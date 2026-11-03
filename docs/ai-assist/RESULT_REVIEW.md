@@ -32,7 +32,7 @@ The path gate keeps the cost off most commits. Each run row logs the `models` it
 
 | Marker | Meaning | Author |
 |---|---|---|
-| `**reproduced**` | It ran something that shows the wrong result | **Outcome tag required.** Commit the repro as a test in the right suite, as its own file, then fix the code in place: `fixed_pre_commit`. Never change the reviewer's test to make it pass; if it expects the wrong thing, tag `false_positive: <reason>` and the weekly judge re-checks it |
+| `**reproduced**` | It ran something that shows the wrong result | **Outcome tag required.** Commit the repro as a test in the right suite, as its own file, then fix the code in place: `fixed_pre_commit`. Never change the reviewer's test to make it pass; if it expects the wrong thing, tag `false_positive: <reason>`. Any tag but `fixed_pre_commit` sends it to the owner's `decide` queue at the next weekly pass, whatever the verify agent says: a session can't tag a failing repro away |
 | `**inferred**` | Read from code only | Optional tag (like fanout `plausible`). Untagged, the weekly bug sweep checks it at `origin/main` |
 | `**display**` | Wrong only in what is drawn; no number, membership or export changes | Listed only |
 
@@ -45,7 +45,9 @@ Log rows: `result_review_run` (tokens, cost, models, `escape_valve`: `no_result_
 A diff touching any of these runs the review. `*` matches across `/`. The list is seeded from the
 result-affecting rows of [`../todo/HARDENING_SURFACES.md`](../todo/HARDENING_SURFACES.md) and from the
 backtest: 2 of its 4 bugs sat in frontend code that feeds a result. Widen it when a result bug
-lands outside it.
+lands outside it. The weekly record lists those under *Result bugs outside the result paths*: real
+bugs verify marks `result` (a wrong number, cell set, channel, unit or export) in a file this list
+doesn't match. That is the list's recall check.
 
 ```result-paths
 app/src/tasks/*

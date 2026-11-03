@@ -77,6 +77,12 @@ P1 as built:
   `result-ed26d1b8`, the last being the blur default. The first pass after merge reads the new
   source from the start of the log.
 
+**P1b (follow-up):**
+- A `reproduced` finding tagged anything but fixed goes to the owner's `decide` queue, so a session
+  can't tag a failing repro away.
+- Verify's `result` flag, and the record's list of real result bugs outside the path list: the
+  path list's recall check.
+
 **P2: public face** (needs Dominik's eyes on the renders before merge)
 - README recital paragraph and the `readme-findings.svg` diagram.
 - `chart.py` and `flow_chart.py`: a third reviewer.

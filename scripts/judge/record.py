@@ -25,6 +25,8 @@ _MIRROR_DIR = _REPO / MIRROR_REL
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness.claude_cli import USAGE_KEYS  # noqa: E402
+from cecelia.effectiveness.log import OUTCOME_VOCABULARY  # noqa: E402
+from cecelia.effectiveness.recital import is_result_path, repo_result_paths  # noqa: E402
 from cecelia.effectiveness.judge_staleness import backlog, judge_store  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
@@ -420,6 +422,31 @@ def _render_agent_causes(record: dict) -> list[str]:
     return out
 
 
+def shipped_reproduced(b: dict) -> bool:
+    """A result review's `reproduced` finding its author tagged anything but fixed. The tag is the
+    author's word against a failing repro, so only the owner closes it (`decide`): neither the sweep's
+    excerpt judge nor verify may dismiss it."""
+    return bool(b.get("owner_only")) or (  # set by the sweep's merge when any merged finding was one
+        str(b.get("key", "")).startswith("result-") and b.get("marker") == "reproduced"
+        and b.get("outcome") in OUTCOME_VOCABULARY - {"fixed_pre_commit"})
+
+
+def path_misses(bugs: _t.Sequence[dict], globs: _t.Sequence[str]) -> list[dict]:
+    """Real bugs verify says make a result wrong (`result`), in a file the result review never runs on,
+    and that it didn't raise itself: what the path list missed (`docs/ai-assist/RESULT_REVIEW.md`)."""
+    return [b for b in bugs if (b.get("verify") or {}).get("result") and (b.get("verify") or {}).get("verdict") == "fix"
+            and not str(b.get("key", "")).startswith("result-") and b.get("file")
+            and not is_result_path(b["file"], globs)]
+
+
+def _render_path_misses(misses: _t.Sequence[dict]) -> list[str]:
+    return ["## Result bugs outside the result paths", "",
+            "Verify says each makes a result wrong, but the result review never runs on its file. Widen the "
+            "`result-paths` list in `docs/ai-assist/RESULT_REVIEW.md` if the file computes results.", "",
+            *(f"- {b['id']} · `{b['file']}` · {_cell(one_line((b.get('verify') or {}).get('effect', '')))}" for b in misses),
+            ""]
+
+
 def render_markdown(record: dict) -> str:
     if record.get("kind") == "failure":
         run = record["run"]
@@ -430,6 +457,7 @@ def render_markdown(record: dict) -> str:
                 "Next action: read the cron log in `~/.cecelia-effectiveness/cron/`, fix the cause, "
                 "and rerun `pixi run judge-weekly`.\n")
     run = record["run"]
+    misses = path_misses(record["bugs"], repo_result_paths(_REPO)) or ()
     out = [f"# Weekly judge — {record['date']}", "",
            _HOW_TO_USE.format(json=f"{record['date']}.json"), "",
            "| | |", "|---|---|",
@@ -446,6 +474,7 @@ def render_markdown(record: dict) -> str:
               "*still open*), new findings wait for the next pass, and none can be marked fixed.", ""]
              if (run.get("failed") or {}).get("sweep") else []),
            *_render_bugs(record["bugs"]), "",
+           *(_render_path_misses(misses) if misses else []),
            "## Rules", "", *_render_rules(record)]
     if record.get("agent_causes"):
         out += ["", "## Agent causes per guide", "", *_render_agent_causes(record)]
