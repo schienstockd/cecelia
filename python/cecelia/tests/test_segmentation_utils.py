@@ -430,6 +430,8 @@ class PhysicalUnitsTest(unittest.TestCase):
         def __init__(self, x=0.5, y=0.5):
             self._x, self._y = x, y
 
+        def im_physical_size_um(self, axis, default=1.0):  # the fakes' sizes are already µm
+            return self.im_physical_size(axis)
         def im_physical_size(self, ax, default=1.0):
             return self._x if ax == 'x' else self._y
 

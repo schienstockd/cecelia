@@ -65,7 +65,7 @@ end
         proj = CciaProject(; uid = "mP", name = "m"); proj.root = mktempdir()
         st = CciaSet(; uid = "mS", dir = mktempdir()); push!(proj._sets, st); push!(proj.set_uids, st.uid)
         push!(st._images, img); push!(st.image_uids, img.uid)
-        # a track cluster is profiled as motility (`is_track_pop`, ai/measures.jl), one row per track
+        # trackclust pops are track pops (`is_track_pop`), so they summarise as motility, n = tracks
         summ = measure_summary(proj; kind = "motility").images[1].summaries
         got = Dict((s.valueName, s.population) => s.n for s in summ)
         # each summary is labelled with ONE segmentation, so its n is that segmentation's tracks in the pop

@@ -272,7 +272,9 @@ function metadata_qc_findings(meta::AbstractDict)
     elseif z_corr
         mf("metadata.z_spacing_corrected", "z")
     elseif phys_z !== nothing && phys_x !== nothing && phys_x > 0
-        ratio = phys_z / phys_x
+        # each axis in µm first: Z may carry its own unit (PhysicalSizeZUnit), e.g. X in nm, Z in µm
+        um(ax) = something(length_unit_um(_meta_axis_length_unit(meta, ax)), 1.0)
+        ratio = (phys_z * um("Z")) / (phys_x * um("X"))
         (ratio < _Z_RATIO_MIN || ratio > _Z_RATIO_MAX) && mf("metadata.z_spacing_unusual", "z")
     end
 
@@ -281,6 +283,8 @@ function metadata_qc_findings(meta::AbstractDict)
         mf("metadata.frame_interval_unknown", "t")
     elseif t_incr !== nothing && t_unit === nothing
         mf("metadata.frame_interval_no_unit", "t")
+    elseif t_incr !== nothing && time_unit_seconds(t_unit) === nothing
+        mf("metadata.frame_interval_unit_unknown", "t")
     end
 
     # spatial unit — one PhysicalSizeUnit covers x/y/z; flag whichever axes carry a value
@@ -289,6 +293,8 @@ function metadata_qc_findings(meta::AbstractDict)
         phys_y !== nothing && mf("metadata.pixel_size_no_unit", "y")
         (phys_z !== nothing && !any(f -> f["detail"]["field"] == "z", fs)) &&
             mf("metadata.pixel_size_no_unit", "z"; key = "metadata.voxel_depth_no_unit")
+    elseif phys_x !== nothing && length_unit_um(phys_unit) === nothing
+        mf("metadata.pixel_size_unit_unknown", "x")
     end
     fs
 end
@@ -699,16 +705,18 @@ function category_dist_metrics(vals)
 end
 
 """
-    hmm_states_qc_findings(m) -> Vector
+    hmm_states_qc_findings(m; fit = nothing) -> Vector
 
-Advisory findings for one image's HMM state assignment, from `category_dist_metrics` `m`
-(PURE → unit-tested). Most-severe first:
+Advisory findings for one image's HMM state assignment, from `category_dist_metrics` `m` and the
+set-wide `fit` (`hmm_fit_stats`, optional) (PURE → unit-tested). Most-severe first:
   • no cells decoded (`n == 0`) ⇒ warn (tracks too short / measurements incomplete).
   • all decoded cells in one state (`n_distinct ≤ 1`) ⇒ warn (image didn't switch states — check
     it's the same acquisition/measurements, or the model has too few states).
   • one state holds ≥ `_DOMINANT_FRAC` of cells ⇒ info (check it's really this uniform).
+  • the shared fit used every Baum–Welch iteration without meeting its own stopping rule ⇒ warn,
+    listed first: every state above comes from that unfinished fit.
 """
-function hmm_states_qc_findings(m)
+function hmm_states_qc_findings(m; fit = nothing)
     findings = Dict{String,Any}[]
     if m.n == 0
         push!(findings, qc_finding("warn", "hmm.no_states_decoded"))
@@ -718,6 +726,9 @@ function hmm_states_qc_findings(m)
         push!(findings, qc_finding("info", "hmm.dominant_state";
             pct = round(Int, 100 * m.dominant_frac),
             detail = Dict{String,Any}("dominantStateFrac" => round(m.dominant_frac; digits = 3))))
+    end
+    if fit !== nothing && !fit.converged
+        pushfirst!(findings, qc_finding("warn", "hmm.not_converged"; iterations = fit.iterations))
     end
     findings
 end

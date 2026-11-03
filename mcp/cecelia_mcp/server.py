@@ -638,7 +638,12 @@ def get_behaviour_summary(project_uid: str, image_uid: str = "", set_uid: str = 
     Per image, `behaviour` is a list; each entry is one HMM column of one segmentation:
       - `kind` "state": `{valueName, column, n, nStates, distribution: [{value, n, fraction}]}` — the
         fraction of cells in each state (e.g. 0.42 Directed / 0.35 Scanning / 0.23 Meandering). `n` is
-        the number of DECODED cells (untracked cells have no state and are excluded).
+        the number of DECODED cells (untracked cells have no state and are excluded). `fit` is the
+        run's fit record — `{numStates, modelMeasurements, logLik, aic, bic, nObs, converged}`, the
+        same on every image of the run, null for runs fitted before it was recorded. Only the
+        `modelMeasurements` drove the states. To compare state counts, lay out runs that differ only
+        in numStates by log-likelihood (an elbow); AIC/BIC keep falling with more states on movement
+        data, so never pick the count from them alone.
       - `kind` "transitions": `{valueName, column, n, nDistinct, distribution: [top transitions]}` —
         e.g. "1_2" is a 1→2 transition; distribution is the top-N by frequency, `nDistinct` the total.
     An image collapsed into one state, or a very different dominant-state fraction from its peers, is
@@ -1309,8 +1314,8 @@ def get_guide(guide_id: str = "") -> dict:
 
     Without `guide_id`: the catalogue `[{id, kind, title, summary}]`. `kind` "recipe" is a whole
     pipeline for one kind of data (e.g. "intravital-timelapse"), with each step's reason and every
-    guide it uses inlined; "guide" is one page or task; "dataset-call" is a capability not built yet,
-    waiting only for a real dataset — its text says what data would do and gives the issue link;
+    guide it uses inlined; "guide" is one page or task; "dataset-call" is a capability waiting only for
+    a real dataset, to build it or to test a built one — its text says what data would do and gives the issue link;
     "request" (`request-a-feature`) is the feature-request form for everything else. With `guide_id`: `{id, kind, title, text}`,
     the text as Markdown. Task guides name the function they run (`Runs: segment.coastalMeasure`)
     and the parameters worth setting. The steps are written for the GUI ("pick it from the

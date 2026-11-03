@@ -10,7 +10,7 @@
 // What a caller supplies is only what is genuinely per-guide: which page, which function, what its
 // parameters mean, and what to do with the output afterwards.
 
-import type { GuideCtx, GuideDef, GuideStep, Prereq, Reveal } from './types'
+import type { GuideCtx, GuideDef, GuideStep, Maturity, Prereq, Reveal } from './types'
 import { PREREQ } from './prereqs'
 
 // The reusable half: the steps that drive `ModuleLayout` + `TaskRunner`. Exported on its own because
@@ -56,6 +56,7 @@ export interface ModuleTaskGuideOpts extends TaskRunStepsOpts {
   prereqs?: Prereq[]
   intro?: string                   // one sentence on what this function is FOR
   after?: GuideStep[]              // what to do with the output (QC, the viewer, the next page)
+  maturity: Maturity               // the taught feature's tier (FEATURE_MATURITY_PLAN)
 }
 
 // Every use of the task-run block, for the ratchet in `guides.test.ts` — it checks each one's
@@ -220,5 +221,6 @@ export function moduleTaskGuide(o: ModuleTaskGuideOpts): GuideDef {
       ...taskRunSteps(o),
       ...(o.after ?? []),
     ],
+    maturity: o.maturity,
   }
 }

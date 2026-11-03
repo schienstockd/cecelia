@@ -12,9 +12,11 @@
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const recordMovieGuide: GuideDef = {
   id: 'record-a-movie',
+  maturity: GUIDE_MATURITY['record-a-movie'],
   title: 'Record a movie',
   group: 'Analysis',
   icon: 'pi-video',

@@ -44,6 +44,8 @@ class _Dims:
     def is_timeseries(self):
         return 'T' in self.im_dim_order
 
+    def im_physical_size_um(self, axis, default=1.0):  # the fakes' sizes are already µm
+        return self.im_physical_size(axis)
     def im_physical_size(self, _ax, default=1.0):
         return default
 

@@ -125,6 +125,12 @@ end
     m3 = Cecelia._resample_z_inherited_meta(Dict{String,Any}(
         "SizeZ" => 1, "PhysicalSizeX" => 1.0, "PhysicalSizeZ" => 0.1))
     @test m3["SizeZ"] == 1                    # round(1 * 0.1) = 0, floored to 1
+    # mixed per-axis units: X in nm, Z in µm → the ratio is taken in µm, Z written back in its own unit
+    m4 = Cecelia._resample_z_inherited_meta(Dict{String,Any}(
+        "PhysicalSizeX" => 500.0, "PhysicalSizeUnit" => "nm", "PhysicalSizeZ" => 2.0,
+        "PhysicalSizeZUnit" => "µm", "SizeZ" => 10))
+    @test m4["SizeZ"] == 40                   # 2 µm / 0.5 µm = 4× planes
+    @test m4["PhysicalSizeZ"] ≈ 0.5 && m4["PhysicalSizeZUnit"] == "µm"
 end
 
 @testset "Register stacks channels across cycles (pure helper)" begin

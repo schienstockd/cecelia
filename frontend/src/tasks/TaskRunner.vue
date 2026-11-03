@@ -37,6 +37,11 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { taskMaturity, taskOptionSuffix, pageBadged } from '../utils/maturity'
+import { tierTip } from '../lib/guides/tiers'
+import { openMaturityRow } from '../lib/guideOpen'
+import ComingSoonBadge from '../components/ComingSoonBadge.vue'
+import ReportProblemButton from '../components/ReportProblemButton.vue'
 import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
@@ -90,6 +95,12 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
+// the picked task's maturity badge — Experimental only in practice (a Coming soon task can't be picked);
+// docs/todo/FEATURE_MATURITY_PLAN.md → P2, `utils/maturity.ts` → taskMaturity
+const taskMat = computed(() => {
+  const m = taskDef.value ? taskMaturity(taskDef.value, props.defs) : null
+  return m && pageBadged(m.tier) ? m : null
+})
 // picker sub-headings (Segment / Measure / Correct …); null = render the flat list
 const fnGroups = computed(() => groupTaskDefs(props.defs))
 
@@ -806,7 +817,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
               :disabled="!!gatingReasonFor(d)"
               :title="gatingReasonFor(d) || d.purpose || undefined"
             >
-              {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+              {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : taskOptionSuffix(d, defs) }}
             </option>
           </optgroup>
         </template>
@@ -818,7 +829,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
             :disabled="!!gatingReasonFor(d)"
             :title="gatingReasonFor(d) || d.purpose || undefined"
           >
-            {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+            {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : taskOptionSuffix(d, defs) }}
           </option>
         </template>
       </select>
@@ -857,6 +868,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
       <div v-if="taskDef" class="fn-meta">
         <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
+        <template v-if="taskMat">
+          <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
+                  v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
+            <ComingSoonBadge :tier="taskMat.tier" />
+          </button>
+          <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
+        </template>
         <ChipSelect v-if="canHpc" class="env-switch" variant="segmented" :options="TARGET_OPTIONS"
           :model-value="runChoice.target" aria-label="Where to run" @update:model-value="setTarget" />
         <template v-else>
@@ -1119,7 +1137,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .defs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
 .defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
-.fn-meta { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
+.fn-meta { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.4rem; }
 .fn-effect {
   display: flex;
   align-items: center;

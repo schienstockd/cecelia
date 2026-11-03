@@ -46,13 +46,8 @@ _BIGTIFF_BYTES = 3_500_000_000
 # pixels-per-unit and only understand INCH/CENTIMETER). Both the OME spelling and the symbol, since
 # `ccid.json` carries whatever the importer read. A unit absent from here is left unconverted rather
 # than guessed — see where this is used.
-_PER_CM = {
-    'micrometer': 1e4, 'µm': 1e4, 'um': 1e4,
-    'nanometer':  1e7, 'nm': 1e7,
-    'millimeter': 10.0, 'mm': 10.0,
-    'centimeter': 1.0,  'cm': 1.0,
-    'meter':      0.01, 'm':  0.01,
-}
+from cecelia.utils.units import LENGTH_UNIT_UM as _UM_PER
+_PER_CM = {unit: 1e4 / um for unit, um in _UM_PER.items()}
 
 
 def _remaining_axes(dim_order, fixed):

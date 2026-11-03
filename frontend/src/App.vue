@@ -234,7 +234,7 @@ const bare = computed(() => popout || route.meta.bare === true)
     <GuidesDialog v-if="isGuidesOpen" />
     <IconLegendDialog v-if="isIconLegendOpen" />
     <ColorLegendDialog v-if="isColorLegendOpen" />
-    <!-- Call for Datasets — capabilities we can build once a real dataset lands. State lives in
+    <!-- Call for Datasets — what we can build, or test, once a real dataset lands. State lives in
          lib/callForDatasetsOpen.ts; opened from AppHeader and (once wired) from vis-aid chips via
          `?ask=<id>`. -->
     <CallForDatasetsModal v-if="isCallForDatasetsOpen" />

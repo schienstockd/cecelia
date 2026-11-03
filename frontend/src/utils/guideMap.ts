@@ -7,7 +7,9 @@ import { availablePaths, guideRoutes } from './viewProfiles'
 import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { GUIDES, guideById } from '../lib/guides'
 import { isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides/recipes'
-import type { GuideDef } from '../lib/guides/types'
+import type { GuideDef, Tier } from '../lib/guides/types'
+import { tierTip, TIER_LABEL, TIER_DOT, chipDot } from '../lib/guides/tiers'
+import { pageTier, badged } from './maturity'
 
 export interface MapChip {
   route: string
@@ -21,6 +23,7 @@ export interface MapChip {
   dim: boolean                 // a recipe is picked and this page isn't on it
   hidden: boolean              // the active sidebar layout hides it — dimmed, still reachable
   claude: string | null        // what Claude makes here (mapData.ts → claude)
+  tier: Tier | null            // the page's maturity (utils/maturity.ts → pageTier); exempt = no badge
 }
 
 export interface MapGroup {
@@ -78,6 +81,7 @@ export function buildMap(recipe: WrittenRecipe | null, visible: string[]): MapGr
         dim: !!lit && !lit.has(i.to),
         hidden: !visible.includes(i.to),
         claude: e?.claude ?? null,
+        tier: pageTier(i.to),
       }
     }),
   }))
@@ -87,11 +91,23 @@ export function buildMap(recipe: WrittenRecipe | null, visible: string[]): MapGr
  *  what Claude makes there. */
 export function chipTip(c: MapChip, showClaude = false): string {
   const parts = [c.what]
+  if (badged(c.tier)) parts.push(tierTip(c.tier))
   if (c.pairedLabel) parts.push(`summarised on ${c.pairedLabel}`)
   if (c.hidden) parts.push('hidden by your sidebar layout')
   if (showClaude && c.claude) parts.push(c.claude)
   return parts.join(' · ')
 }
+
+/** The page button's marker — `chipDot` lives beside the tier words (`lib/guides/tiers.ts`) so the
+ *  badge can use it without the guide catalogue; re-exported here for the map. */
+export { chipDot }
+
+/** The legend under the grid: each tier in use, with its dot. Stable is reserved and never listed. */
+export const TIER_LEGEND: { tier: Tier; dot: string; label: string }[] =
+  (['experimental', 'beta', 'tested', 'comingSoon'] as const).map(t => ({ tier: t, dot: TIER_DOT[t]!, label: TIER_LABEL[t] }))
+
+/** The marker's accessible name. */
+export const tierLabel = (t: Tier | null | undefined): string => (t ? TIER_LABEL[t] : '')
 
 /** Which guide group opens first: the one whose guides teach the page you're on, else Start. */
 export function defaultOpenGroup(currentPath: string): string {

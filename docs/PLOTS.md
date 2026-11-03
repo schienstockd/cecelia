@@ -772,6 +772,27 @@ to a `*transitions*` column, profile to a `*state*` column), **Scale** (0–1 / 
 **Normalize** (crosstab), and **Cell values**. Plot defs: `state_signature.json` (profile) and
 `transition_matrix.json` (crosstab).
 
+**A profile over an HMM state column follows its run.** When the category is
+`live.cell.hmm.state.{colName}` and the run left a fit record (`{props}.hmmfit.json`, `docs/DATAMODEL.md`
+→ *HMM state output*), the rows are the measures the run was FITTED on first, then the requested
+extras, and the response carries `fit` (`modelMeasurements, numStates, logLik, bic, converged`).
+`SummaryPanel` shows it as a footer `PlotNotice` ("Fitted on speed, angle · 3 states"; amber when the
+fit did not converge), via `utils/hmmFitNote.ts`. Without it a run fitted on shape descriptors drew the
+spec's speed/angle rows, and a plotted correlate read like a modelled measure. Resolved in
+`_hmm_profile_fit` before the frame is read, in all four `plot_summary_data` methods.
+
+**HMM state count (`elbow` chart, `hmm_state_count.json`) — a second precomputed readout.** Every
+HMM run recorded on the selected images (`{props}.hmmfit.json`), grouped into FAMILIES of runs that
+differ only in `numStates` (same pops, modelled measures and preprocessing — anything else is a
+different curve, since log-likelihood is of the preprocessed data); one line per family over K, y =
+log-likelihood (the elbow) or BIC (panel option). Values are drawn as recorded — no smoothing, unlike
+the trend line, because with 3–5 points a fitted curve would invent the elbow. A run that did not
+converge is a hollow dot; the tooltip carries the run name and the gain over the previous K. Spec
+`dataSource.precomputed: "hmmFit"` → `isPrecomputedSpec` (no population selection, same as the
+interaction matrix); `plot_summary_data` intercepts `chartType == "elbow"` before any `pop_df` read
+(`app/src/plotting/hmm_fit_curve.jl`); rows built by `utils/hmmElbow.ts`, marks by `buildHmmElbow`.
+It never picks K — see `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
+
 **Tiled / spatial map** (binned positions over the image field) — roadmap → `Plot.raster` /
 `Plot.cell` over binned x/y. Needs a backend aggregation that bins centroids into a grid.
 

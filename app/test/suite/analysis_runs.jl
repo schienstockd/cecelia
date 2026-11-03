@@ -77,6 +77,9 @@ end
         write_json_atomic(replace(props, r"\.h5ad$" => ".clustfeatures.json"),
                           Dict("clusters.alpha" => Dict("features" => ["a"]),
                                "regions.alpha"  => Dict("features" => ["b"])))
+        # HMM fit records: the deleted run's key goes, a sibling run's stays
+        Cecelia.put_props_sidecar_entry!(Cecelia.hmm_fit_path(props), "movement", Dict("numStates" => 3))
+        Cecelia.put_props_sidecar_entry!(Cecelia.hmm_fit_path(props), "other", Dict("numStates" => 4))
         qcf = Cecelia.qc_path(img, "clustPops.cluster", "B.alpha"); mkpath(dirname(qcf)); write(qcf, "{}")
         mkpath(Cecelia.img_spatial_graph_dir(img)); write(Cecelia.img_spatial_graph_path(img, "g1"), "x")
         mkpath(Cecelia.img_stats_dir(img));         write(Cecelia.img_stats_path(img, "s1"), "{}")
@@ -106,6 +109,8 @@ end
 
         @test delete_analysis_run!(img, "hmm", "movement")
         @test !any(c -> startswith(c, "live.cell.hmm."), obs())
+        @test Cecelia.hmm_fit_entry(props, "movement") === nothing
+        @test Cecelia.hmm_fit_entry(props, "other")["numStates"] == 4
         @test delete_analysis_run!(img, "contacts", "flow#flow.T", "B")
         @test !any(c -> occursin("#flow.T", c), obs())
         @test !("flow.track.approachIndex#flow.T" in col_names(label_props(tprops); data_type = :obs))

@@ -262,7 +262,7 @@ def _spatial_scale(dim_utils: DimUtils, n_spatial: int):
     `coor_list` itself is in pixels of the (possibly Z-MIPed) array.
     """
     axes = ["z", "y", "x"][-n_spatial:]
-    return [float(dim_utils.im_physical_size(a)) for a in axes]
+    return [float(dim_utils.im_physical_size_um(a)) for a in axes]
 
 
 def _extract_fibre_image(im_data, dim_utils: DimUtils, fibre_channels, t_index):
@@ -600,7 +600,7 @@ def run(params: dict):
                 aniso_box_len.append(blen); aniso_box_aniso.append(coh)
                 # -1 marks a T-collapsed frame, so a reader can tell it from real frame 0.
                 aniso_t_index.append(int(t_index) if t_index is not None else (-1 if integrate_time else 0))
-                pxsz = float(dim_utils.im_physical_size("x"))
+                pxsz = float(dim_utils.im_physical_size_um("x"))
                 summary_frames.append(_scalar_summary(
                     aniso_im, sk_bool, pxsz, aniso.weighted_anisotropy(coh, blen)))
 

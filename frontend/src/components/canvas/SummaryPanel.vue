@@ -14,6 +14,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from
 import CanvasPanel from './CanvasPanel.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import PlotChart from '../plots/PlotChart.vue'
+import { hmmFitNote } from '../../utils/hmmFitNote'
+import type { ElbowMetric } from '../../utils/hmmElbow'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
@@ -61,7 +63,7 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        statsSuffix?: string; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median' }   // datapoint = each cell/track, or each image's mean/median (one dot per image)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
@@ -301,7 +303,11 @@ const specPinnedMode = computed(() => !!props.spec.dataSource.matrix?.mode)
 // series and no category column — what it needs is WHICH RUN, which the response reports back in
 // `suffixes` (there is no spec field for a run picker, so the data supplies the options).
 // one predicate, shared with the population picker and mirrored server-side — see isPrecomputedSpec
-const isInteraction = computed(() => isPrecomputedSpec(props.spec))
+const isPrecomputed = computed(() => isPrecomputedSpec(props.spec))
+const isInteraction = computed(() => isPrecomputed.value && props.spec.dataSource.matrix?.mode === 'interaction')
+// the HMM state-count elbow: y = log-likelihood (the elbow) or BIC
+const elbowMetric = computed<ElbowMetric>({
+  get: () => props.ui.elbowMetric ?? 'logLik', set: v => (props.ui.elbowMetric = v) })
 const statsSuffix = computed<string>({
   get: () => props.ui.statsSuffix ?? '', set: v => (props.ui.statsSuffix = v) })
 const runOptions = computed<string[]>(() => (result.value as { suffixes?: string[] } | null)?.suffixes ?? [])
@@ -353,7 +359,7 @@ const categorySel = computed<string>({ get: () => matrixCategory.value, set: v =
 const optsOpen = ref(false)
 const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
 const hasOpts = computed(() => groupByOpts.value.length > 0
-  || chartType.value === 'heatmap'
+  || chartType.value === 'heatmap' || chartType.value === 'elbow'
   || canStatUnit.value
   || (['histogram', 'bar', 'frequency', 'count'] as ChartType[]).includes(chartType.value))
 // friendly menu labels (the internal ChartType value stays as-is, e.g. 'strip' renders a beeswarm)
@@ -454,8 +460,8 @@ function applyImageSelector(body: Record<string, unknown>) {
 
 /** `isCurrent()` comes from the scheduler: false once a newer fetch has started. */
 async function fetchData(isCurrent: () => boolean) {
-  // an interaction matrix has no series — its populations are fixed by the run it reads
-  if (!isInteraction.value && !ownSeries.value.length) { result.value = null; return }
+  // a precomputed readout has no series — its content is fixed by the runs it reads
+  if (!isPrecomputed.value && !ownSeries.value.length) { result.value = null; return }
   if (!crossImage.value && !props.imageUid) { result.value = null; return }
   // measuresFromData offers measures built from THIS image's columns, so a fetch fired before the new
   // image's columns have loaded would request the previous image's measure (e.g. 3D-only `euler_number`
@@ -470,6 +476,26 @@ async function fetchData(isCurrent: () => boolean) {
   // matrix/heatmap pools the whole frame into ONE grid, so it's a single request (not the per-popType
   // series merge below). All targets go under the first target's popType — behaviour heatmaps are
   // live-only; a target whose pop only exists under another popType would simply contribute no cells.
+  // the HMM state-count elbow reads every recorded run's fit — one request, no populations
+  if (chartType.value === 'elbow') {
+    try {
+      const body: Record<string, unknown> = {
+        projectUid: props.projectUid, popType: popType.value, granularity: granularity.value, chartType: 'elbow' }
+      applyImageSelector(body)
+      const res = await fetch('/api/plot_data', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+      const r = await res.json() as PlotDataResponse
+      if (!isCurrent()) return
+      result.value = r
+    } catch (e) {
+      if (!isCurrent()) return
+      error.value = e instanceof Error ? e.message : String(e); result.value = null
+    }
+    return
+  }
+
   if (chartType.value === 'heatmap') {
     try {
       const cat = isInteraction.value ? '' : matrixCategory.value
@@ -594,13 +620,16 @@ const vis = computed<VisProps>(() => props.vis ?? DEFAULT_VIS)
 const hasData = computed(() => {
   const r = result.value
   if (!r) return false
+  if (r.chartType === 'elbow') return (r.curves?.length ?? 0) > 0
   return r.chartType === 'matrix' ? (r.cells?.length ?? 0) > 0 : r.series.length > 0
 })
 // An interaction matrix reads a `neighbourStats` run, not the ticked populations, so "no data" means
 // the run is missing — name the task that produces it rather than blaming the selection.
 const emptyMessage = computed(() => isInteraction.value
   ? 'No interaction run yet — run "Interaction matrix" on this image.'
-  : 'No data for the selected populations.')
+  : chartType.value === 'elbow'
+    ? 'No HMM fits recorded yet — run "HMM states" at several state counts.'
+    : 'No data for the selected populations.')
 // Named empty series (see emptySeriesLabels): only meaningful for a measure plot — a population summary
 // legitimately reports a zero count, and a matrix has no series.
 // Faceting splits the panel into one small multiple per image/series. Past a dozen they are slivers
@@ -616,6 +645,9 @@ const facetNote = computed(() => {
     ? { text: `${load.n} panels`, tip: `Faceting into ${load.n} small multiples — each is narrow. Select fewer images, or facet by series.` }
     : null
 })
+// state signature over an HMM run: which measures drove the states, and how well the run fit
+const fitNote = computed(() => (result.value?.chartType === 'matrix' ? hmmFitNote(result.value.fit) : null))
+
 const emptyNote = computed(() => {
   const r = result.value
   if (!r || !hasMeasure.value || r.chartType === 'matrix') return ''
@@ -660,6 +692,7 @@ const buildOpts = computed<BuildOpts>(() => ({
   timeScale: timeSeries.value ? (timeScale.value ?? undefined) : undefined,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity, statsShowNs, statsUseStars
   heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
+  elbowMetric: elbowMetric.value,
   brushActiveIds: pointBrushActive.value ?? null,
   // For single-image panels the server strips per-series uID (by_image=false), so the plot's
   // per-dot pointUid ends up "" and the (uid, vn) source key collapses to `|vn`. The panel
@@ -712,9 +745,11 @@ function exportAs(kind: string) {
 // export cost rather than a per-render one. Mirrors fetchData's per-popType request grouping. Heatmaps
 // have no per-datapoint form, so they export their aggregated grid as before.
 async function fetchRawCsv(): Promise<string | null> {
-  if (!ownSeries.value.length) return null
+  // a precomputed readout (interaction matrix, HMM state count) has no series — export what it drew
+  if (!isPrecomputed.value && !ownSeries.value.length) return null
   if (!crossImage.value && !props.imageUid) return null
-  if (chartType.value === 'heatmap') return result.value ? plotDataToCsv(result.value, csvMeta()) : null
+  if (chartType.value === 'heatmap' || chartType.value === 'elbow')
+    return result.value ? plotDataToCsv(result.value, csvMeta()) : null
   const byType = new Map<string, SeriesTarget[]>()
   for (const t of ownSeries.value) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
   const requests = [...byType.entries()].map(async ([pt, targets]) => {
@@ -1119,7 +1154,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
               v-tooltip.bottom="'Which interaction run to show'">
         <option v-for="s in runOptions" :key="s" :value="s">{{ s }}</option>
       </select>
-      <select v-if="showPopTypePicker && !isInteraction" v-model="popType" class="sp-poptype"
+      <select v-if="showPopTypePicker && !isPrecomputed" v-model="popType" class="sp-poptype"
               v-tooltip.bottom="'Population type'">
         <option v-for="o in popTypeOpts" :key="o.popType" :value="o.popType">{{ popTypeLabel(o) }}</option>
       </select>
@@ -1171,6 +1206,13 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
                The Mode toggle is shown only for a GENERIC heatmap; the behaviour presets
                (state signature = profile, transition matrix = crosstab) pin their mode, so the two
                plots stay distinct rather than each being able to become the other. -->
+          <label v-if="chartType === 'elbow'" class="sp-pop-row cc-muted" v-tooltip.top="'Value on the y axis'">
+            <span>Show</span>
+            <select v-model="elbowMetric">
+              <option value="logLik">log-likelihood</option>
+              <option value="bic">BIC</option>
+            </select>
+          </label>
           <template v-if="chartType === 'heatmap'">
             <label v-if="hmCtl.mode && !specPinnedMode" class="sp-pop-row cc-muted" v-tooltip.top="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
               <span>Mode</span>
@@ -1270,6 +1312,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="facetNote" class="sp-foot-note" :text="facetNote.text" :tip="facetNote.tip" />
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
+      <PlotNotice v-else-if="fitNote" class="sp-foot-note" :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <CcToggle v-if="!docked" v-model="settings.csvIncludeAttrs" label="Attributes" class="sp-attrs cc-fs-xs"
                 v-tooltip.top="'Add image name + attributes to the CSV'" />
@@ -1283,7 +1326,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
     </template>
 
     <div ref="summaryBodyEl" class="sp-body">
-      <div v-if="!series.length && !isInteraction" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
+      <div v-if="!series.length && !isPrecomputed" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
       <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
