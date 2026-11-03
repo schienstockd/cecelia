@@ -319,6 +319,10 @@ class ResultReviewRowsTest(unittest.TestCase):
         self.assertIn("unchanged diff", format_event(self._run("unchanged_diff"), use_colour=False))
         self.assertIn("1m", format_event(self._run(), use_colour=False))
 
+    def test_the_reviewers_list_first_then_the_mechanical_checks(self):
+        labels = ["mlnt", "rslt", "invt", "conv", "fnut", "zzzz"]
+        self.assertEqual(sorted(labels, key=console._mech_rank), ["fnut", "conv", "rslt", "invt", "mlnt", "zzzz"])
+
     def test_skips_count_apart_from_runs(self):
         tally = console._Tally()
         for valve in (None, "no_result_paths", "no_result_paths"):
