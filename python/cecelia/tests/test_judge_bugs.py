@@ -379,7 +379,8 @@ class SweepTest(_Repo):
         def dear(prompt):   # every call spends $1: $4 with $1.50 a call stops after the third
             self.prompts.append(prompt)
             return {"items": []}, 1.0
-        _, cost = self.sweep(self._many(5 * self.b.BATCH_ITEMS), judge=dear)
+        with mock.patch.object(self.b, "SWEEP_USD", 4.0):
+            _, cost = self.sweep(self._many(5 * self.b.BATCH_ITEMS), judge=dear)
         self.assertEqual((len(self.prompts), cost), (3, 3.0))
 
     def test_over_the_budget_is_unjudged_not_open(self):
@@ -478,13 +479,13 @@ class SweepTest(_Repo):
                  "verify": {**one["verify"], "date": f"2026-10-0{i}"}} for i in range(1, 6)]
         previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": bugs}
         sha = self.commit("a.py", "".join(f"line {i}\n" for i in range(1, 62)), msg="fix: (fanout-00000005)")
-        with mock.patch.object(self.b, "PARKED_RECHECK", 3):
+        with mock.patch.object(self.b, "PARKED_RECHECK", 3):   # a landed fix takes no slot
             later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
                                  merged_prs=lambda since: [], repo=self.repo)[0]
         status = {b["key"]: b["status"] for b in later}
         self.assertEqual(status, {"fanout-00000005": "open", "fanout-00000001": "open", "fanout-00000002": "open",
-                                  "fanout-00000003": "parked", "fanout-00000004": "parked"})
-        waiting = next(b for b in later if b["key"] == "fanout-00000003")
+                                  "fanout-00000003": "open", "fanout-00000004": "parked"})
+        waiting = next(b for b in later if b["key"] == "fanout-00000004")
         self.assertIn("waiting for a re-check slot (3 a pass)", waiting["why"])
         self.assertIn("`a.py` changed since it was verified", waiting["recheck"])
         self.assertEqual(waiting["verify"]["verdict"], "guard")   # kept: still parked, verdict and all
@@ -499,6 +500,45 @@ class SweepTest(_Repo):
         self.assertEqual([(b["key"], b["status"]) for b in nxt],
                          [("fanout-00000009", "open"), ("fanout-00000008", "parked")])
         self.assertIn("a commit naming its key landed", nxt[0]["why"])
+
+    def test_landed_fixes_go_back_however_many_and_take_no_slot(self):
+        one = self._guarded()["bugs"][0]
+        bugs = [{**one, "key": f"fanout-0000000{i}", "sources": [f"fanout-0000000{i}"]} for i in range(1, 5)]
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": bugs}
+        sha = self.commit("b.py", "g = 1\n", msg="fix: guards (fanout-00000001 fanout-00000002 fanout-00000003)")
+        with mock.patch.object(self.b, "PARKED_RECHECK", 1):
+            later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                                 merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual({b["key"]: b["status"] for b in later},
+                         {"fanout-00000001": "open", "fanout-00000002": "open", "fanout-00000003": "open",
+                          "fanout-00000004": "parked"})   # untouched: no trigger, stays parked
+
+    def _in_function(self, body):
+        return f"import os\n\n\ndef helper(x):\n{body}    return x\n\n\ndef other():\n    return 2\n"
+
+    def _parked_in_function(self):
+        """A parked bug on line 5, inside `helper`, verified at the current SHA."""
+        sha = self.commit("f.py", self._in_function("    y = x\n"), msg="add f")
+        b = {**self._guarded()["bugs"][0], "key": "fanout-0000000f", "sources": ["fanout-0000000f"], "file": "f.py",
+             "line": 5, "commit": sha}
+        b["verify"] = {**b["verify"], "sha": sha}
+        return {"run": {"ts": "2026-10-05T00:00:00Z", "sha": sha}, "bugs": [b]}
+
+    def test_a_parked_bug_stays_parked_when_only_other_code_in_its_file_changed(self):
+        previous = self._parked_in_function()
+        text = self._in_function("    y = x\n").replace("return 2", "return 3")
+        sha = self.commit("f.py", "# a comment above\n" + text, msg="touch other")   # helper moved down a line too
+        later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                             merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([b["status"] for b in later], ["parked"])
+
+    def test_a_parked_bug_goes_back_when_its_function_changed(self):
+        previous = self._parked_in_function()
+        sha = self.commit("f.py", self._in_function("    y = x\n    assert y\n"), msg="touch helper")
+        later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                             merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([b["status"] for b in later], ["open"])
+        self.assertIn("`helper` in `f.py` changed since it was verified", later[0]["why"])
 
     def test_a_parked_bug_whose_file_is_gone_is_gone_for_free_and_takes_no_slot(self):
         one = self._guarded()["bugs"][0]

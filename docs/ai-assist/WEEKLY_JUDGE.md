@@ -59,13 +59,14 @@ test whether an agent can actually use the framework.
    - a function that no longer exists is `gone`;
    - findings on one file + function are merged into one bug;
    - a `parked` bug (verify said `guard`, step 4) skips the judge and stays parked, unless a commit
-     names its key (*Landed fixes* below: the guard may have gone in elsewhere) or one since its
-     verify SHA touched its file (an agent-run error with no file: unless a run hit it again after it
-     was verified). A file or function that no longer exists then makes it `gone` for free, as for
-     an open bug, without taking a re-check slot. Otherwise it goes back to `open` with its verdict
-     cleared, and verify looks at it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
-     the check is a proxy, and a busy file would otherwise send its every parked bug back each
-     week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
+     names its key (*Landed fixes* below: the guard `--auto` added, or one that went in elsewhere) or
+     the function it sits in changed since its verify SHA (its file, when there is no function; an
+     agent-run error with no file: unless a run hit it again after it was verified). A file or
+     function that no longer exists then makes it `gone` for free, as for an open bug, without taking
+     a re-check slot. Otherwise it goes back to `open` with its verdict cleared, and verify looks at it
+     again: every one a landed fix names, plus 10 a pass (`PARKED_RECHECK`) on the function proxy, the
+     oldest parking first. The proxy was the whole file once, and a busy file sent its every parked bug
+     back each week, half of them on code nobody had touched. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
    **Result review** (key `result-…`): `reproduced` findings not tagged `fixed_pre_commit`, and untagged
    `inferred` notes, judged like fanout findings. `display` notes are never swept
@@ -140,9 +141,10 @@ test whether an agent can actually use the framework.
 
    Then tool-less judge calls read the excerpts as data and mark each bug `live_bug` / `gone` /
    `not_a_bug`, 40 per call (`BATCH_ITEMS`: it bounds the prompt, not the spend). Calls continue until
-   nothing is left or the next one could take the sweep past **$4** (`SWEEP_USD`): a call starts only
-   while what's spent plus its whole $1.50 budget fits, so $4 is four calls, 160 bugs, against a
-   measured inflow of about 100 a week. Bugs with a landed fix go first, then carried `open` ones,
+   nothing is left or the next one could take the sweep past **$10** (`SWEEP_USD`): a call starts only
+   while what's spent plus its whole $1.50 budget fits, and calls measure $0.70-1.30, so $10 is six
+   calls, 240 bugs, against an inflow of 100-150 a week. It is a ceiling, not the throughput: at $4
+   only two calls fit, and the backlog outgrew them. Bugs with a landed fix go first, then carried `open` ones,
    then the rest oldest first. A failed call ends the sweep; what earlier calls judged stands.
    Commits pushed to a PR's branch after it merged are reported as `stranded` (`stranded-pr<N>`):
    by the scan of PRs merged since the last pass, and by any branch with findings waiting on it,
@@ -170,7 +172,8 @@ test whether an agent can actually use the framework.
    one of:
    - `fix`: the bug is live;
    - `guard`: it can't happen today, and the agent names what would make it live. The bug becomes
-     `parked`: off the work list, listed under *Parked*, and back to verify when its file changes;
+     `parked`: off the work list, listed under *Parked*; `--auto` adds the guard (*Unattended* below), and it comes
+     back to verify when a commit names it or its function changes;
    - `decide`: only you can answer it, so it goes on the owner queue;
    - `fixed`: the finding was right, but the code no longer has the defect (fixed since, or removed).
      The bug becomes `gone`, and counts as a real bug fixed in the charts. A repeated agent error
@@ -245,7 +248,9 @@ test whether an agent can actually use the framework.
    fields; in the prose ones `@name` and `#N` go inside code spans, home paths become `~` and
    project/image uids `<uid>`, and a body that still carries any of those isn't filed (*held*).
    `gh` is allowlisted to the issue subcommands this needs. At most 20 creates a pass, one a
-   second; the rest wait. A mirror that fails says so on `run.issues` and leaves the pass standing.
+   second; the rest wait. GitHub's own 5xx (a `502 Bad Gateway`) is retried twice, 10 s apart: reads and
+   repeatable writes as they are, a create only after the list shows it didn't land anyway. A mirror
+   that still fails says so on `run.issues` and leaves the pass standing.
    Design: [`docs/todo/JUDGE_WORKFLOW_PLAN.md`](../todo/JUDGE_WORKFLOW_PLAN.md) D7–D11, D14.
 9. **Chart** (`chart.py`, best-effort, last). The README's chart is rendered from the log and the
    store and pushed to the `judge-assets` branch; *The chart* below. Its own timer
@@ -282,7 +287,7 @@ is more than 9 days old or failed, and when the backlog grew two passes in a row
 **Spend.** The record's *Tokens* row has what each step used: output, uncached input, and cache read
 and write, taken from each call's `usage`. Its *Spend* row is the CLI's dollar figure, which is list
 price, not what a seat is charged. The caps are in dollars, because `--max-budget-usd` is the
-CLI's only limit: bug sweep $4 ($1.50 per call), verify $10 ($2 per group), rule mapping $2. Verify's cap counts
+CLI's only limit: bug sweep $10 ($1.50 per call), verify $20 ($2 per group), rule mapping $2. They are ceilings, not the throughput: a pass that reaches one leaves a backlog that goes first next time. Verify's cap counts
 a failed agent that never said its cost at its whole budget (`reserved_usd`); its spend (`usd`) is
 only what the agents reported.
 
@@ -325,8 +330,8 @@ add one comment (your words, defused like a body; on a bug filed that pass, righ
 create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's create cap says
 *issue not filed yet*.
 
-**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works every `fix` bug (or
-the first N sessions) without you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
+**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works every `fix` bug, then every
+`parked` one (or the first N sessions) without you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
 per step: spinner, elapsed time, the agent's tool calls and its latest; `pixi run agents` lists
 the agent as `auto-fix^`. On the usage limit it waits for the reset and resumes the same
 session (a recital round runs again); a reset more than 6 h off (`MAX_WAIT`) stops the run instead, and so does a third limit in a row (`MAX_LIMIT_WAITS` = 2: an unreadable reset waits an hour, so a weekly limit would otherwise loop for days). A bug with a landed fix
@@ -441,7 +446,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
-| `pixi run judge-review --auto` | Work the `fix` bugs unattended, one PR per session (`--limit N`, `--dry-run`) |
+| `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`) |
 | `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |

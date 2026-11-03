@@ -39,11 +39,12 @@ never took (`stranded`). A finding waiting on commits made after its branch's PR
 branch's stranded bug (`waiting`), pushed or local-only (`stranded-local-<branch>`).
 
 A bug verify called `guard` (the flaw is there, nothing reachable triggers it) is `parked`: carried,
-off the work list, and not judged again. Each pass checks for free whether a commit names its key
-(`fix_landed`) or one since its verify SHA touched its file (an agent-run error with no file: whether
-a run hit it again); if so, a file or function that no longer exists makes it `gone` for free, and
-otherwise it goes back to `open` with its verdict cleared, so verify looks at it again: at most
-`PARKED_RECHECK` a pass, the rest wait parked for a slot.
+off the sweep's work list, and not judged again; `judge-review --auto` adds its guard (`review.auto_items`).
+Each pass checks for free whether a commit names its key (`fix_landed`) or the function it sits in
+changed since its verify SHA (its file, when there is no function; an agent-run error with no file:
+whether a run hit it again); if so, a file or function that no longer exists makes it `gone` for free,
+and otherwise it goes back to `open` with its verdict cleared, so verify looks at it again: every one
+a landed fix names, plus `PARKED_RECHECK` more a pass, the rest wait parked for a slot.
 
 A carried `open` / `unjudged` bug whose key a commit since the last pass names (`previous sha..sha`)
 gets `fix_landed`: the commits, and their PR where git shows one. No Claude call; it is evidence for
@@ -146,14 +147,16 @@ BATCH_ITEMS = 40
 WINDOW_DAYS = 7
 #: Budget per judge call (`--max-budget-usd`). A 40-item call measured $0.78.
 CALL_USD = 1.50
-#: Budget per sweep. A call starts only while what's spent plus a whole CALL_USD fits, so the cap
-#: holds even if that call spends its budget: $4 is four calls, 160 findings, against a measured
-#: inflow of about 100 a week.
-SWEEP_USD = 4.0
-#: Parked bugs sent back to verify per pass. Their re-check is a proxy (their file changed), and a busy
-#: file would otherwise send its every parked bug back each week, out of verify's budget. Over the
-#: cap a bug stays parked and goes first next pass: a landed fix ahead, then the oldest parking.
-PARKED_RECHECK = 3
+#: Budget per sweep: a ceiling, not the throughput. A call starts only while what's spent plus a whole
+#: CALL_USD fits, so the cap holds even if that call spends its budget. Calls measure $0.70-1.30, so $10
+#: is six calls, 240 findings, against an inflow of 100-150 a week (more when a batch of branches
+#: merges): the queue drains each pass, and what it doesn't reach goes first next time.
+SWEEP_USD = 10.0
+#: Parked bugs sent back to verify per pass on the proxy (the code of the function they sit in changed),
+#: out of verify's budget. A bug whose key a commit names (a guard an `--auto` session added) is
+#: not capped: that is how a parked bug leaves. Over the cap a bug stays parked and goes first next
+#: pass, the oldest parking first.
+PARKED_RECHECK = 10
 
 JUDGE_SCHEMA = {
     "type": "object",
@@ -570,11 +573,17 @@ def _parked(b: dict) -> bool:
     return b.get("was") == "parked" or b.get("was") == "open" and (b.get("verify") or {}).get("verdict") == "guard"
 
 
+def _code(found: dict) -> str | None:
+    """`locate`'s excerpt without its line numbers: code that only moved compares equal."""
+    return re.sub(r"(?m)^ *\d+  ", "", found["code"]) if found.get("code") is not None else None
+
+
 def _touched(b: dict, sha: str, repo: pathlib.Path) -> str | None:
     """Why a parked bug goes back to verify, or None while it stays parked: a commit names its key
-    (the guard may have gone in elsewhere, so its file needn't change), or one since its verify SHA
-    touched its file. An agent-run error with no file has nothing else to watch but its own runs: it
-    goes back once a run hits it again after it was verified."""
+    (the guard may have gone in elsewhere, so its file needn't change), or the function it sits in
+    changed since its verify SHA (the whole file when there's no function to find). An agent-run error
+    with no file has nothing else to watch but its own runs: it goes back once a run hits it again
+    after it was verified."""
     v = b.get("verify") or {}
     if b.get("fix_landed"):
         return f"a commit naming its key landed ({b['fix_landed'][-1]['commit'][:8]})"
@@ -587,20 +596,28 @@ def _touched(b: dict, sha: str, repo: pathlib.Path) -> str | None:
     if found is None:   # a finding that named no file, nor did verify: no file to watch
         return None
     commits = (git_output("log", "--format=%h", f"{v['sha']}..{sha}", "--", found[0], cwd=str(repo)) or "").split()
-    return (f"`{found[0]}` changed since it was verified ({len(commits)} commit(s), latest {commits[0]})"
-            if commits else None)
+    if not commits:
+        return None
+    if not found[2]:   # its own file:line, not one verify's evidence named: look at its function
+        then, now = locate(b, v["sha"], repo), locate(b, sha, repo)
+        if then["symbol"] and not now["gone"] and _code(then) == _code(now):
+            return None
+        if then["symbol"]:
+            return f"`{then['symbol']}` in `{found[0]}` changed since it was verified (latest {commits[0]})"
+    return f"`{found[0]}` changed since it was verified ({len(commits)} commit(s), latest {commits[0]})"
 
 
 def _unpark(fired: list[tuple[dict, str]], date: str) -> list[dict]:
-    """Parked bugs whose re-check fired: the first PARKED_RECHECK go back to verify as `open` with no
-    verdict (`eligible` takes those), a landed fix first, then the oldest parking; the rest stay
-    parked, `recheck` saying why one is due, and wait for a slot."""
+    """Parked bugs whose re-check fired go back to verify as `open` with no verdict (`eligible` takes
+    those): every one a landed fix names, then PARKED_RECHECK more, the oldest parking first; the rest
+    stay parked, `recheck` saying why one is due, and wait for a slot."""
     fired = sorted(fired, key=lambda f: (not f[0].get("fix_landed"), (f[0].get("verify") or {}).get("date") or ""))
-    out = []
-    for i, (b, back) in enumerate(fired):
+    out, slots = [], PARKED_RECHECK
+    for b, back in fired:
         v = b.get("verify") or {}
         said = f"parked {v.get('date') or '?'} as guard; {back}"
-        if i < PARKED_RECHECK:
+        if b.get("fix_landed") or slots > 0:
+            slots -= 0 if b.get("fix_landed") else 1
             out.append({**_strip({k: x for k, x in b.items() if k != "verify"}), "status": "open", "opened": date,
                         "why": f"{said}, so verify checks it again"})
         else:
@@ -644,8 +661,9 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     carried bug (its fix, reported once) and for a function that no longer exists; a new finding
     the judge calls gone was fixed before it was ever listed and isn't. A bug the judge didn't
     answer for (failed, or over the budget) waits `unjudged`, except a carried `open` one, which stays
-    open. A carried `parked` bug skips the judge: it stays parked unless its file changed since it
-    was verified; one whose file or function is gone is `gone` for free, and only up to
+    open. A carried `parked` bug skips the judge: it stays parked unless a commit names its key or its
+    function changed since it was verified (`_touched`); one whose file or function is gone is `gone`
+    for free, every landed fix goes back, and only up to
     `PARKED_RECHECK` of the rest a pass go back to verify. A failed judge call is said in
     `failures["sweep"]` and ends the sweep; a `judge.RateLimited` propagates.
 

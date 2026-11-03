@@ -237,7 +237,10 @@ def run(*, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys
             print(_col(_DIM, "  past the deadline: the rest wait for next week", use_colour=colour), file=out)
             break
         print("\n" + _hr(f"#{pr['number']} {pr['title']}", _af._width(), use_colour=colour), file=out, flush=True)
-        cost = work_pr(pr, main=main, out=out, session=session, sh=sh, log_path=log_path, dry_run=dry_run)
+        try:
+            cost = work_pr(pr, main=main, out=out, session=session, sh=sh, log_path=log_path, dry_run=dry_run)
+        except _af.SetupFailed:   # off its own bot branch, so one PR's failure says nothing of the next
+            continue
         if cost is not None:
             ran, spent = ran + 1, spent + cost
     if ran:

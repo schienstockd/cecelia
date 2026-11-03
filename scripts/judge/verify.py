@@ -60,9 +60,12 @@ VERDICTS = ("fix", "decide", "guard", "fixed", "dismiss")
 GROUP_MAX = 8
 #: Budget per agent (`--max-budget-usd`) and per pass, set from the measured cost per agent (the
 #: plan's phase 9 entry; the summary's `group_usd` records each one). The pass cap is checked against
-#: the worst case (every agent spending GROUP_USD), so a pass starts at least 5 agents.
+#: the worst case (every agent spending GROUP_USD), so a pass starts at least 10 agents. Agents measure
+#: $0.20-0.75; a pass runs about 25 groups of new bugs, plus the parked ones coming back (each guard an
+#: `--auto` session added is re-verified, which is how it closes). The cap is a ceiling: what it
+#: doesn't reach waits, oldest first.
 GROUP_USD = 2.0
-PASS_USD = 10.0
+PASS_USD = 20.0
 TIMEOUT_SEC = 1200
 TOOLS = "Read,Grep,Glob,Bash"
 

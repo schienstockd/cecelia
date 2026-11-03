@@ -409,18 +409,25 @@ def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict
                tried: _t.Mapping[str, dict] = {}) -> list[dict]:
     """The pending work `--auto` may take, bundled: every bug verify called `fix` with no landed fix
     (`fix_landed`), except one an auto session already called `not_real` or `left`, found `landed`
-    on main, or failed on `AUTO_ATTEMPTS` times (its card says why; the owner takes it from there)."""
+    on main, or failed on `AUTO_ATTEMPTS` times (its card says why; the owner takes it from there).
+    Then the `parked` bugs (verify said `guard`): the session adds the guard, its commit names the
+    key, and the next pass's verify closes it. That is how parked bugs leave instead of piling up.
+    One PR each: a parked bug an auto session already opened a PR for isn't taken again."""
     by_id = {b["id"]: b for b in record.get("bugs", [])}
 
-    def eligible(ref: str) -> bool:
+    def eligible(ref: str, done: tuple[str, ...] = ("not_real", "left", "landed")) -> bool:
         b = by_id[ref]
         last = tried.get(b["key"]) or {}
-        return ((b.get("verify") or {}).get("verdict") == "fix"
-                and not b.get("fix_landed")   # a commit naming it landed: the next pass re-checks it
-                and last.get("outcome") not in ("not_real", "left", "landed")
+        return (not b.get("fix_landed")   # a commit naming it landed: the next pass re-checks it
+                and last.get("outcome") not in done
                 and not (last.get("outcome") == "failed" and last.get("attempt", 1) >= AUTO_ATTEMPTS))
-    return bundles(record, [it for it in pending(record, reviews, older)
-                            if it["kind"] == "work" and eligible(it["ref"])])
+    work = [it for it in pending(record, reviews, older)
+            if it["kind"] == "work" and (by_id[it["ref"]].get("verify") or {}).get("verdict") == "fix"
+            and eligible(it["ref"])]
+    parked = [{"kind": "work", "ref": b["id"]} for b in record.get("bugs", [])
+              if b.get("status") == "parked" and (b.get("verify") or {}).get("verdict") == "guard"
+              and eligible(b["id"], ("not_real", "left", "landed", "fixed"))]
+    return bundles(record, work + parked)
 
 
 def rule_answers(records: _t.Iterable[dict], reviews: _t.Iterable[dict]) -> dict[str, str]:

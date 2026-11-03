@@ -142,6 +142,30 @@ class ItemsTest(_AutoFixture):
         self.assertEqual(len(self.rv.auto_items(self.record, [], tried={})), 1)
 
 
+    def test_parked_bugs_come_after_the_fix_bugs_and_get_one_pr_each(self):
+        guard = {"verdict": "guard", "date": "2026-10-05", "trigger": "a caller passing None"}
+        record = self.build(bugs=[_bug("B1", verify=FIX),
+                                  _bug("B2", status="parked", verify=guard, file="c.py", branch="feat/y"),
+                                  _bug("B3", status="parked", verify={**guard, "verdict": "fix"}, file="d.py",
+                                       branch="feat/z")])
+        self.assertEqual([it["ref"] for it in self.rv.auto_items(record, [])], ["B1", "B2"])
+        for done in ("fixed", "not_real", "left", "landed"):   # a PR already opened for it: not again
+            self.assertEqual([it["ref"] for it in self.rv.auto_items(record, [], tried={"fanout-b2": {"outcome": done}})],
+                             ["B1"], done)
+        landed = {**record, "bugs": [record["bugs"][0], {**record["bugs"][1], "fix_landed": [{"commit": "e44eada5"}]},
+                                     record["bugs"][2]]}
+        self.assertEqual([it["ref"] for it in self.rv.auto_items(landed, [])], ["B1"])
+
+    def test_a_guard_brief_asks_for_the_guard_not_the_feature(self):
+        guard = {"verdict": "guard", "date": "2026-10-05", "trigger": "a caller passing None"}
+        record = self.build(bugs=[_bug("B2", status="parked", verify=guard)])
+        brief = self.af.fix_brief(record, record["bugs"], self.main.parent / "cecelia-fix-x", "fix-x")
+        self.assertIn("Live once: a caller passing None", brief)
+        self.assertIn("Fix it as a guard", brief)
+        self.assertNotIn("Fix it as a guard", self.af.fix_brief(self.record, [self.record["bugs"][0]],
+                                                                 self.main.parent / "cecelia-fix-x", "fix-x"))
+
+
 class LandedTest(_AutoFixture):
 
     def test_a_bug_whose_fix_landed_on_main_gets_no_session(self):
@@ -195,6 +219,31 @@ class LandedTest(_AutoFixture):
         self.assertEqual(ran, 1)
         self.assertIn("1 left: past the deadline, next pass", out.getvalue())
         self.assertNotIn("── B5 ", out.getvalue())
+
+    def test_a_broken_bootstrap_stops_the_run_and_says_why(self):
+        # what `pixi run bootstrap-worktree` printed under the unit's PATH (no juliaup): the reason
+        # first, then pixi's whole task list, so a bare last-400-characters tail showed only tasks
+        tasks = "".join(f"\t{t}\n" for t in ["judge-verify", "judge-weekly"] + [f"task-{i:02d}" for i in range(40)])
+        said = "julia: command not found\n\nAvailable tasks:\n" + tasks
+        record = self.build(bugs=[_bug("B4", verify=FIX, file="c.py", branch="feat/y"),
+                                  _bug("B5", verify=FIX, file="d.py", branch="feat/z")])
+        inner = self.sh()
+
+        def sh(argv, cwd, **kw):
+            if list(argv[:3]) == ["pixi", "run", "bootstrap-worktree"]:
+                self.calls.append(list(argv))
+                return subprocess.CompletedProcess(argv, 1, "", said)
+            return inner(argv, cwd, **kw)
+        out = io.StringIO()
+        with mock.patch.object(self.af, "landed", return_value={}):
+            ran = self.af.run(record, out=out, path=self.log, auto_log=self.auto, main=self.main,
+                              session=self.session(), sh=sh)
+        text = out.getvalue()
+        self.assertEqual(ran, 0)
+        self.assertEqual(sum(c[:3] == ["pixi", "run", "bootstrap-worktree"] for c in self.calls), 1)
+        self.assertNotIn("── B5 ", text)
+        self.assertIn("bootstrap-worktree failed: julia: command not found", text)
+        self.assertIn("stopping: worktree setup fails the same way for every session", text)
 
     def test_a_landed_bug_leaves_its_bundle(self):
         by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
