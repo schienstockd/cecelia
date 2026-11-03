@@ -12,13 +12,18 @@
 # graph parameters are not duplicated across task specs. Output is a FLAT table (Decision 9) in a
 # per-image spatialStats sidecar, read by the interaction heatmap and MCP.
 #
+# `shufflePops` (optional) switches to the CONDITIONAL null: labels are shuffled only among those
+# populations, the rest stay fixed — e.g. CD69+ vs CD69− T cells shuffled, target cells in place, asks
+# whether the CD69+ ones sit next to the targets more than T cells in general do. Tissue zoning cancels
+# because both compared groups share the same positions (statistics in `pairwise_contact_logodds`).
+#
 # Division of labour (docs/ARCHITECTURE.md): Julia resolves the populations → per-segment (label →
 # basis code) via `pop_df` (so membership composes with gating across poptypes), and names the graph.
 # Python (`cell_neighbour_stats_run.py`) loads the graph, joins the codes onto its nodes by
 # (valueName, label), and computes the log-odds + permutation z/p (`spatial_utils`). squidpy/CODEX
 # attribution in `spatial_utils.pairwise_contact_logodds` + THIRD_PARTY.md.
 
-using DataFrames: nrow
+using DataFrames: DataFrame, nrow, eachrow
 
 struct NeighbourStats <: CciaTask end
 
@@ -27,6 +32,7 @@ Base.@kwdef struct NeighbourStatsParams
     statsSuffix::String         = "default"
     graphSuffix::String         = "default"
     nPermutations::Int          = 1000
+    shufflePops::Vector{String} = String[]
 end
 
 function parse_neighbour_stats_params(d::AbstractDict)::NeighbourStatsParams
@@ -34,7 +40,19 @@ function parse_neighbour_stats_params(d::AbstractDict)::NeighbourStatsParams
         basisPops     = _str_list(d, "basisPops"),
         statsSuffix   = string(get(d, "statsSuffix", "default")),
         graphSuffix   = string(get(d, "graphSuffix", "default")),
-        nPermutations = Int(get(d, "nPermutations", 1000)))
+        nPermutations = Int(get(d, "nPermutations", 1000)),
+        shufflePops   = _str_list(d, "shufflePops"))
+end
+
+# Pure: the basis names the shuffle covers, from the shuffle pops' own pooled `pop_df` rows (named by
+# `_basis_name`, as `_basis_segments` names the basis). → (names, nothing) or (nothing, error message).
+function _shuffle_basis(basis::AbstractVector{<:AbstractString}, shuffle_df::DataFrame)
+    nrow(shuffle_df) == 0 && return (nothing, "no cells in the shuffled populations")
+    shuffled = sort(unique(_basis_name(String(r.value_name), String(r.pop)) for r in eachrow(shuffle_df)))
+    missing_ = setdiff(shuffled, basis)
+    isempty(missing_) || return (nothing, "shuffled populations must also be in Populations: $(join(missing_, ", "))")
+    length(shuffled) < 2 && return (nothing, "shuffle at least 2 populations (got $(join(shuffled, ", ")))")
+    (shuffled, nothing)
 end
 
 # Pure QC helpers (unit-tested per docs/MODULES.md). Advisory only — never gates.
@@ -99,9 +117,18 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
     length(basis) < 2 &&
         (on_log("[ERROR] neighbourStats: need ≥2 populations for pairwise stats (got $(basis))"); return nothing)
 
+    shuffle = String[]
+    if !isempty(p.shufflePops)
+        sdf = pop_df_multi([img], [img.uid], p.shufflePops; pop_cols = String[], granularity = :cell)
+        names_, err = _shuffle_basis(basis, sdf)
+        err === nothing || (on_log("[ERROR] neighbourStats: $err"); return nothing)
+        shuffle = names_
+    end
+
     stats_path = img_stats_path(img, p.statsSuffix)
     qc_out_path = joinpath(task_run_dir(img._dir), "neighbour_stats_qc.json")
-    on_log("[INFO] neighbourStats: graph=$(p.graphSuffix) basis=$(basis) permutations=$(p.nPermutations) → $(p.statsSuffix)")
+    on_log("[INFO] neighbourStats: graph=$(p.graphSuffix) basis=$(basis) permutations=$(p.nPermutations)" *
+           (isempty(shuffle) ? "" : " shuffle=$(shuffle)") * " → $(p.statsSuffix)")
     on_progress(2, 3)
 
     task_params = Dict{String,Any}(
@@ -110,6 +137,7 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
         "statsPath" => stats_path,
         "nPermutations" => p.nPermutations,
         "randomState" => 0,
+        "shufflePops" => shuffle,
         "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_neighbour_stats_run.py", task_params, task_run_dir(img._dir);

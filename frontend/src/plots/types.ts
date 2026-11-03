@@ -66,6 +66,9 @@ export interface PlotSpec {
     // the default category column (used if present in the discovered obs columns); otherwise the panel
     // picks a sensible one (an HMM-state column for profile, a transitions column for crosstab).
     matrix?: { mode?: 'profile' | 'crosstab' | 'interaction'; category?: string }
+    // one neighbourStats population PAIR across images — a dot per image, read from the runs'
+    // sidecars; the panel offers the run + pair pickers from the response (docs/PLOTS.md)
+    contactPairs?: boolean
     // a readout fixed by analysis runs rather than the population selection (see isPrecomputedSpec):
     // 'hmmFit' = the HMM state-count elbow from the runs' fit records
     precomputed?: 'hmmFit'

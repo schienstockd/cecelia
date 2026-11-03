@@ -27,9 +27,12 @@ const OTHER_BASIS_NAME = "other"
 # It deliberately returns NO physical sizes: these tasks consume a graph that `cellNeighbours` already
 # built in µm (its coordinates are scaled per image at build time), so there is nothing here to convert.
 # It used to hand back a per-uID sizes dict that BOTH callers discarded.
+# A basis population's name: its (segmentation, population) pair, so B/qc and T/qc stay distinct.
+_basis_name(vn::AbstractString, pop::AbstractString) = string(vn, pop)
+
 function _basis_segments(imgs, df::DataFrame)
     basis_pairs = sort(unique([(String(r.value_name), String(r.pop)) for r in eachrow(df)]))
-    basis = [string(vn, p) for (vn, p) in basis_pairs]
+    basis = [_basis_name(vn, p) for (vn, p) in basis_pairs]
     code_of = Dict(basis_pairs[i] => i - 1 for i in eachindex(basis_pairs))
     img_by_uid = Dict(img.uid => img for img in imgs)
     segments = Vector{Dict{String,Any}}()

@@ -39,6 +39,7 @@ export interface PopTypeSpecLike {
     granularity?: 'cell' | 'track'
     popTypes?: PopTypeOption[]
     matrix?: { mode?: string }
+    contactPairs?: boolean
     precomputed?: string     // 'hmmFit' — the HMM state-count elbow, read from the runs' fit records
   }
 }
@@ -56,7 +57,11 @@ export interface PopTypeSpecLike {
  * recorded HMM run's fit, so its curves are fixed by the runs, not the ticked populations.
  */
 export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
-  spec.dataSource.matrix?.mode === 'interaction' || spec.dataSource.precomputed === 'hmmFit'
+  spec.dataSource.matrix?.mode === 'interaction' || spec.dataSource.precomputed === 'hmmFit' ||
+  isContactPairsSpec(spec)
+
+/** One interaction pair across images (a dot per image): precomputed too, plus a pair picker. */
+export const isContactPairsSpec = (spec: PopTypeSpecLike): boolean => !!spec.dataSource.contactPairs
 
 // Default display names, so a spec need not repeat them. Deliberately user-facing wording ("Gated",
 // not "flow") — the pop-type ids are an implementation detail.

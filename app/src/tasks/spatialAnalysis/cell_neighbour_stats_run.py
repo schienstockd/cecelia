@@ -14,7 +14,8 @@ spatialStats sidecar for the interaction heatmap + MCP (Decision 9).
 
 Membership + basis codes come from Julia (neighbourStats.jl). Params: graphPath, graphSuffix,
 segments [{valueName, labels, popCodes}], basis (population names ↔ code index), statsPath,
-nPermutations, randomState, qcOutPath.
+nPermutations, randomState, qcOutPath, shufflePops (optional subset of `basis`: shuffle labels only
+among these populations, the rest stay fixed — the conditional random-labelling null).
 """
 
 import numpy as np
@@ -36,6 +37,7 @@ def run(params):
     n_perm     = int(script_utils.get_param(params, "nPermutations", default=1000))
     rs         = int(script_utils.get_param(params, "randomState", default=0))
     qc_path    = script_utils.get_param(params, "qcOutPath", default=None)
+    shuffle    = list(script_utils.get_param(params, "shufflePops", default=[]) or [])
     n_basis    = len(basis)
 
     if graph_path is None or len(segments) == 0 or n_basis < 2:
@@ -62,8 +64,13 @@ def run(params):
     # per-timepoint graph → permute labels WITHIN a frame (a global shuffle would migrate labels
     # across frames and invalidate the null; see pairwise_contact_logodds).
     times = obs["_t"].to_numpy() if "_t" in obs.columns else None
+    shuffle_codes = sorted({basis.index(p) for p in shuffle if p in basis}) or None
+    if shuffle_codes is not None:
+        log.log(f">> conditional null: labels shuffled among {[basis[c] for c in shuffle_codes]}; "
+                "the other populations stay fixed")
     observed, expected, log_odds, zscore, pvalue = spatial_utils.pairwise_contact_logodds(
-        conn, codes, n_basis, n_permutations=n_perm, random_state=rs, times=times)
+        conn, codes, n_basis, n_permutations=n_perm, random_state=rs, times=times,
+        shuffle_codes=shuffle_codes)
     m = spatial_utils.graph_metrics(a)
     n_pair_edges = int(observed.sum() + np.trace(observed)) // 2
 
@@ -90,6 +97,7 @@ def run(params):
                           {"basis": list(basis), "nCells": m["nCells"], "nEdges": n_pair_edges,
                            "graphSuffix": graph_sfx, "graph": meta,
                            "nPermutations": n_perm, "coverage": coverage,
+                           "shufflePops": [basis[c] for c in shuffle_codes or []],
                            "records": records}, indent=1)
         log.log(f">> wrote {stats_path}: {len(records)} population pairs over {n_pair_edges} contacts")
     if n_perm > 0:

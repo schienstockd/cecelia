@@ -7,7 +7,7 @@
     "Testing whether two cell types associate or avoid each other",
     { "text": "After Neighbour graph; no regions needed", "check": "neighbourGraph" }
   ],
-  "notWhen": ["Strongly zoned tissue: the shuffle test can call weak pairs significant"],
+  "notWhen": ["Zoned tissue with Shuffle only empty: weak pairs can pass"],
   "category": "Spatial analysis",
   "group": "Neighbourhood",
   "env": [
@@ -48,6 +48,22 @@
       "acrossSegmentations": true,
       "default": [],
       "tip": "Cell types to test for pairwise association; at least two"
+    },
+    {
+      "key": "shufflePops",
+      "label": "Shuffle only",
+      "type": "popSelection",
+      "accepts": [
+        "live",
+        "clust",
+        "region",
+        "track",
+        "trackclust"
+      ],
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Shuffle labels only among these; empty shuffles all"
     },
     {
       "key": "nPermutations",

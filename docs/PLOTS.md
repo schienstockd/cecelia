@@ -33,6 +33,15 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
+The same sidecars answer the CROSS-image question too — one pair's value in every image, grouped by an
+attribute (`spatial_interaction_pairs.json`, `dataSource.contactPairs`). The request carries
+`contactPairs: true` + `suffix` + `pair`; `_contact_pair_plot` turns the sidecars into one row per image
+(`pop` = the pair, the measure = `logOdds` or `zScore`) and hands it to `_summary_agg`, so box/strip/bar,
+`groupAttr` and the between-group stats are the ordinary per-image path. The run and pair pickers are
+built from the `suffixes` / `pairs` the response reports. With `shufflePops` set on the run (the
+conditional null), the log-odds is observed vs that null's exact mean, so ≈ 0 means "no different from
+the shuffled populations in general".
+
 This replaced `SpatialContactHeatmap.vue` + `GET /api/plots/contact_matrix`, which broke the rule on both
 counts and was consequently pinned in a fixed box below the image table. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
 
@@ -112,7 +121,7 @@ the mapping: `_normalise_accepts` folds `flow`→`live` (same gate map), but a p
 "Gated" slices the cell gates, "Tracked" the derived `_tracked` sets.
 
 **A PRECOMPUTED plot has no family selection at all.** `isPrecomputedSpec` (today: `matrix.mode ===
-"interaction"`) marks a plot whose rows/columns come from the analysis run it reads, not from the
+"interaction"` or `contactPairs`) marks a plot whose rows/columns come from the analysis run it reads, not from the
 population picker. Three surfaces ask that one predicate — the panel (needs no series), the population
 picker (says so instead of offering dead eye toggles), and the server (`api_plot_data`'s `precomputed`,
 which must not reject a body with no pops). Forking it is how one of them ends up disagreeing.

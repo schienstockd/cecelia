@@ -760,6 +760,7 @@ export const spatialAnalysisGuide = moduleTaskGuide({
   params: [
     'Neighbour graph — the graph a Neighbour-graph run produced; pick the one you want scored.',
     'Population basis — the pairs to score interactions between; at least two.',
+    'Shuffle only — e.g. CD69+ and CD69− T cells; the other populations stay put.',
     'Name — output name for this run; a later plot picks it up by this name.',
   ],
   after: [
@@ -772,6 +773,7 @@ export const spatialAnalysisGuide = moduleTaskGuide({
       bullets: [
         'The permutation test tells you if a pattern is a real signal or the same cell types rearranged.',
         'Contacts and aggregates plot the same underlying graph in different shapes — worth a look next.',
+        'Interaction across images plots one pair per image, grouped by an attribute, with the group test.',
       ],
     },
   ],

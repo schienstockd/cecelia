@@ -1,0 +1,18 @@
+{
+  "id": "spatial_interaction_pairs",
+  "label": "Interaction across images",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["boxplot", "strip", "bar"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+    ],
+    "contactPairs": true,
+    "measure": "logOdds",
+    "measureOptions": ["logOdds", "zScore"]
+  },
+  "scopeModes": ["summarised", "by_attr"],
+  "params": []
+}

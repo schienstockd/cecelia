@@ -1191,6 +1191,60 @@ function _interaction_matrix(img::CciaImage; suffix::AbstractString="")
         "granularity" => "cell", "series" => Any[])
 end
 
+# ── One interaction PAIR across images (a PRECOMPUTED statistic, image = datapoint) ─────────────────
+#
+# The interaction matrix is one image's run; the cross-image question — "is CD69+ T ↔ target contact
+# stronger under DTx than PBS?" — needs ONE pair's value from every image, grouped by an image attribute,
+# with the normal between-group test. Rather than a second chart family, the sidecars are turned into a
+# frame the distribution builders already understand (one row per image, `pop` = the pair, the measure
+# column = logOdds or zScore) and handed to `_summary_agg` — so box/strip/bar, groupAttr, stats stars and
+# CSV export behave exactly as on every other per-image plot. Same reader as the matrix and MCP
+# (`_collect_contact_stats`). Images without the run, or without the pair, contribute no dot.
+const CONTACT_PAIR_MEASURES = ("logOdds", "zScore")
+_pair_label(a::AbstractString, b::AbstractString) = string(a, " × ", b)
+
+function _contact_pair_frame(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector;
+                             suffix::AbstractString = "", pair::AbstractString = "",
+                             measure::AbstractString = "logOdds")
+    measure in CONTACT_PAIR_MEASURES ||
+        error("contact pairs: measure must be one of $(join(CONTACT_PAIR_MEASURES, ", ")) (got \"$measure\")")
+    stats = [(String(u), _collect_contact_stats(im)) for (im, u) in zip(imgs, uids)]
+    suffixes = sort(unique(String[s.suffix for (_, ss) in stats for s in ss]))
+    sfx = (!isempty(suffix) && suffix in suffixes) ? String(suffix) : (isempty(suffixes) ? "" : first(suffixes))
+    runs = [(u, ss[i]) for (u, ss) in stats for i in eachindex(ss) if ss[i].suffix == sfx]
+    pairs = String[]
+    for (_, r) in runs, p in r.pairs
+        lbl = _pair_label(p.popA, p.popB)
+        lbl in pairs || push!(pairs, lbl)
+    end
+    pr = (!isempty(pair) && pair in pairs) ? String(pair) : (isempty(pairs) ? "" : first(pairs))
+    us = String[]; vs = Float64[]
+    for (u, r) in runs, p in r.pairs
+        _pair_label(p.popA, p.popB) == pr || continue
+        v = getfield(p, Symbol(measure))
+        (v === nothing || !isfinite(v)) && continue
+        push!(us, u); push!(vs, Float64(v))
+    end
+    df = DataFrame("uID" => us, "value_name" => fill("", length(us)), "pop" => fill(pr, length(us)),
+                   String(measure) => vs)
+    (; df, suffixes, suffix = sfx, pairs, pair = pr)
+end
+
+function _contact_pair_plot(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
+                            chart_type::AbstractString; suffix::AbstractString = "",
+                            pair::AbstractString = "", measure::Union{AbstractString,Nothing} = nothing,
+                            raw::Bool = false, attr_map::Union{Nothing,AbstractDict} = nothing,
+                            stats_enabled::Bool = false, stats_test::Symbol = :auto)::Dict{String,Any}
+    m = something(measure, "logOdds")
+    f = _contact_pair_frame(imgs, uids; suffix = suffix, pair = pair, measure = m)
+    # each row is already one image: pool them into one series, or one per attribute value
+    r = _summary_agg(f.df, chart_type; measure = m, granularity = :cell, nbins = 30, normalize = :none,
+                     by_image = attr_map !== nothing, raw = raw, attr_map = attr_map,
+                     stats_enabled = stats_enabled, stats_test = stats_test)
+    r["suffixes"] = f.suffixes; r["suffix"] = f.suffix; r["pairs"] = f.pairs; r["pair"] = f.pair
+    r
+end
+
 # group `(value_name, pop)` targets → ordered [(value_name, [pop…])]; vcat per-vn frames (cols union).
 function _targets_frame(targets, fetch_vn)::DataFrame
     order = String[]; byvn = Dict{String,Vector{String}}()
@@ -1220,9 +1274,12 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
                            stats_suffix::AbstractString="",
+                           contact_pairs::Bool=false, stats_pair::AbstractString="",
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     # A PRECOMPUTED per-population-PAIR statistic has no pop_df frame — it comes from the
     # `spatialStats/{suffix}.json` sidecar. Intercept before any membership work (see _interaction_matrix).
+    contact_pairs && return _contact_pair_plot([img], [img.uid], chart_type; suffix = stats_suffix,
+        pair = stats_pair, measure = measure, raw = raw, stats_enabled = stats_enabled, stats_test = stats_test)
     chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "interaction" &&
         return _interaction_matrix(img; suffix = stats_suffix)
     # the HMM state-count comparison reads the runs' fit records, not cells (hmm_fit_curve.jl)
@@ -1261,7 +1318,14 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            matrix_normalize::Symbol=:none,
                            attr_map::Union{Nothing,AbstractDict}=nothing,
                            stats_suffix::AbstractString="",
+                           contact_pairs::Bool=false, stats_pair::AbstractString="",
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
+    if contact_pairs
+        r = _contact_pair_plot(imgs, uids, chart_type; suffix = stats_suffix, pair = stats_pair,
+            measure = measure, raw = raw, attr_map = attr_map, stats_enabled = stats_enabled, stats_test = stats_test)
+        r["scope"] = String(scope)
+        return r
+    end
     # The interaction matrix belongs to ONE image's sidecar (it is a per-image statistic), so a
     # cross-image request shows the first selected image's — never a silent pool of incomparable runs.
     if chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "interaction"
