@@ -557,6 +557,14 @@ body {
 .cc-dot-fail { background: var(--cc-dot-fail); }
 .cc-dot-idle { background: var(--cc-dot-idle); }
 .cc-dot-info { background: var(--cc-dot-info); }
+/* Feature-maturity tiers — a CATEGORY marker, not a status light, so it composes its own background
+   (docs/todo/FEATURE_MATURITY_PLAN.md). Tested is Okabe–Ito bluish green: Beta's blue and the ok sky
+   blue were too close to tell apart side by side. */
+:root { --cc-tier-tested: #009E73; }
+.cc-tier-experimental { background: var(--cc-dot-warn); }
+.cc-tier-beta         { background: var(--cc-dot-info); }
+.cc-tier-tested       { background: var(--cc-tier-tested); }
+.cc-tier-comingSoon   { background: var(--cc-dot-idle); }
 
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */

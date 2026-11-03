@@ -14,9 +14,11 @@
 // (Next still moves on, plan D2).
 
 import type { GuideDef } from './types'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const tourGuide: GuideDef = {
   id: 'find-your-way-around',
+  maturity: GUIDE_MATURITY['find-your-way-around'],
   title: 'Find your way around',
   group: 'Start',
   icon: 'pi-map',

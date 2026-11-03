@@ -13,6 +13,7 @@ import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 import { shortVersionLabel } from '../utils/versionLabel'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
+import PageMaturity from './PageMaturity.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -101,12 +102,12 @@ const statusTip: Record<string, string> = {
          "walk me through it" to "this is broken" to "does anyone know?" reads left to right. Plain
          `<a target="_blank">`, not a router link: both leave the app. -->
     <span class="help-links" data-guide="header.help">
-      <!-- Call for Datasets — the entry into the modal that lists capabilities we can build once
+      <!-- Call for Datasets — the entry into the modal that lists what we can build, or test, once
            a real dataset lands. Before the GitHub icon on purpose: the row now reads "help us
            build this → report a broken thing → chat", which is the direction the user's ask
            usually escalates. See docs/todo/CALL_FOR_DATASETS_PLAN.md. -->
       <button type="button" class="help-link cc-btn cc-btn-bare cc-btn-icon"
-              v-tooltip.bottom="'Call for Datasets — capabilities we can build with your data'"
+              v-tooltip.bottom="'Call for Datasets — what your data could help us build or test'"
               aria-label="Call for Datasets"
               @click="openCallForDatasets()">
         <i class="pi pi-megaphone" />
@@ -124,6 +125,10 @@ const statusTip: Record<string, string> = {
         <i class="pi pi-comments" />
       </a>
     </span>
+
+    <!-- this page's maturity: a badge for Experimental / Coming soon, else a quiet link to its map row,
+         plus "Something wrong?" — after the help row, because it is the same question asked of one page -->
+    <PageMaturity />
 
     <span class="spacer" />
 

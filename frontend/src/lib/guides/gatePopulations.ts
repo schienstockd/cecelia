@@ -7,9 +7,11 @@
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const gatePopulationsGuide: GuideDef = {
   id: 'gate-populations',
+  maturity: GUIDE_MATURITY['gate-populations'],
   title: 'Create and gate populations',
   group: 'Populations',
   icon: 'pi-chart-scatter',

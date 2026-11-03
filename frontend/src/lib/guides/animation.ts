@@ -14,9 +14,11 @@
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const animationGuide: GuideDef = {
   id: 'build-an-animation',
+  maturity: GUIDE_MATURITY['build-an-animation'],
   title: 'Build an animation',
   group: 'Analysis',
   icon: 'pi-images',

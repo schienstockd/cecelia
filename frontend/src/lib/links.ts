@@ -57,3 +57,59 @@ export function formatSupportRequestUrl(exts: string[]): string {
   })
   return `${CECELIA_REPO_URL}/issues/new?${q}`
 }
+
+/** The bug form's OS dropdown word for a pixi platform label (`utils/systemEnvs.ts` → `platform`). */
+export function issueOsLabel(platform: string | null | undefined): string {
+  if (!platform) return ''
+  if (platform.startsWith('linux')) return 'Linux'
+  if (platform.startsWith('osx')) return 'macOS'
+  if (platform.startsWith('win')) return 'Windows'
+  return ''
+}
+
+/** What a "Something wrong?" report carries. `params` only when the user ticked for it. */
+export interface ProblemReport {
+  feature: string
+  tier: string                  // the tier's word ("Experimental")
+  page?: string                 // the route it was reported from
+  version?: string              // `appCtl.updateCurrent`
+  platform?: string             // the server's pixi platform ("linux-64")
+  lastTask?: string             // "segment.cellposeMeasure — failed"
+  params?: Record<string, unknown> | null
+}
+
+/** GitHub rejects very long URLs (~8 KB); stay under with room for the encoding. */
+export const REPORT_URL_MAX = 7500
+/** The settings block's own cap, before encoding — a long param list is cut, not dropped. */
+export const REPORT_PARAMS_MAX = 2000
+
+/**
+ * A prefilled bug report for one feature — the "Something wrong?" link on a page's maturity badge and
+ * on the map's Maturity rows (docs/todo/FEATURE_MATURITY_PLAN.md → *Something wrong?*).
+ *
+ * Goes to the bug FORM, filling its fields by id (`what-happened`, `version`, `os`). Task settings go in
+ * only when passed: GitHub is public, and settings carry file paths and project names, so the caller
+ * asks first. Pure — the caller reads the version, platform and last task.
+ */
+export function problemReportUrl(r: ProblemReport): string {
+  const os = issueOsLabel(r.platform)
+  const facts = [
+    `Feature: ${r.feature} (${r.tier})`,
+    r.page && `Page: ${r.page}`,
+    r.version && `Cecelia: ${r.version}`,
+    r.platform && `OS: ${os || r.platform}${os ? ` (${r.platform})` : ''}`,
+    r.lastTask && `Last task: ${r.lastTask}`,
+  ].filter(Boolean).join('\n')
+  const head = `What went wrong?\n\n\n---\n${facts}`
+  const build = (settings: string) => {
+    const q = new URLSearchParams({ template: 'bug_report.yml', title: `${r.feature}: `, 'what-happened': head + settings })
+    if (r.version) q.set('version', r.version)
+    if (os) q.set('os', os)
+    return `${CECELIA_REPO_URL}/issues/new?${q}`
+  }
+  if (!r.params) return build('')
+  let json = JSON.stringify(r.params, null, 1)
+  if (json.length > REPORT_PARAMS_MAX) json = `${json.slice(0, REPORT_PARAMS_MAX)}\n… (cut)`
+  const url = build(`\n\nLast task's settings:\n\`\`\`json\n${json}\n\`\`\``)
+  return url.length <= REPORT_URL_MAX ? url : build('\n\n(Settings left out: too long for a link)')
+}
