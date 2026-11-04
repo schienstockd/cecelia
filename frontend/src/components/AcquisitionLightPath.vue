@@ -10,6 +10,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import palettes from '../plots/palettes.json'
+import CollapsibleSection from './CollapsibleSection.vue'
 import { lightPathStages, LIGHT_PATH_SOURCES, type LightPathImage } from '../utils/acquisitionLightPath'
 
 const props = defineProps<{ image: LightPathImage }>()
@@ -32,6 +33,8 @@ const hover = ref<number | null>(null)
 
 <template>
   <div class="lp">
+    <CollapsibleSection label="Light path" storage-key="cc.imageMeta.lightPathOpen" max-height="none"
+                        tip="Show the schematic microscope">
     <svg class="lp-fig" viewBox="0 0 490 200" fill="none" role="img"
          aria-label="Schematic two-photon light path with numbered stages">
       <!-- 1 laser -->
@@ -91,6 +94,7 @@ const hover = ref<number | null>(null)
       </g>
     </svg>
     <p class="lp-cap cc-muted cc-fs-xs">Schematic, not this microscope's layout</p>
+    </CollapsibleSection>
 
     <ol class="lp-stages">
       <li v-for="s in stages" :key="s.key" class="lp-stage"

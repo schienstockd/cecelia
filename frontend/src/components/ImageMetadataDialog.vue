@@ -44,6 +44,23 @@ function num(v: number | null | undefined): string {
 
 // Calibration readouts share the ImageTable's formatting (`0.346 µm`, not `0.3459441507762987
 // micrometer`) — one shared helper, `formatPhysicalSize`, so the two surfaces stay in sync.
+// Fill-only: adds what the store or the source file records and ccid.json lacks (size, timing,
+// acquisition settings); never overwrites a value already set (`resync_ome_meta!`).
+const resyncing = ref(false)
+async function resync() {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid || resyncing.value) return
+  resyncing.value = true
+  try {
+    await project.resyncImageMeta(projectUid, [img.value.uid])
+    log.info(`Re-read metadata from file for ${img.value.name}.`, { source: 'manageImages' })
+  } catch (e) {
+    log.error(`Failed to re-read metadata: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
+  } finally {
+    resyncing.value = false
+  }
+}
+
 const physical = computed(() => {
   const i = img.value
   const u = i.physicalSizeUnit
@@ -223,7 +240,13 @@ async function saveEditVn() {
       </section>
 
       <section class="md-section">
-        <h4 class="md-h cc-eyebrow">Dimensions &amp; calibration</h4>
+        <div class="md-head cc-row">
+          <h4 class="md-h cc-eyebrow">Dimensions &amp; calibration</h4>
+          <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing" @click="resync"
+            v-tooltip.left="'Re-read metadata from the store and source file'">
+            <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
+          </button>
+        </div>
         <div class="md-grid">
           <span class="md-k">Channels (C)</span><span class="md-v">{{ num(img.sizeC) }}</span>
           <span class="md-k">Z-slices (Z)</span><span class="md-v">{{ num(img.sizeZ) }}</span>
@@ -418,6 +441,7 @@ async function saveEditVn() {
 
 .md-section { display: flex; flex-direction: column; gap: 0.4rem; }
 .md-h { margin: 0; }
+.md-head { justify-content: space-between; }
 
 .md-grid {
   display: grid; grid-template-columns: max-content 1fr;
