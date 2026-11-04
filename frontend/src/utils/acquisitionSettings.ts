@@ -10,6 +10,7 @@ export interface AcquisitionLaser { name: string; wavelengthNm?: number | null; 
 export interface AcquisitionChannel {
   order: number; name: string | null; dyePreset: string | null; laser: string | null
   detector: string | null; hv: number | null; gain: number | null; offset: number | null
+  bitDepth?: number | null
 }
 export interface AcquisitionSettings {
   system?: string | null

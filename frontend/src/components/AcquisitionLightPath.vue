@@ -10,6 +10,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import palettes from '../plots/palettes.json'
+import LightPathSourceGlyph from './LightPathSourceGlyph.vue'
 import { lightPathStages, LIGHT_PATH_SOURCES, type LightPathImage } from '../utils/acquisitionLightPath'
 
 const props = defineProps<{ image: LightPathImage }>()
@@ -17,7 +18,7 @@ const props = defineProps<{ image: LightPathImage }>()
 const stages = computed(() => lightPathStages(props.image))
 
 const oi = palettes.palettes['okabe-ito']
-const C = { exc: oi[5], em: oi[4], ome: oi[4], file: oi[0], measured: oi[6] }
+const C = { exc: oi[5], em: oi[4] }
 
 // Stage markers on the drawing, by stage number.
 const MARKERS: Record<number, [number, number]> = {
@@ -99,12 +100,7 @@ const hover = ref<number | null>(null)
         <span class="lp-t cc-muted">{{ s.title }}</span>
         <ul class="lp-items">
           <li v-for="(it, i) in s.items" :key="i" class="lp-item">
-            <svg class="lp-src" viewBox="0 0 10 10" aria-hidden="true">
-              <circle v-if="it.source === 'ome'" cx="5" cy="5" r="3.5" :fill="C.ome" />
-              <path v-else-if="it.source === 'file'" d="M5 1 L9 5 L5 9 L1 5 Z" :fill="C.file" />
-              <path v-else-if="it.source === 'measured'" d="M5 1.2 L9 8.6 H1 Z" :fill="C.measured" />
-              <circle v-else cx="5" cy="5" r="3.2" class="lp-missing" />
-            </svg>
+            <LightPathSourceGlyph :source="it.source" class="lp-src" />
             <span :class="{ 'cc-muted': it.source === 'missing' }">{{ it.text }}</span>
           </li>
           <li v-if="!s.items.length" class="lp-item cc-muted">—</li>
@@ -113,15 +109,10 @@ const hover = ref<number | null>(null)
     </ol>
 
     <div class="lp-legend cc-row cc-row-loose cc-muted cc-fs-xs">
-      <span class="lp-key"><svg class="lp-src" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5 H9" :stroke="C.exc" stroke-width="2" /></svg>excitation</span>
-      <span class="lp-key"><svg class="lp-src" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5 H4 M6 5 H10" :stroke="C.em" stroke-width="2" /></svg>emission</span>
+      <span class="lp-key"><svg class="lp-line" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5 H9" :stroke="C.exc" stroke-width="2" /></svg>excitation</span>
+      <span class="lp-key"><svg class="lp-line" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5 H4 M6 5 H10" :stroke="C.em" stroke-width="2" /></svg>emission</span>
       <span v-for="src in LIGHT_PATH_SOURCES" :key="src.key" class="lp-key">
-        <svg class="lp-src" viewBox="0 0 10 10" aria-hidden="true">
-          <circle v-if="src.key === 'ome'" cx="5" cy="5" r="3.5" :fill="C.ome" />
-          <path v-else-if="src.key === 'file'" d="M5 1 L9 5 L5 9 L1 5 Z" :fill="C.file" />
-          <path v-else-if="src.key === 'measured'" d="M5 1.2 L9 8.6 H1 Z" :fill="C.measured" />
-          <circle v-else cx="5" cy="5" r="3.2" class="lp-missing" />
-        </svg>{{ src.label }}
+        <LightPathSourceGlyph :source="src.key" />{{ src.label }}
       </span>
     </div>
   </div>
@@ -154,8 +145,7 @@ const hover = ref<number | null>(null)
 .lp-t { white-space: nowrap; }
 .lp-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .lp-item { display: flex; align-items: flex-start; gap: 0.35rem; word-break: break-word; }
-.lp-src { flex: none; width: 10px; height: 10px; margin-top: 0.25em; }
-.lp-key .lp-src { margin-top: 0; }
-.lp-missing { fill: none; stroke: var(--cc-text-dim); stroke-width: 1.2; }
+.lp-src { margin-top: 0.25em; }
+.lp-line { flex: none; width: 10px; height: 10px; }
 .lp-key { display: inline-flex; align-items: center; gap: 0.3rem; }
 </style>

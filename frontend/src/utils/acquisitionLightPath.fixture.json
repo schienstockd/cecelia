@@ -1,5 +1,5 @@
 {
- "_source": "Real output: oir_meta.acquisition_settings on zolIMa 20armH (FV4000 3.2.1) and saturation_run.py profile on its default store; byT trimmed to the first 3 of 181 frames.",
+ "_source": "Real output: oir_meta.acquisition_settings on zolIMa 20armH (FV4000 3.2.1) and data_path.measure_store on its default store, through the img_cleanup_facts shape; byT trimmed to the first 3 of 181 frames.",
  "acquisition": {
   "source": "oir",
   "system": "FV4000",
@@ -309,6 +309,60 @@
        0
       ]
      }
+    },
+    "containerBits": 16,
+    "topValue": 165,
+    "saturated": false,
+    "range": {
+     "p1": 20,
+     "p50": 31,
+     "p999": 75,
+     "max": 165,
+     "hist": {
+      "binWidth": 5.1875,
+      "counts": [
+       5862968035,
+       0,
+       0,
+       284565,
+       1777811,
+       10144578,
+       6951669,
+       812000,
+       56457,
+       24269,
+       59060,
+       173095,
+       222314,
+       61476,
+       5407,
+       1213,
+       1763,
+       4111,
+       6876,
+       3864,
+       612,
+       89,
+       44,
+       104,
+       227,
+       210,
+       55,
+       4,
+       2,
+       6,
+       9,
+       11
+      ]
+     }
+    },
+    "noise": {
+     "bgLevel": 41.0,
+     "bgMedian": null,
+     "bgSpread": null,
+     "snr": null,
+     "untestable": "background clipped at 0",
+     "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    },
    {
@@ -473,6 +527,60 @@
        0
       ]
      }
+    },
+    "containerBits": 16,
+    "topValue": 567,
+    "saturated": false,
+    "range": {
+     "p1": 19,
+     "p50": 27,
+     "p999": 130,
+     "max": 567,
+     "hist": {
+      "binWidth": 17.75,
+      "counts": [
+       5495001215,
+       346456168,
+       13342677,
+       23016966,
+       2495608,
+       2110070,
+       584697,
+       260316,
+       151346,
+       56462,
+       43342,
+       13765,
+       13212,
+       4905,
+       4196,
+       1619,
+       1476,
+       608,
+       527,
+       251,
+       216,
+       114,
+       73,
+       30,
+       39,
+       14,
+       10,
+       6,
+       4,
+       2,
+       0,
+       2
+      ]
+     }
+    },
+    "noise": {
+     "bgLevel": 39.0,
+     "bgMedian": null,
+     "bgSpread": null,
+     "snr": null,
+     "untestable": "background clipped at 0",
+     "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    },
    {
@@ -637,6 +745,60 @@
        0
       ]
      }
+    },
+    "containerBits": 16,
+    "topValue": 550,
+    "saturated": false,
+    "range": {
+     "p1": 21,
+     "p50": 34,
+     "p999": 191,
+     "max": 550,
+     "hist": {
+      "binWidth": 17.21875,
+      "counts": [
+       5057335689,
+       475588364,
+       168406445,
+       103539573,
+       33240019,
+       26198513,
+       7171815,
+       6795913,
+       1996983,
+       1892415,
+       517677,
+       488558,
+       148913,
+       135328,
+       40848,
+       33666,
+       12014,
+       9000,
+       3670,
+       2253,
+       971,
+       631,
+       299,
+       183,
+       95,
+       45,
+       23,
+       19,
+       4,
+       5,
+       3,
+       2
+      ]
+     }
+    },
+    "noise": {
+     "bgLevel": 47.0,
+     "bgMedian": null,
+     "bgSpread": null,
+     "snr": null,
+     "untestable": "background clipped at 0",
+     "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    },
    {
@@ -801,6 +963,60 @@
        0
       ]
      }
+    },
+    "containerBits": 16,
+    "topValue": 352,
+    "saturated": false,
+    "range": {
+     "p1": 20,
+     "p50": 31,
+     "p999": 127,
+     "max": 352,
+     "hist": {
+      "binWidth": 11.03125,
+      "counts": [
+       5568295949,
+       11095801,
+       229074989,
+       41859292,
+       3666123,
+       21317509,
+       4278826,
+       596175,
+       2331927,
+       527103,
+       94773,
+       279511,
+       71271,
+       14864,
+       35763,
+       10088,
+       2268,
+       4725,
+       1447,
+       372,
+       663,
+       222,
+       69,
+       128,
+       37,
+       15,
+       17,
+       2,
+       3,
+       1,
+       2,
+       1
+      ]
+     }
+    },
+    "noise": {
+     "bgLevel": 44.0,
+     "bgMedian": null,
+     "bgSpread": null,
+     "snr": null,
+     "untestable": "background clipped at 0",
+     "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    }
   ]

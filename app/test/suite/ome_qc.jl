@@ -594,6 +594,10 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             # per-plane profile, one entry per depth / per frame
             @test all(ch -> ch["profile"]["byZ"]["p99"] isa AbstractVector, chans)
             @test length(chans[1]["profile"]["byT"]["p99"]) == 3     # the store's 3 frames
+            # range and noise floor per channel, from the same histogram
+            @test all(ch -> ch["range"]["max"] == ch["topValue"], chans)
+            @test all(ch -> length(ch["range"]["hist"]["counts"]) == 32, chans)
+            @test all(ch -> haskey(ch["noise"], "snr"), chans)
             # the facts line reads it straight back — one entry per probed channel, a number each
             facts = Cecelia.img_cleanup_facts(r1)
             @test length(facts["channels"]) == length(chans)
@@ -607,7 +611,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             Cecelia.commit_state!(r1) do raw
                 m = Dict{String,Any}(String(k) => v for (k, v) in raw["meta"])
                 m["saturation"] = Dict{String,Any}("channels" => [
-                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) != "profile")
+                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) ∉ ("profile", "range", "noise"))
                     for ch in m["saturation"]["channels"]])
                 raw["meta"] = m
             end
@@ -615,7 +619,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test !haskey(r2.meta["saturation"]["channels"][1], "profile")
             @test Cecelia.ensure_saturation_meta!(r2)
             r3 = init_object(proj.uid, img.uid)
-            @test haskey(r3.meta["saturation"]["channels"][1], "profile")
+            @test all(k -> haskey(r3.meta["saturation"]["channels"][1], k), ("profile", "range", "noise"))
             @test r3.meta["SizeT"] == 1
             rm(proj.root; recursive = true)
         end

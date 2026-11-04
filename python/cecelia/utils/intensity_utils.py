@@ -334,3 +334,87 @@ def clip_stats(hist, vmin, vmax):
         "trueMax": true_max,
         "rangeSpan": float(vmax - vmin),
     }
+
+
+#: Bins of the compact histogram the data-path panel draws: enough to show a shape, small enough to
+#: keep in ccid `meta` per channel.
+COMPACT_HIST_BINS = 32
+
+#: Above this zero fraction the background is clipped at 0 (offset, or subtracted upstream) and its
+#: spread cannot be measured from what is left.
+NOISE_MAX_ZERO_FRAC = 0.5
+
+#: Normal-distribution quantile one standard deviation above the median: Φ(1).
+UPPER_SIGMA_Q = 0.8413
+
+
+def _wquantile(h, lo, hi, q):
+    """Quantile `q` (0–1) of the values in bins [lo, hi] of integer histogram `h`, weighted by count."""
+    seg = h[lo:hi + 1]
+    total = int(seg.sum())
+    if total == 0:
+        return None
+    return float(lo + np.searchsorted(np.cumsum(seg), q * total))
+
+
+def range_stats(hist):
+    """How much of the range a channel uses: p1, p50 and p99.9 over NON-ZERO voxels, the max, and a
+    `COMPACT_HIST_BINS`-bin histogram over [0, max] (all voxels). Non-zero because most channels are
+    mostly exact zeros (offset or upstream subtraction — `zeroFrac` reports that separately), which
+    would pin every low percentile at 0 and say nothing about the signal."""
+    h = np.asarray(hist).astype(np.int64)
+    nz = np.nonzero(h)[0]
+    top = int(nz[-1]) if nz.size else 0
+    hn = h.copy()
+    if hn.size:
+        hn[0] = 0
+    pct = {k: (hist_percentile(hn, p) if int(hn.sum()) else None)
+           for k, p in (('p1', 1), ('p50', 50), ('p999', 99.9))}
+    edges = np.linspace(0, top + 1, COMPACT_HIST_BINS + 1)
+    counts = [int(h[int(np.ceil(a)):int(np.ceil(b))].sum()) for a, b in zip(edges[:-1], edges[1:])]
+    return {**pct, 'max': top, 'hist': {'binWidth': float((top + 1) / COMPACT_HIST_BINS), 'counts': counts}}
+
+
+def noise_stats(hist, background_method='triangle'):
+    """Noise floor and a typical-signal SNR, from the histogram alone.
+
+    * ``bgLevel`` — `background_threshold` (zeros ignored when FINDING the level).
+    * ``bgMedian`` — median of the voxels at or below ``bgLevel``, zeros included.
+    * ``bgSpread`` — the ``UPPER_SIGMA_Q`` quantile of those voxels minus their median: one standard
+      deviation for a normal background, read from the upper side only. A background clipped at 0
+      loses its LOWER tail; while fewer than half its voxels are 0 the median and everything above it
+      are untouched, so this stays right where a MAD would shrink (the zeros' deviations are cut short).
+    * ``snr`` — (median of the voxels above ``bgLevel`` − ``bgMedian``) / ``bgSpread``.
+
+    Limits: a histogram does not know where a voxel sits, so dim structure inside the background widens
+    the spread (SNR reads low), and Poisson noise grows with signal, so one background spread
+    understates the noise on bright structure. When more than ``NOISE_MAX_ZERO_FRAC`` of voxels are
+    exactly zero the median itself is clipped, and when the spread is 0 there is nothing to divide by:
+    ``bgSpread`` and ``snr`` are None and ``untestable`` says why.
+    """
+    h = np.asarray(hist).astype(np.int64)
+    total = int(h.sum())
+    out = {'bgLevel': None, 'bgMedian': None, 'bgSpread': None, 'snr': None, 'untestable': None,
+           'estimator': 'triangle background; spread = p84.13 - median of the background (zeros kept)'}
+    if total == 0 or int(h[1:].sum()) == 0:
+        out['untestable'] = 'no non-zero voxels'
+        return out
+    bg = background_threshold(h, method=background_method)
+    lo = int(np.floor(bg))
+    out['bgLevel'] = float(bg)
+    if int(h[0]) / total > NOISE_MAX_ZERO_FRAC:
+        out['untestable'] = 'background clipped at 0'
+        return out
+    med = _wquantile(h, 0, lo, 0.5)
+    if med is None:
+        out['untestable'] = 'no voxels in the background'
+        return out
+    out['bgMedian'] = med
+    spread = _wquantile(h, 0, lo, UPPER_SIGMA_Q) - med
+    sig = _wquantile(h, lo + 1, h.size - 1, 0.5) if lo + 1 < h.size else None
+    if spread <= 0 or sig is None:
+        out['untestable'] = 'background spread is 0' if spread <= 0 else 'no voxels above background'
+        return out
+    out['bgSpread'] = float(spread)
+    out['snr'] = float((sig - med) / spread)
+    return out

@@ -24,9 +24,17 @@ export interface LightPathStage { n: number; key: string; title: string; items: 
 
 /** Per depth / per frame numbers from the import probe (`intensity_utils.PlaneProfile.summary`). */
 export interface PlaneProfileAxis { p50: number[]; p99: number[]; zeroFrac: number[]; clipped: number[] }
+/** Range and noise of a channel from the import probe (`intensity_utils.range_stats` / `noise_stats`). */
+export interface ChannelRange { p1: number | null; p50: number | null; p999: number | null; max: number; hist: { binWidth: number; counts: number[] } }
+export interface ChannelNoise {
+  bgLevel: number | null; bgMedian: number | null; bgSpread: number | null; snr: number | null
+  untestable: string | null; estimator?: string
+}
 export interface CleanupFactsChannel {
   index: number; name: string; zeroPct: number | null; clippedPct: number | null
   profile?: { byZ: PlaneProfileAxis; byT: PlaneProfileAxis } | null
+  containerBits?: number | null; topValue?: number | null; saturated?: boolean | null
+  range?: ChannelRange | null; noise?: ChannelNoise | null
 }
 
 /** The slice of the image payload the diagram reads. */

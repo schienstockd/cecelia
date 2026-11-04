@@ -33,19 +33,24 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
     end
 end
 
-"""Whether a stored `meta` carries a saturation probe with the per-plane `profile` on every channel.
+"""Fields every probed channel carries from the current probe (`data_path.measure_store`) beyond the
+clipping numbers: a stored probe missing any of them is re-run by `ensure_saturation_meta!`."""
+const SATURATION_CURRENT_KEYS = ("profile", "range", "noise")
+
+"""Whether a stored `meta` carries a probe with every `SATURATION_CURRENT_KEYS` field on every channel.
 Through `_saturation_channels`, which normalises JSON3's Symbol keys — a raw `haskey(ch, "profile")`
 on the persisted ccid would never match."""
-function _saturation_has_profile(meta::AbstractDict)::Bool
+function _saturation_is_current(meta::AbstractDict)::Bool
     chans = _saturation_channels(meta)
-    !isempty(chans) && all(ch -> haskey(ch, "profile"), chans)
+    !isempty(chans) && all(ch -> all(k -> haskey(ch, k), SATURATION_CURRENT_KEYS), chans)
 end
 
 """
     ensure_saturation_meta!(img) -> Bool
 
 Backfill `meta["saturation"]` for an image imported before the probe existed — or before it
-recorded per-plane `profile`s, in which case the key is replaced, not merged — so denoise's
+recorded every `SATURATION_CURRENT_KEYS` field (per-plane `profile`, `range`, `noise`), in which
+case the key is replaced, not merged — so denoise's
 saturation gate, the import QC dot and the Cleanup facts (`img_cleanup_facts`) have their signal.
 Called by the denoise task and by Refresh metadata in the image dialog (`measure: true` on
 `POST /api/images/meta/resync`). A no-op when
@@ -61,7 +66,7 @@ function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing
     ccid = state_file(img)
     isfile(ccid) || return false
     meta = get(read_ccid_raw(ccid), "meta", Dict{String,Any}())
-    _saturation_has_profile(meta) && return false
+    _saturation_is_current(meta) && return false
     existing = get(meta, "saturation", nothing)
     zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
@@ -71,7 +76,7 @@ function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing
         if isnothing(existing)
             _merge_zarr_meta_into_ccid!(img, Dict{String,Any}("saturation" => sat); overwrite = false)
         else
-            # Probed before per-plane profiles existed: replace just this key with the fuller probe
+            # Probed before the current fields existed: replace just this key with the fuller probe
             # of the same store (the whole-channel numbers come out the same).
             commit_state!(img) do raw
                 m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))

@@ -606,7 +606,15 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
             # Where in the stack, from the same probe: per depth / per frame p50, p99, zero fraction
             # and voxels at the channel ceiling (`intensity_utils.PlaneProfile`). Absent on images
             # probed before it existed until `ensure_saturation_meta!` re-probes them.
-            "profile"    => get(ch, "profile", nothing)))
+            "profile"    => get(ch, "profile", nothing),
+            # What landed in the file (`data_path.measure_store`): store dtype bits, p1/p50/p99.9/max
+            # of non-zero voxels + a 32-bin histogram, and the noise floor / SNR or why it can't be
+            # measured. Same absence rule as `profile`.
+            "containerBits" => get(ch, "containerBits", nothing),
+            "topValue"      => get(ch, "topValue", nothing),
+            "saturated"     => get(ch, "saturated", nothing),
+            "range"         => get(ch, "range", nothing),
+            "noise"         => get(ch, "noise", nothing)))
     end
     um_per_px = img_is_calibrated(img) ? img_physical_sizes(img)[1][3] : nothing
     drift = Dict{String,Any}[]

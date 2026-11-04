@@ -11,6 +11,8 @@
 import { computed, ref, nextTick, onMounted } from 'vue'
 import { acquisitionRows } from '../utils/acquisitionSettings'
 import { isMultiphoton } from '../utils/acquisitionLightPath'
+import { hasDataPath } from '../utils/acquisitionDataPath'
+import AcquisitionDataPath from './AcquisitionDataPath.vue'
 import AcquisitionLightPath from './AcquisitionLightPath.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useToast } from '../composables/useToast'
@@ -46,8 +48,8 @@ function num(v: number | null | undefined): string {
 // Calibration readouts share the ImageTable's formatting (`0.346 µm`, not `0.3459441507762987
 // micrometer`) — one shared helper, `formatPhysicalSize`, so the two surfaces stay in sync.
 // Fill-only: adds what the store or the source file records and ccid.json lacks (size, timing,
-// acquisition settings); never overwrites a value already set (`resync_ome_meta!`). Also measures the
-// per-depth / per-frame profile when it is missing — one image, so the pixel pass is affordable here.
+// acquisition settings); never overwrites a value already set (`resync_ome_meta!`). Also runs the
+// import's pixel probe when its numbers are missing (per-plane profile, range, noise floor) — one image, so the pixel pass is affordable here.
 const resyncing = ref(false)
 async function resync() {
   const projectUid = projectMeta.current?.uid
@@ -129,6 +131,8 @@ const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
 const acquisition = computed(() => acquisitionRows(img.value.acquisition))
 // Two-photon acquisitions get the light-path diagram, which places the same values at their stage.
 const lightPath = computed(() => isMultiphoton(img.value.acquisition))
+// Per-channel pixel numbers from the import probe — any image probed with the current probe.
+const dataPath = computed(() => hasDataPath(img.value))
 // A crop names its source image (by name when it's in the open project) + version + pixel box.
 const cropLine = computed(() => {
   const cs = img.value.cropSource
@@ -271,6 +275,12 @@ async function saveEditVn() {
             <span class="md-k">{{ r.k }}</span><span class="md-v">{{ r.v }}</span>
           </template>
         </div>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection v-if="dataPath" label="Acquired data" tip="What landed in the file, per channel" accordion="cc.imageMeta.section" section="data" max-height="none">
+        <div class="md-section md-cs">
+          <AcquisitionDataPath :image="img" />
         </div>
       </CollapsibleSection>
 
