@@ -470,6 +470,73 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         rm(proj.root; recursive = true)
     end
 
+    # ── resync_ome_meta! reads acquisition settings out of an .oir source (meta["acquisition"]) ──
+    # The source is the real FV4000 settings document (test-data/acquisition/) wrapped in filler bytes,
+    # the way an .oir stores it after the first frame.
+    let oir_doc = normpath(joinpath(test_projects_dir(), "..", "acquisition",
+                                    "oir_fv4000_3.2.1_imageProperties.xml"))
+        if have_fixture(oir_doc)
+            @testset "resync_ome_meta! fills acquisition settings from an .oir source" begin
+                proj = create_project!(name = "meta-acq-$(rand(1000:9999))")
+                s    = add_set!(proj; name = "set")
+                src  = joinpath(proj.root, "source.oir")
+                write(src, vcat(rand(UInt8, 4096), read(oir_doc), rand(UInt8, 2048)))
+                img  = add_image!(s; name = "img", meta = Dict{String,Any}("ori_path" => src))
+                zdir = joinpath(img_zero_dir(img), "img.ome.zarr")
+                # The source's own stack: 181 frames × 4 channels × 31 planes (metadata only).
+                make_zarr(zdir; axes = ["t", "c", "z", "y", "x"], level_scales = [[15.0, 1.0, 2.0, 0.5, 0.5]],
+                          units = Dict("x" => "micrometer", "y" => "micrometer", "z" => "micrometer"),
+                          shape = [181, 4, 31, 8, 8])
+                img.filepath["default"]            = "img.ome.zarr"
+                img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+                save!(img)
+
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                acq = init_object(proj.uid, img.uid).meta["acquisition"]
+                @test acq["system"] == "FV4000"
+                @test acq["brightZ"]["enabled"] == true
+                @test [p["zFromStartUm"] for p in acq["brightZ"]["points"]] == [0.0, 60.0]
+                @test acq["scanner"]["type"] == "Resonant"
+
+                # Fill-only: a second resync keeps what is there, even once the source is gone.
+                rm(src)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                @test init_object(proj.uid, img.uid).meta["acquisition"]["system"] == "FV4000"
+
+                # A re-import (overwrite) whose read found no settings drops the old source's.
+                Cecelia._merge_zarr_meta_into_ccid!(init_object(proj.uid, img.uid),
+                    Dict{String,Any}("SizeC" => 1); overwrite = true)
+                @test !haskey(init_object(proj.uid, img.uid).meta, "acquisition")
+
+                # A z-projection of it keeps ori_path but not the stack: the per-depth ramp must not
+                # be attached to a single plane.
+                proj_img = add_image!(s; name = "zproj", meta = Dict{String,Any}("ori_path" => src))
+                write(src, vcat(rand(UInt8, 4096), read(oir_doc)))
+                pdir = joinpath(img_zero_dir(proj_img), "img.ome.zarr")
+                make_zarr(pdir; axes = ["t", "c", "z", "y", "x"], level_scales = [[15.0, 1.0, 2.0, 0.5, 0.5]],
+                          units = Dict("x" => "micrometer", "y" => "micrometer", "z" => "micrometer"),
+                          shape = [181, 4, 1, 8, 8])
+                proj_img.filepath["default"]            = "img.ome.zarr"
+                proj_img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+                save!(proj_img)
+                @test resync_ome_meta!(init_object(proj.uid, proj_img.uid))
+                @test !haskey(init_object(proj.uid, proj_img.uid).meta, "acquisition")
+
+                # A registered stack's ori_path is only the reference cycle's file: resync must not
+                # attach that one file's settings to every channel.
+                write(src, vcat(rand(UInt8, 4096), read(oir_doc)))
+                reg = init_object(proj.uid, img.uid)
+                reg.meta["register_reference_uid"] = "ref"
+                save!(reg)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                @test !haskey(init_object(proj.uid, img.uid).meta, "acquisition")
+                rm(proj.root; recursive = true)
+            end
+        else
+            @test_skip "acquisition fixture missing"
+        end
+    end
+
     # ── resync_ome_meta! repairs a flat store whose NGFF calibration never landed ──
     # The shipped case: the 8-bit import wrote a flat store, `sync_zarr_calibration!` silently
     # skipped its NGFF half, and the store ended up disagreeing with its own OME-XML. ccid.json

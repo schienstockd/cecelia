@@ -70,6 +70,15 @@ symmetry:
 Regenerate with `pixi run python python/cecelia/tests/make_aniso_fixture.py` (which also documents
 the layout) after any change to the anisotropy `uns` block; keep it tiny.
 
+## `acquisition/` — microscope settings documents cut from real source files
+
+`oir_fv4000_3.2.1_imageProperties.xml` (135 KB) and `oir_fvmpe-rs_2.3.2_imageProperties.xml` (48 KB)
+are the `lsmimage:imageProperties` XML documents, byte for byte, from two real `.oir` files: an FV4000
+resonant two-photon time-lapse with Bright Z ON (14.4 → 21 % over 60 µm), and an FVMPE-RS galvo
+time-lapse with Bright Z OFF but ramp points still stored. Checked for user names and paths before
+committing (none). `test_oir_meta.py` parses them and wraps them in filler bytes to test the container
+scan; `ome_qc.jl` wraps the FV4000 one as a fake `.oir` source for the resync test.
+
 ## `run-logs/` — real run logs, for the chain-from-history builder
 
 Each file is one image's `runlog.json` rows, copied from a dev project's task history (not written by

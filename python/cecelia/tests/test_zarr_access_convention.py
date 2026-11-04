@@ -37,7 +37,7 @@ _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # Files allowed to talk to zarr / tifffile / OME-XML / lxml directly. Every entry has a reason.
 # _BASELINE_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
 # reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
-_BASELINE_MAX = 5
+_BASELINE_MAX = 6
 _BASELINE = {
     # Owns the idiom: zarr_utils IS the canonical zarr wrapper; ome_xml_utils IS the OME-XML parser.
     os.path.join('python', 'cecelia', 'utils', 'zarr_utils.py'),
@@ -54,6 +54,10 @@ _BASELINE = {
     # The task IS to write a TIFF (`exportImages.ome_tiff`), so `tifffile` is unavoidable here. No
     # other task should import tifffile.
     os.path.join('app', 'src', 'tasks', 'exportImages', 'ome_tiff_run.py'),
+    # Parses the Olympus/Evident `.oir` settings document — VENDOR XML inside the raw source file, not
+    # OME-XML. `ome_xml_utils` (ome_types) only parses OME, and the fields read here never reach the
+    # OME model. Must not grow into an OME-XML reader: OME stays in ome_xml_utils.
+    os.path.join('python', 'cecelia', 'utils', 'oir_meta.py'),
 }
 
 # Banned top-level modules (via `import X` or `from X import ...`). The last-segment name matches.
