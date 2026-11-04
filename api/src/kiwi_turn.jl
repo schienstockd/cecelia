@@ -33,6 +33,7 @@ const KIWI_READ_TOOLS = [
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
     "get_task_catalogue",   # what each step is for — "which step fixes this?" is a fair Kiwi question
+    "get_acquisition_knowledge",   # why an image looks off at acquisition — stage, check, sources
     "gate_plot", "gate_cells_view",   # a population's gate and its cells in the image, as pictures
     "gate_histogram", "gate_stats", "gate_examples",   # its distribution, counts, and example crops
     "list_figures",   # the project's figures and their specs
