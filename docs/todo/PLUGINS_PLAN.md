@@ -19,7 +19,7 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       (314 tracks, 4367 detections, 3D, micron). The format has **no columns**: `<particle>` IS the
       track and its id is its ordinal, so the column mapping is bypassed for `.xml`. A DIFFERENT
       export from TrackMate's "Spots in tracks" CSV, which does have columns.
-- [x] ~~**Which segmentation does it attach to?**~~ **None — there isn't one** (Dominik). Added a
+- [x] ~~**Which segmentation does it attach to?**~~ **None — there isn't one** (the maintainer). Added a
       *points* mode: each detection becomes a cell, written as a labelProps table and registered, so
       no segmentation is needed. Works because `img_value_names` reads ccid.json's `label_props`, not
       the label store, and `is_tracked` wants only a `track_id` column.
@@ -31,7 +31,7 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       against an image or a segmentation of the UNcropped original, the crop offset shifts everything.
       Only matters once something else is put beside them.
 
-- [ ] **Imported points do not appear in the viewer's MASKS list** (Dominik, on screen). The run
+- [ ] **Imported points do not appear in the viewer's MASKS list** (the maintainer, on screen). The run
       succeeds and registers the value name, but the chip row still shows only the segmentations that
       have label pixels. Expected in part — a points set has no mask to draw — but it then appears
       NOWHERE in the viewer, which is not the answer either. Being traced; the question is which list
@@ -43,7 +43,7 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
 
 **Correctness / cleanup**
 - [x] ~~**Split the plugin.**~~ `cumulativeChange` is a track MEASURE and did not belong in a repo
-      called `ccia-importTracks` (Dominik). Now two single-purpose example plugins —
+      called `ccia-importTracks` (the maintainer). Now two single-purpose example plugins —
       `ccia-importTracks` and `ccia-trackMeasures` — and the published repo carries the importer only.
 - [x] ~~**Windows: plugin install could never have worked.**~~ `tar -xzf <absolute path>` — GNU tar
       reads `C:\...` as `host:path` and attempts a REMOTE archive. The repo already had pure command
@@ -67,7 +67,7 @@ Live checklist for the `feat/plugins` branch. Delete an item when it lands; this
       `nestedTooltips` (`utils/uiCopy.ts`) only knows the `v-tooltip` DIRECTIVE. `SelectionTable` takes
       its tooltip as a PROP (`row-tooltip`) and renders it on the `<tr>`, so a tipped control in one of
       its slots fires two overlapping tooltips and the scan says nothing — which is exactly how one
-      shipped into the plugins Settings table before Dominik spotted it on screen.
+      shipped into the plugins Settings table before the maintainer spotted it on screen.
       Teaching the scanner that `row-tooltip` tips the subtree is a two-line change and finds
       **52 real instances in 6 files**: `ImageTable` 19, `TaskList` 10, `NotebookTable` 9,
       `TasksModule` 6, `MoviesModule` 5, `ProjectPanel` 3.
@@ -115,7 +115,7 @@ into `<config_dir>/modules/`, a runtime `register_task!` puts it in dispatch, an
 **existing** category (e.g. `tracking/`) surfaces on that built-in page automatically. See
 [`../CUSTOM_MODULES.md`](../CUSTOM_MODULES.md) and [`CUSTOM_MODULES_PLAN.md`](CUSTOM_MODULES_PLAN.md).
 
-> **Premise corrected again, 2026-08-17 (Dominik).** "Distribution only" was too narrow, and would
+> **Premise corrected again, 2026-08-17 (the maintainer).** "Distribution only" was too narrow, and would
 > have shipped something that did not earn its name: *"custom task, custom module page, a plugin —
 > both are important, that's the whole point of the plugin. We already have the custom module loader
 > otherwise."* A plugin that only groups tasks in a directory adds packaging and nothing else, because
@@ -319,7 +319,7 @@ registers the tasks — hence "registers and runs, but has no form".)
 ## The contribution model — designed, not built
 
 **Status: Decisions 10 and 11 are built. 12 has had its design pass and is blocked on the viewer's
-overlay model; 13 stays deferred.** Written 2026-08-19 after Dominik asked why a
+overlay model; 13 stays deferred.** Written 2026-08-19 after the maintainer asked why a
 plugin cannot ship a component "the way napari plugins do", and the answer turned out to be more
 interesting than "the browser has a build step".
 
@@ -532,7 +532,7 @@ plugin layer is one more entry rather than a fourth branch. That is a real refac
 no test coverage below the composable, on a panel whose correctness is judged by eye.
 
 **Recommendation: do not start Decision 12 by writing `layers`.** Either generalise the viewer's
-overlay model as its own piece of work (with Dominik looking at the result), or park Decision 12
+overlay model as its own piece of work (with the maintainer looking at the result), or park Decision 12
 until something actually wants a layer a plugin cannot already get by registering a tracked
 `label_props` value name — which is how the points import works today, and is why it worked by
 accident.
@@ -630,7 +630,7 @@ special case, and then `layers` would need retrofitting around it.
   shared `python/`. Pre-existing (hand-dropped modules were never visible to them either) and inert
   today, since only built-in segmentation tasks are previewable — but it is the thing that breaks
   first if a plugin task is ever made previewable.
-- **P1.5 — the import builder: preview the file, then map its columns.** (Dominik, 2026-08-17.)
+- **P1.5 — the import builder: preview the file, then map its columns.** (the maintainer, 2026-08-17.)
   The task half is done; this is the page half for an *input*, which P1 does not cover — P1 gave the
   custom page a plot canvas, which is the right primitive for RESULTS. An import form needs to show
   the data being imported and let the user assign its columns.
@@ -699,7 +699,7 @@ special case, and then `layers` would need retrofitting around it.
   *(original scope below)*
 - **P4 (original) — the curated few.** The registry list plus the seed plugins.
 
-  **First candidate is the external TRACK importer** (Dominik, 2026-08-17). An earlier draft of this
+  **First candidate is the external TRACK importer** (the maintainer, 2026-08-17). An earlier draft of this
   plan named cell2location and Xenium instead, "because working old-R code exists to translate" —
   which is a much weaker criterion than *can we tell whether it is right*. Both halves of that
   rationale have since collapsed:

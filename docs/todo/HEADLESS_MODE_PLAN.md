@@ -40,7 +40,7 @@ The GUI is only a client. Everything below already runs without it:
 
 ## Locked decisions
 
-- **D1 — command name: `pixi run chat`** *(renamed from `pixi run headless`, Dominik, 2026-10-30)*.
+- **D1 — command name: `pixi run chat`** *(renamed from `pixi run headless`, the maintainer, 2026-10-30)*.
   "Headless" means no UI and nobody at the keyboard, which is what a future non-interactive chain
   run is; this mode is an interactive conversation. So the name is kept free for that run, and this
   one matches the app's own word for a terminal session with Claude (Kiwi's *Chat* row, *Chat to

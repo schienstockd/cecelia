@@ -197,7 +197,7 @@ convention (PR #1070's initial commit hand-rolled all four pieces; three follow-
 it against this shape).
 
 **A page whose work is per-image belongs on `ModuleLayout`, however it started.** Animation moved
-across (Dominik, 2026-08-10): as a standalone page it read whichever image napari happened to have
+across (the maintainer, 2026-08-10): as a standalone page it read whichever image napari happened to have
 open, so its empty state — *"open an image in napari to start capturing keyframes"* — could only be
 acted on by navigating to some other page, picking an image there, and coming back. The image table IS
 that action, and it carries the set bar, the filters and the eye with it. Which changes what the page's
@@ -208,7 +208,7 @@ not make "it's open elsewhere" a precondition the page cannot satisfy.
 
 **Do not write a page subtitle — or a page title.** All three carried a paragraph explaining the feature
 to a first-time reader: permanent noise on a screen its owner uses daily, and the clearest tell that a
-page was AI-written. The `<h1>` went the same way (Dominik, 2026-08-10) — the sidebar names the page and
+page was AI-written. The `<h1>` went the same way (the maintainer, 2026-08-10) — the sidebar names the page and
 highlights it, so a heading repeating that word is chrome the daily user reads past forever. `ModulePage`
 therefore has neither, and Settings dropped its own `.page-title` to match. The controls say what the
 page is; the explanation belongs in `docs/`. Same rule as tooltips and QC findings: if you are tempted to

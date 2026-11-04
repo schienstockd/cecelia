@@ -50,7 +50,7 @@ it.
 | 2 | **Per-area audits**, smallest first: result correctness, provenance/staleness, upgrade contracts | ≤3 agents | Do. The other 5 areas only if these earn it. |
 | 3 | **Matrix + ranked gaps**, each score naming the data it rests on | 1 agent | Do, after 2. The audit proposes the matrix layout; judge it once there is one to look at. |
 | 4 | **Test-set needs**: per module, the small self-contained image that would catch a wrong result, and what makes it different from intravital data | from 3 | Do. Feeds a test-set section in the call for datasets. |
-| 5 | **Browser passes** on features nobody has seen running | Dominik | Do, from the list the agent writes. |
+| 5 | **Browser passes** on features nobody has seen running | The maintainer | Do, from the list the agent writes. |
 | 6 | **First-run observation** by a non-maintainer | — | Not possible yet; no other users. Comes with the first external dataset. |
 | 7 | **Manifest + tier badges** | — | Design only, after 3. Flag-only first. |
 | 8 | **Blocking recital check** | — | Don't yet. See below. |

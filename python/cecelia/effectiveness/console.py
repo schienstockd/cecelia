@@ -628,12 +628,12 @@ def _name_cell(row: AgentRow) -> str:
 
 
 def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> str:
-    """One table row — idle in yellow (waiting for Dominik), open findings in orange (the commit
+    """One table row — idle in yellow (waiting for the maintainer), open findings in orange (the commit
     hook will block on them). `cols` = the worktree and branch column widths."""
     if not row.readable:
         return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} {'—':<8} (session file unreadable)",
                     use_colour=use_colour)
-    # `asks` (its last reply is a question to Dominik; magenta, apart from idle's yellow) replaces
+    # `asks` (its last reply is a question to the maintainer; magenta, apart from idle's yellow) replaces
     # the state, then `done` (merged, not working: close the window, then prune the worktree),
     # then `recite` (its commit's recital reviewers are running — minutes, not a stuck turn).
     status = (_col(_MAGENTA, f"{'asks':<6}", use_colour=use_colour) if row.asks else

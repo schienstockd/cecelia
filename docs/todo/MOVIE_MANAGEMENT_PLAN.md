@@ -188,7 +188,7 @@ those three concessions on a control people use to find files.
 
 **Phase 6 — edit / recreate.** A ⚙-style action on any movie row that banked a config, reopening the
 page that AUTHORS that kind, prefilled. The three questions this was parked on, and the answers
-(Dominik, 2026-08-10):
+(the maintainer, 2026-08-10):
 
 1. **It opens the page prefilled; it does not re-render.** Everything lands filled in and the user
    presses Render themselves — so "remake it with one field changed" is the same two clicks as "remake
@@ -216,7 +216,7 @@ Three things the earlier phases had not noticed, all fixed here rather than work
   to it. Both pages store per set — the batch's config and output, both pages' image selection — and
   both originally checked the ACTIVE set, so a movie recorded in another set (or a page with no set
   active yet) restored the config, skipped the selection, and reported *"switch to its set to see it"*
-  (Dominik, 2026-08-10). One click should repair what it can. Images spanning two sets have no single
+  (the maintainer, 2026-08-10). One click should repair what it can. Images spanning two sets have no single
   answer: the active set stands and the difference is reported.
 - **The timeline is per-image, so a restore replaces ONE image's keyframes**, not the store. Written to
   the animation store's refs directly rather than through `load()` — that one exists for hydrating from
@@ -237,7 +237,7 @@ and `tStart`/`tEnd`.
 `tStart`/`tEnd` turned out not to be dead but **unreachable**: `run_batch_movies` reads them, feeds
 `_t_sweep_frames`, and the whole stack down to `napari_utils.record_timelapse` honours them — there was
 simply no control anywhere that could ask. So the store's bag became `BatchMovieCfg` itself, the two
-dead fields went, and the frame range was wired up properly instead (Dominik, 2026-08-10): a shared
+dead fields went, and the frame range was wired up properly instead (the maintainer, 2026-08-10): a shared
 `MovieTimeRange.vue` on the two surfaces that sweep T, the missing forwarding on the single-record path
 (`_t_range` → `run_single_movie` → `record_timelapse!`), and the range banked with the movie so a
 recreate reproduces it. Details in `docs/NAPARI.md` → *Movie frame range*; the reason it is frame

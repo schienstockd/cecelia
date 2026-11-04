@@ -36,7 +36,7 @@ table exists to stop: something worth knowing turns up, has no obvious home, and
 path cannot dangle when the work ships, which is what a TODO citation does by construction. Cite the
 tracker only for work that is genuinely still open, and by title.
 
-Items marked **🔹 needs-input** need something only Dominik can provide — a test asset, a
+Items marked **🔹 needs-input** need something only the maintainer can provide — a test asset, a
 domain-specific expected value, or a decision an agent shouldn't make alone. Grep `needs-input`.
 
 ---
@@ -102,7 +102,7 @@ identical by construction, so the snapshot/restore steps can collapse — but on
 Keep the full-composite path for a hypothetical bulk correction (a Review pass that edits N%
 of labels), and gate the frame-scoped path on a size heuristic (`|tSubset| < nT`).
 
-Dominik, 2026-09-09 asked why we re-measure everything for a single-op edit — we don't have to.
+The maintainer, 2026-09-09 asked why we re-measure everything for a single-op edit — we don't have to.
 Blocks nothing today (the no-op skip covers the case that hit), but the first real brush edit on
 a large image will feel it.
 
@@ -123,7 +123,7 @@ The WebGPU viewer must (a) persist per-image layer props atomically as the user 
 and (c) write to the SAME on-disk file napari autosaves to so keyframes stay portable across viewers
 during the P6→P9 transition window. Full design + acceptance in the plan doc → PY.
 
-Dominik, 2026-08-26: "as long as the layer autosave props lands at some point. that is ok. because it
+The maintainer, 2026-08-26: "as long as the layer autosave props lands at some point. that is ok. because it
 is essential."
 
 
@@ -172,7 +172,7 @@ after a pipeline task rewrites its inputs. The `DATA_STAMP` convention
 (`docs/NOTEBOOKS.md` → *Refreshing after a pipeline re-run*) is the working answer today, but it is
 manual and easy to forget. The only reset currently available is the Notebooks page's **Restart**,
 which stops the whole Pluto server and takes **every** open session (and their unsaved edits) with it
-— which is what prompted this (Dominik, 2026-07-29).
+— which is what prompted this (the maintainer, 2026-07-29).
 
 **Mechanism, verified against the pinned Pluto (`Pluto/F6SNP`, `src/webserver/Router.jl`):**
 - `GET /notebooklist` → a Dict of `notebook_id => path`. **MsgPack-encoded** (`pack`), not JSON, and

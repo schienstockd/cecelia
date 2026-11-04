@@ -3,7 +3,7 @@
 > design lives in `docs/todo/TASK_DISCOVERY_PLAN.md`.
 >
 > **Outcome:** not run as a brief. On 2026-10-07 Claude checked its concerns against the code with
-> Dominik in chat. Several facts here were already stale: #1483, #1476, #1485 and #1486 had merged, the
+> the maintainer in chat. Several facts here were already stale: #1483, #1476, #1485 and #1486 had merged, the
 > GUI reads the fields in #1492, and `seg.*` findings (#1479) are part of the `--discovery` bundle. The
 > on/off measurement is the intravital guide-run pair of the 2026-10-07 night. Read
 > [`docs/todo/TASK_DISCOVERY_PLAN.md`](../todo/TASK_DISCOVERY_PLAN.md).

@@ -78,7 +78,7 @@ Fix: use a `MAP_WRITE` buffer, write the fetched slab straight into
 ## Reservations to state before commit
 
 - WebGPU browser support: `mapAsync` behaviour differs subtly across Chrome/Firefox;
-  Dominik is on Linux. Don't caveat Safari — he doesn't use it. Do caveat Firefox
+  the maintainer is on Linux. Don't caveat Safari — they don't use it. Do caveat Firefox
   if you can't verify it there.
 - Measurement floor: `onSubmittedWorkDone` is ~100 ms; anything below that is
   UNMEASURED, not IMPROVED. Say so.
@@ -87,7 +87,7 @@ Fix: use a `MAP_WRITE` buffer, write the fetched slab straight into
 
 ## Explicit constraints
 
-- **Never start/kill the dev server.** Dominik owns 8080/5173/7655.
+- **Never start/kill the dev server.** The maintainer owns 8080/5173/7655.
 - **Never write shared dev config.**
 - **Ask before commit; state reservations first.**
 - **Branches + PRs only, never push to main.**

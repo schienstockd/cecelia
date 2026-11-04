@@ -473,7 +473,7 @@ def reviewer_test_gate(message: str) -> str | None:
     listed = "\n".join(f"  - `{path}` holds the repro for `{slug}`" for slug, path in held)
     return (f"This commit changes the result review's own test:\n{listed}\n"
             "Fix the code, not the repro. If the repro expects the wrong thing, say so with "
-            "`[<slug>: false_positive: <reason>]` — that sends it to Dominik's decide queue. "
+            "`[<slug>: false_positive: <reason>]` — that sends it to the maintainer's decide queue. "
             "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
 
 

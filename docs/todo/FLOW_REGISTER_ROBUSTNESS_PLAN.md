@@ -1,7 +1,7 @@
 # flowRegister robustness — Galene-derived follow-ups
 
 **Status:** Phase 1 shipped 2026-09-07 as metric-only (PR #848). **P2 + P3 PARKED 2026-09-08** — see *Why the rest is parked* below.
-**Prompted by:** Dominik surfacing an ex-colleague's implementation (Galene) after the
+**Prompted by:** the maintainer surfacing an ex-colleague's implementation (Galene) after the
 [structural-channel passthrough](../../app/src/tasks/cleanupImages/flow_register.jl) landed. The
 comment that started it: *"optical flow can't distinguish cell movement from local distortion, and
 the flow itself is not pixel-wise accurate, so you get broken collagens in the corrected video"*.
@@ -194,7 +194,7 @@ concrete form. We do the same, but *before* Farneback rather than *inside* an op
 
 **Expected impact on c91ICQ (measured post-Phase 2, don't presume).** If most of the 115.82 px
 peak flow is uncorrected residual rigid drift, Farneback's peak should drop into the 20-40 px
-range and the clamp becomes irrelevant. If not — and Dominik's observation on this movie was that
+range and the clamp becomes irrelevant. If not — and the maintainer's observation on this movie was that
 the wobble is real tissue deformation, not drift — the warm-start does nothing measurable and
 Phase 3 becomes the load-bearing phase. Measure before deciding.
 
@@ -283,7 +283,7 @@ one becomes load-bearing.
   [`app/src/tasks/cleanupImages/flow_register.json`](../../app/src/tasks/cleanupImages/flow_register.json).
 - Related plan — [`CORRECTION_QC_PLAN.md`](CORRECTION_QC_PLAN.md) (wizard W3 enables flowRegister;
   a `frameCorrelationFloor` default belongs on the per-card rules table there once Phase 1 lands).
-- Prior colleague comment (Dominik surfaced 2026-09-07): distinguishes flow-for-detection (their
+- Prior colleague comment (the maintainer surfaced 2026-09-07): distinguishes flow-for-detection (their
   approach: localise regions, hand-off to DL restoration) from flow-for-correction (Cecelia's
   approach: apply as warp). Their DL restoration path was slow/chunky and belongs in a separate
   program — not portable, recorded here as context.

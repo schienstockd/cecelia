@@ -12,7 +12,7 @@ Same substrate — `~/.cecelia-effectiveness/events.jsonl` — new events + new 
 
 ## Origin
 
-- 2026-09-26 chat with Dominik, right after #1252's rebase.
+- 2026-09-26 chat with the maintainer, right after #1252's rebase.
 - User: "but this doc just says what the runtime is. not.. whether it was actually useful for anything."
 - Reframe: "why cant we start on implementing v2. otherwise. if i start using this now.. it's just runtime. and doesnt tell us anything."
 - The v1 log-plan explicitly deferred findings emission ("needs outcome-resolution design"). That's the load-bearing bit this plan resolves.

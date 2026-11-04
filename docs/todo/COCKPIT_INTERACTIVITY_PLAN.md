@@ -11,9 +11,9 @@
 
 **Status:** planning (2026-09-08). Uncommitted scratch in the `feat/correction-cockpit-review-brush`
 worktree; commit into the first-phase PR when work starts.
-**Origin:** Dominik ran PRs #850 (obs carry-over), #852 (invalidation surface), #855 (Review pager
+**Origin:** the maintainer ran PRs #850 (obs carry-over), #852 (invalidation surface), #855 (Review pager
 + `label.split`) tonight and said the Labels + Review tabs feel *silent* — a count of picked labels,
-no visible list, no per-focus feedback — compared to what he built himself pre-cecelia (napari-vizsla
+no visible list, no per-focus feedback — compared to what they built themselves pre-cecelia (napari-vizsla
 and the older PyQt **NucleoSegment**). This plan is the follow-up: (a) the interactivity affordances
 those two projects have and we don't, ranked by how much UX we get per line-of-code; (b) six
 correctness findings surfaced by an adversarial review of the tonight-shipped code.
@@ -21,8 +21,8 @@ correctness findings surfaced by an adversarial review of the tonight-shipped co
 ## Goal
 
 Turn the cockpit from "silent count" into "you can SEE what you picked, which one you're on, what it
-looks like across planes, and which one to review first" — matching the interactivity floor Dominik
-already shipped in his own earlier surfaces. Fix the six correctness bugs at the same time.
+looks like across planes, and which one to review first" — matching the interactivity floor the maintainer
+already shipped in their own earlier surfaces. Fix the six correctness bugs at the same time.
 
 ---
 
@@ -51,7 +51,7 @@ already shipped in his own earlier surfaces. Fix the six correctness bugs at the
 
 ## The interactivity gap — ranked
 
-Rankings cross-check napari-vizsla (Dominik's tracks-editing plugin) and NucleoSegment (Dominik's
+Rankings cross-check napari-vizsla (the maintainer's tracks-editing plugin) and NucleoSegment (the maintainer's
 pre-cecelia nucleus corrector). "Both voted" = both plugins do this; strongest signal to port.
 
 ### Rank 1 — Chip strip of picked labels **(both voted)**
@@ -293,7 +293,7 @@ Both source projects have shapes that would REGRESS cecelia if adopted:
   + correctness only, no new op kinds.
 - napari-vizsla — https://github.com/tlnagy/napari-vizsla (`_widget.py` at 684 LOC, review dated
   2026-09-08).
-- NucleoSegment — Dominik's pre-cecelia PyQt project at
+- NucleoSegment — the maintainer's pre-cecelia PyQt project at
   `/media/dominik/QUACK2/LONDON/LAPTOP_FILES/PycharmProjects/NucleoSegment` (~14k LOC; the review
   focused on `frontend/gui/nuc_select.py` + `processing/correction.py`).
 - Current cockpit code — `frontend/src/components/correction/CorrectionCockpit.vue`,

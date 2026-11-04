@@ -10,7 +10,7 @@ measuring half (Q-M4 sparsity probes, `meta.saturation`) stays. Related:
 
 ## Why
 
-- **The plan panel did not help** (Dominik, 2026-10-07). The Cleanup page's `CorrectionPlanPanel`
+- **The plan panel did not help** (the maintainer, 2026-10-07). The Cleanup page's `CorrectionPlanPanel`
   (acquisition cards, a three-question wizard, a recommended ordered plan, save as `plan.json`, mount as a
   chain) is ~2,300 lines of Julia + Vue (panel, cards, routes, engine) built 2026-09-06. Nobody used it to decide a cleanup.
 - **Its cutoffs are guesses.** `correction_plan.jl`'s header: "All bands are unvalidated placeholders".
@@ -61,7 +61,7 @@ measuring half (Q-M4 sparsity probes, `meta.saturation`) stays. Related:
 ### P0 — read the night run (checkpoint)
 - Did the `on` agent read and act on "not photon-limited — denoising would remove signal"? Did the
   `off` agent denoise or smooth? Did either go back to Cleanup after segmenting?
-- Either way, the panel UI goes (Dominik's call). The result decides only how loudly the fact is
+- Either way, the panel UI goes (the maintainer's call). The result decides only how loudly the fact is
   shown: if the agent used it, the per-channel line is the replacement; if it did not, P1 is still
   for people and the agent check waits for a later pair.
 
@@ -74,8 +74,8 @@ Neither went back to Cleanup after segmenting. So the per-channel line is the re
   the top of the Cleanup page's task column~~ (dropped, below); `get_image_info` carries it, `--discovery off` drops it.
   Clipped % is of SIGNAL voxels and 0 unless the structural detector saw a pile-up. An image imported
   before the sparsity fields shows no channel line until a denoise run backfills it.
-- **GUI panel dropped (2026-10-11, Dominik).** On a 29-channel IBEX image it filled half the Cleanup
-  page with "—" and "0%" and pushed the tasks below the fold; he did not use it to decide anything.
+- **GUI panel dropped (2026-10-11, the maintainer).** On a 29-channel IBEX image it filled half the Cleanup
+  page with "—" and "0%" and pushed the tasks below the fold; they did not use it to decide anything.
   `CleanupFacts.vue` is gone; `img_cleanup_facts` and the payload field stay for `get_image_info` and
   the `--discovery off` arm (D5, D7). Decision 1 now holds for the agent only.
 - Was: the image accessor, a row on the Cleanup page for the selected image, and `get_image_info` carrying
@@ -84,7 +84,7 @@ Neither went back to Cleanup after segmenting. So the per-channel line is the re
 ### P2 — smoothing preview — **built, checkpoint open**
 - `python/cecelia/utils/smooth_utils.py` (shared by `smooth_run.py` and the worker's `_preview_smooth`);
   `task_previewable(::Smooth)`; protocol 17. The viewer's compare badge reads "Smooth".
-- Was: extract the smooth compute and declare the preview trait. Checkpoint: Dominik looks at one
+- Was: extract the smooth compute and declare the preview trait. Checkpoint: the maintainer looks at one
   photon-limited and one bright movie in the preview.
 
 ### P3 — removal — **built**

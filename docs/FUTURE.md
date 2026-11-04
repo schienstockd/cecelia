@@ -75,7 +75,7 @@ identifies a specific bottleneck that InMemoryDatasets.jl addresses.
 scaling the whole panel (which is what the canvas-level `useCanvasZoom` CSS transform does today).
 
 **Why deferred:** Deliberate product decision — the gating plots should not have zoom for now
-(Dominik, 2026-07-27), and they don't. Recorded here because the *reason it was hard has gone away*
+(the maintainer, 2026-07-27), and they don't. Recorded here because the *reason it was hard has gone away*
 and that is worth not re-deriving: the old blocker was the WebGL layer, where the overlays would have
 had to replicate regl's `projectionLocal · cameraView · model` transform and invert it for gate
 hit-testing. That layer was removed. The dots and the gate overlay are now both 2D canvases mapping
@@ -101,7 +101,7 @@ observer offloads them to a subagent (~80k tokens). But the first-pass payload t
 `features` → `featuresByRun`, drop `mean`, round to 4 significant figures) is expected to shrink that
 a lot on its own, so the roll-up may never be needed. It is also **not obviously correct**: behaviour
 and phenotype vary *within* an image per population, so a median-per-image roll-up flattens real
-structure the observer needs in order to spot outliers (Dominik).
+structure the observer needs in order to spot outliers (the maintainer).
 
 **Revisit when:** the payload trim proves insufficient in practice. Then add it as an explicit opt-in
 for the "compare T vs B across the set" question only — per-image stays the default.
@@ -240,7 +240,7 @@ material clipping case exists in any data we have (worst observed: 0.007% of sig
 36 channels of nine movies).
 
 **Why deferred.** It needs labels, and specifically labels good enough to trust a per-cell count from —
-so it waits on segmentation being reliable on real data (Dominik, 2026-08-04). Building it against
+so it waits on segmentation being reliable on real data (the maintainer, 2026-08-04). Building it against
 uncertain segmentation would produce a number nobody can act on either, for a different reason.
 
 **Revisit when.** Segmentation is dependable on real acquisitions. The import check stays as it is until

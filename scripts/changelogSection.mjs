@@ -4,7 +4,7 @@
 // GitHub's auto-generated PR list (`* title by @user in #N`) — 450 lines of it for v0.1.0. That list
 // is also what the in-app What's New modal renders, since `/api/update/check` passes the release body
 // straight through as markdown (api/src/update_api.jl → lib/whatsNew.ts). A user opening it learned
-// nothing they could act on (Dominik, 2026-08-10: "they will just say... ok. not sure what that tells
+// nothing they could act on (the maintainer, 2026-08-10: "they will just say... ok. not sure what that tells
 // me now"). The hand-written notes already existed one file away, in CHANGELOG.md, doing nothing.
 //
 // So the CHANGELOG becomes the release body, and stops being a mirror that has to be kept in step.

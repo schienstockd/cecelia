@@ -603,7 +603,7 @@ def run(params):
             m_scales, m_cum, problem = coastal_utils.scales_from_seconds(
                 declared, cum_seconds, dt_movie)
             if problem:
-                # His call, 2026-08-24: drop it and say so, rather than clamping onto the closest
+                # The maintainer's call, 2026-08-24: drop it and say so, rather than clamping onto the closest
                 # frames it has. A clamped movie contributes different spans than the rest under the
                 # same channel names — the quiet version of the corruption the metric-set contract
                 # exists to prevent.

@@ -3,7 +3,7 @@
 **Status:** parked plan / in progress. Goal: bring an *old R-version* cecelia project into the new
 Julia stack **without recomputing** the expensive steps.
 
-## Scope (LOCKED with Dominik)
+## Scope (LOCKED with the maintainer)
 
 **Migrate: images · segmentation · tracking.** These are the expensive/irreplaceable outputs.
 
@@ -128,10 +128,10 @@ top-level `included` bool.
 1. Migrate **one** image from `8BR53W` into a scratch project; assert `ccid.json` parses,
    `label_props(...)|>as_df` reads with **index=label**, `obsm['spatial']` present, zarr opens, dims
    match OME-XML. (Use both a tracked obsm file and an older var-centroid file.)
-2. Dominik opens it in the running app → image + labels + tracks render.
+2. The maintainer opens it in the running app → image + labels + tracks render.
 3. Then run over a full user dataset.
 
-## Open decisions (need Dominik)
+## Open decisions (need the maintainer)
 1. **Copy vs symlink** the image/label zarr (disk cost vs coupling to the source drive).
 2. **`migration/` top-level dir** OK?
 3. Track-lineage: synthesize defaults, or leave absent and let the app treat every cell as its own

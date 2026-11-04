@@ -108,7 +108,7 @@ class NormParamsCacheTest(unittest.TestCase):
         self.assertEqual(self._call(), {0: (1.0, 999.0), 1: (1.0, 999.0)})
 
     def test_two_groups_over_the_same_channel_compute_it_once(self):
-        """His `flowTom` shape: two model groups, one channel. The second used to repeat the whole
+        """The maintainer's `flowTom` shape: two model groups, one channel. The second used to repeat the whole
         streaming read."""
         self._call({'cellChannels': [1], 'normalise': 99.9})
         with open(norm_cache.path_for(self.path), encoding='utf-8') as fh:

@@ -150,7 +150,7 @@ Added on review (2026-11-02), before the audit was run.
    number in this brief.
 4. **Output homes.** `docs/todo/HARDENING_AUDIT.md` is deliberate: it is the 0.3.0 work list, not a
    frozen record. `docs/HARDENING_MATRIX.md` is the living, re-scored file.
-5. **Don't break the maintainer's machine.** Never start or kill servers (8080/5173/7655 are his).
+5. **Don't break the maintainer's machine.** Never start or kill servers (8080/5173/7655 are theirs).
    Use an isolated `CECELIA_DEV_DIR`; never write the shared dev config or call
    `set_projects_dir`. Run tasks via `run_task`/`run_tasks` in the REPL. Any `claude -p` used to
    trace Claude/Kiwi sets `CECELIA_OBSERVER_NO_PAIR=1`. Copy project data before running anything

@@ -115,11 +115,11 @@ Python launcher — were written down the same way, learned in flight rather tha
 ### Exercised on common scenarios, not exhaustively covered
 
 - **Chain executor.** The scheduler that runs analysis chains has been exercised on the
-  arrangements Dominik runs day-to-day — the "common shapes" of the analysis DAG. Component parts
+  arrangements the maintainer runs day-to-day — the "common shapes" of the analysis DAG. Component parts
   are unit-tested (`pixi run test-pkg`), but arbitrary user-driven chain shapes — parallel
   branches, resume-then-retry mid-chain, unusual resource-pool combinations, cancellations
   interleaved with dependencies — have not been covered exhaustively. Real bugs are expected to
-  surface once other people run combinations Dominik hasn't. This is a stated gap rather than a
+  surface once other people run combinations the maintainer hasn't. This is a stated gap rather than a
   claim of coverage.
 
 For most of the above, real intravital data was the validation, not synthetic fixtures. Synthetic
@@ -128,7 +128,7 @@ data often enough that they weren't a substitute for looking.
 
 ## Attribution position
 
-Claude wrote essentially all of the code. Dominik directed it, made every scientific and design
+Claude wrote essentially all of the code. The maintainer directed it, made every scientific and design
 decision, and reviewed as much as was practical. Neither of them is the sole author in the
 pre-2024 sense of the word. The one convention every surveyed disclosure agrees on is that AI is
 not listed as an author, and Cecelia follows that. On the rest — how loudly to name the AI role,

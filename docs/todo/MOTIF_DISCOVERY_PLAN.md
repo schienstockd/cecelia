@@ -86,7 +86,7 @@ Decision N`).
    of motifs from a different clustering run). *Not* a variant of `clust`
    — different granularity semantic (a `clust` cell = member of a
    track-level cluster; a `motifs` cell = inside a motif-instance span).
-   Confirm with Dominik before implementation.
+   Confirm with the maintainer before implementation.
 2. **Set-scope task, always** — same rule as clustering (see
    `docs/todo/CLUSTERING_PLAN.md` Decision 6). Pooling via
    `pop_df(imgs, uids, "live", pops; granularity=:cell)`; per-image
@@ -341,7 +341,7 @@ independently gated.
   tracks and checking correlation with matrix-profile output —
   worth doing once the classes are stable; not a blocker.
 
-## Open questions (Dominik's call before implementation starts)
+## Open questions (the maintainer's call before implementation starts)
 
 Copy of the report's §6, kept here so the plan is self-contained.
 

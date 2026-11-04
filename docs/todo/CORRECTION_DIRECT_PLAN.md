@@ -7,7 +7,7 @@ Supersedes `COCKPIT_INTERACTIVITY_PLAN.md`. Retires the queue-and-apply half of
 itself is the problem, so that direction is discarded entirely.
 
 **Origin:** the cockpit shipped as a queue-and-apply engine — pick labels → verb builds an
-invisible op list → Apply runs a Julia composite → zarr rewrite → re-measure. Dominik:
+invisible op list → Apply runs a Julia composite → zarr rewrite → re-measure. The maintainer:
 *"the queue is not visible, the operations are not visible, it's visually not clear what
 will happen during the background task. paint had a better UX 20 years ago."* The fix is
 direct manipulation on the viewer, with `Apply` split into (a) immediate autosave of the

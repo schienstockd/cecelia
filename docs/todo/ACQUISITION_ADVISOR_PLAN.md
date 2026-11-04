@@ -1,6 +1,6 @@
 # Acquisition advisor — plan
 
-**Status:** **DRAFT** (2026-11-04) — nothing built; decisions being worked through with Dominik one at
+**Status:** **DRAFT** (2026-11-04) — nothing built; decisions being worked through with the maintainer one at
 a time. Brief: [`docs/archive/ACQUISITION_ADVISOR_PROMPT.md`](../archive/ACQUISITION_ADVISOR_PROMPT.md).
 
 ## Goal
@@ -36,9 +36,9 @@ Evident FV4000.
 - **Roadmap** is in hardening (`docs/ROADMAP.md`).
 - **Prior art already in the repo:** `MICROCLAW_LESSONS_PLAN.md` — MicroClaw (Marin et al. 2026), a
   Claude agent driving microscopes through Micro-Manager. Agent reading only; not run, not read by
-  Dominik.
+  the maintainer.
 
-## Worked example — "my image gets darker with depth" (Dominik, 2026-11-04)
+## Worked example — "my image gets darker with depth" (the maintainer, 2026-11-04)
 
 A user acquires a z-stack in tissue without Bright Z, because they don't know it exists, and sees
 the image get darker with depth. What each piece contributes:
@@ -78,7 +78,7 @@ line of kind 3, but no manual-processing pipeline.
 
 Worked through in order; each is open until marked agreed.
 
-1. **Who is it for — Cecelia users first** — agreed (Dominik, 2026-11-04). People already analysing
+1. **Who is it for — Cecelia users first** — agreed (the maintainer, 2026-11-04). People already analysing
    in Cecelia: the project profile supplies the question (goal, cell types, channels), the test
    acquisition is imported into their project and gets the import QC, and the pilot runs their own
    steps. Facility users who don't use Cecelia are out of scope for now; serving them is a separate
@@ -100,7 +100,7 @@ Worked through in order; each is open until marked agreed.
    - **Not found in either file:** pixel dwell time. `TimeIncrement` is missing on the FVMPE-RS file.
    - **Unchecked:** LSM 780 and LSM 980. No CZI is among the `ori_path`s in the dev projects.
    - **Scope list vs. data:** the lab's own OIRs are two-photon (FVMPE-RS, FV4000), while the brief
-     lists confocal scopes (LSM 780/980, FV4000). **Two-photon first** (Dominik, 2026-11-04); CZI
+     lists confocal scopes (LSM 780/980, FV4000). **Two-photon first** (the maintainer, 2026-11-04); CZI
      and confocal-only error modes such as the pinhole wait.
    - **The raw OIR holds more than Bio-Formats passes on.** Checked by grepping the embedded XML of
      the FV4000 `.oir` (first 60 MB): `commonparam:pixelSpeed` (dwell, e.g. 2 µs) and `lineSpeed`;
@@ -136,9 +136,9 @@ Worked through in order; each is open until marked agreed.
    Store per-plane summaries (a few percentiles, zero fraction, top-bin count), not per-plane
    histograms.
 
-   **Agreed (Dominik, 2026-11-04): the per-plane numbers go into the normal import check**, for
+   **Agreed (the maintainer, 2026-11-04): the per-plane numbers go into the normal import check**, for
    every user and not only the advisor. They're advisory only and never block an import.
-5. **Knowledge store — repo files, no manuals** — agreed (Dominik, 2026-11-04). Three small parts,
+5. **Knowledge store — repo files, no manuals** — agreed (the maintainer, 2026-11-04). Three small parts,
    all in the repo:
    - **Key map** per vendor and software version (kind 1). Code, tested against real files.
    - **Two-photon explanations** (kind 2): what each stage does and which error causes which
@@ -167,7 +167,7 @@ Worked through in order; each is open until marked agreed.
    So a pilot is not real-time at the microscope. Denoise and segmentation dominate.
 7. **Screenshot lane** — deferred to Milestone 3. Offline, the file holds the settings; a screenshot can only confirm display-scaled values, never measure.
 8. **Evaluation + stop/go** — open. No published validation of LLM acquisition advice exists
-   (prior-art review), so this set would be the first. **Dominik is supplying known-bad two-photon
+   (prior-art review), so this set would be the first. **The maintainer is supplying known-bad two-photon
    acquisitions** (2026-11-04). Each needs a known diagnosis written down *before* the advisor sees
    it.
 9. **Prior-art and literature review** — done (2026-11-04), full record in
@@ -198,7 +198,7 @@ Worked through in order; each is open until marked agreed.
      two-photon criterion still needs sourcing. QUAREP's phototoxicity group (WG13) has published
      nothing yet.
 10. **Phasing vs. hardening** — drafted below (Phases), for review.
-11. **Light-path diagram (brainstorm, Dominik 2026-11-04 — not a spec yet).** Users find the settings
+11. **Light-path diagram (brainstorm, the maintainer 2026-11-04 — not a spec yet).** Users find the settings
     confusing because it isn't clear where in the acquisition each one acts. One small, generic
     diagram per imaging technology (two-photon first) would place every setting at its point in the
     excitation and detection path. Each stage would show this image's values from the point-3 key
@@ -225,7 +225,7 @@ Worked through in order; each is open until marked agreed.
     Checked under simulated deuteranopia, protanopia and tritanopia (Machado 2009): colour alone
     merged vendor with measured (red–green) and OME with vendor (tritan); the shapes keep them apart.
     The optics are generic, not the FV4000's real layout; the detector-to-channel split is unmapped.
-12. **Lab knowledge beyond one project** — open, **keep visible** (Dominik, 2026-11-04: "we should
+12. **Lab knowledge beyond one project** — open, **keep visible** (the maintainer, 2026-11-04: "we should
     not let this aspect get buried"). The case: "CD169-Kat bleaches after 30 min at 20 %" or
     "lymph node needs Bright Z from 40 µm", learned in one project, should reach the next one and
     the advisor.
@@ -240,7 +240,7 @@ Worked through in order; each is open until marked agreed.
       lab knowledge from project X" copy, which travels with export and is owned per user; or a
       dedicated lab-knowledge project that others reference. Also open: who promotes, and whether
       the advisor may *suggest* a promotion ("this keeps coming up — make it lab knowledge?").
-    - **Leaning: a lab-knowledge project** (Dominik, 2026-11-04, "probably"). How it would meet
+    - **Leaning: a lab-knowledge project** (the maintainer, 2026-11-04, "probably"). How it would meet
       Decision 11's objections: *drift*, because projects reference its entries instead of copying
       them; *mixing users*, because it is an ordinary project with `owners` in `project.json`;
       *export* is the gap, since a project export would not carry the referenced entries unless
@@ -250,7 +250,7 @@ Worked through in order; each is open until marked agreed.
 
 **Draft (2026-11-04).** Effort figures are guesses until a phase starts.
 
-**Ships before 1.0, as Experimental** (Dominik, 2026-11-04: "shouldn't we ship the advisor before —
+**Ships before 1.0, as Experimental** (the maintainer, 2026-11-04: "shouldn't we ship the advisor before —
 not wait for 1.0"). This overrides the brief's decision 6 and is an explicit exception to the roadmap's
 "hardening only" (`docs/ROADMAP.md` → Phase 3). It stays compatible with "no new headline surface":
 the diagram lives in the existing image metadata dialog, and the advisor is Claude reading through
@@ -265,7 +265,7 @@ they and the diagram (P4) are useful without Claude.
   Pure, unit-tested finding helpers (`qc.jl` pattern) and cohort metrics in `qc_cohort.jl`. Shown
   through `get_image_info` (MCP), which already carries the saturation facts.
   *Effort:* small–medium. *Risk:* touches a step every import runs; the thresholds need real data
-  (Dominik's bad images), as `_SATURATION_WARN_SIGNAL_FRAC` did.
+  (the maintainer's bad images), as `_SATURATION_WARN_SIGNAL_FRAC` did.
 - **P2 · OIR acquisition-settings reader** (point 3). Key map over `OriginalMetadata` plus a reader
   for the raw `.oir` XML (dwell, line time, Bright Z ramp pairs, auto HV, correction collar), for
   FV4000 3.2 and FVMPE-RS 2.3. Written to ccid `meta` at import and listed plainly in
@@ -281,11 +281,11 @@ they and the diagram (P4) are useful without Claude.
   *Effort:* medium. *Risk:* key names change with software versions; an unknown version reports
   "not mapped" instead of guessing.
 
-- **P4 · Light-path diagram** (point 11; moved here, Dominik 2026-11-04: "same for the diagram").
+- **P4 · Light-path diagram** (point 11; moved here, the maintainer 2026-11-04: "same for the diagram").
   Its own inline-SVG component (house shape: `DatasetAskFigure.vue`, `ClaudeWaysIn.vue`), mounted
   by `ImageMetadataDialog.vue`, with the stage→setting/finding mapping in a tested `utils/*.ts`.
   It shows P2's settings and P1's findings at their stages. Line and marker colours come from the
-  canonical qualitative palette `plots/palettes.json` → `okabe-ito`, not the status-dot tokens. Needs no Claude, so it doesn't wait for the advisor's evaluation. Gate: Dominik's visual
+  canonical qualitative palette `plots/palettes.json` → `okabe-ito`, not the status-dot tokens. Needs no Claude, so it doesn't wait for the advisor's evaluation. Gate: the maintainer's visual
   pass and a dark-mode check before it ships; generic optics are labelled as a schematic, not the
   scope's real layout.
 
@@ -302,10 +302,10 @@ for the analysis?") without a new page, and both are useful without Claude.
   names flagged.
 - **P6 · Offline pilot** (point 6): run the project chain on a crop and map task QC and result
   review findings to stages. About 15 min for 256² × 41 t on zolIMa.
-- **P7 · Evaluation** (point 8): Dominik's bad acquisitions with diagnoses written beforehand, good
+- **P7 · Evaluation** (point 8): the maintainer's bad acquisitions with diagnoses written beforehand, good
   counterparts, the biology-not-optics case and a time-effect case.
   **Stop/go before Milestone 2** (proposed, to agree): the main cause is right on most cases; never
-  "caused by" on the biology case; unverified directions flagged every time; Dominik's judgement
+  "caused by" on the biology case; unverified directions flagged every time; the maintainer's judgement
   that the advice was useful.
 - **Demo:** one bad and one good acquisition from the set, diagram + advice side by side.
 - **Ship gate (proposed):** the evaluation has run at least once and the advisor is never

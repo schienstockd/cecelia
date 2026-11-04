@@ -160,7 +160,7 @@ the well-rendered-composite case, and the real leverage is in
 channels/segCount/pops as this plan proposes — confirmation to have before
 committing the backend-compute lift. Not a blocker; can run in parallel.
 
-Dominik's eyeball time, not code time.
+The maintainer's eyeball time, not code time.
 
 ## Phased build sequence
 
@@ -260,7 +260,7 @@ Each phase independently mergeable.
 
 **Module-page multi-panel captures** (branch `docs/multipanel-capture-plan` in
 sibling worktree `cecelia-multipanel-plan`, plan doc not yet committed):
-related but orthogonal (Dominik, 2026-09-20). Both work is under the general
+related but orthogonal (the maintainer, 2026-09-20). Both work is under the general
 umbrella of "structured sidecar attached to a PNG capture," but the two
 schemas serve different queries — landscape carries spatial tile aggregations,
 module-page carries per-panel provenance. Track independently. If a third

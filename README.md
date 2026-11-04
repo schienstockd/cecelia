@@ -10,7 +10,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 [cecelia](https://github.com/schienstockd/cecelia-legacy) in a Julia + Python + Vue stack.
 
 > **This software was written almost entirely by AI.** Cecelia Feijoa's code was written by
-> [Claude Code](https://claude.com/claude-code) under Dominik's direction, and validated on real
+> [Claude Code](https://claude.com/claude-code) under the maintainer's direction, and validated on real
 > intravital microscopy data. It has not yet been independently tested by other users. How the
 > workflow works, per-subsystem validation, and sources:
 > [How this software was built](#how-this-software-was-built).
@@ -221,7 +221,7 @@ offline renderer, the analysis board, the notebook playground, the chain executo
 decisions it was consulted like a colleague with opinions worth listening to; on scientific
 decisions it was the implementer, not the judge.
 
-**The human role — direction, and validation on real data.** Dominik set every goal and every
+**The human role — direction, and validation on real data.** The maintainer set every goal and every
 design decision, and provided the immunology and intravital-microscopy judgment the analysis has to
 be correct for. The automated test suite checks *code correctness* — that a function does what it's
 supposed to. It doesn't check *scientific correctness* — whether a segmentation captured the cells
@@ -232,7 +232,7 @@ cells being analysed — the metric had been optimising something other than the
 The final choice was made on the images, not on the number. Per-subsystem validation record:
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
-**Claude checks its own drift.** Dominik can't review every change, so the setup lets Claude catch
+**Claude checks its own drift.** The maintainer can't review every change, so the setup lets Claude catch
 its own mistakes. Before each commit, `pixi run recital` has fresh reviewer agents read the
 diff: the *fan-out audit* looks for a fix that missed its sibling call sites, the *convention check*
 for new code that duplicates an existing helper or breaks a convention. When the diff touches code
@@ -244,16 +244,16 @@ is resolved in the message, and every outcome is logged (`pixi run recital-conso
 unattended judge re-checks what wasn't fixed. This is recent and still being measured:
 [`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
 
-<p align="center"><img src="frontend/public/readme-findings.svg" alt="Where a reviewer finding goes. Fan-out plausible notes go to the weekly bug check unless tagged fixed in the commit (the tag is optional). Fan-out confirmed and convention should-reuse findings go to both the bug check and the rule count, and convention wrong-home findings to the rule count only, unless they were fixed in the commit: then they are caught and end there. Result-review reproduced findings go to the bug check unless fixed in the commit, and result-review inferred notes unless tagged fixed (the tag is optional). Convention potential duplicates, result-review display notes and the mechanical checks are only listed at commit and end there. A bug still on main becomes a GitHub issue after a verify agent has looked at it; Dominik or the auto-fix agent opens a fix PR, and the issue is closed once the judge sees the bug gone. A rule broken in 3+ sessions becomes a proposal in a rules PR; Dominik edits the rule or rejects it in judge-review." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-findings.svg" alt="Where a reviewer finding goes. Fan-out plausible notes go to the weekly bug check unless tagged fixed in the commit (the tag is optional). Fan-out confirmed and convention should-reuse findings go to both the bug check and the rule count, and convention wrong-home findings to the rule count only, unless they were fixed in the commit: then they are caught and end there. Result-review reproduced findings go to the bug check unless fixed in the commit, and result-review inferred notes unless tagged fixed (the tag is optional). Convention potential duplicates, result-review display notes and the mechanical checks are only listed at commit and end there. A bug still on main becomes a GitHub issue after a verify agent has looked at it; the maintainer or the auto-fix agent opens a fix PR, and the issue is closed once the judge sees the bug gone. A rule broken in 3+ sessions becomes a proposal in a rules PR; the maintainer edits the rule or rejects it in judge-review." width="100%"></p>
 
 Lines into the bug check are vermillion, lines into the rule count blue. *Not fixed* includes
 *false positive*: that's the agent's own call, so the judge re-checks it. The bug check also takes
-errors from unattended agent runs, and runs Dominik reviewed as bad.
+errors from unattended agent runs, and runs the maintainer reviewed as bad.
 
 The terms, in all three figures: *confirmed* and *plausible* are the fan-out reviewer's sure and
 unsure calls; only a confirmed one has to be resolved before commit. The result review's
 *reproduced* finding ran something that shows the wrong result and has to be resolved; *inferred*
-was read from the code only. A reproduced one shipped unfixed goes to Dominik, not to an agent. *Gone*: the flagged code has
+was read from the code only. A reproduced one shipped unfixed goes to the maintainer, not to an agent. *Gone*: the flagged code has
 since changed and the problem isn't there. *Not a bug*: the judge or a verify agent read the code
 and disagreed. *Parked*: real, but nothing in today's code reaches it. *Waiting*: not on `main` yet,
 or not judged yet. Where the findings went so far:
@@ -265,7 +265,7 @@ or not judged yet. Where the findings went so far:
 Both charts are redrawn by the weekly judge. What they count and what they can't tell you:
 [`docs/ai-assist/AGENT_RECORD.md`](docs/ai-assist/AGENT_RECORD.md).
 
-**Attribution.** Claude wrote the code. Dominik directed it, reviewed as much as was practical, and
+**Attribution.** Claude wrote the code. The maintainer directed it, reviewed as much as was practical, and
 made every scientific and design decision. Neither is the sole author in the sense the word meant a
 few years ago. Every public disclosure the field has landed on so far agrees on one thing: AI isn't
 a listed author. On everything else — how loudly to say "AI wrote this", what to call the human's

@@ -115,12 +115,12 @@ by `continuousControls.test.ts` ratchet).
 - Work in a fresh worktree — `git worktree add ../cecelia-list-plots main` at
   `/home/dominik/cc-workspace/cecelia/`. Copy `.env` from the primary checkout so
   `CECELIA_DEV_DIR` resolves.
-- Never start/kill servers (Dominik owns 8080/5173/7655).
+- Never start/kill servers (the maintainer owns 8080/5173/7655).
 - Never write shared dev config.
 - State reservations before every commit.
 - Commit attribution: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`
 - PR body ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
-- Untestable rendering changes need Dominik's eyes BEFORE shipping. This is mostly
+- Untestable rendering changes need the maintainer's eyes BEFORE shipping. This is mostly
   plumbing, but if you add ANY visible affordance, hold for eyeball.
 
 ## Output

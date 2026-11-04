@@ -163,7 +163,7 @@ measures → 2-state HMM on speed + angle, into a fresh value_name, through `run
 named in the agent's `RESULT {…}` line is the headline) → canary → `record.md` / `record.json`.
 Navigation: cost, turns, tool calls, tool errors, tasks run (`runlog.json`), new value_names.
 `--scripted-ceiling` runs `ceiling.jl` as the "agent": the full record path verified at $0 (scores as
-P2, canary flags L1). Dominik starts the real runs (auto mode blocks assistant-side `claude -p`
+P2, canary flags L1). The maintainer starts the real runs (auto mode blocks assistant-side `claude -p`
 spawns, as in #1264). **Checkpoint (open):** one vague + one guided run, N=1 each, spend shown,
 findings written.
 
@@ -208,7 +208,7 @@ refusal is not shown as the agent's last message, and `run_app.py` exits 75. A p
 refuses (or that fails) is said in the entry (*Explained after the run: not answered — …*), never an
 empty why.
 
-**No breadcrumbs (Dominik, 2026-10-03).** The run measures autonomous reasoning in this domain, so
+**No breadcrumbs (the maintainer, 2026-10-03).** The run measures autonomous reasoning in this domain, so
 the agent gets exactly what any user's install gives it — tools, their API docs, the app's own
 error messages and guidance — and NOTHING written for this task: no analysis hints in tool
 docstrings or server instructions ("gate in the valley", "check counts after"), no plan rules that
@@ -235,7 +235,7 @@ Expected first candidates, in order of what P3 shows: close audit L1/L2 behind a
 flag; task-interface or doc fixes where the agent got lost; more real-data crops (jFWePN) on the
 `crop.py` tier.
 
-**L1/L2 design — PROPOSAL, needs Dominik's call (not built).** L1 is now confirmed by a run (P2).
+**L1/L2 design — PROPOSAL, needs the maintainer's call (not built).** L1 is now confirmed by a run (P2).
 L2 is harder than "refuse an existing output name": tracking, track measures, HMM, motif and clustering
 write *in place* into the value_name (or the pops' value_name) they are given, so the rule has to say
 which value_names an unattended run may touch at all.

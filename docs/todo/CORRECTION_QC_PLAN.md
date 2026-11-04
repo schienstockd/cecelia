@@ -142,7 +142,7 @@ recommend or exclude them. See PR moving `cleanupImages.{dtype,flip}` → `editI
 
 Every QC metric produces a **continuous `score ∈ [0.0, 1.0]`** (higher = more confidence that the
 condition holds), and rules trigger on score ranges. Bands are defensible only as **"calibrated on
-Dominik's dev movies"** per 1d ground-truth (there is none), so every band below is explicitly
+the maintainer's dev movies"** per 1d ground-truth (there is none), so every band below is explicitly
 flagged as a placeholder.
 
 Notation: a range `x ≥ 0.7 → include` means the plan includes the task when the score is at least
