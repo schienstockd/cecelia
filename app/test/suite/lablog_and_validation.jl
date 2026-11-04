@@ -177,6 +177,10 @@ end
     sQ    = add_set!(projQ; name="set-Q")
     iQ    = add_image!(sQ; name="q-1", meta=Dict{String,Any}("ori_path"=>"/tmp/q1.tif"))
     stamp(t) = Dates.format(t, "yyyy-mm-ddTHH:MM:SS")
+    # The digest is day-scoped by each run's `at`, so every window below must start today: in the
+    # first minutes after local midnight, wait until they do.
+    since_midnight = Dates.now() - Dates.DateTime(Dates.today())
+    since_midnight < Dates.Minute(3) && sleep((Dates.Minute(3) - since_midnight).value / 1000 + 1)
     now_ = Dates.now()
     finished!(fun, vn, t0, t1) = Cecelia._update_run_log!(iQ) do es
         push!(es, Dict{String,Any}("fun" => fun, "valueName" => vn, "status" => "done",
@@ -192,9 +196,9 @@ end
     # HMM: run-log valueName empty, QC under the step at `{labelSet}.{colName}`
     write_qc(iQ, "behaviour.hmm_states", "B.movement", warn("Collapsed to one state"))
     finished!("behaviour.hmm", "", now_ - Dates.Minute(1), now_ + Dates.Minute(1))
-    # a run that finished an hour ago does NOT claim QC written now (a later run's)
+    # a run that finished before the QC was written does NOT claim it (a later run's)
     write_qc(iQ, "clustTracks.cluster", "B.speed", warn("One cluster dominates"))
-    finished!("clustTracks.cluster", "", now_ - Dates.Hour(2), now_ - Dates.Hour(1))
+    finished!("clustTracks.cluster", "", now_ - Dates.Minute(2), now_ - Dates.Minute(1))
 
     ctx = capture_context!(projQ; date=Dates.Date(now_))
     @test ctx !== nothing
@@ -295,15 +299,17 @@ end
     add_pop!(m, "preexisting"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
     save_pop_map!(m, img)
 
-    # gating already present at first capture → baseline seeded, NOT reported (no retro dump)
-    @test capture_context!(proj) === nothing
+    # gating already present at first capture → baseline seeded, NOT reported (no retro dump).
+    # Both captures on ONE date: a new day re-seeds the baseline.
+    day = Dates.today()
+    @test capture_context!(proj; date=day) === nothing
     @test isempty(parse_lab_log(read_lab_log(proj)))
 
     # a subsequent addition IS reported
     m2 = load_pop_map(img; value_name="default", pop_type="flow")
     add_pop!(m2, "newpop"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
     save_pop_map!(m2, img)
-    b = capture_context!(proj)
+    b = capture_context!(proj; date=day)
     @test b !== nothing && occursin("added: newpop", b)
 
     rm(proj.root; recursive=true)
