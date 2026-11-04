@@ -19,7 +19,7 @@ def _n_channels(arr, channel_axis):
     return 1 if channel_axis is None else int(arr.shape[channel_axis])
 
 
-def channel_histograms(arr, channel_axis, channels=None, steps=None):
+def channel_histograms(arr, channel_axis, channels=None, steps=None, on_plane=None):
     """
     One integer histogram per channel over the whole stack (all axes except `channel_axis`).
 
@@ -36,6 +36,10 @@ def channel_histograms(arr, channel_axis, channels=None, steps=None):
 
     `steps`: optional `{axis: stride}` over the leading (non-Y/X) axes — e.g. `{t_idx: 4}` reads every
     fourth timepoint. Striding here, rather than slicing `arr` first, keeps a zarr level unread.
+
+    `on_plane`: optional `on_plane(c, ix, plane_hist)`, called with each plane's own histogram before it
+    is summed — `ix` indexes the leading non-channel axes in order. Per-plane numbers (`PlaneProfile`)
+    come out of the same pass at no extra read.
     """
     if not np.issubdtype(arr.dtype, np.integer):
         raise ValueError(f"channel_histograms requires an integer dtype, got {arr.dtype}")
@@ -52,9 +56,80 @@ def channel_histograms(arr, channel_axis, channels=None, steps=None):
                 sl[channel_axis] = c
             for i, v in zip(lead, ix):
                 sl[i] = v
-            hist += np.bincount(np.asarray(arr[tuple(sl)]).ravel(), minlength=nbins)[:nbins]
+            plane = np.bincount(np.asarray(arr[tuple(sl)]).ravel(), minlength=nbins)[:nbins]
+            hist += plane
+            if on_plane is not None:
+                on_plane(c, ix, plane)
         hists.append(hist)
     return hists
+
+
+def stack_axis_indices(ngff_axes, ndim, fallback):
+    """`{'C': i|None, 'T': i|None, 'Z': i|None}` for a store's level array.
+
+    From the store's own NGFF axis names (`zarr_utils.read_axes`) when they cover every dimension —
+    they describe the array as written. `fallback` (a dict of the same shape, e.g. from `DimUtils` over
+    the OME-XML) is used only when the store declares no usable axes: an OME-XML `DimensionOrder`
+    other than XYZCT does not describe a bioformats2raw TCZYX store, and trusting it files frames
+    under depths.
+    """
+    if ngff_axes and len(ngff_axes) == ndim:
+        low = [str(a).lower() for a in ngff_axes]
+        return {d: (low.index(d.lower()) if d.lower() in low else None) for d in ('C', 'T', 'Z')}
+    return dict(fallback)
+
+
+class PlaneProfile:
+    """Per-plane intensity numbers, collected through `channel_histograms(on_plane=...)` and summarised
+    by depth (over time) and by time (over depth).
+
+    Per plane: the 50th and 99th percentile, the zero fraction and the voxels at the plane's own top
+    value. `summary(c, top_value)` then counts, per depth / per frame, the voxels at the CHANNEL's
+    ceiling (`saturation_stats`' `topValue`) — where in the stack clipping happened, not just whether.
+    No verdicts: these are the numbers a reader (or a later finding) reasons with.
+    """
+
+    def __init__(self, lead_axes, t_axis=None, z_axis=None):
+        self._t = lead_axes.index(t_axis) if t_axis in lead_axes else None
+        self._z = lead_axes.index(z_axis) if z_axis in lead_axes else None
+        self._rows = {}                       # channel -> list of (t, z, p50, p99, zeroFrac, top, nTop)
+
+    def __call__(self, c, ix, h):
+        total = int(h.sum())
+        nz = np.flatnonzero(h)
+        top = int(nz[-1]) if nz.size else 0
+        occupied = h[:top + 1]          # same percentiles, without summing the empty bins above `top`
+        self._rows.setdefault(c, []).append((
+            ix[self._t] if self._t is not None else 0,
+            ix[self._z] if self._z is not None else 0,
+            hist_percentile(occupied, 50), hist_percentile(occupied, 99), (int(h[0]) / total) if total else 0.0, top, int(h[top]) if nz.size else 0))
+
+    def summary(self, c, top_value):
+        """`{'byZ': {...}, 'byT': {...}}` — per depth / per frame: median p50 and p99, mean zero
+        fraction, and the count of voxels at the channel ceiling `top_value` (0 where the plane's top is
+        below it, and everywhere when `top_value` is None — pass `profile_ceiling(stats)`, which is
+        None unless the channel clipped). Lists are indexed by z / t position."""
+        rows = self._rows.get(c, [])
+        def group(key):
+            out = {}
+            for r in rows:
+                out.setdefault(r[key], []).append(r)
+            keys = sorted(out)
+            g = [out[k] for k in keys]
+            return {
+                'p50':      [float(np.median([r[2] for r in rs])) for rs in g],
+                'p99':      [float(np.median([r[3] for r in rs])) for rs in g],
+                'zeroFrac': [round(float(np.mean([r[4] for r in rs])), 4) for rs in g],
+                'clipped':  [int(sum(r[6] for r in rs if top_value and r[5] == top_value)) for rs in g],
+            }
+        return {'byZ': group(1), 'byT': group(0)}
+
+
+def profile_ceiling(stats):
+    """The value `PlaneProfile.summary` should count as clipped: the channel's `topValue` when
+    `saturation_stats` judged it clipped, else None. A channel's brightest value is only a ceiling
+    when voxels piled up there; otherwise it is just the brightest signal."""
+    return stats['topValue'] if stats.get('saturated') else None
 
 
 def hist_percentile(hist, pct):
