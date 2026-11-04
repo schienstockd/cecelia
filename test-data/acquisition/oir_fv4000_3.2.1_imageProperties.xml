@@ -1,0 +1,1934 @@
+<?xml version="1.0" encoding="ASCII"?>
+<lsmimage:imageProperties xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:base="http://www.olympus.co.jp/hpf/model/base" xmlns:commonimage="http://www.olympus.co.jp/hpf/model/commonimage" xmlns:commonparam="http://www.olympus.co.jp/hpf/model/commonparam" xmlns:commonphase="http://www.olympus.co.jp/hpf/model/commonphase" xmlns:dye="http://www.olympus.co.jp/hpf/model/dye" xmlns:fvBi="http://www.olympus.co.jp/fluoview/model/fv_bi" xmlns:fvCommonimage="http://www.olympus.co.jp/fluoview/model/fv_commonimage" xmlns:fvCommonparam="http://www.olympus.co.jp/fluoview/model/fv_commonparam" xmlns:fvCommonphase="http://www.olympus.co.jp/fluoview/model/fv_commonphase" xmlns:fvLsmimage="http://www.olympus.co.jp/fluoview/model/fv_lsmimage" xmlns:fvLsmparam="http://www.olympus.co.jp/fluoview/model/fv_lsmparam" xmlns:lsmimage="http://www.olympus.co.jp/hpf/model/lsmimage" xmlns:lsmparam="http://www.olympus.co.jp/hpf/model/lsmparam" xmlns:opticalelement="http://www.olympus.co.jp/hpf/model/opticalelement" xmlns:roi="http://www.olympus.co.jp/hpf/model/roi" xmlns:root="http://www.olympus.co.jp/hpf/model/root" version="1.1.0.0">
+  <commonimage:general>
+    <base:creationDateTime>2026-07-16T13:44:05.228+10:00</base:creationDateTime>
+    <base:sampleName></base:sampleName>
+    <base:tags></base:tags>
+  </commonimage:general>
+  <commonimage:system>
+    <base:systemName>FV4000</base:systemName>
+    <base:systemVersion>3.2.1.85</base:systemVersion>
+    <base:deviceName>LSM</base:deviceName>
+  </commonimage:system>
+  <commonimage:microscope>
+    <base:name>BX63LF</base:name>
+  </commonimage:microscope>
+  <commonimage:processing>
+    <commonimage:region/>
+  </commonimage:processing>
+  <commonimage:lsm>
+    <commonimage:laser>
+      <commonimage:name>MaiTai e HP DS-OL</commonimage:name>
+      <commonimage:id>MaiTai e HP DS-OL_196864</commonimage:id>
+    </commonimage:laser>
+    <commonimage:laser>
+      <commonimage:name>INSIGHT X3-OL</commonimage:name>
+      <commonimage:id>INSIGHT X3-OL_131328</commonimage:id>
+    </commonimage:laser>
+  </commonimage:lsm>
+  <commonimage:imageInfo>
+    <commonimage:phase id="3a0edb32-adea-4da4-96ba-72acbda2b804" name="Phase 1">
+      <commonphase:group id="917e3c1b-3d45-46b5-9023-38a25bc38737" name="Group 1">
+        <commonphase:channel id="7a0605e9-2826-4c42-a02d-32ab5b8930b1" order="1">
+          <root:productData xsi:type="fvCommonphase:FvChannelInfo">
+            <fvCommonphase:pinholeDiameter>50.0</fvCommonphase:pinholeDiameter>
+            <fvCommonphase:filterName>BA410-455</fvCommonphase:filterName>
+          </root:productData>
+          <commonphase:name>CH1</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:imageDefinition>
+            <commonphase:depth>2</commonphase:depth>
+            <commonphase:bitCounts>16</commonphase:bitCounts>
+            <commonphase:colorType>GlayScale</commonphase:colorType>
+            <commonphase:imageType>INTENSITY</commonphase:imageType>
+          </commonphase:imageDefinition>
+          <commonphase:laserDataId>MaiTai e HP DS-OL_196864Imaging_main_phase_1</commonphase:laserDataId>
+        </commonphase:channel>
+        <commonphase:channel id="7b8efd46-6b14-4f84-88b5-8a61802400c9" order="2">
+          <root:productData xsi:type="fvCommonphase:FvChannelInfo">
+            <fvCommonphase:pinholeDiameter>50.0</fvCommonphase:pinholeDiameter>
+            <fvCommonphase:filterName>BA495-540</fvCommonphase:filterName>
+          </root:productData>
+          <commonphase:name>CH2</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:imageDefinition>
+            <commonphase:depth>2</commonphase:depth>
+            <commonphase:bitCounts>16</commonphase:bitCounts>
+            <commonphase:colorType>GlayScale</commonphase:colorType>
+            <commonphase:imageType>INTENSITY</commonphase:imageType>
+          </commonphase:imageDefinition>
+          <commonphase:laserDataId>MaiTai e HP DS-OL_196864Imaging_main_phase_1</commonphase:laserDataId>
+        </commonphase:channel>
+      </commonphase:group>
+      <commonphase:group id="2777fc96-7d91-444f-bab0-a8b7a387b50b" name="Group 2">
+        <commonphase:channel id="bb8d4d5d-5dad-43bd-b536-39ab647b597b" order="3">
+          <root:productData xsi:type="fvCommonphase:FvChannelInfo">
+            <fvCommonphase:pinholeDiameter>50.0</fvCommonphase:pinholeDiameter>
+            <fvCommonphase:filterName>ET585/40M</fvCommonphase:filterName>
+          </root:productData>
+          <commonphase:name>CH3</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:imageDefinition>
+            <commonphase:depth>2</commonphase:depth>
+            <commonphase:bitCounts>16</commonphase:bitCounts>
+            <commonphase:colorType>GlayScale</commonphase:colorType>
+            <commonphase:imageType>INTENSITY</commonphase:imageType>
+          </commonphase:imageDefinition>
+          <commonphase:laserDataId>INSIGHT X3-OL_131328Imaging_main_phase_1</commonphase:laserDataId>
+        </commonphase:channel>
+        <commonphase:channel id="f87dad19-fef9-4b41-8806-22dd152d2fab" order="4">
+          <root:productData xsi:type="fvCommonphase:FvChannelInfo">
+            <fvCommonphase:pinholeDiameter>50.0</fvCommonphase:pinholeDiameter>
+            <fvCommonphase:filterName>ET720/60M</fvCommonphase:filterName>
+          </root:productData>
+          <commonphase:name>CH4</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:imageDefinition>
+            <commonphase:depth>2</commonphase:depth>
+            <commonphase:bitCounts>16</commonphase:bitCounts>
+            <commonphase:colorType>GlayScale</commonphase:colorType>
+            <commonphase:imageType>INTENSITY</commonphase:imageType>
+          </commonphase:imageDefinition>
+          <commonphase:laserDataId>INSIGHT X3-OL_131328Imaging_main_phase_1</commonphase:laserDataId>
+        </commonphase:channel>
+      </commonphase:group>
+    </commonimage:phase>
+    <commonimage:region xsi:type="roi:LSMImagingROI" id="-1">
+      <roi:roiType>BackgroundROI</roi:roiType>
+      <roi:transmissivity>0</roi:transmissivity>
+    </commonimage:region>
+    <commonimage:width>1024</commonimage:width>
+    <commonimage:height>1024</commonimage:height>
+  </commonimage:imageInfo>
+  <commonimage:acquisition xsi:type="lsmimage:LSMAcquisition" embedSaturationInfo="false">
+    <root:productData xsi:type="fvLsmimage:FvLsmAcquisition">
+      <fvCommonimage:stimulationParam mode="REPEAT">
+        <root:productData xsi:type="fvCommonparam:FvLSMStimulationParam">
+          <fvCommonparam:referencePhaseId>3a0edb32-adea-4da4-96ba-72acbda2b804</fvCommonparam:referencePhaseId>
+          <fvCommonparam:pmtProtection>true</fvCommonparam:pmtProtection>
+        </root:productData>
+        <commonparam:region>
+          <roi:ROI xsi:type="roi:LSMStimulationROI" id="-2">
+            <roi:roiType>BackgroundROI</roi:roiType>
+            <roi:transmissivity>0</roi:transmissivity>
+          </roi:ROI>
+        </commonparam:region>
+        <commonparam:scanUnitType>Main</commonparam:scanUnitType>
+        <commonparam:mainLaser xsi:type="commonparam:MPELaserParam" laserDataId="MaiTai e HP DS-OL_196864Stimulating_main">
+          <commonparam:power>100.0</commonparam:power>
+          <commonparam:transmissivity>0.0</commonparam:transmissivity>
+          <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+          <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+            <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+          </commonparam:productData>
+          <commonparam:alignment>
+            <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+            <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+            <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+            <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+            <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+            <commonparam:shiftXPosition>8953</commonparam:shiftXPosition>
+            <commonparam:shiftYPosition>9238</commonparam:shiftYPosition>
+            <commonparam:tiltXPosition>17276</commonparam:tiltXPosition>
+            <commonparam:tiltYPosition>17925</commonparam:tiltYPosition>
+          </commonparam:alignment>
+        </commonparam:mainLaser>
+        <commonparam:mainLaser xsi:type="commonparam:MPELaserParam" laserDataId="INSIGHT X3-OL_131328Stimulating_main">
+          <commonparam:power>100.0</commonparam:power>
+          <commonparam:transmissivity>0.0</commonparam:transmissivity>
+          <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+          <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+            <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+          </commonparam:productData>
+          <commonparam:alignment>
+            <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+            <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+            <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+            <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+            <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+            <commonparam:shiftXPosition>8715</commonparam:shiftXPosition>
+            <commonparam:shiftYPosition>8061</commonparam:shiftYPosition>
+            <commonparam:tiltXPosition>17360</commonparam:tiltXPosition>
+            <commonparam:tiltYPosition>17755</commonparam:tiltYPosition>
+          </commonparam:alignment>
+        </commonparam:mainLaser>
+        <commonparam:speed>
+          <commonparam:speed>2.0</commonparam:speed>
+          <commonparam:roundtrip>false</commonparam:roundtrip>
+          <commonparam:speedInformation>
+            <commonparam:pixelSpeed>0.002</commonparam:pixelSpeed>
+            <commonparam:lineSpeed>3.138</commonparam:lineSpeed>
+            <commonparam:frameSpeed>3216.45</commonparam:frameSpeed>
+          </commonparam:speedInformation>
+        </commonparam:speed>
+        <commonparam:activation>
+          <commonparam:repeatCount>2</commonparam:repeatCount>
+        </commonparam:activation>
+      </fvCommonimage:stimulationParam>
+      <fvLsmimage:lsmMicroscopePhase id="LSM">
+        <fvCommonimage:lightpath>
+          <fvCommonimage:firstMirrorCube id="DM760__ID__1" special="false">
+            <opticalelement:name>DM760</opticalelement:name>
+            <opticalelement:displayName>DM760</opticalelement:displayName>
+            <opticalelement:productName>U-FF</opticalelement:productName>
+          </fvCommonimage:firstMirrorCube>
+          <fvCommonimage:secondMirrorCube id="MIRROR__ID__0" special="false">
+            <opticalelement:name>MIRROR</opticalelement:name>
+            <opticalelement:displayName>MIRROR</opticalelement:displayName>
+            <opticalelement:productName>MIRROR</opticalelement:productName>
+          </fvCommonimage:secondMirrorCube>
+          <fvCommonimage:diaLampState>Off</fvCommonimage:diaLampState>
+          <fvCommonimage:diaLampValue>0.0</fvCommonimage:diaLampValue>
+          <fvCommonimage:epiLampState>Off</fvCommonimage:epiLampState>
+          <fvCommonimage:epiLampValue>10</fvCommonimage:epiLampValue>
+          <fvCommonimage:dicPrismState>In</fvCommonimage:dicPrismState>
+          <fvCommonimage:dicPrismContrast>0</fvCommonimage:dicPrismContrast>
+          <fvCommonimage:epiShutterState>Close</fvCommonimage:epiShutterState>
+          <fvCommonimage:diaShutterState>Close</fvCommonimage:diaShutterState>
+        </fvCommonimage:lightpath>
+      </fvLsmimage:lsmMicroscopePhase>
+      <fvLsmimage:biProperties>
+        <fvBi:epi id="BI_EPI" name="BI_EPI">
+          <fvCommonimage:lightpath>
+            <fvCommonimage:firstMirrorCube xsi:type="opticalelement:EmptyMirrorCube" id="Empty__ID__0" special="false">
+              <opticalelement:name>Empty</opticalelement:name>
+              <opticalelement:displayName>Empty</opticalelement:displayName>
+              <opticalelement:productName>None</opticalelement:productName>
+              <opticalelement:excitationFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__" special="false">
+                <opticalelement:name>Empty</opticalelement:name>
+              </opticalelement:excitationFilter>
+              <opticalelement:dichroicMirror xsi:type="opticalelement:EmptyFilter" id="Empty__ID__" special="false">
+                <opticalelement:name>Empty</opticalelement:name>
+              </opticalelement:dichroicMirror>
+              <opticalelement:emissionFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__" special="false">
+                <opticalelement:name>Empty</opticalelement:name>
+              </opticalelement:emissionFilter>
+            </fvCommonimage:firstMirrorCube>
+            <fvCommonimage:secondMirrorCube id="IX3-FGFPXL__ID__3" special="false">
+              <opticalelement:name>IX3-FGFPXL</opticalelement:name>
+              <opticalelement:displayName>IX3-FGFPXL</opticalelement:displayName>
+              <opticalelement:productName>IX3-FGFPXL</opticalelement:productName>
+            </fvCommonimage:secondMirrorCube>
+            <fvCommonimage:diaLampState>Off</fvCommonimage:diaLampState>
+            <fvCommonimage:diaLampValue>0.0</fvCommonimage:diaLampValue>
+            <fvCommonimage:epiLampState>Off</fvCommonimage:epiLampState>
+            <fvCommonimage:epiLampValue>10</fvCommonimage:epiLampValue>
+            <fvCommonimage:poralizerState>In</fvCommonimage:poralizerState>
+            <fvCommonimage:dicPrismState>In</fvCommonimage:dicPrismState>
+            <fvCommonimage:dicPrismContrast>0</fvCommonimage:dicPrismContrast>
+            <fvCommonimage:epiShutterState>Open</fvCommonimage:epiShutterState>
+            <fvCommonimage:diaShutterState>Close</fvCommonimage:diaShutterState>
+          </fvCommonimage:lightpath>
+        </fvBi:epi>
+        <fvBi:dia id="BI_DIA" name="BI_DIA">
+          <fvCommonimage:lightpath>
+            <fvCommonimage:firstMirrorCube xsi:type="opticalelement:EmptyMirrorCube" id="Empty__ID__0" special="false">
+              <opticalelement:name>Empty</opticalelement:name>
+              <opticalelement:displayName>Empty</opticalelement:displayName>
+              <opticalelement:productName>None</opticalelement:productName>
+              <opticalelement:excitationFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__" special="false">
+                <opticalelement:name>Empty</opticalelement:name>
+              </opticalelement:excitationFilter>
+              <opticalelement:dichroicMirror xsi:type="opticalelement:EmptyFilter" id="Empty__ID__" special="false">
+                <opticalelement:name>Empty</opticalelement:name>
+              </opticalelement:dichroicMirror>
+              <opticalelement:emissionFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__" special="false">
+                <opticalelement:name>Empty</opticalelement:name>
+              </opticalelement:emissionFilter>
+            </fvCommonimage:firstMirrorCube>
+            <fvCommonimage:secondMirrorCube id="IX3-FGFPXL__ID__3" special="false">
+              <opticalelement:name>IX3-FGFPXL</opticalelement:name>
+              <opticalelement:displayName>IX3-FGFPXL</opticalelement:displayName>
+              <opticalelement:productName>IX3-FGFPXL</opticalelement:productName>
+            </fvCommonimage:secondMirrorCube>
+            <fvCommonimage:diaLampState>Off</fvCommonimage:diaLampState>
+            <fvCommonimage:diaLampValue>4.2</fvCommonimage:diaLampValue>
+            <fvCommonimage:epiLampState>Off</fvCommonimage:epiLampState>
+            <fvCommonimage:epiLampValue>10</fvCommonimage:epiLampValue>
+            <fvCommonimage:poralizerState>In</fvCommonimage:poralizerState>
+            <fvCommonimage:dicPrismState>In</fvCommonimage:dicPrismState>
+            <fvCommonimage:dicPrismContrast>0</fvCommonimage:dicPrismContrast>
+            <fvCommonimage:epiShutterState>Open</fvCommonimage:epiShutterState>
+            <fvCommonimage:diaShutterState>Close</fvCommonimage:diaShutterState>
+          </fvCommonimage:lightpath>
+        </fvBi:dia>
+        <fvBi:activePhaseId>BI_DIA</fvBi:activePhaseId>
+      </fvLsmimage:biProperties>
+    </root:productData>
+    <commonimage:microscopeConfiguration>
+      <root:productData xsi:type="fvCommonimage:FvMicroscopeConfiguration">
+        <fvCommonimage:condenser xsi:type="opticalelement:EmptyCondenser" id="Empty__ID__0" special="false">
+          <opticalelement:name>None</opticalelement:name>
+          <opticalelement:displayName>Empty</opticalelement:displayName>
+        </fvCommonimage:condenser>
+        <fvCommonimage:lightpathPrismState>Camera</fvCommonimage:lightpathPrismState>
+        <fvCommonimage:fs>150</fvCommonimage:fs>
+        <fvCommonimage:fsFullOpen>true</fvCommonimage:fsFullOpen>
+        <fvCommonimage:observation>LSM</fvCommonimage:observation>
+      </root:productData>
+      <commonimage:objectiveLens id="XLPLN25XWMP2__ID__0" special="false">
+        <opticalelement:name>XLPLN25XWMP2</opticalelement:name>
+        <opticalelement:displayName>XLPLN25XWM</opticalelement:displayName>
+        <opticalelement:magnification>25.0</opticalelement:magnification>
+        <opticalelement:naValue>1.05</opticalelement:naValue>
+        <opticalelement:wdValue>2.0</opticalelement:wdValue>
+        <opticalelement:immersion>WATER</opticalelement:immersion>
+        <opticalelement:refraction>1.334</opticalelement:refraction>
+        <opticalelement:afOneShot>false</opticalelement:afOneShot>
+        <opticalelement:afContinuous>false</opticalelement:afContinuous>
+        <opticalelement:afOneShotForPlastic>false</opticalelement:afOneShotForPlastic>
+        <opticalelement:afContinuousForPlastic>false</opticalelement:afContinuousForPlastic>
+      </commonimage:objectiveLens>
+      <commonimage:zPosition>
+        <commonparam:zStagePosition>6509.95</commonparam:zStagePosition>
+      </commonimage:zPosition>
+      <commonimage:pixelCalibration>
+        <commonparam:x>1.0</commonparam:x>
+        <commonparam:y>1.0</commonparam:y>
+        <commonparam:z>1.0</commonparam:z>
+      </commonimage:pixelCalibration>
+      <commonimage:userPixelCalibration>
+        <commonparam:x>1.0</commonparam:x>
+        <commonparam:y>1.0</commonparam:y>
+        <commonparam:z>1.0</commonparam:z>
+      </commonimage:userPixelCalibration>
+      <commonimage:correctionCollarPosition>0.0</commonimage:correctionCollarPosition>
+    </commonimage:microscopeConfiguration>
+    <commonimage:imagingParam xsi:type="lsmparam:LSMImagingParam">
+      <root:productData xsi:type="fvLsmparam:FvLsmImagingParam">
+        <fvCommonparam:synchronizationParam>
+          <fvCommonparam:baseMethod>LSM_IMAGING</fvCommonparam:baseMethod>
+          <fvCommonparam:restInStimulation>false</fvCommonparam:restInStimulation>
+          <fvCommonparam:synchronizedAcquisitionParamList xsi:type="fvCommonparam:ImagingSynchronizedAcquisitionParam">
+            <fvCommonparam:type>LSM_IMAGING</fvCommonparam:type>
+            <fvCommonparam:syncWaitTime/>
+            <fvCommonparam:enabled>true</fvCommonparam:enabled>
+            <fvCommonparam:preFrameCount>1</fvCommonparam:preFrameCount>
+            <fvCommonparam:imagingFrameCount>5610</fvCommonparam:imagingFrameCount>
+            <fvCommonparam:restTime>0.0</fvCommonparam:restTime>
+          </fvCommonparam:synchronizedAcquisitionParamList>
+          <fvCommonparam:synchronizedAcquisitionParamList xsi:type="fvCommonparam:StimulationSynchronizedAcquisitionParam">
+            <fvCommonparam:type>LSM_STIMULATION</fvCommonparam:type>
+            <fvCommonparam:syncWaitTime>
+              <commonparam:frame>1</commonparam:frame>
+            </fvCommonparam:syncWaitTime>
+            <fvCommonparam:enabled>true</fvCommonparam:enabled>
+            <fvCommonparam:stimulationFrameCount>2</fvCommonparam:stimulationFrameCount>
+          </fvCommonparam:synchronizedAcquisitionParamList>
+        </fvCommonparam:synchronizationParam>
+        <fvLsmparam:interlace>
+          <fvLsmparam:enabled>false</fvLsmparam:enabled>
+          <fvLsmparam:number>1</fvLsmparam:number>
+        </fvLsmparam:interlace>
+        <fvLsmparam:integration>
+          <fvLsmparam:averageKalmanCount>5</fvLsmparam:averageKalmanCount>
+          <fvLsmparam:accumulateKalmanCount>2</fvLsmparam:accumulateKalmanCount>
+        </fvLsmparam:integration>
+        <fvLsmparam:truSight>
+          <fvLsmparam:enabled>false</fvLsmparam:enabled>
+          <fvLsmparam:highResolution>false</fvLsmparam:highResolution>
+        </fvLsmparam:truSight>
+        <fvLsmparam:lpmParam>
+          <fvLsmparam:enableLaserPowerCalibration>false</fvLsmparam:enableLaserPowerCalibration>
+          <fvLsmparam:isAutoCalibration>true</fvLsmparam:isAutoCalibration>
+        </fvLsmparam:lpmParam>
+        <fvLsmparam:lUTSettingsParam>
+          <fvLsmparam:dynamicRangeParam>
+            <fvLsmparam:maxPhoton>8</fvLsmparam:maxPhoton>
+            <fvLsmparam:maxPhoton>32</fvLsmparam:maxPhoton>
+            <fvLsmparam:maxPhoton>128</fvLsmparam:maxPhoton>
+          </fvLsmparam:dynamicRangeParam>
+        </fvLsmparam:lUTSettingsParam>
+      </root:productData>
+      <commonparam:region>
+        <roi:ROI xsi:type="roi:LSMImagingROI" id="-1">
+          <roi:roiType>BackgroundROI</roi:roiType>
+          <roi:transmissivity>0</roi:transmissivity>
+        </roi:ROI>
+      </commonparam:region>
+      <commonparam:axis xsi:type="commonparam:ZAxisParam" enable="true" lockStep="false" paramEnable="true">
+        <commonparam:axis>ZSTACK</commonparam:axis>
+        <commonparam:startPosition>6509.95</commonparam:startPosition>
+        <commonparam:endPosition>6569.95</commonparam:endPosition>
+        <commonparam:step>2.0</commonparam:step>
+        <commonparam:maxSize>31</commonparam:maxSize>
+        <commonparam:paramName>Start End</commonparam:paramName>
+        <commonparam:basePosition>6509.95</commonparam:basePosition>
+      </commonparam:axis>
+      <commonparam:axis xsi:type="commonparam:ZAxisParam" enable="true" lockStep="false" paramEnable="false">
+        <commonparam:axis>ZSTACK</commonparam:axis>
+        <commonparam:startPosition>200.0</commonparam:startPosition>
+        <commonparam:endPosition>220.0</commonparam:endPosition>
+        <commonparam:step>1.0</commonparam:step>
+        <commonparam:maxSize>21</commonparam:maxSize>
+        <commonparam:paramName>Range</commonparam:paramName>
+        <commonparam:basePosition>210.0</commonparam:basePosition>
+      </commonparam:axis>
+      <commonparam:axis enable="true" lockStep="false">
+        <commonparam:axis>TIMELAPSE</commonparam:axis>
+        <commonparam:startPosition>0.0</commonparam:startPosition>
+        <commonparam:endPosition>2715.0</commonparam:endPosition>
+        <commonparam:step>15.0</commonparam:step>
+        <commonparam:maxSize>181</commonparam:maxSize>
+      </commonparam:axis>
+      <commonparam:axis enable="false" lockStep="false">
+        <commonparam:axis>LAMBDA</commonparam:axis>
+        <commonparam:startPosition>0.0</commonparam:startPosition>
+        <commonparam:endPosition>0.0</commonparam:endPosition>
+        <commonparam:step>0.0</commonparam:step>
+        <commonparam:maxSize>0</commonparam:maxSize>
+      </commonparam:axis>
+      <commonparam:zDriveUnitType>Motor</commonparam:zDriveUnitType>
+      <lsmparam:mainLaser xsi:type="commonparam:MPELaserParam" laserDataId="MaiTai e HP DS-OL_196864Imaging_main_phase_1">
+        <commonparam:power>100.0</commonparam:power>
+        <commonparam:transmissivity>14.4</commonparam:transmissivity>
+        <commonparam:optionalTransmissivity>14.4</commonparam:optionalTransmissivity>
+        <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+          <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+          <fvLsmparam:powerFeedbackValue>0.0</fvLsmparam:powerFeedbackValue>
+        </commonparam:productData>
+        <commonparam:alignment>
+          <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+          <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+          <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+          <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+          <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+          <commonparam:shiftXPosition>8953</commonparam:shiftXPosition>
+          <commonparam:shiftYPosition>9238</commonparam:shiftYPosition>
+          <commonparam:tiltXPosition>17276</commonparam:tiltXPosition>
+          <commonparam:tiltYPosition>17925</commonparam:tiltYPosition>
+        </commonparam:alignment>
+      </lsmparam:mainLaser>
+      <lsmparam:mainLaser xsi:type="commonparam:MPELaserParam" laserDataId="INSIGHT X3-OL_131328Imaging_main_phase_1">
+        <commonparam:power>100.0</commonparam:power>
+        <commonparam:transmissivity>14.9</commonparam:transmissivity>
+        <commonparam:optionalTransmissivity>14.9</commonparam:optionalTransmissivity>
+        <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+          <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+          <fvLsmparam:powerFeedbackValue>0.0</fvLsmparam:powerFeedbackValue>
+        </commonparam:productData>
+        <commonparam:alignment>
+          <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+          <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+          <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+          <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+          <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+          <commonparam:shiftXPosition>8715</commonparam:shiftXPosition>
+          <commonparam:shiftYPosition>8061</commonparam:shiftYPosition>
+          <commonparam:tiltXPosition>17360</commonparam:tiltXPosition>
+          <commonparam:tiltYPosition>17755</commonparam:tiltYPosition>
+        </commonparam:alignment>
+      </lsmparam:mainLaser>
+      <lsmparam:area>
+        <lsmparam:xpan>0.0</lsmparam:xpan>
+        <lsmparam:ypan>0.0</lsmparam:ypan>
+        <lsmparam:rotation>0.0</lsmparam:rotation>
+        <lsmparam:zoom>1.5</lsmparam:zoom>
+      </lsmparam:area>
+      <lsmparam:pmt channelId="7a0605e9-2826-4c42-a02d-32ab5b8930b1" detectorId="__FV40-EXBSD_D_1__">
+        <lsmparam:voltage>0</lsmparam:voltage>
+        <lsmparam:offset>0</lsmparam:offset>
+        <lsmparam:gain>1.0</lsmparam:gain>
+      </lsmparam:pmt>
+      <lsmparam:pmt channelId="7b8efd46-6b14-4f84-88b5-8a61802400c9" detectorId="__FV40-EXBSD_D_2__">
+        <lsmparam:voltage>0</lsmparam:voltage>
+        <lsmparam:offset>0</lsmparam:offset>
+        <lsmparam:gain>1.0</lsmparam:gain>
+      </lsmparam:pmt>
+      <lsmparam:pmt channelId="bb8d4d5d-5dad-43bd-b536-39ab647b597b" detectorId="__FV40-EXRSD_D_3__">
+        <lsmparam:voltage>0</lsmparam:voltage>
+        <lsmparam:offset>0</lsmparam:offset>
+        <lsmparam:gain>1.0</lsmparam:gain>
+      </lsmparam:pmt>
+      <lsmparam:pmt channelId="f87dad19-fef9-4b41-8806-22dd152d2fab" detectorId="__FV40-EXRSD_D_4__">
+        <lsmparam:voltage>0</lsmparam:voltage>
+        <lsmparam:offset>0</lsmparam:offset>
+        <lsmparam:gain>1.0</lsmparam:gain>
+      </lsmparam:pmt>
+      <lsmparam:method>
+        <lsmparam:sequentialType>Line</lsmparam:sequentialType>
+        <lsmparam:integration average="false">
+          <commonparam:type>Frame</commonparam:type>
+          <commonparam:count>2</commonparam:count>
+        </lsmparam:integration>
+      </lsmparam:method>
+      <lsmparam:pmtCommon>
+        <lsmparam:autoHV>true</lsmparam:autoHV>
+      </lsmparam:pmtCommon>
+      <lsmparam:brightnessAdjustmentParam>
+        <lsmparam:enable>true</lsmparam:enable>
+        <lsmparam:phaseBrightnessAdjustment phaseId="3a0edb32-adea-4da4-96ba-72acbda2b804" zDriveUnitType="Motor">
+          <lsmparam:zBrightnessAdjustment>
+            <lsmparam:id>93722647-62e1-4cfe-a17d-1ab20391afa0</lsmparam:id>
+            <lsmparam:relativeCoordinate>0.0</lsmparam:relativeCoordinate>
+            <lsmparam:pmtParam channelId="7a0605e9-2826-4c42-a02d-32ab5b8930b1" detectorId="__FV40-EXBSD_D_1__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:pmtParam channelId="7b8efd46-6b14-4f84-88b5-8a61802400c9" detectorId="__FV40-EXBSD_D_2__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:pmtParam channelId="bb8d4d5d-5dad-43bd-b536-39ab647b597b" detectorId="__FV40-EXRSD_D_3__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:pmtParam channelId="f87dad19-fef9-4b41-8806-22dd152d2fab" detectorId="__FV40-EXRSD_D_4__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:laserParam xsi:type="commonparam:MPELaserParam" laserDataId="MaiTai e HP DS-OL_196864Imaging_main_phase_1">
+              <commonparam:power>100.0</commonparam:power>
+              <commonparam:transmissivity>14.4</commonparam:transmissivity>
+              <commonparam:optionalTransmissivity>14.4</commonparam:optionalTransmissivity>
+              <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+                <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+                <fvLsmparam:powerFeedbackValue>0.0</fvLsmparam:powerFeedbackValue>
+              </commonparam:productData>
+              <commonparam:alignment>
+                <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+                <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+                <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+                <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+                <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+                <commonparam:shiftXPosition>8953</commonparam:shiftXPosition>
+                <commonparam:shiftYPosition>9238</commonparam:shiftYPosition>
+                <commonparam:tiltXPosition>17276</commonparam:tiltXPosition>
+                <commonparam:tiltYPosition>17925</commonparam:tiltYPosition>
+              </commonparam:alignment>
+            </lsmparam:laserParam>
+            <lsmparam:laserParam xsi:type="commonparam:MPELaserParam" laserDataId="INSIGHT X3-OL_131328Imaging_main_phase_1">
+              <commonparam:power>100.0</commonparam:power>
+              <commonparam:transmissivity>14.9</commonparam:transmissivity>
+              <commonparam:optionalTransmissivity>14.9</commonparam:optionalTransmissivity>
+              <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+                <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+                <fvLsmparam:powerFeedbackValue>0.0</fvLsmparam:powerFeedbackValue>
+              </commonparam:productData>
+              <commonparam:alignment>
+                <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+                <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+                <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+                <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+                <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+                <commonparam:shiftXPosition>8715</commonparam:shiftXPosition>
+                <commonparam:shiftYPosition>8061</commonparam:shiftYPosition>
+                <commonparam:tiltXPosition>17360</commonparam:tiltXPosition>
+                <commonparam:tiltYPosition>17755</commonparam:tiltYPosition>
+              </commonparam:alignment>
+            </lsmparam:laserParam>
+          </lsmparam:zBrightnessAdjustment>
+          <lsmparam:zBrightnessAdjustment>
+            <lsmparam:id>1b63f6a9-b6c1-485b-ae6d-7f56f38af45c</lsmparam:id>
+            <lsmparam:relativeCoordinate>60.0</lsmparam:relativeCoordinate>
+            <lsmparam:pmtParam channelId="7a0605e9-2826-4c42-a02d-32ab5b8930b1" detectorId="__FV40-EXBSD_D_1__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:pmtParam channelId="7b8efd46-6b14-4f84-88b5-8a61802400c9" detectorId="__FV40-EXBSD_D_2__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:pmtParam channelId="bb8d4d5d-5dad-43bd-b536-39ab647b597b" detectorId="__FV40-EXRSD_D_3__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:pmtParam channelId="f87dad19-fef9-4b41-8806-22dd152d2fab" detectorId="__FV40-EXRSD_D_4__">
+              <lsmparam:voltage>0</lsmparam:voltage>
+              <lsmparam:offset>0</lsmparam:offset>
+              <lsmparam:gain>1.0</lsmparam:gain>
+            </lsmparam:pmtParam>
+            <lsmparam:laserParam xsi:type="commonparam:MPELaserParam" laserDataId="MaiTai e HP DS-OL_196864Imaging_main_phase_1">
+              <commonparam:power>100.0</commonparam:power>
+              <commonparam:transmissivity>21.0</commonparam:transmissivity>
+              <commonparam:optionalTransmissivity>21.0</commonparam:optionalTransmissivity>
+              <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+                <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+                <fvLsmparam:powerFeedbackValue>0.0</fvLsmparam:powerFeedbackValue>
+              </commonparam:productData>
+              <commonparam:alignment>
+                <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+                <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+                <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+                <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+                <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+                <commonparam:shiftXPosition>8953</commonparam:shiftXPosition>
+                <commonparam:shiftYPosition>9238</commonparam:shiftYPosition>
+                <commonparam:tiltXPosition>17276</commonparam:tiltXPosition>
+                <commonparam:tiltYPosition>17925</commonparam:tiltYPosition>
+              </commonparam:alignment>
+            </lsmparam:laserParam>
+            <lsmparam:laserParam xsi:type="commonparam:MPELaserParam" laserDataId="INSIGHT X3-OL_131328Imaging_main_phase_1">
+              <commonparam:power>100.0</commonparam:power>
+              <commonparam:transmissivity>20.4</commonparam:transmissivity>
+              <commonparam:optionalTransmissivity>20.4</commonparam:optionalTransmissivity>
+              <commonparam:productData xsi:type="fvLsmparam:FVLaserParam">
+                <fvLsmparam:baseLaserPower>0</fvLsmparam:baseLaserPower>
+                <fvLsmparam:powerFeedbackValue>0.0</fvLsmparam:powerFeedbackValue>
+              </commonparam:productData>
+              <commonparam:alignment>
+                <commonparam:activeAutoAlignment>false</commonparam:activeAutoAlignment>
+                <commonparam:shiftXOffset>0</commonparam:shiftXOffset>
+                <commonparam:shiftYOffset>0</commonparam:shiftYOffset>
+                <commonparam:tiltXOffset>0</commonparam:tiltXOffset>
+                <commonparam:tiltYOffset>0</commonparam:tiltYOffset>
+                <commonparam:shiftXPosition>8715</commonparam:shiftXPosition>
+                <commonparam:shiftYPosition>8061</commonparam:shiftYPosition>
+                <commonparam:tiltXPosition>17360</commonparam:tiltXPosition>
+                <commonparam:tiltYPosition>17755</commonparam:tiltYPosition>
+              </commonparam:alignment>
+            </lsmparam:laserParam>
+          </lsmparam:zBrightnessAdjustment>
+        </lsmparam:phaseBrightnessAdjustment>
+      </lsmparam:brightnessAdjustmentParam>
+      <lsmparam:correctionCollarAutoAdjustmentParam>
+        <root:productData xsi:type="fvLsmparam:ASACParam">
+          <fvLsmparam:objectiveLensName>XLPLN25XWMP2</fvLsmparam:objectiveLensName>
+          <fvLsmparam:interpolation>Linear</fvLsmparam:interpolation>
+          <fvLsmparam:enablePredictionFunction>false</fvLsmparam:enablePredictionFunction>
+          <fvLsmparam:predictionFunctionParam>
+            <fvLsmparam:coverslipThickness>0.17</fvLsmparam:coverslipThickness>
+            <fvLsmparam:immersionType>DRY</fvLsmparam:immersionType>
+            <fvLsmparam:immersionRefractive>1.0</fvLsmparam:immersionRefractive>
+            <fvLsmparam:specimenRefractive>1.36</fvLsmparam:specimenRefractive>
+          </fvLsmparam:predictionFunctionParam>
+        </root:productData>
+        <lsmparam:compensationZSeries>false</lsmparam:compensationZSeries>
+        <lsmparam:zDriveUnitCorrectionCollarAdjustment>
+          <lsmparam:zDriveUnitType>Motor</lsmparam:zDriveUnitType>
+          <lsmparam:phaseAdjustmentList/>
+        </lsmparam:zDriveUnitCorrectionCollarAdjustment>
+        <lsmparam:zDriveUnitCorrectionCollarAdjustment>
+          <lsmparam:zDriveUnitType>Piezo</lsmparam:zDriveUnitType>
+          <lsmparam:phaseAdjustmentList/>
+        </lsmparam:zDriveUnitCorrectionCollarAdjustment>
+      </lsmparam:correctionCollarAutoAdjustmentParam>
+    </commonimage:imagingParam>
+    <commonimage:phase xsi:type="lsmimage:LSMPhase" id="3a0edb32-adea-4da4-96ba-72acbda2b804">
+      <root:productData xsi:type="fvLsmimage:FvLsmPhase">
+        <fvLsmimage:lightpath>
+          <fvLsmimage:excitationDM xsi:type="opticalelement:Mirror" id="MIRROR__ID__2">
+            <opticalelement:name>MIRROR</opticalelement:name>
+            <opticalelement:reflectWaveRange>
+              <opticalelement:startWavelength>0</opticalelement:startWavelength>
+              <opticalelement:endWavelength>1100</opticalelement:endWavelength>
+            </opticalelement:reflectWaveRange>
+            <opticalelement:transmissivity>0.0</opticalelement:transmissivity>
+          </fvLsmimage:excitationDM>
+          <fvLsmimage:pinholeDiameter>50</fvLsmimage:pinholeDiameter>
+          <fvLsmimage:pinholePosition x="0" y="0"/>
+          <fvLsmimage:dmSlider xsi:type="opticalelement:EmptyFilter" id="Empty__ID__2" special="false">
+            <opticalelement:name>Empty</opticalelement:name>
+          </fvLsmimage:dmSlider>
+          <fvLsmimage:irLaserLightpath>
+            <fvLsmimage:dichroicMirror id="LCDM690-1050__ID__2">
+              <opticalelement:name>LCDM690-1050</opticalelement:name>
+              <opticalelement:transmittedWaveRange>
+                <opticalelement:startWavelength>400</opticalelement:startWavelength>
+                <opticalelement:endWavelength>687</opticalelement:endWavelength>
+              </opticalelement:transmittedWaveRange>
+              <opticalelement:reflectWaveRange>
+                <opticalelement:startWavelength>690</opticalelement:startWavelength>
+                <opticalelement:endWavelength>1050</opticalelement:endWavelength>
+              </opticalelement:reflectWaveRange>
+            </fvLsmimage:dichroicMirror>
+          </fvLsmimage:irLaserLightpath>
+          <fvLsmimage:mainLaserNDFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__0" special="false">
+            <opticalelement:name>Empty</opticalelement:name>
+          </fvLsmimage:mainLaserNDFilter>
+        </fvLsmimage:lightpath>
+        <fvLsmimage:firstMirrorTurretIndex>1</fvLsmimage:firstMirrorTurretIndex>
+        <fvLsmimage:secondMirrorTurretIndex>0</fvLsmimage:secondMirrorTurretIndex>
+      </root:productData>
+      <commonphase:name>Phase 1</commonphase:name>
+      <commonphase:group id="917e3c1b-3d45-46b5-9023-38a25bc38737">
+        <commonphase:name>Group 1</commonphase:name>
+        <commonphase:channel xsi:type="lsmimage:NormalChannel" id="7a0605e9-2826-4c42-a02d-32ab5b8930b1" order="1" enable="true" detectorId="__FV40-EXBSD_D_1__">
+          <root:productData xsi:type="fvCommonphase:FVChannel">
+            <fvCommonphase:backgroundIntensity>0</fvCommonphase:backgroundIntensity>
+            <fvCommonphase:interval>31.9</fvCommonphase:interval>
+            <fvCommonphase:enableDisplayPhoton>false</fvCommonphase:enableDisplayPhoton>
+            <fvCommonphase:histogramDisplayRangeParam>
+              <fvCommonphase:startIntensity>0</fvCommonphase:startIntensity>
+              <fvCommonphase:endIntensity>101</fvCommonphase:endIntensity>
+            </fvCommonphase:histogramDisplayRangeParam>
+          </root:productData>
+          <commonphase:name>CH1</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:deviceName>BNDD1</commonphase:deviceName>
+          <commonphase:bitCount>16</commonphase:bitCount>
+          <lsmimage:dyeName>SHG</lsmimage:dyeName>
+          <lsmimage:dyeId>ECFP_DYE</lsmimage:dyeId>
+          <lsmimage:dyeData applicationVersion="3.2.1.85" platformVersion="3.1.2.11" version="2.3" id="ECFP_DYEDATA">
+            <dye:name>ECFP</dye:name>
+            <dye:shortName>ECFP</dye:shortName>
+            <dye:excitationWavelength>442</dye:excitationWavelength>
+            <dye:emissionWavelength>476</dye:emissionWavelength>
+            <dye:emissionGroupName>C</dye:emissionGroupName>
+            <dye:availableExcitationLaser>445</dye:availableExcitationLaser>
+            <dye:availableExcitationLaser>405</dye:availableExcitationLaser>
+            <dye:availableLaser>445</dye:availableLaser>
+            <dye:availableLaser>405</dye:availableLaser>
+            <dye:emissionSpectrum>
+              <dye:normalizedIntensity value="0.0127211454" waveLength="440"/>
+              <dye:normalizedIntensity value="0.0126914706" waveLength="441"/>
+              <dye:normalizedIntensity value="0.0138573504" waveLength="442"/>
+              <dye:normalizedIntensity value="0.0157408951" waveLength="443"/>
+              <dye:normalizedIntensity value="0.0180590778" waveLength="444"/>
+              <dye:normalizedIntensity value="0.0207244645" waveLength="445"/>
+              <dye:normalizedIntensity value="0.0240621901" waveLength="446"/>
+              <dye:normalizedIntensity value="0.0289492049" waveLength="447"/>
+              <dye:normalizedIntensity value="0.03654069" waveLength="448"/>
+              <dye:normalizedIntensity value="0.0446655258" waveLength="449"/>
+              <dye:normalizedIntensity value="0.054537475" waveLength="450"/>
+              <dye:normalizedIntensity value="0.0665155651" waveLength="451"/>
+              <dye:normalizedIntensity value="0.0805649495" waveLength="452"/>
+              <dye:normalizedIntensity value="0.0971842095" waveLength="453"/>
+              <dye:normalizedIntensity value="0.1171700203" waveLength="454"/>
+              <dye:normalizedIntensity value="0.1396194426" waveLength="455"/>
+              <dye:normalizedIntensity value="0.1680433084" waveLength="456"/>
+              <dye:normalizedIntensity value="0.1998782495" waveLength="457"/>
+              <dye:normalizedIntensity value="0.2403877192" waveLength="458"/>
+              <dye:normalizedIntensity value="0.2863157676" waveLength="459"/>
+              <dye:normalizedIntensity value="0.3342974864" waveLength="460"/>
+              <dye:normalizedIntensity value="0.3851323705" waveLength="461"/>
+              <dye:normalizedIntensity value="0.4401195626" waveLength="462"/>
+              <dye:normalizedIntensity value="0.4987703724" waveLength="463"/>
+              <dye:normalizedIntensity value="0.5582040529" waveLength="464"/>
+              <dye:normalizedIntensity value="0.6200170373" waveLength="465"/>
+              <dye:normalizedIntensity value="0.6832168236" waveLength="466"/>
+              <dye:normalizedIntensity value="0.7400197316" waveLength="467"/>
+              <dye:normalizedIntensity value="0.7951068329" waveLength="468"/>
+              <dye:normalizedIntensity value="0.8429756464" waveLength="469"/>
+              <dye:normalizedIntensity value="0.8850108243" waveLength="470"/>
+              <dye:normalizedIntensity value="0.922000393" waveLength="471"/>
+              <dye:normalizedIntensity value="0.9514283623" waveLength="472"/>
+              <dye:normalizedIntensity value="0.9746817953" waveLength="473"/>
+              <dye:normalizedIntensity value="0.991446089" waveLength="474"/>
+              <dye:normalizedIntensity value="1.0" waveLength="475"/>
+              <dye:normalizedIntensity value="0.9992202261" waveLength="476"/>
+              <dye:normalizedIntensity value="0.9950192961" waveLength="477"/>
+              <dye:normalizedIntensity value="0.9873897587" waveLength="478"/>
+              <dye:normalizedIntensity value="0.9800502069" waveLength="479"/>
+              <dye:normalizedIntensity value="0.9701795439" waveLength="480"/>
+              <dye:normalizedIntensity value="0.9541416915" waveLength="481"/>
+              <dye:normalizedIntensity value="0.9401989704" waveLength="482"/>
+              <dye:normalizedIntensity value="0.9286589711" waveLength="483"/>
+              <dye:normalizedIntensity value="0.9152820495" waveLength="484"/>
+              <dye:normalizedIntensity value="0.9023905311" waveLength="485"/>
+              <dye:normalizedIntensity value="0.8917061706" waveLength="486"/>
+              <dye:normalizedIntensity value="0.8820183298" waveLength="487"/>
+              <dye:normalizedIntensity value="0.8767754854" waveLength="488"/>
+              <dye:normalizedIntensity value="0.8705098235" waveLength="489"/>
+              <dye:normalizedIntensity value="0.86687342" waveLength="490"/>
+              <dye:normalizedIntensity value="0.8644371931" waveLength="491"/>
+              <dye:normalizedIntensity value="0.8659148559" waveLength="492"/>
+              <dye:normalizedIntensity value="0.8767090427" waveLength="493"/>
+              <dye:normalizedIntensity value="0.8880118513" waveLength="494"/>
+              <dye:normalizedIntensity value="0.9006426893" waveLength="495"/>
+              <dye:normalizedIntensity value="0.9106196167" waveLength="496"/>
+              <dye:normalizedIntensity value="0.9194676569" waveLength="497"/>
+              <dye:normalizedIntensity value="0.9325093657" waveLength="498"/>
+              <dye:normalizedIntensity value="0.9450199455" waveLength="499"/>
+              <dye:normalizedIntensity value="0.9519038515" waveLength="500"/>
+              <dye:normalizedIntensity value="0.9541185762" waveLength="501"/>
+              <dye:normalizedIntensity value="0.9571364177" waveLength="502"/>
+              <dye:normalizedIntensity value="0.959524403" waveLength="503"/>
+              <dye:normalizedIntensity value="0.9579439094" waveLength="504"/>
+              <dye:normalizedIntensity value="0.9598154912" waveLength="505"/>
+              <dye:normalizedIntensity value="0.9521632628" waveLength="506"/>
+              <dye:normalizedIntensity value="0.9437684986" waveLength="507"/>
+              <dye:normalizedIntensity value="0.9328113816" waveLength="508"/>
+              <dye:normalizedIntensity value="0.9195708606" waveLength="509"/>
+              <dye:normalizedIntensity value="0.9065009167" waveLength="510"/>
+              <dye:normalizedIntensity value="0.8939896026" waveLength="511"/>
+              <dye:normalizedIntensity value="0.8758952641" waveLength="512"/>
+              <dye:normalizedIntensity value="0.8541607671" waveLength="513"/>
+              <dye:normalizedIntensity value="0.8392266806" waveLength="514"/>
+              <dye:normalizedIntensity value="0.8194646776" waveLength="515"/>
+              <dye:normalizedIntensity value="0.8025712062" waveLength="516"/>
+              <dye:normalizedIntensity value="0.7854514581" waveLength="517"/>
+              <dye:normalizedIntensity value="0.7695851991" waveLength="518"/>
+              <dye:normalizedIntensity value="0.7555859366" waveLength="519"/>
+              <dye:normalizedIntensity value="0.7420972968" waveLength="520"/>
+              <dye:normalizedIntensity value="0.7263312007" waveLength="521"/>
+              <dye:normalizedIntensity value="0.7051794724" waveLength="522"/>
+              <dye:normalizedIntensity value="0.6889701851" waveLength="523"/>
+              <dye:normalizedIntensity value="0.6789268029" waveLength="524"/>
+              <dye:normalizedIntensity value="0.6627292356" waveLength="525"/>
+              <dye:normalizedIntensity value="0.6553787777" waveLength="526"/>
+              <dye:normalizedIntensity value="0.6455731064" waveLength="527"/>
+              <dye:normalizedIntensity value="0.6288676354" waveLength="528"/>
+              <dye:normalizedIntensity value="0.6174686106" waveLength="529"/>
+              <dye:normalizedIntensity value="0.6043396578" waveLength="530"/>
+              <dye:normalizedIntensity value="0.5904267433" waveLength="531"/>
+              <dye:normalizedIntensity value="0.5820194791" waveLength="532"/>
+              <dye:normalizedIntensity value="0.5714087591" waveLength="533"/>
+              <dye:normalizedIntensity value="0.5682812422" waveLength="534"/>
+              <dye:normalizedIntensity value="0.5568001467" waveLength="535"/>
+              <dye:normalizedIntensity value="0.5486032404" waveLength="536"/>
+              <dye:normalizedIntensity value="0.5375305365" waveLength="537"/>
+              <dye:normalizedIntensity value="0.5293540496" waveLength="538"/>
+              <dye:normalizedIntensity value="0.5216486463" waveLength="539"/>
+              <dye:normalizedIntensity value="0.5108393427" waveLength="540"/>
+              <dye:normalizedIntensity value="0.5000821745" waveLength="541"/>
+              <dye:normalizedIntensity value="0.4910847781" waveLength="542"/>
+              <dye:normalizedIntensity value="0.4820547524" waveLength="543"/>
+              <dye:normalizedIntensity value="0.4727905022" waveLength="544"/>
+              <dye:normalizedIntensity value="0.4610990443" waveLength="545"/>
+              <dye:normalizedIntensity value="0.4425969291" waveLength="546"/>
+              <dye:normalizedIntensity value="0.4303601784" waveLength="547"/>
+              <dye:normalizedIntensity value="0.4166442364" waveLength="548"/>
+              <dye:normalizedIntensity value="0.4041548132" waveLength="549"/>
+              <dye:normalizedIntensity value="0.3921976013" waveLength="550"/>
+              <dye:normalizedIntensity value="0.3800325859" waveLength="551"/>
+              <dye:normalizedIntensity value="0.3709397996" waveLength="552"/>
+              <dye:normalizedIntensity value="0.355939239" waveLength="553"/>
+              <dye:normalizedIntensity value="0.3462469078" waveLength="554"/>
+              <dye:normalizedIntensity value="0.3369273525" waveLength="555"/>
+              <dye:normalizedIntensity value="0.3257434657" waveLength="556"/>
+              <dye:normalizedIntensity value="0.3163563258" waveLength="557"/>
+              <dye:normalizedIntensity value="0.3058470093" waveLength="558"/>
+              <dye:normalizedIntensity value="0.2965854051" waveLength="559"/>
+              <dye:normalizedIntensity value="0.2863839869" waveLength="560"/>
+              <dye:normalizedIntensity value="0.2783763811" waveLength="561"/>
+              <dye:normalizedIntensity value="0.267816054" waveLength="562"/>
+              <dye:normalizedIntensity value="0.2620798924" waveLength="563"/>
+              <dye:normalizedIntensity value="0.2549718102" waveLength="564"/>
+              <dye:normalizedIntensity value="0.2472093828" waveLength="565"/>
+              <dye:normalizedIntensity value="0.2402485757" waveLength="566"/>
+              <dye:normalizedIntensity value="0.2327152324" waveLength="567"/>
+              <dye:normalizedIntensity value="0.2274152747" waveLength="568"/>
+              <dye:normalizedIntensity value="0.2190537274" waveLength="569"/>
+              <dye:normalizedIntensity value="0.2123255596" waveLength="570"/>
+              <dye:normalizedIntensity value="0.2072431165" waveLength="571"/>
+              <dye:normalizedIntensity value="0.2034684235" waveLength="572"/>
+              <dye:normalizedIntensity value="0.197705518" waveLength="573"/>
+              <dye:normalizedIntensity value="0.1921276921" waveLength="574"/>
+              <dye:normalizedIntensity value="0.1853616166" waveLength="575"/>
+              <dye:normalizedIntensity value="0.1808540218" waveLength="576"/>
+              <dye:normalizedIntensity value="0.1758639906" waveLength="577"/>
+              <dye:normalizedIntensity value="0.172986416" waveLength="578"/>
+              <dye:normalizedIntensity value="0.1680969678" waveLength="579"/>
+              <dye:normalizedIntensity value="0.1643189115" waveLength="580"/>
+              <dye:normalizedIntensity value="0.1624217854" waveLength="581"/>
+              <dye:normalizedIntensity value="0.1565871053" waveLength="582"/>
+              <dye:normalizedIntensity value="0.1526270317" waveLength="583"/>
+              <dye:normalizedIntensity value="0.1482287981" waveLength="584"/>
+              <dye:normalizedIntensity value="0.1439270089" waveLength="585"/>
+              <dye:normalizedIntensity value="0.1416307231" waveLength="586"/>
+              <dye:normalizedIntensity value="0.1374048507" waveLength="587"/>
+              <dye:normalizedIntensity value="0.1317615131" waveLength="588"/>
+              <dye:normalizedIntensity value="0.1301929247" waveLength="589"/>
+              <dye:normalizedIntensity value="0.1251148866" waveLength="590"/>
+              <dye:normalizedIntensity value="0.1219824587" waveLength="591"/>
+              <dye:normalizedIntensity value="0.1190153064" waveLength="592"/>
+              <dye:normalizedIntensity value="0.1153815004" waveLength="593"/>
+              <dye:normalizedIntensity value="0.1103276092" waveLength="594"/>
+              <dye:normalizedIntensity value="0.1089029101" waveLength="595"/>
+              <dye:normalizedIntensity value="0.1056412923" waveLength="596"/>
+              <dye:normalizedIntensity value="0.105093783" waveLength="597"/>
+              <dye:normalizedIntensity value="0.0999006369" waveLength="598"/>
+              <dye:normalizedIntensity value="0.0970669584" waveLength="599"/>
+              <dye:normalizedIntensity value="0.0927261757" waveLength="600"/>
+              <dye:normalizedIntensity value="0.089541842" waveLength="601"/>
+              <dye:normalizedIntensity value="0.0852032446" waveLength="602"/>
+              <dye:normalizedIntensity value="0.0841093003" waveLength="603"/>
+              <dye:normalizedIntensity value="0.0822042411" waveLength="604"/>
+              <dye:normalizedIntensity value="0.0779180564" waveLength="605"/>
+              <dye:normalizedIntensity value="0.0752548505" waveLength="606"/>
+              <dye:normalizedIntensity value="0.0746063008" waveLength="607"/>
+              <dye:normalizedIntensity value="0.0717025914" waveLength="608"/>
+              <dye:normalizedIntensity value="0.0687786394" waveLength="609"/>
+              <dye:normalizedIntensity value="0.0671417755" waveLength="610"/>
+              <dye:normalizedIntensity value="0.0653998793" waveLength="611"/>
+              <dye:normalizedIntensity value="0.0634984397" waveLength="612"/>
+              <dye:normalizedIntensity value="0.0623338868" waveLength="613"/>
+              <dye:normalizedIntensity value="0.0611891707" waveLength="614"/>
+              <dye:normalizedIntensity value="0.0594363808" waveLength="615"/>
+              <dye:normalizedIntensity value="0.0574193594" waveLength="616"/>
+              <dye:normalizedIntensity value="0.0567789114" waveLength="617"/>
+              <dye:normalizedIntensity value="0.0559377477" waveLength="618"/>
+              <dye:normalizedIntensity value="0.0540316158" waveLength="619"/>
+              <dye:normalizedIntensity value="0.0528816911" waveLength="620"/>
+              <dye:normalizedIntensity value="0.0521084486" waveLength="621"/>
+              <dye:normalizedIntensity value="0.0501461835" waveLength="622"/>
+              <dye:normalizedIntensity value="0.0493828947" waveLength="623"/>
+              <dye:normalizedIntensity value="0.0483078239" waveLength="624"/>
+              <dye:normalizedIntensity value="0.0466761063" waveLength="625"/>
+              <dye:normalizedIntensity value="0.0465285432" waveLength="626"/>
+              <dye:normalizedIntensity value="0.0454817729" waveLength="627"/>
+              <dye:normalizedIntensity value="0.0427197889" waveLength="628"/>
+              <dye:normalizedIntensity value="0.0435318033" waveLength="629"/>
+              <dye:normalizedIntensity value="0.0419286751" waveLength="630"/>
+              <dye:normalizedIntensity value="0.0409274824" waveLength="631"/>
+              <dye:normalizedIntensity value="0.0391438872" waveLength="632"/>
+              <dye:normalizedIntensity value="0.0397278159" waveLength="633"/>
+              <dye:normalizedIntensity value="0.0375547525" waveLength="634"/>
+              <dye:normalizedIntensity value="0.0366910669" waveLength="635"/>
+              <dye:normalizedIntensity value="0.0342747401" waveLength="636"/>
+              <dye:normalizedIntensity value="0.0349922525" waveLength="637"/>
+              <dye:normalizedIntensity value="0.0353469371" waveLength="638"/>
+              <dye:normalizedIntensity value="0.0360635703" waveLength="639"/>
+              <dye:normalizedIntensity value="0.03411214" waveLength="640"/>
+              <dye:normalizedIntensity value="0.033158818" waveLength="641"/>
+              <dye:normalizedIntensity value="0.0329147369" waveLength="642"/>
+              <dye:normalizedIntensity value="0.0313981209" waveLength="643"/>
+              <dye:normalizedIntensity value="0.0303126892" waveLength="644"/>
+              <dye:normalizedIntensity value="0.0302766566" waveLength="645"/>
+              <dye:normalizedIntensity value="0.0301440929" waveLength="646"/>
+              <dye:normalizedIntensity value="0.0301400439" waveLength="647"/>
+              <dye:normalizedIntensity value="0.027776537" waveLength="648"/>
+              <dye:normalizedIntensity value="0.0274194753" waveLength="649"/>
+              <dye:normalizedIntensity value="0.0275011444" waveLength="650"/>
+            </dye:emissionSpectrum>
+            <dye:excitationSpectrum>
+              <dye:normalizedIntensity value="0.2121942672" waveLength="300"/>
+              <dye:normalizedIntensity value="0.1958125939" waveLength="301"/>
+              <dye:normalizedIntensity value="0.1777040587" waveLength="302"/>
+              <dye:normalizedIntensity value="0.1600672271" waveLength="303"/>
+              <dye:normalizedIntensity value="0.1448845121" waveLength="304"/>
+              <dye:normalizedIntensity value="0.1329535188" waveLength="305"/>
+              <dye:normalizedIntensity value="0.1208854564" waveLength="306"/>
+              <dye:normalizedIntensity value="0.1101915582" waveLength="307"/>
+              <dye:normalizedIntensity value="0.1014886109" waveLength="308"/>
+              <dye:normalizedIntensity value="0.0954632142" waveLength="309"/>
+              <dye:normalizedIntensity value="0.0894677" waveLength="310"/>
+              <dye:normalizedIntensity value="0.0842551774" waveLength="311"/>
+              <dye:normalizedIntensity value="0.0797956004" waveLength="312"/>
+              <dye:normalizedIntensity value="0.0752645027" waveLength="313"/>
+              <dye:normalizedIntensity value="0.0723156204" waveLength="314"/>
+              <dye:normalizedIntensity value="0.0706498398" waveLength="315"/>
+              <dye:normalizedIntensity value="0.0679981343" waveLength="316"/>
+              <dye:normalizedIntensity value="0.0667677863" waveLength="317"/>
+              <dye:normalizedIntensity value="0.0643465895" waveLength="318"/>
+              <dye:normalizedIntensity value="0.0624670001" waveLength="319"/>
+              <dye:normalizedIntensity value="0.0610184186" waveLength="320"/>
+              <dye:normalizedIntensity value="0.0594983459" waveLength="321"/>
+              <dye:normalizedIntensity value="0.0594474071" waveLength="322"/>
+              <dye:normalizedIntensity value="0.057239826" waveLength="323"/>
+              <dye:normalizedIntensity value="0.0577681815" waveLength="324"/>
+              <dye:normalizedIntensity value="0.0584003467" waveLength="325"/>
+              <dye:normalizedIntensity value="0.0569701885" waveLength="326"/>
+              <dye:normalizedIntensity value="0.0574172173" waveLength="327"/>
+              <dye:normalizedIntensity value="0.056516814" waveLength="328"/>
+              <dye:normalizedIntensity value="0.0568842163" waveLength="329"/>
+              <dye:normalizedIntensity value="0.0563670085" waveLength="330"/>
+              <dye:normalizedIntensity value="0.0562341263" waveLength="331"/>
+              <dye:normalizedIntensity value="0.0559204394" waveLength="332"/>
+              <dye:normalizedIntensity value="0.0566258925" waveLength="333"/>
+              <dye:normalizedIntensity value="0.0572044479" waveLength="334"/>
+              <dye:normalizedIntensity value="0.0573917507" waveLength="335"/>
+              <dye:normalizedIntensity value="0.0584483249" waveLength="336"/>
+              <dye:normalizedIntensity value="0.0570997431" waveLength="337"/>
+              <dye:normalizedIntensity value="0.0572373329" waveLength="338"/>
+              <dye:normalizedIntensity value="0.0578676318" waveLength="339"/>
+              <dye:normalizedIntensity value="0.0588902965" waveLength="340"/>
+              <dye:normalizedIntensity value="0.0597642711" waveLength="341"/>
+              <dye:normalizedIntensity value="0.0596273252" waveLength="342"/>
+              <dye:normalizedIntensity value="0.059108366" waveLength="343"/>
+              <dye:normalizedIntensity value="0.0613265209" waveLength="344"/>
+              <dye:normalizedIntensity value="0.0611223147" waveLength="345"/>
+              <dye:normalizedIntensity value="0.0609716483" waveLength="346"/>
+              <dye:normalizedIntensity value="0.0616703296" waveLength="347"/>
+              <dye:normalizedIntensity value="0.0641586565" waveLength="348"/>
+              <dye:normalizedIntensity value="0.0649128038" waveLength="349"/>
+              <dye:normalizedIntensity value="0.0653651273" waveLength="350"/>
+              <dye:normalizedIntensity value="0.0666645398" waveLength="351"/>
+              <dye:normalizedIntensity value="0.0677244571" waveLength="352"/>
+              <dye:normalizedIntensity value="0.0697761684" waveLength="353"/>
+              <dye:normalizedIntensity value="0.0706862489" waveLength="354"/>
+              <dye:normalizedIntensity value="0.0722169907" waveLength="355"/>
+              <dye:normalizedIntensity value="0.0736892373" waveLength="356"/>
+              <dye:normalizedIntensity value="0.0746289513" waveLength="357"/>
+              <dye:normalizedIntensity value="0.0762689685" waveLength="358"/>
+              <dye:normalizedIntensity value="0.0783016163" waveLength="359"/>
+              <dye:normalizedIntensity value="0.0799553478" waveLength="360"/>
+              <dye:normalizedIntensity value="0.0819634433" waveLength="361"/>
+              <dye:normalizedIntensity value="0.0846452646" waveLength="362"/>
+              <dye:normalizedIntensity value="0.0851326221" waveLength="363"/>
+              <dye:normalizedIntensity value="0.0887664023" waveLength="364"/>
+              <dye:normalizedIntensity value="0.0915196406" waveLength="365"/>
+              <dye:normalizedIntensity value="0.0946787427" waveLength="366"/>
+              <dye:normalizedIntensity value="0.0983579325" waveLength="367"/>
+              <dye:normalizedIntensity value="0.1022175871" waveLength="368"/>
+              <dye:normalizedIntensity value="0.1072640965" waveLength="369"/>
+              <dye:normalizedIntensity value="0.1098653979" waveLength="370"/>
+              <dye:normalizedIntensity value="0.1148936811" waveLength="371"/>
+              <dye:normalizedIntensity value="0.1199757962" waveLength="372"/>
+              <dye:normalizedIntensity value="0.1249606263" waveLength="373"/>
+              <dye:normalizedIntensity value="0.131527695" waveLength="374"/>
+              <dye:normalizedIntensity value="0.1371989985" waveLength="375"/>
+              <dye:normalizedIntensity value="0.1430951538" waveLength="376"/>
+              <dye:normalizedIntensity value="0.1495182787" waveLength="377"/>
+              <dye:normalizedIntensity value="0.1570418289" waveLength="378"/>
+              <dye:normalizedIntensity value="0.1647259751" waveLength="379"/>
+              <dye:normalizedIntensity value="0.1723971195" waveLength="380"/>
+              <dye:normalizedIntensity value="0.1777190389" waveLength="381"/>
+              <dye:normalizedIntensity value="0.1867964978" waveLength="382"/>
+              <dye:normalizedIntensity value="0.1954369029" waveLength="383"/>
+              <dye:normalizedIntensity value="0.205458335" waveLength="384"/>
+              <dye:normalizedIntensity value="0.2154865813" waveLength="385"/>
+              <dye:normalizedIntensity value="0.2244416641" waveLength="386"/>
+              <dye:normalizedIntensity value="0.235006016" waveLength="387"/>
+              <dye:normalizedIntensity value="0.2479865056" waveLength="388"/>
+              <dye:normalizedIntensity value="0.2568214461" waveLength="389"/>
+              <dye:normalizedIntensity value="0.2739103511" waveLength="390"/>
+              <dye:normalizedIntensity value="0.2878527935" waveLength="391"/>
+              <dye:normalizedIntensity value="0.3065694634" waveLength="392"/>
+              <dye:normalizedIntensity value="0.3230045643" waveLength="393"/>
+              <dye:normalizedIntensity value="0.3396301816" waveLength="394"/>
+              <dye:normalizedIntensity value="0.3576459766" waveLength="395"/>
+              <dye:normalizedIntensity value="0.3753691366" waveLength="396"/>
+              <dye:normalizedIntensity value="0.3942199788" waveLength="397"/>
+              <dye:normalizedIntensity value="0.4139511582" waveLength="398"/>
+              <dye:normalizedIntensity value="0.4333082287" waveLength="399"/>
+              <dye:normalizedIntensity value="0.4538296146" waveLength="400"/>
+              <dye:normalizedIntensity value="0.4699286175" waveLength="401"/>
+              <dye:normalizedIntensity value="0.491222074" waveLength="402"/>
+              <dye:normalizedIntensity value="0.5109544864" waveLength="403"/>
+              <dye:normalizedIntensity value="0.5303929723" waveLength="404"/>
+              <dye:normalizedIntensity value="0.5500558563" waveLength="405"/>
+              <dye:normalizedIntensity value="0.5677892174" waveLength="406"/>
+              <dye:normalizedIntensity value="0.5882059047" waveLength="407"/>
+              <dye:normalizedIntensity value="0.6022134455" waveLength="408"/>
+              <dye:normalizedIntensity value="0.6205601921" waveLength="409"/>
+              <dye:normalizedIntensity value="0.635133006" waveLength="410"/>
+              <dye:normalizedIntensity value="0.6527276171" waveLength="411"/>
+              <dye:normalizedIntensity value="0.6652873858" waveLength="412"/>
+              <dye:normalizedIntensity value="0.6831160512" waveLength="413"/>
+              <dye:normalizedIntensity value="0.7003245713" waveLength="414"/>
+              <dye:normalizedIntensity value="0.71456082" waveLength="415"/>
+              <dye:normalizedIntensity value="0.731159" waveLength="416"/>
+              <dye:normalizedIntensity value="0.7471254783" waveLength="417"/>
+              <dye:normalizedIntensity value="0.7698144406" waveLength="418"/>
+              <dye:normalizedIntensity value="0.7892019429" waveLength="419"/>
+              <dye:normalizedIntensity value="0.8094207619" waveLength="420"/>
+              <dye:normalizedIntensity value="0.8304419831" waveLength="421"/>
+              <dye:normalizedIntensity value="0.8511489714" waveLength="422"/>
+              <dye:normalizedIntensity value="0.873308536" waveLength="423"/>
+              <dye:normalizedIntensity value="0.891904906" waveLength="424"/>
+              <dye:normalizedIntensity value="0.9089432427" waveLength="425"/>
+              <dye:normalizedIntensity value="0.9296788914" waveLength="426"/>
+              <dye:normalizedIntensity value="0.9443578506" waveLength="427"/>
+              <dye:normalizedIntensity value="0.9587485322" waveLength="428"/>
+              <dye:normalizedIntensity value="0.9730820583" waveLength="429"/>
+              <dye:normalizedIntensity value="0.9826411414" waveLength="430"/>
+              <dye:normalizedIntensity value="0.9888740655" waveLength="431"/>
+              <dye:normalizedIntensity value="0.9963185105" waveLength="432"/>
+              <dye:normalizedIntensity value="1.0" waveLength="433"/>
+              <dye:normalizedIntensity value="0.9998552265" waveLength="434"/>
+              <dye:normalizedIntensity value="0.9959500838" waveLength="435"/>
+              <dye:normalizedIntensity value="0.9915089347" waveLength="436"/>
+              <dye:normalizedIntensity value="0.9936152829" waveLength="437"/>
+              <dye:normalizedIntensity value="0.9889837736" waveLength="438"/>
+              <dye:normalizedIntensity value="0.9811807167" waveLength="439"/>
+              <dye:normalizedIntensity value="0.9727718127" waveLength="440"/>
+              <dye:normalizedIntensity value="0.9683876242" waveLength="441"/>
+              <dye:normalizedIntensity value="0.9652289512" waveLength="442"/>
+              <dye:normalizedIntensity value="0.9603384455" waveLength="443"/>
+              <dye:normalizedIntensity value="0.9584452761" waveLength="444"/>
+              <dye:normalizedIntensity value="0.9545465797" waveLength="445"/>
+              <dye:normalizedIntensity value="0.9537351022" waveLength="446"/>
+              <dye:normalizedIntensity value="0.9580181688" waveLength="447"/>
+              <dye:normalizedIntensity value="0.9621650534" waveLength="448"/>
+              <dye:normalizedIntensity value="0.9635469094" waveLength="449"/>
+              <dye:normalizedIntensity value="0.9690017253" waveLength="450"/>
+              <dye:normalizedIntensity value="0.9747504653" waveLength="451"/>
+              <dye:normalizedIntensity value="0.9788333944" waveLength="452"/>
+              <dye:normalizedIntensity value="0.9821163626" waveLength="453"/>
+              <dye:normalizedIntensity value="0.9773569415" waveLength="454"/>
+              <dye:normalizedIntensity value="0.9699527222" waveLength="455"/>
+              <dye:normalizedIntensity value="0.9613163645" waveLength="456"/>
+              <dye:normalizedIntensity value="0.9474526295" waveLength="457"/>
+              <dye:normalizedIntensity value="0.9330136633" waveLength="458"/>
+              <dye:normalizedIntensity value="0.9067669036" waveLength="459"/>
+              <dye:normalizedIntensity value="0.8743257189" waveLength="460"/>
+              <dye:normalizedIntensity value="0.8402856235" waveLength="461"/>
+              <dye:normalizedIntensity value="0.8034228737" waveLength="462"/>
+              <dye:normalizedIntensity value="0.7550147143" waveLength="463"/>
+              <dye:normalizedIntensity value="0.7030249033" waveLength="464"/>
+              <dye:normalizedIntensity value="0.6492918794" waveLength="465"/>
+              <dye:normalizedIntensity value="0.5991422682" waveLength="466"/>
+              <dye:normalizedIntensity value="0.5459362586" waveLength="467"/>
+              <dye:normalizedIntensity value="0.4965153627" waveLength="468"/>
+              <dye:normalizedIntensity value="0.4450898783" waveLength="469"/>
+              <dye:normalizedIntensity value="0.3969430504" waveLength="470"/>
+              <dye:normalizedIntensity value="0.346031418" waveLength="471"/>
+              <dye:normalizedIntensity value="0.3043700893" waveLength="472"/>
+              <dye:normalizedIntensity value="0.2678103692" waveLength="473"/>
+              <dye:normalizedIntensity value="0.2285345408" waveLength="474"/>
+              <dye:normalizedIntensity value="0.1970900928" waveLength="475"/>
+              <dye:normalizedIntensity value="0.1695554157" waveLength="476"/>
+              <dye:normalizedIntensity value="0.1427813666" waveLength="477"/>
+              <dye:normalizedIntensity value="0.1210648689" waveLength="478"/>
+              <dye:normalizedIntensity value="0.1034664547" waveLength="479"/>
+              <dye:normalizedIntensity value="0.0887994783" waveLength="480"/>
+              <dye:normalizedIntensity value="0.0763284137" waveLength="481"/>
+              <dye:normalizedIntensity value="0.0668358695" waveLength="482"/>
+              <dye:normalizedIntensity value="0.0578109579" waveLength="483"/>
+              <dye:normalizedIntensity value="0.0505048316" waveLength="484"/>
+              <dye:normalizedIntensity value="0.0431986341" waveLength="485"/>
+              <dye:normalizedIntensity value="0.0367498172" waveLength="486"/>
+              <dye:normalizedIntensity value="0.0320571408" waveLength="487"/>
+              <dye:normalizedIntensity value="0.0285759628" waveLength="488"/>
+              <dye:normalizedIntensity value="0.0252188397" waveLength="489"/>
+              <dye:normalizedIntensity value="0.0235483372" waveLength="490"/>
+            </dye:excitationSpectrum>
+          </lsmimage:dyeData>
+          <lsmimage:laserDataId>MaiTai e HP DS-OL_196864Imaging_main_phase_1</lsmimage:laserDataId>
+        </commonphase:channel>
+        <commonphase:channel xsi:type="lsmimage:NormalChannel" id="7b8efd46-6b14-4f84-88b5-8a61802400c9" order="2" enable="true" detectorId="__FV40-EXBSD_D_2__">
+          <root:productData xsi:type="fvCommonphase:FVChannel">
+            <fvCommonphase:backgroundIntensity>0</fvCommonphase:backgroundIntensity>
+            <fvCommonphase:interval>31.83</fvCommonphase:interval>
+            <fvCommonphase:enableDisplayPhoton>false</fvCommonphase:enableDisplayPhoton>
+            <fvCommonphase:histogramDisplayRangeParam>
+              <fvCommonphase:startIntensity>0</fvCommonphase:startIntensity>
+              <fvCommonphase:endIntensity>318</fvCommonphase:endIntensity>
+            </fvCommonphase:histogramDisplayRangeParam>
+          </root:productData>
+          <commonphase:name>CH2</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:deviceName>BNDD2</commonphase:deviceName>
+          <commonphase:bitCount>16</commonphase:bitCount>
+          <lsmimage:dyeName>eGFP</lsmimage:dyeName>
+          <lsmimage:laserDataId>MaiTai e HP DS-OL_196864Imaging_main_phase_1</lsmimage:laserDataId>
+        </commonphase:channel>
+      </commonphase:group>
+      <commonphase:group id="2777fc96-7d91-444f-bab0-a8b7a387b50b">
+        <commonphase:name>Group 2</commonphase:name>
+        <commonphase:channel xsi:type="lsmimage:NormalChannel" id="bb8d4d5d-5dad-43bd-b536-39ab647b597b" order="3" enable="true" detectorId="__FV40-EXRSD_D_3__">
+          <root:productData xsi:type="fvCommonphase:FVChannel">
+            <fvCommonphase:backgroundIntensity>0</fvCommonphase:backgroundIntensity>
+            <fvCommonphase:interval>31.67</fvCommonphase:interval>
+            <fvCommonphase:enableDisplayPhoton>false</fvCommonphase:enableDisplayPhoton>
+            <fvCommonphase:histogramDisplayRangeParam>
+              <fvCommonphase:startIntensity>0</fvCommonphase:startIntensity>
+              <fvCommonphase:endIntensity>333</fvCommonphase:endIntensity>
+            </fvCommonphase:histogramDisplayRangeParam>
+          </root:productData>
+          <commonphase:name>CH3</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:deviceName>RNDD3</commonphase:deviceName>
+          <commonphase:bitCount>16</commonphase:bitCount>
+          <lsmimage:dyeName>tdTomato</lsmimage:dyeName>
+          <lsmimage:dyeId>tdTomato_DYE</lsmimage:dyeId>
+          <lsmimage:dyeData applicationVersion="3.2.1.85" platformVersion="3.1.2.11" version="2.3" id="tdTomato_DYEDATA">
+            <dye:name>tdTomato</dye:name>
+            <dye:shortName>tdTomato</dye:shortName>
+            <dye:excitationWavelength>554</dye:excitationWavelength>
+            <dye:emissionWavelength>581</dye:emissionWavelength>
+            <dye:emissionGroupName>Y</dye:emissionGroupName>
+            <dye:availableExcitationLaser>561</dye:availableExcitationLaser>
+            <dye:availableExcitationLaser>514</dye:availableExcitationLaser>
+            <dye:availableLaser>561</dye:availableLaser>
+            <dye:availableLaser>514</dye:availableLaser>
+            <dye:emissionSpectrum>
+              <dye:normalizedIntensity value="0.002506675" waveLength="530"/>
+              <dye:normalizedIntensity value="0.003045877" waveLength="531"/>
+              <dye:normalizedIntensity value="0.003685813" waveLength="532"/>
+              <dye:normalizedIntensity value="0.004616111" waveLength="533"/>
+              <dye:normalizedIntensity value="0.005313927" waveLength="534"/>
+              <dye:normalizedIntensity value="0.006490621" waveLength="535"/>
+              <dye:normalizedIntensity value="0.007751175" waveLength="536"/>
+              <dye:normalizedIntensity value="0.010834208" waveLength="537"/>
+              <dye:normalizedIntensity value="0.016097286" waveLength="538"/>
+              <dye:normalizedIntensity value="0.0205365" waveLength="539"/>
+              <dye:normalizedIntensity value="0.021887575" waveLength="540"/>
+              <dye:normalizedIntensity value="0.021813781" waveLength="541"/>
+              <dye:normalizedIntensity value="0.023570682" waveLength="542"/>
+              <dye:normalizedIntensity value="0.02672203" waveLength="543"/>
+              <dye:normalizedIntensity value="0.032285166" waveLength="544"/>
+              <dye:normalizedIntensity value="0.038319187" waveLength="545"/>
+              <dye:normalizedIntensity value="0.045171521" waveLength="546"/>
+              <dye:normalizedIntensity value="0.05360941" waveLength="547"/>
+              <dye:normalizedIntensity value="0.063751427" waveLength="548"/>
+              <dye:normalizedIntensity value="0.076140622" waveLength="549"/>
+              <dye:normalizedIntensity value="0.088175727" waveLength="550"/>
+              <dye:normalizedIntensity value="0.104332003" waveLength="551"/>
+              <dye:normalizedIntensity value="0.120949764" waveLength="552"/>
+              <dye:normalizedIntensity value="0.141443631" waveLength="553"/>
+              <dye:normalizedIntensity value="0.16378033" waveLength="554"/>
+              <dye:normalizedIntensity value="0.188034765" waveLength="555"/>
+              <dye:normalizedIntensity value="0.217141197" waveLength="556"/>
+              <dye:normalizedIntensity value="0.246877795" waveLength="557"/>
+              <dye:normalizedIntensity value="0.280939476" waveLength="558"/>
+              <dye:normalizedIntensity value="0.317644612" waveLength="559"/>
+              <dye:normalizedIntensity value="0.356168229" waveLength="560"/>
+              <dye:normalizedIntensity value="0.397524041" waveLength="561"/>
+              <dye:normalizedIntensity value="0.441217921" waveLength="562"/>
+              <dye:normalizedIntensity value="0.485388608" waveLength="563"/>
+              <dye:normalizedIntensity value="0.531522254" waveLength="564"/>
+              <dye:normalizedIntensity value="0.577818881" waveLength="565"/>
+              <dye:normalizedIntensity value="0.625434238" waveLength="566"/>
+              <dye:normalizedIntensity value="0.66913515" waveLength="567"/>
+              <dye:normalizedIntensity value="0.715599126" waveLength="568"/>
+              <dye:normalizedIntensity value="0.755714886" waveLength="569"/>
+              <dye:normalizedIntensity value="0.796537343" waveLength="570"/>
+              <dye:normalizedIntensity value="0.832589369" waveLength="571"/>
+              <dye:normalizedIntensity value="0.868101305" waveLength="572"/>
+              <dye:normalizedIntensity value="0.895908251" waveLength="573"/>
+              <dye:normalizedIntensity value="0.924672214" waveLength="574"/>
+              <dye:normalizedIntensity value="0.943777184" waveLength="575"/>
+              <dye:normalizedIntensity value="0.96482883" waveLength="576"/>
+              <dye:normalizedIntensity value="0.976689112" waveLength="577"/>
+              <dye:normalizedIntensity value="0.986444991" waveLength="578"/>
+              <dye:normalizedIntensity value="0.995908732" waveLength="579"/>
+              <dye:normalizedIntensity value="0.995713628" waveLength="580"/>
+              <dye:normalizedIntensity value="1.0" waveLength="581"/>
+              <dye:normalizedIntensity value="0.998307049" waveLength="582"/>
+              <dye:normalizedIntensity value="0.995741753" waveLength="583"/>
+              <dye:normalizedIntensity value="0.988220321" waveLength="584"/>
+              <dye:normalizedIntensity value="0.978846213" waveLength="585"/>
+              <dye:normalizedIntensity value="0.969760394" waveLength="586"/>
+              <dye:normalizedIntensity value="0.960040264" waveLength="587"/>
+              <dye:normalizedIntensity value="0.945720011" waveLength="588"/>
+              <dye:normalizedIntensity value="0.933755368" waveLength="589"/>
+              <dye:normalizedIntensity value="0.924918241" waveLength="590"/>
+              <dye:normalizedIntensity value="0.909501082" waveLength="591"/>
+              <dye:normalizedIntensity value="0.895793009" waveLength="592"/>
+              <dye:normalizedIntensity value="0.882349985" waveLength="593"/>
+              <dye:normalizedIntensity value="0.869258978" waveLength="594"/>
+              <dye:normalizedIntensity value="0.856186178" waveLength="595"/>
+              <dye:normalizedIntensity value="0.84312078" waveLength="596"/>
+              <dye:normalizedIntensity value="0.827776452" waveLength="597"/>
+              <dye:normalizedIntensity value="0.815922388" waveLength="598"/>
+              <dye:normalizedIntensity value="0.802405348" waveLength="599"/>
+              <dye:normalizedIntensity value="0.792581967" waveLength="600"/>
+              <dye:normalizedIntensity value="0.780407343" waveLength="601"/>
+              <dye:normalizedIntensity value="0.770228763" waveLength="602"/>
+              <dye:normalizedIntensity value="0.756292205" waveLength="603"/>
+              <dye:normalizedIntensity value="0.746689389" waveLength="604"/>
+              <dye:normalizedIntensity value="0.737209217" waveLength="605"/>
+              <dye:normalizedIntensity value="0.729117571" waveLength="606"/>
+              <dye:normalizedIntensity value="0.715958988" waveLength="607"/>
+              <dye:normalizedIntensity value="0.705906382" waveLength="608"/>
+              <dye:normalizedIntensity value="0.696077228" waveLength="609"/>
+              <dye:normalizedIntensity value="0.689160944" waveLength="610"/>
+              <dye:normalizedIntensity value="0.679217585" waveLength="611"/>
+              <dye:normalizedIntensity value="0.67283732" waveLength="612"/>
+              <dye:normalizedIntensity value="0.661279095" waveLength="613"/>
+              <dye:normalizedIntensity value="0.652003427" waveLength="614"/>
+              <dye:normalizedIntensity value="0.642292031" waveLength="615"/>
+              <dye:normalizedIntensity value="0.631997395" waveLength="616"/>
+              <dye:normalizedIntensity value="0.623895535" waveLength="617"/>
+              <dye:normalizedIntensity value="0.615682726" waveLength="618"/>
+              <dye:normalizedIntensity value="0.602233411" waveLength="619"/>
+              <dye:normalizedIntensity value="0.591712066" waveLength="620"/>
+              <dye:normalizedIntensity value="0.584160287" waveLength="621"/>
+              <dye:normalizedIntensity value="0.575788272" waveLength="622"/>
+              <dye:normalizedIntensity value="0.561762896" waveLength="623"/>
+              <dye:normalizedIntensity value="0.552056089" waveLength="624"/>
+              <dye:normalizedIntensity value="0.540924266" waveLength="625"/>
+              <dye:normalizedIntensity value="0.533388919" waveLength="626"/>
+              <dye:normalizedIntensity value="0.521582373" waveLength="627"/>
+              <dye:normalizedIntensity value="0.507538937" waveLength="628"/>
+              <dye:normalizedIntensity value="0.498710691" waveLength="629"/>
+              <dye:normalizedIntensity value="0.490699722" waveLength="630"/>
+              <dye:normalizedIntensity value="0.477484369" waveLength="631"/>
+              <dye:normalizedIntensity value="0.465528756" waveLength="632"/>
+              <dye:normalizedIntensity value="0.455839268" waveLength="633"/>
+              <dye:normalizedIntensity value="0.442868314" waveLength="634"/>
+              <dye:normalizedIntensity value="0.434381797" waveLength="635"/>
+              <dye:normalizedIntensity value="0.423997158" waveLength="636"/>
+              <dye:normalizedIntensity value="0.412179583" waveLength="637"/>
+              <dye:normalizedIntensity value="0.402144519" waveLength="638"/>
+              <dye:normalizedIntensity value="0.393432551" waveLength="639"/>
+              <dye:normalizedIntensity value="0.382416044" waveLength="640"/>
+              <dye:normalizedIntensity value="0.373312979" waveLength="641"/>
+              <dye:normalizedIntensity value="0.36217183" waveLength="642"/>
+              <dye:normalizedIntensity value="0.35488399" waveLength="643"/>
+              <dye:normalizedIntensity value="0.347543674" waveLength="644"/>
+              <dye:normalizedIntensity value="0.336198317" waveLength="645"/>
+              <dye:normalizedIntensity value="0.326844932" waveLength="646"/>
+              <dye:normalizedIntensity value="0.316971813" waveLength="647"/>
+              <dye:normalizedIntensity value="0.307946539" waveLength="648"/>
+              <dye:normalizedIntensity value="0.29960709" waveLength="649"/>
+              <dye:normalizedIntensity value="0.290584406" waveLength="650"/>
+              <dye:normalizedIntensity value="0.285558325" waveLength="651"/>
+              <dye:normalizedIntensity value="0.273654893" waveLength="652"/>
+              <dye:normalizedIntensity value="0.267825302" waveLength="653"/>
+              <dye:normalizedIntensity value="0.26013023" waveLength="654"/>
+              <dye:normalizedIntensity value="0.251835042" waveLength="655"/>
+              <dye:normalizedIntensity value="0.243070598" waveLength="656"/>
+              <dye:normalizedIntensity value="0.234838841" waveLength="657"/>
+              <dye:normalizedIntensity value="0.227193507" waveLength="658"/>
+              <dye:normalizedIntensity value="0.222740008" waveLength="659"/>
+              <dye:normalizedIntensity value="0.216576683" waveLength="660"/>
+              <dye:normalizedIntensity value="0.209729234" waveLength="661"/>
+              <dye:normalizedIntensity value="0.204087493" waveLength="662"/>
+              <dye:normalizedIntensity value="0.199208555" waveLength="663"/>
+              <dye:normalizedIntensity value="0.194059978" waveLength="664"/>
+              <dye:normalizedIntensity value="0.188011228" waveLength="665"/>
+              <dye:normalizedIntensity value="0.183422947" waveLength="666"/>
+              <dye:normalizedIntensity value="0.17839694" waveLength="667"/>
+              <dye:normalizedIntensity value="0.170920213" waveLength="668"/>
+              <dye:normalizedIntensity value="0.167634009" waveLength="669"/>
+              <dye:normalizedIntensity value="0.16336281" waveLength="670"/>
+              <dye:normalizedIntensity value="0.159780471" waveLength="671"/>
+              <dye:normalizedIntensity value="0.153141745" waveLength="672"/>
+              <dye:normalizedIntensity value="0.150128213" waveLength="673"/>
+              <dye:normalizedIntensity value="0.145909786" waveLength="674"/>
+              <dye:normalizedIntensity value="0.141949969" waveLength="675"/>
+              <dye:normalizedIntensity value="0.138971077" waveLength="676"/>
+              <dye:normalizedIntensity value="0.134966998" waveLength="677"/>
+              <dye:normalizedIntensity value="0.130882392" waveLength="678"/>
+              <dye:normalizedIntensity value="0.128135537" waveLength="679"/>
+              <dye:normalizedIntensity value="0.122766099" waveLength="680"/>
+              <dye:normalizedIntensity value="0.118659583" waveLength="681"/>
+              <dye:normalizedIntensity value="0.116790624" waveLength="682"/>
+              <dye:normalizedIntensity value="0.113825202" waveLength="683"/>
+              <dye:normalizedIntensity value="0.110360029" waveLength="684"/>
+              <dye:normalizedIntensity value="0.106695163" waveLength="685"/>
+              <dye:normalizedIntensity value="0.103933653" waveLength="686"/>
+              <dye:normalizedIntensity value="0.102048484" waveLength="687"/>
+              <dye:normalizedIntensity value="0.098439573" waveLength="688"/>
+              <dye:normalizedIntensity value="0.096329027" waveLength="689"/>
+              <dye:normalizedIntensity value="0.093432588" waveLength="690"/>
+              <dye:normalizedIntensity value="0.090715487" waveLength="691"/>
+              <dye:normalizedIntensity value="0.088030879" waveLength="692"/>
+              <dye:normalizedIntensity value="0.085564912" waveLength="693"/>
+              <dye:normalizedIntensity value="0.082256282" waveLength="694"/>
+              <dye:normalizedIntensity value="0.081315695" waveLength="695"/>
+              <dye:normalizedIntensity value="0.078985177" waveLength="696"/>
+              <dye:normalizedIntensity value="0.074955341" waveLength="697"/>
+              <dye:normalizedIntensity value="0.074449595" waveLength="698"/>
+              <dye:normalizedIntensity value="0.072801201" waveLength="699"/>
+              <dye:normalizedIntensity value="0.069281404" waveLength="700"/>
+            </dye:emissionSpectrum>
+            <dye:excitationSpectrum>
+              <dye:normalizedIntensity value="0.139699096" waveLength="300"/>
+              <dye:normalizedIntensity value="0.124471545" waveLength="301"/>
+              <dye:normalizedIntensity value="0.110744653" waveLength="302"/>
+              <dye:normalizedIntensity value="0.100051614" waveLength="303"/>
+              <dye:normalizedIntensity value="0.090774615" waveLength="304"/>
+              <dye:normalizedIntensity value="0.085211692" waveLength="305"/>
+              <dye:normalizedIntensity value="0.080957252" waveLength="306"/>
+              <dye:normalizedIntensity value="0.078411329" waveLength="307"/>
+              <dye:normalizedIntensity value="0.078201481" waveLength="308"/>
+              <dye:normalizedIntensity value="0.078502619" waveLength="309"/>
+              <dye:normalizedIntensity value="0.079577494" waveLength="310"/>
+              <dye:normalizedIntensity value="0.081993738" waveLength="311"/>
+              <dye:normalizedIntensity value="0.084032419" waveLength="312"/>
+              <dye:normalizedIntensity value="0.087812974" waveLength="313"/>
+              <dye:normalizedIntensity value="0.091516049" waveLength="314"/>
+              <dye:normalizedIntensity value="0.095918308" waveLength="315"/>
+              <dye:normalizedIntensity value="0.099788864" waveLength="316"/>
+              <dye:normalizedIntensity value="0.104474822" waveLength="317"/>
+              <dye:normalizedIntensity value="0.109284255" waveLength="318"/>
+              <dye:normalizedIntensity value="0.113936975" waveLength="319"/>
+              <dye:normalizedIntensity value="0.117720104" waveLength="320"/>
+              <dye:normalizedIntensity value="0.1214666" waveLength="321"/>
+              <dye:normalizedIntensity value="0.125062703" waveLength="322"/>
+              <dye:normalizedIntensity value="0.128729496" waveLength="323"/>
+              <dye:normalizedIntensity value="0.132579805" waveLength="324"/>
+              <dye:normalizedIntensity value="0.136230096" waveLength="325"/>
+              <dye:normalizedIntensity value="0.140998332" waveLength="326"/>
+              <dye:normalizedIntensity value="0.14600275" waveLength="327"/>
+              <dye:normalizedIntensity value="0.152820084" waveLength="328"/>
+              <dye:normalizedIntensity value="0.16039313" waveLength="329"/>
+              <dye:normalizedIntensity value="0.166864031" waveLength="330"/>
+              <dye:normalizedIntensity value="0.174418937" waveLength="331"/>
+              <dye:normalizedIntensity value="0.181587851" waveLength="332"/>
+              <dye:normalizedIntensity value="0.186555871" waveLength="333"/>
+              <dye:normalizedIntensity value="0.191024958" waveLength="334"/>
+              <dye:normalizedIntensity value="0.192468619" waveLength="335"/>
+              <dye:normalizedIntensity value="0.191591304" waveLength="336"/>
+              <dye:normalizedIntensity value="0.187647014" waveLength="337"/>
+              <dye:normalizedIntensity value="0.181284724" waveLength="338"/>
+              <dye:normalizedIntensity value="0.17319636" waveLength="339"/>
+              <dye:normalizedIntensity value="0.163928841" waveLength="340"/>
+              <dye:normalizedIntensity value="0.154341809" waveLength="341"/>
+              <dye:normalizedIntensity value="0.143830295" waveLength="342"/>
+              <dye:normalizedIntensity value="0.134815812" waveLength="343"/>
+              <dye:normalizedIntensity value="0.12651245" waveLength="344"/>
+              <dye:normalizedIntensity value="0.118382421" waveLength="345"/>
+              <dye:normalizedIntensity value="0.110478626" waveLength="346"/>
+              <dye:normalizedIntensity value="0.104002692" waveLength="347"/>
+              <dye:normalizedIntensity value="0.098393071" waveLength="348"/>
+              <dye:normalizedIntensity value="0.092766714" waveLength="349"/>
+              <dye:normalizedIntensity value="0.088694736" waveLength="350"/>
+              <dye:normalizedIntensity value="0.084517073" waveLength="351"/>
+              <dye:normalizedIntensity value="0.080853674" waveLength="352"/>
+              <dye:normalizedIntensity value="0.078281183" waveLength="353"/>
+              <dye:normalizedIntensity value="0.074944085" waveLength="354"/>
+              <dye:normalizedIntensity value="0.072693566" waveLength="355"/>
+              <dye:normalizedIntensity value="0.070108084" waveLength="356"/>
+              <dye:normalizedIntensity value="0.067730813" waveLength="357"/>
+              <dye:normalizedIntensity value="0.065070779" waveLength="358"/>
+              <dye:normalizedIntensity value="0.06319595" waveLength="359"/>
+              <dye:normalizedIntensity value="0.060790473" waveLength="360"/>
+              <dye:normalizedIntensity value="0.057506393" waveLength="361"/>
+              <dye:normalizedIntensity value="0.055200398" waveLength="362"/>
+              <dye:normalizedIntensity value="0.052328993" waveLength="363"/>
+              <dye:normalizedIntensity value="0.04946227" waveLength="364"/>
+              <dye:normalizedIntensity value="0.046723937" waveLength="365"/>
+              <dye:normalizedIntensity value="0.044223425" waveLength="366"/>
+              <dye:normalizedIntensity value="0.041461919" waveLength="367"/>
+              <dye:normalizedIntensity value="0.038769582" waveLength="368"/>
+              <dye:normalizedIntensity value="0.036871697" waveLength="369"/>
+              <dye:normalizedIntensity value="0.035210697" waveLength="370"/>
+              <dye:normalizedIntensity value="0.033381865" waveLength="371"/>
+              <dye:normalizedIntensity value="0.031865524" waveLength="372"/>
+              <dye:normalizedIntensity value="0.030311964" waveLength="373"/>
+              <dye:normalizedIntensity value="0.029159376" waveLength="374"/>
+              <dye:normalizedIntensity value="0.027861076" waveLength="375"/>
+              <dye:normalizedIntensity value="0.026570852" waveLength="376"/>
+              <dye:normalizedIntensity value="0.025657957" waveLength="377"/>
+              <dye:normalizedIntensity value="0.024747403" waveLength="378"/>
+              <dye:normalizedIntensity value="0.023306434" waveLength="379"/>
+              <dye:normalizedIntensity value="0.022214121" waveLength="380"/>
+              <dye:normalizedIntensity value="0.020908681" waveLength="381"/>
+              <dye:normalizedIntensity value="0.019443368" waveLength="382"/>
+              <dye:normalizedIntensity value="0.018271937" waveLength="383"/>
+              <dye:normalizedIntensity value="0.016980425" waveLength="384"/>
+              <dye:normalizedIntensity value="0.015951312" waveLength="385"/>
+              <dye:normalizedIntensity value="0.014708956" waveLength="386"/>
+              <dye:normalizedIntensity value="0.013565146" waveLength="387"/>
+              <dye:normalizedIntensity value="0.012746116" waveLength="388"/>
+              <dye:normalizedIntensity value="0.011999649" waveLength="389"/>
+              <dye:normalizedIntensity value="0.011270387" waveLength="390"/>
+              <dye:normalizedIntensity value="0.010800948" waveLength="391"/>
+              <dye:normalizedIntensity value="0.010408286" waveLength="392"/>
+              <dye:normalizedIntensity value="0.010382538" waveLength="393"/>
+              <dye:normalizedIntensity value="0.010022413" waveLength="394"/>
+              <dye:normalizedIntensity value="0.009951839" waveLength="395"/>
+              <dye:normalizedIntensity value="0.010092987" waveLength="396"/>
+              <dye:normalizedIntensity value="0.010019253" waveLength="397"/>
+              <dye:normalizedIntensity value="0.010171051" waveLength="398"/>
+              <dye:normalizedIntensity value="0.010339585" waveLength="399"/>
+              <dye:normalizedIntensity value="0.010556222" waveLength="400"/>
+              <dye:normalizedIntensity value="0.011062293" waveLength="401"/>
+              <dye:normalizedIntensity value="0.011393159" waveLength="402"/>
+              <dye:normalizedIntensity value="0.011664804" waveLength="403"/>
+              <dye:normalizedIntensity value="0.012237938" waveLength="404"/>
+              <dye:normalizedIntensity value="0.012695673" waveLength="405"/>
+              <dye:normalizedIntensity value="0.013460046" waveLength="406"/>
+              <dye:normalizedIntensity value="0.01389531" waveLength="407"/>
+              <dye:normalizedIntensity value="0.014681101" waveLength="408"/>
+              <dye:normalizedIntensity value="0.015428505" waveLength="409"/>
+              <dye:normalizedIntensity value="0.016186441" waveLength="410"/>
+              <dye:normalizedIntensity value="0.01698183" waveLength="411"/>
+              <dye:normalizedIntensity value="0.017650701" waveLength="412"/>
+              <dye:normalizedIntensity value="0.018738099" waveLength="413"/>
+              <dye:normalizedIntensity value="0.019568365" waveLength="414"/>
+              <dye:normalizedIntensity value="0.020765544" waveLength="415"/>
+              <dye:normalizedIntensity value="0.021646253" waveLength="416"/>
+              <dye:normalizedIntensity value="0.022901835" waveLength="417"/>
+              <dye:normalizedIntensity value="0.024073266" waveLength="418"/>
+              <dye:normalizedIntensity value="0.025259092" waveLength="419"/>
+              <dye:normalizedIntensity value="0.026527431" waveLength="420"/>
+              <dye:normalizedIntensity value="0.027662229" waveLength="421"/>
+              <dye:normalizedIntensity value="0.029000673" waveLength="422"/>
+              <dye:normalizedIntensity value="0.03052509" waveLength="423"/>
+              <dye:normalizedIntensity value="0.032118793" waveLength="424"/>
+              <dye:normalizedIntensity value="0.033455599" waveLength="425"/>
+              <dye:normalizedIntensity value="0.034953565" waveLength="426"/>
+              <dye:normalizedIntensity value="0.036838576" waveLength="427"/>
+              <dye:normalizedIntensity value="0.038724756" waveLength="428"/>
+              <dye:normalizedIntensity value="0.040327589" waveLength="429"/>
+              <dye:normalizedIntensity value="0.042237762" waveLength="430"/>
+              <dye:normalizedIntensity value="0.044035111" waveLength="431"/>
+              <dye:normalizedIntensity value="0.046204524" waveLength="432"/>
+              <dye:normalizedIntensity value="0.0485571" waveLength="433"/>
+              <dye:normalizedIntensity value="0.050502736" waveLength="434"/>
+              <dye:normalizedIntensity value="0.052939228" waveLength="435"/>
+              <dye:normalizedIntensity value="0.055525529" waveLength="436"/>
+              <dye:normalizedIntensity value="0.057852591" waveLength="437"/>
+              <dye:normalizedIntensity value="0.060955379" waveLength="438"/>
+              <dye:normalizedIntensity value="0.063067677" waveLength="439"/>
+              <dye:normalizedIntensity value="0.066335723" waveLength="440"/>
+              <dye:normalizedIntensity value="0.069261082" waveLength="441"/>
+              <dye:normalizedIntensity value="0.072198613" waveLength="442"/>
+              <dye:normalizedIntensity value="0.075237265" waveLength="443"/>
+              <dye:normalizedIntensity value="0.078359364" waveLength="444"/>
+              <dye:normalizedIntensity value="0.081694239" waveLength="445"/>
+              <dye:normalizedIntensity value="0.085517395" waveLength="446"/>
+              <dye:normalizedIntensity value="0.088999971" waveLength="447"/>
+              <dye:normalizedIntensity value="0.092324897" waveLength="448"/>
+              <dye:normalizedIntensity value="0.096121251" waveLength="449"/>
+              <dye:normalizedIntensity value="0.09836229" waveLength="450"/>
+              <dye:normalizedIntensity value="0.102288791" waveLength="451"/>
+              <dye:normalizedIntensity value="0.105974778" waveLength="452"/>
+              <dye:normalizedIntensity value="0.109392632" waveLength="453"/>
+              <dye:normalizedIntensity value="0.11368628" waveLength="454"/>
+              <dye:normalizedIntensity value="0.11713117" waveLength="455"/>
+              <dye:normalizedIntensity value="0.120981128" waveLength="456"/>
+              <dye:normalizedIntensity value="0.124808848" waveLength="457"/>
+              <dye:normalizedIntensity value="0.128102759" waveLength="458"/>
+              <dye:normalizedIntensity value="0.132272815" waveLength="459"/>
+              <dye:normalizedIntensity value="0.136668403" waveLength="460"/>
+              <dye:normalizedIntensity value="0.140689704" waveLength="461"/>
+              <dye:normalizedIntensity value="0.145070896" waveLength="462"/>
+              <dye:normalizedIntensity value="0.148675659" waveLength="463"/>
+              <dye:normalizedIntensity value="0.153073353" waveLength="464"/>
+              <dye:normalizedIntensity value="0.158720894" waveLength="465"/>
+              <dye:normalizedIntensity value="0.164412792" waveLength="466"/>
+              <dye:normalizedIntensity value="0.168533458" waveLength="467"/>
+              <dye:normalizedIntensity value="0.172368786" waveLength="468"/>
+              <dye:normalizedIntensity value="0.177789625" waveLength="469"/>
+              <dye:normalizedIntensity value="0.184310969" waveLength="470"/>
+              <dye:normalizedIntensity value="0.191031629" waveLength="471"/>
+              <dye:normalizedIntensity value="0.197384089" waveLength="472"/>
+              <dye:normalizedIntensity value="0.201573105" waveLength="473"/>
+              <dye:normalizedIntensity value="0.206221143" waveLength="474"/>
+              <dye:normalizedIntensity value="0.213861603" waveLength="475"/>
+              <dye:normalizedIntensity value="0.220047634" waveLength="476"/>
+              <dye:normalizedIntensity value="0.225328613" waveLength="477"/>
+              <dye:normalizedIntensity value="0.230901718" waveLength="478"/>
+              <dye:normalizedIntensity value="0.236103461" waveLength="479"/>
+              <dye:normalizedIntensity value="0.240667583" waveLength="480"/>
+              <dye:normalizedIntensity value="0.244593382" waveLength="481"/>
+              <dye:normalizedIntensity value="0.248002692" waveLength="482"/>
+              <dye:normalizedIntensity value="0.252367967" waveLength="483"/>
+              <dye:normalizedIntensity value="0.256561313" waveLength="484"/>
+              <dye:normalizedIntensity value="0.260128859" waveLength="485"/>
+              <dye:normalizedIntensity value="0.263727068" waveLength="486"/>
+              <dye:normalizedIntensity value="0.267681423" waveLength="487"/>
+              <dye:normalizedIntensity value="0.271546947" waveLength="488"/>
+              <dye:normalizedIntensity value="0.275057846" waveLength="489"/>
+              <dye:normalizedIntensity value="0.280474237" waveLength="490"/>
+              <dye:normalizedIntensity value="0.285450332" waveLength="491"/>
+              <dye:normalizedIntensity value="0.288587881" waveLength="492"/>
+              <dye:normalizedIntensity value="0.293280042" waveLength="493"/>
+              <dye:normalizedIntensity value="0.30067601" waveLength="494"/>
+              <dye:normalizedIntensity value="0.306710595" waveLength="495"/>
+              <dye:normalizedIntensity value="0.314885098" waveLength="496"/>
+              <dye:normalizedIntensity value="0.324848056" waveLength="497"/>
+              <dye:normalizedIntensity value="0.333201861" waveLength="498"/>
+              <dye:normalizedIntensity value="0.342235304" waveLength="499"/>
+              <dye:normalizedIntensity value="0.354997806" waveLength="500"/>
+              <dye:normalizedIntensity value="0.36620031" waveLength="501"/>
+              <dye:normalizedIntensity value="0.37937654" waveLength="502"/>
+              <dye:normalizedIntensity value="0.392123826" waveLength="503"/>
+              <dye:normalizedIntensity value="0.405052404" waveLength="504"/>
+              <dye:normalizedIntensity value="0.419818943" waveLength="505"/>
+              <dye:normalizedIntensity value="0.434280949" waveLength="506"/>
+              <dye:normalizedIntensity value="0.449499371" waveLength="507"/>
+              <dye:normalizedIntensity value="0.463481757" waveLength="508"/>
+              <dye:normalizedIntensity value="0.479678029" waveLength="509"/>
+              <dye:normalizedIntensity value="0.492970126" waveLength="510"/>
+              <dye:normalizedIntensity value="0.507314861" waveLength="511"/>
+              <dye:normalizedIntensity value="0.521587149" waveLength="512"/>
+              <dye:normalizedIntensity value="0.533897416" waveLength="513"/>
+              <dye:normalizedIntensity value="0.546106797" waveLength="514"/>
+              <dye:normalizedIntensity value="0.556977851" waveLength="515"/>
+              <dye:normalizedIntensity value="0.567838137" waveLength="516"/>
+              <dye:normalizedIntensity value="0.575904731" waveLength="517"/>
+              <dye:normalizedIntensity value="0.58261439" waveLength="518"/>
+              <dye:normalizedIntensity value="0.587767797" waveLength="519"/>
+              <dye:normalizedIntensity value="0.593180092" waveLength="520"/>
+              <dye:normalizedIntensity value="0.59886567" waveLength="521"/>
+              <dye:normalizedIntensity value="0.600715218" waveLength="522"/>
+              <dye:normalizedIntensity value="0.604976914" waveLength="523"/>
+              <dye:normalizedIntensity value="0.606406063" waveLength="524"/>
+              <dye:normalizedIntensity value="0.609637593" waveLength="525"/>
+              <dye:normalizedIntensity value="0.611429675" waveLength="526"/>
+              <dye:normalizedIntensity value="0.613219768" waveLength="527"/>
+              <dye:normalizedIntensity value="0.61880996" waveLength="528"/>
+              <dye:normalizedIntensity value="0.624027036" waveLength="529"/>
+              <dye:normalizedIntensity value="0.628781578" waveLength="530"/>
+              <dye:normalizedIntensity value="0.634464113" waveLength="531"/>
+              <dye:normalizedIntensity value="0.644101472" waveLength="532"/>
+              <dye:normalizedIntensity value="0.653366299" waveLength="533"/>
+              <dye:normalizedIntensity value="0.664100652" waveLength="534"/>
+              <dye:normalizedIntensity value="0.676196389" waveLength="535"/>
+              <dye:normalizedIntensity value="0.690357843" waveLength="536"/>
+              <dye:normalizedIntensity value="0.706901366" waveLength="537"/>
+              <dye:normalizedIntensity value="0.72104901" waveLength="538"/>
+              <dye:normalizedIntensity value="0.742361354" waveLength="539"/>
+              <dye:normalizedIntensity value="0.760716622" waveLength="540"/>
+              <dye:normalizedIntensity value="0.778735407" waveLength="541"/>
+              <dye:normalizedIntensity value="0.799016883" waveLength="542"/>
+              <dye:normalizedIntensity value="0.821550516" waveLength="543"/>
+              <dye:normalizedIntensity value="0.841268221" waveLength="544"/>
+              <dye:normalizedIntensity value="0.863252246" waveLength="545"/>
+              <dye:normalizedIntensity value="0.884670041" waveLength="546"/>
+              <dye:normalizedIntensity value="0.906090178" waveLength="547"/>
+              <dye:normalizedIntensity value="0.924401557" waveLength="548"/>
+              <dye:normalizedIntensity value="0.944615619" waveLength="549"/>
+              <dye:normalizedIntensity value="0.960614097" waveLength="550"/>
+              <dye:normalizedIntensity value="0.973300524" waveLength="551"/>
+              <dye:normalizedIntensity value="0.984111303" waveLength="552"/>
+              <dye:normalizedIntensity value="0.995832168" waveLength="553"/>
+              <dye:normalizedIntensity value="1.0" waveLength="554"/>
+              <dye:normalizedIntensity value="0.999331714" waveLength="555"/>
+              <dye:normalizedIntensity value="0.995242649" waveLength="556"/>
+              <dye:normalizedIntensity value="0.98851286" waveLength="557"/>
+              <dye:normalizedIntensity value="0.974947479" waveLength="558"/>
+              <dye:normalizedIntensity value="0.957769611" waveLength="559"/>
+              <dye:normalizedIntensity value="0.938796969" waveLength="560"/>
+              <dye:normalizedIntensity value="0.911902625" waveLength="561"/>
+              <dye:normalizedIntensity value="0.878962343" waveLength="562"/>
+              <dye:normalizedIntensity value="0.845061299" waveLength="563"/>
+              <dye:normalizedIntensity value="0.806022998" waveLength="564"/>
+              <dye:normalizedIntensity value="0.764591392" waveLength="565"/>
+              <dye:normalizedIntensity value="0.723370922" waveLength="566"/>
+              <dye:normalizedIntensity value="0.676393247" waveLength="567"/>
+              <dye:normalizedIntensity value="0.63231214" waveLength="568"/>
+              <dye:normalizedIntensity value="0.586473827" waveLength="569"/>
+              <dye:normalizedIntensity value="0.541351903" waveLength="570"/>
+              <dye:normalizedIntensity value="0.495330661" waveLength="571"/>
+              <dye:normalizedIntensity value="0.452310618" waveLength="572"/>
+              <dye:normalizedIntensity value="0.410465284" waveLength="573"/>
+              <dye:normalizedIntensity value="0.370380899" waveLength="574"/>
+              <dye:normalizedIntensity value="0.331550926" waveLength="575"/>
+              <dye:normalizedIntensity value="0.297259209" waveLength="576"/>
+              <dye:normalizedIntensity value="0.264503965" waveLength="577"/>
+              <dye:normalizedIntensity value="0.235156392" waveLength="578"/>
+              <dye:normalizedIntensity value="0.208583901" waveLength="579"/>
+              <dye:normalizedIntensity value="0.185705357" waveLength="580"/>
+              <dye:normalizedIntensity value="0.163636715" waveLength="581"/>
+              <dye:normalizedIntensity value="0.144412441" waveLength="582"/>
+              <dye:normalizedIntensity value="0.125773005" waveLength="583"/>
+              <dye:normalizedIntensity value="0.108532288" waveLength="584"/>
+              <dye:normalizedIntensity value="0.095701203" waveLength="585"/>
+              <dye:normalizedIntensity value="0.083671358" waveLength="586"/>
+              <dye:normalizedIntensity value="0.07224297" waveLength="587"/>
+              <dye:normalizedIntensity value="0.062144132" waveLength="588"/>
+              <dye:normalizedIntensity value="0.054796266" waveLength="589"/>
+              <dye:normalizedIntensity value="0.047689382" waveLength="590"/>
+              <dye:normalizedIntensity value="0.040961114" waveLength="591"/>
+              <dye:normalizedIntensity value="0.035668198" waveLength="592"/>
+              <dye:normalizedIntensity value="0.030909793" waveLength="593"/>
+              <dye:normalizedIntensity value="0.027164935" waveLength="594"/>
+              <dye:normalizedIntensity value="0.023380285" waveLength="595"/>
+              <dye:normalizedIntensity value="0.020600755" waveLength="596"/>
+              <dye:normalizedIntensity value="0.01790912" waveLength="597"/>
+              <dye:normalizedIntensity value="0.015793311" waveLength="598"/>
+              <dye:normalizedIntensity value="0.013337508" waveLength="599"/>
+              <dye:normalizedIntensity value="0.011684466" waveLength="600"/>
+              <dye:normalizedIntensity value="0.009999005" waveLength="601"/>
+              <dye:normalizedIntensity value="0.00864558" waveLength="602"/>
+              <dye:normalizedIntensity value="0.007557363" waveLength="603"/>
+              <dye:normalizedIntensity value="0.006680516" waveLength="604"/>
+              <dye:normalizedIntensity value="0.0057661" waveLength="605"/>
+              <dye:normalizedIntensity value="0.004992129" waveLength="606"/>
+              <dye:normalizedIntensity value="0.004460895" waveLength="607"/>
+              <dye:normalizedIntensity value="0.003881207" waveLength="608"/>
+              <dye:normalizedIntensity value="0.00329555" waveLength="609"/>
+              <dye:normalizedIntensity value="0.003015946" waveLength="610"/>
+              <dye:normalizedIntensity value="0.002547912" waveLength="611"/>
+              <dye:normalizedIntensity value="0.002242093" waveLength="612"/>
+              <dye:normalizedIntensity value="0.001948562" waveLength="613"/>
+              <dye:normalizedIntensity value="0.001633964" waveLength="614"/>
+              <dye:normalizedIntensity value="0.00153811" waveLength="615"/>
+              <dye:normalizedIntensity value="0.001295725" waveLength="616"/>
+              <dye:normalizedIntensity value="0.001090418" waveLength="617"/>
+              <dye:normalizedIntensity value="0.001047032" waveLength="618"/>
+              <dye:normalizedIntensity value="8.1161E-4" waveLength="619"/>
+              <dye:normalizedIntensity value="7.22217E-4" waveLength="620"/>
+              <dye:normalizedIntensity value="5.63841E-4" waveLength="621"/>
+              <dye:normalizedIntensity value="5.95371E-4" waveLength="622"/>
+              <dye:normalizedIntensity value="5.10308E-4" waveLength="623"/>
+              <dye:normalizedIntensity value="4.22085E-4" waveLength="624"/>
+              <dye:normalizedIntensity value="4.25772E-4" waveLength="625"/>
+              <dye:normalizedIntensity value="3.45004E-4" waveLength="626"/>
+              <dye:normalizedIntensity value="2.71434E-4" waveLength="627"/>
+              <dye:normalizedIntensity value="3.02238E-4" waveLength="628"/>
+              <dye:normalizedIntensity value="2.35761E-4" waveLength="629"/>
+              <dye:normalizedIntensity value="1.7462E-4" waveLength="630"/>
+            </dye:excitationSpectrum>
+          </lsmimage:dyeData>
+          <lsmimage:laserDataId>INSIGHT X3-OL_131328Imaging_main_phase_1</lsmimage:laserDataId>
+        </commonphase:channel>
+        <commonphase:channel xsi:type="lsmimage:NormalChannel" id="f87dad19-fef9-4b41-8806-22dd152d2fab" order="4" enable="true" detectorId="__FV40-EXRSD_D_4__">
+          <root:productData xsi:type="fvCommonphase:FVChannel">
+            <fvCommonphase:backgroundIntensity>0</fvCommonphase:backgroundIntensity>
+            <fvCommonphase:interval>32.27</fvCommonphase:interval>
+            <fvCommonphase:enableDisplayPhoton>false</fvCommonphase:enableDisplayPhoton>
+            <fvCommonphase:histogramDisplayRangeParam>
+              <fvCommonphase:startIntensity>0</fvCommonphase:startIntensity>
+              <fvCommonphase:endIntensity>186</fvCommonphase:endIntensity>
+            </fvCommonphase:histogramDisplayRangeParam>
+          </root:productData>
+          <commonphase:name>CH4</commonphase:name>
+          <commonphase:opticalResolution>
+            <commonparam:x>0.398285714285714</commonparam:x>
+            <commonparam:y>0.398285714285714</commonparam:y>
+            <commonparam:z>1.336943711710632</commonparam:z>
+          </commonphase:opticalResolution>
+          <commonphase:length>
+            <commonparam:x>0.331456303681194</commonparam:x>
+            <commonparam:y>0.331456303681194</commonparam:y>
+            <commonparam:z>2.0</commonparam:z>
+          </commonphase:length>
+          <commonphase:pixelUnit>
+            <commonphase:x>MICRO_METER</commonphase:x>
+            <commonphase:y>MICRO_METER</commonphase:y>
+            <commonphase:z>MICRO_METER</commonphase:z>
+          </commonphase:pixelUnit>
+          <commonphase:deviceName>RNDD4</commonphase:deviceName>
+          <commonphase:bitCount>16</commonphase:bitCount>
+          <lsmimage:dyeName>Katushka2S</lsmimage:dyeName>
+          <lsmimage:laserDataId>INSIGHT X3-OL_131328Imaging_main_phase_1</lsmimage:laserDataId>
+        </commonphase:channel>
+      </commonphase:group>
+      <lsmimage:imagingMainLaser enable="true" id="MaiTai e HP DS-OL_196864Imaging_main_phase_1" isVariable="true" laserId="MaiTai e HP DS-OL_196864">
+        <commonimage:wavelength>900</commonimage:wavelength>
+        <commonimage:forcedOff>false</commonimage:forcedOff>
+      </lsmimage:imagingMainLaser>
+      <lsmimage:imagingMainLaser enable="true" id="INSIGHT X3-OL_131328Imaging_main_phase_1" isVariable="true" laserId="INSIGHT X3-OL_131328">
+        <commonimage:wavelength>1140</commonimage:wavelength>
+        <commonimage:forcedOff>false</commonimage:forcedOff>
+      </lsmimage:imagingMainLaser>
+      <lsmimage:param>
+        <lsmimage:autoPinhole>false</lsmimage:autoPinhole>
+      </lsmimage:param>
+    </commonimage:phase>
+    <commonimage:configuration xsi:type="lsmimage:LSMConfiguration">
+      <root:productData xsi:type="fvLsmimage:FvLsmConfiguration">
+        <fvLsmimage:externalDetectorLightpath detectorId="__FV40-EXRSD_D_3__" detectorIndex="0">
+          <fvLsmimage:commonBarrierFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__0" special="false">
+            <opticalelement:name>Empty</opticalelement:name>
+          </fvLsmimage:commonBarrierFilter>
+          <fvLsmimage:dichroicMirror id="MIRROR__ID__0" special="false">
+            <opticalelement:name>MIRROR</opticalelement:name>
+            <opticalelement:transmittanceSpectrum/>
+          </fvLsmimage:dichroicMirror>
+          <fvLsmimage:filterCube id="SpecialFilerCube0__ID__0" special="true">
+            <opticalelement:name>FYCY5</opticalelement:name>
+            <opticalelement:displayName>FYCY5</opticalelement:displayName>
+            <opticalelement:productName>SpecialFilerCube</opticalelement:productName>
+            <opticalelement:dichroicMirror id="SpecialFilter2__ID__" special="true">
+              <opticalelement:name>T660</opticalelement:name>
+            </opticalelement:dichroicMirror>
+            <opticalelement:filter id="SpecialFilter0__ID__" special="true">
+              <opticalelement:name>ET585/40M</opticalelement:name>
+            </opticalelement:filter>
+            <opticalelement:filter id="SpecialFilter1__ID__" special="true">
+              <opticalelement:name>ET720/60M</opticalelement:name>
+            </opticalelement:filter>
+          </fvLsmimage:filterCube>
+        </fvLsmimage:externalDetectorLightpath>
+        <fvLsmimage:externalDetectorLightpath detectorId="__FV40-EXRSD_D_4__" detectorIndex="1">
+          <fvLsmimage:commonBarrierFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__0" special="false">
+            <opticalelement:name>Empty</opticalelement:name>
+          </fvLsmimage:commonBarrierFilter>
+          <fvLsmimage:dichroicMirror id="MIRROR__ID__0" special="false">
+            <opticalelement:name>MIRROR</opticalelement:name>
+            <opticalelement:transmittanceSpectrum/>
+          </fvLsmimage:dichroicMirror>
+          <fvLsmimage:filterCube id="SpecialFilerCube0__ID__0" special="true">
+            <opticalelement:name>FYCY5</opticalelement:name>
+            <opticalelement:displayName>FYCY5</opticalelement:displayName>
+            <opticalelement:productName>SpecialFilerCube</opticalelement:productName>
+            <opticalelement:dichroicMirror id="SpecialFilter2__ID__" special="true">
+              <opticalelement:name>T660</opticalelement:name>
+            </opticalelement:dichroicMirror>
+            <opticalelement:filter id="SpecialFilter0__ID__" special="true">
+              <opticalelement:name>ET585/40M</opticalelement:name>
+            </opticalelement:filter>
+            <opticalelement:filter id="SpecialFilter1__ID__" special="true">
+              <opticalelement:name>ET720/60M</opticalelement:name>
+            </opticalelement:filter>
+          </fvLsmimage:filterCube>
+        </fvLsmimage:externalDetectorLightpath>
+        <fvLsmimage:externalDetectorLightpath detectorId="__FV40-EXBSD_D_1__" detectorIndex="0">
+          <fvLsmimage:commonBarrierFilter id="BA750__ID__0" special="false">
+            <opticalelement:name>BA750</opticalelement:name>
+            <opticalelement:transmittanceSpectrum/>
+          </fvLsmimage:commonBarrierFilter>
+          <fvLsmimage:dichroicMirror id="SDM570__ID__0" special="false">
+            <opticalelement:name>SDM570</opticalelement:name>
+            <opticalelement:transmittanceSpectrum/>
+          </fvLsmimage:dichroicMirror>
+          <fvLsmimage:filterCube id="FV40-FVG__ID__0" special="false">
+            <opticalelement:name>FV40-FVG</opticalelement:name>
+            <opticalelement:displayName>FV40-FVG</opticalelement:displayName>
+            <opticalelement:productName>FV40-FVG</opticalelement:productName>
+            <opticalelement:dichroicMirror id="SDM485__ID__" special="false">
+              <opticalelement:name>SDM485</opticalelement:name>
+            </opticalelement:dichroicMirror>
+            <opticalelement:filter id="BA410-455__ID__" special="false">
+              <opticalelement:name>BA410-455</opticalelement:name>
+            </opticalelement:filter>
+            <opticalelement:filter id="BA495-540__ID__" special="false">
+              <opticalelement:name>BA495-540</opticalelement:name>
+            </opticalelement:filter>
+          </fvLsmimage:filterCube>
+        </fvLsmimage:externalDetectorLightpath>
+        <fvLsmimage:externalDetectorLightpath detectorId="__FV40-EXBSD_D_2__" detectorIndex="1">
+          <fvLsmimage:commonBarrierFilter id="BA750__ID__0" special="false">
+            <opticalelement:name>BA750</opticalelement:name>
+            <opticalelement:transmittanceSpectrum/>
+          </fvLsmimage:commonBarrierFilter>
+          <fvLsmimage:dichroicMirror id="SDM570__ID__0" special="false">
+            <opticalelement:name>SDM570</opticalelement:name>
+            <opticalelement:transmittanceSpectrum/>
+          </fvLsmimage:dichroicMirror>
+          <fvLsmimage:filterCube id="FV40-FVG__ID__0" special="false">
+            <opticalelement:name>FV40-FVG</opticalelement:name>
+            <opticalelement:displayName>FV40-FVG</opticalelement:displayName>
+            <opticalelement:productName>FV40-FVG</opticalelement:productName>
+            <opticalelement:dichroicMirror id="SDM485__ID__" special="false">
+              <opticalelement:name>SDM485</opticalelement:name>
+            </opticalelement:dichroicMirror>
+            <opticalelement:filter id="BA410-455__ID__" special="false">
+              <opticalelement:name>BA410-455</opticalelement:name>
+            </opticalelement:filter>
+            <opticalelement:filter id="BA495-540__ID__" special="false">
+              <opticalelement:name>BA495-540</opticalelement:name>
+            </opticalelement:filter>
+          </fvLsmimage:filterCube>
+        </fvLsmimage:externalDetectorLightpath>
+        <fvLsmimage:scanUnitType>Main</fvLsmimage:scanUnitType>
+        <fvLsmimage:fptEnabled>false</fvLsmimage:fptEnabled>
+      </root:productData>
+      <commonimage:stimulationMainLaser enable="false" id="MaiTai e HP DS-OL_196864Stimulating_main" isVariable="true" laserId="MaiTai e HP DS-OL_196864">
+        <commonimage:wavelength>900</commonimage:wavelength>
+        <commonimage:forcedOff>false</commonimage:forcedOff>
+      </commonimage:stimulationMainLaser>
+      <commonimage:stimulationMainLaser enable="false" id="INSIGHT X3-OL_131328Stimulating_main" isVariable="true" laserId="INSIGHT X3-OL_131328">
+        <commonimage:wavelength>1140</commonimage:wavelength>
+        <commonimage:forcedOff>false</commonimage:forcedOff>
+      </commonimage:stimulationMainLaser>
+      <commonimage:zdcMode>OneShot</commonimage:zdcMode>
+      <lsmimage:scannerType>Resonant</lsmimage:scannerType>
+    </commonimage:configuration>
+    <lsmimage:scannerSettings type="Galvano">
+      <lsmimage:param>
+        <lsmparam:imageSize>
+          <commonparam:width>512</commonparam:width>
+          <commonparam:height>512</commonparam:height>
+        </lsmparam:imageSize>
+        <lsmparam:speed>
+          <commonparam:speed>0.5</commonparam:speed>
+          <commonparam:roundtrip>true</commonparam:roundtrip>
+          <commonparam:speedInformation>
+            <commonparam:pixelSpeed>5.0E-4</commonparam:pixelSpeed>
+            <commonparam:lineSpeed>0.48828125</commonparam:lineSpeed>
+            <commonparam:frameSpeed>250.9765625</commonparam:frameSpeed>
+            <commonparam:seriesInterval>11664.0</commonparam:seriesInterval>
+          </commonparam:speedInformation>
+          <lsmparam:focus>0</lsmparam:focus>
+        </lsmparam:speed>
+      </lsmimage:param>
+    </lsmimage:scannerSettings>
+    <lsmimage:scannerSettings type="Resonant">
+      <lsmimage:param>
+        <lsmparam:imageSize>
+          <commonparam:width>1024</commonparam:width>
+          <commonparam:height>1024</commonparam:height>
+        </lsmparam:imageSize>
+        <lsmparam:speed>
+          <commonparam:speed>0.033</commonparam:speed>
+          <commonparam:roundtrip>true</commonparam:roundtrip>
+          <commonparam:speedInformation>
+            <commonparam:pixelSpeed>3.3E-5</commonparam:pixelSpeed>
+            <commonparam:lineSpeed>0.06337135614702154</commonparam:lineSpeed>
+            <commonparam:frameSpeed>130.6717363751584</commonparam:frameSpeed>
+            <commonparam:seriesInterval>11983.0</commonparam:seriesInterval>
+          </commonparam:speedInformation>
+          <lsmparam:focus>0</lsmparam:focus>
+        </lsmparam:speed>
+      </lsmimage:param>
+    </lsmimage:scannerSettings>
+  </commonimage:acquisition>
+</lsmimage:imageProperties>

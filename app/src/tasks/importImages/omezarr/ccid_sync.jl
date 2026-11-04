@@ -18,6 +18,9 @@ const _OME_DERIVED_META_KEYS = (
     "SizeC", "SizeT", "SizeZ",
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
     "TimeIncrement", "TimeIncrementUnit",
+    # Read from the SOURCE file, not the store, but the same rule holds: a re-import from another
+    # source (or one whose settings can't be read) must not keep the previous source's settings.
+    "acquisition",
 )
 
 """
@@ -144,6 +147,14 @@ function resync_ome_meta!(img::CciaImage)::Bool
     if get(zarr_meta, "SizeT", 1) > 1 && get(zarr_meta, "TimeIncrement", 0.0) == 0.0
         src = string(get(img.meta, "ori_path", ""))
         isempty(src) || _recover_ims_time_increment!(zarr_meta, src, task_run_dir(img._dir))
+    end
+    # Same repair for the acquisition settings: images imported before they were read get them from
+    # the source file. Skipped when ccid already has them (the read is a scan of the source) and for a
+    # registered stack, whose `ori_path` is only the REFERENCE cycle's file. Other derived images
+    # (projection, Z-crop, resample) are caught by the count check in `_recover_acquisition_settings!`.
+    if !haskey(img.meta, "acquisition") && !haskey(img.meta, "register_reference_uid")
+        src = string(get(img.meta, "ori_path", ""))
+        isempty(src) || _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir))
     end
 
     merged = _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)

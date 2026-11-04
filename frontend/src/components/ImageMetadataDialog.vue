@@ -9,6 +9,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted } from 'vue'
+import { acquisitionRows } from '../utils/acquisitionSettings'
 import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
@@ -104,6 +105,7 @@ const size = (s: StoreInfo | null | undefined) => (s && s.bytes > 0 ? formatByte
 const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
+const acquisition = computed(() => acquisitionRows(img.value.acquisition))
 // A crop names its source image (by name when it's in the open project) + version + pixel box.
 const cropLine = computed(() => {
   const cs = img.value.cropSource
@@ -226,6 +228,17 @@ async function saveEditVn() {
           <span class="md-k">Pixel size Y</span><span class="md-v">{{ physical.y }}</span>
           <span class="md-k">Voxel depth Z</span><span class="md-v">{{ physical.z }}</span>
           <span class="md-k">Frame interval</span><span class="md-v">{{ timeStr }}</span>
+        </div>
+      </section>
+
+      <!-- Microscope settings read from the source file (laser power, Bright Z, scan, detectors) —
+           values Bio-Formats drops. Absent for formats without a reader. -->
+      <section v-if="acquisition.length" class="md-section">
+        <h4 class="md-h cc-eyebrow">Acquisition</h4>
+        <div class="md-grid">
+          <template v-for="(r, i) in acquisition" :key="i">
+            <span class="md-k">{{ r.k }}</span><span class="md-v">{{ r.v }}</span>
+          </template>
         </div>
       </section>
 
