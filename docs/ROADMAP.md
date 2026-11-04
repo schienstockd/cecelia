@@ -84,6 +84,10 @@ the freeze as a milestone (below). `CHANGELOG.md` and the root `LICENSE` (GPL-3-
 acknowledgements are DONE. The 1.0 bar is **fitness for the science being done with it**, not R-parity
 — see `docs/RELEASING.md` → *Versioning*.
 
+**Exception — the acquisition advisor ships before 1.0, as Experimental** (Dominik, 2026-11-04). No new
+page: per-plane import numbers, an OIR settings reader, a light-path diagram in the image metadata
+dialog, and Claude advising through the MCP. Plan: `docs/todo/ACQUISITION_ADVISOR_PLAN.md`.
+
 > Phases 4 and 5 below shipped ahead of this one: packaging and self-update were needed to get the tool
 > onto other machines, which the freeze does not gate. The phase numbers are historical order, not
 > dependency order.
