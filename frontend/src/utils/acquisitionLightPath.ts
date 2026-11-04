@@ -124,7 +124,7 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
     if (ends) sample.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))
   }
   if (sizeZ > 1 && !facts.some(f => f.profile)) {
-    sample.push(item('Signal by depth not measured yet (next denoise run)', 'missing'))
+    sample.push(item('Signal by depth not measured yet: refresh metadata', 'missing'))
   }
 
   // 6 · dichroics and filters — the file names neither

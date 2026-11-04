@@ -138,19 +138,23 @@ end
 # whose ccid.json lost these fields) — re-derives them from the already-converted OME-ZARR (same
 # reader ImportOmezarr uses) without touching the original source file or re-running
 # bioformats2raw. Returns the refreshed payload per uid so the frontend can drop the warning icon
-# immediately, no page reload needed.
+# immediately, no page reload needed. `measure: true` also runs the import's pixel probe when the
+# stored one is missing or predates the per-plane profile (`ensure_saturation_meta!`, a full pass
+# over the store — seconds per image), so a single image's dialog can fill it without a re-import.
 function api_images_meta_resync(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
     isnothing(proj_dir) && return 400, JSON3.write((; error=err))
     project_uid = _wstr(data, :projectUid)
     image_uids  = _wvec_str(data, :imageUids)
     isempty(image_uids) && return 400, JSON3.write((; error="imageUids required"))
+    measure     = _wbool(data, :measure) === true
 
     images = Dict{String,Any}()
     for uid in image_uids
         img = init_object(project_uid, uid)
         img isa CciaImage || continue
         resync_ome_meta!(img)
+        measure && ensure_saturation_meta!(img)
         reloaded = init_object(project_uid, uid)
         reloaded isa CciaImage && (images[uid] = _image_payload(reloaded))
     end

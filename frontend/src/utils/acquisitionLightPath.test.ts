@@ -64,7 +64,7 @@ describe('lightPathStages — what is not there', () => {
   it('flags a stack whose per-depth signal was never measured', () => {
     const img: LightPathImage = { ...real, cleanupFacts: { channels: real.cleanupFacts!.channels!.map(c => ({ ...c, profile: null })) } }
     expect(stage(img, 'sample').items.at(-1)).toEqual(
-      { text: 'Signal by depth not measured yet (next denoise run)', source: 'missing' })
+      { text: 'Signal by depth not measured yet: refresh metadata', source: 'missing' })
   })
 
   it('lists clipped channels at digitisation', () => {

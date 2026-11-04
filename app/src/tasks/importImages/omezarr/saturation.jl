@@ -47,7 +47,8 @@ end
 Backfill `meta["saturation"]` for an image imported before the probe existed — or before it
 recorded per-plane `profile`s, in which case the key is replaced, not merged — so denoise's
 saturation gate, the import QC dot and the Cleanup facts (`img_cleanup_facts`) have their signal.
-Called by the denoise task. A no-op when
+Called by the denoise task and by Refresh metadata in the image dialog (`measure: true` on
+`POST /api/images/meta/resync`). A no-op when
 the field is already there with profiles. Probes the `default` store — clipping and photon counts are
 ACQUISITION properties; a derived store (drift padding, AF output) would skew `zeroFrac` — through
 `_probe_saturation`, then persists through the import's own fill-only meta write and refreshes the

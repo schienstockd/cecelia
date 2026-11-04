@@ -12,6 +12,7 @@ import { computed, ref, nextTick, onMounted } from 'vue'
 import { acquisitionRows } from '../utils/acquisitionSettings'
 import { isMultiphoton } from '../utils/acquisitionLightPath'
 import AcquisitionLightPath from './AcquisitionLightPath.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
 import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
@@ -45,14 +46,15 @@ function num(v: number | null | undefined): string {
 // Calibration readouts share the ImageTable's formatting (`0.346 µm`, not `0.3459441507762987
 // micrometer`) — one shared helper, `formatPhysicalSize`, so the two surfaces stay in sync.
 // Fill-only: adds what the store or the source file records and ccid.json lacks (size, timing,
-// acquisition settings); never overwrites a value already set (`resync_ome_meta!`).
+// acquisition settings); never overwrites a value already set (`resync_ome_meta!`). Also measures the
+// per-depth / per-frame profile when it is missing — one image, so the pixel pass is affordable here.
 const resyncing = ref(false)
 async function resync() {
   const projectUid = projectMeta.current?.uid
   if (!projectUid || resyncing.value) return
   resyncing.value = true
   try {
-    await project.resyncImageMeta(projectUid, [img.value.uid])
+    await project.resyncImageMeta(projectUid, [img.value.uid], true)
     log.info(`Re-read metadata from file for ${img.value.name}.`, { source: 'manageImages' })
   } catch (e) {
     log.error(`Failed to re-read metadata: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
@@ -215,7 +217,13 @@ async function saveEditVn() {
     </template>
 
     <div class="md-body">
-      <p class="md-name">{{ img.name }}</p>
+      <div class="md-head cc-row">
+        <p class="md-name">{{ img.name }}</p>
+        <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing" @click="resync"
+          v-tooltip.left="'Refresh metadata from the store and source file'">
+          <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
+        </button>
+      </div>
 
       <!-- headline: the original source file this image was converted from -->
       <section class="md-section">
@@ -239,14 +247,8 @@ async function saveEditVn() {
         </div>
       </section>
 
-      <section class="md-section">
-        <div class="md-head cc-row">
-          <h4 class="md-h cc-eyebrow">Dimensions &amp; calibration</h4>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="resyncing" @click="resync"
-            v-tooltip.left="'Re-read metadata from the store and source file'">
-            <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
-          </button>
-        </div>
+      <CollapsibleSection label="Dimensions & calibration" tip="Size and calibration" accordion="cc.imageMeta.section" section="dimensions" default-open max-height="none">
+        <div class="md-section md-cs">
         <div class="md-grid">
           <span class="md-k">Channels (C)</span><span class="md-v">{{ num(img.sizeC) }}</span>
           <span class="md-k">Z-slices (Z)</span><span class="md-v">{{ num(img.sizeZ) }}</span>
@@ -256,29 +258,32 @@ async function saveEditVn() {
           <span class="md-k">Voxel depth Z</span><span class="md-v">{{ physical.z }}</span>
           <span class="md-k">Frame interval</span><span class="md-v">{{ timeStr }}</span>
         </div>
-      </section>
+        </div>
+      </CollapsibleSection>
 
       <!-- Microscope settings read from the source file (laser power, Bright Z, scan, detectors) —
            values Bio-Formats drops. Absent for formats without a reader. -->
-      <section v-if="acquisition.length" class="md-section">
-        <h4 class="md-h cc-eyebrow">Acquisition</h4>
+      <CollapsibleSection v-if="acquisition.length" label="Acquisition" tip="Microscope settings from the source file" accordion="cc.imageMeta.section" section="acquisition" max-height="none">
+        <div class="md-section md-cs">
         <AcquisitionLightPath v-if="lightPath" :image="img" />
         <div v-else class="md-grid">
           <template v-for="(r, i) in acquisition" :key="i">
             <span class="md-k">{{ r.k }}</span><span class="md-v">{{ r.v }}</span>
           </template>
         </div>
-      </section>
+        </div>
+      </CollapsibleSection>
 
-      <section v-if="channels.length" class="md-section">
-        <h4 class="md-h cc-eyebrow">Channels</h4>
+      <CollapsibleSection v-if="channels.length" label="Channels" tip="Channel names" accordion="cc.imageMeta.section" section="channels" max-height="none">
+        <div class="md-section md-cs">
         <ol class="md-chips cc-row cc-row-tight">
           <li v-for="(c, i) in channels" :key="i" class="md-chip">{{ c }}</li>
         </ol>
-      </section>
+        </div>
+      </CollapsibleSection>
 
-      <section class="md-section">
-        <h4 class="md-h cc-eyebrow">Stored files</h4>
+      <CollapsibleSection label="Stored files" tip="Versions, segmentations and their sizes" accordion="cc.imageMeta.section" section="stored" max-height="none">
+        <div class="md-section md-cs">
         <div class="md-grid">
           <span class="md-k">Active version</span><span class="md-v">{{ img.activeValueName || '—' }}</span>
         </div>
@@ -406,30 +411,34 @@ async function saveEditVn() {
             <code class="md-code">{{ fns.join(', ') }}</code>
           </li>
         </ul>
-      </section>
+        </div>
+      </CollapsibleSection>
 
-      <section v-if="attrs.length" class="md-section">
-        <h4 class="md-h cc-eyebrow">Attributes</h4>
+      <CollapsibleSection v-if="attrs.length" label="Attributes" tip="Image attributes" accordion="cc.imageMeta.section" section="attributes" max-height="none">
+        <div class="md-section md-cs">
         <div class="md-grid">
           <template v-for="[k, v] in attrs" :key="'a-' + k">
             <span class="md-k">{{ k }}</span><span class="md-v">{{ v }}</span>
           </template>
         </div>
-      </section>
+        </div>
+      </CollapsibleSection>
 
-      <section v-if="extra.length" class="md-section">
-        <h4 class="md-h cc-eyebrow">Other metadata</h4>
+      <CollapsibleSection v-if="extra.length" label="Other metadata" tip="Other recorded metadata" accordion="cc.imageMeta.section" section="other" max-height="none">
+        <div class="md-section md-cs">
         <div class="md-grid">
           <template v-for="[k, v] in extra" :key="'e-' + k">
             <span class="md-k">{{ k }}</span><span class="md-v">{{ v }}</span>
           </template>
         </div>
-      </section>
+        </div>
+      </CollapsibleSection>
 
-      <section v-if="img.note" class="md-section">
-        <h4 class="md-h cc-eyebrow">Note</h4>
+      <CollapsibleSection v-if="img.note" label="Note" tip="Note on this image" accordion="cc.imageMeta.section" section="note" max-height="none">
+        <div class="md-section md-cs">
         <p class="md-note-text">{{ img.note }}</p>
-      </section>
+        </div>
+      </CollapsibleSection>
     </div>
   </BaseModal>
 </template>
@@ -441,7 +450,8 @@ async function saveEditVn() {
 
 .md-section { display: flex; flex-direction: column; gap: 0.4rem; }
 .md-h { margin: 0; }
-.md-head { justify-content: space-between; }
+.md-head { justify-content: space-between; flex-wrap: nowrap; }
+.md-cs { padding: 0.2rem 0 0.4rem; }
 
 .md-grid {
   display: grid; grid-template-columns: max-content 1fr;

@@ -323,10 +323,11 @@ export const useProjectStore = defineStore('project', () => {
   // Re-read images' metadata from their stores and source files (`resync_ome_meta!`: fill-only — size,
   // timing, the source's acquisition settings) and merge the whole returned payload, so every field
   // the resync can fill reaches the table and the metadata dialog. Throws on an HTTP error.
-  async function resyncImageMeta(projectUid: string, imageUids: string[]): Promise<void> {
+  // `measure` also runs the import's pixel probe where it is missing (per-depth profile; a full pass).
+  async function resyncImageMeta(projectUid: string, imageUids: string[], measure = false): Promise<void> {
     const res = await fetch('/api/images/meta/resync', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUids }),
+      body: JSON.stringify({ projectUid, imageUids, measure }),
     })
     const body = await res.json().catch(() => ({})) as { images?: Record<string, Partial<CciaImage>>; error?: string }
     if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
