@@ -15,9 +15,8 @@ stack. Per-tag notes are also on the
 
 ### Read this first
 
-- **Import drops an incomplete last timepoint.** A recording stopped mid-volume came in with that
-  timepoint's unrecorded z-planes left black. Tick *Keep incomplete last timepoint* (Advanced) to keep
-  it. Already-imported images are unchanged; re-import one to drop it.
+- **Import drops an incomplete last timepoint**, left partly black when a recording stopped
+  mid-volume. Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it.
 
 ### Fixed
 
