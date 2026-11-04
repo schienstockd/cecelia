@@ -15,9 +15,9 @@ canary case (did CLAUDE.md load at all?) but don't prove the realistic case (doe
 guardrail survive when the ask is phrased like a real user bug report and the agent
 has to discover the util itself).
 
-Dominik asked: could we sample from his past init prompts (the first user message of
+The maintainer asked: could we sample from their past init prompts (the first user message of
 past `claude` sessions on this repo) to seed **indirect** prompts — real app tasks in
-his voice, no naming of the rule under test, natural discovery pressure on CLAUDE.md?
+their voice, no naming of the rule under test, natural discovery pressure on CLAUDE.md?
 
 ## Source
 
@@ -33,7 +33,7 @@ Not every past session is a coding task. These patterns filtered out (all exclud
 from the shortlist below):
 
 - `move <X>.md ... read it` — meta-tasks pointing at `~/Downloads/prompts/*.md`,
-  not app work. **Dominik explicitly asked for these to be excluded.**
+  not app work. **The maintainer explicitly asked for these to be excluded.**
 - PR / CI / release audits — `audit 1232 for release cut`, `780 ci is failing`,
   `advance main cecelia-feijoa`, `peek at feat/...`, `check <repo>`.
 - Worktree/plan reviews — meta about design docs, not the code the docs describe.

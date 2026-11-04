@@ -2,7 +2,7 @@
 
 **Status:** **P1 built** (2026-10-27, branch `feat/user-claude-guide-p1`), with the recommended answers
 taken for Decision 3 (option d: the observer's channel) and Decision 5 (no; `register_label_files!` stays
-internal). P2 is a reply to the reporter, waiting on Dominik sending it. P3 is held unless sessions without
+internal). P2 is a reply to the reporter, waiting on the maintainer sending it. P3 is held unless sessions without
 the observer turn out to matter.
 
 ## Goal
@@ -72,7 +72,7 @@ On the way, it produced unversioned state with no provenance, and patches that e
    observer is registered user-scope, so its `SERVER_INSTRUCTIONS` are in the system prompt of every
    `claude` session on the machine (`mcp/cecelia_mcp/guidance.py:8-11`). This reporter had it registered:
    their first report covers the **Set up** button, and the 10-19 one covers the assistant's highlights.
-3. **Where it lives — Dominik's call.** Options:
+3. **Where it lives — the maintainer's call.** Options:
    - (d) **The observer's own channel** (recommended). Add one or two lines to `SERVER_INSTRUCTIONS`
      ("add a capability as a custom module; never hand-edit Cecelia's files; report bugs with the patch"),
      pointing at the full text. That text goes in a section of `docs/ai-assist/OBSERVER-SETUP.md` →
@@ -95,11 +95,11 @@ On the way, it produced unversioned state with no provenance, and patches that e
      if it should be shared. It runs as a task, so it gets logs, QC and provenance.
    - **Never hand-edit** core files, `ccid.json`, `.h5ad` or label/image stores. Use the task that does the
      job: importing labels is `segment.importLabels`. If no task does it, that's a module or a report.
-   - **Hit a bug?** A local patch is a stopgap the next update wipes. Write it up for Dominik with the
+   - **Hit a bug?** A local patch is a stopgap the next update wipes. Write it up for the maintainer with the
      patch, as reporters already do. It goes through `docs/USER_REPORTS.md`, and diagnoses are verified there.
    - **Looking at your data?** Read through the Cecelia accessors (`init_object`, `pop_df`, `label_props`),
      and for figures use a notebook. Nothing is written back into the project except through a task.
-5. **Expose `register_label_files!` to custom modules?** Dominik's call. Recommendation: **no** for now.
+5. **Expose `register_label_files!` to custom modules?** The maintainer's call. Recommendation: **no** for now.
    `segment.importLabels` covers the one observed case, and a module writing label sets would also need
    the name-collision guard (`assert_labels_free`) and versioning rules. Revisit if a second, non-import
    case appears.

@@ -32,7 +32,7 @@ Three ways to resolve it, and only one is acceptable:
 | Override `predict_from_zarr` so coastal owns its loop | **Rejected.** It re-implements tiling, streaming, stitching and post-processing — a second variant of the exact thing the base exists to do once. This is the divergent-re-implementation trap in `CLAUDE.md`. |
 | **Extend the base with an opt-in temporal window** | **Chosen.** One declarative change; cellpose is unaffected; coastal keeps tiling and streaming. |
 
-Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want special cases here."*
+The maintainer, 2026-08-06: *"we should make a plan to extend the base. i don't want special cases here."*
 
 ## Locked decisions
 
@@ -67,14 +67,14 @@ Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want sp
    trained on one 512² tile has not seen the movie. See Phase 2 — this is the part with real design
    left in it.
 
-6. **One parameter value per SET, exposed — never a per-image default.** Dominik, 2026-08-06:
+6. **One parameter value per SET, exposed — never a per-image default.** The maintainer, 2026-08-06:
    *"we should expose the blur. and it should be the same across images. ideally you wouldn't use
    different params for different images in the same set."* Varying segmentation parameters between
    images in a set makes anything computed across that set incomparable, so the task must not
    auto-tune per image, and there must be no hidden per-image override. `seed_blur_sigma` is a
    first-class, user-visible param with a documented meaning, not an internal constant.
 
-   **It is an ordinary run parameter** — Dominik, 2026-08-06: *"i just thought we could use seed blur
+   **It is an ordinary run parameter** — the maintainer, 2026-08-06: *"i just thought we could use seed blur
    as a normal parameter during function run."* So it ships with a documented default, the user
    adjusts it for their data like `prob_threshold` or `cellDiameter`, and the preview is how they
    judge it. No auto-tuning, no calibration table, and **no reason to hold the task on Phase 4**.
@@ -86,7 +86,7 @@ Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want sp
    calibrated constant, which is exactly what an exposed param is for. Phase 4's QC gate is how we
    validate the segmenter, not a gate on shipping the knob.
 
-7. **Trained models live in the config dir, like the cellpose vault.** Dominik: *"maybe it should
+7. **Trained models live in the config dir, like the cellpose vault.** The maintainer: *"maybe it should
    just be in config like the cellpose vault. to use it across projects."* So
    `<config_dir>/models/coastalModels/`, matching `cellposeModels/` exactly. Consequence to accept
    knowingly: a model does NOT travel with a `.ccbundle` project export, so a shared project will
@@ -106,7 +106,7 @@ Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want sp
    anyway: voxels are 6x anisotropic (2.0 um z vs 0.331 xy), and `SEGMENTATION_OPEN_PROBLEM.md`
    records that OpticalFlow3D's axial speeds are not credible at that sampling.
 
-10. **Two-pass is generic, and it is just stacking model groups.** Dominik, 2026-08-06: *"two pass
+10. **Two-pass is generic, and it is just stacking model groups.** The maintainer, 2026-08-06: *"two pass
    as generic. because then we don't have to reinvent if we add another segmenter. because it's
    literally just running the same thing twice ... you can stack up multiple segmentation groups on
    top of another."* So multi-pass is NOT a coastal feature and not a new mechanism — the repeatable
@@ -132,7 +132,7 @@ Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want sp
 
 11. **Small-object handling stays in the base where the base already has it.** `minCellSize` /
    `cellSizeMax` already exist. Coastal's two-pass produces both size classes; the cells-vs-bodies
-   split is a **gating** decision downstream, not a segmentation parameter (Dominik: *"in the real
+   split is a **gating** decision downstream, not a segmentation parameter (the maintainer: *"in the real
    world we would just use the gating option in cecelia"*). So no apoptotic-body criterion is
    encoded in the task.
 
@@ -151,7 +151,7 @@ Dominik, 2026-08-06: *"we should make a plan to extend the base. i don't want sp
 
 ### Phase 2 — the model vault  `[DECIDED 2026-08-06; the mechanism already exists]`
 
-Dominik: *"it might be different for different cells. so we sort of need a solid vault that people
+The maintainer: *"it might be different for different cells. so we sort of need a solid vault that people
 can fill with their own models based on their own data."* So: **a trained model is a versioned
 artefact the user owns**, not something a segmentation run produces and throws away.
 

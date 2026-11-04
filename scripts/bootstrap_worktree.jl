@@ -40,7 +40,7 @@ sibling_dst(repo_root::AbstractString, name::AbstractString) =
 One line saying how many worktrees `pixi run prune-worktrees --remove` could remove right now —
 `prune_worktrees.py --summary` (no fetch, no report) — or `nothing` when none can go or the call
 fails: the nudge is a hint, never a reason to fail a bootstrap. Agents relay the line (root
-CLAUDE.md → *remind Dominik about worktree cleanup*).
+CLAUDE.md → *remind the maintainer about worktree cleanup*).
 """
 function cleanup_nudge(repo_root::AbstractString)
     python = Sys.which("python")

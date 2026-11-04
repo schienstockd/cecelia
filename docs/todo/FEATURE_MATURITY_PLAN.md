@@ -2,7 +2,7 @@
 
 **Status:** **P1 + P2 built** (2026-11-02); P3 open. Decisions 1–9 agreed in discussion; starting tiers
 seeded from `FEATURE_MATURITY_TIERS.md` — the 7 Tested proposals are seeded as Beta with a "maintainer
-review → Tested" item, pending his review of each fails-if line.
+review → Tested" item, pending the maintainer's review of each fails-if line.
 
 **Related:**
 - Parent: [`HARDENING_AUDIT_PLAN.md`](HARDENING_AUDIT_PLAN.md) — the depth scores and gaps that fill
@@ -15,7 +15,7 @@ review → Tested" item, pending his review of each fails-if line.
   `utils/guideMap.test.ts`, and `user-docs/README.md` generated from the same data.
 - Pill extended: `components/ComingSoonBadge.vue` ("the ONE way to signal an incomplete surface").
 - Release checklist: [`../RELEASING.md`](../RELEASING.md).
-- Starting tiers: [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md) — 58 features, provisional, with his
+- Starting tiers: [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md) — 58 features, provisional, with the maintainer's
   decisions of 2026-11-02.
 
 ## Goal
@@ -38,7 +38,7 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
 4. **A feature with no guide is listed, not invisible.** It gets a tier too and shows on the map as
    "no guide yet". That list is the gap list: either write the guide, or the feature isn't ready.
 5. **Every feature has an explicit tier.** No silent default; a test fails on an untiered page or task.
-6. **Only the maintainer promotes** (today: Dominik). A tier changes only by editing the registry, in a
+6. **Only the maintainer promotes.** A tier changes only by editing the registry, in a
    PR that carries the evidence; the maintainer merges it. An agent may open that PR and argue for it, never promote.
 7. **Demotion on a confirmed wrong-result bug.** A Tested feature with a confirmed wrong-result bug
    drops to Beta in the fix PR, until a test guarding that bug lands.
@@ -47,7 +47,7 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
    says how far to trust a result, and these produce none. No badge, no maturity row.
 10. **On the map, a dot per tier with a legend, not a pill.** A pill on every page button was clutter
    (nearly every page is Beta); an unexplained dot, or marking only Experimental, said nothing. One
-   `.cc-dot` tone per tier, a legend line under the grid (2026-11-02, from his look at P1).
+   `.cc-dot` tone per tier, a legend line under the grid (2026-11-02, from the maintainer's look at P1).
 11. **Test sets go through the call for datasets** — one registry, a `kind: 'build' | 'test'` field;
    the modal shows "Help us build" then "Help us test" (`CALL_FOR_DATASETS_PLAN.md`, Decision 9). Every
    record with `needs` carries a `datasetAsk`, or a `noAsk` reason when the need isn't data (an HPC
@@ -148,7 +148,7 @@ evidence, and the registry shape is informed by a real case.
 ## Phases
 
 - **P1** — **built.** `maturity` on every guide + the unguided list + the tests; expandable rows on the map;
-  tiers in user-docs. Starting tiers drafted from the inventory and step 2, corrected by him, marked
+  tiers in user-docs. Starting tiers drafted from the inventory and step 2, corrected by the maintainer, marked
   provisional until the matrix re-scores them. Where it landed:
   - Records: `lib/guides/maturityRecords.ts` (`GUIDE_MATURITY`, keyed by guide id; each guide reads its
     own) and `lib/guides/unguided.ts` (`UNGUIDED`); the type is `Maturity` in `lib/guides/types.ts`. A
@@ -188,6 +188,6 @@ evidence, and the registry shape is informed by a real case.
 ## Open questions
 
 - Starting tiers — drafted in [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md); 7 proposed for
-  Tested pending his review of each fails-if line; cluster assignment needs his PROVENANCE.md line.
+  Tested pending the maintainer's review of each fails-if line; cluster assignment needs their PROVENANCE.md line.
 - A guide that spans several features (a recipe, or segment → measure): tier the feature it is named
   for; a recipe shows each step's badge.

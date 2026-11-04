@@ -227,7 +227,7 @@ populations/tracks with colours, and the colour-by legend), plus an optional fre
 "which image / mouse / location is this, and what are the colours?" without opening the project or a
 separate doc. Applies to all three movie paths: single record, batch, animation page.
 
-### Decisions (2026-07-24, confirmed with Dominik)
+### Decisions (2026-07-24, confirmed with the maintainer)
 
 1. **Content = full auto + optional note.** Auto-fill from the image + view: `title` = `img.name`
    joined with its `img.attr` values ("MERTK — mouse 1 — location B"); a **channels** section
@@ -310,7 +310,7 @@ library. Playback **speed** (0.25–4×), **zoom** (1–8×), **autoplay-on-sele
 globally in `stores/settings.ts` (`moviesPlaybackRate`/`moviesZoom`/`moviesAutoplay`/`moviesLoop`);
 `<video>` resets `playbackRate` on each new source, so it's re-applied on `loadedmetadata` (which also
 `.play()`s when autoplay is on, since the native attr only fires on first load). Those four controls
-plus Refresh live **in the side panel above the movie list**, not in a page header (Dominik,
+plus Refresh live **in the side panel above the movie list**, not in a page header (the maintainer,
 2026-08-10): they are what you reach for while picking a movie, and a header row of four options
 stretched across an otherwise-empty page read as stray chrome. Both empty states moved into the player
 stage in the same change, so the panel — and its Refresh — stays reachable in a project with no movies.

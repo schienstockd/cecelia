@@ -7,8 +7,8 @@ see [`docs/MILESTONES.md`](MILESTONES.md).
 
 ## The shape of this project
 
-Development is **solo and demand-driven**: the maintainer dogfoods Cecelia on his own images and fixes
-things as he hits them, plus the occasional ad-hoc request ("here's my image, make it do X" → implement
+Development is **solo and demand-driven**: the maintainer dogfoods Cecelia on their own images and fixes
+things as they hit them, plus the occasional ad-hoc request ("here's my image, make it do X" → implement
 → ship). There is **no schedulable feature roadmap** to release against. So the cadence is a
 **time-boxed heartbeat + event triggers** — not "release when phase N is done".
 
@@ -152,7 +152,7 @@ acknowledgements (celltrackR GPL-2). **Satisfied** — `LICENSE`, `THIRD_PARTY.m
    > This used to be `generate_release_notes: true` — GitHub's auto PR list. That list is also what
    > the in-app **What's New** modal renders, since the update check passes the release body through
    > as markdown, and 450 lines of `* title by @user in #N` told a user nothing they could act on
-   > (Dominik, 2026-08-10). Write for the person opening that modal: what changed for them, and what
+   > (the maintainer, 2026-08-10). Write for the person opening that modal: what changed for them, and what
    > they now have to decide. The commit log is one click away on the compare link appended below.
 4. **Maturity sweep** (`docs/todo/FEATURE_MATURITY_PLAN.md` → *Promotion and demotion*). An agent can
    draft this list; the maintainer signs off, and only the maintainer changes a tier:

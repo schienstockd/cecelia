@@ -2,7 +2,7 @@
 
 **Status:** measured 2026-08-01, revised 2026-08-03 when the correction stopped being a division.
 The output-mapping half of this is **resolved by the mechanism change**; the input-precision half is
-unchanged and still needs a decision from Dominik.
+unchanged and still needs a decision from the maintainer.
 
 Opened because the AF preview made a long-standing property visible for the first time: the corrected
 channel showed a carpet of single-pixel speckle. The easy explanation — "dividing by a noisy denominator

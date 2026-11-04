@@ -47,7 +47,7 @@ names the blocker as a **storage decision**. Decision 2 below is that decision.
 
 No bouts anywhere. Decision 1b makes these first-class.
 
-## Decisions (proposed — numbered for citation; ✋ = Dominik's call, see *Open questions*)
+## Decisions (proposed — numbered for citation; ✋ = the maintainer's call, see *Open questions*)
 
 1. **Arrest is "time in a population", not a speed threshold in a task.** A per-cell filter
    population (`live.cell.speed < 2 µm/min`, gated by the user) carries the threshold. The measure is
@@ -189,14 +189,14 @@ The plan treated P3 as "a suffix family in `track_props`". Reading the read path
    (`frontend/src/utils/measureGroups.ts` grouping). Arrest via a gated population (answered Q2) adds
    population membership as flag columns (`pop_membership_fetch`) and a picker entry per population.
 Split into P3a (1 + 2 + clustering-picker exposure, contacts/HMM/motif) and P3b (gate-axis picker +
-population-membership flags for arrest). P3b changes the gating UI — needs Dominik's eyes.
+population-membership flags for arrest). P3b changes the gating UI — needs the maintainer's eyes.
 
 ### P4 — approach toward a target
 Decision 5. `trackMeasures` writes per-cell `approach#<target>` and the per-track index for each
 `min_distance#*` column present at measure time (re-run it after contacts). Per-track means then come
 free from `track_props`. About 3 files.
 
-## Answered (Dominik, 2026-10-31)
+## Answered (the maintainer, 2026-10-31)
 
 - **Q1 → one window per run.** `windowMinutes` on `trackMeasures`; a second time scale is a second
   segmentation run. Decision 2 locked as written.
@@ -209,7 +209,7 @@ free from `track_props`. About 3 files.
   rename can only break a saved track gate drawn on a dwell column. Key the columns by population
   path (the same rule as `contact#<target>`); revisit only if a renamed gate actually breaks.
 
-## Open questions (Dominik) — as first asked
+## Open questions (the maintainer) — as first asked
 
 1. **Decision 2 storage.** One window per `valueName` run (proposed), or several windows side by side
    (`live.cell.window5m.speed`, `…window15m…`)? Side by side lets HMM mix scales, at the cost of a

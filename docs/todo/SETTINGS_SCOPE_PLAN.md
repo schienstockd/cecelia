@@ -26,7 +26,7 @@ Storage and System each mix scopes, so they cannot be gated whole.
 
 ## Decisions
 
-Locked 2026-10-17 (Dominik).
+Locked 2026-10-17 (the maintainer).
 
 1. **Gate by scope, per section — not per item.** One predicate, `canManageMachine`, in the
    `appControl` store; each machine section gets one `v-if` on it. Today it is "active profile is
@@ -68,7 +68,7 @@ Locked 2026-10-17 (Dominik).
 - Delete the Interface section's per-profile toggles; Preferences → Interface is their home.
   Check `data-guide` anchors and `docs/todo/GUIDE_ADDITIONS_PLAN.md` for steps that pointed at them.
 
-## Answered while building (2026-10-17, Dominik)
+## Answered while building (2026-10-17, the maintainer)
 
 9. **Updates are peanut's.** Not just the Settings section: the header update badge, the What's-new
    update card and in-app install / restart-to-update (`canApplyUpdate`) are gated on

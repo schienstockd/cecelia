@@ -5,7 +5,7 @@
 Parked plan (see `docs/todo/README.md`). Supersedes the three exploratory prompts in
 `docs/ai-assist/` (`qc-consolidation-prompt.md`, `observer-redesign-prompt.md`,
 `qc-observer-relationship.md`) — those framed the problem; this is the agreed, code-grounded plan.
-Locked decisions below were made with Dominik on 2026-07-18.
+Locked decisions below were made with the maintainer on 2026-07-18.
 
 ## The thesis (locked)
 
@@ -106,7 +106,7 @@ the observer redesign lands. Each slice: pure helper unit-tested + wiring + doc 
 (`QC-PROCESS.md`, `OBSERVER.md`, `INVENTORY.md` as touched).
 
 ## Explicitly out of scope (parked)
-- Auto-calling Claude on "multiple warnings" (escalation ladder) — Dom chose on-demand-only; revisit
+- Auto-calling Claude on "multiple warnings" (escalation ladder) — the maintainer chose on-demand-only; revisit
   only if on-demand proves insufficient.
 - `qc_flag_fired` / `:flagged` node state + hold (needs QC_PLAN.md advisory-vs-blocking ratification).
 - ~~afCorrect~~ / ~~cellposeCorrect~~ QC (no agreed objective metric — see the QC-coverage notes;

@@ -5,7 +5,7 @@ Why a visible window: three headless designs were tried and all three produced i
 real paint, so every timing measures Qt plumbing - the same failure
 `docs/todo/CLOUD_MIGRATION_ASSESSMENT.md` section 2 recorded and declined to publish. A shown
 QWidget can be painted SYNCHRONOUSLY via `repaint()`, which is the one primitive that makes this
-measurable. Dominik approved a brief window, 2026-08-24.
+measurable. The maintainer approved a brief window, 2026-08-24.
 
 Timing: set camera -> `native.repaint()` (synchronous paint) -> `glFinish()` (GPU drained). No
 framebuffer readback anywhere in the timed region.

@@ -78,7 +78,7 @@ def main():
 
     # firefox here is a SNAP: it cannot read /tmp, and its `home` interface denies TOP-LEVEL
     # dot-directories, so ~/.cache is refused too (it fails as "Firefox is already running", not as
-    # a permission error). A dir under the repo works. Never his real profile.
+    # a permission error). A dir under the repo works. Never the maintainer's real profile.
     prof_root = os.environ.get('PROBE_PROFILE_ROOT') or os.path.join(HERE, '_profiles')
     os.makedirs(prof_root, exist_ok=True)
     prof = tempfile.mkdtemp(prefix='ffprof-', dir=prof_root)

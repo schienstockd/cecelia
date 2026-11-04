@@ -40,7 +40,7 @@ server-side, in-process, with no Qt, no X server and no WebGPU. So the real opti
 C is not a strawman: it is the path the **in-app 3D crop panel** already took when the napari crop
 was removed (`docs/NAPARI.md` → *3D crop*, `docs/todo/CROP_PANEL_PLAN.md`) — "renders a coloured,
 scrubbable MIP in the browser". The gap between C and a usable 3D viewer is a camera and a raycast,
-not an architecture. **Dominik's call, 2026-08-24: benchmark all three.** G2 therefore measures A (napari's own MIP,
+not an architecture. **The maintainer's call, 2026-08-24: benchmark all three.** G2 therefore measures A (napari's own MIP,
 = G1), B (browser WGSL) and C (Julia raycast, frames streamed), and reports the new code each
 needs. C would not pay G3's chunk-delivery cost at all.
 
@@ -110,7 +110,7 @@ editing in a browser" — is **empty today**, and it is empty by design decision
 - **Gating: never in napari.** The gating engine and Population Manager are Julia-native
   (`project_gating_popmanager`, `docs/POPULATION.md`).
 - Segmentation-mask correction (`CORRECTION_PLAN.md` P2) is **open, unbuilt**. **Answered by
-  Dominik, 2026-08-24:** the old R version put it in napari *because you have to see the actual
+  the maintainer, 2026-08-24:** the old R version put it in napari *because you have to see the actual
   intensity-channel signal*, but an in-browser surface modelled on the track-correction timeline is
   acceptable. So it need not re-open the writeback category — but it makes a browser-side intensity
   renderer a *prerequisite* for the feature rather than a nicety. See the plan, §5a.
@@ -186,7 +186,7 @@ Stated plainly, as cost, not as a footnote:
 
 ## G0 — can the browser reach the GPU? **PASS**, with one trap
 
-Attempted headless, so as not to put a window on Dominik's desktop. **Headless Firefox cannot be
+Attempted headless, so as not to put a window on the maintainer's desktop. **Headless Firefox cannot be
 used for this at all on this machine** — and the failure is informative rather than merely annoying:
 
 | Attempt | Result |
@@ -210,7 +210,7 @@ Two facts that do carry, and are good news:
   cannot read `/tmp` at all, and its `home` interface denies top-level dot-directories — a profile
   under `~/.cache` fails with the misleading *"Firefox is already running, but is not responding"*.
 
-### Result from a real window — Firefox 153, Dominik's machine, 2026-08-24
+### Result from a real window — Firefox 153, the maintainer's machine, 2026-08-24
 
 Raw: `docs/todo/spike/webgpu/g0_result.json`. Page:
 `docs/todo/spike/webgpu/adapter_probe_standalone.html`.
@@ -278,7 +278,7 @@ nobody repeats them:
 
 What makes it measurable: a **shown** QWidget can be painted *synchronously* with `repaint()`. Each
 frame is `set camera → native.repaint() → glFinish()`, with no framebuffer readback in the timed
-region. Dominik approved the visible window, 2026-08-24.
+region. The maintainer approved the visible window, 2026-08-24.
 
 ### The numbers
 
@@ -549,7 +549,7 @@ Two on-disk facts found while wiring this up, both worth knowing beyond this aud
   (`/`). Hardcoding flat made every `fXgbTl` chunk look absent, so the slab came back all zeros —
   which would have rendered **black with no error**. Read `dimension_separator`, never assume it.
   Moot for new data: `config.jl:897-901` offers only `nested` and `v3` (also nested), so flat is
-  legacy that `zarr_utils.py:146` keeps readable (Dominik, 2026-08-24).
+  legacy that `zarr_utils.py:146` keeps readable (the maintainer, 2026-08-24).
 - **`fXgbTl`'s whole-plane chunks are a consequence of its size, not a format choice.** The writer
   asked for 512x512 tiles and the image is 420x441, so one tile covers the plane. Large images still
   land on 3x3 tiles per plane, so per-plane chunking for big stores is a `chunkSizeY`/`chunkSizeX`
@@ -726,7 +726,7 @@ are "napari already wrote this" problems — and under the full-replacement goal
 
 ## Recommendation
 
-> **SCOPE CORRECTION (Dominik, 2026-08-24).** An earlier draft of this section recommended keeping
+> **SCOPE CORRECTION (the maintainer, 2026-08-24).** An earlier draft of this section recommended keeping
 > napari for the subset it is better at (movies, keyframes, mask correction). **That is not the
 > goal.** The aim is to *replace* napari and ship a sole browser app — the cloud mandate does not
 > tolerate a Qt process, so "napari does this well" is not an argument for keeping it, it is a
@@ -802,5 +802,5 @@ Stated so the recommendation is not read as more complete than it is.
 - **Serving blosc bytes at slab granularity with WASM decode** — the obvious optimisation from G3,
   untested.
 - **Whether a browser raycast is scientifically trustworthy.** This is a frame-rate audit. Whether
-  the picture is good enough to judge segmentation on needs Dominik's eyes on a side-by-side still,
+  the picture is good enough to judge segmentation on needs the maintainer's eyes on a side-by-side still,
   not a benchmark.

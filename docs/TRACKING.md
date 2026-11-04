@@ -648,7 +648,7 @@ colours by:
   we never use Plot's inline legend (it wraps the svg in a `<figure>` whose swatch div eats height and
   clips the bottom axis in a fixed-height panel — `plots/plot.ts`). So the diagnostics keep their two
   meaningful colours (blue = the measurement, amber = the expectation) at any group count.
-  *(Dominik, 2026-08-19: star and rose split too — the first cut overlaid them with an image colour per
+  *(the maintainer, 2026-08-19: star and rose split too — the first cut overlaid them with an image colour per
   track and a two-swatch legend, and it read as one scribble.)*
 - **Facets share ONE domain, and their cells stay square** (`facetGrid`/`facetBox`,
   `frontend/src/plots/facetGrid.ts` — also what the UMAP's small multiples measure with). Two conditions

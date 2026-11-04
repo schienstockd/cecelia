@@ -1,6 +1,6 @@
 # Acquisition advisor: literature and prior-art review
 
-Prepared 2026-11-04 by a Claude research agent for Dominik (Cecelia). **Everything below comes from pages fetched in this session**: Crossref API records, Europe PMC / PMC OAI full text or abstracts, arXiv API, GitHub API (repo trees and files), vendor and facility web pages, and the Micro-Manager device list. If a claim rests on an abstract only, it says so. Vendor claims are marked **[vendor]**. Anything not retrieved is listed in §6. Nobody has run any of the tools.
+Prepared 2026-11-04 by a Claude research agent for the maintainer (Cecelia). **Everything below comes from pages fetched in this session**: Crossref API records, Europe PMC / PMC OAI full text or abstracts, arXiv API, GitHub API (repo trees and files), vendor and facility web pages, and the Micro-Manager device list. If a claim rests on an abstract only, it says so. Vendor claims are marked **[vendor]**. Anything not retrieved is listed in §6. Nobody has run any of the tools.
 
 ---
 

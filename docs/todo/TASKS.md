@@ -44,7 +44,7 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       says so — but it is the backend's view, and `api/runner.jl` is a second process with its own
       `load_custom_modules!` that deliberately survives a backend restart. So after restarting the
       backend the flag goes FALSE while the runner is still old, which is exactly the state that cost
-      Dominik ~40 minutes: restarted the server, same error, because the task ran in the runner
+      the maintainer ~40 minutes: restarted the server, same error, because the task ran in the runner
       (verified by process start times — runner 14:19, backend 15:01, plugin reinstalled 14:50).
       Mitigated in wording only: the message names both processes. The real fix is asking the runner
       for its own module report, which needs a status channel the backend does not have today.
@@ -169,7 +169,7 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       **The blocker is the viewer, not the bridge**: `ViewerPanel.vue` hardcodes one button per
       overlay kind, each with its own visibility map, settings key and push path — labels, tracks,
       branches, preview. A plugin layer is the fourth copy. Blocked on generalising that into one
-      overlay registry, which wants to be its own piece of work and needs Dominik's eyes;
+      overlay registry, which wants to be its own piece of work and needs the maintainer's eyes;
       **(4) the component tier stays DEFERRED** with a named trigger — someone wants a picture cecelia
       genuinely cannot draw. Vue is bundled inside `frontend/dist` (checked), so it needs externalising
       plus a runtime loader, and it makes props/stores/composables a contract that cannot be walked
@@ -187,7 +187,7 @@ Design plans live elsewhere and are linked per item: `PLUGINS_PLAN.md` for the p
       `nestedTooltips` (`utils/uiCopy.ts`) only knows the `v-tooltip` DIRECTIVE. `SelectionTable`
       takes its tooltip as a PROP (`row-tooltip`) and renders it on the `<tr>`, so a tipped control
       in one of its slots fires two overlapping tooltips and the scan says nothing — which is exactly
-      how one shipped into the plugins Settings table before Dominik caught it on screen.
+      how one shipped into the plugins Settings table before the maintainer caught it on screen.
       Teaching the scanner that `row-tooltip` tips the subtree is two lines and finds **52 real
       instances in 6 files**: `ImageTable` 19, `TaskList` 10, `NotebookTable` 9, `TasksModule` 6,
       `MoviesModule` 5, `ProjectPanel` 3.

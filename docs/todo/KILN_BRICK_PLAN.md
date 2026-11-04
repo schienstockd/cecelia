@@ -34,7 +34,7 @@ around what's visible, not a Z-streaming device. Same atlas, different geometry.
 
 ## Locked decisions
 
-1. **Take Kiln as a reference, not a vendored fork** (Dominik, 2026-08-28: "not gospel — what we
+1. **Take Kiln as a reference, not a vendored fork** (the maintainer, 2026-08-28: "not gospel — what we
    can use here, not port the entire mechanism"). What we adopt as *concepts*: the physical brick
    atlas, page-table indirection, and the SSE-with-hysteresis LOD scheduler. What we write from
    scratch, cecelia-shaped: everything below — r8uint/r16uint texture, N-channel WGSL, T axis,
@@ -53,7 +53,7 @@ around what's visible, not a Z-streaming device. Same atlas, different geometry.
    `(t, brick_x, brick_y, brick_z, level)`; the existing timepoint LRU (`tileEvictions`
    `timePenalty`) generalises with a `tPenalty` on the brick cache.
 6. **3D halo = one ring of bricks around the visible frustum**, at the same level as the visible
-   brick. The name Dominik coined for it (2026-08-28) — same idea as the 2D `haloPrefetch` but a 3D
+   brick. The name the maintainer coined for it (2026-08-28) — same idea as the 2D `haloPrefetch` but a 3D
    neighbourhood shell around what the camera sees. Not a Kiln concept; grafted on.
 7. **Data source is the existing Julia slab endpoint, extended by a `cTo` param.** A brick request
    is a bounded slab: `try_serve_slab` at `api/src/viewer_api.jl:320` already accepts
@@ -150,7 +150,7 @@ is the frame decision: `{ level, toLoad, toEvict }`. XY-only reduces to the spec
 the viewport's `halfDUm ≥ nZ * voxelUmZ / 2` — SispLk-shape (nZ=4) reproduces the pre-amendment
 "walk every z-slab" behaviour unchanged. Debug overlay + shader-side integration land in P5.
 
-**Why P4.1 landed before P5, not after data arrives (2026-08-28):** Dominik confirmed thick
+**Why P4.1 landed before P5, not after data arrives (2026-08-28):** the maintainer confirmed thick
 vibratome images are coming but no reference image exists yet. Extending the scheduler's API
 now — `centreUm: [x, y, z]`, `halfDUm`, anisotropic voxel scaling — is purely additive and
 costs ~1 hour; retrofitting after the wire-up would touch every P5 call site. Same discipline
@@ -158,7 +158,7 @@ as designing `SlabQuery.cTo` before P3 rather than after.
 
 **P5 — Integrate.** Toggle `viewerBrickEnabled` in dev; verify SispLk and 35uedD render at L0 in
 the visible region and coarsen away from the camera. Compare visible frame time against the
-current whole-volume path on Dominik's RTX 2000 Ada; the audit's 5.3 ms MIP budget is the target
+current whole-volume path on the maintainer's RTX 2000 Ada; the audit's 5.3 ms MIP budget is the target
 that must NOT regress.
 
 Broken into four visible checkpoints so a milestone can be eyeballed before the next lands:

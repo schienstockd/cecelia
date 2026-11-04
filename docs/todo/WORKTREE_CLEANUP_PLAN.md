@@ -6,17 +6,17 @@ Status: **in-progress** (2026-10-10) on `prune-worktrees` — P1 built (report, 
 
 One command that says which sibling worktrees can go, and removes only the ones whose removal
 cannot lose work. Everything that needs a judgement call is listed with enough evidence that the
-review is short, and is left to Dominik or an agent.
+review is short, and is left to the maintainer or an agent.
 
 ## Why
 
-Dominik asked an agent to clean up worktrees about 14 times between 2026-09-18 and 2026-10-09.
+The maintainer asked an agent to clean up worktrees about 14 times between 2026-09-18 and 2026-10-09.
 Every session re-derived the criteria, and the same traps came back:
 
 - **Squash merges** — a merged branch is not an ancestor of `origin/main`, so an ancestry check
   alone calls it unmerged. The PR's merged head is the test.
 - **Commits pushed after the merge** (#1330) — the PR says merged but the local HEAD has more.
-- **Merged and clean is not unused** — Dominik runs `pixi run dev` and the consoles from feature
+- **Merged and clean is not unused** — the maintainer runs `pixi run dev` and the consoles from feature
   worktrees.
 - **State shifts mid-audit** — other sessions commit into a worktree between the scan and the
   removal (2026-09-26).
@@ -24,7 +24,7 @@ Every session re-derived the criteria, and the same traps came back:
   look dirty (2026-09-26).
 - **Worktrees nested inside `cecelia-feijoa`** (2026-09-28).
 - **The permission classifier blocks `--force`, `branch -D` and `kill`** — so those were always
-  going to be Dominik's `!` commands anyway (2026-09-28, 2026-10-09).
+  going to be the maintainer's `!` commands anyway (2026-09-28, 2026-10-09).
 
 The scheduled run of 2026-10-07 wrote the criteria down properly (27 removed, 24 GB freed, nothing
 forced). This plan turns that prompt into code.
@@ -41,7 +41,7 @@ separately on branch `fix-judge-worktree-leak`); this tool only prunes the entri
 2. **Report by default. `--remove` acts on SAFE and DEAD only.** SAFE is defined so that removal
    cannot lose work; nothing else is ever removed by the tool.
 3. **Never `--force`, never `git branch -D`, never kill a process.** For anything that needs one,
-   the report prints the exact command for Dominik to run with `!`.
+   the report prints the exact command for the maintainer to run with `!`.
 4. **SAFE = all of:**
    a. *Merged*: HEAD is an ancestor of `origin/main`, **or** the branch has a merged PR whose
       `headRefOid` equals HEAD (covers squash merges and catches commits pushed after the merge).
@@ -72,10 +72,10 @@ separately on branch `fix-judge-worktree-leak`); this tool only prunes the entri
 Context: a proposal to grow this tool into a per-worktree status table (PR, CI, recital findings,
 parked plans, session state) was audited and dropped — every column is either in the current
 report or shown natively by Claude Code. A narrower "list removable, prune on confirm" proposal
-turned out to be P1 as built, with one gate that doesn't hold on Dominik's machine.
+turned out to be P1 as built, with one gate that doesn't hold on the maintainer's machine.
 
 11. **Claude sessions count as IN USE — read from Claude Code's session files, not `/proc` cwd.**
-    *Why:* decision 4c misses them. Dominik launches every session from `~/cc-workspace/cecelia`
+    *Why:* decision 4c misses them. The maintainer launches every session from `~/cc-workspace/cecelia`
     and works in a worktree by `cd`, so the `claude` process's cwd is the workspace root. On
     2026-10-13 all 7 live sessions had that cwd; the `/proc` scan only flagged worktrees where an
     MCP server or `pixi run dev` happened to run. Removal still cannot lose work (merged + clean),
@@ -99,14 +99,14 @@ turned out to be P1 as built, with one gate that doesn't hold on Dominik's machi
     4.5 s (17 worktrees, `--no-fetch`), small next to bootstrap's `pixi install` + `npm ci`. If
     the call fails, bootstrap prints nothing — the nudge is a hint, not a gate.
 14. **No interactive pick-list.** SAFE is defined so removal cannot lose work, and agents run
-    `--remove` non-interactively on Dominik's go-ahead (root `CLAUDE.md`). A y/n prompt would
+    `--remove` non-interactively on the maintainer's go-ahead (root `CLAUDE.md`). A y/n prompt would
     only add a step.
 15. **Remote branches: delete what a PR already holds, list the rest** (revised 2026-11-01; was
     "untouched"). Auto-delete on merge wasn't enough: 23 leftovers had piled up, 16 of them merged
     PRs' branches brought back by a later push, the rest closed-PR or never-PR'd. GONE (tip in main,
     or a merged/closed PR at exactly this tip — the commits stay reachable under `refs/pull/`) is
     deleted by `--remove` with a lease on the surveyed tip; STRAY (no PR after 14 days, or commits
-    after the PR) is printed for Dominik. The resurrection itself is stopped at the source by the
+    after the PR) is printed for the maintainer. The resurrection itself is stopped at the source by the
     `pre-push` hook (`scripts/pre_push_check.py`).
 
 ## Phases
@@ -126,10 +126,10 @@ turned out to be P1 as built, with one gate that doesn't hold on Dominik's machi
   dir + transcript in `tmp_path` covering a live match, a reused pid (`procStart` mismatch), a
   `cd` mid-transcript (last cwd wins) and an unparseable file (warning, no match). `--summary`
   gets a test on made-up rows. `bootstrap_worktree.jl`: swap `cleanup_nudge` for the
-  `--summary` call; update root `CLAUDE.md` (*remind Dominik about worktree cleanup* → relay
+  `--summary` call; update root `CLAUDE.md` (*remind the maintainer about worktree cleanup* → relay
   the removable count) and `docs/DEV.md` → *Removing worktrees*.
 - **P2 — shorter review of the rest.** Per DIRTY/UNMERGED worktree: diffstat, and whether each
   change is already on main (`git cherry` for commits, patch comparison for uncommitted work).
   JUNK gets its `rm` + `worktree remove` command printed. IN USE lists the PIDs and commands.
 - **P3 — only if still asked weekly.** A scheduled 5 am run. Not built unless the one-command
-  version still leaves Dominik asking.
+  version still leaves the maintainer asking.

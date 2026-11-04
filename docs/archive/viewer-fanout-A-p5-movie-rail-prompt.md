@@ -94,12 +94,12 @@ Run: `pixi run test-api`.
   has fields the new authors don't understand, list them.
 - The smoke route uses default `crop = nothing`, `max_px = 0`. The record path may need
   both — plumb them if the UI has them.
-- Test in a private window if you touch persisted view state — Dominik keeps his own
-  running instance on 8080; don't clear his localStorage.
+- Test in a private window if you touch persisted view state — the maintainer keeps their own
+  running instance on 8080; don't clear their localStorage.
 
 ## Explicit constraints
 
-- **Never start/kill the dev server.** Dominik owns 8080/5173/7655.
+- **Never start/kill the dev server.** The maintainer owns 8080/5173/7655.
 - **Never write shared dev config.** Use `CECELIA_DEV_DIR` isolation.
 - **Branches + PRs only, never push to main.** Ask before commit; state reservations first.
 - **Copy `.env`** into your worktree if you're starting fresh.

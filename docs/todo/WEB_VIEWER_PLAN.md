@@ -4,15 +4,15 @@
 
 **Goal: cecelia becomes a sole browser app. napari is removed, not split with.** The cloud mandate
 does not tolerate a Qt process, so "napari already does this well" is never a reason to keep a
-feature there — it is a competing implementation to beat. Dominik, 2026-08-24.
+feature there — it is a competing implementation to beat. The maintainer, 2026-08-24.
 
 **The bar is PARITY with what the repo does today, not new capability.** "It's more important to get
-parity to what we have now in the repo, rather than adding new stuff" — Dominik, 2026-08-24. So the
+parity to what we have now in the repo, rather than adding new stuff" — the maintainer, 2026-08-24. So the
 phase list is derived from the bridge's own 31 commands (the checklist below), not from what a viewer
 could be; anything the browser gains along the way is a bonus, never a reason to reorder.
 
 Evidence this rests on: `NAPARI_WEBGPU_AUDIT.md` (removed with the napari purge — see git history) — every number below was
-measured on Dominik's RTX 2000 Ada with real data from `zolIMa`. Read it before revisiting a
+measured on the maintainer's RTX 2000 Ada with real data from `zolIMa`. Read it before revisiting a
 decision here. Prior context: [`CLOUD_MIGRATION_ASSESSMENT.md`](CLOUD_MIGRATION_ASSESSMENT.md)
 (storage + headless GL, still valid), [`CROP_PANEL_PLAN.md`](CROP_PANEL_PLAN.md) (the first
 browser-rendered image surface, built).
@@ -72,7 +72,7 @@ progress/cancel contract `record_timelapse` needs.
    (`config.jl:897-901`).
 7. **No pyramid exists.** Every store is single-level, so "3D detail level" has nothing to select.
    Building one is separate work that helps whichever renderer wins.
-8. **The 2D z-plane view is the timecourse view, and the default.** Dominik: *"I normally switch to
+8. **The 2D z-plane view is the timecourse view, and the default.** The maintainer: *"I normally switch to
    2D plane rather than 3D MIP to look at the timecourse. A 2D z plane view is needed in any case"*
    (2026-08-24). It is not a lesser mode — it is the one that plays. A plane timepoint of `Dml3RG` is
    8.8 MB and ~13 ms against 326 MB and ~400 ms, and the whole 181-frame movie is **1.59 GB, so it fits
@@ -80,7 +80,7 @@ progress/cancel contract `record_timelapse` needs.
    structure. Both come out of ONE shader: a plane is a volume one deep seen face-on with `steps = 1`,
    which needs orthographic projection (perspective foreshortens a flat plane towards the edges).
 9. **Visual parity with napari is NOT a goal.** "If it looks different it's fine, as long as it shows
-   you the data" — Dominik, 2026-08-24. This closes the figure-comparability risk an earlier draft
+   you the data" — the maintainer, 2026-08-24. This closes the figure-comparability risk an earlier draft
    raised, and removes any deadline on A/B-ing against napari before it is removed.
 
 ## Parity checklist — the 31 things the bridge actually does
@@ -114,7 +114,7 @@ zoom, per-channel contrast and visibility, opened from the ViewerPanel's ↗.
 against ~330 ms/channel for the Python prototype — so the gate ("much slower than the prototype")
 passed. Byte-for-byte identical to `zarr_utils` on both stores, all four probes and the wire order
 (`docs/todo/spike/webgpu/slab_bench.jl`, `p1_slab_bench.json`).
-**Verified in the browser** (Dominik, 2026-08-24): opened against a restarted backend — the shader
+**Verified in the browser** (the maintainer, 2026-08-24): opened against a restarted backend — the shader
 compiles, both routes answer, and the raycast shows the data. A generated harness
 (`shader_check.mjs` → `~/Downloads/TMP/shader_check.html`) asserts the shader and the LUT indexing on a
 phantom, with no backend, for the next time the shader changes.
@@ -139,7 +139,7 @@ Four things settled while building it, each of which reads as tidiness and is no
 - **A reset must FILL the frame, in 3D as well as 2D.** The first fit framed off
   `max(extent) * 1.7`, which left the image at ~64% of the viewport height — a reset that looked zoomed
   out. The second fitted 3D to the bounding SPHERE so rotating could never clip a corner; that traded a
-  permanently zoomed-out reset for a problem the wheel already solves, and Dominik asked for fill in
+  permanently zoomed-out reset for a problem the wheel already solves, and the maintainer asked for fill in
   both. The framing constant now lives in ONE place (`VIEW_HALF_ANGLE`) and is interpolated into the
   WGSL, because the camera solves for `dist` from it and the shader turns `dist` back into a half-height
   — two copies drift, and the symptom is exactly a reset that does not fit. The third attempt fixed the
@@ -163,7 +163,7 @@ Four things settled while building it, each of which reads as tidiness and is no
   `isCurrent()` compared a token that only moved when a successor RUN started — and a successor cannot
   start while its predecessor is in flight, because runs are serialised. So a queued request did not
   supersede anything, and a walk over a 170-frame window ran to completion wherever the user went. Two
-  bugs, one cause (Dominik, 2026-08-24): jumping to timepoint 90 waited for every frame before it, and
+  bugs, one cause (the maintainer, 2026-08-24): jumping to timepoint 90 waited for every frame before it, and
   **playback stopped outright** — each tick queued a request that could not start, while the walk filled
   frames nobody was waiting for. `isCurrent()` now also requires that nothing is pending, which is what
   rule 2 of that util always claimed; the viewer's walk is back to a plain loop with a checkpoint
@@ -188,7 +188,7 @@ Four things settled while building it, each of which reads as tidiness and is no
   orientation gate. An earlier version hid it unless the camera was face-on, reasoning that a rotated
   horizontal axis mixes x and z; that is true of the voxel grid but not of the space actually rendered,
   which is scaled to µm on all three axes and therefore metrically uniform.
-- **The 3D view needed a DEPTH control, not a faster fetch** (Dominik's suggestion, 2026-08-24 — "would
+- **The 3D view needed a DEPTH control, not a faster fetch** (the maintainer's suggestion, 2026-08-24 — "would
   it help if we were to crop the z stack with a double edged slider?"). Yes, decisively: every cost on
   this path is linear in the plane count, so 8 planes of 41 is a ~0.6 s fetch instead of ~5.8 s, and
   five times as many timepoints fit the same VRAM budget. `z=N&zTo=M` on the slab route, a `RangeSlider`
@@ -203,7 +203,7 @@ Four things settled while building it, each of which reads as tidiness and is no
   looked exactly like a real geometry bug and was diagnosed as one twice. The numbers are now snapshot
   into a ref in `syncCacheState`, which already ran at every moment they change.
 - **A read-ahead is only worth pre-paying for while a frame is cheap.** Entering the 3D view took ~6 s
-  ("now it doesn't load anything, or needs like 5 s" — Dominik, 2026-08-24) because the walk filled the
+  ("now it doesn't load anything, or needs like 5 s" — the maintainer, 2026-08-24) because the walk filled the
   whole four-timepoint window before it ended. Measured on the real target, from the client: one 3D
   timepoint is **~1 s to fetch 326 MB** (server read 0.51–0.60 s; all four channels in parallel answer in
   0.68 s wall, so the server is not the constraint) plus ~0.5 s to upload. The read-ahead buys exactly
@@ -214,7 +214,7 @@ Four things settled while building it, each of which reads as tidiness and is no
 - **The contrast slider's RANGE follows the data even though its auto WINDOW does not.** They look like
   the same question and are not: a window recomputed per timepoint makes playback flicker (decision 5),
   but a ceiling taken from the first timepoint and held is simply *wrong* on a movie that brightens —
-  "you might want to push it up a bit, but you can't because it's clipped" (Dominik, 2026-08-24). The
+  "you might want to push it up a bit, but you can't because it's clipped" (the maintainer, 2026-08-24). The
   ceiling is now the brightest voxel seen in any loaded timepoint, ratcheting upward only, plus 50%
   headroom so the window can always be opened past saturation. Affordable because it needs no
   percentiles: `slabMax` shares `contrastFromSlab`'s strided walk but skips the sort.
@@ -235,7 +235,7 @@ resident movie is still unmeasured and would be the honest worst case.
 
 **Two ways to kill the BROWSER, neither of which raises anything catchable.** Firefox's main process
 crashed with `MozCrashReason: Queue[Id(4,2)] does not exist` and
-`GraphicsCriticalError: Texture is not submitted` (Dominik, 2026-08-24, RTX 2000 Ada). Both paths were
+`GraphicsCriticalError: Texture is not submitted` (the maintainer, 2026-08-24, RTX 2000 Ada). Both paths were
 live in `volumeRenderer.ts`:
 
 1. **Work submitted after the device was gone.** `device.lost` was surfaced to the user but never
@@ -252,7 +252,7 @@ whole browser. Guard invariants at the resource, not only at the policy.
 
 **VRAM exhaustion took three attempts to make impossible, and the first two are instructive.** The
 original control was a megabytes-of-VRAM slider, and setting it too high **lost the GPU device**
-(Dominik, 2026-08-24). It was unanswerable by construction: WebGPU deliberately exposes no free-VRAM
+(the maintainer, 2026-08-24). It was unanswerable by construction: WebGPU deliberately exposes no free-VRAM
 figure, so neither the user nor the app can compute a safe number.
 
 1. **An `out-of-memory` error scope around each texture** — necessary, not sufficient. Asked for 181
@@ -566,7 +566,7 @@ dispatch left and no Julia callers, and the 3D-crop replacement is in `docs/todo
 
 **Mask correction with intensity context** (was P6). "We can defer P6 on mask correction for now. It's
 not critical and will only be used by a niche group that hasn't migrated to the new system anyway" —
-Dominik, 2026-08-24. It is also the one item that is NOT parity: the old R version put it in napari
+the maintainer, 2026-08-24. It is also the one item that is NOT parity: the old R version put it in napari
 because you must see the intensity channels while correcting, and an in-browser surface modelled on the
 track-correction timeline would be a new design, not a port. Everything above is a prerequisite anyway.
 
@@ -586,7 +586,7 @@ track-correction timeline would be a new design, not a port. Everything above is
 
 ## Read-path knobs — what was measured, taken and rejected
 
-Asked for explicitly (Dominik, 2026-08-24) after "did your profiling find any knobs".
+Asked for explicitly (the maintainer, 2026-08-24) after "did your profiling find any knobs".
 
 **Taken.** `read_native` broadcast `ltoh`/`ntoh` over the whole block whenever the store declared an
 order, even when it already matched the host — element-wise a no-op, but the broadcast still allocated
@@ -729,7 +729,7 @@ asserts the top of the screen lights. If it says MIRRORED, revert that one line.
 viewer depends on the sign — the overlays project through the same basis, so points and pixels agree
 either way, which is also why the bug could not be seen by comparing them.
 
-## Open questions for Dominik — none blocking
+## Open questions for the maintainer — none blocking
 
 Written down rather than guessed at (2026-08-24). Work continued past all of these under the stated
 assumption; each is a place where a different answer would change what gets built, not whether.

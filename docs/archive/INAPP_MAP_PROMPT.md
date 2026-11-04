@@ -3,7 +3,7 @@
 > to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
 
 > **Outcome (2026-10-30, `feat/inapp-map`).** Built as the front of the Guides dialog; the map and the
-> guide accordion are one view (Dominik). Two premises changed: **no new first-run entry** (the
+> guide accordion are one view (the maintainer). Two premises changed: **no new first-run entry** (the
 > welcome dialog / empty-project surfaces were rejected again under GUIDE_SYSTEM_PLAN D11 — only the
 > tour's compass step now names the map), and the data file holds **only what the sidebar can't say**
 > (`lib/guides/mapData.ts`), deriving labels, icons and groups from `navGroups.ts`, so it is not a

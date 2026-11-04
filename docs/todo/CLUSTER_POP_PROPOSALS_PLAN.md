@@ -22,7 +22,7 @@ Cluster populations already exist (`clust` / `trackclust` / `region`: stored fil
    pop in the run holds, `dryRun`. `pop/add` stays off the MCP allow-lists (it takes any pop type).
 3. **Ownership is the gate rule.** `createdBy` / `updatedBy` as for gates: a user's edit makes it
    theirs (built with the gate fix, `stamp_edit!`). No `set-own-cluster-pop`: change = delete + propose.
-4. **Proposed, not yet confirmed by Dominik:** names drawn from the top-|z| features until the user
+4. **Proposed, not yet confirmed by the maintainer:** names drawn from the top-|z| features until the user
    renames; a re-run on the same suffix with named pops warns (stale icon) rather than blocks;
    cluster-id exclusivity enforced server-side for GUI ticks too.
 

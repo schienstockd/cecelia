@@ -259,7 +259,7 @@ the part meant to be read first.
 
 ## README needs to say this out loud
 
-Right now the README (implicitly or explicitly) reads like the process is "Dominik
+Right now the README (implicitly or explicitly) reads like the process is "the maintainer
 and Claude, indefinitely." That has to change in the README itself, not just in
 internal docs nobody outside the project would think to look for.
 

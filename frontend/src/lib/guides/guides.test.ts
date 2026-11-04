@@ -228,7 +228,7 @@ describe('recipes compose real guides', () => {
     expect(dangling).toEqual([])
   })
 
-  // A step with no guide is the specialised kind (Dominik, 2026-10-30): never the spine of a recipe.
+  // A step with no guide is the specialised kind (the maintainer, 2026-10-30): never the spine of a recipe.
   it('keeps steps without a guide optional, except where the recipe is about them', () => {
     for (const r of RECIPES) for (const s of r.steps ?? [])
       if (!isGuideStep(s) && !s.optional) expect(r.id, `${r.id} → ${s.label} is required with no guide`).toBe('live-structures')

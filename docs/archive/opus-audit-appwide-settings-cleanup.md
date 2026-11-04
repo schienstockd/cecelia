@@ -37,9 +37,9 @@ there's a slow week."
 ## Terminology correction: "app-wide" means per-profile, not shared-universal
 
 Confirmed design: launch flow is choose-a-profile first ("Hello Ben") →
-Ben sees only his projects → Kiwi is ready under his identity → and his
+Ben sees only their projects → Kiwi is ready under their identity → and their
 settings (whatever Task 1 reclassifies as above-project-scope) are
-*his own*, not shared with other profiles on the same machine. "App-wide"
+*their own*, not shared with other profiles on the same machine. "App-wide"
 in Tasks 1–3 below means "scoped above individual projects, persists
 across a profile's projects" — it does NOT mean "one config row shared
 identically by every profile." If Ben changes a setting, it must not

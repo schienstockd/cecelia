@@ -12,7 +12,7 @@ in `docs/ARCHITECTURE.md` → *Viewer* → *Multi-atlas contract*.
 
 Let the brick renderer use more atlas capacity than a single WebGPU texture can carry, by
 allocating N atlas textures and binding them together. Two triggers, both confirmed on
-Dominik's laptop (RTX 2000 Ada, Chromium/Dawn/Linux Vulkan) 2026-09-15:
+the maintainer's laptop (RTX 2000 Ada, Chromium/Dawn/Linux Vulkan) 2026-09-15:
 
 1. **`maxBufferSize = 4 GiB − 4`** (Chromium/Dawn cap, hardware-independent). Even with an
    8 GB card the single-atlas ceiling is ~4 GiB — 50 %+ of the card's VRAM is architecturally
@@ -211,7 +211,7 @@ the S0 diagnostic that verified the shape on real Dawn.
   laptop) renders both halves; regression check by walking Z and comparing to N=1 at the
   same Z.
 - **Ship criterion:** real-viewer visual identical for N=1 case; visual for N=2 case
-  matches N=1 case rendered at the same Z (measured by Dominik).
+  matches N=1 case rendered at the same Z (measured by the maintainer).
 
 ## Migration risk map
 
@@ -229,6 +229,6 @@ the S0 diagnostic that verified the shape on real Dawn.
   *WebGPU viewer* covering: `MAX_ATLASES`, slot encoding (Decision 2), homogeneity
   invariant (Decision 3), fallback behaviour when `binding_array` is missing.
 - Update the parent `WEBGPU_UPLOAD_PATH_PLAN.md`'s U5 phase row with the merged PR(s)
-  and the measured VRAM the renderer can now actually reach on Dominik's card and the
+  and the measured VRAM the renderer can now actually reach on the maintainer's card and the
   workstation.
 - Move this plan to the *closed* section of `docs/todo/README.md`.

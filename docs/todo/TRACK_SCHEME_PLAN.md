@@ -33,7 +33,7 @@ will come back otherwise.
    frames — correctly, the engine refuses it too — but a greyed button with a tooltip is not an
    explanation. On a timeline, two bars overlapping in x *is* the explanation.
 
-## Ground truth (from Dominik, 2026-08-19)
+## Ground truth (from the maintainer, 2026-08-19)
 
 - **The plot is for the obvious ones; the image is for the hard ones.** "for obvious ones I would like
   to have a plot. for more detailed ones I probably have to trace the actual cell signal and then
@@ -194,7 +194,7 @@ wrong for 300 frames. Follow its layout conventions, not its markup.
     picker is a follow-up.
   - **Reservation, untested in a browser.** The strip renders and the tests pin the geometry
     (buildDetectionsLane, detectionRects, detectionHit), but a live check on `zolIMa/fXgbTl`
-    (where the reference numbers were measured) is Dominik's — the picture-alignment claim above
+    (where the reference numbers were measured) is the maintainer's — the picture-alignment claim above
     is a shader-adjacent detail I can only assert, not verify.
 - **P4 — morphology-aware candidates.** Add appearance/size continuity to the gap score, borrowing
   coastal's cost terms. Changes the ranking; measure the effect on the reference image before and

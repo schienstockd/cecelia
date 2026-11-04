@@ -237,7 +237,7 @@ both P1 chips (deferred) AND P4 outcome control:
 - Outcome tag control: inline good/bad + note-required inline input; re-tagging allowed.
 - Both filter chips (P4.D6): status (all/open/resolved/parked), outcome (all/untagged/good/bad).
 - Extract testable logic into `frontend/src/utils/*.ts`; test.
-- Rendering half needs Dominik's eyeball per `feedback_reservation_is_not_management`.
+- Rendering half needs the maintainer's eyeball per `feedback_reservation_is_not_management`.
 
 **Phase 4.3 — Retrieval bias.**
 - `api/src/blackboard_api.jl::api_blackboard_search` — outcome tiebreak on equal match strength:

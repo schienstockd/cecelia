@@ -4,7 +4,7 @@
 [`COASTAL_SEGMENTATION_PLAN.md`](COASTAL_SEGMENTATION_PLAN.md), which covers the segmenter itself.
 This covers only **training and managing models**.
 
-Dominik: *"we had a train models page on the previous r version. but that was.. terrible. but the
+The maintainer: *"we had a train models page on the previous r version. but that was.. terrible. but the
 idea is to provide a transparent module page to create and manage the model vault."*
 
 ## Scope — what lives where
@@ -53,7 +53,7 @@ the model name, the manifest summary (channel, sigma, metric count, date), renam
 is exactly the case `CLAUDE.md` and `docs/todo/UX_PRIMITIVES_PLAN.md` warn about.
 
 **BUILT — after a detour through the wrong shell.** The vault was a top-level `FloatingPanel` first,
-which Dominik rejected: *"i want this like the pop manager. not a top level panel. that will
+which the maintainer rejected: *"i want this like the pop manager. not a top level panel. that will
 interfere with the viewer panel and lab log."* Exactly right — the app's window layer already holds
 the Viewer and the Lab log, and a manager scoped to one canvas has no business competing for it. The
 vault now wraps `CanvasSidePanel` on the flow canvas, toggled from the canvas bar (`showVault`,
@@ -88,7 +88,7 @@ nowhere). See `docs/UI.md` → *Generic plot-integration interface*.
 
 ### The plot answers "what goes IN", not "what came out"
 
-The paragraph above got the plot's *question* wrong, and it took Dominik's figure to show it. Built as
+The paragraph above got the plot's *question* wrong, and it took the maintainer's figure to show it. Built as
 "what did this model learn", the panel required a trained model, ran inference, and showed the metric
 planes **after** dropping — so the one view that would let you judge the metric set was the one thing
 it hid. And you cannot ask it before training, which is the only time the answer changes anything.
@@ -154,7 +154,7 @@ board-PDF export instead of a chart hand-drawn inside a dialog.
    (`COASTAL_SEGMENTATION_PLAN.md` decision 7). The manager should show clearly that a model is
    machine-local, and the segmentation task must fail loudly on a missing model rather than falling
    back to an untrained one.
-3. ~~**Which images does training run on?**~~ **Answered: the experimental SET.** Dominik,
+3. ~~**Which images does training run on?**~~ **Answered: the experimental SET.** The maintainer,
    2026-08-06: *"the model will be trained on images from an experimental set."* So
    `opticalFlow.train` is `"scope": "set"` — one model from the set's images, not one model per
    image. Getting this wrong is not a small difference: image scope would have produced N models,

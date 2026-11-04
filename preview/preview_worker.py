@@ -946,7 +946,7 @@ def _post_process_merged(seg, merged, passes, ctx):
     preview smoothed and size-filtered each pass at its FULL extent and then let the merge clip it,
     while the run clips first and filters the clipped result.
 
-    Measured on zolIMa/fXgbTl with his own flowTom config (seedSize 10.61/2.65, minComponentSize
+    Measured on zolIMa/fXgbTl with the maintainer's own flowTom config (seedSize 10.61/2.65, minComponentSize
     1.1): 52 objects in run order against 53 in the old preview order, with non-identical
     foreground — and it diverges at `minCellSize` 0 as well, because `labelSmoothing` defaults to
     0.5 and is equally order-sensitive. A preview that cannot predict its own run is worse than no
