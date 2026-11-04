@@ -18,7 +18,8 @@ Parameter contract (JSON written by Julia):
   imPath     - absolute path to the .ome.zarr the import just wrote
   resultPath - absolute path to write the result JSON to
 
-Result JSON: {"channels": [{"index", "saturated", "topValue", "topCount", "topFrac"}, …]} — the Julia
+Result JSON: {"channels": [{"index", "saturated", "topValue", "topCount", "topFrac", "profile"}, …]}
+(`profile` = `intensity_utils.PlaneProfile.summary`: per-depth and per-frame numbers) — the Julia
 handler turns this into ccid meta + QC findings. `{}` when the store cannot be read as integer data
 (nothing to say, and a QC pass must never fail an otherwise-good import).
 """
@@ -44,16 +45,23 @@ def run(params):
         levels, _ = zarr_utils.open_as_zarr(im_path)
         level0 = levels[0]
         dim_utils.calc_image_dimensions(level0.shape)
-        c_idx = dim_utils.dim_idx('C') if 'C' in dim_utils.im_dim_order else None
+        from_ome = {d: (dim_utils.dim_idx(d) if d in dim_utils.im_dim_order else None)
+                    for d in ('C', 'T', 'Z')}
+        axes = intensity_utils.stack_axis_indices(zarr_utils.read_axes(im_path), level0.ndim, from_ome)
+        c_idx = axes['C']
 
         log.log(f'>> checking {level0.dtype} {level0.shape} for clipping at acquisition')
         log.progress(1, 2)
-        hists = intensity_utils.channel_histograms(level0, c_idx)
+        lead = [i for i in range(level0.ndim - 2) if i != c_idx]
+        profile = intensity_utils.PlaneProfile(lead, t_axis=axes['T'], z_axis=axes['Z'])
+        hists = intensity_utils.channel_histograms(level0, c_idx, on_plane=profile)
 
         channels = []
         for i, h in enumerate(hists):
             stats = intensity_utils.saturation_stats(h)
             stats['index'] = i
+            # Where in the stack: per depth / per frame percentiles, zeros and ceiling voxels.
+            stats['profile'] = profile.summary(i, intensity_utils.profile_ceiling(stats))
             channels.append(stats)
             log.log(f'   ch{i}: {"SATURATED" if stats["saturated"] else "ok"} '
                     f'(top occupied value {stats["topValue"]}, {stats["topCount"]} voxels '

@@ -20,10 +20,11 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     (ok && isfile(result_file)) || return nothing
     try
-        chans = get(JSON3.read(read(result_file, String)), :channels, nothing)
+        # Typed read: each channel's nested `profile` (per-depth / per-frame lists) lands as plain
+        # Dicts and Vectors, not JSON3 views.
+        chans = get(JSON3.read(read(result_file, String), Dict{String,Any}), "channels", nothing)
         (isnothing(chans) || isempty(chans)) && return nothing
-        return Dict{String,Any}(
-            "channels" => [Dict{String,Any}(String(k) => v for (k, v) in ch) for ch in chans])
+        return Dict{String,Any}("channels" => [Dict{String,Any}(ch) for ch in chans])
     catch e
         @warn "Could not read saturation result" exception = e
         return nothing
@@ -32,13 +33,22 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
     end
 end
 
+"""Whether a stored `meta` carries a saturation probe with the per-plane `profile` on every channel.
+Through `_saturation_channels`, which normalises JSON3's Symbol keys — a raw `haskey(ch, "profile")`
+on the persisted ccid would never match."""
+function _saturation_has_profile(meta::AbstractDict)::Bool
+    chans = _saturation_channels(meta)
+    !isempty(chans) && all(ch -> haskey(ch, "profile"), chans)
+end
+
 """
     ensure_saturation_meta!(img) -> Bool
 
-Backfill `meta["saturation"]` for an image imported before the probe existed, so denoise's
+Backfill `meta["saturation"]` for an image imported before the probe existed — or before it
+recorded per-plane `profile`s, in which case the key is replaced, not merged — so denoise's
 saturation gate, the import QC dot and the Cleanup facts (`img_cleanup_facts`) have their signal.
 Called by the denoise task. A no-op when
-the field is already there. Probes the `default` store — clipping and photon counts are
+the field is already there with profiles. Probes the `default` store — clipping and photon counts are
 ACQUISITION properties; a derived store (drift padding, AF output) would skew `zeroFrac` — through
 `_probe_saturation`, then persists through the import's own fill-only meta write and refreshes the
 import QC. Persisted rather than recomputed per call: the probe is a full pixel pass (seconds per
@@ -49,13 +59,25 @@ failed write is logged, never thrown.
 function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing)::Bool
     ccid = state_file(img)
     isfile(ccid) || return false
-    haskey(get(read_ccid_raw(ccid), "meta", Dict{String,Any}()), "saturation") && return false
+    meta = get(read_ccid_raw(ccid), "meta", Dict{String,Any}())
+    _saturation_has_profile(meta) && return false
+    existing = get(meta, "saturation", nothing)
     zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     sat = _probe_saturation(zarr_path, task_run_dir(img._dir); on_log = on_log)
     isnothing(sat) && return false
     try
-        _merge_zarr_meta_into_ccid!(img, Dict{String,Any}("saturation" => sat); overwrite = false)
+        if isnothing(existing)
+            _merge_zarr_meta_into_ccid!(img, Dict{String,Any}("saturation" => sat); overwrite = false)
+        else
+            # Probed before per-plane profiles existed: replace just this key with the fuller probe
+            # of the same store (the whole-channel numbers come out the same).
+            commit_state!(img) do raw
+                m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
+                m["saturation"] = sat
+                raw["meta"] = m
+            end
+        end
         write_metadata_qc!(img)
     catch e
         # Advisory, like the import probe: a failed backfill leaves the score absent, never fails

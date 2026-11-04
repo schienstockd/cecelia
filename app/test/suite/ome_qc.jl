@@ -524,14 +524,32 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test haskey(r1.meta, "saturation")
             chans = r1.meta["saturation"]["channels"]
             @test !isempty(chans) && all(ch -> haskey(ch, "zeroFrac"), chans)
+            # per-plane profile, one entry per depth / per frame
+            @test all(ch -> ch["profile"]["byZ"]["p99"] isa AbstractVector, chans)
+            @test length(chans[1]["profile"]["byT"]["p99"]) == 3     # the store's 3 frames
             # the facts line reads it straight back — one entry per probed channel, a number each
             facts = Cecelia.img_cleanup_facts(r1)
             @test length(facts["channels"]) == length(chans)
             @test all(c -> c["zeroPct"] isa Real && c["clippedPct"] isa Real, facts["channels"])
             @test isempty(facts["drift"])                        # drift correction never ran
             @test r1.meta["SizeT"] == 1                          # fill-only: other meta untouched
+            @test all(c -> haskey(c, "profile"), facts["channels"])
             # already present → no second probe
             @test !Cecelia.ensure_saturation_meta!(r1)
+            # probed before profiles existed → re-probed, the key replaced, other meta kept
+            Cecelia.commit_state!(r1) do raw
+                m = Dict{String,Any}(String(k) => v for (k, v) in raw["meta"])
+                m["saturation"] = Dict{String,Any}("channels" => [
+                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) != "profile")
+                    for ch in m["saturation"]["channels"]])
+                raw["meta"] = m
+            end
+            r2 = init_object(proj.uid, img.uid)
+            @test !haskey(r2.meta["saturation"]["channels"][1], "profile")
+            @test Cecelia.ensure_saturation_meta!(r2)
+            r3 = init_object(proj.uid, img.uid)
+            @test haskey(r3.meta["saturation"]["channels"][1], "profile")
+            @test r3.meta["SizeT"] == 1
             rm(proj.root; recursive = true)
         end
     end

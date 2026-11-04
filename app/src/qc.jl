@@ -602,7 +602,11 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
             "index"      => i,
             "name"       => i + 1 <= length(names) ? names[i + 1] : "Channel $(i + 1)",
             "zeroPct"    => isnothing(zf) ? nothing : round(zf * 100, digits = 1),
-            "clippedPct" => isnothing(clipped) ? nothing : round(clipped * 100, digits = 3)))
+            "clippedPct" => isnothing(clipped) ? nothing : round(clipped * 100, digits = 3),
+            # Where in the stack, from the same probe: per depth / per frame p50, p99, zero fraction
+            # and voxels at the channel ceiling (`intensity_utils.PlaneProfile`). Absent on images
+            # probed before it existed until `ensure_saturation_meta!` re-probes them.
+            "profile"    => get(ch, "profile", nothing)))
     end
     um_per_px = img_is_calibrated(img) ? img_physical_sizes(img)[1][3] : nothing
     drift = Dict{String,Any}[]
