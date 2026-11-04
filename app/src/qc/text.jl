@@ -63,6 +63,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Channel {channel} clipped at the detector",
         long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
 
+    # acquisition stopped mid-volume (partial_timepoint_qc_findings): dropped at import, or still there
+    "import.partial_timepoint_dropped" => (
+        short = "Dropped an incomplete last timepoint",
+        long  = "The acquisition stopped mid-volume: {n} of {count} z-planes were never recorded. To keep it, re-import with \"Keep incomplete last timepoint\"."),
+    "import.partial_timepoint" => (
+        short = "Last timepoint is incomplete ({n} of {count} z-planes empty)",
+        long  = "The acquisition stopped mid-volume, so cells vanish from those planes in the last frame. Re-import to drop it."),
+
     # mostly-zero channels (import.photon_limited) — ONE finding per image, not per channel: sparsity
     # is a scanning-mode property (laser/PMT settings shared across channels), so a per-channel
     # finding would be N copies of the same acquisition observation. States the measurement, not a

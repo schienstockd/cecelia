@@ -184,6 +184,13 @@
             }
           ],
           "tip": "-Xmx via BIOFORMATS2RAW_OPTS; raise for OOM on big 3D Imaris"
+        },
+        {
+          "key": "keepPartialTimepoint",
+          "label": "Keep incomplete last timepoint",
+          "type": "bool",
+          "default": false,
+          "tip": "Keep a last timepoint whose deep z-planes were never recorded (left black)"
         }
       ]
     }
