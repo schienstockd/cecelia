@@ -1100,6 +1100,7 @@ end
     EXEMPT = Set([
         "tasks/importImages/read_ims_time_interval_run.py",       # one TimeIncrement out of an .ims
         "tasks/importImages/read_imagej_physical_size_run.py",    # one pixel size out of an ImageJ tag
+        "tasks/importImages/read_acquisition_settings_run.py",    # one settings document out of a file header
     ])
 
     gaps = String[]

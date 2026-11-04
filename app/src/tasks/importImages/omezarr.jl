@@ -23,6 +23,8 @@ using Statistics: median
 #                    `resync_ome_meta!` is the entry point routes/importer call after a metadata edit.
 #   saturation.jl  — the clipping + sparsity probe (`_probe_saturation`) import runs on every store,
 #                    and `ensure_saturation_meta!`, its on-demand backfill for older images.
+#   acquisition.jl — `_recover_acquisition_settings!`: the source file's acquisition settings
+#                    (`meta["acquisition"]`) that Bio-Formats drops, read at import and on resync.
 #   staging.jl     — source copying — `_stage_source!` and the yielding chunked copy underneath, so
 #                    a multi-GB import doesn't freeze the WS server. The COMPANION detector
 #                    (`_companion_files`) also lives here since the staging step is what fans it out.
@@ -34,5 +36,6 @@ include(joinpath(@__DIR__, "omezarr", "fingerprint.jl"))
 include(joinpath(@__DIR__, "omezarr", "calibration.jl"))
 include(joinpath(@__DIR__, "omezarr", "ccid_sync.jl"))
 include(joinpath(@__DIR__, "omezarr", "saturation.jl"))
+include(joinpath(@__DIR__, "omezarr", "acquisition.jl"))
 include(joinpath(@__DIR__, "omezarr", "staging.jl"))
 include(joinpath(@__DIR__, "omezarr", "task.jl"))
