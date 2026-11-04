@@ -31,6 +31,15 @@ class AcquisitionKnowledgeTest(unittest.TestCase):
                     self.assertLessEqual(set(sym["sources"]), set(self.k["sources"]))
         self.assertIn("darker-with-depth", ids)        # the plan's worked example
 
+    def test_offset_advice_only_for_a_clipped_background(self):
+        # a high zero fraction alone is no reason to touch the offset: on a photon-counting detector
+        # the zeros are voxels with no photon (intensity_utils.floor_stats tells the two apart)
+        syms = {sym["id"]: sym for st in self.k["stages"] for sym in st["symptoms"]}
+        self.assertIn("background clipped at 0", syms["background-at-zero"]["check"])
+        no_photon = syms["zeros-are-no-photon"]
+        self.assertIn("photon-counted", no_photon["check"])
+        self.assertIn("Never suggest the offset", no_photon["check"])
+
     def test_every_source_has_a_doi_and_is_cited(self):
         cited = {s for st in self.k["stages"] for sym in st["symptoms"] for s in sym["sources"]}
         for sid, src in self.k["sources"].items():

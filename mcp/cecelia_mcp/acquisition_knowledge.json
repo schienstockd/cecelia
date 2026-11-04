@@ -150,12 +150,23 @@
     },
     {
      "id": "background-at-zero",
-     "symptom": "Most of the background is exactly 0.",
-     "explanation": "Offset set so the background is cut off at 0: dim signal near the background is lost and the noise floor cannot be measured.",
-     "check": "Acquired data: % of voxels at 0; noise floor 'not measurable: background clipped at 0'.",
+     "symptom": "Most of the background is exactly 0, and the non-zero counts are highest at 1 and fall.",
+     "explanation": "A continuous background cut off at 0 by the offset: dim signal near the background is lost and the noise floor cannot be measured. Raising the offset brings the background back.",
+     "check": "Acquired data: zeros read 'likely background clipped at 0'. Only then is the offset the lever.",
      "alternatives": "Background subtracted after acquisition (upstream processing) looks the same.",
      "sources": [
       "waters2009"
+     ]
+    },
+    {
+     "id": "zeros-are-no-photon",
+     "symptom": "Most voxels are exactly 0, nothing just above 0, then peaks at a fixed step.",
+     "explanation": "A photon-counting detector writes 0 where no photon arrived and about one fixed step per photon. The zeros are real: few photons per voxel, not a clipped background. Raising an offset only adds a pedestal; the levers are photons per voxel: power or its depth ramp, dwell time, frame summing or averaging.",
+     "check": "Acquired data: zeros read 'likely no photon detected (photon-counted ...)' and photons per non-zero voxel. Never suggest the offset from the zero fraction alone.",
+     "alternatives": "Sparse labelling: most of the volume holds no labelled structure, so few photons is expected there.",
+     "sources": [
+      "waters2009",
+      "pawley2006"
      ]
     }
    ]
