@@ -10,6 +10,8 @@
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted } from 'vue'
 import { acquisitionRows } from '../utils/acquisitionSettings'
+import { isMultiphoton } from '../utils/acquisitionLightPath'
+import AcquisitionLightPath from './AcquisitionLightPath.vue'
 import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
 import type { CciaImage } from '../stores/project'
@@ -106,6 +108,8 @@ const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
 const acquisition = computed(() => acquisitionRows(img.value.acquisition))
+// Two-photon acquisitions get the light-path diagram, which places the same values at their stage.
+const lightPath = computed(() => isMultiphoton(img.value.acquisition))
 // A crop names its source image (by name when it's in the open project) + version + pixel box.
 const cropLine = computed(() => {
   const cs = img.value.cropSource
@@ -188,7 +192,7 @@ async function saveEditVn() {
 </script>
 
 <template>
-  <BaseModal width="560px" @close="$emit('close')">
+  <BaseModal width="720px" @close="$emit('close')">
     <template #title>
       <i class="pi pi-info-circle" /> Image metadata
     </template>
@@ -235,7 +239,8 @@ async function saveEditVn() {
            values Bio-Formats drops. Absent for formats without a reader. -->
       <section v-if="acquisition.length" class="md-section">
         <h4 class="md-h cc-eyebrow">Acquisition</h4>
-        <div class="md-grid">
+        <AcquisitionLightPath v-if="lightPath" :image="img" />
+        <div v-else class="md-grid">
           <template v-for="(r, i) in acquisition" :key="i">
             <span class="md-k">{{ r.k }}</span><span class="md-v">{{ r.v }}</span>
           </template>

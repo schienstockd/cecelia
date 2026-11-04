@@ -7,6 +7,7 @@ import { useSettingsStore } from './settings'
 import { prunedImageVersion } from '../utils/staleImageVersion'
 import type { CropSource } from '../utils/cropSource'
 import type { AcquisitionSettings } from '../utils/acquisitionSettings'
+import type { CleanupFactsChannel } from '../utils/acquisitionLightPath'
 import { publishViewerImageMeta } from '../lib/viewerImageMetaChannel'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
@@ -30,6 +31,7 @@ export interface CciaImage {
   oriPath?: string | null                 // original source file location (before OME-Zarr conversion)
   extraMeta?: Record<string, string | number | boolean>  // any other meta not surfaced as a field
   acquisition?: AcquisitionSettings | null  // source-file microscope settings (utils/acquisitionSettings.ts)
+  cleanupFacts?: { channels?: CleanupFactsChannel[] } | null  // import probe per channel (qc.jl img_cleanup_facts)
   cropSource?: CropSource | null           // set on a crop: source image + version + pixel box
   filepath?: string                       // active version filename (for display)
   activeValueName?: string                // active value name (the _active key from versioned dict)
