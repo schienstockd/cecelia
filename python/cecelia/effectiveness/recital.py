@@ -47,6 +47,7 @@ from .inventory_coverage import run_inventory_check
 from .changelog_check import run_changelog_check
 from .maintainability_lint import run_maintainability_lint
 from .log import append_event
+from cecelia.utils.atomic_io import write_json_atomic
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
 #: the single source of truth.
@@ -62,6 +63,16 @@ ERROR_MARKER = "RECITAL SCRIPT ERROR"
 #: One reviewer's error block as `_run_reviewer` writes it: the marker line, then its message up to
 #: the next italic line (the section's `_<title>: not run …_` tail) or the end.
 _ERROR_BLOCK = re.compile(r"> \*\*" + re.escape(ERROR_MARKER) + r"\*\* — (.*?)(?=\n\n_|\Z)", re.S)
+
+
+#: Every tail of a reviewer that should have run and didn't starts `_<title>: not run`.
+NOT_RUN = "not run"
+#: The tail of a reviewer section whose reviewer errored.
+ERRORED_TAIL = f"{NOT_RUN} — the reviewer errored"
+#: A result review's own tail line saying it didn't run (errored, or no git dir). The commit hook
+#: blocks an agent commit carrying one: a usage limit must not let a result-path change in
+#: unreviewed. A whole line, so a finding that quotes the tail doesn't match.
+RESULT_NOT_RUN = re.compile(rf"^_Result review: {NOT_RUN}\b[^\n]*_[ \t]*$", re.MULTILINE)
 
 
 def reviewer_errors(body: str) -> list[str]:
@@ -243,6 +254,7 @@ from .git_context import current_branch as _current_branch  # noqa: E402
 from .git_context import current_head_sha as _current_head_sha  # noqa: E402
 from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
 from .git_context import git_dir as _git_dir  # noqa: E402
+from .git_context import git_output as _git_output  # noqa: E402
 from .agent_sandbox import SANDBOX_SETTINGS, WORKTREE_ROOT, agent_env  # noqa: E402
 from .git_context import parse_diff as _parse_diff  # noqa: E402
 from .git_context import repo_root as _repo_root  # noqa: E402
@@ -341,6 +353,80 @@ _STRIP_TRAILING_TAIL = re.compile(
 )
 
 
+#: Each reviewer's last round on this change, in `<git dir>/recital-rounds/<mechanism>.json`.
+ROUNDS_DIR = "recital-rounds"
+
+
+class Rounds(_t.NamedTuple):
+    """What a repeat round needs: where the last round is kept, which change this is (branch @
+    parent SHA: a commit starts a new change), and the staged tree being reviewed (`git write-tree`).
+    Why rounds exist: `docs/ai-assist/FANOUT_AUDIT.md` → *Repeat rounds*."""
+    dir: pathlib.Path
+    change: str
+    tree: str
+
+
+def _last_round(rounds: Rounds | None, mechanism: str) -> dict | None:
+    """The reviewer's last round on this same change, or None (first round, or a new change)."""
+    if rounds is None:
+        return None
+    try:
+        last = json.loads((rounds.dir / f"{mechanism}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return last if isinstance(last, dict) and last.get("change") == rounds.change else None
+
+
+def _save_round(rounds: Rounds | None, mechanism: str, section: str, earlier: list[str]) -> None:
+    """Keep this round for the next: its tree, its section (reused if nothing changes), and every
+    finding bullet so far on this change (the next round is told not to repeat them)."""
+    if rounds is None:
+        return
+    try:
+        rounds.dir.mkdir(parents=True, exist_ok=True)
+        write_json_atomic(rounds.dir / f"{mechanism}.json",
+                          {"change": rounds.change, "tree": rounds.tree, "section": section, "earlier": earlier})
+    except OSError:  # best-effort: the next round is then a full one
+        pass
+
+
+def _reused_round(rounds: Rounds | None, mechanism: str, title: str, event_name: str, *,
+                  pr: str | None, commit: str | None, branch: str | None) -> str | None:
+    """The last round's section when the staged tree hasn't changed since, logged as a reuse."""
+    last = _last_round(rounds, mechanism)
+    if last is None or rounds is None or last.get("tree") != rounds.tree or not last.get("section"):
+        return None
+    append_event(event_name, {"duration_s": 0.0, "escape_valve": "unchanged_diff"},
+                 pr=pr, commit=commit, branch=branch)
+    return last["section"].replace(f"_{title}: run_", f"_{title}: run — reused, staged diff unchanged_")
+
+
+def _tree_delta(old_tree: str, new_tree: str) -> str | None:
+    """`git diff` between two staged trees: what changed since the last round. None when git
+    can't say (a tree pruned by `git gc`): the round is then a full one."""
+    return _git_output("diff", old_tree, new_tree)
+
+
+def _delta_note(delta: str, earlier: _t.Sequence[str]) -> str:
+    """Appended to a repeat round's prompt, after the full diff."""
+    listed = "\n".join(earlier) if earlier else "(none)"
+    return (
+        "\n\n---\n\nREPEAT ROUND. The full staged diff above was reviewed in an earlier round on "
+        "this change, and the author has changed it since. Review only what the change since that "
+        "round (below) adds, removes or breaks; read the full diff above as context. Do not report "
+        "again anything already reported (listed below), and report a finding outside the change "
+        "below only if that change caused it.\n\nAlready reported:\n"
+        f"{listed}\n\nChange since the earlier round:\n\n{delta}"
+    )
+
+
+def _finding_lines(section: str, mechanism: str) -> list[str]:
+    """The section's finding bullets (any marker, slug included), not its evidence bullets."""
+    tags = [_marker_tag_re(m) for m in (*MARKERS[mechanism], *ADVISORY_MARKERS[mechanism])]
+    return [ln for ln in section.splitlines()
+            if re.match(r"[ \t]*[-*][ \t]", ln) and any(t.search(outside_code(ln)) for t in tags)]
+
+
 def _run_reviewer(
     *,
     event_name: str,
@@ -357,10 +443,55 @@ def _run_reviewer(
     branch: str | None,
     prompt: str | None = None,
     run_extra: dict | None = None,
+    rounds: Rounds | None = None,
 ) -> str:
     """Spawn one reviewer, emit its `_run` + per-finding events, format its recital section.
-    `prompt` replaces the doc-plus-diff default; `run_extra` joins the `_run` row's payload."""
+    `prompt` replaces the doc-plus-diff default; `run_extra` joins the `_run` row's payload.
+    With `rounds`, a repeat round on the same change reuses the last section when the staged tree
+    is unchanged, else reviews only the change since that round."""
+    reused = _reused_round(rounds, mechanism, title, event_name, pr=pr, commit=commit, branch=branch)
+    if reused is not None:
+        return reused
+    last = _last_round(rounds, mechanism)
+    earlier: list[str] = list(last.get("earlier") or []) if last else []
     prompt = _reviewer_prompt(doc_path, diff) if prompt is None else prompt
+    delta = _tree_delta(last["tree"], rounds.tree) if last and rounds and last.get("tree") else None
+    if delta:
+        prompt += _delta_note(delta, earlier)
+        run_extra = {**(run_extra or {}), "round": "delta", "delta_chars": len(delta)}
+    else:
+        earlier = []  # a full round re-reviews everything: nothing earlier to carry
+    section = _review_section(
+        event_name=event_name, finding_event_name=finding_event_name,
+        advisory_event_name=advisory_event_name, mechanism=mechanism, title=title,
+        tail_none=tail_none, claude_runner=claude_runner, pr=pr, commit=commit, branch=branch,
+        prompt=prompt, run_extra=run_extra)
+    if section.endswith(f"_{title}: {ERRORED_TAIL}_"):  # the tail, not a finding quoting the marker
+        return section  # not kept: the next round must be a real one
+    new = [b for b in _finding_lines(section, mechanism) if b not in earlier]
+    if earlier:
+        section = (f"_{title} — earlier rounds on this change (already logged; tag them as usual):_\n\n"
+                   + "\n".join(earlier) + "\n\n" + section)
+    _save_round(rounds, mechanism, section, earlier + new)
+    return section
+
+
+def _review_section(
+    *,
+    event_name: str,
+    finding_event_name: str,
+    advisory_event_name: str,
+    mechanism: str,
+    title: str,
+    tail_none: str,
+    claude_runner: _t.Callable[[str], str | ReviewerReply],
+    pr: str | None,
+    commit: str | None,
+    branch: str | None,
+    prompt: str,
+    run_extra: dict | None,
+) -> str:
+    """One spawn: the reply, its `_run`, `_finding` and `_advisory` rows, and the formatted section."""
     start = time.monotonic()
     error: str | None = None
     output: str = ""
@@ -389,7 +520,7 @@ def _run_reviewer(
         # Not `tail_none`: "no audit needed" under an error would say the reviewer ran and cleared it.
         return (
             f"_{title} (evidence):_\n\n> **{ERROR_MARKER}** — {error}\n\n"
-            f"_{title}: not run — the reviewer errored_"
+            f"_{title}: {ERRORED_TAIL}_"
         )
 
     stripped = output.strip()
@@ -537,8 +668,9 @@ def run_result_review(
     pr: str | None,
     commit: str | None,
     branch: str | None,
+    rounds: Rounds | None = None,
 ) -> str:
-    """The third reviewer, gated on result paths and reused for an unchanged staged diff.
+    """The third reviewer, gated on result paths; repeat rounds as `_run_reviewer`.
     `claude_runner` (tests) replaces the spawn and skips the tree export."""
     title = "Result review"
     root = _repo_root()
@@ -547,24 +679,21 @@ def run_result_review(
         append_event("result_review_run", {"duration_s": 0.0, "escape_valve": "no_result_paths"},
                      pr=pr, commit=commit, branch=branch)
         return f"_{title}: skipped — no result paths_"
+    # Checked here too, before the tree export, which a reuse doesn't need.
+    reused = _reused_round(rounds, "result", title, "result_review_run", pr=pr, commit=commit, branch=branch)
+    if reused is not None:
+        return reused
 
     key = hashlib.sha1(f"{claim or ''}\n{diff}".encode("utf-8")).hexdigest()[:12]
-    gd = _git_dir() if claude_runner is None else None  # a test's fake runner caches nothing
-    home = (gd / "result-review") if gd else None
-    saved = home / key / "section.md" if home else None
-    if saved is not None and saved.is_file():
-        append_event("result_review_run", {"duration_s": 0.0, "escape_valve": "unchanged_diff"},
-                     pr=pr, commit=commit, branch=branch)
-        return saved.read_text(encoding="utf-8").replace(f"_{title}: run_", f"_{title}: run — reused, staged diff unchanged_")
-
+    gd = _git_dir() if claude_runner is None else None
     runner = claude_runner
     trees = RESULT_TREE_ROOT / hashlib.sha1(str(gd).encode("utf-8")).hexdigest()[:10] if gd else None
     tree = (trees / key) if trees else root
     if runner is None:
-        if home is None or trees is None:
-            return f"_{title}: not run — no git dir to key the review on_"
-        for old in [*(home.glob("*") if home.is_dir() else ()), *(trees.glob("*") if trees.is_dir() else ())]:
-            if old.name != key:  # keep one review: the latest
+        if trees is None:
+            return f"_{title}: {NOT_RUN} — no git dir to key the review on_"
+        for old in (trees.glob("*") if trees.is_dir() else ()):
+            if old.name != key:  # keep one copy: the latest
                 shutil.rmtree(old, ignore_errors=True)
         _export_staged_tree(root, tree)
         def runner(prompt: str) -> ReviewerReply:
@@ -577,7 +706,7 @@ def run_result_review(
                                                "--no-session-persistence"],
                                    env=agent_env(PYTHONPATH=str(tree / "python")))
 
-    section = _run_reviewer(
+    return _run_reviewer(
         event_name="result_review_run",
         finding_event_name="result_review_finding",
         advisory_event_name="result_review_advisory",
@@ -592,11 +721,8 @@ def run_result_review(
         branch=branch,
         prompt=_result_prompt(_RESULT_DOC, diff, claim, tree, sys.executable),
         run_extra={"paths": touched[:20], "repro_dir": str(tree / "_review")},
+        rounds=rounds,
     )
-    if saved is not None and ERROR_MARKER not in section:
-        saved.parent.mkdir(parents=True, exist_ok=True)
-        saved.write_text(section, encoding="utf-8")
-    return section
 
 
 #: The stamp recital ends its body with — which change (branch @ parent SHA) the review is OF.
@@ -629,9 +755,16 @@ def run_recital(
     *,
     claude_runner: _t.Callable[[str], str | ReviewerReply] | None = None,
     claim: str | None = None,
+    staged_tree: str | None = None,
+    rounds_dir: pathlib.Path | None = None,
 ) -> str:
     """Spawn the reviewers, emit `_run` events, return the formatted recital body. `claim` is what
     the result review is told the change is for (marked unverified).
+
+    - `staged_tree`: the index as a tree (`git write-tree`). With it, a repeat round on the same
+      change (branch @ parent SHA) reuses each reviewer's last section when the tree is unchanged,
+      else reviews only the change since then. None (a diff from stdin) = every round is a full one.
+    - `rounds_dir`: where the rounds are kept; default `<git dir>/recital-rounds` (tests pass one).
 
     - `diff`: the staged diff string (from `git diff --staged`).
     - `claude_runner`: optional; injected in tests to bypass real subprocess. Signature:
@@ -652,6 +785,11 @@ def run_recital(
     pr = _current_pr()
     commit = _current_head_sha()
     branch = _current_branch()
+    if rounds_dir is None and claude_runner is None:
+        gd = _git_dir()
+        rounds_dir = gd / ROUNDS_DIR if gd else None
+    rounds = Rounds(rounds_dir, f"{branch or '?'}@{commit or '?'}", staged_tree) \
+        if staged_tree and rounds_dir else None
 
     fanout_section = _run_reviewer(
         event_name="fanout_audit_run",
@@ -666,6 +804,7 @@ def run_recital(
         pr=pr,
         commit=commit,
         branch=branch,
+        rounds=rounds,
     )
     convention_section = _run_reviewer(
         event_name="convention_check_run",
@@ -680,9 +819,10 @@ def run_recital(
         pr=pr,
         commit=commit,
         branch=branch,
+        rounds=rounds,
     )
     result_section = run_result_review(diff, claim=claim, claude_runner=claude_runner,
-                                       pr=pr, commit=commit, branch=branch)
+                                       pr=pr, commit=commit, branch=branch, rounds=rounds)
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
     lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
     changelog_section = run_changelog_check(diff, pr=pr, commit=commit, branch=branch)

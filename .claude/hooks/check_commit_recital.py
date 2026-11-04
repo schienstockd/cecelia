@@ -94,7 +94,7 @@ sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
 from cecelia.effectiveness.log import unresolved_findings  # noqa: E402
 from cecelia.effectiveness.recital import (  # noqa: E402
-    MARKERS, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code, recital_body_path,
+    MARKERS, RESULT_NOT_RUN, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code, recital_body_path,
 )
 import importlib.util  # noqa: E402
 
@@ -438,6 +438,10 @@ def agent_recital_gate(message: str) -> str | None:
         return ("recital ran for this change, but its body is not in the message (no "
                 f"`_Recital stamp:` line). Append {where} — `pixi run recital` saves its body "
                 "there — to the message and commit again.")
+    if RESULT_NOT_RUN.search(message):
+        return ("the result review did not run (its reviewer errored, often a usage limit). This "
+                "change touches a result path, so it needs that review. Run `pixi run recital` again "
+                "once the reviewer can run, and append the new body.")
     return None
 
 

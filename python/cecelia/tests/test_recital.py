@@ -835,3 +835,118 @@ class RecitalCliMergeTest(unittest.TestCase):
             self.assertEqual(r.recital_body_path(), pathlib.Path("/repo/.git/worktrees/w/recital-body.md"))
         with mock.patch.object(r, "_git_dir", return_value=None):
             self.assertIsNone(r.recital_body_path())
+
+
+class RepeatRoundTest(unittest.TestCase):
+    """A repeat round on the same change (branch @ parent SHA) reuses each reviewer's last section
+    when the staged tree is unchanged, else reviews only the change since that round. Trees come
+    from a real git repo: the delta is `git diff` between them."""
+
+    def setUp(self):
+        FindingsEmissionTest.setUp(self)
+        self.repo = pathlib.Path(self._tmp.name) / "repo"
+        self.repo.mkdir()
+        self._git("init", "-q")
+        cwd = os.getcwd()
+        os.chdir(self.repo)  # `_tree_delta` runs git in the process cwd, as recital does
+        self.addCleanup(os.chdir, cwd)
+        self.rounds = pathlib.Path(self._tmp.name) / "rounds"
+        self.prompts: list[str] = []
+        self.reply = ("- **a.py:1** — two callers still read the old key [**confirmed**]\n\n"
+                      "Evidence:\n- checked the callers in b.py")
+
+    _events = FindingsEmissionTest._events
+
+    def _git(self, *args: str) -> str:
+        import subprocess
+        return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True,
+                              encoding="utf-8").stdout.strip()
+
+    def _stage(self, text: str) -> str:
+        (self.repo / "a.py").write_text(text, encoding="utf-8")
+        self._git("add", "a.py")
+        return self._git("write-tree")
+
+    def _round(self, tree: str, *, sha: str = "a" * 40, fail: bool = False) -> str:
+        def fake(prompt: str) -> str:
+            self.prompts.append(prompt)
+            if fail:
+                raise RecitalError("claude exited 1; stdout:\nYou've hit your 5-hour limit")
+            return self.reply if "FANOUT_AUDIT.md" in prompt else "no findings"
+        with mock.patch("cecelia.effectiveness.recital._current_head_sha", return_value=sha), \
+                mock.patch("cecelia.effectiveness.recital._current_branch", return_value="b"):
+            return run_recital("some diff", claude_runner=fake, staged_tree=tree, rounds_dir=self.rounds)
+
+    def _runs(self, event: str = "fanout_audit_run") -> list[dict]:
+        return [e["payload"] for e in self._events() if e["event"] == event]
+
+    def test_an_unchanged_tree_reuses_every_reviewer_without_spawning(self):
+        tree = self._stage("x = 1\n")
+        first = self._round(tree)
+        self.prompts.clear()
+        again = self._round(tree)
+        self.assertEqual(self.prompts, [])
+        self.assertIn("_Fanout audit: run — reused, staged diff unchanged_", again)
+        self.assertIn(first.split("_Fanout audit (evidence):_")[1].split("[")[1][:15], again)  # same slug
+        for ev in ("fanout_audit_run", "convention_check_run"):
+            self.assertEqual(self._runs(ev)[-1].get("escape_valve"), "unchanged_diff", ev)
+
+    def test_a_changed_tree_reviews_only_the_delta_and_carries_earlier_findings(self):
+        self._round(self._stage("x = 1\n"))
+        slug = next(e["payload"]["slug"] for e in self._events() if e["event"] == "fanout_audit_finding")
+        self.prompts.clear()
+        self.reply = "no fanout audit needed"
+        body = self._round(self._stage("x = 1\ny = 2\n"))
+        fanout_prompt = next(p for p in self.prompts if "FANOUT_AUDIT.md" in p)
+        self.assertIn("REPEAT ROUND", fanout_prompt)
+        delta = fanout_prompt.split("Change since the earlier round:")[1]
+        self.assertIn("+y = 2", delta)
+        self.assertNotIn("+x = 1", delta)
+        already = fanout_prompt.split("Already reported:")[1].split("Change since")[0]
+        self.assertIn(f"[{slug}]", already)                                        # told not to repeat it
+        self.assertNotIn("Evidence:", already)
+        self.assertNotIn("checked the callers", already)                           # evidence bullets aren't findings
+        self.assertIn("earlier rounds on this change", body)
+        self.assertIn(f"[{slug}]", body)                                           # still in front of the author
+        self.assertEqual(self._runs()[-1].get("round"), "delta")
+
+    def test_a_new_parent_starts_a_full_round(self):
+        tree = self._stage("x = 1\n")
+        self._round(tree)
+        self.prompts.clear()
+        self._round(self._stage("x = 2\n"), sha="c" * 40)   # committed: a new change
+        self.assertTrue(self.prompts)
+        self.assertFalse(any("REPEAT ROUND" in p for p in self.prompts))
+
+    def test_an_errored_round_is_not_kept(self):
+        tree = self._stage("x = 1\n")
+        self._round(tree)
+        self._round(self._stage("x = 1\ny = 2\n"), fail=True)
+        self.prompts.clear()
+        self._round(self._git("write-tree"))   # same tree as the failed round: must spawn again
+        self.assertTrue(any("FANOUT_AUDIT.md" in p for p in self.prompts))
+        self.assertTrue(any("REPEAT ROUND" in p for p in self.prompts))   # delta from the last good round
+
+    def test_a_finding_that_quotes_the_error_marker_is_still_a_round(self):
+        # A reviewer quoting `RECITAL SCRIPT ERROR` in a finding didn't error: its round is kept.
+        self.reply = "- **a.py:1** — anchors on the `> **RECITAL SCRIPT ERROR** —` block [**confirmed**]"
+        tree = self._stage("x = 1\n")
+        self._round(tree)
+        self.prompts.clear()
+        self._round(tree)
+        self.assertEqual(self.prompts, [])
+
+    def test_a_tree_git_no_longer_has_falls_back_to_a_full_round(self):
+        self._round(self._stage("x = 1\n"))
+        self.prompts.clear()
+        with mock.patch("cecelia.effectiveness.recital._tree_delta", return_value=None):
+            body = self._round(self._stage("x = 2\n"))
+        self.assertFalse(any("REPEAT ROUND" in p for p in self.prompts))
+        self.assertNotIn("earlier rounds on this change", body)
+
+    def test_no_staged_tree_means_no_rounds(self):
+        tree = self._stage("x = 1\n")
+        self._round(tree)
+        self.prompts.clear()
+        self._round(None)
+        self.assertTrue(any("FANOUT_AUDIT.md" in p for p in self.prompts))
