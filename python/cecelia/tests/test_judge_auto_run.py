@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import subprocess
+import unittest
 from unittest import mock
 
 from cecelia.effectiveness import auto_run
@@ -171,11 +172,11 @@ class DetachTest(_AutoFixture):
             return mock.Mock(pid=31337)
         out = io.StringIO()
         with mock.patch.dict(os.environ, {"CECELIA_EVAL_CRON_LOG_DIR": str(self.tmp / "cron")}):
-            pid = self.af.detach(["--auto", "--detach", "--limit", "3"], pathlib.Path("/r/scripts/judge/review.py"),
-                                 out=out, now=NOW, popen=popen)
+            script = pathlib.Path("/r/scripts/judge/review.py")
+            pid = self.af.detach(["--auto", "--detach", "--limit", "3"], script, out=out, now=NOW, popen=popen)
         log = self.tmp / "cron" / "auto-20261104T090000Z.log"
         self.assertEqual(pid, 31337)
-        self.assertEqual(seen["argv"][1:], ["/r/scripts/judge/review.py", "--auto", "--limit", "3"])
+        self.assertEqual(seen["argv"][1:], [str(script), "--auto", "--limit", "3"])
         self.assertTrue(seen["start_new_session"])
         self.assertIs(seen["stdin"], subprocess.DEVNULL)
         self.assertEqual(seen["env"][auto_run.LOG_ENV], str(log))
@@ -187,6 +188,7 @@ class DetachTest(_AutoFixture):
             self.assertEqual(self.rv.main(["--detach"]), 2)
             self.assertEqual(self.rv.main(["--auto", "--dry-run", "--detach"]), 2)
 
+    @unittest.skipUnless(os.name == "posix", "state.try_lock is POSIX only; the judge runs on Linux")
     def test_a_second_run_starts_nothing_while_one_holds_the_lock(self):
         self.rec.write(self.record)
         fake = mock.Mock()
@@ -216,5 +218,4 @@ class DetachTest(_AutoFixture):
 
 
 if __name__ == "__main__":
-    import unittest
     unittest.main()
