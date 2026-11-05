@@ -289,6 +289,64 @@ they and the diagram (P4) are useful without Claude.
   pass and a dark-mode check before it ships; generic optics are labelled as a schematic, not the
   scope's real layout.
 
+- **P4b · Data path panel** (addendum, maintainer 2026-11-04 —
+  `docs/archive/ACQUISITION_DATA_PATH_PANEL.md`). Light path shows what the scope was *asked* to do;
+  this shows what *landed in the file*. A second section of the metadata dialog (*Acquired data*), for
+  every image with a probe, not only two-photon; same source markers, everything here is *measured
+  at import*. Headless first: `cecelia.utils.data_path.measure_store(path)` returns the numbers from
+  a store path, no project needed; the import runner (`saturation_run.py`) calls it.
+
+  **Verified facts (this branch):** the import probe already makes one full pass with per-channel
+  histograms (`intensity_utils.channel_histograms`) and keeps clipping (`saturation_stats`:
+  structural pile-up, so it needs no bit depth — `topValue` is the detected ceiling), zero fraction,
+  signal fraction, and per-plane / per-frame p50, p99, zero fraction and clipped count (P1). It runs on
+  the `default` store, i.e. the import before any processing. The `.oir` reader gives a per-channel
+  `bitDepth` (FV4000 reports 16 for every channel) and the integration mode (`frame ×2 · sum`). No
+  reader gives a saturation level. Bleed-through primitives exist: `coloc_utils` (TLS slope, Pearson,
+  Costes, envelope slope) and `correction_utils.af_bleedthrough_alphas` with its paired sampling.
+  `background_threshold` (triangle, zeros ignored) is the derived background level.
+
+  **Metrics — lands now (P4b-1):**
+
+  | Metric | Definition | Inputs | Fails / untestable when |
+  |---|---|---|---|
+  | Container depth | bits of the store dtype | store | — |
+  | Recorded depth | `bitDepth` per channel | `.oir` | not recorded (other formats) |
+  | Ceiling | `topValue` when `is_saturated` finds a pile-up; else none detected. Source: *detected* — no reader records a level | histogram | float stores (probe skipped) |
+  | Clipped | `clippedSignalFrac` — top-bin voxels over voxels above background | histogram | no ceiling detected → 0 by definition |
+  | Floor | `zeroFrac` — voxels exactly 0; `floor` — what they are, from the low end of the histogram: *photon-counted* (empty run above 0 ending at a cut, a peak and another at twice its value: no photon detected; reports the step per photon and photons per voxel), *clipped* (a spike at 0 over counts that run on from 1: offset or upstream subtraction, which look alike) or *indeterminate* | histogram | photon-counted: noise floor replaced by photons per voxel |
+  | Range | p1, p50, p99.9 over **non-zero** voxels, and max | histogram | channel all zero |
+  | Histogram | 32 equal bins over [0, max], counts | histogram | — |
+  | Noise floor | background level (triangle); median and spread (p84.13 − median, upper side only) of the voxels at or below it, zeros kept — robust to a background partly clipped at 0 | histogram | > 50 % zeros: the median itself is clipped, spread not measurable |
+  | SNR | (p50 of voxels above background − background median) / spread | histogram | spread 0 or not measurable |
+  | By depth / time | P1's `byZ` / `byT` p50, p99, zero fraction, clipped — drawn as small series | profile | single plane / frame |
+
+  Histogram-only estimators ignore where voxels sit: dim structure inside the background widens the
+  spread (SNR reads low), and a zero-clipped background makes it unmeasurable, which the panel says.
+  Summed frames (`frame ×2 · sum`) raise the ceiling past the detector's range; the structural test
+  finds the pile-up wherever it is, so the count is not needed, and the panel notes the mode next to
+  the ceiling. Re-probe: images whose stored probe lacks these fields get them from the dialog's
+  Refresh metadata (`ensure_saturation_meta!`, `measure: true`), like the P1 profile.
+
+  **Waits:**
+  - *P4b-2 bleed-through*: paired samples per channel pair on the same laser, and from SHG, through
+    `coloc_utils.tls_slope` / `pearson` on background-subtracted voxels (sampling as
+    `af_bleedthrough_alphas`, reported). Whether two channels may co-label is a question about the
+    experiment, so the panel shows the slope and Pearson, not "leak". Where filters aren't recorded,
+    says settings can't answer.
+  - *Bleaching / abrupt changes over time*: a step test on `byT` p50; thresholds need real movies.
+  - *Cross-checks* (ramp too steep, noise- vs sampling-limited, bleaching vs dose, sampling vs the
+    question): advisor rules in P5, from both panels' numbers; the question comes from the user.
+  - *Regression set*: real files with known saturation, clipped floor, bleaching, bleed-through and
+    depth fall-off plus expected readings — the maintainer's bad images (P7). Until then the tests use real
+    output from zolIMa 20armH (no clipping, photon-counted floor, Bright Z on, flat with depth).
+
+  **Open:** whether container vs detector depth is worth a row when the vendor reports 16 for a 12-bit
+  path (FV4000 does); whether a *clipped* floor should be split into "offset" vs "subtracted" from the
+  file's offset value. Offset advice (P5) applies to a *clipped* floor only, never to a zero fraction
+  alone: zolIMa 20armH is 86–100 % zeros and photon-counted (nothing from 1 to 18, a peak every ~30),
+  so its zeros are voxels with no photon (review: `docs/archive/ACQUIRED_DATA_PANEL_REVIEW.md`).
+
 Why these fit hardening: all three make an existing result easier to trust ("was this acquisition fit
 for the analysis?") without a new page, and both are useful without Claude.
 

@@ -9,8 +9,12 @@
 -->
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted } from 'vue'
-import { acquisitionRows } from '../utils/acquisitionSettings'
+import { acquisitionRows, acquisitionNotice, microscopeName } from '../utils/acquisitionSettings'
+import { acquisitionSupportRequestUrl } from '../lib/links'
 import { isMultiphoton } from '../utils/acquisitionLightPath'
+import { hasDataPath } from '../utils/acquisitionDataPath'
+import AcquisitionDataPath from './AcquisitionDataPath.vue'
+import InlineNote from './InlineNote.vue'
 import AcquisitionLightPath from './AcquisitionLightPath.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useToast } from '../composables/useToast'
@@ -46,8 +50,9 @@ function num(v: number | null | undefined): string {
 // Calibration readouts share the ImageTable's formatting (`0.346 µm`, not `0.3459441507762987
 // micrometer`) — one shared helper, `formatPhysicalSize`, so the two surfaces stay in sync.
 // Fill-only: adds what the store or the source file records and ccid.json lacks (size, timing,
-// acquisition settings); never overwrites a value already set (`resync_ome_meta!`). Also measures the
-// per-depth / per-frame profile when it is missing — one image, so the pixel pass is affordable here.
+// acquisition settings); never overwrites a value already set (`resync_ome_meta!`). Also runs the
+// import's pixel probe when any `SATURATION_CURRENT_KEYS` field is missing (saturation.jl) — one
+// image, so the pixel pass is affordable here.
 const resyncing = ref(false)
 async function resync() {
   const projectUid = projectMeta.current?.uid
@@ -129,6 +134,12 @@ const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
 const acquisition = computed(() => acquisitionRows(img.value.acquisition))
 // Two-photon acquisitions get the light-path diagram, which places the same values at their stage.
 const lightPath = computed(() => isMultiphoton(img.value.acquisition))
+// The diagram has no rows of its own for the system, so name it above (the plain rows already do).
+const scope = computed(() => (lightPath.value ? microscopeName(img.value.acquisition) : null))
+const acqNotice = computed(() =>
+  acquisitionNotice(img.value.acquisition, img.value.acquisitionMissing, lightPath.value, acquisitionSupportRequestUrl))
+// Per-channel pixel numbers from the import probe — any image probed with the current probe.
+const dataPath = computed(() => hasDataPath(img.value))
 // A crop names its source image (by name when it's in the open project) + version + pixel box.
 const cropLine = computed(() => {
   const cs = img.value.cropSource
@@ -262,15 +273,30 @@ async function saveEditVn() {
       </CollapsibleSection>
 
       <!-- Microscope settings read from the source file (laser power, Bright Z, scan, detectors) —
-           values Bio-Formats drops. Absent for formats without a reader. -->
-      <CollapsibleSection v-if="acquisition.length" label="Acquisition" tip="Microscope settings from the source file" accordion="cc.imageMeta.section" section="acquisition" max-height="none">
+           values Bio-Formats drops. Always shown: without settings (or without a diagram) it says why,
+           so users of an untested microscope learn it exists and can ask for it. -->
+      <CollapsibleSection label="Acquisition" tip="Microscope settings from the source file" accordion="cc.imageMeta.section" section="acquisition" max-height="none">
         <div class="md-section md-cs">
+        <p v-if="scope" class="md-scope cc-fs-sm"><span class="cc-muted">Microscope</span> {{ scope }}</p>
         <AcquisitionLightPath v-if="lightPath" :image="img" />
-        <div v-else class="md-grid">
+        <div v-else-if="acquisition.length" class="md-grid">
           <template v-for="(r, i) in acquisition" :key="i">
             <span class="md-k">{{ r.k }}</span><span class="md-v">{{ r.v }}</span>
           </template>
         </div>
+        <div v-if="acqNotice" class="md-acq-note cc-row">
+          <InlineNote :short="acqNotice.text" />
+          <a v-if="acqNotice.action" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-xs" :href="acqNotice.action.url"
+             target="_blank" rel="noopener" v-tooltip="'Opens a GitHub issue: attach a sample file'">
+            {{ acqNotice.action.label }} <i class="pi pi-external-link" />
+          </a>
+        </div>
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection v-if="dataPath" label="Acquired data" tip="What landed in the file, per channel" accordion="cc.imageMeta.section" section="data" max-height="none">
+        <div class="md-section md-cs">
+          <AcquisitionDataPath :image="img" />
         </div>
       </CollapsibleSection>
 
@@ -452,6 +478,7 @@ async function saveEditVn() {
 .md-h { margin: 0; }
 .md-head { justify-content: space-between; flex-wrap: nowrap; }
 .md-cs { padding: 0.2rem 0 0.4rem; }
+.md-scope, .md-acq-note { margin: 0; }
 
 .md-grid {
   display: grid; grid-template-columns: max-content 1fr;

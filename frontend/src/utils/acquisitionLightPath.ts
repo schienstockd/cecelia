@@ -6,8 +6,9 @@
  * docs/todo/ACQUISITION_ADVISOR_PLAN.md → P4).
  */
 
+import type { CciaImage } from '../stores/project'
 import { fmtNum, shortUnit, formatTimeIncrement } from './physicalSize'
-import type { AcquisitionSettings } from './acquisitionSettings'
+import { framesShortOf, type AcquisitionSettings } from './acquisitionSettings'
 
 /** Where a value came from — drawn as a shape AND a colour, so it reads without colour vision. */
 export type LightPathSource = 'ome' | 'file' | 'measured' | 'missing'
@@ -24,9 +25,23 @@ export interface LightPathStage { n: number; key: string; title: string; items: 
 
 /** Per depth / per frame numbers from the import probe (`intensity_utils.PlaneProfile.summary`). */
 export interface PlaneProfileAxis { p50: number[]; p99: number[]; zeroFrac: number[]; clipped: number[] }
+/** Range and noise of a channel from the import probe (`intensity_utils.range_stats` / `noise_stats`). */
+export interface ChannelRange { p1: number | null; p50: number | null; p999: number | null; max: number; hist: { binWidth: number; counts: number[] } }
+export interface ChannelNoise {
+  bgLevel: number | null; bgMedian: number | null; bgSpread: number | null; snr: number | null
+  untestable: string | null; estimator?: string
+}
+/** What a channel's exact zeros are (`intensity_utils.floor_stats`); `kind` mirrors `FLOOR_KINDS` there. */
+export interface ChannelFloor {
+  kind: 'photon-counted' | 'clipped' | 'indeterminate' | 'none'
+  firstValue: number | null; photonStep: number | null
+  photons: { p50: number; p999: number } | null; evidence: string | null
+}
 export interface CleanupFactsChannel {
   index: number; name: string; zeroPct: number | null; clippedPct: number | null
   profile?: { byZ: PlaneProfileAxis; byT: PlaneProfileAxis } | null
+  containerBits?: number | null; topValue?: number | null; saturated?: boolean | null
+  range?: ChannelRange | null; floor?: ChannelFloor | null; noise?: ChannelNoise | null
 }
 
 /** The slice of the image payload the diagram reads. */
@@ -41,6 +56,8 @@ export interface LightPathImage {
   timeIncrement?: number | null
   timeIncrementUnit?: string | null
   cleanupFacts?: { channels?: CleanupFactsChannel[] } | null
+  /** QC sidecars, as on the image payload (`lib/qc.ts` reads them). */
+  qc?: CciaImage['qc']
 }
 
 /** Shortest excitation wavelength that still means multiphoton: one-photon lines stop near 640 nm,
@@ -154,6 +171,8 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
   if (sizeT > 1) {
     const every = img.timeIncrement ? formatTimeIncrement(img.timeIncrement, img.timeIncrementUnit) : null
     stack.push(item(join([`${sizeT} frames`, every && `every ${every}`]), img.timeIncrement ? 'ome' : 'missing'))
+    const short = framesShortOf(img.acquisition)
+    if (short) stack.push(item(`${short}: stopped early or cropped`, 'file'))
     for (const f of facts) {
       const ends = f.profile ? endsText(f.profile.byT.p99, i => `frame ${i + 1}`) : null
       if (ends) stack.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))

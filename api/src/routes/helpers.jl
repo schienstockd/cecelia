@@ -114,7 +114,7 @@ const _SURFACED_META_KEYS = Set([
     "TimeIncrement", "TimeIncrementUnit",
     "ori_path", "channel_names", "channel_colormaps", "funParams",
     "crop_source_uid", "crop_source_value_name", "crop_box",   # → cropSource
-    "acquisition",                                               # → acquisition
+    "acquisition", "acquisitionMissing",                         # → acquisition / acquisitionMissing
 ])
 
 # Any scalar meta key not already surfaced as a field and not internal — rendered verbatim in the
@@ -302,6 +302,9 @@ function _image_payload(img::CciaImage)
         # scan timing, detector settings, channel→laser/detector), read at import or on Refresh
         # metadata (`_recover_acquisition_settings!`). `nothing` for formats without a reader.
         acquisition     = get(img.meta, "acquisition", nothing),
+        # Why there are none (`ACQUISITION_MISSING`: format / source / unread / other-stack), so the
+        # dialog can say so — or `nothing` when settings exist or were never looked for.
+        acquisitionMissing = haskey(img.meta, "acquisition") ? nothing : get(img.meta, "acquisitionMissing", nothing),
         # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
         # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.
         runLog          = _enriched_run_log(img),
