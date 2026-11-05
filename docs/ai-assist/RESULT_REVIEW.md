@@ -26,7 +26,7 @@ each with a failing test. It also found 2 live bugs in PRs nobody had reported a
 3. A repeat round on the same change reuses the last review when the staged tree is unchanged, and otherwise reviews only the change since that round: [`FANOUT_AUDIT.md`](FANOUT_AUDIT.md) → *Repeat rounds*.
 4. If the reviewer errors (a usage limit, a timeout), its section ends `_Result review: not run — the reviewer errored_`, and the commit hook blocks an agent commit carrying that line. Re-run recital once the reviewer can run. The fanout and convention reviewers don't block on an error.
 
-**Model = Opus**, unlike the other two reviewers. In the backtest Sonnet caught the same three bugs
+**Model = Opus**, as for every recital reviewer (`claude_cli.MEASURED_MODEL`). In the backtest Sonnet caught the same three bugs
 but reproduced only two, and missed the one finding still live on main (a pixel value read as µm).
 The path gate keeps the cost off most commits. Each run row logs the `models` it ran on.
 
