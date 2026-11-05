@@ -409,10 +409,14 @@ end
         @test ncal[k] == "µm"
     end
     @test ncal["TimeIncrementUnit"] == "s"
-    # An unknown unit passes through rather than being guessed at — same rule as the converter.
-    @test Cecelia._export_calibration(
-        Dict{String,Any}("PhysicalSizeX" => 1.0, "PhysicalSizeUnit" => "furlong")
-    )["PhysicalSizeXUnit"] == "furlong"
+    # A unit with no OME symbol is neither guessed at nor written verbatim (schema-invalid: Bio-Formats
+    # would discard the whole OME block); its values are left out, as an absent size is.
+    furlong = Cecelia._export_calibration(
+        Dict{String,Any}("PhysicalSizeX" => 1.0, "PhysicalSizeUnit" => "furlong",
+                         "TimeIncrement" => 2.0, "TimeIncrementUnit" => "fortnight"))
+    @test isempty(furlong)
+    @test Cecelia._export_calibration(Dict{String,Any}(
+        "TimeIncrement" => 500.0, "TimeIncrementUnit" => "millisecond"))["TimeIncrementUnit"] == "ms"
     @test cal["PhysicalSizeX"] == 0.325 && cal["PhysicalSizeXUnit"] == "µm"
     @test cal["TimeIncrement"] == 10.0 && cal["TimeIncrementUnit"] == "s"
 

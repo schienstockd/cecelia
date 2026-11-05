@@ -215,6 +215,29 @@
         end
     end
 
+    # Regression: the import (`resolved_zarr`) and the metadata editor (`img_filepath(img, "default")`)
+    # both pass the SERIES subdir `<store>/0`, while bioformats2raw keeps `OME/` at the store root —
+    # so the OME-XML half of every sync was a silent no-op on a real import.
+    @testset "sync_zarr_calibration! through the series subdir reaches the root OME-XML" begin
+        mktempdir() do d
+            make_zarr(d; axes = ["t", "z", "y", "x"], level_scales = [[1.0, 0.6, 0.5, 0.5]],
+                      shape = [3, 1, 4, 4], planes = [(z = 0, t = 1, dt = 0.0, unit = "s")])
+            @test !isdir(joinpath(d, "0", "OME")) && isfile(joinpath(d, "OME", "METADATA.ome.xml"))
+            @test Cecelia._ome_xml_file(joinpath(d, "0")) == joinpath(d, "OME", "METADATA.ome.xml")
+            @test Cecelia._ome_xml_file(joinpath(d, "0") * "/") == joinpath(d, "OME", "METADATA.ome.xml")
+            Cecelia.sync_zarr_calibration!(joinpath(d, "0"), Dict{String,Any}(
+                "PhysicalSizeZ" => 3.0, "PhysicalSizeUnit" => "micrometer",
+                "TimeIncrement" => 5.0, "TimeIncrementUnit" => "second"))
+            xml = read(joinpath(d, "OME", "METADATA.ome.xml"), String)
+            @test occursin("TimeIncrement=\"5.0\"", xml)
+            @test occursin("PhysicalSizeZ=\"3.0\"", xml)
+            @test read_ome_metadata(joinpath(d, "0"))["PhysicalSizeZ"] == 3.0   # NGFF half unchanged
+        end
+        mktempdir() do d                                    # no sidecar anywhere: still a no-op
+            @test isnothing(Cecelia._ome_xml_file(d))
+        end
+    end
+
     # ── flat (create_multiscales) layout: the 8-bit import + crop write one ──
     # Regression: these readers/writers hardcoded the series `0/.zattrs`. For a flat store that
     # path exists too (the level-0 array's own, empty `.zattrs`), so every one of them found no

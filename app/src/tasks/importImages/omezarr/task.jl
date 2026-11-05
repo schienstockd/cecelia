@@ -275,10 +275,8 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # unit-less-t placeholder cases). The value stays flagged for human confirmation regardless —
     # this just keeps the viewer honest about the number we've already decided to compute with.
     if haskey(zarr_meta, "PhysicalSizeZ_raw") || get(zarr_meta, "SizeT", 1) > 1
-        # NGFF sync targets the SUBDIR that actually holds multiscales (`resolved_zarr`); OME-XML
-        # lives at `<zarr_out>/OME/METADATA.ome.xml` regardless of series, so a series-picked import
-        # can't reach it via this path (update_ome_xml_pixels walks `<resolved>/OME/…`). The browser
-        # viewer + offline renderer read NGFF; the legacy napari OME-XML path is being retired.
+        # NGFF sync targets the SUBDIR that actually holds multiscales (`resolved_zarr`); the OME-XML
+        # half finds `<zarr_out>/OME/METADATA.ome.xml` from there (`_ome_xml_file` probes the parent).
         sync_zarr_calibration!(resolved_zarr, zarr_meta)
     end
 

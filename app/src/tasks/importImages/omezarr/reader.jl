@@ -1,6 +1,26 @@
 # ── OME-ZARR metadata reader ──────────────────────────────────────────────────
 
 """
+    _ome_xml_file(zarr_path) -> Union{String,Nothing}
+
+The store's `OME/METADATA.ome.xml` sidecar, or `nothing`. It lives at the STORE ROOT, not at the
+series subdir the multiscales sit in: bioformats2raw writes `<store>/OME/METADATA.ome.xml` and puts
+the multiscales in `<store>/0/` (or `<store>/N/` for a series pick), and callers pass either — the
+import's `resolved_zarr` and `img_filepath(img, "default")` are both the series subdir. Probes the
+given path first (store root, or a flat store), then its parent. The ONE lookup for reads and writes
+(`_delta_t_fallback`, `update_ome_xml_pixels!`); Python's twin is `ome_xml_utils.load_ome_xml`.
+Without the parent probe the writer silently skipped every bioformats2raw import and metadata edit.
+"""
+function _ome_xml_file(zarr_path::AbstractString)::Union{String,Nothing}
+    path = rstrip(zarr_path, ['/', '\\'])
+    for root in (path, dirname(path))
+        f = joinpath(root, "OME", "METADATA.ome.xml")
+        isfile(f) && return f
+    end
+    nothing
+end
+
+"""
 Fallback for the time interval when there's no top-level NGFF `t`-axis scale: many OME-XML
 sources (including ones bioformats2raw converts) carry no single `TimeIncrement` on `Pixels`,
 only per-`Plane` `DeltaT` — the elapsed seconds since T=0 for each frame. Scrapes
@@ -15,17 +35,8 @@ first interval at 34.69 s (a scanner warm-up) while every other interval cluster
 old logic sampled `TheT="1"` alone and would have baked in the outlier.
 """
 function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
-    # The OME/METADATA.ome.xml sidecar lives at the STORE ROOT, not at the series subdir the
-    # multiscales sit in. bioformats2raw writes `<store>/OME/METADATA.ome.xml` and puts the
-    # multiscales in `<store>/0/` (or `<store>/N/` for a series pick), and callers here pass either
-    # the store root (import task) or the series subdir (`img_filepath` → `series_base`). Probe the
-    # given path first (flat-store case) and fall back to the parent (bf2raw wrapper case); missing
-    # this second lookup meant every bf2raw import silently skipped the fallback.
-    xml_file = joinpath(zarr_path, "OME", "METADATA.ome.xml")
-    if !isfile(xml_file)
-        xml_file = joinpath(dirname(zarr_path), "OME", "METADATA.ome.xml")
-        isfile(xml_file) || return nothing
-    end
+    xml_file = _ome_xml_file(zarr_path)
+    isnothing(xml_file) && return nothing
     try
         xml = read(xml_file, String)
         # Elapsed seconds since T=0, keyed by TheT. Match the <Plane …> opening tag whether
