@@ -8,7 +8,7 @@ cellpose 3 (`cyto2`, `cyto3`) is revived as a Mac-only opt-in pixi env. See
 worktree `cecelia-cellpose4`. Suites green: `test-py` 901, `test-pkg` 5931, `test-api`, frontend
 typecheck + 2066 vitest.
 
-Dominik, 2026-08-21: *"scrap the cellpose pin. cellpose denoise is not that useful. we will scratch
+The maintainer, 2026-08-21: *"scrap the cellpose pin. cellpose denoise is not that useful. we will scratch
 that. coastal denoise and smooth will replace that. we have to migrate to cellpose v4. v3 is
 outdated. and doesn't perform as well on static images."*
 
@@ -82,7 +82,7 @@ checkpoint in either `cellposeModels/` slot. **Confirmed by running it** — cel
 clear error, `ValueError: This model does not appear to be a CP4 model. CP3 models are not compatible
 with CP4.`, so `_get_model` only has to name the file in the re-raise.
 
-**Measured on his GPU** (RTX 2000 Ada Laptop, 8 GB, `cpsam_v2`, `diameter=20`): model load 2.1 s,
+**Measured on the maintainer's GPU** (RTX 2000 Ada Laptop, 8 GB, `cpsam_v2`, `diameter=20`): model load 2.1 s,
 then 0.28 s / 1.03 s / 4.14 s for a 256² / 512² / 1024² tile, ~1.5 GiB peak VRAM. Cost is linear in
 PIXELS (~4 µs/px) where cyto* tracked cells. VRAM is not a problem at the default `bsize=256`.
 
@@ -163,15 +163,15 @@ exposes a net-denoise task. See Decision 1.
 
 ---
 
-## Decisions (Dominik, 2026-08-21)
+## Decisions (the maintainer, 2026-08-21)
 
 1. **No net-denoise task survives.** `cleanupImages.cellposeCorrect` is deleted; `cleanupImages.smooth`
    is the cleanup path. `coastal.denoise` stays available in the library, uncalled by cecelia.
    Deblur and upsample go with it and have no replacement.
 2. **Stop shipping `ccia.fluo`.** The installers no longer fetch `ceceliaModels`; the drop-in slot is
    unchanged and takes v4 checkpoints. Retraining on v4 is separate work — see the reservations.
-3. **No v3-vs-v4 A/B on his data.** The v4 quality claim for static images is taken as given.
-4. **The original prompt's Task 1 is not a default at all.** Dominik reframed it: *"we could come up
+3. **No v3-vs-v4 A/B on the maintainer's data.** The v4 quality claim for static images is taken as given.
+4. **The original prompt's Task 1 is not a default at all.** The maintainer reframed it: *"we could come up
    with a sort of.. builder i guess. to say. ok. what do you want to do? intravital? then do these
    steps. do you need behaviour or tracks or interactions? then follow these steps. do you have large
    multiplex images. then do these steps."* That is a guided workflow builder, not a default-selection
@@ -239,7 +239,7 @@ Ranked. 1 and 2 are the ones that change what a user can do.
    error is honest, but old label stores can no longer be regenerated — and `EaMaVq`'s tuned
    configuration, the one with a measured number attached, is among them.
 4. **Quality on static data is unverified.** "v4 is stronger on static images" is taken as given
-   (Dominik's call, A/B declined). v3 and v4 cannot coexist in one env, so a comparison would need
+   (the maintainer's call, A/B declined). v3 and v4 cannot coexist in one env, so a comparison would need
    the old env kept around.
 5. **Deblur and upsample are gone with no replacement.** Neither exists in coastal, neither is in
    `smooth`. `upsample_*` could not be ported in any case — it changes the output size, which the

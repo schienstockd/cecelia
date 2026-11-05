@@ -4,7 +4,7 @@ Status: **DONE (2026-09-29)** · Branch: `pop-sync`. All punch-list items P1–P
 
 ## Origin
 
-Chat, 2026-09-29 — reviewing cluster tracks with a colleague, Dominik hit:
+Chat, 2026-09-29 — reviewing cluster tracks with a colleague, the maintainer hit:
 
 1. "The toggle to wait for population selection to update plots seems broken and doesn't
    seem to be wired into all plots on the module pages."
@@ -137,7 +137,7 @@ Ordered by value / cost. Each item is standalone; you call which we take first.
   - **Fallback**: diff pre/post `flat` snapshots keyed by a stable pop id — but
     `PopTree` doesn't currently carry one, so this is more work than the server change.
 - **Also**: delete already works; on add, the "click the eye to reveal" gate stays —
-  Dominik confirmed 2026-09-29.
+  the maintainer confirmed 2026-09-29.
 - **Open**: is there a stable pop id we could diff by, or must the server change land
   first? (Fork suspected there isn't — verify before coding.)
 

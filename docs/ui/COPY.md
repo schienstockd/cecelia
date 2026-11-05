@@ -63,7 +63,7 @@ both stay — the distinction is the point, so it's written down rather than lef
 `Create`/`Add`, `Delete`/`Remove` and `Run`/`Start` are **not** synonyms — picking the wrong one is a
 copy bug, not a style preference.
 
-**Noun vocabulary.** Settled 2026-10-30 (Dominik), when the user map showed one word doing two jobs.
+**Noun vocabulary.** Settled 2026-10-30 (the maintainer), when the user map showed one word doing two jobs.
 Code, routes and older docs keep the old names; only what a user or Claude reads changed.
 
 | Use | For | Not |
@@ -128,7 +128,7 @@ a `tip`.** Both are ratcheted to zero with an empty allow-list.
 `ChipSelect`/`SwatchSelect` are not one hit target but many small ones, and `CcToggle` is a switch you
 aim at — a tooltip anchored there renders **on top of the control**, so the hover help hides the thing
 you were about to click. Here the blanket rule is actively wrong rather than merely redundant
-(Dominik, 2026-08-07, on the channel selection and then the bool params' switch). Such a control
+(the maintainer, 2026-08-07, on the channel selection and then the bool params' switch). Such a control
 counts as covered when a tipped label or heading precedes it inside the same row, including one
 wrapper deeper — the ordinary label-then-control shape, and where the explanation belongs anyway. One
 with no tipped heading anywhere is still reported, and the exemption is these three: a plain `select`

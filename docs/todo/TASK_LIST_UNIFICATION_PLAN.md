@@ -53,7 +53,7 @@ simply never revisited. Adopting the canonical table deletes the rule and the qu
 1. **Both surfaces render through `SelectionTable`** (`selectionMode`: `none` for the sidebar, `single`
    for `/tasks`, whose row selection drives the log pane). No second list component, no fork.
 
-2. **The sidebar becomes a real table, header and all** (Dominik, 2026-08-15). `SelectionTable` renders
+2. **The sidebar becomes a real table, header and all** (the maintainer, 2026-08-15). `SelectionTable` renders
    its `<thead>` unconditionally and **no `headerless` prop is being added** — the point of the change
    is that the two surfaces look like each other and like every other list in the app, and an
    exception carved for the narrow panel is how the next divergence starts. The sidebar gains sortable
@@ -199,7 +199,7 @@ Each phase is independently shippable and independently viewable in the browser.
       `display: none` base to reverse, so it never did anything.
 - [x] `npm run typecheck` clean; `npx vitest run` 124 files / 1518 tests green.
 - **The card look is gone** — rounded per-status bordered cards become table rows. That is the point,
-  and it is also the biggest visual change in the whole plan. **Needs Dominik's eyes in a browser**:
+  and it is also the biggest visual change in the whole plan. **Needs the maintainer's eyes in a browser**:
   a 280px-wide table with six columns and five row buttons is what cannot be judged from a diff.
 - [ ] Verify all three hosts in the browser: `TaskRunner` (every module page), `BatchMoviesPanel`,
       `AnimationPanel`.

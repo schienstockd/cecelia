@@ -3,7 +3,7 @@
 Status: **BUILT** — all four phases landed in one change (2026-08-04). Kept as the record of *why* the
 shape is what it is; the durable "how it works" now lives in `docs/UI.md` → *Deleting is one modal with
 four scopes*, `docs/OBJECTMODEL.md` → *Dropping the analysis*, `docs/MODULES.md` → *`hidden`*, and
-`docs/API.md`. Grew out of a `docs/TODO.md` item, deleted when this shipped. Dominik, 2026-08-04.
+`docs/API.md`. Grew out of a `docs/TODO.md` item, deleted when this shipped. The maintainer, 2026-08-04.
 
 **What shipped, against the phases below:** `DeleteImagesDialog.vue` (four scopes) + the plan/execute
 split with `ImageFileActions`; `utils/imageDelete.ts` (union + per-image active resolution,
@@ -57,7 +57,7 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
      (`__tracks`, `__branch`, `.clustfeatures.json`). Prefix-driven, so a companion added later goes
      too. Deleting a segmentation used to leave those as files nothing could reach.
    - **All analysis ("the numbers")** — keep `ccid.json` + the image stores, drop everything derived.
-3. **`importImages.remove` is UNLISTED from the UI, not deleted** (confirmed by Dominik, 2026-08-04,
+3. **`importImages.remove` is UNLISTED from the UI, not deleted** (confirmed by the maintainer, 2026-08-04,
    after the cost below surfaced). It stays registered and runnable — the duplicate *entry* goes, the
    task does not. `app/test/suite.jl` uses it as its real-task workhorse in ~15 testsets (chain end-to-end,
    fault isolation, scope resolution, `_spec_output_value_name`, registry dispatch) *because* it does
@@ -66,14 +66,14 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    chain suite's workhorse and remove a chain capability to save a duplicate menu entry. Unlisting
    needs a new `"hidden": true` flag in the task spec, honoured by `GET /api/tasks/definitions` — the
    first such flag, so it goes in `docs/MODULES.md` with the param-type reference.
-4. **The ViewerPanel label delete is scrapped**, per Dominik. Cost accepted: in the viewer you have the
+4. **The ViewerPanel label delete is scrapped**, per the maintainer. Cost accepted: in the viewer you have the
    layer in front of you, which is the most natural place to decide it is junk; after this you go to
    the Import page instead.
 5. **Settings → Storage is untouched.** It is the *automatic, whole-project* site ("free every non-active
    version", "sweep debris"); the modal is the *deliberate, per-image* site. Neither grows the other's
    job. Its one gap — `imageBytes` ignores `1/{uid}` — is fixed by Phase 4, not by moving anything.
 6. **Multi-image selection resolves names by UNION, skipping the images that lack the name**
-   (Dominik, 2026-08-04, superseding the original intersection rule). Select three images where two
+   (the maintainer, 2026-08-04, superseding the original intersection rule). Select three images where two
    carry `B` and one doesn't: `B` is offered, and applied to the two that have it. Intersection was
    worse than the problem it avoided — it made `B` undeletable until the selection was narrowed, and
    the silent-no-op worry it was guarding against is answered by badging each chip `k/n` when the name
@@ -85,7 +85,7 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    un-imported" warning counts images**, not the selection (taking `default` can strip one image of
    everything while another keeps its corrected version).
 
-12. **A conflict blocks, a skip only warns** (Dominik, 2026-08-04). The test is whether the user's
+12. **A conflict blocks, a skip only warns** (the maintainer, 2026-08-04). The test is whether the user's
    stated intent can be honoured at all:
    - **Blocks** (confirm greyed, `activeMismatches`): an image keeps a version but not the one chosen
      to stay active. Per-image substitution was the original behaviour and it is worse than a block —
@@ -100,14 +100,14 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    stats/ cl/ shapes/ out/ data/ qc/ tasks/ logs/`) is output. A delete-list silently leaks whatever
    analysis dir is added next. The keep-list is pinned by a package test that fails when a new sibling
    appears.
-8. **The keep-list is `ccid.json` + `runlog.json` + `gating/`** (Dominik: keep the run log; gating added
+8. **The keep-list is `ccid.json` + `runlog.json` + `gating/`** (the maintainer: keep the run log; gating added
    as Decision 13). Consequence, accepted
    deliberately: the image-table run tag then reflects **history, not current state** — an image whose
    outputs are gone still shows "last run: Cleanup · Cellpose correct". That is preferable to losing
-   the record of what was done. `qc/` does **not** survive (my call, not Dominik's): its findings score
+   the record of what was done. `qc/` does **not** survive (my call, not the maintainer's): its findings score
    outputs that no longer exist, so keeping them would assert a QC verdict about nothing.
 9. **The analysis reset never touches image versions**, and the versions scope never touches analysis —
-   two orthogonal scopes. Rationale (Dominik): *the derived version is the one you keep; once everything
+   two orthogonal scopes. Rationale (the maintainer): *the derived version is the one you keep; once everything
    is derived you no longer need the raw and the intermediates.* So dropping the numbers must leave
    every store intact, and shedding stores is a separate, deliberate act.
 10. **The versions scope pre-selects every NON-ACTIVE version**, with the new-active picker defaulting
@@ -122,7 +122,7 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    taking all of them, is what correctly un-imports the image at the end rather than mid-loop. Assert
    the ordering in a package test.
 
-13. **Gate definitions are never destroyed by either delete scope** (Dominik, 2026-08-05). `gating/{vn}.json`
+13. **Gate definitions are never destroyed by either delete scope** (the maintainer, 2026-08-05). `gating/{vn}.json`
    is hand-drawn user work, not derived output: nothing regenerates it, and re-running a segmentation
    under the same value_name makes the existing strategy apply to the new cells. So
    `/api/images/labels/delete` leaves it, and `gating/` joined `ANALYSIS_KEEP`. The two scopes now agree;
@@ -132,7 +132,7 @@ can't see `1/{uid}` at all, and `delete_image!` is both dirs or nothing.
    keyed by **run suffix, not value_name** (the graph pools across segmentations), so a per-label-set
    delete has nothing of theirs to take. They ARE dropped by an analysis reset, being recomputable.
 
-14. **A fifth scope, "Runs" — delete one analysis run** (Dominik, 2026-10-04, from a mistaken
+14. **A fifth scope, "Runs" — delete one analysis run** (the maintainer, 2026-10-04, from a mistaken
    whole-segmentation tracking run that left `P14/_tracked` beside the wanted `P14/qc/_tracked`, with
    no way to remove it short of *All analysis*). One registry, `RUN_KINDS` in `app/src/analysis_runs.jl`:
    per kind, the task funs that produce it, a disk-presence lister and a delete. Kinds: track sets
@@ -198,7 +198,7 @@ is mostly checking that the *backend* tasks refuse a filepath-less image cleanly
 ## Open questions
 
 None outstanding — the three that were open (run-log survival, whether the reset sheds versions,
-multi-version ordering) are Decisions 8, 9 and 11, answered by Dominik 2026-08-04.
+multi-version ordering) are Decisions 8, 9 and 11, answered by the maintainer 2026-08-04.
 
 ## Reservations
 

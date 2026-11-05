@@ -1,6 +1,6 @@
 # Figures — paper figures from the raw data, in one standard look
 
-**Status:** built (2026-11-01) — P1 #1880, P2 #1881, P3 #1882, P4 on `feat/figures-p4`; awaiting Dominik's
+**Status:** built (2026-11-01) — P1 #1880, P2 #1881, P3 #1882, P4 on `feat/figures-p4`; awaiting the maintainer's
 visual pass. Open: decision C; a second row from the editor.
 
 ## Goal
@@ -12,7 +12,7 @@ writes a spec and never a renderer.
 
 ## Where this came from
 
-Dominik's PI, about a filmstrip a Claude session made on 2026-10-31 (the `feat/roi-triage` session,
+The maintainer's PI, about a filmstrip a Claude session made on 2026-10-31 (the `feat/roi-triage` session,
 zolIMa / UMq4v3, a macrophage with an ingested tdTom fragment):
 
 > "Yes can u give me a still of any of the images where there is fragment inside but high res/contrast?
@@ -37,7 +37,7 @@ strip.** The session wrote `ingest_strip.py`, `ingest_z.py` and `ingest_movie.py
 So "high res" cannot mean more detail than the camera recorded. It can mean: a larger output with
 smooth interpolation rather than blocks, proper fonts at print size, a tighter contrast, a single
 frame instead of a strip. Denoising is already spent: UMq4v3 is itself cropped from a denoised
-image (Dominik, 2026-11-01).
+image (the maintainer, 2026-11-01).
 
 ## What already exists (verified 2026-11-01)
 
@@ -94,14 +94,14 @@ image (Dominik, 2026-11-01).
    because `ingest_z.py` already shows it's needed. Any further kind needs three recurring bespoke scripts first.
    Data plots stay on the board.
 
-8. **The house look is the Cecelia paper's image panels** (Nat Commun 2025, Fig. 4a; Dominik,
+8. **The house look is the Cecelia paper's image panels** (Nat Commun 2025, Fig. 4a; the maintainer,
    2026-11-01): black tiles on a white page with thin white gaps, plain black column titles above
    (nothing written on the image but the scale bar), a black legend band below with each channel named
    in its own colour, an Arial-metric face. Sizes are mm / pt at a dpi (default 20 mm tiles, 7 pt text,
    300 dpi), so text is the same size in every figure whatever the tile size.
 9. **Crisp pixels by default.** Smooth (Lanczos) enlargement of a 90 px crop read as blurry. `pixels`
    enlarges by a whole factor so every native pixel is an equal block; `smooth` stays an option.
-10. **One scale bar, on the first tile** (Dominik, 2026-11-01); `last` / `all` remain.
+10. **One scale bar, on the first tile** (the maintainer, 2026-11-01); `last` / `all` remain.
 11. **Channels by name, with a display name.** A spec names channels as the image does (`mem-TOM`) and
     may give the legend a paper name (`tdTom`); the name resolves through `channel_indices`.
 12. **The source is the denoised image when there is one.** Checked on the PI's cell (2026-11-01): the
@@ -109,7 +109,7 @@ image (Dominik, 2026-11-01).
     version's few intensity levels (Katushka 0–11 counts) are the price. A spec names its `valueName`,
     so the same figure can be rendered from any version.
 
-13. **Figures get their own folder, `{project}/figures/`** (Dominik, 2026-11-01: "rename that folder"
+13. **Figures get their own folder, `{project}/figures/`** (the maintainer, 2026-11-01: "rename that folder"
     once it holds both). A separate folder rather than renaming `movies/`: every existing movie and
     every path that resolves one stays put, and each folder says what is in it. One registry
     (`settings/movies.json`) and one page cover both; `_media_path` maps a name to its file. Only the
@@ -123,7 +123,7 @@ image (Dominik, 2026-11-01).
     view (the viewer snapshot is banked with the spec) or an animation's first keyframe. Viewer and
     batch movies bank no camera, so they open on the image.
 
-17. **Time labels stay the viewer's `0:12:30`** (Dominik, 2026-11-01: "17.2 min is just weird");
+17. **Time labels stay the viewer's `0:12:30`** (the maintainer, 2026-11-01: "17.2 min is just weird");
     `12.5 min` is a project style option (`timeFormat`). Decision F closed.
 18. **The figure style is per project** (Decision B closed): the house style is ONE file
     (`frontend/src/lib/figureStyle.json`) the renderer, the package and the editor read; a project
@@ -139,7 +139,7 @@ image (Dominik, 2026-11-01).
     board's PDF export takes the figure file itself. Claude places one with `add_analysis_board`
     (`{plot: "figure", name}`).
 
-## Open decisions (Dominik's)
+## Open decisions (the maintainer's)
 
 | # | Question | Pick |
 |---|---|---|
@@ -176,7 +176,7 @@ Movies page (frames, legend names, mm, scale bar, crisp/smooth → re-make in pl
 row (e.g. tdTom alone) from the editor, and seeding from the board's image strip. Original scope: A figure row with preview and a
 form editor (frames, channels, range, rows, crop, style). "Save as figure" sits next to the viewer's
 Record button and records the same snapshot as a still sequence (the board image strip's snapshot can
-seed one too). Needs Dominik's eyes.
+seed one too). Needs the maintainer's eyes.
 
 **P3 — Claude's tools. BUILT** (`feat/figures-p3`): `mcp/cecelia_mcp/figure_tools.py` (`add_figure`,
 `set_figure`, `delete_figure`, `list_figures`) on both servers; own-only enforced server-side

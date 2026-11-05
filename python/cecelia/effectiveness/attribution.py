@@ -62,7 +62,7 @@ def reply_line(stamp: dict, pr: str = "") -> str:
     fix = f" — as was the fix in {pr}" if pr else ""
     return (f"*This reply was written by {reply_phrase(stamp)}, working in this repo on @schienstockd's "
             f"behalf{fix}. Cecelia is openly AI-assisted; see [`CLAUDE.md`]({_CLAUDE_MD}). Anything "
-            "here that needs a human decision is his.*")
+            "here that needs a human decision is theirs.*")
 
 
 def footer(stamp: dict) -> str:

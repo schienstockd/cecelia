@@ -27,7 +27,7 @@ Repo: `schienstockd/cecelia` (public). Look at `docs/ai-assist/EFFECTIVENESS.md`
 
 ## Why
 
-The maintainer wants to be transparent about how the repo is worked with agents and how those agents perform over time, and wants to see for himself what happens. The audience is readers of the README and the maintainer. This is not a marketing chart. An honest, readable record matters more than a flattering one.
+The maintainer wants to be transparent about how the repo is worked with agents and how those agents perform over time, and wants to see for themselves what happens. The audience is readers of the README and the maintainer. This is not a marketing chart. An honest, readable record matters more than a flattering one.
 
 ## Starting point (a first sketch, not gospel)
 

@@ -94,7 +94,7 @@ function Cecelia._inject_dynamic_options!(spec::Dict{String,Any}, ::ImportCsvTra
     # but it is decided by the file's EXTENSION, which is a property of the string already sitting in
     # the form. Hiding it from Julia meant it was only re-resolved when the user EDITED the path, so
     # a form restored from a previous run, or redrawn after a run finished, showed the column mapping
-    # for an XML import (Dominik, on screen). Declared as `showIf` on the spec it is simply always
+    # for an XML import (the maintainer, on screen). Declared as `showIf` on the spec it is simply always
     # right, because the frontend evaluates it on every render.
     #
     # What is left needs the file OPEN, which no spec field can express: the column names themselves.

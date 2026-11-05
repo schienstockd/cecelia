@@ -77,7 +77,7 @@ is what the schema says), it was already RIGHT and every browser-authored keyfra
 rendering in the mirror location. Confirm what convention the renderer actually uses —
 this may already be aligned with the new (fixed) frontend convention. If it is,
 previously-captured keyframes replayed against the new build will jump; document this in
-the commit message so Dominik knows keyframes recorded before this commit are stale.
+the commit message so the maintainer knows keyframes recorded before this commit are stale.
 
 ### 4. Keyframe restore path
 
@@ -104,13 +104,13 @@ Before committing, post a report:
 - Whether the offline renderer needs a compensating flip
 - Whether previously-saved keyframes / animations will replay in the same place or jump
 
-Then hand the commit off to Dominik — he calls the commit.
+Then hand the commit off to the maintainer — they call the commit.
 
 ## Rules of engagement
 
 - This is a shared worktree (`cecelia-vizsla-review`). Other sessions may be working
   here. Verify branch before you commit; stage explicit paths, not `git add -A`.
-- Never start / kill Dominik's dev server. He runs the app on 8080/5173/7655.
+- Never start / kill the maintainer's dev server. They run the app on 8080/5173/7655.
 - If you find that the fix is wrong (e.g. the renderer disagrees and the previous
   convention was actually correct given the schema), STOP and post — do not silently
   revert; the docstring was clearly wrong even if the math was right.

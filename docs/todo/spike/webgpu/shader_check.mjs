@@ -3,7 +3,7 @@
 // The one failure the app cannot rule out on its own is the shader: WGSL is compiled by the browser,
 // there is no offline validator in this repo, and nothing here can open a WebGPU context (headless
 // Firefox has no compositor — see NAPARI_WEBGPU_AUDIT.md → G0). So a broken shader would be found by
-// Dominik, on his click, in a window that also needs the backend restarted first.
+// the maintainer, on their click, in a window that also needs the backend restarted first.
 //
 // This is NOT a second copy of the shader. It READS `frontend/src/lib/webgpu/shaders/mip*.wgsl` and
 // expands them with the app's own expander (`wgslExpand.ts`, which Node runs with its types

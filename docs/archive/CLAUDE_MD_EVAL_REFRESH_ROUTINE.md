@@ -23,7 +23,7 @@ Where this doc departs from the plan doc's stance, the plan-doc section is named
 
 ## TL;DR — diagnostic tool, not a compliance suite
 
-**Original intent (Dominik, 2026-09-29):** *"I thought we can build a system to diagnose
+**Original intent (the maintainer, 2026-09-29):** *"I thought we can build a system to diagnose
 weaknesses in our dev setup, and clean those up over time."* This doc restores that
 frame — the compliance-suite reading that had crept in gets called out and reversed.
 
@@ -36,7 +36,7 @@ frame — the compliance-suite reading that had crept in gets called out and rev
   across two rule rewrites = the fix isn't in the rule text → **escalate** to a different
   setup layer, and keep the probe as the measure of whether that layer worked. Never
   rewrite the probe to go green, and never retire a failing probe to save spend.
-  (Dominik, 2026-09-30.)
+  (The maintainer, 2026-09-30.)
 - **The suite SHRINKS as weaknesses close.** New probes cycle in as new drift is
   spotted; old ones cycle out. Growing headcount is compliance thinking — the
   ~$17/week baseline should be a peak, not a floor.
@@ -551,7 +551,7 @@ Cite the paired-cap as ours; cite Yoo & Harman §4 for the framing.**
 
 - **Monday 23:59 (cron):** rotation step → WITH-arm suite → rollup. Cost budget
   $20/pass.
-- **On-demand (Dominik):** ablation, after canary refresh AND HEALTH_ALERT / CLAUDE.md
+- **On-demand (the maintainer):** ablation, after canary refresh AND HEALTH_ALERT / CLAUDE.md
   edit. Cost budget $30/mo.
 - **Manual `pixi run claude-md-eval`:** unchanged, before/after material CLAUDE.md edit.
 - **Quarterly review:** confirm anchors, review direct:indirect target-shift, review

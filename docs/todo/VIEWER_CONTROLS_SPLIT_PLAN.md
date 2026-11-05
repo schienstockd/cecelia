@@ -20,7 +20,7 @@ checkpointed.
 
 ## The design in one paragraph
 
-**Viewer today already does what Dominik wants.** It doesn't pick its own segmentations, populations,
+**Viewer today already does what the maintainer wants.** It doesn't pick its own segmentations, populations,
 or colour-by; the ViewerPanel and the pop manager on module pages feed it. The WebGPU viewer grew its
 own selectors because it started life as a standalone spike; those selectors are the whole "too mixed"
 problem. The fix is **subtractive on the viewer**, **almost zero-change on the panel**.
@@ -73,7 +73,7 @@ is untouched until P8.
    - **Viewport** (timepoint scrubber, view mode, z-plane, reset view, annotations).
    - **Debug** (unchanged; renderer diagnostics only).
    The current mixture of layer-ish knobs and viewport-ish knobs under CollapsibleSection headings is
-   the "too mixed" state Dominik called out.
+   the "too mixed" state the maintainer called out.
 4. **Multi-segmentation is a layer-list feature, not a new panel.** Each shown segmentation is one row
    with its own visibility / opacity / contour / colour. The single-mask `<select>` at
    `ViewerWindow.vue:1306` is a UI limit, not a data limit — the renderer can already sample multiple
@@ -246,14 +246,14 @@ in `overlays!.pops`, masks are the one exception at a single `labelName`). The c
 - The WebGPU volume renderer's mask compositing needs to accept N label textures (one per shown vn).
   Bench first with N=2 to check the shader/bind-group budget before opening the UI.
 - **NAPARI-BRIDGE rows keep working through the transition.** For any layer type WebGPU cannot draw yet
-  (branches, gated-tracks ribbons — the two things Dominik flagged as napari-only for now), the layer
+  (branches, gated-tracks ribbons — the two things the maintainer flagged as napari-only for now), the layer
   row in the window carries a `via: 'napari'` badge and routes its writes to the legacy bridge instead
   of the WebGPU renderer. The user sees ONE layer list; the sink is an implementation detail.
 
 ## Phases
 
 Each phase leaves a working browser and is a natural commit + fresh-session boundary. Approach agreed
-(Dominik, 2026-08-25): one phase per session, no rush; a fresh session picks up from the phase table
+(the maintainer, 2026-08-25): one phase per session, no rush; a fresh session picks up from the phase table
 below and reads the phase's *own* Steps subsection before touching anything.
 
 **Reading order for a fresh session:** this file's top → the phase you're on (below) → the file:line
@@ -269,7 +269,7 @@ anchors in that phase → the referenced source. Do not re-derive the architectu
 | P3 | Delete viewer's own segmentation selector | **DONE** 2026-08-25 | Viewer reads `settings.getLabelVisibility(uid)`. Radio-like: single-slot bind group, first-ticked wins; explicit-false persistence for others. |
 | P4 | Delete viewer's own colour-by selector | **DONE** 2026-08-25 | Viewer reads `settings.getColourBy(setUid)`. |
 | P5 | Populations from module-page pop managers | **DONE** 2026-08-26 | Pop manager pings `cc.viewerOverlaysTick`; viewer refetches overlays and derives `hiddenPops` from `pop.show`. Follow-up 2026-08-26: overlays follow the manager's `(valueName, popType)` via `cc.gatingCurrent`; panel per-pop-type gate empties the overlays list when off. |
-| P6 | Rename `napari*` → viewer-oriented names | **DONE (mostly)** 2026-08-26 | Renamed: `napariUpdateImage → viewerAutoUpdate`, `napariResetOnReload → viewerResetOnReload`, `project.napariReloadTick → viewerReloadTick`, `project.requestViewerReload → requestViewerReload` (+ matching localStorage keys). Deleted: `settings.napariAsDask`, `settings.napariLabelsCache`, "Restart napari" button, `bridgeStale` panel warning, segment-cache-running warning. **KEPT**: `settings.napariAutoSaveLayerProps` — the animation page banks per-image napari view state via `POST /api/napari/screenshot`; deleting before the WebGPU equivalent exists breaks the animation-snapshot pipeline (Dominik, 2026-08-26). File renames (`napariAutoShow.ts`/`napariColormap.ts`/`napariOverlays.ts`) deferred to P9 (they get deleted anyway). |
+| P6 | Rename `napari*` → viewer-oriented names | **DONE (mostly)** 2026-08-26 | Renamed: `napariUpdateImage → viewerAutoUpdate`, `napariResetOnReload → viewerResetOnReload`, `project.napariReloadTick → viewerReloadTick`, `project.requestViewerReload → requestViewerReload` (+ matching localStorage keys). Deleted: `settings.napariAsDask`, `settings.napariLabelsCache`, "Restart napari" button, `bridgeStale` panel warning, segment-cache-running warning. **KEPT**: `settings.napariAutoSaveLayerProps` — the animation page banks per-image napari view state via `POST /api/napari/screenshot`; deleting before the WebGPU equivalent exists breaks the animation-snapshot pipeline (the maintainer, 2026-08-26). File renames (`napariAutoShow.ts`/`napariColormap.ts`/`napariOverlays.ts`) deferred to P9 (they get deleted anyway). |
 | P7 | WebGPU-native tracks (per-vn selection + ribbons) | **shipped** 2026-08-26 | Per-vn cell-track ribbons: `rebuildOverlays` gates `buildTrackBuffer` on `settings.getTrackVisibility(imageUid, [payload.valueName])`, so the panel's per-segmentation "directions" eye hides tracks in the WebGPU viewer instead of only touching napari. Default OFF preserved. Gated-track pop ribbons + trackclust ribbons: `filterPayloadByLabels` (new util in `viewerOverlays.ts`) narrows the pop-manager's payload to a pop's own cells, and `rebuildOverlays` adds those filtered payloads to `buildMultiTrackBuffer` as extra sources coloured by `pop.colour`. Trackclust needs a distinct `popType=trackclust` fetch — `loadTracks` does it for the pop-manager's active vn only, cached per vn, dropped on toggle-off. Reuses the existing colour picker (no new renderer primitive). |
 | P8 | WebGPU-native picking (click → gating plot highlight) | **shipped 2026-08-26** — `frontend/src/utils/viewerPick.ts` (pure `screenToImagePx`: canvas click → image pixel via `cam`/`meta`; tested for centre + top-left + pan direction + anisotropic voxels + out-of-image), `ViewerWindow.vue` splits pointerdown/up into click-vs-drag via `CLICK_MAX_TRAVEL_PX = 4` and `pickCellAt` POSTs `/api/viewer/pick-cell`; `api/src/viewer_api.jl` reads one voxel via `read_slab`, updates the transient selection through the existing `_set_napari_selection!` / `_inject_napari_pop!` / `_broadcast_popmap` bridge (so linked-brushing highlights work with zero gating-store changes). Plane view only — MIP picking is ambiguous (see `WEB_VIEWER_PLAN.md` P6). `mode: 'replace'` default; `'add'` / `'toggle'` supported by the endpoint, not wired to the UI yet. |
 | PZ | WebGPU-era movie recording (server-side offline-renderer cutover) | **shipped** #687 2026-08-31 (`feat/viewer-p5-movie-rail`) | `handle_movie_record` now routes to `record_view_movie` via `api/src/movie_rail.jl`; title cards go through the shared helper; CPU point/segment/mask overlays composited on movie frames; batch-movie config off napari; animation-card thumbnail via `POST /api/viewer/thumbnail`. Direction locked 2026-08-26: recording stays server-side (headless, batch-friendly, task-rail integrated). |
@@ -389,7 +389,7 @@ Locked decision 3 forbids selectors in the viewer.
 Pop-manager writes → server → cross-window ping → viewer refetches. `PopulationManager.vue:113`'s
 `toggleViewer(p)` is now effectively `togglePop(p)` — the name is P6 territory.
 
-**Design settled — two-level model kept, not simplified to one.** Dominik's in-code note
+**Design settled — two-level model kept, not simplified to one.** The maintainer's in-code note
 (`ViewerWindow.vue:534-537`, 2026-08-25) is authoritative: the gating `show` flag SEEDS the viewer's
 per-row eye but does not LOCK it. Users may want to peek at a pop hidden in the manager without
 changing the manager's decision. The row eye stays as a transient render-visibility control.
@@ -479,7 +479,7 @@ population to the open gating plots (`docs/todo/README.md` links `project_napari
 it's a renderer/shader extension, not a controls question. Numbered `PX` because it can happen at any
 point after P3 (P3's "first-ticked wins" is the interim behaviour).
 
-**Direction settled (Dominik, 2026-08-25).** Per-cell contours in 2D and per-cell IDs are both
+**Direction settled (the maintainer, 2026-08-25).** Per-cell contours in 2D and per-cell IDs are both
 required. Bitmask packing was considered and rejected: it loses cell IDs at the voxel level and can
 only draw per-mask (structure) contours, not per-cell outlines within a mask. Going N-slot bind
 group instead, with the cap **exposed as a user-visible setting** rather than hardcoded — the
@@ -536,7 +536,7 @@ worth, ~5.6 GB just for masks. That's why the cap is user-owned — the setting 
 Deleting the bridge before this cuts over kills every recording surface: the single-image record
 button, the animation card, and batch movies.
 
-**Direction settled 2026-08-26 (Dominik).** Movie encoding does NOT move into the browser tab.
+**Direction settled 2026-08-26 (the maintainer).** Movie encoding does NOT move into the browser tab.
 Reasons: (a) batch movies iterate images headless with no tab per image; (b) CI / scripted
 regeneration must run without a browser; (c) a tab-blocked encode with no cancel is worse UX than
 the existing task rail. The `WEB_VIEWER_PLAN.md` browser/offline split holds — the browser renderer
@@ -609,7 +609,7 @@ paths that routed through the bridge must be dead.
 
 **Only when 1–9 are green:** delete napari from `pixi.toml` env, remove `napari` from Python deps.
 
-## The two things napari still owns (Dominik, 2026-08-25)
+## The two things napari still owns (the maintainer, 2026-08-25)
 
 Not everything moves. Viewer retention is explicit and scoped:
 
@@ -649,7 +649,7 @@ Discovery pass ran (`frontend/CLAUDE.md` mandatory lookups + `docs/inventory/FRO
 Small behavioural bugs in the current two-panel wiring, worth fixing during P1 while touching the same
 files. Each is user-observed; keep this list additive as more surface.
 
-1. **Clicking a new image with the eye does not reload the viewer** (Dominik, 2026-08-25). The image
+1. **Clicking a new image with the eye does not reload the viewer** (the maintainer, 2026-08-25). The image
    switches in the panel's "Current image" section but the WebGPU window keeps showing the previous
    one. Suspect: `ViewerWindow.vue` reacts to `imageUid` prop change but the eye-click path in the
    panel updates a different state (napari-side image), and the two are not bridged. Trace the click

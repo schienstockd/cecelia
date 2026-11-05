@@ -4,7 +4,7 @@
 shaders (PRs #1345, #1349, #1359, #1371).
 - **Stills** (cards, keyframe thumbnails) are on the shader too, served by the preview worker —
   [`STILLS_WORKER_PLAN.md`](STILLS_WORKER_PLAN.md).
-- **Open:** the viewer-side pixel capture (needs a browser — Dominik's click); Phase 5 (bricks) for a
+- **Open:** the viewer-side pixel capture (needs a browser — the maintainer's click); Phase 5 (bricks) for a
   level 0 over the device's 3D-texture limit.
 
 Supersedes [`VIEWER_PARITY_PLAN.md`](VIEWER_PARITY_PLAN.md) Decision 1 ("the two renderers stay")
@@ -12,7 +12,7 @@ and its "shared drawing library" non-goal. That plan's shared-JSON work (Phases 
 
 ## Scope (locked 2026-10-01)
 
-- **Build Phases 1 and 2.** (Phase 3 followed on 2026-10-02, at Dominik's go-ahead.) 3D movies are
+- **Build Phases 1 and 2.** (Phase 3 followed on 2026-10-02, at the maintainer's go-ahead.) 3D movies are
   where the payoff is:
   - The torch ray-caster is the renderer with no parity test.
   - It has no masks.
@@ -104,7 +104,7 @@ renderer stays for that platform until one exists — Phase 0 finds out.
 - Take `mipShader.ts`'s WGSL as-is (constants substituted by hand) and run it headlessly in `wgpu-py`
   for one frame: fXgbTl (zolIMa), version `denoised`, t = 3, the camera + layers banked with
   `M2b-MERTK_KAT-SWHL-GFP-Tom-res_cropped_smoothed-with-pops.mp4` in `settings/movies.json`.
-- Compare against the viewer at the same state (Dominik's screenshot from 2026-09-30; a browser
+- Compare against the viewer at the same state (the maintainer's screenshot from 2026-09-30; a browser
   `canvas.toDataURL()` capture for a numeric diff), and against `render_animation_run.py`'s frame.
 - Measure: time per frame on the workstation GPU and on a software adapter; whether `wgpu-py` installs
   cleanly into the pixi env on Linux / macOS / Windows.
@@ -266,7 +266,7 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - **Open.**
   - **The viewer-side capture is still needed.** A `canvas.toDataURL()` of the viewer at a fixed
     view state on a committed fixture closes the pixel test. That needs a browser, so it's
-    Dominik's click.
+    the maintainer's click.
 - **Closed after review.**
   - **Perspective.** `buildViewState` records the 3D projection toggle (`camera.perspective` 1/0;
     2D is always 0), and Fill from view carries it on `camera3d`. Applying a view state in the
@@ -284,7 +284,7 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - Fixes on the way: the viewer's point size is a RADIUS (`mip_points.wgsl`: fill radius `ov.pointPx`),
   while `draw_points!` takes it as a diameter, so 2D movie points are half the viewer's size.
 
-**Result (built 2026-10-02, after Dominik's go-ahead).**
+**Result (built 2026-10-02, after the maintainer's go-ahead).**
 
 - **Not `tileShader`: the viewer's 2D view is `mip.wgsl`.** A normal plane is drawn by the same pass
   as 3D — a texture one plane deep (or the ± window's planes), one step, head-on, orthographic

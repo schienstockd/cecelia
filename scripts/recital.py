@@ -28,7 +28,7 @@ import argparse
 import subprocess
 import sys
 
-from cecelia.effectiveness.git_context import in_sequencer_commit
+from cecelia.effectiveness.git_context import git_output, in_sequencer_commit
 from cecelia.effectiveness.recital import RecitalError, recital_body_path, run_recital
 
 
@@ -66,7 +66,9 @@ def main() -> int:
         return 2
 
     try:
-        recital = run_recital(diff, claim=args.claim)
+        # The index as a tree lets a repeat round review only what changed since the last one.
+        staged_tree = None if args.stdin else git_output("write-tree")
+        recital = run_recital(diff, claim=args.claim, staged_tree=staged_tree)
     except RecitalError as e:
         # A hard failure that run_recital itself couldn't recover from — unusual, since each
         # reviewer's error is caught inside `_run_reviewer` and folded into its section.

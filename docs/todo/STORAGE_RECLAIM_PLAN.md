@@ -13,7 +13,7 @@ should show disk usage + the reclaimable originals and free them in one click.
 - **Reclaimable = every image version EXCEPT the active one** (`reclaimable_versions`). Keep only
   what you're using: the original `default` import AND any superseded intermediates (e.g. with
   `cpCorrected` active, `default` + `afCorrected` are both freeable). Started as default-only, then
-  generalised (Dom, 2026-07-20): "really you can remove every image except the active one." Channel
+  generalised (the maintainer, 2026-07-20): "really you can remove every image except the active one." Channel
   names/dims (fallback to `default`) and all derived labels/measurements/gating live in `1/`, so
   dropping non-active image stores is safe. Freeing `default` is irreversible (re-import) — accepted.
 - **On-demand scan.** Walking every image store (`_dir_bytes`) is expensive at TB scale, so it is NOT

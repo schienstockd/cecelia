@@ -40,7 +40,7 @@ Landing bar: capture overlay respects both flags; existing users see no behaviou
 - P1.2 — Two `CcToggle` chips on `DrawSurface.vue`'s `.ds-notes` area, emitting `{attachToKiwi, sendToPaired}` on Save.
 - P1.3 — `ViewerWindow.onDrawSave` reads the flags: pass `noPush` when Send=off; call `useKiwiStore().addRef({kind:'capture', captureId})` when Attach=on. Mirror in `composables/useCanvasShare.ts::onAnnotateSave` in the same PR (lockstep — leaving one behind is the bug from `_repair_dont_warn`-style drift).
 - P1.4 — `stores/settings.ts` persists `captureAttachToKiwi` + `captureSendToPaired`; defaults per Decisions 2 + 3.
-- **Checkpoint:** unit test on the backend flag; manual Chrome/Firefox check on the overlay with all four toggle combinations (memory: Dominik cannot check Safari; do not ask him to).
+- **Checkpoint:** unit test on the backend flag; manual Chrome/Firefox check on the overlay with all four toggle combinations (memory: the maintainer cannot check Safari; do not ask them to).
 
 ### P2 — Blackboard persistence (output side)
 

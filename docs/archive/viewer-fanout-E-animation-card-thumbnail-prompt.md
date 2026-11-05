@@ -25,7 +25,7 @@ follow-ups — "Animation-card thumbnail via WebGPU canvas `toBlob()`".
 ## What to build
 
 1. On animation SAVE (frontend): call `canvas.toBlob('image/png')` on the WebGPU
-   canvas at the frame the animation opens on (or a mid-frame — Dominik's call).
+   canvas at the frame the animation opens on (or a mid-frame — the maintainer's call).
 2. POST the blob to a new endpoint (or extend the existing animation-save endpoint
    to accept a thumbnail multipart part).
 3. Server-side: store the thumbnail alongside the animation config
@@ -82,9 +82,9 @@ follow-ups — "Animation-card thumbnail via WebGPU canvas `toBlob()`".
 
 ## Explicit constraints
 
-- **Never start/kill the dev server.** Dominik owns 8080/5173/7655.
+- **Never start/kill the dev server.** The maintainer owns 8080/5173/7655.
 - **Never write shared dev config.**
 - **Ask before commit; state reservations first.**
 - **Branches + PRs only, never push to main.**
 - **Copy `.env`** into your worktree.
-- **This is a small chunk.** If it grows past a day, stop and check with Dominik.
+- **This is a small chunk.** If it grows past a day, stop and check with the maintainer.

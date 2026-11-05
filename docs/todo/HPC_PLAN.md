@@ -114,7 +114,7 @@ The class (cpu/gpu) picks the queue, account and QoS. Login-node specifics, Appt
 partition flags are **configuration, not assumptions** (`extra_directives`, `preamble`).
 
 **D9 — Settings live in the app's Settings page (GUI), not in a config file only.** *Revised
-2026-10-13 (Dominik): only scheduler, host and port are shared (`custom.toml`); everything else —
+2026-10-13 (the maintainer): only scheduler, host and port are shared (`custom.toml`); everything else —
 remote folder, email, queues, account, QoS, directives, preamble — is per profile, beside the
 username and key. A remote folder is usually `/scratch/<user>/…`, and accounts follow a person's
 group. The per-profile fields are edited in **Preferences → HPC** (the profile's own dialog), the

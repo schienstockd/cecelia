@@ -45,7 +45,7 @@ The real ask is: *at Save time, should the backend `push` step be conditional on
 
 Do **selective sidecar** (option B, but honest about which kinds need one). Sidecar the six fragile / live-only kinds with a minimal snapshot per kind (label + one line of value, no full plot summary except for `plot` where `plotSummaryText` already gives the exact text); for the six stable kinds, resolve-or-"gone" is enough. The saved entry is a normal Blackboard entry; the sidecar rides inside `meta.json` as an additive `kiwiRefs: {refKey: {label, snapshot, savedAt}}` map keyed by canonical ref shape (mirror `_kiwi_canon` in `api/src/kiwi_api.jl:38`).
 
-**The one hard tradeoff:** *how much of the plot's numbers to freeze.* `plotSummaryText` is capped at 12 KB and enumerates every series; a saved entry with three plot refs is 36 KB of frozen text that will never re-compute even if the plot's underlying data was fixed later. Alternative — freeze **only the numbers that a claim cites** (mine claim text for numbers, snapshot those). Cheaper but ambiguous when a claim says "in 6 of 7 images". Dominik decides: full plot summary vs. cited-numbers only.
+**The one hard tradeoff:** *how much of the plot's numbers to freeze.* `plotSummaryText` is capped at 12 KB and enumerates every series; a saved entry with three plot refs is 36 KB of frozen text that will never re-compute even if the plot's underlying data was fixed later. Alternative — freeze **only the numbers that a claim cites** (mine claim text for numbers, snapshot those). Cheaper but ambiguous when a claim says "in 6 of 7 images". The maintainer decides: full plot summary vs. cited-numbers only.
 
 **Costed touchpoint list** (recommended approach — capture destination + Blackboard persistence):
 

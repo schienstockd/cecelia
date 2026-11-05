@@ -20,7 +20,7 @@ job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background 
 
 The transcript also carries Claude Code's recap — a `system` entry with `subtype: "away_summary"`,
 written while the window sits unattended — which `latest_recap` reads — and the session's last
-reply, which `ends_with_question` reads: a turn that ended on a question is waiting for Dominik,
+reply, which `ends_with_question` reads: a turn that ended on a question is waiting for the maintainer,
 whatever still runs in the background.
 
 How full a session's context is reaches only its statusline (`context_window.used_percentage` in
@@ -106,7 +106,7 @@ def _runs_judge_review(argv: _t.Sequence[str]) -> bool:
 
 def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
     """Whether one of the session's nearest `depth` parent processes runs `scripts/judge/review.py`
-    — a queue that resumes only once Dominik has dealt with the session and closed it."""
+    — a queue that resumes only once the maintainer has dealt with the session and closed it."""
     return any(_runs_judge_review(argv) for argv in _parent_argvs(pid, proc, depth))
 
 
@@ -223,7 +223,7 @@ def session_stamp(session_id: str, home: pathlib.Path | None = None) -> dict[str
 
 
 def typed_by_a_person(entry: dict) -> bool:
-    """A prompt Dominik typed — not a tool result, an injected meta message, a compaction summary,
+    """A prompt the maintainer typed — not a tool result, an injected meta message, a compaction summary,
     or a message from elsewhere: `origin.kind` is "human" for a typed prompt, and
     "task-notification" / "peer" / "auto-continuation" otherwise (older entries carry no `origin`)."""
     origin = entry.get("origin")
@@ -238,7 +238,7 @@ def typed_by_a_person(entry: dict) -> bool:
 
 def latest_recap(transcript: pathlib.Path, tail_bytes: int = RECAP_TAIL_BYTES) -> tuple[str, str] | None:
     """(timestamp, text) of the session's newest recap, or None. A recap followed by a prompt
-    Dominik typed is out of date — he has been back since — so it doesn't count."""
+    the maintainer typed is out of date — they have been back since — so it doesn't count."""
     for entry in _tail_entries(transcript, tail_bytes):
         if typed_by_a_person(entry):
             return None
@@ -252,7 +252,7 @@ def latest_recap(transcript: pathlib.Path, tail_bytes: int = RECAP_TAIL_BYTES) -
 
 
 def ends_with_question(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> bool:
-    """Whether the newest turn ended with a reply to Dominik that ends in `?`. The newest message
+    """Whether the newest turn ended with a reply to the maintainer that ends in `?`. The newest message
     decides: a prompt, tool result or notification after the reply means the session has moved on;
     a reply ending in a tool call means it isn't done. Trailing markdown (`**Go?**`) is ignored."""
     for entry in _tail_entries(transcript, tail_bytes):
@@ -341,7 +341,7 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
         if not from_auto_fix(pid, proc):
             return None   # a headless `claude -p` run (a recital reviewer, an eval) — nobody's window
         session = _transcript_session(pid, "auto-fix", status, meta, sid, projects, context)
-        return dataclasses.replace(session, auto=True, asks=False)   # it never waits for Dominik
+        return dataclasses.replace(session, auto=True, asks=False)   # it never waits for the maintainer
     session = _transcript_session(pid, name, status, meta, sid, projects, context)
     return dataclasses.replace(session, judge=from_judge_review(pid, proc),
                                recital=running_recital(pid, proc, children or {}))

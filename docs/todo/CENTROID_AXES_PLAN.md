@@ -65,8 +65,8 @@ The fix everyone already expects (Claude, the R version, intuition): name the co
    Handles *any* prior format so it also covers anyone who used the old R version: (a) Feijoa
    `centroid-N` labels in `uns/spatial_cols` + `t` → explicit names (via `skimage_centroid_axis_names`);
    (b) old-R flat `centroid_x/_y/_z/_t` var columns → lifted into `obsm` with explicit `uns` (generalise
-   `legacy_migrate`). This is the remedy the read-time guard points at. Dominik runs it; we don't touch
-   his files.
+   `legacy_migrate`). This is the remedy the read-time guard points at. The maintainer runs it; we don't touch
+   their files.
 
 ## Blast radius (from discovery — file:line)
 

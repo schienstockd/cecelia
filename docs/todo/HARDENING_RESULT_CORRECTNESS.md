@@ -13,7 +13,7 @@
 
 - **Ledger: 88 rows** of plausible-wrong-result bugs: 47 in A (45 distinct fixes) and 41 in B. 31 further candidates were dropped as loud crashes or errors, UI-only, or moot.
 - **Guard now: 62 Y, 15 P, 10 N, 1 moot.** Almost every Y is a **synthetic unit input or a value pin**. None runs a real image through segment → measure → track → gate/cluster and compares the output against a stored answer. (observed)
-- **Found by:** nearly all by the maintainer looking at his own intravital data (zolIMa/fXgbTl, UMq4v3, yDfwP7, c91ICQ, MERTK, spleen…) or by a review/fanout/audit pass. Only one (4bffdf58, a stale sibling save wiping ccid.json) was caught by a test harness, and that was the agent-eval fixture setup, not a result test. **No bug in the ledger was caught by an existing result test before it shipped.** (observed from commit messages; found-by is inferred where the message does not say)
+- **Found by:** nearly all by the maintainer looking at their own intravital data (zolIMa/fXgbTl, UMq4v3, yDfwP7, c91ICQ, MERTK, spleen…) or by a review/fanout/audit pass. Only one (4bffdf58, a stale sibling save wiping ccid.json) was caught by a test harness, and that was the agent-eval fixture setup, not a result test. **No bug in the ledger was caught by an existing result test before it shipped.** (observed from commit messages; found-by is inferred where the message does not say)
 - **Recurring classes** (rows can count in more than one):
   - wrong input selected (segmentation/value_name, group, channel, version, pop, model): **~25**. The biggest class.
   - units/time/calibration lost, ignored or out of sync: **~15**.
@@ -111,7 +111,7 @@ Fixture note: most Julia guards run on `test-data/projects/testpr/1/KDIeEm` (one
 - Guarded: 29 Y, 8 P, 4 N (motif span-broadcast 41809852, pooled-boxplot pointUids cad78b0a, napari time-restricted brushing 7ec4915a, trackclust vn preference 76fa75df).
 - Recurring class #1: **wrong-input-selected — segmentation/value_name** (13 rows): first/active/`default` label set used where the run's or the tracked one was meant; co-clustered segmentations pooled N times. Every one looked plausible (a populated dropdown, an empty "nothing to review", a doubled count).
 - Recurring class #2: **time axis ignored** (cross-frame pairing in contacts, aggregates, neighbour graph, napari brushing) and **units** (btrack in pixels, 6x Z under-count) — 6 rows.
-- Recurring class #3: **params silently not reaching the run** (chain section flattening, order chips, String-vs-Symbol flags, no-op chunk param, ignored Settings default) — 5 rows. Found-by is overwhelmingly the maintainer on his own data or a review/fanout pass; only 4bffdf58 was found by a test harness (agent-eval fixture setup).
+- Recurring class #3: **params silently not reaching the run** (chain section flattening, order chips, String-vs-Symbol flags, no-op chunk param, ignored Settings default) — 5 rows. Found-by is overwhelmingly the maintainer on their own data or a review/fanout pass; only 4bffdf58 was found by a test harness (agent-eval fixture setup).
 
 #### Ledger
 
@@ -426,7 +426,7 @@ Fixture note: most Julia guards run on `test-data/projects/testpr/1/KDIeEm` (one
 - Guarded: 29 Y, 8 P, 4 N (motif span-broadcast 41809852, pooled-boxplot pointUids cad78b0a, napari time-restricted brushing 7ec4915a, trackclust vn preference 76fa75df).
 - Recurring class #1: **wrong-input-selected — segmentation/value_name** (13 rows): first/active/`default` label set used where the run's or the tracked one was meant; co-clustered segmentations pooled N times. Every one looked plausible (a populated dropdown, an empty "nothing to review", a doubled count).
 - Recurring class #2: **time axis ignored** (cross-frame pairing in contacts, aggregates, neighbour graph, napari brushing) and **units** (btrack in pixels, 6x Z under-count) — 6 rows.
-- Recurring class #3: **params silently not reaching the run** (chain section flattening, order chips, String-vs-Symbol flags, no-op chunk param, ignored Settings default) — 5 rows. Found-by is overwhelmingly the maintainer on his own data or a review/fanout pass; only 4bffdf58 was found by a test harness (agent-eval fixture setup).
+- Recurring class #3: **params silently not reaching the run** (chain section flattening, order chips, String-vs-Symbol flags, no-op chunk param, ignored Settings default) — 5 rows. Found-by is overwhelmingly the maintainer on their own data or a review/fanout pass; only 4bffdf58 was found by a test harness (agent-eval fixture setup).
 
 ## Ledger
 

@@ -13,6 +13,11 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+### Read this first
+
+- **Import drops an incomplete last timepoint**, left partly black when a recording stopped
+  mid-volume. Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it.
+
 ### Fixed
 
 - **Copying gates matches channels by name, as the R version did.** Before, an image with another

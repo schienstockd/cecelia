@@ -1,7 +1,7 @@
 # HMM fit quality — record how well each HMM run fit, and what it was fitted on
 
 **Status:** built (2026-11-02) — P1 + P2 + P3 on `feat/hmm-fit-quality`. P2's footer note and P3's
-chart in the live app await Dominik's visual check (P3 was rendered headless with the real-data numbers
+chart in the live app await the maintainer's visual check (P3 was rendered headless with the real-data numbers
 below — lines, hollow not-converged dot and axis label correct).
 
 **Real-data check (2026-11-02):** `4kS67f`, T cells (`T/qc/_tracked`, 8 images, 3,653 decoded
@@ -71,7 +71,7 @@ things that answer needed are missing from `behaviour.hmm_states` today:
   response carries `fit` (modelMeasurements, numStates, logLik, bic, converged) and the rows are the
   modelled measures followed by the requested extras.
 - `SummaryPanel` shows a one-line caption: "Fitted on speed, angle · 3 states · log-lik −277186".
-- **Needs Dominik's visual check** before merge.
+- **Needs the maintainer's visual check** before merge.
 
 ### P3 — state-count comparison (the elbow)
 - New `HMM state count` plot (`hmm_state_count.json`, chart `elbow`): every recorded run on the

@@ -5,7 +5,9 @@
     _probe_saturation(zarr_path, run_dir; on_log, on_progress, on_process) -> Union{Dict,Nothing}
 
 The acquisition clipping + sparsity probe (`saturation_run.py`): one streamed histogram pass over
-`zarr_path`, returning the `meta["saturation"]` value `Dict("channels" => [...])`, or `nothing` when
+`zarr_path`, returning the `meta["saturation"]` value `Dict("channels" => [...])` — plus a
+`"partialTimepoint"` entry when the acquisition stopped mid-volume, which callers pop into its own
+meta field — or `nothing` when
 the probe failed or the store is not integer data. The ONE implementation — import runs it on every
 new store, `ensure_saturation_meta!` on images imported before the field existed. Advisory: never
 throws.
@@ -22,9 +24,13 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
     try
         # Typed read: each channel's nested `profile` (per-depth / per-frame lists) lands as plain
         # Dicts and Vectors, not JSON3 views.
-        chans = get(JSON3.read(read(result_file, String), Dict{String,Any}), "channels", nothing)
+        res   = JSON3.read(read(result_file, String), Dict{String,Any})
+        chans = get(res, "channels", nothing)
         (isnothing(chans) || isempty(chans)) && return nothing
-        return Dict{String,Any}("channels" => [Dict{String,Any}(ch) for ch in chans])
+        out = Dict{String,Any}("channels" => [Dict{String,Any}(ch) for ch in chans])
+        pt = get(res, "partialTimepoint", nothing)
+        isnothing(pt) || (out["partialTimepoint"] = Dict{String,Any}(pt))
+        return out
     catch e
         @warn "Could not read saturation result" exception = e
         return nothing
@@ -67,9 +73,14 @@ function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     sat = _probe_saturation(zarr_path, task_run_dir(img._dir); on_log = on_log)
     isnothing(sat) && return false
+    # An already-imported store is not trimmed (derived stores and labels depend on its T); the record
+    # alone raises the QC warning.
+    fields = Dict{String,Any}("saturation" => sat)
+    pt = pop!(sat, "partialTimepoint", nothing)
+    isnothing(pt) || (fields["partialTimepoint"] = merge(pt, Dict{String,Any}("trimmed" => false)))
     try
         if isnothing(existing)
-            _merge_zarr_meta_into_ccid!(img, Dict{String,Any}("saturation" => sat); overwrite = false)
+            _merge_zarr_meta_into_ccid!(img, fields; overwrite = false)
         else
             # Probed before per-plane profiles existed: replace just this key with the fuller probe
             # of the same store (the whole-channel numbers come out the same).
@@ -78,6 +89,9 @@ function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing
                 m["saturation"] = sat
                 raw["meta"] = m
             end
+            # The partial-timepoint record stays fill-only: never overwrite one an import wrote.
+            haskey(fields, "partialTimepoint") && _merge_zarr_meta_into_ccid!(img,
+                Dict{String,Any}("partialTimepoint" => fields["partialTimepoint"]); overwrite = false)
         end
         write_metadata_qc!(img)
     catch e

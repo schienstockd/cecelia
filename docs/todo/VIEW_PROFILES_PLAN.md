@@ -54,7 +54,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
    shared with a collaborator must not dictate their menu. (Per-project would also mean the profile
    travels in project metadata and mutates a shared artefact to change one person's UI.)
 3. **Profiles are BUILT in the GUI. A config file is the storage format, not the authoring path**
-   (Dominik, 2026-08-17 — this reverses an earlier "picked, not authored" draft). Settings gets the
+   (the maintainer, 2026-08-17 — this reverses an earlier "picked, not authored" draft). Settings gets the
    selector *and* a builder: create, rename, duplicate, delete a profile, choose its pages and their
    order, all in the app. Hand-editing a `<config_dir>/view-profiles/*.json` keeps working (that is how a
    profile is shared between machines, and how a plugin can ship one —
@@ -96,7 +96,7 @@ per user. A profile hides clutter. It cannot invent a page, and it is not access
    the Lab Log records science, not config lint. Silent-only is not enough either, because a renamed
    route would make a profile quietly shrink with no way to notice.
 9. **`/` is its own neutral welcome page — the landing route is profile-INDEPENDENT.**
-   (Dominik, 2026-08-17, superseding "the landing route follows the profile".) `modules/WelcomeModule.vue`
+   (the maintainer, 2026-08-17, superseding "the landing route follows the profile".) `modules/WelcomeModule.vue`
    is a greyed watermark of the brand mark and no copy.
    *Why the first answer was wrong:* a record's `redirect` is resolved **before any router guard**, so
    `redirect: () => firstVisiblePath(…)` fired while the profile list was still in flight, landed on

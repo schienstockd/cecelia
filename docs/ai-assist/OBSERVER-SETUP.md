@@ -141,7 +141,7 @@ to every session (`mcp/cecelia_mcp/guidance.py`); this is the long form.
   makes on every write: atomic writes, name collisions, versioning. If a task already does the job, use
   it; importing a label image made elsewhere is **Segment → Import labels** (`segment.importLabels`).
   If none does, that's a custom module or a report.
-- **Fixed a bug locally?** Keep working, but the next update overwrites the patch. Send it to Dominik as a
+- **Fixed a bug locally?** Keep working, but the next update overwrites the patch. Send it to the maintainer as a
   report with the patch attached ([`USER_REPORTS.md`](../USER_REPORTS.md) is how reports are handled).
   The cause is verified on `main` before anything ships, and the fix then reaches everyone.
 - **Just looking at your data, or making a figure?** Read it through Cecelia's accessors (`init_object`,

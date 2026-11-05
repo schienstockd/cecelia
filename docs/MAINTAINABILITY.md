@@ -68,7 +68,7 @@ one opts out with `MAINT-EXEMPT: <reason>`. The rest are reference only.
 - Dataset IDs (`WIaUjL/p6t4mC`, `fXgbTl`, six-character project uid slugs)
 - Measured percentages tied to one run (`0.113 from CH3 into CH2`, `735-3576 of 65536 levels`)
 - Quoted user reports (`reported: "the zslice is still not updating..."`)
-- Dated authorship attributions (`Dominik, 2026-08-25`)
+- Dated authorship attributions (`Maintainer, 2026-08-25`)
 - Narrative history (`used to be QC-exempt`, `The first run reported`, `It appeared — X — and it was`)
 - Internal phase codes (`P9 slice 4`, `Phase H, H3`) that will rot on the next reorg
 - Commit SHA cross-references (`same class as commit 860da24b`) that break on rebase or squash

@@ -3,7 +3,7 @@
 **Status:** **P1–P3 built** (2026-10-27, branch `docs/microclaw-lessons`); **O1, O2 parked**. Of eight
 candidate lessons, five were checked against our code and real runs and are **not needed**. The three
 small changes they left (P1–P3) are built. The two open checks (O1, O2) cost quota and wait on
-Dominik's call.
+the maintainer's call.
 
 ## Goal
 
@@ -18,14 +18,14 @@ building.
 
 - **Who read MicroClaw.** Claude agents only: five Opus agents split the repo by area, at
   `bb3e123` (2026-10-19). Claude spot-checked the key claims against the source. Nobody ran
-  MicroClaw, and Dominik has not read it. Everything here about MicroClaw is **an agent's reading**.
+  MicroClaw, and the maintainer has not read it. Everything here about MicroClaw is **an agent's reading**.
   Don't repeat it as a fact about their software.
 - **Who checked Cecelia.** One Sonnet agent per item, reading `origin/main` at `5565e179`, the 15 app-tier
   agent runs in `~/.cecelia-effectiveness/app-runs/` (2026-10-04 → 10-09), and 3,002 Claude Code
   transcripts under `~/.claude/projects/` (for tool-result sizes). Claims marked ✔ were re-checked by
   the coordinating session against the code. Unmarked ones are the agent's reading.
-- **Not in scope.** Bugs in MicroClaw itself. Dominik's call: we don't report them, because he would only be
-  relaying an agent's reading of code he hasn't seen.
+- **Not in scope.** Bugs in MicroClaw itself. The maintainer's call: we don't report them, because they would only be
+  relaying an agent's reading of code they haven't seen.
 
 ## Verdicts
 
@@ -44,14 +44,14 @@ building.
 and that this was "a likely reason guides go unused". The briefing half was wrong: knowledge is pushed into
 the first tool result. The guides half was never evidenced (see row 5).
 
-## Decisions (proposed, Dominik's call)
+## Decisions (proposed, the maintainer's call)
 
 1. **Don't port MicroClaw's knowledge injection, error envelope, blanket "unknown" fields, session export
    or replay harness.** Each was checked above and either already covered or has no observed failure behind it.
 2. **Port only what fixes a hole we can point at:** the two silent result caps (P1) and the
    population-not-found 404 (P2).
-3. **CLAUDE.md lines (P3) are a process change** and are his call. They are not part of P1/P2.
-4. **The open checks cost quota (O1, O2), so they run only on his say-so**, smallest first, one at a time.
+3. **CLAUDE.md lines (P3) are a process change** and are the maintainer's call. They are not part of P1/P2.
+4. **The open checks cost quota (O1, O2), so they run only on the maintainer's say-so**, smallest first, one at a time.
 
 ## Phases (each ships alone)
 

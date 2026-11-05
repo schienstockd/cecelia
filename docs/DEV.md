@@ -84,7 +84,7 @@ relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current*
 
 ### State reservations before committing (agents)
 
-Every time you're told to commit or push — **including** when Dominik asks *"what's the PR url?"* (that
+Every time you're told to commit or push — **including** when the maintainer asks *"what's the PR url?"* (that
 request itself is the go-ahead to commit + push, so don't stall on extra `git status` round-trips) —
 **first volunteer your honest reservations about the change**, in the same turn, before running the
 commit. Not a reassurance; a short, prioritized list that separates:
@@ -95,19 +95,19 @@ commit. Not a reassurance; a short, prioritized list that separates:
 - **Real limitations**: perf/fetch-volume concerns, edge cases you didn't handle, options that are
   silent no-ops, stale-state paths.
 
-If any reservation is material, pause for Dominik's call; if there are genuinely none, say "no
+If any reservation is material, pause for the maintainer's call; if there are genuinely none, say "no
 reservations" and proceed. This is not the same as re-asking permission every turn — state the risk
-once, then act on the go-ahead. Dominik added this rule after reservations surfaced only when he asked
+once, then act on the go-ahead. The maintainer added this rule after reservations surfaced only when they asked
 "any reservations?" *after* a merge — they belong at the decision point instead.
 
 ## Pull requests
 
-Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merged this way). An agent
+Open a PR against `main` for review; **the maintainer reviews and merges** (PR #1 merged this way). An agent
 **asks first** (see the golden rule) before pushing the branch or opening the PR.
 
 - The `gh` CLI **is installed and authenticated** in the agent environment, so an agent pushes the
   branch and opens the PR itself with `gh pr create`, then relays the PR URL. (This section used to
-  say `gh` was absent and that the agent should hand over the `pull/new/<branch>` link for Dominik to
+  say `gh` was absent and that the agent should hand over the `pull/new/<branch>` link for the maintainer to
   open and paste a body into — that stopped being true, and the stale instruction had agents doing
   the manual dance for no reason.)
 - **Always write a complete PR body** — for *every* branch, not just large ones. The commit message
@@ -135,7 +135,7 @@ gh pr create --base main --title "<type>(<scope>): <summary>" --body-file <path>
 
 ### Agent-authored public replies are attributed
 
-Anything an agent posts to a **public surface under Dominik's account** — an issue comment, a
+Anything an agent posts to a **public surface under the maintainer's account** — an issue comment, a
 discussion reply, a review comment on someone else's PR — ends with an attribution line naming the
 model:
 
@@ -145,7 +145,7 @@ model:
 *This reply was written by Claude Code (<model>), working in this repo on @schienstockd's behalf
 — as was the fix in #<pr>. Cecelia is openly AI-assisted; see
 [`CLAUDE.md`](https://github.com/schienstockd/cecelia/blob/main/CLAUDE.md). Anything here that needs
-a human decision is his.*
+a human decision is theirs.*
 ```
 
 `<model>` is the model **actually writing that reply** (`Claude Opus 5.5`, …), and the Bash guard
@@ -160,11 +160,11 @@ months and kept pinning it after that model was superseded, so what shipped reco
 was written rather than who wrote the thing.
 
 The objection is not the AI involvement — this project says it is AI-assisted on the front page.
-It is the **implied claim of authorship**: the comment carries Dominik's name and an outside reader
-assumes he typed it. Prompted by the reply on #540 (2026-08-13), which went out unmarked and read,
-in his words, like AI.
+It is the **implied claim of authorship**: the comment carries the maintainer's name and an outside reader
+assumes they typed it. Prompted by the reply on #540 (2026-08-13), which went out unmarked and read,
+in their words, like AI.
 
-Scope: outward-facing text landing under his identity. **Not** commit messages (they carry the
+Scope: outward-facing text landing under the maintainer's identity. **Not** commit messages (they carry the
 `Claude-Model` trailers), not PR bodies (the footer above names the model), not code comments, not
 chat.
 

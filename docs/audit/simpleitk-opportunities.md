@@ -59,7 +59,7 @@ case discussed in `estimate_drift`).
 | Tests | new: `test_drift_estimate_itk.py`; existing tests unchanged |
 | Docs | `docs/todo/` new plan (there is no drift plan yet) |
 
-**Recommendation.** Only worth doing if he has a movie where the current estimator visibly
+**Recommendation.** Only worth doing if the maintainer has a movie where the current estimator visibly
 fails on rotation. Real intravital drift *is* mostly translation, and the multiLag solver already
 outperforms a bare pairwise estimator by 60x on the `4kS67f/fHqhyb` case. **Park until an image
 demands it** and add it as a new estimator, not a replacement.
@@ -86,9 +86,9 @@ of the algorithm. There is no scipy/skimage equivalent worth porting to.
 - Chain wiring: N4 should sit **between** drift/AF and smoothing (structural correction before
   photon-count denoising).
 
-**Recommendation.** Cheapest concrete SimpleITK win in the tree. Only pursue if he confirms real
+**Recommendation.** Cheapest concrete SimpleITK win in the tree. Only pursue if the maintainer confirms real
 users have widefield / non-flat-field-corrected input — the audit brief says not to invent user
-needs, and cecelia is confocal-first. But if he says yes, this is a two-day task with no
+needs, and cecelia is confocal-first. But if they say yes, this is a two-day task with no
 regression surface.
 
 ### 2.3 Re-expose sitkibex's engine (not a task change; a helper)

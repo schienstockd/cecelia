@@ -18,7 +18,7 @@ those users image — so they became requests; one whole phase turned out to be 
 The prompt behind the cellpose 4 work opened with "make coastal the default for live-cell
 segmentation". There is no such default to change — `segment.cellpose` and `segment.coastal` are two
 sibling entries in the Segment category and you click one. Asked whether to add a per-task
-"suits timelapse / suits static" hint instead, Dominik reframed it:
+"suits timelapse / suits static" hint instead, the maintainer reframed it:
 
 > *"this was more of a .. guide. i mean we could come up with a sort of.. builder i guess. to say.
 > ok. what do you want to do? intravital? then do these steps. do you need behaviour or tracks or
@@ -98,7 +98,7 @@ that does not exist yet is a build error, same ratchet as the anchors.
 
 `segmentGuide` cannot say "use coastal instead" — it is the cellpose guide. The scenario is the only
 place where "for this data, that tool, and here is why" can be said once instead of as a tip on every
-affected control. Concretely, the first four (Dominik's own list):
+affected control. Concretely, the first four (the maintainer's own list):
 
 | scenario | the fork it exists to state |
 |---|---|
@@ -107,7 +107,7 @@ affected control. Concretely, the first four (Dominik's own list):
 | Large multiplex images | AF correction before segmentation; cellpose (static is its case); tiling params |
 | Many small confocal images, interactions | do it as a **chain** over a set, not image by image |
 
-**Only the first of those four is being written (Dominik, 2026-08-21).** The other three go in as
+**Only the first of those four is being written (the maintainer, 2026-08-21).** The other three go in as
 REQUESTS, not recipes — see D9. The reason is in D7: the honest version of each needs a fork we cannot
 state yet, because we do not know what those users actually image or what they want out of it, and a
 generic recipe over an unknown scenario is the guessed prose this plan's own D5 exists to prevent.
@@ -121,7 +121,7 @@ pages it does not use) and must not merge — a scenario that hid pages would be
 opinion about biology, and a profile that implied an analysis path would travel between users who do
 different work.
 
-### D4 — Where it lives: the Guides picker, not the Welcome page  *(confirmed, Dominik 2026-08-21)*
+### D4 — Where it lives: the Guides picker, not the Welcome page  *(confirmed, the maintainer 2026-08-21)*
 
 The compass already means "show me how", it is already in the header on every page, and `GuidesDialog`
 already groups and ranks by readiness. A scenario section at the TOP of that dialog is one section in
@@ -135,7 +135,7 @@ one component. Considered and rejected:
 
 ### D5 — The copy is the deliverable, and it is subject to the existing ratchets
 
-**A number appears only where it has been measured** (Dominik, 2026-08-21). "Cell diameter ≈ 10 µm for
+**A number appears only where it has been measured** (the maintainer, 2026-08-21). "Cell diameter ≈ 10 µm for
 T cells" is the most useful sentence in the idea and the easiest to be wrong in public, so a scenario
 may state a value only where we measured it on real data and can cite where; everywhere else it names
 the control and says what it decides. This also keeps the scenarios from becoming a second, drifting
@@ -158,9 +158,9 @@ whose whole doc discipline is one canonical name per job. So: type `RecipeDef`, 
 The USER-facing heading is a separate, copy-only decision (D5 applies): proposed **"What are you
 trying to do?"** as the first section of the picker, with the guide groups below it unchanged.
 
-### D-rev — The intravital recipe is the paper's workflow, cellpose by default  *(Dominik, 2026-10-05)*
+### D-rev — The intravital recipe is the paper's workflow, cellpose by default  *(the maintainer, 2026-10-05)*
 
-The first version taught motion segmentation as THE intravital path. Wrong for most data (Dominik):
+The first version taught motion segmentation as THE intravital path. Wrong for most data (the maintainer):
 cellpose is fine for most movies; the optical-flow model was needed for this lab's own dim movie, which
 is not the norm. The recipe now follows the Cecelia paper's behaviour analysis (Nat Commun 2025,
 Fig. 4c): drift correction → cellpose segment + measure (flow model + motion segmentation as an
@@ -169,7 +169,7 @@ track clustering on whole-track measures + HMM states + transitions. The cluster
 "HMM is the supervised alternative" bullet was wrong the same way — the two are combined, not
 alternatives — and now says so. Found when the recipe was handed to an agent through `get_guide`.
 
-**AF correction is an optional step after drift** *(Dominik, 2026-10-06)*: "add af as an optional step if
+**AF correction is an optional step after drift** *(the maintainer, 2026-10-06)*: "add af as an optional step if
 there is bleedthrough between the channels." New guide `af-correct` (`cleanupImages.afCorrect`, bare —
 no composite wraps it since the AF + drift one was retired). After drift, not before: the AF run carries
 a drift-corrected store's valid box forward and its background estimate skips the zero padding. Found
@@ -235,7 +235,7 @@ field fed from the `taskDefs` store (the vault arrives as the coastal Model sele
 options), which is the first prereq to read a store the guide runtime does not already hold. Stays out
 of this build; the dependency lives in the copy, as P0 decided.
 
-### D9 — The three we are not writing go in as REQUESTS, and the request asks for data  *(Dominik, 2026-08-21)*
+### D9 — The three we are not writing go in as REQUESTS, and the request asks for data  *(the maintainer, 2026-08-21)*
 
 A `RecipeDef` has one of two bodies: `steps` (a written recipe) or `wanted` (a name and a request
 link). Both render in the same list, in the same order, because the list IS the answer to "which
@@ -263,7 +263,7 @@ carry the "send us images" ask on its own.
 **Nothing here posts anything.** The row opens a browser at a prefilled issue — the same mechanism as
 the What's New *Report a problem* link. No form in the app, no upload path, no new endpoint.
 
-### D10 — Four more recipes, from the paper and the R-version missions  *(Dominik, 2026-10-30)*
+### D10 — Four more recipes, from the paper and the R-version missions  *(the maintainer, 2026-10-30)*
 
 D9's rule stands: no recipe without measured data behind it. The data now exists. These are the lab's
 own published workflows: the paper's Results (Figs 2–5, PMC11850795) and the eight R-version missions
@@ -295,19 +295,19 @@ Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
 | **In vitro migration** | Fig 5b, mission *cancer flow tracks* | `import-images` → `fix-metadata` → `segment-an-image` → `gate-populations` → `track-cells` → `behaviour-states` → `cluster-tracks` → `run-a-chain` |
 
 **Left out, on purpose:**
-- **Xenium** was a one-off test that Dominik never liked.
+- **Xenium** was a one-off test that the maintainer never liked.
 - **Registering staining cycles (IBEX):** `editImages/register.json` exists, but nothing has validated
   it and there is no test dataset for it yet.
 - **Track flow fields** (`binariseTracks` → branching) are deferred in `SPATIAL_ANISOTROPY_PLAN.md`
   D11. The anisotropy that is built is the structure orientation field, not one from tracks.
 
-**Settled 2026-10-30 (Dominik):**
+**Settled 2026-10-30 (the maintainer):**
 - **The three remaining gaps (aggregates, branching, contact/distance to a structure) are specialised
   functions.** They become optional recipe steps with no guide, naming the page and task. A guide
   follows only if people get stuck there.
 - **Denoise is not an in vitro step.** Today it's an option for photon-limited intravital data, so it
   moves into the intravital recipe as optional, beside the flow-model fork. In vitro migration drops it.
-- **The *why* lines:** Claude drafts them from the paper's Results and the R tutorial; Dominik
+- **The *why* lines:** Claude drafts them from the paper's Results and the R tutorial; the maintainer
   corrects them.
 - **Live + structures is wired in code, but has not been run end to end.** Both contact tasks write
   per-cell `{pop}.cell.min_distance#<target>` and `contact#<target>` columns
@@ -319,7 +319,7 @@ Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
 
 **Claude is not in these steps.** This is the Claude-free first pass. D11 covers what Claude changes.
 
-### D11 — Claude is an overlay on the same recipes, not a recipe of its own  *(Dominik, 2026-10-30; built with the map)*
+### D11 — Claude is an overlay on the same recipes, not a recipe of its own  *(the maintainer, 2026-10-30; built with the map)*
 
 The steps stay the same with or without Claude. Claude changes *how you check* a step, not which steps
 exist. A separate Claude recipe would repeat every step and drift away from the original. So each
@@ -351,7 +351,7 @@ Where it helps. All of these use shipped tools; the audit was read-only and chec
 It adds nothing to import, metadata, registration or denoise. One exception: LabArchives context can
 fill in the subject and goal before metadata, but only from the terminal.
 
-### Two ways in, not a loop *(Dominik, 2026-10-31; supersedes the four-step loop below)*
+### Two ways in, not a loop *(the maintainer, 2026-10-31; supersedes the four-step loop below)*
 
 Kiwi and Claude Code are **two ways in, not two steps**. Kiwi is the structured rubber duck: it points
 at the evidence and you decide. Claude Code is the interactive route: you work the analysis through in
@@ -363,7 +363,7 @@ the Blackboard as the bridge (**Continue in terminal**). Content: `claudeOvervie
 
 *Superseded 2026-10-31, kept for the record:*
 
-**The overlay needs a loop to hang on** *(Dominik, 2026-10-30: "otherwise the integration part is a bit lost")*.
+**The overlay needs a loop to hang on** *(the maintainer, 2026-10-30: "otherwise the integration part is a bit lost")*.
 Markers on single steps don't tell a user what the Blackboard is for, when to attach evidence, or
 when a terminal session is worth it. The map's Claude cluster is therefore this four-step loop, worded
 the same here, in `user-docs/README.md` → *Working with Claude* and in Kiwi's help
@@ -394,7 +394,7 @@ Points the overlay has to respect:
 
 ### The map — built 2026-10-30 (`feat/inapp-map`)
 
-The front of the Guides dialog, merged with the guide list (Dominik: one view; D11 of GUIDE_SYSTEM_PLAN
+The front of the Guides dialog, merged with the guide list (the maintainer: one view; D11 of GUIDE_SYSTEM_PLAN
 not reopened, so no new first-run entry — the tour's compass step names it).
 
 - **Recipes on top** (ChipSelect, none picked by default). None picked = nothing lit: there is no
@@ -498,7 +498,7 @@ predicates.
 
 - **Nothing here can be judged from a test.** The new picker section is markup: whether an accordion
   inside a modal that already scrolls reads well, and whether a recipe row's readiness line competes
-  with the guide rows' own, are exactly the questions `vitest` cannot answer. P2 stops for Dominik to
+  with the guide rows' own, are exactly the questions `vitest` cannot answer. P2 stops for the maintainer to
   look at it before P3's copy goes in.
 - **The recipes duplicate judgement that lives nowhere else.** A fork stated in a recipe ("not
   cellpose, for this data") is a claim with a shelf life — it was true the day cellpose 4 landed. When
@@ -513,14 +513,14 @@ predicates.
 
 ## Open questions
 
-1. ~~**The picker heading.**~~ **Settled (Dominik, 2026-10-30): `Recipes`.** "What are you trying to do?" is the recognition question, and it is longer
+1. ~~**The picker heading.**~~ **Settled (the maintainer, 2026-10-30): `Recipes`.** "What are you trying to do?" is the recognition question, and it is longer
    than every other heading in the dialog. Alternative: a plain `Recipes` eyebrow matching
    `Start`/`Data`/`Populations`, with the question as the section's one-line intro.
 2. ~~**A `recipe_request.yml` template, or a prefilled `feature_request.yml`?**~~ **Built:** `.github/ISSUE_TEMPLATE/recipe_request.yml` exists, and `recipeRequestUrl` opens it. D9 recommends the new
    template — it can ask for example images, which is the thing that actually unblocks a recipe, and
    the existing one requires a proposed solution the requester does not have. One more file in
    `.github/ISSUE_TEMPLATE/` is the whole cost.
-3. ~~**Is "intravital" one recipe or two axes crossed?**~~ **Answered by D10:** the data picks the recipe, and the question is the steps inside it. Dominik's list mixes *what the data is*
+3. ~~**Is "intravital" one recipe or two axes crossed?**~~ **Answered by D10:** the data picks the recipe, and the question is the steps inside it. The maintainer's list mixes *what the data is*
    (intravital, large multiplex, many small confocal) with *what you want* (behaviour, tracks,
    interactions). Moot while only one is written — and the requests are what will answer it, since a
    request names the data and the wanted output separately.

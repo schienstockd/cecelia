@@ -3,7 +3,7 @@
 **Status:** planning, 2026-09-10. Branch `feat/cellpose-v3-optin`, worktree
 `cecelia-cellpose-v3-optin`.
 
-Dominik, 2026-09-10: *"just tried to run the cellpose segmentation on a mac m3 laptop. so slow.
+The maintainer, 2026-09-10: *"just tried to run the cellpose segmentation on a mac m3 laptop. so slow.
 like. really slow"* — cellpose 4 (Cellpose-SAM) is a ~300M-param transformer and MPS is much slower
 per op than CUDA. On the R version, cyto/cyto2/cyto3 on MPS worked fine; the migration to v4
 (`CELLPOSE_V4_PLAN.md`, #610) is what regressed Mac users.

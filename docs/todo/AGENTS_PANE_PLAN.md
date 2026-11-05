@@ -5,12 +5,12 @@ Status: **built** (2026-10-13) — P1 (`claude_sessions.py`, `agents.py`, the pa
 ## Goal
 
 One live view of agent work. Each running Claude Code session gets one row: which worktree it is
-in, its branch, the PR with its CI state, whether the session is working or waiting for Dominik,
+in, its branch, the PR with its CI state, whether the session is working or waiting for the maintainer,
 and how many recital rounds and open findings its branch has.
 
 ## Why
 
-Dominik runs about 10 foreground sessions at once, one per worktree. The native tools cover part
+The maintainer runs about 10 foreground sessions at once, one per worktree. The native tools cover part
 of this, as checked on 2026-10-13:
 
 | Want | Native |
@@ -18,7 +18,7 @@ of this, as checked on 2026-10-13:
 | Live sessions, idle/busy | Yes: `/list-agents` |
 | Worktree | No. Every session shows its launch folder, the workspace root |
 | PR / CI | Only in Agent view, and only for background (`/bg`) sessions |
-| Waiting for Dominik | Partly: Agent view's "needs input", background only |
+| Waiting for the maintainer | Partly: Agent view's "needs input", background only |
 | Recital rounds, open findings | No |
 
 The earlier `claude-console` and session-bus briefs (`docs/archive/`) were dropped for their
@@ -47,16 +47,16 @@ extras: hooks, a message bus, window control. None of those is needed here.
    (`WORKTREE_CLEANUP_PLAN.md` decision 11), the same way it already imports `git_context`.
 4. **The session files are undocumented, so failures show.** If a file can't be parsed, the row
    reads `? (unreadable)` rather than disappearing. A missing `~/.claude/sessions/` hides the pane.
-5. **Rows are sorted by what needs Dominik:** a `pixi run judge-review` session waiting for him
+5. **Rows are sorted by what needs the maintainer:** a `pixi run judge-review` session waiting for them
    (`*` after its name; found by `scripts/judge/review.py` among its parent processes,
-   `claude_sessions.from_judge_review` — the review queue resumes only once he has dealt with it
-   and closed it), then a session asking him something (`asks`: its turn is
+   `claude_sessions.from_judge_review` — the review queue resumes only once they have dealt with it
+   and closed it), then a session asking them something (`asks`: its turn is
    over and its last reply ends in `?` — `claude_sessions.ends_with_question`; status alone can't
    say, a background CI watch keeps it at `shell`), then idle with a failed CI run or a merge
    conflict (`conflict` in the ci column, from the PR's `mergeable`), then idle, then done,
-   then idle with its PR's CI still running (it waits on CI, not him), then busy. Idle on a
-   foreground session in practice means waiting for him.
-6. **No plan-mode column.** Dominik keeps sessions in auto mode, so it would never change.
+   then idle with its PR's CI still running (it waits on CI, not them), then busy. Idle on a
+   foreground session in practice means waiting for them.
+6. **No plan-mode column.** The maintainer keeps sessions in auto mode, so it would never change.
 7. **`pixi run agents` is an alias** that opens `recital-console` with only the agents pane. It is
    for the second terminal.
 
@@ -86,7 +86,7 @@ extras: hooks, a message bus, window control. None of those is needed here.
   60 s; a failed fetch keeps the last list. A one-shot snapshot (`--no-follow`, or piped) waits for it.
 - `pixi run agents`, → (← undoes, PgUp/PgDn scroll): under each session, first Claude Code's own
   recap of it (`claude_sessions.latest_recap`: the newest `away_summary` entry in the transcript,
-  dropped once Dominik has typed a prompt after it — notifications and peer messages don't count).
+  dropped once the maintainer has typed a prompt after it — notifications and peer messages don't count).
   Asked for 2026-10-13: most rows just said idle; the recap says what the session is waiting on.
   Then its outcome counts
   (`open · fixed · shipped · false pos · dropped`) and every recital finding on its branch with
@@ -96,7 +96,7 @@ extras: hooks, a message bus, window control. None of those is needed here.
 - The → view draws each finding with the recital console's own `_render_finding_block` (head line +
   description capped at 3 lines, no branch anchor — the session row names it), outcome in front,
   the agent's reason (`why …`) under it. A one-line-per-finding version clipped every description
-  and read as clutter; a version listing only non-fixed findings dropped detail Dominik wanted.
+  and read as clutter; a version listing only non-fixed findings dropped detail the maintainer wanted.
 - **Which window is which:** each session has a badge, a `●` in its own colour, one of 7 CVD-safe
   hues (Paul Tol's 'bright'; `agents.session_badge`). Their hues overlap the state colours (any
   CVD-safe set does), so the badge's own column before the name is what tells it from a state. Each live
@@ -107,7 +107,7 @@ extras: hooks, a message bus, window control. None of those is needed here.
   the session raised (#1692); the wrapper draws badge and name in front of any statusline
   command. Asked for 2026-10-15: a hash of the session id into 4 shapes × 7 Okabe-Ito colours gave
   three orange rows out of five, the shapes were too small to tell apart, and the colours were the
-  state column's own. Colouring the name instead of a dot was tried and dropped: he preferred the
+  state column's own. Colouring the name instead of a dot was tried and dropped: the maintainer preferred the
   dots. Opt-in, one line in `~/.claude/settings.json`:
   `"command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"`. ~60 ms per
   refresh on top of the wrapped command; if it fails the wrapped statusline still shows.

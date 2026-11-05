@@ -63,12 +63,12 @@ share credit via `out = b × b²/Σbᵢ²` — no scale, no ceiling, output in i
 ## How it was built
 
 **Was this really written by an AI?**
-Almost all of the source, yes — by Claude Code under Dominik's direction. Cecelia is a port of an
+Almost all of the source, yes — by Claude Code under the maintainer's direction. Cecelia is a port of an
 existing peer-reviewed tool (the R/Shiny `cecelia`, *Nature Communications* 2025), so the design and
 the science were already validated; the work was translating them into the new stack.
 
 **Then who verified the science?**
-Dominik. The AI never had access to a microscope or real imaging data beyond small test fixtures,
+The maintainer. The AI never had access to a microscope or real imaging data beyond small test fixtures,
 so all scientific and visual validation was done by the human author. Early releases haven't yet
 been independently tested by other users — treat them accordingly.
 

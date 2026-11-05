@@ -676,7 +676,7 @@ describe('pyramidDeepestDims — powers-of-two downsample of the source', () => 
   it('halves XY per level and keeps Z (bf2raw does not downsample Z)', () => {
     // VJy1Nx: at N=3 the deepest is ~278×265×31 — the "not enough for 3D playback" case
     expect(pyramidDeepestDims(3, { nX: 1111, nY: 1057, nZ: 31 })).toEqual({ w: 278, h: 265, z: 31 })
-    // At N=4 it's ~139×132×31 — Dominik's "good" answer
+    // At N=4 it's ~139×132×31 — the maintainer's "good" answer
     expect(pyramidDeepestDims(4, { nX: 1111, nY: 1057, nZ: 31 })).toEqual({ w: 139, h: 133, z: 31 })
   })
 

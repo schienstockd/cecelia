@@ -25,8 +25,8 @@ sessions' surfaces.
 
 ## Not fan-outable
 
-- **Vertical orientation verify** — one line kept or reverted after Dominik clicks
-  through `docs/todo/spike/webgpu/shader_check.mjs`. He owns it.
+- **Vertical orientation verify** — one line kept or reverted after the maintainer clicks
+  through `docs/todo/spike/webgpu/shader_check.mjs`. The maintainer owns it.
 
 ## Handoff notes
 
@@ -34,7 +34,7 @@ sessions' surfaces.
   `origin/main`. Do NOT fork from `feat/viewer-p5-overlay-author`.
 - Every brief has a "Files NOT to touch" list keyed to which OTHER session owns the
   code. If two sessions collide anyway, the earliest-in-flight one wins by default.
-- Every brief ends with the standard constraints: never start/kill Dominik's dev
+- Every brief ends with the standard constraints: never start/kill the maintainer's dev
   server, ask before commit, state reservations first, branches + PRs only.
 
 ## Cost estimate (rough)

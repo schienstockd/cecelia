@@ -4,7 +4,7 @@
 **Origin:** `docs/archive/denoising-methods-prompt.md` (companion to the drift/registration prompt),
 and the 2026-09-05 evaluation of SUPPORT + DeepCAD-RT on drift-corrected crops of `2h06xA` (MERTK
 mem-TOM, photon-limited) and `c91ICQ` (CAR-T, saturated). Result: SUPPORT is a clean win on
-photon-limited intravital and useless on saturated data; Dominik: *"that's great"* on 2h06xA v2, *"we
+photon-limited intravital and useless on saturated data; the maintainer: *"that's great"* on 2h06xA v2, *"we
 can scrap this for movies like c91ICQ. not photon-starved so it probably doesnt work"*. Full context:
 `[[project_denoising_methods_eval]]` auto-memory.
 
@@ -12,7 +12,7 @@ can scrap this for movies like c91ICQ. not photon-starved so it probably doesnt 
 
 A user-visible **standalone cleanup task** that runs a **self-supervised denoiser (SUPPORT)** on a
 per-image movie, using a **model picked from a vault**, with the **model trained on a set of images**
-via a **generalised Model Training page**. Verbatim third-party method — Dominik's framing:
+via a **generalised Model Training page**. Verbatim third-party method — the maintainer's framing:
 *"this is not our method. but you can use it for denoising"*.
 
 ## Locked decisions
@@ -20,7 +20,7 @@ via a **generalised Model Training page**. Verbatim third-party method — Domin
 ### D1 — Standalone cleanup task, NOT a replacement for median-of-3 smooth
 `cleanupImages.denoise` is a sibling to `cleanupImages.smooth` / `driftCorrect` / `stackAlign` /
 `flowRegister`. Writes `ccidDenoised.ome.zarr`. The archive prompt's second framing (denoiser as
-fusion step replacing median-of-3) is **out of scope for this plan** — Dominik was clear the intent
+fusion step replacing median-of-3) is **out of scope for this plan** — the maintainer was clear the intent
 mirrors the old cellpose-denoise slot.
 
 ### D2 — Per-kind vault directories
@@ -56,7 +56,7 @@ selector** (Optical flow / Denoise / …). Route, sidebar entry, docs sweep. Rej
 pages (divergent-reimplementation trap), or keep name and add denoise under Optical Flow (dishonest).
 
 ### D5 — Attribution UI is PARKED
-Dominik: *"maybe leave it for now. and wait for my colleague. otherwise we would also need to cite
+The maintainer: *"maybe leave it for now. and wait for my colleague. otherwise we would also need to cite
 scanpy and anything else"*. When a colleague contributes an algorithm, the question is forced and this
 gets designed. Belongs in `docs/FUTURE.md` at that point. **Do not build attribution UI in this plan.**
 
@@ -131,7 +131,7 @@ Purpose: prove the plumbing before writing the training loop.
 ### Phase B — training task on the existing OpticalFlow page (temporary home)
 Purpose: prove the training loop wired to the vault; don't touch the rename yet.
 
-- Task: `modelTraining.trainSupportDenoise` (or the naming Dominik prefers when we get there — this
+- Task: `modelTraining.trainSupportDenoise` (or the naming the maintainer prefers when we get there — this
   is the fresh module namespace) in `app/src/task_defs/`. Set-scope input: one experimental set's
   images. Params: `imageUids[]`, `modelName`, `channel`, `inputFrames`, `patchXY`, `epochs`,
   `unetSize` (small / medium / large), `midZOnly` (bool, default true — matches per-Z inference).

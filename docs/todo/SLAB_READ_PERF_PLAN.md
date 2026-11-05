@@ -82,7 +82,7 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
    write — still `api/src/`, still no HTTP/2 change. No rechunker without sign-off (Phase 3).
 10. **Measure before and after every phase, same bench.** A result that contradicts the plan stops
     the phase. Projections are labelled as projections. Through-server numbers need a server running
-    the branch — Dominik starts it; agents do not start or kill servers.
+    the branch — the maintainer starts it; agents do not start or kill servers.
 11. **The cache widens `image_render.jl`'s Zarr carve-out, deliberately and narrowly.** It lives in
     `api/src/chunk_cache.jl`, included by `image_render.jl` (still the only file with `using Zarr`),
     and `read_native` (`image_geometry.jl`) reads through it — so the byte-order swap still applies

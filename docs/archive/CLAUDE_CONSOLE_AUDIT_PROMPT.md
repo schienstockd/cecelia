@@ -22,7 +22,7 @@ Run this in Claude Code (Opus) at the repo root. **Audit and plan only. Do not i
 
 ## Problem
 
-D often runs 10+ Claude Code sessions in parallel (one per git worktree, mostly), on Ubuntu with the standard terminal. He loses track of which window needs him. He wants a read-mostly live console, `pixi run claude-console`, in the family of:
+The maintainer often runs 10+ Claude Code sessions in parallel (one per git worktree, mostly), on Ubuntu with the standard terminal. They lose track of which window needs them. They want a read-mostly live console, `pixi run claude-console`, in the family of:
 
 - `pixi run console` → `api/task_console.jl` (scheduler tasks, WebSocket + HTTP snapshot reconcile)
 - `pixi run recital-console` → `python/cecelia/effectiveness/console.py` (tails `~/.cecelia-effectiveness/events.jsonl`)
@@ -34,10 +34,10 @@ D often runs 10+ Claude Code sessions in parallel (one per git worktree, mostly)
    working → in recital → recital findings open → committed → PR lodged (CI pending/failed/green, review state) → merged → **ready to clean up worktree**.
 3. **Identity**: which worktree path, branch, PR number/URL, commits ahead of base, dirty or clean.
 4. **Plan**: whether a plan was parked (and where) during the session.
-5. **Attention ordering**: sessions that need D float to the top (needs input > cleanup ready > findings open > CI failed > PR open > committed > recital running > parked > working).
+5. **Attention ordering**: sessions that need the maintainer float to the top (needs input > cleanup ready > findings open > CI failed > PR open > committed > recital running > parked > working).
 6. **Window locate/highlight**: a way to find the terminal window of a session, or make it visibly stand out. Ideas on the table: terminal title and/or background tint set by a hook when input is needed and reset afterwards; a jump action from the console. Blinking was floated and is probably too much.
 
-"Open reservations" in D's message is assumed to mean unresolved recital findings. Flag it if the code suggests otherwise.
+"Open reservations" in the maintainer's message is assumed to mean unresolved recital findings. Flag it if the code suggests otherwise.
 
 ## Constraints and conventions
 
@@ -72,7 +72,7 @@ Write small spike scripts and run them where possible:
 - Focus/raise by title: `wmctrl -a` / `xdotool` under X11. State plainly what is impossible under Wayland (windows generally cannot be focused by an outside process) and what the realistic fallbacks are (unique titles, tint, desktop notification via `notify-send`, a GNOME-specific route if one exists). Verify; do not assert.
 - Whether tmux would be a worthwhile (opt-in) upgrade path, with the exact commands, but do not require it.
 
-Report which highlight/jump features work on D's actual setup, which need a one-time setting, and which are not feasible.
+Report which highlight/jump features work on the maintainer's actual setup, which need a one-time setting, and which are not feasible.
 
 ### 4. Evaluate candidate bases
 Compare, in a table with explicit criteria:
@@ -111,6 +111,6 @@ Write `docs/todo/CLAUDE_CONSOLE_PLAN.md` with:
 4. Candidate comparison table and rejected options with reasons.
 5. Data model, state machine, reconcile strategy.
 6. Phased build plan, each phase independently useful and shippable, with test strategy. Suggested shape (change it if the audit says otherwise): P1 hooks + sessions log + minimal table with needs-input tint; P2 git/gh enrichment and cleanup-ready; P3 recital and plan joins; P4 focus/jump.
-7. Open questions for D, numbered, each with your default if he does not answer.
+7. Open questions for the maintainer, numbered, each with your default if they do not answer.
 
-Keep it terse: decisions and evidence, no narrative. Then stop and wait for D's review. Do not start implementing.
+Keep it terse: decisions and evidence, no narrative. Then stop and wait for the maintainer's review. Do not start implementing.
