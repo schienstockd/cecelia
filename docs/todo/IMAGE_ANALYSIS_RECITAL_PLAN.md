@@ -102,21 +102,41 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
 
 ## Approach
 
-Four stages, cheapest first. Each stage only runs if the one before it passed. The first two are
-deterministic and need no model.
+Same two layers as the dev recital: **mechanical checks wherever a rule can decide, a model only
+where reading and judgement are needed.** Recital is a mechanism in Cecelia, not an agent. It
+builds the input (claim + record, never the analyst's conversation), runs the rules itself, and
+runs a fresh headless model turn for the reading parts. That turn goes through the app's agent
+seam (`run_agent_turn`, `app/src/ai/agent_runner.jl`; Kiwi's `run_kiwi_turn`), which applies the
+profile's own credentials, not the dev recital's bare `claude -p` spawn.
+
+| | Mechanical | Model |
+|---|---|---|
+| Dev recital | inventory check, maintainability lint, changelog check, stamp, hook | fanout audit, convention check, result review |
+| Analysis recital | S0, S1, S2 rules, S3 perturbations + threshold | parsing the claim (S3a), S2 judgement calls, the open review (S4) |
+
+The balance differs. In dev the model does most of the valuable work, because code has to be read
+to be understood. Here the record is already structured, so most of the verdict can be computed.
 
 | Stage | Question | How | Output |
 |---|---|---|---|
 | **S0 Record gate** | Can the record say what was done? | Rules: every output the claim uses has its params (`funParamsByName` or run log); every image in scope has those outputs; the grouping attribute (e.g. `Mouse`) is filled | `sufficient` or a list of gaps. A gap is a finding about the record, not the claim |
 | **S1 Cohort consistency** | Was everything compared treated the same? | Rules: params, versions, metadata (interval, pixel size, channels) and gates equal across images; set members excluded silently; cohort-QC outliers (`app/src/qc_cohort.jl`) | Differences, each one a finding |
 | **S2 Conventions** | Is the claim built the way the field expects? | Mostly rules: unit of the test vs n animals, physical units, same pop definitions per arm. A model only for what rules can't read | Findings |
-| **S3 Claim review** | Does the claim survive reasonable changes? | Model, but over a **fixed perturbation set per claim type**, logged with the result. The reviewer doesn't choose the perturbations (that would be forking paths on its side) | `reproduced` when a perturbation crosses the **pre-set threshold**, else `inferred` / clean |
+| **S3a Parse the claim** | What exactly is claimed? | Model: the sentence → a structured claim (type, measure, groups, images). Shown to the analyst to confirm before S3b | A structured claim, or "unknown type" |
+| **S3b Check the claim** | Does it survive reasonable changes? | **Code:** the fixed perturbation set for that claim type, logged with the result | `reproduced` when a perturbation crosses the **pre-set threshold**, else clean |
+| **S4 Open review** | Anything else look off? | Model reads claim + record freely. **Advisory only:** it raises `inferred` findings and never changes S0–S3's verdict | `inferred` findings |
 
-S3 needs two things defined before any run:
+S3b needs two things defined before any run:
 - **Perturbation sets per claim type**, e.g. "A > B on a measure": leave one image out, leave one
   animal out, per-animal medians vs pooled cells, other summary statistic, gate dry-run ±10 %.
 - **What "moves the claim" means**, e.g. the direction flips, or the per-animal test loses
   significance. Fixed in advance, so `reproduced` isn't a judgement call.
+
+Why S4 exists: rules only find what they anticipate. Code-time result review earned its keep with
+findings nobody had a rule for (a px value read as µm, live on main). S4 keeps that, and keeps the
+model away from the verdict. **A recurring S4 finding gets promoted to a rule**, the same ratchet
+pattern the dev side uses (a judge finding becomes a ratchet test). Over time S4 is how the
+mechanical layer grows.
 
 ## GUI (brainstorm, 2026-11-05, not decided)
 
@@ -130,11 +150,11 @@ you type, and review is something you ask for. Everything sits on surfaces that 
    the plot shows their verdicts through `lib/severity.ts` (colour + icon + label), not bare
    `.cc-dot` state lights. Findings point at the data: a missing image is drawn as a ghost on the
    plot, with a jump to the image, not listed in a side panel.
-3. **S3 is a "Check claim" button, run by Kiwi in a fresh context.** The user states the claim, and
+3. **"Check claim" runs S3a, S3b and S4 in a fresh context.** The user states the claim, and
    Kiwi can help phrase it as a structured claim with refs. The *review* must not see the analyst's
    conversation (the recital's withheld-reasoning rule), so it runs as a separate headless Kiwi turn
-   with only the claim and the record. Claims Kiwi makes itself go through the same check. It costs
-   about $1 and takes about a minute, so it's always the analyst's call. The button shows the fixed
+   with only the claim and the record. Claims Kiwi makes itself go through the same check. The model
+   calls cost about $1 and take about a minute, so it's always the analyst's call. The button shows the fixed
    perturbation set before running.
 4. **Findings live on the blackboard.** The claim is an entry and the findings are sections, tagged
    with the existing per-section outcomes (`set_blackboard_section_outcome`). Every round stays on
@@ -158,16 +178,21 @@ and threshold for the "A > B" claim type.
 gaps) plus seeded copies (wrong interval on one image, one image excluded, one param changed). If
 these catch most of what matters, they can ship alone (Sonnet's point; P2 below decides).
 
-**P2. S3 calibration with a model.** The number a sceptical reader asks for is the **false-positive
-rate**, so lead with null claims. Pseudo-arms from mice give known nulls. Caveat: 4kS67f has only
-3 distinct 2-vs-2 mouse splits (mice 1, 2, 4 have one tracked image each, mouse 3 has three), so
-more claims come from measures × populations, and those aren't independent. Then seeded true
-positives. Repeat each case 3 times to measure run-to-run variance. Start with ~5 cases × 3 (about
-$15 on Opus); scale only if that holds.
+**P2. Calibrate S3a, S3b and S4.**
+- **S3b is code**, so its false-positive rate belongs to the perturbation set and threshold, not to a
+  model, and needs no repeats. Lead with null claims: pseudo-arms from mice. Caveat: 4kS67f has
+  only 3 distinct 2-vs-2 mouse splits (mice 1, 2, 4 have one tracked image each, mouse 3 has three),
+  so more claims come from measures × populations, and those aren't independent.
+- **S3a** is measured as parse accuracy over a set of written claims.
+- **S4** is measured by what it finds that S0–S3 missed (its added value) and how often that's
+  wrong, on the null claims and on seeded true positives.
+- **The model parts (S3a, S4) run 3 times per case** to measure run-to-run variance. Start with ~5
+  cases × 3 (about $15 on Opus, scaled from one $0.87 code-review run); scale only if that holds.
 
-**P3. Decide the shape.** With P0–P2 data, settle Q1–Q4 and whether S3 ships at all.
+**P3. Decide the shape.** With P0–P2 data, settle Q1–Q4 and whether S4 earns its cost.
 
-**P4. Mechanism.** Reuse recital's spawn, run rows, markers and outcome tags. The new parts are a
+**P4. Mechanism.** Reuse recital's design (run rows, markers, outcome tags); spawn through the app's
+agent seam, not recital's. The new parts are a
 claim object (Q2), a record exporter, and the stamp on the export.
 
 **Paper.** Not in the Nature Protocols paper beyond, at most, the export stamp. If P2 holds, the
