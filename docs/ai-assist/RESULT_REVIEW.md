@@ -42,6 +42,30 @@ Log rows: `result_review_run` (tokens, cost, models, `escape_valve`: `no_result_
 `unchanged_diff`), `result_review_finding` (each `reproduced`), `result_review_advisory`
 (each `inferred` / `display`), and `result_review_finding_resolved` (written by the commit hook).
 
+## When rounds don't converge — a heuristic under probe
+
+**The pattern:** round after round reproduces a new made-up input against the same function,
+and each fix adds a branch. This is typical of a hand-written classifier: histogram shape,
+thresholds, detector modes. The reviewer can always build another input, and every new branch is
+new code for the next round to probe. Recital flags it: when one file gets a new `**reproduced**`
+input in 3 or more rounds on the same change (`PROBE_ROUNDS` in `recital.py`), the section ends
+`_Repeat probing: …_`. That's a pointer: check whether the inputs are made up. If they are, stop
+adding branches:
+
+1. **Pin the input domain.** Use real data from the instruments in use, name those stores in the
+   test, and state the domain in the function's docstring.
+2. **Send everything ambiguous or outside the domain to the function's "can't tell" answer** (e.g.
+   `indeterminate`), never to a confident label. Use one rule, not a branch per case. This often
+   makes the open repros pass for the right reason: `fixed_pre_commit`.
+3. **Tag a reproduced case still outside the domain `shipped_with_finding: outside <domain>`**, and
+   list it in the PR's reservations. That tag sends it to the owner's `decide` queue (table above),
+   so the owner accepts the gap, not the session.
+
+Why: on one PR, five rounds reproduced six new synthetic histograms against the same background
+classifier (analog pedestal plus padding, S/B = 2, Poisson 0.1, a clipped narrow Gaussian,
+discriminator jitter). None came from a real store. The change took 9 rounds, about $20 across the
+three reviewers. The pointer would have fired on the third of those five rounds.
+
 ## Result paths
 
 A diff touching any of these runs the review. `*` matches across `/`. The list is seeded from the
