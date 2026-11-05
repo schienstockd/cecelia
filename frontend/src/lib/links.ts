@@ -58,6 +58,16 @@ export function formatSupportRequestUrl(exts: string[]): string {
   return `${CECELIA_REPO_URL}/issues/new?${q}`
 }
 
+/** A "read acquisition settings from my microscope's files" request, prefilled with the extension.
+ *  The ask is a sample file: a reader is written and tested against a real one. */
+export function acquisitionSupportRequestUrl(ext: string): string {
+  const q = new URLSearchParams({
+    template: 'feature_request.yml',
+    title:    `Acquisition settings: support ${ext} files (microscope: …)`,
+  })
+  return `${CECELIA_REPO_URL}/issues/new?${q}`
+}
+
 /** The bug form's OS dropdown word for a pixi platform label (`utils/systemEnvs.ts` → `platform`). */
 export function issueOsLabel(platform: string | null | undefined): string {
   if (!platform) return ''

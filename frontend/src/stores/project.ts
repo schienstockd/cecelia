@@ -6,7 +6,8 @@ import { useAnalysisLayoutStore } from './analysisLayout'
 import { useSettingsStore } from './settings'
 import { prunedImageVersion } from '../utils/staleImageVersion'
 import type { CropSource } from '../utils/cropSource'
-import type { AcquisitionSettings } from '../utils/acquisitionSettings'
+import type { AcquisitionSettings, AcquisitionMissing } from '../utils/acquisitionSettings'
+import type { CleanupFactsChannel } from '../utils/acquisitionLightPath'
 import { publishViewerImageMeta } from '../lib/viewerImageMetaChannel'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
@@ -30,6 +31,8 @@ export interface CciaImage {
   oriPath?: string | null                 // original source file location (before OME-Zarr conversion)
   extraMeta?: Record<string, string | number | boolean>  // any other meta not surfaced as a field
   acquisition?: AcquisitionSettings | null  // source-file microscope settings (utils/acquisitionSettings.ts)
+  acquisitionMissing?: AcquisitionMissing | null  // why there are none (omezarr/acquisition.jl)
+  cleanupFacts?: { channels?: CleanupFactsChannel[] } | null  // import probe per channel (qc.jl img_cleanup_facts)
   cropSource?: CropSource | null           // set on a crop: source image + version + pixel box
   filepath?: string                       // active version filename (for display)
   activeValueName?: string                // active value name (the _active key from versioned dict)
@@ -318,6 +321,20 @@ export const useProjectStore = defineStore('project', () => {
     } catch { /* leave the store as-is on any error */ }
   }
 
+  // Re-read images' metadata from their stores and source files (`resync_ome_meta!`: fill-only — size,
+  // timing, the source's acquisition settings) and merge the whole returned payload, so every field
+  // the resync can fill reaches the table and the metadata dialog. Throws on an HTTP error.
+  // `measure` also runs the import's pixel probe where it is missing (per-depth profile; a full pass).
+  async function resyncImageMeta(projectUid: string, imageUids: string[], measure = false): Promise<void> {
+    const res = await fetch('/api/images/meta/resync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, imageUids, measure }),
+    })
+    const body = await res.json().catch(() => ({})) as { images?: Record<string, Partial<CciaImage>>; error?: string }
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    for (const [uid, img] of Object.entries(body.images ?? {})) updateImageMeta(uid, img)
+  }
+
   // Add an attr key (empty string value) to all images in a set.
   function addAttrKey(setUid: string, attrName: string) {
     const set = sets.value.find(s => s.uid === setUid)
@@ -407,7 +424,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, resyncImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

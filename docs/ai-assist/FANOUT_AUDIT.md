@@ -52,6 +52,14 @@ Why: every round used to re-review the whole diff, so each fix paid for a full r
 7-round PR all three reviewers ran each round, about $28 in total. The later rounds found nothing new,
 or went further and further out for something new.
 
+**When rounds don't converge (the author's side).** A delta round can't fix a drip the author causes:
+
+- **A finding names one copy of something restated by hand** (a key list, a constant repeated in a comment or doc): grep every copy and fix them all in the same round. Better, point at the source instead of restating it. Fixing one copy per round pays a full round per copy.
+- **An advisory comes back a second time:** act on it, or dismiss it once with a reason in the recital. Don't leave it to repeat.
+- **The result review keeps finding new inputs against the same function:** [`RESULT_REVIEW.md`](RESULT_REVIEW.md) → *When rounds don't converge*.
+
+On one PR, the fanout reported one more hand-copied key list each round, and the same convention advisory came back on 6 rounds without being acted on.
+
 ## Reviewer prompt
 
 *(Everything below the horizontal rule is passed verbatim as the subagent's prompt, followed by the staged diff.)*

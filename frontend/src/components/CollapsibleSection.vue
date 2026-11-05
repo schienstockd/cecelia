@@ -16,6 +16,7 @@
                          (`utils/singleOpen.ts` — one registry per app instance, never two refs per key).
                          Takes precedence over `open` and `storageKey`.
     section     string   This section's id within its accordion (what is persisted; default: `label`).
+  Slot `after-label`: a status mark after the heading (e.g. a warning icon), visible while closed.
     open        bool|null CONTROLLED mode, outside an accordion: pass it (with @update:open, or v-model:open)
                          and the parent owns open/closed. Omit it — it is `null` — and the section manages
                          itself. For one-open-at-a-time use `accordion`, not this.
@@ -92,6 +93,7 @@ const open = computed({
       v-tooltip.right="tip || (open ? `Collapse ${label}` : `Expand ${label}`)">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
       <span class="cs-label cc-eyebrow">{{ label }}</span>
+      <slot name="after-label" />
     </button>
     <!-- with a real max-height the body scrolls itself; with max-height:none it must NOT be a scroll
          container (overflow-y:auto would still make it the sticky scrollport, so a `position:sticky`

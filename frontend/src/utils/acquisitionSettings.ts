@@ -10,6 +10,7 @@ export interface AcquisitionLaser { name: string; wavelengthNm?: number | null; 
 export interface AcquisitionChannel {
   order: number; name: string | null; dyePreset: string | null; laser: string | null
   detector: string | null; hv: number | null; gain: number | null; offset: number | null
+  bitDepth?: number | null
 }
 export interface AcquisitionSettings {
   system?: string | null
@@ -25,6 +26,48 @@ export interface AcquisitionSettings {
   pinholeUm?: number | null
   channels?: AcquisitionChannel[]
   phaseCount?: number | null
+  /** `acquired` is set when the store has fewer frames than the file planned (stopped early, or cropped). */
+  timelapse?: { intervalS?: number | null; count?: number | null; acquired?: number | null } | null
+}
+
+/** Why an image has no settings (`ACQUISITION_MISSING` in omezarr/acquisition.jl). */
+export interface AcquisitionMissing { reason: 'format' | 'source' | 'unread' | 'other-stack' | 'registered' | 'no-source'; ext?: string }
+
+/** "FVMPE-RS · software 2.6.1.243", or null when the file does not name the system. */
+export function microscopeName(acq: AcquisitionSettings | null | undefined): string | null {
+  return acq?.system ? join([acq.system, acq.softwareVersion && `software ${acq.softwareVersion}`]) : null
+}
+
+/** "21 of 45 planned frames" when a time-lapse stopped early (or was cropped), else null. */
+export function framesShortOf(acq: AcquisitionSettings | null | undefined): string | null {
+  const t = acq?.timelapse
+  return t?.acquired != null && t.count != null && t.acquired < t.count ? `${t.acquired} of ${n(t.count)} planned frames` : null
+}
+
+export interface AcquisitionNotice { text: string; action?: { label: string; url: string } }
+
+/**
+ * What the Acquisition section says instead of (or under) the settings, so it never silently vanishes:
+ * why there are no settings, or why there is no diagram. `requestUrl(ext)` builds the "support this
+ * microscope" issue link (lib/links.ts).
+ */
+export function acquisitionNotice(
+  acq: AcquisitionSettings | null | undefined, missing: AcquisitionMissing | null | undefined,
+  hasDiagram: boolean, requestUrl: (ext: string) => string,
+): AcquisitionNotice | null {
+  if (acq) return hasDiagram ? null : { text: 'Light-path diagram: two-photon only so far' }
+  switch (missing?.reason) {
+    case 'format': {
+      const ext = missing.ext || 'this file type'
+      return { text: `Settings are not read from ${ext} files yet`, action: { label: 'Request your microscope', url: requestUrl(ext) } }
+    }
+    case 'source': return { text: 'Source file not reachable: refresh metadata when it is' }
+    case 'unread': return { text: 'No readable settings in the source file' }
+    case 'other-stack': return { text: 'Source settings describe another stack (a projection, crop or resample)' }
+    case 'registered': return { text: 'Registered from several cycles: no single source file' }
+    case 'no-source': return { text: 'No original file recorded' }
+    default: return { text: 'Not read yet: refresh metadata' }
+  }
 }
 
 export interface AcquisitionRow { k: string; v: string }
@@ -47,7 +90,10 @@ function brightZRamp(bz: NonNullable<AcquisitionSettings['brightZ']>): string {
 export function acquisitionRows(acq: AcquisitionSettings | null | undefined): AcquisitionRow[] {
   if (!acq) return []
   const rows: AcquisitionRow[] = []
-  if (acq.system) rows.push({ k: 'Microscope', v: join([acq.system, acq.softwareVersion && `software ${acq.softwareVersion}`]) })
+  const scope = microscopeName(acq)
+  if (scope) rows.push({ k: 'Microscope', v: scope })
+  const short = framesShortOf(acq)
+  if (short) rows.push({ k: 'Time-lapse', v: `${short} (stopped early or cropped)` })
   if ((acq.phaseCount ?? 1) > 1) rows.push({ k: 'Phases', v: `${acq.phaseCount} · first shown` })
   const o = acq.objective
   if (o) rows.push({ k: 'Objective', v: join([o.name, o.magnification != null && `${n(o.magnification)}×`, o.na != null && `NA ${n(o.na)}`, o.immersion]) })

@@ -79,6 +79,11 @@ time-lapse with Bright Z OFF but ramp points still stored. Checked for user name
 committing (none). `test_oir_meta.py` parses them and wraps them in filler bytes to test the container
 scan; `ome_qc.jl` wraps the FV4000 one as a fake `.oir` source for the resync test.
 
+`floor_photon_counted_fv4000.json` (4 KB): the low end (values 0–400) of the raw-value histogram of
+four mid-depth planes, first frame, every channel of a real FV4000 two-photon store, by `np.bincount`.
+Nothing from 1 to 18, then peaks every ~30: photon-counted output. `test_floor_stats.py` checks that
+`floor_stats` calls it photon-counted, not a background clipped at 0.
+
 ## `run-logs/` — real run logs, for the chain-from-history builder
 
 Each file is one image's `runlog.json` rows, copied from a dev project's task history (not written by

@@ -243,9 +243,9 @@ end
     for ngff in ("micrometer", "nanometer", "millimeter", "second", "minute")
         @test Cecelia.ome_xml_unit_name(ngff) in valid
     end
-    # An unknown unit passes through — we do not guess a conversion — so it is the CALLER's job not
-    # to invent one, and the scan below is what keeps a caller from skipping the converter entirely.
-    @test Cecelia.ome_xml_unit_name("furlong") == "furlong"
+    # An unknown unit has no symbol — never guessed, never passed through (that would void the block)
+    # — so the caller leaves the value out; the scan below keeps a caller from skipping the converter.
+    @test isnothing(Cecelia.ome_xml_unit_name("furlong"))
 
     # Anything that ASSIGNS an OME unit attribute must route through the converter. This is the
     # bypass that shipped: the OME-TIFF export copied ccid.json's "micrometer" straight into
@@ -262,7 +262,7 @@ end
         isdir(root) || continue
         for (dir, _, files) in walkdir(root), f in files
             endswith(f, ".jl") || continue
-            occursin("ome_xml_unit_name", read(joinpath(dir, f), String)) || continue
+            occursin("ome_xml_unit_name(", read(joinpath(dir, f), String)) || continue
             dir_has_converter[dir] = true
         end
     end
@@ -273,7 +273,7 @@ end
             endswith(f, ".jl") || continue
             path = joinpath(dir, f); src = read(path, String)
             occursin(r"\"(PhysicalSize[XYZ]Unit|TimeIncrementUnit)\"\s*(=>|\]\s*=)", src) || continue
-            occursin("ome_xml_unit_name", src) && continue
+            occursin("ome_xml_unit_name(", src) && continue
             get(dir_has_converter, dir, false) && continue
             push!(offenders, basename(path))
         end

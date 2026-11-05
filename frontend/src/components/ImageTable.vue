@@ -366,23 +366,7 @@ async function resyncFlagged() {
   if (!uids.length || !projectUid || resyncing.value) return
   resyncing.value = true
   try {
-    const res = await fetch('/api/images/meta/resync', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUids: uids }),
-    })
-    const body = await res.json().catch(() => ({})) as { ok?: boolean; images?: Record<string, Partial<CciaImage>>; error?: string }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    for (const [uid, img] of Object.entries(body.images ?? {})) {
-      project.updateImageMeta(uid, {
-        physicalSizeX: img.physicalSizeX,
-        physicalSizeY: img.physicalSizeY,
-        physicalSizeZ: img.physicalSizeZ,
-        physicalSizeUnit: img.physicalSizeUnit,
-        physicalSizeZCorrected: img.physicalSizeZCorrected,
-        timeIncrement: img.timeIncrement,
-        timeIncrementUnit: img.timeIncrementUnit,
-      })
-    }
+    await project.resyncImageMeta(projectUid, uids)
     log.info(`Re-read physical size & timing from file for ${uids.length} image(s).`, { source: 'manageImages' })
   } catch (e) {
     log.error(`Failed to resync metadata: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })

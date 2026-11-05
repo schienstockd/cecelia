@@ -593,6 +593,17 @@ function saturation_metrics(meta::AbstractDict)
     out
 end
 
+"""A probe stored before `floor` existed said "background clipped at 0" from the zero fraction alone, a
+cause it could not know (photon-counted zeros read the same). Pass what it measured instead until
+`ensure_saturation_meta!` re-probes it; a probe with `floor` passes through unchanged."""
+function _noise_without_guessed_cause(noise, floor)
+    (noise isa AbstractDict && isnothing(floor)) || return noise
+    n = Dict{String,Any}(String(k) => v for (k, v) in noise)
+    get(n, "untestable", nothing) == "background clipped at 0" &&
+        (n["untestable"] = "most voxels are 0 (refresh metadata for why)")
+    n
+end
+
 """
     img_cleanup_facts(img) -> Dict
 
@@ -627,7 +638,17 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
             # Where in the stack, from the same probe: per depth / per frame p50, p99, zero fraction
             # and voxels at the channel ceiling (`intensity_utils.PlaneProfile`). Absent on images
             # probed before it existed until `ensure_saturation_meta!` re-probes them.
-            "profile"    => get(ch, "profile", nothing)))
+            "profile"    => get(ch, "profile", nothing),
+            # What landed in the file (`data_path.measure_store`): store dtype bits, p1/p50/p99.9/max
+            # of non-zero voxels + a 32-bin histogram, what the exact zeros are (photon-counted vs a
+            # background clipped at 0, with photons per voxel), and the noise floor / SNR or why it
+            # can't be measured. Same absence rule as `profile`.
+            "containerBits" => get(ch, "containerBits", nothing),
+            "topValue"      => get(ch, "topValue", nothing),
+            "saturated"     => get(ch, "saturated", nothing),
+            "range"         => get(ch, "range", nothing),
+            "floor"         => get(ch, "floor", nothing),
+            "noise"         => _noise_without_guessed_cause(get(ch, "noise", nothing), get(ch, "floor", nothing))))
     end
     um_per_px = img_is_calibrated(img) ? img_physical_sizes(img)[1][3] : nothing
     drift = Dict{String,Any}[]

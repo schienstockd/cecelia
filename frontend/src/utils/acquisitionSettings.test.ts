@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acquisitionRows, type AcquisitionSettings } from './acquisitionSettings'
+import { acquisitionNotice, acquisitionRows, framesShortOf, microscopeName, type AcquisitionSettings } from './acquisitionSettings'
 
 // Shapes copied from `oir_meta.parse_settings` on test-data/acquisition/oir_*_imageProperties.xml.
 const FV4000: AcquisitionSettings = {
@@ -54,5 +54,39 @@ describe('acquisitionRows', () => {
   it('a multi-phase file says only the first phase is shown', () => {
     expect(row(acquisitionRows({ ...FV4000, phaseCount: 2 }), 'Phases')).toBe('2 · first shown')
     expect(row(acquisitionRows(FV4000), 'Phases')).toBeUndefined()
+  })
+})
+
+describe('acquisitionNotice — the section never vanishes silently', () => {
+  const url = (ext: string) => `issue:${ext}`
+  const acq = { system: 'FVMPE-RS', softwareVersion: '2.6.1.243' }
+
+  it('says nothing more under a diagram', () => {
+    expect(acquisitionNotice(acq, null, true, url)).toBeNull()
+  })
+  it('says why there is no diagram for settings that are not two-photon', () => {
+    expect(acquisitionNotice(acq, null, false, url)?.text).toBe('Light-path diagram: two-photon only so far')
+  })
+  it('asks for the microscope when the file type has no reader', () => {
+    expect(acquisitionNotice(null, { reason: 'format', ext: '.czi' }, false, url)).toEqual({
+      text: 'Settings are not read from .czi files yet', action: { label: 'Request your microscope', url: 'issue:.czi' } })
+  })
+  it('names the other reasons, and an image never looked at', () => {
+    expect(acquisitionNotice(null, { reason: 'source' }, false, url)?.text).toBe('Source file not reachable: refresh metadata when it is')
+    expect(acquisitionNotice(null, { reason: 'other-stack' }, false, url)?.text).toMatch(/another stack/)
+    expect(acquisitionNotice(null, null, false, url)?.text).toBe('Not read yet: refresh metadata')
+  })
+})
+
+describe('microscope name and a stopped-early time-lapse', () => {
+  it('names the system with its software', () => {
+    expect(microscopeName({ system: 'FVMPE-RS', softwareVersion: '2.6.1.243' })).toBe('FVMPE-RS · software 2.6.1.243')
+    expect(microscopeName({})).toBeNull()
+  })
+  it('says how many of the planned frames were acquired', () => {
+    expect(framesShortOf({ timelapse: { count: 45, acquired: 21 } })).toBe('21 of 45 planned frames')
+    expect(framesShortOf({ timelapse: { count: 45 } })).toBeNull()
+    expect(acquisitionRows({ system: 'X', timelapse: { count: 45, acquired: 21 } }))
+      .toContainEqual({ k: 'Time-lapse', v: '21 of 45 planned frames (stopped early or cropped)' })
   })
 })

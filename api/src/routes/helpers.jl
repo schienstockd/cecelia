@@ -114,7 +114,7 @@ const _SURFACED_META_KEYS = Set([
     "TimeIncrement", "TimeIncrementUnit",
     "ori_path", "channel_names", "channel_colormaps", "funParams",
     "crop_source_uid", "crop_source_value_name", "crop_box",   # → cropSource
-    "acquisition",                                               # → acquisition
+    "acquisition", "acquisitionMissing",                         # → acquisition / acquisitionMissing
 ])
 
 # Any scalar meta key not already surfaced as a field and not internal — rendered verbatim in the
@@ -295,12 +295,16 @@ function _image_payload(img::CciaImage)
         qc              = _image_qc_payload(img),
         # What was measured that bears on Cleanup — per channel zero / clipped %, per drift run the
         # excursion — with no verdict (CLEANUP_FACTS_PLAN D1). The MCP's get_image_info reads it from
-        # here (D5); the GUI does not show it.
+        # here (D5); the GUI shows the per-depth / per-frame profile in the metadata dialog's light-path
+        # diagram (frontend/src/utils/acquisitionLightPath.ts).
         cleanupFacts    = Cecelia.img_cleanup_facts(img),
         # The source file's acquisition settings that Bio-Formats drops (laser power and Bright Z ramp,
         # scan timing, detector settings, channel→laser/detector), read at import or on Refresh
         # metadata (`_recover_acquisition_settings!`). `nothing` for formats without a reader.
         acquisition     = get(img.meta, "acquisition", nothing),
+        # Why there are none (`ACQUISITION_MISSING`: format / source / unread / other-stack), so the
+        # dialog can say so — or `nothing` when settings exist or were never looked for.
+        acquisitionMissing = haskey(img.meta, "acquisition") ? nothing : get(img.meta, "acquisitionMissing", nothing),
         # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
         # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.
         runLog          = _enriched_run_log(img),

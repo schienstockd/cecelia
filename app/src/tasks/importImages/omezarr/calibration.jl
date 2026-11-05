@@ -98,14 +98,43 @@ function update_ome_scale!(zarr_path::String, updates::Dict{String,Float64};
 end
 
 # NGFF unit names (what the frontend/ccid.json use) → OME-XML's unit abbreviations
+# (mirrored in `zarr_utils._OME_XML_UNIT`, kept equal by the cross-language golden test).
+# The spellings beyond the NGFF names are the ones analysis already accepts (`_LENGTH_UNIT_UM` /
+# `_TIME_UNIT_S`, model/image.jl): a unit analysis converts must also reach the OME-XML.
 const _OME_XML_UNIT = Dict(
-    "micrometer" => "µm", "nanometer" => "nm", "millimeter" => "mm",
-    "second" => "s", "minute" => "min",
+    "micrometer" => "µm", "micrometre" => "µm", "micron" => "µm", "microns" => "µm", "um" => "µm",
+    "nanometer" => "nm", "nanometre" => "nm", "millimeter" => "mm", "millimetre" => "mm",
+    "second" => "s", "sec" => "s", "millisecond" => "ms", "minute" => "min", "hour" => "h",
+    "µm" => "µm", "nm" => "nm", "mm" => "mm", "s" => "s", "ms" => "ms", "min" => "min", "h" => "h",
 )
 
-"""Map an NGFF unit name (e.g. `"micrometer"`) to its OME-XML abbreviation (`"µm"`), or pass the
-value through unchanged if it's not one of the known NGFF names (e.g. already an abbreviation)."""
-ome_xml_unit_name(ngff_unit::AbstractString)::String = get(_OME_XML_UNIT, ngff_unit, ngff_unit)
+# OME 2016-06 `UnitsLength` / `UnitsTime` symbols. A `<Pixels>` unit outside them makes the whole
+# document schema-invalid: `ome_types` then parses nothing (the image loses every OME-XML value,
+# not just the one) and Bio-Formats discards the OME block.
+const _OME_UNIT_SYMBOLS = Set([
+    "Ym", "Zm", "Em", "Pm", "Tm", "Gm", "Mm", "km", "hm", "dam", "m", "dm", "cm", "mm", "µm", "nm",
+    "pm", "fm", "am", "zm", "ym", "Å", "thou", "li", "in", "ft", "yd", "mi", "ua", "ly", "pc", "pt",
+    "pixel", "reference frame",
+    "Ys", "Zs", "Es", "Ps", "Ts", "Gs", "Ms", "ks", "hs", "das", "s", "ds", "cs", "ms", "µs", "ns",
+    "ps", "fs", "as", "zs", "ys", "min", "h", "d",
+])
+
+"""
+    ome_xml_unit_name(unit) -> Union{String,Nothing}
+
+The OME-XML symbol for a unit (`"micrometer"` → `"µm"`), or `nothing` when it has none — the ONE
+converter every OME-XML unit writer goes through. A writer given `nothing` leaves the value out: a
+unit outside OME's enumerations voids the whole document, and a bare value is read in OME's default
+unit. Resolved the way analysis resolves it (`_unit_key`: lowercase + strip), so the XML states the
+unit `img_physical_sizes` computes with — "NM", "MS" and "Ms" all read as nm / ms there. Only a unit
+analysis doesn't convert falls through to an exact OME symbol ("µs", "d", "Å").
+"""
+function ome_xml_unit_name(unit::AbstractString)::Union{String,Nothing}
+    u = strip(unit)
+    sym = get(_OME_XML_UNIT, lowercase(u), nothing)
+    isnothing(sym) || return sym
+    u in _OME_UNIT_SYMBOLS ? String(u) : nothing
+end
 
 """
 Patch `OME/METADATA.ome.xml`'s `<Pixels>` attributes directly (regex text edit — no XML
@@ -119,8 +148,8 @@ existing attribute is replaced, a missing one is inserted.
 """
 function update_ome_xml_pixels!(zarr_path::String, attrs::Dict{String,String})
     isempty(attrs) && return
-    xml_file = joinpath(zarr_path, "OME", "METADATA.ome.xml")
-    isfile(xml_file) || return
+    xml_file = _ome_xml_file(zarr_path)      # store root, also when given the series subdir
+    isnothing(xml_file) && return
     try
         xml = read(xml_file, String)
         m = match(r"<Pixels\b[^>]*>", xml)
@@ -188,21 +217,26 @@ function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
     time_unit isa AbstractString && (unit_updates["t"] = time_unit)
 
     # OME-XML <Pixels> attributes (napari reads the time interval only from here)
+    # A unit with no OME symbol drops its values from the XML (the NGFF half above still lands).
     xml_attrs   = Dict{String,String}()
     ome_spatial = spatial_unit isa AbstractString ? ome_xml_unit_name(spatial_unit) : nothing
+    spatial_ok  = !(spatial_unit isa AbstractString) || !isnothing(ome_spatial)
     for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
                             ("PhysicalSizeZ", "PhysicalSizeZUnit"))
         v = get(meta, key, nothing)
-        if v isa Real
+        if v isa Real && spatial_ok
             xml_attrs[key] = string(Float64(v))
             isnothing(ome_spatial) || (xml_attrs[unit_key] = ome_spatial)
         end
     end
-    tv = get(meta, "TimeIncrement", nothing)
-    if tv isa Real
+    tv       = get(meta, "TimeIncrement", nothing)
+    ome_time = time_unit isa AbstractString ? ome_xml_unit_name(time_unit) : nothing
+    if tv isa Real && (!(time_unit isa AbstractString) || !isnothing(ome_time))
         xml_attrs["TimeIncrement"] = string(Float64(tv))
-        time_unit isa AbstractString && (xml_attrs["TimeIncrementUnit"] = ome_xml_unit_name(time_unit))
+        isnothing(ome_time) || (xml_attrs["TimeIncrementUnit"] = ome_time)
     end
+    (spatial_ok && (!(time_unit isa AbstractString) || !isnothing(ome_time))) ||
+        @warn "Left a calibration value out of the OME-XML: no OME symbol for its unit" spatial_unit time_unit
 
     (isempty(axis_updates) && isempty(unit_updates)) ||
         update_ome_scale!(zarr_path, axis_updates; units = unit_updates)

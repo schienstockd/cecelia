@@ -40,9 +40,13 @@ function _export_calibration(meta::AbstractDict; z_mip::Bool = false, one_frame:
     # schema-invalid, and Bio-Formats then DISCARDS the entire OME block and falls back to counting
     # IFDs — so a 31x4x32 movie opened as 3968 timepoints, one channel, no names and no voxel size.
     # Writing "micrometer" is exactly the bug this task exists to prevent, one layer down.
-    unit = get(meta, "PhysicalSizeUnit", nothing)
-    unit = unit isa AbstractString ? ome_xml_unit_name(unit) : unit
+    # A unit with no OME symbol (`ome_xml_unit_name` → nothing) leaves its values out: written bare,
+    # OME would read them in its default unit.
+    raw_unit = get(meta, "PhysicalSizeUnit", nothing)
+    unit = raw_unit isa AbstractString && !isempty(raw_unit) ? ome_xml_unit_name(raw_unit) : nothing
+    spatial_ok = !(raw_unit isa AbstractString && !isempty(raw_unit)) || !isnothing(unit)
     for (k, ax) in (("PhysicalSizeX", "X"), ("PhysicalSizeY", "Y"), ("PhysicalSizeZ", "Z"))
+        spatial_ok || break
         (ax == "Z" && z_mip) && continue
         v = get(meta, k, nothing)
         (isnothing(v) || v == "") && continue
@@ -55,10 +59,10 @@ function _export_calibration(meta::AbstractDict; z_mip::Bool = false, one_frame:
         ti = get(meta, "TimeIncrement", nothing)
         if !(isnothing(ti) || ti == "")
             tv = tryparse_f64(ti)
-            if !isnothing(tv) && tv > 0
+            tunit = ome_xml_unit_name(string(get(meta, "TimeIncrementUnit", "s")))
+            if !isnothing(tv) && tv > 0 && !isnothing(tunit)
                 out["TimeIncrement"]     = tv
-                out["TimeIncrementUnit"] = ome_xml_unit_name(
-                    string(get(meta, "TimeIncrementUnit", "s")))
+                out["TimeIncrementUnit"] = tunit
             end
         end
     end
