@@ -62,6 +62,12 @@ class FloorStatsTest(unittest.TestCase):
         v[v < 40] = 0
         assert iu.floor_stats(_hist(v))['kind'] == 'indeterminate'
 
+    def test_every_kind_is_a_named_one(self):
+        rng = np.random.default_rng(10)
+        for h in (_hist(_photon_counted(0.2)), _hist(np.arange(1, 500)), _hist([0, 0, 0]),
+                  _hist(np.clip(rng.normal(-5, 10, 50_000).round(), 0, None).astype(int))):
+            assert iu.floor_stats(h)['kind'] in iu.FLOOR_KINDS
+
     def test_no_zeros(self):
         assert iu.floor_stats(_hist(np.arange(1, 500)))['kind'] == 'none'
 

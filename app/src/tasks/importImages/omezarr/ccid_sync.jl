@@ -20,8 +20,11 @@ const _OME_DERIVED_META_KEYS = (
     "TimeIncrement", "TimeIncrementUnit",
     # Read from the SOURCE file, not the store, but the same rule holds: a re-import from another
     # source (or one whose settings can't be read) must not keep the previous source's settings.
-    "acquisition",
+    "acquisition", "acquisitionMissing",
 )
+
+# Replaced even by a fill-only resync: what THIS read found, not a value a human set.
+const _STATUS_META_KEYS = ("acquisitionMissing",)
 
 """
 Reconcile the channel names a fresh store read produced with the ones already in `ccid.json`.
@@ -82,10 +85,12 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                     delete!(m, k)
                 end
             end
+            # settings found now: an earlier read's reason for having none no longer holds
+            haskey(zarr_meta, "acquisition") && delete!(m, "acquisitionMissing")
             for (k, v) in zarr_meta
                 if k == "channel_names"
                     overwrite && (ch_action = _merge_channel_names!(raw, v))
-                elseif overwrite || !haskey(m, k)
+                elseif overwrite || !haskey(m, k) || k in _STATUS_META_KEYS
                     m[k] = v
                 end
             end
@@ -148,14 +153,8 @@ function resync_ome_meta!(img::CciaImage)::Bool
         src = string(get(img.meta, "ori_path", ""))
         isempty(src) || _recover_ims_time_increment!(zarr_meta, src, task_run_dir(img._dir))
     end
-    # Same repair for the acquisition settings: images imported before they were read get them from
-    # the source file. Skipped when ccid already has them (the read is a scan of the source) and for a
-    # registered stack, whose `ori_path` is only the REFERENCE cycle's file. Other derived images
-    # (projection, Z-crop, resample) are caught by the count check in `_recover_acquisition_settings!`.
-    if !haskey(img.meta, "acquisition") && !haskey(img.meta, "register_reference_uid")
-        src = string(get(img.meta, "ori_path", ""))
-        isempty(src) || _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir))
-    end
+    # Same repair for the acquisition settings (`_resync_acquisition_settings!`).
+    _resync_acquisition_settings!(zarr_meta, img)
 
     merged = _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)
     has_calibration_meta(merged) && sync_zarr_calibration!(zarr_path, merged)

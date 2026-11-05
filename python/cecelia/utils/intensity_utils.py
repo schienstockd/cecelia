@@ -358,6 +358,9 @@ def _wquantile(h, lo, hi, q):
 #: one fixed step per photon, with a discriminator below the first step, so its histogram has an EMPTY
 #: run above 0 and then a peak. A background clipped at 0 (offset, or subtracted upstream) is a
 #: continuous distribution cut at 0: a spike at 0, then counts that run on from 1 with no gap.
+#: The legal `floor_stats` kinds — the one list; the TS union `ChannelFloor.kind`
+#: (frontend/src/utils/acquisitionLightPath.ts) and `ome_qc.jl` mirror it.
+FLOOR_KINDS = ('photon-counted', 'clipped', 'indeterminate', 'none')
 #: Minimum empty values between 0 and the first occupied value to call a gap.
 FLOOR_MIN_GAP = 3
 #: The first peak must stand this far above the first occupied value: a hard threshold on analog data

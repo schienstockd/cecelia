@@ -521,6 +521,37 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 save!(proj_img)
                 @test resync_ome_meta!(init_object(proj.uid, proj_img.uid))
                 @test !haskey(init_object(proj.uid, proj_img.uid).meta, "acquisition")
+                @test init_object(proj.uid, proj_img.uid).meta["acquisitionMissing"]["reason"] == "other-stack"
+
+                # A time-lapse stopped early: the file keeps the planned 181 frames, the store has 60.
+                # Same acquisition — attached, with the frames actually acquired.
+                short = add_image!(s; name = "short", meta = Dict{String,Any}("ori_path" => src))
+                sdir = joinpath(img_zero_dir(short), "img.ome.zarr")
+                make_zarr(sdir; axes = ["t", "c", "z", "y", "x"], level_scales = [[15.0, 1.0, 2.0, 0.5, 0.5]],
+                          units = Dict("x" => "micrometer", "y" => "micrometer", "z" => "micrometer"),
+                          shape = [60, 4, 31, 8, 8])
+                short.filepath["default"]            = "img.ome.zarr"
+                short.filepath[VERSIONED_ACTIVE_KEY] = "default"
+                save!(short)
+                @test resync_ome_meta!(init_object(proj.uid, short.uid))
+                sm = init_object(proj.uid, short.uid).meta
+                @test sm["acquisition"]["timelapse"]["acquired"] == 60
+                @test round(Int, sm["acquisition"]["timelapse"]["count"]) == 181
+                @test !haskey(sm, "acquisitionMissing")
+
+                # Why not, when not: a format with no reader, and a source that is gone
+                zm = Dict{String,Any}("SizeC" => 1)
+                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.czi", proj.root)
+                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".czi")
+                zm = Dict{String,Any}("SizeC" => 1)
+                @test !Cecelia._recover_acquisition_settings!(zm, joinpath(proj.root, "gone.oir"), proj.root)
+                @test zm["acquisitionMissing"]["reason"] == "source"
+                @test_throws ArgumentError Cecelia._acquisition_missing("typo", "/x.oir")
+                # a time projection (one frame of 181) is not this stack
+                zm = Dict{String,Any}("SizeC" => 4, "SizeZ" => 31, "SizeT" => 1)
+                write(src, vcat(rand(UInt8, 4096), read(oir_doc)))
+                @test !Cecelia._recover_acquisition_settings!(zm, src, proj.root)
+                @test zm["acquisitionMissing"]["reason"] == "other-stack"
 
                 # A registered stack's ori_path is only the reference cycle's file: resync must not
                 # attach that one file's settings to every channel.
@@ -530,6 +561,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 save!(reg)
                 @test resync_ome_meta!(init_object(proj.uid, img.uid))
                 @test !haskey(init_object(proj.uid, img.uid).meta, "acquisition")
+                @test init_object(proj.uid, img.uid).meta["acquisitionMissing"]["reason"] == "registered"
                 rm(proj.root; recursive = true)
             end
         else
@@ -598,6 +630,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test all(ch -> ch["range"]["max"] == ch["topValue"], chans)
             @test all(ch -> length(ch["range"]["hist"]["counts"]) == 32, chans)
             @test all(ch -> haskey(ch["noise"], "snr"), chans)
+            # kinds = intensity_utils.FLOOR_KINDS. RESULT-REVIEW: result-13384462
             @test all(ch -> ch["floor"]["kind"] in ("photon-counted", "clipped", "indeterminate", "none"), chans)
             # the facts line reads it straight back — one entry per probed channel, a number each
             facts = Cecelia.img_cleanup_facts(r1)
@@ -612,7 +645,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             Cecelia.commit_state!(r1) do raw
                 m = Dict{String,Any}(String(k) => v for (k, v) in raw["meta"])
                 m["saturation"] = Dict{String,Any}("channels" => [
-                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) ∉ ("profile", "range", "floor", "noise"))
+                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) ∉ Cecelia.SATURATION_CURRENT_KEYS)
                     for ch in m["saturation"]["channels"]])
                 raw["meta"] = m
             end

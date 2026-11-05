@@ -8,7 +8,7 @@
 
 import type { CciaImage } from '../stores/project'
 import { fmtNum, shortUnit, formatTimeIncrement } from './physicalSize'
-import type { AcquisitionSettings } from './acquisitionSettings'
+import { framesShortOf, type AcquisitionSettings } from './acquisitionSettings'
 
 /** Where a value came from — drawn as a shape AND a colour, so it reads without colour vision. */
 export type LightPathSource = 'ome' | 'file' | 'measured' | 'missing'
@@ -31,7 +31,7 @@ export interface ChannelNoise {
   bgLevel: number | null; bgMedian: number | null; bgSpread: number | null; snr: number | null
   untestable: string | null; estimator?: string
 }
-/** What a channel's exact zeros are (`intensity_utils.floor_stats`). */
+/** What a channel's exact zeros are (`intensity_utils.floor_stats`); `kind` mirrors `FLOOR_KINDS` there. */
 export interface ChannelFloor {
   kind: 'photon-counted' | 'clipped' | 'indeterminate' | 'none'
   firstValue: number | null; photonStep: number | null
@@ -171,6 +171,8 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
   if (sizeT > 1) {
     const every = img.timeIncrement ? formatTimeIncrement(img.timeIncrement, img.timeIncrementUnit) : null
     stack.push(item(join([`${sizeT} frames`, every && `every ${every}`]), img.timeIncrement ? 'ome' : 'missing'))
+    const short = framesShortOf(img.acquisition)
+    if (short) stack.push(item(`${short}: stopped early or cropped`, 'file'))
     for (const f of facts) {
       const ends = f.profile ? endsText(f.profile.byT.p99, i => `frame ${i + 1}`) : null
       if (ends) stack.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))
