@@ -14,6 +14,7 @@ from cecelia.effectiveness.maintainability_lint import (
     is_task_file,
     lint_diff,
     looks_like_uid,
+    marker_findings,
     run_maintainability_lint,
 )
 
@@ -168,3 +169,36 @@ class RunMaintainabilityLintTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# Built split so this file carries no whole marker itself (the hook would guard it, the lint flag it).
+_M = "RESULT-" "REVIEW: "
+
+
+class ReproMarkerTest(unittest.TestCase):
+    def test_marker_in_the_header_of_its_own_file_is_clean(self):
+        d = _diff("python/cecelia/tests/test_x.py", [f'"""{_M}result-0123abcd — two groups."""', "import x"], new=True)
+        self.assertEqual(_lint(d), [])
+
+    def test_marker_inside_a_shared_suite_is_flagged(self):
+        d = _diff("app/test/suite/ome_qc.jl", [f"    # kinds. {_M}result-0123abcd"], context=["x"] * 8)
+        (f,) = [f for f in _lint(d) if f.check.startswith("marker")]
+        self.assertEqual((f.check, f.line, f.detail), ("marker:placement", 9, "result-0123abcd"))
+        self.assertIn("own file", format_section([f], files_checked=1))
+
+    def test_a_slug_the_hook_cannot_parse_is_flagged(self):
+        d = _diff("python/cecelia/tests/test_y.py", [f'"""{_M}noise-partial-clip — clipped background."""'], new=True)
+        (f,) = marker_findings(parse_diff(d)[0])
+        self.assertEqual((f.check, f.detail), ("marker:slug", "noise-partial-clip"))
+
+    def test_prose_about_the_marker_is_not_a_marker(self):
+        d = _diff("python/cecelia/effectiveness/x.py", ['"""an added `RESULT-REVIEW:` line"""',
+                                                         '_M = re.compile(r"RESULT-REVIEW:\\s*(x)")'], context=["a"] * 8)
+        self.assertEqual(marker_findings(parse_diff(d)[0]), [])
+
+    def test_a_tests_only_diff_is_still_checked(self):
+        d = _diff("python/cecelia/tests/test_z.py", ["x = 1"], new=True)
+        self.assertIn("nothing flagged", format_section(_lint(d), files_checked=1))
+        with mock.patch("cecelia.effectiveness.maintainability_lint.append_event"):
+            self.assertNotIn("skipped", run_maintainability_lint(d, after_lines=lambda p: 1))
+
