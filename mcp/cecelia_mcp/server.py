@@ -244,7 +244,10 @@ def get_image_info(project_uid: str, image_uid: str) -> dict:
     and for a crop `cropSource` {uid, valueName, box} — add box x0/y0/z0/t0 to map its coordinates
     into the source (-1 = axis kept whole). `acquisition` (when the source format has a reader) holds
     the microscope settings as recorded: lasers + transmission %, Bright Z (`enabled` says whether the
-    stored ramp was applied), scanner timing, detector HV/gain/offset per channel."""
+    stored ramp was applied), scanner timing, detector HV/gain/offset per channel. `cleanupFacts` is
+    what was measured in the file at import, per channel: zero / clipped %, and where measured a
+    `profile` of per-depth (`byZ`) and per-frame (`byT`) p50, p99, zero fraction and clipped count.
+    Read both against get_acquisition_knowledge."""
     return _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
 
 
@@ -1364,6 +1367,29 @@ def get_guide(guide_id: str = "") -> dict:
         if e["id"] == guide_id:
             return {k: e[k] for k in ("id", "kind", "title", "text")}
     raise ToolError(f"no guide {guide_id!r}; known: {', '.join(e['id'] for e in entries)}")
+
+
+# What each stage of a two-photon acquisition does, which symptom points at which stage, and which
+# measured number shows it — with citations; plus one unverified feature line per scope. Hand-written,
+# committed beside this file (docs/todo/ACQUISITION_ADVISOR_PLAN.md → P3).
+_ACQUISITION_KNOWLEDGE_PATH = os.path.join(os.path.dirname(__file__), "acquisition_knowledge.json")
+
+
+@_tool
+def get_acquisition_knowledge(system: str = "") -> dict:
+    """Two-photon acquisition knowledge for reading an image's acquisition: per stage of the light path
+    (keys match get_image_info's settings and the metadata dialog's Light path: laser, power, scanner,
+    objective, sample, filters, detectors, digitisation, stack) what it does and its `symptoms` — each
+    with `explanation`, `check` (which recorded setting or measured number shows it), `alternatives`
+    (other causes, often biology) and `sources` (ids into `sources`, with DOIs). `scopes` gives each
+    microscope's name for the feature that fixes a stage (e.g. FV4000 → Bright Z), `verified: false`
+    until a facility confirms it — say so when you pass one on. `system` (get_image_info's
+    `acquisition.system`, e.g. "FV4000") keeps only that scope. Project-independent. Read-only."""
+    with open(_ACQUISITION_KNOWLEDGE_PATH, encoding="utf-8") as f:
+        knowledge = json.load(f)
+    if system:
+        knowledge["scopes"] = [s for s in knowledge["scopes"] if s["system"].lower() == system.lower()]
+    return knowledge
 
 
 @_tool

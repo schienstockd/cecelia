@@ -354,10 +354,21 @@ for the analysis?") without a new page, and both are useful without Claude.
 
 - **P3 · Knowledge files** (point 5): two-photon explanations with citations, feature-name lines
   per scope, in the repo.
+  **Built:** `mcp/cecelia_mcp/acquisition_knowledge.json` — per light-path stage, symptoms with
+  explanation, check (setting or measured number), alternatives and sources. Sources checked on
+  Crossref: Helmchen & Denk 2005, Theer 2003, Pinkard 2021, Patterson & Piston 2000, Hopt & Neher
+  2001, Waters 2009, North 2006, Pawley 2006 ch. 4. Wording is ours; the files' claims are kept to what
+  each source is known for, no numbers quoted from them. Feature lines for FV4000 and FVMPE-RS
+  (Bright Z, Auto HV), all `verified: false`.
 - **P5 · Advisor**: guidance text and any MCP additions (`server.py` + `guidance.py`) so Claude
   reads settings, per-plane numbers and the knowledge files. The echo-back is the diagram. Rules:
   "consistent with" until a cause is separated, reasoning marked as reasoning, unverified feature
   names flagged.
+  **Built:** `get_acquisition_knowledge(system)` + a briefing paragraph (`guidance.py`): read
+  `acquisition` (asked) against `cleanupFacts` (landed), "consistent with" until alternatives are out,
+  reasoning marked, sources cited by id, unverified names flagged, untestable numbers left unknown,
+  the question asked before judging sampling, the metadata dialog as the echo-back. Not yet
+  evaluated (P7).
 - **P6 · Offline pilot** (point 6): run the project chain on a crop and map task QC and result
   review findings to stages. About 15 min for 256² × 41 t on zolIMa.
 - **P7 · Evaluation** (point 8): the maintainer's bad acquisitions with diagnoses written beforehand, good

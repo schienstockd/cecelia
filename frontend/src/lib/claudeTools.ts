@@ -45,6 +45,7 @@ export const CAPABILITIES: Capability[] = [
 
   { group: 'project', label: 'Project, sets and images', tools: ['get_project_info', 'list_images', 'find_object'], kiwi: true, terminal: true },
   { group: 'project', label: 'An image’s metadata, channels and notes', tools: ['get_image_info', 'get_image_notes'], kiwi: true, terminal: true },
+  { group: 'project', label: 'Why an image looks off at acquisition', tools: ['get_acquisition_knowledge'], kiwi: true, terminal: true },
   { group: 'project', label: 'Image attributes — treatment, mouse, timepoint', tools: ['get_image_attributes'], kiwi: true, terminal: true },
   { group: 'project', label: 'Other projects on this machine', tools: ['list_projects'], kiwi: false, terminal: true },
   { group: 'project', label: 'Your LabArchives notebook, once linked', tools: ['get_labarchives_context'], kiwi: false, terminal: true },
