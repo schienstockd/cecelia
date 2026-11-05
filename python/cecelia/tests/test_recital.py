@@ -950,3 +950,68 @@ class RepeatRoundTest(unittest.TestCase):
         self.prompts.clear()
         self._round(None)
         self.assertTrue(any("FANOUT_AUDIT.md" in p for p in self.prompts))
+
+
+class RepeatProbingTest(unittest.TestCase):
+    """Result-review rounds on one change that each reproduce a new input against the same file
+    point the author at `RESULT_REVIEW.md` → *When rounds don't converge*."""
+
+    NOTE = "_Repeat probing:"
+    setUp = RepeatRoundTest.setUp
+    _git = RepeatRoundTest._git
+    _stage = RepeatRoundTest._stage
+
+    def _result_round(self, tree: str, reply: str, change: str = "b@" + "a" * 40) -> str:
+        from cecelia.effectiveness import recital
+        rounds = recital.Rounds(self.rounds, change, tree)
+        return recital._run_reviewer(
+            event_name="result_review_run", finding_event_name="result_review_finding",
+            advisory_event_name="result_review_advisory", mechanism="result", title="Result review",
+            tail_none="no result review needed", doc_path="docs/ai-assist/RESULT_REVIEW.md",
+            diff="some diff", claude_runner=lambda _p: reply, pr=None, commit=None, branch="b",
+            prompt="review", rounds=rounds)
+
+    def _repro(self, file: str, line: int) -> str:
+        return f"- **{file}:{line}** — input {line} gives the wrong label [**reproduced**]"
+
+    def _rounds(self, replies: list[str]) -> list[str]:
+        return [self._result_round(self._stage(f"x = {i}\n"), r) for i, r in enumerate(replies)]
+
+    def test_a_third_round_with_a_new_input_against_one_file_points_at_the_stop_rule(self):
+        bodies = self._rounds([self._repro("u.py", n) for n in (10, 20, 30)])
+        self.assertNotIn(self.NOTE, bodies[1])
+        self.assertIn(self.NOTE, bodies[2])
+        self.assertIn("`u.py`", bodies[2])
+        self.assertIn("When rounds don't converge", bodies[2])
+
+    def test_new_inputs_in_different_files_dont(self):
+        bodies = self._rounds([self._repro(f, 10) for f in ("u.py", "v.py", "w.py")])
+        self.assertNotIn(self.NOTE, bodies[2])
+
+    def test_the_same_finding_reported_again_doesnt_count(self):
+        # A full round after an errored one (or a reviewer repeating itself) re-reports the old input.
+        with mock.patch("cecelia.effectiveness.recital._tree_delta", return_value=None):  # full rounds
+            bodies = self._rounds([self._repro("u.py", 10)] * 3)
+        self.assertNotIn(self.NOTE, bodies[2])
+
+    def test_advisories_dont_count(self):
+        inferred = "- **u.py:{}** — might mislabel [**inferred**]"
+        bodies = self._rounds([inferred.format(n) for n in (10, 20, 30)])
+        self.assertNotIn(self.NOTE, bodies[2])
+
+    def test_a_commit_starts_the_count_again(self):
+        self._rounds([self._repro("u.py", n) for n in (10, 20)])
+        body = self._result_round(self._stage("x = 9\n"), self._repro("u.py", 30), change="b@" + "c" * 40)
+        self.assertNotIn(self.NOTE, body)
+
+    def test_backtest_sequences(self):
+        # Files with a new reproduced finding per round, from the logged rounds of five branches.
+        from cecelia.effectiveness.recital import _probe_note
+        iu, oir = "python/cecelia/utils/intensity_utils.py", "python/cecelia/utils/oir_meta.py"
+        probed_heuristic = [[iu], [iu], [], [iu], [], [iu], [iu, iu]]   # a classifier probed each round
+        fired = [i for i in range(1, len(probed_heuristic) + 1) if _probe_note(probed_heuristic[:i])]
+        self.assertEqual(fired[0], 4)                                    # the third round with a hit
+        for real in ([[], [oir], [oir], [], [], []],                     # two real bugs, then clean
+                     [["calibration.jl"], [], []],
+                     [[iu], [], ["saturation_run.py"], []]):
+            self.assertFalse(any(_probe_note(real[:i]) for i in range(1, len(real) + 1)), real)
