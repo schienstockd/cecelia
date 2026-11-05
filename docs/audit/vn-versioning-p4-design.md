@@ -3,7 +3,7 @@
 Sibling to `docs/audit/vn-versioning-touchpoints.md`. Written after P1a/P1b/P1c/P1d and P2 infra
 shipped; the pre-P1 "P4" scope was written before those primitives existed and needs revisiting.
 
-**Design decisions locked with Dominik on 2026-09-19 (see § *Locked decisions* below). This doc
+**Design decisions locked with the maintainer on 2026-09-19 (see § *Locked decisions* below). This doc
 records the design; the pilot writer (ingest) shipped. As-built — including what isn't built yet —
 is `app/CLAUDE.md` → *Reprocessing writes route through `keep_previous_version()`*.**
 

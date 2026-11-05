@@ -2,7 +2,7 @@
 
 Read, write and report zarr v3 (OME-NGFF 0.5) stores, and offer **sharding** as a write option.
 
-Status: **Phases 1-3 built and Phase 4 measured.** **Default is `nested` — NGFF 0.4 / zarr v2, nested chunk keys** (Dominik, 2026-08-14). `flat` was the default from 2026-08-07 and has been **removed entirely**, not relabelled: a flat store conforms to **no published NGFF version** (nested storage is what 0.2 introduced — ome-zarr-py `FormatV02`, "Changelog: move to nested storage" — and 0.3/0.4/0.5 inherit it), so flat keys are 0.1 storage carrying the 0.4-shaped metadata (`axes` + `coordinateTransformations`) written beside them. The two writers each labelled a different half and disagreed on disk: bioformats2raw stamped `0.1` for `--no-nested`, our own writers stamped `0.4` for the identical layout. Its measured benefit also shrank under re-measurement — ~14% on an 81 MB fixture, but **~5% (171 MB) on a real 3.5 GB movie**, with **no read speedup** (189 ms flat vs 188 ms nested). Existing flat stores still READ (the separator is self-describing); nothing needs re-importing, and derived stores of a legacy flat source now come out nested. Rationale for keeping v2 — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
+Status: **Phases 1-3 built and Phase 4 measured.** **Default is `nested` — NGFF 0.4 / zarr v2, nested chunk keys** (the maintainer, 2026-08-14). `flat` was the default from 2026-08-07 and has been **removed entirely**, not relabelled: a flat store conforms to **no published NGFF version** (nested storage is what 0.2 introduced — ome-zarr-py `FormatV02`, "Changelog: move to nested storage" — and 0.3/0.4/0.5 inherit it), so flat keys are 0.1 storage carrying the 0.4-shaped metadata (`axes` + `coordinateTransformations`) written beside them. The two writers each labelled a different half and disagreed on disk: bioformats2raw stamped `0.1` for `--no-nested`, our own writers stamped `0.4` for the identical layout. Its measured benefit also shrank under re-measurement — ~14% on an 81 MB fixture, but **~5% (171 MB) on a real 3.5 GB movie**, with **no read speedup** (189 ms flat vs 188 ms nested). Existing flat stores still READ (the separator is self-describing); nothing needs re-importing, and derived stores of a legacy flat source now come out nested. Rationale for keeping v2 — not because v3 costs disk (it does not, once our writers pin a flat chunk key) but because its only real benefit here, fewer files, needs `--shard-depth`, which we do not expose and which carries the D8 write-amplification risk. Original status: **Phase 1 (read) COMPLETE** — both languages read v2 and v3 identically, against committed real fixtures of each format; all four suites green. Phase 2 (report) next. Prerequisite #484 (bioformats2raw shuffle spelling) is merged; v3 only exists in bioformats2raw ≥ 0.12.0.
 
 ---
 
@@ -114,7 +114,7 @@ store written from the same source decode to **identical pixels**. The v2 case i
 there the order is metadata Zarr.jl parses for the eltype and then ignores, which is the entire reason
 `read_native` exists. Adding a v3 branch would double-swap.
 
-**D7 — No v2 → v3 converter. Existing stores stay v2, permanently.** (Dominik, 2026-08-06.) A
+**D7 — No v2 → v3 converter. Existing stores stay v2, permanently.** (the maintainer, 2026-08-06.) A
 converter would rewrite every byte for no analytical gain, and both formats are readable, so there is
 nothing to migrate *for*. This is a **non-goal**, not deferred work — `resync_ome_meta!` (metadata-only
 repair) is not a precedent for it. It also means `read_native`'s big-endian path
@@ -151,7 +151,7 @@ write unit is user-variable.
 > * `SegmentationWriter.block_size` (+ `overlap`) is the **compute tile** for cellpose — memory and
 >   boundary artefacts. Unrelated to the chunk.
 >
-> The 512 in `plane_chunks` is also **not a hard border** (Dominik, 2026-08-06): it dates from
+> The 512 in `plane_chunks` is also **not a hard border** (the maintainer, 2026-08-06): it dates from
 > intravital 2P acquisitions being 512×512, and current acquisitions are 1024×1024. Widening it is a
 > real option, but it is a *read-granularity* trade — a small random region read pulls 4× the bytes —
 > and it must be decided on its own merits, not as a side effect of a sharding choice. It does not
@@ -160,7 +160,7 @@ write unit is user-variable.
 Phase 4 measures the correction-task rewrite to confirm the prediction above.
 
 **D9 — Derived stores INHERIT their format/chunk/shard from the source store; the import is the only
-place it is chosen.** (Dominik, 2026-08-06.) Every writer has to handle v3, not just the import — the
+place it is chosen.** (the maintainer, 2026-08-06.) Every writer has to handle v3, not just the import — the
 correction tasks, crop, copy, the segmentation label writer, branching skeletons, rechunk. But they must
 not each grow their own format param: that would let a v2 original acquire a v3 drift-corrected variant,
 which is the same class of inconsistency `bf2raw_compression_flags` already exists to prevent ("an
@@ -182,7 +182,7 @@ stays its own decision (`LABEL_COMPRESSOR`) — format is inherited, codec is no
 axes and conflating them would undo the measured label-codec choice.
 
 **D10 — The format default lives in Settings → Storage, next to the compressor table; the import
-param pre-fills from it.** (Dominik, 2026-08-07.) The compressor is already there as a table with
+param pre-fills from it.** (the maintainer, 2026-08-07.) The compressor is already there as a table with
 measured numbers *because* the trade-off is the whole reason there is a choice, and format has exactly
 that shape. But format cannot be purely global the way the compressor is: an existing v2 image cannot
 become v3 (D7, no converter) and derived stores inherit (D9), so it is decided **per image, at import**.
@@ -332,7 +332,7 @@ imported twice (NGFF 0.4 and 0.5) and drift-corrected in both, `zstd-shuffle`, 3
 Correction time is indistinguishable. So v3 is functionally fine end to end — import, streaming
 correction, read-back.
 
-**The directory blow-up was OURS, not v3's — corrected (Dominik spotted it).** The first reading of
+**The directory blow-up was OURS, not v3's — corrected (the maintainer spotted it).** The first reading of
 this table said "unsharded v3 is strictly worse on disk". Wrong: it compared bioformats2raw's v2 import
 against *our* v3 write. bioformats2raw nests for **both** formats, so at import the difference is 3
 directories, not 20 000:

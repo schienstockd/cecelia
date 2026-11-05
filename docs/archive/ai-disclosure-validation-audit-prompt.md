@@ -7,13 +7,13 @@
 ## Why
 
 The README already discloses that Cecelia was written almost entirely by
-Claude Code under Dominik's direction, and states that scientific/visual
+Claude Code under the maintainer's direction, and states that scientific/visual
 validation was done by the human. That disclosure is good but generic —
 it asserts "validated correctness" without the specific, falsifiable detail
 that makes a claim like that credible to a skeptical reader. A concrete
 example already exists: coastal produced optimization numbers that looked
 fine but didn't confirm whether the segmentation actually captured the
-signal Dominik wanted — automated metrics alone were insufficient, and
+signal the maintainer wanted — automated metrics alone were insufficient, and
 visual inspection against real images was what caught it. That's worth
 documenting precisely, and there may be other cases like it that haven't
 been written down anywhere.
@@ -74,7 +74,7 @@ than picking one convention and presenting it as consensus.
 ## Part 2: Honest self-audit of Cecelia's own validation practices
 
 Separately from the survey, audit what actually happened during
-development — this needs to come from Dominik's memory and the repo
+development — this needs to come from the maintainer's memory and the repo
 history, not be inferred or invented.
 
 1. **Catalog every place validation happened, at the level of specificity
@@ -84,7 +84,7 @@ history, not be inferred or invented.
    FlowUtils, is one concrete instance to start from), which were
    validated by eyeballing real images/output because a numeric metric
    alone wasn't sufficient (coastal is the one instance we have — ask
-   Dominik directly whether there are others: segmentation quality checks,
+   the maintainer directly whether there are others: segmentation quality checks,
    tracking sanity checks, gating population plausibility checks, anything
    in the napari-bridge/viewer work), and which — if any — haven't been
    validated against real data at all yet and should be flagged as such
@@ -107,7 +107,7 @@ history, not be inferred or invented.
 ## Part 2.5: Goalposts going forward — this was made up as we went
 
 Be direct about this in the writeup rather than glossing over it:
-validation up to now was ad hoc — Dominik used judgment case by case,
+validation up to now was ad hoc — the maintainer used judgment case by case,
 without a stated rule for when a fixture/golden-value test is sufficient
 versus when real-data visual inspection is required. That's not a failure
 to hide, but it means there's currently no standing convention a future
@@ -142,7 +142,7 @@ process document floating elsewhere):
   generally enough to apply to future subsystems, not just as a rule
   about coastal specifically.
 - State plainly what satisfies the bar when it's triggered: real-data
-  visual inspection by Dominik (or whoever has the domain expertise),
+  visual inspection by the maintainer (or whoever has the domain expertise),
   documented as such — doesn't need to be elaborate, but should exist
   somewhere durable (a test comment, a doc note, a PR description) rather
   than living only in memory.
@@ -156,7 +156,7 @@ process document floating elsewhere):
 ## Part 3: Write it up
 
 Once Part 1 and Part 2 are both done, propose (don't just write
-unilaterally — this is Dominik's disclosure to make, in his own words
+unilaterally — this is the maintainer's disclosure to make, in their own words
 where it matters) concrete updates:
 
 - A strengthened "human role" / validation section in `README.md`,
@@ -166,7 +166,7 @@ where it matters) concrete updates:
   plainly.
 - A new validation-convention paragraph added to `CLAUDE.md` per Part 2.5B
   — the trigger condition and the bar, stated once, durably, so future
-  work (Dominik's or an AI agent's) has a rule to follow instead of
+  work (the maintainer's or an AI agent's) has a rule to follow instead of
   re-deriving judgment calls each time.
 - Any retrospective clean-up items from Part 2.5A filed in `docs/TODO.md`
   per its existing convention.

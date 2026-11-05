@@ -268,7 +268,7 @@ The brief asked for "tissue type, imaging modality, channels used, training data
 checksum, download URL". All present, with three changes:
 
 - **`channels used` is a name, not an index.** `trainChannels: [2]` in the manifest is an index into
-  *his* image; it means nothing in another lab's file. `channel: "mem-TOM"` is the transferable half,
+  *the training* image; it means nothing in another lab's file. `channel: "mem-TOM"` is the transferable half,
   and it is already what the picker labels with.
 - **Scale ranges added**, per the finding — the fields that actually predict transfer.
 - **`notSuitedTo` added.** Every model in this vault will be trained on one lab's data, and the useful
@@ -276,7 +276,7 @@ checksum, download URL". All present, with three changes:
 
 ## Does a recipient have to reproduce our parameters, or is there leeway?
 
-Dominik, 2026-08-21: *"we have not shown that models can transfer to other data. this is more of a
+The maintainer, 2026-08-21: *"we have not shown that models can transfer to other data. this is more of a
 test. and it needs testing whether they would have to reproduce the exact parameters that we used or
 whether there is some leeway."*
 
@@ -324,7 +324,7 @@ Two consequences, both cheap:
 
 ### Would you train in physical units instead?
 
-Dominik, 2026-08-21: *"would you somehow train on physical size and actual timescale"*. Yes — but the
+The maintainer, 2026-08-21: *"would you somehow train on physical size and actual timescale"*. Yes — but the
 useful version is not feeding the numbers to the network, and one thing has to be corrected first.
 
 **Coastal already throws the absolute scale away.** Every metric plane goes through
@@ -379,7 +379,7 @@ pieces:
   reported it; that shifts every channel after the mag block and zero-fills the tail. Both now raise,
   naming `maxFrameInterval` — the shortest span and the smallest gap between two spans, whichever is
   smaller. A training movie that trips either is skipped with a warning rather than clamped onto its
-  closest frames (Dominik, 2026-08-24).
+  closest frames (the maintainer, 2026-08-24).
 - **Spatial — a choice between two known approaches.** Either resample XY to a canonical µm/px
   (exactly what cellpose 1–3 did with diameter → 30 px, and what v4 gave up), or train across scales
   by resampling as augmentation and let the net absorb it. The first is predictable and costs a
@@ -465,7 +465,7 @@ the UI renders, so building the UI first fixes the schema by accident.
 
 ## Reservations
 
-1. **Nobody has shown that a coastal model transfers to other data at all** (Dominik, 2026-08-21:
+1. **Nobody has shown that a coastal model transfers to other data at all** (the maintainer, 2026-08-21:
    *"this is more of a test"*). Every model here was trained on the movie it was then used on. So the
    vault is an experiment before it is a feature, and P0.5 is the experiment. Until it runs, the honest
    first entry is a *reference* — this is what a converged model looks like, here is what it was

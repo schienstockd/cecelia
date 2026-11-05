@@ -25,9 +25,9 @@ extract the shared spine first, then each family is a thin instance.
 - `CELL_CARDS_PLAN.md` — Phase 1 shipped 2026-09-08 (`feat/cell-cards-phase1`), Phase 2 pending.
 - `MOTIF_DISCOVERY_PLAN.md` — P2 slice 4 named a `motifCards` InteractiveView but deferred code
   until the extraction question was answered.
-- 2026-09-19 chat: Dominik pushed back on shipping motifCards standalone — "would we then not
+- 2026-09-19 chat: the maintainer pushed back on shipping motifCards standalone — "would we then not
   also need an HMM card. and then it requires basically a common basic component for all three."
-  He confirmed HMM cards is a real want (Fig 4c reference:
+  They confirmed HMM cards is a real want (Fig 4c reference:
   https://www.nature.com/articles/s41467-025-57193-y#MOESM1).
 
 ## Invariants
@@ -53,7 +53,7 @@ extract the shared spine first, then each family is a thin instance.
 | Stats footer   | per-pop median of 10 `live.track.*` measures | per-class median of the 3 motif features + `motif.distance` | per-state median of the 3 HMM features + `live.cell.speed`     |
 | Suffix param   | clust suffix                               | motif suffix (`{props}.motiffeatures.json` key) | the HMM column name (there IS no per-run suffix on HMM)        |
 
-## Locked decisions (draft — Dominik to react)
+## Locked decisions (draft — the maintainer to react)
 
 Numbered so code/other docs can cite them.
 
@@ -77,7 +77,7 @@ Numbered so code/other docs can cite them.
    in that state.** Ties broken by run length (prefer longer runs). Rationale: matches Fig 4c
    — the cards there each show a track SEGMENT that is dominantly one state, not a state's
    longest run globally (which could sit inside an atypical track). Alternative candidate
-   ("longest state-run across the pool") deferred; if Dominik prefers it, one line changes.
+   ("longest state-run across the pool") deferred; if the maintainer prefers it, one line changes.
 4. **`motifCards` frame range = `(t_start, t_start + windowSize - 1)` of the medoid instance.**
    Motif window is a fixed 8 frames by default (`MotifDiscoveryParams.windowSize`). No context
    padding beyond the window unless a card-level `padFrames` param opens up later. Trace

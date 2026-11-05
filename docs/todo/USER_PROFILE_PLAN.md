@@ -186,7 +186,7 @@ in the same pass — no code shims, direct rename (per the *no backwards-compat 
 
 **Not renamed in this phase:**
 - **`[ai].profile` in `custom.toml` stays put.** A rename to `[profile].active` would need a
-  read-fallback and Dominik's dev environment has multiple `cecelia-*` worktrees pointing at
+  read-fallback and the maintainer's dev environment has multiple `cecelia-*` worktrees pointing at
   the same `custom.toml` — an older worktree reading a config written by a newer one would
   lose the active profile. Cosmetic-only; defer.
 - **`<config_dir>/user-profiles/` on-disk directory stays put** (Decision 7 — `profiles/` is

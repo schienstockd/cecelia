@@ -23,7 +23,7 @@
 Repo: `schienstockd/cecelia`, `frontend/src/`. Brick-based volumetric viewer over WebGPU.
 
 Two things came up while investigating the "movie playback flicks through blocks" issue
-(intravital image, Dominik, 2026-09-10; see PR #893) and a follow-up hardware question
+(intravital image, the maintainer, 2026-09-10; see PR #893) and a follow-up hardware question
 (workstation now has an RTX 5000, 32GB VRAM):
 
 1. **Atlas texture capacity** — bricks are packed into a single `texture_3d<u32>` atlas

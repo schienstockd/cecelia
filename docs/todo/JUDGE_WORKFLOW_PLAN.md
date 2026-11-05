@@ -1,10 +1,10 @@
 # Weekly judge — draining the backlog, and bugs as GitHub issues
 
-**Status:** decisions locked (2026-10-07, Dominik); a concerns review folded in (2026-10-09: D14, D15
+**Status:** decisions locked (2026-10-07, the maintainer); a concerns review folded in (2026-10-09: D14, D15
 and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2–P4 built and on: the
 2026-10-09 pass ran in the issue layout, which is now the default (`--no-issues` / `JUDGE_ISSUES=0`
 for the old record PR). P5 audited 2026-10-09; its fixes are in (see P5). Rule proposals are answered
-in `judge-review` after the bugs (Dominik, 2026-10-09: "I will probably forget otherwise"); the
+in `judge-review` after the bugs (the maintainer, 2026-10-09: "I will probably forget otherwise"); the
 rules-only PR only carries `EFFECTIVENESS.md`.
 **Part 4 (pooling by root cause, D16–D18, P6) proposed 2026-10-11, not built. Part 5 (fix bundles in
 `judge-review`, D19, P7) built 2026-10-11.**
@@ -148,7 +148,7 @@ change a bug, answer it in `judge-review` (D11).
 
 ### D8. Identity: the owner's own `gh`
 
-The pass runs from a local systemd timer with Dominik's `gh` auth, so issues are authored by
+The pass runs from a local systemd timer with the maintainer's `gh` auth, so issues are authored by
 `schienstockd`.
 
 A bot or GitHub App identity is **rejected**. It needs a stored, rotated credential and buys nothing
@@ -318,7 +318,7 @@ the line instead of the whole function, and a moved line isn't followed.
 
 ## Part 5 — fix bundles in `judge-review` (built 2026-10-11)
 
-**The ask (Dominik, 2026-10-11):** working the list one bug per session is tedious, and some bugs
+**The ask (the maintainer, 2026-10-11):** working the list one bug per session is tedious, and some bugs
 touch sites close enough that one agent could fix them together. Part 4 joins rows that are *one*
 bug. This joins *different* bugs that one session should work together.
 
@@ -386,7 +386,7 @@ allowlist, so tests use a fake.
 - lock: every create is followed by a lock;
 - the allowlist: a `repo delete` or `pr merge` through the runner raises.
 
-**Checkpoint:** a `--dry-run` that prints what it would file, against the real store. Dominik reads it
+**Checkpoint:** a `--dry-run` that prints what it would file, against the real store. The maintainer reads it
 before the first real filing.
 
 ### P3 — `judge-review` on issues (Part 3)
@@ -398,7 +398,7 @@ issue (ignored).
 
 `WEEKLY_JUDGE.md` is rewritten at this phase.
 
-### P5 — audit the whole loop (Dominik, 2026-10-09)
+### P5 — audit the whole loop (the maintainer, 2026-10-09)
 
 Once P1–P4 are in: one audit of the pass end to end, against real records and a real pass. It covers
 sweep, verify, parking, the issue mirror, `judge-review` and the status issue. It looks for what the
@@ -427,7 +427,7 @@ D16–D18. **Tests:**
 - `enclosing` names `;(window as X).foo = () => {` as `foo`.
 
 **Checkpoint:** the backfill on the 2026-10-09 open list pools the five sets above and leaves B47 and
-B50 on their own (24 rows → about 17). Dominik reads the merges before the first pass that closes
+B50 on their own (24 rows → about 17). The maintainer reads the merges before the first pass that closes
 issues.
 
 ### P7 — fix bundles (Part 5, D19)
@@ -466,7 +466,7 @@ whole bundle. Tests: `BundleTest` in `test_judge_review.py` covers:
   the code, and it costs a call. Verify's groups already put each observed pair in front of one agent
   with the code. Revisit if duplicates turn up that share neither branch nor file.
 
-## Answered (Dominik, 2026-10-07)
+## Answered (the maintainer, 2026-10-07)
 
 1. **Sweep budget (D1):** $4 a pass.
 2. **Parking `guard` bugs (D4):** yes, off the list with no issue, re-checked when their file changes.

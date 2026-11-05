@@ -67,7 +67,7 @@ Three things follow from this that Sonnet's earlier read (2026-08-27) didn't hav
    renderer is picked once per image.
 
 4. **The user dropdown is a FLOOR, not a pin. SSE reloads finer on zoom-in.** Reversal of the
-   8b780fd `setLevelOverride` pin. Dominik screenshot 2026-08-29 (SispLk zoomed IN, still L5,
+   8b780fd `setLevelOverride` pin. The maintainer screenshot 2026-08-29 (SispLk zoomed IN, still L5,
    one L5 voxel covering ~30 device px): the pin blocks the exact reason the pyramid exists. New
    rule:
    - "Auto" (dropdown = -1) → floor = `n-1` (coarsest); SSE freely picks finer as viewport shrinks.
@@ -105,7 +105,7 @@ grid cell still EMPTY with the same brick position at the previous displayT (LRU
 freshly-landed boundT bricks and produced the constant-refresh loop from screenshot #49). Under
 playback the readiness probe returns true so scrub never stalls. Hold-on-cold path retired in B8.
 
-**B1 — SKIPPED** by Dominik 2026-08-29. Bench6 blobs (fXgbTl, Dml3RG, f8gzA2) enough evidence.
+**B1 — SKIPPED** by the maintainer 2026-08-29. Bench6 blobs (fXgbTl, Dml3RG, f8gzA2) enough evidence.
 
 **B2 ✅ shipped 2026-08-29** — `shouldUseBricks(meta)` + tests. Cache-budget shape:
 ```ts
@@ -143,7 +143,7 @@ the same `setOverlayPoints`/`setOverlaySegments`/`setLabelStyle` interface as fl
 a `u32` brick alongside every intensity brick and writes into a 3D `r32uint` atlas texture with
 identical slot geometry, silent fallback to intensity-only on miss. Full side-by-side visual sweep
 (open the same image in two popups, one `?bricks=0`, one `?bricks=1`, sub-pixel position match on
-zolIMa and fXgbTl) still owed and needs Dominik's eyes.
+zolIMa and fXgbTl) still owed and needs the maintainer's eyes.
 
 **B7 — STRUCK.** Not a real task after B2+B3+the toggle: auto-select routes small movies to flat
 (fXgbTl) and everything else to brick, and the Bricks Auto/Brick/Flat toggle lets the user override
@@ -158,7 +158,7 @@ branch stays load-bearing.
 `prevDisplayT >= 0` sanity check (dropping it would build a `brickKey({t:-1, …})` on the initial
 frame). `setFrankensteinEnabled` removed from the interface; `?brickFrank` URL knob and the chip's
 `frank on/off` readout gone. `anyBricksResident` (only referenced by the hold-on-cold branches) also
-removed. Frankenstein confirmed stable across daily use (Dominik, 2026-08-31: "frank works fine.
+removed. Frankenstein confirmed stable across daily use (the maintainer, 2026-08-31: "frank works fine.
 hold on cold is out"). Retired PRs: this branch.
 
 **B9 ✅ shipped 2026-08-29** — Bricks Auto/Brick/Flat toggle in the VIEW panel + reactive
@@ -173,7 +173,7 @@ slots miss on `show`/`hasTimepoint`, and `uploadFrame`'s existing `dropSlot(t)` 
 lazily as t's are revisited (no upfront 200 ms `dropAll`). ViewerWindow's `zPump` aborts
 in-flight slab fetches before firing `setZPlane` — otherwise old-plane bytes could land in a
 slot stamped fresh. `useTiles` and volume mode fall through to full reallocate (different
-geometry). Together closes the 1-2 s plane-wheel freeze Dominik hit on Dml3RG 2D.
+geometry). Together closes the 1-2 s plane-wheel freeze the maintainer hit on Dml3RG 2D.
 
 ## Perf ledger (B5, bench7 2026-08-31)
 

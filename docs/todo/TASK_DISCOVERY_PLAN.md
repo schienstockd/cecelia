@@ -44,7 +44,7 @@ not photon-limited. Nothing told the agents this, and nothing would tell a user 
    ("needs photon-sparse signal", "blurs cell edges"). It never names a channel, a percentile or a
    threshold for some data. This is the no-breadcrumbs rule: the reader still reasons. Each line must
    be traceable to the task's code, its docs or a plan's measurement. The PR cites the source for each
-   one, and Dominik redlines the copy.
+   one, and the maintainer redlines the copy.
 3. **The copy rules are the existing ones** ([`docs/ui/COPY.md`](../ui/COPY.md), `docs/UI.md`): brief,
    one line, the problem rather than an essay.
 4. **The recommender says why, both ways.** The photon-limited score drives denoise and smooth:
@@ -86,7 +86,7 @@ not photon-limited. Nothing told the agents this, and nothing would tell a user 
 - Add `purpose`, `useWhen` and `notWhen` to every visible task spec (`hidden` ones may skip).
 - Read the fields in the Julia spec index. Add a ratchet test that every visible spec has a
   `purpose` and that every line fits the length limit.
-- The PR lists every line with its source, for Dominik to redline.
+- The PR lists every line with its source, for the maintainer to redline.
 
 ### P2 — surfaces
 - MCP: `get_module_params` carries the fields, and `get_task_catalogue` is added. Update server.py and
@@ -107,7 +107,7 @@ on their first recommend (the import's probe, persisted fill-only). Rule summary
 ### P4 — segmentation findings
 - Add `seg.*` codes to `qc/text.jl`. They are emitted by the segment/measure tasks from values those
   tasks already compute, and appear in `get_qc_metrics`, the task log and the image's QC dot.
-- **Checkpoint:** Dominik looks at the findings on the M2 crops before the thresholds count as
+- **Checkpoint:** the maintainer looks at the findings on the M2 crops before the thresholds count as
   calibrated.
 - *Built (2026-10-06), checkpoint open:* `seg.fragmented`, `seg.merged`, `seg.counts_unstable` (info),
   banked by `segment.cellpose` / `segment.coastal` through `bank_segment_qc!` from object sizes +

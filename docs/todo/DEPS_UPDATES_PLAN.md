@@ -39,7 +39,7 @@ someone remembers. Four dependency surfaces exist:
    `skan <0.14`), the `coastal` git `rev`, or Julia `[compat]`. These are deliberate edits.
 8. **Majors come in; no blanket caps.** Most `pixi.toml` specs are bare floors, so the refresh
    brings in majors (the first dry run: pandas 3, mcp 2, trimesh 5, websockets 17, anndata 0.13).
-   Dominik: *"I'm fine to bring in majors. we just need to review those carefully and the failure
+   The maintainer: *"I'm fine to bring in majors. we just need to review those carefully and the failure
    modes in ci. i dont want to get stuck in old versions."* A cap is a temporary hold only, and it
    needs a matching `docs/TODO.md` item (`docs/DEV.md` → *Dependency updates* → *When CI goes red*).
 9. **The PR body leads with what to review.** Pixi: explicit-dep majors, downgrades and 0.x minor
@@ -54,7 +54,7 @@ someone remembers. Four dependency surfaces exist:
 
 - **Repo setting.** *Settings → Actions → General → "Allow GitHub Actions to create and approve pull
   requests"* is currently **off** (`can_approve_pull_request_reviews: false`). The workflow can't
-  open its PR until this is on. This is Dominik's call.
+  open its PR until this is on. This is the maintainer's call.
 - **Dependabot PRs get a read-only token,** so `julia-actions/cache` can't prune old depot caches on
   those runs. The failure is non-fatal: `handle_caches.jl` logs it and the job continues. Caches pile
   up on the PR ref until LRU eviction. Monthly grouping keeps this to a handful.
@@ -87,5 +87,5 @@ someone remembers. Four dependency surfaces exist:
   `update-deps` PR before cutting a release, never as part of it, because the lock is what the
   release installs. `docs/SHIPPING.md` is unchanged, since its update table covers user-side update
   paths, not repo maintenance.
-- **P4 — After merge (Dominik).** Flip the repo setting, run the workflow once with
+- **P4 — After merge (the maintainer).** Flip the repo setting, run the workflow once with
   `workflow_dispatch`, and approve CI on the PR it opens.

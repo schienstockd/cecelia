@@ -147,7 +147,7 @@ the number of atlases it did — not a knob.
   static bindings and its `switch(atlasIndex)` arm per Decision 3. Report per-N:
   `wgslCompiles`, `pipelineCreates`, `sampleOk` (draw one fragment that reads from atlas 0
   and atlas N-1 through the switch).
-- Re-run on Brave 151 / Dawn Vulkan (Dominik's device) AND on any workstation before
+- Re-run on Brave 151 / Dawn Vulkan (the maintainer's device) AND on any workstation before
   merging S1. If any N fails, drop back to `if/else if` and rerun; if that fails, inline
   N shaders with no branching. Do NOT ship S1 against unverified shader shape.
 - **Ship criterion:** all four variants compile and sample correctly in the diagnostic on
@@ -168,7 +168,7 @@ the number of atlases it did — not a knob.
   truth.
 - **Ship criterion:** fXgbTl at a 4 GB budget renders identical to today (N=1 shader
   identical to current). fXgbTl at a 12 GB budget renders correctly through N=3 (visual
-  smoke by Dominik; the "walking Z and comparing to N=1 at the same Z" test from parent
+  smoke by the maintainer; the "walking Z and comparing to N=1 at the same Z" test from parent
   plan P3).
 
 ### S2 — Label atlas grows to N. Delete the P2 orphan-brick gate.
@@ -194,7 +194,7 @@ the number of atlases it did — not a knob.
   ship-gating. Diagnostic row still shows it.
 - `brickAtlas.test.ts` — drop the `clamps to N=1 when caller passes maxAtlases=1` test
   (the caller no longer clamps).
-- **Ship criterion:** on Dominik's laptop, the renderer at 12 GB `viewerCacheMB` now
+- **Ship criterion:** on the maintainer's laptop, the renderer at 12 GB `viewerCacheMB` now
   allocates ~3 atlases and renders correctly (measured VRAM matches, no black holes).
 
 ### S4 — Uncap the `viewerCacheMB` slider and add the resolved read-out.
@@ -241,5 +241,5 @@ This plan does NOT wait for that migration — the fixed-variant path stands on 
   WEBGPU_MULTI_ATLAS_SHADER_VARIANTS_PLAN.md — supersedes P3, ships without
   binding_array."`
 - Update `WEBGPU_UPLOAD_PATH_PLAN.md`'s U5 row with the measured VRAM the renderer can now
-  actually reach on Dominik's laptop and the workstation.
+  actually reach on the maintainer's laptop and the workstation.
 - Move this plan to the *closed* section of `docs/todo/README.md`.

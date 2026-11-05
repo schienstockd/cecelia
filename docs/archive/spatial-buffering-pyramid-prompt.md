@@ -38,7 +38,7 @@ temporal locality).
 We don't currently know how zarr's XY chunking behaves on the actual large
 datasets — find out empirically rather than assuming a chunk shape.
 
-1. Pick 2-3 real large tilescan stores (get paths from Dominik — he has
+1. Pick 2-3 real large tilescan stores (get paths from the maintainer — they have
    larger tilescans to work off already). For each, read `.zarray`/
    `.zattrs` and record: full XY dimensions, chunk shape (all axes, not
    just XY — note if chunks span full Z/C or are also split there),

@@ -5,7 +5,7 @@ main). Punch list from [`GUIDE_SYSTEM_AUDIT.md`](GUIDE_SYSTEM_AUDIT.md). Prior a
 [`GUIDE_SYSTEM_PLAN.md`](GUIDE_SYSTEM_PLAN.md) (D1–D11 still binding).
 
 Goal: seven new guides + one park + one tour touch-up, distributed across five phases so each phase
-is independently reviewable and ship-able. Draft copy inline per phase — Dominik redlines before
+is independently reviewable and ship-able. Draft copy inline per phase — the maintainer redlines before
 the PR. Tone: matches existing guides (`taskGuides.ts`, `singleTopicGuides.ts`) — one short
 sentence per step, 1–3 punchy bullets, em-dash punch, no fluff.
 

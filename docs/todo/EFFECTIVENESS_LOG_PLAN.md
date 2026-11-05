@@ -1,6 +1,6 @@
 # AI-assist effectiveness log — structured evidence that the reviewer/ratchet infra earns its keep
 
-Status: **DRAFT (2026-09-26)** — plan only, nothing built. Awaiting Dominik's pushback on schema, event taxonomy, and the public-vs-private split before any code lands.
+Status: **DRAFT (2026-09-26)** — plan only, nothing built. Awaiting the maintainer's pushback on schema, event taxonomy, and the public-vs-private split before any code lands.
 
 **Prior-art scope search:** [`docs/ai-assist/DRIFT_DETECTION_PRIOR_ART.md`](../ai-assist/DRIFT_DETECTION_PRIOR_ART.md) — why we didn't adopt drift-analyzer / Revieko / Conclave / AgentSync and what we borrowed.
 
@@ -10,21 +10,21 @@ Produce **structured evidence** — not prose highlights — that Cecelia's AI-a
 
 Two audiences, both under-served today:
 
-1. **Presentation audience.** When Dominik shows this infra externally, the only evidence available is Claude-generated highlight prose from `docs/ai-assist/*` — cherry-picked cases, no denominator, no false-positive counterweight. A skeptical reviewer can dismiss it as anecdote.
+1. **Presentation audience.** When the maintainer shows this infra externally, the only evidence available is Claude-generated highlight prose from `docs/ai-assist/*` — cherry-picked cases, no denominator, no false-positive counterweight. A skeptical reviewer can dismiss it as anecdote.
 2. **Internal tuning loop.** Ratchets and audits already get adjusted via PR-trail evidence (`feedback_measure_before_calling_churn`, the two PR-trail audits cited in [FANOUT_AUDIT.md](../ai-assist/FANOUT_AUDIT.md)). That reading is manual, slow, and doesn't compound. Structured rows do.
 
 The goal is the **same data serving both**, without the model ever reading its own scoreboard (see [Non-goals](#non-goals)).
 
 ## Origin
 
-- 2026-09-26 chat with Dominik. Prompt was "how would you use a reward system for Claude Code." Sonnet's answer distinguished RLHF (unavailable, undesirable) from harness-level scoring, and warned about Goodhart if the agent sees its own score in-session.
-- Dominik's reframe: "there is not really anything about when asked by a reviewer, hey, how well did your claude code sessions actually do. You have all this infrastructure to enforce app-wide conventions. But do these actually work?" — that's the honest gap this plan closes.
+- 2026-09-26 chat with the maintainer. Prompt was "how would you use a reward system for Claude Code." Sonnet's answer distinguished RLHF (unavailable, undesirable) from harness-level scoring, and warned about Goodhart if the agent sees its own score in-session.
+- The maintainer's reframe: "there is not really anything about when asked by a reviewer, hey, how well did your claude code sessions actually do. You have all this infrastructure to enforce app-wide conventions. But do these actually work?" — that's the honest gap this plan closes.
 - Second reframe: "it's also for when i'm presenting this. i have no evidence to show that this works other than claude summarising highlight cases from the docs."
 - Third reframe: "if the structured version going forward is clean, then we should plan this carefully. And be transparent on the github page. Hey. This is how we are driving this and this is the data." — that promoted this from an internal tool to a **public transparency artifact**, which changes schema stability requirements.
 
 ## Non-goals
 
-- **Not a reward function the agent optimizes against in-session.** The agent must never read its own scoreboard. That's the Goodhart trap Sonnet flagged — "cheapest way to score well on fewer findings is to write code the reviewer's heuristics don't recognize as fix-shaped." Log is passive, read only by Dominik between sessions.
+- **Not a reward function the agent optimizes against in-session.** The agent must never read its own scoreboard. That's the Goodhart trap Sonnet flagged — "cheapest way to score well on fewer findings is to write code the reviewer's heuristics don't recognize as fix-shaped." Log is passive, read only by the maintainer between sessions.
 - **Not RLHF/fine-tuning.** Weights are not ours.
 - **Not a bug tracker.** Findings that are real bugs live in PR history and issues; the log records the *encounter* (fired / real / fixed-or-not), not the bug itself.
 - **Not a completeness claim.** See [Ceiling](#ceiling--what-this-cannot-measure).
@@ -35,7 +35,7 @@ The goal is the **same data serving both**, without the model ever reading its o
 
 One-time systematic re-reading of a **fixed sample** of recent PRs, classifying each against the same schema the forward log will use. Purpose: give the presentation defensible numbers at N>0 today, without waiting months for the live log to compound.
 
-**Sample method** (draft — needs Dominik's call):
+**Sample method** (draft — needs the maintainer's call):
 
 - Fixed window, e.g. last quarter (2026-Q3) or last 30 merged PRs on `main`. Stated up front on the rollup page.
 - No exclusions. Every PR in the window is classified, including trivial docs-only PRs (they get `fanout_audit: skipped_docs_only` and count as a valid sample point, not a discard).
@@ -50,7 +50,7 @@ One-time systematic re-reading of a **fixed sample** of recent PRs, classifying 
 - Any ratchet hits in CLAUDE.md-scoped reviews? Same real/FP classification.
 - Any *known* misses — bug caught later by PR review comment or subsequent commit trail that the audit/ratchets should have caught? Classified as `retrospective_miss`.
 
-**Execution**: one afternoon of Claude going through PRs with a fixed template, one afternoon of Dominik sanity-checking classifications. Small, one-shot, deliberately not scaled.
+**Execution**: one afternoon of Claude going through PRs with a fixed template, one afternoon of the maintainer sanity-checking classifications. Small, one-shot, deliberately not scaled.
 
 **Why do this first**: the retrospective may reveal the schema is wrong. If most catches turn out to be ratchet-hits, not sibling-audit findings, that changes which emit sites need instrumenting first. Doing it before wiring up the forward log is cheap insurance against building the wrong logger.
 
@@ -58,7 +58,7 @@ One-time systematic re-reading of a **fixed sample** of recent PRs, classifying 
 
 `~/.cecelia-effectiveness/events.jsonl` (per-user, cross-worktree; overridable via `CECELIA_EFFECTIVENESS_LOG`). Append-only, one line per event. Rollup script (`/audit-rollup` or `pixi run audit-rollup`) reads it and emits a curated markdown to `docs/ai-assist/EFFECTIVENESS.md` for public rendering.
 
-Not heartbeated. Rollup runs **on-demand** when Dominik is about to review or present. Auto-committing weekly would (a) fill git history with noise, (b) let stale/uncurated numbers land publicly without a diff review.
+Not heartbeated. Rollup runs **on-demand** when the maintainer is about to review or present. Auto-committing weekly would (a) fill git history with noise, (b) let stale/uncurated numbers land publicly without a diff review.
 
 ## Schema
 
@@ -112,7 +112,7 @@ Adding a new event later is fine. Renaming one is painful — decide these caref
 | `convention_check_run` | Every time the convention-check reviewer subagent is spawned (see [`CONVENTION_CHECK_PLAN.md`](CONVENTION_CHECK_PLAN.md)) | `additions_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_additions" \| "tests_only" \| "no_additions_worth_checking"`, **`cited_doc_refs: list[str]`** |
 | `convention_check_finding` | Per finding the convention-check reviewer returns | `verdict: "should_reuse" \| "potential_duplicate"`, `file: str`, `line: int`, `added_symbol: str`, `canonical_symbol: str \| null`, **`cited_doc_refs: list[str]`**, `outcome: <see below>` |
 | `ratchet_hit` | When a CLAUDE.md ratchet flags something during a review or edit | `ratchet_id: str` (kebab-case matching CLAUDE.md), `file: str`, `line: int`, `outcome: <see below>` |
-| `human_override` | When Dominik overrules a finding or ratchet ("ship it anyway") | `target_event_ref: {ts, event}`, `reason: str` |
+| `human_override` | When the maintainer overrules a finding or ratchet ("ship it anyway") | `target_event_ref: {ts, event}`, `reason: str` |
 | `retrospective_miss` | Reserved for post-hoc misses: a bug found later that infra should have caught | `discovered_via: "pr_comment" \| "later_commit" \| "incident" \| "refactor"`, `original_pr: str`, `should_have_fired: str` (which ratchet or "fanout_audit"), `bug_class: str` |
 | `plan_logged` | When a plan doc is written into `docs/todo/` (currently manual, could auto-instrument) | `path: str`, `origin_session: str` |
 | `prompt_logged` | When a notable prompt or slash-command is recorded | `command: str` |
@@ -126,8 +126,8 @@ The last two are optional and lower-priority; they're listed so the schema has r
 `outcome` on findings and ratchet hits is one of:
 
 - `fixed_pre_commit` — the finding survived to the reservations recital, the fix was applied before commit. Strongest signal that the infra caught something real.
-- `shipped_with_finding` — finding was raised, Dominik chose to ship anyway. Not a false positive — a judgment call.
-- `false_positive` — finding was raised, Dominik or the implementing agent determined it was wrong. Overhead cost.
+- `shipped_with_finding` — finding was raised, the maintainer chose to ship anyway. Not a false positive — a judgment call.
+- `false_positive` — finding was raised, the maintainer or the implementing agent determined it was wrong. Overhead cost.
 - `dropped_no_action` — finding was raised but not resolved before session ended. Rare; usually indicates a workflow gap.
 
 Closed list is deliberate. An open-ended `outcome: str` field cannot aggregate.
@@ -176,13 +176,13 @@ Two candidates were considered:
 
 Rollup output (`docs/ai-assist/EFFECTIVENESS.md`) is committed either way.
 
-Recommendation: **option 1**. Keeps the repo clean of high-churn machine output; the rollup is the durable artifact. Consistent with the general "high-churn machine output doesn't belong in main branch history" principle Dominik has applied elsewhere.
+Recommendation: **option 1**. Keeps the repo clean of high-churn machine output; the rollup is the durable artifact. Consistent with the general "high-churn machine output doesn't belong in main branch history" principle the maintainer has applied elsewhere.
 
 ## Rollup mechanism
 
-`/audit-rollup` slash command or `pixi run audit-rollup` task. Reads the jsonl, produces `docs/ai-assist/EFFECTIVENESS.md`, stages it. Dominik reviews the diff, commits if the update is meaningful, discards if it isn't.
+`/audit-rollup` slash command or `pixi run audit-rollup` task. Reads the jsonl, produces `docs/ai-assist/EFFECTIVENESS.md`, stages it. The maintainer reviews the diff, commits if the update is meaningful, discards if it isn't.
 
-Not heartbeated. Not auto-committed. Rationale in the chat that led to this plan: a scheduled agent producing commits creates git churn Dominik didn't ask for, and stale numbers landing publicly without a diff review defeats the transparency goal.
+Not heartbeated. Not auto-committed. Rationale in the chat that led to this plan: a scheduled agent producing commits creates git churn the maintainer didn't ask for, and stale numbers landing publicly without a diff review defeats the transparency goal.
 
 ## Usage-weighted spot-check as a derived query
 
@@ -203,7 +203,7 @@ The output is a **heat map** of the ground-truth doc set:
 - **Hot** (cited N× per quarter) — reviewer relies on this entry heavily. Worth a 5-minute manual spot-check every few months: does the entry still describe the current canonical, or has behavior drifted since the entry was written? Cheap because you only look at a handful.
 - **Cold** (cited 0×) — two hypotheses: either the entry is genuinely unused (candidate for pruning), or the reviewer never runs against changes in that area (worth knowing — a whole domain going unchecked is a distinct failure).
 
-This is *not* a metric to optimize against — same reason as [Non-goals](#non-goals). It's a passive signal Dominik reads between sessions when deciding what to spot-check. Combined with the mechanical link-checker (file existence) and the reviewer-override `outcome=false_positive` signal (which surfaces stale-doc candidates on the hot end directly), it covers three classes of doc staleness at effectively zero incremental cost:
+This is *not* a metric to optimize against — same reason as [Non-goals](#non-goals). It's a passive signal the maintainer reads between sessions when deciding what to spot-check. Combined with the mechanical link-checker (file existence) and the reviewer-override `outcome=false_positive` signal (which surfaces stale-doc candidates on the hot end directly), it covers three classes of doc staleness at effectively zero incremental cost:
 
 | Staleness class | Detected by |
 |---|---|
@@ -244,20 +244,20 @@ State this explicitly on the public page, not buried in methodology:
 
 - **Silent misses.** Bugs that shipped and were never noticed. Unbounded, unmeasurable, permanently invisible to this log.
 - **Cross-module private-helper cloning.** An opaque-named private helper (`_catkey`, `_impl`) cloned into a different module. The convention-check reviewer explicitly excludes this class (see [`CONVENTION_CHECK_PLAN.md`](CONVENTION_CHECK_PLAN.md#not-in-scope-this-plan)) because opaque names don't respond to synonym greps; detecting them reliably would require semantic-similarity indexing. Not in the numbers.
-- **Counterfactual.** We can say "the audit flagged X, and Dominik fixed it" — we cannot say "this bug would have shipped without the audit." Dominik might have noticed anyway. Attribution to infra vs to the implementing agent's own judgment is fuzzy.
+- **Counterfactual.** We can say "the audit flagged X, and the maintainer fixed it" — we cannot say "this bug would have shipped without the audit." The maintainer might have noticed anyway. Attribution to infra vs to the implementing agent's own judgment is fuzzy.
 - **Selection bias in the retrospective.** The sample is PRs that were merged — a PR that was so bad it got closed unreviewed doesn't appear.
 - **Novelty decay.** Ratchets that were productive at N=0 may become noise at N=100 as the codebase adapts around them. The log will show FP rate rising over time; interpreting that as "ratchet no longer needed" vs "ratchet still needed but is being routed around" requires reading, not aggregating.
 
 Naming these on the page up front kills the strongest pushback lines before they're asked.
 
-## Open decisions — Dominik's call
+## Open decisions — the maintainer's call
 
 1. **Retrospective sample window**: last quarter (2026-Q3) or last 30 merged PRs? Quarter is calendar-clean; 30-PR is denominator-clean.
 2. **Storage location**: `~/.claude/…` (recommended) or `docs/audit-log/` gitignored?
 3. **Event taxonomy v1**: are the seven events above the right set? Are `plan_logged` / `prompt_logged` in scope or should we ship without them?
 4. **Emit-site instrumentation order**: sibling-audit first (highest signal, one emit point), then ratchets (many emit points, need per-ratchet hook), then optional events? Or all-at-once?
-5. **Public rendering cadence**: rollup regenerated on every review session (Dominik's call), or on a monthly Dominik-triggered pass? On-demand is safer; monthly is more predictable for external readers.
-6. **Attribution of the log itself**: does the public page name that Claude generated the rollup, or is it framed as Dominik's tool? Same class of decision as the existing "attribute Claude-authored public replies" discipline.
+5. **Public rendering cadence**: rollup regenerated on every review session (the maintainer's call), or on a monthly the maintainer-triggered pass? On-demand is safer; monthly is more predictable for external readers.
+6. **Attribution of the log itself**: does the public page name that Claude generated the rollup, or is it framed as the maintainer's tool? Same class of decision as the existing "attribute Claude-authored public replies" discipline.
 
 ## Not in scope (this plan)
 

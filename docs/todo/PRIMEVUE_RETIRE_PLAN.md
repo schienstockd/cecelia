@@ -1,6 +1,6 @@
 # Retire PrimeVue
 
-**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting Dominik's visual pass. P3 built (PrimeVue removed), stacked on P2. P4 built (icons on vendored Lucide), stacked on P3.
+**Status:** in progress (2026-10-02). P0 done (exact pins + Dependabot ignore). P1 done (own toast). P2 built (own tooltip), awaiting the maintainer's visual pass. P3 built (PrimeVue removed), stacked on P2. P4 built (icons on vendored Lucide), stacked on P3.
 
 ## Goal
 
@@ -93,7 +93,7 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
   still holds (the positioner knows the viewport, not the panel), only its rationale changed.
   Headless-Chromium smoke test passed: flip at all four edges, clamp inside the viewport, a
   full-width `.left` row falling to top, HTML path, live update, Escape, outside-hover, detached
-  target, scroll, unmount. **Needs Dominik's eyes before merging**: placement in dense panels
+  target, scroll, unmount. **Needs the maintainer's eyes before merging**: placement in dense panels
   (PopulationManager, the task panels, the ImageTable QC badge), dark mode, and the floating windows.
 - **P3, remove — built, stacked on P2.** `primevue` + `@primeuix/themes` dropped (no `@primeuix/*`
   or `@primevue/*` left in the lock), the `PrimeVue` config + Aura preset gone from `main.ts`, and
@@ -119,7 +119,7 @@ Modals and dialogs are already hand-rolled (`BaseModal.vue`). No other PrimeVue 
   glyph. Mapping choices that follow the meaning rather than the old shape: `pi-pause` → columns-2
   (it means "side by side"), `pi-ellipsis-v` → grip-vertical ("drag to place"), `pi-desktop` →
   square-terminal ("the console"), `pi-gauge` → ruler ("voxel size"), `pi-github` → folder-git-2
-  (Lucide has no brand marks), `pi-file-o` → file-x ("a file it cannot read"). **Needs Dominik's eyes**:
+  (Lucide has no brand marks), `pi-file-o` → file-x ("a file it cannot read"). **Needs the maintainer's eyes**:
   stroke weight vs neighbouring text, the busy spinner (1s turn, was 2s), baseline alignment of
   inline icons, and icon-button squares in toolbars.
 

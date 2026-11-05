@@ -233,7 +233,7 @@ export const GUIDE_MATURITY = {
   'cluster-tracks': {
     tier: 'beta',
     testedOn: IV2P,
-    checkedBy: { who: 'Dominik', when: '2026-11', data: 'intravital movies; matches the old R version' },
+    checkedBy: { who: 'Maintainer', when: '2026-11', data: 'intravital movies; matches the old R version' },
     evidence: [
       { path: 'app/test/suite/plots.jl', test: 'track-grained plots return the aggregates they name',
         failsIf: 'a track heatmap row shows a different aggregate than it names' },

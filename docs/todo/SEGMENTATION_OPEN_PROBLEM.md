@@ -118,7 +118,7 @@ Nonzero % at `t=2, z=24` per channel, via the chain framework (templates saved i
 | AF → smooth, TOM/CD169 allowed to coexist | 5.4% | 24.6% | 6.1% |
 | AF → smooth, **nuc-GFP the only AF target** | **58.5%** | 87.5% | 5.6% |
 
-Dominik's read of the images — "on the smooth only version I could clearly see dendrites in 169; on
+The maintainer's read of the images — "on the smooth only version I could clearly see dendrites in 169; on
 the AF it's all just speckles" — is reproduced by the table and by
 `~/Downloads/TMP/af_variants_fXgbTl.png`.
 

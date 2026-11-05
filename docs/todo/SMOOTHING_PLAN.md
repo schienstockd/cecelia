@@ -213,7 +213,7 @@ for `gaussian σ=1 + temporal median 3`. The structural objection is void.
 background and objects that stay separate, which is exactly the trade the net takes the wrong side of.
 
 **Superseded 2026-08-21.** `cleanupImages.cellposeCorrect` was REMOVED in the cellpose 4 migration
-(`CELLPOSE_V4_PLAN.md`) — Dominik: *"cellpose denoise is not that useful. we will scratch that.
+(`CELLPOSE_V4_PLAN.md`) — the maintainer: *"cellpose denoise is not that useful. we will scratch that.
 coastal denoise and smooth will replace that."* So the pin is dropped, this task is the cleanup path,
 and coastal's own `denoise.py` (the CPnet port) stays available in the library without cecelia calling
 it. The paragraph below is kept because the bug it describes is in DATA already on disk.

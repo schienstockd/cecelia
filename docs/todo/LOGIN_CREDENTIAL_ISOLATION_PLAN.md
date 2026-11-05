@@ -363,7 +363,7 @@ Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every pl
   `app/src/ai/claude_conversations.jl`.
 
 **Not verified / not done:**
-- A real end-to-end login through the private window (needs a person) — Dominik on the lab box.
+- A real end-to-end login through the private window (needs a person) — the maintainer on the lab box.
 - **macOS + Windows:** the shim is POSIX `sh`; macOS uses `open -na <App> --args <flag>`, untested
   (no Mac). On Windows `$BROWSER` handling is unmeasured, so no shim: the CLI opens the default
   browser as before and the link + code box is the private route.

@@ -178,7 +178,7 @@ async function main() {
   const fmt = navigator.gpu.getPreferredCanvasFormat();
   // `premultiplied`, not `opaque`. The shader writes alpha 1, so the pixels are identical — but the
   // two take different compositor paths, and on this machine (Firefox 154, Wayland, Mesa iris) the
-  // `opaque` path showed nothing at all, in this page and in the app (Dominik, 2026-08-25). This page
+  // `opaque` path showed nothing at all, in this page and in the app (the maintainer, 2026-08-25). This page
   // is the independent check: it shares no code with the app except this line.
   ctx.configure({device, format: fmt, alphaMode: 'opaque'});
 

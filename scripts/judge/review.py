@@ -23,6 +23,7 @@ Usage:
     pixi run judge-review --auto --dry-run      # the briefs it would send
     pixi run judge-review --auto [--limit 3]    # work every `fix` bug (or the first 3 sessions)
     pixi run judge-review --auto --until EPOCH  # no new session after EPOCH (the weekly pass's deadline)
+    pixi run judge-review --auto --detach       # in the background: closing the terminal doesn't stop it
 """
 from __future__ import annotations
 
@@ -41,7 +42,7 @@ import uuid
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness import git_context, read_events  # noqa: E402
+from cecelia.effectiveness import auto_run, git_context, read_events  # noqa: E402
 from cecelia.effectiveness.claude_cli import RateLimited, limit_exit, resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
 from cecelia.effectiveness.console import (  # noqa: E402
@@ -836,6 +837,12 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     return answered
 
 
+def _running() -> str:
+    """The run holding the lock, as `auto_run` saw it last."""
+    line = auto_run.status_line()
+    return line[1] if line else "see pixi run recital-console"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="record to review (default: the newest pass record)")
@@ -844,7 +851,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="--auto: print the briefs, run nothing")
     ap.add_argument("--until", type=float, default=None,
                     help="--auto: start no session after this time (epoch seconds); the running one finishes")
+    ap.add_argument("--detach", action="store_true",
+                    help="--auto: run in the background, free of this terminal; log in the cron folder, "
+                         "progress on `pixi run recital-console`")
     args = ap.parse_args(argv)
+    if args.detach and (not args.auto or args.dry_run):
+        print("judge-review: --detach is for a real --auto run (not --dry-run)", file=sys.stderr)
+        return 2
     try:
         if args.date:
             older = _record.pass_records(before=args.date)
@@ -869,10 +882,33 @@ def main(argv: list[str] | None = None) -> int:
                   "only the newest", file=sys.stderr)
             return 1
         auto_fix = _load_sibling("auto_fix")
-        try:
-            auto_fix.run(record, limit=args.limit, dry_run=args.dry_run, older=older, until=args.until)
-        except RateLimited as e:
-            return limit_exit("judge-review --auto", e)
+        if args.dry_run:
+            auto_fix.run(record, limit=args.limit, dry_run=True, older=older, until=args.until)
+            return 0
+        lock = auto_run.run_lock()   # two runs would work the same bugs
+        if lock is None:
+            print(f"judge-review --auto: another run is going ({_running()}); this one starts nothing",
+                  file=sys.stderr)
+            return 1
+        if args.detach:
+            lock.close()   # the child takes it; the moment between is a terminal's, not a timer's
+            auto_fix.detach(sys.argv[1:] if argv is None else argv, pathlib.Path(__file__).resolve())
+            return 0
+        with lock:
+            tracker = auto_run.Tracker()
+            auto_fix.unattended(tracker)
+            try:
+                auto_fix.run(record, limit=args.limit, older=older, until=args.until, tracker=tracker,
+                             out=sys.stdout)
+            except RateLimited as e:
+                tracker.finish("usage limit")
+                return limit_exit("judge-review --auto", e)
+            except KeyboardInterrupt:
+                tracker.finish("stopped with Ctrl-C")
+                raise
+            except BaseException as e:   # the console says how it ended, not just that the pid is gone
+                tracker.finish(f"crashed: {type(e).__name__}: {e}"[:200])
+                raise
         return 0
     tty = sys.stdout.isatty()
     run_queue(record, press=read_key if tty and sys.stdin.isatty() else None, use_colour=tty, fullscreen=tty,

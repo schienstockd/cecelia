@@ -1360,7 +1360,7 @@ sequences the results so a slider drag can't land an out-of-order answer.
   **Rule of thumb: if re-running with a different setting would not change it, it is a flag, not a
   severity.** Merging them loses information in a specific direction — the advice's tone swallows the
   data's. That is not hypothetical: generalising the motion advisory flattened "2D recommended" and
-  "your z axis is noise" into one `warn`, and the severe fact disappeared from the UI until Dominik
+  "your z axis is noise" into one `warn`, and the severe fact disappeared from the UI until the maintainer
   noticed the missing icon.
 - **The judgement goes in the `.ts`, not the SFC**, so thresholds and wording are unit-tested
   (`paramAdvisors.test.ts`) — the component only fetches and renders. This is the frontend testing

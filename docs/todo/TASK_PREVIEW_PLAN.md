@@ -10,7 +10,7 @@ The originating `docs/TODO.md` item is retired accordingly, and the durable half
 one, and the numbers behind it (cellpose cost scaling, the AF stats cost, the striding-stability sweep,
 the dask comparison) are expensive to re-derive and are cited from code comments. Started 2026-07-30 as
 a segmentation-only plan (`SEG_PREVIEW_PLAN.md`); widened 2026-07-31 to a shared component after
-Dominik pointed out that denoise and autofluorescence correction have the same problem.
+the maintainer pointed out that denoise and autofluorescence correction have the same problem.
 
 ## Goal
 
@@ -52,7 +52,7 @@ Previewability is a property of a task's *compute*, not of a category:
 
 1. **The real compute, on a bounded region.** No approximation — the point is to judge the params you are
    about to run, so an approximation would answer a different question.
-2. **The region is the current napari view in XY, ONE z-plane, the current timepoint** (Dominik,
+2. **The region is the current napari view in XY, ONE z-plane, the current timepoint** (the maintainer,
    2026-07-31, revised the same day once the numbers came in). The first version of this decision previewed
    the whole z-stack, on the grounds that a single-plane preview shows something the run won't reproduce.
    That is true, and it costs ~90 s (Decision 8) with no trick available to reduce it — so **3D previews are
@@ -67,7 +67,7 @@ Previewability is a property of a task's *compute*, not of a category:
    **diameter, boundaries and splitting are faithful**; what is missing is stitching, so **object counts and
    z-extents will differ from the run**. The warning should say that, not "results may vary".
 3. **The preview never touches disk. The worker returns the mask block; the viewer wraps it in a lazy
-   full-shape array** (Dominik, 2026-07-31: *"for preview specifically I would expect this to be removed
+   full-shape array** (the maintainer, 2026-07-31: *"for preview specifically I would expect this to be removed
    after preview finishes"*).
 
    This reverses the store-based version below, and it reverses it back to something like the plan's
@@ -121,7 +121,7 @@ Previewability is a property of a task's *compute*, not of a category:
    won't reproduce — the preview would lie. `_compute_norm_params` already derives whole-image percentiles
    from a streamed histogram. AF and denoise normalise too, which is why this belongs to the mechanism
    rather than to segmentation.
-6. **Runs on the GPU, not pooled** (Dominik, 2026-07-31). It uses the card like any cellpose run. It does
+6. **Runs on the GPU, not pooled** (the maintainer, 2026-07-31). It uses the card like any cellpose run. It does
    not queue in a resource pool — a preview that waits behind a full segmentation is not a preview — so it
    belongs on the un-pooled rail (`jobs.jl:27`, "No pool or chain", how data patches and export/import
    already run). Pools stay for scheduler tasks. Consequence to observe rather than pre-empt: firing a
@@ -212,7 +212,7 @@ An earlier draft opened with "extract the cellpose denoise compute into a reusab
 (`correction_utils.af_correct_image`) and segmentation (`CellposeUtils.predict_slice`), which are already
 reusable.
 
-**Dropped.** Cellpose denoise is unmaintained upstream and phased out in v4 (Dominik, 2026-07-31), so there
+**Dropped.** Cellpose denoise is unmaintained upstream and phased out in v4 (the maintainer, 2026-07-31), so there
 is no version to migrate it to; `coastal` replaces it. Extracting it would be refactoring code on its way
 out, and the preview would then be re-pointed at the replacement anyway.
 
@@ -292,7 +292,7 @@ knowing.
 
 ## Observations from live testing (2026-07-31) — all tracked, none of them dropped
 
-Testing against Dominik's running viewer produced findings that unit tests could not have, listed here
+Testing against the maintainer's running viewer produced findings that unit tests could not have, listed here
 because side notes in a conversation do not survive it:
 
 | Observation | Where it went |

@@ -94,7 +94,7 @@ sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
 from cecelia.effectiveness.log import unresolved_findings  # noqa: E402
 from cecelia.effectiveness.recital import (  # noqa: E402
-    MARKERS, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code, recital_body_path,
+    MARKERS, RESULT_NOT_RUN, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code, recital_body_path,
 )
 import importlib.util  # noqa: E402
 
@@ -438,6 +438,10 @@ def agent_recital_gate(message: str) -> str | None:
         return ("recital ran for this change, but its body is not in the message (no "
                 f"`_Recital stamp:` line). Append {where} — `pixi run recital` saves its body "
                 "there — to the message and commit again.")
+    if RESULT_NOT_RUN.search(message):
+        return ("the result review did not run (its reviewer errored, often a usage limit). This "
+                "change touches a result path, so it needs that review. Run `pixi run recital` again "
+                "once the reviewer can run, and append the new body.")
     return None
 
 
@@ -473,7 +477,7 @@ def reviewer_test_gate(message: str) -> str | None:
     listed = "\n".join(f"  - `{path}` holds the repro for `{slug}`" for slug, path in held)
     return (f"This commit changes the result review's own test:\n{listed}\n"
             "Fix the code, not the repro. If the repro expects the wrong thing, say so with "
-            "`[<slug>: false_positive: <reason>]` — that sends it to Dominik's decide queue. "
+            "`[<slug>: false_positive: <reason>]` — that sends it to the maintainer's decide queue. "
             "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
 
 

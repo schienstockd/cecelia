@@ -621,6 +621,56 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         end
     end
 
+    # ── a last timepoint the acquisition never finished ────────────────────────────────────────────
+    @testset "partial_timepoint_qc_findings — info when dropped, warn when still there" begin
+        pt(trimmed) = Dict{String,Any}("partialTimepoint" => Dict{String,Any}(
+            "t" => 19, "emptyZ" => collect(14:25), "sizeZ" => 26, "trimmed" => trimmed))
+        dropped = Cecelia.partial_timepoint_qc_findings(pt(true))
+        @test length(dropped) == 1
+        @test dropped[1]["code"] == "import.partial_timepoint_dropped"
+        @test dropped[1]["level"] == "info"
+        @test occursin("12 of 26", dropped[1]["long"])
+        kept = Cecelia.partial_timepoint_qc_findings(pt(false))
+        @test kept[1]["code"] == "import.partial_timepoint"
+        @test kept[1]["level"] == "warn"
+        @test occursin("12 of 26", kept[1]["short"])
+        @test kept[1]["detail"]["t"] == 19
+        # complete, cleared by a clean re-import (`nothing`), or never checked → nothing to say
+        @test isempty(Cecelia.partial_timepoint_qc_findings(Dict{String,Any}()))
+        @test isempty(Cecelia.partial_timepoint_qc_findings(Dict{String,Any}("partialTimepoint" => nothing)))
+    end
+
+    # ── _apply_partial_timepoint!: the trim on a copy of the real bioformats2raw store ─────────────
+    @testset "_apply_partial_timepoint! drops the last timepoint, or keeps it on request" begin
+        src = fixture_path("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+        if !have_fixture(src)
+            @test_skip "ZARRFMT fixture missing"
+        else
+            pt = Dict{String,Any}("t" => 2, "emptyZ" => [1, 2], "sizeZ" => 3)
+            for keep in (false, true)
+                mktempdir() do tmp
+                    store = joinpath(tmp, "img.ome.zarr")
+                    cp(src, store)
+                    meta = Cecelia.read_ome_metadata(joinpath(store, "0"))
+                    @test meta["SizeT"] == 3
+                    Cecelia._apply_partial_timepoint!(meta, pt, joinpath(store, "0"), store, tmp, keep)
+                    rec = meta["partialTimepoint"]
+                    @test rec["emptyZ"] == [1, 2]
+                    @test rec["trimmed"] === !keep
+                    @test meta["SizeT"] == (keep ? 3 : 2)
+                    # the store itself agrees: OME-XML SizeT and the array shape
+                    @test Cecelia.read_ome_metadata(joinpath(store, "0"))["SizeT"] == (keep ? 3 : 2)
+                    za = JSON3.read(read(joinpath(store, "0", "0", ".zarray"), String))
+                    @test za[:shape][1] == (keep ? 3 : 2)
+                end
+            end
+            # a complete last timepoint clears a previous import's record
+            meta = Dict{String,Any}("SizeT" => 3)
+            Cecelia._apply_partial_timepoint!(meta, nothing, "", "", "", false)
+            @test haskey(meta, "partialTimepoint") && isnothing(meta["partialTimepoint"])
+        end
+    end
+
     # ── img_cleanup_facts: what get_image_info shows, no verdict (CLEANUP_FACTS_PLAN D1) ────────────
     @testset "img_cleanup_facts — per channel zero/clipped, per drift run the excursion" begin
         proj = create_project!(name = "cleanup-facts-$(rand(1000:9999))")

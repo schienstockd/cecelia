@@ -424,7 +424,7 @@ class GuidanceTest(unittest.TestCase):
     def test_every_tool_is_named_in_the_guidance(self):
         # An unmentioned tool is an unused one — the assistant never offers the capability. This has
         # gone stale twice in the prompt era (create_chain, then get_analysis_boards /
-        # get_image_attributes), both times noticed only because Dominik read the prompt himself.
+        # get_image_attributes), both times noticed only because the maintainer read the prompt themselves.
         missing = sorted(t for t in self.names if t not in self.text and t not in self.UNMENTIONED)
         self.assertEqual([], missing, f"tools missing from guidance.py: {missing}")
         # …and the exemption list cannot silently grow to cover a real tool: every name on it must

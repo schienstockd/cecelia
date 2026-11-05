@@ -1218,7 +1218,7 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
   it opens (never remembered): GitHub is public and settings carry paths and project names. The URL
   stays under 7,500 chars — settings are cut at 2,000, then left out with a note.
 - **Only the maintainer promotes** (plan Decision 6). An agent may add evidence and tick `next` items,
-  and argue for a tier in its PR; the tier line itself changes on his review.
+  and argue for a tier in its PR; the tier line itself changes on the maintainer's review.
 
 ### The orientation tour — the one guide with no prerequisites
 

@@ -184,7 +184,7 @@ panel type" framing is dropped — cards fit as a registry-declared InteractiveV
   single-image shape fails typecheck.
 - Fixture: `test-data/projects/testpr/1/KDIeEm` has no clustering column yet. **Phase 1 adds a
   synthetic `clusters.movement` + `{props}.clustfeatures.json` sidecar to it** — small (few dozen
-  ints + a JSON), fits the 1 MB/file cap. fXgbTl stays on Dominik's machine as the manual browser
+  ints + a JSON), fits the 1 MB/file cap. fXgbTl stays on the maintainer's machine as the manual browser
   target (real intravital data, pool of 1); testpr becomes the headless `test-api` fixture.
 
 **Checkpoint:** TS contract compiles; drift test asserts pool-shaped medoid; Phase 1 knows what
@@ -236,7 +236,7 @@ the detail floater. `ImageStripView` still renders identically (extraction was c
 - Promote durable parts to `docs/PLOTS.md` (the view + registry entry) and `docs/UI.md` (the
   Card Table template).
 
-**Checkpoint:** browser-verified by Dominik (per the "real-data visual validation" rule — cards
+**Checkpoint:** browser-verified by the maintainer (per the "real-data visual validation" rule — cards
 are a rendering surface, so no test proves biological correctness).
 
 ## Open questions

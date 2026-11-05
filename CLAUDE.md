@@ -289,9 +289,9 @@ Tests must **not** depend on the dev projects dir — use the committed `test-da
 merge). Full conventions — branch naming, commit style, how PRs are opened, release tagging — in
 [`docs/DEV.md`](docs/DEV.md).
 
-**Agents: remind Dominik about worktree cleanup.** When `pixi run bootstrap-worktree` prints its
+**Agents: remind the maintainer about worktree cleanup.** When `pixi run bootstrap-worktree` prints its
 cleanup nudge (how many worktrees can be removed now), or a PR of yours has just merged, relay it and
-suggest `pixi run prune-worktrees` (report first, `--remove` on his go-ahead). One line, not a menu — and
+suggest `pixi run prune-worktrees` (report first, `--remove` on the maintainer's go-ahead). One line, not a menu — and
 don't run `--remove` unasked. [`docs/DEV.md`](docs/DEV.md) → *Removing worktrees*.
 
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't
@@ -342,7 +342,7 @@ blocks a message with no stamp, or one stamped for a different change.
 
 - **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
 - **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework, an untyped shape where an enum/struct exists, and comment content in the wrong home (`**wrong home**`, outcome-tagged like `**should reuse**`).
-- **Result review** catches **silent wrong results** — a change that makes a number, a cell set, a channel or a unit wrong with no error. It runs only when the diff touches a result path (`docs/ai-assist/RESULT_REVIEW.md`), in a copy of the staged tree, and reproduces what it can. A `**reproduced**` finding needs a tag: commit its repro as a test carrying `RESULT-REVIEW: <slug>` and fix the code in place, never the reviewer's test. The hook blocks a commit that changes such a test unless it tags the slug `false_positive`, which goes to Dominik. `--claim` is what it is told the change is for, marked unverified.
+- **Result review** catches **silent wrong results** — a change that makes a number, a cell set, a channel or a unit wrong with no error. It runs only when the diff touches a result path (`docs/ai-assist/RESULT_REVIEW.md`), in a copy of the staged tree, and reproduces what it can. A `**reproduced**` finding needs a tag: commit its repro as a test carrying `RESULT-REVIEW: <slug>` and fix the code in place, never the reviewer's test. The hook blocks a commit that changes such a test unless it tags the slug `false_positive`, which goes to the maintainer. `--claim` is what it is told the change is for, marked unverified.
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
 - **Maintainability lint** (mechanical) catches a task file pushed past 200 lines and incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments — `docs/MAINTAINABILITY.md`.
 - **Changelog check** (mechanical) catches a changed task default with no `CHANGELOG.md` line on the branch: a default changes results on re-run, so it belongs under *Read this first* (`docs/RELEASING.md`).

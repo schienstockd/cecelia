@@ -707,7 +707,7 @@ Not blocking the design — resolve during their PRs.
   new dep on the `/blackboard` page only. Not blocking; PR #7 concern.
 - **Landscape correlation check.** 2–3 frames from `zolIMa` / `jFWePN` — does the k-means
   tile labelling match a domain-expert eyeball at tile resolution? Not a segmentation metric;
-  just "does the heatmap agree." Dominik's time, not code time (Decision 15).
+  just "does the heatmap agree." The maintainer's time, not code time (Decision 15).
 - **Gating-plot subscription line-count in PR #4.** Resolved 2026-09-20 — split as #4b.
   Substrate for #4b is the module-page panel infrastructure the multipanel work landed on;
   design record moved to *Module-page canvas captures → PR #4b interaction*.

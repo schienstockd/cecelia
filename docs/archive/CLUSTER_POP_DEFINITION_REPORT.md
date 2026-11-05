@@ -149,11 +149,11 @@ Audited 2026-10-31 against `origin/main` @ `5af29afe` and the open `origin/feat/
   - Write checks go to a copy under an isolated `CECELIA_DEV_DIR`.
 - **Needs a live session:** the ✦ and evidence tooltip in the cluster-mode manager, the set-wide refresh across open images, the stale icon, and judging whether the example sheets look right.
 
-## Open decisions only Dominik can make
+## Open decisions only the maintainer can make
 1. **Is the ✦ write wanted at all, or only reads plus chat proposals?** *Pick:* reads now; the write waits for a ≥10-cluster dataset.
 2. **Pool names:** may Claude use cell-type words (for example "Tregs"), or only feature-derived names until the user renames? *Pick:* feature-derived only.
 3. **Adoption:** does any user edit of a ✦ pop make it the user's (so Claude loses own-only access)? *Pick:* yes. It also fixes #1856's gates.
-4. **Re-run on the same suffix with named pops present:** warn only, or block the run? *Pick:* warn, with the stale icon on the pops (Dominik's rule: repair, don't warn, so offer "re-map by profile" later).
+4. **Re-run on the same suffix with named pops present:** warn only, or block the run? *Pick:* warn, with the stale icon on the pops (the maintainer's rule: repair, don't warn, so offer "re-map by profile" later).
 5. **Server-side exclusivity for GUI ticks too?** *Pick:* yes, one owner check for both paths.
 
 ## Top 3 ways it goes wrong, and the test that catches each

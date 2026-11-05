@@ -9,7 +9,7 @@ objectively; Cellpose 4 is one *candidate*, to be earned on data, not assumed.
 The cellpose-denoise-extraction arc (see [`coastal` `DENOISE_PLAN.md`]) was motivated by lifting the
 `cellpose==3.1.1.2` pin to enable Cellpose 4 segmentation. While validating data we found the real
 problem is **segmentation quality**: the current v3 pipeline **massively over-segments**. And the
-gating **QC gate gives us a ground-truth-free way to measure it** (Dominik's idea).
+gating **QC gate gives us a ground-truth-free way to measure it** (the maintainer's idea).
 
 ### Evidence (measured 2026-07-25)
 `EaMaVq` (project `4kS67f`, spleen `M4c-CD8-GFP-CD20-Tom_002`), QC gate = gating population `qc`
@@ -24,7 +24,7 @@ gating **QC gate gives us a ground-truth-free way to measure it** (Dominik's ide
 ~87–92% of labels are rejected by the QC gate — heavy over-segmentation under v3.
 
 > **REVERSED IN PART, 2026-08-21.** cecelia now runs **cellpose 4** (`docs/todo/CELLPOSE_V4_PLAN.md`).
-> Dominik: *"we have to migrate to cellpose v4. v3 is outdated. and doesn't perform as well on static
+> The maintainer: *"we have to migrate to cellpose v4. v3 is outdated. and doesn't perform as well on static
 > images."* Nothing below is retracted — the Phase 2 numbers stand and are the most important thing
 > anyone reads before running cellpose on intravital data. What changed is the **scope of the
 > conclusion**: it was measured on intravital (`EaMaVq`, T cells, 5 frames), and that case is now
@@ -37,14 +37,14 @@ gating **QC gate gives us a ground-truth-free way to measure it** (Dominik's ide
 >   one env. The old runs' label stores are still on disk; the recipe is not reproducible.
 > * **On intravital, expect the 0.0% row.** If someone points `segment.cellpose` at a dim 3D movie
 >   they now get cpsam, which measured 65 objects / 0% pass here. `segment.coastal` is the answer for
->   that data, and this is the strongest argument for the guided workflow builder Dominik sketched
+>   that data, and this is the strongest argument for the guided workflow builder the maintainer sketched
 >   on 2026-08-21 — the tool should not let that pairing happen silently.
 
 ## OUTCOME (2026-07-25) — v4 rejected; pivot to coastal-native segmentation
 
 The phased plan below ran to a conclusion. Summary of what we found:
 
-- **Phase 1 (fix v3):** Dominik had already swept v3 params — **13.4% (T) / 7.9% (B) QC-pass is v3's
+- **Phase 1 (fix v3):** the maintainer had already swept v3 params — **13.4% (T) / 7.9% (B) QC-pass is v3's
   ceiling** on this data. A pure `min_size` filter recovers most passing cells (vol>300 keeps ~all
   qc-pass, drops ~86% of junk) but only prunes tiny fragments; it doesn't fix split/missed cells. So
   v3 is at its practical best and still over-segments.
@@ -68,7 +68,7 @@ The phased plan below ran to a conclusion. Summary of what we found:
 
 - **Phase 3 (decision):** **v4 migration DROPPED.** Cellpose's generalist/SAM direction diverges from
   intravital needs (dim 3D, moving cells). → **New north star: make `coastal` cecelia's own denoise +
-  segmentation engine, independent of cellpose** (Dominik). Denoise is already done (`coastal.denoise`);
+  segmentation engine, independent of cellpose** (the maintainer). Denoise is already done (`coastal.denoise`);
   coastal already has a **flow + temporal-embedding segmenter** (`segment.py`/`model.py`/`train.py`/
   `flow.py`) with the right inductive bias for moving-cell data. **The same QC-gate harness is the
   yardstick** for it. Tracked as task #17; supersedes the "which cellpose version" framing entirely.
@@ -125,7 +125,7 @@ The phases below are kept as the historical record of how we got here.
 ### Phase 0+1 — Measure & fix v3  `[task #15, NOW; no rc, no GPU-isolation]`
 - Formalize the reusable **QC-gate scorer** (headless: load image → `pop_df` flow `qc` → pass-yield).
   Seed: the one-off `qc_gate.jl`.
-- **Baseline** current v3 across a few images with a `qc` gate (EaMaVq done; add more Dominik names).
+- **Baseline** current v3 across a few images with a `qc` gate (EaMaVq done; add more the maintainer names).
 - **Diagnose/tune** the over-segmentation by sweeping v3 cellpose params (`diameter`,
   `flow_threshold`, `cellprob_threshold`, `min_size`) and re-scoring via the QC gate. Needs the GPU
   (cellpose re-runs) — run only when the GPU is free.

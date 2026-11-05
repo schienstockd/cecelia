@@ -18,7 +18,7 @@ it leaked into. Corrected CH2 came out 98-99% zero and segmenting it found CH3. 
 
   This landed the wrong way round first, and the failure is worth keeping. `p6t4mC` is two reporters in
   two cell types with no overlap; shipping the envelope unconditionally derived **0.0248** where the
-  total slope gives **0.113**, and Dominik's verdict on the run was "there is still overspill from CH3
+  total slope gives **0.113**, and the maintainer's verdict on the run was "there is still overspill from CH3
   into CH2, quite a lot". Measured: the residual on the CH3-brightest voxels sat at **2.54×** the
   target's level elsewhere at 0.0248 and **~0.9×** at 0.113 — while the target's OWN cells are kept at
   100% either way, because they sit where the competitor is dim and `α·competitor` is ~0 there. So the
@@ -67,10 +67,10 @@ What landed is a third step, not a retune of the second: `afChannels` per combin
 AF-ONLY reference channels. Each is smoothed in 3D at two scales (`AF_MASK_SCALES_UM`: 1.2 µm for
 granules, 0.6 µm for single-voxel specks the coarse field dilutes), and the target fades to zero over
 `[K, K+2]` robust sigmas above each field's median, whichever scale is more certain (`AF_MASK_K` = 6,
-picked by eye against 3σ/4σ — Dominik's call). References take no part in the weight and never
+picked by eye against 3σ/4σ — the maintainer's call). References take no part in the weight and never
 leak into the target, but they DO receive leaks, and those are removed before thresholding
 (`af_reference_leaks` / `af_reference_field`). That was learned the hard way: the first cut excluded
-the reference from the fit entirely, calling the CART->AF 0.095 spurious, and Dominik's first
+the reference from the fit entirely, calling the CART->AF 0.095 spurious, and the maintainer's first
 preview showed bright CART cells hollowed. The AF channel under a CART cell rises 0.32 -> 1.55 photons
 with CART brightness, right at the threshold, so cell centres were zeroed and rims kept (89% kept in
 that region; 99% once the leak is subtracted; the brightest 2% of CART voxels keep 98% movie-wide). XY-only smoothing left 14-19% on AF-bright voxels against 1-3% in 3D, which is why
@@ -93,8 +93,8 @@ remains for any estimator: AF covering a large share of the marker-bright voxels
 `afCombinations` entry): Competes, AF, or unused, and "different cell types" shown only when
 something competes. Two cuts before it were wrong and are worth not repeating. Two channel lists per
 combination let one channel compete and be AF at once. Three image-wide role lists (correct / AF /
-competing) then let one channel hold all three — Dominik's screenshot — and the single role-per-channel
-map that fixed that lost the per-target grouping he needed ("correct two channels with different
+competing) then let one channel hold all three — the maintainer's screenshot — and the single role-per-channel
+map that fixed that lost the per-target grouping they needed ("correct two channels with different
 mechanisms"). Roles per target keep both properties. A channel may be AF for one target and compete
 with another: `af_weight_stats` fits bleedthrough for every channel that competes anywhere and treats
 every AF channel as a reference, which costs nothing because a coefficient is only applied between a
@@ -264,7 +264,7 @@ positional sd of 1.4 px across four timepoints, but the T-cell *clusters* sit at
 
 ## The task has TWO jobs, and only one mechanism
 
-Stated by Dominik, 2026-08-06: what this should remove is (a) intensity present in more than one
+Stated by the maintainer, 2026-08-06: what this should remove is (a) intensity present in more than one
 channel — tissue autofluorescence — and (b) bleedthrough between channels. The dominance weight is a
 rough approximation of (a) and does nothing principled about (b).
 
@@ -312,7 +312,7 @@ property (go fix the filter set) or tissue autofluorescence (nothing to fix).
 
 ### The actual complaint: real cells get dimmed, and part of the cell is cropped off
 
-Dominik, 2026-08-06, when asked what "doesn't work well" looks like. That is a *different* failure
+The maintainer, 2026-08-06, when asked what "doesn't work well" looks like. That is a *different* failure
 from the one the numbers above were being optimised against, and it has a specific cause.
 
 **The current weight eats a real cell from its rim inwards.** Binning voxels inside real T-cell

@@ -33,7 +33,7 @@ the whole cost.
    adopt-or-relaunch by protocol, Quit-everything, the log tag, packaging on all three OSes. A second
    worker would copy about 20 files of that wiring (port, shutdown list and its test, diagnostics,
    single-instance, log filter, Settings service control, observer service list, bundle check, dev
-   launcher) for a few hundred lines of real code. Dominik's call.
+   launcher) for a few hundred lines of real code. The maintainer's call.
 2. **Movies stay on the one-off runner.** A movie runs for minutes; on the worker it would hold
    previews up, and start-up is a small share of it.
 3. **One renderer, two outputs.** The runner's frame loop becomes `render_frames(params, host)`

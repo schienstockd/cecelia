@@ -371,7 +371,7 @@ the Quit/Restart asymmetry (D3) land here — without them the thing is not cont
 > `started_at`/`finished_at` **byte-identical** to the runner's own record. That last part is the
 > whole reason the timestamps are passed through rather than re-derived.
 >
-> *In the GUI (Dominik):* a real **cellpose segmentation survived Settings → Restart** — the case the
+> *In the GUI (the maintainer):* a real **cellpose segmentation survived Settings → Restart** — the case the
 > headless run could not reach, because it is the one with a Python child and a Julia post-step
 > (`register_label_files!`, `write_qc`, `append_run_log!`) on the far side of the restart.
 >
