@@ -637,15 +637,19 @@ JUDGE_MARK = "*"
 AUTO_MARK = "^"
 
 
+#: Marks a background job: the daemon keeps it alive with no window, so it outlives the terminal
+#: that was showing it — end it with `kill <pid>` when its work is done.
+BG_MARK = "&"
+
+
 def _name_cell(row: AgentRow) -> str:
-    """The name in 12 columns, `*` right after it for a judge-review session, `^` for its `--auto`
-    fix agent (kept when cut)."""
-    if row.auto:
-        return f"{row.name[:11] + AUTO_MARK:<12}"
-    if not row.judge:
+    """The name in 12 columns, a mark right after it (kept when cut): `^` for judge-review's
+    `--auto` fix agent, `*` for a session judge-review opened, `&` for a background job."""
+    mark = AUTO_MARK if row.auto else JUDGE_MARK if row.judge else BG_MARK if row.bg else ""
+    if not mark:
         return _fit(row.name, 12)
     name = row.name if len(row.name) <= 11 else row.name[:10] + "…"
-    return f"{name + JUDGE_MARK:<12}"
+    return f"{name + mark:<12}"
 
 
 def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> str:
@@ -781,6 +785,8 @@ def agents_block(state: "DashboardState", width: int, *, use_colour: bool,
         hint += f" · {JUDGE_MARK} judge-review"
     if any(r.auto for r in state.agents or ()):
         hint += f" · {AUTO_MARK} judge-review --auto"
+    if any(r.bg for r in state.agents or ()):
+        hint += f" · {BG_MARK} background, no window"
     return [_hr("agents" + hint, width, use_colour=use_colour), *rows, ""]
 
 
