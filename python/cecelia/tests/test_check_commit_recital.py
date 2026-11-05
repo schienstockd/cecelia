@@ -759,7 +759,7 @@ class CommitMsgHookTest(unittest.TestCase):
                          [("fanout-abcd1234", "fixed_pre_commit")])
 
     def test_a_commit_changing_the_result_reviews_repro_needs_false_positive(self):
-        repro = "# RESULT-REVIEW: result-0000aaaa\ndef test_two_groups_get_their_own_flow(): ...\n"
+        repro = "# RESULT-" "REVIEW: result-0000aaaa\ndef test_two_groups_get_their_own_flow(): ...\n"
         with mock.patch.object(self.hook, "_staged_changed_files", return_value=["python/cecelia/tests/test_r.py"]), \
                 mock.patch.object(self.hook, "_head_text", return_value=repro):
             blocked = self.hook.main(["--commit-msg", self._msg_file("fix: relax the flow test\n")])

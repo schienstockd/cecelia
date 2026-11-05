@@ -63,8 +63,8 @@ function channelItems(f: CleanupFactsChannel, recordedBits: number | null | unde
   return items
 }
 
-/** Channels the import's QC flagged as clipped (`import.channel_saturated`, qc.jl: detected pile-up
- *  AND at least 1 % of signal) — the same bar as the image table's warning, not a second rule. */
+/** Channels the import's QC flagged as clipped (`import.channel_saturated`, any level: qc.jl raises it
+ *  for every detected pile-up — `warn` from 1 % of signal, `info` below). QC's rule, not a second one. */
 function qcClippedChannels(img: LightPathImage): Set<number> {
   return new Set(qcFindings(img as CciaImage)
     .filter(f => f.code === 'import.channel_saturated' && typeof f.detail?.channel === 'number')
