@@ -295,7 +295,8 @@ function _image_payload(img::CciaImage)
         qc              = _image_qc_payload(img),
         # What was measured that bears on Cleanup — per channel zero / clipped %, per drift run the
         # excursion — with no verdict (CLEANUP_FACTS_PLAN D1). The MCP's get_image_info reads it from
-        # here (D5); the GUI does not show it.
+        # here (D5); the GUI shows the per-depth / per-frame profile in the metadata dialog's light-path
+        # diagram (frontend/src/utils/acquisitionLightPath.ts).
         cleanupFacts    = Cecelia.img_cleanup_facts(img),
         # The source file's acquisition settings that Bio-Formats drops (laser power and Bright Z ramp,
         # scan timing, detector settings, channel→laser/detector), read at import or on Refresh
