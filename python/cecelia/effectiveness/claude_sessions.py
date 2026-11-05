@@ -16,7 +16,8 @@ A headless `claude -p` run (the recital's reviewers) writes a session file too �
 is no one's window, so `sdk*` entrypoints are skipped, but for the fix agent `judge-review --auto`
 runs (`from_auto_fix`): it works a worktree unattended, and the pane shows it as `auto-fix`.
 Claude Code's daemon also keeps a `spare: true` background session warm for the next background
-job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background job is shown.
+job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background job is shown,
+marked `bg` — it has no window, so closing the terminal that was showing it doesn't end it.
 
 The transcript also carries Claude Code's recap — a `system` entry with `subtype: "away_summary"`,
 written while the window sits unattended — which `latest_recap` reads — and the session's last
@@ -68,6 +69,7 @@ class Session:
     judge: bool = False                    # opened by `pixi run judge-review` — `from_judge_review()`
     recital: bool = False                  # `pixi run recital` runs under it — `running_recital()`
     auto: bool = False                     # `judge-review --auto`'s headless fix agent — `from_auto_fix()`
+    bg: bool = False                       # a background job (`kind: "bg"`): the daemon keeps it, no window
 
 
 def claude_home() -> pathlib.Path:
@@ -344,7 +346,8 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
         return dataclasses.replace(session, auto=True, asks=False)   # it never waits for the maintainer
     session = _transcript_session(pid, name, status, meta, sid, projects, context)
     return dataclasses.replace(session, judge=from_judge_review(pid, proc),
-                               recital=running_recital(pid, proc, children or {}))
+                               recital=running_recital(pid, proc, children or {}),
+                               bg=meta.get("kind") == "bg")
 
 
 def _transcript_session(pid: int, name: str, status: str, meta: dict, sid: str,
