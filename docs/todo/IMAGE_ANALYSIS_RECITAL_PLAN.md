@@ -1,7 +1,7 @@
 # Image analysis recital — review a claim before it leaves Cecelia
 
-**Status:** parked (2026-11-05). Concept only; nothing built. Next step is P0, a hand-walked claim: no build, no
-quota.
+**Status:** parked (2026-11-05). P0 done by hand the same day (results below); one rule it found shipped
+as #1958. Nothing else built. Next: P0 on a second project with a real comparison.
 
 ## Goal
 
@@ -46,12 +46,12 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
 | Dev recital | Analysis counterpart | Carries over? | Status |
 |---|---|---|---|
 | Commit = the moment work becomes durable | A result leaving: figure export, methods report, a blackboard entry marked as a finding | **Partly.** Analysis is exploratory, with many exports and no single "commit". Which exports count is open (Q1) | guess |
-| Staged diff: small, complete, exact | The record: run stamps, `funParamsByName`, gates, set membership, QC findings, saved h5ad tables | **Partly.** The record is large and has holes. 4kS67f set `XcPcu8` has no seg/track params in `funParamsByName` for any of its 7 images, only clustering. The run-log fallback (`run_log_params_for_output`, `app/src/run_log.jl:236`) doesn't recover them either: none of the 7 `runlog.json` files has a segment or tracking run | guess, with one data point |
+| Staged diff: small, complete, exact | The record: run stamps, `funParamsByName`, gates, set membership, QC findings, saved h5ad tables | **Partly.** The record is large and has holes. In 4kS67f the seg/track params live only in the flat `meta.funParams` (last run per task, not per output), so B's segmentation is recorded and T's isn't; the per-name bank and the run log both start after the July runs. The motion-dims choice was logged without naming the population | tested (P0) |
 | `--claim "<commit subject>"` | One sentence plus the images and populations it's about | **Doesn't exist yet.** There's no claim object. The biggest design gap (Q2) | guess |
 | Author's reasoning withheld | Analyst's chat, notes and Kiwi thread withheld | **Yes** | guess |
-| Fanout / sibling-call audit | **Cohort consistency:** same params, metadata, versions, gates and set membership across compared images; no cohort-QC outlier | **Yes, strongly.** Probably the most valuable reviewer | guess |
-| Convention check (canonical helpers) | **Analysis conventions:** statistical unit (animal not cell), n reported, gates not tuned on one arm, physical units, same pop definitions per arm | **Yes** | guess |
-| Result review: reproduce with a failing test | **Claim review:** recompute the claim from saved outputs under perturbations (leave one image/animal out, per-animal vs pooled, gate dry-run nudge, other summary statistic). Never re-run segmentation or tracking (Decision 1) | **Partly.** No test suite to commit a repro into. The repro is a recomputation plus numbers that need a durable home (Q3) | guess |
+| Fanout / sibling-call audit | **Cohort consistency:** same params, metadata, versions, gates and set membership across compared images; no cohort-QC outlier | **Yes, strongly.** Probably the most valuable reviewer | tested (P0): found the set-membership gap, per-image gates, a re-tracked image and mixed 2D/3D speeds |
+| Convention check (canonical helpers) | **Analysis conventions:** statistical unit (animal not cell), n reported, gates not tuned on one arm, physical units, same pop definitions per arm | **Yes** | tested (P0): the claim holds per track (p = 2e-10, n = 330) but not per mouse (p = 0.18, n = 4) |
+| Result review: reproduce with a failing test | **Claim review:** recompute the claim from saved outputs under perturbations (leave one image/animal out, per-animal vs pooled, gate dry-run nudge, other summary statistic). Never re-run segmentation or tracking (Decision 1) | **Partly.** No test suite to commit a repro into. The repro is a recomputation plus numbers that need a durable home (Q3) | tested (P0): one image (k3Tx90) reverses the claim; leave-one-out moves p across 0.05 |
 | `**reproduced**` / `**inferred**` / `**display**` | reproduced = a perturbation moved the claim; inferred = read from the record only; display = only what's drawn is off | **Yes** | guess |
 | Outcome tags, `decide` queue | Analyst tags each finding (fixed / acknowledged / false positive) | **Yes.** Closest existing piece: blackboard outcome tagging (`set_blackboard_outcome`, `mcp/cecelia_mcp/server.py:1613`) | guess |
 | Commit hook blocks | Export blocked until findings are tagged | **Probably not.** Blocking an exploratory export is hostile. A stamp on the export ("recital: 2 findings acknowledged") may be the right analogue (Q4) | guess |
@@ -85,20 +85,43 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   try is visible?
 - **Q6. Who's the author.** Human analyst and agent run go through the same recital, and the stamp
   says which. This links to the parked agent-overnight work.
+- **Q7. What "fixed" means for a claim.** Changing the analysis can be tagged fixed; rewording the
+  claim to fit the data can't (that's forking paths again). A reworded claim starts a new round.
+- **Q8. Who sees untagged findings.** The weekly judge reads one codebase; these sit in many projects.
+  More natural: the project's session briefing (`get_session_briefing`) that Kiwi and Claude Code read.
 
-## Evidence so far (2026-11-05)
+## P0 results (2026-11-05, by hand)
 
-- **Substrate.** Use 4kS67f "unimelb 3P spleen", set `XcPcu8` "B and T": 7 images, 4 mice, B and T
-  tracked and gated. No treatment arm, but mice give pseudo-arms, a free known-null control.
-  jFWePN/NRUBxU no longer exists. zolIMa holds only the MERTK arm (WT deleted on purpose) and has 1
-  tracked image.
-- **Real findings already in that set, for P0 to confirm:**
-  - fHqhyb is in the set but untracked, with blank Mouse/Location, so a set-level claim runs on 6.
-  - Seg and track params aren't recorded for any of the 7 images, neither in `funParamsByName` nor in
-    `runlog.json`. Only some leftover `tasks/cellpose_run.*.params.json` files and the task logs remain.
-- **Real import incident.** zolIMa ldYr8J's July 2026 import logged 360 `No pixel blocks` planes
-  mid-acquisition. The 5 Aug re-import healed it; only the log remembers it. That's run-time, not
-  claim-time, but it shows the record (logs) can hold the only trace of a problem.
+Claim: "T cells move faster than B cells", 4kS67f set `XcPcu8`, populations `B/qc` and `T/qc`, per
+track, `live.track.speed`. Run on a copy of the record (no image data), read through `pop_df`.
+Nothing seeded: every finding below is real.
+
+| Stage | Found |
+|---|---|
+| **S0 record** | fHqhyb is in the set with 3,990 gated cells but **no tracks** and blank Mouse/Location: a track claim silently runs on 6 images, a cell claim on 7. Seg/track params sit only in the flat `funParams` (last run per task): B's segmentation is recorded, T's isn't. The run log starts 18 July, after the 3 July segmentation |
+| **S1 consistency** | B segmentation identical on all 6 (cyto2, diameter 10). `qc` gates drawn per image (same axes and transforms, different polygons). 3w4IY5's B was re-tracked later with `forceRecompute` and different param keys, and it's the B speed outlier (median 7.0 vs 2.3–4.7). **Speeds mix 2D and 3D**: `dims = "auto"` chose per image and per population; in 5 of 6 images one population was 2D and the other 3D, and the log didn't say which. Today's detector picks differently from July's on the same data |
+| **S2 conventions** | Pooled per track the claim is overwhelming (Mann–Whitney p = 2×10⁻¹⁰, n = 330). Per image p = 0.04 (n = 6), per mouse p = 0.18 (n = 4). The unit of the test decides the claim |
+| **S3b perturbations** | k3Tx90 reverses it (T 2.5 vs B 4.7). Leave-one-image-out: per-image p goes 0.007–0.10, so it crosses 0.05 depending on which image is dropped. Leave-one-mouse-out: p 0.06–0.35, never below 0.05 |
+
+What P0 says about the concept:
+- **The cheap stages did most of the work.** S0–S2 and S3b are rules or arithmetic; none needed a model.
+  This was concern 1 in the honest take: it holds.
+- **But one finding had no rule** — the 2D/3D mix. It was found by reading logs while chasing the
+  3w4IY5 outlier, which is S4's job. It became a rule straight away (#1958, a cohort check), so the
+  ratchet (Review finding → Check rule) worked on its first instance.
+- **A record gap must not stop later stages.** S0 found gaps, and S1–S3b still found the most
+  important problems. So stages must not wait on each other: a gap skips only the checks that need
+  the missing part.
+- **Within-image comparisons need their own consistency check.** #1958 checks across images per
+  population; a B-vs-T claim also needs B and T measured the same way in each image.
+- **The claim is not wrong, it's under-specified.** "T faster than B" holds per track and fails per
+  mouse. The finding is a question for the analyst (which unit?), which argues for the Translator
+  making the unit explicit before anything runs.
+
+Other evidence:
+- jFWePN/NRUBxU no longer exists. zolIMa holds only the MERTK arm (WT deleted on purpose).
+- zolIMa ldYr8J's July 2026 import logged 360 `No pixel blocks` planes mid-acquisition; the 5 Aug
+  re-import healed it, and only the log remembers it.
 
 ## Approach
 
