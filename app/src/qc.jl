@@ -183,8 +183,8 @@ end
 const _Z_RATIO_MIN = 0.02
 const _Z_RATIO_MAX = 50
 
-# Level at which clipping raises a FINDING, as a fraction of the channel's SIGNAL voxels (those above
-# the derived background) — see `intensity_utils.saturation_stats`, which reports both denominators.
+# Level at which a clipping finding becomes `warn` (below it, detected clipping is `info`), as a
+# fraction of the channel's SIGNAL voxels (those above the derived background) — see `intensity_utils.saturation_stats`, which reports both denominators.
 #
 # **This is a smoke alarm, not a calibrated threshold, and it cannot be calibrated from the data in
 # hand.** The number was re-derived rather than guessed once: measured over all 36 channels of the nine
@@ -194,10 +194,10 @@ const _Z_RATIO_MAX = 50
 # clipping at all, on either denominator, and any level between the observed trace and 1% would be
 # separating "trace" from "nothing" rather than "material" from "trace".
 #
-# 1% of signal voxels is therefore chosen to be ~140x above anything actually acquired: it exists to
-# catch unmistakable damage — a channel driven far into saturation — and to stay silent otherwise. It is
-# NOT a claim about where clipping starts to matter. The first genuinely clipped acquisition should
-# replace it.
+# 1% of signal voxels was therefore set ~140x above anything acquired at the time: it exists to
+# catch unmistakable damage — a channel driven far into saturation. It is NOT a claim about where
+# clipping starts to matter. A later session clipped 0.03-0.19% of signal — real, but still below this
+# level — so detected clipping is now always reported (`info`), and this level only decides `warn`.
 #
 # The number a user can act on is not a voxel fraction at all: it is how many CELLS have clipped voxels,
 # which needs labels and so belongs at measure time. Deferred until segmentation is reliable on real
@@ -320,11 +320,11 @@ end
 """
     saturation_qc_findings(meta) -> Vector
 
-One `warn` per channel that clipped at acquisition **materially** — detected by
-`intensity_utils.is_saturated` AND with at least `_SATURATION_WARN_FRAC` of its voxels at the ceiling.
+One finding per channel that clipped at acquisition — detected by `intensity_utils.is_saturated`:
+`warn` with at least `_SATURATION_WARN_SIGNAL_FRAC` of its signal voxels at the ceiling, `info` below.
 From the persisted `meta["saturation"]` (written by `ImportOmezarr`, which checks every import).
 PURE → unit-tested. Empty when the check didn't run (an image imported before it existed, or a
-non-integer store), and empty for trace-level clipping — which the METRICS still record.
+non-integer store).
 
 Advisory, like all QC — but this is the one import finding a user can only act on *before* the
 experiment: clipped values are gone, so no correction, threshold or rescale recovers them. Hence the
@@ -338,12 +338,15 @@ function saturation_qc_findings(meta::AbstractDict)
     fs = Dict{String,Any}[]
     for ch in _saturation_channels(meta)
         get(ch, "saturated", false) === true || continue
-        # detected AND unmistakable — see _SATURATION_WARN_SIGNAL_FRAC. A trace pile-up is recorded in
-        # the metrics but does not raise a finding. Normalised by SIGNAL voxels, not all voxels.
+        # Detected = a finding. `warn` only when unmistakable (see _SATURATION_WARN_SIGNAL_FRAC); below
+        # that it is `info`: still clipped, still unrecoverable, still worth seeing on the channel — a
+        # trace pile-up hidden from the user is a clipped channel they never hear about. Normalised by
+        # SIGNAL voxels, not all voxels.
         frac = _cal_num(get(ch, "clippedSignalFrac", nothing))
-        (isnothing(frac) || frac < _SATURATION_WARN_SIGNAL_FRAC) && continue
+        isnothing(frac) && continue
+        level = frac < _SATURATION_WARN_SIGNAL_FRAC ? "info" : "warn"
         i = _cal_int(get(ch, "index", nothing), 0)
-        push!(fs, qc_finding("warn", "import.channel_saturated"; channel = i,
+        push!(fs, qc_finding(level, "import.channel_saturated"; channel = i,
             # the COUNT plus the SIGNAL-relative percentage. Not the all-voxel fraction: measured on a
             # real session that is ~1e-6, which rounds to "0.0001%" and says more about how much blank
             # frame there is than about the clipping.

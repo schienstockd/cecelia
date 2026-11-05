@@ -235,16 +235,17 @@ ceiling at import.
 user nothing to decide; "17 of 2 400 cells have truncated intensity in CH2" does — one affected cell in
 ten matters when you are comparing means, while 500 clipped voxels spread over a 377 M-voxel movie may
 not. It would also give the import check's threshold something real to be calibrated against: today
-`_SATURATION_WARN_SIGNAL_FRAC` is deliberately a smoke alarm ~140x above anything measured, because no
-material clipping case exists in any data we have (worst observed: 0.007% of signal voxels, across all
-36 channels of nine movies).
+`_SATURATION_WARN_SIGNAL_FRAC` is deliberately a smoke alarm, set when the worst observed clipping was
+0.007% of signal voxels (all 36 channels of nine movies); the worst since is 0.19%, still below it.
 
 **Why deferred.** It needs labels, and specifically labels good enough to trust a per-cell count from —
 so it waits on segmentation being reliable on real data (the maintainer, 2026-08-04). Building it against
 uncertain segmentation would produce a number nobody can act on either, for a different reason.
 
 **Revisit when.** Segmentation is dependable on real acquisitions. The import check stays as it is until
-then: detection + metrics on every import, a finding only for unmistakable damage.
+then: detection + metrics on every import, an `info` finding for any detected clipping and `warn` only
+for unmistakable damage. The first truly clipped session (0.03–0.19 % of signal, laser power raised
+between movies) sat below the alarm, which is why detected clipping is no longer silent.
 
 **Reference:** `qc.jl::saturation_qc_findings` / `_SATURATION_WARN_SIGNAL_FRAC`,
 `intensity_utils.saturation_stats` (both denominators), `#456`/`#462`.

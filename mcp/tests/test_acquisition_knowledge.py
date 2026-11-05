@@ -3,7 +3,7 @@ together: every cited source exists with a DOI, every symptom says how to check 
 could be, stages are the light path's, and no scope feature claims to be verified by default."""
 import unittest
 
-from cecelia_mcp import server
+from cecelia_mcp import guidance, server
 
 # The light path's stages, in order — `frontend/src/utils/acquisitionLightPath.ts` (`lightPathStages`)
 # and the metadata dialog use the same keys, so a symptom lands at the stage the user is looking at.
@@ -58,6 +58,10 @@ class AcquisitionKnowledgeTest(unittest.TestCase):
         out = server.get_acquisition_knowledge("fv4000")
         self.assertEqual(["FV4000"], [s["system"] for s in out["scopes"]])
         self.assertEqual([], server.get_acquisition_knowledge("LSM 980")["scopes"])
+
+    def test_briefing_compares_settings_within_a_set_first(self):
+        # a setting changed between movies is diffed before any optical or biological explanation
+        self.assertIn("compare their `acquisition` first", guidance.BRIEFING_GUIDANCE)
 
 
 if __name__ == "__main__":
