@@ -36,12 +36,12 @@ class DataPathStatsTest(unittest.TestCase):
         assert 8 <= n['bgSpread'] <= 12                                    # p84 - median ~ sigma
         assert 40 <= n['snr'] <= 60                                        # (600 - 100) / 10
 
-    def test_noise_is_untestable_when_the_background_is_clipped_at_zero(self):
-        # the real case: 86-100 % of voxels exactly 0 (zolIMa 20armH, offset clips the background)
+    def test_noise_is_untestable_when_most_voxels_are_zero(self):
+        # what the zeros are is floor_stats' call (test_floor_stats.py); here: no number is invented
         vals = np.concatenate([np.zeros(9000, int), np.arange(20, 220)])
         n = iu.noise_stats(_hist(vals))
         assert n['snr'] is None and n['bgSpread'] is None
-        assert n['untestable'] == 'background clipped at 0'
+        assert n['untestable'] == 'most voxels are 0'
         assert n['bgLevel'] is not None                                    # the level is still reported
 
     def test_noise_of_an_all_zero_channel(self):

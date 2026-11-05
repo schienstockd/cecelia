@@ -598,6 +598,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test all(ch -> ch["range"]["max"] == ch["topValue"], chans)
             @test all(ch -> length(ch["range"]["hist"]["counts"]) == 32, chans)
             @test all(ch -> haskey(ch["noise"], "snr"), chans)
+            @test all(ch -> ch["floor"]["kind"] in ("photon-counted", "clipped", "indeterminate", "none"), chans)
             # the facts line reads it straight back — one entry per probed channel, a number each
             facts = Cecelia.img_cleanup_facts(r1)
             @test length(facts["channels"]) == length(chans)
@@ -611,7 +612,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             Cecelia.commit_state!(r1) do raw
                 m = Dict{String,Any}(String(k) => v for (k, v) in raw["meta"])
                 m["saturation"] = Dict{String,Any}("channels" => [
-                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) ∉ ("profile", "range", "noise"))
+                    Dict{String,Any}(String(k) => v for (k, v) in ch if String(k) ∉ ("profile", "range", "floor", "noise"))
                     for ch in m["saturation"]["channels"]])
                 raw["meta"] = m
             end
@@ -619,7 +620,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test !haskey(r2.meta["saturation"]["channels"][1], "profile")
             @test Cecelia.ensure_saturation_meta!(r2)
             r3 = init_object(proj.uid, img.uid)
-            @test all(k -> haskey(r3.meta["saturation"]["channels"][1], k), ("profile", "range", "noise"))
+            @test all(k -> haskey(r3.meta["saturation"]["channels"][1], k), Cecelia.SATURATION_CURRENT_KEYS)
             @test r3.meta["SizeT"] == 1
             rm(proj.root; recursive = true)
         end
@@ -648,6 +649,15 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         @test c[2]["zeroPct"] == 0.0  && c[2]["clippedPct"] == 0.0
         @test c[3]["zeroPct"] === nothing && c[3]["clippedPct"] === nothing
         @test isempty(f["drift"])
+
+        # a probe stored before `floor` guessed "background clipped at 0" from the zero fraction alone:
+        # passed on as what it measured; with `floor`, the probe's own reason passes through
+        old_noise = Dict{String,Any}("snr" => nothing, "untestable" => "background clipped at 0")
+        @test Cecelia._noise_without_guessed_cause(old_noise, nothing)["untestable"] ==
+              "most voxels are 0 (refresh metadata for why)"
+        @test Cecelia._noise_without_guessed_cause(old_noise, Dict("kind" => "clipped"))["untestable"] ==
+              "background clipped at 0"
+        @test Cecelia._noise_without_guessed_cause(nothing, nothing) === nothing
 
         # one entry per drift output, from its QC sidecar; µm from the pixel size
         write_qc(img, "cleanupImages.driftCorrect", "driftCorrected", Dict{String,Any}[];

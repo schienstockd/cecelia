@@ -35,7 +35,7 @@ end
 
 """Fields every probed channel carries from the current probe (`data_path.measure_store`) beyond the
 clipping numbers: a stored probe missing any of them is re-run by `ensure_saturation_meta!`."""
-const SATURATION_CURRENT_KEYS = ("profile", "range", "noise")
+const SATURATION_CURRENT_KEYS = ("profile", "range", "floor", "noise")
 
 """Whether a stored `meta` carries a probe with every `SATURATION_CURRENT_KEYS` field on every channel.
 Through `_saturation_channels`, which normalises JSON3's Symbol keys — a raw `haskey(ch, "profile")`
@@ -49,7 +49,7 @@ end
     ensure_saturation_meta!(img) -> Bool
 
 Backfill `meta["saturation"]` for an image imported before the probe existed — or before it
-recorded every `SATURATION_CURRENT_KEYS` field (per-plane `profile`, `range`, `noise`), in which
+recorded every `SATURATION_CURRENT_KEYS` field (any of `SATURATION_CURRENT_KEYS`), in which
 case the key is replaced, not merged — so denoise's
 saturation gate, the import QC dot and the Cleanup facts (`img_cleanup_facts`) have their signal.
 Called by the denoise task and by Refresh metadata in the image dialog (`measure: true` on

@@ -3,8 +3,8 @@ What landed in the file: per-channel pixel statistics of an OME-ZARR store, from
 
 The import probe (`app/src/tasks/importImages/saturation_run.py`) calls `measure_store` on the store it
 just wrote, and the result becomes ccid `meta["saturation"]` — the clipping verdict, the range the
-channel uses, the noise floor, and per-depth / per-frame numbers. Headless on purpose: a path in, a
-dict out, no project, so it can be run on any store from a shell
+channel uses, what its zeros are, the noise floor, and per-depth / per-frame numbers. Headless on
+purpose: a path in, a dict out, no project, so it can be run on any store from a shell
 (`docs/todo/ACQUISITION_ADVISOR_PLAN.md` → P4b).
 
 Every number is computed from integer histograms (`intensity_utils`), so a full pass costs one read of
@@ -22,7 +22,7 @@ from cecelia.utils.dim_utils import DimUtils
 def measure_store(im_path, log=None):
     """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
     with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
-    `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`). Raises on a store that is not
+    `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`). Raises on a store that is not
     integer data (`channel_histograms`) — the caller decides whether that fails anything."""
     say = log or (lambda _m: None)
     dim_utils = DimUtils(ome_xml_utils.load_ome_xml(im_path))
@@ -45,7 +45,8 @@ def measure_store(im_path, log=None):
         stats['index'] = i
         stats['containerBits'] = bits
         stats['range'] = intensity_utils.range_stats(h)
-        stats['noise'] = intensity_utils.noise_stats(h)
+        stats['floor'] = intensity_utils.floor_stats(h)
+        stats['noise'] = intensity_utils.noise_stats(h, floor=stats['floor'])
         stats['profile'] = profile.summary(i, intensity_utils.profile_ceiling(stats))
         channels.append(stats)
         say(f'   ch{i}: {"SATURATED" if stats["saturated"] else "ok"} '

@@ -1,6 +1,7 @@
 /**
  * The data-path panel's content (`AcquisitionDataPath.vue`): what landed in the file, per channel —
- * store depth, range used, clipping at the top and at zero, noise floor and SNR, and the shape of the
+ * store depth, range used, clipping at the top, what the zeros are (no photon on a photon-counting
+ * detector, or a background clipped at 0), noise floor and SNR or photons per voxel, and the shape of the
  * channel over depth and time. Everything comes from the import probe (`data_path.measure_store`,
  * through `cleanupFacts`), so it is `measured`; the recorded detector depth and integration mode come
  * from the microscope file. A check that cannot run says why. Numbers only, no verdicts
@@ -8,10 +9,15 @@
  */
 
 import { fmtNum } from './physicalSize'
-import type { LightPathImage, LightPathItem, CleanupFactsChannel } from './acquisitionLightPath'
+import { qcFindings } from '../lib/qc'
+import type { CciaImage } from '../stores/project'
+import type { LightPathImage, LightPathItem, CleanupFactsChannel, ChannelFloor } from './acquisitionLightPath'
 
 export interface DataPathChannel {
+  index: number
   name: string
+  /** What on this channel needs a look, one short reason each; empty when nothing measured does. */
+  attention: string[]
   items: LightPathItem[]
   /** Compact histogram counts over [0, max] (all voxels), or null when not measured. */
   hist: number[] | null
@@ -22,6 +28,13 @@ export interface DataPathChannel {
 
 const n = (x: number | null | undefined): string => (x == null ? '—' : fmtNum(x))
 const pct = (x: number) => (x >= 1 ? fmtNum(Math.round(x * 10) / 10) : fmtNum(+x.toPrecision(2)))
+
+/** Why the zeros are there, with what the call rests on; nothing when it can't be told. */
+function zeroCause(fl: ChannelFloor | null | undefined): string {
+  if (fl?.kind === 'photon-counted') return `: likely no photon detected (photon-counted: ${fl.evidence})`
+  if (fl?.kind === 'clipped') return `: likely background clipped at 0 (${fl.evidence})`
+  return ''
+}
 
 function channelItems(f: CleanupFactsChannel, recordedBits: number | null | undefined): LightPathItem[] {
   const items: LightPathItem[] = []
@@ -34,7 +47,13 @@ function channelItems(f: CleanupFactsChannel, recordedBits: number | null | unde
   } else if (f.saturated === false) {
     items.push({ text: 'no ceiling pile-up detected', source: 'measured' })
   }
-  if (f.zeroPct != null) items.push({ text: `${pct(f.zeroPct)} % of voxels at 0`, source: 'measured' })
+  if (f.zeroPct != null) items.push({ text: `${pct(f.zeroPct)} % of voxels at 0${zeroCause(f.floor)}`, source: 'measured' })
+  const fl = f.floor
+  if (fl?.kind === 'photon-counted' && fl.photons) {
+    // Counts are the measure here: there is no background distribution to take an SNR against.
+    items.push({ text: `photons per non-zero voxel: median ${n(fl.photons.p50)} · p99.9 ${n(fl.photons.p999)} (~${n(fl.photonStep)} per photon)`, source: 'measured' })
+    return items
+  }
   const nz = f.noise
   if (nz) {
     items.push(nz.snr != null
@@ -42,6 +61,32 @@ function channelItems(f: CleanupFactsChannel, recordedBits: number | null | unde
       : { text: `Noise floor not measurable: ${nz.untestable ?? 'unknown'}`, source: 'missing' })
   }
   return items
+}
+
+/** Channels the import's QC flagged as clipped (`import.channel_saturated`, qc.jl: detected pile-up
+ *  AND at least 1 % of signal) — the same bar as the image table's warning, not a second rule. */
+function qcClippedChannels(img: LightPathImage): Set<number> {
+  return new Set(qcFindings(img as CciaImage)
+    .filter(f => f.code === 'import.channel_saturated' && typeof f.detail?.channel === 'number')
+    .map(f => f.detail!.channel as number))
+}
+
+/**
+ * Measured losses the analysis cannot undo: clipping at the top (from the QC finding) and a background
+ * clipped at 0 (dim signal cut away; no QC finding exists for it, the floor kind is the measurement).
+ * A photon-counted floor or a low photon count is not on the list: that is how the detector reports,
+ * not a loss, and "low" would need a threshold the question sets.
+ */
+export function channelAttention(f: CleanupFactsChannel, qcClipped: boolean): string[] {
+  const out: string[] = []
+  if (qcClipped) out.push(`clipped at ${n(f.topValue)}`)
+  if (f.floor?.kind === 'clipped') out.push('background clipped at 0')
+  return out
+}
+
+/** The channel to open first: the first that needs a look, else the first. */
+export function firstDataPathChannel(chans: DataPathChannel[]): number | null {
+  return (chans.find(c => c.attention.length) ?? chans[0])?.index ?? null
 }
 
 /** Notes that hold for every channel: summed frames lift the ceiling past one detector read. */
@@ -55,12 +100,15 @@ export function dataPathNotes(img: LightPathImage): LightPathItem[] {
 export function dataPathChannels(img: LightPathImage): DataPathChannel[] {
   const facts = img.cleanupFacts?.channels ?? []
   const acq = img.acquisition
+  const clipped = qcClippedChannels(img)
   return facts.map(f => {
     const recorded = acq?.channels?.find(c => c.order === f.index + 1)?.bitDepth
     const z = f.profile?.byZ.p99 ?? []
     const t = f.profile?.byT.p99 ?? []
     return {
+      index: f.index,
       name: img.channelNames?.[f.index] || f.name,
+      attention: channelAttention(f, clipped.has(f.index)),
       items: channelItems(f, recorded),
       hist: f.range?.hist.counts ?? null,
       byZ: z.length > 1 ? z : null,

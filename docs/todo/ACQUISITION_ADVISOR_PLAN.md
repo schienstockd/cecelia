@@ -314,7 +314,7 @@ they and the diagram (P4) are useful without Claude.
   | Recorded depth | `bitDepth` per channel | `.oir` | not recorded (other formats) |
   | Ceiling | `topValue` when `is_saturated` finds a pile-up; else none detected. Source: *detected* — no reader records a level | histogram | float stores (probe skipped) |
   | Clipped | `clippedSignalFrac` — top-bin voxels over voxels above background | histogram | no ceiling detected → 0 by definition |
-  | Floor | `zeroFrac` — voxels exactly 0 (offset clipping or upstream subtraction; the two look alike) | histogram | — |
+  | Floor | `zeroFrac` — voxels exactly 0; `floor` — what they are, from the low end of the histogram: *photon-counted* (empty run above 0 ending at a cut, a peak and another at twice its value: no photon detected; reports the step per photon and photons per voxel), *clipped* (a spike at 0 over counts that run on from 1: offset or upstream subtraction, which look alike) or *indeterminate* | histogram | photon-counted: noise floor replaced by photons per voxel |
   | Range | p1, p50, p99.9 over **non-zero** voxels, and max | histogram | channel all zero |
   | Histogram | 32 equal bins over [0, max], counts | histogram | — |
   | Noise floor | background level (triangle); median and spread (p84.13 − median, upper side only) of the voxels at or below it, zeros kept — robust to a background partly clipped at 0 | histogram | > 50 % zeros: the median itself is clipped, spread not measurable |
@@ -339,11 +339,13 @@ they and the diagram (P4) are useful without Claude.
     question): advisor rules in P5, from both panels' numbers; the question comes from the user.
   - *Regression set*: real files with known saturation, clipped floor, bleaching, bleed-through and
     depth fall-off plus expected readings — Dominik's bad images (P7). Until then the tests use real
-    output from zolIMa 20armH (no clipping, Bright Z on, flat with depth).
+    output from zolIMa 20armH (no clipping, photon-counted floor, Bright Z on, flat with depth).
 
   **Open:** whether container vs detector depth is worth a row when the vendor reports 16 for a 12-bit
-  path (FV4000 does); whether the zero floor should be split into "offset" vs "subtracted" from the
-  file's offset value.
+  path (FV4000 does); whether a *clipped* floor should be split into "offset" vs "subtracted" from the
+  file's offset value. Offset advice (P5) applies to a *clipped* floor only, never to a zero fraction
+  alone: zolIMa 20armH is 86–100 % zeros and photon-counted (nothing from 1 to 18, a peak every ~30),
+  so its zeros are voxels with no photon (review: `docs/archive/ACQUIRED_DATA_PANEL_REVIEW.md`).
 
 Why these fit hardening: all three make an existing result easier to trust ("was this acquisition fit
 for the analysis?") without a new page, and both are useful without Claude.

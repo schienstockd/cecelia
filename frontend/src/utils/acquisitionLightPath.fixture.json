@@ -356,12 +356,22 @@
       ]
      }
     },
+    "floor": {
+     "kind": "photon-counted",
+     "firstValue": 19,
+     "photonStep": 31,
+     "photons": {
+      "p50": 1.0,
+      "p999": 2.42
+     },
+     "evidence": "nothing from 1 to 18, then a peak at 31"
+    },
     "noise": {
      "bgLevel": 41.0,
      "bgMedian": null,
      "bgSpread": null,
      "snr": null,
-     "untestable": "background clipped at 0",
+     "untestable": "photon-counted: zeros are voxels with no photon",
      "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    },
@@ -574,12 +584,22 @@
       ]
      }
     },
+    "floor": {
+     "kind": "photon-counted",
+     "firstValue": 19,
+     "photonStep": 26,
+     "photons": {
+      "p50": 1.04,
+      "p999": 5.0
+     },
+     "evidence": "nothing from 1 to 18, then a peak at 26"
+    },
     "noise": {
      "bgLevel": 39.0,
      "bgMedian": null,
      "bgSpread": null,
      "snr": null,
-     "untestable": "background clipped at 0",
+     "untestable": "photon-counted: zeros are voxels with no photon",
      "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    },
@@ -792,12 +812,22 @@
       ]
      }
     },
+    "floor": {
+     "kind": "photon-counted",
+     "firstValue": 19,
+     "photonStep": 32,
+     "photons": {
+      "p50": 1.06,
+      "p999": 5.97
+     },
+     "evidence": "nothing from 1 to 18, then a peak at 32"
+    },
     "noise": {
      "bgLevel": 47.0,
      "bgMedian": null,
      "bgSpread": null,
      "snr": null,
-     "untestable": "background clipped at 0",
+     "untestable": "photon-counted: zeros are voxels with no photon",
      "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    },
@@ -1010,12 +1040,22 @@
       ]
      }
     },
+    "floor": {
+     "kind": "photon-counted",
+     "firstValue": 19,
+     "photonStep": 30,
+     "photons": {
+      "p50": 1.03,
+      "p999": 4.23
+     },
+     "evidence": "nothing from 1 to 18, then a peak at 30"
+    },
     "noise": {
      "bgLevel": 44.0,
      "bgMedian": null,
      "bgSpread": null,
      "snr": null,
-     "untestable": "background clipped at 0",
+     "untestable": "photon-counted: zeros are voxels with no photon",
      "estimator": "triangle background; spread = p84.13 - median of the background (zeros kept)"
     }
    }

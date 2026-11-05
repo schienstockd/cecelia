@@ -340,8 +340,8 @@ def clip_stats(hist, vmin, vmax):
 #: keep in ccid `meta` per channel.
 COMPACT_HIST_BINS = 32
 
-#: Above this zero fraction the background is clipped at 0 (offset, or subtracted upstream) and its
-#: spread cannot be measured from what is left.
+#: Above this zero fraction the median of the background is itself 0, so its spread cannot be measured
+#: from what is left (`floor_stats` says what the zeros are).
 NOISE_MAX_ZERO_FRAC = 0.5
 
 #: Normal-distribution quantile one standard deviation above the median: Φ(1).
@@ -349,18 +349,119 @@ UPPER_SIGMA_Q = 0.8413
 
 
 def _wquantile(h, lo, hi, q):
-    """Quantile `q` (0–1) of the values in bins [lo, hi] of integer histogram `h`, weighted by count."""
+    """Quantile `q` (0–1) of the values in bins [lo, hi] of integer histogram `h`, or None when empty."""
     seg = h[lo:hi + 1]
-    total = int(seg.sum())
-    if total == 0:
-        return None
-    return float(lo + np.searchsorted(np.cumsum(seg), q * total))
+    return float(lo + hist_percentile(seg, q * 100)) if int(seg.sum()) else None
+
+
+#: Floor classification (`floor_stats`). A photon-counting detector writes 0 for "no photon" and about
+#: one fixed step per photon, with a discriminator below the first step, so its histogram has an EMPTY
+#: run above 0 and then a peak. A background clipped at 0 (offset, or subtracted upstream) is a
+#: continuous distribution cut at 0: a spike at 0, then counts that run on from 1 with no gap.
+#: Minimum empty values between 0 and the first occupied value to call a gap.
+FLOOR_MIN_GAP = 3
+#: The first peak must stand this far above the first occupied value: a hard threshold on analog data
+#: (values below T set to 0) also leaves a gap, but its counts fall from T instead of rising to a peak.
+FLOOR_PEAK_RISE = 1.5
+#: An occupied value needs this share of the non-zero voxels to count (hot pixels and rounding).
+FLOOR_MIN_SHARE = 1e-5
+#: The empty run must end at a CUT: the first occupied value holds at least this share of the first
+#: peak. A discriminator cuts the one-photon peak's lower side (4–15 % of the peak on a real FV4000
+#: store); an analog distribution's tail fades out to single voxels (< 0.1 %).
+FLOOR_EDGE_MIN = 0.01
+#: A clipped background piles everything at or below 0 into the 0 bin: a spike at least this many times
+#: the counts at 1–5, with no gap after it. An unclipped distribution that merely reaches 0 has a 0 bin
+#: like its neighbours.
+FLOOR_SPIKE = 3
+#: Checked before the spike: counts that fall from 1 like a Poisson ladder (h[2]/h[1] below this, each
+#: next ratio smaller) are raw photon counts (step 1) OR a background clipped well below 0 with a narrow
+#: spread — a log-concave tail falls the same way. The histogram cannot tell them apart, so neither is
+#: claimed (`indeterminate`). A clipped background with a wider spread runs on from 1.
+FLOOR_LADDER_FALL = 0.6
+#: Photon counting also puts a peak at two photons: a local maximum in [1.6, 2.4] × the step that stands
+#: this far above the trough before it. Padding zeros plus an analog background above 0 (a stitched or
+#: drift-corrected canvas) also give a gap and a peak, but no second peak at twice its level.
+FLOOR_COMB_WINDOW = (1.6, 2.4)
+FLOOR_COMB_RISE = 1.5
+
+
+def _first_peak(h, start):
+    """The first local maximum of the (5-wide smoothed) histogram at or after `start`, refined to the
+    largest raw bin within 2 of it. The first, not the tallest: at a few photons per voxel the
+    two-photon peak can be the taller one, and the discriminator can sit anywhere below the first."""
+    sm = np.convolve(h.astype(np.float64), np.ones(5) / 5, mode='same')
+    m = start
+    while m + 1 < h.size and sm[m + 1] >= sm[m]:
+        m += 1
+    lo, hi = max(start, m - 2), min(h.size, m + 3)
+    return lo + int(np.argmax(h[lo:hi]))
+
+
+def _has_second_photon_peak(h, step):
+    """Whether the (3-wide smoothed) histogram has a local maximum in `FLOOR_COMB_WINDOW` × `step`
+    standing `FLOOR_COMB_RISE` above the lowest point between it and the first peak."""
+    lo, hi = int(round(FLOOR_COMB_WINDOW[0] * step)), int(round(FLOOR_COMB_WINDOW[1] * step))
+    if hi + 1 >= h.size:
+        return False
+    sm = np.convolve(h.astype(np.float64), np.ones(3) / 3, mode='same')
+    m2 = lo + int(np.argmax(sm[lo:hi + 1]))
+    if m2 in (lo, hi):                         # an edge of the window: a slope, not a peak
+        return False
+    trough = float(sm[step:m2 + 1].min())
+    return sm[m2] > 0 and sm[m2] >= FLOOR_COMB_RISE * max(trough, 1.0 / 3)
+
+
+def floor_stats(hist):
+    """What the exact zeros of a channel are, read from the low end of its histogram.
+
+    * ``kind`` — ``'photon-counted'`` (empty run above 0 ending at a cut, then a peak, and another at
+      twice its value: zeros are voxels where no photon was detected), ``'clipped'`` (a spike at 0
+      over a background that runs on from 1: a continuous background cut at 0 by the offset or by
+      subtraction upstream), ``'indeterminate'``, or ``'none'`` (no zeros). Shape only: a histogram cannot see
+      where the zeros sit, so padding plus a peaked analog channel can still pass — hence "likely".
+    * ``firstValue`` — the smallest occupied non-zero value.
+    * ``photonStep`` — value of the first peak above the cut (`_first_peak`), taken as the output per
+      detected photon (photon-counted only).
+    * ``photons`` — p50 and p99.9 of the non-zero voxels divided by ``photonStep``.
+    * ``evidence`` — one line saying what the call rests on.
+    """
+    h = np.asarray(hist).astype(np.int64)
+    out = {'kind': 'indeterminate', 'firstValue': None, 'photonStep': None, 'photons': None, 'evidence': None}
+    nzt = int(h[1:].sum()) if h.size > 1 else 0
+    if h.size == 0 or int(h[0]) == 0:
+        out['kind'] = 'none'
+        return out
+    if nzt == 0:
+        out['evidence'] = 'every voxel is 0'
+        return out
+    occ = np.nonzero(h[1:] >= max(1, FLOOR_MIN_SHARE * nzt))[0]
+    if not occ.size:
+        return out
+    v1 = int(occ[0]) + 1
+    out['firstValue'] = v1
+    mode = _first_peak(h, v1)
+    if (v1 - 1 >= FLOOR_MIN_GAP and h[mode] >= FLOOR_PEAK_RISE * h[v1] and h[v1] >= FLOOR_EDGE_MIN * h[mode]
+            and _has_second_photon_peak(h, mode)):
+        hn = h.copy()
+        hn[0] = 0
+        out.update(kind='photon-counted', photonStep=mode,
+                   photons={'p50': round(hist_percentile(hn, 50) / mode, 2),
+                            'p999': round(hist_percentile(hn, 99.9) / mode, 2)},
+                   evidence=f'nothing from 1 to {v1 - 1}, then a peak at {mode}')
+    elif v1 == 1 and h.size > 3 and h[2] < FLOOR_LADDER_FALL * h[1] and h[3] * h[1] < h[2] * h[2]:
+        out['evidence'] = 'counts fall steeply from 1: raw photon counts or a narrow clipped background'
+    elif v1 == 1 and h[0] >= FLOOR_SPIKE * h[1:min(6, h.size)].max(initial=0):
+        out.update(kind='clipped', evidence='a spike at 0 over a background that runs on from 1')
+    else:
+        out['evidence'] = (f'nothing from 1 to {v1 - 1}, but no photon peaks above it' if v1 > 1
+                           else 'no spike at 0')
+    return out
 
 
 def range_stats(hist):
     """How much of the range a channel uses: p1, p50 and p99.9 over NON-ZERO voxels, the max, and a
     `COMPACT_HIST_BINS`-bin histogram over [0, max] (all voxels). Non-zero because most channels are
-    mostly exact zeros (offset or upstream subtraction — `zeroFrac` reports that separately), which
+    mostly exact zeros (`zeroFrac` counts them, `floor_stats` says what they are), which
     would pin every low percentile at 0 and say nothing about the signal."""
     h = np.asarray(hist).astype(np.int64)
     nz = np.nonzero(h)[0]
@@ -375,7 +476,7 @@ def range_stats(hist):
     return {**pct, 'max': top, 'hist': {'binWidth': float((top + 1) / COMPACT_HIST_BINS), 'counts': counts}}
 
 
-def noise_stats(hist, background_method='triangle'):
+def noise_stats(hist, background_method='triangle', floor=None):
     """Noise floor and a typical-signal SNR, from the histogram alone.
 
     * ``bgLevel`` — `background_threshold` (zeros ignored when FINDING the level).
@@ -389,8 +490,10 @@ def noise_stats(hist, background_method='triangle'):
     Limits: a histogram does not know where a voxel sits, so dim structure inside the background widens
     the spread (SNR reads low), and Poisson noise grows with signal, so one background spread
     understates the noise on bright structure. When more than ``NOISE_MAX_ZERO_FRAC`` of voxels are
-    exactly zero the median itself is clipped, and when the spread is 0 there is nothing to divide by:
-    ``bgSpread`` and ``snr`` are None and ``untestable`` says why.
+    exactly zero the median itself is 0, and when the spread is 0 there is nothing to divide by:
+    ``bgSpread`` and ``snr`` are None and ``untestable`` says why — naming the cause from ``floor``
+    (`floor_stats`) when given. A photon-counted channel has no background distribution to measure;
+    its counts are the measure (``floor['photons']``).
     """
     h = np.asarray(hist).astype(np.int64)
     total = int(h.sum())
@@ -403,7 +506,10 @@ def noise_stats(hist, background_method='triangle'):
     lo = int(np.floor(bg))
     out['bgLevel'] = float(bg)
     if int(h[0]) / total > NOISE_MAX_ZERO_FRAC:
-        out['untestable'] = 'background clipped at 0'
+        kind = (floor or {}).get('kind')
+        out['untestable'] = ('photon-counted: zeros are voxels with no photon' if kind == 'photon-counted'
+                             else 'background clipped at 0' if kind == 'clipped'
+                             else 'most voxels are 0')
         return out
     med = _wquantile(h, 0, lo, 0.5)
     if med is None:

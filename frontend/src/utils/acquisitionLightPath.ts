@@ -6,6 +6,7 @@
  * docs/todo/ACQUISITION_ADVISOR_PLAN.md → P4).
  */
 
+import type { CciaImage } from '../stores/project'
 import { fmtNum, shortUnit, formatTimeIncrement } from './physicalSize'
 import type { AcquisitionSettings } from './acquisitionSettings'
 
@@ -30,11 +31,17 @@ export interface ChannelNoise {
   bgLevel: number | null; bgMedian: number | null; bgSpread: number | null; snr: number | null
   untestable: string | null; estimator?: string
 }
+/** What a channel's exact zeros are (`intensity_utils.floor_stats`). */
+export interface ChannelFloor {
+  kind: 'photon-counted' | 'clipped' | 'indeterminate' | 'none'
+  firstValue: number | null; photonStep: number | null
+  photons: { p50: number; p999: number } | null; evidence: string | null
+}
 export interface CleanupFactsChannel {
   index: number; name: string; zeroPct: number | null; clippedPct: number | null
   profile?: { byZ: PlaneProfileAxis; byT: PlaneProfileAxis } | null
   containerBits?: number | null; topValue?: number | null; saturated?: boolean | null
-  range?: ChannelRange | null; noise?: ChannelNoise | null
+  range?: ChannelRange | null; floor?: ChannelFloor | null; noise?: ChannelNoise | null
 }
 
 /** The slice of the image payload the diagram reads. */
@@ -49,6 +56,8 @@ export interface LightPathImage {
   timeIncrement?: number | null
   timeIncrementUnit?: string | null
   cleanupFacts?: { channels?: CleanupFactsChannel[] } | null
+  /** QC sidecars, as on the image payload (`lib/qc.ts` reads them). */
+  qc?: CciaImage['qc']
 }
 
 /** Shortest excitation wavelength that still means multiphoton: one-photon lines stop near 640 nm,
