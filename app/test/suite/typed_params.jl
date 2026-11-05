@@ -705,7 +705,10 @@ end
         @test p.chunkSize == 512
         @test p.maxWorkers == "2"
         @test p.jvmHeapGiB == "16"
+        @test p.keepPartialTimepoint === false       # default: an incomplete last timepoint is dropped
     end
+    @test Cecelia.parse_import_omezarr_params(Dict{String,Any}(
+        "keepPartialTimepoint" => true)).keepPartialTimepoint === true
     let p = Cecelia.parse_import_omezarr_params(Dict{String,Any}())
         @test p.src_path == ""                       # empty → fall back to img.meta.ori_path in the handler
         @test isnothing(p.pyramidLevels)             # nothing → fall back to pyramidScale
