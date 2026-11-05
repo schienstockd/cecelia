@@ -266,6 +266,12 @@ they and the diagram (P4) are useful without Claude.
   through `get_image_info` (MCP), which already carries the saturation facts.
   *Effort:* small–medium. *Risk:* touches a step every import runs; the thresholds need real data
   (the maintainer's bad images), as `_SATURATION_WARN_SIGNAL_FRAC` did.
+  **Built:** the profile (`PlaneProfile`, P4b) and the findings: `app/src/qc/profile.jl` raises `info`
+  for signal fading over the movie, background rising over it, brighter / darker with depth and
+  clipping concentrated deep, with `maxSignalFade` / `maxDepthChange` as cohort metrics, and the
+  Acquired-data panel shows each on its channel. Levels sit between the quiet and the clear channels
+  of the only profiled session (3 movies, 12 channels) — placeholders until P7's set. *Signal ending
+  at a depth* is not built: no real case yet to set a level from.
 - **P2 · OIR acquisition-settings reader** (point 3). Key map over `OriginalMetadata` plus a reader
   for the raw `.oir` XML (dwell, line time, Bright Z ramp pairs, auto HV, correction collar), for
   FV4000 3.2 and FVMPE-RS 2.3. Written to ccid `meta` at import and listed plainly in

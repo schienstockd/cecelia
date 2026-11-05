@@ -98,6 +98,22 @@ describe('channels that need a look', () => {
     expect(firstDataPathChannel(cs)).toBe(2)
   })
 
+  it('puts each depth / time finding on its channel, with the channel\'s own number', () => {
+    // detail shape as qc/profile.jl writes it (`perChannel` rows of channel + the trend key)
+    const qc = { 'importImages.omezarr/default': { findings: [
+      { level: 'info' as const, code: 'import.signal_fades', short: '', long: '',
+        detail: { channels: [1, 2], perChannel: [{ channel: 1, fade: 0.428 }, { channel: 2, fade: 0.456 }] } },
+      { level: 'info' as const, code: 'import.clipped_deep', short: '', long: '',
+        detail: { channels: [2], perChannel: [{ channel: 2, clippedDeepShare: 0.71 }] } },
+      { level: 'info' as const, code: 'import.darker_with_depth', short: '', long: '',
+        detail: { channels: [0], perChannel: [{ channel: 0, depthChange: -0.4 }] } }] } }
+    const cs = dataPathChannels({ ...real, qc })
+    expect(cs[1].attention).toEqual(['fades 43% over the movie'])
+    expect(cs[2].attention).toEqual(['fades 46% over the movie', '71% of clipping in the deeper half'])
+    expect(cs[0].attention).toEqual(['40% darker with depth'])
+    expect(cs[3].attention).toEqual([])
+  })
+
   it('has no channel to open on an unprobed image', () => {
     expect(firstDataPathChannel([])).toBe(null)
   })

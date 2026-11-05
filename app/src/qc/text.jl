@@ -63,6 +63,24 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Channel {channel} clipped at the detector",
         long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
 
+    # depth / time trends from the import profile (qc/profile.jl): the measurement, not a cause —
+    # bleaching, drift and cells leaving read the same here. One finding per kind, channels listed.
+    "import.signal_fades" => (
+        short = "Brightest signal falls up to {pct}% over the movie ({n} channel{s})",
+        long  = "Check before comparing intensity across frames — bleaching, drift or cells leaving. Channels: {channels}."),
+    "import.background_rises" => (
+        short = "Background rises up to {pct}% over the movie ({n} channel{s})",
+        long  = "Check before gating on intensity across frames. Channels: {channels}."),
+    "import.brighter_with_depth" => (
+        short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
+        long  = "Check the Bright Z ramp — power may rise faster than signal is lost. Channels: {channels}."),
+    "import.darker_with_depth" => (
+        short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
+        long  = "Check the Bright Z ramp, or whether there are fewer cells deeper. Channels: {channels}."),
+    "import.clipped_deep" => (
+        short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
+        long  = "Lower the deep end of the Bright Z ramp, or the HV. Channels: {channels}."),
+
     # acquisition stopped mid-volume (partial_timepoint_qc_findings): dropped at import, or still there
     "import.partial_timepoint_dropped" => (
         short = "Dropped an incomplete last timepoint",

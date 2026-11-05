@@ -84,6 +84,11 @@ four mid-depth planes, first frame, every channel of a real FV4000 two-photon st
 Nothing from 1 to 18, then peaks every ~30: photon-counted output. `test_floor_stats.py` checks that
 `floor_stats` calls it photon-counted, not a background clipped at 0.
 
+`profile_fvmpe_session.json` (26 KB): `meta.saturation.channels` (index, saturated, per-plane `profile`)
+copied from two real FVMPE-RS two-photon movies of one session, as `importImages.omezarr` stored them:
+one ran to the end and fades over time, one stopped early with two channels clipped mostly deep.
+Summary numbers only, no pixels. `app/test/suite/qc_profile.jl` reads it.
+
 ## `run-logs/` — real run logs, for the chain-from-history builder
 
 Each file is one image's `runlog.json` rows, copied from a dev project's task history (not written by
