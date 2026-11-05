@@ -45,7 +45,7 @@ Flags are statistical, not interpretive. Claude says "this gate produced 23 cell
 - Track length distribution — flag bimodal when unimodal expected *(not yet)*
 - Fraction of cells tracked vs. segmented — flag <30% *(not yet)*
 - `bayesian_tracking` cohort: `nTracks`, `meanTrackLength`, `nTrackedCells`
-- `track_measures`: motion dimensionality uncertain (auto + low confidence) → warn (`track_measures_qc_findings`); cohort `nTracks`, `meanSpeed`, `meanDisplacement`
+- `track_measures`: motion dimensionality uncertain (auto + low confidence) → warn (`track_measures_qc_findings`); cohort `nTracks`, `meanSpeed`, `meanDisplacement`, and `motionDims` — categorical, so the set is checked for agreement, not outliers: every image measured in 2D when most were 3D (or the reverse) is flagged (`cohort.mixed`, `_cohort_minority`), because `dims = "auto"` decides per image and speed/angle aren't comparable across a set that mixes them
 
 *HMM/behaviour* (`behaviour.hmm_states` / `behaviour.hmm_transitions`, set-scope): implemented — banked per image via `write_qc` in the state/transition write loops (`category_dist_metrics` + `hmm_states_qc_findings` / `hmm_transitions_qc_findings`, `qc.jl`).
 - No cells decoded into a state — tracks too short / measurements incomplete (warn)

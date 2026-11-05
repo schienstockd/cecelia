@@ -294,4 +294,8 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "cohort.outlier" => (
         short = "{metric} is a cohort outlier",
         long  = "This image's {metric} ({value}) is far {dir} the set median ({median}) — check this image before trusting the run."),
+    # a categorical setting the set doesn't agree on (qc_cohort.jl `_cohort_minority`)
+    "cohort.mixed" => (
+        short = "{metric} differs from the set",
+        long  = "This image has {metric} {value}, unlike most of the set — measures aren't comparable across it. Re-run with one setting for every image."),
 )
