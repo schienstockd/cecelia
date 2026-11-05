@@ -19,9 +19,9 @@ Evident FV4000.
   only. No laser power, gain, pinhole, scan speed or detector settings are parsed anywhere.
 - **Acquisition QC that already runs on every import** (`qc.jl`, `importImages/saturation_run.py`,
   `intensity_utils.saturation_stats`):
-  - `import.channel_saturated` — clipping at the detector ceiling. Threshold
-    `_SATURATION_WARN_SIGNAL_FRAC = 1e-2` is a deliberate smoke alarm, ~140× above anything measured
-    (worst seen 0.007 % of signal voxels; 4 of 9 real movies clip a channel). Per-cell clipping is
+  - `import.channel_saturated` — clipping at the detector ceiling: `info` whenever detected, `warn`
+    from `_SATURATION_WARN_SIGNAL_FRAC = 1e-2`, a deliberate smoke alarm, set when the worst seen was
+    0.007 % of signal voxels (4 of 9 real movies clip a channel); worst since 0.19 %, still below it. Per-cell clipping is
     deferred until segmentation is dependable (`docs/FUTURE.md` → *Flag clipping per CELL*).
   - `import.photon_limited` — high zero fraction.
   - Cohort comparison: `nChannelsSaturated` / `maxClippedSignalFrac` per set (`qc_cohort.jl`).

@@ -89,13 +89,17 @@ describe('channels that need a look', () => {
   it('flags top clipping only where QC raised it, plus a clipped floor; opens the first flagged channel', () => {
     const f = real.cleanupFacts!.channels!.map(c =>
       c.index === 2 ? { ...c, saturated: true, topValue: 4095, floor: { ...c.floor!, kind: 'clipped' as const } }
-        : c.index === 3 ? { ...c, saturated: true, topValue: 352 } : c)  // trace pile-up: QC stays silent
+        : c.index === 3 ? { ...c, saturated: true, topValue: 352 }  // probed before QC had a finding for it
+        : c.index === 1 ? { ...c, saturated: true, topValue: 4095 } : c)
     const qc = { 'importImages.omezarr/default': { findings: [
-      { level: 'warn' as const, code: 'import.channel_saturated', short: '', long: '', detail: { channel: 2 } }] } }
+      { level: 'warn' as const, code: 'import.channel_saturated', short: '', long: '', detail: { channel: 2 } },
+      // below the 1 % warn level QC still reports the clipping, as `info` — the channel is still marked
+      { level: 'info' as const, code: 'import.channel_saturated', short: '', long: '', detail: { channel: 1 } }] } }
     const cs = dataPathChannels({ ...real, cleanupFacts: { channels: f }, qc })
     expect(cs[2].attention).toEqual(['clipped at 4095', 'background clipped at 0'])
+    expect(cs[1].attention).toEqual(['clipped at 4095'])
     expect(cs[3].attention).toEqual([])
-    expect(firstDataPathChannel(cs)).toBe(2)
+    expect(firstDataPathChannel(cs)).toBe(1)   // the first flagged one, warn or info
   })
 
   it('puts each depth / time finding on its channel, with the channel\'s own number', () => {

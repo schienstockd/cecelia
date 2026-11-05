@@ -211,7 +211,7 @@ class LiveSessionsTest(_FakeHome):
             self.session(pid, "500", f"s{pid}", name=f"n{pid}")
             meta = json.loads((self.home / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
             (self.home / "sessions" / f"{pid}.json").write_text(json.dumps({**meta, **extra}), encoding="utf-8")
-        self.assertEqual([s.name for s in self.live()], ["n11"])
+        self.assertEqual([(s.name, s.bg) for s in self.live()], [("n11", True)])
 
     def test_no_sessions_folder_means_no_sessions(self):
         self.assertEqual(live_sessions(self.home / "missing", proc=self.proc), [])
@@ -469,6 +469,16 @@ class PrCiTest(unittest.TestCase):
         self.assertEqual(console._name_cell(AgentRow("auto-fix", "busy", "w", "x", auto=True)), "auto-fix^   ")
         self.assertEqual(console._name_cell(AgentRow("cecelia-prune-x", "idle", "w", "x", judge=True)),
                          "cecelia-pr…*")
+
+    def test_a_background_job_carries_an_ampersand_and_the_header_says_why(self):
+        rows = [AgentRow("FastTIFF repo audit", "idle", "w", "x", bg=True), AgentRow("cecelia-7e", "idle", "w", "y")]
+        self.assertEqual(console._name_cell(rows[0]), "FastTIFF r…&")
+        self.assertEqual(console._name_cell(rows[1]), "cecelia-7e  ")
+        state = console.DashboardState()
+        state.agents = rows
+        self.assertIn("& background, no window", console.agents_block(state, 100, use_colour=False)[0])
+        state.agents = rows[1:]
+        self.assertNotIn("&", console.agents_block(state, 100, use_colour=False)[0])
 
     def test_a_judge_review_session_waiting_on_ci_waits_with_the_others_but_leads_them(self):
         rows = [AgentRow("a", "idle", "w", "x", pr=1, pr_state="OPEN", ci="running"),
