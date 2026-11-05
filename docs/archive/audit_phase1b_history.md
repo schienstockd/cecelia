@@ -111,7 +111,7 @@ Impact: adds `af_bleedthrough_alphas` (per ordered channel pair) subtracted BEFO
 Impact: **canonical example of a "not derivable" precondition** — Phase 2's wizard question set will lean on this pattern. Default = "on" (exclusive), rationale documented.
 
 ### 2026-08-21 — PR #610 — Cellpose v4 migration; `cleanupImages.cellposeCorrect` RETIRED
-> Dominik quoted verbatim: *"cellpose denoise is not that useful. we will scratch that. coastal denoise and smooth will replace that. we have to migrate to cellpose v4. v3 is outdated. and doesn't perform as well on static images."*
+> The maintainer quoted verbatim: *"cellpose denoise is not that useful. we will scratch that. coastal denoise and smooth will replace that. we have to migrate to cellpose v4. v3 is outdated. and doesn't perform as well on static images."*
 > "Breaking. `cyto3`/`cyto2`/`cyto`/`nuclei` and `cleanupImages.cellposeCorrect` are gone, and custom v3 checkpoints cannot load. Existing outputs on disk are untouched and stay readable; what cannot be done any more is *re-running* an old cellpose configuration."
 
 Impact: a whole correction task deleted; `RETIRED_FUN_NAMES` machinery introduced (`app/src/tasks/task.jl:1615`). Chain templates naming the retired task now error with a migration message.

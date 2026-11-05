@@ -1,6 +1,6 @@
 # In-app crop panel — replace the napari 3D crop
 
-**Status:** planned (2026-07-22). Supersedes the "improve the 3D-crop UX" TODO item. Decision by Dominik:
+**Status:** planned (2026-07-22). Supersedes the "improve the 3D-crop UX" TODO item. Decision by the maintainer:
 the napari-driven crop has a low ceiling (napari only edits shapes in 2-D, the projection collapses all
 channels to one grayscale MIP, and the 2D↔3D dance is clunky). **Remove the napari crop path entirely**
 and do the crop **in the app**.
@@ -24,7 +24,7 @@ viewer process + GPU/display + 2D/3D toggling). A headless in-app render removes
 
 - **No napari in the crop flow.** The napari crop path is deleted once the in-app panel works (see Phase 3).
 - **Render is IN-PROCESS JULIA** — a *narrow, sanctioned carve-out* of the "one canonical image reader"
-  rule (Dominik, 2026-07-22). Julia reads the OME-ZARR directly (`Zarr.jl` + `Blosc.jl`) **only for this
+  rule (the maintainer, 2026-07-22). Julia reads the OME-ZARR directly (`Zarr.jl` + `Blosc.jl`) **only for this
   lightweight MIP preview**; **Python `zarr_utils` stays canonical for ALL processing/analysis reads**.
   Justified because it's tiny read-helpers (a MIP + composite), not a second full image stack — and it
   buys the decisive win: the API server is already running, so the render is an in-process handler (like

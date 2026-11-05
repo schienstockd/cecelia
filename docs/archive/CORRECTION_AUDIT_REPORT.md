@@ -36,7 +36,7 @@ delivered 2026-09-06. The audit is the input; the design lives in
 - **Post-hoc QC metrics are estimator-conditional.** Which drift findings can fire depends on which
   of the three `driftCorrect` estimators ran; the user isn't told.
 - **No ground truth.** `test-data/` has no fixture with verified acquisition properties. Every
-  threshold in the corpus is calibrated on Dominik's dev movies only — Phase 2 flags all QC score
+  threshold in the corpus is calibrated on the maintainer's dev movies only — Phase 2 flags all QC score
   bands as *unvalidated placeholders*.
 
 ## Deliverables checklist (from the prompt)

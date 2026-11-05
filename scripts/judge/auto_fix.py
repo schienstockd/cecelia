@@ -52,7 +52,7 @@ import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness import agent_sandbox  # noqa: E402
+from cecelia.effectiveness import agent_sandbox, auto_run  # noqa: E402
 from cecelia.effectiveness.claude_cli import (  # noqa: E402
     RateLimited, failure_text, limit_in_text, limit_resets_at, models, rate_limit, read_result, reset_at, resolve_claude_bin,
     synthetic_limit, with_reset)
@@ -252,10 +252,12 @@ class Progress:
         self._stop.set()
         if self.tty:
             self._thread.join()
+        tty = self.out.isatty()   # now, not at the start: the terminal may have gone (`FallbackOut`)
+        if tty:
             self.out.write("\r\033[K")
         bad = self.failed or kind is not None
-        mark = _col(VERMILLION if bad else SKY_BLUE, "✗" if bad else "✓", use_colour=self.tty)
-        print(f"  {mark} {self.label}" + _col(_DIM, self.stats(), use_colour=self.tty), file=self.out, flush=True)
+        mark = _col(VERMILLION if bad else SKY_BLUE, "✗" if bad else "✓", use_colour=tty)
+        print(f"  {mark} {self.label}" + _col(_DIM, self.stats(), use_colour=tty), file=self.out, flush=True)
 
     def stats(self) -> str:
         calls = [f"{self.calls} tool call{'s' if self.calls != 1 else ''}"] if self.calls else []
@@ -275,6 +277,8 @@ class Progress:
     def _spin(self) -> None:
         frame = 0
         while not self._stop.wait(0.1):
+            if not self.out.isatty():   # the terminal went away mid-session (`FallbackOut`): no frames in a file
+                continue
             self.out.write("\r\033[K" + self.line(frame))
             self.out.flush()
             frame += 1
@@ -353,6 +357,99 @@ def conflict_brief(files: _t.Sequence[str]) -> str:
             "main changed and what your fix needs, and touch nothing else; run the matching tests. Answer "
             "`fixed` once no marker is left, `stuck` when you can't resolve it. `title`: leave empty (the merge "
             "names itself); `summary`: what conflicted and how you resolved it.")
+
+
+#: What a terminal draws with and a log file shouldn't hold: SGR colours, line erases, carriage returns.
+_TERMINAL_CODES = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]|\r")
+
+
+class FallbackOut:
+    """The run's stdout or stderr: the terminal while it lasts, then `path`. A closed terminal makes
+    every write fail (EIO); without this the next one ended the run, with the session's agent still
+    working. `on_switch(path)` is called once, from the write that found it gone."""
+
+    def __init__(self, primary: _t.TextIO, path: pathlib.Path, on_switch: _t.Callable[[pathlib.Path], None]
+                 = lambda path: None, *, shared: "FallbackOut | None" = None):
+        self._primary, self.path, self._on_switch = primary, path, on_switch
+        self._shared = shared   # stderr follows stdout's switch: one fallback file, one note
+        self._file: _t.TextIO | None = None
+        self._lock = threading.Lock()
+
+    def _target(self) -> _t.TextIO:
+        if self._shared is not None:
+            return self._shared._file or self._primary
+        return self._file or self._primary
+
+    def _switch(self) -> _t.TextIO:
+        owner = self._shared or self
+        with owner._lock:
+            if owner._file is None:
+                owner.path.parent.mkdir(parents=True, exist_ok=True)
+                owner._file = open(owner.path, "a", encoding="utf-8", buffering=1)
+                owner._file.write(f"--- {_dt.datetime.now().astimezone():%Y-%m-%d %H:%M:%S}: the terminal went away; "
+                                  "the run goes on here ---\n")
+                owner._on_switch(owner.path)
+        return owner._file
+
+    def write(self, text: str) -> int:
+        owner = self._shared or self
+        if owner._file is None:
+            try:
+                return self._primary.write(text)
+            except OSError:
+                pass
+        # in the file, plain text: colour and spinner codes were decided while there was a terminal
+        return self._switch().write(_TERMINAL_CODES.sub("", text))
+
+    def flush(self) -> None:
+        try:
+            self._target().flush()
+        except OSError:
+            self._switch().flush()
+
+    def isatty(self) -> bool:
+        try:
+            return self._target().isatty()
+        except (OSError, ValueError):
+            return False
+
+    def fileno(self) -> int:
+        return self._target().fileno()
+
+    @property
+    def encoding(self) -> str:
+        return getattr(self._target(), "encoding", "utf-8")
+
+
+def unattended(tracker: auto_run.Tracker | None = None, *, name: str = "auto",
+               now: _dt.datetime | None = None) -> None:
+    """Make this process outlive its terminal: SIGHUP ignored (the agents it starts inherit that), and
+    stdout/stderr that move to `<name>-<ts>-terminal-lost.log` when the terminal goes (`FallbackOut`),
+    which `tracker` learns. Not needed under `--detach` or the weekly pass, harmless there; `judge-deps`
+    calls it too."""
+    import signal
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    log = os.environ.get(auto_run.LOG_ENV)
+    stamp = f"{(now or _dt.datetime.now(_dt.timezone.utc)):%Y%m%dT%H%M%SZ}"
+    path = pathlib.Path(log) if log and tracker else auto_run.log_dir() / f"{name}-{stamp}-terminal-lost.log"
+    sys.stdout = FallbackOut(sys.stdout, path, lambda p: tracker and tracker.update(log=str(p)))
+    sys.stderr = FallbackOut(sys.stderr, path, shared=sys.stdout)
+
+
+def detach(argv: _t.Sequence[str], script: pathlib.Path, *, out: _t.TextIO = sys.stdout,
+           now: _dt.datetime | None = None, popen: _t.Callable = subprocess.Popen) -> int:
+    """`--detach`: the same command without it, in its own session (no terminal to lose), output to
+    `auto-<ts>.log` in the cron log folder. Returns the child's pid."""
+    path = auto_run.log_dir() / f"auto-{(now or _dt.datetime.now(_dt.timezone.utc)):%Y%m%dT%H%M%SZ}.log"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as log:
+        child = popen([sys.executable, str(script), *(a for a in argv if a != "--detach")],
+                      stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                      env={**os.environ, auto_run.LOG_ENV: str(path)}, cwd=os.getcwd())
+    print(f"judge-review --auto: running in the background, pid {child.pid}\n"
+          f"  log      {path}\n  progress pixi run recital-console (or pixi run agents)", file=out)
+    return child.pid
 
 
 def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str | None = None,
@@ -997,10 +1094,12 @@ def _without(items: list[dict], by_id: dict, keys: _t.Container[str]) -> list[di
 def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys.stdout,
         path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None, older: _t.Sequence[dict] = (),
         main: pathlib.Path | None = None, until: float | None = None, clock: _t.Callable[[], float] = time.time,
-        **kw) -> int:
+        tracker: "auto_run.Tracker | None" = None, **kw) -> int:
     """Every bundle from `review.auto_items` (up to `limit` sessions), one after another. Returns the
     sessions run. Past `until` (epoch seconds) it starts no new session; the one running finishes, so a
-    caller with a hard stop (the weekly unit's timeout) passes one that leaves a session's length."""
+    caller with a hard stop (the weekly unit's timeout) passes one that leaves a session's length.
+    `tracker` (not on a dry run) gets the run's progress for the consoles (`auto_run`); this writes its
+    start and its normal ends, the caller the ones that raise."""
     main = main or _rv.main_checkout()
     items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
@@ -1030,8 +1129,12 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
           file=out, flush=True)
     for line in outcome_rows(rows, use_colour=colour):
         print(line, file=out)
+    tracker = None if dry_run else tracker
+    if tracker:
+        tracker.start(record=record["date"], total=min(limit, len(items)), until=until,
+                      log=os.environ.get(auto_run.LOG_ENV))
     spent, ran, handed = 0.0, 0, 0
-    late = False
+    late, end = False, "done"
     for item in items:
         if ran >= limit or dry_run and items.index(item) >= limit:
             break
@@ -1049,21 +1152,28 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
             name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
             print(fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)
             continue
+        if tracker:
+            tracker.update(current=" + ".join(b["id"] for b in bugs))
         try:
             cost = work_one(record, bugs, main=main, out=out, path=path, auto_log=auto_log, **kw)
         except SetupFailed:
             print(_col(_DIM, "  stopping: worktree setup fails the same way for every session", use_colour=colour),
                   file=out)
+            end = "worktree setup failed"
             break
         if cost is not None:   # an earlier run's worktree handed back instead: not a session, take the next
             spent += cost
             ran += 1
         else:
             handed += 1
+        if tracker:
+            tracker.update(done=ran + handed, spent=round(spent, 2))
     if not dry_run:
         left = len(items) - ran - handed
         print("\n" + _hr(f"{ran} session(s) · ${spent:.2f}" + (f" · {handed} handed back" if handed else "")
                          + (f" · {left} left: run again" if left > 0 and not late else "")
                          + (f" · {left} left: past the deadline, next pass" if late else ""),
                          width, use_colour=colour), file=out)
+    if tracker:
+        tracker.finish("past the deadline" if late else end)
     return ran

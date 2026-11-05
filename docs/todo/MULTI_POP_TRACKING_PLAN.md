@@ -23,7 +23,7 @@ Let a user run `tracking.bayesian_tracking` on two (or more) gated populations o
 segmentation and see BOTH populations' tracks in the viewer, each as its own layer that reads and
 toggles like the point populations do (`overlays.pops` → swatch / name / count / eye).
 
-Concrete scenario (Dominik, `fXgbTl`, 2026-09-01):
+Concrete scenario (the maintainer, `fXgbTl`, 2026-09-01):
 
 > "i tried to track /qc/CD169-/cells and /qc/CD169-/fragments in fXgbTl. but then it seems when i
 > toggle the track ribbons it only shows me the last tracked population. also. the different track
@@ -51,7 +51,7 @@ Concrete scenario (Dominik, `fXgbTl`, 2026-09-01):
    shows only shared tail sliders and a per-source legend that is gated on
    `trackColorMode === 'solid'`. There is no equivalent per-pop layer row for tracks.
 
-4. **User's ask does not need existing tracked-data preservation** (Dominik, 2026-09-01: "dont
+4. **User's ask does not need existing tracked-data preservation** (the maintainer, 2026-09-01: "dont
    worry about existing tracked data"). Re-running tracking after this ships is acceptable.
 
 ## Locked decisions

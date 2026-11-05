@@ -10,7 +10,7 @@ A plot declares **which manager it needs**; the host renders it. Today the Analy
 `activeIsCluster ? PopulationManager : SeriesPicker`, so a plot that needs the **model vault** cannot
 say so — and `flowProbability` is consequently dead on the board.
 
-Dominik: *"the plot has to say what manager it needs … i hope that pop manager and model vault share
+The maintainer: *"the plot has to say what manager it needs … i hope that pop manager and model vault share
 the same interface that this is easy to switch out."*
 
 They nearly do. This plan makes that contract explicit, teaches the board to resolve it from the

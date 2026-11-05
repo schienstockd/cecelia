@@ -254,8 +254,10 @@ def main(argv: _t.Sequence[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true", help="print the red PRs' briefs, run nothing")
     ap.add_argument("--until", type=float, default=None, help="start no session after this time (epoch seconds)")
     args = ap.parse_args(argv)
+    if not args.dry_run:
+        _af.unattended(name="deps")   # a closed terminal doesn't end it mid-session
     try:
-        run(limit=args.limit, dry_run=args.dry_run, until=args.until)
+        run(limit=args.limit, dry_run=args.dry_run, until=args.until, out=sys.stdout)
     except RateLimited as e:
         return limit_exit("judge-deps", e)
     return 0

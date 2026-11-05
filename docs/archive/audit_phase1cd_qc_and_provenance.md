@@ -90,7 +90,7 @@ Composition implications: any Phase 2 QC score that mixes drift (per-image) with
   - `ZARRFMT/{ZV2img, ZV3img}` — zarr v2 vs v3 format equivalence fixtures; empty of biological signal, no acquisition properties.
 - The fixture cap is 1 MB per file, 8 MB total tree (`test-data/README.md`) — a real correction fixture (a few frames of a real 4-channel movie with a known scanner) blows through this.
 - **No repo has reference images with verified acquisition properties for correction auto-detection.** Every calibration number in the corpus is a "property of THIS MACHINE's data" (PR #526 quoted in 1b §2026-08-12): the 2 px `residualRms` threshold (18 movies), the 0.35 stack-align applied-fraction floor (`d5vw7z/c91ICQ`), the AF ceiling range (nine `kSUFux` movies), the SUPPORT saturation gate (`2h06xA` vs `c91ICQ`).
-- **Consequence for Phase 2**: every QC score band and every applicability-rule threshold in the plan is defensible only as "measured on Dominik's dev data". Ranges cannot be validated against a labelled reference set. Any `AcquisitionPreset` card the design proposes (galvo / resonant / spinning-disk / …) needs the maintainer to attest that a representative image exists in `dev/`; there is no fixture to test the card-classifier against.
+- **Consequence for Phase 2**: every QC score band and every applicability-rule threshold in the plan is defensible only as "measured on the maintainer's dev data". Ranges cannot be validated against a labelled reference set. Any `AcquisitionPreset` card the design proposes (galvo / resonant / spinning-disk / …) needs the maintainer to attest that a representative image exists in `dev/`; there is no fixture to test the card-classifier against.
 
 ---
 

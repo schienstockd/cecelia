@@ -43,7 +43,7 @@ Ground truth from [`code.claude.com/docs/en/best-practices`](https://code.claude
 | `INVENTORY.md` + `docs/inventory/*.md` | Session start (linked from root `CLAUDE.md`); agent must think to grep | Prevention — but requires an explicit action every time |
 | `docs/MAINTAINABILITY.md` | On demand (not auto-loaded into every session); referenced from root `CLAUDE.md` | Prevention on paper, detection in practice — see item 7 |
 | All convention tests + Julia ratchets | Post-hoc — at `pixi run test-*` time | **Detection.** The code already exists on disk when the check runs. |
-| PR review by Dominik | Post-hoc — at PR time | **Detection.** |
+| PR review by the maintainer | Post-hoc — at PR time | **Detection.** |
 | The claim in `docs/MAINTAINABILITY.md:3-4` that this is "the check that runs *before* new code lands" | Post-hoc, in practice | **Detection.** The doc is aspirational about its own lifecycle. |
 
 **One thing that IS session-start deterministic:** the nested-CLAUDE.md loading pattern (`frontend/CLAUDE.md` loads only when a session touches `frontend/`). That is a lifecycle-shaping choice done well — see item 5.
@@ -58,7 +58,7 @@ Six merged PRs from the last six weeks whose title/body explicitly names hand-ro
 
 | # | PR | What existed | What was reimplemented | Caught by |
 |---|---|---|---|---|
-| A | [#1215](https://github.com/schienstockd/cecelia/pull/1215) "Unify viewer capture reshow with the module-page pathway" | Module pages mounted `CaptureViewSurface` for `CaptureEnvelope` rehydration | Viewer used a read-only `MarksOverlay` + `.vw-marks-chip` — a second rehydration path with no pencil affordance | Dominik noticed a specific capture had no re-annotate button |
+| A | [#1215](https://github.com/schienstockd/cecelia/pull/1215) "Unify viewer capture reshow with the module-page pathway" | Module pages mounted `CaptureViewSurface` for `CaptureEnvelope` rehydration | Viewer used a read-only `MarksOverlay` + `.vw-marks-chip` — a second rehydration path with no pencil affordance | The maintainer noticed a specific capture had no re-annotate button |
 | B | [#1079](https://github.com/schienstockd/cecelia/pull/1079) "blackboard list gets the canonical draggable divider" | `usePanelResize` composable (used by TasksModule) | Blackboard shipped fixed `width: 22rem` — no drag, no persistence | Follow-up PR after user feedback |
 | C | [#1074](https://github.com/schienstockd/cecelia/pull/1074) "blackboard page uses canonical primitives" | `SelectionTable`, `ConfirmDeleteButton`, the `ChainModule` shell pattern | Blackboard hand-rolled `<ul>` list + bespoke layout + non-canonical buttons | User feedback on preceding PR #1070; body explicitly says *"I hand-rolled a list + bespoke layout + non-canonical buttons"* |
 | D | [#1076](https://github.com/schienstockd/cecelia/pull/1076) "shared spine for cellCards / motifCards / hmmCards" | (nothing — this is the extraction after the fact) | Three parallel card implementations (cellCards, motifCards, hmmCards) with duplicated filmstrip render | Planned refactor after three variants shipped |

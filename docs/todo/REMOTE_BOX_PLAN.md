@@ -29,7 +29,7 @@ This plan corrects it in several places (marked **brief said**).
 2. Imaging data never leaves the box: no file transfer, no clipboard sync, no tunnelling the UI out.
 3. Clients are Windows, Mac or Linux, and client setup needs no terminal.
 
-The brief's "pin driver and CUDA versions" is **dropped** (Dominik, 2026-10-16).
+The brief's "pin driver and CUDA versions" is **dropped** (the maintainer, 2026-10-16).
 On this box Ubuntu's unattended security upgrades already moved the driver from 595.91.07 to 595.99.02
 on 2026-10-10, and P0 ran on the result. The driver libraries and the kernel's pre-built NVIDIA modules
 update together, so holding only the driver would split them, which is the failure pinning is meant to
@@ -40,7 +40,7 @@ reboot. `remote-check` reports that as "reboot the box".
 ## Decisions
 
 1. **Cecelia is started by hand from the menu, inside the user's desktop session. No autostart, and
-   no systemd service** (Dominik, 2026-10-16). **Brief said** "backend and frontend as systemd
+   no systemd service** (the maintainer, 2026-10-16). **Brief said** "backend and frontend as systemd
    services". Production has no separate frontend process: `pixi run app` serves the built Vue app
    from the Julia server (`app.py:5-6`). And `app.py` already does what a unit would add:
    - it relaunches the server on Settings → Restart (exit 42)
@@ -112,9 +112,9 @@ Gotchas hit on the way, each one a line in the P3 admin notes:
    Users connect with the client they already know: Windows Remote Desktop (`mstsc`), Microsoft's
    Windows App on Mac, Remmina on Linux. NoMachine, xrdp and Desktop Sharing are not used.
 6. **Everyone uses the one `peanut` account; people are told apart inside Cecelia by user profiles**
-   (Dominik, 2026-10-16). That machinery has shipped (`USER_PROFILE_PLAN.md`): a launch-time profile
+   (the maintainer, 2026-10-16). That machinery has shipped (`USER_PROFILE_PLAN.md`): a launch-time profile
    picker, per-profile settings, project ownership and a load-screen filter, and author stamps on
-   blackboard, notebooks, chains and tasks. `cecelia` is Dominik's admin account. What follows:
+   blackboard, notebooks, chains and tasks. `cecelia` is the maintainer's admin account. What follows:
    - **One person at a time.** One OS account means one Cecelia (the single-instance lock is per
      config dir) and one install-wide active profile (`docs/audit/persistence-audit.md`, gap B, "fine
      for one person per machine"). A second Remote Login as `peanut` is expected to take over the
@@ -124,14 +124,14 @@ Gotchas hit on the way, each one a line in the P3 admin notes:
    - No auto-login. Remote and walk-up users both start at the GNOME login screen.
 7. **The console behaves like any desktop.** Remote sessions never show on it, so the brief's
    "sleep/lock disabled" goes. Screens lock on idle by default (a dconf default, not a lock), except
-   for the admin account `cecelia`, which keeps auto-lock off by choice (Dominik, 2026-10-16).
+   for the admin account `cecelia`, which keeps auto-lock off by choice (the maintainer, 2026-10-16).
 8. **Brave is the browser.** It is installed, and WebGPU is on by default for this GPU on Wayland. No
    Chrome install and no flags.
-9. **SSH is for Dominik only** (2026-10-16): key login only, password login off, `AllowUsers
+9. **SSH is for the maintainer only** (2026-10-16): key login only, password login off, `AllowUsers
    cecelia`. `peanut` users have no shell access, which also closes the `scp` path around
    requirement 2.
 
-## Open questions — need Dominik
+## Open questions — need the maintainer
 
 - **Q3. Reachability from outside the building.** From the institute Wi-Fi, 3389 is reachable now. SSH
   was not until something was changed on 2026-10-15/16; record what that was. Does it work over the
@@ -177,7 +177,7 @@ Gotchas hit on the way, each one a line in the P3 admin notes:
   Verified from outside: key login works, password login is no longer offered, `peanut` is refused
   over SSH, and Remote Login is back on 3389. The console lock is a default, not enforced: `cecelia`
   keeps `lock-enabled=false` in its own dconf on purpose, so the admin console session does not
-  auto-lock (Dominik, 2026-10-16). Every account without its own setting locks after 5 idle
+  auto-lock (the maintainer, 2026-10-16). Every account without its own setting locks after 5 idle
   minutes. Whether `peanut` has its own setting is unchecked: its dconf is not readable from
   `cecelia`. The Q7 keyring stays a manual step.
 

@@ -101,7 +101,7 @@ the page you're on).
 
 - **Browser-close → quit. DECIDED AGAINST (2026-07-09).** Considered auto-shutdown when the last WS
   client disconnects (a ~15s grace window survives refresh — the robust alternative to a footgun
-  `beforeunload`). Dom chose **explicit Quit only**: closing the browser just disconnects; the backend
+  `beforeunload`). The maintainer chose **explicit Quit only**: closing the browser just disconnects; the backend
   keeps running. To stop the app: the Quit button, or closing `app.py`'s window in prod. Don't
   re-raise without a new ask.
 - Frontend (Vite) *controls* — but its port IS shown (read-only "Frontend (GUI)" row) so the full

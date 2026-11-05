@@ -222,16 +222,16 @@ defending hardcoded constants (smoothVis-class — protected).
 - Reclassified to protected on re-read: `api/src/server.jl:137` (route-table 42s→11s boot measurement), `app/src/run_log.jl:10` (cancel-logging argument), `app/src/runner/client.jl:265` (silent-retry pitfall), `app/src/runner/server.jl:472` (port-then-state race), `python/cecelia/utils/segmentation_utils.py:401` (perf argument for outer-loop placement), `python/cecelia/utils/store_sweep.py:195` (name-vs-structure silent-failure).
 - Skipped as legitimate reference: `api/src/routes.jl:1693` (route describes a legacy-migration import).
 
-**Bucket E — dated signatures** (7 edits, 6 files): `(Dominik, YYYY-MM-DD)` stripped in place across `api/src/image_geometry.jl:14`, `api/src/image_render.jl:7`, `api/src/movie_helpers.jl:114`, `app/src/config.jl:1173`, `app/src/tasks/task.jl:181`, `python/cecelia/utils/title_card.py:288`, `python/cecelia/utils/zarr_utils.py:144`.
+**Bucket E — dated signatures** (7 edits, 6 files): `(the maintainer, YYYY-MM-DD)` stripped in place across `api/src/image_geometry.jl:14`, `api/src/image_render.jl:7`, `api/src/movie_helpers.jl:114`, `app/src/config.jl:1173`, `app/src/tasks/task.jl:181`, `python/cecelia/utils/title_card.py:288`, `python/cecelia/utils/zarr_utils.py:144`.
 
 **Standard-doc addendum:** [`docs/MAINTAINABILITY.md`](../MAINTAINABILITY.md) → *No cross-references*: added a paragraph naming the whole-file exception (legacy migrators, canonical algorithm ports, reference implementations).
 
 ## Phase 3 — frontend name-elimination + narrow P2 (2026-09-15, LANDED)
 
-Mid-audit, Dominik widened the scope from the narrow P2 sweep to a **whole-codebase name-elimination pass** (`grep just for Dominik. this shouldn't really be in any code file`). Docs (.md) deliberately excluded — archived audit records legitimately name the audit-scope user.
+Mid-audit, the maintainer widened the scope from the narrow P2 sweep to a **whole-codebase name-elimination pass** (`grep just for Dominik. this shouldn't really be in any code file`). Docs (.md) deliberately excluded — archived audit records legitimately name the audit-scope user.
 
-- **Parenthetical signature strips** (mechanical, single-line): 66 files, 167 strips. `(Dominik, YYYY-MM-DD…)` removed with leading whitespace. `[^)\n]` regex constraint so multi-line parentheticals were left for per-case handling.
-- **Reworded attributions + ownership refs**: 61 files, ~150 rewrites in two rounds. `Dominik's <thing>` → `the <thing>`; `reported by Dominik` → `reported`; `Dominik hit` → `observed`; quote-attributions kept the quote and dropped the name; multi-line parentheticals + one-off attributions per-case.
+- **Parenthetical signature strips** (mechanical, single-line): 66 files, 167 strips. `(the maintainer, YYYY-MM-DD…)` removed with leading whitespace. `[^)\n]` regex constraint so multi-line parentheticals were left for per-case handling.
+- **Reworded attributions + ownership refs**: 61 files, ~150 rewrites in two rounds. `the maintainer's <thing>` → `the <thing>`; `reported by the maintainer` → `reported`; `the maintainer hit` → `observed`; quote-attributions kept the quote and dropped the name; multi-line parentheticals + one-off attributions per-case.
 - **`/home/dominik` path literal** in `frontend/src/utils/fsPath.test.ts` → `/home/alice`. Test is pure string-parsing (`fsBreadcrumbs` doesn't touch the filesystem); semantics preserved.
 - **Frontend narrow-P2 categories** (post name-elimination): 5 commit SHA cross-refs removed; 25 orphan phase codes dropped or reworded (the 19 that anchor a `docs/todo/*_PLAN.md` section by path are kept); 1 quoted user report converted to invariant.
 - **Corruption fixes**: my round-2 substitution script used Python's `\s` which spans newlines, collapsing a handful of multi-line parentheticals into `//. Continuation` junk. Caught via a targeted `^\s*(#|//|\*)\.\s*[A-Z]` grep; fixed at all 9 sites (`ViewerWindow.vue:2960 & 3691`, `brickVolumeRenderer.ts`, `volumeRenderer.ts`, `viewerCrashGuard.ts`, `debouncedLatest.ts`, `CollapsiblePanel.vue`, `BatchMoviesPanel.vue`, `CorrectionCockpit.vue`, `cell_cards_api.jl`).

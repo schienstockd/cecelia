@@ -38,6 +38,20 @@ Manual emission via `python scripts/log_event.py` remains available for ad-hoc /
 
 Otherwise spawn the subagent — even for small diffs. The prompt's own short-circuit handles no-fix-hunk cases (tail becomes `_no fanout audit needed_`, no evidence fold).
 
+## Repeat rounds — the same change, reviewed again
+
+All three reviewers (fanout, convention, result review) handle a repeat `pixi run recital` on the
+same change (same branch and parent SHA) the same way. `scripts/recital.py` records the staged tree
+(`git write-tree`) of each round in `<git dir>/recital-rounds/<reviewer>.json`:
+
+- **Tree unchanged:** the last section is reused and nothing spawns. Tail `_…: run — reused, staged diff unchanged_`, run row `escape_valve: "unchanged_diff"`.
+- **Tree changed:** the reviewer gets the full diff as context, the change since its last round, and the findings already reported. It reviews only that change and doesn't repeat the earlier findings. Run row `round: "delta"`. The section opens with the earlier rounds' findings, which still need their tags (the commit hook asks for every finding logged on the change).
+- **Full round instead:** the first round on a change, after a commit (new parent), after a round that errored (never kept), with a diff from `--stdin`, or when git has pruned the old tree.
+
+Why: every round used to re-review the whole diff, so each fix paid for a full review again. On one
+7-round PR all three reviewers ran each round, about $28 in total. The later rounds found nothing new,
+or went further and further out for something new.
+
 ## Reviewer prompt
 
 *(Everything below the horizontal rule is passed verbatim as the subagent's prompt, followed by the staged diff.)*

@@ -37,7 +37,7 @@ reachable from the UI: `get_analysis_lineage` exists only for Claude (MCP + `/ap
 5. **One generator, two front doors.** A pure Julia function produces the report; a route serves it to
    the UI and the observer MCP gets a read tool on the same route. No second assembly path.
 
-## Open questions (his call)
+## Open questions (the maintainer's call)
 
 - **Where the button lives.** The Analysis board's `⤓ Export` dropdown (beside PDF/CSV) reads
   naturally — "export the methods for what this board shows". Alternative: the project/set panel.

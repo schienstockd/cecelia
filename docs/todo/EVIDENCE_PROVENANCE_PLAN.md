@@ -83,4 +83,4 @@ checkable (`/api/kiwi/refs/resolve`) or reviewable. The two pieces it lacks are 
 - Is 200 runs per image enough history for stamps to stay resolvable? Check one long-running
   project's `runlog.json` lengths before P1.
 - Should a stale flag also show in the UI (Blackboard page, capture reshow), or stay MCP-only at
-  first? MCP-only is cheaper; it's Dominik's call once P2 exists.
+  first? MCP-only is cheaper; it's the maintainer's call once P2 exists.

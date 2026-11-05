@@ -19,8 +19,10 @@ Parameter contract (JSON written by Julia):
   resultPath - absolute path to write the result JSON to
 
 Result JSON: `cecelia.utils.data_path.measure_store` — {"channels": [{"index", "saturated",
-"topValue", …, "containerBits", "range", "floor", "noise", "profile"}, …], "sampling"} — the Julia
-handler turns this into ccid meta + QC findings. `{}` when the store cannot be read as integer data
+"topValue", …, "containerBits", "range", "floor", "noise", "profile"}, …], "sampling"}, plus
+"partialTimepoint": {"t", "emptyZ", "sizeZ"} when the acquisition stopped mid-volume (that timepoint
+is left out of every stat) — the Julia handler turns this into ccid meta + QC findings and, unless the
+import keeps it, trims that timepoint. `{}` when the store cannot be read as integer data
 (nothing to say, and a QC pass must never fail an otherwise-good import).
 """
 

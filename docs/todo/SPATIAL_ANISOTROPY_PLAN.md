@@ -14,7 +14,7 @@ Two readouts from the 3P behaviour paper's **Figure 4**, made computable and rea
   scattered against the % of that image's tracks in each behaviour state.
 
 **Neither is an app plot.** Both were built on the spatial module page, did not work there, and
-were reverted (Dominik, 2026-07-29). They are figure-shaped, so they belong in a **Notebook**; the
+were reverted (the maintainer, 2026-07-29). They are figure-shaped, so they belong in a **Notebook**; the
 app's job is to compute and store the numbers correctly, which is what this branch does. The
 recipe is `docs/NOTEBOOKS.md` → *Structure anisotropy*; the stored contract is
 `docs/SEGMENTATION.md`.
@@ -22,7 +22,7 @@ recipe is `docs/NOTEBOOKS.md` → *Structure anisotropy*; the stored contract is
 Getting there meant auditing the anisotropy pass, which turned out to be substantially wrong —
 that audit (A1–A8) is the bulk of this document and the bulk of the change.
 
-**The legacy implementation is a reference, not gospel** (Dominik: parts of it were eyeballed
+**The legacy implementation is a reference, not gospel** (the maintainer: parts of it were eyeballed
 rather than validated). Correctness is established against synthetic fields of known orientation;
 agreement with legacy only *explains* a difference, it never passes or fails anything.
 
@@ -45,7 +45,7 @@ reverted UI was reverted with it.
 | `app/src/model/image.jl` | `img_branch_value_names` |
 | `app/src/qc_cohort.jl`, `mcp/…` | the per-image `anisotropy` metric + the ratio-vs-count note |
 
-**Renamed the `uns` keys `ilee_*` → `orientation_*`** (Dominik, 2026-07-29). Two reasons: the old
+**Renamed the `uns` keys `ilee_*` → `orientation_*`** (the maintainer, 2026-07-29). Two reasons: the old
 names claimed an ILEE lineage the arrays do not have (A1), and `ilee_box_anisotropy` was per-box
 *coherence*, easily confused with the per-image `anisotropy` scalar. `orientation_` also avoids
 the `aniso_anisotropy` stutter an `aniso_` prefix would have produced. Runs banked before the
@@ -67,7 +67,7 @@ endpoint-to-junction, 0.185 junction-to-junction), which a per-image scalar cann
 Branch pops exist on disk and `pop_df(img, "branch", …)` reads them, but neither the gating page
 nor the plot picker can reach them: `/api/gating/channels` and `/api/plots/populations` both
 enumerate `label_props` value_names, and a branch value_name is a *segmentation* (`SHG`) that
-usually has no per-cell table. Dominik also saw the four branch types listed **flat** rather than
+usually has no per-cell table. The maintainer also saw the four branch types listed **flat** rather than
 as subpopulations of one `SHG` pop.
 
 Partial fixes for this were written and then reverted here, deliberately: repairing one link of a
@@ -236,7 +236,7 @@ arrays readable without reading `branching_run.py`.
 
 **Final: `anisotropySource=skeleton`, σ = 12 px, box = 15 px** (from `channel` / 2.0 / 45).
 
-> **Now expressed in µm (2026-07-30, Dominik).** Pixels are not a meaningful unit to a user and made
+> **Now expressed in µm (2026-07-30, the maintainer).** Pixels are not a meaningful unit to a user and made
 > a mixed-calibration cohort silently incomparable, so the params became `structureTensorSigmaUm`
 > (default **7 µm**) and `anisotropyBoxUm` (default **5 µm**) — the same settings at EaMaVq's
 > 0.596 µm/px, converted by the Julia handler. NEW KEYS deliberately: reusing the old ones would let
@@ -360,7 +360,7 @@ observer is read-only summary-first by design.
 1. **Re-run `segment.branching` on EaMaVq with Anisotropy on** (skeleton, σ=12, box=15, flatten Z).
    Until then no image has the `orientation_*` block under its new names, so every notebook read
    comes back empty. This also regenerates the branch labels zarr with the corrected axes (A8).
-   Dominik runs it from the GUI.
+   The maintainer runs it from the GUI.
 2. **Decision 10** — `network_weights`, if wanted.
 3. **The branch pop-type UI gap**, if wanted — see *Known limitation* above.
 
@@ -371,7 +371,7 @@ observer is read-only summary-first by design.
    helper per language (`fibre_orientation`, `quiver_df`); a hand-rolled `eigvec[…, 1, :]` in a
    notebook still goes wrong. Noted in `docs/SEGMENTATION.md` and `docs/NOTEBOOKS.md`.
 3. **The `uns` key rename is breaking** for anything already banked. Nothing in-tree reads the old
-   names, and no notebook exists yet, so the blast radius is Dominik's own EaMaVq run — which
+   names, and no notebook exists yet, so the blast radius is the maintainer's own EaMaVq run — which
    needs re-running anyway (item 1).
 4. **`ccia.fluo` reaches a new user** — RE-OPENED 2026-08-21, was resolved 2026-08-05. The picker
    still lists any checkpoint in the models dir, but `ccia.fluo` is a cellpose 3 file and cellpose 4

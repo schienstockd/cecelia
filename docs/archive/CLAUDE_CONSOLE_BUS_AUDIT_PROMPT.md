@@ -18,7 +18,7 @@ Companion to `CLAUDE_CONSOLE_AUDIT_PROMPT.md`. Run in Claude Code (Opus) at the 
 
 ## Problem
 
-D often runs 10+ Claude Code sessions in parallel (one per worktree). Today he sometimes tells one session: "ping the session working on xyz", and the sessions then coordinate by hand-relayed requests. He wants this to be a first-class, safe, visible mechanism that works alongside `pixi run claude-console`.
+The maintainer often runs 10+ Claude Code sessions in parallel (one per worktree). Today they sometimes tell one session: "ping the session working on xyz", and the sessions then coordinate by hand-relayed requests. They wants this to be a first-class, safe, visible mechanism that works alongside `pixi run claude-console`.
 
 Typical use: interface and contract questions between worktrees (e.g. an API shape shared by the Julia backend and the Vue frontend), "are you touching file X?", "I changed Y, rebase before you continue", handoff notes. Not: one session editing another's worktree.
 
@@ -43,7 +43,7 @@ The July 2026 OpenAI/Hugging Face incident is the reference case. Verify its det
 
 - Follow `CLAUDE.md` (incl. Windows-compat). Target is Ubuntu; keep POSIX-only code isolated.
 - Reuse the console's registry, event-log tail, palette and key handling. No new daemon unless the audit shows files cannot meet the requirements.
-- Prefer approaches D can read and debug in a text editor.
+- Prefer approaches the maintainer can read and debug in a text editor.
 - A broken bus must never block or slow a Claude Code session.
 
 ## Tasks
@@ -99,6 +99,6 @@ Write `docs/todo/CLAUDE_CONSOLE_BUS_PLAN.md`:
 5. Protocol, data model, state machine.
 6. Threat model.
 7. Phased plan, each phase useful on its own. Suggested: P1 read-only visibility (registry topics, message log view, no delivery); P2 human-approved delivery; P3 bounded autonomous delivery between registered sessions; P4 opt-in extras (tmux nudge, headless resume).
-8. Numbered open questions for D, each with your default.
+8. Numbered open questions for the maintainer, each with your default.
 
-Keep it terse: decisions and evidence, no narrative. Then stop and wait for D's review. Do not implement.
+Keep it terse: decisions and evidence, no narrative. Then stop and wait for the maintainer's review. Do not implement.

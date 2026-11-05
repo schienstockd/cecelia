@@ -2,7 +2,7 @@
 > time. It is not a description of how the code works now, and not instructions to re-run. Current
 > design lives in `docs/todo/GUIDE_RUNS_PLAN.md`.
 >
-> **Outcome:** not run as a brief; its questions were answered in a chat with Dominik on 2026-10-06,
+> **Outcome:** not run as a brief; its questions were answered in a chat with the maintainer on 2026-10-06,
 > which reframed the runs as guide runs reviewed by a person rather than smoke tests (a clean finish
 > hid most of what the runs found). Read [`docs/todo/GUIDE_RUNS_PLAN.md`](../todo/GUIDE_RUNS_PLAN.md).
 

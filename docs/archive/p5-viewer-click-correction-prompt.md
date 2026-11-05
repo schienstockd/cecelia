@@ -26,7 +26,7 @@ Prior art we're stealing the **highlighting model** from, not the ops:
 `napari-vizsla` draws the clicked cell's whole tracklet as an outlined
 polygon — past leg **white**, future leg **gray** — with each successor
 tracklet as an orange stub at the branch point. That's the "look, don't
-read" interaction the ground truth (Dominik, 2026-08-19) asked for.
+read" interaction the ground truth (the maintainer, 2026-08-19) asked for.
 
 ## What already exists — reuse, don't rebuild
 

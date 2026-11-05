@@ -356,6 +356,27 @@ function saturation_qc_findings(meta::AbstractDict)
 end
 
 """
+    partial_timepoint_qc_findings(meta) -> Vector
+
+Zero or one finding from `meta["partialTimepoint"]` — a last timepoint the acquisition stopped before
+finishing (written by `ImportOmezarr` via `_apply_partial_timepoint!`). `info` when the import dropped
+it, `warn` when it is still in the store (kept on request, a failed trim, or an image imported before
+the check: `ensure_saturation_meta!` records it without trimming). PURE → unit-tested.
+"""
+function partial_timepoint_qc_findings(meta::AbstractDict)
+    pt = get(meta, "partialTimepoint", nothing)
+    pt isa AbstractDict || return Dict{String,Any}[]
+    pt = Dict{String,Any}(String(k) => v for (k, v) in pt)
+    n  = length(something(get(pt, "emptyZ", nothing), []))
+    nz = _cal_int(get(pt, "sizeZ", nothing), 0)
+    detail = Dict{String,Any}("t" => _cal_int(get(pt, "t", nothing), 0), "emptyZ" => get(pt, "emptyZ", []),
+                              "sizeZ" => nz)
+    get(pt, "trimmed", false) === true ?
+        [qc_finding("info", "import.partial_timepoint_dropped"; n = n, count = nz, detail = detail)] :
+        [qc_finding("warn", "import.partial_timepoint"; n = n, count = nz, detail = detail)]
+end
+
+"""
     photon_limited_qc_findings(meta) -> Vector
 
 Zero or one `info` finding summarising every photon-limited channel — `zeroFrac >=
@@ -661,7 +682,7 @@ function write_metadata_qc!(img::CciaImage)
     # findings and no metrics, same as saturation when the check didn't run.
     zp = img_filepath(img, VERSIONED_DEFAULT_VAL)
     findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta),
-                    photon_limited_qc_findings(meta),
+                    photon_limited_qc_findings(meta), partial_timepoint_qc_findings(meta),
                     isnothing(zp) ? Dict{String,Any}[] : pyramid_qc_findings(zp))
 
     metrics = import_metrics(meta)

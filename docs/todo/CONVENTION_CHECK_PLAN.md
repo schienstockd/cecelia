@@ -23,8 +23,8 @@ Different failure classes, different search shapes, different reviewer prompts. 
 
 ## Origin
 
-- 2026-09-26 chat with Dominik. He observed: "every time I point out to Opus — hey this button looks hand rolled, did you check app convention — it normally gets it and says, oh, yeah, I didn't actually check. Wouldn't all we need is a tick on the PR requiring the agent to say yes I checked app conventions XYZ. And couple this to a git commit hook."
-- Immediate refinement: a self-attested tick is gameable — the cheapest way to satisfy "yes I checked" is to say yes. What actually forces the check when Dominik prompts after the fact is *specificity* — naming what the agent should have looked at. That specificity plus a fresh subagent that has to produce evidence, not just an assertion, is the mechanism.
+- 2026-09-26 chat with the maintainer. They observed: "every time I point out to Opus — hey this button looks hand rolled, did you check app convention — it normally gets it and says, oh, yeah, I didn't actually check. Wouldn't all we need is a tick on the PR requiring the agent to say yes I checked app conventions XYZ. And couple this to a git commit hook."
+- Immediate refinement: a self-attested tick is gameable — the cheapest way to satisfy "yes I checked" is to say yes. What actually forces the check when the maintainer prompts after the fact is *specificity* — naming what the agent should have looked at. That specificity plus a fresh subagent that has to produce evidence, not just an assertion, is the mechanism.
 - Direct precedent: [`FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md) — same shape (fresh subagent, tail line, evidence fold), different job.
 
 ## Why not just self-attestation
@@ -173,7 +173,7 @@ Concrete cases from the repo's own history. The reviewer prompt is calibrated so
 | Bordered `surface-1` boxes | `ChainModule` flex-column shape |
 | Raw PNG thumbnails | `composeImageWithOverlay` in `overlayCompose.ts` (Kiwi PR A pattern) |
 
-**What actually happened**: Dominik reviewed, filed feedback, and the fix landed as **three separate follow-up commits** — `81b6d2e3` (canonical primitives), `7df00c55` (canonical divider), `20b11c7f` (collapsed one-mechanism-not-two). Fix commit message states verbatim: *"I hand-rolled a list + bespoke layout + non-canonical buttons + attachment thumbnails that didn't show the annotations. Rewritten against the frontend inventory."*
+**What actually happened**: the maintainer reviewed, filed feedback, and the fix landed as **three separate follow-up commits** — `81b6d2e3` (canonical primitives), `7df00c55` (canonical divider), `20b11c7f` (collapsed one-mechanism-not-two). Fix commit message states verbatim: *"I hand-rolled a list + bespoke layout + non-canonical buttons + attachment thumbnails that didn't show the annotations. Rewritten against the frontend inventory."*
 
 **Reviewer expectation**: On the initial `19738976` diff, the reviewer must produce **at least four `should reuse` findings** citing `SelectionTable`, `ConfirmDeleteButton`, `usePanelResize`, `ChainModule` layout, and — likely a fifth — `composeImageWithOverlay`. All five canonicals are named in `docs/ui/PRIMITIVES.md` and/or `docs/inventory/FRONTEND.md`. Missing this case = reviewer is broken.
 
@@ -224,7 +224,7 @@ Two things the plan makes newly load-bearing. Worth stating.
 Today `docs/inventory/*.md`, `docs/ui/PRIMITIVES.md`, `docs/ui/COPY.md`, and `docs/PLOTS.md` are norms — nice-to-have, occasionally consulted. Once this reviewer cites them as ground truth for pre-commit gating, stale docs silently miss duplications. The convention check **promotes this set to first-class artifacts**:
 
 - Adding a new canonical helper without updating the relevant inventory file, or a new primitive without updating `PRIMITIVES.md`, becomes its own convention violation. (Not enforced by this reviewer at v1; a future extension could grep whether a new file marked `# Canonical:` in a comment appears in the corresponding doc.)
-- The reviewer itself surfaces stale-doc candidates — if it flags a "should reuse" that Dominik overrides because the canonical is stale, that's a doc-update signal.
+- The reviewer itself surfaces stale-doc candidates — if it flags a "should reuse" that the maintainer overrides because the canonical is stale, that's a doc-update signal.
 - The [Case studies](#case-studies) — blackboard, `pop_df`, h5ad, JSON — should stay in the plan doc as a regression-test set. Any change to the reviewer prompt or the doc list must not regress these.
 
 ### Pre-commit latency
@@ -271,7 +271,7 @@ Same outcome vocabulary as sibling findings (`fixed_pre_commit`, `shipped_with_f
 
 This closes the gap flagged in the effectiveness plan's [Ceiling](EFFECTIVENESS_LOG_PLAN.md#ceiling--what-this-cannot-measure): sibling covers case-F fix drift only, so a broader "we catch drift" claim is currently unenforced. With this reviewer wired up + logged, the broader claim earns its name.
 
-## Open decisions — Dominik's call
+## Open decisions — the maintainer's call
 
 1. ~~**Inventory scope**~~: answered by the companion audit (2026-09-26). Confirmed doc list is in §Inventory scope; ground-truth set spans `docs/inventory/*.md` + `docs/ui/PRIMITIVES.md` + `docs/ui/COPY.md` + `docs/PLOTS.md` + module `CLAUDE.md` files.
 2. ~~**Ship order**~~: **log first (or alongside).** The cost-gradient section makes the argument — without the log wired, the first N reviewer runs go unmeasured and the "worth 60s/commit" claim can't be earned back with data.

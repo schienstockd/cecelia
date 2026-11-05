@@ -1,7 +1,7 @@
 # Spatial Analysis + Region Clustering — Parked Plan
 
 **Status:** in-progress on branch `feat/spatial-regions` (Opus pass 2026-07-20; decisions confirmed
-by Dominik same day). Source prompt: `cecelia-feijoa/docs/archive/spatial-region-clustering-prompt.md`.
+by the maintainer same day). Source prompt: `cecelia-feijoa/docs/archive/spatial-region-clustering-prompt.md`.
 
 ## Goal
 
@@ -75,7 +75,7 @@ cross-poptype query (Decision 6).
 
 ### Decision 17 — ONE persisted, pop-agnostic neighbour graph is the substrate (2026-07-30)
 
-Dominik: *"these neighbours could be used for regions. but also — neighbours alone could be used
+The maintainer: *"these neighbours could be used for regions. but also — neighbours alone could be used
 independent of regions… you can extract cell interactions from neighbours without explicitly forming
 regions. i'm a bit worried about parallel implementations here. we need to generalise."*
 
@@ -85,7 +85,7 @@ and `clustRegions` each rebuilt their own basis-restricted graph in-process. The
 `{vn}.spatial.h5ad` had zero consumers anywhere in the codebase — Phase 2's "shared substrate" was a
 dead end.
 
-**Resolved (both calls Dominik's):**
+**Resolved (both calls the maintainer's):**
 
 1. **The graph is pop-agnostic and persisted per run** → `spatialGraph/{suffix}.h5ad`, holding obs
    (`valueName`, `label`[, `_t`]), `obsm['spatial']` in µm, squidpy's obsp matrices, and the build
@@ -108,7 +108,7 @@ dead end.
 **This restores legacy, it does not invent something.** Old-R `clustRegions/kmeansClust.R:45` read the
 *persisted* neighbour table via `cciaObj$spatialDT(...)` and joined `popDT` onto it; `cellRegions.R`
 stored `neighbour_value_name`/`neighbour_label` per edge, i.e. cross-segmentation and pop-agnostic.
-Dominik confirmed: *"the previous r version also required neighbours to be run before region
+The maintainer confirmed: *"the previous r version also required neighbours to be run before region
 clustering."*
 
 **Consequence for plots:** cell interactions are now just a labelling of the shared graph, so an
@@ -117,7 +117,7 @@ rather than a by-product.
 
 ### Decision 18 — interactions carry a permutation test, with `n` as a parameter (2026-07-30)
 
-Dominik: *"we should implement an actual test whether the interactions you see are real. ie/ versus
+The maintainer: *"we should implement an actual test whether the interactions you see are real. ie/ versus
 random shuffling the pops 1000 times or so"* … *"can we make n a param. i don't know if 1000 is always
 the best to choose."*
 
@@ -155,7 +155,7 @@ cross-poptype containment query work (join on `label`, Decision 6) and matches l
 neighbourhoods come from the squidpy graph (radius / kNN / Delaunay — user-selectable, mirroring
 legacy `cellNeighbours` modes).
 
-CytoMAP's **raster-window** paradigm is a **committed mode** (Phase 6; Dominik confirmed 2026-07-20),
+CytoMAP's **raster-window** paradigm is a **committed mode** (Phase 6; the maintainer confirmed 2026-07-20),
 sequenced after the per-cell path works end-to-end so it can't block static-image shipping. The two
 paradigms differ in *what a neighbourhood is*:
 - **Per-cell:** each cell centres its own neighbourhood (its graph neighbours); every cell gets a region
@@ -281,7 +281,7 @@ variant (trimesh surface distance → connected components) for large objects (l
 Mesh contact/containment (legacy `cell_contacts_mesh.py`, `cell_clusters_mesh.py`) stays on **trimesh**
 — consistency with the existing 3D object-measurement step (same mesh objects), and geometry stays in
 Python (the architecture boundary). The legacy's two pain points (slow collision sweep, required saving
-meshes) are addressed by *how* it's used, not by switching engines (Dominik raised this 2026-07-20):
+meshes) are addressed by *how* it's used, not by switching engines (the maintainer raised this 2026-07-20):
 
 1. **Do not persist meshes at segmentation.** Generate on the fly. Two tiers:
    - *Fast/default:* bbox / convex-hull approx meshes from the measure step's existing `bbox_*` columns
@@ -331,7 +331,7 @@ Cecelia invests in spatial-transcriptomics niches (the `stomics` vignette).
 The `popSelection` widget muddles all poptypes into one flat chip strip (and discards the `popType` the
 backend already sends). With flow/live/clust/trackclust/region now all live, this is confusing — and
 region-clustering basis must accept BOTH cells and tracks (gated + clustered + region). Redesign
-(Dominik's calls):
+(the maintainer's calls):
 
 1. **A function declares an explicit poptype allow-list** — `popSelection` params carry
    `accepts: [...]` (e.g. `["flow","live","clust","region"]`; region basis adds `"track","trackclust"`).
@@ -359,7 +359,7 @@ behaviour regions (Phase 8 backend, when a track basis is verified).
 
 ### Decision 15 — filter populations live in the existing PopulationManager (no separate manager)
 
-Dominik's call after weighing a separate "Filter Manager": **one manager, not two.** If storage is
+The maintainer's call after weighing a separate "Filter Manager": **one manager, not two.** If storage is
 unified (a filter pop is just a `Population` in the per-poptype sidecar, resolved by `pop_df` like a
 gate — `ensure_filter_pop!` is the programmatic primitive), a second manager is only a filtered *view*
 behind an artificial boundary. So: add a **"New filter population"** affordance to the existing
@@ -372,7 +372,7 @@ per-poptype `PopulationManager` (reused CRUD: `pop/add`·`update`·`delete`), an
 - **Colour + all pop attributes apply** (a filter pop is a Population): user-picked colour (palette
   default, not the old random), `show`, label overrides — nothing special-cased.
 - Filter on ANY obs measure (cluster/region/aggregate/intensity/speed/HMM…) for ANY poptype — the R
-  `filterMeasure/filterFun/filterValues` lazy-predicate model. Dominik: "old app filtered TRUE/FALSE —
+  `filterMeasure/filterFun/filterValues` lazy-predicate model. The maintainer: "old app filtered TRUE/FALSE —
   reference not gospel"; kept measure-agnostic (`> 0` is just the flag case).
 LAST priority (task #10). See CD8→aggregate→CD69 workflow: chain composes parent∩child, no muddle.
 
@@ -384,7 +384,7 @@ hand-drawn gates. Pure form logic in `utils/filterPopForm.ts`. Julia 1478, vites
 
 ### Decision 16 — Spatial Analysis plots: CytoMAP parity for the Gerner lab
 
-Dominik: "take CytoMAP as inspiration; provide at least similar plots for Gerner people." The Spatial
+The maintainer: "take CytoMAP as inspiration; provide at least similar plots for Gerner people." The Spatial
 Analysis + Region Clustering pages need a plot canvas (currently none). Plan, reusing the existing
 registry + `SummaryCanvas`/cluster-heatmap framework (docs/PLOTS.md — NOT a bespoke panel):
 1. **Region composition heatmap** (CytoMAP signature): region × basis-population mean composition —
@@ -532,7 +532,7 @@ handler resolves the basis via `pop_df` and assigns each pooled cell a **(value_
 cell and a nearby T cell are neighbours across segmentations), computes composition via shared
 `spatial_utils.neighbourhood_composition` (`freq = n/sum(n)`), pools across the set, clusters (Leiden
 via `find_populations` with `axis="NONE"`, or k-means), and writes `regions.{suffix}` + `X_umap.{suffix}`
-via `split_back_and_write(col_prefix="regions")` — **generalised, not forked** (Dominik's ask). Shared
+via `split_back_and_write(col_prefix="regions")` — **generalised, not forked** (the maintainer's ask). Shared
 `spatial_utils.build_spatial_graph` used by both cellNeighbours and this (one squidpy entry point).
 Registered + QC + COHORT_METRICS. Tests: Julia param/dispatch, Python composition unit tests (pure).
 **Validated on XcPcu8** (project 4kS67f, images LUkCpP+k3Tx90, B/T basis): 1966 cells pooled →
@@ -574,7 +574,7 @@ static-image support (prompt constraint).
 - Cross-poptype query is first-class (Decision 6), not an afterthought.
 - Live-imaging extension scoped separately (Phase 8).
 
-## Resolved (Dominik, 2026-07-20)
+## Resolved (the maintainer, 2026-07-20)
 
 - **squidpy dep weight** — non-issue; incremental cost is negligible (heavy tree already present via
   scanpy). Added via `pixi add --pypi squidpy` (v1.8.3; conda route breaks the cellpose numpy pin).

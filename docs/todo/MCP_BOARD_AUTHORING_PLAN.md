@@ -8,7 +8,7 @@ design-but-don't-run split to the Analysis board — the third artefact after no
 
 *"can you plot out the key pieces in project 4kS67f"* should produce a board worth looking at.
 
-Dominik: *"claude do add board only … it can only add one board at a time. it cannot modify or delete
+The maintainer: *"claude do add board only … it can only add one board at a time. it cannot modify or delete
 boards. add yes. modify no. delete no."*
 
 One MCP tool that **adds one board**, previewed before it lands, validated against real project state,
@@ -35,7 +35,7 @@ Boards already persist: the frontend autosaves `{tabs, layouts}` to `settings/an
 1. **Add-only. No board versioning — dropped 2026-08-08.** A brand-new board, never a touched one.
    **No modify-in-place, no delete, no rename, no reorder** — those are the user's, in the GUI.
 
-   An earlier draft had a Phase 4 giving boards notebook-style snapshot/restore. Dominik: *"i'm not
+   An earlier draft had a Phase 4 giving boards notebook-style snapshot/restore. The maintainer: *"i'm not
    sure we need restorable artefacts for boards? … I don't want another parallel versioning system."*
    Correct on both counts:
    - **Nothing needs restoring.** Versioning exists for notebooks because `revise` overwrites the

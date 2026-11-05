@@ -104,6 +104,14 @@ class PlaneProfile:
             ix[self._z] if self._z is not None else 0,
             hist_percentile(occupied, 50), hist_percentile(occupied, 99), (int(h[0]) / total) if total else 0.0, top, int(h[top]) if nz.size else 0))
 
+    def drop_t(self, t):
+        """Forget every plane of timepoint `t` — one that is not acquisition data (a stopped
+        acquisition's zero-filled last frame, `partial_last_timepoint`)."""
+        if self._t is None:
+            return
+        for c, rows in self._rows.items():
+            self._rows[c] = [r for r in rows if r[0] != t]
+
     def summary(self, c, top_value):
         """`{'byZ': {...}, 'byT': {...}}` — per depth / per frame: median p50 and p99, mean zero
         fraction, and the count of voxels at the channel ceiling `top_value` (0 where the plane's top is
@@ -243,6 +251,47 @@ def saturation_stats(hist, background_method='triangle'):
         'zeroFrac': (n_zero / total) if total else 0.0,
         'signalFrac': (signal / total) if total else 0.0,
     }
+
+
+def partial_last_timepoint(occupied):
+    """The z-planes an acquisition stopped before writing, or None. `occupied` is a bool `[T, Z]` array:
+    does the (t, z) plane hold any non-zero voxel in ANY channel.
+
+    A recording stopped mid-volume leaves its last timepoint with the deepest z-planes never written.
+    Bio-Formats keeps that timepoint and fills the missing planes with zeros (OIRReader only drops a
+    timepoint that has no complete plane at all), so it arrives as black planes in the last frame.
+
+    Only planes that hold data in EVERY earlier timepoint can be missing: a stopped acquisition loses
+    planes it recorded throughout. That excludes planes the source left blank throughout (a crop done
+    before import). A plane blank in SOME earlier timepoints but not others is registration padding
+    (a z-drift correction shifts each frame and pads the deep end), and then nothing is reported at all:
+    with steady drift the shift can step up on the last frame, leaving one more plane blank there than
+    in any frame before — a complete timepoint that looks stopped. Acquired data never blanks a whole
+    plane in every channel now and then. A miss only means no trim, so the rule errs that way; the one
+    case it cannot tell apart is a drift whose ONLY step is on the last frame. The missing planes must
+    also be the tail of the recorded planes. Empty planes anywhere else (mid-stack, or mid-series) are a
+    different problem and are not reported here.
+
+    Returns `{"t": T-1, "emptyZ": [z, ...], "sizeZ": Z}`, or None when the last timepoint is complete,
+    the image has fewer than two timepoints, or the pattern is not a trailing run.
+    """
+    occ = np.asarray(occupied, dtype=bool)
+    if occ.ndim != 2 or occ.shape[0] < 2:
+        return None
+    n_t, n_z = occ.shape
+    earlier = occ[:-1]
+    if (earlier.any(axis=0) & ~earlier.all(axis=0)).any():   # blank only sometimes: drift padding
+        return None
+    recorded = earlier.all(axis=0)                # data in every earlier timepoint
+    missing = ~occ[-1] & recorded
+    if not missing.any():
+        return None
+    rec_z = np.flatnonzero(recorded)
+    miss_z = np.flatnonzero(missing)
+    # a stopped acquisition loses a TAIL: the missing planes are the last len(miss_z) recorded ones
+    if not np.array_equal(miss_z, rec_z[len(rec_z) - len(miss_z):]):
+        return None
+    return {"t": int(n_t - 1), "emptyZ": [int(z) for z in miss_z], "sizeZ": int(n_z)}
 
 
 def triangle_threshold(hist):

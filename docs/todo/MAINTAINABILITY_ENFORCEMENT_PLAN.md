@@ -107,7 +107,7 @@ The widened prompt, run through recital's own `claude -p` path against real diff
 
 - **P0 — Replay (decides P3's scope). ✅** A script over the 150 merged PRs for each item-3 sub-check,
   using the Decision 5 triggers. Output per sub-check: PRs fired, locations flagged, a hand-labelled
-  real-vs-noise sample. Checkpoint: Dominik sees the table before anything is wired.
+  real-vs-noise sample. Checkpoint: the maintainer sees the table before anything is wired.
 - **P1 — Type-shape reuse (prompt edit). ✅** Three example additions in step 1 of `CONVENTION_CHECK.md`,
   three grep sets in step 4 (`@enum`, `struct .*Spec`, `Union{Nothing`). Check it against one real past
   diff per category, and record the result here.

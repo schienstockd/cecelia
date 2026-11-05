@@ -15,6 +15,7 @@ Base.@kwdef struct ImportOmezarrParams
     shardDepth::Any      = "1"
     maxWorkers::String   = "auto"
     jvmHeapGiB::Any      = "auto"
+    keepPartialTimepoint::Bool = false
 end
 
 function parse_import_omezarr_params(d::AbstractDict)::ImportOmezarrParams
@@ -29,7 +30,8 @@ function parse_import_omezarr_params(d::AbstractDict)::ImportOmezarrParams
         shardSize     = get(d, "shardSize", "auto"),
         shardDepth    = get(d, "shardDepth", "1"),
         maxWorkers    = string(get(d, "maxWorkers", "auto")),
-        jvmHeapGiB    = get(d, "jvmHeapGiB", "auto"))
+        jvmHeapGiB    = get(d, "jvmHeapGiB", "auto"),
+        keepPartialTimepoint = Bool(get(d, "keepPartialTimepoint", false)))
 end
 
 
@@ -165,8 +167,9 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     monitor  = @async begin
         while process_running(proc)
             if isdir(zarr_out) && src_size > 0
-                p = min(_dir_bytes(zarr_out) / src_size, 0.98)
-                on_progress(round(Int, p * 100), 100)
+                # `frac`, not `p`: a closure assigning `p` would rebind the params struct above
+                frac = min(_dir_bytes(zarr_out) / src_size, 0.98)
+                on_progress(round(Int, frac * 100), 100)
             end
             sleep(2)
         end
@@ -253,6 +256,10 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # the io pool alongside the conversion. Advisory: a failure here never fails the import.
     let sat = _probe_saturation(resolved_zarr, task_run_dir(img._dir);
                                 on_log = on_log, on_progress = on_progress, on_process = on_process)
+        # before the `isnothing(sat)` check: a failed probe must still clear a previous import's record
+        _apply_partial_timepoint!(zarr_meta, isnothing(sat) ? nothing : pop!(sat, "partialTimepoint", nothing),
+                                  resolved_zarr, zarr_out, task_run_dir(img._dir), p.keepPartialTimepoint;
+                                  on_log = on_log, on_progress = on_progress, on_process = on_process)
         if !isnothing(sat)
             zarr_meta["saturation"] = sat
             n = count(ch -> get(ch, "saturated", false) === true, sat["channels"])

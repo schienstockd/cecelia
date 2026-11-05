@@ -129,7 +129,8 @@ main() {
         if [ "$rc" -ne "$EX_TEMPFAIL" ] || [ ! -f "$LIMIT_FILE" ]; then
             if [ "$rc" -eq 0 ]; then   # red bot PRs first: they block every update behind them
                 run_unattended JUDGE_DEPS_FIX "$DEPS_LOG_FILE" judge-deps
-                run_unattended JUDGE_AUTO_FIX "$AUTO_LOG_FILE" judge-review --auto
+                # the log the consoles' judge --auto line points at (`effectiveness/auto_run.py`)
+                CECELIA_JUDGE_AUTO_LOG="$AUTO_LOG_FILE" run_unattended JUDGE_AUTO_FIX "$AUTO_LOG_FILE" judge-review --auto
             fi
             return "$rc"
         fi

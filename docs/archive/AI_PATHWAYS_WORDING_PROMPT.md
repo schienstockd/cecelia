@@ -6,7 +6,7 @@
 > [`docs/todo/KIWI_ASSISTANT_PLAN.md`](../todo/KIWI_ASSISTANT_PLAN.md).
 >
 > **Outcome (2026-10-31):** audited (history, capabilities from code, string inventory); not as a
-> single proposal PR. Dominik's call: **two ways in, not a loop**. Kiwi (structured rubber duck) and
+> single proposal PR. The maintainer's call: **two ways in, not a loop**. Kiwi (structured rubber duck) and
 > Claude Code (the interactive route) sit side by side, either first, Blackboard as the bridge. Kiwi's
 > `?` now shows the two modes with a schematic each, plus *What each can use* — `lib/claudeTools.ts`,
 > pinned by its test to the real tool registrations and `KIWI_READ_TOOLS` (replaces the hand-written

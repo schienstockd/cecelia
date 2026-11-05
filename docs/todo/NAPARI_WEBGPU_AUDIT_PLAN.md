@@ -23,14 +23,14 @@ From `CLOUD_MIGRATION_ASSESSMENT.md`, measured on `origin/main` @ 2e5b89fd:
 | h5ad is read server-side by the bridge; 139 MB total vs 192.6 GB zarr (1:1380) | A browser client must **re-implement** those reads. Counts against the web renderer |
 | `offscreen` and `eglfs` give no GL context; an X server is a hard dependency for remoting | Cost on the *remoting* side of the ledger |
 | Hardware GL only via `__NV_PRIME_RENDER_OFFLOAD=1` + `__GLX_VENDOR_LIBRARY_NAME=nvidia` (`app/src/napari.jl:55-59`) | Applies to the browser too — see gate G0 |
-| Multi-user is cheap: per-process singletons, container per user, 193 routes untouched | Confirmed by Dominik: **one session per workstation, one VM per user.** Phase 4 is closed, see §6 |
+| Multi-user is cheap: per-process singletons, container per user, 193 routes untouched | Confirmed by the maintainer: **one session per workstation, one VM per user.** Phase 4 is closed, see §6 |
 | Store has a **single multiscale level** — no coarse browse level | Required work for *both* options. See §5, item L |
 | `.ccbundle` packing is 6.1× faster than a live-store copy | Session import/export shape, unchanged by this audit |
 | Napari throughput numbers in that doc are **invalid** (readback raced the draw; NVIDIA and llvmpipe landed within 5%) | Gate G1 re-takes them with an explicit render-complete sync. This is the yardstick |
 
 ## 2. The datasets — real numbers, from disk
 
-Dominik's call: `fXgbTl` for small tests, any image from set `OLifi6` for the real target. Both in
+The maintainer's call: `fXgbTl` for small tests, any image from set `OLifi6` for the real target. Both in
 project `zolIMa`. Read from `.zarray`/`.zattrs`, not estimated.
 
 | | `fXgbTl` (small test) | `OLifi6` / `VJy1Nx` (real target) |
@@ -59,7 +59,7 @@ scrub cost, which is a request-count problem, not a bandwidth problem (39 MB).
 
 ## 3. The rig
 
-Benchmarks run on Dominik's machine now; if the concept holds, re-run on the real VM.
+Benchmarks run on the maintainer's machine now; if the concept holds, re-run on the real VM.
 
 - GPU: **NVIDIA RTX 2000 Ada Generation Laptop, 8188 MiB**, driver 580.173.02.
 - Browser: **Firefox 153.0.4** — the only browser installed. No Chrome/Chromium.
@@ -87,10 +87,10 @@ event callbacks actually bound, plugins. Cross-reference `docs/NAPARI.md` (91 KB
 criticality. Also settle the dask question: find the actual `add_image` call site and record whether
 it goes through dask or `as_dask=False`.
 - **Artifact:** feature inventory table + the dask finding.
-- **Gate:** none — but the prompt mandates a **check-in with Dominik here** before spending GPU time.
+- **Gate:** none — but the prompt mandates a **check-in with the maintainer here** before spending GPU time.
 
 ### S2 — G0: does the browser even get the GPU?
-Load a local page reporting `navigator.gpu` adapter info, in a throwaway Firefox profile (his
+Load a local page reporting `navigator.gpu` adapter info, in a throwaway Firefox profile (their
 profile is not touched), with and without the PRIME env. Confirm WebGPU is enabled on Linux in FF
 153 and that the adapter is the RTX 2000 Ada, **not llvmpipe** — the prior assessment's
 software-renders-silently trap, now on the browser side.
@@ -107,7 +107,7 @@ clock, per the prior doc's own diagnosis. Measure (a) 3D MIP rotate frame time a
   they land within 5% again the harness is still racing and the numbers are still invalid.
 
 ### S4 — G2: volumetric raycast — **three renderers, one yardstick**
-Dominik, 2026-08-24: **benchmark all three options.** So G2 is not "can WebGPU do it" but "which of
+The maintainer, 2026-08-24: **benchmark all three options.** So G2 is not "can WebGPU do it" but "which of
 the three makes an acceptable frame on this GPU, and at what cost in new code":
 
 - **A** — Napari's own 3D MIP (that is S3/G1, and it is the yardstick).
@@ -163,7 +163,7 @@ one-session-per-VM note → an unhedged recommendation.
 
 ## 5a. Segmentation-mask correction — a requirement, not just a risk
 
-Dominik, 2026-08-24, on `CORRECTION_PLAN.md` P2 (unbuilt): *"in the previous R version this was done
+The maintainer, 2026-08-24, on `CORRECTION_PLAN.md` P2 (unbuilt): *"in the previous R version this was done
 in napari because you had to see the actual signal from the intensity channels. but we could come up
 with an alternative way that is more similar to the track correction in browser."*
 
@@ -188,7 +188,7 @@ renderer first.
 
 ## 6. Phase 4 is closed
 
-Dominik, 2026-08-24: **one session per workstation, one VM per user.** No concurrency sizing is
+The maintainer, 2026-08-24: **one session per workstation, one VM per user.** No concurrency sizing is
 needed — there is no shared-instance case to size, and the prior assessment already established
 that per-process singletons make container-per-user free of route changes. Nothing further to
 compute; the audit records this and moves on.
@@ -209,7 +209,7 @@ compute; the audit records this and moves on.
   major targets. A G0 failure would be a *tooling* result, not a verdict about WebGPU — say so
   rather than concluding the concept is dead.
 - S4 measures rendering, not scientific accuracy. Whether a browser MIP/raycast is *visually
-  trustworthy enough to judge segmentation on* is a separate question that needs Dominik's eyes on
+  trustworthy enough to judge segmentation on* is a separate question that needs the maintainer's eyes on
   a side-by-side still, not a frame rate.
 - The audit can honestly conclude something narrower than either option, e.g. browser for
   display-only review and Napari retained for the correction/editing subset. That is on the table.

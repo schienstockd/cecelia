@@ -655,6 +655,47 @@ def read_axes(path):
     return [ax["name"] for ax in axes] if axes else None
 
 
+def trim_timepoints(path, size_t):
+    """Shrink a store's time axis to its first ``size_t`` timepoints, on every pyramid level, IN PLACE.
+
+    For the import only, on the store bioformats2raw has just written and nothing references yet: it
+    drops a timepoint the acquisition never finished (`intensity_utils.partial_last_timepoint`). It
+    is not a general editing tool. A registered store is rewritten through `staged_store` instead,
+    because an in-place change that is cancelled half-way leaves the levels disagreeing.
+
+    zarr's ``resize`` deletes the chunks outside the new shape but leaves their (now empty) nested key
+    directories behind, so those are pruned here. The NGFF metadata carries no shapes, so it needs no
+    change; the OME-XML ``SizeT`` is the caller's (Julia ``update_ome_xml_pixels!``).
+
+    Returns the number of levels resized. Raises ValueError when the store has no time axis or
+    ``size_t`` is outside ``1 .. current``.
+    """
+    axes = read_axes(path) or []
+    if 't' not in axes:
+        raise ValueError(f'no time axis in {path!r} (axes {axes})')
+    t_idx = axes.index('t')
+    base = series_base(path)
+    datasets = read_multiscales_meta(path).get('datasets') or [{'path': '0'}]
+    grp = zarr.open_group(base, mode='r+')
+    n = 0
+    for ds in datasets:
+        lvl_path = str(ds.get('path', '0'))
+        arr = grp[lvl_path]
+        cur = int(arr.shape[t_idx])
+        if not 1 <= size_t <= cur:
+            raise ValueError(f'cannot trim level {lvl_path} of {path!r} from {cur} to {size_t} timepoints')
+        if size_t == cur:
+            continue
+        shape = list(arr.shape)
+        shape[t_idx] = size_t
+        arr.resize(tuple(shape))
+        n += 1
+        for dirpath, _, _ in os.walk(os.path.join(base, lvl_path), topdown=False):
+            if not os.listdir(dirpath):          # bottom-up, so a parent sees its children gone
+                os.rmdir(dirpath)
+    return n
+
+
 def read_time_increment(path):
     """Seconds per frame for a store: the NGFF time-axis scale first, falling back to the
     OME-XML ``TimeIncrement``. None when neither is available or there is no time axis.

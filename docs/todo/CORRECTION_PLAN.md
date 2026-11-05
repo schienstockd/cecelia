@@ -75,7 +75,7 @@ from the first draft of this plan and both are load-bearing UX:
   `track_id` vector per edit — and `tracksEditHistoryDF` (`:137-160`) renders a **Rollback**
   action link per row. The history was undo, not just a log.
 
-**Segmentation correction was the training-label path, repurposed** (Dominik, 2026-08-17). There is
+**Segmentation correction was the training-label path, repurposed** (the maintainer, 2026-08-17). There is
 no `correctSegmentation` task; the mechanism is:
 
 ```
@@ -91,7 +91,7 @@ The user edits the **napari Labels layer with the legacy viewer's own paint / fi
 Labels, and the layer is written back over `<obj>/labels/<valueName>.zarr`, registering
 `imLabelsFilepath` (value name `manual` when drawn from scratch — `trainModelsServer.R:80-89`).
 
-**Editability was a decision made at LOAD time, and it has to be here too** (Dominik, 2026-08-17).
+**Editability was a decision made at LOAD time, and it has to be here too** (the maintainer, 2026-08-17).
 `show_labels` takes `as_np_array` (`inst/py/napari_utils.py:530`), documented as *"boolean to load
 labels as numpy array for editing"* (`R/napariUtils.R:288`). When set it collapses the pyramid to
 **level 0 only, eagerly** — `im_labels[0].compute()` / `im_labels[0][:]` (`:589-598`) — and it is
@@ -117,7 +117,7 @@ Three properties of that write are **incompatible with Feijoa and must not be po
 
 (3) is not an old-R bug to fix in passing — it is the whole design problem of this feature.
 
-**How the lab actually coped with (3), and why it must not be reproduced** (Dominik, 2026-08-17):
+**How the lab actually coped with (3), and why it must not be reproduced** (the maintainer, 2026-08-17):
 after every correction they **manually re-ran two whole tasks** —
 
 1. measure labels again, and

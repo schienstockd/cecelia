@@ -84,10 +84,10 @@
   </g>
   <g fill="#6b6b66" text-anchor="middle" font-size="11">
     <text x="560" y="108">after verify</text>
-    <text x="708" y="108">Dominik or auto-fix</text>
+    <text x="708" y="108">Maintainer or auto-fix</text>
     <text x="841" y="108">once gone</text>
     <text x="560" y="406">in a rules PR</text>
-    <text x="748" y="406">Dominik, in judge-review</text>
+    <text x="748" y="406">Maintainer, in judge-review</text>
   </g>
   <g stroke="#6b6b66" stroke-width="2" fill="none" marker-end="url(#arrowDim)">
     <path d="M560,146 L560,122" />

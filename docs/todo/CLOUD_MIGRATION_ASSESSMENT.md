@@ -1,6 +1,6 @@
 # Cloud migration: tenancy scope + headless-render spike
 
-> **STATUS: assessed and declined, 2026-08-21.** Dominik's call: not realistic. This is kept as a
+> **STATUS: assessed and declined, 2026-08-21.** The maintainer's call: not realistic. This is kept as a
 > decision record, not a plan — nothing here is scheduled. **One exception: NCI ARE + VirtualGL
 > (section 3d) is not closed** — it was raised after the decision and is the only route that
 > survives the findings below. If the cloud mandate returns, start at 3d, then 3b and 3c.
@@ -181,7 +181,7 @@ exception — but it has to be said before the storage is procured.
   exactly once. (b) rclone's VFS cache means the gdrive *concurrent* figure (8.45 chunks/s) is
   read-after-write and therefore optimistic; the honest cold gdrive number is the 9,730 ms/file
   serial read.
-- All measured from Dominik's laptop over the lab network, not from a cloud instance inside the
+- All measured from the maintainer's laptop over the lab network, not from a cloud instance inside the
   same datacentre as the storage. A cloud VM adjacent to the share would do better on CIFS — how
   much is unknown, and it does not change conclusions 1, 3 or 4.
 

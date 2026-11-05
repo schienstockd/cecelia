@@ -235,7 +235,7 @@ end
 #
 # **Every band below is an unvalidated placeholder.** They were picked from geometry (what a 2-cell
 # merge does to an equivalent diameter: ×1.26 in 3D, ×1.41 in 2D) and counting noise, NOT calibrated on
-# real data. They are `info`, never `warn`, until Dominik has looked at what fires on real crops (the
+# real data. They are `info`, never `warn`, until the maintainer has looked at what fires on real crops (the
 # P4 checkpoint; CLAUDE.md → *Real-data visual validation*). Move them here, nowhere else.
 const SEG_QC_MIN_OBJECTS     = 20     # fewer objects than this → too few to say anything about sizes
 const SEG_FRAG_MEDIAN_RATIO  = 0.5    # median eq. diameter below half the given diameter → fragmented

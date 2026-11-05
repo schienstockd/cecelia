@@ -19,7 +19,7 @@ design debts we take from other single-lab tools.
 - Preprint DOI: to be filled from `spacr/README.md` when citation lands
 
 Both patterns are Einar Olafsson's design decisions. The code we might read is largely LLM
-output at scale, but the *ideas* — pinned chain inputs, one-command environment doctor — are his.
+output at scale, but the *ideas* — pinned chain inputs, one-command environment doctor — are Olafsson's.
 We are borrowing ideas, not code, so nothing in spaCR's licence attaches to us; the
 obligation is academic, not legal (Decision 3).
 

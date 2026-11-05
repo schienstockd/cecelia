@@ -33,7 +33,7 @@ The value of the observer session depends entirely on what Claude can see. Claud
 > method and its `ALLOWED_ROUTES` entry) and `mcp/cecelia_mcp/guidance.py` (what the server tells any
 > session about its own toolset). An unmentioned tool is an unused one: the assistant never offers the
 > capability. This went stale **twice** — `create_chain`, then
-> `get_analysis_boards`/`get_image_attributes` — both caught only when Dominik read a prompt and
+> `get_analysis_boards`/`get_image_attributes` — both caught only when the maintainer read a prompt and
 > noticed the gap. A ⚠️ comment did not prevent either, because you only read it if you already knew
 > the other file existed.
 >

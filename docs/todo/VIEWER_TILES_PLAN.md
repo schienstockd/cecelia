@@ -60,9 +60,9 @@ logic.
 ### Phase A — 2D "auto-fit" level (`pickPlaneLevel`) — SUPERSEDED
 
 Originally shipped in PR #660: a static byte-budget picker that chose the finest level
-whose whole-plane fetch fit under `PLANE_LEVEL_BUDGET_BYTES = 200 MB`. Dominik pushed
+whose whole-plane fetch fit under `PLANE_LEVEL_BUDGET_BYTES = 200 MB`. The maintainer pushed
 back: "why does it load l1 for 2d? that should depend on the zoom level of the camera —
-that's the whole point of the pyramids." He was right — a static per-session level
+that's the whole point of the pyramids." They were right — a static per-session level
 ignores what the pyramid exists for. `pickPlaneLevel` + `PLANE_LEVEL_BUDGET_BYTES` were
 deleted with their tests in the same PR; Phase B replaces it.
 

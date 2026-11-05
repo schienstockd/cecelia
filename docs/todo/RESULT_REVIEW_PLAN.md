@@ -83,7 +83,7 @@ P1 as built:
 - Verify's `result` flag, and the record's list of real result bugs outside the path list: the
   path list's recall check.
 
-**P2: public face** (needs Dominik's eyes on the renders before merge)
+**P2: public face** (needs the maintainer's eyes on the renders before merge)
 - README recital paragraph and the `readme-findings.svg` diagram.
 - `chart.py` and `flow_chart.py`: a third reviewer.
 

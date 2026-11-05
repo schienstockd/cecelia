@@ -333,7 +333,7 @@ describe('envelope size ratchet (LANDSCAPE_COMPLEMENTARY_PLAN Phase 5, Decision 
   // MEASURED baseline (2026-09-20, Phase 4 as-shipped): a 32×32 grid with every tile
   // carrying all four channels + segCount + 4 pops + tracks + sourceRun serialises to
   // ~640 KB. Decision 7's original estimate of ~400 KB "full-featured" undercounted the
-  // pops contribution — even 4 pops per tile at 32×32 alone is ~250 KB. If Dominik
+  // pops contribution — even 4 pops per tile at 32×32 alone is ~250 KB. If the maintainer
   // reads this and wants to reset the budget lower, either the schema shrinks (shorter
   // pop paths / names) or the density cap for the augmented layer moves down from 32.
   //

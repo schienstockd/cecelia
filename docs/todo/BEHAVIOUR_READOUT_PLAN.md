@@ -83,7 +83,7 @@ Only after `motif.class` starts landing on cells (motif plan's P2 wires the `mot
 - `get_behaviour_summary` reads `motif.class` + `motif.distance` (motif plan Decision 12, revised 2026-09-19 to drop the vn suffix) and emits them as `labels[].source = "motif"` with `confidence` from the distance. **No shape change** (that is the point of Decision 3).
 - Same for user-renamed pops: if a pop has a `renamedFrom: cluster|motif|hmm|filter` provenance, its membership flows as `source = "user_rename"`.
 
-## Open questions (Dominik's call before P1 starts)
+## Open questions (the maintainer's call before P1 starts)
 
 1. **Confirm Decision 2** — drop the canonical qualitative label set entirely for v1. Reversal (adding `labels.canonical: str?`) is a pure additive migration; the question is whether we should pre-commit to *not* shipping it.
 2. **Confirm Decision 5** — no code path derives a label string from a numeric descriptor. Same reversal cost as Decision 2. This one is the ratchet that keeps the "field-level portability" claim honest.

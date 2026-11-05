@@ -29,7 +29,7 @@ for a reason found in the code:
 - **No "show me the run" button on the parked bubble.** It would have had to un-collapse the functions
   panel and scroll the task list — the guide reaching into app state, which D1 forbids. It says where to
   look instead.
-- **Found in the browser, by Dominik, within minutes of first use — all three now covered:**
+- **Found in the browser, by the maintainer, within minutes of first use — all three now covered:**
   1. *The route never updated.* `createWebHashHistory` navigates by `pushState`, which fires no
      `hashchange`, so `currentPath` sat at the boot path and every routed step said "back to
      /manage-images". Now polled + re-read on start; the parsing half is `routePathFromHash` (tested).
@@ -40,7 +40,7 @@ for a reason found in the code:
      a `reveal` pointing at **New set** — the D5 mechanism, no new machinery, and it applies to the
      shared builder too, so every module-task guide inherits it. Needed one new `GuideCtx` field
      (`setCount`): "which set is active" and "are there any" are different questions.
-- **Layout reworked after first sight** (Dominik): the picker is divided rows, not 11 boxed cards. The
+- **Layout reworked after first sight** (the maintainer): the picker is divided rows, not 11 boxed cards. The
   action column was a stretch column that also held the "X first" button, so `Start` took the width of
   its widest sibling and the right edge zigzagged; met prerequisites were listed as chips, which was
   pure wrapping for no information. Now: fixed-width action column, readiness + step count in one
@@ -87,12 +87,12 @@ for a reason found in the code:
   step reveals "tick a single row" rather than pointing at a button that isn't rendered.
 - **The ring framed the wrong region for a tall control.** `getBoundingClientRect()` ignores clipping,
   so `TaskRunner`'s parameters block reported the full height it has inside a shorter scrolling panel
-  and the ring was drawn mostly outside the panel (Dominik, 2026-08-12). `visibleRect()` intersects the
+  and the ring was drawn mostly outside the panel (the maintainer, 2026-08-12). `visibleRect()` intersects the
   anchor with every clipping ancestor and the viewport; the ring AND the bubble placement now follow
   what is actually on screen.
 - **`PREREQ.imageImported` hand-rolled a second definition of "imported"** (`status === 'done'`), so a
   project full of long-since-converted images reported it MISSING and every guide read as blocked
-  (Dominik, 2026-08-12). `status` is the transient conversion-job state; the canonical answer is
+  (the maintainer, 2026-08-12). `status` is the transient conversion-job state; the canonical answer is
   `isImported` (`utils/inclusion.ts` — does the image HAVE a converted file), which is what the image
   table uses to decide whether the napari eye is enabled. The import guide's own gates and copy went
   the same way: they referenced a "Status column reads done", but that column shows the per-MODULE task
@@ -110,12 +110,12 @@ for a reason found in the code:
 - **A finished run draws nothing on the image until you toggle it.** The napari steps implied the
   overlay appears with the image; it does not — each segmentation has its own row in the Viewer panel
   with per-overlay switches, and until you flip one napari shows the raw channels and the run looks like
-  it did nothing (Dominik, 2026-08-12). Segment and track now walk open-in-napari → open the Viewer
+  it did nothing (the maintainer, 2026-08-12). Segment and track now walk open-in-napari → open the Viewer
   panel → **switch the overlay on** → judge it, with `viewer.toggleLabels` / `viewer.toggleTracks`.
 - **Both cluster guides end by defining populations from the result.** Clustering leaves numbered
   clusters, which are not populations: you open the population manager, create a population and tick
   cluster IDs into it (no gate to draw). That is the step that makes the result usable anywhere a gated
-  population is, so stopping at the UMAP left the guide short of the point (Dominik, 2026-08-12).
+  population is, so stopping at the UMAP left the guide short of the point (the maintainer, 2026-08-12).
 - **One anchor id can match several live elements**, and taking the first in DOM order was wrong: each
   floating gating plot carries its own axis controls, so the ring landed on plot 1 while the user worked
   in plot 2 — and because the ring sits above the app, it drew straight across the panel in front.
@@ -146,7 +146,7 @@ for a reason found in the code:
   the fun-name pair check fail.
 - **The ring outlived what it was pointing at.** Clicking a control that opens a dialog leaves the
   control underneath it, and a ring at z-1499 then floated on top of the dialog, framing something the
-  user could no longer see (the lab log's `?` → the Claude overview; Dominik, 2026-08-12). The ring is
+  user could no longer see (the lab log's `?` → the Claude overview; the maintainer, 2026-08-12). The ring is
   now suppressed when the anchor is occluded, and when the guide has finished. The bubble keeps its
   placement — it sits above the dialog and stays readable. `isOccluded` was already there for
   multi-candidate resolution; the ring needed it too.
@@ -192,7 +192,7 @@ Reference: `docs/ui/PRIMITIVES.md`, `docs/UI.md` (Onboarding · Explainer sketch
 **The gap is not the plumbing — it is (a) a bubble with a tour event model, (b) stable anchors in the
 markup, (c) the step catalogue.** Everything a guide needs to *observe* is already in a store.
 
-`lib/tips.ts` already carries the exact topic list Dominik named (segmentation, tracking, HMM,
+`lib/tips.ts` already carries the exact topic list the maintainer named (segmentation, tracking, HMM,
 gate-then-napari) as short text cards. **The guide is the interactive form of a tip, not a second
 catalogue** — see D7.
 
@@ -300,7 +300,7 @@ and the What's New modal becomes a second discovery surface for free.
 
 ### D11 — An orientation tour, with no prerequisites, started once on first launch
 
-*(added after the initial build — Dominik, 2026-08-13)*
+*(added after the initial build — the maintainer, 2026-08-13)*
 
 The catalogue as shipped had a hole at the front: every guide taught a pipeline step, so every guide
 needed data, so a first-time user with an empty project opened the picker and found a wall of amber
@@ -506,7 +506,7 @@ Each phase is shippable and leaves the app working.
 **P1 — the runtime, plus *Import images* end to end.** `anchorPosition.ts` (+ `TeleportPopover`
 refactor), `GuideBubble.vue`, `stores/guide.ts`, `GuidesDialog.vue`, the header button, the D4 test,
 the import guide, anchors in `SetBar`/`ImageTable`/`ManageImagesModule`/`FileBrowser`. Docs:
-`docs/UI.md` section + `INVENTORY.md` line. **Stop here for Dominik to look at it** (R3).
+`docs/UI.md` section + `INVENTORY.md` line. **Stop here for the maintainer to look at it** (R3).
 
 **P2 — `moduleTask.ts` + drift correct, segment, track.** Anchors in `ModuleLayout`, `TaskRunner`,
 `TaskList`, `ViewerPanel`. This is where `awaitTask` (D3) and `reveal` (D5) get real use.

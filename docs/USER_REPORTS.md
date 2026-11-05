@@ -7,7 +7,7 @@ fixed work and a reply. Same procedure whether a person or an agent does the tri
 
 Raw reports are **private**: they carry the reporter's name, machine and data details. They live in
 the private repo [`schienstockd/cecelia-user-reports`](https://github.com/schienstockd/cecelia-user-reports)
-(ask Dominik for access), cloned beside the cecelia checkouts as `../cecelia-user-reports`.
+(ask the maintainer for access), cloned beside the cecelia checkouts as `../cecelia-user-reports`.
 
 - `reports/YYYY-MM-DD_<initials>.md` — the report **verbatim**, never edited. A cover email or
   message goes beside it as `..._cover.md`.
@@ -56,12 +56,12 @@ One issue per item, following [`bug_report.yml`](../.github/ISSUE_TEMPLATE/bug_r
   ---
   📨 *From a user report against v<version> (the report itself is kept private). The symptom is
   the user's; cause, `file:line` references and fix were traced on `main` @ <sha> by Claude Code
-  (<model>) on @schienstockd's behalf — anything marked unverified wasn't. Decisions here are his.*
+  (<model>) on @schienstockd's behalf — anything marked unverified wasn't. Decisions here are theirs.*
   ```
 
   It carries provenance (a user hit this, not our own review — the judge's ⚖️ footer is the other
   source), what was verified, and the attribution [`DEV.md`](DEV.md) → *Agent-authored public
-  replies are attributed* requires for anything posted under Dominik's account. Drop the Claude
+  replies are attributed* requires for anything posted under the maintainer's account. Drop the Claude
   part if a person triaged it.
 - Write the issue number back into `index.md`, status `open`.
 
@@ -78,6 +78,6 @@ One issue per item, following [`bug_report.yml`](../.github/ISSUE_TEMPLATE/bug_r
 1. When an issue closes, set its row to `fixed` with the PR and the release it ships in. A fix on
    `main` hasn't reached the reporter until it's tagged ([`RELEASING.md`](RELEASING.md)).
 2. When every item is `fixed`, `already-fixed` or `wontfix` (with a reason), draft a reply: what was
-   fixed and in which release, what wasn't and why, and any questions for the reporter. Dominik
+   fixed and in which release, what wasn't and why, and any questions for the reporter. The maintainer
    sends it.
 3. Mark the report closed in `index.md`.

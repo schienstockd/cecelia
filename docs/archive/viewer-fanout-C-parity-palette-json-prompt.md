@@ -102,7 +102,7 @@ Both run: `pixi run test-api` + `pixi run test-frontend`.
 
 ## Explicit constraints
 
-- **Never start/kill the dev server.** Dominik owns 8080/5173/7655.
+- **Never start/kill the dev server.** The maintainer owns 8080/5173/7655.
 - **Never write shared dev config.**
 - **Ask before commit; state reservations first.**
 - **Branches + PRs only, never push to main.**

@@ -81,7 +81,7 @@ class IncidentHistoryTest(unittest.TestCase):
     def test_each_pattern(self):
         self.assertEqual(self._checks("app/src/x.jl", ["# a live turn on 4kS67f came back"]),
                          ["incident:dataset_uid"])
-        self.assertEqual(self._checks("frontend/src/x.ts", ["// Dominik, 2026-09-10: keep it"]),
+        self.assertEqual(self._checks("frontend/src/x.ts", ["// Maintainer, 2026-09-10: keep it"]),
                          ["incident:dated_authorship"])
         self.assertEqual(self._checks("app/src/x.jl", ["# same class as commit 860da24b"]),
                          ["incident:commit_sha"])

@@ -39,6 +39,8 @@ Manual emission via `python scripts/log_event.py` remains available for ad-hoc /
 
 Otherwise spawn. The prompt's own short-circuit handles the "additions present but all trivial" case (tail becomes `_no convention check needed_`, no evidence fold).
 
+A repeat recital on the same change reuses or reviews only the change since the last round: [`FANOUT_AUDIT.md`](FANOUT_AUDIT.md) → *Repeat rounds*.
+
 ## Reviewer prompt
 
 *(Everything below the horizontal rule is passed verbatim as the subagent's prompt, followed by the staged diff.)*

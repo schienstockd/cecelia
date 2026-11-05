@@ -242,7 +242,7 @@ class ReplyTest(unittest.TestCase):
     def test_user_report_issue_footer_counts_wrapped_as_in_the_template(self):
         footer_md = ("Body.\n\n---\n📨 *From a user report against v0.1.4. The symptom is the user's; cause"
                      " and fix were traced on `main` @ abc by Claude Code\n(Claude Haiku 5.5) on "
-                     "@schienstockd's behalf. Decisions here are his.*\n")
+                     "@schienstockd's behalf. Decisions here are theirs.*\n")
         issue = self.body_file("i.md", footer_md)
         self.assertIsNone(self.problem(f"gh issue create --repo o/r --title t --body-file {issue}"))
         bare = self.body_file("b.md", "Body.")
