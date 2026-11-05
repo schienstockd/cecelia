@@ -154,7 +154,7 @@ function api_images_meta_resync(body_bytes::Vector{UInt8})
         img = init_object(project_uid, uid)
         img isa CciaImage || continue
         resync_ome_meta!(img)
-        measure && ensure_saturation_meta!(img)
+        measure && Cecelia.ensure_saturation_meta!(img)   # not exported
         reloaded = init_object(project_uid, uid)
         reloaded isa CciaImage && (images[uid] = _image_payload(reloaded))
     end
