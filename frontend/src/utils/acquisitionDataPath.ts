@@ -71,17 +71,45 @@ function qcClippedChannels(img: LightPathImage): Set<number> {
     .map(f => f.detail!.channel as number))
 }
 
+/** Per-channel note for each depth / time finding (qc/profile.jl), keyed by the finding's code and
+ *  read from its `detail.perChannel` — the panel shows the number on the channel it belongs to. */
+const PROFILE_NOTES: Record<string, { key: string; note: (v: number) => string }> = {
+  'import.signal_fades': { key: 'fade', note: v => `fades ${pc(v)}% over the movie` },
+  'import.background_rises': { key: 'backgroundRise', note: v => `background up ${pc(v - 1)}% over the movie` },
+  'import.brighter_with_depth': { key: 'depthChange', note: v => `${pc(v)}% brighter with depth` },
+  'import.darker_with_depth': { key: 'depthChange', note: v => `${pc(-v)}% darker with depth` },
+  'import.clipped_deep': { key: 'clippedDeepShare', note: v => `${pc(v)}% of clipping in the deeper half` },
+}
+const pc = (v: number) => Math.round(v * 100)   // a whole percent from a fraction
+
+function qcProfileNotes(img: LightPathImage): Map<number, string[]> {
+  const out = new Map<number, string[]>()
+  for (const f of qcFindings(img as CciaImage)) {
+    const spec = PROFILE_NOTES[f.code]
+    const per = f.detail?.perChannel
+    if (!spec || !Array.isArray(per)) continue
+    for (const row of per as Record<string, unknown>[]) {
+      const ch = row.channel
+      const v = row[spec.key]
+      if (typeof ch !== 'number' || typeof v !== 'number') continue
+      out.set(ch, [...(out.get(ch) ?? []), spec.note(v)])
+    }
+  }
+  return out
+}
+
 /**
  * Measured losses the analysis cannot undo: clipping at the top (from the QC finding) and a background
  * clipped at 0 (dim signal cut away; no QC finding exists for it, the floor kind is the measurement).
  * A photon-counted floor or a low photon count is not on the list: that is how the detector reports,
- * not a loss, and "low" would need a threshold the question sets.
+ * not a loss, and "low" would need a threshold the question sets. Then the depth / time trends QC
+ * flagged on this channel (`profileNotes`): not losses, but they change what an intensity means.
  */
-export function channelAttention(f: CleanupFactsChannel, qcClipped: boolean): string[] {
+export function channelAttention(f: CleanupFactsChannel, qcClipped: boolean, profileNotes: string[] = []): string[] {
   const out: string[] = []
   if (qcClipped) out.push(`clipped at ${n(f.topValue)}`)
   if (f.floor?.kind === 'clipped') out.push('background clipped at 0')
-  return out
+  return [...out, ...profileNotes]
 }
 
 /** The channel to open first: the first that needs a look, else the first. */
@@ -101,6 +129,7 @@ export function dataPathChannels(img: LightPathImage): DataPathChannel[] {
   const facts = img.cleanupFacts?.channels ?? []
   const acq = img.acquisition
   const clipped = qcClippedChannels(img)
+  const profile = qcProfileNotes(img)
   return facts.map(f => {
     const recorded = acq?.channels?.find(c => c.order === f.index + 1)?.bitDepth
     const z = f.profile?.byZ.p99 ?? []
@@ -108,7 +137,7 @@ export function dataPathChannels(img: LightPathImage): DataPathChannel[] {
     return {
       index: f.index,
       name: img.channelNames?.[f.index] || f.name,
-      attention: channelAttention(f, clipped.has(f.index)),
+      attention: channelAttention(f, clipped.has(f.index), profile.get(f.index)),
       items: channelItems(f, recorded),
       hist: f.range?.hist.counts ?? null,
       byZ: z.length > 1 ? z : null,

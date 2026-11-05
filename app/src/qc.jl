@@ -38,6 +38,7 @@ end
 # the wording can be reviewed as a set without wading past the helpers. Rendering (`qc_text` and
 # the code that reads QC files back) stays here.
 include(joinpath(@__DIR__, "qc", "text.jl"))
+include(joinpath(@__DIR__, "qc", "profile.jl"))   # depth / time findings from the import profile
 
 """
     qc_text(key; subs...) -> (short, long)
@@ -686,11 +687,14 @@ function write_metadata_qc!(img::CciaImage)
     zp = img_filepath(img, VERSIONED_DEFAULT_VAL)
     findings = vcat(metadata_qc_findings(meta), saturation_qc_findings(meta),
                     photon_limited_qc_findings(meta), partial_timepoint_qc_findings(meta),
+                    profile_qc_findings(meta),
                     isnothing(zp) ? Dict{String,Any}[] : pyramid_qc_findings(zp))
 
     metrics = import_metrics(meta)
     sm      = saturation_metrics(meta)
     isnothing(sm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, sm))
+    prm     = profile_metrics(meta)
+    isnothing(prm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, prm))
     pm      = isnothing(zp) ? nothing : pyramid_metrics(zp)
     isnothing(pm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, pm))
 
