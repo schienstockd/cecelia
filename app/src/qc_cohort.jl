@@ -134,7 +134,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
                                          # different depth from its peers (usually a user leaving the
                                          # default in place). `deepestGridTiles` catches a chunk-shape
                                          # difference the level count alone would hide.
-                                         "nPyramidLevels", "deepestGridTiles"],
+                                         "nPyramidLevels", "deepestGridTiles",
+                                         # Depth / time trend of the brightest signal (qc/profile.jl):
+                                         # one movie fading or changing with depth far more than its
+                                         # session peers is a setting or a prep difference.
+                                         "maxSignalFade", "maxDepthChange"],
     # AF correction: both metrics describe the ACQUISITION, which is what makes them comparable across a
     # set shot in one session. `saturatedFrac` is the fraction of input voxels clipped at the sensor —
     # measured across the nine kSUFux movies it spanned 0.001% to 0.018%, a 13x spread at identical

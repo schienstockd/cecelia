@@ -124,6 +124,7 @@ class AgentRow:
     judge: bool = False            # opened by `pixi run judge-review`, whose queue waits on it
     recital: bool = False          # `pixi run recital` is running under it — shown as `recite`
     auto: bool = False             # `judge-review --auto`'s fix agent: unattended, named `auto-fix`
+    bg: bool = False               # a background job: no window — closing a terminal doesn't end it
     #: The branch's slugged findings, each with its outcome ("unresolved" until tagged) and the
     #: resolution row (None while unresolved) — the detail view (→) lists them.
     findings: tuple[tuple[dict, str, dict | None], ...] = ()
@@ -263,6 +264,6 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
                                            and pr.get("mergeable") == "CONFLICTING"),
                              findings=tuple(findings), session_id=s.session_id, recap=s.recap,
                              context_pct=s.context_pct, asks=s.asks and s.status != "busy", judge=s.judge,
-                             recital=s.recital, auto=s.auto,
+                             recital=s.recital, auto=s.auto, bg=s.bg,
                              badge=slots.get(s.session_id)))
     return sort_rows(rows)
