@@ -1,7 +1,7 @@
 # Image analysis recital — review a claim before it leaves Cecelia
 
-**Status:** parked (2026-11-05). Concept only; nothing built. Un-park when P0 (a hand-walked claim) is
-worth doing. That is a cheap first step, not a build.
+**Status:** parked (2026-11-05). Concept only; nothing built. Next step is P0, a hand-walked claim: no build, no
+quota.
 
 ## Goal
 
@@ -100,32 +100,48 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   mid-acquisition. The 5 Aug re-import healed it; only the log remembers it. That's run-time, not
   claim-time, but it shows the record (logs) can hold the only trace of a problem.
 
+## Approach
+
+Four stages, cheapest first. Each stage only runs if the one before it passed. The first two are
+deterministic and need no model.
+
+| Stage | Question | How | Output |
+|---|---|---|---|
+| **S0 Record gate** | Can the record say what was done? | Rules: every output the claim uses has its params (`funParamsByName` or run log); every image in scope has those outputs; the grouping attribute (e.g. `Mouse`) is filled | `sufficient` or a list of gaps. A gap is a finding about the record, not the claim |
+| **S1 Cohort consistency** | Was everything compared treated the same? | Rules: params, versions, metadata (interval, pixel size, channels) and gates equal across images; set members excluded silently; cohort-QC outliers (`app/src/qc_cohort.jl`) | Differences, each one a finding |
+| **S2 Conventions** | Is the claim built the way the field expects? | Mostly rules: unit of the test vs n animals, physical units, same pop definitions per arm. A model only for what rules can't read | Findings |
+| **S3 Claim review** | Does the claim survive reasonable changes? | Model, but over a **fixed perturbation set per claim type**, logged with the result. The reviewer doesn't choose the perturbations (that would be forking paths on its side) | `reproduced` when a perturbation crosses the **pre-set threshold**, else `inferred` / clean |
+
+S3 needs two things defined before any run:
+- **Perturbation sets per claim type**, e.g. "A > B on a measure": leave one image out, leave one
+  animal out, per-animal medians vs pooled cells, other summary statistic, gate dry-run ±10 %.
+- **What "moves the claim" means**, e.g. the direction flips, or the per-animal test loses
+  significance. Fixed in advance, so `reproduced` isn't a judgement call.
+
 ## Phases
 
-Each phase updates the translation table. Smallest first; ask before anything that costs quota.
+Smallest first. Ask before anything that costs quota.
 
-**P0. Walk one claim by hand (no build, no quota).** Pick a real claim on 4kS67f, e.g. "T cells move
-faster than B cells", and run the three checks by hand from the record. Answer: does each reviewer
-have what it needs? Which table rows hold? Output: the table updated, plus a list of what the record
-lacks.
+**P0. Hand-walk one claim (no build, no quota).** "T cells move faster than B cells" on 4kS67f set
+`XcPcu8`. Run S0–S3 by hand from the record. Expected: S0 flags fHqhyb (in set, untracked, no Mouse)
+and the missing seg/track params. Output: the translation table updated, a first perturbation set
+and threshold for the "A > B" claim type.
 
-**P1. Backtest, smallest first.** On a copy of the 4kS67f record (no image data, ~171 MB, in a temp
-dir, never the live projects dir), run `claude -p` as reviewer with the claim and the record only.
-Start with 3 cases plus 1 control, about $4 on Opus:
-- the real fHqhyb gap
-- a seeded wrong time interval on one image
-- one image silently excluded
-- a clean control
+**P1. S0 + S1 as code, no model.** Deterministic checks over a record. Test them on 4kS67f (the real
+gaps) plus seeded copies (wrong interval on one image, one image excluded, one param changed). If
+these catch most of what matters, they can ship alone (Sonnet's point; P2 below decides).
 
-Then the rest: a gate tuned on one arm, pseudoreplication, a pseudo-arm null claim (must come back
-"not supported", not "pipeline error"). Score it like `RESULT_REVIEW_PLAN.md`'s backtest: reproduced
-/ inferred / missed, plus false positives, cost and time.
+**P2. S3 calibration with a model.** The number a sceptical reader asks for is the **false-positive
+rate**, so lead with null claims. Pseudo-arms from mice give known nulls. Caveat: 4kS67f has only
+3 distinct 2-vs-2 mouse splits (mice 1, 2, 4 have one tracked image each, mouse 3 has three), so
+more claims come from measures × populations, and those aren't independent. Then seeded true
+positives. Repeat each case 3 times to measure run-to-run variance. Start with ~5 cases × 3 (about
+$15 on Opus); scale only if that holds.
 
-**P2. Decide the shape.** With P0–P1 data, settle Q1–Q4. If cohort consistency carries most of the
-value, it may ship alone first, deterministic and without a model.
+**P3. Decide the shape.** With P0–P2 data, settle Q1–Q4 and whether S3 ships at all.
 
-**P3. Mechanism.** Reuse recital's spawn, run rows, markers and outcome tags. The new parts are a
-claim object, a record exporter, and the stamp on the export.
+**P4. Mechanism.** Reuse recital's spawn, run rows, markers and outcome tags. The new parts are a
+claim object (Q2), a record exporter, and the stamp on the export.
 
-**P4. Paper link.** If P1 holds, the backtest is the evidence for the hand-off-and-check thesis, and
-the head-to-head (recital over a Cecelia record vs over bespoke code) is the next experiment.
+**Paper.** Not in the Nature Protocols paper beyond, at most, the export stamp. If P2 holds, the
+evidence belongs in the perspective piece or its own paper.
