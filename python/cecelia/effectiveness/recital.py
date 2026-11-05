@@ -377,15 +377,18 @@ def _last_round(rounds: Rounds | None, mechanism: str) -> dict | None:
     return last if isinstance(last, dict) and last.get("change") == rounds.change else None
 
 
-def _save_round(rounds: Rounds | None, mechanism: str, section: str, earlier: list[str]) -> None:
-    """Keep this round for the next: its tree, its section (reused if nothing changes), and every
-    finding bullet so far on this change (the next round is told not to repeat them)."""
+def _save_round(rounds: Rounds | None, mechanism: str, section: str, earlier: list[str],
+                probed: list[list[str]]) -> None:
+    """Keep this round for the next: its tree, its section (reused if nothing changes), every
+    finding bullet so far on this change (the next round is told not to repeat them), and the
+    files each round reproduced a new finding in (`_probe_note`)."""
     if rounds is None:
         return
     try:
         rounds.dir.mkdir(parents=True, exist_ok=True)
         write_json_atomic(rounds.dir / f"{mechanism}.json",
-                          {"change": rounds.change, "tree": rounds.tree, "section": section, "earlier": earlier})
+                          {"change": rounds.change, "tree": rounds.tree, "section": section,
+                           "earlier": earlier, "probed": probed})
     except OSError:  # best-effort: the next round is then a full one
         pass
 
@@ -425,6 +428,39 @@ def _finding_lines(section: str, mechanism: str) -> list[str]:
     tags = [_marker_tag_re(m) for m in (*MARKERS[mechanism], *ADVISORY_MARKERS[mechanism])]
     return [ln for ln in section.splitlines()
             if re.match(r"[ \t]*[-*][ \t]", ln) and any(t.search(outside_code(ln)) for t in tags)]
+
+
+#: Rounds on one change that each reproduce a new result-review finding in the same file before
+#: recital points the author at `RESULT_REVIEW.md` → *When rounds don't converge*. Backtest on the
+#: logged rounds: a heuristic probed with a new made-up input every round hit one file in 5 rounds;
+#: real bugs found across rounds hit a file in at most 2.
+PROBE_ROUNDS = 3
+
+_SLUG_LEAD_RE = re.compile(rf"^([ \t]*[-*][ \t]+)\[{SLUG_PATTERN}\] ")
+
+
+def _probed_files(last: dict | None, mechanism: str, bullets: _t.Sequence[str]) -> list[list[str]]:
+    """Per round on this change, the files a new outcome-tagged finding sits in; this round's
+    appended. Only the result review counts: its findings are inputs that break the code."""
+    probed = [list(r) for r in (last.get("probed") or [])] if last else []
+    if mechanism != "result":
+        return probed
+    seen = set(last.get("earlier") or []) if last else set()  # a full round re-reports old ones
+    files = {f.file for b in bullets if b not in seen
+             for f in _parse_findings(_SLUG_LEAD_RE.sub(r"\1", b), mechanism) if f.file != "?"}
+    return probed + [sorted(files)]
+
+
+def _probe_note(probed: list[list[str]]) -> str | None:
+    """The stop-rule pointer, when this round's file had new reproduced inputs in `PROBE_ROUNDS`+
+    rounds on the change. A pointer, not a verdict: the author checks whether it's the pattern."""
+    hot = [f for f in (probed[-1] if probed else []) if sum(f in r for r in probed) >= PROBE_ROUNDS]
+    if not hot:
+        return None
+    files = ", ".join(f"`{f}`" for f in hot)
+    return (f"_Repeat probing: {files} got a new reproduced input in {PROBE_ROUNDS} or more rounds on "
+            "this change. If each fix added a branch for a made-up input, stop adding branches: "
+            "`docs/ai-assist/RESULT_REVIEW.md` → *When rounds don't converge*._")
 
 
 def _run_reviewer(
@@ -469,10 +505,14 @@ def _run_reviewer(
     if section.endswith(f"_{title}: {ERRORED_TAIL}_"):  # the tail, not a finding quoting the marker
         return section  # not kept: the next round must be a real one
     new = [b for b in _finding_lines(section, mechanism) if b not in earlier]
+    probed = _probed_files(last, mechanism, new)
     if earlier:
         section = (f"_{title} — earlier rounds on this change (already logged; tag them as usual):_\n\n"
                    + "\n".join(earlier) + "\n\n" + section)
-    _save_round(rounds, mechanism, section, earlier + new)
+    note = _probe_note(probed)
+    if note:
+        section += "\n\n" + note
+    _save_round(rounds, mechanism, section, earlier + new, probed)
     return section
 
 
