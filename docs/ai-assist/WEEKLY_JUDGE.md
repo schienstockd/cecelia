@@ -366,6 +366,16 @@ the last one (up to ~4h, CI included) ends inside the unit's 12h timeout instead
 the pass's: a failed session, the usage limit or the deadline leaves the rest for next week.
 `Environment=JUDGE_AUTO_FIX=0` in the unit (`systemctl --user edit weekly-judge.service`) skips it.
 
+**Run by hand, and where it is.** A run outlives the terminal it was started from: it ignores the
+hangup, and when the terminal goes its output moves to `cron/auto-<ts>-terminal-lost.log` (a closed
+tab once ended a run after two sessions). `--detach` starts it in the background straight away,
+logging to `cron/auto-<ts>.log`. One run at a time (`auto_run.lock`): a second one, the timer's
+included, starts nothing while one is going. Each run writes where it is to
+`~/.cecelia-effectiveness/auto_run.json` (`effectiveness/auto_run.py`), and `pixi run recital-console`
+and `pixi run agents` show it as one line under the header: running (sessions done of total, spend,
+the bug it is on, the deadline, the log), finished and how (for 12 h), or **died**: the process gone
+with no end written, which a kill or a lost machine looks like, with the log to read.
+
 **Red dependency PRs.** Before `--auto`, the same pass runs `judge-deps` (`scripts/judge/deps_fix.py`)
 on every open Dependabot or `update-deps` PR whose CI finished red. A green bot PR is yours to merge; a
 red one means a bump broke something, and finding which is the work this takes off you. One session per
@@ -446,7 +456,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
-| `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`) |
+| `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background) |
 | `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |

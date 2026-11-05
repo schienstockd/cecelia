@@ -38,6 +38,7 @@ import typing as _t
 from .agents import AgentRow, PrCache, agent_rows, session_badge
 from .claude_sessions import live_sessions
 from .git_context import recent_prs
+from . import auto_run
 from .judge_staleness import judge_record_warning, judge_store
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
 from .recital import ADVISORY_MARKERS, TAGGABLE_ADVISORY
@@ -569,6 +570,8 @@ class DashboardState:
         self.findings_offset = 0
         self.findings_page = 1
         self.findings_expanded = False
+        #: `judge-review --auto`'s (kind, line) from `auto_run.status_line`; None = no run to show.
+        self.auto_run: tuple[str, str] | None = None
         #: Agents-pane rows; None = no pane (no sessions, or liveness can't be checked here).
         self.agents: list[AgentRow] | None = None
         self.agents_note: str | None = None
@@ -594,6 +597,7 @@ def refresh_agents(state: "DashboardState", log_path: pathlib.Path,
                    prs: _t.Iterable[dict] = ()) -> None:
     """Re-read live sessions and their branches' recital state into `state.agents`; `prs` is the
     newest-first PR list the PR/CI columns join against."""
+    state.auto_run = auto_run_line()
     sessions = live_sessions()
     if sessions is None:
         state.agents, state.agents_note = [], "can't list sessions on this OS (needs /proc)"
@@ -601,6 +605,23 @@ def refresh_agents(state: "DashboardState", log_path: pathlib.Path,
         state.agents, state.agents_note = [], "no live Claude Code sessions"
     else:
         state.agents, state.agents_note = agent_rows(sessions, list(read_events(log_path)), prs), None
+
+
+def auto_run_line() -> tuple[str, str] | None:
+    """`judge-review --auto`'s line, or None; never fails the console over its state file."""
+    try:
+        return auto_run.status_line()
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+#: Running in blue, died in the warning yellow, finished dim.
+_AUTO_RUN_COLOUR = {"running": _BLUE, "died": _YELLOW, "finished": _DIM}
+
+
+def _auto_run_row(line: tuple[str, str], width: int, *, use_colour: bool) -> str:
+    kind, text = line
+    return _clip(_col(_AUTO_RUN_COLOUR.get(kind, _DIM), text, use_colour=use_colour), width)
 
 
 def _fit(text: str, n: int) -> str:
@@ -876,6 +897,8 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     path_str = "" if agents_only else _col(_DIM, str(log_path), use_colour=use_colour) + "   "
     time_str = _col(_GREY, now, use_colour=use_colour)
     chrome: list[str] = [_clip(f"{title}  {path_str}{time_str}", width)]
+    if agents_only and state.auto_run:
+        chrome.append(_auto_run_row(state.auto_run, width, use_colour=use_colour))
     if agents_only:
         pane, state.agents_offset, state.agents_page = scroll_window(
             agents_block(state, width, use_colour=use_colour, keys=True), height - len(chrome) - 1,
@@ -913,6 +936,8 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
                   _col(_DIM, "no events yet", use_colour=use_colour))
     if judge_warning:
         chrome.append(_clip(_col(_YELLOW, judge_warning, use_colour=use_colour), width))
+    if state.auto_run:
+        chrome.append(_auto_run_row(state.auto_run, width, use_colour=use_colour))
     chrome.append("")
     chrome.extend(agents_block(state, width, use_colour=use_colour))
 
@@ -1250,6 +1275,9 @@ def _run_stream_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     judge_warning = judge_record_warning(judge_store(log_path))
     if judge_warning:
         print(_col(_YELLOW, judge_warning, use_colour=use_colour), file=out, flush=True)
+    line = auto_run_line()
+    if line:
+        print(_auto_run_row(line, width, use_colour=use_colour), file=out, flush=True)
     for event in seed_events:
         line = format_event(event, use_colour=use_colour, width=width)
         if line is not None:

@@ -397,7 +397,8 @@ judge-run-reviews = "python scripts/judge/run_reviews.py"
 judge-record = "python scripts/judge/record.py"
 # The owner's queue for the newest run record: the bugs a verify agent sent you (`decide`). One key
 # per answer (open / wont_fix); answers are append-only events in ~/.cecelia-effectiveness/review.jsonl,
-# applied by the next pass. `--date D` for another record.
+# applied by the next pass. `--date D` for another record. `-- --auto --detach` works the `fix` bugs in
+# the background (log in ~/.cecelia-effectiveness/cron/); `recital-console` shows the run's progress.
 judge-review = "python scripts/judge/review.py"
 # Red dependency-bot PRs (Dependabot, update-deps): one unattended session each finds the bump that
 # broke CI and opens a PR with the bump plus the fix; never a merge. `-- --dry-run` prints the briefs.
