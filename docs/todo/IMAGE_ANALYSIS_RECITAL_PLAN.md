@@ -118,6 +118,33 @@ S3 needs two things defined before any run:
 - **What "moves the claim" means**, e.g. the direction flips, or the per-animal test loses
   significance. Fixed in advance, so `reproduced` isn't a judgement call.
 
+## GUI (brainstorm, 2026-11-05, not decided)
+
+Cheap checks run automatically, the expensive one on request, like an IDE: the linter underlines as
+you type, and review is something you ask for. Everything sits on surfaces that already exist.
+
+1. **Stating a claim** happens on an Analysis board plot (its ⋯ menu): one sentence, with the scope
+   (images, populations, measure) taken from the plot. The plot *is* the claim object. A Kiwi claim
+   (refs already attached) could be promoted to one.
+2. **S0, S1 and the rule-based part of S2 run as soon as the claim exists.** They need no model, so
+   the plot shows their verdicts through `lib/severity.ts` (colour + icon + label), not bare
+   `.cc-dot` state lights. Findings point at the data: a missing image is drawn as a ghost on the
+   plot, with a jump to the image, not listed in a side panel.
+3. **S3 is a "Check claim" button, run by Kiwi in a fresh context.** The user states the claim, and
+   Kiwi can help phrase it as a structured claim with refs. The *review* must not see the analyst's
+   conversation (the recital's withheld-reasoning rule), so it runs as a separate headless Kiwi turn
+   with only the claim and the record. Claims Kiwi makes itself go through the same check. It costs
+   about $1 and takes about a minute, so it's always the analyst's call. The button shows the fixed
+   perturbation set before running.
+4. **Findings live on the blackboard.** The claim is an entry and the findings are sections, tagged
+   with the existing per-section outcomes (`set_blackboard_section_outcome`). Every round stays on
+   the entry.
+5. **Export isn't blocked.** The board's export dropdown shows the claim's state, and the exported
+   figure gets a footer stamp linking back to the entry.
+
+This mostly answers Q1 (checks run when a claim is *stated*; export only reads the result) and leans
+Q4 toward the stamp. A mockup was shown on 2026-11-05 and isn't committed.
+
 ## Phases
 
 Smallest first. Ask before anything that costs quota.
