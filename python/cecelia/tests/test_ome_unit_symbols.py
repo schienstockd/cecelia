@@ -68,3 +68,26 @@ class OmeUnitSymbolTest(unittest.TestCase):
                          f'_OME_XML_UNIT: {offenders}. NGFF/ccid store UDUNITS names '
                          "('micrometer'); OME-XML needs the symbol ('µm'), and an invalid one "
                          'voids the entire metadata block.')
+
+
+class OmeUnitResolveTest(unittest.TestCase):
+    """`_ome_unit_symbol`: every spelling analysis converts reaches the symbol analysis reads it as
+    (case-insensitively — 'MS' and 'Ms' are milliseconds there); a real OME symbol outside that is kept
+    (not relabelled as seconds); an unknown one is None, so the writer leaves the value out instead of
+    stamping it in OME's default unit."""
+
+    def test_spellings_analysis_accepts_resolve(self):
+        for u, sym in (('um', 'µm'), ('micron', 'µm'), ('Micrometer', 'µm'), ('micrometre', 'µm'),
+                       ('sec', 's'), ('Second', 's'), ('millisecond', 'ms'), ('hour', 'h'),
+                       ('NM', 'nm'), ('MS', 'ms'), ('Ms', 'ms'), ('Min', 'min'), ('H', 'h')):
+            with self.subTest(unit=u):
+                self.assertEqual(sym, zarr_utils._ome_unit_symbol(u))
+
+    def test_symbols_outside_the_map_are_kept_exactly(self):
+        for sym in ('µs', 'ns', 'd', 'Å', 'cm'):        # OME symbols analysis does not convert
+            with self.subTest(unit=sym):
+                self.assertEqual(sym, zarr_utils._ome_unit_symbol(sym))
+
+    def test_unknown_units_resolve_to_none(self):
+        for u in ('furlong', 'fortnight', '', None):
+            self.assertIsNone(zarr_utils._ome_unit_symbol(u))

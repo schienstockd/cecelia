@@ -1313,9 +1313,26 @@ def calibration_for_axes(dim_utils, axes):
 # NGFF/dim_utils unit vocabulary → the abbreviation OME-XML uses. The Julia side keeps its own copy
 # (`omezarr.jl::_OME_XML_UNIT`) because it cannot call in here; the cross-language golden test
 # (app/test/runtests.jl → "calibration writers agree across languages") is what keeps them equal.
-_OME_XML_UNIT = {'micrometer': 'µm', 'um': 'µm', 'µm': 'µm', 'nanometer': 'nm', 'nm': 'nm',
-                 'millimeter': 'mm', 'mm': 'mm', 'second': 's', 's': 's',
-                 'millisecond': 'ms', 'ms': 'ms', 'minute': 'min', 'min': 'min'}
+_OME_XML_UNIT = {'micrometer': 'µm', 'micrometre': 'µm', 'micron': 'µm', 'microns': 'µm', 'um': 'µm',
+                 'µm': 'µm', 'nanometer': 'nm', 'nanometre': 'nm', 'nm': 'nm',
+                 'millimeter': 'mm', 'millimetre': 'mm', 'mm': 'mm', 'second': 's', 'sec': 's', 's': 's',
+                 'millisecond': 'ms', 'ms': 'ms', 'minute': 'min', 'min': 'min', 'hour': 'h', 'h': 'h'}
+
+
+def _ome_unit_symbol(unit):
+    """The OME-XML symbol for a unit name or symbol, or None when it has none — a writer then leaves
+    the value out: a unit outside OME's `UnitsLength`/`UnitsTime` makes the document invalid, and a
+    bare value is read in OME's default unit. Julia's twin: `calibration.jl::ome_xml_unit_name`."""
+    if not unit:
+        return None
+    # Resolved the way analysis resolves it (`units.length_unit_um`: lowercase + strip), so the XML
+    # states the unit the measures compute with; only a unit analysis doesn't convert falls through
+    # to an exact OME symbol ('µs', 'd', 'Å').
+    u = str(unit).strip()
+    if u.lower() in _OME_XML_UNIT:
+        return _OME_XML_UNIT[u.lower()]
+    from ome_types.model import UnitsLength, UnitsTime    # lazy: see read_scale
+    return u if u in {e.value for e in UnitsLength} | {e.value for e in UnitsTime} else None
 
 
 def write_calibration(path, dim_utils, axes=None):
@@ -1377,14 +1394,17 @@ def write_calibration(path, dim_utils, axes=None):
     for ax, attr in (('X', 'physical_size_x'), ('Y', 'physical_size_y'), ('Z', 'physical_size_z')):
         if ax not in scale_for_axis:
             continue
+        unit = _ome_unit_symbol(unit_for_axis.get(ax))
+        if unit_for_axis.get(ax) and unit is None:
+            continue                     # no OME symbol: leave the source's value + unit as they are
         setattr(px, attr, float(scale_for_axis[ax]))
-        unit = _OME_XML_UNIT.get(unit_for_axis.get(ax))
         unit and setattr(px, f'{attr}_unit', unit)
     # T only when the interval is known — same gate as the NGFF unit (see calibration_for_axes);
     # writing the 1.0 placeholder here would re-create the divergence from the other direction.
-    if 'T' in scale_for_axis and unit_for_axis.get('T'):
+    t_unit = _ome_unit_symbol(unit_for_axis.get('T'))
+    if 'T' in scale_for_axis and t_unit:
         px.time_increment = float(scale_for_axis['T'])
-        px.time_increment_unit = _OME_XML_UNIT.get(unit_for_axis['T'], 's')
+        px.time_increment_unit = t_unit
     ome_xml_utils.write_ome_xml(path, omexml)
     return True
 
