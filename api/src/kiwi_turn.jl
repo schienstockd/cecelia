@@ -515,7 +515,8 @@ that way. If nothing is left, abstain."""
                   session_id = "", mcp_config_path = …, timeout_s = 300,
                   on_progress = step -> …, on_process = proc -> …, prior_refs = []) -> Dict
 
-One Kiwi turn (see the top of this file). Returns
+One Kiwi turn (see the top of this file). `system_prompt` / `allowed_tools` default to Kiwi's own; the
+claim review (`claim_review.jl`) passes its own, with the analyst's reasoning withheld. Returns
 `{ok, abstain, claims, reasoning, errors, reasked, reaskErrors, sessionId, usage:{input,output}, toolCalls,
 seconds}` where `ok` means every claim passed validation, possibly after the one re-ask; `errors` lists
 what still failed and `reaskErrors` what the first attempt failed on (empty if no re-ask). Never
@@ -530,7 +531,9 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
                        mcp_config_path::AbstractString = _write_observer_mcp_config(; headless = true),
                        timeout_s::Real = 300, on_progress::Function = _ -> nothing,
                        on_process::Function = _ -> nothing, prior_refs = Any[],
-                       prior_results = Dict{String,Any}())::Dict{String,Any}
+                       prior_results = Dict{String,Any}(),
+                       system_prompt::AbstractString = kiwi_system_prompt(project_uid),
+                       allowed_tools::AbstractVector = _kiwi_allowed_tools())::Dict{String,Any}
     t0 = time()
     # resolved ONCE, when asked — validation reuses these (see `kiwi_validate_reply(; known)`)
     results = [resolve_kiwi_ref(project_uid, r) for r in refs]
@@ -547,8 +550,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     isempty(prior_pack) || (pack = isempty(pack) ? prior_pack : string(pack, "\n\n", prior_pack))
     full_prompt = isempty(pack) ? String(prompt) : string(prompt, "\n\n", pack)
     schema = kiwi_reply_schema(; reasoning)
-    opts = (; system_prompt = kiwi_system_prompt(project_uid), replace_system_prompt = true,
-              json_schema = schema, allowed_tools = _kiwi_allowed_tools(), strict_mcp = true,
+    opts = (; system_prompt = String(system_prompt), replace_system_prompt = true,
+              json_schema = schema, allowed_tools = String.(allowed_tools), strict_mcp = true,
               builtin_tools = "", stream = true, timeout_s,
               settings_path = _write_observer_hook_settings())
     usage = [0, 0]; tool_calls = 0; reask_errors = String[]

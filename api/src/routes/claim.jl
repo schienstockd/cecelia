@@ -53,14 +53,17 @@ end
 
 const _CLAIM_STAGE_LABEL = Dict("S0" => "Record", "S1" => "Consistency", "S2" => "Conventions")
 
-# Give every warning a section id, reusing the one its key had; new keys take the next number.
-function _claim_assign_ids!(ids::AbstractDict, findings)
+# The section id for `key`: the one it had, else the next number after every id the claim has used.
+function _claim_section_id!(ids::AbstractDict, key::AbstractString)::String
+    haskey(ids, key) && return String(ids[key])
     n = maximum((parse(Int, String(v)[2:end]) for v in values(ids)); init = 0)
+    ids[key] = "s" * lpad(n + 1, 2, '0')
+end
+
+# Give every warning a section id, reusing the one its key had.
+function _claim_assign_ids!(ids::AbstractDict, findings)
     for f in findings
-        f["level"] == "warn" || continue
-        k = _claim_finding_key(f)
-        haskey(ids, k) || (n += 1; ids[k] = "s" * lpad(n, 2, '0'))
-        f["sectionId"] = String(ids[k])
+        f["level"] == "warn" && (f["sectionId"] = _claim_section_id!(ids, _claim_finding_key(f)))
     end
     ids
 end
@@ -94,8 +97,9 @@ function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
     println(io)
     println(io, "Checked: ", join(result["ran"], ", "), "  ")
     sk = result["skipped"]
+    rv = get(c, "review", nothing)
     println(io, "Not checked: ", join(vcat([string(k, " (", sk[k], ")") for k in sort!(collect(keys(sk)))],
-                                           ["review (not run)"]), ", "), "\n")
+                                           rv isa AbstractDict ? String[] : ["review (not run)"]), ", "), "\n")
     warns = filter(f -> f["level"] == "warn", result["findings"])
     infos = filter(f -> f["level"] != "warn", result["findings"])
     println(io, "## Findings\n")
@@ -109,6 +113,19 @@ function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
         line = join(filter(!isempty, [ev, isempty(prov) ? "" : prov * " from the record"]), " · ")
         isempty(line) || println(io, "\n", line)
         println(io)
+    end
+    if rv isa AbstractDict
+        println(io, "## Review\n")
+        println(io, "Advisory: one model turn that read the claim and the record, not your notes — ",
+                rv["status"], isempty(get(rv, "model", "")) ? "" : ", " * rv["model"], ". Inferred from the record; nothing recomputed.\n")
+        rs = filter(x -> x["kind"] != "interpretation", rv["claims"])
+        isempty(rs) && println(io, get(rv, "abstain", false) ? "Nothing raised. " * get(rv, "note", "") : "No findings.", "\n")
+        for x in rs
+            println(io, "### ", x["sectionId"], " · Review · ", x["text"], "\n")
+        end
+        for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
+            println(io, "What the record would support: ", x["text"], "\n")
+        end
     end
     if !isempty(infos)
         println(io, "## Notes\n")
@@ -197,6 +214,7 @@ function api_claim_state(body_bytes::Vector{UInt8})
         if !_claim_same_round(c, new)
             for k in ("text", "setUid", "populations", "measure", "unitAttr"); c[k] = new[k]; end
             c["round"] = Int(get(c, "round", 1)) + 1
+            delete!(c, "review")   # it answered the earlier round's question
             push!(c["rounds"], round_rec(c, c["round"]))
         end
         result = _claim_run(uid, c)

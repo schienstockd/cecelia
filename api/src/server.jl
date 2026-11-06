@@ -76,6 +76,7 @@ include("plots_registry_api.jl") # bidirectional context — live plot registry 
 include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
 include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3)
 include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
+include("claim_review.jl")   # claim recital — the one model turn, run as a Kiwi turn with the analyst's reasoning withheld
 include("kiwi_profile_api.jl") # Kiwi profile roster + picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6)
 include("profile_settings_api.jl") # Per-profile settings (USER_PROFILE_PLAN Phase 4)
 include("hpc_api.jl")          # Settings → HPC: site/profile/project settings + connection test (HPC_PLAN P1)
@@ -435,6 +436,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/qc/cohort/check" => (req, body_bytes) -> (api_qc_cohort_check(body_bytes)),
     "/api/claim/state" => (req, body_bytes) -> (api_claim_state(body_bytes)),
     "/api/claim/check" => (req, body_bytes) -> (api_claim_check(body_bytes)),
+    "/api/claim/review" => (req, body_bytes) -> (api_claim_review(body_bytes)),
     "/api/lablog/append" => (req, body_bytes) -> (api_lablog_append(body_bytes)),
     "/api/lablog/capture" => (req, body_bytes) -> (api_lablog_capture(body_bytes)),
     "/api/observer/register" => (req, body_bytes) -> (api_observer_register(body_bytes)),
