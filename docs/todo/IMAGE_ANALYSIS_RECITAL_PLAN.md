@@ -94,7 +94,11 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   claim (measure, populations, unit, wording) is recorded with a hash; the significance threshold is
   divided by the number of variants on record, and earlier passes are re-checked against the final
   count. The log sets the count, not the analyst (after CONFIRM's hashed hypothesis signatures,
-  `RECITAL_PRIOR_ART.md` §7). Open: how the GUI shows the rounds.
+  `RECITAL_PRIOR_ART.md` §7). A **variant** is a change to what is claimed or how it's tested
+  (measure, populations, unit, image subset, wording). Fixing a flagged problem (re-measuring with
+  matched dims) is not a variant and isn't penalised, but it's logged, so repeated "fixes" stay
+  visible. Rounds are correlated, so dividing by the count is conservative. The analyst always sees
+  the current threshold and why it moved. Open: how the GUI shows the rounds.
 - **Q6. Who's the author.** Human analyst and agent run go through the same recital, and the stamp
   says which. This links to the parked agent-overnight work.
 - **Q7. What "fixed" means for a claim.** Changing the analysis can be tagged fixed; rewording the
@@ -171,7 +175,7 @@ Three roles, by who decides:
 | Stage | Question | How | Output |
 |---|---|---|---|
 | **S0 Record gate** | Can the record say what was done? | Rules: every output the claim uses has its params (`funParamsByName` or run log); every image in scope has those outputs; the grouping attribute (e.g. `Mouse`) is filled | `sufficient` or a list of gaps. A gap is a finding about the record, not the claim |
-| **S1 Cohort consistency** | Was everything compared treated the same? | Rules: params, versions, metadata (interval, pixel size, channels) and gates equal across images; set members excluded silently; cohort-QC outliers (`app/src/qc_cohort.jl`). **Within an image:** the populations the claim compares were measured the same way (dims, params, interval). A new recital rule, not part of #1958: cohort QC compares one population across images and doesn't know which populations a claim compares. **Confound check:** for each record column the comparison doesn't account for (mouse, interval, dims, seg params, gate version), test whether it differs between the compared groups; if it does, the group difference may be that column (after CONFIRM's confound-completeness audit, `RECITAL_PRIOR_ART.md` §7) | Differences, each one a finding |
+| **S1 Cohort consistency** | Was everything compared treated the same? | Rules: params, versions, metadata (interval, pixel size, channels) and gates equal across images; set members excluded silently; cohort-QC outliers (`app/src/qc_cohort.jl`). **Within an image:** the populations the claim compares were measured the same way (dims, params, interval). A new recital rule, not part of #1958: cohort QC compares one population across images and doesn't know which populations a claim compares. **Confound check:** for each record column the comparison doesn't account for (mouse, interval, dims, seg params, gate version), list where it differs between the compared groups (after CONFIRM's confound-completeness audit, `RECITAL_PRIOR_ART.md` §7). **No significance tests:** with ~6 images or 4 mice, "no difference found" proves nothing, and testing every column adds noise. Categorical columns (dims, params) are flagged on plain inequality. A column that splits the groups perfectly (B all 2D, T all 3D) is reported as "can't be separated from the effect" | Differences, each one a finding |
 | **S2 Conventions** | Is the claim built the way the field expects? | Mostly rules: unit of the test vs n animals, physical units, same pop definitions per arm. A model only for what rules can't read | Findings |
 | **S3a Parse the claim** | What exactly is claimed? | Model: the sentence → a structured claim (type, measure, groups, images). Shown to the analyst to confirm before S3b | A structured claim, or "unknown type" |
 | **S3b Check the claim** | Does it survive reasonable changes? | **Code:** the fixed perturbation set for that claim type, logged with the result | `reproduced` when a perturbation crosses the **pre-set threshold**, else clean |
@@ -240,13 +244,16 @@ and the missing seg/track params. Output: the translation table updated, a first
 and threshold for the "A > B" claim type.
 
 **P1. S0 + S1 as code, no model.** Deterministic checks over a record. Test them on 4kS67f (the real
-gaps) plus seeded copies (wrong interval on one image, one image excluded, one param changed). If
+gaps) plus seeded copies (wrong interval on one image, one image excluded, one param changed), each
+paired with a matched copy where the check must stay quiet. "Recital raised nothing" on a commit is
+not evidence the checks work; only these pairs are. If
 these catch most of what matters, they can ship alone (Sonnet's point; P2 below decides).
 
 **P2. Calibrate S3a, S3b and S4.**
 - **First, the baseline.** Give the same claim and record to a plain "review this claim" prompt and
-  compare what it surfaces, its false alarms, and which findings the analyst finds useful. About
-  $1–2. If it matches the staged recital, the structure isn't earning its cost, and only the rules
+  compare what it surfaces, its false alarms, and which findings the analyst finds useful. Make it
+  fair: the same record access including the logs (the 2D/3D mix came from them), none of the P0
+  findings, 3 runs. Judge on which questions would change the analysis. About $3–5. If it matches the staged recital, the structure isn't earning its cost, and only the rules
   (P1) ship.
 - **S3b is code**, so its false-positive rate belongs to the perturbation set and threshold, not to a
   model, and needs no repeats. Lead with null claims: pseudo-arms from mice. Caveat: 4kS67f has
