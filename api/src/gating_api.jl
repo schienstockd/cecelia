@@ -1067,6 +1067,11 @@ _cluster_map_key(basis, suffix) = basis in Cecelia.CLUSTER_MAP_BASES ? "X_$(basi
 
 function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
+    # The embedding, the codes and the `pop`/`colourPops` membership below all read `_latest`; a
+    # labels pin can't be honoured without reading every one of them at the pinned version. Refuse it
+    # rather than return a map whose membership silently ignores the pin the caller asked for.
+    _labels_version_pin(q) === nothing ||
+        return _gerr(400, "labelsVersion is not supported on /api/plots/cluster-map (it reads _latest)")
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     pop_type = get(q, "popType", "clust")
