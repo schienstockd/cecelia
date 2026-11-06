@@ -157,6 +157,38 @@ Other evidence:
 - zolIMa ldYr8J's July 2026 import logged 360 `No pixel blocks` planes mid-acquisition; the 5 Aug
   re-import healed it, and only the log remembers it.
 
+## P2 baseline results (2026-11-06)
+
+Same claim and scope as P0, given to a plain "review this claim; does the record support it?" prompt
+(Opus, `claude -p`, 3 runs, no MCP). Input: a copy of the record without image data, blackboard, Kiwi
+turns, notebooks or captures, so neither the analyst's reasoning nor the P0 findings were visible;
+the lab log and task logs were included. Cost $1.07 / $1.25 / $0.80, 2–3 min each. Not sandboxed:
+the runs were told to stay inside the copy, and no transcript was kept to prove it.
+
+| P0 finding | Baseline (3 runs) |
+|---|---|
+| 2D/3D mix confounds B vs T | **3/3, and further than P0:** recomputed speeds from the centroids in both modes and matched each saved table to one, so they named which population got which dims (T 3D / B 2D in 4 images, reversed in k3Tx90), the thing P0 said the record can't tell. All three gave the corrected numbers (gap ≈ 1.2 µm/min, not 2.5) |
+| Unit of the test (per track vs per mouse) | 3/3, with per-movie paired tests and "4 mice can't go below p = 0.125" |
+| k3Tx90 reverses it | 3/3, and explained by the dims swap |
+| fHqhyb in set, no tracks | 3/3 (it is `included: false`, "failed drift correction") |
+| 3w4IY5 B outlier, re-tracked | 2/3 (gate changed between tracking and now: 592 → 558 cells) |
+| Seg/track params recorded for B only | 0/3 |
+| Leave-one-out | Not as such; per-image differences given instead |
+| **Not in P0** | 3/3: EaMaVq left the set after the July stats, so the July numbers cover a different cohort. 3/3: the same test was run 7 times on 07-27 (1 Mann–Whitney, 6 Welch) and reported as `****`, which is forking paths in the record. 3/3: every 3D choice was logged as WARN "review" and never followed up |
+
+Each run ended with a reworded claim the record does support and the steps to firm it up. That is
+the "turn it back to the analyst" output the plan asks for.
+
+**What this says.** On this claim, a plain prompt matches or beats P0 on everything except the
+record-gap finding, which is a rule's job anyway (S0). By the plan's own test, the staged model
+structure (S3a Translator, S3b perturbation sets, S4 as a separate reviewer) isn't earning its cost
+here. Caveats: one claim, with large and blatant problems; the baseline is the same model family as
+S4, so it effectively *was* S4 with record access; it recomputed rather than only reading the record
+(fine under Decision 1); and three runs agreeing isn't the same as being steady across claims.
+**Next:** the same baseline on a subtle or null claim (pseudo-arms from mice), where the risk is
+false alarms rather than misses. If it stays good there, the shape becomes P1 rules plus one plain
+review turn, with no Translator and no perturbation sets.
+
 ## Approach
 
 Same two layers as the dev recital: **mechanical checks wherever a rule can decide, a model only
