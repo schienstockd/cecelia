@@ -112,10 +112,17 @@ def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
     return any(_runs_judge_review(argv) for argv in _parent_argvs(pid, proc, depth))
 
 
-def from_auto_fix(pid: int, proc: pathlib.Path) -> bool:
-    """Whether the session's parent is `review.py --auto`: its fix agent. Not a recital reviewer
-    under it, whose parent is `recital.py`."""
-    return any(_runs_judge_review(argv) and "--auto" in argv for argv in _parent_argvs(pid, proc, 1))
+def from_auto_fix(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
+    """Whether the session's nearest `review.py`/`recital.py` ancestor (within `depth`) is
+    `review.py --auto`: its fix agent. Not a recital reviewer under it, whose nearest one is
+    `recital.py`. Looking past the direct parent keeps the fix agent when `claude` is a wrapper
+    that forks the CLI rather than exec'ing it."""
+    for argv in _parent_argvs(pid, proc, depth):
+        if any(pathlib.PurePath(a).parts[-2:] == RECITAL_SCRIPT for a in argv):
+            return False
+        if _runs_judge_review(argv):
+            return "--auto" in argv
+    return False
 
 
 #: `pixi run recital` runs this script; under a session it means the session is mid-commit.
