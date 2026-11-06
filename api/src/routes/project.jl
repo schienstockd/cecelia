@@ -515,38 +515,10 @@ function api_projects_rename(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true, name))
 end
 
-# Where deleted projects wait for their background `rm`. A dot-dir directly under projects_dir with
-# no project.json of its own, so `_scan_projects_raw` (and every other one-level project scan) skips it.
-const _DELETING_DIR = ".deleting"
-_deleting_root() = joinpath(projects_dir(), _DELETING_DIR)
-
-# Recursive rm that tolerates the mid-walk ENOENT Julia's readdir-based rm hits on huge OME-ZARR trees
-# (dimension_separator="/"): if the target is gone afterwards the delete succeeded. Returns the error
-# when the directory survives, `nothing` otherwise.
-function _rm_project_tree(dir::AbstractString)
-    try
-        rm(dir; recursive=true, force=true)
-    catch e
-        isdir(dir) && return e
-    end
-    nothing
-end
-
-# Remove anything left in `.deleting/` by a server that stopped mid-delete. Called once at startup.
-function sweep_deleting_projects()
-    root = _deleting_root()
-    isdir(root) || return
-    for entry in readdir(root; join=true)
-        err = _rm_project_tree(entry)
-        err === nothing || @warn "Could not finish deleting project" dir=entry exception=err
-    end
-end
-
 # delete → permanently remove a project directory from disk. Body {uid}. The frontend guards against
-# deleting the currently-open project. Removing a project's tree takes minutes on big zarr stores, so
-# the directory is first RENAMED into `.deleting/` (instant, same filesystem) — the project is gone from
-# the list the moment this returns — and the `rm` runs in the background. A rename that fails (a file
-# held open on Windows) falls back to the synchronous rm. Destructive + irreversible.
+# deleting the currently-open project. `discard!` (app/src/discard.jl) moves the tree aside instantly,
+# so the project is gone from the list the moment this returns; the rm runs in the background.
+# Destructive + irreversible.
 function api_projects_delete(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body
@@ -554,24 +526,10 @@ function api_projects_delete(body_bytes::Vector{UInt8})
     isempty(uid) && return 400, JSON3.write((; error="uid required"))
     proj_dir = joinpath(projects_dir(), uid)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
-    trash = joinpath(_deleting_root(), string(uid, "-", time_ns()))
-    moved = try
-        mkpath(_deleting_root())
-        mv(proj_dir, trash)
-        true
+    try
+        discard!(proj_dir)
     catch e
-        @warn "Could not move project aside — deleting in place" uid exception=e
-        false
-    end
-    if moved
-        errormonitor(Threads.@spawn begin
-            err = _rm_project_tree(trash)
-            err === nothing || @warn "Background project delete failed — leftovers removed at next start" uid dir=trash exception=err
-        end)
-    else
-        err = _rm_project_tree(proj_dir)
-        err === nothing ||
-            return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, err)))
+        return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, e)))
     end
     200, JSON3.write((; ok=true, uid))
 end

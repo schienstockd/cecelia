@@ -409,8 +409,20 @@ function import_project(bundle::AbstractString;
         _localise_owners!(joinpath(tmp, "project.json"))
 
         mkpath(projects_dir())
-        mode == "replace" && ispath(target) && rm(target; recursive = true)   # overwrite in place
-        mv(tmp, target)
+        # Replace: move the old project aside first and only discard it once the import is in place —
+        # a failed `mv` restores it, so a broken replace never leaves the user with neither.
+        replacing = mode == "replace" && ispath(target)
+        old = replacing ? move_aside(target) : nothing
+        if replacing && old === nothing               # aside failed (Windows open handle) → in-place rm
+            err = _rm_tree(target); err === nothing || throw(err)
+        end
+        try
+            mv(tmp, target)
+        catch
+            old === nothing || mv(old, target)
+            rethrow()
+        end
+        old === nothing || discard_later(old)
         on_log("Done. Imported project $dest_uid" * (dest_uid != uid ? " (copy of $uid)" : ""))
         return dest_uid
     catch e

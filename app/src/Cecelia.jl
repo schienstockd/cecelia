@@ -67,6 +67,7 @@ export save!
 export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, rename_set!, set_name_taken, move_image!
+export discard!, move_aside, discard_later, sweep_discarded!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes,
        image_included
 export img_axes, img_has_time
@@ -288,6 +289,7 @@ include("config_dir.jl")     # Base-only: also included standalone by api/dev.jl
 include("ports.jl")          # Base-only port-slot resolver — same standalone loaders
 include("api_token.jl")      # Base-only API token (the loopback gate) — same standalone loaders
 include("config.jl")
+include("discard.jl")        # discard!: move a tree into projects_dir/.deleting, rm in the background
 include("utils.jl")
 include("run_sidecars.jl")   # {props}.{kind}.json per-run manifests (clustfeatures / motiffeatures / hmmfit)
 include("single_instance.jl")  # at-most-one Cecelia per host — before any HTTP/WS bind. D7 / P5.
