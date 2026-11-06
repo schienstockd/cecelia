@@ -1,6 +1,7 @@
 # Claim checks — the mechanical half of the claim recital: does the RECORD let a claim be made, and
 # was everything it compares treated the same way? Design + stages: docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md
-# (S0 record gate, S1 consistency + confound list). No model, no significance tests, read-only.
+# (S0 record gate, S1 consistency + confound list, S2 conventions). No model, no significance tests,
+# read-only.
 #
 # Two steps, so the rules are testable without a project on disk:
 #   claim_record_table(scope)  — reads the record: one row per (image, population) over EVERY image
@@ -179,8 +180,14 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
             d = m isa AbstractDict ? get(m, :motionDims, nothing) : nothing
             isnothing(d) || (vars["motionDims"] = d)
         end
+        # calibration problems, from the one metadata checker (qc.jl), as `field => [codes]`
+        calib = Dict{String,Any}()
+        for f in metadata_qc_findings(img.meta)
+            push!(get!(calib, f["detail"]["field"], String[]), f["code"])
+        end
         push!(rows, Dict{String,Any}(
             "image" => img.uid, "pop" => pop, "valueName" => vn, "included" => image_included(img),
+            "calibration" => calib,
             "hasData" => isfile(table), "hasGate" => !isnothing(gate),
             "unit" => isempty(scope.unit_attr) ? "" : string(get(img.attr, scope.unit_attr, "")),
             "paramsSource" => sources, "vars" => vars))
@@ -355,10 +362,100 @@ function _claim_s1_between(rows, scope)
     findings, not_compared
 end
 
+# S2 — is the claim built the way the field expects? Counts only; no test is run.
+
+# The smallest two-sided p an exact rank test can reach with this many units: paired (signed-rank,
+# every unit has both groups) 2/2^n; unpaired (Mann–Whitney, disjoint units) 2/C(n1+n2, n1). A
+# design whose floor is above 0.05 can't show a difference per unit, whatever the data.
+claim_min_p_paired(n::Integer) = n < 1 ? 1.0 : min(1.0, 2 / 2.0^n)
+claim_min_p_unpaired(n1::Integer, n2::Integer) =
+    (n1 < 1 || n2 < 1) ? 1.0 : Float64(min(1, 2 / binomial(big(n1 + n2), big(n1))))
+const CLAIM_ALPHA = 0.05
+
+# Measures read in physical units: tracks need space AND time; shape measures need space. Anything
+# else (intensities, counts, ids) is calibration-free.
+const _CLAIM_SPATIAL_MEASURE = r"(?i)(area|volume|surface|length|axis|diameter|perimeter|extent|distance|displacement|speed|velocity)"
+function _claim_calibration_fields(measure::AbstractString)
+    _claim_needs_tracking(measure) && return ("x", "y", "z", "t")
+    occursin(_CLAIM_SPATIAL_MEASURE, measure) ? ("x", "y", "z") : ()
+end
+
+function _claim_s2(rows, scope)
+    findings = Any[]
+    used = filter(r -> r["included"] && r["hasData"], rows)
+    isempty(used) && return findings
+
+    # the statistical unit
+    if isempty(scope.unit_attr)
+        push!(findings, qc_finding("warn", "claim.no_unit";
+            detail = _claim_detail("S2", Dict{String,Any}("images" => _claim_imgs(used)))))
+    else
+        attr = scope.unit_attr
+        units = Dict(p => Set(String[r["unit"] for r in used if r["pop"] == p && !isempty(r["unit"])])
+                     for p in scope.populations)
+        imgs_per_unit = Dict{String,Vector{String}}()
+        for r in used
+            isempty(r["unit"]) && continue
+            v = get!(imgs_per_unit, r["unit"], String[])
+            r["image"] in v || push!(v, r["image"])
+        end
+        foreach(sort!, values(imgs_per_unit))
+        ev = Dict{String,Any}("attr" => attr, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
+                              "imagesPerUnit" => imgs_per_unit)
+        if length(scope.populations) >= 2
+            shared = reduce(intersect, values(units))
+            disjoint = all(isempty(intersect(units[a], units[b]))
+                           for a in scope.populations for b in scope.populations if a < b)
+            if disjoint && length(scope.populations) == 2
+                n1, n2 = (length(units[p]) for p in scope.populations)
+                ev["design"] = "unpaired"; ev["minP"] = claim_min_p_unpaired(n1, n2); n = min(n1, n2)
+            else
+                ev["design"] = "paired"; n = length(shared)
+                ev["minP"] = claim_min_p_paired(n)
+            end
+        else
+            n = length(first(values(units)))
+            ev["design"] = "one group"; ev["minP"] = claim_min_p_paired(n)
+        end
+        ev["n"] = n
+        pmin = round(ev["minP"]; sigdigits = 2)
+        if n == 0
+            # no unit filled in where the claim has data — S0's `claim.unit_blank` already says so
+        elseif ev["minP"] > CLAIM_ALPHA
+            push!(findings, qc_finding("warn", "claim.few_units"; attr = attr, n = n, p = pmin,
+                detail = _claim_detail("S2", ev)))
+        else
+            push!(findings, qc_finding("info", "claim.unit_count"; attr = attr, n = n,
+                detail = _claim_detail("S2", ev)))
+        end
+        # several images from one unit: a test per image would count that unit more than once
+        multi = sort!([u for (u, is) in imgs_per_unit if length(is) > 1])
+        isempty(multi) || push!(findings, qc_finding("info", "claim.images_per_unit"; attr = attr,
+            n_images = length(_claim_imgs(filter(r -> !isempty(r["unit"]), used))), n = length(imgs_per_unit),
+            detail = _claim_detail("S2", Dict{String,Any}("attr" => attr, "units" => multi,
+                "imagesPerUnit" => imgs_per_unit))))
+    end
+
+    # physical units: a calibration problem on a field the measure is read in
+    fields = _claim_calibration_fields(scope.measure)
+    if !isempty(fields)
+        bad = Dict{String,Vector{String}}()
+        for r in used, f in fields
+            for code in get(r["calibration"], f, String[])
+                v = get!(bad, r["image"], String[]); code in v || push!(v, code)
+            end
+        end
+        isempty(bad) || push!(findings, qc_finding("warn", "claim.uncalibrated"; n = length(bad),
+            measure = scope.measure, detail = _claim_detail("S2", Dict{String,Any}("measure" => scope.measure,
+                "fields" => collect(fields), "images" => bad))))
+    end
+    findings
+end
+
 """
     claim_checks(table, scope) -> Dict
 
-PURE. S0 over every row; S1 over the rows the claim runs on (included, with data). Returns
+PURE. S0 over every row; S1 and S2 over the rows the claim runs on (included, with data). Returns
 `{findings, ran, skipped, notCompared, nRows, nUsed}`: `ran`/`skipped` name the checks so a quiet
 result can't read as a full pass, and `notCompared` lists the variables S1 couldn't compare between
 groups because one group has no record of them (an S0 gap, not a clean bill).
@@ -397,6 +494,15 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
                     detail = _claim_detail("S1", Dict{String,Any}("variable" => what, "settings" => sort!(ks)))))
             end
         end
+    end
+    # S2 — conventions, over the rows the claim runs on
+    if isempty(used)
+        skipped["S2"] = "no images with data"
+    else
+        isempty(scope.unit_attr) || push!(ran, "S2.unit")
+        isempty(_claim_calibration_fields(scope.measure)) ? (skipped["S2.calibration"] = "measure needs no calibration") :
+            push!(ran, "S2.calibration")
+        append!(findings, _claim_s2(table, scope))
     end
     Dict{String,Any}("findings" => findings, "ran" => ran, "skipped" => skipped,
                      "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))

@@ -349,6 +349,22 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "claim.not_compared" => (
         short = "{variable}: {n} setting(s) not compared between groups",
         long  = "Only one group has them on record, so whether the groups match there is unknown — record them for both before relying on the comparison."),
+    # S2: is the claim built the way the field expects?
+    "claim.no_unit" => (
+        short = "No statistical unit named",
+        long  = "A pooled test counts every cell or track as independent — name the attribute that identifies the animal or sample (e.g. Mouse)."),
+    "claim.few_units" => (
+        short = "{attr}: n = {n}, so a rank test can't go below p = {p}",
+        long  = "A rank test per {attr} can't reach p < 0.05 with this many, and a t-test rests on normality it can't check — add {attr}s, or report the comparison as descriptive."),
+    "claim.unit_count" => (
+        short = "Tested per {attr}: n = {n}",
+        long  = "Report n as the number of {attr}s, not cells or tracks."),
+    "claim.images_per_unit" => (
+        short = "{n_images} images from {n} distinct {attr}",
+        long  = "A test per image counts some {attr}s more than once — summarise per {attr} first."),
+    "claim.uncalibrated" => (
+        short = "{n} image(s) lack calibration for {measure}",
+        long  = "The measure is in pixels or frames there, not physical units — fix the image metadata, then re-measure."),
     "claim.confounded" => (
         short = "{variable} splits the compared groups",
         long  = "Every value of one group differs from every value of the other, so its effect can't be separated from the claim — match it before comparing."),
