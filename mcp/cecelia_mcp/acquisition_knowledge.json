@@ -1,6 +1,6 @@
 {
  "technology": "two-photon",
- "status": "Experimental. Our own wording of the cited sources; a cause stays 'consistent with' until the alternatives are ruled out. Scope feature lines are unverified until a facility checks them.",
+ "status": "Experimental. Our own wording of the cited sources; a cause stays 'consistent with' until the alternatives are ruled out. Scope feature lines are unverified until a facility checks them; `seenInFiles` is what the lab's own files record.",
  "sources": {
   "helmchen2005": {
    "cite": "Helmchen F, Denk W (2005). Deep tissue two-photon microscopy. Nat Methods 2:932-940",
@@ -201,13 +201,15 @@
      "stage": "power",
      "name": "Bright Z",
      "line": "Bright Z: set laser power at the top and at the bottom of the stack; it is interpolated in between.",
-     "verified": false
+     "verified": false,
+     "seenInFiles": "7 of 7 FV4000 .oir files: on, laser % stored at 2 depths (0 and 60 µm from the stack start). Interpolation in between is not in the file."
     },
     {
      "stage": "detectors",
      "name": "Auto HV",
      "line": "Auto HV: the software sets detector HV; the file may then record HV 0, so judge gain from the measured clipping.",
-     "verified": false
+     "verified": false,
+     "seenInFiles": "7 of 7 FV4000 .oir files: Auto HV on, every detector recorded at HV 0."
     }
    ]
   },
@@ -218,7 +220,8 @@
      "stage": "power",
      "name": "Bright Z",
      "line": "Bright Z: set laser power at several depths of the stack; check that it is switched on, not only set.",
-     "verified": false
+     "verified": false,
+     "seenInFiles": "7 of 7 FVMPE-RS .oir files: depths set (12 → 15 % over 35 µm) but switched off. Auto HV is on there too, yet HV 550 is recorded."
     }
    ]
   }
