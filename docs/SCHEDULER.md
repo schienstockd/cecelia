@@ -1020,6 +1020,14 @@ path (`api/task_console.jl`, `frontend/src/utils/taskReconcile.ts`).
 - **One row per task id**, re-appended on repeat. Both repeats are real: a cancel is announced twice
   (immediately from `on_status_change`, then as the final status), and `task:restart` reuses the id for a
   new run whose outcome must supersede the old one.
+- **The start is read and forgotten by id, so it is guarded both ways.** A repeat of the same terminal
+  status keeps the `started_at` the first one banked (the start is already gone from the in-flight map) —
+  but only until a new run registers under the id, so a restart cancelled before it ran banks `""`.
+  A start the caller **passes** — even `""`, as a relay of the runner's frame does — is banked as is and
+  never re-derived; only an omitted one (`nothing`) is derived from this process's own note.
+  A terminal frame arriving while another run is queued/running under the id (`_live_run_under`) is not
+  that run's — `run_task` deregisters before the final frame is sent, so a restart can register in the
+  gap — and it leaves that run's start alone, banking `""` for its own.
 - **`image_uids` is carried** — a set-scope task's full member list exists *only* on that frame, and a
   replay without it invalidates the representative image's plots alone.
 - **`since` is inclusive**, so a poller always re-reads its own newest entry; two units finishing in the

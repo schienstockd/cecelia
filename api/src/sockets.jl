@@ -121,9 +121,11 @@ function _ov_look_seg(cfg, dflt::AbstractString)
 end
 
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
-                   started_at="", finished_at="")
+                   started_at=nothing, finished_at="")
+    # `started_at` is passed only by a relay (the runner's stamp, authoritative even when ""); `nothing`
+    # lets `record_task_outcome!` derive it from this process's own note.
     if string(status) == "running"
-        seed = parse_iso_utc(started_at)
+        seed = isnothing(started_at) ? nothing : parse_iso_utc(started_at)
         isnothing(seed) ? note_task_started!(task_id) : note_task_started!(task_id, seed)
     end
     row = record_task_outcome!(task_id, status;
