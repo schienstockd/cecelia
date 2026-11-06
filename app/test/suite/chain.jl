@@ -400,13 +400,57 @@ end
                    params=Dict{String,Any}("diameter" => 99, "adv" => Dict("iters" => 50)))],
         ChainEdge[]))
 
+    # A set-scope twin, so both executor paths are driven.
+    set_spec = joinpath(mktempdir(), "rangedParamSet.json")
+    write(set_spec, JSON3.write(Dict(
+        "fun_name" => "customTest.rangedParamSet", "task" => "rangedParamSet",
+        "label" => "Ranged param set task", "scope" => "set", "resource_pool" => "cpu",
+        "params" => Any[
+            Dict("key" => "diameter", "type" => "float", "min" => 2.0, "max" => 60.0, "default" => 10)])))
+    register_task!("customTest.rangedParamSet", _RangedParamSetTask(); spec = set_spec)
+    save_chain_template!(proj, ChainTemplate("clamp-set-chain",
+        [ChainNode(id="s1", fn="customTest.rangedParamSet", scope="set",
+                   params=Dict{String,Any}("diameter" => 99))],
+        ChainEdge[]))
+
+    # The node:* frames carry the params the task RAN with, not the stored out-of-range value.
+    frames = Dict{String,Vector{Any}}()
+    frame_lock = ReentrantLock()
+    handlers = Dict(ev => (p -> (lock(frame_lock) do
+                                     push!(get!(frames, ev, Any[]), p.params)
+                                 end; nothing))
+                    for ev in ("node:queued", "node:running", "node:done"))
+    for (ev, h) in handlers; subscribe_chain_events!(ev, h); end
+
     logs = String[]
-    run = run_chain(proj, [img.uid]; chain="clamp-chain", on_log = line -> push!(logs, line))
+    run = try
+        run_chain(proj, [img.uid]; chain="clamp-chain", on_log = line -> push!(logs, line))
+    finally
+        for (ev, h) in handlers; unsubscribe_chain_events!(ev, h); end
+    end
     st = run.image_states[img.uid]["n1"]
     @test st.status == NODE_DONE
     @test st.result["diameter"] == 60.0 && st.result["iters"] == 10
     @test any(l -> contains(l, "[$(img.uid)/n1]") && contains(l, "'diameter' = 99") &&
                    contains(l, "running with 60.0"), logs)
+    for ev in ("node:queued", "node:running", "node:done")
+        @test !isempty(get(frames, ev, Any[]))
+        @test all(p -> p["diameter"] == 60.0 && p["adv"]["iters"] == 10, get(frames, ev, Any[]))
+    end
+
+    empty!(frames)
+    for (ev, h) in handlers; subscribe_chain_events!(ev, h); end
+    set_run = try
+        run_chain(proj, [img.uid]; chain="clamp-set-chain", on_log = _ -> nothing)
+    finally
+        for (ev, h) in handlers; unsubscribe_chain_events!(ev, h); end
+    end
+    @test set_run.image_states[img.uid]["s1"].status == NODE_DONE
+    @test set_run.image_states[img.uid]["s1"].result["diameter"] == 60.0
+    for ev in ("node:queued", "node:running", "node:done")
+        @test !isempty(get(frames, ev, Any[]))
+        @test all(p -> p["diameter"] == 60.0, get(frames, ev, Any[]))
+    end
 
     # This run's own override is not clamped: refused at launch, before any node runs.
     @test_throws ChainTemplateError run_chain(proj, [img.uid]; chain="clamp-chain",

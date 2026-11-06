@@ -218,7 +218,9 @@ end
 # What a node actually runs with: its STORED params clamped to the current spec (`_clamp_to_spec`, one
 # log line per moved value), then this run's overrides on top, unclamped — those are the caller's own
 # values, so a bad one should still fail. Resume hashes stay on `effective_params` (unclamped), so a
-# node that finished before its spec's range tightened is not re-run for it.
+# node that finished before its spec's range tightened is not re-run for it. What REPORTS the node —
+# the `params` of its node:queued/running/waiting/done events — carries these run params, never
+# `effective_params`: a frame says what the task ran with, not a stored out-of-range value.
 function _node_run_params(task, node::ChainNode, overrides::Dict{String,Any}, log::Function)
     clamped = _clamp_to_spec(task, node.params; on_clamp = (k, from, to) ->
         log("stored '$k' = $from is outside the current range of $(node.fn); running with $to"))
@@ -342,7 +344,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # time counts from the real start, not from when the image thread reached here.
         _update_node_state!(run, image_uid, node.id;
                             status=NODE_QUEUED, task_id=tid,
-                            fn=node.fn, node_params=effective_params)
+                            fn=node.fn, node_params=run_params)
 
         # THROUGH `execute_task`, the canonical single-task pathway — the same one `handle_task_run`
         # and the runner's own task handler use. A chain node is a task; the only thing it needs that
@@ -367,7 +369,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                 on_status   = (st, _uid, _uids, _pool) -> st == "running" &&
                     _update_node_state!(run, image_uid, node.id;
                                         status=NODE_RUNNING, fn=node.fn,
-                                        node_params=effective_params),
+                                        node_params=run_params),
                 on_result   = (_uid, meta) -> (result[] = meta))))
         catch e
             @warn "Task error in chain" uid=image_uid node=node.id exception=e
@@ -388,7 +390,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         end
         _update_node_state!(run, image_uid, node.id;
                             fn          = node.fn,
-                            node_params = effective_params,
+                            node_params = run_params,
                             status      = final_status,
                             result      = result,
                             params_hash = final_status == NODE_DONE ? _params_hash(effective_params) : nothing)
@@ -483,16 +485,6 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
         end
     end
 
-    tid = gen_uid()
-    # :queued, not :running — the same distinction the image-scope path makes. This node goes through
-    # `run_task` now, so it waits for a slot in its `resource_pool` like any other task, and only a
-    # pool worker picking it up means "running" (`execute_task`'s `on_status`, below).
-    for uid in participating_uids
-        _update_node_state!(run, uid, node.id;
-                            status=NODE_QUEUED, task_id=tid,
-                            fn=node.fn, node_params=effective_params)
-    end
-
     task_struct = try
         _task_from_fun_name(node.fn)
     catch e
@@ -502,6 +494,21 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
         end
         _barrier_signal_done!(run, node.id)
         return
+    end
+    # Resolved before :queued so every frame this node sends carries what it runs with (see
+    # `_node_run_params`). No image loaded → no uid for the log prefix, and the node fails in
+    # `execute_task` below anyway, so the clamp line is dropped rather than mis-attributed.
+    run_params = _node_run_params(task_struct, node, overrides, isempty(imgs) ? (_ -> nothing) :
+        line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line"))
+
+    tid = gen_uid()
+    # :queued, not :running — the same distinction the image-scope path makes. This node goes through
+    # `run_task` now, so it waits for a slot in its `resource_pool` like any other task, and only a
+    # pool worker picking it up means "running" (`execute_task`'s `on_status`, below).
+    for uid in participating_uids
+        _update_node_state!(run, uid, node.id;
+                            status=NODE_QUEUED, task_id=tid,
+                            fn=node.fn, node_params=run_params)
     end
 
     # Applicability gating (set-scope): drop images that don't satisfy the task's `requires.axes` or
@@ -551,8 +558,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                           image_uid    = first(imgs).uid,
                           image_uids   = participating_uids,
                           pool_name    = node.resource_pool,
-                          params       = _node_run_params(task_struct, node, overrides,
-                              line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line")),
+                          params       = run_params,
                           chain_run_id = run.id,
                           chain_node_id = node.id,
                           by           = chain_run_as(run));
@@ -562,7 +568,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
             # barrier row flips NODE_QUEUED → NODE_RUNNING together.
             on_status   = (st, _uid, _uids, _pool) -> st == "running" && for uid in participating_uids
                 _update_node_state!(run, uid, node.id;
-                                    status=NODE_RUNNING, fn=node.fn, node_params=effective_params)
+                                    status=NODE_RUNNING, fn=node.fn, node_params=run_params)
             end,
             on_result   = (_uid, meta) -> (result[] = meta))))
     catch e
@@ -581,8 +587,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
         lock(run._lock) do
             for uid in participating_uids; run.image_states[uid][node.id].result = result; end
         end
-        _await_manual_set!(run, node, participating_uids, task_struct,
-                           _node_run_params(task_struct, node, overrides, _ -> nothing), effective_params,
+        _await_manual_set!(run, node, participating_uids, task_struct, run_params, effective_params,
                            is_cancelled)
         _barrier_signal_done!(run, node.id)
         return
@@ -590,7 +595,7 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
                             fn          = node.fn,
-                            node_params = effective_params,
+                            node_params = run_params,
                             status      = final_status,
                             result      = result,
                             params_hash = final_status == NODE_DONE ? ph : nothing)
@@ -651,7 +656,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
         ph_val = isnothing(result) ? nothing : ph
         for img in imgs_snap
             _update_node_state!(run, img.uid, node.id;
-                                fn=node.fn, node_params=effective_params,
+                                fn=node.fn, node_params=run_params,
                                 status=st, result=result, params_hash=ph_val)
         end
     end
