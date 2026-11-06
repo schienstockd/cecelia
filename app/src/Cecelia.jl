@@ -87,6 +87,7 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_findin
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
+export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE
 export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
 export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
@@ -326,6 +327,7 @@ include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
+include("claim_checks.jl")   # after qc_cohort.jl — claim recital S0/S1 over a set
 include("lab_log.jl")
 include("lab_log_context.jl")
 # the one reader/writer of settings/analysisBoards.json — after CciaProject (model/project.jl), and

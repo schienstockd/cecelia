@@ -316,4 +316,40 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "cohort.mixed" => (
         short = "{metric} differs from the set",
         long  = "This image has {metric} {value}, unlike most of the set — measures aren't comparable across it. Re-run with one setting for every image."),
+
+    # claim checks (claim_checks.jl) — S0: can the record say what was done?
+    "claim.image_excluded" => (
+        short = "{n} image(s) in the set are excluded",
+        long  = "The claim runs without them — include them, or say in the claim why they are left out."),
+    "claim.no_data" => (
+        short = "{n} image(s) have no data for {pop}",
+        long  = "The claim runs on fewer images than the set holds — run the missing step on them, or narrow the claim's scope."),
+    "claim.unit_blank" => (
+        short = "{attr} is blank on {n} image(s)",
+        long  = "The statistical unit can't be counted for them — fill in {attr} before testing per unit."),
+    "claim.params_not_recorded" => (
+        short = "No {kind} params recorded for {pop} on {n} image(s)",
+        long  = "Whether those images were processed the same way can't be checked — re-run the step to record it, or note how it was done."),
+    "claim.params_last_run_only" => (
+        short = "{kind} params for {pop} only in the last-run record on {n} image(s)",
+        long  = "A later run of the same task under another name would overwrite them — re-run under this name to record them exactly."),
+    "claim.dims_not_recorded" => (
+        short = "Track dimensions not recorded for {pop} on {n} image(s)",
+        long  = "2D and 3D speeds can't be told apart — re-run track measures with dims set, or recompute both groups in 2D."),
+    # S1: was everything compared treated the same?
+    "claim.differs_across_images" => (
+        short = "{variable} differs across images for {pop}",
+        long  = "Images in the comparison were processed differently — re-run the odd ones with matching settings, or restrict the claim to the matching images."),
+    "claim.within_tolerance" => (
+        short = "{variable} differs slightly across images",
+        long  = "Within tolerance — shown for the record, no action needed."),
+    "claim.differs_between_groups" => (
+        short = "{variable} differs between the compared groups on {n} image(s)",
+        long  = "The groups were not measured the same way there — match the setting for both groups, or restrict the claim to the images where they match."),
+    "claim.not_compared" => (
+        short = "{variable}: {n} setting(s) not compared between groups",
+        long  = "Only one group has them on record, so whether the groups match there is unknown — record them for both before relying on the comparison."),
+    "claim.confounded" => (
+        short = "{variable} splits the compared groups",
+        long  = "Every value of one group differs from every value of the other, so its effect can't be separated from the claim — match it before comparing."),
 )
