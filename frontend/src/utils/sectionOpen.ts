@@ -8,6 +8,7 @@
 // `revealPlots` is the page-level ask built on it: `ModuleLayout` answers by folding its Images section
 // and opening its Plots section — the layout owns those keys, so no caller has to know them.
 
+import { ref, watch, getCurrentScope, onScopeDispose, type Ref } from 'vue'
 import { profileStorage } from './profileStorage'
 const SECTION_EVENT = 'cc:section-open'
 const REVEAL_PLOTS_EVENT = 'cc:reveal-plots'
@@ -28,6 +29,20 @@ export function onSectionOpen(key: string, apply: (open: boolean) => void): () =
   }
   window.addEventListener(SECTION_EVENT, h)
   return () => window.removeEventListener(SECTION_EVENT, h)
+}
+
+/**
+ * A persisted open/closed flag for a fold that is NOT a `CollapsibleSection` (it draws its own toggle):
+ * the same stored format (`'1'`/`'0'`), and it follows `setSectionOpen` on the key the way a mounted
+ * section does. Call it in a component's setup (or any effect scope) — the subscription ends with it.
+ */
+export function useStoredSectionOpen(key: string, defaultOpen = true): Ref<boolean> {
+  const stored = profileStorage.getItem(key)
+  const open = ref(stored === null ? defaultOpen : stored === '1')
+  watch(open, v => { try { profileStorage.setItem(key, v ? '1' : '0') } catch { /* ignore */ } })
+  const off = onSectionOpen(key, v => { open.value = v })
+  if (getCurrentScope()) onScopeDispose(off)
+  return open
 }
 
 /** Ask the current page to bring its plots into view (fold its image table, open its plots). */
