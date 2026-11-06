@@ -334,7 +334,16 @@ end
         @test _post(api_projects_delete, Dict("uid"=>"nope"))[1] == 404       # not found
         st, body = _post(api_projects_delete, Dict("uid"=>uid))
         @test st == 200 && JSON3.read(body).ok == true
-        @test !isdir(proj.root)                                               # gone from disk
+        @test !isdir(proj.root)                                               # gone at its path at once
+        @test all(p -> p["uid"] != uid, _scan_projects_raw())                  # .deleting/ is not a project
+        # the moved-aside tree is removed in the background
+        @test timedwait(() -> isempty(readdir(joinpath(tmp, ".deleting"))), 30.0) === :ok
+
+        # a delete a stopped server left half-done is finished by the startup sweep
+        stale = joinpath(tmp, ".deleting", "left-over")
+        mkpath(joinpath(stale, "a", "b")); write(joinpath(stale, "project.json"), "{}")
+        sweep_deleting_projects()
+        @test !ispath(stale)
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)
