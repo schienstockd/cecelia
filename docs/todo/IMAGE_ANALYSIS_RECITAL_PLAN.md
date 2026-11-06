@@ -185,9 +185,23 @@ structure (S3a Translator, S3b perturbation sets, S4 as a separate reviewer) isn
 here. Caveats: one claim, with large and blatant problems; the baseline is the same model family as
 S4, so it effectively *was* S4 with record access; it recomputed rather than only reading the record
 (fine under Decision 1); and three runs agreeing isn't the same as being steady across claims.
-**Next:** the same baseline on a subtle or null claim (pseudo-arms from mice), where the risk is
-false alarms rather than misses. If it stays good there, the shape becomes P1 rules plus one plain
-review turn, with no Translator and no perturbation sets.
+**Null claim (same day).** The same copy with a made-up `Treatment` attribute (mice 1 and 3 "aPD1",
+2 and 4 "isotype"), claim "anti-PD-1 increases T cell motility", T/qc, `live.track.speed`. Pooled per
+track the stored values make it look real (6.88 vs 4.12, p = 2×10⁻⁶). 3/3 runs said the record
+doesn't support it, and why: the one 2D image (k3Tx90) sits in the isotype arm; measured the same
+way the arms match (3D p = 0.18), and per image or mouse there's nothing (Welch p ≈ 0.6). All three
+noted 2 mice per arm, that M4c (EaMaVq, isotype) left the set, and that no treatment test exists in
+the record. None invented an effect. Cost $1.07 / $0.97 / $1.38 (a first attempt hit the usage limit
+mid-run: $1.72 for nothing).
+
+This is not yet a clean false-alarm test. The null here fails for a real record problem (the dims mix),
+so rejecting it was the right call for a reason the runs could see. The harder case is a null on a
+record with no such problem, where the only right answer is "no difference, and nothing wrong".
+That needs a dataset without confounds, or a copy with the dims recomputed to match.
+
+**Where this leaves the shape.** P1 rules (#1969) plus one plain review turn. The Translator (S3a) and
+the fixed perturbation sets (S3b) are not earning their cost on either claim. Keep them parked unless
+a claim turns up that the plain turn gets wrong.
 
 ## Approach
 
