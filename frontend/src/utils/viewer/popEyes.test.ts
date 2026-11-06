@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
-  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey,
+  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey, reconcileTrackclustEyes,
   type EyePop, type PopEyes, type ListedPop,
 } from './popEyes'
 
@@ -139,6 +139,29 @@ describe('ribbon eyes', () => {
   it('offPaths projects the off eyes onto per-path hides for the movie', () => {
     expect(offPaths({ 'flow::/b': false, 'flow::/a': false, 'clust::/a': false, 'flow::/c': true }))
       .toEqual(['/a', '/b'])
+  })
+})
+
+// Trackclust pops never reach `loadOverlays`' reconcile (not a cell pop type): the manager's button and
+// the viewer's ribbons both read these eyes, so a stale one makes the button disagree with the ribbon.
+describe('reconcileTrackclustEyes', () => {
+  const tc = (path: string, uid: string, show = true) => ({ path, uid, show })
+  it('drops a deleted cluster pop, so one recreated at its path seeds from show', () => {
+    const stored = { 'trackclust::/c1': false, 'flow::/c1': false }
+    const gone = reconcileTrackclustEyes(stored, [tc('/c1', 'u1')], [])
+    expect(gone).toEqual({ 'flow::/c1': false })            // other pop types' eyes kept as stored
+    const back = reconcileTrackclustEyes(gone, [], [tc('/c1', 'u2', true)])
+    expect(popEyeOn(new Map([['B', back]]), 'B', 'trackclust', '/c1', true)).toBe(true)
+  })
+  it('a pop recreated between two fetches (new uid at the old path) does not inherit the eye', () => {
+    const out = reconcileTrackclustEyes({ 'trackclust::/c1': false }, [tc('/c1', 'u1')], [tc('/c1', 'u2', true)])
+    expect(out['trackclust::/c1']).toBe(true)
+  })
+  it('keeps a stored eye over show, and follows a rename by uid', () => {
+    expect(reconcileTrackclustEyes({ 'trackclust::/c1': false }, [], [tc('/c1', 'u1', true)]))
+      .toEqual({ 'trackclust::/c1': false })
+    expect(reconcileTrackclustEyes({ 'trackclust::/c1': false }, [tc('/c1', 'u1')], [tc('/c9', 'u1', true)]))
+      .toEqual({ 'trackclust::/c9': false })
   })
 })
 
