@@ -45,8 +45,8 @@ def _get_diff(from_stdin: bool) -> str:
     if from_stdin:
         return sys.stdin.read()
     try:
-        return subprocess.check_output(
-            ["git", "diff", "--staged"], text=True, encoding="utf-8"
+        return subprocess.check_output(   # a non-UTF-8 text file must not crash the review
+            ["git", "diff", "--staged"], text=True, encoding="utf-8", errors="replace"
         )
     except subprocess.CalledProcessError as e:
         print(f"recital: `git diff --staged` failed: {e}", file=sys.stderr)

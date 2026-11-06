@@ -1,6 +1,6 @@
 /**
  * The source file's acquisition settings (`image.acquisition`, read at import by
- * `python/cecelia/utils/oir_meta.py`) turned into label/value rows for the image metadata dialog.
+ * `python/cecelia/utils/oir_meta.py`, `czi_meta.py`) turned into label/value rows for the image metadata dialog.
  * Values are shown as recorded; nothing here judges them.
  */
 
@@ -13,6 +13,8 @@ export interface AcquisitionChannel {
   bitDepth?: number | null
 }
 export interface AcquisitionSettings {
+  /** Which reader produced it: `oir_meta` or `czi_meta`. */
+  source?: 'oir' | 'czi' | null
   system?: string | null
   softwareVersion?: string | null
   objective?: { name?: string | null; magnification?: number | null; na?: number | null; immersion?: string | null } | null
@@ -32,6 +34,11 @@ export interface AcquisitionSettings {
 
 /** Why an image has no settings (`ACQUISITION_MISSING` in omezarr/acquisition.jl). */
 export interface AcquisitionMissing { reason: 'format' | 'source' | 'unread' | 'other-stack' | 'registered' | 'no-source'; ext?: string }
+
+/** The vendor's name for the depth power ramp: Evident's "Bright Z", Zeiss's "Auto Z brightness". */
+export function depthRampName(acq: AcquisitionSettings | null | undefined): string {
+  return acq?.source === 'czi' ? 'Auto Z brightness' : 'Bright Z'
+}
 
 /** "FVMPE-RS · software 2.6.1.243", or null when the file does not name the system. */
 export function microscopeName(acq: AcquisitionSettings | null | undefined): string | null {
@@ -102,7 +109,7 @@ export function acquisitionRows(acq: AcquisitionSettings | null | undefined): Ac
   }
   const bz = acq.brightZ
   if (bz && bz.enabled != null) {
-    rows.push({ k: 'Bright Z', v: bz.enabled ? join(['on', brightZRamp(bz)]) : 'off' })
+    rows.push({ k: depthRampName(acq), v: bz.enabled ? join(['on', brightZRamp(bz)]) : 'off' })
   }
   const s = acq.scanner
   if (s) {

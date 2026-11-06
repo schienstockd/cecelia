@@ -242,7 +242,7 @@ def merged_pr_heads(branch: str, cwd: str | None = None, state: str = "merged") 
 
 def git_output(*args: str, cwd: str | None = None) -> str | None:
     """`git <args>` stdout (stripped), or None on any failure — not a repo, `git` missing, non-zero
-    exit, timeout. For one-off git-state questions (the commit hook's `core.hooksPath` /
+    exit, timeout, output that is not UTF-8 text (`git show` of a binary blob). For one-off git-state questions (the commit hook's `core.hooksPath` /
     in-progress-merge checks) so they don't grow a second subprocess wrapper. `cwd` defaults to
     the process cwd."""
     git = shutil.which("git")
@@ -253,7 +253,7 @@ def git_output(*args: str, cwd: str | None = None) -> str | None:
             [git, *args], capture_output=True, text=True, timeout=10.0, check=False,
             encoding="utf-8", cwd=cwd,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except (subprocess.TimeoutExpired, OSError, UnicodeDecodeError):
         return None
     return result.stdout.strip() if result.returncode == 0 else None
 
