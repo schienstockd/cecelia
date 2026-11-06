@@ -48,6 +48,7 @@ import { useLinkedSelectionSource, useLinkedSelectionSubscriber } from '../../co
 import { useLinkedSelectionStore, linkedSourceKey } from '../../stores/linkedSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../plots/PlotPointOutMark.vue'
+import ClaimStrip from './ClaimStrip.vue'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null
@@ -66,7 +67,8 @@ const props = defineProps<{
         statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median'   // datapoint = each cell/track, or each image's mean/median (one dot per image)
         metricPop?: string    // per-image metric: which of the run's populations (or pairs) to plot
-        statsPair?: string }  // legacy name of metricPop, from boards saved before the pair plot became a metric
+        statsPair?: string    // legacy name of metricPop, from boards saved before the pair plot became a metric
+        claimEntryId?: string; claimText?: string; claimUnit?: string }   // a claim stated from this plot (ClaimStrip)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
@@ -1381,6 +1383,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
       <PlotNotice v-else-if="fitNote" class="sp-foot-note" :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
+      <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
+      <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="series"
+                  :measure="hasMeasure ? measure : ''" :ui="ui" />
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <CcToggle v-if="!docked" v-model="settings.csvIncludeAttrs" label="Attributes" class="sp-attrs cc-fs-xs"
                 v-tooltip.top="'Add image name + attributes to the CSV'" />
