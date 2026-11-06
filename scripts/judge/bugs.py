@@ -367,7 +367,9 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
         return {"code": None, "symbol": None, "gone": None}
     now = git_output("show", f"{sha}:{file}", cwd=str(repo)) if file else None
     if now is None:
-        return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file else None}
+        # A binary blob reads as None too: it is there, it just has no code to excerpt.
+        there = file and git_output("cat-file", "-t", f"{sha}:{file}", cwd=str(repo)) is not None
+        return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file and not there else None}
     then = git_output("show", f"{b['commit']}:{file}", cwd=str(repo)) if b.get("commit") else None
     found = _enc.enclosing(then, line, file) if then else None
     symbol, at = (found[0], None) if found else (None, None)

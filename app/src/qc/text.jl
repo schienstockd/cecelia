@@ -73,13 +73,13 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         long  = "Check before gating on intensity across frames. Channels: {channels}."),
     "import.brighter_with_depth" => (
         short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
-        long  = "Check the Bright Z ramp — power may rise faster than signal is lost. Channels: {channels}."),
+        long  = "Check the depth power ramp (Bright Z / Auto Z brightness) — power may rise faster than signal is lost. Channels: {channels}."),
     "import.darker_with_depth" => (
         short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
-        long  = "Check the Bright Z ramp, or whether there are fewer cells deeper. Channels: {channels}."),
+        long  = "Check the depth power ramp (Bright Z / Auto Z brightness), or whether there are fewer cells deeper. Channels: {channels}."),
     "import.clipped_deep" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
-        long  = "Lower the deep end of the Bright Z ramp, or the HV. Channels: {channels}."),
+        long  = "Lower the deep end of the depth power ramp (Bright Z / Auto Z brightness), or the HV. Channels: {channels}."),
 
     # acquisition stopped mid-volume (partial_timepoint_qc_findings): dropped at import, or still there
     "import.partial_timepoint_dropped" => (

@@ -496,6 +496,15 @@ fill the `ctx` column (how full each session's context is), wrap your statusline
 `~/.claude/settings.json`. Design:
 `docs/todo/AGENTS_PANE_PLAN.md`.
 
+A session sits where its last top-level `cd` left it, so a read-only `cd ../other-worktree && git log`
+moves it into another session's worktree — the pane then shows it there, with that branch and PR. The
+guard `scripts/worktree_cd_guard.py` (PreToolUse on Bash, logic in
+`cecelia.effectiveness.worktree_cd_guard`) blocks a top-level `cd` into a checkout another live session
+is working in and points at `git -C`; a worktree nobody is in (one you just bootstrapped) and a
+subshell `( cd … )` pass. Wire it globally in `~/.claude/settings.json` so sessions launched from any
+folder get it: `"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command":
+"f=<repo>/scripts/worktree_cd_guard.py; [ -f \"$f\" ] && exec /usr/bin/python3 \"$f\" || exit 0"}]}]}`.
+
 ## Dev worktree switch (Settings → System)
 
 When several git worktrees exist (the branch-preview workflow), **Settings → System → Worktree** lists

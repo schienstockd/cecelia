@@ -783,6 +783,33 @@ end
     rm(proj.root; recursive=true)
 end
 
+# discard!: off its path at once, rm in the background; the startup sweep clears leftovers. Every
+# project-data delete (project, set, image, replace-import) goes through it.
+@testset "discard! — move aside, rm in the background" begin
+    root = Cecelia.discard_root()
+    _drained() = !isdir(root) || isempty(readdir(root))
+    @test timedwait(_drained, 30.0) === :ok                      # nothing pending from earlier tests
+
+    d = mktempdir(Cecelia.projects_dir())
+    mkpath(joinpath(d, "a", "b")); write(joinpath(d, "a", "b", "0.0"), "x")
+    discard!(d)
+    @test !ispath(d)                                             # gone from its path when it returns
+    @test timedwait(_drained, 30.0) === :ok                      # and from disk shortly after
+    @test discard!(d) === nothing                                # missing path → no-op
+
+    # move_aside keeps the tree for a caller that may restore it (replace-import)
+    k = mktempdir(Cecelia.projects_dir()); write(joinpath(k, "f"), "keep")
+    moved = move_aside(k)
+    @test moved !== nothing && !ispath(k) && read(joinpath(moved, "f"), String) == "keep"
+    mv(moved, k); @test read(joinpath(k, "f"), String) == "keep"
+    rm(k; recursive = true)
+
+    # a delete a stopped server left half-done is finished by the startup sweep
+    stale = joinpath(root, "left-over"); mkpath(joinpath(stale, "x"))
+    sweep_discarded!()
+    @test !ispath(stale)
+end
+
 # ── Boundary contract: run a REAL module function end-to-end, no api/ ───────
 # The whole suite loads only `using Cecelia` (api/ is not on the path). This runs
 # an actual task (RemoveImage — real ccid.json + disk work, no external binary) to

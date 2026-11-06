@@ -680,6 +680,17 @@ class LandedTest(_Repo):
         self.assertNotIn(quiet, str(got))
 
 
+class LocateTest(_Repo):
+    def test_a_binary_file_is_not_gone_just_not_text(self):
+        (self.repo / "x.bin").write_bytes(bytes([0x94, 0xff, 0x00, 0x80]) * 64)
+        self.git("add", "x.bin")
+        self.git("commit", "-q", "-m", "bin")
+        sha = self.git("rev-parse", "HEAD")
+        self.assertIsNone(self.b.locate({"file": "x.bin", "line": 1}, sha, self.repo)["gone"])
+        self.assertEqual(self.b.locate({"file": "nope.py", "line": 1}, sha, self.repo)["gone"],
+                         f"`nope.py` isn't in {sha[:8]}")
+
+
 class PrefilterTest(_Repo):
     def test_findings_on_a_frozen_record_are_dropped_new_and_carried(self):
         frozen = "docs/ai-assist/judge-runs/" + "2026-09-30.md"   # split: a fixture, not a doc pointer

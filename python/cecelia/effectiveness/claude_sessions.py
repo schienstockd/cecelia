@@ -366,6 +366,21 @@ def _transcript_session(pid: int, name: str, status: str, meta: dict, sid: str,
         return Session(pid, name, status, None, readable=False, session_id=sid, context_pct=ctx)
 
 
+def under(path: str, root: str) -> bool:
+    """Whether `path` is `root` or inside it — by text, case-folded where the OS folds it."""
+    path, root = os.path.normcase(path), os.path.normcase(root).rstrip(os.sep)
+    return path == root or path.startswith(root + os.sep)
+
+
+def sessions_in(root: str, sessions: _t.Iterable[Session]) -> list[Session]:
+    """Every session that worked inside `root` recently — any of its recent folders, not only the
+    newest: its shell may have been reset to the workspace root while the work is still in this
+    worktree. Over-protecting is the safe failure. Used by `prune-worktrees`' in-use check and the
+    `worktree_cd_guard` hook."""
+    return [s for s in sessions
+            if any(under(c, root) for c in (s.recent_cwds or ((s.cwd,) if s.cwd else ())))]
+
+
 def live_sessions(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib.Path("/proc"),
                   context: pathlib.Path | None = None) -> list[Session] | None:
     """Every live Claude Code session, ordered by pid. [] when Claude Code has never run here;

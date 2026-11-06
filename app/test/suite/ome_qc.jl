@@ -564,8 +564,11 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
 
                 # Why not, when not: a format with no reader, and a source that is gone
                 zm = Dict{String,Any}("SizeC" => 1)
-                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.czi", proj.root)
-                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".czi")
+                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.lif", proj.root)
+                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".lif")
+                zm = Dict{String,Any}("SizeC" => 1)     # .czi has a reader: past the gate, then gone
+                @test !Cecelia._recover_acquisition_settings!(zm, joinpath(proj.root, "gone.czi"), proj.root)
+                @test zm["acquisitionMissing"]["reason"] == "source"
                 zm = Dict{String,Any}("SizeC" => 1)
                 @test !Cecelia._recover_acquisition_settings!(zm, joinpath(proj.root, "gone.oir"), proj.root)
                 @test zm["acquisitionMissing"]["reason"] == "source"

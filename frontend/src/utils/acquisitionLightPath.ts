@@ -8,7 +8,7 @@
 
 import type { CciaImage } from '../stores/project'
 import { fmtNum, shortUnit, formatTimeIncrement } from './physicalSize'
-import { framesShortOf, type AcquisitionSettings } from './acquisitionSettings'
+import { depthRampName, framesShortOf, type AcquisitionSettings } from './acquisitionSettings'
 
 /** Where a value came from — drawn as a shape AND a colour, so it reads without colour vision. */
 export type LightPathSource = 'ome' | 'file' | 'measured' | 'missing'
@@ -106,16 +106,17 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
     .filter(l => l.transmissionPct != null)
     .map(l => item(`${l.name} ${n(l.transmissionPct)} %`, 'file'))
   const bz = acq.brightZ
+  const ramp = depthRampName(acq)
   if (bz?.enabled === true) {
     const pts = bz.points ?? []
     const lasers = Object.keys(pts[0]?.transmissionPct ?? {})
     for (const l of lasers) {
-      power.push(item(`Bright Z on: ${l} ${pts.map(p => `${n(p.transmissionPct[l])} %`).join(' → ')} over ` +
+      power.push(item(`${ramp} on: ${l} ${pts.map(p => `${n(p.transmissionPct[l])} %`).join(' → ')} over ` +
                       `${pts.map(p => n(p.zFromStartUm)).join(' → ')} µm`, 'file'))
     }
-    if (lasers.length === 0) power.push(item('Bright Z on', 'file'))
+    if (lasers.length === 0) power.push(item(`${ramp} on: power changes with depth (ramp not read)`, 'file'))
   } else if (bz?.enabled === false) {
-    power.push(item('Bright Z off: same power at every depth', 'file'))
+    power.push(item(`${ramp} off: same power at every depth`, 'file'))
   } else {
     power.push(item('Power with depth not recorded', 'missing'))
   }

@@ -224,18 +224,17 @@ rename_set!(proj::CciaProject, s::CciaSet, name::AbstractString; force::Bool = f
 """
 Delete a set from the project: removes every member image's data + metadata dirs,
 the set's own metadata dir, drops it from the project manifest, and persists the project.
+The dirs go through `discard!` — gone at once, rm in the background — so the manifest is
+only updated once every one of them is off its path.
 """
 function delete_set!(proj::CciaProject, set_uid::String)::CciaProject
     idx = findfirst(s -> s.uid == set_uid, proj._sets)
     isnothing(idx) && return proj
     s = proj._sets[idx]
-    for image_uid in s.image_uids
-        for sub in ("0", "1")
-            d = joinpath(proj.root, sub, image_uid)
-            isdir(d) && rm(d; recursive = true)
-        end
+    for image_uid in s.image_uids, sub in ("0", "1")
+        discard!(joinpath(proj.root, sub, image_uid))
     end
-    isdir(s._dir) && rm(s._dir; recursive = true)
+    discard!(s._dir)
     deleteat!(proj._sets, idx)
     filter!(u -> u != set_uid, proj.set_uids)
     _commit_member!(proj, "set_uids", set_uid; remove = true)
