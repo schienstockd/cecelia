@@ -24,7 +24,7 @@
       "key": "valueName",
       "label": "Segmentation",
       "type": "valueNameSelection",
-      "field": "labels",
+      "field": "labelPropsNames",
       "default": "default",
       "tip": "The segmentation (label set) whose cells to track"
     },

@@ -153,9 +153,24 @@ export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
  */
 export function normaliseField(field: string | undefined | null): ConsumerField {
   if (field === 'labels') return 'labels'
+  if (field === 'labelPropsNames') return 'labelPropsNames'
   if (field === 'spatialGraphs') return 'spatialGraphs'
   if (field === 'statsSuffixes' || field === 'clusterSuffixes' || field === 'regionSuffixes'
       || field === 'roiSuffixes' || field === 'patternSuffixes')
     return field
   return 'filepaths'
+}
+
+/**
+ * Does a consumer param declaring `field` take an upstream output that lands in `produced`? The chain
+ * whiteboard's edge-prefill test — compare through here, never `normaliseField(...) === produced`.
+ *
+ * Equal fields match. One cross-field match on top: a `labelPropsNames` consumer (a task that reads
+ * only the measurement table — tracking, gating, track measures) takes a `labels` output, because a
+ * segmentation's cells are measured into `label_props` under the SAME value name. Without it, a
+ * segmentation → tracking edge prefills nothing and the node silently tracks the spec default set.
+ */
+export function consumerAccepts(field: string | undefined | null, produced: ConsumerField): boolean {
+  const f = normaliseField(field)
+  return f === produced || (f === 'labelPropsNames' && produced === 'labels')
 }
