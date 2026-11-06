@@ -426,8 +426,11 @@ def unattended(tracker: auto_run.Tracker | None = None, *, name: str = "auto",
     """Make this process outlive its terminal: SIGHUP ignored (the agents it starts inherit that), and
     stdout/stderr that move to `<name>-<ts>-terminal-lost.log` when the terminal goes (`FallbackOut`),
     which `tracker` learns. Not needed under `--detach` or the weekly pass, harmless there; `judge-deps`
-    calls it too."""
+    calls it too. Also `PYTHONDONTWRITEBYTECODE` for everything it starts: recital's reviewers run in the
+    worktree with this process's env, and their commit hook's `__pycache__` under `.claude/` stops the
+    fix at the guard (`agent_env` covers the sessions; this, the rest)."""
     import signal
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     if hasattr(signal, "SIGHUP"):
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
     log = os.environ.get(auto_run.LOG_ENV)

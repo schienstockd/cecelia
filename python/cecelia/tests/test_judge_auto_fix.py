@@ -509,6 +509,15 @@ class FenceTest(_AutoFixture):
                        text=True, encoding="utf-8", timeout=60)
         self.assertEqual(self.af.snapshot(tree), before)
 
+    def test_an_unattended_run_writes_no_bytecode_from_anything_it_starts(self):
+        """Recital's reviewers run in the worktree with the run's own env, not `agent_env`."""
+        with mock.patch.dict(self.af.os.environ, {}, clear=False) as env, \
+                mock.patch.object(sys, "stdout", sys.stdout), mock.patch.object(sys, "stderr", sys.stderr), \
+                mock.patch("signal.signal"):
+            env.pop("PYTHONDONTWRITEBYTECODE", None)
+            self.af.unattended(name="t")
+            self.assertEqual(self.af.os.environ.get("PYTHONDONTWRITEBYTECODE"), "1")
+
     def test_protected_paths(self):
         for p in (".github/workflows/ci.yml", ".githooks/commit-msg", ".claude/settings.json", "pixi.toml",
                   "app/CLAUDE.md", "scripts/judge/auto_fix.py", "scripts/judge/deps_fix.py"):
