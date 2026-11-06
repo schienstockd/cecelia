@@ -1,9 +1,9 @@
 # Image analysis recital — review a claim before it leaves Cecelia
 
-**Status:** building (2026-11-06). P0 (by hand), P1 (S0/S1 rules, #1969) and the P2 baseline are done;
-their results are below. Shape after P2: **P1 rules + S2 rules + one plain review turn**. The
-Translator (S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate. The build order
-is under *Build* at the end.
+**Status:** B1–B5 built (2026-11-06): the rule checks (S0–S2), the route and MCP tools, the claim as a
+Blackboard entry, and the review turn. B6 (the GUI) is in review, first slice only. P0 (by hand), P1
+(#1969) and the P2 baseline are below. Shape after P2: **rules + one plain review turn**; the Translator
+(S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate.
 
 The schematics are `recital_figures/findings_flow.svg` (what happens to a finding) and
 `recital_figures/gui_mockup.svg` (the GUI), v2 of 2026-11-06 (v1 is in git history). Check changes
@@ -370,16 +370,20 @@ claim object (Q2), a record exporter, and the stamp on the export. Concrete orde
 
 ## Build (2026-11-06)
 
+Open after the build: claims between treatment arms (a `group_attr` on `ClaimScope`; today the groups
+are populations); review findings in the briefing's `openClaims`; a first real review run on 4kS67f to
+compare with the P2 baseline (the in-app review reads through the observer tools and can't recompute).
+
 One PR each, smallest and most backend first. The frontend steps need Dominik's eyes before merge.
 
 | | What | Where |
 |---|---|---|
-| B1 | This plan + v2 schematics | docs |
-| B2 | **S2 rules:** the claim's unit vs the images/tracks a pooled test would use; n units per group; a unit attribute that doesn't vary inside a group | `app/src/claim_checks.jl`, `qc/text.jl` |
-| B3 | **Route + MCP tool:** run the checks for a scope, read-only | `api/src/routes/`, `mcp/cecelia_mcp/server.py` + `guidance.py` |
-| B4 | **Claim entry:** a blackboard entry with a `claim` meta key holding the scope (the passthrough pattern of `agentRun` / `knowledge`, `_BB_PASSTHROUGH_KEYS`, not a new entry type); checks re-run on read; the session briefing lists claims with open findings | `api/src/blackboard*.jl`, briefing |
-| B5 | **Review turn:** one headless turn shaped like `run_kiwi_turn` (`api/src/kiwi_turn.jl`: read-only tools, headless MCP config, reply schema, ref validation), with only the claim and the record; findings saved as sections marked `inferred` / `recomputed` | `api/src/` |
-| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export | `frontend/src/components/canvas/` |
+| B1 | This plan + v2 schematics — **done** #1975 | docs |
+| B2 | **S2 rules:** the claim's unit vs the images/tracks a pooled test would use; n units per group; a unit attribute that doesn't vary inside a group — **done** #1978 | `app/src/claim_checks.jl`, `qc/text.jl` |
+| B3 | **Route + MCP tool:** run the checks for a scope, read-only — **done** #1979 | `api/src/routes/`, `mcp/cecelia_mcp/server.py` + `guidance.py` |
+| B4 | **Claim entry:** a blackboard entry with a `claim` meta key holding the scope (the passthrough pattern of `agentRun` / `knowledge`, `_BB_PASSTHROUGH_KEYS`, not a new entry type); checks re-run on read; the session briefing lists claims with open findings — **done** #1981 | `api/src/blackboard*.jl`, briefing |
+| B5 | **Review turn:** one headless turn shaped like `run_kiwi_turn` (`api/src/kiwi_turn.jl`: read-only tools, headless MCP config, reply schema, ref validation), with only the claim and the record; findings saved as sections marked `inferred` / `recomputed` — **done** #1983 (not yet run on a real model) | `api/src/` |
+| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export — **in review** #1985: state a claim + chips + Review + entry link; findings on the dots, the export stamp and the claim text on the plot still to build | `frontend/src/components/canvas/` |
 
 
 **Paper.** Not in the Nature Protocols paper beyond, at most, the export stamp. If P2 holds, the
