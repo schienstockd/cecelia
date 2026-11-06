@@ -87,6 +87,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'builds', label: 'Blackboard entries it writes, revises and tags good/bad',
     tools: ['create_blackboard_entry', 'revise_blackboard_entry', 'set_blackboard_status', 'set_blackboard_outcome', 'set_blackboard_section_outcome'],
     kiwi: false, terminal: true },
+  { group: 'builds', label: 'A claim you state, as a Blackboard entry with its checks', tools: ['state_claim'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Dated lab-log lines', tools: ['append_lab_log'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Your LabArchives context, saved to the project', tools: ['set_labarchives_context'], kiwi: false, terminal: true },
   // Claude Code's own file tools, not an MCP tool — Kiwi runs with none (`--tools ""`)
