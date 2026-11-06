@@ -113,6 +113,7 @@ async function deleteSet() {
   const setName = activeSet.value.name
   const projectUid = projectMeta.current?.uid
   if (projectUid) {
+    busy.value = true
     try {
       const res = await fetch('/api/sets/delete', {
         method: 'POST',
@@ -124,6 +125,8 @@ async function deleteSet() {
     } catch (e) {
       log.error(`Failed to delete set: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
       return
+    } finally {
+      busy.value = false
     }
   }
   project.deleteSet(setUid)
@@ -194,10 +197,10 @@ async function deleteSet() {
       <!-- the set's NAME rides on the armed tooltip: deleting a whole set is the one place a wrong
            target costs every image in it -->
       <ConfirmButton v-if="activeSet" @confirm="deleteSet" v-slot="{ armed, press }">
-        <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-danger-ghost'" @click="press"
+        <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-danger-ghost'" @click="press" :disabled="busy"
           v-tooltip.bottom="armed ? `Click again — permanently delete '${activeSet.name}' and its images from disk`
                                   : `Delete set '${activeSet.name}' and all its images — cannot be undone`">
-          <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete set
+          <i class="pi" :class="busy ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete set
         </button>
       </ConfirmButton>
     </template>

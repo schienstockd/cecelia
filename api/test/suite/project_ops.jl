@@ -342,7 +342,7 @@ end
         # a delete a stopped server left half-done is finished by the startup sweep
         stale = joinpath(tmp, ".deleting", "left-over")
         mkpath(joinpath(stale, "a", "b")); write(joinpath(stale, "project.json"), "{}")
-        sweep_deleting_projects()
+        sweep_discarded!()
         @test !ispath(stale)
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
