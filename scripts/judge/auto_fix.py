@@ -736,12 +736,14 @@ def followup_message(subject: str, summary: str, pr: str, tags: _t.Sequence[str]
 
 
 def _ours(tree: pathlib.Path, main: pathlib.Path) -> bool:
-    """`tree`'s `.git` pointer is a worktree of `main`'s repo, and that worktree points back at it."""
+    """`tree`'s `.git` pointer is a worktree of `main`'s repo, and that worktree points back at it. Paths
+    compared resolved: git writes them so (macOS `/var` → `/private/var`; `D:/a` on Windows)."""
     pointer = tree / ".git"
     text = pointer.read_text(encoding="utf-8", errors="replace").strip() if pointer.is_file() else ""
-    gitdir = pathlib.Path(text.removeprefix("gitdir: ")) if text.startswith("gitdir: ") else None
-    return bool(gitdir and gitdir.parent == main / ".git" / "worktrees" and (gitdir / "gitdir").is_file()
-                and (gitdir / "gitdir").read_text(encoding="utf-8").strip() == str(pointer))
+    gitdir = pathlib.Path(text.removeprefix("gitdir: ")).resolve() if text.startswith("gitdir: ") else None
+    back = gitdir / "gitdir" if gitdir else None
+    return bool(gitdir and gitdir.parent == (main / ".git" / "worktrees").resolve() and back.is_file()
+                and pathlib.Path(back.read_text(encoding="utf-8").strip()).resolve() == pointer.resolve())
 
 
 def adopt(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str, *, main: pathlib.Path,

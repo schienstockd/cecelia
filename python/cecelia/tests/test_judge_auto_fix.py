@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -957,7 +958,13 @@ class ResumeTest(_AutoFixture):
 
     def git_tree(self):
         """A real repo at `self.main` and its worktree `cecelia-fix-fanout-b1` on `fix-fanout-b1`, with
-        uncommitted work and the bytecode cache a session's hook leaves under `.claude/hooks/`."""
+        uncommitted work and the bytecode cache a session's hook leaves under `.claude/hooks/`. Reached
+        through a symlink where one can be made, as macOS's `/var` is: git records the resolved path."""
+        if os.name != "nt":
+            (self.tmp / "real").mkdir()
+            (self.tmp / "link").symlink_to(self.tmp / "real", target_is_directory=True)
+            self.main = self.tmp / "link" / "ws" / "cecelia-feijoa"
+            self.main.mkdir(parents=True)
         run = lambda *a, cwd=self.main: subprocess.run(["git", *a], cwd=str(cwd), check=True,   # noqa: E731
                                                        capture_output=True, text=True, encoding="utf-8")
         run("init", "-q", "-b", "main")
