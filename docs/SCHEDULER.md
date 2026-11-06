@@ -515,7 +515,8 @@ A user report showed three gaps around one Cancel: the row read `cancelled` whil
   or a miss-ack arrives.
 - **A duplicate in-flight run is refused.** `_register_task!` checks, under `_TASKS_LOCK` and in the same
   step as the insert, for a queued/running record with the same `fun_name`, the same output name
-  (`task_output_name`; `""` when the task names none) and any shared image (a set-scope record carries
+  (`task_params_name`: the output, or for a `writesInto` task like tracking the segmentation it writes
+  into, so tracking B and T on one image don't collide; `""` when neither) and any shared image (a set-scope record carries
   every member in `image_uids`). A hit throws `DuplicateRunError` before anything is queued, which
   `execute_task` reports like any pre-job failure: `[ERROR] Already running on this image: …` and a
   terminal `failed`. A cancelled run still winding down no longer counts for that key — but it still

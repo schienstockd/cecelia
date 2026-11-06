@@ -1620,6 +1620,15 @@ Params are therefore ALSO banked under the output name the run wrote, in a **sep
 which would make that blob ambiguous about whether a key is a param or a name. Old entries keep
 working untouched; there is no migration.
 
+- **A task that writes INTO its input declares `writesInto`.** Tracking names no output: it writes
+  track columns into the segmentation it read. Without a name its params were only ever banked as
+  "the last run", so on an image with B and T tracked the form showed T's settings for B, and
+  deleting a B track set rebuilt B's measures with T's `dims`. A top-level `"writesInto": "valueName"`
+  names the input param, and `Cecelia.task_params_name` (Julia) / `taskParamsName` (TS) bank and look
+  up params under it; picking that input on the form restores its record (`namesParamsRecord`).
+  Explicit, never inferred from `valueName`: an image task reads one too but writes a new, fixed-name
+  image. Declared by `tracking.bayesian_tracking`, `tracking.track_measures`, `tracking.correct`; a
+  composite inherits its first step's.
 - **The name comes from the spec, not from a key.** `Cecelia.task_output_name(fun, params)` reads the
   `namespace` declaration, because six different keys can carry it. It is the Julia twin of
   `utils/taskOutput.taskOutput`, pinned against the same specs by *task_output_name agrees with the

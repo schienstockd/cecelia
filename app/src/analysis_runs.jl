@@ -152,6 +152,24 @@ function _tracks_list(img)
     out
 end
 
+# The params `vn`'s track measures were last computed with, from either the standalone step or the
+# composite, whichever ran last for `vn`. Never the flat last-run blob: that may be another
+# segmentation's run, and rebuilding B with T's `dims` measures B differently from how it was measured.
+const _TRACK_MEASURE_FUNS = ("tracking.bayesian_track_measures", "tracking.track_measures")
+function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractString)::Dict{String,Any}
+    for e in Iterators.reverse(read_run_log(ccid_dir))      # newest first
+        r = run_log_row(e)
+        (r.fn in _TRACK_MEASURE_FUNS && r.status == "done" && !r.legacy) || continue
+        task_params_name(r.fn, r.params) == vn && return r.params
+    end
+    # older than the run log: the exact by-name record, still never the flat blob
+    for fun in _TRACK_MEASURE_FUNS
+        hit = read_module_fun_params_by_name(String(ccid_dir), fun, vn)
+        isnothing(hit) || return hit
+    end
+    Dict{String,Any}()
+end
+
 # Deleting a track set IS a re-run of its source with no tracks: the tracker's own lineage merge
 # deletes the rows, compacts the surviving ids and invalidates every track-derived `live.*` column
 # (speed/angle, HMM states, live contacts). Then the per-track table is rebuilt for what survives —
@@ -168,9 +186,7 @@ function _tracks_delete!(img, run; on_log = _ -> nothing)
         _rm_if(_clustfeatures_path(img_track_props_path(img, vn)); on_log)
         return
     end
-    last = something(read_module_fun_params(img._dir, "tracking.bayesian_track_measures"; value_name = vn),
-                     read_module_fun_params(img._dir, "tracking.track_measures"; value_name = vn),
-                     Dict{String,Any}())
+    last = _last_track_measures_params(img._dir, vn)
     res = _run_task(TrackMeasures(), img,
                     Dict{String,Any}("valueName" => vn, "forceRecompute" => true,
                                      "dims" => string(get(last, "dims", "auto")));

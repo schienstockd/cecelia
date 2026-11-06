@@ -54,7 +54,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
-import { taskOutput } from '../utils/taskOutput'
+import { taskParamsName, namesParamsRecord } from '../utils/taskOutput'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -362,7 +362,7 @@ async function initParams(def: TaskDef | undefined) {
   const seq = ++paramReqSeq
   // The name the form is about to show — its own defaults on a first render, or whatever the last
   // scope change left. Asking WITH it means a form that opens on "Tcell" opens with Tcell's params.
-  const got = await fetchSavedParams(def, taskOutput(def, paramValues.value)?.name ?? '')
+  const got = await fetchSavedParams(def, taskParamsName(def, paramValues.value) ?? '')
   const saved = got?.params ?? null
   if (seq !== paramReqSeq) return
   // `null` → the load did not happen, so LEAVE THE FORM ALONE rather than stamping defaults over it.
@@ -426,6 +426,8 @@ function refreshOptionsForForm(def: TaskDef) {
 async function onParamCommit(key: string, value: unknown) {
   const def = taskDef.value
   if (!def || typeof value !== 'string' || !value) return
+  // Only a param that NAMES a params record restores one (the output name, or tracking's segmentation).
+  if (!namesParamsRecord(def, key)) return
   const seq = ++paramReqSeq
 
   let saved: ParamValues | null = null

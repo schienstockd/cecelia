@@ -245,7 +245,7 @@ onwards — so on every project segmented before that existed, every name resolv
 and the form restored nothing. Nobody re-runs six segmentations to seed a convenience feature.
 
 The history was already on disk: this log records every run's params, and a run's output name is
-recoverable from them (`task_output_name`, via the spec's `namespace`). So the by-name record is a
+recoverable from them (`task_params_name`: the spec's `namespace`, or the input a task writes into). So the by-name record is a
 fast index over this, not the only copy — and a name that predates it is found here instead.
 
 Two deliberate choices:
@@ -272,7 +272,7 @@ function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString
     isempty(entries) && return nothing
 
     # Resolved once so an entry for a task that no longer exists costs one lookup, not one per entry.
-    # The per-entry call stays `task_output_name` rather than its pure `_spec_output_name` half: that
+    # The per-entry call stays `task_params_name` rather than its pure `_spec_output_name` half: that
     # would skip the `::CompositeTask` method and answer `""` for exactly the tasks the module pages
     # run. Re-entering `_task_spec` per entry is the price (a cached read, plus a deepcopy + a model-dir
     # scan for a task with dynamic options) and it is paid only while resolving a name.
@@ -292,9 +292,10 @@ function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString
         p = _rl_get(e, "params", nothing)
         p isa AbstractDict || continue
         params = Dict{String,Any}(String(k) => v for (k, v) in p)
-        task_output_name(task, params) == String(value_name) || continue
+        # put `valueName` back first: for a task that writes into its input (tracking) it IS the name
         vn = _rl_str(e, "valueName")
         isempty(vn) || (params["valueName"] = vn)
+        task_params_name(task, params) == String(value_name) || continue
         return params
     end
     nothing

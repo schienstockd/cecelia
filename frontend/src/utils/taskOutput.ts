@@ -93,6 +93,37 @@ export function taskOutput(
   return null
 }
 
+/**
+ * The name a run's params are remembered under: `taskOutput`'s name, or, for a task that writes INTO
+ * its input (`def.writesInto`, tracking), that input's value. Julia twin: `task_params_name`.
+ */
+export function taskParamsName(
+  def: TaskDef | undefined | null,
+  params: ParamValues | undefined | null,
+): string | null {
+  const out = taskOutput(def, params)
+  if (out) return out.name
+  const key = def?.writesInto
+  if (!key) return null
+  const p = [...flatten(def.params)].find(d => d.key === key)
+  return str(p ? savedValueFor(p, params ?? {}) : params?.[key]) ?? str(p?.default)
+}
+
+/**
+ * Whether committing `key` names a params record — so picking it should restore that record. The
+ * output-naming params `taskOutput` reads, and the `writesInto` input. Not any other name param: an
+ * input image's name is not a record, and restoring under it would load an unrelated run.
+ */
+export function namesParamsRecord(def: TaskDef | undefined | null, key: string): boolean {
+  if (!def) return false
+  if (def.writesInto === key) return true
+  for (const p of flatten(def.params)) {
+    if (p.key !== key) continue
+    return isValueNameNamespace(p.namespace) || (p.key === 'outputValueName' && !p.namespace)
+  }
+  return false
+}
+
 /** The namespace a task's FIXED output lands in. `outputField` is the pre-registry spelling. */
 function namespaceOfDef(def: TaskDef): ValueNameNamespace {
   if (isValueNameNamespace(def.outputNamespace)) return def.outputNamespace

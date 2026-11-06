@@ -234,7 +234,8 @@ NAME, too*.
 that writes it, so on a project segmented before it existed *every* name read as "nothing banked" and
 the form restored nothing — the feature was live and did nothing, and nobody re-runs six
 segmentations to seed it. `runlog.json` has always recorded each run's params, and a run's output
-name is recoverable from them (`task_output_name`, via the spec's `namespace`), so
+name is recoverable from them (`task_params_name`: the spec's `namespace`, or the input a tracking
+run writes into — see `docs/MODULES.md` → *Remembered PER OUTPUT NAME, too*), so
 `run_log_params_for_output(ccid_dir, fun, value_name)` (`app/src/run_log.jl`) answers for the
 history. This key stays because it is the exact answer and is the only one the **set** dir has (a set
 keeps no run log) — an index over the log, not a second copy of the truth.

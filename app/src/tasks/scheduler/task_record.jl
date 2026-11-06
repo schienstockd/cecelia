@@ -94,8 +94,8 @@ mutable struct TaskRecord
     params::Dict{String,Any}
     # What the run WRITES, for the duplicate-run guard (`_conflicting_run`): every image it touches (the
     # whole vector for a set-scope task, so `image_uid` alone — the representative — is not enough) and
-    # the output name it writes under (`task_output_name`; `""` = the task names none, so every run of it
-    # writes to the same place).
+    # the name it writes under (`task_params_name`: its output, or for a `writesInto` task like tracking
+    # the input it writes into; `""` = neither, so every run of it writes to the same place).
     image_uids::Vector{String}
     output_name::String
     # Where the work runs, and the run's own cluster resource overrides (`{cpus, memGb, gpus,

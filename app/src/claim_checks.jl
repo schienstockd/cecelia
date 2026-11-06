@@ -71,12 +71,11 @@ function _claim_flatten!(out::Dict{String,Any}, prefix::AbstractString, v)
     out
 end
 
-# The name a task run wrote under: the spec's output name, else the input name — tracking writes its
-# track table beside the segmentation it read (`valueName`), so its spec output name is empty.
+# The name a task run's params belong to (`task_params_name`): its output, or for tracking the
+# segmentation it writes into.
 function _claim_run_output(fun::AbstractString, params::AbstractDict)::String
     p = Dict{String,Any}(String(k) => v for (k, v) in params)
-    out = try task_output_name(String(fun), p) catch; "" end
-    isempty(out) ? string(get(p, "valueName", "")) : out
+    try task_params_name(String(fun), p) catch; "" end
 end
 
 # Every recorded params blob for (image, value_name, kind), one per task fun, with where it came from:

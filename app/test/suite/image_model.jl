@@ -519,6 +519,64 @@ end
     @test composites > 0        # the loop above must not pass by finding nothing to check
 end
 
+# `task_params_name` — the name a run's params are banked under. The output name, or for a task that
+# writes INTO its input (`writesInto`, tracking) that input. Frontend twin: `taskParamsName`.
+@testset "task_params_name: output name, else the input a task writes into" begin
+    # an output-naming task is unchanged
+    @test Cecelia.task_params_name("segment.cellpose", Dict{String,Any}("outputValueName" => "Tcell")) == "Tcell"
+    # tracking names no output but writes into the segmentation it reads
+    @test Cecelia.task_output_name("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B")) == ""
+    @test Cecelia.task_params_name("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B")) == "B"
+    @test Cecelia.task_params_name("tracking.track_measures", Dict{String,Any}("valueName" => "T")) == "T"
+    # …and so does the composite the tracking page runs (the trait-recursion trap)
+    @test Cecelia.task_params_name("tracking.bayesian_track_measures", Dict{String,Any}("valueName" => "B")) == "B"
+    # an image task reads a valueName but writes a NEW image: it must not bank under its input
+    @test Cecelia.task_params_name("cleanupImages.driftCorrect", Dict{String,Any}("valueName" => "default")) == ""
+    @test Cecelia.task_params_name("no.such.task", Dict{String,Any}("valueName" => "B")) == ""
+
+    # every `writesInto` names a real param of its spec
+    for (fun, task) in Cecelia._fun_name_map()
+        spec = Cecelia._task_spec(task)
+        (isnothing(spec) || !haskey(spec, "writesInto")) && continue
+        keys_ = String[]
+        each_spec_param(get(spec, "params", [])) do p, _gk
+            push!(keys_, String(something(spec_get(p, "key", ""), "")))
+        end
+        @test String(spec["writesInto"]) in keys_
+    end
+end
+
+# The bug this fixes: B and T tracked on one image, T last. The run log answers B's tracking params
+# by name (it answered `nothing` for every tracking run before), so the form and `_tracks_delete!`
+# stop reading T's settings for B.
+@testset "run_log_params_for_output finds tracking runs per segmentation" begin
+    proj = create_project!(name="trk-params-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save!(img)
+    fun = "tracking.bayesian_tracking"
+    append_run_log!(img, fun, "B", "done", Dict{String,Any}("valueName" => "B", "maxSearchRadius" => 20))
+    append_run_log!(img, fun, "T", "done", Dict{String,Any}("valueName" => "T", "maxSearchRadius" => 35))
+    b = run_log_params_for_output(img._dir, fun, "B")
+    @test !isnothing(b) && b["maxSearchRadius"] == 20 && b["valueName"] == "B"
+    @test run_log_params_for_output(img._dir, fun, "T")["maxSearchRadius"] == 35
+    # the form and `_tracks_delete!` read through this — B's record, not "the last run" (T's)
+    @test read_module_fun_params(img._dir, fun; value_name = "B")["maxSearchRadius"] == 20
+
+    # deleting a B track set rebuilds B's measures with B's own `dims`: B re-measured standalone in 2D,
+    # then T tracked with the composite in auto. The composite's flat last-run blob is T's and must
+    # not be what B is rebuilt with.
+    append_run_log!(img, "tracking.track_measures", "B", "done", Dict{String,Any}("valueName" => "B", "dims" => "2D"))
+    write_module_fun_params!(img._dir, "tracking.bayesian_track_measures",
+                             Dict{String,Any}("valueName" => "T", "dims" => "auto"))
+    append_run_log!(img, "tracking.bayesian_track_measures", "T", "done",
+                    Dict{String,Any}("valueName" => "T", "dims" => "auto"))
+    @test Cecelia._last_track_measures_params(img._dir, "B")["dims"] == "2D"
+    @test Cecelia._last_track_measures_params(img._dir, "T")["dims"] == "auto"
+    @test isempty(Cecelia._last_track_measures_params(img._dir, "nuc"))
+    rm(proj.root; recursive=true)
+end
+
 # ── Channel names use the versioned convention ──────────────────────────────
 # Regression guard: channel names were stored unversioned under meta, where the
 # task/API readers (which use top-level versioned imChannelNames) never saw them.
