@@ -8,6 +8,16 @@ to the fast points (centroid) route — mostly used for live images where cell s
 import numpy as np
 
 
+def require_volume(n_spatial, task):
+    """Raise unless the label store has 3 spatial axes (z, y, x). Marching cubes builds no mesh from a
+    2D frame (every cell fails and is skipped), so a 2D image would read each whole label frame into
+    RAM — the OOM on a tile scan — only to return nothing. Called by the mesh runners BEFORE any read."""
+    if n_spatial != 3:
+        raise ValueError(
+            f"{task}: the mesh route needs a 3D (z, y, x) label volume, but this image has "
+            f"{n_spatial} spatial axes — use the points route for a 2D image")
+
+
 def build_label_meshes(vol, labels, phys, min_voxels=8, origin=None):
     """Build a physical-scaled trimesh per label via marching cubes on its submask.
 
