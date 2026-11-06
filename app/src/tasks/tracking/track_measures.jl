@@ -447,9 +447,9 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     resolved = p.dims == "2d" ? 2 : p.dims == "3d" ? 3 : det.dims
     if p.dims == "auto"
         tag = (resolved == 2 || det.confidence == "low") ? "[WARN]" : "[INFO]"
-        on_log("$tag motion dims: auto → $(resolved)D — $(det.reason)")
+        on_log("$tag motion dims ($(p.valueName)): auto → $(resolved)D — $(det.reason)")
     else
-        on_log("[INFO] motion dims: $(resolved)D (user-set; auto recommends $(det.dims)D — $(det.reason))")
+        on_log("[INFO] motion dims ($(p.valueName)): $(resolved)D (user-set; auto recommends $(det.dims)D — $(det.reason))")
     end
     if resolved == 2 && size(first(tracks_with_labels)[1].coords, 2) > 2
         on_log("[INFO] Collapsing tracks to the in-plane (xy) axes for all measures")

@@ -109,6 +109,11 @@ Worked through in order; each is open until marked agreed.
      `fvLsmparam:maxPhoton` 8/32/128 (photon-count dynamic range). None of these reach the OME-XML.
    - **FV4000 "voltage 0" may not be missing data.** With `autoHV` on and a photon-count dynamic
      range, there may be no HV to record. Unverified; question for the facility or Evident.
+   - **Feature lines checked against the lab's files (14 `.oir`, 2026-11-06).** FV4000 (7): Bright Z
+     on, laser % at 2 depths 60 µm apart; Auto HV on, HV 0 everywhere. FVMPE-RS (7): Bright Z depths
+     set (12 → 15 % over 35 µm) but off in all 7; Auto HV on, yet HV 550 recorded. Stored per feature
+     as `seenInFiles`; `verified` stays false (interpolation and what Auto HV does on the FVMPE-RS
+     are questions for the facility).
    - **So no import flags are needed.** Two layers: (a) a key map per vendor and software version
      over the `OriginalMetadata` bioformats2raw already keeps; (b) a small reader for the OIR's
      embedded XML, for what Bio-Formats drops (dwell, line time, depth ramp, autoHV, dynamic

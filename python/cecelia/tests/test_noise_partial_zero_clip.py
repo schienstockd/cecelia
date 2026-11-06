@@ -1,6 +1,6 @@
-"""RESULT-REVIEW: noise-partial-clip — `noise_stats` on a background partly clipped at 0 (under the
-50 % gate). Leaving the zeros out of the background drops its clipped lower tail, so the median reads
-high, the spread low, and the SNR inflated (39 against a true 29) with no `untestable` flag."""
+"""`noise_stats` on a background partly clipped at 0 (under the 50 % gate). Leaving the zeros out of
+the background would drop its clipped lower tail, so the median would read high, the spread low, and
+the SNR inflated (39 against a true 29) with no `untestable` flag."""
 import unittest
 
 import numpy as np

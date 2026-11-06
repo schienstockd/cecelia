@@ -72,8 +72,13 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # take a median of, and the drift verdict is already a per-image finding. `furthM`/`furthP` (the
     # Fürth fit) don't depend on track length, so they compare where msdSlope can't; `furthSigma` is
     # the localisation noise floor — one movie far noisier than its peers is a segmentation difference.
+    # `motionDims` (2 or 3) is categorical, not a quantity: it goes through `_cohort_minority`, not the
+    # median/MAD test (see COHORT_CATEGORICAL). Speed, angle and every live.track.* measure are computed
+    # in that many dimensions, so a set whose images were measured in 2D and 3D compares numbers that
+    # aren't comparable — and `dims = "auto"` decides per image, so a set mixes them silently.
     "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement",
-                                     "msdSlope", "persistenceLag", "furthM", "furthP", "furthSigma"],
+                                     "msdSlope", "persistenceLag", "furthM", "furthP", "furthSigma",
+                                     "motionDims"],
     # manual track correction: `fracCellsEdited` is the cohort-comparable one — images from one
     # experiment tracked with one parameter set should need comparable hand-correction, so the movie
     # that needed three times as much is either a worse acquisition or a tracking setting that does
@@ -147,6 +152,12 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # comparable between intravital movies regardless of what this task does.)
     "cleanupImages.afCorrect"        => ["saturatedFrac", "levelsUsedFrac", "maxBleedthrough"],
 )
+
+# Metric keys that name a CATEGORY (a setting the run resolved), not a quantity. A median and MAD
+# mean nothing for them, and the relative-departure fallback is asymmetric (with 2s in the majority a
+# 3 flags; with 3s in the majority a 2 doesn't). What matters is whether the set agrees, so these go
+# through `_cohort_minority`: every image that differs from the most common value is flagged.
+const COHORT_CATEGORICAL = Set{String}(["motionDims"])
 
 """
     register_cohort_metrics!(fun_name, keys) -> Vector{String}
@@ -222,6 +233,32 @@ function _cohort_outliers(values_by_uid::AbstractDict, threshold::Real = _COHORT
        mean = round(μ; digits = 3), sd = round(sd; digits = 3), outliers = outliers)
 end
 
+# Pure: for a CATEGORICAL metric (COHORT_CATEGORICAL), flag every image whose value differs from the
+# most common one. A tie for most common flags every image, since no value is "the set's". Fewer than
+# `_COHORT_MIN_N` values flags nothing, as for `_cohort_outliers`. Returns the same shape as
+# `_cohort_outliers`, so the sidecar, the lab-log lines and the frontend need no special case:
+# `median` carries the most common value (`nothing` on a tie), `mad`/`mean`/`sd` are 0, and an
+# outlier entry is `{value, majority}`. Unit-tested directly.
+function _cohort_minority(values_by_uid::AbstractDict)
+    n = length(values_by_uid)
+    counts = Dict{Float64,Int}()
+    for v in values(values_by_uid); counts[v] = get(counts, v, 0) + 1; end
+    top = isempty(counts) ? 0 : maximum(values(counts))
+    modes = [v for (v, c) in counts if c == top]
+    majority = length(modes) == 1 ? only(modes) : nothing
+    outliers = Dict{String,Any}()
+    if n >= _COHORT_MIN_N && length(counts) > 1
+        for (u, v) in values_by_uid
+            v == majority && continue
+            outliers[string(u)] = Dict{String,Any}("value" => v, "majority" => majority)
+        end
+    end
+    (; n = n, median = majority, mad = 0.0, mean = 0.0, sd = 0.0, outliers = outliers)
+end
+
+# A categorical value as text: 2.0 → "2" (banked ints come back as Float64 through `_read_metric`).
+_cohort_category(v) = (v isa Real && isinteger(v)) ? string(Int(v)) : string(v)
+
 # Read one banked metric value from an image's (fun, vn) QC doc; `nothing` if absent/non-numeric.
 function _read_metric(img::CciaImage, fun_name, value_name, metric_key)
     doc = read_qc(img, fun_name, value_name)
@@ -242,10 +279,13 @@ cohort_qc_path(set::CciaSet, fun_name::AbstractString, value_name::AbstractStrin
 Aggregate the named banked metrics across the set's INCLUDED images and write the cohort summary
 sidecar. Returns the summary doc `{funName, valueName, nIncluded, metrics}` where each metric maps to
 `{n, median, mad, mean, sd, threshold, outliers}` (outliers by robust modified z-score; `threshold`
-is its cutoff). Advisory; recomputes from current data so it's safe to call any time.
+is its cutoff). A categorical metric (`COHORT_CATEGORICAL`) flags every image that differs from the
+most common value instead (`_cohort_minority`). Advisory; recomputes from current data so it's safe
+to call any time.
 """
 # PURE → unit-tested. One image's cohort-outlier finding for a metric, from its `_cohort_outliers`
-# entry (`{value, z}` when MAD>0, `{value, relDev}` when MAD==0) + the cohort median. Brief +
+# entry (`{value, z}` when MAD>0, `{value, relDev}` when MAD==0) or its `_cohort_minority` entry
+# (`{value, majority}`, a categorical metric) + the cohort median. Brief +
 # actionable (short = the problem, long = the action, numbers in `detail`).
 function _cohort_finding(metric::AbstractString, entry::AbstractDict, med)
     val = get(entry, "value", nothing)
@@ -253,6 +293,13 @@ function _cohort_finding(metric::AbstractString, entry::AbstractDict, med)
     detail = Dict{String,Any}("metric" => string(metric), "value" => val, "median" => med)
     haskey(entry, "z")      && (detail["z"] = entry["z"])
     haskey(entry, "relDev") && (detail["relDev"] = entry["relDev"])
+    # A categorical metric differs from the set rather than sitting above or below it.
+    if haskey(entry, "majority")
+        maj = entry["majority"]
+        detail["majority"] = maj
+        return qc_finding("warn", "cohort." * string(metric); key = "cohort.mixed",
+            metric = metric, value = _cohort_category(val), detail = detail)
+    end
     # One catalog entry serves every metric; the emitted code stays per-metric.
     qc_finding("warn", "cohort." * string(metric); key = "cohort.outlier",
         metric = metric, value = val, dir = dir, median = med, detail = detail)
@@ -272,7 +319,7 @@ function _cohort_compute(set::CciaSet, fun_name::AbstractString, value_name::Abs
             v = _read_metric(img, fun_name, value_name, mk)
             isnothing(v) || (vals[img.uid] = v)
         end
-        s = _cohort_outliers(vals, threshold)
+        s = string(mk) in COHORT_CATEGORICAL ? _cohort_minority(vals) : _cohort_outliers(vals, threshold)
         metrics[string(mk)] = Dict{String,Any}(
             "n" => s.n, "median" => s.median, "mad" => s.mad, "mean" => s.mean, "sd" => s.sd,
             "threshold" => Float64(threshold), "outliers" => s.outliers)
@@ -350,6 +397,12 @@ function cohort_qc_summary_lines(doc::AbstractDict; name_of = identity)
         med = get(m, "median", nothing)
         for (uid, e) in get(m, "outliers", Dict())
             val = (e isa AbstractDict) ? get(e, "value", nothing) : nothing
+            if (e isa AbstractDict) && haskey(e, "majority")
+                maj = e["majority"]
+                push!(outs, "  $(name_of(string(uid))) — $(mk) $(_cohort_category(val)) " *
+                            "(most of the set: $(isnothing(maj) ? "no single value" : _cohort_category(maj)))")
+                continue
+            end
             push!(outs, "  $(name_of(string(uid))) — $(mk) $(val) (cohort median $(med))")
         end
     end
