@@ -64,6 +64,7 @@ None of these go through the profile bag.
 | `cc-fn:<module>` | `tasks/TaskRunner.vue:452`, `composables/useKiwiPoint.ts` | Last-picked task function per module. |
 | `cc-filters-open`, `cc-task-open`, `cc-proc-fun`, `cc-proc-mode`, row filters | `components/ModuleLayout.vue` | Module-page layout + filter choices. |
 | `cc.movies.starredOnly`, `cc.movies.tags`, `cc.movies.attrFilter`, `cc.movies.filtersOpen`, sort | `modules/MoviesModule.vue:263` | Movie list filters. (The stars/tags themselves are project data, correctly in `settings/movies.json`.) |
+| `cc.import.lastDir` | `modules/ManageImagesModule.vue` (via `FileBrowser` `rememberKey`) | Folder the last image import was confirmed in; the picker reopens there. |
 | `cc.blackboard.statusFilter`, `.outcomeFilter` | `modules/BlackboardModule.vue:95` | List filters. |
 | `cc.vw.gizmo`, `.overview`, `.tilemap`, `.brickmap` | `modules/ViewerWindow.vue` | Viewer overlay toggles — same class as `viewerScaleBar`, which IS in the bag. |
 | `cc.sidebar.openGroup`, `cc.consoleGroups`, CollapsibleSection / useSingleOpenSection / PlotOptions / CanvasSidePanel / CleanupModule open-state keys | various | Panel open/closed — same class as `sidebarCollapsed`, which IS in the bag. |
