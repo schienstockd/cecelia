@@ -341,6 +341,7 @@ include(joinpath(@__DIR__, "suite", "plots.jl"))
 include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
 
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
+include(joinpath(@__DIR__, "suite", "cohort_categorical.jl"))
 include(joinpath(@__DIR__, "suite", "qc_profile.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_ome_xml_unit.jl"))
 

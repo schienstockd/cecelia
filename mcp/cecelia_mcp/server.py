@@ -308,7 +308,11 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     the entry carries `z` (that score); when the cohort has no spread (MAD 0, ≥half identical) it
     carries `relDev` (relative departure) instead. Either way a clear outlier flags even at n=3. An
     `outliers` map with entries is the flag worth a note — name the image, the LABEL SET, its value, and
-    the cohort median (numbers in the detail). `n` < 3 ⇒ too few images to judge. Advisory; reads current data."""
+    the cohort median (numbers in the detail). `n` < 3 ⇒ too few images to judge. Advisory; reads current data.
+    One metric is a CATEGORY, not a count: `motionDims` (tracks measured in 2 or 3 dimensions). Its
+    `median` is the set's most common value (null on a tie), and an outlier entry is {value, majority}:
+    say the image was measured in <value>D while most of the set was <majority>D, so its speeds and
+    angles aren't comparable with the rest."""
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
