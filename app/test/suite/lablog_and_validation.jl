@@ -179,8 +179,9 @@ end
     stamp(t) = Dates.format(t, "yyyy-mm-ddTHH:MM:SS")
     # The digest is day-scoped by each run's `at`, so every window below must start today: in the
     # first minutes after local midnight, wait until they do.
-    since_midnight = Dates.now() - Dates.DateTime(Dates.today())
-    since_midnight < Dates.Minute(3) && sleep((Dates.Minute(3) - since_midnight).value / 1000 + 1)
+    # In milliseconds: Minute - Millisecond is a CompoundPeriod, which has no `.value`.
+    since_midnight_ms = Dates.value(Dates.now() - Dates.DateTime(Dates.today()))
+    since_midnight_ms < 180_000 && sleep((180_000 - since_midnight_ms) / 1000 + 1)
     now_ = Dates.now()
     finished!(fun, vn, t0, t1) = Cecelia._update_run_log!(iQ) do es
         push!(es, Dict{String,Any}("fun" => fun, "valueName" => vn, "status" => "done",
