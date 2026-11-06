@@ -337,6 +337,21 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     return _client.check_claim(project_uid, set_uid, populations, measure, unit_attr)
 
 
+@_tool
+def state_claim(project_uid: str, set_uid: str, populations: list[str], measure: str, text: str,
+                unit_attr: str | None = None, entry_id: str | None = None) -> dict:
+    """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry with
+    the check_claim findings as its `### sNN` sections — each one the user marks good / bad / unsure.
+    Only when the user asks to state or record a claim; never for your own reading of the data.
+
+    Same scope as check_claim, plus `text`, the claim in the user's words. With `entry_id` it
+    restates an existing claim: changed text or scope starts a new round (earlier rounds stay listed
+    on the entry — rewording to fit the data is a new round, not a fix); unchanged just re-checks.
+    Returns {entryId, round, findings, ran, skipped}. Nothing is blocked or certified: say what the
+    findings ask of the analysis, and which checks did not run."""
+    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attr, entry_id)
+
+
 # Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out
 # the rest of a session.
 _TASK_LOG_MAX_BYTES = 20_000
@@ -1255,6 +1270,12 @@ def _memory_briefing_slice(project_uid: str) -> dict:
     # bucket clears the recurrence threshold — a fresh project reads clean.
     guardrails = _mine_guardrails(entries)
 
+    # Claim recital — the open claims re-checked against the current record (nothing written).
+    try:
+        open_claims = _client.get_open_claims(project_uid).get("claims", [])[:_BRIEFING_OPEN_ENTRIES_MAX]
+    except Exception:
+        open_claims = []
+
     return {
         # PROJECT_MEMORY_PLAN Decision 9 — newProject is TRUE when the profile hasn't been filled
         # in past its seeded placeholder (Subject + Goal are what the briefing enforces). Guidance
@@ -1264,6 +1285,7 @@ def _memory_briefing_slice(project_uid: str) -> dict:
         "openBlackboardEntries": open_entries,
         "recentCaptures":        recent_captures,
         "guardrails":            guardrails,
+        "openClaims":            open_claims,
     }
 
 
@@ -1297,6 +1319,11 @@ def get_session_briefing(project_uid: str) -> dict:
         untagged; newer-first within each group. Reach for `read_blackboard_entry` on any that
         look relevant to what the user is about to ask; if a row carries `outcome.verdict:
         "bad"`, its `outcome.note` is what a prior session learned went wrong — lead with it.
+      - `openClaims`: claims the user stated (state_claim), each re-checked against the CURRENT
+        record — `[{entryId, title, round, open: [{sectionId, short}], closed: [sectionId], new:
+        [short]}]`. `closed` findings no longer apply (the analysis changed): say so. `open` ones
+        still do: raise them before building on the claim. Nothing here is written until the
+        claim is restated.
       - `recentCaptures`: up to 5 shared frames, newest-first — `[{captureId, createdAt, surface}]`.
         Same shape as `get_recent_captures` minus the address (call `get_capture(captureId)` for
         the address + pixels when a specific one matters).

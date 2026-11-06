@@ -47,7 +47,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "register_push_target" => "pairing", "set_observer_active" => "write",
     "append_lab_log" => "write", "create_blackboard_entry" => "write", "revise_blackboard_entry" => "write",
     "set_blackboard_status" => "write", "set_blackboard_outcome" => "write",
-    "set_blackboard_section_outcome" => "write", "create_chain" => "write",
+    "set_blackboard_section_outcome" => "write", "create_chain" => "write", "state_claim" => "write",
     "suggest_chain" => "drafts a chain for create_chain — Kiwi builds no chains",
     "create_notebook" => "write", "revise_notebook" => "write", "set_notebook_description" => "write",
     "add_analysis_board" => "write", "add_gate" => "write", "set_gate" => "write", "delete_gate" => "write",
