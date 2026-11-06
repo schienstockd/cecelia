@@ -20,8 +20,8 @@ stack. Per-tag notes are also on the
 
 ### Fixed
 
-- **Tracking remembers settings per segmentation.** Picking B on a tracking page showed the settings
-  of whichever population ran last, and deleting a B track set rebuilt B with them. Runs from now on.
+- **Tracking remembers settings per segmentation.** B no longer shows, or rebuilds deleted tracks
+  with, the settings of whichever population ran last.
 - **Copying gates matches channels by name, as the R version did.** Before, an image with another
   channel order gated whichever marker sat at that position.
 - **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
