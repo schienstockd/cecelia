@@ -8,6 +8,7 @@ import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useLogStore } from '../stores/log'
 import { fsBreadcrumbs, isPickable } from '../utils/fsPath'
+import { profileStorage } from '../utils/profileStorage'
 
 const emit = defineEmits<{
   (e: 'select', paths: string[]): void
@@ -33,7 +34,10 @@ const props = withDefaults(defineProps<{
   /** Folder to open in: absolute, or relative to home (`.ssh` reaches a dot-folder the listing
    *  hides). Falls back to home when it does not exist. Empty = home. */
   startPath?: string
-}>(), { mode: 'image', extensions: () => [], dirExtensions: () => [], title: '', startPath: '' })
+  /** Remember the folder a selection was confirmed in (per profile) and reopen there next time.
+   *  Ignored when `startPath` is set. */
+  rememberKey?: string
+}>(), { mode: 'image', extensions: () => [], dirExtensions: () => [], title: '', startPath: '', rememberKey: '' })
 
 const title = computed(() =>
   props.title ? props.title
@@ -100,8 +104,16 @@ async function navigate(path: string, quiet = false) {
   }
 }
 
-// open at `startPath` (else home) on mount; a start folder that does not exist is not an error
-void navigate(props.startPath, !!props.startPath).then(() => { if (error.value && props.startPath) void navigate('') })
+// open at `startPath`, else the remembered folder, else home; a start folder that no longer exists
+// (unmounted drive, deleted folder) is not an error — fall back to home quietly
+const initialPath = props.startPath
+  || (props.rememberKey ? profileStorage.getItem(props.rememberKey) ?? '' : '')
+void navigate(initialPath, !!initialPath).then(() => { if (error.value && initialPath) void navigate('') })
+
+function rememberCurrent() {
+  if (props.rememberKey && listing.value?.current)
+    profileStorage.setItem(props.rememberKey, listing.value.current)
+}
 
 function toggleSelect(entry: FsEntry) {
   if (!isSelectable(entry)) return
@@ -130,6 +142,7 @@ function selectAll() {
 }
 
 function confirm() {
+  rememberCurrent()
   if (props.mode === 'dir') {
     if (listing.value?.current) emit('select', [listing.value.current])
     return
