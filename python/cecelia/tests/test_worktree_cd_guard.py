@@ -55,7 +55,7 @@ class BlockingReason(unittest.TestCase):
         return blocking_reason(command, str(cwd or self.mine), "me-id", sessions=lambda: self.sessions)
 
     def test_blocks_cd_into_another_sessions_worktree(self):
-        reason = self.reason(f"cd {self.theirs} && git log")
+        reason = self.reason(f"cd {self.theirs.as_posix()} && git log")
         self.assertIsNotNone(reason)
         self.assertIn("cecelia-7", reason)
         self.assertIn("git -C", reason)
@@ -67,20 +67,20 @@ class BlockingReason(unittest.TestCase):
         """Its newest folder is the workspace root, but it was working in `theirs` a moment ago."""
         self.sessions = [Session(2, "cecelia-7", "idle", str(self.workspace), session_id="other-id",
                                  recent_cwds=(str(self.workspace), str(self.theirs)))]
-        self.assertIsNotNone(self.reason(f"cd {self.theirs}"))
+        self.assertIsNotNone(self.reason(f"cd {self.theirs.as_posix()}"))
 
     def test_allows_cd_within_own_checkout_and_into_a_free_worktree(self):
-        self.assertIsNone(self.reason(f"cd {self.mine}/sub"))
-        self.assertIsNone(self.reason(f"cd {self.free} && pixi run test-py"))
-        self.assertIsNone(self.reason(f"cd {self.workspace}"))
+        self.assertIsNone(self.reason(f"cd {self.mine.as_posix()}/sub"))
+        self.assertIsNone(self.reason(f"cd {self.free.as_posix()} && pixi run test-py"))
+        self.assertIsNone(self.reason(f"cd {self.workspace.as_posix()}"))
 
     def test_allows_peeks_that_do_not_move_the_session(self):
-        self.assertIsNone(self.reason(f"(cd {self.theirs} && git log)"))
-        self.assertIsNone(self.reason(f"git -C {self.theirs} log"))
+        self.assertIsNone(self.reason(f"(cd {self.theirs.as_posix()} && git log)"))
+        self.assertIsNone(self.reason(f"git -C {self.theirs.as_posix()} log"))
 
     def test_own_session_in_the_target_does_not_block(self):
         self.sessions = [Session(1, "me", "busy", str(self.theirs), session_id="me-id")]
-        self.assertIsNone(self.reason(f"cd {self.theirs}"))
+        self.assertIsNone(self.reason(f"cd {self.theirs.as_posix()}"))
 
     def test_no_session_lookup_without_a_cross_checkout_cd(self):
         def boom():
