@@ -87,27 +87,37 @@ export const useCustomModulesStore = defineStore('customModules', () => {
     if (data.registry)   registry.value   = data.registry
   }
 
-  async function refresh() {
+  // The in-flight load (refresh OR reload) — ensureLoaded() hands it to a caller that arrives
+  // mid-load, so an awaiting caller reads `modules`/`registry` after they are set, not before.
+  let pending: Promise<void> | null = null
+
+  function load(url: string, init?: RequestInit): Promise<void> {
     loading.value = true
-    try {
-      const res = await fetch('/api/tasks/custom-modules')
-      if (res.ok) apply(await res.json())
-    } catch { /* ignore — leave last-known state */ }
-    finally { loading.value = false; loadedOnce = true }
+    const p = (async () => {
+      try {
+        const res = await fetch(url, init)
+        if (res.ok) apply(await res.json())
+      } catch { /* ignore — leave last-known state */ }
+      finally { loadedOnce = true }
+    })()
+    pending = p
+    // only the latest load clears the flag, so an older one finishing can't hide a newer one
+    void p.then(() => { if (pending === p) { pending = null; loading.value = false } })
+    return p
+  }
+
+  function refresh(): Promise<void> {
+    return load('/api/tasks/custom-modules')
   }
 
   async function ensureLoaded() {
-    if (!loadedOnce && !loading.value) await refresh()
+    if (pending) return pending
+    if (!loadedOnce) await refresh()
   }
 
   // Rescan the config dir for NEWLY dropped .jl (edits to loaded modules still need a restart).
-  async function reload() {
-    loading.value = true
-    try {
-      const res = await fetch('/api/tasks/custom-modules/reload', { method: 'POST' })
-      if (res.ok) apply(await res.json())
-    } catch { /* ignore */ }
-    finally { loading.value = false; loadedOnce = true }
+  function reload(): Promise<void> {
+    return load('/api/tasks/custom-modules/reload', { method: 'POST' })
   }
 
   // `apply` is exported because /api/plugins/{install,remove} return the SAME payload as the
