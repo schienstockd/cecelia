@@ -3,9 +3,10 @@
 **Status:** parked (2026-11-05). P0 done by hand the same day (results below); one rule it found shipped
 as #1958. Nothing else built. Reviewed 2026-11-06
 (`docs/archive/IMAGE_ANALYSIS_RECITAL_REVIEW_AND_PRIOR_ART.md`); its gaps are folded in below. Prior art is in
-`RECITAL_PRIOR_ART.md`; its proposed plan changes (S3b fraction threshold, power and multiplicity
-gates, claim state split from finding provenance, demoting "AI as reviewer") are not folded in yet. Next: the plain-prompt baseline (P2), then P0 on a second
-project with a real comparison.
+`RECITAL_PRIOR_ART.md`. Two of its changes are folded in (the S1 confound check, rounds raising the
+bar in Q5). The rest (S3b fraction threshold, power gate, claim state split from finding provenance,
+demoting "AI as reviewer") wait for the plain-prompt baseline. Next: that baseline (P2), then P0 on a
+second project with a real comparison.
 
 **Worth building?** The rules (S0–S2) yes: cheap, no model, and P0 found real problems with them.
 The model stages and the full mechanism only if they beat a plain "review this claim" prompt.
@@ -89,11 +90,16 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   It could be a notebook (`docs/NOTEBOOKS.md`) or attached to the claim.
 - **Q4. Block or stamp.** Does an export wait for tags, or leave with the findings stamped on it?
 - **Q5. Rounds on record.** How are repeat recitals on the same claim shown, so passing on the fifth
-  try is visible?
+  try is visible? **Partly decided (2026-11-06):** every round raises the bar. Each tried variant of a
+  claim (measure, populations, unit, wording) is recorded with a hash; the significance threshold is
+  divided by the number of variants on record, and earlier passes are re-checked against the final
+  count. The log sets the count, not the analyst (after CONFIRM's hashed hypothesis signatures,
+  `RECITAL_PRIOR_ART.md` §7). Open: how the GUI shows the rounds.
 - **Q6. Who's the author.** Human analyst and agent run go through the same recital, and the stamp
   says which. This links to the parked agent-overnight work.
 - **Q7. What "fixed" means for a claim.** Changing the analysis can be tagged fixed; rewording the
-  claim to fit the data can't (that's forking paths again). A reworded claim starts a new round.
+  claim to fit the data can't (that's forking paths again). A reworded claim starts a new round, and
+under Q5 that round raises the bar for every variant.
 - **Q8. Who sees untagged findings.** The weekly judge reads one codebase; these sit in many projects.
   More natural: the project's session briefing (`get_session_briefing`) that Kiwi and Claude Code read.
 - **Q9. What the stamp says when only some stages ran.** It has to list what ran, so a partial
@@ -165,7 +171,7 @@ Three roles, by who decides:
 | Stage | Question | How | Output |
 |---|---|---|---|
 | **S0 Record gate** | Can the record say what was done? | Rules: every output the claim uses has its params (`funParamsByName` or run log); every image in scope has those outputs; the grouping attribute (e.g. `Mouse`) is filled | `sufficient` or a list of gaps. A gap is a finding about the record, not the claim |
-| **S1 Cohort consistency** | Was everything compared treated the same? | Rules: params, versions, metadata (interval, pixel size, channels) and gates equal across images; set members excluded silently; cohort-QC outliers (`app/src/qc_cohort.jl`). **Within an image:** the populations the claim compares were measured the same way (dims, params, interval). A new recital rule, not part of #1958: cohort QC compares one population across images and doesn't know which populations a claim compares | Differences, each one a finding |
+| **S1 Cohort consistency** | Was everything compared treated the same? | Rules: params, versions, metadata (interval, pixel size, channels) and gates equal across images; set members excluded silently; cohort-QC outliers (`app/src/qc_cohort.jl`). **Within an image:** the populations the claim compares were measured the same way (dims, params, interval). A new recital rule, not part of #1958: cohort QC compares one population across images and doesn't know which populations a claim compares. **Confound check:** for each record column the comparison doesn't account for (mouse, interval, dims, seg params, gate version), test whether it differs between the compared groups; if it does, the group difference may be that column (after CONFIRM's confound-completeness audit, `RECITAL_PRIOR_ART.md` §7) | Differences, each one a finding |
 | **S2 Conventions** | Is the claim built the way the field expects? | Mostly rules: unit of the test vs n animals, physical units, same pop definitions per arm. A model only for what rules can't read | Findings |
 | **S3a Parse the claim** | What exactly is claimed? | Model: the sentence → a structured claim (type, measure, groups, images). Shown to the analyst to confirm before S3b | A structured claim, or "unknown type" |
 | **S3b Check the claim** | Does it survive reasonable changes? | **Code:** the fixed perturbation set for that claim type, logged with the result | `reproduced` when a perturbation crosses the **pre-set threshold**, else clean |
