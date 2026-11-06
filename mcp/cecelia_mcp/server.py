@@ -1387,7 +1387,8 @@ def get_acquisition_knowledge(system: str = "") -> dict:
     with `explanation`, `check` (which recorded setting or measured number shows it), `alternatives`
     (other causes, often biology) and `sources` (ids into `sources`, with DOIs). `scopes` gives each
     microscope's name for the feature that fixes a stage (e.g. FV4000 → Bright Z), `verified: false`
-    until a facility confirms it — say so when you pass one on. `system` (get_image_info's
+    until a facility confirms it — say so when you pass one on — and `seenInFiles`, what the lab's own
+    files record for it. `system` (get_image_info's
     `acquisition.system`, e.g. "FV4000") keeps only that scope. Project-independent. Read-only."""
     with open(_ACQUISITION_KNOWLEDGE_PATH, encoding="utf-8") as f:
         knowledge = json.load(f)

@@ -53,6 +53,7 @@ class AcquisitionKnowledgeTest(unittest.TestCase):
                 with self.subTest(system=scope["system"], feature=f["name"]):
                     self.assertIn(f["stage"], LIGHT_PATH_STAGES)
                     self.assertIs(f["verified"], False)
+                    self.assertTrue(f["seenInFiles"].strip())   # what the lab's .oir files record
 
     def test_system_keeps_only_that_scope(self):
         out = server.get_acquisition_knowledge("fv4000")
