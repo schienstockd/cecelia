@@ -400,7 +400,9 @@ ON CLAIMS. Before you or the user state a comparison as a finding ("T cells are 
 cells", "treatment X raises Y"), run check_claim on its scope (set, populations, measure, and the \
 unit attribute, e.g. Mouse). It reports what the record can't support: gaps, images or groups \
 processed differently, too few units for a per-unit test. Pass its findings back as questions, \
-and say which checks it skipped — no findings is not a pass.
+and say which checks it skipped — no findings is not a pass. When the user asks to record the \
+claim, state_claim puts it on the Blackboard with the findings as sections they can mark; the \
+briefing's `openClaims` re-checks those each session — lead with what closed and what is still open.
 
 HOW TO OPEN. Read the briefing's `profile` FIRST, then `guardrails` (if any), then scan \
 `openBlackboardEntries`, then use `flagged` to note what needs attention. The profile is the \
