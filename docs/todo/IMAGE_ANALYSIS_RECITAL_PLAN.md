@@ -3,10 +3,15 @@
 **Status:** parked (2026-11-05). P0 done by hand the same day (results below); one rule it found shipped
 as #1958. Nothing else built. Reviewed 2026-11-06
 (`docs/archive/IMAGE_ANALYSIS_RECITAL_REVIEW_AND_PRIOR_ART.md`); its gaps are folded in below. Prior art is in
-`RECITAL_PRIOR_ART.md`. Two of its changes are folded in (the S1 confound check, rounds raising the
-bar in Q5). The rest (S3b fraction threshold, power gate, claim state split from finding provenance,
-demoting "AI as reviewer") wait for the plain-prompt baseline. Next: that baseline (P2), then P0 on a
-second project with a real comparison.
+`RECITAL_PRIOR_ART.md`. One of its changes is folded in (the S1 confound check). A second (rounds
+raising the significance bar, Q5) was folded in and then reverted on 2026-11-06: it turned the
+recital from a helper into a gate (see *Helper, not gate* below). The rest (S3b fraction threshold,
+power gate, claim states such as "blocked / qualified / supported", demoting "AI as reviewer") are
+**on hold until the helper-vs-gate question is settled**, not just until the baseline. Next: that
+baseline (P2), then P0 on a second project with a real comparison.
+
+The two starting schematics are committed: `recital_figures/findings_flow.svg` (what happens to a
+finding) and `recital_figures/gui_mockup.svg` (the GUI). Check changes against them.
 
 **Worth building?** The rules (S0–S2) yes: cheap, no model, and P0 found real problems with them.
 The model stages and the full mechanism only if they beat a plain "review this claim" prompt.
@@ -90,15 +95,18 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   It could be a notebook (`docs/NOTEBOOKS.md`) or attached to the claim.
 - **Q4. Block or stamp.** Does an export wait for tags, or leave with the findings stamped on it?
 - **Q5. Rounds on record.** How are repeat recitals on the same claim shown, so passing on the fifth
-  try is visible? **Partly decided (2026-11-06):** every round raises the bar. Each tried variant of a
-  claim (measure, populations, unit, wording) is recorded with a hash; the significance threshold is
-  divided by the number of variants on record, and earlier passes are re-checked against the final
-  count. The log sets the count, not the analyst (after CONFIRM's hashed hypothesis signatures,
-  `RECITAL_PRIOR_ART.md` §7). A **variant** is a change to what is claimed or how it's tested
-  (measure, populations, unit, image subset, wording). Fixing a flagged problem (re-measuring with
-  matched dims) is not a variant and isn't penalised, but it's logged, so repeated "fixes" stay
-  visible. Rounds are correlated, so dividing by the count is conservative. The analyst always sees
-  the current threshold and why it moved. Open: how the GUI shows the rounds.
+  try is visible? **Leaning (2026-11-06): show rounds, don't charge for them.** Each tried variant
+  of a claim is recorded with a hash, and the log sets the count, not the analyst (after CONFIRM's
+  hashed hypothesis signatures, `RECITAL_PRIOR_ART.md` §7). The entry and the export stamp show the
+  round count and what changed between rounds (as in the mockup: "passing on round 5 shows rounds
+  1–4"). The threshold does **not** move. A **variant** is a change to what is claimed or how it's
+  tested (measure, populations, unit, image subset, wording); fixing a flagged problem (re-measuring
+  with matched dims) is logged as a fix, not a variant.
+  *Considered and reverted:* dividing the significance threshold by the number of variants on record.
+  It makes a code check's verdict depend on the analyst's history rather than the claim; it makes
+  the fix-vs-variant call load-bearing with nobody defined to make it; and with n = 4 mice it fails
+  almost every claim by round 2. Revisit only if the helper-vs-gate question goes to "gate".
+  Open: how the GUI shows the rounds.
 - **Q6. Who's the author.** Human analyst and agent run go through the same recital, and the stamp
   says which. This links to the parked agent-overnight work.
 - **Q7. What "fixed" means for a claim.** Changing the analysis can be tagged fixed; rewording the
@@ -207,6 +215,36 @@ Rules for every run:
 - **"No findings" is not a pass.** Every result lists what ran and what didn't ("S0–S2 ran; S3b,
   S4 not run"), and so does the export stamp.
 
+### Helper, not gate
+
+The recital turns questions back to the analyst; it doesn't certify a claim. Export is never
+blocked, the threshold doesn't depend on how many times the analyst asked, and there is no
+"supported / blocked" claim state. CONFIRM-style gates (power, multiplicity over rounds, claim
+states; `RECITAL_PRIOR_ART.md`) are the other design. They are on hold, not rejected: adopting them
+is a change of purpose, decided on its own, not folded in one gate at a time.
+
+### After a finding (`recital_figures/findings_flow.svg`)
+
+Each finding is either fixed in the analysis or not.
+
+- **Fixed** (the analysis changed: re-measured, re-gated, scope corrected) → it ends at the export
+  stamp. Rewording the claim is not a fix; it starts a new round (Q5, Q7). Tagging is optional.
+- **Within tolerance** (S1 differences below a threshold, e.g. pixel size 0.07 %) and the
+  Translator's output are display only. They go on the stamp and nowhere else.
+- **Not fixed** goes two ways at once:
+  - **Claim check, per project.** At the next session briefing (`get_session_briefing`, read by
+    Kiwi and Claude Code) the open finding is re-checked against the current record: does it still
+    apply? If it does, it becomes a briefing item, and the analyst re-analyses or retracts. If it
+    doesn't, it closes by itself. Nobody closes a finding by hand except by changing the analysis.
+  - **Rule count, across claims and projects.** The same finding kind on **3+ claims** becomes a
+    proposal, which Dominik accepts or rejects in a rules PR. What the proposal is depends on the kind:
+    - recurring **record gap** → a Cecelia bug (a task that doesn't bank its params) → app fix;
+    - recurring **convention** finding → sharpen the S2 rule or its threshold;
+    - recurring **Review inferred** (S4) → a new Check rule. This is how the mechanical layer grows
+      (#1958 was the first, by hand).
+- **Open:** who sees findings across all projects for the rule count. The weekly judge reads one
+  codebase; these sit in many projects on many machines (Q8).
+
 ## GUI (brainstorm, 2026-11-05, not decided)
 
 Cheap checks run automatically, the expensive one on request, like an IDE: the linter underlines as
@@ -232,7 +270,7 @@ you type, and review is something you ask for. Everything sits on surfaces that 
    figure gets a footer stamp linking back to the entry.
 
 This mostly answers Q1 (checks run when a claim is *stated*; export only reads the result) and leans
-Q4 toward the stamp. A mockup was shown on 2026-11-05 and isn't committed.
+Q4 toward the stamp. The mockup (2026-11-05) is `recital_figures/gui_mockup.svg`.
 
 ## Phases
 
