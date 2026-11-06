@@ -1,0 +1,246 @@
+<ImageDocument>
+  <Metadata>
+    <Experiment Version="1.2">
+      <ExperimentBlockIndex>0</ExperimentBlockIndex>
+      <ExperimentBlocks>
+        <AcquisitionBlock IsActivated="true" BlockReference="638289974075784551">
+          <SubDimensionSetups>
+            <TimeSeriesSetup IsActivated="true">
+              <SubDimensionSetups>
+                <ZStackSetup IsActivated="true">
+                  <SetupExtensions>
+                    <SetupExtension>
+                      <LsmZStackSetup IsActivated="true">
+                        <UseAutoBrightnessCorrection>false</UseAutoBrightnessCorrection>
+                        </LsmZStackSetup>
+                    </SetupExtension>
+                  </SetupExtensions>
+                  </ZStackSetup>
+              </SubDimensionSetups>
+            </TimeSeriesSetup>
+            </SubDimensionSetups>
+          </AcquisitionBlock>
+      </ExperimentBlocks>
+      </Experiment>
+    <Information>
+      <Application>
+        <Name>ZEN (blue edition)</Name>
+        <Version>3.6.095.08000</Version>
+        <BuildId>3.14.23040.62</BuildId>
+      </Application>
+      <Image>
+        <SizeX>512</SizeX>
+        <SizeY>1</SizeY>
+        <SizeH>1</SizeH>
+        <OriginalCompressionMethod>Uncompressed</OriginalCompressionMethod>
+        <OriginalEncodingQuality>100</OriginalEncodingQuality>
+        <AcquisitionDateAndTime>2023-08-30T13:14:56.2492959Z</AcquisitionDateAndTime>
+        <SizeC>1</SizeC>
+        <SizeZ>715</SizeZ>
+        <SizeT>5</SizeT>
+        <ComponentBitCount>8</ComponentBitCount>
+        <PixelType>Gray8</PixelType>
+        <Dimensions>
+          <Channels>
+            <Channel Id="Channel:0" Name="Ch1">
+              <Color>#FFD3D3D3</Color>
+              <Reflector>none</Reflector>
+              <NACondenser>0.55</NACondenser>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>28.584674570431</PinholeSize>
+              <PinholeSizeAiry>0.99999999999999423</PinholeSizeAiry>
+              <PixelType>Gray8</PixelType>
+              <ComponentBitCount>8</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>499.616235156808-599.391854797352</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <HasFocusRoi>false</HasFocusRoi>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <DetectorMode>Integration</DetectorMode>
+                <Voltage>649.98626708984</Voltage>
+                <PhotonConversionFactor>1193.2319043568314</PhotonConversionFactor>
+                <Detector Id="Detector: MA-Pmt1" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>0.998</Attenuation>
+                  <Transmission>0.0020000000000000018</Transmission>
+                  <Wavelength>488</Wavelength>
+                  <IsNlo>false</IsNlo>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-1</StokesParameter2>
+                    <StokesParameter3>0</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLKM980LaserLine488" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <LineTime>0.0098304</LineTime>
+                <PixelTime>8.192E-06</PixelTime>
+                <ScanSpeed>5</ScanSpeed>
+                <SampleOffsetX>1.2429835449225E-06</SampleOffsetX>
+                <SampleOffsetY>4.1434096679563996E-07</SampleOffsetY>
+                <SampleRotation>0</SampleRotation>
+                <ZoomX>4</ZoomX>
+                <ZoomY>4</ZoomY>
+                <ScanDirection>Unidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <ScanningMode>Line</ScanningMode>
+                <MainBeamSplitterVis>Beamsplitter.2412-296</MainBeamSplitterVis>
+                <MainBeamSplitterInVis>Beamsplitter.Plate</MainBeamSplitterInVis>
+                <SecondaryBeamSplitter>Beamsplitter.Mirror</SecondaryBeamSplitter>
+              </LaserScanInfo>
+            </Channel>
+          </Channels>
+          <Tracks>
+            <Track Id="Track:1">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:0" />
+              </ChannelRefs>
+            </Track>
+          </Tracks>
+          <X>
+            <AxisOrientation>-1</AxisOrientation>
+          </X>
+          <Y>
+            <AxisOrientation>-1</AxisOrientation>
+          </Y>
+          <T>
+            <StartTime>2023-08-30T13:14:56.2492959Z</StartTime>
+            <Positions>
+              <Interval>
+                <Start>0</Start>
+                <Increment>21.189249999999998</Increment>
+              </Interval>
+            </Positions>
+          </T>
+          <Z>
+            <XYZHandedness>RightHanded</XYZHandedness>
+            <ZAxisDirection>FromObjectiveToSpecimen</ZAxisDirection>
+            <StartPosition>0</StartPosition>
+            <Positions>
+              <Interval>
+                <Start>-74.97</Start>
+                <Increment>0.21</Increment>
+              </Interval>
+            </Positions>
+          </Z>
+        </Dimensions>
+        <ObjectiveSettings>
+          <RefractiveIndex>1.000293</RefractiveIndex>
+          <Medium>Air</Medium>
+          <ObjectiveRef Id="Objective:1" />
+        </ObjectiveSettings>
+        <MicroscopeRef Id="Microscope:1" />
+        <MicroscopeSettings>
+          <EyepieceSettings>
+            <TotalMagnification>200</TotalMagnification>
+          </EyepieceSettings>
+        </MicroscopeSettings>
+        <TubeLenses>
+          <TubeLensRef Id="TubeLens:1" />
+        </TubeLenses>
+        <Session SessionId="4b7a191a-e977-4f18-9d8e-2409736a70d4" SessionName="LSM - 20230830_145718" SessionCreation="AutomaticStageCalibration">
+          <SessionMatrix>1 0 0 0 0 -1 0 0 0 0 1 0 -65000 50000 0 1</SessionMatrix>
+          <HolderCwsId>0</HolderCwsId>
+          <RotationCenter>
+            <X>65000</X>
+            <Y>50000</Y>
+          </RotationCenter>
+        </Session>
+        <SpatialRelations>
+          <StackRotation>
+            <AxisOfRotation>1 0 0</AxisOfRotation>
+            <Angle>0</Angle>
+          </StackRotation>
+        </SpatialRelations>
+      </Image>
+      <Instrument>
+        <Microscopes>
+          <Microscope Id="Microscope:1" Name="Axio Observer.Z1 / 7">
+            <Type>Inverted</Type>
+            <UserDefinedName>28711001004</UserDefinedName>
+            <System>LSM 800</System>
+          </Microscope>
+        </Microscopes>
+        <LightSources>
+          <LightSource Id="MTBLKM980LaserLine488">
+            <Power>13</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+        </LightSources>
+        <Detectors>
+          <Detector Id="Detector: MA-Pmt1" Name="MA-Pmt1">
+            <GammaDefault>1</GammaDefault>
+            <Type>Multialkali-PMT</Type>
+            <Zoom>4,4</Zoom>
+            <Offset>0</Offset>
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+        </Detectors>
+        <Objectives>
+          <Objective Id="Objective:1" Name="Plan-Apochromat 20x/0.8 M27">
+            <LensNA>0.8</LensNA>
+            <NominalMagnification>20</NominalMagnification>
+            <WorkingDistance>610</WorkingDistance>
+            <PupilGeometry>Circular</PupilGeometry>
+            <ImmersionRefractiveIndex>1.000293</ImmersionRefractiveIndex>
+            <Immersion>Air</Immersion>
+            <Manufacturer>
+              <Model>Plan-Apochromat 20x/0.8 M27</Model>
+            </Manufacturer>
+          </Objective>
+        </Objectives>
+        <TubeLenses>
+          <TubeLens Id="TubeLens:1" Name="Tubelens LSM" />
+        </TubeLenses>
+        <Dichroics>
+          <Dichroic Id="Beamsplitter.2412-296" Name="MBS 488/639" />
+          <Dichroic Id="Beamsplitter.Plate" Name="Plate" />
+          <Dichroic Id="Beamsplitter.Mirror" Name="Mirror" />
+        </Dichroics>
+      </Instrument>
+      </Information>
+    <Scaling>
+      <Metadata />
+      <AutoScaling>
+        <Type>Measured</Type>
+        <Objective>Objective.420650-9903-000</Objective>
+        <Optovar>Aquila.Tubelens LSM</Optovar>
+        <Reflector>Reflector.none</Reflector>
+        <ObjectiveName>Plan-Apochromat 20x/0.8 M27</ObjectiveName>
+        <OptovarMagnification>1</OptovarMagnification>
+        <ReflectorMagnification>1</ReflectorMagnification>
+        <CameraName>LSM 980</CameraName>
+        <CameraPixelDistance>4.143212890625,4.143212890625</CameraPixelDistance>
+      </AutoScaling>
+      <Items>
+        <Distance Id="X">
+          <Value>2.0716064453124998E-07</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Y">
+          <Value>2.0716064453124998E-07</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Z">
+          <Value>2.0999999999999997E-07</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+      </Items>
+    </Scaling>
+    </Metadata>
+</ImageDocument>
