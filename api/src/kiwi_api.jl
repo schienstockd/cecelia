@@ -83,7 +83,10 @@ carries the active Kiwi `profile` it ran under (LOGIN_CREDENTIAL_ISOLATION_PLAN 
 """
 function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = Any[], reasoning::Bool = false,
                          model::AbstractString = observer_default_model(), follow_up::AbstractString = "",
-                         profile::AbstractString = Cecelia.active_profile_name())
+                         profile::AbstractString = Cecelia.active_profile_name(),
+                         system_prompt::Union{Nothing,AbstractString} = nothing,
+                         allowed_tools::Union{Nothing,AbstractVector} = nothing,
+                         extra::AbstractDict = Dict{String,Any}(), on_done::Function = _ -> nothing)
     _kiwi_project_ok(puid) || return 404, Dict{String,Any}("error" => "no project $puid")
     isempty(strip(prompt)) && isempty(refs) && return 400, Dict{String,Any}("error" => "ask something or attach a ref")
     conv = isempty(follow_up) ? nothing : _kiwi_conversation(puid, follow_up)
@@ -101,6 +104,7 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
         "refs" => [Dict{String,Any}("ref" => r, "result" => resolve_kiwi_ref(puid, r)) for r in refs],
         "reasoning" => reasoning, "model" => observer_valid_model(model), "engine" => Cecelia.agent_label(agent),
         "profile" => String(profile), "status" => "running", "startedAt" => _kiwi_now(), "steps" => String[])
+    merge!(rec, extra)   # caller fields kept on the record, e.g. `claimReview` names the entry it reviews
     if conv !== nothing
         rec["followUp"] = String(follow_up)
         rec["priorRefs"] = conv.refs
@@ -114,20 +118,23 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
     started || return 409, Dict{String,Any}("error" => "Kiwi is already working on this project")
     tid = rec["turnId"]
     start_job!(tid)
-    Threads.@spawn _kiwi_run_turn!(rec, agent, refs; session_id = conv === nothing ? "" : conv.sessionId)
+    Threads.@spawn _kiwi_run_turn!(rec, agent, refs; session_id = conv === nothing ? "" : conv.sessionId,
+                                   system_prompt, allowed_tools, on_done)
     200, rec
 end
 
 # The worker: run, broadcast steps, record, broadcast done. Never throws — a crash is a failed turn.
-function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::AbstractString = "")
+function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::AbstractString = "",
+                         system_prompt = nothing, allowed_tools = nothing, on_done::Function = _ -> nothing)
     puid, tid = rec["projectUid"], rec["turnId"]
     step(s) = (push!(rec["steps"], s);
                broadcast_ws(Dict{String,Any}("type" => "kiwi:step", "projectUid" => puid, "turnId" => tid, "step" => s)))
     try
+        own = merge(system_prompt === nothing ? (;) : (; system_prompt), allowed_tools === nothing ? (;) : (; allowed_tools))
         out = run_kiwi_turn(puid, rec["prompt"]; refs, agent, reasoning = rec["reasoning"], session_id,
                             prior_refs = get(rec, "priorRefs", Any[]),
                             prior_results = get(rec, "priorResults", Dict{String,Any}()),
-                            on_progress = step, on_process = p -> track_job!(tid, p))
+                            on_progress = step, on_process = p -> track_job!(tid, p), own...)
         rec["reply"] = out
         rec["status"] = job_cancelled(tid) ? "cancelled" : (out["ok"] ? "done" : "failed")
     catch e
@@ -138,6 +145,8 @@ function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::Abstrac
         rec["finishedAt"] = _kiwi_now()
         finish_job!(tid)
         try _kiwi_append_turn!(puid, rec) catch e; @warn "Kiwi: could not save turn $tid" exception = e end
+        # the caller's follow-up on the finished record (the claim review writes onto its entry)
+        try on_done(rec) catch e; @warn "Kiwi: the turn's on_done failed" turn = tid exception = e end
         lock(_KIWI_LOCK) do; delete!(_KIWI_RUNNING, puid); end
         broadcast_ws(Dict{String,Any}("type" => "kiwi:done", "projectUid" => puid, "turnId" => tid, "turn" => rec))
     end
