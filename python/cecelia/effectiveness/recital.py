@@ -46,7 +46,7 @@ import typing as _t
 from .inventory_coverage import run_inventory_check
 from .changelog_check import run_changelog_check
 from .maintainability_lint import run_maintainability_lint
-from .log import append_event
+from .log import SLUG_PATTERN, append_event  # SLUG_PATTERN re-exported: the commit hook imports it here
 from cecelia.utils.atomic_io import write_json_atomic
 
 #: Path to each reviewer's spec doc. `claude -p` reads it itself — the reviewer prompt is
@@ -121,8 +121,6 @@ _OPTIONAL_TAG_NOTE = ("_{Marker} notes need no tag. If you fixed one, tag it `[<
 #: every finding from 2026-09-28 on (11 of 29 across session history), so the parser is
 #: tolerant: ANY bullet line carrying the marker is a finding. The location is best-effort —
 #: first `file:LINE` wins, so `foo.jl:42` slugs the same with or without a trailing range.
-#: A finding slug as `_slug` writes it — the one grammar recital and the commit hook match on.
-SLUG_PATTERN = r"(?:fanout|conv|result)-[0-9a-f]{8}"
 _BULLET_RE = re.compile(rf"^[ \t]*[-*][ \t]+(?!\[{SLUG_PATTERN}\] )(.+)$", re.MULTILINE)
 _LEAD_LOCATION_RE = re.compile(
     r"^\*\*`?([^*:`\s]+):(\d+)[^*]*?`?\*\*\s*[—–:-]?\s*(.*)$"

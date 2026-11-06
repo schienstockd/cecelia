@@ -7,6 +7,11 @@ looks at what the diff DOES, never at what a touched file already is, so old deb
 - **Incident history** — an added comment line carrying a dataset uid, a dated authorship, an
   internal phase code, or a commit SHA. A comment defending an adjacent numeric constant is
   measurement provenance, not history, and is skipped.
+- **Repro marker** — an added `RESULT-REVIEW:` line in any code file, tests included, that is not
+  in the file's header (first `MARKER_HEADER_LINES` lines) or whose slug the commit hook can't parse.
+  The hook guards a whole file by its marker, so a marker inside a shared suite blocks every later
+  edit to it, and an unparseable slug guards nothing (`docs/ai-assist/RESULT_REVIEW.md`: a repro is
+  its own file).
 
 A `MAINT-EXEMPT: <reason>` comment on the line (or the one above) silences an incident finding —
 same shape as `INVENTORY-EXEMPT:` / `COHORT-EXEMPT:` / `DASK-OK:`.
@@ -23,7 +28,7 @@ from dataclasses import dataclass
 
 from .git_context import DiffLine, FileDiff, parse_diff
 from .git_context import git_output as _git_output
-from .log import append_event
+from .log import REPRO_MARKER, append_event
 
 _TITLE = "Maintainability lint"
 
@@ -138,6 +143,28 @@ def incident_findings(fd: FileDiff) -> list[Finding]:
     return out
 
 
+MARKER_HEADER_LINES = 5
+_MARKER = re.compile(r"RESULT-REVIEW:\s*([A-Za-z0-9][\w-]*)")   # a slug-shaped token, not prose about it
+
+
+def marker_findings(fd: FileDiff) -> list[Finding]:
+    """`RESULT-REVIEW:` markers this diff adds below a code file's header, or with a slug the commit
+    hook's `REPRO_MARKER` won't match."""
+    if not fd.path.endswith(_CODE_EXT):
+        return []
+    out: list[Finding] = []
+    for hunk in fd.hunks:
+        for ln in hunk:
+            if ln.kind != "+" or not (m := _MARKER.search(ln.text)):
+                continue
+            slug = m.group(1).rstrip("-")
+            if not REPRO_MARKER.match(ln.text, m.start()):   # the hook's own grammar decides
+                out.append(Finding("marker:slug", fd.path, ln.lineno, slug))
+            elif ln.lineno is not None and ln.lineno > MARKER_HEADER_LINES:
+                out.append(Finding("marker:placement", fd.path, ln.lineno, slug))
+    return out
+
+
 def is_task_file(path: str) -> bool:
     """A file under a task category dir (`app/src/tasks/<category>/…`); top-level framework files
     (`task.jl`, `chain.jl`, …) and the framework dirs don't count."""
@@ -167,6 +194,7 @@ def lint_diff(diff: str, *, after_lines: _t.Callable[[str], int | None]) -> list
     out: list[Finding] = []
     for fd in parse_diff(diff):
         out += incident_findings(fd)
+        out += marker_findings(fd)
         if (n := after_lines(fd.path)) is not None and (f := size_finding(fd, n)):
             out.append(f)
     return out
@@ -186,7 +214,18 @@ def format_section(findings: _t.Sequence[Finding], *, files_checked: int) -> str
         return f"_{_TITLE}: run — nothing flagged_"
     lines = [f"_{_TITLE} (evidence):_", ""]
     for f in findings:
-        if f.check == "size":
+        if f.check == "marker:slug":
+            lines.append(
+                f"- `{f.path}:{f.line}` — repro marker slug `{f.detail}` is not one the commit hook "
+                f"parses, so the repro is unguarded. Use the recital slug (`result-…`)."
+            )
+        elif f.check == "marker:placement":
+            lines.append(
+                f"- `{f.path}:{f.line}` — repro marker `{f.detail}` is below the file header. The hook "
+                f"guards the whole file, so every later edit to it is blocked: put the repro in its own "
+                f"file with the marker at the top (`docs/ai-assist/RESULT_REVIEW.md`)."
+            )
+        elif f.check == "size":
             lines.append(
                 f"- `{f.path}` — {f.detail}. Split it along its responsibilities "
                 f"(`docs/MAINTAINABILITY.md` → *Split rule*)."
@@ -213,7 +252,8 @@ def run_maintainability_lint(
     """Lint the staged diff, emit one `maintainability_lint_run` event, return the markdown section."""
     start = time.monotonic()
     counter = after_lines or _staged_lines
-    files_checked = sum(_is_source(fd.path) for fd in parse_diff(diff))
+    # code files, tests included: the marker check reads tests, the other checks skip them themselves
+    files_checked = sum(fd.path.endswith(_CODE_EXT) for fd in parse_diff(diff))
     findings = lint_diff(diff, after_lines=counter) if files_checked else []
     append_event(
         "maintainability_lint_run",

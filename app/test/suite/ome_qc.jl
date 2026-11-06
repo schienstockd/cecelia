@@ -653,7 +653,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test all(ch -> ch["range"]["max"] == ch["topValue"], chans)
             @test all(ch -> length(ch["range"]["hist"]["counts"]) == 32, chans)
             @test all(ch -> haskey(ch["noise"], "snr"), chans)
-            # kinds = intensity_utils.FLOOR_KINDS. RESULT-REVIEW: result-13384462
+            # kinds = intensity_utils.FLOOR_KINDS
             @test all(ch -> ch["floor"]["kind"] in ("photon-counted", "clipped", "indeterminate", "none"), chans)
             # the facts line reads it straight back — one entry per probed channel, a number each
             facts = Cecelia.img_cleanup_facts(r1)
@@ -1121,17 +1121,15 @@ end
         @test isempty(Cecelia.saturation_qc_findings(clean))
         @test Cecelia.saturation_metrics(clean)["nChannelsSaturated"] == 0
 
-        # TRACE clipping: structurally detected, but far too small to act on. This is the real measured
-        # case — 4 of 36 channels across nine kSUFux movies sit at 1.1-1.4e-6, i.e. ~500 voxels of
-        # 377 M. No finding (telling someone to lower the gain over 500 voxels is not actionable), but
-        # the metric MUST still record it: the cohort comparison is relative, so it is what surfaces an
-        # image clipping far more than its session peers.
-        # 7.2e-5 of SIGNAL voxels is the worst real case measured across nine movies — three orders
-        # below the smoke-alarm level, so it must not warn while still being banked.
+        # TRACE clipping: structurally detected but below the smoke-alarm level. Still an `info` finding
+        # — the channel did clip, and a clipped channel the user never hears about is how two movies
+        # clipping 0.03-0.19% of signal passed import silently. Never `warn`, and the metric still banks
+        # it: the cohort comparison is relative.
         trace = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
             mk(0, true; top = 4095, frac = 1.4e-6, n = 534, sigfrac = 7.2e-5),
         ]))
-        @test isempty(Cecelia.saturation_qc_findings(trace))
+        tf = Cecelia.saturation_qc_findings(trace)
+        @test length(tf) == 1 && tf[1]["level"] == "info" && tf[1]["code"] == "import.channel_saturated"
         tm = Cecelia.saturation_metrics(trace)
         @test tm["nChannelsSaturated"] == 1
         @test tm["maxClippedFrac"] == 1.4e-6
@@ -1141,14 +1139,14 @@ end
         material = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
             mk(0, true; top = 4095, frac = 2.0e-4, n = 75_000, sigfrac = 1.1e-2),
         ]))
-        @test length(Cecelia.saturation_qc_findings(material)) == 1
+        @test only(Cecelia.saturation_qc_findings(material))["level"] == "warn"
 
-        # the ALL-voxel fraction must not be what decides it: a channel with a large all-voxel fraction
-        # but trace signal clipping stays quiet, and vice versa. This is the whole point of the change.
+        # the ALL-voxel fraction must not be what decides the level: a large all-voxel fraction with
+        # trace signal clipping is `info`, not `warn`.
         allvox = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
             mk(0, true; top = 4095, frac = 0.5, n = 999, sigfrac = 1.0e-6),
         ]))
-        @test isempty(Cecelia.saturation_qc_findings(allvox))
+        @test only(Cecelia.saturation_qc_findings(allvox))["level"] == "info"
 
         # a channel with no recorded fraction is not guessed at
         noneframe = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
