@@ -163,8 +163,8 @@ end
 # generic 500 page.
 function _track_plot_groups(q)
     proj = get(q, "projectUid", "")
-    uids = String[strip(x) for x in split(get(q, "imageUids", ""), ',') if !isempty(strip(x))]
-    isempty(uids) && (uids = String[strip(x) for x in split(get(q, "imageUid", ""), ',') if !isempty(strip(x))])
+    uids = _query_list(q, "imageUids")
+    isempty(uids) && (uids = _query_list(q, "imageUid"))
     isempty(uids) && return (nothing, 0, "", _gerr(400, "imageUid or imageUids required"))
     imgs = Any[]
     for u in uids
@@ -172,13 +172,12 @@ function _track_plot_groups(q)
         err === nothing || return (nothing, 0, "", err)
         push!(imgs, img)
     end
-    _csv(key) = String[strip(x) for x in split(get(q, key, ""), ',') if !isempty(strip(x))]
     _flag(key) = get(q, key, "") in ("1", "true")
     max_groups = something(tryparse(Int, get(q, "maxGroups", "")), 12)
     try
         groups, dropped, vn = track_plot_groups(imgs, uids;
-            group_attrs = _csv("groupAttr"), pool_images = _flag("poolImages"),
-            pops = _csv("pops"), pop_type = get(q, "popType", "live"),
+            group_attrs = _query_list(q, "groupAttr"), pool_images = _flag("poolImages"),
+            pops = _query_list(q, "pops"), pop_type = get(q, "popType", "live"),
             value_name = get(q, "valueName", ""), pool_pops = _flag("poolPops"),
             max_groups = max(max_groups, 1))
         (groups, dropped, vn, nothing)
@@ -226,7 +225,7 @@ function api_track_paths(req::HTTP.Request)
     # 2001" has no answer if 2001 was never sent, and the panel cannot even say it exists.
     occupancy = get(q, "occupancy", "") in ("1", "true")
     limit = something(tryparse(Int, get(q, "limit", "")), occupancy ? 20000 : 500)
-    ids   = String[strip(x) for x in split(get(q, "ids", ""), ',') if !isempty(strip(x))]
+    ids   = _query_list(q, "ids")
     color_by = get(q, "colorBy", "")
     try
         out = Any[]

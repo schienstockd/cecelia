@@ -494,7 +494,7 @@ function api_task_fun_params(req::HTTP.Request)
     imgu  = get(q, "imageUid", "")
     setu  = get(q, "setUid", "")
     vname = get(q, "valueName", "")
-    imgus = filter(!isempty, String.(split(get(q, "imageUids", ""), ',')))
+    imgus = _query_list(q, "imageUids")
     (isempty(proj) || isempty(fun)) &&
         return 400, JSON3.write((; error = "projectUid and fun are required"))
 
@@ -1130,6 +1130,8 @@ end
 
 
 include(joinpath(@__DIR__, "routes", "image.jl"))
+
+include(joinpath(@__DIR__, "routes", "claim.jl"))   # claim recital checks (after image.jl: reuses _cohort_set)
 
 include(joinpath(@__DIR__, "routes", "metadata.jl"))
 

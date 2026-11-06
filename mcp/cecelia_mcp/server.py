@@ -316,6 +316,27 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
+@_tool
+def check_claim(project_uid: str, set_uid: str, populations: list[str], measure: str,
+                unit_attr: str | None = None) -> dict:
+    """The claim recital's rule checks: before a comparison leaves Cecelia as a claim ("T cells move
+    faster than B cells"), does the RECORD let it be made? Read-only, no model, no significance test.
+
+    Scope: the set, the populations compared (pop paths, e.g. ["B/qc", "T/qc"]), the measure
+    ("live.track.speed") and `unit_attr`, the image attribute naming the statistical unit ("Mouse").
+    Leave `unit_attr` unset only if the claim really has none — that is itself a finding.
+
+    Returns {findings, ran, skipped, notCompared, nRows, nUsed}. Each finding has level, code, short,
+    long and detail {stage, provenance, evidence}. Stages: S0 record gaps (image excluded, no data,
+    unit blank, params or track dims not recorded), S1 consistency (a setting differing across images,
+    or between the compared populations — `claim.confounded` when it splits them completely), S2
+    conventions (no unit, too few units for a per-unit test, several images per unit, uncalibrated).
+    `ran` / `skipped` say what was checked: no findings is NOT a pass when checks were skipped.
+    Report findings as questions back to the analyst ("this comparison can't support the claim yet,
+    because…"), with the finding's `long` text as the options. Never as a verdict on the biology."""
+    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attr)
+
+
 # Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out
 # the rest of a session.
 _TASK_LOG_MAX_BYTES = 20_000

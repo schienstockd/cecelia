@@ -105,11 +105,10 @@ end
 function api_chains_suggest(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     uid  = get(q, "projectUid", "")
-    csv(k) = String[strip(x) for x in split(get(q, k, ""), ',') if !isempty(strip(x))]
-    uids = csv("imageUids")
+    uids = _query_list(q, "imageUids")
     (isempty(uid) || isempty(uids)) && return 400, JSON3.write((; error="projectUid and imageUids required"))
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
-    keep = haskey(q, "keep") ? csv("keep") : nothing
+    keep = haskey(q, "keep") ? _query_list(q, "keep") : nothing
     r = chain_from_history(proj, uids; keep, retrain = get(q, "retrain", "") in ("1", "true"),
                            name = get(q, "name", "From history"))
     200, JSON3.write(r)
@@ -123,7 +122,7 @@ end
 function api_chains_history_params(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     uid  = get(q, "projectUid", "")
-    uids = String[strip(x) for x in split(get(q, "imageUids", ""), ',') if !isempty(strip(x))]
+    uids = _query_list(q, "imageUids")
     (isempty(uid) || isempty(uids)) && return 400, JSON3.write((; error="projectUid and imageUids required"))
     list(k) = (v = get(q, k, nothing); v === nothing ? nothing : String.(JSON3.read(v, Vector{String})))
     pops, runs = try (list("pops"), list("clusterRuns")) catch
