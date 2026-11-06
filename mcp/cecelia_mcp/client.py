@@ -74,6 +74,7 @@ ALLOWED_ROUTES = frozenset(
                                          # board can compare by; the same route the summary canvas and the
                                          # UMAP colour/facet picker use, not a second attribute surface
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
+        ("GET", "/api/claim/checks"),    # claim recital: record / consistency / convention rules for a claim scope
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
         ("GET", "/api/analysis/measures"),  # per-pop phenotype + motility summaries (median/quantiles)
@@ -421,6 +422,17 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
             {
                 "projectUid": project_uid, "setUid": set_uid, "funName": fun_name,
                 "valueName": value_name, "threshold": threshold,
+            },
+        )
+
+    def check_claim(self, project_uid: str, set_uid: str, populations: list[str], measure: str,
+                    unit_attr: str | None = None):
+        return self._request(
+            "GET",
+            "/api/claim/checks",
+            {
+                "projectUid": project_uid, "setUid": set_uid, "pops": ",".join(populations),
+                "measure": measure, "unitAttr": unit_attr,
             },
         )
 

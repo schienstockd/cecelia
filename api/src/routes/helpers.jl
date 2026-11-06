@@ -3,6 +3,11 @@
 # graph). Image/set payloads are sourced from the model (CciaImage/CciaSet) so
 # ccid.json parsing lives in one place; the API only shapes the response.
 
+# A comma-separated query param as a list, items trimmed, empties dropped: `pops=B/qc, T/qc` →
+# ["B/qc", "T/qc"]; absent → []. The one parse for list-valued query params.
+_query_list(q::AbstractDict, key::AbstractString)::Vector{String} =
+    String[String(strip(x)) for x in split(get(q, key, ""), ',') if !isempty(strip(x))]
+
 # ── Typed request-body boundary ───────────────────────────────────────────────
 #
 # The route setters used to inline `data = JSON3.read(body_bytes)` (or a per-handler
