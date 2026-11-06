@@ -1,17 +1,16 @@
 # Image analysis recital — review a claim before it leaves Cecelia
 
-**Status:** parked (2026-11-05). P0 done by hand the same day (results below); one rule it found shipped
-as #1958. Nothing else built. Reviewed 2026-11-06
-(`docs/archive/IMAGE_ANALYSIS_RECITAL_REVIEW_AND_PRIOR_ART.md`); its gaps are folded in below. Prior art is in
-`RECITAL_PRIOR_ART.md`. One of its changes is folded in (the S1 confound check). A second (rounds
-raising the significance bar, Q5) was folded in and then reverted on 2026-11-06: it turned the
-recital from a helper into a gate (see *Helper, not gate* below). The rest (S3b fraction threshold,
-power gate, claim states such as "blocked / qualified / supported", demoting "AI as reviewer") are
-**on hold until the helper-vs-gate question is settled**, not just until the baseline. Next: that
-baseline (P2), then P0 on a second project with a real comparison.
+**Status:** building (2026-11-06). P0 (by hand), P1 (S0/S1 rules, #1969) and the P2 baseline are done;
+their results are below. Shape after P2: **P1 rules + S2 rules + one plain review turn**. The
+Translator (S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate. The build order
+is under *Build* at the end.
 
-The two starting schematics are committed: `recital_figures/findings_flow.svg` (what happens to a
-finding) and `recital_figures/gui_mockup.svg` (the GUI). Check changes against them.
+The schematics are `recital_figures/findings_flow.svg` (what happens to a finding) and
+`recital_figures/gui_mockup.svg` (the GUI), v2 of 2026-11-06 (v1 is in git history). Check changes
+against them. What v2 changed: real P0/P2 findings instead of illustrative ticks; the statistical unit
+(`Mouse`, n) is part of the claim's scope; one plain Review instead of "Check claim" with a
+perturbation set; no Fixed / Acknowledged / False positive tags (see *Outcome* below); findings drawn
+on the dots they concern; the stamp says what didn't run.
 
 **Worth building?** The rules (S0–S2) yes: cheap, no model, and P0 found real problems with them.
 The model stages and the full mechanism only if they beat a plain "review this claim" prompt.
@@ -66,7 +65,7 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
 | Convention check (canonical helpers) | **Analysis conventions:** statistical unit (animal not cell), n reported, gates not tuned on one arm, physical units, same pop definitions per arm | **Yes** | tested (P0): the claim holds per track (p = 2e-10, n = 330) but not per mouse (p = 0.18, n = 4) |
 | Result review: reproduce with a failing test | **Claim review:** recompute the claim from saved outputs under perturbations (leave one image/animal out, per-animal vs pooled, gate dry-run nudge, other summary statistic). Never re-run segmentation or tracking (Decision 1) | **Partly.** No test suite to commit a repro into. The repro is a recomputation plus numbers that need a durable home (Q3) | tested (P0): one image (k3Tx90) reverses the claim; leave-one-out moves p across 0.05 |
 | `**reproduced**` / `**inferred**` / `**display**` | reproduced = a perturbation moved the claim; inferred = read from the record only; display = only what's drawn is off | **Yes** | guess |
-| Outcome tags, `decide` queue | Analyst tags each finding (fixed / acknowledged / false positive) | **Yes.** Closest existing piece: blackboard outcome tagging (`set_blackboard_outcome`, `mcp/cecelia_mcp/server.py:1613`) | guess |
+| Outcome tags, `decide` queue | Status is computed (re-running the checks closes a finding that's gone); the analyst's verdict on a finding is the blackboard's existing Good / Bad / Unsure (`SectionVerdict.vue`) | **Yes, split in two.** Decided 2026-11-06: no separate fixed / acknowledged / false-positive tags. "Acknowledged" = Good plus a note. Bad = a false alarm, counted against the rule | decided |
 | Commit hook blocks | Export blocked until findings are tagged | **Probably not.** Blocking an exploratory export is hostile. A stamp on the export ("recital: 2 findings acknowledged") may be the right analogue (Q4) | guess |
 | Weekly judge sweep at `origin/main` | Sweep of untagged findings per project | **Partly.** The judge reviews one codebase; findings here are per project and per claim | guess |
 | Path gate (keeps cost off most commits) | Runs only on claims, not on every plot | **Yes.** About $1 per Opus review is fine per figure | guess |
@@ -111,7 +110,7 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   says which. This links to the parked agent-overnight work.
 - **Q7. What "fixed" means for a claim.** Changing the analysis can be tagged fixed; rewording the
   claim to fit the data can't (that's forking paths again). A reworded claim starts a new round, and
-under Q5 that round raises the bar for every variant.
+  the entry shows every round (Q5); the bar doesn't move.
 - **Q8. Who sees untagged findings.** The weekly judge reads one codebase; these sit in many projects.
   More natural: the project's session briefing (`get_session_briefing`) that Kiwi and Claude Code read.
 - **Q9. What the stamp says when only some stages ran.** It has to list what ran, so a partial
@@ -288,10 +287,14 @@ Each finding is either fixed in the analysis or not.
     - recurring **convention** finding → sharpen the S2 rule or its threshold;
     - recurring **Review inferred** (S4) → a new Check rule. This is how the mechanical layer grows
       (#1958 was the first, by hand).
+- **Outcome, decided 2026-11-06.** Whether a finding is still open comes from re-running the checks
+  on the current record, never from a tag. What the analyst thinks of a finding is the blackboard's
+  Good / Bad / Unsure. A rule marked **Bad** on 3+ claims is sharpened or dropped: that is its
+  false-alarm rate (the v2 flow's extra source).
 - **Open:** who sees findings across all projects for the rule count. The weekly judge reads one
   codebase; these sit in many projects on many machines (Q8).
 
-## GUI (brainstorm, 2026-11-05, not decided)
+## GUI (2026-11-05, v2 mockup 2026-11-06)
 
 Cheap checks run automatically, the expensive one on request, like an IDE: the linter underlines as
 you type, and review is something you ask for. Everything sits on surfaces that already exist.
@@ -303,15 +306,15 @@ you type, and review is something you ask for. Everything sits on surfaces that 
    the plot shows their verdicts through `lib/severity.ts` (colour + icon + label), not bare
    `.cc-dot` state lights. Findings point at the data: a missing image is drawn as a ghost on the
    plot, with a jump to the image, not listed in a side panel.
-3. **"Check claim" runs S3a, S3b and S4 in a fresh context.** The user states the claim, and
+3. **"Review" runs one plain review turn (S4) in a fresh context** (v2; v1 ran S3a, S3b and S4). The user states the claim, and
    Kiwi can help phrase it as a structured claim with refs. The *review* must not see the analyst's
    conversation (the recital's withheld-reasoning rule), so it runs as a separate headless Kiwi turn
    with only the claim and the record. Claims Kiwi makes itself go through the same check. The model
    calls cost about $1 and take about a minute, so it's always the analyst's call. The button shows the fixed
    perturbation set before running.
-4. **Findings live on the blackboard.** The claim is an entry and the findings are sections, tagged
-   with the existing per-section outcomes (`set_blackboard_section_outcome`). Every round stays on
-   the entry.
+4. **Findings live on the blackboard.** The claim is an entry and the findings are sections, with
+   the existing per-section verdicts (`set_blackboard_section_outcome`, Good / Bad / Unsure). Every
+   round stays on the entry.
 5. **Export isn't blocked.** The board's export dropdown shows the claim's state, and the exported
    figure gets a footer stamp linking back to the entry.
 
@@ -363,7 +366,21 @@ these catch most of what matters, they can ship alone (Sonnet's point; P2 below 
 
 **P4. Mechanism.** Reuse recital's design (run rows, markers, outcome tags); spawn through the app's
 agent seam, not recital's. The new parts are a
-claim object (Q2), a record exporter, and the stamp on the export.
+claim object (Q2), a record exporter, and the stamp on the export. Concrete order under *Build*.
+
+## Build (2026-11-06)
+
+One PR each, smallest and most backend first. The frontend steps need Dominik's eyes before merge.
+
+| | What | Where |
+|---|---|---|
+| B1 | This plan + v2 schematics | docs |
+| B2 | **S2 rules:** the claim's unit vs the images/tracks a pooled test would use; n units per group; a unit attribute that doesn't vary inside a group | `app/src/claim_checks.jl`, `qc/text.jl` |
+| B3 | **Route + MCP tool:** run the checks for a scope, read-only | `api/src/routes/`, `mcp/cecelia_mcp/server.py` + `guidance.py` |
+| B4 | **Claim entry:** a blackboard entry with a `claim` meta key holding the scope (the passthrough pattern of `agentRun` / `knowledge`, `_BB_PASSTHROUGH_KEYS`, not a new entry type); checks re-run on read; the session briefing lists claims with open findings | `api/src/blackboard*.jl`, briefing |
+| B5 | **Review turn:** one headless turn shaped like `run_kiwi_turn` (`api/src/kiwi_turn.jl`: read-only tools, headless MCP config, reply schema, ref validation), with only the claim and the record; findings saved as sections marked `inferred` / `recomputed` | `api/src/` |
+| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export | `frontend/src/components/canvas/` |
+
 
 **Paper.** Not in the Nature Protocols paper beyond, at most, the export stamp. If P2 holds, the
 evidence belongs in the perspective piece or its own paper.
