@@ -64,6 +64,25 @@ hpc_write_job_record(path::AbstractString, fingerprint::AbstractString, id::Abst
     write_json_atomic(path, Dict{String,Any}("fingerprint" => fingerprint, "jobId" => id, "jobDir" => dir,
                                              "submittedAt" => iso_utc(Dates.now(UTC))))
 
+# A submit in flight: written BEFORE `hpc_submit`, so a submit that timed out but still reached the
+# scheduler leaves the job's name behind and a rerun can find the job by it (`_hpc_adopt_submitted`)
+# instead of submitting a second one beside it. Replaced by the full record once the id is known.
+hpc_write_submit_record(path::AbstractString, fingerprint::AbstractString, name::AbstractString,
+                        dir::AbstractString) =
+    write_json_atomic(path, Dict{String,Any}("fingerprint" => fingerprint, "jobName" => name, "jobDir" => dir,
+                                             "submittingAt" => iso_utc(Dates.now(UTC))))
+
+"""The submit a run started without learning its job id; `nothing` when there is none for THIS fingerprint."""
+function hpc_read_submit_record(path::AbstractString, fingerprint::AbstractString)
+    isfile(path) || return nothing
+    d = try; JSON3.read(read(path, String), Dict{String,Any}); catch; return nothing; end
+    get(d, "fingerprint", "") == fingerprint || return nothing
+    isempty(string(get(d, "jobId", ""))) || return nothing
+    name, dir = string(get(d, "jobName", "")), string(get(d, "jobDir", ""))
+    (isempty(name) || isempty(dir)) && return nothing
+    (; name, dir)
+end
+
 # ── Cancels that could not reach the cluster ───────────────────────────────────────────────────────
 
 mutable struct _HpcPendingCancel
