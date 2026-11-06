@@ -5,6 +5,18 @@
 `read_acquisition_settings_run.py` — this gate stops a Python spawn for formats it has no reader for."""
 const ACQUISITION_SETTINGS_FORMATS = (".oir",)
 
+"""The settings reader's version (`READER_VERSION` in `python/cecelia/utils/oir_meta.py` — kept in
+step by the "language boundaries agree on their protocol" table, app/test/suite/segmentation.jl). Settings stored by an older reader lack fields the newer one returns, so Refresh metadata
+re-reads them (`_resync_acquisition_settings!`)."""
+const ACQUISITION_READER_VERSION = 2
+
+"""Whether stored settings came from an older reader than this one (no version = the first)."""
+function _acquisition_outdated(acq)::Bool
+    acq isa AbstractDict || return false
+    v = get(acq, "readerVersion", 1)
+    v isa Real && v < ACQUISITION_READER_VERSION
+end
+
 """
     _read_acquisition_settings(src_path, run_dir; on_log) -> (settings, reason)
 
@@ -112,13 +124,25 @@ end
     _resync_acquisition_settings!(zarr_meta, img)
 
 The resync side of `_recover_acquisition_settings!`: images imported before settings were read get them
-from the source file. Skipped when ccid already has them (the read is a scan of the source). A
+from the source file. Skipped when ccid already has them from this reader version (the read is a scan
+of the source); settings from an older reader are re-read and replace the stored ones. A
 registered stack's `ori_path` is only the REFERENCE cycle's file, and an image with no `ori_path` has no
 source: both get their reason instead. Other derived images (projection, Z-crop, resample) are caught by
 the count check.
 """
 function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
-    haskey(img.meta, "acquisition") && return
+    stored = get(img.meta, "acquisition", nothing)
+    if !isnothing(stored)
+        _acquisition_outdated(stored) || return
+        # Re-read into a scratch dict: if the source is gone now, the older settings stay and no
+        # `acquisitionMissing` reason is recorded next to them.
+        src = string(get(img.meta, "ori_path", ""))
+        isempty(src) && return
+        fresh = Dict{String,Any}(k => v for (k, v) in zarr_meta if k in ("SizeC", "SizeZ", "SizeT"))
+        _recover_acquisition_settings!(fresh, src, task_run_dir(img._dir)) &&
+            (zarr_meta["acquisition"] = fresh["acquisition"])
+        return
+    end
     src = string(get(img.meta, "ori_path", ""))
     if haskey(img.meta, "register_reference_uid")
         zarr_meta["acquisitionMissing"] = _acquisition_missing("registered", src)

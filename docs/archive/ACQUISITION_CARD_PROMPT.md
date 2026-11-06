@@ -1,6 +1,6 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
 > time. It is not a description of how the code works now, and not instructions to re-run. Current
-> design lives in [`docs/todo/ACQUISITION_ADVISOR_PLAN.md`](../todo/ACQUISITION_ADVISOR_PLAN.md).
+> design lives in [`docs/todo/ACQUISITION_CARD_PLAN.md`](../todo/ACQUISITION_CARD_PLAN.md).
 >
 > **Outcome:** not run as of archiving (2026-11-06, `origin/main` bd436545). Read against main, three
 > premises had moved:
@@ -15,7 +15,13 @@
 >   `verified` stays false.
 > - **"An add-on, not a new surface" has no slot in the advisor plan.** No phase mentions a card or
 >   printout. The only PDF path is `plots/pdf.ts` (`exportTabsToPdf`, pdf-lib, analysis canvas).
->   `docs/todo/ACQUISITION_CARD_PLAN.md` was never written.
+>   `docs/todo/ACQUISITION_CARD_PLAN.md` did not exist yet.
+>
+> **Built (2026-11-06, P0–P3 of `ACQUISITION_CARD_PLAN.md`):** a "Settings card" in the image metadata
+> dialog, two-photon only, printed through the browser. Changed from this brief: light-path order
+> instead of the scope software's order (no per-scope templates), a This-run column, Cecelia's channel
+> names only, and the reader now also returns emission filters, dichroics and the acquisition date.
+> Rethink when multiplex and confocal images land.
 
 # ACQUISITION_CARD_PROMPT
 

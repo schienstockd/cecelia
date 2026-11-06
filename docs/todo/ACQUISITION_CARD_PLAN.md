@@ -1,6 +1,6 @@
 # Acquisition card — plan
 
-**Status:** **DRAFT** (2026-11-06) — nothing built; layout agreed with the maintainer on a mock (below). Audit done against `origin/main` bd436545 on one
+**Status:** **P0–P3 BUILT** (2026-11-06, branch `acquisition-card`) — P4 (a person re-acquires from a card) open. Layout agreed with the maintainer on a mock (below). Audit done against `origin/main` bd436545 on one
 FV4000 image (zolIMa `20armH`) and one FVMPE-RS source file (TCELL_TYPES 2021-12-01 `z180_0001.oir`,
 read-only). Brief: [`docs/archive/ACQUISITION_CARD_PROMPT.md`](../archive/ACQUISITION_CARD_PROMPT.md).
 Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md); lands Experimental.
@@ -42,9 +42,12 @@ Checked in code and on the two files above. "Stored" = in `meta["acquisition"]` 
 4. **In the file, not parsed:** `base:creationDateTime` (acquisition date — stored nowhere today),
    `fvCommonphase:filterName` per channel (barrier filters: BA410-455, BA495-540, ET585/40M,
    ET720/60M on the FV4000; BA415-485 … BA642-709 on the FVMPE-RS), `firstMirrorTurretIndex` (a
-   dichroic *position*, not a name), microscope body (`BX63LF`). **So "Dichroics and filters not
-   recorded" in the Light path panel (`acquisitionLightPath.ts:147`) is wrong for `.oir`: the emission
-   filters are recorded, the reader drops them.** The dichroic name is not in the file.
+   dichroic *position*), microscope body (`BX63LF`). **So "Dichroics and filters not recorded" in the
+   Light path panel was wrong for `.oir`: the emission filters are recorded, the reader dropped
+   them.** *Correction found while building P0:* the dichroics ARE named too — the phase light path
+   holds the IR laser dichroic (`LCDM690-1050` FV4000, `LCDM690-870` FVMPE-RS) and the frame's mirror
+   cubes (`DM760`, both). What each slot does is our reading of the element names; dichroics between
+   the non-descanned detectors are not in the file.
 5. **`zStack` and `scanner.kalman` are stored but untyped** in `AcquisitionSettings`
    (`frontend/src/utils/acquisitionSettings.ts`). Bright Z `hv` is keyed by channel UUID (FV4000) or
    detector id (FVMPE-RS) — two key schemes for one field.
@@ -107,9 +110,11 @@ D2 and D7 are proposed.
   estimated.
 - **D5 · Bright Z prints its state first,** with on/off tick boxes. FVMPE-RS case: "off — depth points
   stored but not applied".
-- **D6 · HV under Auto HV is not a value.** One merged cell for the detectors: "Auto HV on — file
-  records HV <n> · gain · offset", then "? not the HV that ran; start from Auto HV, then check
-  clipping". Fixed in `lightPathStages()` so the modal says the same.
+- **D6 · HV under Auto HV is not a value.** Under Auto HV the HV column is one merged cell, "Auto HV
+  on: file records HV <n>, maybe not the HV used ?"; otherwise each detector shows its HV. Gain and
+  offset are always per channel, in their own column: merging them hid differing offsets (found by
+  result review; `acquisitionCardGain.test.ts`). Same wording in `lightPathStages()`, so the modal
+  says the same.
 - **D7 · Link back = project + image uid as text** in the header. No QR (no dependency, and no
   Cecelia at the scope PC).
 - **D8 · A "This run" column** down the right of the settings, detectors and target tables. The person
@@ -133,10 +138,10 @@ the `.oir`, i.e. assuming P0):
    project + image uid, printed date. Marker legend under it.
 2. **Settings, in light-path order** — rows numbered by stage: lasers (λ → channels), power, Bright Z
    (state first, ramp, unverified feature line), scanner (type, zoom, dwell), pixel size, objective,
-   dichroic (blank: "turret position <i> — name not in file"), digitisation (integration, bit depth,
+   dichroics (as recorded, per slot), digitisation (integration, bit depth,
    Kalman), stack, time. Columns: setting · marker · last time · **This run**.
-3. **Detectors, per channel** — channel · dye preset · laser · detector · emission filter · merged
-   HV/gain/offset cell (D6) · **This run**.
+3. **Detectors, per channel** — channel · dye preset · laser · detector · emission filter · HV (one
+   merged Auto HV cell, D6) · gain and offset (one column) · **This run**.
 4. **Target — check your first snap against this** — per channel: clipped % of signal · zero floor
    kind (`floor_stats` wording) · brightest 1 % top → bottom · brightest 1 % first → last frame ·
    **Your snap**.
@@ -149,25 +154,26 @@ calibrated" for pixel size, and "21 of 45 planned" for a stopped-early time-laps
 
 ## Phases
 
-- **P0 · Reader gaps.** Add `acquiredAt` (`creationDateTime`), per-channel `emissionFilter`,
-  `dichroicTurretIndex` and `microscopeBody` to `oir_meta.parse_settings`; fixture copied from the real
-  XML. Type `zStack` and `kalman` in `AcquisitionSettings`. Existing images pick it up on Refresh
-  metadata.
-- **P1 · Modal wording** (the card inherits it, D1). In `lightPathStages()`: filters from P0 per
-  channel, dichroic turret position; the D6 HV cell; integration printed as recorded ("None × 2", `?`);
+- **P0 · Reader gaps — BUILT.** `oir_meta.parse_settings` returns `acquiredAt`, `microscopeBody`,
+  per-channel `emissionFilter` (matched by channel id) and `dichroics` (`{slot, name}`, Empty slots
+  left out), with `readerVersion` 2. Refresh metadata re-reads settings from an older reader
+  (`ACQUISITION_READER_VERSION`, kept in step with `oir_meta.READER_VERSION` by a test); with the
+  source gone, the older settings stay. `zStack` / `kalman` typed.
+- **P1 · Modal wording — BUILT** (the card inherits it, D1). In `lightPathStages()`: dichroics and
+  per-channel filters from P0; the D6 HV cell; integration printed as recorded ("None × 2", `?`);
   date, Kalman, bit depth shown. Tests in `acquisitionLightPath.test.ts`, extending its real fixture.
   D10: the request action on the not-two-photon notice, and the request URL carrying system and what
   is missing (vitest for both).
-- **P2 · Card content.** `acquisitionCard.ts` regrouping P1's stages + the data path. Tests: golden
+- **P2 · Card content — BUILT.** `acquisitionCard.ts` regrouping P1's stages + the data path. Tests: golden
   content from the `20armH` fixture; missing values (no `acquisition`, no `profile`) print as missing;
   unverified flags survive; Bright Z off; non-two-photon image → no card.
-- **P3 · Print view.** "Settings card" button in the dialog's Acquisition section (two-photon only) →
+- **P3 · Print view — BUILT.** "Settings card" button in the dialog's Acquisition section (two-photon only) →
   print component, Experimental badge; where there is no card, the D10 request action. PDF of `20armH` for the maintainer's eyes before merge.
 - **P4 · Evaluation.** One person re-acquires one image from a printed card, ideally on the FVMPE-RS,
   and fills the This-run columns. Check the new image's clipped % and depth/time p99 change against
   the target block; log what was unclear from the card's own field. Needs facility time.
 
-P0–P3 can run now; P4 waits for a scope session.
+P4 waits for a scope session.
 
 ## Open questions
 
@@ -179,5 +185,6 @@ For the maintainer:
 For facility staff (do not guess):
 - FVMPE-RS: integration "None, count 2" — what ran? HV 550 under Auto HV — the value used, or a
   leftover?
-- Is the dichroic fixed per filter cube, so the turret position is enough?
+- Which recorded dichroic slots matter for re-acquiring (laser combiner, frame cube), and are the
+  detector-unit dichroics fixed per scope?
 - Which fields people actually set by hand, so the card can stay one page.

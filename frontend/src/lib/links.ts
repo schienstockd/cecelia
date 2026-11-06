@@ -10,6 +10,8 @@
 // that ASKS GitHub something (the update check reads the releases API); this module only says where
 // things are.
 
+import type { MicroscopeRequest } from '../utils/acquisitionSettings'
+
 export const CECELIA_REPO_URL = 'https://github.com/schienstockd/cecelia'
 
 /** The issues LIST — "here is where problems get reported", for a browse-first entry point. */
@@ -58,13 +60,15 @@ export function formatSupportRequestUrl(exts: string[]): string {
   return `${CECELIA_REPO_URL}/issues/new?${q}`
 }
 
-/** A "read acquisition settings from my microscope's files" request, prefilled with the extension.
- *  The ask is a sample file: a reader is written and tested against a real one. */
-export function acquisitionSupportRequestUrl(ext: string): string {
-  const q = new URLSearchParams({
-    template: 'feature_request.yml',
-    title:    `Acquisition settings: support ${ext} files (microscope: …)`,
-  })
+/** A "support my microscope" request: a settings reader for a file type (the ask is a sample file —
+ *  a reader is written and tested against a real one), or the diagram and settings card for a
+ *  microscope whose settings are read but which is not two-photon, prefilled with what the file names. */
+export function acquisitionSupportRequestUrl(req: MicroscopeRequest): string {
+  const title = req.what === 'settings'
+    ? `Acquisition settings: support ${req.ext} files (microscope: …)`
+    : `Light-path diagram and settings card: support ${
+        [req.system, req.softwareVersion && `software ${req.softwareVersion}`].filter(Boolean).join(' · ') || '…'}`
+  const q = new URLSearchParams({ template: 'feature_request.yml', title })
   return `${CECELIA_REPO_URL}/issues/new?${q}`
 }
 

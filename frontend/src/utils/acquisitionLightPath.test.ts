@@ -41,12 +41,22 @@ describe('lightPathStages — real FV4000 two-photon stack', () => {
     expect(texts(real, 'stack')[1]).toMatch(/^3 frames · every /)
   })
 
-  it('says what the file does not record instead of leaving a stage blank', () => {
-    expect(stage(real, 'filters').items).toEqual([{ text: 'Dichroics and filters not recorded', source: 'missing' }])
+  it('names the dichroics and each channel’s emission filter from the file', () => {
+    expect(texts(real, 'filters')).toEqual([
+      'excitation DM: MIRROR', 'IR laser DM: LCDM690-1050', 'mirror cube 1: DM760', 'mirror cube 2: MIRROR',
+      'SHG BA410-455', 'nuc-GFP BA495-540', 'mem-TOM ET585/40M', 'CD169-Kat ET720/60M',
+    ])
+    expect(stage(real, 'filters').items.every(i => i.source === 'file')).toBe(true)
   })
 
-  it('lists no clipping when nothing clipped', () => {
-    expect(texts(real, 'digitisation')).toEqual(['frame ×2 · sum'])
+  it('does not list HV 0 as a detector setting under Auto HV', () => {
+    const det = texts(real, 'detectors')
+    expect(det[0]).toBe('SHG · SHG · BNDD1 · gain 1 · offset 0')
+    expect(det.at(-1)).toBe('Auto HV on: file records HV 0, maybe not the HV used')
+  })
+
+  it('lists integration, Kalman and bit depth, and no clipping when nothing clipped', () => {
+    expect(texts(real, 'digitisation')).toEqual(['frame ×2 · sum', 'Kalman · average 5 · accumulate 2', '16 bit'])
   })
 })
 
@@ -54,6 +64,25 @@ describe('lightPathStages — what is not there', () => {
   it('says power with depth is unknown when the file has no Bright Z block', () => {
     expect(stage({ acquisition: { lasers: [] } }, 'power').items).toEqual(
       [{ text: 'Power with depth not recorded', source: 'missing' }])
+  })
+
+  it('says what the file does not record instead of leaving a stage blank', () => {
+    expect(stage({ acquisition: {} }, 'filters').items).toEqual([{ text: 'Dichroics and filters not recorded', source: 'missing' }])
+    const chans = real.acquisition!.channels!.map((c, i) => (i === 0 ? { ...c, emissionFilter: null } : c))
+    expect(stage({ ...real, acquisition: { ...real.acquisition, channels: chans } }, 'filters').items)
+      .toContainEqual({ text: 'SHG filter not recorded', source: 'missing', channel: 1 })
+  })
+
+  it('keeps per-detector HV when Auto HV is off', () => {
+    const chans = real.acquisition!.channels!.map(c => ({ ...c, hv: 600 }))
+    const det = texts({ ...real, acquisition: { ...real.acquisition, autoHV: false, channels: chans } }, 'detectors')
+    expect(det[0]).toBe('SHG · SHG · BNDD1 · HV 600 · gain 1 · offset 0')
+    expect(det.at(-1)).toBe('Auto HV off')
+  })
+
+  it('prints "None" integration with the count the file records instead of picking one', () => {
+    const img: LightPathImage = { acquisition: { scanner: { integration: { type: 'None', count: 2, average: null } } } }
+    expect(texts(img, 'digitisation')).toEqual(['No integration · count 2 recorded'])
   })
 
   it('says Bright Z off means the same power at every depth', () => {

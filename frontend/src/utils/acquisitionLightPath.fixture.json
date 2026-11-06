@@ -1,9 +1,12 @@
 {
- "_source": "Real output: oir_meta.acquisition_settings on zolIMa 20armH (FV4000 3.2.1) and data_path.measure_store on its default store, through the img_cleanup_facts shape; byT trimmed to the first 3 of 181 frames.",
+ "_source": "Real output: oir_meta.acquisition_settings on zolIMa 20armH (FV4000 3.2.1; reader version 2, regenerated from test-data/acquisition/oir_fv4000_3.2.1_imageProperties.xml) and data_path.measure_store on its default store, through the img_cleanup_facts shape; byT trimmed to the first 3 of 181 frames.",
  "acquisition": {
   "source": "oir",
+  "readerVersion": 2,
   "system": "FV4000",
   "softwareVersion": "3.2.1.85",
+  "acquiredAt": "2026-07-16T13:44:05.228+10:00",
+  "microscopeBody": "BX63LF",
   "objective": {
    "name": "XLPLN25XWM",
    "magnification": 25.0,
@@ -83,7 +86,8 @@
     "bitDepth": 16.0,
     "hv": 0.0,
     "gain": 1.0,
-    "offset": 0.0
+    "offset": 0.0,
+    "emissionFilter": "BA410-455"
    },
    {
     "order": 2,
@@ -95,7 +99,8 @@
     "bitDepth": 16.0,
     "hv": 0.0,
     "gain": 1.0,
-    "offset": 0.0
+    "offset": 0.0,
+    "emissionFilter": "BA495-540"
    },
    {
     "order": 3,
@@ -107,7 +112,8 @@
     "bitDepth": 16.0,
     "hv": 0.0,
     "gain": 1.0,
-    "offset": 0.0
+    "offset": 0.0,
+    "emissionFilter": "ET585/40M"
    },
    {
     "order": 4,
@@ -119,7 +125,26 @@
     "bitDepth": 16.0,
     "hv": 0.0,
     "gain": 1.0,
-    "offset": 0.0
+    "offset": 0.0,
+    "emissionFilter": "ET720/60M"
+   }
+  ],
+  "dichroics": [
+   {
+    "slot": "excitationDM",
+    "name": "MIRROR"
+   },
+   {
+    "slot": "irLaserDichroic",
+    "name": "LCDM690-1050"
+   },
+   {
+    "slot": "firstMirrorCube",
+    "name": "DM760"
+   },
+   {
+    "slot": "secondMirrorCube",
+    "name": "MIRROR"
    }
   ],
   "phaseCount": 1,

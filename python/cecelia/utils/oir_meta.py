@@ -5,7 +5,7 @@ An `.oir` is a block container. Its settings are one embedded XML document,
 model and part into the unstructured original-metadata table, and drops the rest. Measured on an
 FV4000 (3.2.1) and an FVMPE-RS (2.3.2) file, the dropped part includes what matters most for
 two-photon acquisition QC: the Bright Z depth/power ramp and whether it was on, pixel dwell and line
-time, auto HV, and the per-channel laser and detector assignment. This reads the document directly,
+time, auto HV, the per-channel laser, detector and emission filter, and the dichroics in the path. This reads the document directly,
 the same way `ims_meta` recovers Imaris timing.
 
 Values are reported as recorded, with units in the key names. Two readings are ours, not Evident's,
@@ -16,6 +16,12 @@ Fixtures: `test-data/acquisition/oir_*_imageProperties.xml`, cut from real files
 """
 import re
 import xml.etree.ElementTree as ET  # vendor .oir XML, not OME-XML: test_zarr_access_convention _BASELINE
+
+#: Bumped when the reader starts returning a field it did not before, so Refresh metadata re-reads
+#: settings stored by an older reader (`ACQUISITION_READER_VERSION` in
+#: app/src/tasks/importImages/omezarr/acquisition.jl must match — asserted in app/test/suite/segmentation.jl
+#: → "language boundaries agree on their protocol"). 2: date, body, filters, dichroics.
+READER_VERSION = 2
 
 #: The settings document's root element, as it appears in the raw bytes.
 _ROOT_TAG = b'lsmimage:imageProperties'
@@ -106,8 +112,43 @@ def _lasers(acq, phase, root):
     return lasers
 
 
-def _channels(acq, phase, lasers):
+def _emission_filters(root, phase):
+    """channel id -> barrier (emission) filter name, from the image-info block of the same phase."""
+    out = {}
+    for info in root.findall('imageInfo/phase'):
+        if info.get('id') not in (None, phase.get('id')):
+            continue
+        for ch in info.findall('group/channel'):
+            name = _text(ch, 'productData/filterName')
+            if name:
+                out[ch.get('id')] = name
+    return out
+
+
+#: Light-path slots that hold a dichroic or mirror cube, as the vendor names them. Which slot does
+#: what (laser combiner, frame cube) is our reading of the element names, so the slot is kept as-is
+#: and the GUI labels it.
+_DICHROIC_SLOTS = (
+    ('excitationDM', 'productData/lightpath/excitationDM/name'),
+    ('dmSlider', 'productData/lightpath/dmSlider/name'),
+    ('irLaserDichroic', 'productData/lightpath/irLaserLightpath/dichroicMirror/name'),
+)
+_CUBE_SLOTS = (('firstMirrorCube', 'firstMirrorCube/name'), ('secondMirrorCube', 'secondMirrorCube/name'))
+
+
+def _dichroics(acq, phase):
+    """Named dichroics / mirror cubes in the light path of this phase and the microscope frame, in
+    file order. An `Empty` slot is left out: nothing is in the path there."""
+    found = [(slot, _text(phase, path)) for slot, path in _DICHROIC_SLOTS]
+    frame = acq.find('.//lsmMicroscopePhase/lightpath')
+    if frame is not None:
+        found += [(slot, _text(frame, path)) for slot, path in _CUBE_SLOTS]
+    return [{'slot': slot, 'name': name} for slot, name in found if name and name.lower() != 'empty']
+
+
+def _channels(acq, phase, lasers, filters=None):
     """Enabled channels of this phase in acquisition order, each with its laser and detector settings."""
+    filters = filters or {}
     # Keyed by CHANNEL: two channels can share a detector (sequential groups), each with its own HV.
     # A `<pmt>` without a channelId (seen on bright-Z points of older files) falls back to the detector.
     pmts = {(p.get('channelId') or p.get('detectorId')): p for p in acq.findall('imagingParam/pmt')}
@@ -127,6 +168,7 @@ def _channels(acq, phase, lasers):
             'hv': _num(_text(det, 'voltage')),
             'gain': _num(_text(det, 'gain')),
             'offset': _num(_text(det, 'offset')),
+            'emissionFilter': filters.get(ch.get('id')),
         })
     return sorted(out, key=lambda c: c['order'])
 
@@ -236,15 +278,20 @@ def parse_settings(xml_bytes):
     lasers = _lasers(acq, phase, root)
     return {
         'source': 'oir',
+        'readerVersion': READER_VERSION,
         'system': _text(root, 'system/systemName'),
         'softwareVersion': _text(root, 'system/systemVersion'),
+        # As recorded, ISO 8601 with the scope PC's UTC offset.
+        'acquiredAt': _text(root, 'general/creationDateTime'),
+        'microscopeBody': _text(root, 'microscope/name'),
         'objective': _objective(acq),
         'lasers': [dict(v) for v in lasers.values()],
         'brightZ': _bright_z(acq, phase, lasers),
         'scanner': _scanner(acq),
         'autoHV': _bool(acq, 'imagingParam/pmtCommon/autoHV'),
         'pinholeUm': _num(_text(phase, 'productData/lightpath/pinholeDiameter')),
-        'channels': _channels(acq, phase, lasers),
+        'channels': _channels(acq, phase, lasers, _emission_filters(root, phase)),
+        'dichroics': _dichroics(acq, phase),
         # Only the first phase is read. A multi-phase (sequential) acquisition says so here rather
         # than having its phases' channels and ramps merged into one.
         'phaseCount': len(phases),
