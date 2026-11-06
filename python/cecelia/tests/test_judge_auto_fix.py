@@ -8,6 +8,8 @@ import json
 import pathlib
 import shutil
 import subprocess
+import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -491,6 +493,22 @@ class FenceTest(_AutoFixture):
             env = self.af.agent_sandbox.agent_env()
         self.assertFalse({"GH_TOKEN", "GITHUB_TOKEN", "DBUS_SESSION_BUS_ADDRESS"} & env.keys())
 
+    def test_the_sessions_commit_hook_leaves_the_exec_surface_as_it_was(self):
+        """The session's PreToolUse hook (`check_commit_recital.py`) loads `claude_attribution.py`; run
+        with the agent's env, it must not write a `__pycache__` the fence then reads as the agent's."""
+        tree = pathlib.Path(self.enterContext(tempfile.TemporaryDirectory()))
+        shutil.copytree(_REPO / ".claude" / "hooks", tree / ".claude" / "hooks",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        before = self.af.snapshot(tree)
+        with mock.patch.dict(self.af.os.environ, {}, clear=False) as env:
+            env.pop("PYTHONDONTWRITEBYTECODE", None)
+            agent = self.af.agent_sandbox.agent_env()
+        subprocess.run([sys.executable, str(tree / ".claude" / "hooks" / "check_commit_recital.py")],
+                       input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "git commit -m x"}}),
+                       cwd=str(tree), env={**agent, "CLAUDE_PROJECT_DIR": str(tree)}, capture_output=True,
+                       text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(self.af.snapshot(tree), before)
+
     def test_protected_paths(self):
         for p in (".github/workflows/ci.yml", ".githooks/commit-msg", ".claude/settings.json", "pixi.toml",
                   "app/CLAUDE.md", "scripts/judge/auto_fix.py", "scripts/judge/deps_fix.py"):
@@ -923,3 +941,99 @@ class WorkTest(_AutoFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResumeTest(_AutoFixture):
+    """`--auto --resume-stopped`: a fix stopped at the first fence goes on from its worktree."""
+
+    def git_tree(self):
+        """A real repo at `self.main` and its worktree `cecelia-fix-fanout-b1` on `fix-fanout-b1`, with
+        uncommitted work and the bytecode cache a session's hook leaves under `.claude/hooks/`."""
+        run = lambda *a, cwd=self.main: subprocess.run(["git", *a], cwd=str(cwd), check=True,   # noqa: E731
+                                                       capture_output=True, text=True, encoding="utf-8")
+        run("init", "-q", "-b", "main")
+        (self.main / ".claude" / "hooks").mkdir(parents=True)
+        (self.main / ".claude" / "hooks" / "check.py").write_text("x = 1\n", encoding="utf-8")
+        (self.main / ".gitignore").write_text("**/__pycache__/\n", encoding="utf-8")
+        (self.main / "a.py").write_text("a = 1\n", encoding="utf-8")
+        run("add", "-A")
+        run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+        run("update-ref", "refs/remotes/origin/main", "HEAD")
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        run("worktree", "add", "-q", "-b", "fix-fanout-b1", str(tree), "HEAD")
+        (tree / "a.py").write_text("a = 2\n", encoding="utf-8")
+        (tree / ".claude" / "hooks" / "__pycache__").mkdir()
+        (tree / ".claude" / "hooks" / "__pycache__" / "check.cpython-312.pyc").write_bytes(b"\x00")
+        return tree
+
+    def test_a_tree_with_only_bytecode_caches_on_its_surface_resumes(self):
+        tree = self.git_tree()
+        cache, other = self.af.surface_strays(tree, self.af.default_sh)
+        self.assertEqual((cache, other), ([".claude/hooks/__pycache__/check.cpython-312.pyc"], []))
+        self.assertIsNone(self.af.resume_problem(tree, "fix-fanout-b1", self.main, self.af.default_sh))
+
+    def test_anything_else_on_the_surface_refuses_the_tree(self):
+        tree = self.git_tree()
+        for path, text in ((".claude/settings.local.json", "{}"), (".claude/hooks/check.py", "x = 2\n"),
+                           (".claude/hooks/__pycache__/evil.py", "")):
+            with self.subTest(path=path):
+                before = (tree / path).read_text(encoding="utf-8") if (tree / path).exists() else None
+                (tree / path).write_text(text, encoding="utf-8")
+                why = self.af.resume_problem(tree, "fix-fanout-b1", self.main, self.af.default_sh)
+                self.assertIn(path, why or "")
+                if before is None:
+                    (tree / path).unlink()
+                else:
+                    (tree / path).write_text(before, encoding="utf-8")
+        self.assertIn("isn't on branch", self.af.resume_problem(tree, "fix-other", self.main, self.af.default_sh))
+
+    def test_resumable_takes_a_stopped_bundle_by_its_rows_and_worktree(self):
+        bugs = self.record["bugs"]
+        row = lambda b, ts, **kw: {"ts": ts, "record": self.record["date"], "ref": b["id"], "key": b["key"],   # noqa: E731
+                                   "outcome": "left", "reason": "Stopped before the PR: …", "pr_url": "", **kw}
+        with self.auto.open("w", encoding="utf-8") as fh:
+            for r in (row(bugs[0], "2026-11-05T08:00:00Z"), row(bugs[1], "2026-11-05T08:00:00Z"),
+                      row(bugs[2], "2026-11-05T09:00:00Z", tree="/x")):   # handed to [f]: not resumed
+                fh.write(json.dumps(r) + "\n")
+        tree = self.main.parent / "cecelia-fix-bundle-fanout-b1"
+        self.assertEqual(self.af.resumable(self.record, self.main, self.auto), [])   # no worktree: nothing
+        tree.mkdir()
+        self.assertEqual(self.af.resumable(self.record, self.main, self.auto), [(bugs[:2], tree)])
+        for b in bugs[:2]:   # a resume logs the whole bundle, `resumed`: not taken again
+            self.rv.append_auto(row(b, "2026-11-05T10:00:00Z", resumed=True), self.auto)
+        self.assertEqual(self.af.resumable(self.record, self.main, self.auto), [])
+
+    def resume(self, *answers):
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        tree.mkdir(exist_ok=True)
+        out = io.StringIO()
+        with mock.patch.object(self.af, "resume_problem", return_value=None), \
+                mock.patch.object(self.af, "surface_strays", return_value=([], [])):
+            spent = self.af.resume_one(self.record, [self.record["bugs"][0]], tree, main=self.main, out=out,
+                                       session=self.session(*answers), sh=self.sh(), path=self.log,
+                                       auto_log=self.auto)
+        return tree, spent, out.getvalue()
+
+    def test_a_resume_recaps_the_fix_then_ships_it_in_the_same_worktree(self):
+        recap = {**_answer(), "bugs": [{"key": "B1", "outcome": "fixed", "reason": "because"}]}   # by its id
+        _, spent, out = self.resume(recap, {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        self.assertIn("That brief was worked already", self.prompts[0][0])
+        self.assertEqual(self.prompts[1][1], "sid-1")   # tagging goes on from the recap
+        self.assertFalse(any(c[:3] == ["pixi", "run", "bootstrap-worktree"] for c in self.calls))
+        self.assertIn("fanout-b1", self.messages[0])
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row.get("resumed")), ("fixed", True))
+        self.assertIn("→ PR https://github.com/o/r/pull/9", out)
+
+    def test_a_failed_recap_keeps_the_fix_for_f(self):
+        tree, _, out = self.resume(None)
+        self.assertFalse(any(c[0] == "remove_worktree" for c in self.calls))
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["tree"], row.get("resumed")), ("left", str(tree), True))
+        self.assertIn("the recap failed", row["reason"])
+        self.assertIn("[f] there opens a session", out)
+
+    def test_an_answer_keyed_by_bug_id_counts_for_that_bug(self):
+        self.work({**_answer(), "bugs": [{"key": "B1", "outcome": "fixed", "reason": "because"}]},
+                  {"tags": []})
+        self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "fixed")

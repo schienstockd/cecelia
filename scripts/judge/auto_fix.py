@@ -582,18 +582,27 @@ def _fixed_keys(answer: dict) -> set[str]:
     return {r["key"] for r in answer.get("bugs", []) if r.get("outcome") == "fixed"}
 
 
+def _keyed(answer: dict, bugs: _t.Sequence[dict]) -> dict:
+    """`answer` with each row under its bug's key: a session that reported a bug by its id (`B134`, as the
+    brief's headings show it) meant that bug, not an unreported one."""
+    ids = {b["id"]: b["key"] for b in bugs}
+    return {**answer, "bugs": [{**r, "key": ids.get(r.get("key"), r.get("key"))} for r in answer.get("bugs", [])]}
+
+
 #: Where `_one_session` puts the session's model ids on its answer; not a schema field.
 MODELS_KEY = "_models"
 
 
 def _log(record: dict, bugs: _t.Sequence[dict], answer: dict, pr: str, auto_log: pathlib.Path | None,
-         *, stopped: str | None = None, tree: pathlib.Path | None = None, stage: str = "staged") -> None:
+         *, stopped: str | None = None, tree: pathlib.Path | None = None, stage: str = "staged",
+         mark: dict | None = None) -> None:
     """One `auto_fix.jsonl` row per bug. `stopped`: why the script stopped short of a green PR, its work
     in `tree` (`stage`: how far it got; `pr`, once opened); a fixed bug is then `left`, and every row
-    names `tree` (`[f]` picks the work up there)."""
-    said = {r.get("key"): r for r in answer.get("bugs", [])}
+    names `tree` (`[f]` picks the work up there). `mark`: fields every row carries (`resumed`)."""
+    said = {r.get("key"): r for r in _keyed(answer, bugs).get("bugs", [])}
     for b in bugs:
-        r = said.get(b["key"]) or {"outcome": "left", "reason": "the session didn't report it"}
+        r = said.get(b["key"]) or {"outcome": "left", "reason": (f"Stopped before the PR: {stopped}." if stopped
+                                                                 else "the session didn't report it")}
         outcome = r.get("outcome") if r.get("outcome") in OUTCOMES else "left"
         reason = r.get("reason") or ""
         if outcome == "fixed" and stopped:
@@ -603,16 +612,17 @@ def _log(record: dict, bugs: _t.Sequence[dict], answer: dict, pr: str, auto_log:
                          "reason": reason, "pr_url": pr if outcome == "fixed" or stopped else "",
                          **({"models": answer[MODELS_KEY]} if answer.get(MODELS_KEY) else {}),
                          **({"tree": str(tree), "stage": stage if stage in STAGES else "staged"}
-                            if stopped and tree else {})}, auto_log)
+                            if stopped and tree else {}), **(mark or {})}, auto_log)
 
 
-def _log_failed(record: dict, bugs: _t.Sequence[dict], why: str, auto_log: pathlib.Path | None) -> None:
+def _log_failed(record: dict, bugs: _t.Sequence[dict], why: str, auto_log: pathlib.Path | None,
+                mark: dict | None = None) -> None:
     tried = _rv.read_auto(auto_log)
     for b in bugs:
         last = tried.get(b["key"]) or {}
         attempt = last.get("attempt", 1) + 1 if last.get("outcome") == "failed" else 1
         _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": "failed",
-                         "reason": why, "attempt": attempt, "pr_url": ""}, auto_log)
+                         "reason": why, "attempt": attempt, "pr_url": "", **(mark or {})}, auto_log)
 
 
 def guard(tree: pathlib.Path, before: dict[str, str], hooks: pathlib.Path,
@@ -722,6 +732,15 @@ def followup_message(subject: str, summary: str, pr: str, tags: _t.Sequence[str]
                       *attribution_trailers(stamp or {})]) + "\n"
 
 
+def _ours(tree: pathlib.Path, main: pathlib.Path) -> bool:
+    """`tree`'s `.git` pointer is a worktree of `main`'s repo, and that worktree points back at it."""
+    pointer = tree / ".git"
+    text = pointer.read_text(encoding="utf-8", errors="replace").strip() if pointer.is_file() else ""
+    gitdir = pathlib.Path(text.removeprefix("gitdir: ")) if text.startswith("gitdir: ") else None
+    return bool(gitdir and gitdir.parent == main / ".git" / "worktrees" and (gitdir / "gitdir").is_file()
+                and (gitdir / "gitdir").read_text(encoding="utf-8").strip() == str(pointer))
+
+
 def adopt(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str, *, main: pathlib.Path,
           say: _t.Callable, sh: _t.Callable, auto_log: pathlib.Path | None) -> bool:
     """The bundle's worktree is there already with no `auto_fix.jsonl` row: an earlier run died mid-way
@@ -729,11 +748,7 @@ def adopt(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str
     Without a baseline its `EXEC_SURFACE` can't be checked, so `[f]` gets it only when its `.git`
     pointer is this repo's and nothing it changed is `PROTECTED`. Holding no work, it is removed and
     the bundle is run afresh; False."""
-    pointer = tree / ".git"
-    text = pointer.read_text(encoding="utf-8", errors="replace").strip() if pointer.is_file() else ""
-    gitdir = pathlib.Path(text.removeprefix("gitdir: ")) if text.startswith("gitdir: ") else None
-    ours = bool(gitdir and gitdir.parent == main / ".git" / "worktrees" and (gitdir / "gitdir").is_file()
-                and (gitdir / "gitdir").read_text(encoding="utf-8").strip() == str(pointer))
+    ours = _ours(tree, main)
     plain = git(pathlib.Path(os.devnull))   # read-only git that runs none of the worktree's hooks
     lines = lambda *a: [f for f in (sh([*plain, *a], tree).stdout or "").split("\n") if f]   # noqa: E731
     changed = lines("diff", "--name-only", "HEAD") + lines("ls-files", "--others", "--exclude-standard") if ours else []
@@ -799,6 +814,7 @@ class Job(_t.NamedTuple):
     handback: _t.Callable[[bool], str]
     on_green: _t.Callable[[dict, str], None] = lambda answer, pr: None
     tool: str = "judge-review --auto"
+    normalise: _t.Callable[[dict], dict] = lambda answer: answer   # the fix answer, as the rest reads it
 
 
 def sayer(out: _t.TextIO) -> _t.Callable[..., None]:
@@ -812,8 +828,9 @@ def sayer(out: _t.TextIO) -> _t.Callable[..., None]:
 
 
 def bug_job(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str, *,
-            path: pathlib.Path | None, auto_log: pathlib.Path | None) -> Job:
-    """A judge bundle as a `Job`: its outcomes go to `auto_fix.jsonl`, and back to the `[f]` queue."""
+            path: pathlib.Path | None, auto_log: pathlib.Path | None, mark: dict | None = None) -> Job:
+    """A judge bundle as a `Job`: its outcomes go to `auto_fix.jsonl` (each row with `mark`), and back to
+    the `[f]` queue."""
     def handback(trusted: bool) -> str:
         queued = ", ".join(b["id"] + " " + b["key"] for b in bugs)
         return (f"back in your judge-review queue: {queued} · "
@@ -825,11 +842,16 @@ def bug_job(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: s
             if b["key"] in _fixed_keys(answer):
                 _rv.append_review("bug_work", record["date"], b["id"], "fix_session", note=f"auto PR {pr}", path=path)
     return Job(brief=fix_brief(record, bugs, tree, branch),
-               log=lambda answer, pr, **kw: _log(record, bugs, answer, pr, auto_log, **kw),
-               log_failed=lambda why: _log_failed(record, bugs, why, auto_log),
+               log=lambda answer, pr, **kw: _log(record, bugs, answer, pr, auto_log, mark=mark, **kw),
+               log_failed=lambda why: _log_failed(record, bugs, why, auto_log, mark),
                commit_message=lambda answer, tags, recital, stamp: commit_message(record, bugs, answer, tags, recital, stamp),
                pr_body=lambda answer, stamp: pr_body(record, bugs, answer, stamp),
-               handback=handback, on_green=on_green)
+               handback=handback, on_green=on_green, normalise=lambda answer: _keyed(answer, bugs))
+
+
+def worktree_name(bugs: _t.Sequence[dict]) -> str:
+    """A bundle's branch, and its worktree's name after `cecelia-`: `fix-<key>`, or `fix-bundle-<first key>`."""
+    return ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
 
 
 def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: _t.TextIO,
@@ -837,7 +859,7 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
              path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float | None:
     """One bundle through to a PR. Returns what its sessions spent; None when it ran none (`adopt`,
     `orphan_branch`)."""
-    name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
+    name = worktree_name(bugs)
     branch = name
     tree = main.parent / f"cecelia-{name}"
     say = sayer(out)
@@ -847,6 +869,111 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
         return None
     return run_job(bug_job(record, bugs, tree, branch, path=path, auto_log=auto_log), tree, branch,
                    main=main, out=out, say=say, session=session, sh=sh)
+
+
+def _changes(tree: pathlib.Path, sh: _t.Callable) -> str:
+    """The worktree's uncommitted work as text: its status and its diff from HEAD."""
+    plain = git(pathlib.Path(os.devnull))
+    return "\n".join(sh([*plain, *a], tree).stdout or "" for a in
+                     (("status", "--porcelain", "--untracked-files=all"), ("diff", "HEAD")))
+
+
+def surface_strays(tree: pathlib.Path, sh: _t.Callable) -> tuple[list[str], list[str]]:
+    """What `tree` holds under `EXEC_SURFACE` that its HEAD doesn't, ignored files included, as (bytecode
+    caches, everything else). A cache is Python's own write; anything else is a change to what runs
+    outside the sandbox."""
+    plain = git(pathlib.Path(os.devnull))
+    surface = [n for n in EXEC_SURFACE if n != ".git"]   # the pointer: `_ours`
+    lines = lambda *a: [f for f in (sh([*plain, *a], tree).stdout or "").split("\n") if f]   # noqa: E731
+    found = list(dict.fromkeys(lines("diff", "--name-only", "HEAD", "--", *surface)
+                               + lines("ls-files", "--others", "--", *surface)))
+    cache = [f for f in found if "/__pycache__/" in f"/{f}" and f.endswith(".pyc")]
+    return cache, [f for f in found if f not in cache]
+
+
+def resume_problem(tree: pathlib.Path, branch: str, main: pathlib.Path, sh: _t.Callable) -> str | None:
+    """Why `tree` can't be resumed; None when it can: this repo's worktree, on `branch` with no commits of
+    its own, holding uncommitted work, and nothing under `EXEC_SURFACE` but bytecode caches."""
+    if not _ours(tree, main):
+        return "its .git pointer isn't this repo's worktree"
+    plain = git(pathlib.Path(os.devnull))
+    if (sh([*plain, "rev-parse", "--abbrev-ref", "HEAD"], tree).stdout or "").strip() != branch:
+        return f"it isn't on branch {branch}"
+    ahead = (sh([*plain, "rev-list", "--count", "origin/main..HEAD"], tree).stdout or "").strip()
+    if ahead != "0":
+        return "it has commits of its own"
+    _, other = surface_strays(tree, sh)
+    if other:
+        return f"it changed {', '.join(other[:5])}, which run outside its sandbox"
+    if not (sh([*plain, "status", "--porcelain"], tree).stdout or "").strip():
+        return "it holds no changes"
+    return None
+
+
+def resumable(record: dict, main: pathlib.Path, auto_log: pathlib.Path | None = None
+              ) -> list[tuple[list[dict], pathlib.Path]]:
+    """The bundles of `record` whose fix stopped before recital with its work still in the worktree: no
+    `tree` on their rows (stops that can go on in it say so, for `[f]`), none `resumed` already, one
+    `left` at least, and the worktree there. A bundle is the rows one `_log` call wrote (one `ts`);
+    its worktree, `cecelia-fix-<key>` or `cecelia-fix-bundle-<key>` of one of them (the bundle's first
+    bug, as `work_one` named it)."""
+    by_key = {b["key"]: b for b in record.get("bugs", [])}
+    groups: dict[str, list[dict]] = {}
+    for key, row in _rv.read_auto(auto_log).items():
+        if row.get("record") == record["date"] and key in by_key:
+            groups.setdefault(row["ts"], []).append(row)
+    order = {b["key"]: i for i, b in enumerate(record.get("bugs", []))}
+    out = []
+    for _, rows in sorted(groups.items()):
+        if any(r.get("tree") or r.get("resumed") for r in rows) or all(r["outcome"] != "left" for r in rows):
+            continue
+        keys = sorted((r["key"] for r in rows), key=order.__getitem__)
+        # the bundle's first bug isn't known from its rows: `worktree_name` of each, alone and as a head
+        trees = [t for k in keys for t in (main.parent / f"cecelia-{worktree_name([by_key[k]])}",
+                                           main.parent / f"cecelia-{worktree_name([by_key[k]] * 2)}") if t.is_dir()]
+        if trees:
+            out.append(([by_key[k] for k in keys], trees[0]))
+    return out
+
+
+def resume_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str) -> str:
+    return (fix_brief(record, bugs, tree, branch) + "\n\n---\n\n"
+            "That brief was worked already: an earlier session made its changes in this worktree, and they "
+            "are still here, uncommitted (`git status`, `git diff HEAD`), but its report was lost. Don't "
+            "change any file. Read the changes, run the matching tests if you need to, and report what "
+            "that session would have: per key, `fixed` only where the changes fix it and carry its test, "
+            "otherwise `left` or `not_real` with why; then `title`, `summary` and `visual` as above.")
+
+
+def resume_one(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, *, main: pathlib.Path,
+               out: _t.TextIO, session: _t.Callable = default_session, sh: _t.Callable = default_sh,
+               path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float | None:
+    """A `resumable` bundle on from its fix: its bytecode caches deleted, a recap session for the report
+    the fix session never gave, then recital, commit and PR as `_work` does them. None, with the tree
+    left as it is, when `resume_problem` finds one."""
+    branch, say = tree.name.removeprefix("cecelia-"), sayer(out)
+    why = resume_problem(tree, branch, main, sh)
+    if why:
+        for b in bugs:
+            _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": "left",
+                             "reason": f"Not resumed: {why}; its work is in {tree.name}.", "pr_url": "",
+                             "resumed": True}, auto_log)
+        say(f"not resumed: {why}", bad=True)
+        say(f"back in your judge-review queue: {', '.join(b['id'] + ' ' + b['key'] for b in bugs)} · "
+            f"{tree.name} is left for you to inspect")
+        return None
+    cache, _ = surface_strays(tree, sh)
+    for f in cache:
+        (tree / f).unlink()
+    for d in sorted({(tree / f).parent for f in cache}, reverse=True):
+        if not any(d.iterdir()):
+            d.rmdir()
+    if cache:
+        say(f"deleted {len(cache)} bytecode cache file(s) under .claude/")
+    job = bug_job(record, bugs, tree, branch, path=path, auto_log=auto_log, mark={"resumed": True})
+    with tempfile.TemporaryDirectory(prefix="auto-fix-hooks-") as hooks_dir:
+        return _work(job, tree, branch, trusted_hooks(pathlib.Path(hooks_dir)), main=main, say=say, out=out,
+                     session=session, sh=sh, recap=resume_brief(record, bugs, tree, branch))
 
 
 def run_job(job: Job, tree: pathlib.Path, branch: str, *, main: pathlib.Path, out: _t.TextIO, say: _t.Callable,
@@ -864,27 +991,49 @@ def run_job(job: Job, tree: pathlib.Path, branch: str, *, main: pathlib.Path, ou
                      out=out, session=session, sh=sh)
 
 
-def _work(job, tree, branch, hooks, *, main, say, out, session, sh) -> float:
+def _work(job, tree, branch, hooks, *, main, say, out, session, sh, recap: str | None = None) -> float:
+    """`job` from its fix session to a green PR (or a hand-back). `recap`: a resume's brief (`resume_one`):
+    the fix is in `tree` already, so the session only reports it, and no way it ends removes the work."""
     before = snapshot(tree)
+    worked = _changes(tree, sh) if recap else None
+
+    def keep(why: str, answer: dict | None = None) -> float:
+        """A resume that stopped before recital: the earlier session's fix stays, for `[f]` there."""
+        job.log(answer or {"bugs": []}, "", stopped=why, tree=tree)
+        say(why, bad=True)
+        say(job.handback(True))
+        return spent
+
+    spent = 0.0
     try:
-        answer, spent, sid, failed = session(job.brief, tree, FIX_SCHEMA, main=main,
-                                             label="agent fixing", out=out)
+        answer, spent, sid, failed = session(recap or job.brief, tree, FIX_SCHEMA, main=main,
+                                             label="agent recapping the fix" if recap else "agent fixing", out=out)
     except RateLimited:
+        if recap:   # not logged: the next resume takes it again
+            say("usage limit during the recap: the worktree stays, resumed again next run", bad=True)
+            raise
         # cut short by quota, not the agent's doing: its half-done edits go, no attempt is counted,
         # and the next run starts the bundle afresh (a worktree left behind would skip it for good)
         say("usage limit during the fix: worktree removed, tried again next run", bad=True)
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
         raise
+    if failed and recap:
+        return keep(f"the recap failed: {failed}")
     if failed:
         job.log_failed(f"{failed} (${spent:.2f})")
         say(f"{failed}; worktree removed, tried again next run", bad=True)
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
         return spent
+    answer = job.normalise(answer)
+    if recap and _changes(tree, sh) != worked:
+        return keep("the recap session changed the worktree, which it was told not to")
     for line in outcome_rows([(r["key"], r["outcome"], r["reason"]) for r in answer["bugs"]],
                              use_colour=out.isatty()):
         print(line, file=out)
+    if not _fixed_keys(answer) and recap:
+        return keep("the recap reports nothing fixed", answer)
     if not _fixed_keys(answer):
         job.log(answer, "")
         agent_sandbox.remove_worktree(main, tree)
@@ -1149,7 +1298,7 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
         print("\n".join(_rv.describe(record, item, width=width, use_colour=colour, evidence=False)) + "\n",
               file=out, flush=True)
         if dry_run:
-            name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
+            name = worktree_name(bugs)
             print(fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)
             continue
         if tracker:
@@ -1176,4 +1325,62 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
                          width, use_colour=colour), file=out)
     if tracker:
         tracker.finish("past the deadline" if late else end)
+    return ran
+
+
+def resume_run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys.stdout,
+               path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None,
+               main: pathlib.Path | None = None, until: float | None = None, clock: _t.Callable[[], float] = time.time,
+               tracker: "auto_run.Tracker | None" = None, **kw) -> int:
+    """`--auto --resume-stopped`: every `resumable` bundle (up to `limit`), the smallest change first, so
+    `--limit 1` is the cheap trial. Returns the bundles it ran sessions for; `until` and `tracker` as `run`."""
+    main = main or _rv.main_checkout()
+    sh = kw.get("sh") or default_sh
+    found = resumable(record, main, auto_log)
+    found.sort(key=lambda bt: len(_changes(bt[1], sh)))
+    colour, width = out.isatty(), _width()
+    if found and not dry_run:
+        fetched = sh(["git", "fetch", "-q", "origin"], main)
+        if fetched.returncode != 0:
+            print(f"  {_col(VERMILLION, '✗', use_colour=colour)} git fetch failed: {_tail(fetched)}", file=out)
+            return 0
+    limit = len(found) if limit is None else limit
+    print(_col(_BOLD, "judge-review --auto --resume-stopped", use_colour=colour)
+          + _col(_DIM, f" · {record['date']} · {len(found)} stopped worktree(s) · running {min(limit, len(found))}"
+                 + (" · dry run" if dry_run else ""), use_colour=colour), file=out, flush=True)
+    tracker = None if dry_run else tracker
+    if tracker:
+        tracker.start(record=record["date"], total=min(limit, len(found)), until=until,
+                      log=os.environ.get(auto_run.LOG_ENV))
+    spent, ran, handed, late = 0.0, 0, 0, False
+    for bugs, tree in found[:limit]:
+        if until is not None and not dry_run and clock() >= until:
+            late = True
+            break
+        ids = [b["id"] for b in bugs]
+        item = {"kind": "bundle", "ref": ids[0], "refs": ids} if len(ids) > 1 else {"kind": "work", "ref": ids[0]}
+        print("\n" + _hr(f"{' + '.join(ids)} · {tree.name}", width, use_colour=colour), file=out, flush=True)
+        print("\n".join(_rv.describe(record, item, width=width, use_colour=colour, evidence=False)) + "\n",
+              file=out, flush=True)
+        if dry_run:
+            why = resume_problem(tree, tree.name.removeprefix("cecelia-"), main, sh)
+            cache, _ = surface_strays(tree, sh)
+            print(f"  {'not resumable: ' + why if why else 'resumable'}"
+                  + (f" · {len(cache)} bytecode cache file(s) to delete" if cache else ""), file=out)
+            continue
+        if tracker:
+            tracker.update(current=" + ".join(ids))
+        cost = resume_one(record, bugs, tree, main=main, out=out, path=path, auto_log=auto_log, **kw)
+        if cost is not None:
+            spent += cost
+            ran += 1
+        else:
+            handed += 1
+        if tracker:
+            tracker.update(done=ran + handed, spent=round(spent, 2))
+    if not dry_run:
+        print("\n" + _hr(f"{ran} resumed · ${spent:.2f}" + (f" · {handed} not resumable" if handed else "")
+                         + (" · past the deadline" if late else ""), width, use_colour=colour), file=out)
+    if tracker:
+        tracker.finish("past the deadline" if late else "done")
     return ran
