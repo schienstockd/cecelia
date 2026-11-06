@@ -361,6 +361,10 @@ they and the diagram (P4) are useful without Claude.
 Why these fit hardening: all three make an existing result easier to trust ("was this acquisition fit
 for the analysis?") without a new page, and both are useful without Claude.
 
+- **Settings card** — a printable card from one image's settings and landed numbers, to re-acquire
+  it at the scope. Own plan: [`ACQUISITION_CARD_PLAN.md`](ACQUISITION_CARD_PLAN.md) (its P0 also
+  fixes the reader dropping the `.oir` emission filters and acquisition date).
+
 ### Milestone 1 — offline advisory core (Experimental, before 1.0)
 
 - **P3 · Knowledge files** (point 5): two-photon explanations with citations, feature-name lines
