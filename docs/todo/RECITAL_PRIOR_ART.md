@@ -18,7 +18,7 @@ coverage is stated per row.
 |---|---|---|---|---|---|
 | 1 | Wei, Zhu, Lan, Zhang, Calhoun. *CONFIRM: Governing Scientific Reporting for Trustworthy Agentic Neuroimaging.* arXiv 2611.01449, v1 1 Nov 2026, v2 3 Nov 2026. https://arxiv.org/abs/2611.01449 | Yes [V] | Full HTML (all ~107k chars, 2 passes). The number-consistency check is only mentioned; how it works is not described in the text I retrieved | **Closest in design.** Frozen plan ≈ S3a, five gates ≈ S2 + S3b, confound gate ≈ S1, diagnoses ≈ gap 2 | Yes: the gate structure, the thresholds as defaults, the control-benchmark design, the diagnosis format |
 | 2 | Chen, Lu, Li, … Calhoun, … Poldrack (17 authors). *Bringing analytic rigor to agentic AI for science: The Brain Researcher platform for neuroimaging data analysis.* arXiv 2608.19902, 20 Aug 2026. https://arxiv.org/abs/2608.19902 | Yes [V] | ~300k of 358k chars. Table 14 (COBIDAS-style provenance fields) and the fork-selection method were **not found** | Close: commitment card ≈ S3a, six claim states, review layer ≈ S0–S3 | Yes: the claim-state vocabulary, and the calibration-library design |
-| 3 | Bertran, Fogliato, Wu. *Many AI analysts, one dataset: Navigating the agentic data science multiverse.* PNAS 123(29) e2606495123, online 14 Jul 2026. https://doi.org/10.1073/pnas.2606495123 | Yes [V] (Crossref) | **PNAS page not accessible (HTTP 403).** Read the arXiv preprint instead, 2602.18710 v2 (12 Mar 2026), full HTML. Crossref lists no arXiv relation. The match is by title and authors, so the published version may differ | Relevant to S4 and P2: an LLM auditor that is explicitly not validated | Cite as a warning, not as a design |
+| 3 | Bertran, Fogliato, Wu. *Many AI analysts, one dataset: Navigating the agentic data science multiverse.* PNAS 123(29) e2606495123, online 14 Jul 2026. https://doi.org/10.1073/pnas.2606495123 | Yes [V] (Crossref) | **PNAS page not accessible (HTTP 403).** Read the arXiv preprint instead, 2602.18710 v2 (11 Mar 2026), full HTML. Crossref lists no arXiv relation. The match is by title and authors, so the published version may differ | Relevant to S4 and P2: an LLM auditor that is explicitly not validated | Cite as a warning, not as a design |
 | 4 | Rewolinski, Zane, Huang, Singh, Wang, Gao, Yu. *Sanity Checks for Agentic Data Science.* arXiv 2604.11003, 13 Apr 2026. https://arxiv.org/abs/2604.11003 | Yes [V] | ~100k of 118k chars. Cost section not visible | S3b: perturbation plus permutation-null checks with fixed thresholds | Yes: the null-perturbation idea for P2 |
 | 5 | Johanns, Moor, Panzeri, … Jianxu Chen. *Agentic-J: An AI Agent for Biological Microscopy Image Analysis.* arXiv 2606.02080, 1 Jun 2026. https://arxiv.org/abs/2606.02080 | Yes [V] | ~100k of 113k chars (the rest is probably references) | **Closest in domain, but not a claim check.** The QA agent audits reporting completeness only | Low. Cite as "bioimage agents audit reporting, not claims" |
 | 6 | Barry, Marcotti, Gerontogianni, Kelly. bioRxiv 10.1101/2025.02.10.637409. v1 (11 Feb 2025): *Enhancing Reproducibility Through Bioimage Analysis: The Significance of Effect Sizes and Controls*. v2 (24 Jun 2025): *A Statistical Framework for Robust and Reproducible BioImage Analysis*. No journal version listed | Yes [V]. The lead's title is the **v2** title | Full text of v1 and v2 | S2 source: unit of analysis, controls, n ≥ 3 | Partly. Rules are qualitative. The code is an analysis notebook, not a checker: https://github.com/FrancisCrickInstitute/Enhancing-Reproducibility |
@@ -27,7 +27,7 @@ coverage is stated per row.
 | 8b | Simonsohn, Simmons, Nelson. *Specification curve analysis.* Nat Hum Behav, 2020. doi 10.1038/s41562-020-0912-z | Yes [V] (metadata) | Metadata only | Background to S3b | Cite |
 | 8c | Silberzahn, Uhlmann, Martin, Anselmi, Aust, Awtrey, et al. *Many Analysts, One Data Set…* AMPPS, 2018. doi 10.1177/2515245917747646 | Yes [V] (metadata) | Metadata only | Background | Cite |
 | 8d | Yu, Kumbier. *Veridical data science.* PNAS, 2020. doi 10.1073/pnas.1901326117 | Yes [V] (metadata). PCS is described in ref 4 [V] | Metadata only | Background to S3b (stability) | Cite |
-| 8e | Schmied, Nelson, Avilov, … Jambor. *Community-developed checklists for publishing images and image analyses.* Nat Methods, 2023 (online 14 Sep 2023). doi 10.1038/s41592-023-01987-9; arXiv 2302.07005 | Yes [V] | arXiv abstract only. It covers formatting, colour, data availability and **reporting** analysis workflows. I could not confirm from the abstract whether it covers statistics | S0-adjacent (reporting completeness) | Cite. Could seed S0's "is the method reportable" list |
+| 8e | Schmied, Nelson, Avilov, … Jambor. *Community-developed checklists for publishing images and image analyses.* Nat Methods 21(2), 2024 (online 14 Sep 2023). doi 10.1038/s41592-023-01987-9; arXiv 2302.07005 | Yes [V] | arXiv abstract only. It covers formatting, colour, data availability and **reporting** analysis workflows. I could not confirm from the abstract whether it covers statistics | S0-adjacent (reporting completeness) | Cite. Could seed S0's "is the method reportable" list |
 | 8f | Laine, Arganda-Carreras, Henriques, Jacquemet. *Avoiding a replication crisis in deep-learning-based bioimage analysis.* Nat Methods, 2021. doi 10.1038/s41592-021-01284-3 | Yes [V] (metadata) | Metadata only | Run-time QC, not claim-time | Cite only |
 
 ### Found beyond the list
@@ -133,12 +133,16 @@ researcher effort was not measured [V].
 
 **Prior art weakens the thesis as currently framed, and covers about half the mechanism.**
 
-1. **The mechanism is not new.** "LLM proposes, deterministic gates over a record decide, findings come
-   back as diagnoses" is CONFIRM and Brain Researcher, both 2026, both with benchmarks [V]. The plan's
-   S2, S3a and S3b re-derive their gates. Cite them; don't present the structure as a contribution.
+1. **The mechanism is not new**, but the reason is the older peer-reviewed work (multiverse analysis,
+   specification curves, PCS / veridical data science, Boba), not CONFIRM. CONFIRM (1 Nov 2026) and
+   Brain Researcher are unreviewed 2026 preprints: **concurrent work**, to cite as such. The plan's S2,
+   S3a and S3b re-derive gates that exist in all of these; don't present the structure as a
+   contribution. (Corrected after the second opinion, section 6.)
 2. **"AI as reviewer" is the weakest part.** The evidence says LLM reviewers are the unreliable piece:
-   a direct judge gives 29% false support (CONFIRM), the auditor in Many AI analysts is unvalidated and
-   missed sign errors, and self-reported stability is poorly calibrated (Sanity Checks) [V]. What works
+   SPOT (2025) finds no LLM above 21% recall / 6% precision at finding errors in published papers [V].
+   CONFIRM's 29% for a direct judge is weaker evidence than it looks: its controls target specific
+   gates, and on literature-unsupported claims its own Screen level does worse than the judge (section
+   6). The auditor in Many AI analysts is unvalidated and "did not consistently catch" sign errors [V]. What works
    is the deterministic gates. Reframe the thesis as **"a structured record makes deterministic claim
    checks possible; the model only parses and suggests"** [I]. P0 already points this way: the cheap
    stages did the work.
@@ -163,3 +167,72 @@ found; (c) the same check applied to human analysts and agent runs alike, in a G
 
 **Not established:** a quantified 2D-vs-3D speed bias for intravital tracking. I found no source,
 so the finding text should say "measured differently", not "biased downward".
+
+## 6. Second opinion (2026-11-06)
+
+An independent agent re-retrieved every source. All 22 references exist with correct metadata; the
+two date slips are fixed above. Corrections and additions, all [V] unless marked:
+
+| Point | Correction |
+|---|---|
+| CONFIRM's numbers | Screen falsely supports 40% of literature-unsupported claims vs 20% for the direct LLM judge, which also recovers more (55% vs Full's 48%, 41% on another set). Appendix D says the designed controls "target specific gates", so 0% vs 29% is partly by construction |
+| Many AI analysts | The auditor "did not consistently catch" sign errors (not "missed"); its prompt lists 12 dimensions, the paper says 13 |
+| Sanity Checks | The 0.34/0.18 correlation is confidence vs empirical exceedance. Its perturbations change the agent's inputs (feature names, prompts), not analysis choices: a loose match to S3b |
+| 2D vs 3D speed [I] | For the same positions, dropping z can only shorten a step, so 2D speeds are biased down. Which population was 2D is unknown, so the direction of the confound in "T faster than B" is unknown |
+| Recency | CONFIRM, Brain Researcher, Sanity Checks, Agentic-J and BIABench are all unreviewed 2026 preprints. Only Many AI analysts (PNAS) and the older work are peer-reviewed |
+
+Missed prior art:
+
+| Work | Why it matters |
+|---|---|
+| Liu, Opsahl-Ong, … Lam. *AI-Driven Reproducibility and Analytical Robustness in Scientific Discovery.* arXiv 2610.23845 (16 Oct 2026) | **Closest post hoc match.** An agent reproduces published SEER cancer findings, proposes alternative analysis choices, re-runs them, and flags 9.5% of findings for expert review [V, abstract]. The second opinion reports 9 of 10 high-scored flags were not real on expert review [not confirmed by us] |
+| Son et al. *SPOT.* arXiv 2505.11855 (2025) | LLMs ≤ 21% recall, ≤ 6% precision at finding errors in papers [V, abstract]. Best evidence for keeping the model off the verdict |
+| FactReview, arXiv 2604.04074 | An LLM reviewer that runs the paper's code reports 6.8% false support: evidence *for* model review when it can execute |
+| arXiv 2610.38691 | A deterministic claim-to-evidence checker |
+| ReAgent (2609.22111), EviGraph (2608.04738); nanopublications (Groth et al. 2010, doi 10.3233/ISU-2010-0613) | Structured claim objects (Q2) |
+| BatchQC (Bioinformatics 2016, doi 10.1093/bioinformatics/btw538) | Batch × condition confounding: S1's concept, outside bioimage |
+| Tisane (arXiv 2201.02705) | Derives the statistical unit from declared data structure: S2 |
+| Boba (arXiv 2007.05551) | Multiverse-analysis tooling |
+| celltrackR QC vignette | Drift and tracking-error checks for motility data |
+| SciScore (iScience 2020) | Rigor checks on manuscripts |
+
+Evidence for the gap: Agentic-J's own case study treats single parasites as the statistical unit.
+
+**Verdict.** A domain transfer plus integration, not a new mechanism. New: post hoc claim review in a
+bioimage GUI against the analyst's own incomplete record, with processing-difference checks between
+compared populations (dims, params) and the unit taken from record metadata; plus measuring what
+analysts do with findings. A paper would rest on P2 and that outcome evidence, not on the design.
+
+## 7. CONFIRM code review (2026-11-06)
+
+Read-only review of github.com/yuxiangwei0808/CONFIRM (Apache-2.0, v0.1.0, public 1 Nov 2026; nothing
+executed). Paths are under `src/confirm/`. The two bugs below were re-checked by hand.
+
+| Area | Finding |
+|---|---|
+| Pipeline | One subject-level table per cohort; OLS on the primary analysis, then multiplicity, confound completeness, power, multiverse stability, replication (`execution.py:479-507`); `verdict.py:23-176` maps results to Screen/Replicate/Full and lists failed gates |
+| Plan lock | A strict pydantic `ClaimContract` (`contract.py:140-183`). **Not locked before execution**: the receipt hashes contract and data after the run (`provenance.py:107-124`) |
+| LLM's reach | The LLM drafts the contract, thresholds included (`agent.py:116-139`); the schema only bounds them (`min_fraction_consistent` may be 0, `contract.py:111`). Human approval is the guard, and is skipped without `--approve` (`agent.py:440-444`) |
+| M_eff | The paper says it counts logged history. In the base path it is the max of declared fields (`analysis.py:63-71`); hashed hypothesis counting exists only in the follow-up search loop (`claim_search.py:1705-1844`) |
+| Multiplicity | Labelled `fdr_bh`, computed as Bonferroni α/M (`analysis.py:74-78`) |
+| **Sign bug** | For a two-sided claim the direction check always passes (`analysis.py:54-59`), so a fork significant in the *opposite* direction counts as consistent (`multiverse.py:78`). All 150 controls are two-sided |
+| Power | One-sample `TTestPower`, d = 0.3, total n (`power.py:34-62`): effectively a minimum-n rule (~90) [I] |
+| Number check | Numbers only (not labels, unlike the paper), regex ± 1e-3 against the result bundle; mismatched sentences dropped (`agent.py:340-360`); untested |
+| Dead parts | `confound` gate always passes because the schema already requires the covariates; `motion_check` is never evaluated |
+| Benchmark | Not tuned on controls (per paper), but each control writes its flaw into the exact field its gate reads, so Full rejecting them is near-guaranteed; only the 42 random-label controls test the gates for real [I]. Control generators and LLM-judge baselines are not in the repo, so baseline fairness can't be checked |
+
+**Reusable for the plan:**
+1. Declared minimum standard + list of failed gates (`verdict.py:23-89`): answers Q9, the stamp lists what failed.
+2. Confound-completeness audit (`analysis.py:151-223`): for each metadata column left out, test its association with the compared groups. Fits S1 with mouse, interval, dims, seg params and gate version as columns.
+3. Fork fraction with errored forks in the denominator (`multiverse.py:64-107`) as the S3b threshold, with the sign check fixed.
+4. Hashed hypothesis signatures, earlier passes re-checked against the final count (`claim_search.py:1705-1844`): Q5/Q7, each round grows M.
+5. "Revision didn't weaken the parent" checks (`claim_search.py:2086-2165`) and `ClaimFeedback` diagnosis + instruction (`feedback.py:19-147`) as finding text.
+
+**Doesn't transfer:** subject-row OLS, ComBat/site/eTIV, the neuro schema, cohort replication
+(leave-one-mouse-out is the nearest analogue). Nothing for record provenance (S0/S1) or cells-within-
+mice pseudoreplication: CONFIRM assumes one row per subject.
+
+**For the plan:** declare the standard before the run; let the log, not the analyst, set M (recital
+rounds); add a minimum per-mouse n; give the plain-prompt baseline the same record; lead P2 with
+pseudo-arm (random-label) controls, since seeded controls that break exactly the field a rule reads
+only prove the rule exists.
