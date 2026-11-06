@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { START_ID, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from './startDot'
+import { START_ID, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from './startDot'
 
 // Round-trip the whiteboard's UML start dot through save (currentTemplate) → load (applyTemplate),
 // the reservation that was previously only static-verified. Exercises the exact pure helpers both
@@ -66,5 +66,34 @@ describe('startDotPosition', () => {
     const pos = startDotPosition(['train'], layout, 220)
     expect(pos.x).toBeLessThan(layout.train.x)
     expect(pos.y).toBe(layout.train.y)
+  })
+})
+
+describe('clearCanvas — a full clear lets Vue unmount before anything is added', () => {
+  it('removes every node and edge, and resolves only after the tick has run', async () => {
+    const calls: string[] = []
+    let releaseTick!: () => void
+    const tick = () => new Promise<void>(r => { calls.push('tick'); releaseTick = () => { calls.push('flushed'); r() } })
+    const done = clearCanvas({
+      nodeIds: [START_ID, 'a'], edgeIds: ['e1'],
+      removeNodes: ids => { calls.push(`nodes:${ids.join(',')}`) },
+      removeEdges: ids => { calls.push(`edges:${ids.join(',')}`) },
+    }, tick).then(() => { calls.push('resolved') })
+    await Promise.resolve()
+    expect(calls).toEqual([`nodes:${START_ID},a`, 'edges:e1', 'tick'])
+    releaseTick()
+    await done
+    expect(calls).toEqual([`nodes:${START_ID},a`, 'edges:e1', 'tick', 'flushed', 'resolved'])
+  })
+
+  // A same-tick remove-all + add of `__start__` reuses the old element and its stale handle bounds, so
+  // the dot's edge draws from the corner (New chain did exactly that). Every full clear in the
+  // whiteboard must go through clearWhiteboard → clearCanvas, which waits for the unmount.
+  it('ChainModule never clears the canvas by hand', () => {
+    const files = import.meta.glob('/src/modules/ChainModule.vue', { query: '?raw', import: 'default', eager: true })
+    const src = Object.values(files)[0] as string
+    expect(src).toBeTruthy()
+    expect(src.match(/removeNodes\(\s*nodes\.value\.map/g) ?? []).toHaveLength(0)
+    expect(src).toMatch(/function clearWhiteboard\(\)[\s\S]{0,200}clearCanvas\(/)
   })
 })
