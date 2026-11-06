@@ -1385,7 +1385,8 @@ def get_acquisition_knowledge(system: str = "") -> dict:
     (keys match get_image_info's settings and the metadata dialog's Light path: laser, power, scanner,
     objective, sample, filters, detectors, digitisation, stack) what it does and its `symptoms` — each
     with `explanation`, `check` (which recorded setting or measured number shows it), `alternatives`
-    (other causes, often biology) and `sources` (ids into `sources`, with DOIs). `scopes` gives each
+    (other causes, often biology), `sources` (ids into `sources`, with DOIs) and `qcCodes` (the task
+    QC finding codes that measure it — get_qc_metrics). `scopes` gives each
     microscope's name for the feature that fixes a stage (e.g. FV4000 → Bright Z), `verified: false`
     until a facility confirms it — say so when you pass one on — and `seenInFiles`, what the lab's own
     files record for it. `system` (get_image_info's

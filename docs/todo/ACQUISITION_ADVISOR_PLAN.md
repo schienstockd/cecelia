@@ -382,6 +382,15 @@ for the analysis?") without a new page, and both are useful without Claude.
   evaluated (P7).
 - **P6 · Offline pilot** (point 6): run the project chain on a crop and map task QC and result
   review findings to stages. About 15 min for 256² × 41 t on zolIMa.
+  **Built (mapping):** each symptom in `acquisition_knowledge.json` lists the task QC codes that
+  measure it (`qcCodes`); the advisor reads them with `get_qc_metrics` after a run. A test keeps every
+  listed code a real `QC_TEXT` key. The pilot on a copy of zolIMa 20armH (256² × 31 z × 41 t, its
+  real chain) raised `drift.unreliable` (6.8 px disagreement), `drift.unregistered_frames` (2) and
+  `import.photon_limited`; motion had no symptom, so `moves-between-frames` (sample stage,
+  Vinegoni 2014) was added. Running the pilot stays manual: the chain is the project's own, run on a
+  crop through the usual tasks. Result-review findings are a commit-time mechanism and do not reach
+  a pilot run. Not built: codes with no symptom yet (`import.background_rises` over time,
+  `import.brighter_with_depth`), and segmentation / tracking QC, whose acquisition cause is a guess.
 - **P7 · Evaluation** (point 8): the maintainer's bad acquisitions with diagnoses written beforehand, good
   counterparts, the biology-not-optics case and a time-effect case.
   **Stop/go before Milestone 2** (proposed, to agree): the main cause is right on most cases; never
