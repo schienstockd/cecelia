@@ -79,9 +79,33 @@ describe('acquisitionCard — what is not there', () => {
       .toContain('Bright Z off: same power at every depth')
   })
 
+  it('prints "No dichroic in the path" when every recorded slot is Empty', () => {
+    const empty = real.acquisition!.dichroics!.map(d => ({ ...d, name: 'Empty' }))
+    const c = acquisitionCard({ ...real, acquisition: { ...real.acquisition, dichroics: empty } }, ctx)
+    expect(c.settings.find(r => r.label === 'Dichroics')!.items).toEqual([{ text: 'No dichroic in the path', source: 'file' }])
+  })
+
   it('only two-photon images get a card', () => {
     expect(hasAcquisitionCard(real)).toBe(true)
     expect(hasAcquisitionCard({ acquisition: { lasers: [{ name: '488', wavelengthNm: 488 }] } })).toBe(false)
     expect(hasAcquisitionCard({})).toBe(false)
+  })
+})
+
+// Real output: czi_meta.parse_settings on test-data/acquisition/czi_lsm780_nlo_metadata.xml (LSM 780
+// two-photon). The .czi reader names no filters or dichroics and records HV per detector.
+const CZI = {"source": "czi", "system": "LSM 780, AxioObserver", "softwareVersion": "13.0.1.518", "objective": {"name": "LD C-Apochromat 63x/1.15 W Korr M27", "magnification": 63.0, "na": 1.1500000000000001, "immersion": "water", "refractiveIndex": 1.333}, "lasers": [{"name": "Chameleon", "wavelengthNm": 775.0, "transmissionPct": 2.0}], "brightZ": {"enabled": false, "points": []}, "scanner": {"type": null, "zoom": 1.0, "pixelDwellUs": 0.9848, "integration": {"type": "Average", "count": 4, "average": null}}, "autoHV": null, "pinholeUm": null, "channels": [{"order": 1, "name": "NDD R1", "dyePreset": null, "laser": "Chameleon", "detector": null, "hv": 780.0, "gain": 1.0, "offset": 2.0, "detectorMode": null, "bitDepth": 8}, {"order": 2, "name": "NDD R2", "dyePreset": null, "laser": "Chameleon", "detector": null, "hv": 640.0, "gain": 1.0, "offset": 1.0, "detectorMode": null, "bitDepth": 8}, {"order": 3, "name": "NDD R3", "dyePreset": null, "laser": "Chameleon", "detector": null, "hv": 520.0, "gain": 1.0, "offset": 1.0, "detectorMode": null, "bitDepth": 8}, {"order": 4, "name": "T PMT", "dyePreset": null, "laser": "Chameleon", "detector": null, "hv": 100.0, "gain": 1.0, "offset": 0.0, "detectorMode": null, "bitDepth": 8}], "zStack": {"stepUm": 0.37, "count": 120.0}} as const
+
+describe('acquisitionCard — a two-photon .czi (Zeiss LSM 780)', () => {
+  const c = acquisitionCard({ uid: 'z', name: 'nlo', acquisition: CZI as unknown as CardImage['acquisition'] }, ctx)
+  it('gets a card, with HV per detector and filters printed as not recorded', () => {
+    expect(hasAcquisitionCard({ acquisition: CZI as unknown as CardImage['acquisition'] })).toBe(true)
+    expect(c.autoHV).toBeNull()
+    expect(c.detectors.map(d => d.hv?.text)).toEqual(['780', '640', '520', '100'])
+    expect(c.detectors.every(d => d.filter.source === 'missing')).toBe(true)
+    expect(c.settings.find(r => r.label === 'Dichroics')!.items).toEqual([{ text: 'Dichroics not recorded', source: 'missing' }])
+  })
+  it('names the depth ramp the Zeiss way', () => {
+    expect(c.settings.find(r => r.label === 'Power')!.items.map(i => i.text).join(' | ')).toMatch(/Auto Z brightness off/)
   })
 })

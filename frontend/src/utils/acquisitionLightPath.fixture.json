@@ -135,6 +135,10 @@
     "name": "MIRROR"
    },
    {
+    "slot": "dmSlider",
+    "name": "Empty"
+   },
+   {
     "slot": "irLaserDichroic",
     "name": "LCDM690-1050"
    },

@@ -5,16 +5,20 @@
 `read_acquisition_settings_run.py` — this gate stops a Python spawn for formats it has no reader for."""
 const ACQUISITION_SETTINGS_FORMATS = (".oir", ".czi")
 
-"""The settings reader's version (`READER_VERSION` in `python/cecelia/utils/oir_meta.py` — kept in
-step by the "language boundaries agree on their protocol" table, app/test/suite/segmentation.jl). Settings stored by an older reader lack fields the newer one returns, so Refresh metadata
-re-reads them (`_resync_acquisition_settings!`)."""
-const ACQUISITION_READER_VERSION = 2
+"""Each settings reader's version, by the `source` it stamps (`READER_VERSION` in
+`python/cecelia/utils/oir_meta.py`, kept in step by the "language boundaries agree on their protocol"
+table in app/test/suite/segmentation.jl; `czi_meta` has no version yet, i.e. 1). Settings stored by an
+older reader lack fields the newer one returns, so Refresh metadata re-reads them
+(`_resync_acquisition_settings!`)."""
+const ACQUISITION_READER_VERSIONS = Dict("oir" => 2, "czi" => 1)
 
-"""Whether stored settings came from an older reader than this one (no version = the first)."""
+"""Whether stored settings came from an older version of their reader (no version = the first)."""
 function _acquisition_outdated(acq)::Bool
     acq isa AbstractDict || return false
+    # No `source` = settings from before `.czi` was read, i.e. the `.oir` reader (every czi read stamps it)
+    current = get(ACQUISITION_READER_VERSIONS, string(get(acq, "source", "oir")), 1)
     v = get(acq, "readerVersion", 1)
-    v isa Real && v < ACQUISITION_READER_VERSION
+    v isa Real && v < current
 end
 
 """

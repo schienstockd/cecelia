@@ -168,13 +168,17 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
   }
 
   // 6 · dichroics and filters — named where the file records them
-  const filters: LightPathItem[] = (acq.dichroics ?? [])
-    .map(d => item(`${DICHROIC_SLOT_LABEL[d.slot] ?? d.slot}: ${d.name}`, 'file'))
+  // The reader keeps Empty slots, so "every slot empty" (recorded) differs from no slot found ([]).
+  const slots = acq.dichroics ?? []
+  const filled = slots.filter(d => d.name.toLowerCase() !== 'empty')
+  const filters: LightPathItem[] = filled.map(d => item(`${DICHROIC_SLOT_LABEL[d.slot] ?? d.slot}: ${d.name}`, 'file'))
+  if (slots.length > 0 && filled.length === 0) filters.push(item('No dichroic in the path', 'file'))
   for (const c of chans) {
     filters.push({ ...(c.emissionFilter ? item(`${chName(c)} ${c.emissionFilter}`, 'file')
                                          : item(`${chName(c)} filter not recorded`, 'missing')), channel: c.order })
   }
   if (filters.length === 0) filters.push(item('Dichroics and filters not recorded', 'missing'))
+  else if (slots.length === 0) filters.unshift(item('Dichroics not recorded', 'missing'))
 
   // 7 · detectors — under Auto HV the recorded HV is not a setting to copy (FV4000 records 0), so it
   // moves to the Auto HV line instead of reading as each detector's value

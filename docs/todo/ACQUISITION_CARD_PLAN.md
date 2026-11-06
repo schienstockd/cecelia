@@ -87,6 +87,11 @@ Until then a non-two-photon image gets no card button rather than a half-right c
 "Request your microscope" action instead (D10), and those requests are the evidence for which scope
 to support next.
 
+**`.czi` landed alongside (#1966).** A two-photon Zeiss file (LSM 780 NLO) passes the same rule and
+gets a card. `czi_meta` reads no filters, dichroics or date, so those rows print "not recorded"; HV is
+per detector (no Auto HV); the depth ramp is named "Auto Z brightness". Reader versions are per
+`source` (`ACQUISITION_READER_VERSIONS`), so `.czi` settings are not re-read on every refresh.
+
 ## Decisions
 
 Agreed on the mock (2026-11-06): light-path order, the "This run" column, channel names only.
@@ -157,7 +162,8 @@ calibrated" for pixel size, and "21 of 45 planned" for a stopped-early time-laps
 - **P0 · Reader gaps — BUILT.** `oir_meta.parse_settings` returns `acquiredAt`, `microscopeBody`,
   per-channel `emissionFilter` (matched by channel id) and `dichroics` (`{slot, name}`, Empty slots
   left out), with `readerVersion` 2. Refresh metadata re-reads settings from an older reader
-  (`ACQUISITION_READER_VERSION`, kept in step with `oir_meta.READER_VERSION` by a test); with the
+  (`ACQUISITION_READER_VERSIONS`, per reader `source`; the `.oir` one kept in step with
+  `oir_meta.READER_VERSION` by a test); with the
   source gone, the older settings stay. `zStack` / `kalman` typed.
 - **P1 · Modal wording — BUILT** (the card inherits it, D1). In `lightPathStages()`: dichroics and
   per-channel filters from P0; the D6 HV cell; integration printed as recorded ("None × 2", `?`);

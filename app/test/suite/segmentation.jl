@@ -709,7 +709,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # (what,            python file,                          python const,       julia value)
             ("preview worker",  "preview/preview_worker.py",           "PROTOCOL",         Cecelia.PREVIEW_PROTOCOL),
             ("params contract", "python/cecelia/utils/script_utils.py", "CONTRACT_VERSION", Cecelia.PY_CONTRACT_VERSION),
-            ("acquisition reader", "python/cecelia/utils/oir_meta.py",  "READER_VERSION",   Cecelia.ACQUISITION_READER_VERSION),
+            ("acquisition reader", "python/cecelia/utils/oir_meta.py",  "READER_VERSION",   Cecelia.ACQUISITION_READER_VERSIONS["oir"]),
         ]
         for (what, rel, const_name, julia_value) in boundaries
             path = joinpath(repo, rel)

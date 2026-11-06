@@ -18,7 +18,7 @@ import re
 import xml.etree.ElementTree as ET  # vendor .oir XML, not OME-XML: test_zarr_access_convention _BASELINE
 
 #: Bumped when the reader starts returning a field it did not before, so Refresh metadata re-reads
-#: settings stored by an older reader (`ACQUISITION_READER_VERSION` in
+#: settings stored by an older reader (`ACQUISITION_READER_VERSIONS["oir"]` in
 #: app/src/tasks/importImages/omezarr/acquisition.jl must match — asserted in app/test/suite/segmentation.jl
 #: → "language boundaries agree on their protocol"). 2: date, body, filters, dichroics.
 READER_VERSION = 2
@@ -137,13 +137,14 @@ _CUBE_SLOTS = (('firstMirrorCube', 'firstMirrorCube/name'), ('secondMirrorCube',
 
 
 def _dichroics(acq, phase):
-    """Named dichroics / mirror cubes in the light path of this phase and the microscope frame, in
-    file order. An `Empty` slot is left out: nothing is in the path there."""
+    """Dichroic / mirror-cube slots in the light path of this phase and the microscope frame, in file
+    order, each as recorded — `Empty` included, so "every slot empty" (recorded) stays distinct from
+    "no slot found" (`[]`, not recorded). A slot this file's model does not have is left out."""
     found = [(slot, _text(phase, path)) for slot, path in _DICHROIC_SLOTS]
     frame = acq.find('.//lsmMicroscopePhase/lightpath')
     if frame is not None:
         found += [(slot, _text(frame, path)) for slot, path in _CUBE_SLOTS]
-    return [{'slot': slot, 'name': name} for slot, name in found if name and name.lower() != 'empty']
+    return [{'slot': slot, 'name': name} for slot, name in found if name]
 
 
 def _channels(acq, phase, lasers, filters=None):
