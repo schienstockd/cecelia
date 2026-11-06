@@ -34,7 +34,15 @@ rem made, the recorded dir is appended, and only when no `julia` is on PATH at a
 :cecelia_recorded
 if not exist "%PIXI_PROJECT_ROOT%\.cecelia-julia" goto :cecelia_done
 set "_cecelia_julia="
+rem The record is UTF-8 (install.ps1 pins it); `set /p` decodes in the console codepage, so a
+rem non-ASCII profile path would read garbled and `if not exist` would skip it silently. Read it
+rem under codepage 65001 and restore the current one; if that can't be parsed, leave it be.
+set "_cecelia_cp="
+for /f "tokens=2 delims=:." %%C in ('chcp 2^>nul') do set "_cecelia_cp=%%C"
+if defined _cecelia_cp >nul 2>nul chcp 65001
 set /p _cecelia_julia=<"%PIXI_PROJECT_ROOT%\.cecelia-julia"
+if defined _cecelia_cp >nul 2>nul chcp %_cecelia_cp%
+set "_cecelia_cp="
 if not defined _cecelia_julia goto :cecelia_done
 if not exist "%_cecelia_julia%" goto :cecelia_done
 for %%F in ("%_cecelia_julia%") do if /i "%%~sF"=="%_cecelia_first%" goto :cecelia_done

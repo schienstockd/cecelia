@@ -75,12 +75,24 @@ def _recorded_julia() -> str:
     The desktop entry and the macOS `.app` start with the session's PATH (launchd's minimal one on
     macOS), which can leave out where that Julia lives: a juliaup in `/opt/homebrew/bin` or
     `~/.local/bin` gets its `julia` beside it, and a reused Julia can be anywhere. It is also the
-    Julia `Pkg.instantiate` ran under, so it beats whichever `julia` PATH happens to offer."""
+    Julia `Pkg.instantiate` ran under, so it beats whichever `julia` PATH happens to offer.
+
+    The file is UTF-8 (install.ps1 pins it). An install made before that, by Windows PowerShell 5.1,
+    wrote it in the ANSI codepage, so bytes that aren't UTF-8 are decoded in the locale's encoding;
+    undecodable reads as absent, never a crash."""
     try:
-        with open(os.path.join(ROOT, ".cecelia-julia"), "r", encoding="utf-8") as f:
-            path = f.read().strip()
+        with open(os.path.join(ROOT, ".cecelia-julia"), "rb") as f:
+            raw = f.read()
     except OSError:
         return ""
+    try:
+        path = raw.decode("utf-8-sig").strip()
+    except UnicodeDecodeError:
+        import locale
+        try:
+            path = raw.decode(locale.getpreferredencoding(False)).strip()
+        except (UnicodeDecodeError, LookupError):
+            return ""
     return path if path and os.path.isfile(path) else ""
 
 

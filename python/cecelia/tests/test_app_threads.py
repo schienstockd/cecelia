@@ -75,6 +75,15 @@ class ThreadArgsTest(unittest.TestCase):
             f.write(f"# comment\n{_DEV_DIR_VAR}={dot}\n")
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(self.app._config_dir(), dot)
+        # An empty env value is unset (falls to .env); an empty .env value falls to ~/.cecelia.
+        # Julia's `_resolve_config_dir` pins the same cases (app/test/suite/config.jl).
+        with mock.patch.dict(os.environ, {_DEV_DIR_VAR: ""}, clear=True):
+            self.assertEqual(self.app._config_dir(), dot)
+        with open(os.path.join(self.root, ".env"), "w", encoding="utf-8") as f:
+            f.write(_DEV_DIR_VAR + "=\n")
+        with mock.patch.dict(os.environ, {_DEV_DIR_VAR: "", "HOME": self.root,
+                                          "USERPROFILE": self.root}, clear=True):
+            self.assertEqual(self.app._config_dir(), os.path.join(self.root, ".cecelia"))
         os.remove(os.path.join(self.root, ".env"))
         with mock.patch.dict(os.environ, {"HOME": self.root, "USERPROFILE": self.root}, clear=True):
             self.assertEqual(self.app._config_dir(), os.path.join(self.root, ".cecelia"))

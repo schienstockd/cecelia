@@ -48,6 +48,17 @@ class JuliaupActivationTest(unittest.TestCase):
         bundled = (REPO / "scripts" / "bundle_required_paths.txt").read_text(encoding="utf-8").split()
         self.assertIn("scripts/activate_juliaup.bat", bundled)
 
+    def test_the_bat_reads_the_record_as_utf8(self):
+        # install.ps1 writes `.cecelia-julia` as UTF-8; `set /p` decodes in the console codepage, so a
+        # non-ASCII profile path (C:\Users\Jürgen) read garbled and `if not exist` skipped it silently.
+        # The read must happen under codepage 65001, and the user's codepage come back right after.
+        lines = BAT.read_text(encoding="utf-8").splitlines()
+        read = next(i for i, ln in enumerate(lines) if ln.startswith("set /p _cecelia_julia="))
+        self.assertEqual(lines[read - 1], "if defined _cecelia_cp >nul 2>nul chcp 65001")
+        self.assertEqual(lines[read + 1], "if defined _cecelia_cp >nul 2>nul chcp %_cecelia_cp%")
+        self.assertTrue(any(ln.startswith("for /f ") and "('chcp 2^>nul')" in ln and "_cecelia_cp=" in ln
+                            for ln in lines[:read]))
+
     @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
     def test_install_owned_juliaup_wins_over_path(self):
         bin_dir = os.path.join(self.root, "juliaup", "bin")
@@ -200,6 +211,18 @@ class WindowsActivationTest(unittest.TestCase):
     def test_no_record_leaves_path_alone(self):
         got, _, _ = self._run(f"{self.other};{self.system32}")
         self.assertEqual(got["PATH"], f"{self.other};{self.system32}")
+
+    def test_non_ascii_recorded_path_is_found(self):
+        # A profile like C:\Users\Jürgen: the UTF-8 record must not be garbled into a path that
+        # `if not exist` skips, leaving terminal tasks on PATH's julia while the app runs the recorded one.
+        recorded = os.path.join(self.root, "J\u00fcrgen", "julia.cmd")
+        os.makedirs(os.path.dirname(recorded))
+        with open(recorded, "w", encoding="utf-8", newline="") as f:
+            f.write("@echo recorded\r\n")
+        self._record(recorded)
+        got, _, _ = self._run(f"{self.other};{self.system32}")
+        shim = os.path.join(self.profile, ".cecelia", "julia-shim")
+        self.assertEqual(got["PATH"], f"{shim};{self.other};{self.system32}")
 
 
 if __name__ == "__main__":

@@ -297,7 +297,10 @@ Pop-Location
 Set-Content -Path (Join-Path $InstallDir '.cecelia-version') -Value $Provenance
 Set-Content -Path (Join-Path $InstallDir '.cecelia-scope')   -Value $Scope
 # The Julia resolved above, for `_find_julia` in app.py: a shortcut launch's PATH may not reach it.
-Set-Content -Path (Join-Path $InstallDir '.cecelia-julia')   -Value $Julia
+# UTF-8 without a BOM on every PowerShell: Set-Content writes ANSI on 5.1 and UTF-8 on 7, and the
+# readers (app.py `_recorded_julia`, scripts/activate_juliaup.bat) decode UTF-8, so a non-ASCII
+# profile path must not depend on which PowerShell ran the installer.
+[IO.File]::WriteAllText((Join-Path $InstallDir '.cecelia-julia'), "$Julia`r`n", (New-Object Text.UTF8Encoding $false))
 Say "Installed: $Provenance ($Scope scope)"
 
 # System scope: every file must carry the Program Files ACL (Users: read + execute; Administrators:

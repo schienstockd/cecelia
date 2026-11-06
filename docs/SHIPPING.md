@@ -456,7 +456,10 @@ extracts juliaup's portable release archive (pinned, `CECELIA_JULIAUP_VERSION`)
 into `<install>\juliaup\bin`; `cecelia-launch.cmd` puts that dir on `PATH`.
 
 Without `<install>/juliaup`, `_find_julia` next takes the Julia the installer resolved, which both
-installers record in `<install>/.cecelia-julia`, before trying PATH. The user-scope desktop entry and
+installers record in `<install>/.cecelia-julia`, before trying PATH. The file is UTF-8 without a BOM
+(`install.ps1` pins it rather than using `Set-Content`, which writes ANSI on Windows PowerShell 5.1).
+Every reader decodes it as UTF-8, and the `.bat` reads it under codepage 65001, so a non-ASCII profile
+path resolves to the same Julia everywhere. The user-scope desktop entry and
 `.app` start with the session's PATH (launchd's minimal one on macOS), which can leave out where that
 Julia lives: a juliaup in `/opt/homebrew/bin` or `~/.local/bin` gets its `julia` beside it.
 `scripts/activate_juliaup.sh` gives every other `pixi run` task (`prod`, `doctor`, `julia-instantiate`,
