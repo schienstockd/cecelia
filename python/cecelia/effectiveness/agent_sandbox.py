@@ -112,13 +112,15 @@ def permission_path(path: pathlib.Path) -> str:
 
 def agent_env(**extra: str) -> dict[str, str]:
     """This process's env for a sandboxed agent: without `CREDENTIAL_ENV`, with `CECELIA_OBSERVER_NO_PAIR`
-    (a throwaway session mustn't re-pair the owner's project), the repo's pinned Node first on PATH
-    (`node_bin_dir`), plus `extra`."""
+    (a throwaway session mustn't re-pair the owner's project), `PYTHONDONTWRITEBYTECODE` (the session's
+    own hooks import `.claude/hooks/*.py`; a `__pycache__` they leave there reads as a change to what
+    runs outside the sandbox, and `auto_fix.guard` drops the work), the repo's pinned Node first on
+    PATH (`node_bin_dir`), plus `extra`."""
     env = {k: v for k, v in os.environ.items() if k not in CREDENTIAL_ENV}
     node = node_bin_dir(env)
     if node:
         env["PATH"] = os.pathsep.join([node, *(p for p in env.get("PATH", "").split(os.pathsep) if p and p != node)])
-    return {**env, "CECELIA_OBSERVER_NO_PAIR": "1", **extra}
+    return {**env, "CECELIA_OBSERVER_NO_PAIR": "1", "PYTHONDONTWRITEBYTECODE": "1", **extra}
 
 
 #: Outside `~`: the `~/**` write denies above would otherwise block the agent's own checkout.

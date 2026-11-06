@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import functools
 import importlib.util as _importlib_util
 import json
 import os
@@ -854,7 +855,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--detach", action="store_true",
                     help="--auto: run in the background, free of this terminal; log in the cron folder, "
                          "progress on `pixi run recital-console`")
+    ap.add_argument("--resume-stopped", action="store_true",
+                    help="--auto: take up the worktrees an earlier run fixed but stopped before recital "
+                         "(no new fix sessions)")
     args = ap.parse_args(argv)
+    if args.resume_stopped and not args.auto:
+        print("judge-review: --resume-stopped goes with --auto", file=sys.stderr)
+        return 2
     if args.detach and (not args.auto or args.dry_run):
         print("judge-review: --detach is for a real --auto run (not --dry-run)", file=sys.stderr)
         return 2
@@ -882,8 +889,9 @@ def main(argv: list[str] | None = None) -> int:
                   "only the newest", file=sys.stderr)
             return 1
         auto_fix = _load_sibling("auto_fix")
+        work = auto_fix.resume_run if args.resume_stopped else functools.partial(auto_fix.run, older=older)
         if args.dry_run:
-            auto_fix.run(record, limit=args.limit, dry_run=True, older=older, until=args.until)
+            work(record, limit=args.limit, dry_run=True, until=args.until)
             return 0
         lock = auto_run.run_lock()   # two runs would work the same bugs
         if lock is None:
@@ -898,8 +906,7 @@ def main(argv: list[str] | None = None) -> int:
             tracker = auto_run.Tracker()
             auto_fix.unattended(tracker)
             try:
-                auto_fix.run(record, limit=args.limit, older=older, until=args.until, tracker=tracker,
-                             out=sys.stdout)
+                work(record, limit=args.limit, until=args.until, tracker=tracker, out=sys.stdout)
             except RateLimited as e:
                 tracker.finish("usage limit")
                 return limit_exit("judge-review --auto", e)

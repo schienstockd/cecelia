@@ -308,7 +308,11 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     the entry carries `z` (that score); when the cohort has no spread (MAD 0, ≥half identical) it
     carries `relDev` (relative departure) instead. Either way a clear outlier flags even at n=3. An
     `outliers` map with entries is the flag worth a note — name the image, the LABEL SET, its value, and
-    the cohort median (numbers in the detail). `n` < 3 ⇒ too few images to judge. Advisory; reads current data."""
+    the cohort median (numbers in the detail). `n` < 3 ⇒ too few images to judge. Advisory; reads current data.
+    One metric is a CATEGORY, not a count: `motionDims` (tracks measured in 2 or 3 dimensions). Its
+    `median` is the set's most common value (null on a tie), and an outlier entry is {value, majority}:
+    say the image was measured in <value>D while most of the set was <majority>D, so its speeds and
+    angles aren't comparable with the rest."""
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
@@ -1381,9 +1385,11 @@ def get_acquisition_knowledge(system: str = "") -> dict:
     (keys match get_image_info's settings and the metadata dialog's Light path: laser, power, scanner,
     objective, sample, filters, detectors, digitisation, stack) what it does and its `symptoms` — each
     with `explanation`, `check` (which recorded setting or measured number shows it), `alternatives`
-    (other causes, often biology) and `sources` (ids into `sources`, with DOIs). `scopes` gives each
+    (other causes, often biology), `sources` (ids into `sources`, with DOIs) and `qcCodes` (the task
+    QC finding codes that measure it — get_qc_metrics). `scopes` gives each
     microscope's name for the feature that fixes a stage (e.g. FV4000 → Bright Z), `verified: false`
-    until a facility confirms it — say so when you pass one on. `system` (get_image_info's
+    until a facility confirms it — say so when you pass one on — and `seenInFiles`, what the lab's own
+    files record for it. `system` (get_image_info's
     `acquisition.system`, e.g. "FV4000") keeps only that scope. Project-independent. Read-only."""
     with open(_ACQUISITION_KNOWLEDGE_PATH, encoding="utf-8") as f:
         knowledge = json.load(f)
