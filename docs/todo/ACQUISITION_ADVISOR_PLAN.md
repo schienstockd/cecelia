@@ -416,8 +416,11 @@ its own milestone so it is not absorbed into "later".
 
 Live session: save/transfer/load at the scope, screenshot lane (point 7, deferred), the fast
 feedback loop (import numbers + diagram; pilot stays offline unless timing improves), adoption test
-with a few real users on locked-down acquisition PCs. Confocal scopes (LSM 780/980, CZI reader) join
-here or later.
+with a few real users on locked-down acquisition PCs. Confocal scopes (LSM 780/980) join here or
+later. **CZI reader built** (`python/cecelia/utils/czi_meta.py`): same settings shape as the OIR
+reader, ZEN black and ZEN blue, tested on public files (an LSM 780 two-photon stack among them). Not
+read: auto Z brightness points (no file with it on), mean vs sum averaging, ZEN black detector mode.
+The dialog and light path name the ramp per vendor (`depthRampName`: "Auto Z brightness" for Zeiss).
 
 ### Later, optional
 

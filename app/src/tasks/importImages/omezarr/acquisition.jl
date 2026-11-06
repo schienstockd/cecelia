@@ -3,7 +3,7 @@
 
 """Source formats with a settings reader. Keep in step with `_READERS` in
 `read_acquisition_settings_run.py` — this gate stops a Python spawn for formats it has no reader for."""
-const ACQUISITION_SETTINGS_FORMATS = (".oir",)
+const ACQUISITION_SETTINGS_FORMATS = (".oir", ".czi")
 
 """The settings reader's version (`READER_VERSION` in `python/cecelia/utils/oir_meta.py` — kept in
 step by the "language boundaries agree on their protocol" table, app/test/suite/segmentation.jl). Settings stored by an older reader lack fields the newer one returns, so Refresh metadata
@@ -24,7 +24,7 @@ The source file's acquisition settings — laser power and Bright Z ramp, scan t
 settings, the channel→laser/detector map — as `read_acquisition_settings_run.py` normalises them, and
 `nothing` for the reason; or `nothing` and why not (`ACQUISITION_MISSING`): no reader for the format,
 the source is gone, or nothing could be read. Reads the SOURCE, not the store: these values never
-reach the OME-XML (see `python/cecelia/utils/oir_meta.py`). Advisory: never throws, and a missing
+reach the OME-XML (see `python/cecelia/utils/oir_meta.py`, `czi_meta.py`). Advisory: never throws, and a missing
 result never fails an import.
 """
 function _read_acquisition_settings(src_path::AbstractString, run_dir::AbstractString;

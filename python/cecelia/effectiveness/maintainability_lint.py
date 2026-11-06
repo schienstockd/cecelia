@@ -195,7 +195,9 @@ def lint_diff(diff: str, *, after_lines: _t.Callable[[str], int | None]) -> list
     for fd in parse_diff(diff):
         out += incident_findings(fd)
         out += marker_findings(fd)
-        if (n := after_lines(fd.path)) is not None and (f := size_finding(fd, n)):
+        # Only a task file has a size rule, and counting reads the staged copy as text: a binary
+        # fixture in the diff would not decode.
+        if is_task_file(fd.path) and (n := after_lines(fd.path)) is not None and (f := size_finding(fd, n)):
             out.append(f)
     return out
 

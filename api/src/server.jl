@@ -1035,8 +1035,8 @@ function start(; host=HOST, port=PORT)
     end
     # The decoded-chunk cache is off until given a budget (chunk_cache.jl) — serving is when it is wanted.
     chunk_cache_budget!(Cecelia.viewer_chunk_cache_bytes())
-    # Finish any project delete a previous run stopped mid-way (api_projects_delete) — off the start path.
-    errormonitor(Threads.@spawn sweep_deleting_projects())
+    # Finish any delete a previous run stopped mid-way (app/src/discard.jl) — off the start path.
+    errormonitor(Threads.@spawn sweep_discarded!())
     want_tls = Cecelia.tls_desired()
     tls = want_tls ? ensure_dev_cert() : nothing
     if tls === nothing

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acquiredAtText, microscopeLine, acquisitionNotice, acquisitionRows, framesShortOf, microscopeName, type AcquisitionSettings, type MicroscopeRequest } from './acquisitionSettings'
+import { acquiredAtText, microscopeLine, acquisitionNotice, acquisitionRows, depthRampName, framesShortOf, microscopeName, type AcquisitionSettings, type MicroscopeRequest } from './acquisitionSettings'
 
 // Shapes copied from `oir_meta.parse_settings` on test-data/acquisition/oir_*_imageProperties.xml.
 const FV4000: AcquisitionSettings = {
@@ -106,5 +106,20 @@ describe('microscope name and a stopped-early time-lapse', () => {
     expect(framesShortOf({ timelapse: { count: 45 } })).toBeNull()
     expect(acquisitionRows({ system: 'X', timelapse: { count: 45, acquired: 21 } }))
       .toContainEqual({ k: 'Time-lapse', v: '21 of 45 planned frames (stopped early or cropped)' })
+  })
+})
+
+describe('a Zeiss .czi names the depth ramp its own way', () => {
+  // Shape copied from `czi_meta.parse_settings` on test-data/acquisition/czi_lsm780_nlo_metadata.xml.
+  const czi: AcquisitionSettings = {
+    source: 'czi', system: 'LSM 780, AxioObserver', softwareVersion: '13.0.1.518',
+    lasers: [{ name: 'Chameleon', wavelengthNm: 775, transmissionPct: 2 }],
+    brightZ: { enabled: false, points: [] },
+  }
+  it('says Auto Z brightness for Zeiss and Bright Z otherwise', () => {
+    expect(depthRampName(czi)).toBe('Auto Z brightness')
+    expect(depthRampName({ ...czi, source: 'oir' })).toBe('Bright Z')
+    expect(depthRampName(null)).toBe('Bright Z')
+    expect(acquisitionRows(czi)).toContainEqual({ k: 'Auto Z brightness', v: 'off' })
   })
 })
