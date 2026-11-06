@@ -319,15 +319,34 @@ function _spec_output_name(spec_params, params::Dict{String,Any})::String
         key = string(get(p, "key", ""))
         isempty(key) && continue
         ns = get(p, "namespace", nothing)
-        v  = strip(string(get(params, key, get(p, "default", ""))))
         if ns !== nothing && !isempty(string(ns))
+            v = strip(string(_saved_value_for(p, key, params)))
             isempty(v) || return v
         elseif key == "outputValueName" && isempty(legacy)
             # the pre-registry spelling, for a spec (or a custom module) not yet migrated
-            legacy = v
+            legacy = strip(string(get(params, key, get(p, "default", ""))))
         end
     end
     legacy
+end
+
+# The stored value of spec param `p`, falling back to a `formerKeys` spelling (a renamed param — saved
+# params that never went through `_apply_spec_defaults` still carry the old key), then the default.
+# Twin of `savedValueFor` (frontend/src/tasks/paramValues.ts).
+function _saved_value_for(p, key::String, params::Dict{String,Any})
+    k = _stored_key(key, get(p, "formerKeys", nothing), params)
+    k === nothing ? get(p, "default", "") : params[k]
+end
+
+# THE `formerKeys` lookup: the key `params` holds a renamed param's value under — `key` itself, else
+# the first former spelling present — or `nothing`. Shared by `_apply_spec_defaults`,
+# `_saved_value_for` and the chain-history leaves, so the precedence cannot drift between them.
+function _stored_key(key::AbstractString, former, params::AbstractDict)::Union{String,Nothing}
+    haskey(params, key) && return String(key)
+    for f in something(former, ())
+        haskey(params, string(f)) && return string(f)
+    end
+    nothing
 end
 
 """
