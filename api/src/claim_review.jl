@@ -36,13 +36,14 @@ last: the claim as the record WOULD support it. If the record raises nothing, ab
 """
 
 function claim_review_prompt(c::AbstractDict)::String
-    unit = isempty(get(c, "unitAttr", "")) ? "none named" : c["unitAttr"]
+    ua = _claim_unit_attrs(c)
+    unit = isempty(ua) ? "none named" : join(ua, " × ")
     """
     Claim: “$(c["text"])”
     Set: $(c["setUid"])
     Populations compared: $(join(c["populations"], ", "))
     Measure: $(c["measure"])
-    Statistical unit (image attribute): $(unit)
+    Replicate (image attributes; one value combination = one replicate): $(unit)
 
     Does the record support this claim as stated?"""
 end

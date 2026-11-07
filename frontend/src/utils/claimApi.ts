@@ -46,11 +46,18 @@ export function claimScopeOf(o: { setUid?: string | null; series: SeriesTarget[]
   return { setUid: o.setUid, populations: pops, measure: o.measure }
 }
 
-/** The attribute most likely to name the animal, for the unit picker's default: an exact
+/** The attribute most likely to name the animal, for the replicate picker's default: an exact
  *  mouse/animal/donor/subject/patient name, else the first one. '' when the set has none. */
 export function defaultUnitAttr(attrs: string[]): string {
   const want = /^(mouse|mice|animal|donor|subject|patient|individual)(_?id)?$/i
   return attrs.find(a => want.test(a.trim())) ?? attrs[0] ?? ''
+}
+
+/** A panel's stored replicate attributes: `claimUnits`, or the single `claimUnit` a panel kept before
+ *  a replicate could combine attributes (Mouse × Location). */
+export function claimUnitsOf(ui: { claimUnits?: string[]; claimUnit?: string }): string[] | null {
+  if (Array.isArray(ui.claimUnits)) return ui.claimUnits
+  return ui.claimUnit === undefined ? null : ui.claimUnit ? [ui.claimUnit] : []
 }
 
 /** Warnings per stage — what each chip counts. Info findings (within tolerance, n per unit) don't. */
@@ -95,7 +102,7 @@ export function parseClaimResult(r: Record<string, unknown> | null): ClaimResult
 
 /** POST /api/claim/state — state (no `entryId`) or restate a claim. */
 export async function stateClaim(body: {
-  projectUid: string; setUid: string; populations: string[]; measure: string; unitAttr: string; text: string
+  projectUid: string; setUid: string; populations: string[]; measure: string; unitAttrs: string[]; text: string
   entryId?: string; source?: Record<string, unknown>
 }, apiBase = ''): Promise<ClaimResult | null> {
   return parseClaimResult(await postJson(`${apiBase}/api/claim/state`, body))

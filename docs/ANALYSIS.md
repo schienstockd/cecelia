@@ -351,7 +351,8 @@ hover toolbar appeared.
 
 A summary plot across a set can carry a **claim** (the claim recital, `docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md`):
 the ✓-badge button in the plot's footer (`components/canvas/ClaimStrip.vue`) takes one sentence and the
-image attribute that names the animal; the scope (set, populations, measure) is the plot's. The record
+**replicate** — the image attribute(s) whose values together count as one independent sample (Mouse, or
+Mouse × Location); the scope (set, the populations the plot draws, measure) is the plot's. The record
 checks run at once (`POST /api/claim/state`) and the footer shows one chip per stage — Record,
 Consistency, Conventions — with the findings on hover. "Review" runs the model review (~$1, a Kiwi turn
 with the analyst's notes withheld). The claim and its findings are a Blackboard entry, where each finding

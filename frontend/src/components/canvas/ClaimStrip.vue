@@ -9,22 +9,24 @@ import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import TeleportPopover from '../TeleportPopover.vue'
 import InlineNote from '../InlineNote.vue'
+import ChipSelect from '../ChipSelect.vue'
 import { useToast } from '../../composables/useToast'
 import { useKiwiStore } from '../../stores/kiwi'
 import { fetchImageAttrs } from '../../composables/useImageAttrs'
 import type { SeriesTarget } from '../../plots/types'
 import {
-  CLAIM_STAGES, claimScopeOf, defaultUnitAttr, stageCounts, skippedLine,
+  CLAIM_STAGES, claimScopeOf, claimUnitsOf, defaultUnitAttr, stageCounts, skippedLine,
   stateClaim, checkClaim, reviewClaim, type ClaimResult,
 } from '../../utils/claimApi'
 
 const props = defineProps<{
   projectUid: string
   setUid?: string | null
-  series: SeriesTarget[]
+  series: SeriesTarget[]   // the populations the plot draws
   measure?: string
-  // the panel's persisted bag — the claim's entry, text and unit attribute
-  ui: { claimEntryId?: string; claimText?: string; claimUnit?: string }
+  // the panel's persisted bag — the claim's entry, text and replicate attributes (`claimUnit`: the
+  // single attribute a panel kept before a replicate could combine several)
+  ui: { claimEntryId?: string; claimText?: string; claimUnits?: string[]; claimUnit?: string }
 }>()
 
 const toast = useToast()
@@ -39,13 +41,14 @@ const reviewTurn = ref('')
 const open = ref(false)
 const btn = useTemplateRef<HTMLElement>('btn')
 const draftText = ref('')
-const draftUnit = ref('')
+const draftUnits = ref<string[]>([])
 const attrs = ref<string[]>([])
 
 async function openForm() {
   draftText.value = props.ui.claimText ?? ''
   attrs.value = (await fetchImageAttrs(props.projectUid, props.setUid ?? null, [])).map(a => a.name)
-  draftUnit.value = props.ui.claimUnit ?? defaultUnitAttr(attrs.value)
+  const kept = claimUnitsOf(props.ui)
+  draftUnits.value = kept ?? [defaultUnitAttr(attrs.value)].filter(Boolean)
   open.value = true
 }
 
@@ -54,11 +57,11 @@ async function submit() {
   const text = draftText.value.trim()
   if (!sc || !text) return
   busy.value = true
-  const r = await stateClaim({ projectUid: props.projectUid, ...sc, unitAttr: draftUnit.value, text,
+  const r = await stateClaim({ projectUid: props.projectUid, ...sc, unitAttrs: draftUnits.value, text,
                                ...(props.ui.claimEntryId ? { entryId: props.ui.claimEntryId } : {}) })
   busy.value = false
   if (!r) { toast.add({ severity: 'error', life: 5000, summary: 'Couldn’t check the claim' }); return }
-  props.ui.claimEntryId = r.entryId; props.ui.claimText = text; props.ui.claimUnit = draftUnit.value
+  props.ui.claimEntryId = r.entryId; props.ui.claimText = text; props.ui.claimUnits = [...draftUnits.value]; delete props.ui.claimUnit
   result.value = r
   open.value = false
 }
@@ -127,13 +130,10 @@ watch(() => props.projectUid, () => { result.value = null; void recheck() })
       <div class="claim-form" @click.stop>
         <input v-model="draftText" class="claim-text" type="text" placeholder="T cells move faster than B cells"
                aria-label="The claim" v-tooltip.top="'The claim, in your words'" @keydown.enter="submit" />
-        <label class="cc-row cc-row-tight cc-muted cc-fs-xs" v-tooltip.top="'The image attribute that names the animal'">
-          <span>Unit</span>
-          <select v-model="draftUnit">
-            <option value="">none</option>
-            <option v-for="a in attrs" :key="a" :value="a">{{ a }}</option>
-          </select>
-        </label>
+        <div class="cc-row cc-row-tight cc-muted cc-fs-xs claim-replicate">
+          <span v-tooltip.top="'What counts as one independent sample (n) — select several to combine'">Replicate</span>
+          <ChipSelect v-model="draftUnits" multiple :options="attrs.map(a => ({ value: a }))" />
+        </div>
         <div v-if="scope" class="cc-muted cc-fs-2xs">{{ scope.populations.join(' vs ') }} · {{ scope.measure }}</div>
         <div class="cc-row cc-row-tight claim-actions">
           <button class="cc-btn" type="button" @click="open = false">Cancel</button>
@@ -149,4 +149,5 @@ watch(() => props.projectUid, () => { result.value = null; void recheck() })
 .claim-form { display: flex; flex-direction: column; gap: 6px; padding: 8px; min-width: 18rem; }
 .claim-text { width: 100%; }
 .claim-actions { justify-content: flex-end; }
+.claim-replicate { flex-wrap: wrap; }
 </style>

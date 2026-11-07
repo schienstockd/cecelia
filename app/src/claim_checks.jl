@@ -14,20 +14,38 @@
 # provenance (`inferred`: read from the record, nothing recomputed) and the evidence.
 
 """
-    ClaimScope(set, populations, measure; unit_attr = "")
+    ClaimScope(set, populations, measure; unit_attrs = String[])
 
 What a claim is about: the set, the populations it compares (`"B/qc"`: segmentation `B`, gated
-population `qc`), the measure (`"live.track.speed"`) and the attribute that names the statistical
-unit (`"Mouse"`). No claim text — parsing a sentence into this is the Translator's job.
+population `qc`), the measure (`"live.track.speed"`) and the image attributes whose values together
+name one replicate — the statistical unit (`["Mouse"]`, or `["Mouse", "Location"]` when each site in
+each mouse counts once). No claim text — parsing a sentence into this is the Translator's job.
 """
 struct ClaimScope
     set::CciaSet
     populations::Vector{String}
     measure::String
-    unit_attr::String
+    unit_attrs::Vector{String}
 end
-ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString; unit_attr::AbstractString = "") =
-    ClaimScope(set, String.(populations), String(measure), String(unit_attr))
+ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString; unit_attrs = String[]) =
+    ClaimScope(set, String.(populations), String(measure), claim_unit_attrs(unit_attrs))
+
+"""
+    claim_unit_attrs(v) -> Vector{String}
+
+A replicate's attributes, normalised: a list or one string (`nothing` = none), trimmed, blanks and
+repeats dropped. The one rule for every scope that is stored, compared or checked.
+"""
+claim_unit_attrs(v) = unique!(String[strip(string(a)) for a in (v isa AbstractVector ? v : v === nothing ? () : (v,))
+                                     if !isempty(strip(string(a)))])
+
+# The replicate's name for text ("Mouse × Location") and an image's replicate ("M1 × left"; "" when
+# any of its attributes is blank — a half-named replicate can't be counted).
+_claim_unit_label(scope::ClaimScope) = join(scope.unit_attrs, " × ")
+function _claim_unit_of(img, attrs)
+    vals = String[string(get(img.attr, a, "")) for a in attrs]
+    any(isempty ∘ strip, vals) ? "" : join(vals, " × ")
+end
 
 # The segmentation a population path lives on, and its gate path inside that segmentation's gating
 # file — the shared pop-ref grammar (`_split_pop_ref`), minus derived markers like `_tracked`, which
@@ -143,7 +161,7 @@ end
     claim_record_table(scope::ClaimScope) -> Vector{Dict{String,Any}}
 
 One row per (image, population) over EVERY image in the set. Each row: `image`, `pop`, `valueName`,
-`included`, `hasData`, `unit` (the unit attribute's value), `paramsSource` (`kind => fun => source`)
+`included`, `hasData`, `unit` (the replicate: its attributes' values, `" × "`-joined), `paramsSource` (`kind => fun => source`)
 and `vars` — the processing variables as flat keys (`meta.*`, `params.<fun>.*`, `gate.*`,
 `motionDims`). Read-only.
 """
@@ -189,7 +207,7 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
             "image" => img.uid, "pop" => pop, "valueName" => vn, "included" => image_included(img),
             "calibration" => calib,
             "hasData" => isfile(table), "hasGate" => !isnothing(gate),
-            "unit" => isempty(scope.unit_attr) ? "" : string(get(img.attr, scope.unit_attr, "")),
+            "unit" => isempty(scope.unit_attrs) ? "" : _claim_unit_of(img, scope.unit_attrs),
             "paramsSource" => sources, "vars" => vars))
     end
     rows
@@ -229,10 +247,10 @@ function _claim_s0(rows, scope)
                 "excluded" => filter(i -> i in excl, nodata), "measure" => scope.measure))))
     end
 
-    if !isempty(scope.unit_attr)
+    if !isempty(scope.unit_attrs)
         blank = _claim_imgs(filter(r -> isempty(r["unit"]), rows))
-        isempty(blank) || push!(findings, qc_finding("warn", "claim.unit_blank"; attr = scope.unit_attr,
-            n = length(blank), detail = _claim_detail("S0", Dict{String,Any}("attr" => scope.unit_attr,
+        isempty(blank) || push!(findings, qc_finding("warn", "claim.unit_blank"; attr = _claim_unit_label(scope),
+            n = length(blank), detail = _claim_detail("S0", Dict{String,Any}("attrs" => scope.unit_attrs,
                 "images" => blank, "excluded" => filter(i -> i in excl, blank)))))
     end
 
@@ -386,11 +404,11 @@ function _claim_s2(rows, scope)
     isempty(used) && return findings
 
     # the statistical unit
-    if isempty(scope.unit_attr)
+    if isempty(scope.unit_attrs)
         push!(findings, qc_finding("warn", "claim.no_unit";
             detail = _claim_detail("S2", Dict{String,Any}("images" => _claim_imgs(used)))))
     else
-        attr = scope.unit_attr
+        attr = _claim_unit_label(scope)
         units = Dict(p => Set(String[r["unit"] for r in used if r["pop"] == p && !isempty(r["unit"])])
                      for p in scope.populations)
         imgs_per_unit = Dict{String,Vector{String}}()
@@ -400,7 +418,7 @@ function _claim_s2(rows, scope)
             r["image"] in v || push!(v, r["image"])
         end
         foreach(sort!, values(imgs_per_unit))
-        ev = Dict{String,Any}("attr" => attr, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
+        ev = Dict{String,Any}("attrs" => scope.unit_attrs, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
                               "imagesPerUnit" => imgs_per_unit)
         if length(scope.populations) >= 2
             shared = reduce(intersect, values(units))
@@ -432,7 +450,7 @@ function _claim_s2(rows, scope)
         multi = sort!([u for (u, is) in imgs_per_unit if length(is) > 1])
         isempty(multi) || push!(findings, qc_finding("info", "claim.images_per_unit"; attr = attr,
             n_images = length(_claim_imgs(filter(r -> !isempty(r["unit"]), used))), n = length(imgs_per_unit),
-            detail = _claim_detail("S2", Dict{String,Any}("attr" => attr, "units" => multi,
+            detail = _claim_detail("S2", Dict{String,Any}("attrs" => scope.unit_attrs, "units" => multi,
                 "imagesPerUnit" => imgs_per_unit))))
     end
 
@@ -463,7 +481,7 @@ groups because one group has no record of them (an S0 gap, not a clean bill).
 function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any}
     ran = String["S0.membership", "S0.data"]
     skipped = Dict{String,String}()
-    isempty(scope.unit_attr) ? (skipped["S0.unit"] = "no unit attribute given") : push!(ran, "S0.unit")
+    isempty(scope.unit_attrs) ? (skipped["S0.unit"] = "no replicate attribute given") : push!(ran, "S0.unit")
     push!(ran, "S0.params")
     _claim_needs_tracking(scope.measure) ? push!(ran, "S0.dims") : (skipped["S0.dims"] = "not a tracking measure")
     findings = _claim_s0(table, scope)
@@ -499,7 +517,7 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
     if isempty(used)
         skipped["S2"] = "no images with data"
     else
-        isempty(scope.unit_attr) || push!(ran, "S2.unit")
+        isempty(scope.unit_attrs) || push!(ran, "S2.unit")
         isempty(_claim_calibration_fields(scope.measure)) ? (skipped["S2.calibration"] = "measure needs no calibration") :
             push!(ran, "S2.calibration")
         append!(findings, _claim_s2(table, scope))

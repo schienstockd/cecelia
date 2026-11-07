@@ -2,8 +2,8 @@
 # scope over a set. Read-only: nothing is written. Plan: docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md.
 
 # The scope from query params, or a (400, body) tuple. `pops` is comma-separated pop paths
-# ("B/qc,T/qc"); `measure` a measure column ("live.track.speed"); `unitAttr` the image attribute that
-# names the statistical unit ("Mouse"), optional.
+# ("B/qc,T/qc"); `measure` a measure column ("live.track.speed"); `unitAttrs` the image attributes
+# whose values together name one replicate ("Mouse" or "Mouse,Location"), optional.
 function _claim_scope_from_query(q::AbstractDict)
     project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")
     pops = _query_list(q, "pops")
@@ -12,10 +12,10 @@ function _claim_scope_from_query(q::AbstractDict)
         return (400, JSON3.write((; error = "projectUid, setUid, pops and measure required")))
     set = _cohort_set(project_uid, set_uid)
     set isa Tuple && return set
-    ClaimScope(set, pops, measure; unit_attr = strip(get(q, "unitAttr", "")))
+    ClaimScope(set, pops, measure; unit_attrs = _query_list(q, "unitAttrs"))
 end
 
-# GET /api/claim/checks?projectUid&setUid&pops&measure[&unitAttr][&rows=1]
+# GET /api/claim/checks?projectUid&setUid&pops&measure[&unitAttrs][&rows=1]
 # → {findings, ran, skipped, notCompared, nRows, nUsed[, rows]}. `rows` (the per-(image, population)
 # record table the rules read) only on request: it carries every flattened param and is large.
 function api_claim_checks(req::HTTP.Request)
@@ -40,8 +40,8 @@ end
 # one by hand. Rewording the claim or changing its scope starts a new round; every round stays on
 # the entry.
 #
-#   claim = {setUid, populations, measure, unitAttr, text, round, rounds: [{round, at, by, text,
-#            setUid, populations, measure, unitAttr}], findingIds: {key: "s01"},
+#   claim = {setUid, populations, measure, unitAttrs, text, round, rounds: [{round, at, by, text,
+#            setUid, populations, measure, unitAttrs}], findingIds: {key: "s01"},
 #            lastCheck: {at, ran, skipped, open: ["s01", …]}, source?}
 
 # What identifies a finding across re-checks: its code and what it is about, not its counts.
@@ -78,8 +78,15 @@ function _claim_evidence_line(ev)::String
     ""
 end
 
+# A claim's replicate attributes, from an entry or a request body: `unitAttrs` (a list), or the older
+# single `unitAttr` string; normalised by `claim_unit_attrs`.
+function _claim_unit_attrs(c)::Vector{String}
+    field(k) = something(get(c, k, nothing), get(c, Symbol(k), nothing), Some(nothing))   # String- or Symbol-keyed
+    claim_unit_attrs(something(field("unitAttrs"), field("unitAttr"), Some(nothing)))
+end
+
 _claim_scope_text(c) = string("set `", c["setUid"], "` · ", join(c["populations"], " vs "), " · `", c["measure"], "`",
-                              isempty(get(c, "unitAttr", "")) ? "" : " · unit: " * c["unitAttr"])
+                              isempty(_claim_unit_attrs(c)) ? "" : " · replicate: " * join(_claim_unit_attrs(c), " × "))
 
 # The entry's text for a claim and its latest check. No timestamp in it: a re-check that finds the
 # same thing leaves the text byte-identical, so the revise is a no-op and no snapshot is spent.
@@ -140,7 +147,7 @@ end
 function _claim_run(uid::AbstractString, c::AbstractDict)
     set = _cohort_set(uid, c["setUid"])
     set isa Tuple && return set
-    claim_checks(ClaimScope(set, String.(c["populations"]), c["measure"]; unit_attr = get(c, "unitAttr", "")))
+    claim_checks(ClaimScope(set, String.(c["populations"]), c["measure"]; unit_attrs = _claim_unit_attrs(c)))
 end
 
 function _claim_last_check(result)
@@ -164,15 +171,16 @@ function _claim_from_body(body)
     # trimmed like `_claim_scope_from_query`, so a scope means the same thing from either route
     Dict{String,Any}("setUid" => String(strip(_wstr(body, :setUid))),
                      "populations" => String[String(strip(string(p))) for p in pops if !isempty(strip(string(p)))],
-                     "measure" => String(strip(_wstr(body, :measure))), "unitAttr" => String(strip(_wstr(body, :unitAttr))),
+                     "measure" => String(strip(_wstr(body, :measure))), "unitAttrs" => _claim_unit_attrs(body),
                      "text" => String(strip(String(get(body, :text, "")))))
 end
-_claim_same_round(a, b) = all(a[k] == b[k] for k in ("text", "setUid", "populations", "measure", "unitAttr"))
+const _CLAIM_SCOPE_KEYS = ("text", "setUid", "populations", "measure", "unitAttrs")
+_claim_same_round(a, b) = all(get(a, k, nothing) == get(b, k, nothing) for k in _CLAIM_SCOPE_KEYS)
 
 """
     POST /api/claim/state
 
-Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttr?, text, entryId?, source? }`
+Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttrs?: [attr, …], text, entryId?, source? }`
 Reply: `{ ok, entryId, round, findings, ran, skipped }`
 
 States a claim: runs the checks and writes them as a Blackboard entry (S0–S2 warnings as `### sNN`
@@ -190,7 +198,7 @@ function api_claim_state(body_bytes::Vector{UInt8})
     src = get(body, :source, nothing)
     src isa AbstractDict && (new["source"] = JSON3.read(JSON3.write(src), Dict{String,Any}))
     by = author_stamp(); at = string(Dates.now())
-    round_rec(c, r) = merge(Dict{String,Any}(k => c[k] for k in ("text", "setUid", "populations", "measure", "unitAttr")),
+    round_rec(c, r) = merge(Dict{String,Any}(k => c[k] for k in _CLAIM_SCOPE_KEYS),
                             Dict{String,Any}("round" => r, "at" => at, "by" => by))
     if isempty(id)
         c = new
@@ -211,8 +219,10 @@ function api_claim_state(body_bytes::Vector{UInt8})
         old = get(meta, "claim", nothing)
         old isa AbstractDict || return 400, JSON3.write((; error = "Not a claim entry"))
         c = _to_str_dict(old)
+        # the single-attribute form, from before a replicate could combine several
+        c["unitAttrs"] = _claim_unit_attrs(c); delete!(c, "unitAttr")
         if !_claim_same_round(c, new)
-            for k in ("text", "setUid", "populations", "measure", "unitAttr"); c[k] = new[k]; end
+            for k in _CLAIM_SCOPE_KEYS; c[k] = new[k]; end
             c["round"] = Int(get(c, "round", 1)) + 1
             delete!(c, "review")   # it answered the earlier round's question
             push!(c["rounds"], round_rec(c, c["round"]))

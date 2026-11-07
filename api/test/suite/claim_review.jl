@@ -32,7 +32,7 @@ end
         imgs = [add_image!(s; name = nm, meta = Dict{String,Any}("ori_path" => "/tmp/x.tif")) for nm in ("i1", "i2")]
         for (img, m) in zip(imgs, ("1", "2")); img.attr["Mouse"] = m; Cecelia.save!(img); end
         st, r = post(api_claim_state, Dict("projectUid" => proj.uid, "setUid" => s.uid, "populations" => ["B/qc", "T/qc"],
-            "measure" => "live.track.speed", "unitAttr" => "Mouse", "text" => "T cells move faster than B cells"))
+            "measure" => "live.track.speed", "unitAttrs" => ["Mouse"], "text" => "T cells move faster than B cells"))
         id = String(r.entryId)
         md0 = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
         @test occursin("review (not run)", md0)
@@ -52,7 +52,7 @@ end
         wait_idle(proj.uid)
         # the prompt names the claim and scope; the withheld tools never reach the engine
         sent = only(fake.seen_opts)
-        @test occursin("T cells move faster than B cells", sent) && occursin("Statistical unit (image attribute): Mouse", sent)
+        @test occursin("T cells move faster than B cells", sent) && occursin("Replicate (image attributes; one value combination = one replicate): Mouse", sent)
         @test !occursin("read_blackboard_entry", sent) && occursin("get_task_log", sent)
 
         meta = _read_bb_meta(proj.uid, id)
@@ -70,7 +70,7 @@ end
         post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test haskey(_read_bb_meta(proj.uid, id)["claim"], "review")
         post(api_claim_state, Dict("projectUid" => proj.uid, "entryId" => id, "setUid" => s.uid, "populations" => ["B/qc", "T/qc"],
-            "measure" => "live.track.speed", "unitAttr" => "Mouse", "text" => "T cells are faster per mouse"))
+            "measure" => "live.track.speed", "unitAttrs" => ["Mouse"], "text" => "T cells are faster per mouse"))
         @test !haskey(_read_bb_meta(proj.uid, id)["claim"], "review")
         @test occursin("review (not run)", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
     finally

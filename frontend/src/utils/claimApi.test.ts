@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { claimPopRef, claimScopeOf, defaultUnitAttr, stageCounts, skippedLine, parseClaimResult } from './claimApi'
+import { claimPopRef, claimScopeOf, claimUnitsOf, defaultUnitAttr, stageCounts, skippedLine, parseClaimResult } from './claimApi'
 
 const s = (valueName: string, pop: string) => ({ valueName, pop, popType: 'flow' })
 
@@ -21,6 +21,11 @@ describe('claimApi', () => {
     expect(defaultUnitAttr(['Treatment', 'animal_id'])).toBe('animal_id')
     expect(defaultUnitAttr(['Mousetrap', 'Location'])).toBe('Mousetrap')   // no exact match: first
     expect(defaultUnitAttr([])).toBe('')
+    // the replicate a panel kept: a list, or the single attribute an older panel stored
+    expect(claimUnitsOf({ claimUnits: ['Mouse', 'Location'] })).toEqual(['Mouse', 'Location'])
+    expect(claimUnitsOf({ claimUnit: 'Mouse' })).toEqual(['Mouse'])
+    expect(claimUnitsOf({ claimUnit: '' })).toEqual([])
+    expect(claimUnitsOf({})).toBeNull()
   })
   it('counts warnings per stage, not info', () => {
     const r = parseClaimResult({ entryId: 'bb-1', round: 2, ran: ['S0.data'], skipped: { 'S0.unit': 'no unit attribute given' },

@@ -318,13 +318,14 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
 
 @_tool
 def check_claim(project_uid: str, set_uid: str, populations: list[str], measure: str,
-                unit_attr: str | None = None) -> dict:
+                unit_attrs: list[str] | None = None) -> dict:
     """The claim recital's rule checks: before a comparison leaves Cecelia as a claim ("T cells move
     faster than B cells"), does the RECORD let it be made? Read-only, no model, no significance test.
 
     Scope: the set, the populations compared (pop paths, e.g. ["B/qc", "T/qc"]), the measure
-    ("live.track.speed") and `unit_attr`, the image attribute naming the statistical unit ("Mouse").
-    Leave `unit_attr` unset only if the claim really has none — that is itself a finding.
+    ("live.track.speed") and `unit_attrs`, the image attributes whose values together name one
+    replicate — the statistical unit (["Mouse"], or ["Mouse", "Location"] when each site in each mouse
+    counts once). Leave it unset only if the claim really has none — that is itself a finding.
 
     Returns {findings, ran, skipped, notCompared, nRows, nUsed}. Each finding has level, code, short,
     long and detail {stage, provenance, evidence}. Stages: S0 record gaps (image excluded, no data,
@@ -334,12 +335,12 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     `ran` / `skipped` say what was checked: no findings is NOT a pass when checks were skipped.
     Report findings as questions back to the analyst ("this comparison can't support the claim yet,
     because…"), with the finding's `long` text as the options. Never as a verdict on the biology."""
-    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attr)
+    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attrs)
 
 
 @_tool
 def state_claim(project_uid: str, set_uid: str, populations: list[str], measure: str, text: str,
-                unit_attr: str | None = None, entry_id: str | None = None) -> dict:
+                unit_attrs: list[str] | None = None, entry_id: str | None = None) -> dict:
     """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry with
     the check_claim findings as its `### sNN` sections — each one the user marks good / bad / unsure.
     Only when the user asks to state or record a claim; never for your own reading of the data.
@@ -349,7 +350,7 @@ def state_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     on the entry — rewording to fit the data is a new round, not a fix); unchanged just re-checks.
     Returns {entryId, round, findings, ran, skipped}. Nothing is blocked or certified: say what the
     findings ask of the analysis, and which checks did not run."""
-    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attr, entry_id)
+    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attrs, entry_id)
 
 
 # Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out

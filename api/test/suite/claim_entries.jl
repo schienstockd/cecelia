@@ -12,7 +12,7 @@
         s    = add_set!(proj; name = "set-A")
         imgs = [add_image!(s; name = nm, meta = Dict{String,Any}("ori_path" => "/tmp/x.tif")) for nm in ("i1", "i2")]
         scope = Dict("projectUid" => proj.uid, "setUid" => s.uid, "populations" => ["B/qc", "T/qc"],
-                     "measure" => "live.track.speed", "unitAttr" => "Mouse")
+                     "measure" => "live.track.speed", "unitAttrs" => ["Mouse"])
 
         @test post(api_claim_state, Dict("projectUid" => proj.uid))[1] == 400
         st, r = post(api_claim_state, merge(scope, Dict("text" => "T cells move faster than B cells")))
@@ -60,6 +60,18 @@
         imgs[1].attr["Mouse"] = ""; Cecelia.save!(imgs[1])
         st, r5 = post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test any(f -> get(f, :sectionId, "") == sid, r5.findings)
+
+        # an entry from before a replicate could combine attributes (`unitAttr`, one string): it still
+        # checks, and restating it with the same single attribute is not a new round
+        c = _read_bb_meta(proj.uid, id)["claim"]; delete!(c, "unitAttrs"); c["unitAttr"] = "Mouse"
+        _set_bb_meta_field!(proj.uid, id, "claim", c)
+        @test post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))[1] == 200
+        @test post(api_claim_state, merge(scope, Dict("entryId" => id, "text" => "T cells move faster per image")))[2].round == 2
+        # Mouse × Location is a different replicate: a new round
+        st, r6 = post(api_claim_state, merge(scope, Dict("entryId" => id, "text" => "T cells move faster per image",
+                                                          "unitAttrs" => ["Mouse", "Location"])))
+        @test st == 200 && r6.round == 3
+        @test occursin("replicate: Mouse × Location", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
 
         # not a claim entry
         st, bb = api_blackboard_create(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid, "title" => "note", "content" => "x"))))

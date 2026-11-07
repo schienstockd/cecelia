@@ -326,7 +326,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         long  = "The claim runs on fewer images than the set holds — run the missing step on them, or narrow the claim's scope."),
     "claim.unit_blank" => (
         short = "{attr} is blank on {n} image(s)",
-        long  = "The statistical unit can't be counted for them — fill in {attr} before testing per unit."),
+        long  = "Their replicate can't be counted — fill in {attr} before testing per replicate."),
     "claim.params_not_recorded" => (
         short = "No {kind} params recorded for {pop} on {n} image(s)",
         long  = "Whether those images were processed the same way can't be checked — re-run the step to record it, or note how it was done."),
@@ -351,17 +351,17 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         long  = "Only one group has them on record, so whether the groups match there is unknown — record them for both before relying on the comparison."),
     # S2: is the claim built the way the field expects?
     "claim.no_unit" => (
-        short = "No statistical unit named",
-        long  = "A pooled test counts every cell or track as independent — name the attribute that identifies the animal or sample (e.g. Mouse)."),
+        short = "No replicate named",
+        long  = "A pooled test counts every cell or track as independent — name the attribute(s) that identify one replicate (e.g. Mouse)."),
     "claim.few_units" => (
         short = "{attr}: n = {n}, so a rank test can't go below p = {p}",
-        long  = "A rank test per {attr} can't reach p < 0.05 with this many, and a t-test rests on normality it can't check — add {attr}s, or report the comparison as descriptive."),
+        long  = "A rank test across {n} replicates can't reach p < 0.05, and a t-test rests on normality it can't check — add replicates, or report the comparison as descriptive."),
     "claim.unit_count" => (
         short = "Tested per {attr}: n = {n}",
-        long  = "Report n as the number of {attr}s, not cells or tracks."),
+        long  = "Report n as the number of replicates ({attr}), not cells or tracks."),
     "claim.images_per_unit" => (
-        short = "{n_images} images from {n} distinct {attr}",
-        long  = "A test per image counts some {attr}s more than once — summarise per {attr} first."),
+        short = "{n_images} images from {n} replicates ({attr})",
+        long  = "A test per image counts some replicates more than once — summarise per replicate first."),
     "claim.uncalibrated" => (
         short = "{n} image(s) lack calibration for {measure}",
         long  = "The measure is in pixels or frames there, not physical units — fix the image metadata, then re-measure."),

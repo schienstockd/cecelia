@@ -52,7 +52,7 @@ function _cc_set(imgs)
     set
 end
 
-_cc_run(imgs) = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attr = "Mouse"))
+_cc_run(imgs) = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"]))
 _cc_codes(r) = sort!([f["code"] for f in r["findings"] if f["level"] == "warn"])
 _cc_find(r, code) = filter(f -> f["code"] == code, r["findings"])
 # seven mice, one image each: one over the smallest paired design whose rank-test floor is under 0.05
@@ -164,6 +164,20 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     ipu = _cc_find(r, "claim.images_per_unit")
     @test length(ipu) == 1 && ipu[1]["detail"]["evidence"]["units"] == ["3"]
     @test isempty(_cc_find(_cc_run(_cc_clean()), "claim.images_per_unit"))   # clean twin: one image each
+    # …the replicate as Mouse × Location: mouse 3's three images are three sites → six replicates,
+    # one image each. Per mouse alone they'd still be four.
+    for (img, loc) in zip(imgs, ("a", "a", "a", "b", "c", "a")); img.attr["Location"] = loc; end
+    rml = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse", "Location"]))
+    ev = _cc_find(rml, "claim.unit_count")[1]["detail"]["evidence"]
+    @test ev["n"] == 6 && ev["attrs"] == ["Mouse", "Location"] && haskey(ev["imagesPerUnit"], "3 × b")
+    @test _cc_codes(rml) == [] && isempty(_cc_find(rml, "claim.images_per_unit"))
+    @test claim_unit_attrs([" Mouse ", "", "Mouse", "Location"]) == ["Mouse", "Location"]
+    @test claim_unit_attrs("Mouse") == ["Mouse"] && claim_unit_attrs(nothing) == String[]
+    # …a site left blank makes that image's replicate uncountable — S0 names the combined attribute
+    delete!(imgs[5].attr, "Location")
+    rml = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse", "Location"]))
+    @test "claim.unit_blank" in _cc_codes(rml)
+    @test occursin("Mouse × Location", _cc_find(rml, "claim.unit_blank")[1]["short"])
 
     # ── S2: unpaired floors (exact Mann–Whitney): 2 vs 2 → 1/3, 4 vs 4 → 2/70 ──
     @test claim_min_p_unpaired(2, 2) ≈ 1 / 3
@@ -178,10 +192,10 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     # …an intensity claim doesn't need calibration: quiet, and says it skipped the check
     imgs = _cc_clean(); delete!(imgs[2].meta, "PhysicalSizeUnit")
     set = _cc_set(imgs)
-    rows = claim_record_table(ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attr = "Mouse"))
-    @test _cc_codes(claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attr = "Mouse"))) ==
+    rows = claim_record_table(ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"]))
+    @test _cc_codes(claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"]))) ==
           ["claim.uncalibrated"]
-    ri = claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "mean_intensity_1"; unit_attr = "Mouse"))
+    ri = claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "mean_intensity_1"; unit_attrs = ["Mouse"]))
     @test isempty(_cc_find(ri, "claim.uncalibrated")) && haskey(ri["skipped"], "S2.calibration")
 
     # every claim finding renders from the catalog (no unfilled placeholder)
