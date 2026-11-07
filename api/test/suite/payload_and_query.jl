@@ -2,7 +2,7 @@
 #
 # Five testsets covering the small API-shape surface the client sees first: points-only
 # value_name reaches the payload (labels vs label_props registries), run-log enrichment
-# only labels image-writing tasks with outputValueName (lineage forest), register-legacy
+# only labels version-writing tasks with outputValueName (lineage forest), register-legacy
 # REPAIRS an existing image (does not clobber the migrated pointers), the funparams
 # sources picker (per-image (image, valueName) pairs), and /api/plots/populations
 # narrowing to one valueName. Extracted so runtests.jl contains only include lines +
@@ -44,7 +44,7 @@
     end
 end
 
-@testset "API: run-log enrichment only labels image-writing tasks with outputValueName" begin
+@testset "API: run-log enrichment only labels version-writing tasks with outputValueName" begin
     # `outputValueName` on a run-log entry drives the version-lineage tree in
     # ImageMetadataDialog. `outputValueName` is polymorphic in the task registry: for
     # `cleanupImages.*` / `editImages.*` it names a NEW STORED IMAGE VERSION, for
@@ -74,12 +74,19 @@ end
         # a labels output ('default' labels), not the 'default' image version.
         append_run_log!(img, "segment.cellposeMeasure", "smoothed", "done",
                         Dict("outputValueName" => "default"); at = "2026-08-08T12:34:53")
+        # An editImages.cropImage of `driftCorrected`: MUST NOT be enriched — its `default` is the
+        # version in the NEW image the crop creates (`task_output_effect == "new-image"`). Enriched,
+        # it closes `driftCorrected → default → driftCorrected` with the drift edge above.
+        append_run_log!(img, "editImages.cropImage", "driftCorrected", "done",
+                        Dict("x0" => 0, "x1" => 10); at = "2026-08-09T10:00:00")
 
         entries = _enriched_run_log(img)
         clean  = entries[findfirst(e -> e["fun"] == "cleanupImages.driftCorrect", entries)]
         measure = entries[findfirst(e -> e["fun"] == "segment.cellposeMeasure", entries)]
         @test get(clean, "outputValueName", "") == "driftCorrected"     # writes a version
         @test !haskey(measure, "outputValueName")                       # writes labels, not a version
+        crop = entries[findfirst(e -> e["fun"] == "editImages.cropImage", entries)]
+        @test !haskey(crop, "outputValueName")                          # writes a new image
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
