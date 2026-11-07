@@ -238,11 +238,24 @@ end
 # for a WebSocket upgrade — the bindings then hold for the whole connection, so a `task:run` from the
 # autonomous MCP (which marks its /ws connect like its HTTP calls) is stamped `via: claude`, not "app".
 function _with_request_author(f, req::HTTP.Request)
-    via = HTTP.header(req, "X-Cecelia-Client", "") == "claude" ? "claude" : "app"
+    via = _from_claude(req) ? "claude" : "app"
     caller = via == "claude" ?
         request_caller(HTTP.header(req, "X-Cecelia-Model", ""), HTTP.header(req, "X-Cecelia-Session", "")) :
         REQUEST_CALLER[]
     Base.ScopedValues.with(f, REQUEST_VIA => via, REQUEST_CALLER => caller)
+end
+
+# A request from a Claude session (the MCP observer / autonomous servers mark every call, HTTP and
+# WebSocket alike — mcp/cecelia_mcp/client.py `claude_headers`). A label, not a credential: the API
+# token is the gate; this says who is asking, for stamping and for the AI switch.
+_from_claude(req::HTTP.Request)::Bool = HTTP.header(req, "X-Cecelia-Client", "") == "claude"
+
+# The AI switch on a route that hands out a model path or touches a Claude login (AI_SURFACES_AUDIT.md
+# §8.7.3): with AI off for the active profile it answers 403 `{error, setBy}` and never runs the handler.
+# Logout, cancel and the conversation purge stay open — they remove credentials.
+_ai_gated(handler::Function) = function (req, body_bytes)
+    refusal = Cecelia.ai_refusal()
+    refusal === nothing ? handler(req, body_bytes) : (403, JSON3.write(refusal))
 end
 
 # ── GET ─────────────────────────────────────────────────────────────────────
@@ -316,7 +329,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/chains/history-params" => (req, body_bytes) -> (api_chains_history_params(req)),
     "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent(req)),
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
-    "/api/observer/chat"     => (req, body_bytes) -> (api_observer_chat(req)),
+    "/api/observer/chat"     => _ai_gated((req, body_bytes) -> (api_observer_chat(req))),
     "/api/kiwi/turns" => (req, body_bytes) -> (api_kiwi_turns(req)),
     "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
     "/api/optical-flow/models" => (req, body_bytes) -> (api_optical_flow_models(req)),
@@ -371,8 +384,8 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/figures/style" => (req, body_bytes) -> (api_figures_style_get(req)),
     # Kiwi profile roster + terminal one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6).
     "/api/kiwi/profiles"          => (req, body_bytes) -> (api_kiwi_profiles_list(req)),
-    "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
-    "/api/kiwi/profiles/auth"     => (req, body_bytes) -> (api_kiwi_profiles_auth(req)),
+    "/api/kiwi/terminal/command"  => _ai_gated((req, body_bytes) -> (api_kiwi_terminal_command(req))),
+    "/api/kiwi/profiles/auth"     => _ai_gated((req, body_bytes) -> (api_kiwi_profiles_auth(req))),
     "/api/kiwi/profiles/login"    => (req, body_bytes) -> (api_kiwi_profiles_login_status(req)),
     # Per-profile settings (USER_PROFILE_PLAN Phase 4). Hydrates the frontend Pinia store on launch.
     "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
@@ -446,7 +459,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/claim/review" => (req, body_bytes) -> (api_claim_review(body_bytes)),
     "/api/lablog/append" => (req, body_bytes) -> (api_lablog_append(body_bytes)),
     "/api/lablog/capture" => (req, body_bytes) -> (api_lablog_capture(body_bytes)),
-    "/api/observer/register" => (req, body_bytes) -> (api_observer_register(body_bytes)),
+    "/api/observer/register" => _ai_gated((req, body_bytes) -> (api_observer_register(body_bytes))),
     "/api/observer/labarchives/set" => (req, body_bytes) -> (api_observer_labarchives_set(body_bytes)),
     "/api/lablog/dismiss" => (req, body_bytes) -> (api_lablog_dismiss(body_bytes)),
     "/api/images/meta/resync" => (req, body_bytes) -> (api_images_meta_resync(body_bytes)),
@@ -510,8 +523,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/profiles/delete"     => (req, body_bytes) -> (api_kiwi_profiles_delete(body_bytes)),
     "/api/kiwi/profiles/logout"     => (req, body_bytes) -> (api_kiwi_profiles_logout(body_bytes)),
     "/api/kiwi/profiles/end-session" => (req, body_bytes) -> (api_kiwi_profiles_end_session(body_bytes)),
-    "/api/kiwi/profiles/login"        => (req, body_bytes) -> (api_kiwi_profiles_login_start(body_bytes)),
-    "/api/kiwi/profiles/login/code"   => (req, body_bytes) -> (api_kiwi_profiles_login_code(body_bytes)),
+    "/api/kiwi/profiles/login"        => _ai_gated((req, body_bytes) -> (api_kiwi_profiles_login_start(body_bytes))),
+    "/api/kiwi/profiles/login/code"   => _ai_gated((req, body_bytes) -> (api_kiwi_profiles_login_code(body_bytes))),
     "/api/kiwi/profiles/login/cancel" => (req, body_bytes) -> (api_kiwi_profiles_login_cancel(body_bytes)),
     # Per-profile settings — partial-dict merge (USER_PROFILE_PLAN Phase 4). Value `null` deletes.
     "/api/profile/settings/patch"   => (req, body_bytes) -> (api_profile_settings_patch(body_bytes)),
@@ -871,6 +884,15 @@ function handle_stream(stream::HTTP.Stream)
     if !_auth_exempt(req.method, path) && !_request_authorized(req)
         read(stream)
         return _write_unauthorized!(stream, path)
+    end
+    # AI off ⇒ refuse every request from Claude (AI_TOGGLE_PLAN D1). Here, beside the token check,
+    # because the WS upgrade and the binary routes below never reach `handle_http`.
+    if _from_claude(req) && !_auth_exempt(req.method, path)
+        refusal = Cecelia.ai_refusal()
+        if refusal !== nothing
+            read(stream)
+            return _write_response!(stream, 403, JSON3.write(refusal), "Content-Type" => "application/json")
+        end
     end
 
     if HTTP.WebSockets.isupgrade(req)

@@ -63,12 +63,15 @@ end
 # auto-repairs). No retry, no queue — a missed push is not a crash-severity event; the
 # clipboard/toast is right there.
 #
-# Return value: `(:sent | :fallback | :not_paired, message_or_nothing)`. The message string
+# Return value: `(:sent | :fallback | :not_paired | :ai_off, message_or_nothing)`. The message string
 # is returned so the caller can log/log-tag it consistently; the frontend only sees the
 # outcome symbol via the JSON response.
 function push_capture_notification(project_uid::AbstractString, capture_id::AbstractString,
                                    address, notes::AbstractString = ""
                                    )::Tuple{Symbol,Union{String,Nothing}}
+    # AI off ⇒ nothing goes to a Claude session. Checked HERE, not at a route: this is outbound, so
+    # the request-side refusal (handle_stream) never sees it (AI_SURFACES_AUDIT.md §2, B4).
+    Cecelia.ai_enabled() || return (:ai_off, nothing)
     record = _read_push_target(project_uid)
     record === nothing && return (:not_paired, nothing)
     socket_path = String(get(record, "socketPath", ""))

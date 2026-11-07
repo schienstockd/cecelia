@@ -110,3 +110,57 @@ export function capabilityGroups(): { key: ToolGroupKey; title: string; items: C
   return TOOL_GROUPS.map(g => ({ ...g, items: CAPABILITIES.filter(c => c.group === g.key) }))
     .filter(g => g.items.length > 0)
 }
+
+// ── Every way AI reaches Cecelia — the AI switch's registry (docs/todo/AI_TOGGLE_PLAN.md P2) ──────────
+// One row per surface that starts a model, hands out a way to start one, touches a Claude login or
+// sends something to a Claude session. The opt-in dialog's "what is sent" and "what you gain" lists
+// read `sends` / `gain` from here. Each row names the server-side point that refuses it with AI off
+// (`app/src/ai/ai_switch.jl`); `claudeTools.test.ts` pins the rows to the backend:
+//   - every route wrapped in `_ai_gated(…)` in api/src/server.jl is a `route` row's route, and back;
+//   - every api/src file that calls `kiwi_start_turn(` is a `turn` row's source, and back;
+//   - `_agent_spawn_cmd(` (the one place a `claude` process is built) is used only in agent_runner.jl
+//     and claude_auth.jl — a new spawn elsewhere fails until it is routed through a gated seam.
+// The CAPABILITIES above are what a session can USE once AI is on; this is what the switch turns off.
+
+/** Which server-side point refuses the surface with AI off. */
+export type AiEnforcedBy =
+  | 'turn'      // kiwi_start_turn — every in-app model turn
+  | 'request'   // handle_stream — every request marked `X-Cecelia-Client: claude` (plan D1)
+  | 'route'     // _ai_gated(…) on the route table
+  | 'push'      // push_capture_notification — outbound, so no request to refuse
+
+export interface AiSurface {
+  id: string
+  label: string          // what the user knows it as
+  enforcedBy: AiEnforcedBy
+  source: string         // the backend file holding the refusal (`turn`: the caller of kiwi_start_turn)
+  routes: string[]       // `route` rows: the gated paths; [] otherwise
+  sends: string          // what leaves the machine — user wording, '' when nothing does
+  gain: string           // what the user gets — user wording, '' for plumbing
+}
+
+export const AI_SURFACES: AiSurface[] = [
+  { id: 'kiwi', label: 'Ask Kiwi', enforcedBy: 'turn', source: 'api/src/kiwi_api.jl', routes: [],
+    sends: 'Your question, and what Kiwi reads to answer it: names, notes, settings and numbers from the project, plus image crops and the frames you share',
+    gain: 'Answers about your project, each one linked to the data behind it' },
+  { id: 'claim-review', label: 'Review a claim', enforcedBy: 'turn', source: 'api/src/claim_review.jl', routes: [],
+    sends: 'The claim and the project record behind it, image crops included',
+    gain: 'A second reading of a claim before it leaves Cecelia' },
+  { id: 'terminal', label: 'Claude in your terminal', enforcedBy: 'request', source: 'api/src/server.jl', routes: [],
+    sends: 'Whatever your Claude session asks Cecelia’s tools for — the project, results and images',
+    gain: 'A Claude session that reads your project, points at the viewer and builds chains, boards, gates and notebooks for you' },
+  { id: 'terminal-start', label: 'Start Claude from Cecelia', enforcedBy: 'route', source: 'api/src/server.jl',
+    routes: ['/api/observer/chat', '/api/kiwi/terminal/command'], sends: '', gain: '' },
+  { id: 'terminal-setup', label: 'Set up Claude in your terminal', enforcedBy: 'route', source: 'api/src/server.jl',
+    routes: ['/api/observer/register'], sends: '', gain: '' },
+  { id: 'claude-login', label: 'Claude login', enforcedBy: 'route', source: 'api/src/server.jl',
+    routes: ['/api/kiwi/profiles/auth', '/api/kiwi/profiles/login', '/api/kiwi/profiles/login/code'], sends: '', gain: '' },
+  { id: 'capture-push', label: 'Send a shared frame to your Claude session', enforcedBy: 'push', source: 'api/src/push_writer.jl', routes: [],
+    sends: 'A shared frame’s id and your note, to your own paired Claude session',
+    gain: 'Your session sees what you shared without copy and paste' },
+]
+
+/** The rows the opt-in dialog lists: everything that sends data or gives the user something. */
+export function aiDialogRows(): AiSurface[] {
+  return AI_SURFACES.filter(s => s.sends || s.gain)
+}
