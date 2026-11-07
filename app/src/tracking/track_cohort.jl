@@ -325,10 +325,12 @@ end
 
 # The per-track colour values for the shown tracks, read from each source's own per-track table.
 #
-# Only columns the per-track table provides DIRECTLY (the motility measures, and the track table's own
-# obs such as `clusters.{suffix}`): a cell measure would first have to be aggregated, which means
-# choosing WHICH aggregate — a decision a plot has nowhere to ask about. An unknown column comes back as
-# "none" so the caller drops the picker rather than painting a scale with no data behind it.
+# Columns the per-track table provides directly (the motility measures, the track table's own obs such
+# as `clusters.{suffix}`), plus a named per-track aggregate (`area.mean`,
+# `live.cell.hmm.state.movement.1`). The name already says which aggregate to use, so its base is
+# derived with `track_aggregate_measures`, the same way `pop_df` does it. A bare cell measure (`area`)
+# names no aggregate and stays out. An unknown column comes back as "none", so the caller drops the
+# picker rather than painting a scale with no data behind it.
 function _track_group_values(g::TrackPlotGroup, shown_keys, owner, color_by::AbstractString)
     values = Dict{String,Any}()
     kind = "none"
@@ -336,7 +338,8 @@ function _track_group_values(g::TrackPlotGroup, shown_keys, owner, color_by::Abs
     for k in shown_keys; push!(get!(by_src, owner[k][1], String[]), k); end
     for (i, ks) in by_src
         s = g.sources[i]
-        tp = track_props(s.img; value_name = s.value_name)
+        tp = track_props(s.img; value_name = s.value_name,
+                         cell_measures = track_aggregate_measures(s.img, s.value_name, [color_by]))
         (color_by in names(tp)) || continue
         col = tp[!, color_by]
         # the ONE measure-type detector (`track_props`' own) — `eltype <: Real` is not it: a joined

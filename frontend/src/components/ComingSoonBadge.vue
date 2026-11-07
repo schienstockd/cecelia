@@ -11,9 +11,9 @@
   `tier` makes it the feature-maturity badge (docs/todo/FEATURE_MATURITY_PLAN.md): "Coming soon" is the
   bottom of the same scale, so one badge says all of it. With a tier it is the map's tier dot plus the
   tier's word, no pill (`lib/guides/tiers.ts` → `chipDot`); `exempt` renders
-  nothing (no scientific result, no badge). Where pages and tasks show it: `PageMaturity.vue`, TaskRunner.
-  `dot` drops the word, for a spot where it is already written next to it (TaskRunner: the picked
-  function's label carries "· Experimental"); the host's tooltip and the aria-label still name the tier.
+  nothing (no scientific result, no badge). Where pages and tasks show it: `MaturityIndicator.vue`.
+  `dot` drops the word — how pages and functions show it (`MaturityIndicator.vue`); the host's tooltip
+  and the aria-label still name the tier.
 
     <ComingSoonBadge />
     <ComingSoonBadge label="Coming soon" note="0.2.1" />

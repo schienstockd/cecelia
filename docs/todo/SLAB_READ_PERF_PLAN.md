@@ -190,6 +190,8 @@ Phase 2): scrub at 16 in flight 1.07 → 0.76–0.80 s, at 6 in flight 0.91–0.
 
 - **Accept:** byte-exact responses under concurrency (test: 16 in flight through a real listener);
   scrub and flat both faster through the server; no regression for other routes (untouched).
+  Later, `handle_stream` got the same write hop for every router response (`_write_router_response!`):
+  binary gating bodies took the same serial write. That change was not benchmarked.
 - **HTTP/2 (TLS)**, measured afterwards in Chromium: slower than plain HTTP/1.1 for bricks (2.5 vs
   1.6 s at 16 in flight), partly an HTTP.jl 64 KB-per-send cap. TLS now defaults off —
   `WEBGPU_UPLOAD_PATH_PLAN.md` → *U4 outcome*.

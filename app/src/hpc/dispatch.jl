@@ -415,6 +415,60 @@ function _hpc_log_usage(d::HpcDispatch, id::AbstractString, on_log::Function)
 end
 
 """
+    _hpc_adopt_submitted(d, record, fingerprint) -> (; id, dir) | nothing
+
+The job an earlier run of THIS fingerprint submitted without learning its id — the submit timed out
+(a busy login node) yet reached the scheduler — found among the scheduler's active jobs by the name
+the submit record kept. Adopting it keeps a rerun from submitting a second job beside it. `nothing`
+when there is no such record, the backend has no job names (the local shell), or the job is gone.
+"""
+function _hpc_adopt_submitted(d::HpcDispatch, record::AbstractString, fingerprint::AbstractString)
+    sub = hpc_read_submit_record(record, fingerprint)
+    isnothing(sub) && return nothing
+    jn = hpc_job_name(d.backend, sub.name)
+    ids = isempty(jn) ? String[] : hpc_active_jobs(d.backend, d.conn; name = jn)
+    isempty(ids) && return nothing
+    (; id = first(ids), dir = sub.dir)
+end
+
+"""
+    _hpc_job_for_run(d, record, fingerprint, new_spec; on_log) -> (; id, dir, done)
+
+The cluster job that answers this run: the one its record names, if still queued/running or finished
+cleanly (`done`); else one an earlier submit of the same run sent without learning its id
+(`_hpc_adopt_submitted`); else a new one, `new_spec()` submitted. The record is written before the
+submit (name + dir) and after it (the id), so a submit that times out yet reaches the scheduler is
+found by the next run rather than submitted twice.
+"""
+function _hpc_job_for_run(d::HpcDispatch, record::AbstractString, fp::AbstractString, new_spec::Function;
+                          on_log::Function = println)
+    prev = hpc_read_job_record(record, fp)
+    if !isnothing(prev)
+        r = only(hpc_poll(d.backend, d.conn, [HpcPollJob(prev.id, prev.dir, 0)]))
+        if r.exit == 0
+            on_log("[HPC] Job $(prev.id) had already finished: copying its results back")
+            return (; id = prev.id, dir = prev.dir, done = true)
+        elseif isnothing(r.exit) && r.state !== JOB_GONE
+            on_log("[HPC] Re-attached to job $(prev.id), still on the cluster")
+            return (; id = prev.id, dir = prev.dir, done = false)
+        end
+        rm(record; force = true)
+    end
+    sub = _hpc_adopt_submitted(d, record, fp)
+    if !isnothing(sub)
+        hpc_write_job_record(record, fp, sub.id, sub.dir)
+        on_log("[HPC] Re-attached to job $(sub.id): an earlier submit timed out but reached the cluster")
+        return (; id = sub.id, dir = sub.dir, done = false)
+    end
+    spec = new_spec()
+    hpc_write_submit_record(record, fp, spec.name, spec.dir)
+    id = hpc_submit(d.backend, d.conn, spec)
+    hpc_write_job_record(record, fp, id, spec.dir)
+    on_log("[HPC] Submitted job $id")
+    (; id, dir = spec.dir, done = false)
+end
+
+"""
     _run_py_hpc(script_rel, params, task_dir, d; reads, writes, env, on_log, on_progress) -> Bool
 
 `run_py` for a dispatched task: see the header of this file for the steps. Never throws: every
@@ -444,39 +498,23 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
         stem = splitext(basename(String(script_rel)))[1]
         fp = hpc_run_fingerprint(d, script_rel, p, code.hash, reads, writes)
         record = joinpath(task_dir, stem * HPC_JOB_RECORD_SUFFIX)
-        prev = hpc_read_job_record(record, fp)
-        id, dir, done = "", "", false
-        if !isnothing(prev)
-            r = only(hpc_poll(d.backend, d.conn, [HpcPollJob(prev.id, prev.dir, 0)]))
-            if r.exit == 0
-                id, dir, done = prev.id, prev.dir, true
-                on_log("[HPC] Job $id had already finished: copying its results back")
-            elseif isnothing(r.exit) && r.state !== JOB_GONE
-                id, dir = prev.id, prev.dir
-                on_log("[HPC] Re-attached to job $id, still on the cluster")
-            else
-                rm(record; force = true)
-            end
-        end
-
-        if isempty(id)
+        # The params travel inside the job script (a quoted heredoc), so submitting is one call. Built
+        # (and the reads synced) only when a job is to be submitted.
+        new_spec() = begin
             d.on_stage(HPC_STAGE_SYNC, "")
             _hpc_claim_mirror!(d; on_log)
             _hpc_sync_reads!(d, reads; on_log)
-            # The params travel inside the job script (a quoted heredoc), so submitting is one call.
             jobname = d.task_id * "-" * stem * "-" * string(rand(UInt32); base = 16)
-            dir = d.remote_root * "/jobs/" * jobname
             eof = "CECELIA_PARAMS_" * string(rand(UInt64); base = 16)
             body = _hpc_job_env(d, code.dir) *
                    "cat > params.json <<'$eof'\n$(JSON3.write(p))\n$eof\n" *
                    "$(_sh_quote(py)) $(_sh_quote(code.dir * "/" * rel_script)) --params params.json\n"
             r = d.resources
-            spec = HpcJobSpec(; name = jobname, dir = dir, body = body, class = d.class, cpus = r.cpus,
-                              mem_gb = r.mem_gb, gpus = r.gpus, walltime_min = r.walltime_min, account = d.account)
-            id = hpc_submit(d.backend, d.conn, spec)
-            hpc_write_job_record(record, fp, id, dir)
-            on_log("[HPC] Submitted job $id")
+            HpcJobSpec(; name = jobname, dir = d.remote_root * "/jobs/" * jobname, body = body, class = d.class,
+                       cpus = r.cpus, mem_gb = r.mem_gb, gpus = r.gpus, walltime_min = r.walltime_min,
+                       account = d.account)
         end
+        id, dir, done = _hpc_job_for_run(d, record, fp, new_spec; on_log)
         if !done
             line(l) = (m = match(r"^\[PROGRESS\] (\d+)/(\d+)$", l);
                        isnothing(m) ? on_log(l) : on_progress(parse(Int, m[1]), parse(Int, m[2])))

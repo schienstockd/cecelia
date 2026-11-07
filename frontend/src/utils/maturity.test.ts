@@ -6,7 +6,7 @@ import { UNGUIDED } from '../lib/guides/unguided'
 import { CALL_FOR_DATASETS } from '../lib/callForDatasets'
 import {
   owners, coverIndex, uncovered, flaggedAndTiered, pageTier, maturityGroups, findTest, badged,
-  pageMaturity, taskMaturity, taskOptionSuffix, pageBadged,
+  pageMaturity, taskMaturity, taskOptionSuffix,
   type TaskSpecLite,
 } from './maturity'
 
@@ -189,10 +189,6 @@ describe('the map’s maturity rows', () => {
 
 describe('badges on the pages and in the task picker (P2)', () => {
   const rowIds = new Set(maturityGroups(TASKS).flatMap(g => g.rows.map(r => r.id)))
-  it('badges Experimental and Coming soon only — Beta and up show nothing on a page', () => {
-    expect((['comingSoon', 'experimental', 'beta', 'tested', 'stable', 'exempt'] as const).filter(pageBadged))
-      .toEqual(['comingSoon', 'experimental'])
-  })
   it('gives a page its tier and the map row its link opens', () => {
     expect(pageMaturity('/phenotype')).toMatchObject({ tier: 'experimental', rowId: 'unguided:phenotype' })
     expect(pageMaturity('/gate')?.tier).toBe('beta')

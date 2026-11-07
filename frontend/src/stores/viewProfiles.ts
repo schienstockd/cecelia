@@ -24,6 +24,9 @@ export const useViewProfilesStore = defineStore('viewProfiles', () => {
   const loading  = ref(false)
   const saving   = ref(false)
   let   loadedOnce = false
+  // the in-flight load — ensureLoaded() hands it to a caller that arrives mid-load, so an awaiting
+  // caller sees the profiles instead of returning before they are set
+  let   pending: Promise<void> | null = null
 
   /** The selected profile, or null for "All". A selection naming a deleted file resolves to All. */
   const active = computed<ViewProfile | null>(() =>
@@ -38,17 +41,24 @@ export const useViewProfilesStore = defineStore('viewProfiles', () => {
     errors.value = data.errors ?? []
   }
 
-  async function refresh() {
+  function refresh(): Promise<void> {
     loading.value = true
-    try {
-      const res = await fetch('/api/profiles')
-      if (res.ok) apply(await res.json())
-    } catch { /* ignore — leave last-known state; a missing profile just means the full menu */ }
-    finally { loading.value = false; loadedOnce = true }
+    const p = (async () => {
+      try {
+        const res = await fetch('/api/profiles')
+        if (res.ok) apply(await res.json())
+      } catch { /* ignore — leave last-known state; a missing profile just means the full menu */ }
+      finally { loadedOnce = true }
+    })()
+    pending = p
+    // only the latest load clears the flag, so an older one finishing can't hide a newer one
+    void p.then(() => { if (pending === p) { pending = null; loading.value = false } })
+    return p
   }
 
   async function ensureLoaded() {
-    if (!loadedOnce && !loading.value) await refresh()
+    if (pending) return pending
+    if (!loadedOnce) await refresh()
   }
 
   function select(id: string) {

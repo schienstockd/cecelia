@@ -1201,15 +1201,15 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
   covered composite; a flagged feature has no record; every evidence path and test name exists, and a
   Tested record's tests are not `@test_skip`/`@test_broken`/`skip`/`xfail`/`it.skip`; every
   `datasetAsk` exists; testedOn ≤70, failsIf/next ≤110, needs ≤90 chars.
-- **On the pages (P2):** the app header carries the current page's maturity (`components/PageMaturity.vue`,
-  one mount for every page — pages have no shared header of their own). Experimental and Coming soon show
-  the badge; every other tiered page shows a quiet `pi-signal` icon instead, so no badge never reads as
-  "fine". Both open the Guides dialog on that feature's Maturity row (`lib/guideOpen.ts` →
+- **On the pages (P2):** the app header carries the current page's maturity (`components/MaturityIndicator.vue`,
+  one mount for every page — pages have no shared header of their own). Every tiered page shows its
+  tier's dot alone (`ComingSoonBadge … dot`, the map's colours; the tooltip names it) — Beta included,
+  so an unmarked page never reads as "fine". It opens the Guides dialog on that feature's Maturity row (`lib/guideOpen.ts` →
   `openMaturityRow`; `MaturityMap` opens the section and the row, then scrolls to it). Exempt pages and
   non-sidebar routes show nothing. In the task picker (`TaskRunner`) an Experimental task's option reads
-  `… · Experimental` (a native `<option>` holds text only) and the picked one gets the badge beside it.
-  Beta and up are never badged on a page: nothing is Tested yet, so it would mark nearly every page.
-  Logic: `pageMaturity` / `taskMaturity` / `pageBadged` / `taskOptionSuffix` in `utils/maturity.ts`.
+  `… · Experimental` (a native `<option>` holds text only) and the picked one gets the SAME
+  `MaturityIndicator` as the header — its dot plus the bug — so a function and a page look alike.
+  Logic: `pageMaturity` / `taskMaturity` / `taskOptionSuffix` in `utils/maturity.ts`.
 - **"Something wrong?"** (`components/ReportProblemButton.vue`, `pi-bug`) beside the page's badge or
   link, beside a picked task's badge, and in every expanded Maturity row: a popover that opens a
   prefilled bug form (`lib/links.ts` → `problemReportUrl`) — feature, tier, page, version

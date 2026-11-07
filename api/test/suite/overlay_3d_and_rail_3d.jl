@@ -340,6 +340,17 @@ end
             tc_only = Dict{String,Any}("showTrackclust" => true, "tailLength" => 5, "trackColourMode" => "pop")
             @test seg_colours(kf(tc_only)) == clusters
             @test seg_colours(rail(tc_only)) == clusters
+            # a look's ribbon eyes decide each cluster's ribbon (the viewer draws trackclust by them,
+            # not by `show`) — in both renderers and on the card
+            scanning_off = Dict{String,Any}("ribbonEyes" => Dict("B" => Dict("trackclust::/Scanning" => false)))
+            rest = Set(hex_to_rgb.(["#f58518", "#54a24b"]))
+            @test seg_colours(kf(merge(tc_only, scanning_off))) == rest
+            @test seg_colours(rail(merge(tc_only, scanning_off))) == rest
+            @test first.(card(merge(c, Dict{Symbol,Any}(:showPopulations => false,
+                    :ribbonEyes => Dict("B" => Dict("trackclust::/Scanning" => false)))))) == ["Directed", "Meandering"]
+            # another segmentation's eye, or another pop type's at that path, is not this one's
+            @test seg_colours(kf(merge(tc_only, Dict{String,Any}("ribbonEyes" => Dict(
+                "P14" => Dict("trackclust::/Scanning" => false), "B" => Dict("flow::/Scanning" => false)))))) == clusters
             # no popValueName: the movie's segmentation — the mask's, else none (not every segmentation)
             delete!(c, :popValueName)
             @test first.(card(merge(c, Dict{Symbol,Any}(:labelValueNames => ["B"])))) ==

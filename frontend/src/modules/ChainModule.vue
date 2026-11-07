@@ -36,9 +36,9 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
-import { taskOutput, consumerField, normaliseField, type ConsumerField } from '../utils/taskOutput'
+import { taskOutput, consumerField, consumerAccepts, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
-import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from '../utils/startDot'
+import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
 import { waitingByNode, continueFrame } from '../utils/chainManual'
@@ -673,18 +673,20 @@ function addStartNode() {
   addNodes([{ id: START_ID, type: 'start', position: DEFAULT_START_POS, data: {} }])
 }
 
+// Empty the canvas and wait for the unmount — the only way a full clear is done (see clearCanvas).
+function clearWhiteboard() {
+  return clearCanvas({
+    nodeIds: nodes.value.map(n => n.id), edgeIds: edges.value.map(e => e.id), removeNodes, removeEdges,
+  }, nextTick)
+}
+
 async function applyTemplate(
   tmpl: ChainTemplate,
   positions: Record<string, { x: number; y: number }>,
 ) {
-  // Clear canvas — and let Vue unmount it before adding the next chain. Every chain's start dot is
-  // `__start__` (and authored chains reuse ids like `track`/`hmm`), so a same-tick remove+add hands
-  // the new node the OLD element: Vue Flow never re-measures its handles and the edge draws from the
-  // node's top-left corner instead of the handle — "the start node is not connected".
-  removeNodes(nodes.value.map(n => n.id))
-  removeEdges(edges.value.map(e => e.id))
+  // Clear canvas — and let Vue unmount it before adding the next chain (why: clearCanvas in utils/startDot).
   selectedNodeId.value = null
-  await nextTick()
+  await clearWhiteboard()
 
   // Computed once for the whole template, and only consulted where a saved position is missing — a
   // chain the user has dragged is never re-laid-out. That's their spatial memory of their own pipeline.
@@ -816,9 +818,8 @@ async function removeChain() {
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     chainNames.value = chainNames.value.filter(n => n !== name)
-    removeNodes(nodes.value.map(n => n.id))
-    removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
+    await clearWhiteboard()
     if (chainNames.value.length) {
       await switchChain(chainNames.value[0])
     } else {
@@ -884,9 +885,8 @@ async function createChain() {
   if (!uid) return
   try {
     const stored = await saveEmptyChain(uid, name)
-    removeNodes(nodes.value.map(n => n.id))
-    removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
+    await clearWhiteboard()              // unmount the old `__start__` first, or the new dot reuses its element
     addStartNode()                       // new chains get a UML start dot by default — link it to the first task
     closeNameInput()
     // Center + zoom on the start dot (which sits at ~20,40) so it's obviously visible on an otherwise
@@ -1070,7 +1070,7 @@ function propagateValueName(sourceId: string, targetId: string) {
   const patch: Record<string, unknown> = {}
   const walk = (ps: ParamDef[] | undefined) => {
     for (const p of ps ?? []) {
-      if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
+      if (p.type === 'valueNameSelection' && consumerAccepts(p.field, out.field))
         patch[p.key] = out.name
       walk(p.params)
     }

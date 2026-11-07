@@ -386,8 +386,9 @@ function _custom_module_categories()
         # cohortFuns = the category's funs that bank cohort-comparable metrics (Cecelia.COHORT_METRICS,
         # populated at load incl. custom modules' register_cohort_metrics!). Drives the "Check cohort"
         # button on the generic custom page WITHOUT any hardcoded per-page list — a custom module that
-        # declares its metrics gets the button automatically.
-        cohort_funs = String[f for f in funs if haskey(Cecelia.COHORT_METRICS, f)]
+        # declares its metrics gets the button automatically. A composite qualifies when its steps bank
+        # them — the same `_has_cohort_answer` the cohort routes gate on, so the button and the route agree.
+        cohort_funs = String[f for f in funs if _has_cohort_answer(f)]
         push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs,
                        cohortFuns = cohort_funs,
                        views = [(; v.view, v.label, v.plugin) for v in views if v.moduleName == category]))

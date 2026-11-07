@@ -35,7 +35,9 @@ end
 # What a param says about the names it holds. `ns` is the namespace a value lives in — the output
 # namespace for a name the task WRITES (`namespace`), the field it READS from (`field`: labels,
 # spatialGraphs, …; image versions are ""), or "models" for a model picker (`optionsFrom` a vault).
-const _HistoryLeaf = @NamedTuple{type::String, ns::String, writes::Bool, accepts::Vector{String}}
+# `former` = the param's `formerKeys` (a renamed param), which a run saved before the rename still uses.
+const _HistoryLeaf = @NamedTuple{type::String, ns::String, writes::Bool, accepts::Vector{String},
+                                 former::Vector{String}}
 
 # a label set is named the same whether a picker lists its labels or its measurements
 _field_ns(field) = (f = string(something(field, ""));
@@ -56,7 +58,8 @@ function _spec_leaf_params!(out::Dict{String,_HistoryLeaf}, spec)
         # took as its input. The first step to declare a key says what it is, unless a later one writes it.
         (haskey(out, k) && isempty(ns_w)) && continue
         out[k] = (; type = t, ns, writes = !isempty(ns_w),
-                    accepts = String[string(a) for a in something(get(p, "accepts", nothing), [])])
+                    accepts = String[string(a) for a in something(get(p, "accepts", nothing), [])],
+                    former = String[string(f) for f in something(get(p, "formerKeys", nothing), [])])
     end
     isnothing(spec) || walk(get(spec, "params", []))
     out
@@ -77,7 +80,10 @@ function _history_output(fn::String, params::Dict{String,Any}, leaves)::Tuple{St
     name = task_output_name(fn, params)
     isempty(name) && return (task_fixed_output(fn), "")
     for (k, l) in leaves
-        l.writes && string(get(params, k, "")) == name && return (name, l.ns)
+        l.writes || continue
+        # `task_output_name` resolves a renamed param through its former keys — match the same way
+        kk = something(_stored_key(k, l.former, params), k)
+        string(get(params, kk, "")) == name && return (name, l.ns)
     end
     (name, "")
 end

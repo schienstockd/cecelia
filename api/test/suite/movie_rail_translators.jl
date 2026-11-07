@@ -97,6 +97,12 @@
     look_tc2 = merge(look_pc, Dict{String,Any}("maskPopTypes" => ["trackclust"]))
     @test mask_pop_scope(overlay_track_plan(look_tc2), "OTI", "P14", "flow", nothing, false).pop_types == ["trackclust"]
     @test overlay_track_plan(look_pc).mask_pop_types == String[]
+    # a prebuilt (legacy, no `trackSegs`) overlays dict: a named source with no colour takes the
+    # viewer's default (`""` → palette / legend colour), as the translator; the unnamed one stays grey
+    legacy = overlay_track_plan(Dict{String,Any}("allTracks" => true, "trackSources" => [
+        Dict("valueName" => "flowTom"), Dict("valueName" => "cpSAM", "colour" => "#00ccff")]))
+    @test legacy.segs == [("flowTom", ""), ("cpSAM", "#00ccff")]
+    @test overlay_track_plan(Dict{String,Any}("allTracks" => true)).segs == [("", OVERLAY_GREY)]
     batch = overlay_track_plan(Dict{String,Any}("showPopulations" => true))
     @test mask_pop_scope(batch, "OTI", "P14", "flow", ["/x"], false).all_cells === true
     @test mask_pop_scope(batch, "OTI", "OTI", "flow", ["/x"], false) ==
@@ -449,6 +455,10 @@ end
     @test _ov_look_seg(Dict{String,Any}("valueName" => "flowTom"), "x") == "flowTom"
     @test _ov_look_seg(Dict{String,Any}("popValueName" => ""), "fallback") == "fallback"
     @test _ov_look_seg(nothing, "fallback") == "fallback"
+    # a keyframe request's mask outranks the image version when the look names no segmentation
+    @test _ov_look_seg(Dict{String,Any}(), "default"; mask = "cpSAM") == "cpSAM"
+    @test _ov_look_seg(Dict{String,Any}("popValueName" => "flowTom"), "default"; mask = "cpSAM") == "flowTom"
+    @test _ov_look_seg(Dict{String,Any}(), "default"; mask = nothing) == "default"
 end
 
 @testset "API: movie rail — a recording renders the viewer's colours and framing" begin
