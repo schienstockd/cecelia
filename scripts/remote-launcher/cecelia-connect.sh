@@ -11,6 +11,7 @@ CONF="$CONF_DIR/connection.json"
 PID_FILE="$CONF_DIR/tunnel.pid"
 LOG_FILE="$CONF_DIR/last-connect.log"
 LOCAL_PORT_FILE="$CONF_DIR/tunnel.port"
+REMOTE_PORT_FILE="$CONF_DIR/tunnel.remote"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WIZARD="$SCRIPT_DIR/cecelia-connect-setup.sh"
@@ -55,15 +56,41 @@ _port_open() {
   fi
 }
 
-# Reuse an existing tunnel when the PID is alive AND the recorded port still answers.
+# The profile's remotePort is written at install, before the VM's Cecelia has chosen a port slot
+# (app/src/ports.jl). On a VM shared by several OS users a later user's backend sits on slot N
+# (8080 + 10 x N), and 8080 is slot 0: another user's Cecelia. So ask the VM which port this
+# user's backend took, from the single-instance lock it writes (app/src/single_instance.jl:
+# `api_port` in <config_dir>/cecelia.lock, ~/.cecelia for an installed app), and tunnel there.
+# No lock (Cecelia not started yet) keeps the profile's port.
+REMOTE_LOCK=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$CONN_USER@$HOST" \
+  'cat "$HOME/.cecelia/cecelia.lock" 2>/dev/null' 2>/dev/null || true)
+LOCK_PORT=$(printf '%s' "$REMOTE_LOCK" | sed -n 's/.*"api_port"[[:space:]]*:[[:space:]]*"\{0,1\}\([0-9][0-9]*\).*/\1/p' | head -n1)
+if [ -n "$LOCK_PORT" ] && [ "$LOCK_PORT" != "$REMOTE_PORT" ]; then
+  printf '[cecelia] your Cecelia on the VM is on port %s (profile says %s); tunnelling to %s\n' \
+    "$LOCK_PORT" "$REMOTE_PORT" "$LOCK_PORT"
+  REMOTE_PORT="$LOCK_PORT"
+fi
+
+# Reuse an existing tunnel when the PID is alive, the recorded local port still answers, AND it
+# forwards to the remote port resolved above. A tunnel opened before Cecelia started (no lock yet,
+# so the profile's 8080) or by an older launcher (no tunnel.remote) may point at another user's
+# backend; the local probe can't tell, so close it and open a fresh one.
 TUNNEL_UP=0
 REUSED_PORT=""
 if [ -f "$PID_FILE" ] && [ -f "$LOCAL_PORT_FILE" ]; then
   _PID=$(cat "$PID_FILE" 2>/dev/null || true)
   _PORT=$(cat "$LOCAL_PORT_FILE" 2>/dev/null || true)
+  _RPORT=$(cat "$REMOTE_PORT_FILE" 2>/dev/null || true)
   if [ -n "$_PID" ] && kill -0 "$_PID" 2>/dev/null && [ -n "$_PORT" ] && _port_open "$_PORT"; then
-    TUNNEL_UP=1
-    REUSED_PORT="$_PORT"
+    if [ "$_RPORT" = "$REMOTE_PORT" ]; then
+      TUNNEL_UP=1
+      REUSED_PORT="$_PORT"
+    else
+      printf '[cecelia] existing tunnel forwards to VM port %s, not %s; reopening\n' \
+        "${_RPORT:-unknown}" "$REMOTE_PORT"
+      kill "$_PID" 2>/dev/null || true
+      rm -f "$PID_FILE" "$LOCAL_PORT_FILE" "$REMOTE_PORT_FILE"
+    fi
   fi
 fi
 
@@ -109,6 +136,7 @@ if [ "$TUNNEL_UP" = "0" ]; then
   fi
   [ -n "$SSH_PID" ] && printf '%s' "$SSH_PID" > "$PID_FILE"
   printf '%s' "$LOCAL_PORT" > "$LOCAL_PORT_FILE"
+  printf '%s' "$REMOTE_PORT" > "$REMOTE_PORT_FILE"
 
   # Wait for the forward to accept — up to 15s. Usually <1s over a warm SSH connection.
   WAITED=0
