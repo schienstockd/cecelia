@@ -37,11 +37,8 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
-import { taskMaturity, taskOptionSuffix, pageBadged } from '../utils/maturity'
-import { tierTip } from '../lib/guides/tiers'
-import { openMaturityRow } from '../lib/guideOpen'
-import ComingSoonBadge from '../components/ComingSoonBadge.vue'
-import ReportProblemButton from '../components/ReportProblemButton.vue'
+import { taskMaturity, taskOptionSuffix } from '../utils/maturity'
+import MaturityIndicator from '../components/MaturityIndicator.vue'
 import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
@@ -99,12 +96,9 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
-// the picked task's maturity badge — Experimental only in practice (a Coming soon task can't be picked);
+// the picked task's maturity, drawn exactly as the header draws a page's (`MaturityIndicator`);
 // docs/todo/FEATURE_MATURITY_PLAN.md → P2, `utils/maturity.ts` → taskMaturity
-const taskMat = computed(() => {
-  const m = taskDef.value ? taskMaturity(taskDef.value, props.defs) : null
-  return m && pageBadged(m.tier) ? m : null
-})
+const taskMat = computed(() => taskDef.value ? taskMaturity(taskDef.value, props.defs) : null)
 // picker sub-headings (Segment / Measure / Correct …); null = render the flat list
 const fnGroups = computed(() => groupTaskDefs(props.defs))
 
@@ -848,13 +842,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
         <div v-if="taskDef" class="section-heading-actions">
           <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
-          <template v-if="taskMat">
-            <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
-                    v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
-              <ComingSoonBadge :tier="taskMat.tier" dot />
-            </button>
-            <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
-          </template>
+          <MaturityIndicator :maturity="taskMat" :page="$route.path" />
         </div>
       </div>
       <select
