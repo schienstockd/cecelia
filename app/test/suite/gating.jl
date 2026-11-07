@@ -313,6 +313,31 @@ end
     @test m2._uid_backfilled == false                 # nothing to backfill this time
 end
 
+@testset "UID backfill saves under the gating lock and re-reads first" begin
+    td = mktempdir()
+    mkpath(joinpath(td, "gating"))
+    legacy(name) = """{"pop_type":"flow","value_name":"B","populations":[
+      {"name":"$name","colour":"#f00","show":true,"children":[]}]}"""
+    p = joinpath(td, "gating", "B.json")
+    write(p, legacy("cd4"))
+    # The sidecar has no UIDs, so this load will backfill. While another task holds the lock (a
+    # locked gate edit mid-cycle), that save must wait, and must not write back the stale tree.
+    local t
+    with_popmap_lock() do
+        t = @async load_pop_map(td, "B")
+        for _ in 1:50; yield(); end
+        @test !istaskdone(t)                                  # blocked on the lock, not saved
+        @test !occursin("\"uid\"", read(p, String))           # file untouched so far
+        # the locked writer's edit: a different tree with its own uid
+        write(p, """{"pop_type":"flow","value_name":"B","populations":[
+          {"name":"cd8","uid":"abc123","colour":"#0f0","show":true,"children":[]}]}""")
+    end
+    m = fetch(t)
+    @test has_pop(m, "/cd8") && !has_pop(m, "/cd4")           # re-read, not the stale tree
+    @test pop_uid(m, "/cd8") == "abc123"
+    @test occursin("cd8", read(p, String)) && !occursin("cd4", read(p, String))  # edit not dropped
+end
+
 # ── Retired UIDs (MULTI_POP_TRACKING_ORPHANS_PLAN P2) ──────────────────────────────
 # A pop's UID outlives the pop as long as the segmentation's h5ad still carries `track_source`
 # rows stamped with it. Reusing that UID for a new pop would silently transfer the old orphan

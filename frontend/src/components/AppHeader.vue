@@ -13,7 +13,11 @@ import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 import { shortVersionLabel } from '../utils/versionLabel'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
-import PageMaturity from './PageMaturity.vue'
+import { useRoute } from 'vue-router'
+import MaturityIndicator from './MaturityIndicator.vue'
+import { pageMaturity } from '../utils/maturity'
+
+const route = useRoute()
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -126,9 +130,9 @@ const statusTip: Record<string, string> = {
       </a>
     </span>
 
-    <!-- this page's maturity: a badge for Experimental / Coming soon, else a quiet link to its map row,
+    <!-- this page's maturity: its tier dot (opens the map row),
          plus "Something wrong?" — after the help row, because it is the same question asked of one page -->
-    <PageMaturity />
+    <MaturityIndicator class="page-maturity" :maturity="pageMaturity(route.path)" :page="route.path" />
 
     <span class="spacer" />
 
@@ -195,6 +199,8 @@ const statusTip: Record<string, string> = {
 </template>
 
 <style scoped>
+/* hugs the help row it continues (it asks the same question of one page) */
+.page-maturity { margin-left: -0.35rem; }
 .app-header {
   display: flex;
   align-items: center;

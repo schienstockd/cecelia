@@ -13,7 +13,7 @@ import { cohortFunsFor } from '../lib/cohortStages'
 import { runCohortCheck, fetchCohortRuns } from '../lib/cohortCheck'
 
 // `funs` overrides the built-in COHORT_STAGES lookup — passed by pages whose cohort funs come from the
-// backend (custom modules: funNames ∩ COHORT_METRICS), so the button needs no hardcoded per-page entry.
+// backend (custom modules: the funNames the cohort routes can answer), so the button needs no hardcoded per-page entry.
 const props = defineProps<{ module?: string; setUid?: string; funs?: string[] }>()
 const projectMeta = useProjectMetaStore()
 const project = useProjectStore()

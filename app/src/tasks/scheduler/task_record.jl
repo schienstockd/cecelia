@@ -134,6 +134,14 @@ Base.showerror(io::IO, e::DuplicateRunError) =
 
 _is_active(rec::TaskRecord) = rec.status in (TASK_QUEUED, TASK_RUNNING)
 
+# Whether a queued or running run is registered under `id`. A run's own terminal frame is sent after its
+# record turned terminal (`_set_status!`) or was deregistered, so a terminal frame arriving while this
+# holds belongs to some OTHER run under the id — `record_task_outcome!` must not touch the live run's start.
+_live_run_under(id::AbstractString) = lock(_TASKS_LOCK) do
+    r = get(_TASKS, String(id), nothing)
+    !isnothing(r) && _is_active(r)
+end
+
 # The run `new` would collide with, or `nothing`. Same id while the previous run under it is still
 # registered at all — even cancelled and winding down: its run-log close, outcome and status frames are
 # all keyed by that id, so a `task:restart` overlapping them would have its own entries stamped with the

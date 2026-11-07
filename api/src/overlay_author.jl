@@ -852,7 +852,9 @@ function overlay_track_plan(ov)
     inc = Bool(g("includeTracks", true))
     col = String(g("allTracksColour", OVERLAY_GREY))
     asked = Bool(g("allTracks", false))
-    all_tracks, sources = _whole_seg_track_sources(asked, g("trackSources", nothing); default_colour = col)
+    # a NAMED source with no colour takes the viewer's default (the palette by position, `""`), as the
+    # translator writes it; `col` is the unnamed single source's colour only
+    all_tracks, sources = _whole_seg_track_sources(asked, g("trackSources", nothing); default_colour = "")
     segs = !(all_tracks && inc) ? Tuple{String,String}[] :
            isempty(sources) ? [("", col)] : [(s["valueName"], s["colour"]) for s in sources]
     # the pops' ribbons were the non-`allTracks` mode — sources all hidden do not make them one
@@ -968,12 +970,13 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         end
     end
 
-    # Track-cluster ribbons — every segmentation's, one source per shown pop.
+    # Track-cluster ribbons — every segmentation's, one source per pop whose ribbon eye is on (a look's
+    # `ribbonEyes`, else the manager's `show`) — the viewer's trackclust loop.
     for tvn in tc_vns
         parts = _overlay_parts(img; value_name = tvn, pop_type = "trackclust", include_tracks = true)
         has_t |= parts.hasT
         for L in _overlay_pops(img, tvn, "trackclust")
-            L.show || continue
+            look_eye_on(plan.ribbon_eyes, tvn, "trackclust", String(L.path), Bool(L.show)) || continue
             hops = _hops_of(parts.track_hist; group = String(L.path))
             isempty(hops) && continue
             key = "$(tvn)::trackclust::$(L.path)"

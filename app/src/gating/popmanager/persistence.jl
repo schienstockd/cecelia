@@ -169,7 +169,9 @@ Decision 0) has no `uid` on any node — `_add_node!` generates them and flips
 `m._uid_backfilled = true`. This function then runs a `save_pop_map!` before returning so the
 freshly-picked UIDs are stable across sessions (a next load would otherwise reroll them and any
 outside reference — a `track_source` obs value, a lab-log capture — would drift). Once the sidecar
-is UID-complete this branch never fires again.
+is UID-complete this branch never fires again. The backfill re-reads and saves under
+`with_popmap_lock`, so an unlocked caller can neither reroll a concurrent loader's UIDs nor drop a
+locked gate edit.
 
 `backfill_save = false` skips that write, for a caller that must stay read-only (the Kiwi ref resolver,
 `api/src/kiwi_refs.jl`, which only asks whether a path exists — the rerolled uids are never used)."""
@@ -178,8 +180,18 @@ function load_pop_map(task_dir::AbstractString, value_name::AbstractString;
     path = gating_path(task_dir, value_name; pop_type=pop_type)
     isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
     m = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
-    (backfill_save && m._uid_backfilled) && save_pop_map!(m, task_dir)
-    m
+    (backfill_save && m._uid_backfilled) || return m
+    # The backfill is a WRITE, and most callers load without holding `with_popmap_lock`. So take
+    # the lock (reentrant, so a caller that already holds it is unaffected) and RE-READ the file
+    # under it: a concurrent loader may have backfilled already (its UIDs win; saving ours would
+    # reroll them and orphan any `track_source` stamped with them), and a locked gate edit may have
+    # landed since our read (saving our stale tree would drop it).
+    with_popmap_lock() do
+        isfile(path) || return PopulationMap(; pop_type=pop_type, value_name=value_name)
+        fresh = from_tree(JSON3.read(read(path, String), Dict{String,Any}))
+        fresh._uid_backfilled && save_pop_map!(fresh, task_dir)
+        fresh
+    end
 end
 
 # CciaImage convenience (task_dir = img._dir). Also stamps the P3b `authored_labels_version`

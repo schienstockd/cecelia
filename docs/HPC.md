@@ -133,6 +133,9 @@ them once. An env without them reads as not installed, and Install fetches only 
 - **Reattach by rerun:** if Cecelia quits or crashes mid-job, run the same task again. It finds the job
   through `<task dir>/<runner>.hpc.json` and follows it, or collects its outputs, instead of
   submitting again. "The same" means equal runner, params, code, env, resources and input files.
+  The record is written before the submit too, with the job's name: a submit that timed out on a busy
+  login node but still reached the scheduler is found by that name on the rerun and followed, not
+  submitted a second time (SLURM and PBS; the local shell has no job names).
 - **Undeclared outputs:** anything the job changed beyond its declared outputs is named in the log
   (`[WARN] The cluster job also changed …`) and not copied back.
 

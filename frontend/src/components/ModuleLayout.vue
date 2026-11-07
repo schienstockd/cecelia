@@ -44,7 +44,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUpdated, onBeforeUnmount, useSlots } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
-import { onRevealPlots, setSectionOpen } from '../utils/sectionOpen'
+import { onRevealPlots, setSectionOpen, useStoredSectionOpen } from '../utils/sectionOpen'
 import { usePlotFullscreen, reportCanvasMaximised } from '../composables/usePlotFullscreen'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
@@ -160,13 +160,10 @@ const selectedNames = computed(() =>
 const attrFilter = ref<AttrFilterState>(emptyAttrFilter())
 
 // Attributes and processing-history are two separate dropdowns off the action bar (Filter / Task),
-// each COLLAPSED by default with its own open-state persisted per module (UI.md).
-const filterKey = computed(() => `cc-filters-open:${props.module ?? 'default'}`)
-const filtersOpen = ref(profileStorage.getItem(`cc-filters-open:${props.module ?? 'default'}`) === '1')
-watch(filtersOpen, v => { try { profileStorage.setItem(filterKey.value, v ? '1' : '0') } catch { /* ignore */ } })
-const taskKey = computed(() => `cc-task-open:${props.module ?? 'default'}`)
-const taskOpen = ref(profileStorage.getItem(`cc-task-open:${props.module ?? 'default'}`) === '1')
-watch(taskOpen, v => { try { profileStorage.setItem(taskKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+// each COLLAPSED by default with its own open-state persisted per module (UI.md) — and following
+// `setSectionOpen` on that key (`utils/sectionOpen.ts`).
+const filtersOpen = useStoredSectionOpen(`cc-filters-open:${props.module ?? 'default'}`, false)
+const taskOpen = useStoredSectionOpen(`cc-task-open:${props.module ?? 'default'}`, false)
 
 // ── Row filters (Excluded / Imported / Starred) ─────────────────────────────────
 // One persisted on/off toggle per filter, declared as data in utils/rowFilters.ts and rendered by a

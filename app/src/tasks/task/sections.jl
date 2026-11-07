@@ -155,11 +155,10 @@ function _apply_spec_defaults(task::CciaTask, params::Dict{String,Any})::Dict{St
             key = string(get(p, "key", ""))
             # a renamed param: a value stored under a former key (old funParams, saved chains) wins
             # over the default — `formerKeys`, docs/MODULES.md → *Fields any param may carry*
-            former = isempty(key) || haskey(out, key) ? nothing :
-                     findfirst(k -> haskey(out, string(k)), collect(get(p, "formerKeys", String[])))
-            if former !== nothing
+            former = isempty(key) ? nothing : _stored_key(key, get(p, "formerKeys", nothing), out)
+            if former !== nothing && former != key
                 copied || (out = copy(out); copied = true)
-                out[key] = out[string(collect(p["formerKeys"])[former])]
+                out[key] = out[former]
             elseif !isempty(key) && haskey(p, "default") && !haskey(out, key)
                 copied || (out = copy(out); copied = true)
                 out[key] = _spec_value(p["default"])

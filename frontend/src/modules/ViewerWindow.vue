@@ -37,8 +37,8 @@ import { useWsStore } from '../stores/ws'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
-         eyeKey, flipPopEye, offPaths,
-         eyeTurnedOn, type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
+         eyeKey, flipPopEye, offPaths, reconcileTrackclustEyes,
+         eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
@@ -105,7 +105,7 @@ import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          type MaskStore } from '../utils/viewerLabels'
-import { maskPopTable, trackclustMaskLayer, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
+import { maskPopTable, trackclustMaskLayer, maskLayerShowsAny, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -993,8 +993,27 @@ const maskPopLayers = computed<MaskPopLayer[]>(() => {
   if (settings.viewerMaskColour === 'pops')
     return popLayers.value.filter(l => l.vn === vn).map(l => ({ payload: l.payload, hidden: layerHidden(l) }))
   const tc = maskTrackclust.value
-  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn ? [trackclustMaskLayer(tc.payload)] : []
+  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn
+    ? [trackclustMaskLayer(tc.payload, (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))] : []
 })
+/** The trackclust pops last fetched per segmentation — the `prev` a reconcile tells a delete by. */
+const trackclustSeen = new Map<string, TrackclustEyePop[]>()
+/**
+ * Reconcile one segmentation's trackclust eyes (points + ribbons, the two bags the manager's button
+ * writes) against a fresh `popType=trackclust` payload. `loadOverlays` never fetches trackclust, so
+ * without this a deleted cluster pop's eye outlived it and a pop recreated at its path inherited it.
+ */
+function reconcileTrackclustEyesFor(vn: string, payload: OverlayPayload) {
+  if (!imageUid) return
+  const next = (payload.pops ?? []).map(p => ({ path: p.path, uid: p.uid, show: p.show }))
+  const prev = trackclustSeen.get(vn) ?? []
+  trackclustSeen.set(vn, next)
+  const points = reconcileTrackclustEyes(settings.getPopEyes(imageUid, vn), prev, next)
+  if (!samePopEyes(settings.getPopEyes(imageUid, vn), points)) settings.setPopEyes(imageUid, vn, points)
+  popEyes.value = new Map(popEyes.value).set(vn, points)
+  const ribbons = reconcileTrackclustEyes(settings.getPopEyes(imageUid, vn, 'ribbons'), prev, next)
+  storeRibbonEyes(new Map(ribbonEyes.value).set(vn, ribbons))
+}
 const maskTable = computed(() => maskPopLayers.value.length ? maskPopTable(maskPopLayers.value) : null)
 watch(maskTable, () => frame.redraw())
 /** One segmentation's track-cluster pops (`popType=trackclust`) — the ribbons' and the mask's one
@@ -1011,7 +1030,9 @@ async function loadMaskTrackclust() {
   const vn = settings.viewerMaskColour === 'trackclust' ? maskName.value : ''
   if (!vn || !projectUid || !imageUid) { maskTrackclust.value = null; return }
   // null = no cell table: the palette, as for pops
-  const payload = trackclustPayloads.value.get(vn) ?? await fetchTrackclustPayload(vn)
+  const cached = trackclustPayloads.value.get(vn)
+  const payload = cached ?? await fetchTrackclustPayload(vn)
+  if (payload && !cached) reconcileTrackclustEyesFor(vn, payload)
   // a later mask / mode change has overtaken this fetch
   if (settings.viewerMaskColour !== 'trackclust' || maskName.value !== vn) return
   maskTrackclust.value = payload ? { vn, payload } : null
@@ -1416,8 +1437,10 @@ const maskColourNote = computed(() => {
   if (mode === 'id') return ''
   if (previewVn.value || liveVn.value) return 'Not for a preview mask'
   if (mode === 'pops') return maskTable.value ? '' : 'No populations shown on this mask'
-  const tc = maskTrackclust.value
-  return tc?.vn === maskName.value && tc.payload.pops.some(p => p.show !== false) ? ''
+  const tc = maskTrackclust.value, vn = maskName.value
+  // by the eyes the mask draws by (`maskPopLayers`), not `show`
+  return tc?.vn === vn && maskLayerShowsAny(trackclustMaskLayer(tc.payload,
+    (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))) ? ''
     : 'No track clusters on this mask'
 })
 const BRICKS_MODES = [
@@ -1878,7 +1901,9 @@ function rebuildOverlays() {
     // own sources with their own colours.
     for (const [tcVn, tcPayload] of trackclustPayloads.value.entries()) {
       for (const pop of tcPayload.pops ?? []) {
-        if (!pop.show || !pop.labels?.length) continue
+        // drawn by its ribbon eye, which the Population Manager's button reads and writes — `show`
+        // only for a pop with no eye (`reconcileTrackclustEyesFor`)
+        if (!popEyeOn(ribbonEyes.value, tcVn, 'trackclust', pop.path, pop.show) || !pop.labels?.length) continue
         // Trackclust pops are FILTERS on a `clusters.{suffix}` column — the tracks they cover are
         // by construction the tracks of the segmentation's tracked cells (see popmanager/pop_df.jl).
         // No per-pop attribution to filter by; labels-only is correct here.
@@ -2095,6 +2120,8 @@ async function loadTracks() {
     await Promise.all(tcVns.map(async vn => {
       // one vn's failure must not take the others down (`null`)
       const payload = await fetchTrackclustPayload(vn)
+      // an empty one too: its pops were all deleted, and their eyes go with them
+      if (payload) reconcileTrackclustEyesFor(vn, payload)
       // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
       // but would show up as a source count if it made it into the map.
       if (payload && (payload.pops ?? []).length) tcNext.set(vn, payload)

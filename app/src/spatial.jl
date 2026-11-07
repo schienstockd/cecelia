@@ -58,8 +58,11 @@ sorted by count. Cells not part of the region-clustering basis (no region value)
 function region_membership(img::CciaImage, query_pop::Tuple{<:AbstractString,<:AbstractString},
                            suffix::AbstractString; value_name=nothing)::DataFrame
     col = _region_col(suffix)
+    # `expand_cluster_pops=false`: a bare clust/region ref is THIS segmentation's pop — the run-wide
+    # expansion pooled every co-clustered segmentation's cells into the counts.
     df = pop_df(img, String(query_pop[1]), [String(query_pop[2])];
-                value_name = value_name, pop_cols = [col], categorical = [col], granularity = :cell)
+                value_name = value_name, pop_cols = [col], categorical = [col], granularity = :cell,
+                expand_cluster_pops = false)
     (nrow(df) == 0 || !(col in names(df))) &&
         return DataFrame(region = String[], n = Int[], frac = Float64[])
     g = combine(groupby(dropmissing(df, col), col), nrow => :n)
@@ -88,7 +91,8 @@ function region_enrichment(img::CciaImage,
     for qp in query_pops
         popname = string(qp[1], ":", qp[2])
         df = pop_df(img, String(qp[1]), [String(qp[2])];
-                    value_name = value_name, pop_cols = [col], categorical = [col], granularity = :cell)
+                    value_name = value_name, pop_cols = [col], categorical = [col], granularity = :cell,
+                    expand_cluster_pops = false)   # one segmentation, as `region_membership`
         (nrow(df) == 0 || !(col in names(df))) && continue
         d = dropmissing(df, col)
         total = nrow(d)
