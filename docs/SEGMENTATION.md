@@ -470,8 +470,8 @@ At 2024 px the outputs differ, and both differences are `stitch3D` defects:
 `stitch3D` also reuses ids across an empty plane before its first match, so two cells several planes
 apart can come back as ONE label whose centroid sits in the gap. `stitch_planes` gives every
 unmatched label a fresh id instead. `split_z_gaps` (`cellpose_utils.py`) still runs after every
-stitched call: a correct stitch passes through it unchanged. The cellpose 3 opt-in path still calls
-cellpose's own stitch.
+stitched call: a correct stitch passes through it unchanged. The cellpose 3 opt-in path runs the
+same per-plane eval + `stitch_planes` — `stitch3D`'s defects are version-independent.
 
 ---
 

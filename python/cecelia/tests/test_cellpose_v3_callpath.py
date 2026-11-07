@@ -76,13 +76,25 @@ class TestCellposeV3CallPath(unittest.TestCase):
         # Not a list-of-planes shim: v3 handles the Z axis natively.
         self.assertEqual(len(self.model.calls), 1)
 
-    def test_3d_with_stitching_passes_threshold(self):
+    def test_3d_with_stitching_uses_stitch_planes_not_stitch3d(self):
+        """Cellpose's `stitch3D` (reached via `stitch_threshold=`) is dense-matrix cost and merges
+        unrelated cells through a 16-bit id wrap — on v3 as on v4. The v3 branch must send planes
+        with the size filter off and stitch them with `stitch_planes`, never ask cellpose to stitch."""
         tile = np.stack([np.stack([self.plane] * 3)])
-        self.seg.predict_slice(tile, self._params(stitchThreshold=0.4))
-        kw = self._last_kwargs()
-        self.assertEqual(kw['z_axis'], 0)
-        self.assertEqual(kw['stitch_threshold'], 0.4)
-        self.assertFalse(kw['do_3D'])
+        with mock.patch.object(cpu, 'stitch_planes', wraps=cpu.stitch_planes) as sp:
+            out = self.seg.predict_slice(tile, self._params(stitchThreshold=0.4))
+        self.assertEqual(len(self.model.calls), 1)
+        x, kw = self.model.calls[-1]
+        self.assertIsInstance(x, list)
+        self.assertEqual(len(x), 3)
+        self.assertNotIn('stitch_threshold', kw)
+        self.assertNotIn('z_axis', kw)
+        self.assertEqual(kw['min_size'], -1)
+        self.assertEqual(kw['channels'], [0, 0])            # still the v3 kwargs
+        sp.assert_called_once()
+        self.assertEqual(sp.call_args.args[1], 0.4)
+        self.assertEqual(out.shape, (3, 8, 8))
+        self.assertEqual(out.dtype, np.uint32)
 
     def test_unknown_v3_model_name_rejected(self):
         """Only cyto2/cyto3 are shipped in the v3 env; anything else raises with a clear message

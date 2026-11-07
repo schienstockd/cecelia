@@ -67,3 +67,23 @@ export function buildStartGraph(
     })),
   }
 }
+
+export interface ClearableCanvas {
+  nodeIds: string[]
+  edgeIds: string[]
+  removeNodes: (ids: string[]) => void
+  removeEdges: (ids: string[]) => void
+}
+
+/**
+ * Empty the whiteboard and resolve only after Vue has flushed the unmount (`tick` = `nextTick`).
+ * Every chain's start dot is `START_ID` (and authored chains reuse task ids), so a same-tick
+ * remove+add hands the new node the OLD element: Vue Flow never re-measures its handles and the
+ * dot's edge draws from the node's top-left corner. Every full clear that is followed by adding
+ * nodes goes through here.
+ */
+export async function clearCanvas(c: ClearableCanvas, tick: () => Promise<unknown>): Promise<void> {
+  c.removeNodes(c.nodeIds)
+  c.removeEdges(c.edgeIds)
+  await tick()
+}

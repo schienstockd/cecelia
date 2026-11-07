@@ -31,7 +31,7 @@ const route    = useRoute()
 // the route by full path, so a fresh instance (and fresh defs) is created per category.
 const category = computed(() => String(route.params.category ?? ''))
 const { defs, reload } = useTaskDefs(category.value)
-// cohort funs come from the backend (funNames ∩ COHORT_METRICS), so the "Check cohort" button appears
+// cohort funs come from the backend (the funNames the cohort routes can answer), so the "Check cohort" button appears
 // automatically for a custom module that registered cohort metrics — no hardcoded per-page list.
 const customModules = useCustomModulesStore()
 const cat = computed(() => customModules.categories.find(c => c.name === category.value))

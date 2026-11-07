@@ -367,9 +367,13 @@ pixi run app        # Ctrl-b d to detach; `tmux attach -t cecelia` to come back
 The startup will call `webbrowser.open()` and `xdg-open` will fail silently — that is expected on a
 headless VM; you'll open the browser on the laptop side.
 
-**Tunnel from the laptop:**
+**Tunnel from the laptop.** Your Cecelia on the VM isn't always on 8080: when several OS users
+share the VM, each takes its own port slot (8080 + 10 × N), and 8080 may be another user's. Read
+your port from the lock it writes once it's running (`scripts/remote-launcher/cecelia-connect.sh`
+does this for you):
 ```bash
-ssh -L 8080:localhost:8080 <vm>
+ssh <vm> cat .cecelia/cecelia.lock     # "api_port": 8090 → use 8090 below (8080 if no lock yet)
+ssh -L 8080:localhost:<api_port> <vm>
 # then, in a laptop browser — the sign-in link, once per browser (Cecelia only answers its own user):
 open "http://localhost:8080/api/auth?token=$(ssh <vm> cat .cecelia/api-token)"
 ```

@@ -168,6 +168,41 @@ class LoopbackSchemeTest(unittest.TestCase):
 
         self.assertEqual(asyncio.run(run()), frames)
 
+    def _ws_launch(self, tls: bool, stale: str) -> tuple[list, str]:
+        # the autonomous launch path (`AutonomousClient._ws_send`) with a stale remembered scheme: TLS
+        # toggled + app restarted after this process's last HTTP call (`definitions()` is cached, so
+        # a later `run_task` makes no fresh HTTP call before the send)
+        from websockets.sync.server import serve
+        from cecelia_mcp.autonomous import AutonomousClient
+
+        def handler(ws):
+            msg = json.loads(ws.recv())
+            ws.send(json.dumps({"type": "task:started", "taskId": msg["taskId"]}))
+
+        ctx = None
+        if tls:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(*_self_signed(Path(self._tmp.name)))
+        with serve(handler, "127.0.0.1", 0, ssl=ctx) as server:
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            port = server.socket.getsockname()[1]
+            base = f"http://127.0.0.1:{port}"
+            loopback.remember(base, f"{stale}://127.0.0.1:{port}")
+            c = AutonomousClient(base_url=base)
+            frames = c._ws_send({"type": "task:run", "taskId": "t1"}, lambda f: True, wait_s=3)
+            server.shutdown()
+        return frames, loopback.resolve(base).split("://")[0]
+
+    def test_ws_launch_survives_tls_turned_on(self):
+        frames, now = self._ws_launch(tls=True, stale="http")
+        self.assertEqual(frames, [{"type": "task:started", "taskId": "t1"}])
+        self.assertEqual(now, "https")
+
+    def test_ws_launch_survives_tls_turned_off(self):
+        frames, now = self._ws_launch(tls=False, stale="https")
+        self.assertEqual(frames, [{"type": "task:started", "taskId": "t1"}])
+        self.assertEqual(now, "http")
+
 
 class OffLoopbackTest(unittest.TestCase):
     def test_remote_hosts_are_verified_and_never_swapped(self):

@@ -478,6 +478,45 @@ end
     # a task that names no output of its own reports "", never a guess
     @test Cecelia.task_output_name("importImages.omezarr", Dict{String,Any}()) == ""
 
+    # a RENAMED namespaced param (`formerKeys`): saved params that never went through
+    # `_apply_spec_defaults` carry only the old key, and must still resolve to the saved name — not the
+    # default — as `savedValueFor` does on the frontend. The current key wins when both are present.
+    renamed = [Dict{String,Any}("key" => "valueName", "type" => "valueNameInput",
+                                "namespace" => "clusters", "default" => "default",
+                                "formerKeys" => ["clusterName"])]
+    @test Cecelia._spec_output_name(renamed, Dict{String,Any}("clusterName" => "immune")) == "immune"
+    @test Cecelia._spec_output_name(renamed, Dict{String,Any}("clusterName" => "old",
+                                                              "valueName" => "new")) == "new"
+    @test Cecelia._spec_output_name(renamed, Dict{String,Any}()) == "default"
+    sectioned = [Dict{String,Any}("key" => "sec", "type" => "section", "params" => renamed)]
+    @test Cecelia._spec_output_name(sectioned, Dict{String,Any}("clusterName" => "immune")) == "immune"
+    # the shared lookup, also used for a chain's produced model names (`_chain_produced_names`)
+    model = Dict{String,Any}("key" => "modelName", "namespace" => "models", "default" => "",
+                             "formerKeys" => ["flowModel"])
+    @test Cecelia._saved_value_for(model, "modelName", Dict{String,Any}("flowModel" => "cytoFg")) == "cytoFg"
+    @test Cecelia._saved_value_for(model, "modelName", Dict{String,Any}()) == ""
+    # the same lookup in chain history: a run saved under the former key keeps its output namespace
+    # (it used to come back "" — a correct name in no namespace)
+    hl = Dict{String,Cecelia._HistoryLeaf}("renamedSuffix" =>
+        (; type = "valueNameInput", ns = "clusters", writes = true, accepts = String[],
+           former = ["valueNameSuffix"]))
+    @test Cecelia._history_output("clustPops.cluster", Dict{String,Any}("valueNameSuffix" => "immune"), hl) ==
+          ("immune", "clusters")
+    # and the leaves carry the spec's `formerKeys`
+    leaves = Cecelia._spec_leaf_params!(Dict{String,Cecelia._HistoryLeaf}(),
+        Dict{String,Any}("params" => renamed))
+    @test leaves["valueName"].former == ["clusterName"]
+    # `_apply_spec_defaults` resolves through the same `_stored_key`: current key wins, then a former one
+    @test Cecelia._stored_key("valueName", ["clusterName"], Dict{String,Any}("clusterName" => 1)) == "clusterName"
+    @test Cecelia._stored_key("valueName", ["clusterName"],
+                              Dict{String,Any}("clusterName" => 1, "valueName" => 2)) == "valueName"
+    @test Cecelia._stored_key("valueName", nothing, Dict{String,Any}()) === nothing
+    let ct = Cecelia._task_from_fun_name("clustPops.cluster")     # real spec: createUmap ← mergeUmap
+        @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}("mergeUmap" => false))["createUmap"] === false
+        @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}("mergeUmap" => false,
+                                                                "createUmap" => true))["createUmap"] === true
+    end
+
     # EVERY spec carrying a valueNameInput resolves through it — so flipping another task's param
     # (Phase 3: clustering, stats, models) cannot silently fail to be remembered per name
     for (fun, task) in Cecelia._fun_name_map()
