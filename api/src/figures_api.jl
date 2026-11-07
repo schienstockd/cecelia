@@ -14,19 +14,13 @@ _movies_changed(project_uid::AbstractString) =
     _figure_filename(dir, img, name, replace) -> String
 
 `<safe name>.png` in `dir`: the requested `name`, else `<image name>_figure`. Without `replace` an
-existing file gets `-2`, `-3`, … rather than being overwritten — a figure is a deliberate artefact,
-unlike a movie, which is named after its image and re-recorded in place.
+existing file gets `_001`, `_002`, … (`_numbered_if_taken`, the movies' rule) rather than being
+overwritten. The viewer sends `replace` when its "number if taken" toggle is off.
 """
 function _figure_filename(dir::AbstractString, img::CciaImage, name::AbstractString, replace::Bool)::String
     base = _safe_name_part(isempty(strip(name)) ? "$(img.name)_figure" : name)
     isempty(base) && (base = "figure")
-    candidate = "$base.png"
-    replace && return candidate
-    k = 2
-    while isfile(joinpath(dir, candidate))
-        candidate = "$base-$k.png"; k += 1
-    end
-    candidate
+    basename(_numbered_if_taken(joinpath(dir, "$base.png"), !replace))
 end
 
 """

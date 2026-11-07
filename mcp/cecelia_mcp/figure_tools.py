@@ -33,6 +33,7 @@ SPEC_DOC = """`spec` (what to show; the image supplies its store, channel names,
   - `display`: {"percentiles": [1, 99.8]} measured over ALL tiles (default) | {"ranges": {"mem-TOM": [0, 68]}}
     | add "perTile": true for a range per tile (the legend then says so). Shared is what makes frames comparable.
   - `scaleBarUm`: bar length (none if omitted); `interpolation`: "pixels" (default, crisp) | "smooth"
+  - `layout`: "strip" (default, frames in one line) | "grid" (frames wrapped into a near-square matrix)
   - `style`: {"tileMm": 20, "dpi": 300, "scaleBarOn": "first"|"last"|"all", "timeFormat": "clock"|"min"} —
     the project's figure style otherwise (the user sets it on the Movies & figures page).
   - Split channels: rows = the merge, then one row per channel in "#ffffff" (the editor's "split channels").
@@ -44,7 +45,7 @@ movies on the Movies & figures page, marked as yours. Returns the figure as a pi
 and the spec as rendered, with the display ranges it measured — check the channel colours and that the
 cell is centred before you report it.
 `dry_run=True` renders and keeps NOTHING — look first, then save. `name` is the file name (default
-`<image>_figure`); an existing one is never overwritten (a `-2` is added). A spec error names the field.
+`<image>_figure`); an existing one is never overwritten (`_001`, `_002`, … is added). A spec error names the field.
 {SPEC_DOC}"""
 
 SET_FIGURE_DOC = f"""Re-make a figure YOU made (`name`, e.g. "cell_figure.png") from a new `spec` — the same file,

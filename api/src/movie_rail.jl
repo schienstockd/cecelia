@@ -382,6 +382,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             size_x::Union{Int,Nothing} = nothing,
                             size_y::Union{Int,Nothing} = nothing,
                             suffix::AbstractString = "",
+                            numbered::Bool = false,   # a taken name gets _001, … (`_numbered_if_taken`)
                             title_card = nothing,
                             value_name::AbstractString = "",
                             label_value_name::Union{AbstractString,Nothing} = nothing,
@@ -469,7 +470,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                                        tally = false,
                                        on_log = line -> ws_log(nothing, task_id, line))
 
-    out_path = _movie_named_path(img, image_uid; suffix = _movie_suffix(suffix))
+    out_path = _numbered_if_taken(_movie_named_path(img, image_uid; suffix = _movie_suffix(suffix)), numbered)
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
     ws_progress(nothing, task_id, 0, length(ts))
     ws_log(nothing, task_id, "Recording $(length(ts)) frame(s) → $(basename(out_path))")
@@ -1007,6 +1008,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                   size_x::Union{Int,Nothing} = nothing,
                                   size_y::Union{Int,Nothing} = nothing,
                                   suffix::AbstractString = "",
+                                  numbered::Bool = false,   # a taken name gets _001, … (`_numbered_if_taken`)
                                   title_card = nothing,
                                   compare_config,
                                   share_contrast::Bool = true,
@@ -1029,7 +1031,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
         return nothing
     end
     grid = _compare_grid(compare_config)
-    out_path = _movie_named_path(img, image_uid; suffix = _movie_suffix(suffix))
+    out_path = _numbered_if_taken(_movie_named_path(img, image_uid; suffix = _movie_suffix(suffix)), numbered)
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
     # Physical calibration for the encoder-side timestamp + scale bar (same reader
     # `run_single_offline` uses). Absent metadata → 1.0 fallback = pixel-space bar.
@@ -1092,6 +1094,7 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
                                        size_x::Union{Int,Nothing} = nothing,
                                        size_y::Union{Int,Nothing} = nothing,
                                        suffix::AbstractString = "",
+                                       numbered::Bool = false,   # a taken name gets _001, … (`_numbered_if_taken`)
                                        title_card = nothing,
                                        keyframes,
                                        value_name::AbstractString = "",
@@ -1124,8 +1127,8 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
                             String[])
     # `_movie_named_path` names by the IMAGE; animations end with `_animation` so timelapse recordings
     # and animations of one image sort together but never collide.
-    out_path = _movie_named_path(img, image_uid;
-                                  suffix = _movie_suffix(suffix) * (from_viewer ? "" : "_animation"))
+    out_path = _numbered_if_taken(_movie_named_path(img, image_uid;
+                                  suffix = _movie_suffix(suffix) * (from_viewer ? "" : "_animation")), numbered)
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
     ws_log(nothing, task_id, "Recording animation → $(basename(out_path))")
 

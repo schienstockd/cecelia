@@ -367,6 +367,7 @@ function handle_movie_record(ws, data)
     fps         = Int(get(data, :fps, 15))
     size_x, size_y = _movie_size_params(data)   # blank = the viewer's canvas size
     suffix      = _wstr(data, :suffix)
+    numbered    = _wbool(data, :numbered)   # the viewer's "number if taken"
     kf_raw      = get(data, :keyframes, nothing)
     keyframes   = (kf_raw === nothing || length(kf_raw) == 0) ? nothing : kf_raw
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
@@ -505,7 +506,7 @@ function handle_movie_record(ws, data)
         end
         @async try
             run_single_keyframes_offline(task_id, project_uid, image_uid; fps = fps,
-                                          size_x = size_x, size_y = size_y, suffix = suffix,
+                                          size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                                           title_card = card, keyframes = keyframes,
                                           value_name = first_vn,
                                           render_quality = rq_sym,
@@ -539,7 +540,7 @@ function handle_movie_record(ws, data)
         compare_cfg[:compareContrast]  = String(get(data, :compareContrast, ""))
         @async try
             run_single_grid_offline(task_id, project_uid, image_uid; fps = fps,
-                                    size_x = size_x, size_y = size_y, suffix = suffix,
+                                    size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                                     title_card = card,
                                     compare_config = compare_cfg,
                                     share_contrast = share_ctr, layout = layout,
@@ -560,7 +561,7 @@ function handle_movie_record(ws, data)
     overlays_raw = get(data, :overlays, nothing)
     @async try
         run_single_offline(task_id, project_uid, image_uid; fps = fps,
-                           size_x = size_x, size_y = size_y, suffix = suffix,
+                           size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                            title_card = card,
                            value_name = first_vn,
                            label_value_name = first_lvn,
