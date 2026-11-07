@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
+  slabZ, loadedPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -473,6 +473,29 @@ describe('zControlsForLoaded — restoring a view state\'s loaded planes', () =>
   })
   it('clamps a range captured on a deeper stack', () => {
     expect(zControlsForLoaded('volume', 17, [0, 60], 20).depth).toEqual([0, 19])
+  })
+})
+
+describe('canMovePlanesInPlace — z moves without a reallocate', () => {
+  it('slides the ±n window in place while its depth is unchanged', () => {
+    // ±2 on a 41-plane stack: plane 14 → 15 keeps 5 planes loaded, so no atlas rebuild per step.
+    const before = loadedPlanes('plane', 14, [0, 40], 2, 41)
+    const after = loadedPlanes('plane', 15, [0, 40], 2, 41)
+    const depth = (r: [number, number]) => r[1] - r[0] + 1
+    expect(canMovePlanesInPlace(true, false, depth(after), depth(before))).toBe(true)
+  })
+  it('a single 2D plane moves in place', () => {
+    expect(canMovePlanesInPlace(true, false, 1, 1)).toBe(true)
+  })
+  it('reallocates when the window clips at a stack end (depth changes)', () => {
+    const mid = loadedPlanes('plane', 2, [0, 40], 2, 41)
+    const edge = loadedPlanes('plane', 1, [0, 40], 2, 41)
+    expect(canMovePlanesInPlace(true, false, edge[1] - edge[0] + 1, mid[1] - mid[0] + 1)).toBe(false)
+  })
+  it('reallocates on the tile path, before the first allocation, or without setZPlane', () => {
+    expect(canMovePlanesInPlace(true, true, 1, 1)).toBe(false)
+    expect(canMovePlanesInPlace(true, false, 1, null)).toBe(false)
+    expect(canMovePlanesInPlace(false, false, 1, 1)).toBe(false)
   })
 })
 

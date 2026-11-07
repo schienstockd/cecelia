@@ -155,11 +155,10 @@ function _apply_spec_defaults(task::CciaTask, params::Dict{String,Any})::Dict{St
             key = string(get(p, "key", ""))
             # a renamed param: a value stored under a former key (old funParams, saved chains) wins
             # over the default — `formerKeys`, docs/MODULES.md → *Fields any param may carry*
-            former = isempty(key) || haskey(out, key) ? nothing :
-                     findfirst(k -> haskey(out, string(k)), collect(get(p, "formerKeys", String[])))
-            if former !== nothing
+            former = isempty(key) ? nothing : _stored_key(key, get(p, "formerKeys", nothing), out)
+            if former !== nothing && former != key
                 copied || (out = copy(out); copied = true)
-                out[key] = out[string(collect(p["formerKeys"])[former])]
+                out[key] = out[former]
             elseif !isempty(key) && haskey(p, "default") && !haskey(out, key)
                 copied || (out = copy(out); copied = true)
                 out[key] = _spec_value(p["default"])
@@ -287,4 +286,20 @@ function _apply_param_requires_by_axes(task::CciaTask, have::AbstractSet{Symbol}
     end
     walk(get(spec, "params", nothing))
     out
+end
+
+"""
+    resolve_run_params(task, params, img_or_imgs) -> Dict
+
+The params a run actually executes with, from what the form sent: nested sections lifted, group
+order resolved, spec defaults filled, image-guarded params dropped. `run_task` (both scopes) and the
+preview resolve through this, and the run log records its result. A form-default blob (`funParams`)
+is what the form SENT, so the two are different shapes (`modelsOrder`, filled defaults) — a reader
+does not compare them (claim checks: `_claim_same_source`).
+"""
+function resolve_run_params(task::CciaTask, params::AbstractDict, scope)::Dict{String,Any}
+    p = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
+    p = _apply_group_order(task, p)
+    p = _apply_spec_defaults(task, p)
+    _apply_param_requires(task, scope, p)
 end

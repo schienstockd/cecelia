@@ -33,8 +33,7 @@ import time
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
-from cecelia_mcp.auth import auth_headers
-from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
+from cecelia_mcp.client import ApiError, DisallowedRoute, claude_headers, http_json
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
 
@@ -271,17 +270,39 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         return {"images": images, "skipped": missing}
 
     # ── WebSocket launch ──
+    def _ws_connect(self):
+        """Open the API's /ws: the scheme that last worked first, then (loopback only) the other one
+        when the connect itself fails — as `loopback.open_url` and `wsclient.observe` do — remembering
+        whichever answered. Covers a TLS toggle + restart after this process's last HTTP call. Only the
+        connect is retried, never a send. A refused upgrade (InvalidStatus) is an answer: raised as-is."""
+        from websockets.exceptions import InvalidHandshake, InvalidStatus
+        from websockets.sync.client import connect
+        bases = loopback.candidates(loopback.resolve(self.base_url))
+        for i, base in enumerate(bases):
+            ws_url = api_url_to_ws(base)
+            try:
+                # Claude's headers, not bare auth: the server stamps the tasks this connection starts
+                # with them (run log `author`); without them an agent's run reads as launched from the app.
+                ws = connect(ws_url, open_timeout=5, additional_headers=claude_headers(),
+                             **ssl_kwargs(ws_url))
+            except InvalidStatus:
+                loopback.remember(self.base_url, base)
+                raise
+            except (OSError, EOFError, InvalidHandshake):  # refused / TLS mismatch / no handshake
+                if i == len(bases) - 1:
+                    raise
+                continue
+            loopback.remember(self.base_url, base)
+            return ws
+        raise AssertionError("unreachable: candidates() is never empty")
+
     def _ws_send(self, message: dict, until, wait_s: float = 4.0) -> list[dict]:
         """Send one message on the API's /ws and collect the frames `until(frame)` accepts, for up to
         `wait_s` — enough to see an immediate refusal; progress is then polled over HTTP."""
         from websockets.exceptions import WebSocketException
-        from websockets.sync.client import connect
         seen: list[dict] = []
         try:
-            # the scheme http_json found working (TLS may have been toggled since setup — cecelia/utils/loopback.py)
-            ws_url = api_url_to_ws(loopback.resolve(self.base_url))
-            with connect(ws_url, open_timeout=5, additional_headers=auth_headers(),
-                         **ssl_kwargs(ws_url)) as ws:
+            with self._ws_connect() as ws:
                 ws.send(json.dumps(message))
                 deadline = time.time() + wait_s
                 while time.time() < deadline:
@@ -298,7 +319,7 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
                         if frame.get("status") in _TERMINAL or str(frame.get("type", "")).endswith(
                                 ("failed", "started")):
                             break
-        except (OSError, WebSocketException) as e:  # refused upgrade / dropped mid-send: say which
+        except (OSError, EOFError, WebSocketException) as e:  # refused upgrade / dropped mid-send: say which
             raise ApiError(0, f"cannot reach Cecelia WebSocket at {self.base_url} "
                               f"({type(e).__name__}: {e})") from e
         return seen

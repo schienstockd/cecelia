@@ -521,6 +521,33 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 @test [p["zFromStartUm"] for p in acq["brightZ"]["points"]] == [0.0, 60.0]
                 @test acq["scanner"]["type"] == "Resonant"
 
+                @test acq["readerVersion"] == Cecelia.ACQUISITION_READER_VERSIONS["oir"]
+                # A reader with no version yet (czi) is current, not re-read on every refresh.
+                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
+                # Settings with no `source` predate the .czi reader: an .oir read, so outdated at v1.
+                @test Cecelia._acquisition_outdated(Dict{String,Any}("system" => "FV4000"))
+                @test acq["channels"][1]["emissionFilter"] == "BA410-455"
+
+                # Settings from an older reader (no readerVersion, no filters) are re-read on resync…
+                old = init_object(proj.uid, img.uid)
+                stale = Dict{String,Any}("system" => "FV4000", "source" => "oir")
+                old.meta["acquisition"] = stale
+                save!(old)
+                @test Cecelia._acquisition_outdated(stale)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                @test init_object(proj.uid, img.uid).meta["acquisition"]["channels"][4]["emissionFilter"] == "ET720/60M"
+                # …but with the source gone, the older settings stay and no reason is recorded.
+                old = init_object(proj.uid, img.uid)
+                old.meta["acquisition"] = stale
+                save!(old)
+                mv(src, src * ".away")
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                kept = init_object(proj.uid, img.uid).meta
+                @test kept["acquisition"]["system"] == "FV4000" && !haskey(kept["acquisition"], "channels")
+                @test !haskey(kept, "acquisitionMissing")
+                mv(src * ".away", src)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))   # back to the current reader
+
                 # Fill-only: a second resync keeps what is there, even once the source is gone.
                 rm(src)
                 @test resync_ome_meta!(init_object(proj.uid, img.uid))
@@ -1533,6 +1560,13 @@ end
             @test sort(scodes(doc["findings"])) == ["seg.counts_unstable", "seg.fragmented"]
             @test doc["metrics"]["nCells"] == 200 && doc["metrics"]["diameterUm"] == 10.0
             @test count(l -> startswith(l, "[QC] seg."), logs) == 2
+            # the runner's `runEnv` comes back from the same parse (→ result → run log `env`);
+            # a file without one gives none
+            @test isempty(Cecelia.bank_segment_qc!(img, "segment.cellpose", "seg", qp))
+            write(qp, JSON3.write(Dict("labelCounts" => Dict("base" => 200),
+                                       "runEnv" => Dict("device" => "cuda", "cellpose" => "4.0.6"))))
+            @test Cecelia.bank_segment_qc!(img, "segment.cellpose", "seg", qp) ==
+                  Dict{String,Any}("device" => "cuda", "cellpose" => "4.0.6")
         end
 
         # metadata calibration findings (port of the old frontend fieldIssues) — codes + field

@@ -154,8 +154,8 @@
     {
      "id": "signal-in-two-channels",
      "symptom": "One structure shows up in two channels.",
-     "explanation": "Bleed-through (emission spilling into a neighbouring channel) or cross-excitation (one laser exciting two dyes). Filters are often not recorded in the file, so it has to be measured.",
-     "check": "Light path: channels sharing a laser; the file's filters (often not recorded).",
+     "explanation": "Bleed-through (emission spilling into a neighbouring channel) or cross-excitation (one laser exciting two dyes). The filters say where the bands should be, not how much spills, so it has to be measured.",
+     "check": "Light path: channels sharing a laser; each channel's emission filter (read from .oir files; often not recorded in other formats).",
      "alternatives": "Real co-labelling of the same cells.",
      "sources": [
       "north2006"

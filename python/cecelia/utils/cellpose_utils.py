@@ -29,8 +29,8 @@ upstream main):
   (few cells over a few Z planes) hits it often. A stitched cell is z-contiguous by construction,
   so `split_z_gaps` gives every z-run its own id.
 * **Its cost grows with the square of the tile area** (a dense overlap matrix per plane pair), so
-  the v4 path no longer calls it: planes are segmented separately and joined by `stitch_planes`,
-  the same rule at sparse cost. The cellpose 3 path still uses it.
+  neither version's path calls it: planes are segmented separately and joined by `stitch_planes`,
+  the same rule at sparse cost.
 
 Cellpose 3 (opt-in `cellpose-v3` env, Mac only — MPS is much faster on the v3 CNNs than on the v4
 transformer):
@@ -40,8 +40,9 @@ transformer):
 * **`channels=[cyto, nuc]` is REQUIRED** — 1-indexed positional pair. `[0, 0]` means grayscale
   (no nuc); `[1, 2]` means "cell channel is axis 0, nuclear channel is axis 1" in the last-axis
   stack this file already assembles.
-* **`z_axis=0, do_3D=False` gives independent 2D slices** (the exact call v4 rejects). With
-  `stitch_threshold>0`, cellpose stitches labels across Z. Return is `(masks, flows, styles)`.
+* **`z_axis=0, do_3D=False` gives independent 2D slices** (the exact call v4 rejects). Z stitching
+  is NOT cellpose's (`stitch_threshold=` is never sent): v3 runs the same list-of-planes +
+  `stitch_planes` path as v4. Return is `(masks, flows, styles)`.
 
 See docs/todo/CELLPOSE_V4_PLAN.md and docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 """
@@ -68,6 +69,10 @@ def _cellpose_major_version() -> int:
 
 
 _CELLPOSE_MAJOR = _cellpose_major_version()
+
+# Most non-zero voxels a tile may hold in a channel that has no frame/image window. Below a cell's
+# worth, so stretching them per tile cannot change which cells are found (`_prepare_channel`).
+_MAX_UNWINDOWED_VOXELS = 100
 _CELLPOSE_V3_BUILTINS = ('cyto2', 'cyto3')
 
 
@@ -238,6 +243,22 @@ class CellposeUtils(SegmentationUtils):
         self._model_cache[model_type] = model
         return model
 
+    def run_env(self):
+        """What this run actually ran on, for the run log's `env` (app/src/run_log.jl): `device` is
+        cellpose's OWN resolved device (`model.device` — it can fall back from the GPU we asked for),
+        `cellpose` the installed distribution's version. A key is absent when not known — no model was
+        loaded, or the version can't be read — never a default."""
+        env = {}
+        devices = {str(getattr(getattr(m, 'device', None), 'type', '') or '') for m in self._model_cache.values()}
+        devices.discard('')
+        if devices:
+            env['device'] = ','.join(sorted(devices))
+        try:
+            env['cellpose'] = importlib.metadata.version('cellpose')
+        except Exception:
+            pass
+        return env
+
     # ── Channel preparation ───────────────────────────────────────────────────
 
     def _prepare_channel(self, ch_data, model_params, norm_params, ch_idx):
@@ -259,7 +280,17 @@ class CellposeUtils(SegmentationUtils):
         if norm_params and ch_idx in norm_params:
             norm_min, norm_max = norm_params[ch_idx]
         else:
-            # only a channel the base found too empty for a window (or a caller passing none)
+            # Only for a channel the base found too empty for a window (or a caller passing none),
+            # and a tile is part of its frame, so the tile is near-empty too. A tile with real
+            # signal here would get a window of its own, i.e. its own brightness. Refuse that
+            # instead. The limit is fixed on purpose rather than read from `_percentile_range`:
+            # raising that cut-off must trip this check, not move it.
+            nonzero = int(np.count_nonzero(ch_data))
+            if nonzero > _MAX_UNWINDOWED_VOXELS:
+                raise ValueError(
+                    f'channel {ch_idx} has {nonzero} non-zero voxels in this tile but no '
+                    'frame/image intensity window. A per-tile window would give each tile its own '
+                    'brightness. The base must supply `norm_params` for every channel with signal.')
             rng = self._percentile_range(arr, float(model_params.get('normalise', 99.9)))
             norm_min, norm_max = rng if rng is not None else (0.0, float(arr.max()) or 1.0)
 
@@ -378,26 +409,24 @@ class CellposeUtils(SegmentationUtils):
             # v3 API: 1-indexed positional `channels=[cyto, nuc]`. `[0, 0]` = grayscale (no nuc);
             # `[1, 2]` = cell axis 0 + nuclear axis 1 of the last-axis stack this file builds.
             eval_kw['channels'] = [1, 2] if nuc_im is not None else [0, 0]
-            if is_3d and stitch_threshold > 0:
-                masks, _, _ = model.eval(im_input, z_axis=0, stitch_threshold=stitch_threshold,
-                                         do_3D=False, **eval_kw)
-            elif is_3d:
-                # v3 accepts `z_axis=0, do_3D=False, stitch_threshold=0` — independent 2D slices,
-                # per-plane numbering. This is the call v4 rejects; v3 has no equivalent restriction.
-                masks, _, _ = model.eval(im_input, z_axis=0, do_3D=False, **eval_kw)
-            else:
-                masks, _, _ = model.eval(im_input, **eval_kw)
-        elif is_3d and stitch_threshold > 0:
-            # v4: 2D per Z plane, stitched across Z. The same three steps as cellpose's own stitched
-            # eval (`_compute_masks`): per-plane masks with the size filter OFF (`min_size=-1`; a
-            # small 2D piece may belong to a large 3D cell), the stitch, then holes filled and
-            # objects under 15 voxels removed on the stitched volume. Only the stitch is ours —
-            # `stitch_planes` says why.
+
+        if is_3d and stitch_threshold > 0:
+            # Both versions: 2D per Z plane, stitched across Z. The same three steps as cellpose's own
+            # stitched eval (`_compute_masks`): per-plane masks with the size filter OFF
+            # (`min_size=-1`; a small 2D piece may belong to a large 3D cell), the stitch, then holes
+            # filled and objects under 15 voxels removed on the stitched volume. Only the stitch is
+            # ours — never cellpose's `stitch3D`, on either version; `stitch_planes` says why.
             planes = [im_input[z] for z in range(im_input.shape[0])]
             per_plane, _, _ = model.eval(planes, min_size=-1, **eval_kw)
             masks = stitch_planes(np.stack(per_plane), stitch_threshold)
             from cellpose.utils import fill_holes_and_remove_small_masks
             masks = fill_holes_and_remove_small_masks(masks, min_size=15)
+        elif _CELLPOSE_MAJOR == 3 and is_3d:
+            # v3 accepts `z_axis=0, do_3D=False, stitch_threshold=0` — independent 2D slices,
+            # per-plane numbering. This is the call v4 rejects; v3 has no equivalent restriction.
+            masks, _, _ = model.eval(im_input, z_axis=0, do_3D=False, **eval_kw)
+        elif _CELLPOSE_MAJOR == 3:
+            masks, _, _ = model.eval(im_input, **eval_kw)
         elif is_3d:
             # v4: independent 2D slices. As a list of planes, because the same call with `z_axis=0`
             # and no stitching is a ValueError in v4 (see the module docstring). Labels are numbered

@@ -7,6 +7,17 @@
 # is the profile that launched it (absent on older entries and when unknown). Stored as a
 # sidecar `{1/uid}/runlog.json` (a JSON array), mirroring the QC sidecars. Capped to RUN_LOG_CAP.
 #
+# ── What made it: `ceceliaVersion`, `author`, `env` ────────────────────────────────────────────────
+# So a result can say which code, which launcher and which machine made it. All three are ABSENT on
+# entries written before they were recorded, and absent whenever the value is not known — never a guess:
+#   ceceliaVersion — `cecelia_version()` of the process that RAN it (the detached runner can lag the
+#                    backend by a version), stamped at open.
+#   author         — the `author_stamp()` shape {profile, via?, model?, session?}: `by` plus the caller
+#                    the asking side captured (`caller_stamp`). No `via` = the asker did not say (a REPL
+#                    call, a chain node — see `run_author`).
+#   env            — facts decided at run time (device, engine version, seed), stamped at close from the
+#                    task result's `"runEnv"` (`run_env_of`). A task that reports none gets none.
+#
 # ── A run is written TWICE: opened when it starts, closed when it ends ─────────────────────────────
 #
 # It used to be appended once, on finish, and ONLY for :done/:failed — `:cancelled` was skipped on the
@@ -148,7 +159,61 @@ _rl_str(e, k) = string(_rl_get(e, k, ""))
 run_entry_status(e)::String = (s = _rl_str(e, "status"); isempty(s) ? "done" : s)
 
 """
-    open_run_log!(img, fun_name, value_name, params; task_id, at) -> entries
+    run_author(by, caller) -> Dict{String,Any}
+
+The run's author stamp, `author_stamp()`-shaped: the `caller` the asking side captured
+(`caller_stamp()`: `{via, model?, session?}`) with `by` — the launching profile the scheduler threads
+— as its `profile`. Either part may be missing and its fields are then absent, not filled in: a REPL
+`run_task` has no caller, so its stamp is `{profile}` and says nothing about `via`.
+"""
+function run_author(by::AbstractString, caller::AbstractDict = Dict{String,Any}())::Dict{String,Any}
+    s = Dict{String,Any}(String(k) => string(v) for (k, v) in caller
+                         if String(k) in ("via", "model", "session") && !isempty(string(v)))
+    isempty(by) || (s["profile"] = String(by))
+    s
+end
+
+"""
+    run_env_of(result) -> Dict{String,Any}
+
+The run-time environment a task reported in its result as `"runEnv"` (e.g. `{device, cellpose, seed}`),
+or an empty Dict. A task opts in by returning it; the scheduler stamps it onto the run-log entry.
+"""
+function run_env_of(result)::Dict{String,Any}
+    result isa AbstractDict || return Dict{String,Any}()
+    env = get(result, "runEnv", get(result, :runEnv, nothing))
+    env isa AbstractDict || return Dict{String,Any}()
+    Dict{String,Any}(String(k) => v for (k, v) in env if v !== nothing)
+end
+
+"""
+    read_run_env(sidecar_path) -> Dict{String,Any}
+
+The `"runEnv"` a Python runner wrote into the JSON sidecar it already hands back (its `qcOutPath`),
+or an empty Dict when the file or the key is missing. This is the Python → Julia half of `run_env_of`:
+the runner knows the device it got; the handler copies this into its result.
+"""
+function read_run_env(path::AbstractString)::Dict{String,Any}
+    isfile(path) || return Dict{String,Any}()
+    try
+        run_env_of(Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String))))
+    catch
+        Dict{String,Any}()
+    end
+end
+
+# The fields every entry gets on the path that CREATES it (open, or a close with nothing to patch).
+function _run_log_stamp!(e::Dict{String,Any}, by::AbstractString, author::AbstractDict)
+    isempty(by) || (e["by"] = String(by))
+    a = run_author(by, author)
+    isempty(a) || (e["author"] = a)
+    v = try cecelia_version() catch; "" end
+    isempty(v) || (e["ceceliaVersion"] = v)
+    e
+end
+
+"""
+    open_run_log!(img, fun_name, value_name, params; task_id, pool, by, caller, at) -> entries
 
 Record that a run has STARTED, with status `"running"`. Pair with `close_run_log!` on every exit path.
 
@@ -158,14 +223,14 @@ that is the whole reason the log is not append-on-finish (see the header). `task
 """
 function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = "",
                        params = nothing; task_id::AbstractString = "", pool::AbstractString = "",
-                       by::AbstractString = "", at::AbstractString = _run_log_now())
+                       by::AbstractString = "", caller::AbstractDict = Dict{String,Any}(),
+                       at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         e = Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
             "status" => RUN_LOG_RUNNING, "params" => _run_log_params(params),
             "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
-        isempty(by) || (e["by"] = String(by))
-        push!(entries, e)
+        push!(entries, _run_log_stamp!(e, by, caller))
         entries
     end
 end
@@ -180,10 +245,13 @@ abandoned work are both visible rather than only successes. If no open entry is 
 before this process started, or a caller that never opened one) the outcome is appended instead, so a
 terminal status is never silently dropped; that is what makes `append_run_log!` below just a
 convenience wrapper rather than a second storage path.
+
+`env` (see `run_env_of`) is stamped as the entry's `env` when non-empty.
 """
 function close_run_log!(img::CciaImage, task_id::AbstractString, status::AbstractString;
                         fun_name::AbstractString = "", value_name::AbstractString = "",
                         params = nothing, pool::AbstractString = "", by::AbstractString = "",
+                        caller::AbstractDict = Dict{String,Any}(), env::AbstractDict = Dict{String,Any}(),
                         at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         # newest-first: a re-run of the same task id should close its own entry, not an older one
@@ -194,12 +262,14 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
                 "fun" => string(fun_name), "valueName" => string(value_name),
                 "status" => string(status), "params" => _run_log_params(params),
                 "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
-            isempty(by) || (e["by"] = String(by))
+            _run_log_stamp!(e, by, caller)
+            isempty(env) || (e["env"] = Dict{String,Any}(String(k) => v for (k, v) in env))
             push!(entries, e)
         else
             e = Dict{String,Any}(String(k) => v for (k, v) in pairs(entries[i]))
             e["status"] = string(status)
             e["finishedAt"] = String(at)
+            isempty(env) || (e["env"] = Dict{String,Any}(String(k) => v for (k, v) in env))
             entries[i] = e
         end
         entries
@@ -245,7 +315,7 @@ onwards — so on every project segmented before that existed, every name resolv
 and the form restored nothing. Nobody re-runs six segmentations to seed a convenience feature.
 
 The history was already on disk: this log records every run's params, and a run's output name is
-recoverable from them (`task_output_name`, via the spec's `namespace`). So the by-name record is a
+recoverable from them (`task_params_name`: the spec's `namespace`, or the input a task writes into). So the by-name record is a
 fast index over this, not the only copy — and a name that predates it is found here instead.
 
 Two deliberate choices:
@@ -272,7 +342,7 @@ function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString
     isempty(entries) && return nothing
 
     # Resolved once so an entry for a task that no longer exists costs one lookup, not one per entry.
-    # The per-entry call stays `task_output_name` rather than its pure `_spec_output_name` half: that
+    # The per-entry call stays `task_params_name` rather than its pure `_spec_output_name` half: that
     # would skip the `::CompositeTask` method and answer `""` for exactly the tasks the module pages
     # run. Re-entering `_task_spec` per entry is the price (a cached read, plus a deepcopy + a model-dir
     # scan for a task with dynamic options) and it is paid only while resolving a name.
@@ -292,9 +362,10 @@ function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString
         p = _rl_get(e, "params", nothing)
         p isa AbstractDict || continue
         params = Dict{String,Any}(String(k) => v for (k, v) in p)
-        task_output_name(task, params) == String(value_name) || continue
+        # put `valueName` back first: for a task that writes into its input (tracking) it IS the name
         vn = _rl_str(e, "valueName")
         isempty(vn) || (params["valueName"] = vn)
+        task_params_name(task, params) == String(value_name) || continue
         return params
     end
     nothing

@@ -199,6 +199,35 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A chain node's run-log entry names its caller ─────────────────────────
+# A chain started by Claude (the autonomous MCP's `chain:run`) logged its node runs as `{profile}` only,
+# because the caller stopped at `ChainRequest`. It now rides `run_chain(; caller)` → `ChainRun.caller` →
+# each node's `TaskRequest`, so the node's entry says `via: claude` — and on a resume, the resumer's.
+@testset "Chain node run log carries the chain's caller" begin
+    proj = create_project!(name="chain-caller-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img-a")
+    mkpath(joinpath(dirname(dirname(img._dir)), "0", img.uid, "ccidImage.ome.zarr"))
+    img.filepath["default"] = "ccidImage.ome.zarr"; img.filepath["_active"] = "default"
+    img.status = IMAGE_DONE; save!(img)
+    save_chain_template!(proj, ChainTemplate("caller-chain",
+        [ChainNode(id="n1", fn="importImages.remove",
+                   params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default"))], ChainEdge[]))
+
+    caller = Dict{String,Any}("via" => "claude", "model" => "claude-opus-5-5")
+    run = run_chain(proj, [img.uid]; chain = "caller-chain", by = "alice", caller, on_log = _ -> nothing)
+    @test run.image_states[img.uid]["n1"].status == NODE_DONE
+    e = read_run_log(init_object(proj.uid, img.uid))[end]
+    @test String(e["author"]["via"]) == "claude" && String(e["author"]["model"]) == "claude-opus-5-5"
+    @test String(e["author"]["profile"]) == "alice"
+    # in memory only — run.json never stores it, so a resume cannot inherit a stale caller
+    @test !haskey(JSON3.read(read(joinpath(run._dir, "run.json"), String), Dict{String,Any}), "caller")
+    # the caller crosses the runner's wire inside the chain request
+    creq = Cecelia.ChainRequest(; project_uid = proj.uid, chain_name = "caller-chain", by = "alice", caller)
+    @test Cecelia.chain_request(JSON3.read(JSON3.write(Cecelia.chain_request_dict(creq)), Dict{String,Any})).caller == caller
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Chain resume — explicit start node (re-run from here) ─────────────────
 @testset "Chain resume — start node force-restart" begin
     # descendants: pure graph reachability over n1→n2→n3
@@ -400,13 +429,57 @@ end
                    params=Dict{String,Any}("diameter" => 99, "adv" => Dict("iters" => 50)))],
         ChainEdge[]))
 
+    # A set-scope twin, so both executor paths are driven.
+    set_spec = joinpath(mktempdir(), "rangedParamSet.json")
+    write(set_spec, JSON3.write(Dict(
+        "fun_name" => "customTest.rangedParamSet", "task" => "rangedParamSet",
+        "label" => "Ranged param set task", "scope" => "set", "resource_pool" => "cpu",
+        "params" => Any[
+            Dict("key" => "diameter", "type" => "float", "min" => 2.0, "max" => 60.0, "default" => 10)])))
+    register_task!("customTest.rangedParamSet", _RangedParamSetTask(); spec = set_spec)
+    save_chain_template!(proj, ChainTemplate("clamp-set-chain",
+        [ChainNode(id="s1", fn="customTest.rangedParamSet", scope="set",
+                   params=Dict{String,Any}("diameter" => 99))],
+        ChainEdge[]))
+
+    # The node:* frames carry the params the task RAN with, not the stored out-of-range value.
+    frames = Dict{String,Vector{Any}}()
+    frame_lock = ReentrantLock()
+    handlers = Dict(ev => (p -> (lock(frame_lock) do
+                                     push!(get!(frames, ev, Any[]), p.params)
+                                 end; nothing))
+                    for ev in ("node:queued", "node:running", "node:done"))
+    for (ev, h) in handlers; subscribe_chain_events!(ev, h); end
+
     logs = String[]
-    run = run_chain(proj, [img.uid]; chain="clamp-chain", on_log = line -> push!(logs, line))
+    run = try
+        run_chain(proj, [img.uid]; chain="clamp-chain", on_log = line -> push!(logs, line))
+    finally
+        for (ev, h) in handlers; unsubscribe_chain_events!(ev, h); end
+    end
     st = run.image_states[img.uid]["n1"]
     @test st.status == NODE_DONE
     @test st.result["diameter"] == 60.0 && st.result["iters"] == 10
     @test any(l -> contains(l, "[$(img.uid)/n1]") && contains(l, "'diameter' = 99") &&
                    contains(l, "running with 60.0"), logs)
+    for ev in ("node:queued", "node:running", "node:done")
+        @test !isempty(get(frames, ev, Any[]))
+        @test all(p -> p["diameter"] == 60.0 && p["adv"]["iters"] == 10, get(frames, ev, Any[]))
+    end
+
+    empty!(frames)
+    for (ev, h) in handlers; subscribe_chain_events!(ev, h); end
+    set_run = try
+        run_chain(proj, [img.uid]; chain="clamp-set-chain", on_log = _ -> nothing)
+    finally
+        for (ev, h) in handlers; unsubscribe_chain_events!(ev, h); end
+    end
+    @test set_run.image_states[img.uid]["s1"].status == NODE_DONE
+    @test set_run.image_states[img.uid]["s1"].result["diameter"] == 60.0
+    for ev in ("node:queued", "node:running", "node:done")
+        @test !isempty(get(frames, ev, Any[]))
+        @test all(p -> p["diameter"] == 60.0, get(frames, ev, Any[]))
+    end
 
     # This run's own override is not clamped: refused at launch, before any node runs.
     @test_throws ChainTemplateError run_chain(proj, [img.uid]; chain="clamp-chain",

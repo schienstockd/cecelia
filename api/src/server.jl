@@ -231,11 +231,18 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     handler = get(table, path, nothing)   # SubString hashes as its String — no copy per request
     handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
     # Bind who's asking for the whole handler, so a writer stamps `author_stamp()` without threading it.
+    _with_request_author(() -> handler(req, body_bytes), req)
+end
+
+# Run `f` with REQUEST_VIA / REQUEST_CALLER bound from `req`'s headers. Used for every HTTP request AND
+# for a WebSocket upgrade — the bindings then hold for the whole connection, so a `task:run` from the
+# autonomous MCP (which marks its /ws connect like its HTTP calls) is stamped `via: claude`, not "app".
+function _with_request_author(f, req::HTTP.Request)
     via = HTTP.header(req, "X-Cecelia-Client", "") == "claude" ? "claude" : "app"
     caller = via == "claude" ?
         request_caller(HTTP.header(req, "X-Cecelia-Model", ""), HTTP.header(req, "X-Cecelia-Session", "")) :
         REQUEST_CALLER[]
-    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via, REQUEST_CALLER => caller)
+    Base.ScopedValues.with(f, REQUEST_VIA => via, REQUEST_CALLER => caller)
 end
 
 # ── GET ─────────────────────────────────────────────────────────────────────
@@ -867,7 +874,9 @@ function handle_stream(stream::HTTP.Stream)
     end
 
     if HTTP.WebSockets.isupgrade(req)
-        HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin) -> true)
+        _with_request_author(req) do
+            HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin) -> true)
+        end
         return
     end
 
@@ -901,28 +910,45 @@ function handle_stream(stream::HTTP.Stream)
     # or other in-flight requests (a napari open would otherwise queue behind it). Under `-t 1` this is
     # just a cooperative task (no behaviour change); under `-t auto` it's real parallelism. Shared state
     # is already lock-guarded (WS clients, napari, chain runs) and Julia HDF5 is serialised via
-    # `_with_h5`. Error handling lives INSIDE the spawned task, so `fetch` always yields a (status, body)
-    # tuple and never rethrows a TaskFailedException.
-    status, body = fetch(Threads.@spawn begin
-        try
+    # `_with_h5`. A HANDLER error is caught inside the spawned task and becomes a 500.
+    #
+    # The response WRITE runs in that same pool task, for the reason `try_serve_slab` writes from its
+    # own (docs/todo/SLAB_READ_PERF_PLAN.md, Phase 5): this connection's task is on HTTP.jl's single
+    # `:interactive` thread, so writing here makes every concurrent response — multi-MB gating
+    # plotdata/density/membership bodies included — copy onto the socket one after another. Only one
+    # task touches the stream at a time: the pool task, while this one waits in `fetch`.
+    _fetch_unwrapped(Threads.@spawn begin
+        status, body = try
             handle_http(req, body_bytes)
         catch e
             @error "Unhandled error in $(req.method) $(req.target)" exception = (e, catch_backtrace())
             500, JSON3.write((; error = sprint(showerror, e)))
         end
+        _write_router_response!(stream, status, body)
     end)
+end
 
-    # Binary handlers (gating plotdata/density/membership) return a byte vector → octet-stream;
-    # everything else returns a JSON string.
+# A failed WRITE (the client went away) has no response left to shape, so it propagates — but as the
+# IOError itself, not wrapped in the TaskFailedException `fetch` raises: HTTP.jl logs a client
+# disconnect at Debug only when it can see the `IOError` (EPIPE/ECONNRESET), and at Error otherwise.
+function _fetch_unwrapped(t::Task)
+    try
+        fetch(t)
+    catch e
+        e isa TaskFailedException && throw(e.task.exception)
+        rethrow()
+    end
+end
+
+# The router's response: binary handlers (gating plotdata/density/membership) return a byte vector →
+# octet-stream; everything else returns a JSON string.
+function _write_router_response!(stream::HTTP.Stream, status::Integer, body)
     content_type = body isa AbstractVector{UInt8} ? "application/octet-stream" : "application/json"
-
-    HTTP.setstatus(stream, status)
-    HTTP.setheader(stream, "Content-Type"                 => content_type)
-    HTTP.setheader(stream, "Access-Control-Allow-Origin"  => "*")
-    HTTP.setheader(stream, "Access-Control-Allow-Methods" => "GET, POST, OPTIONS")
-    HTTP.setheader(stream, "Access-Control-Allow-Headers" => "Content-Type")
-    HTTP.startwrite(stream)
-    write_http_body!(stream, body)
+    _write_response!(stream, status, body,
+                     "Content-Type"                 => content_type,
+                     "Access-Control-Allow-Origin"  => "*",
+                     "Access-Control-Allow-Methods" => "GET, POST, OPTIONS",
+                     "Access-Control-Allow-Headers" => "Content-Type")
 end
 
 # ── Entry point ───────────────────────────────────────────────────────────────

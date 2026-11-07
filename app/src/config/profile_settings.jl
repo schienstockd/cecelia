@@ -265,8 +265,18 @@ request_caller(model::AbstractString, session::AbstractString) =
 `{profile, via}` for the write being made now — store it as `createdBy` / `updatedBy`. A Claude write
 also carries `model` and `session` when they are known; absent means unknown, never a guess.
 """
-function author_stamp()::Dict{String,Any}
-    s = Dict{String,Any}("profile" => active_profile_name(), "via" => REQUEST_VIA[])
+author_stamp()::Dict{String,Any} = merge(Dict{String,Any}("profile" => active_profile_name()), caller_stamp())
+
+"""
+    caller_stamp() -> Dict{String,Any}
+
+`author_stamp()` without the profile: `{via, model?, session?}` of the request being served now. For a
+write that happens LATER, somewhere the request's scope does not reach — a task runs on a pool worker
+or in the detached runner — so the asking side captures this and the run carries it beside `by` (the
+profile), and the two together are the run's author stamp (`run_author`, run_log.jl).
+"""
+function caller_stamp()::Dict{String,Any}
+    s = Dict{String,Any}("via" => REQUEST_VIA[])
     c = REQUEST_CALLER[]
     isempty(c.model)   || (s["model"] = c.model)
     isempty(c.session) || (s["session"] = c.session)

@@ -203,6 +203,18 @@ end
     @test all(c -> String(c.config[:valueName]) == "af", monly[1].columns)
     @test [c.config[:labelValueNames] for c in monly[1].columns] == [["a"], ["b"]]
 
+    # No `popValueName` on a mask compare: every cell draws the pops of the segmentation the title
+    # card names (`_config_pop_segmentation` of the whole config) — not its own row's mask.
+    for cfg in (Dict{Symbol,Any}(:valueNames => ["af"], :labelValueNames => ["a", "b"]),
+                Dict{Symbol,Any}(:valueNames => ["default", "af"], :labelValueNames => ["a", "b"]))
+        g = _compare_grid(cfg)
+        @test all(c -> _config_pop_segmentation(c.config) == _config_pop_segmentation(cfg) == "a",
+                  (c for r in g for c in r.columns))
+    end
+    # a picked one is kept as is
+    @test all(c -> c.config[:popValueName] == "flowTom",
+              _compare_grid(Dict{Symbol,Any}(:labelValueNames => ["a", "b"], :popValueName => "flowTom"))[1].columns)
+
     # A single mask is drawn in the one cell rather than becoming a row of its own.
     one = _compare_grid(Dict{Symbol,Any}(:labelValueNames => ["a"]))
     @test length(one) == 1 && length(one[1].columns) == 1

@@ -11,6 +11,7 @@
   "category": "Tracking",
   "group": "Correct",
   "env": ["local"],
+  "writesInto": "valueName",
   "resource_pool": "cpu",
   "requires": { "axes": ["T"] },
   "params": [

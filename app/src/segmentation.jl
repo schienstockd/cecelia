@@ -374,14 +374,19 @@ one `[QC]` line per finding. Advisory and best-effort — a failure is logged, n
 
 `extra_findings(qmeta)` adds a task's own findings from the same JSON (label import's id pairing), so
 a segmenter with one more signal still banks through here rather than a second `write_qc`.
+
+Returns the runner's `runEnv` from the same parse (`run_env_of`; empty when absent or unreadable), for
+the handler to put in its result → the run log's `env`.
 """
 function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_name::AbstractString,
                           qc_out_path::AbstractString; diameter_um = nothing,
                           extra_findings::Function = _ -> Dict{String,Any}[],
                           on_log::Function = _ -> nothing)
-    isfile(qc_out_path) || return nothing
+    isfile(qc_out_path) || return Dict{String,Any}()
+    env = Dict{String,Any}()
     try
         qmeta  = JSON3.read(read(qc_out_path, String))
+        env    = run_env_of(Dict{String,Any}(String(k) => v for (k, v) in qmeta))
         counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
         findings, primary = segment_qc_findings(counts)
         stats = get(qmeta, :objectStats, nothing)
@@ -401,5 +406,5 @@ function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_na
     catch e
         on_log("[QC] could not compute segment QC: $e")
     end
-    nothing
+    env
 end

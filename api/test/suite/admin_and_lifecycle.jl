@@ -123,6 +123,40 @@ end
     @test st == 400
 end
 
+@testset "API: system env install — no fixed-fraction progress while pixi runs" begin
+    # A fixed fraction held for the minutes a ~500 MB `pixi install` takes reads as a hung bar in the
+    # Task Manager; the job streams pixi's log and leaves the bar to the weight fetch's real bytes.
+    if Sys.iswindows()
+        @test_skip false                                      # the fake pixi is a shell script
+    else
+        cap = Channel{String}(256)
+        key = gensym("test-env-install")
+        lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+        try
+            mktempdir() do tmp
+                pixi = joinpath(tmp, "pixi")
+                write(pixi, "#!/bin/sh\necho 'Downloading pkg' >&2\nexit 1\n"); chmod(pixi, 0o755)
+                job_id = _env_install_job_id("test-no-such-env")
+                @test claim_job!(job_id)
+                _run_env_install("test-no-such-env", pixi, (; approx_size_mb = 1, weights = String[]), job_id)
+                # pixi's lines are drained by @async readers, which may land after the call returns
+                mine = []
+                deadline = time() + 10
+                while time() < deadline && !any(f -> f.type == "task:log" && occursin("Downloading pkg", f.line), mine)
+                    isready(cap) ? (f = JSON3.read(take!(cap)); get(f, :taskId, "") == job_id && push!(mine, f)) :
+                                   sleep(0.05)
+                end
+                while isready(cap); f = JSON3.read(take!(cap)); get(f, :taskId, "") == job_id && push!(mine, f); end
+                @test any(f -> f.type == "task:log" && occursin("Downloading pkg", f.line), mine)
+                @test !any(f -> f.type == "task:progress", mine)
+                @test any(f -> f.type == "task:status" && f.status == "failed", mine)
+            end
+        finally
+            lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        end
+    end
+end
+
 @testset "API: running version prefers dev marker over stale VERSION" begin
     # A dev-channel apply moves the branch archive's payload over the install root, but that archive
     # contains no VERSION file (only release.yml writes one). So on a stable→dev flip, ROOT/VERSION

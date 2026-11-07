@@ -37,8 +37,8 @@ import { useWsStore } from '../stores/ws'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
-         eyeKey, flipPopEye, offPaths,
-         eyeTurnedOn, type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
+         eyeKey, flipPopEye, offPaths, reconcileTrackclustEyes,
+         eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
@@ -70,7 +70,7 @@ import { MAX_ATLASES, atlasCountForBudget } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
@@ -90,6 +90,7 @@ import {
 } from '../utils/viewerPick'
 import { placeBox } from '../utils/anchorPosition'
 import { BOX_HANDLES, resizeBox, drawnBox, previewBoxNeeded, type BoxHandle } from '../utils/viewer/previewBox'
+import { overviewNeedsLoad, overviewKey } from '../utils/viewer/overviewThumb'
 import { beginRect, updateRect, finishRect, type RectDraft } from '../utils/drawGeometry'
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
@@ -105,7 +106,7 @@ import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          type MaskStore } from '../utils/viewerLabels'
-import { maskPopTable, trackclustMaskLayer, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
+import { maskPopTable, trackclustMaskLayer, maskLayerShowsAny, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -914,6 +915,9 @@ watch(colourBy, () => { void loadOverlays() })
  */
 /** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
 let allocatedBricks: boolean | null = null
+/** The loaded-plane count (`zDepth`) the latest `reallocate()` sized the textures for — the z pump
+ *  moves the planes in place only while this still matches. `null` before the first allocation. */
+let allocatedZDepth: number | null = null
 function pickLabelName(names: string[]): string {
   if (!imageUid || !names.length) return ''
   const vis = settings.getLabelVisibility(imageUid, names)
@@ -993,8 +997,27 @@ const maskPopLayers = computed<MaskPopLayer[]>(() => {
   if (settings.viewerMaskColour === 'pops')
     return popLayers.value.filter(l => l.vn === vn).map(l => ({ payload: l.payload, hidden: layerHidden(l) }))
   const tc = maskTrackclust.value
-  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn ? [trackclustMaskLayer(tc.payload)] : []
+  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn
+    ? [trackclustMaskLayer(tc.payload, (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))] : []
 })
+/** The trackclust pops last fetched per segmentation — the `prev` a reconcile tells a delete by. */
+const trackclustSeen = new Map<string, TrackclustEyePop[]>()
+/**
+ * Reconcile one segmentation's trackclust eyes (points + ribbons, the two bags the manager's button
+ * writes) against a fresh `popType=trackclust` payload. `loadOverlays` never fetches trackclust, so
+ * without this a deleted cluster pop's eye outlived it and a pop recreated at its path inherited it.
+ */
+function reconcileTrackclustEyesFor(vn: string, payload: OverlayPayload) {
+  if (!imageUid) return
+  const next = (payload.pops ?? []).map(p => ({ path: p.path, uid: p.uid, show: p.show }))
+  const prev = trackclustSeen.get(vn) ?? []
+  trackclustSeen.set(vn, next)
+  const points = reconcileTrackclustEyes(settings.getPopEyes(imageUid, vn), prev, next)
+  if (!samePopEyes(settings.getPopEyes(imageUid, vn), points)) settings.setPopEyes(imageUid, vn, points)
+  popEyes.value = new Map(popEyes.value).set(vn, points)
+  const ribbons = reconcileTrackclustEyes(settings.getPopEyes(imageUid, vn, 'ribbons'), prev, next)
+  storeRibbonEyes(new Map(ribbonEyes.value).set(vn, ribbons))
+}
 const maskTable = computed(() => maskPopLayers.value.length ? maskPopTable(maskPopLayers.value) : null)
 watch(maskTable, () => frame.redraw())
 /** One segmentation's track-cluster pops (`popType=trackclust`) — the ribbons' and the mask's one
@@ -1011,7 +1034,9 @@ async function loadMaskTrackclust() {
   const vn = settings.viewerMaskColour === 'trackclust' ? maskName.value : ''
   if (!vn || !projectUid || !imageUid) { maskTrackclust.value = null; return }
   // null = no cell table: the palette, as for pops
-  const payload = trackclustPayloads.value.get(vn) ?? await fetchTrackclustPayload(vn)
+  const cached = trackclustPayloads.value.get(vn)
+  const payload = cached ?? await fetchTrackclustPayload(vn)
+  if (payload && !cached) reconcileTrackclustEyesFor(vn, payload)
   // a later mask / mode change has overtaken this fetch
   if (settings.viewerMaskColour !== 'trackclust' || maskName.value !== vn) return
   maskTrackclust.value = payload ? { vn, payload } : null
@@ -1416,8 +1441,10 @@ const maskColourNote = computed(() => {
   if (mode === 'id') return ''
   if (previewVn.value || liveVn.value) return 'Not for a preview mask'
   if (mode === 'pops') return maskTable.value ? '' : 'No populations shown on this mask'
-  const tc = maskTrackclust.value
-  return tc?.vn === maskName.value && tc.payload.pops.some(p => p.show !== false) ? ''
+  const tc = maskTrackclust.value, vn = maskName.value
+  // by the eyes the mask draws by (`maskPopLayers`), not `show`
+  return tc?.vn === vn && maskLayerShowsAny(trackclustMaskLayer(tc.payload,
+    (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))) ? ''
     : 'No track clusters on this mask'
 })
 const BRICKS_MODES = [
@@ -1878,7 +1905,9 @@ function rebuildOverlays() {
     // own sources with their own colours.
     for (const [tcVn, tcPayload] of trackclustPayloads.value.entries()) {
       for (const pop of tcPayload.pops ?? []) {
-        if (!pop.show || !pop.labels?.length) continue
+        // drawn by its ribbon eye, which the Population Manager's button reads and writes — `show`
+        // only for a pop with no eye (`reconcileTrackclustEyesFor`)
+        if (!popEyeOn(ribbonEyes.value, tcVn, 'trackclust', pop.path, pop.show) || !pop.labels?.length) continue
         // Trackclust pops are FILTERS on a `clusters.{suffix}` column — the tracks they cover are
         // by construction the tracks of the segmentation's tracked cells (see popmanager/pop_df.jl).
         // No per-pop attribution to filter by; labels-only is correct here.
@@ -2095,6 +2124,8 @@ async function loadTracks() {
     await Promise.all(tcVns.map(async vn => {
       // one vn's failure must not take the others down (`null`)
       const payload = await fetchTrackclustPayload(vn)
+      // an empty one too: its pops were all deleted, and their eyes go with them
+      if (payload) reconcileTrackclustEyesFor(vn, payload)
       // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
       // but would show up as a source count if it made it into the map.
       if (payload && (payload.pops ?? []).length) tcNext.set(vn, payload)
@@ -3411,19 +3442,23 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
 // short enough that the user sees planes moving past rather than a step-then-freeze. Canonical
 // primitive — do not hand-roll a scrub throttle. See `utils/debouncedLatest.ts` and docs/UI.md →
 // *Continuous controls*.
-const zPump = debouncedLatest<number>(async (zp) => {
+const zPump = debouncedLatest<number>(async () => {
   // Fast plane switch — both renderers implement setZPlane, so skip the full reallocate
-  // (which destroys textures / atlas — the 200 ms-2 s freeze observed 2026-08-29). Abort
-  // any in-flight slab fetches first: their URLs carry the OLD zPlane and would land in a
-  // slot stamped with the NEW planeVersion, leaving wrong bytes on a "fresh" slot. Volume
-  // mode and useTiles have different geometry / cache shapes → fall through to reallocate.
+  // (which destroys textures / atlas — a 200 ms-2 s main-thread freeze, and with the ±n window
+  // on, a fresh multi-GB brick atlas per step that out-ran Dawn's deferred free into
+  // VK_ERROR_OUT_OF_DEVICE_MEMORY). Moving the loaded planes keeps every texture's SHAPE as
+  // long as their count does, so the window moves in place too; only a depth change (the
+  // window clipped at a stack end) or the tile path needs the reallocate. Abort any in-flight
+  // slab fetches first: their URLs carry the OLD planes and would land in a slot stamped with
+  // the NEW planeVersion, leaving wrong bytes on a "fresh" slot.
+  // The planes to load are `zLoaded`, which already reads the latest `zPlane` — not the scheduled arg.
   const r = renderer.value
-  if (r?.setZPlane && !useTiles.value && singlePlane.value) {
+  if (canMovePlanesInPlace(!!r?.setZPlane, useTiles.value, zDepth.value, allocatedZDepth)) {
     for (const ac of aborts.values()) ac.abort()
     aborts.clear()
     inflight.clear()
     pump.cancel()
-    r.setZPlane(zp)
+    r!.setZPlane!(zLoaded.value[0])
     gotoT(t.value)
     return
   }
@@ -3876,7 +3911,7 @@ const overviewSize = computed(() => {
   return { w: Math.min(220, Math.round(OVERVIEW_H * asp)), h: OVERVIEW_H }
 })
 /**
- * Tissue thumbnail behind the minimap rect. Fetched ONCE per image — the deepest pyramid level's
+ * Tissue thumbnail behind the minimap rect. Fetched ONCE per image version — the deepest pyramid level's
  * whole slab, all channels — and composited on the CPU using the same LUTs the shader uses. Small
  * enough to be cheap: for a 20k×17k slide with 5 levels, the deepest is ~635×528 × 24 ch × 2 B ≈
  * 16 MB, one-off, and the composite is ~350k pixels × 24 ch ≈ 8M multiplies (~10-30 ms). Redrawn on
@@ -3885,9 +3920,17 @@ const overviewSize = computed(() => {
 const overviewCanvas = ref<HTMLCanvasElement | null>(null)
 const overviewChans = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
 const overviewDims = ref<{ nX: number; nY: number } | null>(null)
+/** `overviewKey` of the thumbnail held or in flight; `''` = none, so the next trigger fetches. */
+let overviewLoadedKey = ''
 async function loadOverviewThumbnail() {
   const m = meta.value
-  if (!m) return
+  const key = overviewKey(valueName.value, cacheClearRev.value)
+  if (!overviewNeedsLoad({ mode: mode.value, shown: overviewShown.value, starting: !!starting.value,
+                           hasMeta: !!m, key, loadedKey: overviewLoadedKey }) || !m) return
+  overviewLoadedKey = key
+  // Another version's tissue must not sit under this one while the new thumbnail is on its way.
+  overviewChans.value = null
+  overviewDims.value = null
   // Deepest pyramid level for multi-level stores; for a single-level store `m.levels` is empty and
   // L0 = meta.nX/nY is the only choice (SRPabw: no thumbnail because
   // `levels.length === 0` bailed here). L0 is bigger, but still bounded — SRPabw is 441×420×2 B ×
@@ -3909,13 +3952,18 @@ async function loadOverviewThumbnail() {
       if (!res.ok) throw new Error(`Overview c${c}: ${res.status}`)
       return slabView(await res.arrayBuffer(), m.bytesPerVoxel)
     }))
+    if (overviewLoadedKey !== key) return     // a newer version took over mid-flight
     overviewChans.value = bufs
     overviewDims.value = { nX: lvl.nX, nY: lvl.nY }
     renderOverview()
   } catch (e) {
+    if (overviewLoadedKey === key) overviewLoadedKey = ''   // retry on the next trigger
     vlog('warn', 'Overview thumbnail unavailable', e instanceof Error ? e.message : String(e))
   }
 }
+// Fetch whenever the mini map can be seen without one: switching 3D → 2D, turning it on, a version
+// swap or cache clear. A no-op once the key matches.
+watch([mode, overviewShown, starting, meta, valueName, cacheClearRev], () => { void loadOverviewThumbnail() })
 // The canvas is `v-if`'d off when Overview toggles off, so its ref goes null. A fresh canvas mounts
 // blank when the user toggles back on — nothing repaints it until the next channel change, so the
 // thumbnail stays black. Watch the ref: whenever it mounts (null → element),
@@ -4281,6 +4329,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
   allocatedMaskRoom = maskRoom.value
   appliedMaskSource = maskSourceId.value
   allocatedBricks = bricksEnabled.value
+  allocatedZDepth = zDepth.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
   // (chunks are the same size at every level), keeps in-flight fetches (many will still be wanted at the
@@ -4595,9 +4644,8 @@ async function loadVersion(refit: boolean) {
   // must not delay the pixels. Tissue thumbnail for whole-slide (tile) view is the same idea.
   void loadOverlays()
   void loadTracks()
-  // Fetched for any plane view; if the user never opens the minimap, the bytes stay in the HTTP
-  // cache and the canvas just isn't drawn.
-  if (mode.value === 'plane') void loadOverviewThumbnail()
+  // Also fired by its watcher on `starting`; this call just makes the open-in-2D order explicit.
+  void loadOverviewThumbnail()
 }
 
 // Autosave triggers — every watcher settles into one write per debounce window. `deep` on channels

@@ -61,6 +61,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  caller::AbstractDict       = Dict{String,Any}(),
                   target::RunTarget          = TARGET_LOCAL,
                   hpc::Dict{String,Any}      = Dict{String,Any}(),
                   on_log::Function           = line -> println(line),
@@ -75,10 +76,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
         hpc_resources(task, hpc)
         pool_name = "hpc"
     end
-    params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
-    params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
-    params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
-    params = _apply_param_requires(task, img, params)  # drop image-guarded params (see task.jl)
+    params = resolve_run_params(task, params, img)   # sections, group order, spec defaults, axis guards
     validate_params(task, params)
     # Axis gating — raises TaskApplicabilityError before we occupy a pool slot. Chain executor
     # calls task_applies directly and skips (rather than raising) so mixed-image chains work.
@@ -87,13 +85,14 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     fun_name  = _fun_name_from_task(task)
     pool_name = effective_pool_name(task, pool_name)
     pool      = _pool(pool_name)
-    # Throws `DuplicateRunError` if this task is already queued/running on this image with this output.
+    # Throws `DuplicateRunError` if this task is already queued/running on this image with this output
+    # (`task_params_name`, so tracking B and tracking T, which write different files, do not collide).
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id, by = by, params = params,
-                                 output_name = task_output_name(task, params),
+                                 chain_node_id = chain_node_id, by = by, caller = caller, params = params,
+                                 output_name = task_params_name(task, params),
                                  target = target, hpc = hpc)
     _set_status!(rec, TASK_QUEUED)
 
@@ -120,6 +119,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  caller::AbstractDict       = Dict{String,Any}(),
                   target::RunTarget          = TARGET_LOCAL,
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
@@ -130,10 +130,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     # A set-scope run spans images the mirror would have to stage together; not ported (HPC_PLAN P3).
     target === TARGET_HPC &&
         throw(ArgumentError("$(_fun_name_from_task(task)) runs over a whole set and cannot run on the cluster"))
-    params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
-    params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
-    params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
-    params = _apply_param_requires(task, imgs, params)  # drop image-guarded params (set-scope intersects)
+    params = resolve_run_params(task, params, imgs)  # as above; axis guards intersect across the set
     validate_params(task, params)
     # Set-scope tasks (behaviour/hmm) fit jointly across the whole vector — a static image inside
     # the set would break the fit, so gate on ALL images satisfying the requirement.
@@ -148,9 +145,9 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(rep),
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id, by = by, params = params,
+                                 chain_node_id = chain_node_id, by = by, caller = caller, params = params,
                                  image_uids = [i.uid for i in imgs],
-                                 output_name = task_output_name(task, params))
+                                 output_name = task_params_name(task, params))
     _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
@@ -176,6 +173,7 @@ function run_task(proj_uid::String, img_uid::String;
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  caller::AbstractDict       = Dict{String,Any}(),
                   target::RunTarget          = TARGET_LOCAL,
                   hpc::Dict{String,Any}      = Dict{String,Any}(),
                   on_log::Function           = line -> println(line),
@@ -186,7 +184,7 @@ function run_task(proj_uid::String, img_uid::String;
     task = _task_from_fun_name(fun_name)
     img  = init_object(proj_uid, img_uid)
     img isa CciaImage || error("UID '$img_uid' in project '$proj_uid' is not an image")
-    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by, target, hpc,
+    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by, caller, target, hpc,
              on_log, on_progress, on_process, on_status_change, on_hpc)
 end
 

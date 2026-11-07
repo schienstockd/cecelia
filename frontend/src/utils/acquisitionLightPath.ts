@@ -20,7 +20,14 @@ export const LIGHT_PATH_SOURCES: { key: LightPathSource; label: string }[] = [
   { key: 'missing', label: 'not recorded' },
 ]
 
-export interface LightPathItem { text: string; source: LightPathSource }
+export interface LightPathItem {
+  text: string; source: LightPathSource
+  /** The channel (`order`, 1-based) a per-channel item belongs to — the settings card puts those in its
+   *  detector table instead of the settings list. */
+  channel?: number
+  /** As recorded, but what it means is our reading, not checked with the vendor or a facility. */
+  unverified?: true
+}
 export interface LightPathStage { n: number; key: string; title: string; items: LightPathItem[] }
 
 /** Per depth / per frame numbers from the import probe (`intensity_utils.PlaneProfile.summary`). */
@@ -69,6 +76,12 @@ export function isMultiphoton(acq: AcquisitionSettings | null | undefined): bool
   return (acq?.lasers ?? []).some(l => l.wavelengthNm != null && l.wavelengthNm >= MULTIPHOTON_MIN_NM)
 }
 
+/** The vendor's light-path slot names (`oir_meta._DICHROIC_SLOTS`), as the diagram labels them. */
+const DICHROIC_SLOT_LABEL: Record<string, string> = {
+  excitationDM: 'excitation DM', dmSlider: 'DM slider', irLaserDichroic: 'IR laser DM',
+  firstMirrorCube: 'mirror cube 1', secondMirrorCube: 'mirror cube 2',
+}
+
 const n = (x: number | null | undefined): string => (x == null ? '—' : fmtNum(x))
 const join = (parts: (string | null | undefined | false)[]) => parts.filter(Boolean).join(' · ')
 const item = (text: string, source: LightPathSource): LightPathItem => ({ text, source })
@@ -78,6 +91,15 @@ function endsText(p99: number[], at: (i: number) => string): string | null {
   if (p99.length < 2) return null
   const last = p99.length - 1
   return `${n(Math.round(p99[0]))} at ${at(0)} → ${n(Math.round(p99[last]))} at ${at(last)}`
+}
+
+/** Auto HV on, and the HV the file records anyway (0 on the FV4000, 550 on the FVMPE-RS) — which may
+ *  not be the HV used, so it is said here once instead of as each detector's setting. */
+export function autoHVItem(chans: { hv: number | null }[]): LightPathItem {
+  const hvs = [...new Set(chans.map(c => c.hv).filter((v): v is number => v != null))]
+  return hvs.length > 0
+    ? { text: `Auto HV on: file records HV ${hvs.map(n).join(', ')}, maybe not the HV used`, source: 'file', unverified: true }
+    : item('Auto HV on', 'file')
 }
 
 export function lightPathStages(img: LightPathImage): LightPathStage[] {
@@ -145,23 +167,49 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
     sample.push(item('Signal by depth not measured yet: refresh metadata', 'missing'))
   }
 
-  // 6 · dichroics and filters — the file names neither
-  const filters = [item('Dichroics and filters not recorded', 'missing')]
+  // 6 · dichroics and filters — named where the file records them
+  // The reader keeps Empty slots, so "every slot empty" (recorded) differs from no slot found ([]).
+  const slots = acq.dichroics ?? []
+  const filled = slots.filter(d => d.name.toLowerCase() !== 'empty')
+  const filters: LightPathItem[] = filled.map(d => item(`${DICHROIC_SLOT_LABEL[d.slot] ?? d.slot}: ${d.name}`, 'file'))
+  if (slots.length > 0 && filled.length === 0) filters.push(item('No dichroic in the path', 'file'))
+  for (const c of chans) {
+    filters.push({ ...(c.emissionFilter ? item(`${chName(c)} ${c.emissionFilter}`, 'file')
+                                         : item(`${chName(c)} filter not recorded`, 'missing')), channel: c.order })
+  }
+  if (filters.length === 0) filters.push(item('Dichroics and filters not recorded', 'missing'))
+  else if (slots.length === 0) filters.unshift(item('Dichroics not recorded', 'missing'))
 
-  // 7 · detectors
-  const detectors = chans.map(c => item(join([chName(c), c.dyePreset, c.detector,
-    c.hv != null && `HV ${n(c.hv)}`, c.gain != null && `gain ${n(c.gain)}`,
-    c.offset != null && `offset ${n(c.offset)}`]), 'file'))
-  if (acq.autoHV != null) detectors.push(item(`Auto HV ${acq.autoHV ? 'on' : 'off'}`, 'file'))
+  // 7 · detectors — under Auto HV the recorded HV is not a setting to copy (FV4000 records 0), so it
+  // moves to the Auto HV line instead of reading as each detector's value
+  const autoHV = acq.autoHV === true
+  const detectors: LightPathItem[] = chans.map(c => ({ ...item(join([chName(c), c.dyePreset, c.detector,
+    !autoHV && c.hv != null && `HV ${n(c.hv)}`, c.gain != null && `gain ${n(c.gain)}`,
+    c.offset != null && `offset ${n(c.offset)}`]), 'file'), channel: c.order }))
+  if (autoHV) {
+    detectors.push(autoHVItem(chans))
+  } else if (acq.autoHV === false) {
+    detectors.push(item('Auto HV off', 'file'))
+  }
 
   // 8 · digitisation — integration, and voxels at the top of the range
   const digit: LightPathItem[] = []
   const integ = s?.integration
   if (integ?.type) {
     const how = integ.average === false ? 'sum' : integ.average === true ? 'average' : null
-    digit.push(item(integ.type === 'None' ? 'No integration'
-      : join([`${integ.type.toLowerCase()} ×${n(integ.count)}`, how]), 'file'))
+    // "None" with a count > 1 is what the FVMPE-RS file records; print both rather than pick one.
+    const odd = integ.type === 'None' && integ.count != null && integ.count > 1
+    digit.push({ ...item(integ.type === 'None'
+      ? join(['No integration', odd && `count ${n(integ.count)} recorded`])
+      : join([`${integ.type.toLowerCase()} ×${n(integ.count)}`, how]), 'file'), ...(odd ? { unverified: true as const } : {}) })
   }
+  const kal = s?.kalman
+  if (kal && (kal.average != null || kal.accumulate != null)) {
+    digit.push(item(join(['Kalman', kal.average != null && `average ${n(kal.average)}`,
+                          kal.accumulate != null && `accumulate ${n(kal.accumulate)}`]), 'file'))
+  }
+  const bits = [...new Set(chans.map(c => c.bitDepth).filter((v): v is number => v != null))]
+  if (bits.length > 0) digit.push(item(`${bits.map(n).join(', ')} bit`, 'file'))
   for (const f of facts) {
     if (f.clippedPct != null && f.clippedPct > 0) digit.push(item(`${f.name} ${n(f.clippedPct)} % of signal clipped`, 'measured'))
   }

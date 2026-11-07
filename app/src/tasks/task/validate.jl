@@ -319,15 +319,34 @@ function _spec_output_name(spec_params, params::Dict{String,Any})::String
         key = string(get(p, "key", ""))
         isempty(key) && continue
         ns = get(p, "namespace", nothing)
-        v  = strip(string(get(params, key, get(p, "default", ""))))
         if ns !== nothing && !isempty(string(ns))
+            v = strip(string(_saved_value_for(p, key, params)))
             isempty(v) || return v
         elseif key == "outputValueName" && isempty(legacy)
             # the pre-registry spelling, for a spec (or a custom module) not yet migrated
-            legacy = v
+            legacy = strip(string(get(params, key, get(p, "default", ""))))
         end
     end
     legacy
+end
+
+# The stored value of spec param `p`, falling back to a `formerKeys` spelling (a renamed param — saved
+# params that never went through `_apply_spec_defaults` still carry the old key), then the default.
+# Twin of `savedValueFor` (frontend/src/tasks/paramValues.ts).
+function _saved_value_for(p, key::String, params::Dict{String,Any})
+    k = _stored_key(key, get(p, "formerKeys", nothing), params)
+    k === nothing ? get(p, "default", "") : params[k]
+end
+
+# THE `formerKeys` lookup: the key `params` holds a renamed param's value under — `key` itself, else
+# the first former spelling present — or `nothing`. Shared by `_apply_spec_defaults`,
+# `_saved_value_for` and the chain-history leaves, so the precedence cannot drift between them.
+function _stored_key(key::AbstractString, former, params::AbstractDict)::Union{String,Nothing}
+    haskey(params, key) && return String(key)
+    for f in something(former, ())
+        haskey(params, string(f)) && return string(f)
+    end
+    nothing
 end
 
 """
@@ -353,6 +372,37 @@ function task_output_name(task::CciaTask, params::Dict{String,Any})::String
     spec = _task_spec(task)
     isnothing(spec) && return ""
     _spec_output_name(get(spec, "params", []), params)
+end
+
+"""
+    task_params_name(fun_name, params) -> String
+
+The name a run's params are banked and looked up under: its output name (`task_output_name`), or,
+for a task that writes INTO its input, the input's name. Tracking is the case: it writes track
+columns into the segmentation it read and declares no output of its own.
+
+A task opts in with a top-level `"writesInto": "<param key>"` in its spec, naming the input param.
+Explicit, not inferred from `valueName`: an image task (`cleanupImages.*`) also reads a `valueName`
+but writes a NEW image under a fixed name, and banking its params under the input would be wrong.
+The frontend twin is `taskParamsName` (`utils/taskOutput.ts`). `""` when neither applies.
+"""
+function task_params_name(fun_name::AbstractString, params::Dict{String,Any})::String
+    task = try
+        _task_from_fun_name(String(fun_name))
+    catch
+        nothing        # unknown fun_name, as `task_output_name`
+    end
+    isnothing(task) ? "" : task_params_name(task, params)
+end
+
+function task_params_name(task::CciaTask, params::Dict{String,Any})::String
+    out = task_output_name(task, params)
+    isempty(out) || return out
+    spec = _task_spec(task)
+    isnothing(spec) && return ""
+    key = string(something(get(spec, "writesInto", nothing), ""))
+    isempty(key) && return ""
+    strip(string(something(get(params, key, nothing), "")))
 end
 
 """

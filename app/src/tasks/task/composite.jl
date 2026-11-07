@@ -17,6 +17,7 @@
 #   _section_keys       → union of the steps' section param keys
 #   live_outputs        → concatenation of the steps' live outputs
 #   task_output_name    → the FIRST step that names an output
+#   task_params_name    → the FIRST step that names one (output, or the input it writes into)
 #
 # Forgetting one is SILENT and looks like "the feature doesn't work for the composite" — which is
 # exactly how the live preview first shipped broken (the segmentation module page runs
@@ -139,6 +140,16 @@ end
 function task_output_name(task::CompositeTask, params::Dict{String,Any})::String
     for sub in _composite_steps(task)
         name = task_output_name(sub, params)
+        isempty(name) || return name
+    end
+    ""
+end
+
+# Same fold for `task_params_name`: a composite banks under the first step that names one, so
+# `tracking.bayesian_track_measures` banks under the segmentation its tracking step writes into.
+function task_params_name(task::CompositeTask, params::Dict{String,Any})::String
+    for sub in _composite_steps(task)
+        name = task_params_name(sub, params)
         isempty(name) || return name
     end
     ""

@@ -70,6 +70,9 @@ mutable struct TaskRecord
     chain_node_id::String
     # The profile that launched it — stamped onto the run log and handed to the task as `_by`.
     by::String
+    # …and the rest of the launcher's author stamp, `caller_stamp()` as the ASKING side captured it
+    # ({via, model?, session?}); empty when the asker didn't say. `by` + this = the run log's `author`.
+    caller::Dict{String,Any}
     status::TaskStatus                      # see @enum TaskStatus above
     # When it was submitted, and when a pool slot actually admitted it (`nothing` until then, so a task
     # waiting on a busy GPU has a queue wait and no run time). Both UTC. Reported by `list_tasks()`; the
@@ -94,8 +97,8 @@ mutable struct TaskRecord
     params::Dict{String,Any}
     # What the run WRITES, for the duplicate-run guard (`_conflicting_run`): every image it touches (the
     # whole vector for a set-scope task, so `image_uid` alone — the representative — is not enough) and
-    # the output name it writes under (`task_output_name`; `""` = the task names none, so every run of it
-    # writes to the same place).
+    # the name it writes under (`task_params_name`: its output, or for a `writesInto` task like tracking
+    # the input it writes into; `""` = neither, so every run of it writes to the same place).
     image_uids::Vector{String}
     output_name::String
     # Where the work runs, and the run's own cluster resource overrides (`{cpus, memGb, gpus,
@@ -131,6 +134,14 @@ Base.showerror(io::IO, e::DuplicateRunError) =
 
 _is_active(rec::TaskRecord) = rec.status in (TASK_QUEUED, TASK_RUNNING)
 
+# Whether a queued or running run is registered under `id`. A run's own terminal frame is sent after its
+# record turned terminal (`_set_status!`) or was deregistered, so a terminal frame arriving while this
+# holds belongs to some OTHER run under the id — `record_task_outcome!` must not touch the live run's start.
+_live_run_under(id::AbstractString) = lock(_TASKS_LOCK) do
+    r = get(_TASKS, String(id), nothing)
+    !isnothing(r) && _is_active(r)
+end
+
 # The run `new` would collide with, or `nothing`. Same id while the previous run under it is still
 # registered at all — even cancelled and winding down: its run-log close, outcome and status frames are
 # all keyed by that id, so a `task:restart` overlapping them would have its own entries stamped with the
@@ -152,12 +163,14 @@ function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_st
                          live_outputs::Vector{LiveOutput} = LiveOutput[],
                          chain_node_id::String = "",
                          by::String = "",
+                         caller::AbstractDict = Dict{String,Any}(),
                          params::Dict{String,Any} = Dict{String,Any}(),
                          image_uids::Vector{String} = String[image_uid],
                          output_name::String = "",
                          target::RunTarget = TARGET_LOCAL,
                          hpc::Dict{String,Any} = Dict{String,Any}())
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by, TASK_QUEUED,
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by,
+                     Dict{String,Any}(String(k) => v for (k, v) in caller), TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs, params, image_uids, output_name, target, hpc, HPC_STAGE_NONE, "")
     lock(_TASKS_LOCK) do

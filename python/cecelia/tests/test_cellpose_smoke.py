@@ -106,7 +106,8 @@ class CellposeSmokeTest(unittest.TestCase):
         self._run(size_z=1, block_size=128, stitch=0.0)
 
     def test_3d_tiled_stitched(self):
-        # Z stack, 2×2 tiles, Z stitching: the v3 `z_axis=0, do_3D=False, stitch_threshold` call.
+        # Z stack, 2×2 tiles, Z stitching: list-of-planes eval with `min_size=-1`, then
+        # `stitch_planes` — on v3 too (real cellpose 3 must accept that call).
         labels = self._run(size_z=3, block_size=64, stitch=0.2)
         self.assertEqual(labels.shape[-3:], (3, 96, 112))
 

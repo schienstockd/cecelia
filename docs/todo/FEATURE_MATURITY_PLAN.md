@@ -104,11 +104,11 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
   `comingSoon` and given a tier. One source per fact.
 - **Tiers on the existing pill.** `ComingSoonBadge` gains a `tier` prop; "Coming soon" is the bottom
   of the same scale.
-- **A quiet "maturity" link in every page header** that opens that feature's map row — so no badge
-  doesn't read as "fine" (with nothing Tested yet, an unbadged page is Beta: spot-check results).
-- **Badges on the pages** for Experimental and Coming soon only: page header and the task in the task
-  picker. Nothing is Tested at the start, so badging Beta would mark every page and mean nothing. The
-  map shows every tier.
+- **The tier's dot in every page header and beside the picked task**, opening that feature's map row —
+  the map's dot, word in the tooltip, every tier (Beta included, so nothing unmarked reads as "fine").
+  First built as a word badge for Experimental / Coming soon and a `pi-signal` glyph for the rest; the
+  glyph read as a network indicator and the two looks differed page vs task, so one dot (2026-11-07,
+  maintainer). The map shows every tier.
 - **"Something wrong?"** next to each badge and on each map row: opens a prefilled GitHub issue with
   feature, tier, version, OS and the last task name. Task params only on an explicit tick — GitHub is
   public and params carry paths and project names. The URL builder lives in `lib/links.ts`, next to `recipeRequestUrl` and `CECELIA_NEW_ISSUE_URL`.
@@ -163,18 +163,18 @@ evidence, and the registry shape is informed by a real case.
     the picker carry the badge. Words of the scale: `lib/guides/tiers.ts`.
   - user-docs: a Maturity column in the sidebar tables.
 - **P2** — **built.** Badges on pages and the task picker; "Something wrong?" link. Where it landed:
-  - Pages: `components/PageMaturity.vue` in the app HEADER, following the route — pages have no shared
+  - Pages: `components/MaturityIndicator.vue` in the app HEADER, following the route — pages have no shared
     header (ModuleLayout, ModulePage and the pipeline pages each draw their own), so one mount covers
-    every page. Experimental / Coming soon: `ComingSoonBadge tier` (now the tier dot + word, no pill).
-    Any other tiered page: a quiet `pi-signal` icon. Both open the map on that feature's row
+    every page. Every tier: `ComingSoonBadge tier dot` (the tier dot alone; the tooltip names it) —
+    replaced a `pi-signal` icon for Beta and up, which read as a network indicator. It opens the map on that feature's row
     (`openMaturityRow`, `lib/guideOpen.ts`). Exempt pages show nothing (no row to open).
   - Task picker: TaskRunner's `<option>` gets `· Experimental` (text only in a native select); the picked
-    task gets the badge + report button. Coming soon tasks already read "— Coming soon" and can't be
+    task gets the same `MaturityIndicator` as the header (its tier dot + report button). Coming soon tasks already read "— Coming soon" and can't be
     picked. The Chains palette is not badged.
   - "Something wrong?": `components/ReportProblemButton.vue`, a popover → `problemReportUrl`
     (`lib/links.ts`) on the bug form: feature, tier, page, version, OS (the server's pixi platform), last
     task name + status. **Params: an explicit per-report toggle in the popover**, never remembered.
-  - Logic + tests: `pageMaturity` / `taskMaturity` / `pageBadged` / `taskOptionSuffix` in
+  - Logic + tests: `pageMaturity` / `taskMaturity` / `taskOptionSuffix` in
     `utils/maturity.ts` (every page and task link lands on a map row); `lib/links.test.ts`.
 - **P3** — the release-cut step in `RELEASING.md`; CHANGELOG entries carry the tier.
 

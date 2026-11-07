@@ -53,6 +53,29 @@ export function buildLineageEdges(
   return edges
 }
 
+// A cycle (A's parent is B, B's parent is A) has no root, so every version on it — and everything
+// below — would drop out of the forest and the modal would show nothing. The run log can produce one
+// whenever a task's output name is mis-resolved, so cut each cycle at its OLDEST edge: the most
+// recent run is the better claim about what's on disk now. Mutates `edges`.
+function breakCycles(edges: Map<string, LineageEdge>): void {
+  const settled = new Set<string>()
+  for (const start of edges.keys()) {
+    const path: string[] = []
+    const onPath = new Set<string>()
+    let v: string | undefined = start
+    while (v !== undefined && !settled.has(v) && !onPath.has(v)) {
+      path.push(v); onPath.add(v)
+      v = edges.get(v)?.parent
+    }
+    if (v !== undefined && onPath.has(v)) {
+      const cycle = path.slice(path.indexOf(v))
+      const oldest = cycle.reduce((a, b) => (edges.get(a)!.at <= edges.get(b)!.at ? a : b))
+      edges.delete(oldest)
+    }
+    for (const p of path) settled.add(p)
+  }
+}
+
 // Build the version forest — one tree per root, children nested under their parent. Order across
 // siblings is by earliest inbound edge, so a re-run doesn't reshuffle the layout.
 export function buildLineageForest(
@@ -60,6 +83,7 @@ export function buildLineageForest(
   runLog?: RunLogEntry[] | null,
 ): LineageNode[] {
   const edges = buildLineageEdges(versions, runLog)
+  breakCycles(edges)
   const nodes = new Map<string, LineageNode>()
   for (const v of versions) nodes.set(v, { version: v, edge: edges.get(v), children: [] })
 

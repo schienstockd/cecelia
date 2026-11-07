@@ -9,13 +9,15 @@
 -->
 <script setup lang="ts">
 import { computed, ref, nextTick, onMounted } from 'vue'
-import { acquisitionRows, acquisitionNotice, microscopeName } from '../utils/acquisitionSettings'
+import { acquisitionRows, acquisitionNotice, microscopeLine } from '../utils/acquisitionSettings'
 import { acquisitionSupportRequestUrl } from '../lib/links'
 import { isMultiphoton } from '../utils/acquisitionLightPath'
 import { hasDataPath } from '../utils/acquisitionDataPath'
 import AcquisitionDataPath from './AcquisitionDataPath.vue'
 import InlineNote from './InlineNote.vue'
 import AcquisitionLightPath from './AcquisitionLightPath.vue'
+import AcquisitionCardDialog from './AcquisitionCardDialog.vue'
+import { hasAcquisitionCard } from '../utils/acquisitionCard'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useToast } from '../composables/useToast'
 import BaseModal from './BaseModal.vue'
@@ -135,11 +137,15 @@ const acquisition = computed(() => acquisitionRows(img.value.acquisition))
 // Two-photon acquisitions get the light-path diagram, which places the same values at their stage.
 const lightPath = computed(() => isMultiphoton(img.value.acquisition))
 // The diagram has no rows of its own for the system, so name it above (the plain rows already do).
-const scope = computed(() => (lightPath.value ? microscopeName(img.value.acquisition) : null))
+const scope = computed(() => (lightPath.value ? microscopeLine(img.value.acquisition) : null))
 const acqNotice = computed(() =>
   acquisitionNotice(img.value.acquisition, img.value.acquisitionMissing, lightPath.value, acquisitionSupportRequestUrl))
 // Per-channel pixel numbers from the import probe — any image probed with the current probe.
 const dataPath = computed(() => hasDataPath(img.value))
+// The printable settings card: same two-photon rule as the diagram; elsewhere the notice above offers
+// "Request your microscope" instead (docs/todo/ACQUISITION_CARD_PLAN.md D10).
+const cardAvailable = computed(() => hasAcquisitionCard(img.value))
+const showCard = ref(false)
 // A crop names its source image (by name when it's in the open project) + version + pixel box.
 const cropLine = computed(() => {
   const cs = img.value.cropSource
@@ -277,7 +283,15 @@ async function saveEditVn() {
            so users of an untested microscope learn it exists and can ask for it. -->
       <CollapsibleSection label="Acquisition" tip="Microscope settings from the source file" accordion="cc.imageMeta.section" section="acquisition" max-height="none">
         <div class="md-section md-cs">
-        <p v-if="scope" class="md-scope cc-fs-sm"><span class="cc-muted">Microscope</span> {{ scope }}</p>
+        <div v-if="scope || cardAvailable" class="md-scope cc-row cc-fs-sm">
+          <span v-if="scope"><span class="cc-muted">Microscope</span> {{ scope }}</span>
+          <button v-if="cardAvailable && projectMeta.current" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-xs md-card-btn"
+                  v-tooltip="'Printable card to acquire this image again'" @click="showCard = true">
+            <i class="pi pi-print" /> Settings card
+          </button>
+        </div>
+        <AcquisitionCardDialog v-if="showCard && projectMeta.current" :image="img" :project-uid="projectMeta.current.uid"
+                               @close="showCard = false" />
         <AcquisitionLightPath v-if="lightPath" :image="img" />
         <div v-else-if="acquisition.length" class="md-grid">
           <template v-for="(r, i) in acquisition" :key="i">
@@ -479,6 +493,7 @@ async function saveEditVn() {
 .md-head { justify-content: space-between; flex-wrap: nowrap; }
 .md-cs { padding: 0.2rem 0 0.4rem; }
 .md-scope, .md-acq-note { margin: 0; }
+.md-card-btn { margin-left: auto; }
 
 .md-grid {
   display: grid; grid-template-columns: max-content 1fr;

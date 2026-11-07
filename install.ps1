@@ -297,7 +297,10 @@ Pop-Location
 Set-Content -Path (Join-Path $InstallDir '.cecelia-version') -Value $Provenance
 Set-Content -Path (Join-Path $InstallDir '.cecelia-scope')   -Value $Scope
 # The Julia resolved above, for `_find_julia` in app.py: a shortcut launch's PATH may not reach it.
-Set-Content -Path (Join-Path $InstallDir '.cecelia-julia')   -Value $Julia
+# UTF-8 without a BOM on every PowerShell: Set-Content writes ANSI on 5.1 and UTF-8 on 7, and the
+# readers (app.py `_recorded_julia`, scripts/activate_juliaup.bat) decode UTF-8, so a non-ASCII
+# profile path must not depend on which PowerShell ran the installer.
+[IO.File]::WriteAllText((Join-Path $InstallDir '.cecelia-julia'), "$Julia`r`n", (New-Object Text.UTF8Encoding $false))
 Say "Installed: $Provenance ($Scope scope)"
 
 # System scope: every file must carry the Program Files ACL (Users: read + execute; Administrators:
@@ -320,6 +323,8 @@ if ($Scope -eq 'system') {
   # trailing empty entry) — same shape and reason as install.sh's launcher. `--as-is` because a plain
   # `pixi run` takes a write lock on the env, which non-admins can't (also as in install.sh).
   $Launch = Join-Path $InstallDir 'cecelia-launch.cmd'
+  # OEM, the codepage cmd decodes a .cmd in: the paths below come from CECELIA_HOME, which may hold a
+  # non-ASCII character, and ASCII would write it as `?` — a `cd /d` and PATH that don't exist.
   @"
 @echo off
 set "PIXI_HOME=$PixiHome"
@@ -333,7 +338,7 @@ cd /d "$InstallDir" && "$Pixi" run --as-is app
 goto :eof
 :args
 cd /d "$InstallDir" && "$Pixi" run --as-is %*
-"@ | Set-Content -Path $Launch -Encoding ASCII
+"@ | Set-Content -Path $Launch -Encoding Oem
   $Programs = [Environment]::GetFolderPath('CommonPrograms')
   $Lnk = Join-Path $Programs 'Cecelia.lnk'
   $Shell = New-Object -ComObject WScript.Shell

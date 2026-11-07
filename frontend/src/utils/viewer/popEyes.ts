@@ -80,6 +80,24 @@ export function reconcileRibbonEyes(
   return reconcilePopEyes(stored, prev, seeded, fetchedTypes)
 }
 
+/** A fetched track-cluster pop, as `reconcileTrackclustEyes` reads it. */
+export type TrackclustEyePop = Omit<EyePop, 'popType'>
+
+/**
+ * One segmentation's eyes after a `popType=trackclust` fetch — `reconcilePopEyes` over the trackclust
+ * pops alone. Trackclust is not a cell pop type, so `loadOverlays`' reconcile never fetches it and
+ * keeps its eyes untouched; this is theirs: a deleted cluster pop's eye is dropped (so a pop recreated
+ * at its path seeds from `show` rather than inheriting it), a renamed one's follows its uid. Other
+ * pop types' eyes are kept as stored. `prev` empty = first fetch (path presence decides).
+ */
+export function reconcileTrackclustEyes(
+  stored: Readonly<PopEyes>, prev: readonly TrackclustEyePop[], next: readonly TrackclustEyePop[],
+): PopEyes {
+  const tc = (ps: readonly TrackclustEyePop[]): EyePop[] =>
+    ps.map(p => ({ popType: 'trackclust', path: p.path, uid: p.uid, show: p.show }))
+  return reconcilePopEyes(stored, tc(prev), tc(next), ['trackclust'])
+}
+
 /** One pop's eye flipped from what it reads now (`popEyeOn`). Keyed by segmentation; not mutated. */
 export function flipPopEye(eyes: ReadonlyMap<string, Readonly<PopEyes>>, vn: string,
                            popType: string, path: string, show: boolean): Map<string, PopEyes> {

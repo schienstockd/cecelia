@@ -196,6 +196,11 @@ end
             @test occursin("hello there", _cmd_text(c))
             code, body = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=Bad"))
             @test code == 400
+            # A typo'd profile 404s instead of handing out a one-liner whose `CLAUDE_CONFIG_DIR`
+            # the CLI would create as a stray profile — and the route itself creates nothing.
+            code, _ = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=alcie"))
+            @test code == 404
+            @test !isdir(joinpath(tmp, "user-profiles", "alcie"))
         end
         init_cecelia!()   # restore
     end

@@ -21,6 +21,22 @@ describe('unionViewSnapshot', () => {
     expect((u.layers as Record<string, { visible?: boolean }>).X.visible).toBe(false)
   })
 
+  it("keeps a track layer's colour from a keyframe where it is shown, not a later hidden one", () => {
+    const tr = '(flow) (segA) Tracks tcells'
+    const u = unionViewSnapshot([
+      { layers: { [tr]: { visible: true, colour: '#ff0000' } } },
+      { layers: { [tr]: { visible: false, colour: null } } },
+    ])
+    expect(u.layers[tr]).toMatchObject({ visible: true, colour: '#ff0000' })
+    // null ("by track") from a shown keyframe wins over a colour from a hidden one
+    const v = unionViewSnapshot([
+      { layers: { [tr]: { visible: false, colour: '#00ff00' } } },
+      { layers: { [tr]: { visible: true, colour: null } } },
+      { layers: { [tr]: { visible: false, colour: '#0000ff' } } },
+    ])
+    expect((v.layers[tr] as { colour?: unknown }).colour).toBeNull()
+  })
+
   it('tolerates empty / missing snapshots', () => {
     expect(unionViewSnapshot([undefined, null, {}]).layers).toEqual({})
   })

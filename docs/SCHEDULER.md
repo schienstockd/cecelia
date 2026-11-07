@@ -515,7 +515,8 @@ A user report showed three gaps around one Cancel: the row read `cancelled` whil
   or a miss-ack arrives.
 - **A duplicate in-flight run is refused.** `_register_task!` checks, under `_TASKS_LOCK` and in the same
   step as the insert, for a queued/running record with the same `fun_name`, the same output name
-  (`task_output_name`; `""` when the task names none) and any shared image (a set-scope record carries
+  (`task_params_name`: the output, or for a `writesInto` task like tracking the segmentation it writes
+  into, so tracking B and T on one image don't collide; `""` when neither) and any shared image (a set-scope record carries
   every member in `image_uids`). A hit throws `DuplicateRunError` before anything is queued, which
   `execute_task` reports like any pre-job failure: `[ERROR] Already running on this image: …` and a
   terminal `failed`. A cancelled run still winding down no longer counts for that key — but it still
@@ -1020,6 +1021,14 @@ path (`api/task_console.jl`, `frontend/src/utils/taskReconcile.ts`).
 - **One row per task id**, re-appended on repeat. Both repeats are real: a cancel is announced twice
   (immediately from `on_status_change`, then as the final status), and `task:restart` reuses the id for a
   new run whose outcome must supersede the old one.
+- **The start is read and forgotten by id, so it is guarded both ways.** A repeat of the same terminal
+  status keeps the `started_at` the first one banked (the start is already gone from the in-flight map) —
+  but only until a new run registers under the id, so a restart cancelled before it ran banks `""`.
+  A start the caller **passes** — even `""`, as a relay of the runner's frame does — is banked as is and
+  never re-derived; only an omitted one (`nothing`) is derived from this process's own note.
+  A terminal frame arriving while another run is queued/running under the id (`_live_run_under`) is not
+  that run's — `run_task` deregisters before the final frame is sent, so a restart can register in the
+  gap — and it leaves that run's start alone, banking `""` for its own.
 - **`image_uids` is carried** — a set-scope task's full member list exists *only* on that frame, and a
   replay without it invalidates the representative image's plots alone.
 - **`since` is inclusive**, so a poller always re-reads its own newest entry; two units finishing in the
@@ -1055,6 +1064,14 @@ Each entry also carries `by`, the profile that launched it. It is set where the 
 executes: the detached runner is a separate process whose active profile can predate a switch. A chain's
 nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever last resumed it
 (`resumed_by`); a task sees it as `params["_by"]` beside `_task_id`.
+
+**What made it** — three more fields, each absent when unknown and on older entries, never guessed:
+
+| field | written | from |
+|---|---|---|
+| `ceceliaVersion` | at open | `cecelia_version()` of the process that RUNS it (the detached runner can lag the backend) |
+| `author` | at open | `run_author(by, caller)` — the `author_stamp()` shape `{profile, via?, model?, session?}`. `caller` is `caller_stamp()` captured where `by` is (`handle_task_run` → `TaskRequest.caller` → `TaskRecord.caller`). The router binds `via`/model/session for a `/ws` connection from its upgrade headers, so a `task:run` from the autonomous MCP (which sends `X-Cecelia-Client: claude` on its connect) reads `via: claude`. A chain carries it the same way: `ChainRequest.caller` → `run_chain(; caller)` → `ChainRun.caller` (in memory only; a resume brings its own) → each node's `TaskRequest`. A REPL `run_task` / `run_chain` has no caller → `{profile}` only |
+| `env` | at close | the task result's `"runEnv"` (`run_env_of`). A runner reports it through the sidecar it already hands back (`qcOutPath` JSON — a segmenter gets it back from `bank_segment_qc!`'s own parse, anything else via `read_run_env`). Today: `segment.cellpose` → `{device, cellpose}` (cellpose's own resolved `model.device`, installed version); `clustPops.cluster` → `{device, seed}` (`"cuda"`/`"cpu"`, whichever path actually ran) |
 
 `reap_run_log_for_project!` (`api/src/runner_api.jl`) closes those out at project open, converting
 stale `running` entries to `interrupted`. It reaps only what it can *prove* is dead — a task the

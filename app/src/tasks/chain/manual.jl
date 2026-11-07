@@ -104,18 +104,19 @@ end
 
 """
 Image scope: mark the node waiting, park, then record the user's answer. `params` are what prepare ran
-with (the check sees the same); the hash is on `effective_params`, as for every node (resume skips on it).
+with (the check sees the same, and so do its waiting/done frames); the hash is on `effective_params`,
+as for every node (resume skips on it).
 """
 function _await_manual_image!(run::ChainRun, node::ChainNode, uid::String, task,
                               params::Dict{String,Any}, effective_params::Dict{String,Any},
                               is_cancelled::Function)
     ph = _params_hash(effective_params)
     _update_node_state!(run, uid, node.id; status = NODE_WAITING, fn = node.fn,
-                        node_params = effective_params, params_hash = ph)
+                        node_params = params, params_hash = ph)
     ok = _park_manual!(run.id, node.id, uid,
                        () -> _manual_check_image(run, task, node, uid, params), is_cancelled)
     _update_node_state!(run, uid, node.id; status = ok ? NODE_DONE : NODE_CANCELLED, fn = node.fn,
-                        node_params = effective_params, waited = true)
+                        node_params = params, waited = true)
 end
 
 """Set scope: every member waits on ONE park; a continue checks each member and refuses if any fails."""
@@ -125,7 +126,7 @@ function _await_manual_set!(run::ChainRun, node::ChainNode, uids::Vector{String}
     ph = _params_hash(effective_params)
     for uid in uids
         _update_node_state!(run, uid, node.id; status = NODE_WAITING, fn = node.fn,
-                            node_params = effective_params, params_hash = ph)
+                            node_params = params, params_hash = ph)
     end
     check = function()
         bad = String[]
@@ -138,7 +139,7 @@ function _await_manual_set!(run::ChainRun, node::ChainNode, uids::Vector{String}
     ok = _park_manual!(run.id, node.id, _SET_WAITER, check, is_cancelled)
     for uid in uids
         _update_node_state!(run, uid, node.id; status = ok ? NODE_DONE : NODE_CANCELLED, fn = node.fn,
-                            node_params = effective_params, waited = true)
+                            node_params = params, waited = true)
     end
 end
 

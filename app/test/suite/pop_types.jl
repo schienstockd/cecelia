@@ -184,6 +184,37 @@ end
         only(methods(pop_df, (CciaImage, AbstractString, Any))))
 end
 
+@testset "region_membership / region_enrichment count ONE segmentation's cells" begin
+    # A bare region pop on B must not pool the co-clustered T's cells: the counts are read for B.
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "region_membership (fixture missing)"
+    else
+        td = mktempdir()
+        lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+        for vn in ("B", "T")
+            p = joinpath(lpdir, "$(vn).h5ad")
+            cp(h5, p)
+            lab = (label_props(p) |> v -> select_cols(v, String[]) |> as_df).label
+            label_props(p) |> v -> add_obs(v, DataFrame("label" => lab,
+                "regions.immune" => [Float64(l % 2) for l in lab])) |> save!
+            Cecelia._write_clust_features!(p, "immune", ["spatial.comp.x.immune"], ["u1"]; family = "regions")
+        end
+        m = PopulationMap(pop_type="region", value_name="B")
+        add_pop!(m, "R"; filter_measure="regions.immune", filter_fun="in", filter_values=[0, 1])
+        save_pop_map!(m, td)
+        img = CciaImage(; dir=td)
+        img.label_props = Dict("B" => "B.h5ad", "T" => "T.h5ad", "_active" => "B")
+        n_b = nrow(label_props(img; value_name="B") |> v -> select_cols(v, String[]) |> as_df)
+        @test length(Cecelia._expand_cluster_pops(img, ["/R"], "region", "B")) == 2   # the run spans B + T
+
+        rm_ = region_membership(img, ("region", "/R"), "immune"; value_name="B")
+        @test sum(rm_.n) == n_b
+        re = region_enrichment(img, [("region", "/R")], "immune"; value_name="B")
+        @test sum(re.n) == n_b
+    end
+end
+
 @testset "clustfeatures sidecar — families, labels, legacy layouts" begin
     # The sidecar is keyed `{family}.{suffix}` so a cell clustering and a REGION clustering that
     # share a suffix coexist on one segmentation instead of clobbering each other. Three historical

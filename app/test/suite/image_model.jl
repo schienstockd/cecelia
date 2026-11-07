@@ -478,6 +478,45 @@ end
     # a task that names no output of its own reports "", never a guess
     @test Cecelia.task_output_name("importImages.omezarr", Dict{String,Any}()) == ""
 
+    # a RENAMED namespaced param (`formerKeys`): saved params that never went through
+    # `_apply_spec_defaults` carry only the old key, and must still resolve to the saved name — not the
+    # default — as `savedValueFor` does on the frontend. The current key wins when both are present.
+    renamed = [Dict{String,Any}("key" => "valueName", "type" => "valueNameInput",
+                                "namespace" => "clusters", "default" => "default",
+                                "formerKeys" => ["clusterName"])]
+    @test Cecelia._spec_output_name(renamed, Dict{String,Any}("clusterName" => "immune")) == "immune"
+    @test Cecelia._spec_output_name(renamed, Dict{String,Any}("clusterName" => "old",
+                                                              "valueName" => "new")) == "new"
+    @test Cecelia._spec_output_name(renamed, Dict{String,Any}()) == "default"
+    sectioned = [Dict{String,Any}("key" => "sec", "type" => "section", "params" => renamed)]
+    @test Cecelia._spec_output_name(sectioned, Dict{String,Any}("clusterName" => "immune")) == "immune"
+    # the shared lookup, also used for a chain's produced model names (`_chain_produced_names`)
+    model = Dict{String,Any}("key" => "modelName", "namespace" => "models", "default" => "",
+                             "formerKeys" => ["flowModel"])
+    @test Cecelia._saved_value_for(model, "modelName", Dict{String,Any}("flowModel" => "cytoFg")) == "cytoFg"
+    @test Cecelia._saved_value_for(model, "modelName", Dict{String,Any}()) == ""
+    # the same lookup in chain history: a run saved under the former key keeps its output namespace
+    # (it used to come back "" — a correct name in no namespace)
+    hl = Dict{String,Cecelia._HistoryLeaf}("renamedSuffix" =>
+        (; type = "valueNameInput", ns = "clusters", writes = true, accepts = String[],
+           former = ["valueNameSuffix"]))
+    @test Cecelia._history_output("clustPops.cluster", Dict{String,Any}("valueNameSuffix" => "immune"), hl) ==
+          ("immune", "clusters")
+    # and the leaves carry the spec's `formerKeys`
+    leaves = Cecelia._spec_leaf_params!(Dict{String,Cecelia._HistoryLeaf}(),
+        Dict{String,Any}("params" => renamed))
+    @test leaves["valueName"].former == ["clusterName"]
+    # `_apply_spec_defaults` resolves through the same `_stored_key`: current key wins, then a former one
+    @test Cecelia._stored_key("valueName", ["clusterName"], Dict{String,Any}("clusterName" => 1)) == "clusterName"
+    @test Cecelia._stored_key("valueName", ["clusterName"],
+                              Dict{String,Any}("clusterName" => 1, "valueName" => 2)) == "valueName"
+    @test Cecelia._stored_key("valueName", nothing, Dict{String,Any}()) === nothing
+    let ct = Cecelia._task_from_fun_name("clustPops.cluster")     # real spec: createUmap ← mergeUmap
+        @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}("mergeUmap" => false))["createUmap"] === false
+        @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}("mergeUmap" => false,
+                                                                "createUmap" => true))["createUmap"] === true
+    end
+
     # EVERY spec carrying a valueNameInput resolves through it — so flipping another task's param
     # (Phase 3: clustering, stats, models) cannot silently fail to be remembered per name
     for (fun, task) in Cecelia._fun_name_map()
@@ -517,6 +556,64 @@ end
         @test Cecelia.task_output_name(fun, Dict{String,Any}(first(keys_) => "probe-name")) == "probe-name"
     end
     @test composites > 0        # the loop above must not pass by finding nothing to check
+end
+
+# `task_params_name` — the name a run's params are banked under. The output name, or for a task that
+# writes INTO its input (`writesInto`, tracking) that input. Frontend twin: `taskParamsName`.
+@testset "task_params_name: output name, else the input a task writes into" begin
+    # an output-naming task is unchanged
+    @test Cecelia.task_params_name("segment.cellpose", Dict{String,Any}("outputValueName" => "Tcell")) == "Tcell"
+    # tracking names no output but writes into the segmentation it reads
+    @test Cecelia.task_output_name("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B")) == ""
+    @test Cecelia.task_params_name("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B")) == "B"
+    @test Cecelia.task_params_name("tracking.track_measures", Dict{String,Any}("valueName" => "T")) == "T"
+    # …and so does the composite the tracking page runs (the trait-recursion trap)
+    @test Cecelia.task_params_name("tracking.bayesian_track_measures", Dict{String,Any}("valueName" => "B")) == "B"
+    # an image task reads a valueName but writes a NEW image: it must not bank under its input
+    @test Cecelia.task_params_name("cleanupImages.driftCorrect", Dict{String,Any}("valueName" => "default")) == ""
+    @test Cecelia.task_params_name("no.such.task", Dict{String,Any}("valueName" => "B")) == ""
+
+    # every `writesInto` names a real param of its spec
+    for (fun, task) in Cecelia._fun_name_map()
+        spec = Cecelia._task_spec(task)
+        (isnothing(spec) || !haskey(spec, "writesInto")) && continue
+        keys_ = String[]
+        each_spec_param(get(spec, "params", [])) do p, _gk
+            push!(keys_, String(something(spec_get(p, "key", ""), "")))
+        end
+        @test String(spec["writesInto"]) in keys_
+    end
+end
+
+# The bug this fixes: B and T tracked on one image, T last. The run log answers B's tracking params
+# by name (it answered `nothing` for every tracking run before), so the form and `_tracks_delete!`
+# stop reading T's settings for B.
+@testset "run_log_params_for_output finds tracking runs per segmentation" begin
+    proj = create_project!(name="trk-params-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save!(img)
+    fun = "tracking.bayesian_tracking"
+    append_run_log!(img, fun, "B", "done", Dict{String,Any}("valueName" => "B", "maxSearchRadius" => 20))
+    append_run_log!(img, fun, "T", "done", Dict{String,Any}("valueName" => "T", "maxSearchRadius" => 35))
+    b = run_log_params_for_output(img._dir, fun, "B")
+    @test !isnothing(b) && b["maxSearchRadius"] == 20 && b["valueName"] == "B"
+    @test run_log_params_for_output(img._dir, fun, "T")["maxSearchRadius"] == 35
+    # the form and `_tracks_delete!` read through this — B's record, not "the last run" (T's)
+    @test read_module_fun_params(img._dir, fun; value_name = "B")["maxSearchRadius"] == 20
+
+    # deleting a B track set rebuilds B's measures with B's own `dims`: B re-measured standalone in 2D,
+    # then T tracked with the composite in auto. The composite's flat last-run blob is T's and must
+    # not be what B is rebuilt with.
+    append_run_log!(img, "tracking.track_measures", "B", "done", Dict{String,Any}("valueName" => "B", "dims" => "2D"))
+    write_module_fun_params!(img._dir, "tracking.bayesian_track_measures",
+                             Dict{String,Any}("valueName" => "T", "dims" => "auto"))
+    append_run_log!(img, "tracking.bayesian_track_measures", "T", "done",
+                    Dict{String,Any}("valueName" => "T", "dims" => "auto"))
+    @test Cecelia._last_track_measures_params(img._dir, "B")["dims"] == "2D"
+    @test Cecelia._last_track_measures_params(img._dir, "T")["dims"] == "auto"
+    @test isempty(Cecelia._last_track_measures_params(img._dir, "nuc"))
+    rm(proj.root; recursive=true)
 end
 
 # ── Channel names use the versioned convention ──────────────────────────────

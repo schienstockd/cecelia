@@ -244,7 +244,8 @@ def get_image_info(project_uid: str, image_uid: str) -> dict:
     and for a crop `cropSource` {uid, valueName, box} — add box x0/y0/z0/t0 to map its coordinates
     into the source (-1 = axis kept whole). `acquisition` (when the source format has a reader) holds
     the microscope settings as recorded: lasers + transmission %, Bright Z (`enabled` says whether the
-    stored ramp was applied), scanner timing, detector HV/gain/offset per channel. `cleanupFacts` is
+    stored ramp was applied), scanner timing, detector HV/gain/offset and emission filter per
+    channel, the dichroic slots as recorded (`Empty` = nothing in that slot), and when it was acquired. `cleanupFacts` is
     what was measured in the file at import, per channel: zero / clipped %, and where measured a
     `profile` of per-depth (`byZ`) and per-frame (`byT`) p50, p99, zero fraction and clipped count.
     Read both against get_acquisition_knowledge."""

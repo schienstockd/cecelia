@@ -107,11 +107,6 @@ export const badged = (t: Tier | null | undefined): t is Exclude<Tier, 'exempt'>
 /** What a page or a task shows of its maturity: its tier, its name, and the map row it opens. */
 export interface MaturityRef { tier: Exclude<Tier, 'exempt'>; title: string; rowId: string }
 
-/** The tiers a page or a task is BADGED for. Beta and up show nothing there: nothing is Tested yet, so
- *  badging Beta would mark nearly every page and mean nothing (FEATURE_MATURITY_PLAN → *Badges on the
- *  pages*). The map shows every tier. */
-export const pageBadged = (t: Tier | null | undefined): t is 'experimental' | 'comingSoon' =>
-  t === 'experimental' || t === 'comingSoon'
 
 const ownerRef = (o: MaturityOwner | undefined): MaturityRef | null =>
   o && badged(o.maturity.tier) ? { tier: o.maturity.tier, title: o.title, rowId: `${o.kind}:${o.id}` } : null

@@ -56,6 +56,52 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A run says what made it: version, full author stamp, run-time env ───────
+# The run log recorded only the launching profile, so a result could not say which code, which caller
+# (app vs Claude, which model) or which device made it. The caller is captured by the ASKING side
+# (`caller_stamp()`, bound per request) and rides beside `by` to the worker; the env comes back in the
+# task's result. Absent stays absent: a run with no caller has no `via`, a task with no env no `env`.
+@testset "Run log records version, author stamp and run env" begin
+    proj = create_project!(name="rl-prov-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+
+    caller = Dict{String,Any}("via" => "claude", "model" => "claude-opus-5-5", "session" => "abc-123")
+    tid = "prov$(rand(1000:9999))"
+    @test run_task(_RunEnvTask(), img, Dict{String,Any}(); task_id = tid, by = "alice", caller) !== nothing
+    e = only(filter(e -> String(get(e, "taskId", "")) == tid, read_run_log(img)))
+    @test String(e["ceceliaVersion"]) == Cecelia.cecelia_version()
+    @test Dict(String(k) => String(v) for (k, v) in e["author"]) ==
+          Dict("profile" => "alice", "via" => "claude", "model" => "claude-opus-5-5", "session" => "abc-123")
+    @test String(e["by"]) == "alice"                                  # kept for every existing reader
+    @test String(e["env"]["device"]) == "cuda" && e["env"]["seed"] == 0
+
+    # a REPL-style call: no caller, a task that reports no env → neither is invented
+    tid2 = "prov2$(rand(1000:9999))"
+    run_task(_CrashTask(), img, Dict{String,Any}(); task_id = tid2, by = "bob")
+    e2 = only(filter(e -> String(get(e, "taskId", "")) == tid2, read_run_log(img)))
+    @test Dict(String(k) => String(v) for (k, v) in e2["author"]) == Dict("profile" => "bob")
+    @test !haskey(e2, "env")
+
+    # the caller survives the runner's wire format (the detached runner gets the request as JSON)
+    req = Cecelia.TaskRequest(; task_id = "t", fun_name = "f", project_uid = "p", by = "alice", caller)
+    @test Cecelia.task_request(JSON3.read(JSON3.write(Cecelia.task_request_dict(req)), Dict{String,Any})).caller == caller
+    @test isempty(Cecelia.task_request(Dict{String,Any}("taskId" => "t")).caller)   # an older peer
+
+    # the Python → Julia half: a runner's sidecar `runEnv`, read back; missing file/key → empty
+    dir = mktempdir()
+    write(joinpath(dir, "qc.json"), JSON3.write(Dict("labelCounts" => Dict(), "runEnv" => Dict("device" => "cpu", "cellpose" => "4.0.6"))))
+    @test read_run_env(joinpath(dir, "qc.json")) == Dict{String,Any}("device" => "cpu", "cellpose" => "4.0.6")
+    write(joinpath(dir, "old.json"), JSON3.write(Dict("labelCounts" => Dict())))
+    @test isempty(read_run_env(joinpath(dir, "old.json")))
+    @test isempty(read_run_env(joinpath(dir, "missing.json")))
+
+    # an old entry with none of the new fields still reads
+    append_run_log!(img, "segment.cellpose", "default")
+    @test run_log_row(read_run_log(img)[end]).status == "done"
+    forget_task_start!(tid); forget_task_start!(tid2)
+    rm(proj.root; recursive=true)
+end
+
 # ── A cancelled run is RECORDED, and it is recorded before the work starts ───
 # Regression, and the expensive one. The run log used to be appended on finish and only for
 # :done/:failed — `:cancelled` was skipped as "the user aborted, not an outcome worth logging". So a
@@ -325,6 +371,85 @@ end
     @test last(recent_tasks()).id == "cap$(Cecelia._OUTCOME_CAP + 50)"   # newest kept
     @test !any(r -> r.id == "o1", recent_tasks())                        # oldest evicted
     empty!(Cecelia._OUTCOMES)
+end
+
+# ── A terminal frame only banks the start of the run it belongs to ─────────
+# The start is read and then forgotten BY ID. `run_task` deregisters before the runner sends its final
+# status frame, so a `task:restart` under the same id can register (and start) in between: the old run's
+# late frame then banked the restart's start as its own and deleted it, so the restart's outcome had none.
+@testset "Late terminal frame of a superseded run keeps the restart's start" begin
+    proj = create_project!(name="late-frame-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    id   = "lf$(rand(1000:9999))"
+    old  = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)
+    Cecelia._set_status!(old, TASK_RUNNING)
+    Cecelia._set_status!(old, TASK_DONE)
+    Cecelia._deregister_task!(old)                           # run_task returned; final frame not sent yet
+    new = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)   # the restart
+    Cecelia._set_status!(new, TASK_RUNNING)
+    started = iso_utc(task_started_at(id))
+    try
+        row = record_task_outcome!(id, "done")               # the OLD run's late terminal frame
+        @test row.started_at == ""                           # not the restart's start…
+        @test iso_utc(task_started_at(id)) == started        # …which is still on record
+        Cecelia._set_status!(new, TASK_DONE)
+        Cecelia._deregister_task!(new)
+        @test record_task_outcome!(id, "done").started_at == started   # the restart's own outcome has it
+    finally
+        Cecelia._deregister_task!(new); forget_task_start!(id)
+        filter!(r -> r.id != id, Cecelia._OUTCOMES)
+        rm(proj.root; recursive=true)
+    end
+end
+
+# A cancel is announced twice — when it lands, then as the final status after `run_task` returns. The
+# first banks the start and forgets it; the repeat used to overwrite the row with an unknown start.
+@testset "A repeated cancel frame keeps the banked start" begin
+    id = "rc$(rand(1000:9999))"
+    started = iso_utc(note_task_started!(id))
+    try
+        @test record_task_outcome!(id, "cancelled").started_at == started
+        @test record_task_outcome!(id, "cancelled").started_at == started
+        @test only(filter(r -> r.id == id, recent_tasks())).started_at == started
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+    end
+end
+
+# …but a restart under the id that is cancelled before it ever ran is a NEW run with no start: it must
+# not inherit the superseded run's banked start just because both ended "cancelled".
+@testset "A restart cancelled before running does not inherit the old run's start" begin
+    proj = create_project!(name="restart-cancel-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    id   = "rq$(rand(1000:9999))"
+    old  = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)
+    Cecelia._set_status!(old, TASK_RUNNING)
+    try
+        Cecelia._set_status!(old, TASK_CANCELLED)                 # cancel lands, then its frame
+        @test !isempty(record_task_outcome!(id, "cancelled").started_at)
+        Cecelia._deregister_task!(old)
+        new = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)   # the restart, queued
+        Cecelia._set_status!(new, TASK_CANCELLED); Cecelia._deregister_task!(new)
+        @test record_task_outcome!(id, "cancelled").started_at == ""
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+        rm(proj.root; recursive=true)
+    end
+end
+
+# The same restart seen from the API server, relaying the runner's frames: no `TaskRecord` there, so no
+# registration clears anything. The runner's frame says the restart has no start (""); that is banked as
+# is, not re-derived into the superseded run's banked start.
+@testset "A relayed empty start is the producer's word, not re-derived" begin
+    id = "rl$(rand(1000:9999))"
+    started = iso_utc(note_task_started!(id))
+    try
+        @test record_task_outcome!(id, "cancelled").started_at == started            # run A, banked here
+        @test record_task_outcome!(id, "cancelled"; started_at = "").started_at == ""   # restart, relayed
+        @test record_task_outcome!(id, "done"; started_at = started).started_at == started
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+    end
 end
 
 # ── The scheduler stamps a task's own timing ───────────────────────────────

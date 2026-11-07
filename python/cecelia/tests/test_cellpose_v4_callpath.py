@@ -116,6 +116,17 @@ class TestCellposeV4CallPath(unittest.TestCase):
         self.assertEqual(np.asarray(x[0]).shape, (8, 8, 2))   # per plane: [Y, X, C]
         self.assertEqual(out.shape, (3, 8, 8))
 
+    def test_run_env_reports_the_device_the_model_resolved(self):
+        """The run log's `env` comes from here: the device cellpose itself picked (`model.device`),
+        not the one we asked for, and nothing at all when no model reports one."""
+        import importlib.metadata
+        import torch
+        self.assertNotIn('device', self.seg.run_env())          # the fake model has no device → absent
+        self.model.device = torch.device('cpu')
+        env = self.seg.run_env()
+        self.assertEqual(env['device'], 'cpu')
+        self.assertEqual(env['cellpose'], importlib.metadata.version('cellpose'))
+
     def test_default_model_is_a_v4_name(self):
         """The `.get('model', …)` fallback. A v3 name here would load `cpsam_v2` anyway, silently."""
         self.seg._model_cache['cpsam_v2'] = self.model
@@ -152,6 +163,27 @@ class TestCellposeV4CallPath(unittest.TestCase):
         x = np.asarray(self.model.calls[-1][0])
         self.assertEqual(x[3, 3], 0.0)    # the bright square is now dark
         self.assertEqual(x[0, 0], 1.0)
+
+    def test_a_tile_with_signal_and_no_window_is_refused(self):
+        """`norm_params` lacks a channel only when the whole frame is near-empty, so the per-tile
+        fallback must never see real signal. If it does (a raised empty cut-off, a narrowed read,
+        a caller passing none), each tile would get its own brightness: that has to stop the run."""
+        tile = np.zeros((1, 32, 32), np.uint16)
+        tile[0, 4:20, 4:20] = 1000                         # 256 non-zero voxels: a cell, not noise
+        with self.assertRaisesRegex(ValueError, 'channel 0'):
+            self.seg.predict_slice(tile, self._params(), norm_params={})
+        with self.assertRaisesRegex(ValueError, 'channel 0'):
+            self.seg.predict_slice(tile, self._params(), norm_params={1: (0.0, 1.0)})
+        # With a window for the channel, the same tile goes through.
+        self.seg.predict_slice(tile, self._params(), norm_params={0: (0.0, 1000.0)})
+
+    def test_a_near_empty_tile_without_a_window_still_runs(self):
+        """What the fallback is for: a channel the base found too empty for a window."""
+        tile = np.zeros((1, 32, 32), np.uint16)
+        tile[0, 0, :10] = 1000                             # 10 stray voxels
+        self.seg.predict_slice(tile, self._params(), norm_params={})
+        x = np.asarray(self.model.calls[-1][0])
+        self.assertTrue(0.0 <= x.min() and x.max() <= 1.0)
 
     def test_input_is_in_unit_range_without_cellpose_normalising(self):
         flat = np.full((8, 8), 500, np.uint16)          # no contrast: an empty percentile window
