@@ -1,7 +1,10 @@
 """Cecelia structure overview, in the style of the README's earlier framework diagram.
 
-    python3 make_structure_overview.py structure_overview.svg
-    python3 make_structure_overview.py ../../../frontend/public/readme-structure.svg   # the README copy
+    python3 make_structure_overview.py structure_overview.svg                                 # plan copy: with gaps
+    python3 make_structure_overview.py ../../../frontend/public/readme-structure.svg --readme  # README copy
+
+The README copy is the first diagram a new reader sees, so it shows only what exists: no gap marks,
+no dates, no footnotes. The plan copy keeps the gaps.
 
 Pipeline left to right; the layers that make an analysis checkable underneath; AI on top.
 Each cell names what exists (code refs in CECELIA_STRUCTURE_AUDIT.md). Magenta dashed = gap,
@@ -11,7 +14,8 @@ import sys
 from xml.sax.saxutils import escape
 
 OUT = sys.argv[1]
-W, H = 1600, 530
+README = "--readme" in sys.argv[2:]
+W, H = 1600, (448 if README else 538)
 BG, INK, SUB = "#fafaf7", "#2a2a2a", "#6b6b66"
 BLUE, OLIVE, PEACH, PINK = "#dbeaf3", "#efeecf", "#fbe7d4", "#f7d0e0"
 ACCENT, NEW = "#d94a86", "#3a7d44"
@@ -61,6 +65,10 @@ def label(y, h, name, sub):
 
 def cell(x, y, h, rows):
     """A per-stage chip: dashed accent only when all of it is a gap; rows centred vertically."""
+    if README:
+        rows = [(s, "ok") for s, k in rows if k != "gap"]
+        if not rows:
+            return
     allgap = all(k == "gap" for _, k in rows)
     rect(x, y, CW, h, stroke=ACCENT if allgap else INK, dash="5,4" if allgap else None)
     step = 16
@@ -121,32 +129,37 @@ for i, rows in enumerate(REC):
     cell(cx(i), y, h, rows)
 
 # ── checks
-y = 280; h = 50
+y = 280; h = 58
 label(y + 14, h, "Checks", "can it be trusted")
 QC = [
     [("saturation · photon limit", "ok"), ("depth profile", "ok")],
     [("calibration · partial", "ok"), ("timepoints · pyramid", "ok")],
-    [("QC on every run", "ok"), ("cohort QC per set: button only", "gap")],
+    [("QC on every run", "ok"), ("cohort QC per set", "ok"), ("(button only)", "gap")],
     [("no QC on gating", "gap")],
     [("spatial QC", "ok"), ("no QC on statistics", "gap")],
     [("export QC", "ok")],
 ]
 for i, rows in enumerate(QC):
     cell(cx(i), y, h, rows)
-bar(1, 5, y + 58, 30, "**Claim checks** (rules, no model): record complete? · images treated the same? · "
+bar(1, 5, y + 66, 30, "**Claim checks** (rules, no model): record complete? · images treated the same? · "
                       "right statistical unit?", BLUE, size=13.5)
-t(cx(0) + CW / 2, y + 78, "QC warns, never blocks", size=12, fill=SUB, italic=True)
+t(cx(0) + CW / 2, y + 86, "QC warns, never blocks", size=12, fill=SUB, italic=True)
 
 # ── replay
-y = 388; h = 34
+y = 396; h = 34
 label(y - 2, h, "Replay", "run it again")
-bar(1, 3, y, h, "**Chains**: save the steps once, re-run on new images, skip what has not changed", PEACH,
-    size=13.5)
-bar(4, 5, y, h, "re-run from an old run's frozen template", BG, sw=1.4, size=13, dash="5,4",
+bar(1, 5 if README else 3, y, h, "**Chains**: save the steps once, re-run on new images, skip what has not "
+    "changed", PEACH, size=13.5)
+README or bar(4, 5, y, h, "re-run from an old run's frozen template", BG, sw=1.4, size=13, dash="5,4",
     stroke=ACCENT, fill_text=ACCENT)
 
-# ── legend + footnote
-y = 446
+# ── legend + footnote (plan copy only)
+y = 454
+if README:
+    out.append("</svg>")
+    with open(OUT, "w", encoding="utf-8") as f:
+        f.write("\n".join(out))
+    sys.exit(0)
 rect(LX, y, 26, 16, sw=1.4, rx=4); t(LX + 34, y + 13, "exists", size=12.5, anchor="start")
 rect(LX + 100, y, 26, 16, stroke=ACCENT, sw=1.4, rx=4, dash="5,4")
 t(LX + 134, y + 13, "gap", size=12.5, fill=ACCENT, anchor="start", italic=True)
