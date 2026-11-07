@@ -65,6 +65,11 @@ describe('claimApi', () => {
     expect(g.map(x => x.label)).toEqual(['Images', 'The data', 'mystery'])   // order of the labels; unknown last
     expect(g[1].items[0].action).toBe('set a minimum duration')
     expect(r.review?.items[1].action).toBe('')
+    expect(r.review?.lastError).toBe('')
+    const f = parseClaimResult({ entryId: 'bb-4', reviewModel: 'sonnet',
+      review: { status: 'failed', model: 'sonnet', claims: [], lastError: 'You have hit your limit' } })!
+    expect(f.reviewModel).toBe('sonnet')
+    expect(f.review?.lastError).toBe('You have hit your limit')
   })
   it('rejects a reply that is not a claim result', () => {
     expect(parseClaimResult(null)).toBeNull()

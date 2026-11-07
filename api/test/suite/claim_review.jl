@@ -84,6 +84,15 @@ end
         # the analyst can mark a review finding like any other
         @test api_blackboard_section_outcome(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid,
             "entryId" => id, "sectionId" => sid, "verdict" => "bad", "note" => "it has tracks"))))[1] == 200
+        # a run that fails (usage limit) says so and keeps the last review that finished — not "nothing found"
+        push!(fake.script, Cecelia.AgentResult(false, "", 0, 0, "", "You've hit your limit · resets 5pm"))
+        @test post(api_claim_review, Dict("projectUid" => proj.uid, "entryId" => id))[1] == 200
+        wait_idle(proj.uid)
+        rvf = _read_bb_meta(proj.uid, id)["claim"]["review"]
+        @test occursin("hit your limit", rvf["lastError"]) && length(rvf["claims"]) == 2 && rvf["status"] == "done"
+        mdf = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
+        @test occursin("⚠ The last run failed: ", mdf) && occursin("### $sid", mdf) && !occursin("Nothing beyond", mdf)
+        @test JSON3.read(post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))[2] |> JSON3.write).reviewModel != ""
         # a re-check keeps the review; a new round drops it (it answered the earlier question)
         post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test haskey(_read_bb_meta(proj.uid, id)["claim"], "review")

@@ -107,6 +107,23 @@ function _claim_review_done!(rec::AbstractDict)
     c = Dict{String,Any}(String(k) => v for (k, v) in meta["claim"])
     get(c, "round", 1) == get(cr, "round", 1) || return nothing
     reply = get(rec, "reply", nothing)
+    if rec["status"] != "done"
+        # a turn that didn't finish (usage limit, no CLI, cancelled) is not "nothing found": say why,
+        # and keep the last review that did finish
+        errs = reply isa AbstractDict ? get(reply, "errors", Any[]) : Any[]
+        why = !isempty(errs) ? string(first(errs)) : string(get(rec, "error", rec["status"]))
+        prev = get(c, "review", nothing)
+        rv = prev isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in prev) :
+             Dict{String,Any}("status" => rec["status"], "model" => get(rec, "model", ""), "claims" => Any[],
+                              "abstain" => false, "note" => "", "turnId" => rec["turnId"])
+        rv["lastError"] = replace(strip(why), r"\s*\n\s*" => " ")
+        c["review"] = rv
+        result = _claim_run(uid, c)
+        result isa Tuple && return nothing
+        _claim_assign_ids!(c["findingIds"], result["findings"])
+        _claim_write!(uid, id, c, result)
+        return nothing
+    end
     claims = reply isa AbstractDict ? collect(get(reply, "claims", Any[])) : Any[]
     c["review"] = Dict{String,Any}(
         "turnId" => rec["turnId"], "at" => get(rec, "finishedAt", string(Dates.now())),

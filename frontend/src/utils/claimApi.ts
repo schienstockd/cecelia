@@ -27,6 +27,7 @@ export interface ClaimReviewItem { kind: KiwiClaimKind; category: string; text: 
 /** The model review, once a turn has finished (`claim.review` on the entry). */
 export interface ClaimReview {
   turnId: string; status: string; model: string; abstain: boolean; note: string
+  lastError: string               // why the last run didn't finish ('' = it did); earlier points are kept
   items: ClaimReviewItem[]        // observations and questions
   supports: string                // the one interpretation: what the record would support ('' = none)
 }
@@ -38,6 +39,7 @@ export interface ClaimResult {
   checks: ClaimCheckLine[]
   categories: ClaimCategory[]
   categoryLabels: Record<string, string>   // every category id → its label, the review's ones included
+  reviewModel: string                       // the model a review run uses ('' = not reported)
   ran: string[]
   skipped: Record<string, string>
   review: ClaimReview | null
@@ -113,7 +115,7 @@ function parseReview(v: unknown): ClaimReview | null {
   }))
   return {
     turnId: String(r.turnId ?? ''), status: String(r.status ?? ''), model: String(r.model ?? ''),
-    abstain: r.abstain === true, note: String(r.note ?? ''), items,
+    abstain: r.abstain === true, note: String(r.note ?? ''), items, lastError: String(r.lastError ?? ''),
     supports: String(all.find(x => x.kind === 'interpretation')?.text ?? ''),
   }
 }
@@ -149,6 +151,7 @@ export function parseClaimResult(r: Record<string, unknown> | null): ClaimResult
     categoryLabels: (r.categoryLabels && typeof r.categoryLabels === 'object') ? Object.fromEntries(
       Object.entries(r.categoryLabels as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {},
     review: parseReview(r.review),
+    reviewModel: String(r.reviewModel ?? ''),
     ran: Array.isArray(r.ran) ? r.ran.map(String) : [],
     skipped: (r.skipped && typeof r.skipped === 'object') ? Object.fromEntries(
       Object.entries(r.skipped as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {},

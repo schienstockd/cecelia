@@ -168,7 +168,8 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
         <!-- the model review: on request -->
         <div class="claim-head cc-row cc-row-tight">
           <span>Model review</span>
-          <span class="cc-muted" v-tooltip.top="'One model turn reads the claim and the record, not your notes'">· about a minute</span>
+          <span class="cc-muted" v-tooltip.top="'One model turn reads the claim and the record, not your notes'">
+            · {{ result.review?.model || result.reviewModel || 'model' }}, about a minute</span>
           <button class="cc-btn cc-btn-dense claim-review-btn" type="button" :disabled="!!reviewTurn" @click="review">
             <i v-if="reviewTurn" class="pi pi-spin pi-spinner" />
             {{ reviewTurn ? 'Reviewing…' : result.review ? 'Run again' : 'Run' }}
@@ -185,9 +186,10 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
               </template>
             </div>
           </div>
-          <InlineNote v-if="!result.review.items.length" short="Nothing beyond the checks" icon="pi-minus-circle" />
+          <InlineNote v-if="result.review.lastError" :short="`The last run failed: ${result.review.lastError}`" severity="fail" />
+          <InlineNote v-if="result.review.status === 'done' && !result.review.items.length" short="Nothing beyond the checks" icon="pi-minus-circle" />
           <span v-if="result.review.supports" class="cc-muted claim-supports">Would support: {{ result.review.supports }}</span>
-          <span class="cc-muted cc-fs-2xs">Mark each point Good / Bad / Unsure on the Blackboard.</span>
+          <span v-if="result.review.items.length" class="cc-muted cc-fs-2xs">Mark each point Good / Bad / Unsure on the Blackboard.</span>
         </template>
       </template>
     </div>
