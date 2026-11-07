@@ -327,6 +327,85 @@ end
     empty!(Cecelia._OUTCOMES)
 end
 
+# ── A terminal frame only banks the start of the run it belongs to ─────────
+# The start is read and then forgotten BY ID. `run_task` deregisters before the runner sends its final
+# status frame, so a `task:restart` under the same id can register (and start) in between: the old run's
+# late frame then banked the restart's start as its own and deleted it, so the restart's outcome had none.
+@testset "Late terminal frame of a superseded run keeps the restart's start" begin
+    proj = create_project!(name="late-frame-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    id   = "lf$(rand(1000:9999))"
+    old  = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)
+    Cecelia._set_status!(old, TASK_RUNNING)
+    Cecelia._set_status!(old, TASK_DONE)
+    Cecelia._deregister_task!(old)                           # run_task returned; final frame not sent yet
+    new = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)   # the restart
+    Cecelia._set_status!(new, TASK_RUNNING)
+    started = iso_utc(task_started_at(id))
+    try
+        row = record_task_outcome!(id, "done")               # the OLD run's late terminal frame
+        @test row.started_at == ""                           # not the restart's start…
+        @test iso_utc(task_started_at(id)) == started        # …which is still on record
+        Cecelia._set_status!(new, TASK_DONE)
+        Cecelia._deregister_task!(new)
+        @test record_task_outcome!(id, "done").started_at == started   # the restart's own outcome has it
+    finally
+        Cecelia._deregister_task!(new); forget_task_start!(id)
+        filter!(r -> r.id != id, Cecelia._OUTCOMES)
+        rm(proj.root; recursive=true)
+    end
+end
+
+# A cancel is announced twice — when it lands, then as the final status after `run_task` returns. The
+# first banks the start and forgets it; the repeat used to overwrite the row with an unknown start.
+@testset "A repeated cancel frame keeps the banked start" begin
+    id = "rc$(rand(1000:9999))"
+    started = iso_utc(note_task_started!(id))
+    try
+        @test record_task_outcome!(id, "cancelled").started_at == started
+        @test record_task_outcome!(id, "cancelled").started_at == started
+        @test only(filter(r -> r.id == id, recent_tasks())).started_at == started
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+    end
+end
+
+# …but a restart under the id that is cancelled before it ever ran is a NEW run with no start: it must
+# not inherit the superseded run's banked start just because both ended "cancelled".
+@testset "A restart cancelled before running does not inherit the old run's start" begin
+    proj = create_project!(name="restart-cancel-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    id   = "rq$(rand(1000:9999))"
+    old  = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)
+    Cecelia._set_status!(old, TASK_RUNNING)
+    try
+        Cecelia._set_status!(old, TASK_CANCELLED)                 # cancel lands, then its frame
+        @test !isempty(record_task_outcome!(id, "cancelled").started_at)
+        Cecelia._deregister_task!(old)
+        new = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)   # the restart, queued
+        Cecelia._set_status!(new, TASK_CANCELLED); Cecelia._deregister_task!(new)
+        @test record_task_outcome!(id, "cancelled").started_at == ""
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+        rm(proj.root; recursive=true)
+    end
+end
+
+# The same restart seen from the API server, relaying the runner's frames: no `TaskRecord` there, so no
+# registration clears anything. The runner's frame says the restart has no start (""); that is banked as
+# is, not re-derived into the superseded run's banked start.
+@testset "A relayed empty start is the producer's word, not re-derived" begin
+    id = "rl$(rand(1000:9999))"
+    started = iso_utc(note_task_started!(id))
+    try
+        @test record_task_outcome!(id, "cancelled").started_at == started            # run A, banked here
+        @test record_task_outcome!(id, "cancelled"; started_at = "").started_at == ""   # restart, relayed
+        @test record_task_outcome!(id, "done"; started_at = started).started_at == started
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+    end
+end
+
 # ── The scheduler stamps a task's own timing ───────────────────────────────
 # `list_tasks()` is what a client polls to answer "how long has this been going?". Without these
 # fields it can only be answered from when the client first SAW the row, so a console or a browser
