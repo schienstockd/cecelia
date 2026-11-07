@@ -1883,6 +1883,8 @@ export async function createBrickVolumeRenderer(
       const newZLo = Math.max(0, Math.floor(zLo))
       if (newZLo === currentZLo) return
       currentZLo = newZLo
+      // A label-atlas OOM rebuild replays `lastImage` — it must replay the planes on screen now.
+      if (lastImage !== null) lastImage = { ...lastImage, zLo: newZLo }
       // Atlas still allocating (`setImage` is async): nothing resident to invalidate, and its
       // first fetches will read the new `currentZLo`.
       if (atlas === null) return
