@@ -94,6 +94,11 @@ Cecelia._run_task(::_RangedParamTask, ::CciaImage, params::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) =
     Dict{String,Any}("diameter" => params["diameter"], "iters" => params["iters"])
+struct _RangedParamSetTask <: CciaTask end
+Cecelia._run_task(::_RangedParamSetTask, ::Vector{CciaImage}, params::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    Dict{String,Any}("diameter" => params["diameter"])
 
 # Manual chain steps (chain/manual.jl). Prepare counts its calls per image; the check refuses any image
 # whose uid is in `_MANUAL_BLOCKED`. Registered with a spec carrying a `"manual"` block in the testset.
