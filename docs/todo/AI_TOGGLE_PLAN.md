@@ -1,6 +1,7 @@
 # AI toggle: make every model-backed feature optional
 
-**Status:** **PARKED** (2026-11-07). Nothing built. One decision locked (D1). Next step: P0, the audit.
+**Status:** **PARKED** (2026-11-07). Nothing built. One decision locked (D1). P0 done as a draft:
+[`AI_SURFACES_AUDIT.md`](AI_SURFACES_AUDIT.md), whose §9 has the full slice plan. Next step: P1.
 Brief: [`docs/archive/AI_SURFACES_AUDIT_PROMPT.md`](../archive/AI_SURFACES_AUDIT_PROMPT.md). Read its
 banner first, because four of the brief's premises had moved by the time it was archived.
 
@@ -56,6 +57,13 @@ segmentation, tracking, and rule-based findings.
    - **The user's Claude Code registration stays in place.** With AI off, the tools still appear,
      and each call answers with the message above. That is a clear answer, not a dead end.
 
+2. **The machine-wide switch belongs to peanut** (2026-11-07). It is an item in Settings → *Shared
+   workstation* (`[sharedWorkstation]`), which only peanut (`default`) sees. It only matters on
+   workstations. Like the rest of that section it is a visibility gate, not security (consistent with
+   D1). It is one item, not a switch over the section's other items.
+3. **Every other profile sets AI on or off in its own Preferences,** stored per profile on the
+   server, within peanut's ceiling.
+
 ## Starting positions (from the brief, not locked)
 
 These are the brief's positions. Each needs the audit's evidence and the maintainer's agreement before
@@ -75,13 +83,12 @@ it becomes a decision.
 
 ## Open — maintainer calls
 
-1. **Master switch vs the shared-workstation design.** The brief's admin "ceiling" is a master switch
+1. ~~**Master switch vs the shared-workstation design.** The brief's admin "ceiling" is a master switch
    with enforcement. `shared_workstation.jl` rejects a master switch, and its visibility gate is not
    security. Options: reverse that decision for AI specifically, or make the ceiling a separate kind of
-   setting (a policy, not a convenience item) that lives somewhere else.
+   setting (a policy, not a convenience item) that lives somewhere else.~~ Decided: D2.
 2. **Which states to support:** off / on request / on. Is "on request" needed?
-3. **The user layer.** Is the user setting stored per Cecelia profile (where credentials already
-   live)? Is a project-level override wanted?
+3. **The user layer.** ~~Per profile?~~ Decided: D3. Still open: a project-level override?
 4. **Default state** for unmanaged single-user installs (the brief says off everywhere).
 5. **Entry point when AI is off:** a subtle Kiwi link that opens "AI is off", or the settings entry
    plus a first-run message only.
@@ -98,16 +105,17 @@ it becomes a decision.
 
 ## Phases
 
-Each phase is a standalone PR. Sizes are estimates until P0 lands.
+Each phase is a standalone PR. Sizes, risks and tests per slice: audit §9.
 
 - **P0 · Audit (docs only).** Run the brief with the banner's corrections. Start from
   `HARDENING_SURFACES.md` → *Claude+MCP* and extend it rather than re-deriving it. Output:
   `docs/todo/AI_SURFACES_AUDIT.md`, containing the inventory table, the entry-point analysis with every
   bypass, data egress, UI coupling, stored content, existing tests, and profiles/installs. Verified facts
-  are kept separate from assumptions. **Can start now.**
+  are kept separate from assumptions. **Done (draft):** in-app turns have one seam
+  (`kiwi_start_turn` → `run_agent_turn`); every other path is one route, plus two holes (the push writer
+  and the autonomous WS header).
 - **P1 · Gate at the entry point plus the enforcement test.** This includes D1's backend refusal of
-  requests from Claude. The size depends on P0's bypass count.
-  If there is one entry point, this is small. If there are many, P1 first consolidates the bypasses.
+  requests from Claude. Small, per P0 (audit §8.7, slice 2), and it can start now.
 - **P2 · Registry** (home per call 8), with the test that every model path is registered.
 - **P3 · Setting plus default plus opt-in dialog.** Blocked on calls 1–5. The dialog's "what is sent"
   list is read from P2, and its egress lines reuse `CLAUDE_DATA_NOTICE` rather than repeating them. Link to Anthropic's terms rather than paraphrasing them.
