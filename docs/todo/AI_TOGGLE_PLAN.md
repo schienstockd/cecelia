@@ -1,6 +1,6 @@
 # AI toggle: make every model-backed feature optional
 
-**Status:** **PARKED** (2026-11-07). Nothing built, no decision locked. Next step: P0, the audit.
+**Status:** **PARKED** (2026-11-07). Nothing built. One decision locked (D1). Next step: P0, the audit.
 Brief: [`docs/archive/AI_SURFACES_AUDIT_PROMPT.md`](../archive/AI_SURFACES_AUDIT_PROMPT.md). Read its
 banner first, because four of the brief's premises had moved by the time it was archived.
 
@@ -41,6 +41,21 @@ segmentation, tracking, and rule-based findings.
   candidates to bypass them are the observer's terminal `claude` launch (`api/src/observer_api.jl`),
   `pixi run chat` (`chat.py`), the login spawns, and dev tooling.
 
+## Decisions
+
+1. **"Off" covers the MCP observer, enforced at the backend** (2026-11-07). Cecelia never runs the
+   observer as a service. A `claude` process starts it from a config file, whether that's one of the
+   app's own turns or the user's terminal. The observer is a thin HTTP client: every tool call is a
+   request to the running backend with the API token (`mcp/cecelia_mcp/client.py`, `auth.py`). Calls
+   from Claude already send `X-Cecelia-Client: claude`, which `api/src/server.jl` reads on every
+   request. With AI off, the backend refuses those requests and returns "AI is off in Cecelia", and
+   the app's own turns never start. One point covers the in-app turns and the terminal `claude`.
+   - **The header is not a security boundary.** A token holder could leave it off. That is
+     acceptable, because the token holder is the person whose data it is. The switch is a policy for
+     that person's own use, not a defence against them.
+   - **The user's Claude Code registration stays in place.** With AI off, the tools still appear,
+     and each call answers with the message above. That is a clear answer, not a dead end.
+
 ## Starting positions (from the brief, not locked)
 
 These are the brief's positions. Each needs the audit's evidence and the maintainer's agreement before
@@ -72,8 +87,7 @@ it becomes a decision.
    plus a first-run message only.
 6. **Stored AI content when off:** hidden, or shown with a provenance mark. Stamps already record model
    and session (#1826).
-7. **The MCP observer and the terminal `claude`.** The app can't gate a model it doesn't start. Does
-   "off" also stop the observer serving data, or only stop the app's own turns?
+7. ~~The MCP observer and the terminal `claude`.~~ Decided: D1.
 8. **The registry's home.** The closest existing one is `frontend/src/lib/claudeTools.ts`
    (`CAPABILITIES` / `TOOL_GROUPS`, read by `ClaudeOverviewDialog`). It is already a user-worded list
    of what Kiwi and a Claude Code session can use, and its test fails when an MCP tool is missing.
@@ -91,7 +105,8 @@ Each phase is a standalone PR. Sizes are estimates until P0 lands.
   `docs/todo/AI_SURFACES_AUDIT.md`, containing the inventory table, the entry-point analysis with every
   bypass, data egress, UI coupling, stored content, existing tests, and profiles/installs. Verified facts
   are kept separate from assumptions. **Can start now.**
-- **P1 · Gate at the entry point plus the enforcement test.** The size depends on P0's bypass count.
+- **P1 · Gate at the entry point plus the enforcement test.** This includes D1's backend refusal of
+  requests from Claude. The size depends on P0's bypass count.
   If there is one entry point, this is small. If there are many, P1 first consolidates the bypasses.
 - **P2 · Registry** (home per call 8), with the test that every model path is registered.
 - **P3 · Setting plus default plus opt-in dialog.** Blocked on calls 1–5. The dialog's "what is sent"
