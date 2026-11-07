@@ -19,6 +19,25 @@ function Cecelia.hpc_cancel(b::_FlakyCancel, c::HpcConn, id::AbstractString)
     hpc_cancel(b.inner, c, id)
 end
 
+# A scheduler with job names, kept in memory: a submit with `timeout` set reaches the queue and then
+# throws, as an sbatch/qsub that outlasts HPC_SUBMIT_TIMEOUT_S on a busy login node does.
+mutable struct _SlowSubmit <: HpcBackend
+    timeout::Bool
+    submits::Vector{String}                 # the names submitted
+    active::Vector{Tuple{String,String}}    # (id, scheduler name) queued or running
+end
+_SlowSubmit() = _SlowSubmit(true, String[], Tuple{String,String}[])
+Cecelia.hpc_job_name(::_SlowSubmit, name::AbstractString) = "cecelia-" * name
+function Cecelia.hpc_submit(b::_SlowSubmit, ::HpcConn, spec::HpcJobSpec)
+    push!(b.submits, spec.name)
+    id = string(100 + length(b.submits))
+    push!(b.active, (id, "cecelia-" * spec.name))
+    b.timeout && throw(HpcError("Submit: No response from host after 180 s"))
+    id
+end
+Cecelia.hpc_active_jobs(b::_SlowSubmit, ::HpcConn; name = nothing) =
+    [i for (i, n) in b.active if isnothing(name) || n == name]
+
 @testset "HPC job: a cancel that cannot reach the cluster is retried" begin
     if !_HPC_DISPATCH_E2E
         @test_skip false
@@ -102,6 +121,41 @@ end
             @test Cecelia.hpc_read_job_record(rec, "fp1") == (; id = "42", dir = "/r/jobs/j")
             @test Cecelia.hpc_read_job_record(rec, "fp2") === nothing
         end
+    end
+end
+
+@testset "HPC job: a submit that timed out but reached the scheduler is not submitted twice" begin
+    mktempdir() do dir
+        b = _SlowSubmit()
+        d = Cecelia.HpcDispatch("t1", HpcLocalConn(), b, "/r", dir, dir, "cpu", HpcResources(), "")
+        rec = joinpath(dir, "x_run.hpc.json")
+        n = Ref(0)
+        spec() = (n[] += 1; HpcJobSpec(; name = "t1-x_run-$(n[])", dir = "/r/jobs/t1-x_run-$(n[])", body = "true\n",
+                                        class = "cpu"))
+        log = String[]
+        @test_throws HpcError Cecelia._hpc_job_for_run(d, rec, "fp1", spec; on_log = l -> push!(log, l))
+        @test length(b.submits) == 1                                   # it reached the queue anyway
+        @test Cecelia.hpc_read_submit_record(rec, "fp1") == (; name = "t1-x_run-1", dir = "/r/jobs/t1-x_run-1")
+        @test Cecelia.hpc_read_job_record(rec, "fp1") === nothing      # no id was ever learnt
+
+        # The rerun follows that job instead of submitting a second one beside it.
+        b.timeout = false
+        r = Cecelia._hpc_job_for_run(d, rec, "fp1", spec; on_log = l -> push!(log, l))
+        @test r == (; id = "101", dir = "/r/jobs/t1-x_run-1", done = false)
+        @test length(b.submits) == 1
+        @test any(l -> occursin("Re-attached to job 101", l), log)
+        @test Cecelia.hpc_read_job_record(rec, "fp1") == (; id = "101", dir = "/r/jobs/t1-x_run-1")
+
+        # A different run (another fingerprint) is not answered by that job, and neither is one whose
+        # timed-out submit never reached the queue.
+        rm(rec)
+        Cecelia.hpc_write_submit_record(rec, "fp2", "t1-x_run-gone", "/r/jobs/t1-x_run-gone")
+        r = Cecelia._hpc_job_for_run(d, rec, "fp1", spec; on_log = l -> push!(log, l))
+        @test r.id == "102" && length(b.submits) == 2
+        Cecelia.hpc_write_submit_record(rec, "fp3", "t1-x_run-gone", "/r/jobs/t1-x_run-gone")
+        r = Cecelia._hpc_job_for_run(d, rec, "fp3", spec; on_log = l -> push!(log, l))
+        @test r.id == "103" && length(b.submits) == 3
+        @test Cecelia.hpc_read_submit_record(rec, "fp3") === nothing   # superseded by the full record
     end
 end
 
