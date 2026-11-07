@@ -1,6 +1,6 @@
 <!--
   "Something wrong?" — a prefilled GitHub bug report for one feature (docs/todo/FEATURE_MATURITY_PLAN.md
-  → *Something wrong?*). Sits beside a page's maturity link (`PageMaturity.vue`), a picked task's badge
+  → *Something wrong?*). Sits beside a page's maturity link (`MaturityIndicator.vue`), a picked task's badge
   (TaskRunner) and each expanded row of the map's Maturity section (`MaturityMap.vue`).
 
   Opens a small popover rather than the link itself, for ONE reason: the last task's settings go in only
