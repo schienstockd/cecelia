@@ -101,7 +101,7 @@ def _summarise(plane):
 def fingerprint():
     """`{version, metrics: {name: [std, p99abs]}}` for the engine in this process — `{}` on failure.
 
-    Best-effort, like `_coastal_build`: this is provenance, and a coastal version that cannot be
+    Best-effort, like `coastal_utils.coastal_build`: this is provenance, and a coastal version that cannot be
     probed must not fail a training run that otherwise succeeded. `{}` reads downstream as "no
     fingerprint", which is the same case as a model trained before this field existed.
     """

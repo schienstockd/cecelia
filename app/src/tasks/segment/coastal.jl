@@ -219,10 +219,11 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings
     # (`bank_segment_qc!`, segmentation.jl). Coastal has no cell-diameter param, so only the
     # count-stability finding can fire.
-    bank_segment_qc!(img, "segment.coastal", p.outputValueName, qc_out_path;
-                     diameter_um = nothing, on_log = on_log)
+    run_env = bank_segment_qc!(img, "segment.coastal", p.outputValueName, qc_out_path;
+                               diameter_um = nothing, on_log = on_log)
 
     Dict{String,Any}("outputValueName"  => p.outputValueName,
                      "labelValueName"   => p.outputValueName,
-                     "labelFiles"       => label_files)
+                     "labelFiles"       => label_files,
+                     "runEnv"           => run_env)   # device + coastal build + tiling → run log `env`
 end

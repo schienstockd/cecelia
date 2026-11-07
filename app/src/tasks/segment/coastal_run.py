@@ -57,8 +57,10 @@ def run(params):
 
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
+        # `runEnv` rides the same file: the handler copies it into its result → run log `env`.
         write_json_atomic(qc_out_path, {'labelCounts': label_counts,
-                                         'objectStats': getattr(cu, 'object_stats', None)})
+                                         'objectStats': getattr(cu, 'object_stats', None),
+                                         'runEnv': cu.run_env()})
         log.log(f'>> saved segment QC counts: {label_counts}')
 
     log.log('>> done')

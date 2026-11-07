@@ -28,6 +28,7 @@ See `docs/todo/COASTAL_SEGMENTATION_PLAN.md` and coastal's `docs/SEGMENTATION.md
 
 import json
 import os
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -81,6 +82,56 @@ PREDICT_WORKERS = cpu_utils.task_workers(cap=PREDICT_WORKER_CAP)
 # What the projected window is scaled to before coastal sees it — coastal's own convention, kept so
 # a model trained through `normalize_and_project` receives the range it was trained on.
 PROJECTION_MAX = 255.0
+
+
+# A GitHub source tarball of one commit — how pixi.toml pins coastal (`…/archive/<sha>.tar.gz`).
+_ARCHIVE_COMMIT = re.compile(r'/archive/([0-9a-f]{40})\.(?:tar\.gz|zip)$')
+
+
+def coastal_build():
+    """Which coastal is installed — `{version, commit}`, or `None` if neither is knowable.
+
+    `coastal.__version__` alone is not enough: it is `0.1.0` and is not bumped per change, while the
+    pin in `pixi.toml` is a commit described there as "a HARD floor, not a snapshot". So the useful
+    identifier is the commit, which the installer records in the distribution's `direct_url.json`
+    (PEP 610): under `vcs_info.commit_id` for a git install, and only in the `url` for the source
+    tarball pixi.toml actually pins. Absent for a PyPI or editable install, and `None` then rather
+    than a version number that implies more than it knows.
+
+    Recorded on a trained model's manifest (`opticalFlow.train`) and in a segmentation run's `env`
+    (`CoastalUtils.run_env`): coastal's inference is under active change, and output that cannot be
+    tied to an engine build cannot be reproduced. See docs/todo/MODEL_VAULT_PLAN.md.
+    """
+    out = {}
+    try:
+        import coastal
+        v = getattr(coastal, '__version__', None)
+        if v:
+            out['version'] = str(v)
+    except Exception:
+        pass
+    try:
+        import importlib.metadata as md
+        from pathlib import Path
+        dist = md.distribution('coastal')
+        # Located and read explicitly rather than through `Distribution.read_text`, which takes no
+        # encoding — and `test_atomic_io` rightly refuses text IO without one.
+        for f in (dist.files or ()):
+            if f.name != 'direct_url.json':
+                continue
+            info = json.loads(Path(dist.locate_file(f)).read_text(encoding='utf-8'))
+            commit = (info.get('vcs_info') or {}).get('commit_id')
+            if not commit:
+                m = _ARCHIVE_COMMIT.search(str(info.get('url') or ''))
+                commit = m.group(1) if m else None
+            if commit:
+                out['commit'] = str(commit)
+            break
+    except Exception:
+        # No `direct_url.json` is the normal PyPI case, not a failure worth a warning: the record
+        # simply says less.
+        pass
+    return out or None
 
 
 def manifest_path(model_path):
@@ -557,6 +608,22 @@ class CoastalUtils(SegmentationUtils):
             f'convert.')
         return scales, cumulative, dropped, {}
 
+    def _device(self):
+        """The device every model and inference of this run is put on — chosen at run time."""
+        return self.gpu_device if self.use_gpu else 'cpu'
+
+    def run_env(self):
+        """What this run actually ran on, for the run log's `env` (app/src/run_log.jl): `device` the
+        torch device inference used (CUDA, MPS or the CPU — whichever this machine offered),
+        `coastal` the engine build (`coastal_build`: `<version>+<commit>`, the version alone when no
+        commit is recorded), plus the base's tiling. A key is absent when not known — never a default."""
+        env = super().run_env()
+        env['device'] = str(getattr(self._device(), 'type', self._device()))
+        build = coastal_build() or {}
+        if build.get('version') or build.get('commit'):
+            env['coastal'] = '+'.join(str(build[k]) for k in ('version', 'commit') if build.get(k))
+        return env
+
     @staticmethod
     def _quieten_cv2_threads():
         """Hand OpenCV ONE thread, because this class now parallelises over z itself.
@@ -666,11 +733,11 @@ class CoastalUtils(SegmentationUtils):
 
         if model_path not in self._model_cache:
             self._model_cache[model_path] = load_model(
-                model_path, device=self.gpu_device if self.use_gpu else 'cpu')
+                model_path, device=self._device())
 
         inference = LearnedAffinityInference(
             self._model_cache[model_path],
-            device=self.gpu_device if self.use_gpu else 'cpu',
+            device=self._device(),
             # Thresholds are unitless and pass straight through; everything that describes a
             # LENGTH or an AREA arrives in microns and is converted here. Coastal's own API is in
             # pixels — correctly, it is an array library and knows nothing about calibration — so

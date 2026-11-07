@@ -234,49 +234,6 @@ def reduce_metrics(per_frame, dropped):
             for mm in per_frame]
 
 
-def _coastal_build():
-    """Which coastal produced this model — `{version, commit}`, or `None` if neither is knowable.
-
-    `coastal.__version__` alone is not enough: it is `0.1.0` and is not bumped per change, while the
-    pin in `pixi.toml` is a **git revision** and is described there as "a HARD floor, not a snapshot".
-    So the useful identifier is the commit, which pip records in the distribution's `direct_url.json`
-    for a VCS install. Absent for a PyPI or editable install, and `None` then rather than a version
-    number that implies more than it knows.
-
-    Worth recording because coastal's inference is under active change (`perf/coastal-speed`), and one
-    of those changes moved a DEFAULT that decides object size. A model whose output cannot be tied to
-    an engine build cannot be reproduced, which is the first thing a published model has to be.
-    See docs/todo/MODEL_VAULT_PLAN.md.
-    """
-    out = {}
-    try:
-        import coastal
-        v = getattr(coastal, '__version__', None)
-        if v:
-            out['version'] = str(v)
-    except Exception:
-        pass
-    try:
-        import importlib.metadata as md
-        from pathlib import Path
-        dist = md.distribution('coastal')
-        # Located and read explicitly rather than through `Distribution.read_text`, which takes no
-        # encoding — and `test_atomic_io` rightly refuses text IO without one.
-        for f in (dist.files or ()):
-            if f.name != 'direct_url.json':
-                continue
-            info = json.loads(Path(dist.locate_file(f)).read_text(encoding='utf-8'))
-            commit = (info.get('vcs_info') or {}).get('commit_id')
-            if commit:
-                out['commit'] = str(commit)
-            break
-    except Exception:
-        # No `direct_url.json` is the normal PyPI case, not a failure worth a warning: the manifest
-        # simply says less.
-        pass
-    return out or None
-
-
 def reference_interval(movies, scales, max_frames, seed, log):
     """The COARSEST s/frame among the movies that could ANCHOR the spans — or None if none can.
 
@@ -1027,8 +984,8 @@ def run(params):
                                 else 'none' if not phys_scales else 'partial'),
         # The engine, not just its parameters. Coastal's inference is under active change and one of
         # those changes moved a default that decides object size, so "which coastal" is part of what
-        # this model IS — see `_coastal_build`.
-        'coastalBuild': _coastal_build(),
+        # this model IS — see `coastal_utils.coastal_build`.
+        'coastalBuild': coastal_utils.coastal_build(),
         # What that build's flow actually COMPUTES, measured rather than named. `coastalBuild`
         # identifies the code; it cannot say whether a given change touched the feature recipe, so as
         # a check it fires on every commit. This is the numeric answer: a summary of every metric

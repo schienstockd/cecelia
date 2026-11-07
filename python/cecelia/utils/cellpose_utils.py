@@ -246,9 +246,9 @@ class CellposeUtils(SegmentationUtils):
     def run_env(self):
         """What this run actually ran on, for the run log's `env` (app/src/run_log.jl): `device` is
         cellpose's OWN resolved device (`model.device` — it can fall back from the GPU we asked for),
-        `cellpose` the installed distribution's version. A key is absent when not known — no model was
-        loaded, or the version can't be read — never a default."""
-        env = {}
+        `cellpose` the installed distribution's version, plus the base's tiling. A key is absent when
+        not known — no model was loaded, or the version can't be read — never a default."""
+        env = super().run_env()
         devices = {str(getattr(getattr(m, 'device', None), 'type', '') or '') for m in self._model_cache.values()}
         devices.discard('')
         if devices:

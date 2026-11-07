@@ -129,8 +129,6 @@ function _cluster_segments(df, img_by_uid, measures; on_log)
     segments
 end
 
-const _CLUSTER_SEED = 0   # Leiden/UMAP seed: fixed, named so the runner and the run log's `env.seed` agree
-
 function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -195,5 +193,5 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     on_log("[INFO] clustPops done → clusters.$(p.valueNameSuffix)")
     Dict{String,Any}("suffix" => p.valueNameSuffix, "segments" => length(segments),
                      "cells" => nrow(df), "features" => length(p.clusterMeasures),   # runEnv → run log `env`
-                     "runEnv" => merge(read_run_env(qc_out_path), Dict{String,Any}("seed" => _CLUSTER_SEED)))
+                     "runEnv" => _cluster_run_env(qc_out_path))
 end

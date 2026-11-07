@@ -151,7 +151,7 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
         # NB: no `perTimepoint` here — whether neighbourhoods are per-frame is a property of the GRAPH
         # (set on cellNeighbours), so behaviour regions come from choosing a per-timepoint graph.
         "createUmap" => p.createUmap,
-        "randomState" => 0, "qcOutPath" => qc_out_path)
+        "randomState" => _CLUSTER_SEED, "qcOutPath" => qc_out_path)
     on_progress(3, 4)
 
     ok = run_py("tasks/clustRegions/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
@@ -184,5 +184,6 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
 
     on_log("[INFO] clustRegions done → regions.$(p.valueNameSuffix)")
     Dict{String,Any}("suffix" => p.valueNameSuffix, "segments" => length(segments),
-                     "cells" => nrow(df), "basis" => length(basis))
+                     "cells" => nrow(df), "basis" => length(basis),
+                     "runEnv" => _cluster_run_env(qc_out_path))   # device (Leiden only) + seed → run log `env`
 end

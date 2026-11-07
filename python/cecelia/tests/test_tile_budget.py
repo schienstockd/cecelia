@@ -160,6 +160,18 @@ class SegmentationAutoTest(unittest.TestCase):
         self.assertEqual(seg.block_size, 16)
         self.assertEqual(seg.tiling_note, '16 px (set)')
 
+    def test_run_env_records_the_tiling_the_run_resolved(self):
+        """`auto` resolves from free RAM/VRAM at run time, so the run log's `env` must carry the
+        size that actually cut the frame — and no `blockSize` before it is known, never a guess."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(cpu_utils, 'available_memory_bytes', return_value=4e6), \
+                mock.patch.object(tb, 'MIN_AUTO_BLOCK', 16), mock.patch.object(tb, 'AUTO_BLOCK_STEP', 16):
+            seg = _Sized(_params(tmp, overlap='4'), _du())
+            self.assertEqual(seg.run_env(), {'overlap': 4})              # auto, not resolved yet
+            seg.predict_from_zarr([np.zeros((64, 48), np.uint16)])
+        self.assertEqual(seg.run_env(), {'blockSize': seg.block_size, 'overlap': 4})
+        self.assertLess(seg.run_env()['blockSize'], 64)
+
     def test_out_of_memory_stops_with_the_size_to_set(self):
         with tempfile.TemporaryDirectory() as tmp:
             seg = _Oom(_params(tmp, blockSize='1024', overlap='4'), _du())
