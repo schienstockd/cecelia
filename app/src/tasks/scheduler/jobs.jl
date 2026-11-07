@@ -93,7 +93,7 @@ function _execute_job!(job::TaskJob)
         try
             for tgt in log_targets
                 open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id, pool = rec.pool_name,
-                              by = rec.by)
+                              by = rec.by, caller = rec.caller)
             end
         catch e
             @warn "run-log open failed" task_id = job.id exception = e
@@ -150,7 +150,8 @@ function _execute_job!(job::TaskJob)
             for tgt in log_targets
                 close_run_log!(tgt, job.id, string(final);
                                fun_name = fun_name, value_name = value_name, params = job.params,
-                               pool = rec.pool_name, by = rec.by)
+                               pool = rec.pool_name, by = rec.by, caller = rec.caller,
+                               env = run_env_of(result))
             end
         catch e
             @warn "run-log close failed" task_id = job.id exception = e
@@ -173,7 +174,7 @@ function _execute_job!(job::TaskJob)
             for tgt in log_targets
                 close_run_log!(tgt, job.id, "failed";
                                fun_name = fun_name, value_name = value_name, params = job.params,
-                               pool = rec.pool_name, by = rec.by)
+                               pool = rec.pool_name, by = rec.by, caller = rec.caller)
             end
         catch; end
     finally

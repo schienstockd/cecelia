@@ -199,6 +199,35 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A chain node's run-log entry names its caller ─────────────────────────
+# A chain started by Claude (the autonomous MCP's `chain:run`) logged its node runs as `{profile}` only,
+# because the caller stopped at `ChainRequest`. It now rides `run_chain(; caller)` → `ChainRun.caller` →
+# each node's `TaskRequest`, so the node's entry says `via: claude` — and on a resume, the resumer's.
+@testset "Chain node run log carries the chain's caller" begin
+    proj = create_project!(name="chain-caller-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img-a")
+    mkpath(joinpath(dirname(dirname(img._dir)), "0", img.uid, "ccidImage.ome.zarr"))
+    img.filepath["default"] = "ccidImage.ome.zarr"; img.filepath["_active"] = "default"
+    img.status = IMAGE_DONE; save!(img)
+    save_chain_template!(proj, ChainTemplate("caller-chain",
+        [ChainNode(id="n1", fn="importImages.remove",
+                   params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default"))], ChainEdge[]))
+
+    caller = Dict{String,Any}("via" => "claude", "model" => "claude-opus-5-5")
+    run = run_chain(proj, [img.uid]; chain = "caller-chain", by = "alice", caller, on_log = _ -> nothing)
+    @test run.image_states[img.uid]["n1"].status == NODE_DONE
+    e = read_run_log(init_object(proj.uid, img.uid))[end]
+    @test String(e["author"]["via"]) == "claude" && String(e["author"]["model"]) == "claude-opus-5-5"
+    @test String(e["author"]["profile"]) == "alice"
+    # in memory only — run.json never stores it, so a resume cannot inherit a stale caller
+    @test !haskey(JSON3.read(read(joinpath(run._dir, "run.json"), String), Dict{String,Any}), "caller")
+    # the caller crosses the runner's wire inside the chain request
+    creq = Cecelia.ChainRequest(; project_uid = proj.uid, chain_name = "caller-chain", by = "alice", caller)
+    @test Cecelia.chain_request(JSON3.read(JSON3.write(Cecelia.chain_request_dict(creq)), Dict{String,Any})).caller == caller
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Chain resume — explicit start node (re-run from here) ─────────────────
 @testset "Chain resume — start node force-restart" begin
     # descendants: pure graph reachability over n1→n2→n3
