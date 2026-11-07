@@ -400,11 +400,7 @@ those disagreed for five params before the spec became the single authority.
 """
 function preview_params_for_run(task::CciaTask, params::AbstractDict,
                                 img::CciaImage)::AbstractDict
-    flat = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
-    flat = _apply_group_order(task, flat)
-    flat = _apply_spec_defaults(task, flat)
-    flat = _apply_param_requires(task, img, flat)   # drop image-guarded params (see task.jl)
-    preview_params(task, flat, img)
+    preview_params(task, resolve_run_params(task, params, img), img)
 end
 
 
