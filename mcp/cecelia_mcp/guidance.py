@@ -398,8 +398,8 @@ a hunch.
 
 ON CLAIMS. Before you or the user state a comparison as a finding ("T cells are faster than B \
 cells", "treatment X raises Y"), run check_claim on its scope (set, populations, measure, and the \
-unit attribute, e.g. Mouse). It reports what the record can't support: gaps, images or groups \
-processed differently, too few units for a per-unit test. Pass its findings back as questions, \
+replicate attributes, e.g. ["Mouse"] or ["Mouse", "Location"]). It reports what the record can't \
+support: gaps, images or groups processed differently, too few replicates for a per-replicate test. Pass its findings back as questions, \
 and say which checks it skipped — no findings is not a pass. When the user asks to record the \
 claim, state_claim puts it on the Blackboard with the findings as sections they can mark; the \
 briefing's `openClaims` re-checks those each session — lead with what closed and what is still open.

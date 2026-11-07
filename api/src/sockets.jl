@@ -367,6 +367,7 @@ function handle_movie_record(ws, data)
     fps         = Int(get(data, :fps, 15))
     size_x, size_y = _movie_size_params(data)   # blank = the viewer's canvas size
     suffix      = _wstr(data, :suffix)
+    numbered    = _wbool(data, :numbered)   # the viewer's "number if taken"
     kf_raw      = get(data, :keyframes, nothing)
     keyframes   = (kf_raw === nothing || length(kf_raw) == 0) ? nothing : kf_raw
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
@@ -505,7 +506,7 @@ function handle_movie_record(ws, data)
         end
         @async try
             run_single_keyframes_offline(task_id, project_uid, image_uid; fps = fps,
-                                          size_x = size_x, size_y = size_y, suffix = suffix,
+                                          size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                                           title_card = card, keyframes = keyframes,
                                           value_name = first_vn,
                                           render_quality = rq_sym,
@@ -539,7 +540,7 @@ function handle_movie_record(ws, data)
         compare_cfg[:compareContrast]  = String(get(data, :compareContrast, ""))
         @async try
             run_single_grid_offline(task_id, project_uid, image_uid; fps = fps,
-                                    size_x = size_x, size_y = size_y, suffix = suffix,
+                                    size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                                     title_card = card,
                                     compare_config = compare_cfg,
                                     share_contrast = share_ctr, layout = layout,
@@ -560,7 +561,7 @@ function handle_movie_record(ws, data)
     overlays_raw = get(data, :overlays, nothing)
     @async try
         run_single_offline(task_id, project_uid, image_uid; fps = fps,
-                           size_x = size_x, size_y = size_y, suffix = suffix,
+                           size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                            title_card = card,
                            value_name = first_vn,
                            label_value_name = first_lvn,
@@ -822,9 +823,11 @@ function handle_task_run(ws, data)
     end
 
     # Remember the params for this run (R parity: saveModuleFunParams). Persist to each processed
-    # image (a record of what params produced it) and to the set (the shared last-used default) so
-    # the module-page form is pre-populated next time (image → set → task-defaults). Done here, at
-    # dispatch, so it sticks regardless of run outcome — like the old taskManager did at launch.
+    # image and to the set (the shared last-used default) so the module-page form is pre-populated
+    # next time (image → set → task-defaults). Done here, at dispatch, so it sticks regardless of run
+    # outcome — like the old taskManager did at launch: after a failure the form comes back with what
+    # was tried. So this is a FORM DEFAULT, not a record of what produced an output — that is the run
+    # log (`run_log_params_for_output`, done runs only).
     _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
     # Everything above is the ASKING side — guards and project-state edits this process owns. The run

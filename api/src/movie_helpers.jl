@@ -86,6 +86,19 @@ function _movie_named_path(img, uid::AbstractString; suffix::AbstractString = ""
     joinpath(_movies_dir(img), (isempty(safe) ? String(uid) : safe) * suffix * ".mp4")
 end
 
+# `path`, or — when `numbered` and a file is already there — the first free `<stem>_001<ext>`,
+# `_002`, … beside it. Off = the caller overwrites, which is what a re-record of one view wants; on =
+# "keep the last one too". One rule for movies and figures (`_figure_filename`).
+function _numbered_if_taken(path::AbstractString, numbered::Bool)::String
+    (numbered && isfile(path)) || return String(path)
+    stem, ext = splitext(path)
+    k = 1
+    while isfile("$(stem)_$(lpad(k, 3, '0'))$ext")
+        k += 1
+    end
+    "$(stem)_$(lpad(k, 3, '0'))$ext"
+end
+
 # A user-supplied filename addition → a safe `_suffix` fragment, or "" for none. Same character rule as
 # the image name above, so one movie name can't be sanitised two ways.
 #

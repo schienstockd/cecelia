@@ -468,7 +468,8 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     argv = Cecelia._build_claude_cmd(c, "/tmp/m.json"; system_prompt = "you are kiwi",
         replace_system_prompt = true, json_schema = "{\"type\":\"object\"}",
         allowed_tools = ["mcp__cecelia-observer__list_images", "mcp__cecelia-observer__list_plots"],
-        strict_mcp = true, builtin_tools = "").exec
+        strict_mcp = true, builtin_tools = "", disallowed_tools = ["mcp__cecelia-observer__get_session_briefing"]).exec
+    @test argv[findfirst(==("--disallowedTools"), argv) + 1] == "mcp__cecelia-observer__get_session_briefing"
     @test "--system-prompt" in argv && !("--append-system-prompt" in argv)
     @test argv[findfirst(==("--json-schema"), argv) + 1] == "{\"type\":\"object\"}"
     @test argv[findfirst(==("--allowedTools"), argv) + 1] ==
@@ -477,7 +478,7 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     @test argv[findfirst(==("--tools"), argv) + 1] == ""       # built-in tools off
     # the observer's defaults are untouched by the new options
     obs = Cecelia._build_claude_cmd(c, "/tmp/m.json").exec
-    @test !any(in(obs), ["--strict-mcp-config", "--tools", "--json-schema", "--system-prompt"])
+    @test !any(in(obs), ["--strict-mcp-config", "--tools", "--json-schema", "--system-prompt", "--disallowedTools"])
     @test obs[findfirst(==("--allowedTools"), obs) + 1] == "mcp__cecelia-observer"
     @test !("--settings" in obs)
 

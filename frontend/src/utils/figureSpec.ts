@@ -7,6 +7,7 @@ import { colourForRender } from './viewerColormap'
 import { niceScaleBar } from './stillOverlay'
 import type { ViewerViewState } from './viewer/viewState'
 
+export type FigureLayout = 'strip' | 'grid'
 export interface FigureChannel { c: string; colour: string; name?: string }
 export interface FigureSpec {
   kind: 'sequence'
@@ -20,6 +21,8 @@ export interface FigureSpec {
   display: { ranges: Record<string, [number, number]> }
   scaleBarUm?: number
   interpolation?: 'pixels' | 'smooth'
+  /** `grid` wraps a long series into a near-square matrix (render_figure.py `grid_columns`) */
+  layout?: FigureLayout
   style?: { tileMm?: number }
   /** The viewer snapshot it was saved from — what "open at source" restores (the renderer ignores it). */
   view?: ViewerViewState
@@ -28,7 +31,7 @@ export interface FigureSpec {
 /** Why a view can't become a figure, or the spec. Figures are 2D: a 3D view has no single crop. */
 export function figureSpecFromView(vs: ViewerViewState | null | undefined, channelNames: string[],
                                    opts: { valueName?: string; scaleBarUm?: number; frames?: number[];
-                                           split?: boolean } = {}):
+                                           split?: boolean; grid?: boolean } = {}):
   { spec: FigureSpec } | { error: string } {
   if (!vs || !vs.canvas?.height) return { error: 'Open the image in the viewer first' }
   if (vs.dims.ndisplay === 3) return { error: 'Figures are 2D — switch the viewer to 2D' }
@@ -57,6 +60,7 @@ export function figureSpecFromView(vs: ViewerViewState | null | undefined, chann
     frames: opts.frames?.length ? opts.frames : [t], rows: splitRows(channels, !!opts.split), display: { ranges },
     view: vs,
   }
+  if (opts.grid) spec.layout = 'grid'
   if (opts.valueName) spec.valueName = opts.valueName
   if (opts.scaleBarUm) spec.scaleBarUm = opts.scaleBarUm
   return { spec }
@@ -78,9 +82,13 @@ export function figureFrames(lo: number, hi: number, every: number | null | unde
   return { frames, every: step, auto }
 }
 
-/** The figure's file name: `<image>_t64` for a still, `<image>_t50-110` for a strip. */
-export const figureName = (image: string, frames: number[]): string =>
-  frames.length > 1 ? `${image}_t${frames[0]}-${frames[frames.length - 1]}` : `${image}_t${frames[0] ?? 0}`
+/** The figure's file name: `<image>_t64` for a still, `<image>_t50-110` for a strip, then the viewer's
+ *  `name` field (`_<suffix>`) like a movie's — the server sanitises it. */
+export function figureName(image: string, frames: number[], suffix = ''): string {
+  const t = frames.length > 1 ? `t${frames[0]}-${frames[frames.length - 1]}` : `t${frames[0] ?? 0}`
+  const tail = suffix.trim()
+  return `${image}_${t}${tail ? `_${tail}` : ''}`
+}
 
 /** The Save-as-figure button's tooltip: which frames it will take, so "auto" says what it picked. */
 export function figureTipText(r: { frames: number[]; every: number; auto: boolean } | null): string {
@@ -129,6 +137,7 @@ export function isSplit(rows: Row[] | undefined): boolean {
 
 export interface FigureEdits {
   split?: boolean                        // merge + one grey row per channel
+  grid?: boolean                         // frames wrapped into a near-square matrix
   frames?: number[]
   names?: Record<string, string>         // channel (as the spec names it) → legend name; '' = the image's
   tileMm?: number
@@ -158,6 +167,7 @@ export function applyFigureEdits<T extends Record<string, unknown>>(spec: T, e: 
   if (e.scaleBarUm === null) delete s.scaleBarUm
   else if (e.scaleBarUm) s.scaleBarUm = e.scaleBarUm
   if (e.interpolation) s.interpolation = e.interpolation
+  if (e.grid !== undefined) { if (e.grid) s.layout = 'grid'; else delete s.layout }
   return s as T
 }
 

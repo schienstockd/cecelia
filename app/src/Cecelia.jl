@@ -88,7 +88,7 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_findin
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
-export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired
+export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired, claim_unit_attrs
 export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran
 export open_run_log!, close_run_log!, reap_run_log!, skip_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED, RUN_LOG_SKIPPED
 export run_author, run_env_of, read_run_env
@@ -449,6 +449,7 @@ include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log o
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
 include("ai/claude_conversations.jl")   # delete a profile's Claude conversations (shared workstation)
+include("ai/ai_switch.jl")   # is AI allowed for this profile? workstation ceiling + profile preference
 # HPC settings (site / profile identity / project override) + the ssh transport. After
 # profile_settings.jl (identity lives in the profile bag) and jobs.jl (`_kill_proc_tree`).
 # docs/todo/HPC_PLAN.md.
@@ -489,6 +490,7 @@ export active_profile_name, active_profile_dir, set_active_profile!, kiwi_termin
 export ClaudeAuth, claude_auth_status, claude_auth_logout!,
        claude_login_start!, claude_login_status, claude_login_code!, claude_login_cancel!
 export purge_claude_conversations!, purge_claude_conversations_wanted, claude_profile_in_use
+export AIOffBy, AI_OFF_MESSAGE, ai_off_by, ai_enabled, ai_state, ai_refusal
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export render_figure, figure_params, figure_source, figure_stale_reason, figure_style_schema, project_figure_style, set_project_figure_style!, clean_figure_style   # figures.jl — FIGURES_PLAN

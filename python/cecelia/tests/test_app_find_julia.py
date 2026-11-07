@@ -9,7 +9,9 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -87,7 +89,44 @@ class FindJuliaTest(unittest.TestCase):
         # The file `_recorded_julia` reads only exists if the installers write it.
         repo = APP_PY.parent
         self.assertIn('"$INSTALL_DIR/.cecelia-julia"', (repo / "install.sh").read_text(encoding="utf-8"))
-        self.assertIn("'.cecelia-julia')   -Value $Julia", (repo / "install.ps1").read_text(encoding="utf-8"))
+        ps1 = (repo / "install.ps1").read_text(encoding="utf-8")
+        # UTF-8 without a BOM on every PowerShell — never Set-Content, whose encoding is ANSI on 5.1
+        # and UTF-8 on 7, while every reader decodes UTF-8.
+        self.assertIn("[IO.File]::WriteAllText((Join-Path $InstallDir '.cecelia-julia'), \"$Julia`r`n\", "
+                      "(New-Object Text.UTF8Encoding $false))", ps1)
+        self.assertNotIn("'.cecelia-julia')   -Value", ps1)
+
+    def _non_ascii_julia(self) -> str:
+        julia = os.path.join(tempfile.mkdtemp(), "Jürgen", self.app._exe("julia"))
+        os.makedirs(os.path.dirname(julia))
+        open(julia, "w", encoding="utf-8").close()
+        return julia
+
+    def test_non_ascii_record_in_utf8_is_found(self):
+        # What install.ps1 writes now, under a profile like C:\Users\Jürgen. A BOM is tolerated too.
+        julia = self._non_ascii_julia()
+        for prefix in (b"", b"\xef\xbb\xbf"):
+            with open(os.path.join(self.root, ".cecelia-julia"), "wb") as f:
+                f.write(prefix + julia.encode("utf-8") + b"\r\n")
+            self.assertEqual(self.app._recorded_julia(), julia)
+
+    def test_legacy_ansi_record_does_not_crash(self):
+        # An install made by Windows PowerShell 5.1's Set-Content: cp1252, so ü is the lone byte 0xFC.
+        # It used to raise UnicodeDecodeError out of the launcher; now it decodes in the locale's ANSI
+        # codepage, and bytes no codec takes read as "no record".
+        julia = self._non_ascii_julia()
+        with open(os.path.join(self.root, ".cecelia-julia"), "wb") as f:
+            f.write(julia.encode("cp1252") + b"\r\n")
+        with mock.patch("locale.getencoding", return_value="cp1252"):
+            self.assertEqual(self.app._recorded_julia(), julia)
+            # Python's UTF-8 mode (PYTHONUTF8=1, the default from 3.15) makes getpreferredencoding say
+            # utf-8; the ANSI fallback must still be the ANSI codepage.
+            flags = {k: getattr(sys.flags, k) for k in dir(sys.flags)
+                     if not k.startswith("_") and not callable(getattr(sys.flags, k))}
+            with mock.patch.object(sys, "flags", types.SimpleNamespace(**flags | {"utf8_mode": 1})):
+                self.assertEqual(self.app._recorded_julia(), julia)
+        with mock.patch("locale.getencoding", return_value="utf-8"):
+            self.assertEqual(self.app._recorded_julia(), "")
 
     def test_without_it_path_julia_is_used_and_env_untouched(self):
         env = {"PATH": "/usr/local/bin:/usr/bin"}

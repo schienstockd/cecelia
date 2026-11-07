@@ -57,6 +57,11 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "mark_tile" => "point-out", "mark_freeform" => "point-out", "select_on_plot" => "point-out",
 )
 _kiwi_allowed_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in KIWI_READ_TOOLS]
+# Every observer tool a turn's allow-list leaves out, denied by name: the allow-list alone doesn't stop a
+# tool the user's own settings permit (`_build_claude_cmd` → `disallowed_tools`).
+_kiwi_denied_tools(allowed) = String["mcp__" * OBSERVER_MCP_NAME * "__" * t
+                                     for t in sort!(unique(vcat(collect(KIWI_READ_TOOLS), collect(keys(KIWI_EXCLUDED_TOOLS)))))
+                                     if !("mcp__" * OBSERVER_MCP_NAME * "__" * t in allowed)]
 
 const KIWI_CLAIM_KINDS = ("observation", "interpretation", "question")
 
@@ -552,6 +557,7 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     schema = kiwi_reply_schema(; reasoning)
     opts = (; system_prompt = String(system_prompt), replace_system_prompt = true,
               json_schema = schema, allowed_tools = String.(allowed_tools), strict_mcp = true,
+              disallowed_tools = _kiwi_denied_tools(String.(allowed_tools)),
               builtin_tools = "", stream = true, timeout_s,
               settings_path = _write_observer_hook_settings())
     usage = [0, 0]; tool_calls = 0; reask_errors = String[]

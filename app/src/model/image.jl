@@ -604,9 +604,11 @@ end
 
 # ── Per-task param memory (funParams) ───────────────────────────────────────────
 # Mirrors the old R `saveModuleFunParams`/`moduleFunParams`: the last-used params for a task are
-# remembered in the object's ccid.json under `meta["funParams"][fun_name]`. On run they are saved
-# to each processed IMAGE (a record of what params produced it) AND to the SET (the shared
-# last-used default); the module-page form is populated image → set → task-defaults.
+# remembered in the object's ccid.json under `meta["funParams"][fun_name]`. At dispatch, whatever the
+# run's outcome, they are saved to each processed IMAGE AND to the SET (the shared last-used
+# default); the module-page form is populated image → set → task-defaults. A FORM DEFAULT, not a
+# record: a failed run's params land here too. What produced an output is the run log's latest
+# `done` run (`run_log_params_for_output`).
 #
 # This is a targeted read-modify-write of ccid.json (same idiom a task uses to register its output
 # filepath) rather than load-object → save! — deliberately **dir-based** so remembering a param blob

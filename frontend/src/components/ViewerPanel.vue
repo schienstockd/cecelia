@@ -234,6 +234,13 @@ const figureEvery = computed<number | null>({
 const figureSplit = computed<boolean>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).figureSplit : false,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { figureSplit: v }) } })
+const figureGrid = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).figureGrid : false,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { figureGrid: v }) } })
+// A taken file name (movie or figure): off = overwrite, on = add _001, _002, …
+const numberIfTaken = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).numberIfTaken : false,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { numberIfTaken: v }) } })
 const figureRange = computed(() => {
   const r = resolveFrameRange(movieTStart.value, movieTEnd.value, openedImage.value?.sizeT ?? 1)
   return figureFrames(r.lo, r.hi, figureEvery.value)
@@ -444,15 +451,19 @@ async function saveFigure() {
   const valueName = viewerStore.openImage?.valueName || undefined
   // the Record range, every Nth frame — a one-frame range is a single still
   const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
-  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value })
+  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value,
+                                                                           grid: figureGrid.value })
   if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
   r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
   savingFigure.value = true
   try {
     const res = await fetch('/api/figures/render', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
+      // named like a movie: the image, the frames, then the `name` field; a taken name is
+      // overwritten unless "_001" is on
       body: JSON.stringify({ projectUid, imageUid: img.uid, spec: r.spec,
-                             name: figureName(img.name ?? img.uid, r.spec.frames) }),
+                             name: figureName(img.name ?? img.uid, r.spec.frames, movieSuffix.value),
+                             replace: !numberIfTaken.value }),
     })
     const body = await res.json().catch(() => ({}))
     recordNote.value = res.ok
@@ -530,7 +541,7 @@ async function recordTimelapse() {
       })
       ws.send({
         type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
-        suffix: movieSuffix.value, titleCard, source: 'viewer',
+        suffix: movieSuffix.value, numbered: numberIfTaken.value, titleCard, source: 'viewer',
         valueNames: versions, look: lookForRender(look), renderQuality: renderQuality.value,
         showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
         keyframes: timelapseKeyframes(hexViewState(vs3), movieTStart.value, Math.min(movieTEnd.value ?? lastT, lastT)),
@@ -550,7 +561,7 @@ async function recordTimelapse() {
     })
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
-      suffix: movieSuffix.value, titleCard,
+      suffix: movieSuffix.value, numbered: numberIfTaken.value, titleCard,
       // More than one cell = a comparison; one is the plain record the backend already did.
       // `labelValueNames` is OMITTED when there is nothing to say — absent means "leave the masks
       // alone", which is what the plain record has always done.
@@ -614,7 +625,7 @@ async function recordViewerMatch(uid: string, projectUid: string) {
     })
     const common = {
       type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
-      suffix: movieSuffix.value, titleCard, matchViewer: true,
+      suffix: movieSuffix.value, numbered: numberIfTaken.value, titleCard, matchViewer: true,
       valueNames: look.valueNames ?? [], look: lookForRender(look),
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
     }
@@ -1198,7 +1209,7 @@ onUnmounted(() => {
           </div>
           <MovieOptionsButton class="opt-btn">
             <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
-                                 v-model:suffix="movieSuffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
+                                 v-model:suffix="movieSuffix" v-model:numbered="numberIfTaken" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
                                  :size-z="matchViewer ? 1 : openedImage?.sizeZ" v-model:show3D="show3D"
                                  v-model:zSlice="zSlice" :default-z="viewerZ"
@@ -1212,6 +1223,11 @@ onUnmounted(() => {
                 <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
                       v-tooltip.bottom="'Save as figure: one grey row per channel under the merge'">split</span>
                 <CcToggle v-model="figureSplit" aria-label="Split channels in the figure" />
+              </span>
+              <span class="cc-row-group">
+                <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
+                      v-tooltip.bottom="'Save as figure: wrap the frames into a square grid'">grid</span>
+                <CcToggle v-model="figureGrid" aria-label="Frames as a grid in the figure" />
               </span>
             </div>
             <TitleCardControls v-model="movieTitleCardModel" />

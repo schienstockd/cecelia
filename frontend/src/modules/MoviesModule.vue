@@ -54,6 +54,18 @@ const hasProject = computed(() => projectMeta.hasProject)
 
 const movies = ref<MovieEntry[]>([])
 const selected = ref<string>('')          // name of the currently-loaded movie
+// Ping-pong (Prism's): the one shown before this, so a button / Shift+P flips between the two. Flipping
+// is itself a selection, so the pair swaps and the next flip goes back.
+const previous = ref<string>('')
+// The figure editor opens on demand: shown for every figure it pushed the list down, and the list
+// jumped as you walked through mixed movies and figures. A new selection closes it.
+const editingFigure = ref(false)
+watch(selected, (now, before) => {
+  if (before && now !== before) previous.value = before
+  editingFigure.value = false
+})
+const previousExists = computed(() => !!previous.value && movies.value.some(m => m.name === previous.value))
+function pingPong() { if (previousExists.value) selected.value = previous.value }
 const loading = ref(false)
 const videoEl = ref<HTMLVideoElement | null>(null)
 const viewportEl = ref<HTMLElement | null>(null)
@@ -118,6 +130,7 @@ function onKey(e: KeyboardEvent) {
   if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomAround(settings.moviesZoom * ZOOM_STEP, cx, cy) }
   else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomAround(settings.moviesZoom / ZOOM_STEP, cx, cy) }
   else if (e.key === '0' || e.key === ')') { e.preventDefault(); settings.moviesZoom = 1 }
+  else if (e.key === 'P' || e.key === 'p') { e.preventDefault(); pingPong() }
 }
 // slider zooms about the viewport centre too, so it's consistent with wheel/keys
 function onZoomSlider(v: number) {
@@ -607,6 +620,10 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                        @input="onZoomSlider(($event.target as HTMLInputElement).valueAsNumber)" class="mov-range" />
                 <span class="mov-num cc-readout">{{ zoomLabel }}</span>
               </label>
+              <button class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="!previousExists" @click="pingPong"
+                      v-tooltip.bottom="previousExists ? `Back to ${previous} (Shift+P)` : 'Back to the previous one (Shift+P)'">
+                <i class="pi pi-arrow-right-arrow-left" /> Previous
+              </button>
             </div>
             <div class="cc-row cc-row-tight">
               <CcToggle class="mov-ctl cc-muted" v-model="settings.moviesAutoplay" label="Autoplay"
@@ -627,10 +644,16 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                       v-tooltip.left="'How this project\'s figures look'">
                 <i class="pi pi-print" /> Figure style
               </button>
+              <!-- always there, disabled on a movie: appearing only on a figure re-wrapped the row -->
+              <button class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="!currentIsFigure"
+                      :class="{ 'cc-btn-on': editingFigure }" @click="editingFigure = !editingFigure"
+                      v-tooltip.left="currentIsFigure ? 'Change this figure and re-make it' : 'Edit a figure: select one'">
+                <i class="pi pi-pencil" /> Edit
+              </button>
             </div>
           </div>
 
-          <div v-if="currentIsFigure && projectUid" class="cc-card">
+          <div v-if="currentIsFigure && projectUid && editingFigure" class="cc-card">
             <FigureEditor :project-uid="projectUid" :name="selected" :frame-count="selectedFrames"
                           :stale-reason="selectedRow?.staleReason ?? ''"
                           @rendered="refresh" />

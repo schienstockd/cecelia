@@ -372,7 +372,10 @@ observer_hook_settings(mcp_dir::AbstractString, python_bin::AbstractString)::Dic
 # The defaults reproduce the observer's turn exactly. A Kiwi turn (KIWI_ASSISTANT_PLAN Decision 8) also
 # passes: `replace_system_prompt` (its own prompt, not appended to Claude Code's), `json_schema` (the
 # reply schema), `allowed_tools` (a read-only allow-list, not the whole server), `strict_mcp` (ignore
-# the user's other MCP servers) and `builtin_tools = ""` (no Bash/Read/Edit — observer tools only).
+# the user's other MCP servers), `builtin_tools = ""` (no Bash/Read/Edit — observer tools only) and
+# `disallowed_tools`: the observer tools a turn must NOT call. `--allowedTools` only pre-approves — a
+# tool off that list still runs if the user's own Claude settings allow it — so the tools to keep out
+# are denied by name.
 # `settings_path` adds a `--settings` file — the app's turns load the caller hook that way.
 function _build_claude_cmd(a::ClaudeAgent, mcp_config_path::AbstractString;
                            session_id::AbstractString = "", system_prompt::AbstractString = "",
@@ -380,6 +383,7 @@ function _build_claude_cmd(a::ClaudeAgent, mcp_config_path::AbstractString;
                            allowed_tools::Union{Nothing,Vector{String}} = nothing,
                            strict_mcp::Bool = false,
                            builtin_tools::Union{Nothing,AbstractString} = nothing,
+                           disallowed_tools::AbstractVector = String[],
                            settings_path::AbstractString = "",
                            stream::Bool = false)::Cmd
     allowed = allowed_tools === nothing ? ["mcp__" * OBSERVER_MCP_NAME] : allowed_tools
@@ -392,6 +396,7 @@ function _build_claude_cmd(a::ClaudeAgent, mcp_config_path::AbstractString;
     strict_mcp              && push!(args, "--strict-mcp-config")
     isempty(settings_path)  || append!(args, ["--settings", String(settings_path)])
     builtin_tools === nothing || append!(args, ["--tools", String(builtin_tools)])
+    isempty(disallowed_tools) || append!(args, ["--disallowedTools", join(String.(disallowed_tools), ",")])
     isempty(json_schema)    || append!(args, ["--json-schema", String(json_schema)])
     isempty(system_prompt)  ||
         append!(args, [replace_system_prompt ? "--system-prompt" : "--append-system-prompt", String(system_prompt)])

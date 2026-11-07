@@ -373,9 +373,17 @@ end
         # a deliberate artefact is not overwritten by a second one of the same name
         write(joinpath(mdir, "cell_figure.png"), "1")
         img = CciaImage(; uid = "IMG1", name = "cell", dir = "")
-        @test _figure_filename(mdir, img, "", false) == "cell_figure-2.png"
+        @test _figure_filename(mdir, img, "", false) == "cell_figure_001.png"
         @test _figure_filename(mdir, img, "", true) == "cell_figure.png"
         @test _valid_movie_name(_figure_filename(mdir, img, "../Fig 4b", false))   # sanitised, no traversal
+        # the movies' "number if taken": off overwrites, on takes the first free _NNN
+        mp = joinpath(mdir, "cell_x.mp4")
+        @test _numbered_if_taken(mp, true) == mp                       # free → as asked
+        write(mp, "1")
+        @test _numbered_if_taken(mp, false) == mp                      # off → overwrite
+        @test _numbered_if_taken(mp, true) == joinpath(mdir, "cell_x_001.mp4")
+        write(joinpath(mdir, "cell_x_001.mp4"), "1")
+        @test _numbered_if_taken(mp, true) == joinpath(mdir, "cell_x_002.mp4")
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end

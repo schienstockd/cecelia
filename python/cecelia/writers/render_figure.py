@@ -29,6 +29,8 @@ font stack.
     ``timeIncrementS``  : seconds per timepoint (``None`` = label ``t<n>``)
     ``pixelSizeUm``     : x pixel size; ``zStepUm``: z step (``zstack`` labels); ``zAniso`` = z / x
     ``scaleBarUm``      : scale-bar length (``None`` = none)
+    ``layout``          : ``strip`` (default: every frame in one line) | ``grid`` (the frames wrapped
+                          into a near-square matrix — ``grid_columns`` — for a long series)
     ``style``           : overrides of ``STYLE`` (dpi, tileMm — default auto by frame count, gapMm, fontPt, scaleFontPt, barMm,
                           scaleBarOn ``first`` (default) | ``last`` | ``all``)
 """
@@ -45,6 +47,7 @@ from cecelia.utils.zarr_utils import open_as_zarr, read_axes
 from cecelia.writers import render_animation_run
 
 KINDS = ('sequence', 'zstack')
+LAYOUTS = ('strip', 'grid')
 MAX_TILES = 64
 MAX_TILE_PX = 4096
 PREVIEW_PX = 1600
@@ -110,6 +113,9 @@ def validate(spec):
             raise FigureSpecError('rows[].channels: each row needs at least one channel')
         for ch in r['channels']:
             _hex(ch.get('colour', '#ffffff'))
+    s['layout'] = s.get('layout') or 'strip'
+    if s['layout'] not in LAYOUTS:
+        raise FigureSpecError(f'layout {s["layout"]!r}: expected one of {", ".join(LAYOUTS)}')
     s.setdefault('zHalf', 0)
     s.setdefault('display', {})
     return s
@@ -198,6 +204,17 @@ _NAMED = {'#ff00ff': 'magenta', '#00ff00': 'green', '#ffffff': 'grey', '#00ffff'
           '#ff0000': 'red', '#0000ff': 'blue', '#ffff00': 'yellow'}
 
 
+def grid_columns(n, n_rows, layout):
+    """Frames per line. ``strip``: all ``n``. ``grid``: about ``sqrt(n * n_rows)`` — each line of frames
+    is ``n_rows`` tiles tall, so the matrix comes out near square — then evened out so the last line is
+    as full as it can be (8 frames → 3 + 3 + 2, not 3 + 3 + 3 with one hole too many)."""
+    if layout != 'grid' or n <= 1:
+        return n
+    c = max(1, int(np.ceil(np.sqrt(n * max(1, n_rows)))))
+    lines = int(np.ceil(n / c))
+    return int(np.ceil(n / lines))
+
+
 def _px(mm, dpi):
     return max(1, int(round(mm / 25.4 * dpi)))
 
@@ -283,6 +300,10 @@ def render_figure(spec, host=None, log=None):
     nc = dict(zip([a.lower() for a in axes], levels[0].shape)).get('c', 1)
     cols = _columns(s)
     ranges = display_ranges(s, levels, axes, cols)
+    per_line = grid_columns(len(cols), len(s['rows']), s['layout'])
+    # Auto tile width from the FRAME count, whatever the layout: a grid is the strip's tiles rearranged,
+    # so its text (fixed pt) keeps the strip's size against the tiles. Sized by its column count, eight
+    # frames got 60 mm tiles instead of 22.5 mm and the labels read tiny.
     tile = tile_px(s, style, len(cols))
     style = dict(style, tileMm=tile_mm(style, len(cols)))     # figure.json records what auto picked
     canvas = s['sizePx'] if s['interpolation'] == 'smooth' else tile
@@ -301,11 +322,11 @@ def render_figure(spec, host=None, log=None):
             img = Image.fromarray(frame).convert('RGB')
             if img.size != (tile, tile):
                 img = img.resize((tile, tile), Image.LANCZOS if s['interpolation'] == 'smooth' else Image.NEAREST)
-            if _shows_bar(style['scaleBarOn'], ri, ci, len(s['rows']), len(cols)):
+            if _shows_bar(style['scaleBarOn'], ri, ci, len(s['rows']), len(cols)):   # first / last FRAME
                 _draw_scale_bar(img, bar, style)
             tiles.append(img)
         rows_px.append((tiles, _legend_parts(s, row)))
-    out = _compose(rows_px, [c[3] for c in cols], tile, style)
+    out = _compose(rows_px, [c[3] for c in cols], tile, style, per_line)
     fig_path = os.path.join(s['outDir'], 'figure.png')
     with atomic_path(fig_path) as tmp:
         out.save(tmp, format='PNG', dpi=(style['dpi'], style['dpi']))
@@ -321,9 +342,14 @@ def render_figure(spec, host=None, log=None):
     return {'figure': fig_path, 'spec': os.path.join(s['outDir'], 'figure.json')}
 
 
-def _compose(rows_px, col_labels, tile, style):
+def _compose(rows_px, col_labels, tile, style, per_line=None):
     """White page: column titles above, then per row its tiles (white gaps) and a black legend band
-    with each channel named in its own colour."""
+    with each channel named in its own colour.
+
+    ``per_line`` < the frame count wraps the frames into blocks (``layout: grid``): each block repeats
+    the titles over its own frames and all the rows; the legend bands follow the last block only when
+    there is one row (a merge — one legend says it all), under every row of every block when the
+    figure is split (a grey row can't be read without its name)."""
     dpi = style['dpi']
     gap = _px(style['gapMm'], dpi)
     f = title_card.figure_font(_pt(style['fontPt'], dpi))
@@ -332,30 +358,46 @@ def _compose(rows_px, col_labels, tile, style):
     line_h = line_h[3] - line_h[1]
     pad = max(2, line_h // 3)
     n = len(col_labels)
-    W = n * tile + (n - 1) * gap
+    per = max(1, min(per_line or n, n))
+    blocks = [list(range(b, min(n, b + per))) for b in range(0, n, per)]
+    n_rows = len(rows_px)
+    W = per * tile + (per - 1) * gap
     head_h = line_h + 2 * pad
     band_h = line_h + 2 * pad
-    H = head_h + len(rows_px) * (tile + band_h) + (len(rows_px) - 1) * gap
+
+    def bands_in(bi):
+        return n_rows > 1 or bi == len(blocks) - 1
+
+    H = 0
+    for bi in range(len(blocks)):
+        H += head_h + n_rows * tile + (n_rows - 1) * gap + (n_rows * band_h if bands_in(bi) else 0)
+    H += (len(blocks) - 1) * gap
     page = Image.new('RGB', (W, H), (255, 255, 255))
     d = ImageDraw.Draw(page)
-    for i, lab in enumerate(col_labels):
-        b = d.textbbox((0, 0), lab, font=f)
-        x = i * (tile + gap) + (tile - (b[2] - b[0])) / 2 - b[0]
-        d.text((x, pad - b[1]), lab, font=f, fill=(0, 0, 0))
-    y = head_h
-    for tiles, parts in rows_px:
-        for i, t in enumerate(tiles):
-            page.paste(t, (i * (tile + gap), y))
-        y += tile
-        d.rectangle([0, y, W - 1, y + band_h - 1], fill=(0, 0, 0))
-        space = d.textlength('  ', font=f)
-        total = sum(d.textlength(t, font=f) for t, _ in parts) + space * (len(parts) - 1)
-        x = (W - total) / 2
-        for t, rgb in parts:
-            b = d.textbbox((0, 0), t, font=f)
-            d.text((x, y + pad - b[1]), t, font=f, fill=rgb)
-            x += d.textlength(t, font=f) + space
-        y += band_h + gap
+    space = d.textlength('  ', font=f)
+    y = 0
+    for bi, idx in enumerate(blocks):
+        for k, i in enumerate(idx):
+            b = d.textbbox((0, 0), col_labels[i], font=f)
+            x = k * (tile + gap) + (tile - (b[2] - b[0])) / 2 - b[0]
+            d.text((x, y + pad - b[1]), col_labels[i], font=f, fill=(0, 0, 0))
+        y += head_h
+        for ri, (tiles, parts) in enumerate(rows_px):
+            for k, i in enumerate(idx):
+                page.paste(tiles[i], (k * (tile + gap), y))
+            y += tile
+            if bands_in(bi):
+                d.rectangle([0, y, W - 1, y + band_h - 1], fill=(0, 0, 0))
+                total = sum(d.textlength(t, font=f) for t, _ in parts) + space * (len(parts) - 1)
+                x = (W - total) / 2
+                for t, rgb in parts:
+                    b = d.textbbox((0, 0), t, font=f)
+                    d.text((x, y + pad - b[1]), t, font=f, fill=rgb)
+                    x += d.textlength(t, font=f) + space
+                y += band_h
+            if ri < n_rows - 1:
+                y += gap
+        y += gap
     return page
 
 

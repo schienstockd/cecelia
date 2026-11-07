@@ -76,10 +76,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
         hpc_resources(task, hpc)
         pool_name = "hpc"
     end
-    params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
-    params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
-    params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
-    params = _apply_param_requires(task, img, params)  # drop image-guarded params (see task.jl)
+    params = resolve_run_params(task, params, img)   # sections, group order, spec defaults, axis guards
     validate_params(task, params)
     # Axis gating — raises TaskApplicabilityError before we occupy a pool slot. Chain executor
     # calls task_applies directly and skips (rather than raising) so mixed-image chains work.
@@ -133,10 +130,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     # A set-scope run spans images the mirror would have to stage together; not ported (HPC_PLAN P3).
     target === TARGET_HPC &&
         throw(ArgumentError("$(_fun_name_from_task(task)) runs over a whole set and cannot run on the cluster"))
-    params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
-    params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
-    params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
-    params = _apply_param_requires(task, imgs, params)  # drop image-guarded params (set-scope intersects)
+    params = resolve_run_params(task, params, imgs)  # as above; axis guards intersect across the set
     validate_params(task, params)
     # Set-scope tasks (behaviour/hmm) fit jointly across the whole vector — a static image inside
     # the set would break the fit, so gate on ALL images satisfying the requirement.

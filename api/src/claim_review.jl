@@ -5,7 +5,7 @@
 # validation, one re-ask, kept in the Kiwi feed) with its own system prompt and a narrower tool list:
 # the analyst's reasoning is WITHHELD — no Blackboard, no captures, no image notes, no briefing, no
 # ELN context — so the review reads the claim and the record only. Advisory: its findings are
-# `inferred`, go on the claim entry as `### sNN · Review · …` sections the analyst marks, and never
+# `inferred`, go on the claim entry as `### sNN · …` sections under a `### <Category>` heading, which the analyst marks, and never
 # change what the checks found. It reads through the observer tools only, so it can't recompute.
 
 # What the review must not see: where the analyst's own reasoning lives.
@@ -35,16 +35,43 @@ last: the claim as the record WOULD support it. If the record raises nothing, ab
 `note` what you checked. Never say the claim is true or false; say what the record can't support yet.
 """
 
-function claim_review_prompt(c::AbstractDict)::String
-    unit = isempty(get(c, "unitAttr", "")) ? "none named" : c["unitAttr"]
+function claim_review_prompt(c::AbstractDict, found::AbstractVector = String[])::String
+    ua = _claim_unit_attrs(c)
+    unit = isempty(ua) ? "none named" : join(ua, " × ")
+    known = isempty(found) ? "The rule checks found nothing." :
+        "The rule checks already found these — the analyst sees them, so do NOT repeat or rephrase them:\n" *
+        join(("- " * f for f in found), "\n")
     """
     Claim: “$(c["text"])”
     Set: $(c["setUid"])
     Populations compared: $(join(c["populations"], ", "))
     Measure: $(c["measure"])
-    Statistical unit (image attribute): $(unit)
+    Replicate (image attributes; one value combination = one replicate): $(unit)
 
-    Does the record support this claim as stated?"""
+    $(known)
+
+    What else in the record bears on whether this claim can be made as stated? Report only what the
+    checks above don't already say; if that is nothing, abstain.
+
+    Write each observation or question as `<Category>: <what is wrong, and where — name the images or
+    populations> → <what the analyst should do about it>`, with Category one of: $(_claim_review_category_list()).
+    """
+end
+
+# The category labels the review files its points under — the checks' own (qc/text.jl `claim.cat.*`).
+_claim_review_category_list() = join((_claim_category_label(c) for c in Cecelia.CLAIM_CATEGORIES), ", ")
+
+# A review point's text → `(category, text, action)`: the leading `<Category>:` names one of the
+# claim categories (else `other`, text kept whole), the trailing `→ …` is what to do ("" if absent).
+function _claim_review_point(text::AbstractString)
+    t = strip(text); cat = "other"
+    m = match(r"^([^:]{2,40}):\s*(.+)$"s, t)
+    if m !== nothing
+        hit = findfirst(c -> lowercase(_claim_category_label(c)) == lowercase(strip(m[1])), Cecelia.CLAIM_CATEGORIES)
+        hit === nothing || (cat = Cecelia.CLAIM_CATEGORIES[hit]; t = strip(m[2]))
+    end
+    parts = split(t, r"\s*(→|->)\s*"; limit = 2)
+    (cat, String(parts[1]), length(parts) == 2 ? String(parts[2]) : "")
 end
 
 """
@@ -59,7 +86,10 @@ function claim_review_start(uid::AbstractString, id::AbstractString; model::Abst
     meta === nothing && return 404, Dict{String,Any}("error" => "Entry not found")
     c = get(meta, "claim", nothing)
     c isa AbstractDict || return 400, Dict{String,Any}("error" => "Not a claim entry")
-    kiwi_start_turn(uid, claim_review_prompt(c); model,
+    # what the rule checks found, so the review spends its turn on what they can't see
+    result = _claim_run(uid, c)
+    found = result isa Tuple ? String[] : String[f["short"] for f in result["findings"]]
+    kiwi_start_turn(uid, claim_review_prompt(c, found); model,
                     system_prompt = claim_review_system_prompt(uid), allowed_tools = claim_review_tools(),
                     extra = Dict{String,Any}("claimReview" => Dict{String,Any}("entryId" => String(id),
                                                                               "round" => get(c, "round", 1))),
@@ -77,6 +107,23 @@ function _claim_review_done!(rec::AbstractDict)
     c = Dict{String,Any}(String(k) => v for (k, v) in meta["claim"])
     get(c, "round", 1) == get(cr, "round", 1) || return nothing
     reply = get(rec, "reply", nothing)
+    if rec["status"] != "done"
+        # a turn that didn't finish (usage limit, no CLI, cancelled) is not "nothing found": say why,
+        # and keep the last review that did finish
+        errs = reply isa AbstractDict ? get(reply, "errors", Any[]) : Any[]
+        why = !isempty(errs) ? string(first(errs)) : string(get(rec, "error", rec["status"]))
+        prev = get(c, "review", nothing)
+        rv = prev isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in prev) :
+             Dict{String,Any}("status" => rec["status"], "model" => get(rec, "model", ""), "claims" => Any[],
+                              "abstain" => false, "note" => "", "turnId" => rec["turnId"])
+        rv["lastError"] = replace(strip(why), r"\s*\n\s*" => " ")
+        c["review"] = rv
+        result = _claim_run(uid, c)
+        result isa Tuple && return nothing
+        _claim_assign_ids!(c["findingIds"], result["findings"])
+        _claim_write!(uid, id, c, result)
+        return nothing
+    end
     claims = reply isa AbstractDict ? collect(get(reply, "claims", Any[])) : Any[]
     c["review"] = Dict{String,Any}(
         "turnId" => rec["turnId"], "at" => get(rec, "finishedAt", string(Dates.now())),
@@ -84,15 +131,22 @@ function _claim_review_done!(rec::AbstractDict)
         "abstain" => reply isa AbstractDict && get(reply, "abstain", false) == true,
         "note" => reply isa AbstractDict ? string(get(reply, "note", "")) : "",
         # one line each: a finding's text becomes a `### sNN` heading
-        "claims" => [Dict{String,Any}("kind" => string(get(x, "kind", "")),
-                                      "text" => replace(strip(string(get(x, "text", ""))), r"\s*\n\s*" => " "))
-                     for x in claims])
+        "claims" => [_claim_review_item(x) for x in claims])
     result = _claim_run(uid, c)
     result isa Tuple && return nothing
     _claim_assign_ids!(c["findingIds"], result["findings"])
     _claim_assign_review_ids!(c)
     _claim_write!(uid, id, c, result)
     nothing
+end
+
+# One reply claim → a review point: one line, filed under its category, the action split off.
+function _claim_review_item(x)
+    kind = string(get(x, "kind", ""))
+    text = replace(strip(string(get(x, "text", ""))), r"\s*\n\s*" => " ")
+    kind == "interpretation" && return Dict{String,Any}("kind" => kind, "text" => text)
+    cat, t, act = _claim_review_point(text)
+    Dict{String,Any}("kind" => kind, "category" => cat, "text" => t, "action" => act)
 end
 
 # Review findings get section ids from the same counter, keyed by their text: a re-run that finds the
