@@ -708,6 +708,23 @@ template inline and not a pointer to the template *file*: the content is cached 
 `settings/chains/.cache/<hash>.json`, and `load_chain_run` resolves the hash back to it. So editing the
 template afterwards can't rewrite history, and `run.json` stays compact.
 
+**What a run left out is in the record, not only the log.** Two fields say so, both optional on read
+(a `run.json` written before them loads with them empty):
+
+- `image_states[uid][node_id].reason` — written beside `"status": "skipped"`, and only then: the
+  task's applicability reason (missing axis / pixel size), `upstream step <id> <status>` for fault
+  isolation, or the `successful_only` barrier dropping an upstream failure. A set-scope node fits on
+  the remaining subset, so this is how its one result says which images it does not cover. Any other
+  transition clears it (`_update_node_state!`, `_reset_stale_nodes!`, `_force_restart_from!`).
+- `excluded_images` — `{uid: reason}` for images `handle_chain_run` dropped before the run existed
+  (`_drop_excluded`: the image is excluded). They are not in `image_uids`, so without this the run
+  could not say its selection was larger. Carried across the runner boundary as
+  `ChainRequest.excluded`; a resume keeps the record it was created with.
+
+A single task run has no run record of its own, so an image it drops is recorded in **that image's**
+`runlog.json` instead: a `skipped` entry with a `reason`, under the task id the rest of the selection
+ran with (`skip_run_log!`, `app/src/run_log.jl`).
+
 That freeze is load-bearing beyond reproducibility: it is *why* a template can be edited, renamed or
 deleted at all without a snapshot mechanism. Renaming one is a plain file move
 (`POST /api/chains/rename`) and past runs keep the name they ran under — a historical fact, not stale
@@ -742,7 +759,8 @@ clamps the same way when it loads a chain (`clampParamsToSpec`). A direct `run_t
 (`api/src/sockets.jl` → `handle_chain_run`), with no HTTP equivalent — which is what keeps chain runs
 a user action even though Claude can author the chain. `handle_chain_run` also owns the guards
 `run_chain` itself does not have (project exists, `_drop_excluded`), so a second launch entry point
-would have to share them rather than re-implement them.
+would have to share them rather than re-implement them. What `_drop_excluded` drops is passed on as
+`ChainRequest.excluded` and lands in run.json `excluded_images` (*Template vs run record*).
 
 ### Live QC row
 
@@ -926,7 +944,10 @@ broadcasts each to every connected client, `chain:`-prefixed with camelCase keys
                               → :cancelled (cancel_chain_run! killed the subprocess mid-run)
          → :queued → :cancelled (cancel flag seen before the job got a slot)
          → :skipped  (fault isolation: a DIRECT predecessor is :failed/:cancelled/:skipped)
+         → :skipped  (the task does not apply to this image — missing axis / pixel size)
 ```
+
+Every `:skipped` carries its `reason` in `run.json` (*Template vs run record*).
 
 **Fault isolation is per-predecessor, not global.** A node is skipped only when one of its *own*
 direct predecessors failed/was cancelled/was skipped — not when *any* node in the chain failed.

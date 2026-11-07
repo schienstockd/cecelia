@@ -254,6 +254,10 @@ Base.@kwdef struct ChainRequest
     # to run elsewhere is refused by `execute_chain` rather than quietly run here.
     target::RunTarget          = TARGET_LOCAL
     by::String                 = ""   # as TaskRequest.by — who started the run
+    # Images the asker dropped from the selection before dispatch (uid => reason; `_drop_excluded`).
+    # Carried so the run record can say so (run.json `excluded_images`) — the asker decides, the
+    # executing process only records. Fresh runs only.
+    excluded::Dict{String,String} = Dict{String,String}()
 end
 
 # `req.by`, or this process's active profile when the asker didn't say.
@@ -261,7 +265,8 @@ _request_by(req)::String = isempty(req.by) ? active_profile_name() : req.by
 
 chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
-    "runId" => r.run_id, "startNode" => r.start_node, "target" => string(r.target), "by" => r.by)
+    "runId" => r.run_id, "startNode" => r.start_node, "target" => string(r.target), "by" => r.by,
+    "excluded" => r.excluded)
 
 chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     project_uid = string(get(d, "projectUid", "")),
@@ -270,7 +275,8 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     run_id      = string(get(d, "runId", "")),
     start_node  = string(get(d, "startNode", "")),
     target      = run_target(string(get(d, "target", "local"))),
-    by          = string(get(d, "by", "")))
+    by          = string(get(d, "by", "")),
+    excluded    = Dict{String,String}(string(k) => string(v) for (k, v) in get(d, "excluded", Dict())))
 
 """
     execute_chain(req::ChainRequest; on_log, on_finished) -> Bool
@@ -295,7 +301,7 @@ function execute_chain(req::ChainRequest;
         proj = load_project(req.project_uid)
         if isempty(req.run_id)
             run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req),
-                      on_cancel_check = is_chain_cancelled, on_log = on_log)
+                      excluded = req.excluded, on_cancel_check = is_chain_cancelled, on_log = on_log)
         else
             run_chain(proj, String[]; run_id = req.run_id, by = _request_by(req),
                       start_node = isempty(req.start_node) ? nothing : req.start_node,

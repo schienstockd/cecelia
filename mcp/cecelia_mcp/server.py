@@ -378,20 +378,23 @@ def get_task_log(project_uid: str, image_uid: str, fun: str, max_bytes: int = _T
 def get_task_history(project_uid: str, limit: int = 100) -> dict:
     """Recent task runs across all images, newest first: `{count, total, truncated, history}`.
     `truncated: true` means `limit` cut the list — `total` runs exist, raise `limit` to see older
-    ones. Each `history` row: `imageUid`, `imageName`, `fun`,
+    ones. `skipped` rows (below) ride along inside the window but are not runs: they count in neither
+    `limit` nor `total`, so `count` can exceed `limit`. Each `history` row: `imageUid`, `imageName`, `fun`,
     `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
     outcome — and **`params`**, the params that run used (the tuning trail; `{}` on older runs). Pair
     `params` with get_module_params + get_cohort_qc to suggest a param adjustment on an outlier: what
     was tried, the valid range, the direction to try. It is "what was tried", not a params→outcome
     relationship — suggest, don't predict.
 
-    `runStatus` is one of `done` · `failed` · `cancelled` · `interrupted` · `running`. The last three
-    mean **no output was produced**, so never read a result as belonging to one:
+    `runStatus` is one of `done` · `failed` · `cancelled` · `interrupted` · `running` · `skipped`.
+    All but the first two mean **no output was produced**, so never read a result as belonging to one:
       * `cancelled` — someone stopped it.
       * `interrupted` — its process died mid-run (a backend/runner Ctrl-C or crash). Nobody chose this
         and nobody was told; a user staring at a half-finished batch asking "what happened to the other
         three?" is answered HERE and almost nowhere else.
       * `running` — live right now, outcome not yet known.
+      * `skipped` — asked for and never dispatched; `reason` says why (e.g. the image is excluded).
+        Not a run: its `params` were never tried, so leave it out of any tuning trail.
     A long-running `fun` that keeps coming back `interrupted` is worth raising as a workflow problem
     (work is being lost to restarts), not as a param problem.
 

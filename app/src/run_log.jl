@@ -25,7 +25,12 @@
 # with the terminal status. A run whose process died leaves a stale `"running"` entry, which
 # `reap_run_log!` converts to `"interrupted"` once it can prove no live task still owns it. Statuses:
 #
-#   running · done · failed · cancelled · interrupted        (legacy entries carry none → read "done")
+#   running · done · failed · cancelled · interrupted · skipped   (legacy entries carry none → read "done")
+#
+# `skipped` is the one entry with no run behind it: the run was ASKED for on this image and dropped
+# before dispatch (today: the image is excluded), written once by `skip_run_log!` with a `reason`. Its
+# `taskId` is the one the rest of the selection ran under, so a set-level result that covers fewer
+# images can be traced to the images it left out. Like cancelled/interrupted it produced no output.
 #
 # Readers must therefore treat `status` as an open set and NOT assume a terminal one — `"running"` on
 # disk means "started, outcome not yet known", which is a real state, not a corrupt entry.
@@ -41,6 +46,7 @@ const RUN_LOG_CAP = 200
 # The one non-terminal status, and the one a reaped run gets. Named because three files test for them.
 const RUN_LOG_RUNNING     = "running"
 const RUN_LOG_INTERRUPTED = "interrupted"
+const RUN_LOG_SKIPPED     = "skipped"     # asked for, never dispatched — see `skip_run_log!`
 
 # Serialises the read-modify-write in `_update_run_log!`. Two tasks CAN target one image at once (they
 # sit in different pools), and both `open_run_log!` and `close_run_log!` rewrite the whole file, so
@@ -147,6 +153,10 @@ _rl_str(e, k) = string(_rl_get(e, k, ""))
 # see the header) read as the historical success it is. The one rule every "did it succeed" reader uses.
 run_entry_status(e)::String = (s = _rl_str(e, "status"); isempty(s) ? "done" : s)
 
+# Whether an entry is a run at all — false for a `skipped` one (asked for, never dispatched; see
+# `skip_run_log!`). The one rule every "what ran on this image" reader passes over skips with.
+run_entry_ran(e)::Bool = run_entry_status(e) != RUN_LOG_SKIPPED
+
 """
     open_run_log!(img, fun_name, value_name, params; task_id, at) -> entries
 
@@ -202,6 +212,28 @@ function close_run_log!(img::CciaImage, task_id::AbstractString, status::Abstrac
             e["finishedAt"] = String(at)
             entries[i] = e
         end
+        entries
+    end
+end
+
+"""
+    skip_run_log!(img, fun_name, reason; value_name, params, task_id, by, at) -> entries
+
+Record that a run was asked for on this image and dropped before dispatch — status `"skipped"` plus
+the `reason`. One write, no open/close pair: nothing ran, so there is no outcome to wait for. Pass the
+`task_id` the rest of the selection runs under, so the entry links to that run's entries.
+"""
+function skip_run_log!(img::CciaImage, fun_name::AbstractString, reason::AbstractString;
+                       value_name::AbstractString = "", params = nothing,
+                       task_id::AbstractString = "", by::AbstractString = "",
+                       at::AbstractString = _run_log_now())
+    _update_run_log!(img) do entries
+        e = Dict{String,Any}(
+            "fun" => string(fun_name), "valueName" => string(value_name),
+            "status" => RUN_LOG_SKIPPED, "reason" => string(reason),
+            "params" => _run_log_params(params), "at" => String(at), "taskId" => string(task_id))
+        isempty(by) || (e["by"] = String(by))
+        push!(entries, e)
         entries
     end
 end

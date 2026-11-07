@@ -35,7 +35,7 @@ Sets group images for processing. An image belongs to one set but lives independ
       ccid.json             — CciaSet fields + image_uids list
     {image_uid}/
       ccid.json             — CciaImage fields
-      runlog.json           — per-run history (fun, valueName, params, status) — see run_log.jl
+      runlog.json           — per-run history (fun, valueName, params, status; `skipped` = dropped before dispatch) — see run_log.jl
       data/                 — layer-props sidecars ({zarr}.json), image sidecars
       labels/               — segmentation label zarrs, one per value_name
       labelProps/           — per-cell measurements, {value_name}.h5ad

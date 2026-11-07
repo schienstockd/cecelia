@@ -371,7 +371,10 @@ function _kiwi_resolve_task(puid, ref)
         p isa AbstractDict || return false
         (try Cecelia.task_output_name(task, Dict{String,Any}(String(k) => v for (k, v) in p)) catch; "" end) == vn
     end
-    runs = [e for e in read_run_log(img) if Cecelia._rl_str(e, "fun") == fn && touches(e)]
+    # a `skipped` entry was never dispatched and wrote nothing, so it is not a run here — counting it
+    # would report "latest run skipped" as if the output might not be the done run's
+    runs = [e for e in read_run_log(img) if Cecelia._rl_str(e, "fun") == fn &&
+                                            run_entry_ran(e) && touches(e)]
     on = vn === nothing ? img.name : "$(img.name) · $vn"
     i = findlast(e -> run_entry_status(e) == "done", runs)
     i === nothing && return _kiwi_bad("exists", isempty(runs) ? "no completed run on $on" :

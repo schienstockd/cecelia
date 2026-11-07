@@ -620,15 +620,17 @@ end
 # Drop images the user has excluded from further processing (CciaImage.included == false) before a
 # run. This is the backend half of the include/exclude feature — the GUI already makes excluded
 # images unselectable, so this is belt-and-suspenders for run paths that bypass the checkboxes (chain
-# resume from disk, the REPL, a stale selection). Returns the included uids; `on_skip(uid)` is called
-# for each dropped one so the caller can log it (nothing is ever silently dropped). Images that fail
-# to load are kept — let the downstream loader report the real error.
+# resume from disk, the REPL, a stale selection). Returns the included uids; `on_skip(uid, img)` is
+# called for each dropped one so the caller can log AND record it (nothing is ever silently dropped):
+# a chain run banks them in run.json `excluded_images`, a task run writes a `skipped` entry into each
+# dropped image's run log. Images that fail to load are kept — let the downstream loader report the
+# real error.
 function _drop_excluded(project_uid::String, uids::Vector{String}, on_skip::Function)
     keep = String[]
     for u in uids
         obj = try init_object(project_uid, u) catch; nothing end
         if obj isa CciaImage && !image_included(obj)
-            on_skip(u)
+            on_skip(u, obj)
         else
             push!(keep, u)
         end
@@ -669,10 +671,13 @@ function handle_chain_run(ws, data)
     # here too was a wasted read of every ccid.json in the project on the dispatch path.
 
     # Hard-skip excluded images (belt-and-suspenders — the GUI already blocks selecting them).
+    excluded = Dict{String,String}()
     if !resuming
-        image_uids = _drop_excluded(project_uid, image_uids, u ->
+        image_uids = _drop_excluded(project_uid, image_uids, (u, _) -> begin
+            excluded[u] = IMAGE_EXCLUDED_REASON
             broadcast_ws(Dict{String,Any}("type" => "chain:log",
-                                          "line" => "[INFO] Skipping excluded image $u")))
+                                          "line" => "[INFO] Skipping excluded image $u"))
+        end)
         if isempty(image_uids)
             HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
                                                    error="All selected images are excluded")))
@@ -688,7 +693,8 @@ function handle_chain_run(ws, data)
     # Hand it to the detached runner if there is one. A REFUSAL is not a fallback: it means that run id
     # is already executing there, and starting a second execution would have two processes writing the
     # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
-    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, by = active_profile_name())
+    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, excluded,
+                          by = active_profile_name())
     outcome = _submit_chain_to_runner(creq)
     outcome === :accepted && return
     if outcome === :refused
@@ -787,7 +793,21 @@ function handle_task_run(ws, data)
     end
 
     # Hard-skip excluded images before dispatch (belt-and-suspenders; the GUI already blocks them).
-    _skip(u) = ws_log(ws, task_id, "[INFO] Skipping excluded image $u")
+    # Each dropped image gets a `skipped` run-log entry under this task id, so the record says the run
+    # was asked for on it and why it was left out (once per image: `image_uid` may repeat in `image_uids`).
+    noted = Set{String}()
+    function _skip(u, img)
+        ws_log(ws, task_id, "[INFO] Skipping excluded image $u")
+        u in noted && return
+        push!(noted, u)
+        try
+            skip_run_log!(img, fun_name, IMAGE_EXCLUDED_REASON;
+                          value_name = string(get(params, "valueName", "")), params,
+                          task_id, by = active_profile_name())
+        catch e
+            @warn "Could not record skipped image in its run log" uid = u exception = e
+        end
+    end
     isempty(image_uids) || (image_uids = _drop_excluded(project_uid, image_uids, _skip))
     if !isempty(image_uid) && isempty(_drop_excluded(project_uid, [image_uid], _skip))
         image_uid = ""

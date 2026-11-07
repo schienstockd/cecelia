@@ -1599,7 +1599,8 @@ optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/
   (greyed, auto-select-all uses the included subset).
 - **Hard-skipped in the backend too.** Belt-and-suspenders for run paths that bypass the checkboxes
   (chain resume, REPL): `_drop_excluded` (`api/src/sockets.jl`) filters excluded uids before dispatch
-  and logs each skip. Set via `POST /api/images/inclusion/set`; `project.setInclusion` reflects it live.
+  and logs each skip — and records it: a chain run in run.json `excluded_images`, a single task as a
+  `skipped` entry in the dropped image's `runlog.json` (`docs/SCHEDULER.md` → *Template vs run record*). Set via `POST /api/images/inclusion/set`; `project.setInclusion` reflects it live.
 - **Hide-excluded toggle.** One of the row filters below (default: show excluded rows, greyed).
 
 **Row filters — add one by adding a table row, not a component.** The on/off toggles next to the

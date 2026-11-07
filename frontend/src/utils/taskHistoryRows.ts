@@ -53,10 +53,13 @@ export interface HistoryContext {
  * — `reap_run_log!` stamps it when the project loads), so the output is missing and there is nothing
  * to collect. `failed` over `cancelled` because the two neutral states both read as "someone meant
  * this": a crashed run is news, and the whole point of the row is that you can go and look at its log.
- * A missing status is a legacy entry and means success, matching `runLog.runStatus`.
+ * `skipped` (asked for, never dispatched — the image was excluded) reads as `cancelled`: a decision,
+ * not news, and no output. A missing status is a legacy entry and means success, matching
+ * `runLog.runStatus`.
  */
 const RUN_STATUS: Record<string, TaskStatus> = {
   done: 'done', failed: 'failed', cancelled: 'cancelled', interrupted: 'failed', running: 'running',
+  skipped: 'cancelled',
 }
 
 /** A local `yyyy-mm-ddTHH:MM:SS` run-log stamp → Date, or undefined when absent/unparseable.
