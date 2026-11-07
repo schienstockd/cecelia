@@ -1,7 +1,11 @@
 # Image analysis recital — review a claim before it leaves Cecelia
 
-**Status:** B1–B5 built (2026-11-06): the rule checks (S0–S2), the route and MCP tools, the claim as a
-Blackboard entry, and the review turn. B6 (the GUI) is in review, first slice only. P0 (by hand), P1
+**Status:** B1–B5 built (2026-11-06); B6's first slice merged (#1985, 2026-11-07): state a claim from
+a summary plot, checks as facts grouped by category with what to do, the model review in the same
+popover. Changed in use (Dominik, 2026-11-07): Good / Bad / Unsure marks only the MODEL's points — the
+checks are mechanical, plain lines; the replicate can combine attributes (Mouse × Location). Open:
+findings on the dots, the export stamp, the claim text on the plot, treatment-arm claims, review
+findings in the briefing's `openClaims`. P0 (by hand), P1
 (#1969) and the P2 baseline are below. Shape after P2: **rules + one plain review turn**; the Translator
 (S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate.
 
@@ -383,7 +387,7 @@ One PR each, smallest and most backend first. The frontend steps need Dominik's 
 | B3 | **Route + MCP tool:** run the checks for a scope, read-only — **done** #1979 | `api/src/routes/`, `mcp/cecelia_mcp/server.py` + `guidance.py` |
 | B4 | **Claim entry:** a blackboard entry with a `claim` meta key holding the scope (the passthrough pattern of `agentRun` / `knowledge`, `_BB_PASSTHROUGH_KEYS`, not a new entry type); checks re-run on read; the session briefing lists claims with open findings — **done** #1981 | `api/src/blackboard*.jl`, briefing |
 | B5 | **Review turn:** one headless turn shaped like `run_kiwi_turn` (`api/src/kiwi_turn.jl`: read-only tools, headless MCP config, reply schema, ref validation), with only the claim and the record; findings saved as sections marked `inferred` / `recomputed` — **done** #1983 (not yet run on a real model) | `api/src/` |
-| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export — **in review** #1985: state a claim + chips + Review + entry link; findings on the dots, the export stamp and the claim text on the plot still to build | `frontend/src/components/canvas/` |
+| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export — **first slice merged** #1985: footer button + popover (claim, replicate, checks by category, model review), entry grouped the same way; findings on the dots, the export stamp and the claim text on the plot still to build | `frontend/src/components/canvas/` |
 
 
 **Paper.** Not in the Nature Protocols paper beyond, at most, the export stamp. If P2 holds, the
