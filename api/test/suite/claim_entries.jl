@@ -77,6 +77,10 @@
         @test st == 200 && r6.round == 3
         @test occursin("per Mouse × Location", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
 
+        # the entry was deleted while the plot still holds its id: restating states the claim afresh
+        st, rn = post(api_claim_state, merge(scope, Dict("entryId" => "bb-20990101T000000-abcdef", "text" => "T > B")))
+        @test st == 200 && rn.round == 1 && rn.entryId != "bb-20990101T000000-abcdef"
+
         # not a claim entry
         st, bb = api_blackboard_create(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid, "title" => "note", "content" => "x"))))
         @test post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => String(JSON3.read(bb).entryId)))[1] == 400

@@ -5,7 +5,7 @@
 # validation, one re-ask, kept in the Kiwi feed) with its own system prompt and a narrower tool list:
 # the analyst's reasoning is WITHHELD — no Blackboard, no captures, no image notes, no briefing, no
 # ELN context — so the review reads the claim and the record only. Advisory: its findings are
-# `inferred`, go on the claim entry as `### sNN · Review · …` sections the analyst marks, and never
+# `inferred`, go on the claim entry as `### sNN · …` sections under a `### <Category>` heading, which the analyst marks, and never
 # change what the checks found. It reads through the observer tools only, so it can't recompute.
 
 # What the review must not see: where the analyst's own reasoning lives.

@@ -120,11 +120,17 @@ function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
                 ". Mark each point Good, Bad or Unsure.\n")
         rs = filter(x -> x["kind"] != "interpretation", rv["claims"])
         isempty(rs) && println(io, get(rv, "abstain", false) ? "Nothing raised. " * get(rv, "note", "") : "Nothing beyond the checks.", "\n")
-        order(x) = something(findfirst(==(get(x, "category", "other")), Cecelia.CLAIM_CATEGORIES), length(Cecelia.CLAIM_CATEGORIES))
-        for x in sort(rs; by = order)
-            act = get(x, "action", "")
-            println(io, "### ", x["sectionId"], " · ", _claim_category_label(get(x, "category", "other")), " · ",
-                    x["text"], isempty(act) ? "" : " → " * act, "\n")
+        # grouped like the checks: a `### <Category>` heading (not a section — it has no id) closes the
+        # previous point's section, then that category's points follow
+        cat_of(x) = (k = get(x, "category", "other"); k in Cecelia.CLAIM_CATEGORIES ? k : "other")
+        for cat in Cecelia.CLAIM_CATEGORIES
+            xs = filter(x -> cat_of(x) == cat, rs)
+            isempty(xs) && continue
+            println(io, "### ", _claim_category_label(cat), "\n")
+            for x in xs
+                act = get(x, "action", "")
+                println(io, "### ", x["sectionId"], " · ", x["text"], isempty(act) ? "" : " → " * act, "\n")
+            end
         end
         for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
             println(io, "## What the record would support\n\n", x["text"], "\n")
@@ -204,6 +210,8 @@ function api_claim_state(body_bytes::Vector{UInt8})
     by = author_stamp(); at = string(Dates.now())
     round_rec(c, r) = merge(Dict{String,Any}(k => c[k] for k in _CLAIM_SCOPE_KEYS),
                             Dict{String,Any}("round" => r, "at" => at, "by" => by))
+    # a restate of a claim whose entry was deleted states it afresh — the plot still holds the old id
+    !isempty(id) && _valid_bb_entry_id(id) && _read_bb_meta(uid, id) === nothing && (id = "")
     if isempty(id)
         c = new
         c["round"] = 1; c["rounds"] = Any[round_rec(c, 1)]; c["findingIds"] = Dict{String,Any}()

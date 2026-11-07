@@ -71,10 +71,15 @@ end
         sid = rv["claims"][1]["sectionId"]
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
         # one line, under its category, the action after the arrow
-        @test occursin("### $sid · Images · Image i1 has no tracks for either population. → Re-run tracking on i1.", md)
+        @test occursin("### Images\n\n### $sid · Image i1 has no tracks for either population. → Re-run tracking on i1.", md)
         @test rv["claims"][1]["category"] == "images" && rv["claims"][1]["action"] == "Re-run tracking on i1."
         @test occursin("Category one of: Images, Processing record, Same processing, Replicates, Units, The data, Other", sent)
         @test occursin("## What the record would support\n\nNothing about speed can be said yet.", md)
+        # a later round with review points renders (the category grouping must not clobber the claim)
+        c2 = deepcopy(meta["claim"]); c2["round"] = 2
+        push!(c2["rounds"], merge(copy(c2["rounds"][1]), Dict{String,Any}("round" => 2)))
+        md2 = _claim_entry_md(c2, _claim_run(proj.uid, c2))
+        @test occursin("### Images\n\n### $sid", md2) && occursin("## Earlier rounds", md2)
         @test !occursin("Not run.", md) && sid in meta["sectionIds"]
         # the analyst can mark a review finding like any other
         @test api_blackboard_section_outcome(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid,

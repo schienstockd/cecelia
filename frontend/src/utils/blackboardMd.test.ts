@@ -146,3 +146,11 @@ describe('splitEntrySections / appendMissSection', () => {
     expect(two.md).toContain('### m02 · track · all · missed\n- **Should have:** retrack')
   })
 })
+
+describe('splitEntrySections — a plain heading between sections', () => {
+  it('closes the section before it and stays a heading, so sections can be grouped (claim review)', () => {
+    const parts = splitEntrySections('## Model review\n\n### The data\n\n### s08 · B tracks are short → set a minimum\n\n### Images\n\n### s09 · i1 has no tracks\n')
+    expect(parts.map(p => p.kind === 'section' ? p.id : p.md.trim())).toEqual(
+      ['## Model review\n\n### The data', 's08', '### Images', 's09'])
+  })
+})
