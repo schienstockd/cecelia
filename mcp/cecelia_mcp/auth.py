@@ -15,3 +15,4 @@ def auth_headers() -> dict[str, str]:
     """`{"Authorization": "Bearer <token>"}`, or {} when there is no token."""
     tok = api_token()
     return {"Authorization": f"Bearer {tok}"} if tok else {}
+
