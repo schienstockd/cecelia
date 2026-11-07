@@ -34,7 +34,31 @@ rem made, the recorded dir is appended, and only when no `julia` is on PATH at a
 :cecelia_recorded
 if not exist "%PIXI_PROJECT_ROOT%\.cecelia-julia" goto :cecelia_done
 set "_cecelia_julia="
+rem The record is UTF-8 (install.ps1 pins it); `set /p` decodes in the console codepage, so a
+rem non-ASCII profile path would read garbled and `if not exist` would skip it silently. Read it
+rem under codepage 65001 and restore the current one; if that can't be parsed, leave it be.
+rem An install made before that, by Windows PowerShell 5.1, wrote it in the ANSI codepage: when the
+rem UTF-8 read names no file, read it again in that one, as `_recorded_julia` in app.py does.
+set "_cecelia_cp="
+set "_cecelia_acp="
+for /f "tokens=2 delims=:." %%C in ('chcp 2^>nul') do set "_cecelia_cp=%%C"
+if not defined _cecelia_cp goto :cecelia_read_plain
+>nul 2>nul chcp 65001
 set /p _cecelia_julia=<"%PIXI_PROJECT_ROOT%\.cecelia-julia"
+if exist "%_cecelia_julia%" goto :cecelia_read_done
+for /f "tokens=1,3" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Nls\CodePage" /v ACP 2^>nul') do if /i "%%A"=="ACP" set "_cecelia_acp=%%B"
+if not defined _cecelia_acp goto :cecelia_read_done
+>nul 2>nul chcp %_cecelia_acp%
+set "_cecelia_julia="
+set /p _cecelia_julia=<"%PIXI_PROJECT_ROOT%\.cecelia-julia"
+:cecelia_read_done
+>nul 2>nul chcp %_cecelia_cp%
+goto :cecelia_read_end
+:cecelia_read_plain
+set /p _cecelia_julia=<"%PIXI_PROJECT_ROOT%\.cecelia-julia"
+:cecelia_read_end
+set "_cecelia_cp="
+set "_cecelia_acp="
 if not defined _cecelia_julia goto :cecelia_done
 if not exist "%_cecelia_julia%" goto :cecelia_done
 for %%F in ("%_cecelia_julia%") do if /i "%%~sF"=="%_cecelia_first%" goto :cecelia_done

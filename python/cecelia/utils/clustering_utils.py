@@ -122,14 +122,15 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
                      transformation: str = "NONE", log_base: float = 0,
                      create_umap: bool = True, use_paga: bool = False,
                      paga_threshold: float = 0.1, backend: str = "auto",
-                     random_state: int = 0, log=None):
+                     random_state: int = 0, log=None, run_env: dict | None = None):
     """Cluster `adata` in place: transform -> normalise -> neighbours -> Leiden (`obs['clusters']`,
     categorical string codes) -> optional UMAP (`obsm['X_umap']`).
 
     Granularity-blind — `adata.X` is whatever feature matrix the caller built. Returns
     `(clusters, x_umap)` for convenience; the mutation on `adata` is the source of truth.
     `random_state` makes a run reproducible. `backend='auto'` uses the GPU when available and
-    silently falls back to CPU (logged)."""
+    silently falls back to CPU (logged). Pass a dict as `run_env` to learn which one ran: `device` is
+    set to `"cuda"` (rapids_singlecell) or `"cpu"` once that path has succeeded — the run log's `env`."""
     _log = log if callable(log) else (lambda _m: None)
 
     # Every step below rewrites `adata.X` in place, so it must be writable. A matrix built with
@@ -148,6 +149,8 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
             _log(">> clustering on GPU (rapids_singlecell)")
             _find_gpu(adata, resolution=resolution, create_umap=create_umap,
                       random_state=random_state)
+            if run_env is not None:
+                run_env["device"] = "cuda"   # rapids_singlecell is CUDA-only
             return adata.obs["clusters"], adata.obsm.get("X_umap")
         except Exception as e:  # CUDA / import failure mid-run -> fall back, don't crash the task
             _log(f">> GPU clustering failed ({e}); falling back to CPU")
@@ -166,6 +169,8 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
         else:
             sc.tl.umap(adata, random_state=random_state)
 
+    if run_env is not None:
+        run_env["device"] = "cpu"
     return adata.obs["clusters"], adata.obsm.get("X_umap")
 
 

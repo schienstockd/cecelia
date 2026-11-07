@@ -18,6 +18,7 @@ import unittest
 REPO = pathlib.Path(__file__).resolve().parents[3]
 SCRIPT = REPO / "scripts" / "activate_juliaup.sh"
 BAT = REPO / "scripts" / "activate_juliaup.bat"
+APP_PY = REPO / "app.py"
 
 
 def _activated(root, path):
@@ -47,6 +48,36 @@ class JuliaupActivationTest(unittest.TestCase):
         self.assertIn(b"\r\n", BAT.read_bytes())  # cmd misreads goto/labels in an LF batch file
         bundled = (REPO / "scripts" / "bundle_required_paths.txt").read_text(encoding="utf-8").split()
         self.assertIn("scripts/activate_juliaup.bat", bundled)
+
+    def test_the_bat_reads_the_record_as_utf8(self):
+        # install.ps1 writes `.cecelia-julia` as UTF-8; `set /p` decodes in the console codepage, so a
+        # non-ASCII profile path (C:\Users\Jürgen) read garbled and `if not exist` skipped it silently.
+        # The read must happen under codepage 65001, and the user's codepage come back right after.
+        lines = BAT.read_text(encoding="utf-8").splitlines()
+        reads = [i for i, ln in enumerate(lines) if ln.startswith("set /p _cecelia_julia=")]
+        self.assertTrue(any(ln.startswith("for /f ") and "('chcp 2^>nul')" in ln and "_cecelia_cp=" in ln
+                            for ln in lines[:reads[0]]))
+        self.assertEqual(lines[reads[0] - 1], ">nul 2>nul chcp 65001")
+        self.assertIn(">nul 2>nul chcp %_cecelia_cp%", lines[reads[0]:])
+
+    def test_launcher_cmd_is_written_in_the_oem_codepage(self):
+        # cmd decodes a .cmd in the OEM codepage; `-Encoding ASCII` wrote a `ü` in a CECELIA_HOME
+        # install path as `?`, so the system-scope launcher would `cd /d` into a path that doesn't exist.
+        ps1 = (REPO / "install.ps1").read_text(encoding="utf-8")
+        self.assertIn('"@ | Set-Content -Path $Launch -Encoding Oem', ps1)
+        self.assertNotIn("Set-Content -Path $Launch -Encoding ASCII", ps1)
+
+    def test_the_bat_falls_back_to_the_ansi_codepage_like_app_py(self):
+        # An install made by Windows PowerShell 5.1 wrote the record in the ANSI codepage. app.py's
+        # `_recorded_julia` falls back to it; the .bat must too, or the app runs the recorded Julia
+        # while terminal tasks run PATH's. The second read is under the ACP from the registry.
+        text = BAT.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        reads = [i for i, ln in enumerate(lines) if ln.startswith("set /p _cecelia_julia=")]
+        acp = next(i for i, ln in enumerate(lines) if "reg query" in ln and "/v ACP" in ln)
+        self.assertTrue(any(reads[0] < acp < r and lines[r - 2] == ">nul 2>nul chcp %_cecelia_acp%"
+                            for r in reads))
+        self.assertIn("locale.getencoding()", APP_PY.read_text(encoding="utf-8"))
 
     @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
     def test_install_owned_juliaup_wins_over_path(self):
@@ -200,6 +231,31 @@ class WindowsActivationTest(unittest.TestCase):
     def test_no_record_leaves_path_alone(self):
         got, _, _ = self._run(f"{self.other};{self.system32}")
         self.assertEqual(got["PATH"], f"{self.other};{self.system32}")
+
+    def test_non_ascii_recorded_path_is_found(self):
+        # A profile like C:\Users\Jürgen: the UTF-8 record must not be garbled into a path that
+        # `if not exist` skips, leaving terminal tasks on PATH's julia while the app runs the recorded one.
+        recorded = os.path.join(self.root, "J\u00fcrgen", "julia.cmd")
+        os.makedirs(os.path.dirname(recorded))
+        with open(recorded, "w", encoding="utf-8", newline="") as f:
+            f.write("@echo recorded\r\n")
+        self._record(recorded)
+        got, _, _ = self._run(f"{self.other};{self.system32}")
+        shim = os.path.join(self.profile, ".cecelia", "julia-shim")
+        self.assertEqual(got["PATH"], f"{shim};{self.other};{self.system32}")
+
+    def test_legacy_ansi_record_is_found(self):
+        # Written by an older install.ps1 under Windows PowerShell 5.1: the ANSI codepage, not UTF-8.
+        import locale
+        recorded = os.path.join(self.root, "J\u00fcrgen", "julia.cmd")
+        os.makedirs(os.path.dirname(recorded))
+        with open(recorded, "w", encoding="utf-8", newline="") as f:
+            f.write("@echo recorded\r\n")
+        with open(os.path.join(self.root, ".cecelia-julia"), "wb") as f:
+            f.write(recorded.encode(locale.getencoding()) + b"\r\n")
+        got, _, _ = self._run(f"{self.other};{self.system32}")
+        shim = os.path.join(self.profile, ".cecelia", "julia-shim")
+        self.assertEqual(got["PATH"], f"{shim};{self.other};{self.system32}")
 
 
 if __name__ == "__main__":

@@ -53,9 +53,12 @@ end
 function _resolve_config_dir(dev_dir::Union{AbstractString,Nothing},
                              env_val::Union{AbstractString,Nothing},
                              dotenv_val::Union{AbstractString,Nothing})::String
-    isnothing(dev_dir)    || return expand_user(String(dev_dir))
-    isnothing(env_val)    || return expand_user(String(env_val))
-    isnothing(dotenv_val) || return expand_user(String(dotenv_val))
+    # An empty env/.env value (`CECELIA_DEV_DIR=`) counts as unset, as in the Python twin
+    # `loopback.config_dir`: taken as-is it resolves to "" (the CWD), and the launcher and the
+    # server would read different custom.toml files.
+    isnothing(dev_dir) || return expand_user(String(dev_dir))
+    (isnothing(env_val) || isempty(env_val)) || return expand_user(String(env_val))
+    (isnothing(dotenv_val) || isempty(dotenv_val)) || return expand_user(String(dotenv_val))
     expand_user("~/.cecelia")
 end
 

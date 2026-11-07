@@ -56,6 +56,52 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A run says what made it: version, full author stamp, run-time env ───────
+# The run log recorded only the launching profile, so a result could not say which code, which caller
+# (app vs Claude, which model) or which device made it. The caller is captured by the ASKING side
+# (`caller_stamp()`, bound per request) and rides beside `by` to the worker; the env comes back in the
+# task's result. Absent stays absent: a run with no caller has no `via`, a task with no env no `env`.
+@testset "Run log records version, author stamp and run env" begin
+    proj = create_project!(name="rl-prov-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+
+    caller = Dict{String,Any}("via" => "claude", "model" => "claude-opus-5-5", "session" => "abc-123")
+    tid = "prov$(rand(1000:9999))"
+    @test run_task(_RunEnvTask(), img, Dict{String,Any}(); task_id = tid, by = "alice", caller) !== nothing
+    e = only(filter(e -> String(get(e, "taskId", "")) == tid, read_run_log(img)))
+    @test String(e["ceceliaVersion"]) == Cecelia.cecelia_version()
+    @test Dict(String(k) => String(v) for (k, v) in e["author"]) ==
+          Dict("profile" => "alice", "via" => "claude", "model" => "claude-opus-5-5", "session" => "abc-123")
+    @test String(e["by"]) == "alice"                                  # kept for every existing reader
+    @test String(e["env"]["device"]) == "cuda" && e["env"]["seed"] == 0
+
+    # a REPL-style call: no caller, a task that reports no env → neither is invented
+    tid2 = "prov2$(rand(1000:9999))"
+    run_task(_CrashTask(), img, Dict{String,Any}(); task_id = tid2, by = "bob")
+    e2 = only(filter(e -> String(get(e, "taskId", "")) == tid2, read_run_log(img)))
+    @test Dict(String(k) => String(v) for (k, v) in e2["author"]) == Dict("profile" => "bob")
+    @test !haskey(e2, "env")
+
+    # the caller survives the runner's wire format (the detached runner gets the request as JSON)
+    req = Cecelia.TaskRequest(; task_id = "t", fun_name = "f", project_uid = "p", by = "alice", caller)
+    @test Cecelia.task_request(JSON3.read(JSON3.write(Cecelia.task_request_dict(req)), Dict{String,Any})).caller == caller
+    @test isempty(Cecelia.task_request(Dict{String,Any}("taskId" => "t")).caller)   # an older peer
+
+    # the Python → Julia half: a runner's sidecar `runEnv`, read back; missing file/key → empty
+    dir = mktempdir()
+    write(joinpath(dir, "qc.json"), JSON3.write(Dict("labelCounts" => Dict(), "runEnv" => Dict("device" => "cpu", "cellpose" => "4.0.6"))))
+    @test read_run_env(joinpath(dir, "qc.json")) == Dict{String,Any}("device" => "cpu", "cellpose" => "4.0.6")
+    write(joinpath(dir, "old.json"), JSON3.write(Dict("labelCounts" => Dict())))
+    @test isempty(read_run_env(joinpath(dir, "old.json")))
+    @test isempty(read_run_env(joinpath(dir, "missing.json")))
+
+    # an old entry with none of the new fields still reads
+    append_run_log!(img, "segment.cellpose", "default")
+    @test run_log_row(read_run_log(img)[end]).status == "done"
+    forget_task_start!(tid); forget_task_start!(tid2)
+    rm(proj.root; recursive=true)
+end
+
 # ── A cancelled run is RECORDED, and it is recorded before the work starts ───
 # Regression, and the expensive one. The run log used to be appended on finish and only for
 # :done/:failed — `:cancelled` was skipped as "the user aborted, not an outcome worth logging". So a
