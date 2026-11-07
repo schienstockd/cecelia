@@ -14,20 +14,38 @@
 # provenance (`inferred`: read from the record, nothing recomputed) and the evidence.
 
 """
-    ClaimScope(set, populations, measure; unit_attr = "")
+    ClaimScope(set, populations, measure; unit_attrs = String[])
 
 What a claim is about: the set, the populations it compares (`"B/qc"`: segmentation `B`, gated
-population `qc`), the measure (`"live.track.speed"`) and the attribute that names the statistical
-unit (`"Mouse"`). No claim text — parsing a sentence into this is the Translator's job.
+population `qc`), the measure (`"live.track.speed"`) and the image attributes whose values together
+name one replicate — the statistical unit (`["Mouse"]`, or `["Mouse", "Location"]` when each site in
+each mouse counts once). No claim text — parsing a sentence into this is the Translator's job.
 """
 struct ClaimScope
     set::CciaSet
     populations::Vector{String}
     measure::String
-    unit_attr::String
+    unit_attrs::Vector{String}
 end
-ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString; unit_attr::AbstractString = "") =
-    ClaimScope(set, String.(populations), String(measure), String(unit_attr))
+ClaimScope(set::CciaSet, populations::AbstractVector, measure::AbstractString; unit_attrs = String[]) =
+    ClaimScope(set, String.(populations), String(measure), claim_unit_attrs(unit_attrs))
+
+"""
+    claim_unit_attrs(v) -> Vector{String}
+
+A replicate's attributes, normalised: a list or one string (`nothing` = none), trimmed, blanks and
+repeats dropped. The one rule for every scope that is stored, compared or checked.
+"""
+claim_unit_attrs(v) = unique!(String[strip(string(a)) for a in (v isa AbstractVector ? v : v === nothing ? () : (v,))
+                                     if !isempty(strip(string(a)))])
+
+# The replicate's name for text ("Mouse × Location") and an image's replicate ("M1 × left"; "" when
+# any of its attributes is blank — a half-named replicate can't be counted).
+_claim_unit_label(scope::ClaimScope) = join(scope.unit_attrs, " × ")
+function _claim_unit_of(img, attrs)
+    vals = String[string(get(img.attr, a, "")) for a in attrs]
+    any(isempty ∘ strip, vals) ? "" : join(vals, " × ")
+end
 
 # The segmentation a population path lives on, and its gate path inside that segmentation's gating
 # file — the shared pop-ref grammar (`_split_pop_ref`), minus derived markers like `_tracked`, which
@@ -145,7 +163,7 @@ end
     claim_record_table(scope::ClaimScope) -> Vector{Dict{String,Any}}
 
 One row per (image, population) over EVERY image in the set. Each row: `image`, `pop`, `valueName`,
-`included`, `hasData`, `unit` (the unit attribute's value), `paramsSource` (`kind => fun => source`)
+`included`, `hasData`, `unit` (the replicate: its attributes' values, `" × "`-joined), `paramsSource` (`kind => fun => source`)
 and `vars` — the processing variables as flat keys (`meta.*`, `params.<fun>.*`, `gate.*`,
 `motionDims`). Read-only.
 """
@@ -191,7 +209,7 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
             "image" => img.uid, "pop" => pop, "valueName" => vn, "included" => image_included(img),
             "calibration" => calib,
             "hasData" => isfile(table), "hasGate" => !isnothing(gate),
-            "unit" => isempty(scope.unit_attr) ? "" : string(get(img.attr, scope.unit_attr, "")),
+            "unit" => isempty(scope.unit_attrs) ? "" : _claim_unit_of(img, scope.unit_attrs),
             "paramsSource" => sources, "vars" => vars))
     end
     rows
@@ -201,6 +219,33 @@ end
 
 _claim_detail(stage, evidence) = Dict{String,Any}("stage" => stage, "provenance" => "inferred", "evidence" => evidence)
 _claim_imgs(rows) = sort!(unique(String[r["image"] for r in rows]))
+_claim_imgs_union(xs) = sort!(unique(reduce(vcat, [x["images"] for x in xs]; init = String[])))
+# A processing variable as a finding names it: what it is, not its key (`meta.PhysicalSizeX` → "Pixel
+# size (x)", `params.segment.cellposeMeasure.models.0.cellDiameter` → "cellposeMeasure: models.0.cellDiameter").
+# Evidence keeps the key.
+const _CLAIM_VARIABLE_LABEL = Dict(
+    "meta.TimeIncrement" => "Frame interval", "meta.TimeIncrementUnit" => "Frame interval unit",
+    "meta.PhysicalSizeX" => "Pixel size (x)", "meta.PhysicalSizeY" => "Pixel size (y)",
+    "meta.PhysicalSizeZ" => "Z step", "meta.PhysicalSizeUnit" => "Pixel size unit", "meta.SizeZ" => "Number of z slices",
+    "gate.geometry" => "Gate shape", "motionDims" => "Track dimensions (2D/3D)")
+function _claim_variable_label(k::AbstractString)
+    haskey(_CLAIM_VARIABLE_LABEL, k) && return _CLAIM_VARIABLE_LABEL[k]
+    startswith(k, "gate.") && return "Gate " * replace(k[6:end], "_" => " ")
+    fun = _claim_param_fun(k)
+    fun === nothing && return String(k)
+    # the task, then the setting's path inside its params — one label per key, so two settings that
+    # share a leaf name (models.0 / models.1 cellDiameter) stay two findings
+    string(last(split(fun, ".")), ": ", k[length("params." * fun * ".")+1:end])
+end
+# Images as a finding names them: up to three by name, else a count.
+_claim_imgs_text(imgs) = length(imgs) <= 3 ? join(imgs, ", ") : string(length(imgs), " images")
+# A population as a finding names it: its segmentation when that tells the compared ones apart (`B`),
+# else the whole path.
+function _claim_pop_label(pop, scope)
+    vns = [_claim_pop_value_name(p) for p in scope.populations]
+    vn = _claim_pop_value_name(pop)
+    count(==(vn), vns) == 1 ? vn : String(pop)
+end
 
 # Most common value, the images holding each value, and whether the mode is a tie.
 function _claim_value_groups(vals::AbstractDict)
@@ -221,49 +266,52 @@ function _claim_s0(rows, scope)
     for r in rows; push!(get!(by_img, r["image"], Dict{String,Any}[]), r); end
 
     excl = _claim_imgs(filter(r -> !r["included"], rows))
-    isempty(excl) || push!(findings, qc_finding("warn", "claim.image_excluded"; n = length(excl),
+    isempty(excl) || push!(findings, qc_finding("warn", "claim.image_excluded"; n = length(excl), imgs = _claim_imgs_text(excl),
         detail = _claim_detail("S0", Dict{String,Any}("images" => excl))))
 
     for pop in scope.populations
         nodata = _claim_imgs(filter(r -> r["pop"] == pop && !r["hasData"], rows))
-        isempty(nodata) || push!(findings, qc_finding("warn", "claim.no_data"; pop = pop, n = length(nodata),
+        isempty(nodata) || push!(findings, qc_finding("warn", "claim.no_data"; pop = _claim_pop_label(pop, scope),
+            n = length(nodata), imgs = _claim_imgs_text(nodata),
             detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "images" => nodata,
                 "excluded" => filter(i -> i in excl, nodata), "measure" => scope.measure))))
     end
 
-    if !isempty(scope.unit_attr)
+    if !isempty(scope.unit_attrs)
         blank = _claim_imgs(filter(r -> isempty(r["unit"]), rows))
-        isempty(blank) || push!(findings, qc_finding("warn", "claim.unit_blank"; attr = scope.unit_attr,
-            n = length(blank), detail = _claim_detail("S0", Dict{String,Any}("attr" => scope.unit_attr,
+        isempty(blank) || push!(findings, qc_finding("warn", "claim.unit_blank"; attr = _claim_unit_label(scope),
+            n = length(blank), imgs = _claim_imgs_text(blank), detail = _claim_detail("S0", Dict{String,Any}("attrs" => scope.unit_attrs,
                 "images" => blank, "excluded" => filter(i -> i in excl, blank)))))
     end
 
-    # params: only where the claim has data — an image with no output has nothing to have params for
+    # params: only where the claim has data — an image with no output has nothing to have params for.
+    # One fact for every (population, step) gap, not one per pair: "B tracking (5 images), T segment (6 images)".
+    missing = Dict{String,Any}[]; flat = Dict{String,Any}[]; unrec = Dict{String,Any}[]
     for pop in scope.populations, kind in _claim_kinds(scope.measure)
         rs = filter(r -> r["pop"] == pop && r["hasData"], rows)
-        missing_imgs = _claim_imgs(filter(r -> isempty(r["paramsSource"][kind]), rs))
-        flat_only = _claim_imgs(filter(r -> !isempty(r["paramsSource"][kind]) &&
-                                            all(==("flat"), values(r["paramsSource"][kind])), rs))
+        src(r) = values(r["paramsSource"][kind])
+        m = _claim_imgs(filter(r -> isempty(r["paramsSource"][kind]), rs))
+        f = _claim_imgs(filter(r -> !isempty(r["paramsSource"][kind]) && all(==("flat"), src(r)), rs))
         # a form default stood in for the record (no finished run in the log): outcome unknown. These
         # are the images S1 leaves out wherever another image has the run-log record.
-        unrecorded = _claim_imgs(filter(r -> any(!=("runLog"), values(r["paramsSource"][kind])) &&
-                                             !all(==("flat"), values(r["paramsSource"][kind])), rs))
-        isempty(unrecorded) || push!(findings, qc_finding("info", "claim.params_outcome_unrecorded";
-            kind = kind, pop = pop, n = length(unrecorded),
-            detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => unrecorded))))
-        isempty(missing_imgs) || push!(findings, qc_finding("warn", "claim.params_not_recorded";
-            kind = kind, pop = pop, n = length(missing_imgs),
-            detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => missing_imgs))))
-        isempty(flat_only) || push!(findings, qc_finding("info", "claim.params_last_run_only";
-            kind = kind, pop = pop, n = length(flat_only),
-            detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => flat_only))))
+        u = _claim_imgs(filter(r -> any(!=("runLog"), src(r)) && !all(==("flat"), src(r)), rs))
+        isempty(m) || push!(missing, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => m))
+        isempty(f) || push!(flat, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => f))
+        isempty(u) || push!(unrec, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => u))
     end
+    gaps(xs) = join((string(_claim_pop_label(x["pop"], scope), " ", x["kind"], " (", _claim_imgs_text(x["images"]), ")") for x in xs), ", ")
+    isempty(unrec) || push!(findings, qc_finding("info", "claim.params_outcome_unrecorded"; what = gaps(unrec),
+        detail = _claim_detail("S0", Dict{String,Any}("gaps" => unrec, "images" => _claim_imgs_union(unrec)))))
+    isempty(missing) || push!(findings, qc_finding("warn", "claim.params_not_recorded"; what = gaps(missing),
+        detail = _claim_detail("S0", Dict{String,Any}("gaps" => missing, "images" => _claim_imgs_union(missing)))))
+    isempty(flat) || push!(findings, qc_finding("info", "claim.params_last_run_only"; what = gaps(flat),
+        detail = _claim_detail("S0", Dict{String,Any}("gaps" => flat, "images" => _claim_imgs_union(flat)))))
 
     if _claim_needs_tracking(scope.measure)
         for pop in scope.populations
             nodims = _claim_imgs(filter(r -> r["pop"] == pop && r["hasData"] && !haskey(r["vars"], "motionDims"), rows))
-            isempty(nodims) || push!(findings, qc_finding("warn", "claim.dims_not_recorded"; pop = pop,
-                n = length(nodims), detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "images" => nodims))))
+            isempty(nodims) || push!(findings, qc_finding("warn", "claim.dims_not_recorded"; pop = _claim_pop_label(pop, scope),
+                n = length(nodims), imgs = _claim_imgs_text(nodims), detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "images" => nodims))))
         end
     end
     findings
@@ -324,11 +372,11 @@ function _claim_s1_across(rows, scope)
                 rel = (hi - lo) / max(abs(hi), eps())
                 ev = Dict{String,Any}("pop" => pop, "variable" => k, "values" => vals, "relDiff" => round(rel; digits = 4))
                 if rel <= CLAIM_REL_TOLERANCE
-                    push!(findings, qc_finding("info", "claim.within_tolerance"; variable = k,
+                    push!(findings, qc_finding("info", "claim.within_tolerance"; variable = _claim_variable_label(k),
                         detail = merge(_claim_detail("S1", ev), Dict{String,Any}("display" => true))))
                 else
-                    push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k, pop = pop,
-                        detail = _claim_detail("S1", ev)))
+                    push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = _claim_variable_label(k),
+                        pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
                 end
                 continue
             end
@@ -342,8 +390,9 @@ function _claim_s1_across(rows, scope)
                 ev["mode"] = g.mode
                 ev["images"] = sort!(reduce(vcat, [v for (val, v) in g.groups if val != g.mode]; init = String[]))
             end
-            push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k, pop = pop,
-                detail = _claim_detail("S1", ev)))
+            # a gate is drawn per image, so a different shape is a judgement to check, not a setting to re-run
+            push!(findings, qc_finding("warn", startswith(k, "gate.") ? "claim.gate_differs" : "claim.differs_across_images";
+                variable = _claim_variable_label(k), pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
         end
     end
     findings
@@ -385,10 +434,10 @@ function _claim_s1_between(rows, scope)
         ev = Dict{String,Any}("variable" => k, "byPop" => per_pop, "imagesDiffering" => within,
                               "separable" => !disjoint)
         if disjoint
-            push!(findings, qc_finding("warn", "claim.confounded"; variable = k, detail = _claim_detail("S1", ev)))
+            push!(findings, qc_finding("warn", "claim.confounded"; variable = _claim_variable_label(k), detail = _claim_detail("S1", ev)))
         else
-            push!(findings, qc_finding("warn", "claim.differs_between_groups"; variable = k,
-                n = length(within), detail = _claim_detail("S1", ev)))
+            push!(findings, qc_finding("warn", "claim.differs_between_groups"; variable = _claim_variable_label(k),
+                n = length(within), imgs = _claim_imgs_text(within), detail = _claim_detail("S1", ev)))
         end
     end
     findings, not_compared
@@ -418,11 +467,11 @@ function _claim_s2(rows, scope)
     isempty(used) && return findings
 
     # the statistical unit
-    if isempty(scope.unit_attr)
+    if isempty(scope.unit_attrs)
         push!(findings, qc_finding("warn", "claim.no_unit";
             detail = _claim_detail("S2", Dict{String,Any}("images" => _claim_imgs(used)))))
     else
-        attr = scope.unit_attr
+        attr = _claim_unit_label(scope)
         units = Dict(p => Set(String[r["unit"] for r in used if r["pop"] == p && !isempty(r["unit"])])
                      for p in scope.populations)
         imgs_per_unit = Dict{String,Vector{String}}()
@@ -432,7 +481,7 @@ function _claim_s2(rows, scope)
             r["image"] in v || push!(v, r["image"])
         end
         foreach(sort!, values(imgs_per_unit))
-        ev = Dict{String,Any}("attr" => attr, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
+        ev = Dict{String,Any}("attrs" => scope.unit_attrs, "byPop" => Dict(p => sort!(collect(u)) for (p, u) in units),
                               "imagesPerUnit" => imgs_per_unit)
         if length(scope.populations) >= 2
             shared = reduce(intersect, values(units))
@@ -450,7 +499,7 @@ function _claim_s2(rows, scope)
             ev["design"] = "one group"; ev["minP"] = claim_min_p_paired(n)
         end
         ev["n"] = n
-        pmin = round(ev["minP"]; sigdigits = 2)
+        pmin = round(ev["minP"]; sigdigits = 3)
         if n == 0
             # no unit filled in where the claim has data — S0's `claim.unit_blank` already says so
         elseif ev["minP"] > CLAIM_ALPHA
@@ -464,7 +513,7 @@ function _claim_s2(rows, scope)
         multi = sort!([u for (u, is) in imgs_per_unit if length(is) > 1])
         isempty(multi) || push!(findings, qc_finding("info", "claim.images_per_unit"; attr = attr,
             n_images = length(_claim_imgs(filter(r -> !isempty(r["unit"]), used))), n = length(imgs_per_unit),
-            detail = _claim_detail("S2", Dict{String,Any}("attr" => attr, "units" => multi,
+            detail = _claim_detail("S2", Dict{String,Any}("attrs" => scope.unit_attrs, "units" => multi,
                 "imagesPerUnit" => imgs_per_unit))))
     end
 
@@ -478,10 +527,122 @@ function _claim_s2(rows, scope)
             end
         end
         isempty(bad) || push!(findings, qc_finding("warn", "claim.uncalibrated"; n = length(bad),
-            measure = scope.measure, detail = _claim_detail("S2", Dict{String,Any}("measure" => scope.measure,
+            imgs = _claim_imgs_text(sort!(collect(keys(bad)))), measure = scope.measure, detail = _claim_detail("S2", Dict{String,Any}("measure" => scope.measure,
                 "fields" => collect(fields), "images" => bad))))
     end
     findings
+end
+
+# ── the checks as a list of facts ──────────────────────────────────────────────────────────────
+
+# Every check in reading order. What each one looks at, and the fact it states when it finds nothing,
+# are copy: `claim.ok.<id>` in qc/text.jl. `S2.unit` always states a fact (the n), so it has no pass line.
+const CLAIM_CHECK_IDS = ("S0.membership", "S0.data", "S0.unit", "S0.params", "S0.dims",
+                         "S1.acrossImages", "S1.betweenGroups", "S2.unit", "S2.calibration")
+# What each check is about, for the reader: the categories the checks are listed under, in order
+# (labels in qc/text.jl, `claim.cat.<id>`). The model review uses the same ones, plus `data` (the
+# measured values themselves, which no rule reads) and `other`.
+const CLAIM_CATEGORIES = ("images", "record", "sameness", "replicates", "units", "data", "other")
+const CLAIM_CATEGORY_OF = Dict(
+    "S0.membership" => "images", "S0.data" => "images", "S0.unit" => "images",
+    "S0.params" => "record", "S0.dims" => "record",
+    "S1.acrossImages" => "sameness", "S1.betweenGroups" => "sameness",
+    "S2.unit" => "replicates", "S2.calibration" => "units")
+# The check each finding comes from.
+const CLAIM_CHECK_OF = Dict(
+    "claim.image_excluded" => "S0.membership", "claim.no_data" => "S0.data", "claim.unit_blank" => "S0.unit",
+    "claim.params_not_recorded" => "S0.params", "claim.params_last_run_only" => "S0.params",
+    "claim.params_outcome_unrecorded" => "S0.params",
+    "claim.dims_not_recorded" => "S0.dims",
+    "claim.differs_across_images" => "S1.acrossImages", "claim.within_tolerance" => "S1.acrossImages",
+    "claim.gate_differs" => "S1.acrossImages",
+    "claim.differs_between_groups" => "S1.betweenGroups", "claim.confounded" => "S1.betweenGroups",
+    "claim.not_compared" => "S1.betweenGroups",
+    "claim.no_unit" => "S2.unit", "claim.few_units" => "S2.unit", "claim.unit_count" => "S2.unit",
+    "claim.images_per_unit" => "S2.unit", "claim.uncalibrated" => "S2.calibration")
+
+# The same finding for several populations is ONE fact ("No B and T data on fHqhyb"): merged when
+# its code, its other subjects and its images agree — across-image differences by variable alone,
+# since each population's values differ in their own way. Also folds exact repeats (one per pop).
+function _claim_merge_pops(findings)
+    groups = Dict{Any,Vector{Any}}(); order = Any[]
+    for f in findings
+        subs = get(f, "subs", Dict{String,Any}())
+        ev = get(get(f, "detail", Dict()), "evidence", Dict())
+        imgs = f["code"] in ("claim.differs_across_images", "claim.gate_differs") ? nothing : get(ev, "images", nothing)
+        k = (f["code"], f["level"], sort!([kv for kv in subs if kv[1] != "pop"]; by = first), imgs)
+        haskey(groups, k) || push!(order, k)
+        push!(get!(groups, k, Any[]), f)
+    end
+    out = Any[]
+    for k in order
+        fs = groups[k]
+        pops = unique(String[string(f["subs"]["pop"]) for f in fs if haskey(get(f, "subs", Dict()), "pop")])
+        if length(fs) == 1 || length(pops) < 2
+            push!(out, fs[1]); continue
+        end
+        f1 = fs[1]
+        subs = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in f1["subs"])
+        subs[:pop] = join(pops, " and ")
+        d = copy(f1["detail"])
+        evs = [f["detail"]["evidence"] for f in fs]
+        # what every population's evidence agrees on stays at the top; the rest is per population
+        common = Dict{String,Any}(k => v for (k, v) in evs[1] if k != "pop" && all(e -> get(e, k, nothing) == v, evs))
+        d["evidence"] = merge(common, Dict{String,Any}("pops" => pops, "byPop" => Dict(zip(pops, evs))))
+        push!(out, qc_finding(f1["level"], f1["code"]; detail = d, subs...))
+    end
+    for f in out
+        f["detail"]["check"] = get(CLAIM_CHECK_OF, f["code"], "")
+    end
+    out
+end
+
+"""
+    claim_check_lines(result) -> Vector{Dict}
+
+The checks as a list of facts, in reading order: `{id, state, text, tip}`. `state` is `warn` (its
+warnings are the findings with `detail.check == id`), `ok` (`text` is the fact it confirmed) or
+`skipped` (`text` says why). The plot's popover and the claim entry both read this.
+"""
+function claim_check_lines(result::AbstractDict)
+    lines = Dict{String,Any}[]
+    for id in CLAIM_CHECK_IDS
+        fs = filter(f -> get(f["detail"], "check", "") == id, result["findings"])
+        warn = any(f -> f["level"] == "warn", fs)
+        t = qc_text("claim.ok." * id)
+        state, text = if warn
+            "warn", ""
+        elseif haskey(result["skipped"], id)
+            "skipped", string(result["skipped"][id])
+        elseif id in result["ran"]
+            # a check that always states a fact (the n per replicate) says it in its info finding
+            info = filter(f -> f["level"] == "info", fs)
+            "ok", (id == "S2.unit" && !isempty(info)) ? info[1]["short"] : t.short
+        else
+            continue
+        end
+        push!(lines, Dict{String,Any}("id" => id, "category" => CLAIM_CATEGORY_OF[id], "state" => state,
+                                      "text" => text, "tip" => t.long))
+    end
+    lines
+end
+
+"""
+    claim_categories(lines) -> Vector{Dict}
+
+The categories the check lines fall in, in reading order: `{id, label, tip, state}` — `warn` if any of
+its checks found a problem, `ok` if one ran and none did, else `skipped`.
+"""
+function claim_categories(lines::AbstractVector)
+    out = Dict{String,Any}[]
+    for cat in CLAIM_CATEGORIES
+        ls = filter(l -> l["category"] == cat, lines)
+        isempty(ls) && continue
+        st = any(l -> l["state"] == "warn", ls) ? "warn" : any(l -> l["state"] == "ok", ls) ? "ok" : "skipped"
+        t = qc_text("claim.cat." * cat)
+        push!(out, Dict{String,Any}("id" => cat, "label" => t.short, "tip" => t.long, "state" => st))
+    end
+    out
 end
 
 """
@@ -495,7 +656,7 @@ groups because one group has no record of them (an S0 gap, not a clean bill).
 function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any}
     ran = String["S0.membership", "S0.data"]
     skipped = Dict{String,String}()
-    isempty(scope.unit_attr) ? (skipped["S0.unit"] = "no unit attribute given") : push!(ran, "S0.unit")
+    isempty(scope.unit_attrs) ? (skipped["S0.unit"] = "no replicate attribute given") : push!(ran, "S0.unit")
     push!(ran, "S0.params")
     _claim_needs_tracking(scope.measure) ? push!(ran, "S0.dims") : (skipped["S0.dims"] = "not a tracking measure")
     findings = _claim_s0(table, scope)
@@ -521,23 +682,26 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
                 fun = _claim_param_fun(k)
                 push!(get!(by, isnothing(fun) ? k : "params." * fun, String[]), k)
             end
-            for (what, ks) in sort!(collect(by); by = first)
-                push!(findings, qc_finding("info", "claim.not_compared"; variable = what, n = length(ks),
-                    detail = _claim_detail("S1", Dict{String,Any}("variable" => what, "settings" => sort!(ks)))))
-            end
+            # one note: how many settings, from which steps
+            push!(findings, qc_finding("info", "claim.not_compared"; n = length(not_compared),
+                variable = join(sort!(collect(keys(by))), ", "),
+                detail = _claim_detail("S1", Dict{String,Any}("bySource" => Dict(k => sort!(v) for (k, v) in by)))))
         end
     end
     # S2 — conventions, over the rows the claim runs on
     if isempty(used)
         skipped["S2"] = "no images with data"
     else
-        isempty(scope.unit_attr) || push!(ran, "S2.unit")
+        isempty(scope.unit_attrs) || push!(ran, "S2.unit")
         isempty(_claim_calibration_fields(scope.measure)) ? (skipped["S2.calibration"] = "measure needs no calibration") :
             push!(ran, "S2.calibration")
         append!(findings, _claim_s2(table, scope))
     end
-    Dict{String,Any}("findings" => findings, "ran" => ran, "skipped" => skipped,
-                     "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))
+    out = Dict{String,Any}("findings" => _claim_merge_pops(findings), "ran" => ran, "skipped" => skipped,
+                           "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))
+    out["checks"] = claim_check_lines(out)
+    out["categories"] = claim_categories(out["checks"])
+    out
 end
 
 """

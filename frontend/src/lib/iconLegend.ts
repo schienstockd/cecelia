@@ -212,6 +212,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-book', lucide: 'book-open', means: 'The lab log and notebooks' },
       { icon: 'pi-align-left', lucide: 'text-align-start', means: 'The blackboard — shared Markdown notes for an analysis' },
       { icon: 'pi-paperclip', lucide: 'paperclip', means: 'An attachment — a capture stapled to a blackboard entry' },
+      { icon: 'pi-verified', lucide: 'badge-check', means: 'A claim stated from a plot, checked against the record' },
       { icon: 'pi-list-check', lucide: 'list-checks', means: 'Tasks' },
       { icon: 'pi-clone', lucide: 'layers', means: 'The analysis board, or cascade the plots' },
       { icon: 'pi-table', lucide: 'table', means: 'A heatmap of values' },

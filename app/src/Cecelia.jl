@@ -88,7 +88,7 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_findin
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
-export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired
+export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired, claim_unit_attrs
 export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
 export run_author, run_env_of, read_run_env

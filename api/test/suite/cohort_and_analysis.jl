@@ -296,7 +296,7 @@ end
         @test _cc("")[1] == 400                                           # missing params
         @test _cc("$base&measure=live.track.speed")[1] == 400             # no populations
         @test _cc("?projectUid=$(proj.uid)&setUid=nope&pops=B/qc&measure=x")[1] == 404
-        st, body = _cc("$base&pops=B/qc,T/qc&measure=live.track.speed&unitAttr=Mouse")
+        st, body = _cc("$base&pops=B/qc,T/qc&measure=live.track.speed&unitAttrs=Mouse")
         @test st == 200
         r = JSON3.read(body)
         @test r.nRows == 4 && r.nUsed == 0                                # 2 images × 2 pops, no tracks yet

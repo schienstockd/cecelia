@@ -347,6 +347,20 @@ caption (bottom-centre) and actions (recapture / remove, bottom-right) sit **abo
 toolbar (`.cc-panel-controls`, z-index 6) — they used to live at the top and were masked when the
 hover toolbar appeared.
 
+## Stating a claim from a plot
+
+A set-wide summary plot can carry a **claim** (`docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md`): the footer
+button (`components/canvas/ClaimStrip.vue`) counts open problems and opens a popover with the sentence and
+the **replicate** (image attributes counted as one sample, e.g. Mouse × Location). Scope = the plot's set,
+drawn populations and measure; the sentence itself is read only by the model review.
+- **Checks · no model** (`POST /api/claim/state`): facts grouped by category (`claim_categories`) — ✓ or
+  "what is wrong, where → what to do".
+- **Model review** (on request): one Kiwi turn without the analyst's notes, told what the checks found,
+  filing only what they missed under the same categories.
+
+The Blackboard entry holds the same list; only the model's points are sections to mark Good / Bad /
+Unsure. The panel's `ui` keeps the entry id (restate = new round); opening the board re-checks.
+
 ## Export — one dropdown: figure (PDF / SVG) and/or CSV
 
 `TabbedCanvas` drives export; `LayoutCanvas.capturePage(vector?)` measures the on-screen grid so the

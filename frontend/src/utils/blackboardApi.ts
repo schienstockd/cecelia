@@ -261,7 +261,8 @@ export async function getBlackboardEntry(
   } catch { return null }
 }
 
-async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+/** POST a JSON body; the parsed reply, or null on a network error or non-2xx. Shared with `claimApi.ts`. */
+export async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
   try {
     const res = await fetch(url, {
       method: 'POST',

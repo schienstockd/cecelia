@@ -36,7 +36,7 @@ function _cc_image(uid; interval = 30, included = true, mouse = "1", diameter = 
         Cecelia.write_json_atomic(Cecelia.gating_path(img._dir, vn), Dict{String,Any}(
             "value_name" => vn, "pop_type" => "flow", "populations" => Any[Dict{String,Any}(
                 "name" => "qc", "children" => Any[],
-                "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "volume",
+                "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "volume", "y_channel" => "area",
                                            "vertices" => [[0, 0], [1, 0], [1, 1]]))]))
         write_qc(img, "tracking.track_measures", vn, Dict{String,Any}[];
                  metrics = Dict{String,Any}("motionDims" => getfield(dims, Symbol(vn))))
@@ -52,7 +52,7 @@ function _cc_set(imgs)
     set
 end
 
-_cc_run(imgs) = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attr = "Mouse"))
+_cc_run(imgs) = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"]))
 _cc_codes(r) = sort!([f["code"] for f in r["findings"] if f["level"] == "warn"])
 _cc_find(r, code) = filter(f -> f["code"] == code, r["findings"])
 # seven mice, one image each: one over the smallest paired design whose rank-test floor is under 0.05
@@ -78,7 +78,7 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     imgs = _cc_clean(); imgs[3].meta["PhysicalSizeX"] = 0.5964
     r = _cc_run(imgs)
     @test isempty(_cc_codes(r))
-    @test length(_cc_find(r, "claim.within_tolerance")) == 2          # once per population
+    @test length(_cc_find(r, "claim.within_tolerance")) == 1          # one fact, not one per population
     @test _cc_find(r, "claim.within_tolerance")[1]["detail"]["display"] == true
 
     # ── one image excluded: S0 says so, S1 runs without it ──
@@ -87,13 +87,26 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     @test _cc_codes(r) == ["claim.image_excluded"]
     @test _cc_find(r, "claim.image_excluded")[1]["detail"]["evidence"]["images"] == ["b"]
     @test r["nUsed"] == 12
+    @test _cc_find(r, "claim.image_excluded")[1]["short"] == "Excluded from the set: b"
+    # the checks as facts: the one that found something is `warn`, the rest state what they confirmed
+    st = Dict(l["id"] => l["state"] for l in r["checks"])
+    @test st["S0.membership"] == "warn" && st["S0.data"] == "ok" && st["S2.calibration"] == "ok"
+    @test only(l["text"] for l in r["checks"] if l["id"] == "S2.unit") == "Mouse: n = 6"
+    # …grouped by what they are about: the excluded image makes Images a warning, the rest pass
+    cats = Dict(c["id"] => c["state"] for c in r["categories"])
+    @test [c["id"] for c in r["categories"]] == ["images", "record", "sameness", "replicates", "units"]
+    @test cats["images"] == "warn" && cats["units"] == "ok" && r["categories"][1]["label"] == "Images"
 
     # ── one param changed on one image ──
     imgs = _cc_clean(); imgs[1] = _cc_image("a"; mouse = "1", diameter = 15)
     r = _cc_run(imgs)
     f = _cc_find(r, "claim.differs_across_images")
-    @test length(f) == 2                                                # B and T both segmented at 15
+    @test length(f) == 1                                                # B and T both segmented at 15: one fact
+    @test f[1]["short"] == "cellposeMeasure: models.0.cellDiameter differs across images for B and T"   # named, not keyed
+    @test Cecelia._claim_variable_label("params.segment.cellposeMeasure.models.1.cellDiameter") !=
+          Cecelia._claim_variable_label("params.segment.cellposeMeasure.models.0.cellDiameter")
     ev = f[1]["detail"]["evidence"]
+    @test ev["pops"] == ["B", "T"] && f[1]["detail"]["check"] == "S1.acrossImages"
     @test ev["variable"] == "params.segment.cellposeMeasure.models.0.cellDiameter"
     @test ev["images"] == ["a"] && ev["mode"] == "10"
 
@@ -124,11 +137,11 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
 
     # ── params only in the flat last-run blob: the other population's run is gone ──
     r = _cc_run(_cc_clean(; flat_only = true))
-    nr = _cc_find(r, "claim.params_not_recorded")
-    @test Set((x["detail"]["evidence"]["pop"], x["detail"]["evidence"]["kind"]) for x in nr) ==
-          Set([("B/qc", "tracking"), ("T/qc", "segment")])
-    @test length(_cc_find(r, "claim.params_last_run_only")) == 2
-    @test !isempty(_cc_find(r, "claim.not_compared"))                  # one group has no record
+    nr = only(_cc_find(r, "claim.params_not_recorded"))                 # every gap in one fact
+    @test Set((x["pop"], x["kind"]) for x in nr["detail"]["evidence"]["gaps"]) == Set([("B/qc", "tracking"), ("T/qc", "segment")])
+    @test nr["short"] == "Processing params not on record: B tracking (7 images), T segment (7 images)"
+    @test length(_cc_find(r, "claim.params_last_run_only")) == 1
+    @test length(_cc_find(r, "claim.not_compared")) == 1                # one group has no record: one note
 
     # ── a FAILED re-run's params are not what produced the output ──
     # `funParamsByName` is written at dispatch whatever the outcome (a form default, so a failed run's
@@ -175,9 +188,10 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     r = _cc_run(imgs)
     @test !any(f -> occursin("cellDiameter", get(f["detail"]["evidence"], "variable", "")),
                filter(f -> f["level"] == "warn", r["findings"]))
-    ou = filter(x -> x["detail"]["evidence"]["pop"] == "B/qc" && x["detail"]["evidence"]["kind"] == "segment",
-                _cc_find(r, "claim.params_outcome_unrecorded"))
-    @test length(ou) == 1 && ou[1]["detail"]["evidence"]["images"] == ["g"]
+    # one fact for every gap; B's segmentation gap is g alone
+    ou = filter(x -> x["pop"] == "B/qc" && x["kind"] == "segment",
+                only(_cc_find(r, "claim.params_outcome_unrecorded"))["detail"]["evidence"]["gaps"])
+    @test length(ou) == 1 && ou[1]["images"] == ["g"]
 
     # ── banked dims missing (a run from before track measures banked them) ──
     imgs = _cc_clean(); rm(qc_path(imgs[1], "tracking.track_measures", "T"))
@@ -191,6 +205,18 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     f = _cc_find(r, "claim.differs_across_images")
     @test length(f) == 1 && f[1]["detail"]["evidence"]["images"] == ["c"]
     @test haskey(f[1]["detail"]["evidence"]["byValue"], "(not set)")
+
+    # ── a gate drawn differently on one image, for B and T: one fact, named plainly, gate advice ──
+    # (on the record table — the rules are pure; the synthetic gates aren't what this exercises)
+    sc = ClaimScope(_cc_set(_cc_clean()), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"])
+    rows = claim_record_table(sc)
+    @test all(row -> row["hasGate"] && haskey(row["vars"], "gate.geometry"), rows)   # the fixture's gates load
+    for row in rows; row["vars"]["gate.geometry"] = row["image"] == "b" ? "beef0001" : "cafe0002"; end
+    r = claim_checks(rows, sc)
+    gd = only(_cc_find(r, "claim.gate_differs"))
+    @test gd["short"] == "Gate shape differs across images for B and T" && occursin("drawn per image", gd["long"])
+    @test gd["detail"]["evidence"]["variable"] == "gate.geometry"          # evidence keeps the key
+    @test isempty(_cc_find(r, "claim.differs_across_images"))
 
     # ── one population: S1 between groups is skipped and says why ──
     r1 = claim_checks(ClaimScope(_cc_set(_cc_clean()), ["B/qc"], "live.track.speed"))
@@ -213,6 +239,20 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     ipu = _cc_find(r, "claim.images_per_unit")
     @test length(ipu) == 1 && ipu[1]["detail"]["evidence"]["units"] == ["3"]
     @test isempty(_cc_find(_cc_run(_cc_clean()), "claim.images_per_unit"))   # clean twin: one image each
+    # …the replicate as Mouse × Location: mouse 3's three images are three sites → six replicates,
+    # one image each. Per mouse alone they'd still be four.
+    for (img, loc) in zip(imgs, ("a", "a", "a", "b", "c", "a")); img.attr["Location"] = loc; end
+    rml = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse", "Location"]))
+    ev = _cc_find(rml, "claim.unit_count")[1]["detail"]["evidence"]
+    @test ev["n"] == 6 && ev["attrs"] == ["Mouse", "Location"] && haskey(ev["imagesPerUnit"], "3 × b")
+    @test _cc_codes(rml) == [] && isempty(_cc_find(rml, "claim.images_per_unit"))
+    @test claim_unit_attrs([" Mouse ", "", "Mouse", "Location"]) == ["Mouse", "Location"]
+    @test claim_unit_attrs("Mouse") == ["Mouse"] && claim_unit_attrs(nothing) == String[]
+    # …a site left blank makes that image's replicate uncountable — S0 names the combined attribute
+    delete!(imgs[5].attr, "Location")
+    rml = claim_checks(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse", "Location"]))
+    @test "claim.unit_blank" in _cc_codes(rml)
+    @test occursin("Mouse × Location", _cc_find(rml, "claim.unit_blank")[1]["short"])
 
     # ── S2: unpaired floors (exact Mann–Whitney): 2 vs 2 → 1/3, 4 vs 4 → 2/70 ──
     @test claim_min_p_unpaired(2, 2) ≈ 1 / 3
@@ -227,10 +267,10 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     # …an intensity claim doesn't need calibration: quiet, and says it skipped the check
     imgs = _cc_clean(); delete!(imgs[2].meta, "PhysicalSizeUnit")
     set = _cc_set(imgs)
-    rows = claim_record_table(ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attr = "Mouse"))
-    @test _cc_codes(claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attr = "Mouse"))) ==
+    rows = claim_record_table(ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"]))
+    @test _cc_codes(claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"]))) ==
           ["claim.uncalibrated"]
-    ri = claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "mean_intensity_1"; unit_attr = "Mouse"))
+    ri = claim_checks(rows, ClaimScope(set, ["B/qc", "T/qc"], "mean_intensity_1"; unit_attrs = ["Mouse"]))
     @test isempty(_cc_find(ri, "claim.uncalibrated")) && haskey(ri["skipped"], "S2.calibration")
 
     # every claim finding renders from the catalog (no unfilled placeholder)
