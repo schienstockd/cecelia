@@ -111,13 +111,14 @@ _ov_look_int(cfg, k::AbstractString, dflt::Int) = begin
 end
 
 # Which segmentation an animation's overlays come from: the look's `popValueName`, else its legacy
-# `valueName`, else `dflt`. Empty strings fall through.
-function _ov_look_seg(cfg, dflt::AbstractString)
+# `valueName`, else the request's `mask` (the segmentation it draws — what the 3D batch and title card
+# fall back to, `_config_pop_segmentation`), else `dflt`. Empty strings fall through.
+function _ov_look_seg(cfg, dflt::AbstractString; mask::Union{Nothing,AbstractString} = nothing)
     for k in ("popValueName", "valueName")
         v = _ov_look_str(cfg, k, "")
         isempty(v) || return v
     end
-    String(dflt)
+    (mask === nothing || isempty(mask)) ? String(dflt) : String(mask)
 end
 
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
@@ -480,7 +481,7 @@ function handle_movie_record(ws, data)
         if ovs_cfg !== nothing
             # The SEGMENTATION the overlays come from. `popValueName` is the look's name for it (what
             # `viewerLook` writes); a bare `valueName` is what older animation looks carried.
-            ovs_cfg["valueName"] = _ov_look_seg(look_cfg, first_vn)
+            ovs_cfg["valueName"] = _ov_look_seg(look_cfg, first_vn; mask = kf_mask)
             # `look` carries the resolved per-set settings; a missing tailLength defaults to 30
             # (matches `_overlays_raw_from_config`).
             ovs_cfg["tailLength"] = _ov_look_int(look_cfg, "tailLength", 30)

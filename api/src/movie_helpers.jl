@@ -266,7 +266,11 @@ function _config_overlay_pops(img, config)
     if Bool(get(config, :showPopulations, false))
         pt = String(get(config, :popType, "flow"))
         pf = get(config, :popsFilter, nothing)
-        keep = (pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
+        all_segs = Bool(get(config, :popAllSegmentations, false))
+        # `popsFilter` scopes the ONE batch pop layer; the renderer ignores it on a look's
+        # all-segmentation layers (`viewer_overlay_closure` gets `pops_filter = nothing` there), so the
+        # card must too, or it would drop rows for pops the movie draws.
+        keep = (!all_segs && pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
         # A viewer look: these pop types on every segmentation. Else the ONE segmentation the movie
         # draws pops from (`_config_pop_segmentation`); none → none drawn.
         pts_raw = get(config, :popTypes, nothing)
@@ -279,7 +283,7 @@ function _config_overlay_pops(img, config)
         ribbon_row(vn, lpt, L) = plan.gated && !(vn in tc) &&
             (Bool(get(L, :is_track, false)) || Bool(get(L, :has_tracks, false))) &&
             plan_ribbon_eye(plan, pops_vn, vn, lpt, L.path, Bool(L.show))
-        layers = if Bool(get(config, :popAllSegmentations, false))
+        layers = if all_segs
             [(vn, String(p)) for vn in _overlay_segmentations(img)
                              for p in (pts_raw isa AbstractVector && !isempty(pts_raw) ? pts_raw : [pt])]
         else
@@ -411,7 +415,9 @@ function _track_source_items(config, img = nothing)::Vector{Dict{String,Any}}
     ov === nothing && return Dict{String,Any}[]
     mode = ov["trackColorMode"]
     tc = (img !== nothing && ov["showTrackclust"]) ? Set(trackclust_segmentations(img)) : Set{String}()
-    pop_vn = String(get(ov, "valueName", ""))
+    # the segmentation the unnamed `""` source draws — the renderer's, so the pops' own resolver
+    # (`popValueName`, else the mask's), not just the translator's `popValueName`-only `valueName`
+    pop_vn = _config_pop_segmentation(config)
     colours = ov["trackSourceColours"]
     items = Dict{String,Any}[]
     i = 0
@@ -572,6 +578,12 @@ end
 function _compare_grid(config)::Vector{MovieRow}
     versions = _config_value_names(config)              # never empty ("" = the active version)
     masks    = _config_compare_segmentations(config)
+    # Pin the pops' segmentation before a cell narrows `labelValueNames` to its own mask: unpinned, a
+    # row's renderer would fall back to THAT row's mask while the title card (whole config) names the
+    # first mask's pops. Same default the batch panel sends (`popValueName = labelValueNames[0]`).
+    if length(masks) > 1 && isempty(_cfg_str(config, "popValueName", ""))
+        config = merge(_column_base(config), Dict{Symbol,Any}(:popValueName => _config_pop_segmentation(config)))
+    end
     if length(versions) > 1 && length(masks) > 1
         # A cell draws ONE mask on ONE version; the row is captioned with the mask, so the caption
         # under each cell can stay the version and read as a column header repeated per row.
