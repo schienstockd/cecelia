@@ -1,94 +1,83 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 538" font-family="Georgia, 'Times New Roman', serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 570" font-family="Georgia, 'Times New Roman', serif">
 <defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/></marker></defs>
-<rect width="1600" height="538" fill="#fafaf7"/>
-<text x="20" y="42" font-size="17" fill="#2a2a2a" text-anchor="start" xml:space="preserve" font-weight="700"><tspan>AI</tspan></text>
-<text x="20" y="60" font-size="12" fill="#6b6b66" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>optional</tspan></text>
-<rect x="140" y="18" width="1440" height="50" rx="12" ry="12" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2" stroke-dasharray="7,5"/>
-<text x="860" y="39" font-size="14" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan font-weight="700">Kiwi</tspan><tspan> and </tspan><tspan font-weight="700">Claude Code</tspan><tspan> read the record, QC and checks through the same readers as the app</tspan></text>
-<text x="860" y="57" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>anything they write is stamped (who, model, session) · they design work, you run it · everything below works with AI off</tspan></text>
-<text x="20" y="113" font-size="17" fill="#2a2a2a" text-anchor="start" xml:space="preserve" font-weight="700"><tspan>Pipeline</tspan></text>
-<text x="20" y="131" font-size="12" fill="#6b6b66" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>what you do</tspan></text>
-<rect x="140" y="86" width="227" height="56" rx="12" ry="12" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="253" y="110" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Acquire</tspan></text>
-<text x="253" y="129" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>microscope settings</tspan></text>
-<line x1="367" y1="114" x2="382" y2="114" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="383" y="86" width="227" height="56" rx="12" ry="12" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="496" y="110" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Import</tspan></text>
-<text x="496" y="129" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>calibration · units</tspan></text>
-<line x1="609" y1="114" x2="624" y2="114" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="625" y="86" width="227" height="56" rx="12" ry="12" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="739" y="110" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Process</tspan></text>
-<text x="739" y="129" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>segment · track · correct</tspan></text>
-<line x1="852" y1="114" x2="867" y2="114" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="868" y="86" width="227" height="56" rx="12" ry="12" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="981" y="110" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Populations</tspan></text>
-<text x="981" y="129" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>gating · clusters</tspan></text>
-<line x1="1095" y1="114" x2="1110" y2="114" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="1111" y="86" width="227" height="56" rx="12" ry="12" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="1224" y="110" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analyse</tspan></text>
-<text x="1224" y="129" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>measures · plots · statistics</tspan></text>
-<line x1="1337" y1="114" x2="1352" y2="114" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="1353" y="86" width="227" height="56" rx="12" ry="12" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="1467" y="110" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Export</tspan></text>
-<text x="1467" y="129" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>figures · tables</tspan></text>
-<rect x="383" y="152" width="1197" height="30" rx="10" ry="10" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="981" y="172" font-size="13.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan font-weight="700">One scheduler runs every task</tspan><tspan> · checks the params, logs the run (custom modules too)</tspan></text>
-<text x="20" y="230" font-size="17" fill="#2a2a2a" text-anchor="start" xml:space="preserve" font-weight="700"><tspan>Record</tspan></text>
-<text x="20" y="248" font-size="12" fill="#6b6b66" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>what was done</tspan></text>
-<rect x="140" y="198" width="227" height="66" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="253" y="236" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>settings from the file</tspan></text>
-<rect x="383" y="198" width="227" height="66" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="496" y="228" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration + units</tspan></text>
-<text x="496" y="244" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>source: path only, no checksum</tspan></text>
-<rect x="625" y="198" width="227" height="66" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="739" y="220" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log: params, status</tspan></text>
-<text x="739" y="236" font-size="12.5" fill="#3a7d44" text-anchor="middle" xml:space="preserve"><tspan>version · device · who</tspan></text>
-<text x="739" y="252" font-size="12.5" fill="#3a7d44" text-anchor="middle" xml:space="preserve"><tspan>skipped images + why</tspan></text>
-<rect x="868" y="198" width="227" height="66" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="981" y="220" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gate tree, who drew it</tspan></text>
-<text x="981" y="236" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no gate history</tspan></text>
-<text x="981" y="252" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>GUI edits not logged</tspan></text>
-<rect x="1111" y="198" width="227" height="66" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1224" y="228" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>analysis tasks logged</tspan></text>
-<text x="1224" y="244" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>plots + statistics: no record</tspan></text>
-<rect x="1353" y="198" width="227" height="66" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1467" y="228" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>CSV rows trace back</tspan></text>
-<text x="1467" y="244" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>PDF / SVG carry no record</tspan></text>
-<text x="20" y="322" font-size="17" fill="#2a2a2a" text-anchor="start" xml:space="preserve" font-weight="700"><tspan>Checks</tspan></text>
-<text x="20" y="340" font-size="12" fill="#6b6b66" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>can it be trusted</tspan></text>
-<rect x="140" y="280" width="227" height="58" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="253" y="306" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>saturation · photon limit</tspan></text>
-<text x="253" y="322" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>depth profile</tspan></text>
-<rect x="383" y="280" width="227" height="58" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="496" y="306" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration · partial</tspan></text>
-<text x="496" y="322" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>timepoints · pyramid</tspan></text>
-<rect x="625" y="280" width="227" height="58" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="739" y="298" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>QC on every run</tspan></text>
-<text x="739" y="314" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>cohort QC per set</tspan></text>
-<text x="739" y="330" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>(button only)</tspan></text>
-<rect x="868" y="280" width="227" height="58" rx="6" ry="6" fill="#fafaf7" stroke="#d94a86" stroke-width="1.4" stroke-dasharray="5,4"/>
-<text x="981" y="314" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no QC on gating</tspan></text>
-<rect x="1111" y="280" width="227" height="58" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1224" y="306" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>spatial QC</tspan></text>
-<text x="1224" y="322" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no QC on statistics</tspan></text>
-<rect x="1353" y="280" width="227" height="58" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1467" y="314" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>export QC</tspan></text>
-<rect x="383" y="346" width="1197" height="30" rx="10" ry="10" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="981" y="366" font-size="13.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan font-weight="700">Claim checks</tspan><tspan> (rules, no model): record complete? · images treated the same? · right statistical unit?</tspan></text>
-<text x="253" y="366" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>QC warns, never blocks</tspan></text>
-<text x="20" y="410" font-size="17" fill="#2a2a2a" text-anchor="start" xml:space="preserve" font-weight="700"><tspan>Replay</tspan></text>
-<text x="20" y="428" font-size="12" fill="#6b6b66" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>run it again</tspan></text>
-<rect x="383" y="396" width="712" height="34" rx="10" ry="10" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="739" y="418" font-size="13.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan font-weight="700">Chains</tspan><tspan>: save the steps once, re-run on new images, skip what has not changed</tspan></text>
-<rect x="1111" y="396" width="469" height="34" rx="10" ry="10" fill="#fafaf7" stroke="#d94a86" stroke-width="1.4" stroke-dasharray="5,4"/>
-<text x="1345" y="418" font-size="13" fill="#d94a86" text-anchor="middle" xml:space="preserve"><tspan>re-run from an old run's frozen template</tspan></text>
-<rect x="140" y="454" width="26" height="16" rx="4" ry="4" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="174" y="467" font-size="12.5" fill="#2a2a2a" text-anchor="start" xml:space="preserve"><tspan>exists</tspan></text>
-<rect x="240" y="454" width="26" height="16" rx="4" ry="4" fill="#fafaf7" stroke="#d94a86" stroke-width="1.4" stroke-dasharray="5,4"/>
-<text x="274" y="467" font-size="12.5" fill="#d94a86" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>gap</tspan></text>
-<text x="330" y="467" font-size="12.5" fill="#3a7d44" text-anchor="start" xml:space="preserve"><tspan>added 2026-11-07</tspan></text>
-<rect x="460" y="454" width="26" height="16" rx="4" ry="4" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="1.4" stroke-dasharray="5,3"/>
-<text x="494" y="467" font-size="12.5" fill="#2a2a2a" text-anchor="start" xml:space="preserve"><tspan>model involved, optional</tspan></text>
-<text x="140" y="498" font-size="13" fill="#6b6b66" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>A plotted number traces back to its population, but not yet to the gate as it was when plotted.</tspan></text>
-<text x="140" y="520" font-size="11.5" fill="#999" text-anchor="start" xml:space="preserve"><tspan>From docs/todo/CECELIA_STRUCTURE_AUDIT.md (code refs per cell). Maturity tiers not shown: no feature is Tested yet.</tspan></text>
+<rect width="1100" height="570" fill="#fafaf7"/>
+<line x1="194" y1="144" x2="194" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="356" y1="144" x2="356" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="520" y1="144" x2="520" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="682" y1="144" x2="682" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="846" y1="144" x2="846" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="1008" y1="144" x2="1008" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/>
+<text x="100" y="43" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>AI</tspan></text>
+<text x="100" y="61" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>optional</tspan></text>
+<rect x="118" y="16" width="966" height="56" rx="12" ry="12" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2" stroke-dasharray="7,5"/>
+<text x="601" y="40" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Optional AI assistant</tspan></text>
+<text x="601" y="59" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>reads the same record · everything below works with AI off</tspan></text>
+<text x="100" y="115" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Pipeline</tspan></text>
+<text x="100" y="133" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>what you do</tspan></text>
+<rect x="118" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="194" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Acquire</tspan></text>
+<text x="194" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>microscope</tspan></text>
+<line x1="269" y1="116" x2="280" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="281" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="356" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Import</tspan></text>
+<text x="356" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
+<line x1="432" y1="116" x2="443" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="444" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="520" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Process</tspan></text>
+<text x="520" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>segment · track</tspan></text>
+<line x1="595" y1="116" x2="606" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="607" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="682" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Populations</tspan></text>
+<text x="682" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>gating</tspan></text>
+<line x1="758" y1="116" x2="769" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="770" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="846" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analyse</tspan></text>
+<text x="846" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>plots, statistics</tspan></text>
+<line x1="921" y1="116" x2="932" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="933" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="1008" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Export</tspan></text>
+<text x="1008" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>figures, tables</tspan></text>
+<text x="100" y="214" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Record</tspan></text>
+<text x="100" y="232" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>what was done</tspan></text>
+<rect x="118" y="160" width="966" height="110" rx="12" ry="12" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="601" y="184" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Every task leaves a record</tspan></text>
+<text x="601" y="203" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>parameters, version, who and when</tspan></text>
+<rect x="126" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="194" y="242" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>file settings</tspan></text>
+<rect x="289" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="356" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
+<text x="356" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no checksum</tspan></text>
+<rect x="452" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="520" y="242" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
+<rect x="615" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="682" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates + author</tspan></text>
+<text x="682" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no history</tspan></text>
+<rect x="778" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="846" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>task log</tspan></text>
+<text x="846" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>plots: none</tspan></text>
+<rect x="941" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="1008" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>CSV trace</tspan></text>
+<text x="1008" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>PDF: none</tspan></text>
+<text x="100" y="340" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Checks</tspan></text>
+<text x="100" y="358" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>can it be trusted</tspan></text>
+<rect x="118" y="286" width="966" height="110" rx="12" ry="12" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="601" y="310" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Checks read the record</tspan></text>
+<text x="601" y="329" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>quality checks at each step · claim checks · warn, never block</tspan></text>
+<rect x="126" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="194" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>saturation</tspan></text>
+<rect x="289" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="356" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
+<rect x="452" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="520" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>per run + per set</tspan></text>
+<rect x="615" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="682" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates compared</tspan></text>
+<text x="682" y="376" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no QC</tspan></text>
+<rect x="778" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="846" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>spatial QC</tspan></text>
+<text x="846" y="376" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>stats: no QC</tspan></text>
+<rect x="941" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="1008" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>export QC</tspan></text>
+<text x="100" y="439" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Replay</tspan></text>
+<text x="100" y="457" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>run it again</tspan></text>
+<rect x="118" y="412" width="966" height="56" rx="12" ry="12" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="601" y="436" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Chains replay it</tspan></text>
+<text x="601" y="455" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>re-run the same steps on new images · not from old templates</tspan></text>
+<text x="601" y="502" font-size="20" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analysis you can hand off and check</tspan></text>
+<text x="601" y="526" font-size="14" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>Structure first. AI is an optional layer on top.</tspan></text>
+<text x="118" y="548" font-size="12" fill="#d94a86" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>magenta italics = gap (docs/todo/CECELIA_STRUCTURE_PLAN.md)</tspan></text>
 </svg>
