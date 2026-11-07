@@ -45,24 +45,29 @@ export async function buildTitleCard(
 }
 
 // Merge the layers of several view snapshots into ONE — a layer is present/visible if it's visible in
-// ANY snapshot, with a colormap taken from a snapshot where it's shown. Lets the animation card describe
-// every channel/overlay that appears "at some point" across the keyframes. Pure.
+// ANY snapshot, with its drawn colour — a channel's `colormap`, a track layer's `colour` (null = by
+// track / speed) — taken from a snapshot where it's shown. Lets the animation card describe every
+// channel/overlay that appears "at some point" across the keyframes. Pure.
 export function unionViewSnapshot(
   snapshots: ({ layers?: Record<string, unknown> } | null | undefined)[],
 ): { layers: Record<string, unknown> } {
-  const merged: Record<string, { colormap?: string; visible?: boolean; [k: string]: unknown }> = {}
+  type Layer = { colormap?: string; colour?: string | null; visible?: boolean; [k: string]: unknown }
+  const merged: Record<string, Layer> = {}
   for (const s of snapshots) {
-    const layers = (s?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
+    const layers = (s?.layers ?? {}) as Record<string, Layer>
     for (const [name, l] of Object.entries(layers)) {
       const prev = merged[name]
       const shownHere = l?.visible !== false
-      merged[name] = {
+      const next: Layer = {
         ...(prev ?? {}), ...l,
         visible: shownHere || prev?.visible === true,
         // keep a colormap from a snapshot where the layer is actually shown
         colormap: (shownHere && typeof l?.colormap === 'string') ? l.colormap
           : (prev?.colormap ?? (typeof l?.colormap === 'string' ? l.colormap : undefined)),
       }
+      // same rule for a track layer's `colour`; null is a value ("by track"), so test presence
+      if (prev && 'colour' in prev && !(shownHere && l != null && 'colour' in l)) next.colour = prev.colour
+      merged[name] = next
     }
   }
   return { layers: merged }
