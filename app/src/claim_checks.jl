@@ -79,27 +79,30 @@ function _claim_run_output(fun::AbstractString, params::AbstractDict)::String
     try task_params_name(String(fun), p) catch; "" end
 end
 
-# Every recorded params blob for (image, value_name, kind), one per task fun, with where it came from:
-#   "byName" — banked under this output name (exact);
-#   "runLog" — the most recent finished run that wrote this name (exact);
-#   "flat"   — the flat last-run blob, ONLY when that run wrote this name (last run per task, so the
+# Every params blob for (image, value_name, kind), one per task fun, with where it came from:
+#   "runLog" — the most recent run that wrote this name and finished "done": the RECORD of what made it;
+#   "byName" — the form default banked under this name. Written at dispatch whatever the outcome
+#              (`_remember_fun_params`), so it may be a failed or cancelled run's — used only when the
+#              log has no finished run for the name, and reported as outcome-unrecorded. Its shape is
+#              the form's, not the run's, so S1 never compares it with a run-log row (`_claim_same_source`);
+#   "flat"   — the flat form default, ONLY when its run wrote this name (last request per task, so the
 #              other population's params are gone — the S0 gap this reports).
 function _claim_params_for(img::CciaImage, vn::AbstractString, kind::AbstractString)
     found = Dict{String,Tuple{Dict{String,Any},String}}()
-    byname = get(img.meta, FUN_PARAMS_BY_NAME_META_KEY, nothing)
-    if byname isa AbstractDict
-        for (fun, per) in byname
-            startswith(string(fun), kind * ".") || continue
-            hit = _fun_params_entry(per, String(vn))
-            isnothing(hit) || (found[string(fun)] = (hit, "byName"))
-        end
-    end
     for e in read_run_log(img._dir)
         r = run_log_row(e)
         (startswith(r.fn, kind * ".") && !haskey(found, r.fn) && r.status == "done" && !r.legacy) || continue
         _claim_run_output(r.fn, r.params) == vn || continue
         hit = run_log_params_for_output(img._dir, r.fn, vn)
         isnothing(hit) || (found[r.fn] = (hit, "runLog"))
+    end
+    byname = get(img.meta, FUN_PARAMS_BY_NAME_META_KEY, nothing)
+    if byname isa AbstractDict
+        for (fun, per) in byname
+            (startswith(string(fun), kind * ".") && !haskey(found, string(fun))) || continue
+            hit = _fun_params_entry(per, String(vn))
+            isnothing(hit) || (found[string(fun)] = (hit, "byName"))
+        end
     end
     flat = get(img.meta, FUN_PARAMS_META_KEY, nothing)
     if flat isa AbstractDict
@@ -241,6 +244,13 @@ function _claim_s0(rows, scope)
         missing_imgs = _claim_imgs(filter(r -> isempty(r["paramsSource"][kind]), rs))
         flat_only = _claim_imgs(filter(r -> !isempty(r["paramsSource"][kind]) &&
                                             all(==("flat"), values(r["paramsSource"][kind])), rs))
+        # a form default stood in for the record (no finished run in the log): outcome unknown. These
+        # are the images S1 leaves out wherever another image has the run-log record.
+        unrecorded = _claim_imgs(filter(r -> any(!=("runLog"), values(r["paramsSource"][kind])) &&
+                                             !all(==("flat"), values(r["paramsSource"][kind])), rs))
+        isempty(unrecorded) || push!(findings, qc_finding("info", "claim.params_outcome_unrecorded";
+            kind = kind, pop = pop, n = length(unrecorded),
+            detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => unrecorded))))
         isempty(missing_imgs) || push!(findings, qc_finding("warn", "claim.params_not_recorded";
             kind = kind, pop = pop, n = length(missing_imgs),
             detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => missing_imgs))))
@@ -257,6 +267,29 @@ function _claim_s0(rows, scope)
         end
     end
     findings
+end
+
+# The rows S1 compares params on: if ANY row in a comparison has the run-log record for a task fun,
+# rows that only have a form default (`byName` / `flat`) lose that fun's `params.*` keys. The two are
+# different shapes (the log holds `run_task`'s resolved params, the form blob what the form sent), so
+# comparing them invents differences or hides real ones; S0 already names those rows as a gap. When no
+# row has the record, the form defaults are compared among themselves — one source, one shape.
+# `per_pop`: S1a compares within one population, so the rule is per (population, fun) — B having the
+# record must not strip T's rows when every T row reads the same fallback. S1b compares populations
+# with each other, so there it is per fun across all of them.
+function _claim_same_source(rows; per_pop::Bool)
+    src(r) = merge(Dict{String,String}(), values(r["paramsSource"])...)
+    key(r, f) = per_pop ? (r["pop"], f) : ("", f)
+    logged = Set{Tuple{String,String}}()
+    for r in rows, (f, s) in src(r)
+        s == "runLog" && push!(logged, key(r, f))
+    end
+    map(rows) do r
+        drop = [f for (f, s) in src(r) if s != "runLog" && key(r, f) in logged]
+        isempty(drop) && return r
+        vars = filter(kv -> !any(f -> startswith(kv.first, "params." * f * "."), drop), r["vars"])
+        merge(r, Dict{String,Any}("vars" => vars))
+    end
 end
 
 # `params.<fun>.<setting>` → `<fun>` (task names carry one dot: `segment.cellposeMeasure`).
@@ -471,7 +504,7 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
         skipped["S1.acrossImages"] = "fewer than 2 images with data"
     else
         push!(ran, "S1.acrossImages")
-        append!(findings, _claim_s1_across(used, scope))
+        append!(findings, _claim_s1_across(_claim_same_source(used; per_pop = true), scope))
     end
     not_compared = String[]
     if length(scope.populations) < 2
@@ -480,7 +513,7 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
         skipped["S1.betweenGroups"] = "no images with data"
     else
         push!(ran, "S1.betweenGroups")
-        f, not_compared = _claim_s1_between(used, scope)
+        f, not_compared = _claim_s1_between(_claim_same_source(used; per_pop = false), scope)
         append!(findings, f)
         if !isempty(not_compared)
             by = Dict{String,Vector{String}}()

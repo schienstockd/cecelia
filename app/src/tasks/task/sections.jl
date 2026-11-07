@@ -288,3 +288,19 @@ function _apply_param_requires_by_axes(task::CciaTask, have::AbstractSet{Symbol}
     walk(get(spec, "params", nothing))
     out
 end
+
+"""
+    resolve_run_params(task, params, img_or_imgs) -> Dict
+
+The params a run actually executes with, from what the form sent: nested sections lifted, group
+order resolved, spec defaults filled, image-guarded params dropped. `run_task` (both scopes) and the
+preview resolve through this, and the run log records its result. A form-default blob (`funParams`)
+is what the form SENT, so the two are different shapes (`modelsOrder`, filled defaults) — a reader
+does not compare them (claim checks: `_claim_same_source`).
+"""
+function resolve_run_params(task::CciaTask, params::AbstractDict, scope)::Dict{String,Any}
+    p = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
+    p = _apply_group_order(task, p)
+    p = _apply_spec_defaults(task, p)
+    _apply_param_requires(task, scope, p)
+end

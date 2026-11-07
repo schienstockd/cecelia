@@ -799,9 +799,11 @@ function handle_task_run(ws, data)
     end
 
     # Remember the params for this run (R parity: saveModuleFunParams). Persist to each processed
-    # image (a record of what params produced it) and to the set (the shared last-used default) so
-    # the module-page form is pre-populated next time (image → set → task-defaults). Done here, at
-    # dispatch, so it sticks regardless of run outcome — like the old taskManager did at launch.
+    # image and to the set (the shared last-used default) so the module-page form is pre-populated
+    # next time (image → set → task-defaults). Done here, at dispatch, so it sticks regardless of run
+    # outcome — like the old taskManager did at launch: after a failure the form comes back with what
+    # was tried. So this is a FORM DEFAULT, not a record of what produced an output — that is the run
+    # log (`run_log_params_for_output`, done runs only).
     _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
     # Everything above is the ASKING side — guards and project-state edits this process owns. The run

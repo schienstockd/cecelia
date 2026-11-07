@@ -130,6 +130,55 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     @test length(_cc_find(r, "claim.params_last_run_only")) == 2
     @test !isempty(_cc_find(r, "claim.not_compared"))                  # one group has no record
 
+    # ── a FAILED re-run's params are not what produced the output ──
+    # `funParamsByName` is written at dispatch whatever the outcome (a form default, so a failed run's
+    # settings come back for a retry). Image a: B was made at diameter 10 (done), then a re-run at 15
+    # failed — the by-name blob now holds 15, the run log says 10 made it. The record is the run log.
+    imgs = _cc_clean()
+    a = imgs[1]
+    seg_b(d) = Dict{String,Any}("outputValueName" => "B", "valueName" => "default",
+        "models" => Dict("0" => Dict("model" => "cyto2", "cellDiameter" => d, "cellChannels" => ["Channel 2"])))
+    # the log records what `run_task` resolved (defaults filled, group order applied), not the form
+    segtask = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+    append_run_log!(a, "segment.cellposeMeasure", "default", "done", Cecelia.resolve_run_params(segtask, seg_b(10), a))
+    append_run_log!(a, "segment.cellposeMeasure", "default", "failed", seg_b(15))
+    a.meta["funParamsByName"]["segment.cellposeMeasure"]["B"] = seg_b(15)
+    # the other images read the form blob, which carries the form-only `modelsOrder` the run resolves
+    # away: compared raw against a's run-log entry it would read as a difference nobody made
+    for img in imgs[2:end]
+        img.meta["funParamsByName"]["segment.cellposeMeasure"]["B"]["modelsOrder"] = ["0"]
+    end
+    r = _cc_run(imgs)
+    @test isempty(_cc_codes(r))      # same processing everywhere, whichever source each image read
+    row = only(filter(x -> x["image"] == "a" && x["pop"] == "B/qc",
+                      claim_record_table(ClaimScope(_cc_set(imgs), ["B/qc", "T/qc"], "live.track.speed"))))
+    @test row["paramsSource"]["segment"]["segment.cellposeMeasure"] == "runLog"
+    @test row["vars"]["params.segment.cellposeMeasure.models.0.cellDiameter"] == 10
+    # …and with no finished run in the log at all, the dispatch-time blob is shown as what it is
+    imgs = _cc_clean()
+    append_run_log!(imgs[1], "segment.cellposeMeasure", "default", "failed", seg_b(15))
+    r = _cc_run(imgs)
+    @test isempty(_cc_codes(r))
+    ou = _cc_find(r, "claim.params_outcome_unrecorded")
+    @test !isempty(ou) && all(x -> x["level"] == "info", ou)
+
+    # ── mixed sources: run-log images are compared, a fallback image is a gap, not a difference ──
+    # a–f have B's segmentation in the log; g only has the dispatch-time blob (its done run fell off
+    # the log), and that blob says 15. The two shapes are not comparable, so g is named by S0 and
+    # left out of S1 — never reported as segmented differently.
+    imgs = _cc_clean()
+    for img in imgs[1:6]
+        append_run_log!(img, "segment.cellposeMeasure", "default", "done",
+                        Cecelia.resolve_run_params(segtask, seg_b(10), img))
+    end
+    imgs[7].meta["funParamsByName"]["segment.cellposeMeasure"]["B"] = seg_b(15)
+    r = _cc_run(imgs)
+    @test !any(f -> occursin("cellDiameter", get(f["detail"]["evidence"], "variable", "")),
+               filter(f -> f["level"] == "warn", r["findings"]))
+    ou = filter(x -> x["detail"]["evidence"]["pop"] == "B/qc" && x["detail"]["evidence"]["kind"] == "segment",
+                _cc_find(r, "claim.params_outcome_unrecorded"))
+    @test length(ou) == 1 && ou[1]["detail"]["evidence"]["images"] == ["g"]
+
     # ── banked dims missing (a run from before track measures banked them) ──
     imgs = _cc_clean(); rm(qc_path(imgs[1], "tracking.track_measures", "T"))
     r = _cc_run(imgs)
