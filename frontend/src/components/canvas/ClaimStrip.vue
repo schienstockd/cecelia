@@ -13,6 +13,7 @@ import InlineNote from '../InlineNote.vue'
 import { SEVERITY } from '../../lib/severity'
 import { useToast } from '../../composables/useToast'
 import { useKiwiStore } from '../../stores/kiwi'
+import { useObserverStore } from '../../stores/observer'
 import { fetchImageAttrs } from '../../composables/useImageAttrs'
 import type { SeriesTarget } from '../../plots/types'
 import {
@@ -33,6 +34,7 @@ const props = defineProps<{
 const toast = useToast()
 const router = useRouter()
 const kiwi = useKiwiStore()
+const observer = useObserverStore()   // the AI switch: the model review is a Kiwi turn, hidden while AI is off
 
 const scope = computed(() => claimScopeOf({ setUid: props.setUid, series: props.series, measure: props.measure }))
 const result = ref<ClaimResult | null>(null)
@@ -87,7 +89,7 @@ watch(() => kiwi.turns, ts => {
   void recheck()
 })
 async function review() {
-  if (!props.ui.claimEntryId || reviewTurn.value) return
+  if (!props.ui.claimEntryId || reviewTurn.value || !observer.ai.enabled) return
   const tid = await reviewClaim(props.projectUid, props.ui.claimEntryId)
   if (!tid) { toast.add({ severity: 'warn', life: 5000, summary: 'Kiwi is busy — try again when it’s done' }); return }
   reviewTurn.value = tid
@@ -165,8 +167,8 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
           </div>
         </div>
 
-        <!-- the model review: on request -->
-        <div class="claim-head cc-row cc-row-tight">
+        <!-- the model review: on request, and only while AI is on (the server refuses it otherwise) -->
+        <div v-if="observer.ai.enabled" class="claim-head cc-row cc-row-tight">
           <span>Model review</span>
           <span class="cc-muted" v-tooltip.top="'One model turn reads the claim and the record, not your notes'">
             · {{ result.review?.model || result.reviewModel || 'model' }}, about a minute</span>
