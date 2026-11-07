@@ -171,7 +171,7 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
         "usePaga" => p.usePaga,
         "pagaThreshold" => p.pagaThreshold,
         "reversePath" => p.reversePath,
-        "randomState" => 0)
+        "randomState" => _CLUSTER_SEED)
     # QC (advisory): the runner writes the per-segment cluster distribution here; banked below.
     qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "cluster_qc.json")
     task_params["qcOutPath"] = qc_out_path
@@ -197,7 +197,8 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
 
     on_log("[INFO] clustTracks done → clusters.$(p.valueNameSuffix) (per-track)")
     Dict{String,Any}("suffix" => p.valueNameSuffix, "segments" => length(segments),
-                     "tracks" => nrow(df), "features" => length(present_cols))
+                     "tracks" => nrow(df), "features" => length(present_cols),
+                     "runEnv" => _cluster_run_env(qc_out_path))   # device + seed → run log `env`
 end
 
 # value_name of the first value-name-prefixed pop (for the set-wide motility-column probe). Pops

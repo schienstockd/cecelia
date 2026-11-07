@@ -105,19 +105,6 @@ class PhysicalScaleTest(unittest.TestCase):
         aniso = self.mod._physical_scale(_dim_utils(px=0.32, px_y=0.64), [None])
         self.assertEqual(aniso['y'], 0.64)
 
-    def test_coastal_build_names_the_commit_not_just_the_version(self):
-        """`coastal.__version__` is `0.1.0` and does not move; the pin in `pixi.toml` is a git
-        revision described there as a hard floor. So the identifier that means anything is the commit,
-        and it is what makes a published model's output reproducible at all."""
-        build = self.mod._coastal_build()
-        if build is None:
-            self.skipTest('coastal not installed')
-        self.assertIn('version', build)
-        # A VCS install records the commit; a PyPI/editable one does not, and says less rather than
-        # implying a snapshot it cannot name.
-        if 'commit' in build:
-            self.assertRegex(build['commit'], r'^[0-9a-f]{7,40}$')
-
     def test_units_are_recorded_not_converted(self):
         """No unit converter exists here; inventing one is a silent numeric error on the first
         non-micron file. The unit travels with the value instead."""

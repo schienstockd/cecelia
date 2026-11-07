@@ -849,6 +849,21 @@ function cluster_qc_findings(n_clusters_total::Integer, n_here::Integer, n_clust
     findings
 end
 
+# The seed every clustering task (clustPops / clustTracks / clustRegions / motif discovery) hands its runner
+# (Leiden / UMAP / k-means): fixed, named so the runner and the run log's `env.seed` agree.
+const _CLUSTER_SEED = 0
+
+"""
+    _cluster_run_env(qc_out_path) -> Dict{String,Any}
+
+The run log's `env` for a clustering task (cell, track or region): the `runEnv` the runner wrote into
+its QC sidecar (`device` — the path that actually ran, since `find_populations(backend="auto")` falls
+back from the GPU silently) plus the `seed` Julia handed it. A runner that reports no device (region
+k-means) still records the seed.
+"""
+_cluster_run_env(qc_out_path::AbstractString) =
+    merge(read_run_env(qc_out_path), Dict{String,Any}("seed" => _CLUSTER_SEED))
+
 # Bank a clustering run's QC from the per-segment JSON its Python runner wrote (see
 # clustering_utils.split_back_and_write → qcOutPath). Shared by clustPops + clustTracks (both are
 # set-scope, cluster all images at once, and write one QC doc per (image, segmentation) keyed by the

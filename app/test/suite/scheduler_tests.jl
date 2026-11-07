@@ -94,6 +94,26 @@ end
     write(joinpath(dir, "old.json"), JSON3.write(Dict("labelCounts" => Dict())))
     @test isempty(read_run_env(joinpath(dir, "old.json")))
     @test isempty(read_run_env(joinpath(dir, "missing.json")))
+    # a clustering task's env: the runner's device (GPU may fall back to CPU) + the seed Julia set;
+    # a runner that reports no device (region k-means) still records the seed
+    write(joinpath(dir, "cluster_qc.json"), JSON3.write(Dict("nClusters" => 2, "runEnv" => Dict("device" => "cpu"))))
+    @test Cecelia._cluster_run_env(joinpath(dir, "cluster_qc.json")) == Dict{String,Any}("device" => "cpu", "seed" => 0)
+    @test Cecelia._cluster_run_env(joinpath(dir, "missing.json")) == Dict{String,Any}("seed" => 0)
+
+    # every task whose result depends on a run-time choice hands the runner's env back as "runEnv" —
+    # a handler that drops it (e.g. ignores `bank_segment_qc!`'s return) records nothing
+    for f in ("clustPops/cluster.jl", "clustTracks/cluster.jl", "clustRegions/cluster.jl",
+              "segment/cellpose.jl", "segment/coastal.jl", "behaviour/motif_discovery.jl")
+        @test occursin("\"runEnv\"", read(joinpath(pkgdir(Cecelia), "src", "tasks", f), String))
+    end
+    for f in ("clustTracks/cluster.jl", "clustRegions/cluster.jl")   # one seed, the one env.seed reports
+        src = read(joinpath(pkgdir(Cecelia), "src", "tasks", f), String)
+        @test occursin("\"randomState\" => _CLUSTER_SEED", src) && occursin("_cluster_run_env(", src)
+    end
+    # motif discovery's Leiden takes the same seed, reported as `env.seed` (its runner is CPU-only)
+    motif = read(joinpath(pkgdir(Cecelia), "src", "tasks", "behaviour", "motif_discovery.jl"), String)
+    @test occursin(r"\"randomState\"\s*=>\s*_CLUSTER_SEED", motif) &&
+          occursin(r"\"runEnv\"\s*=>\s*Dict{String,Any}\(\"seed\"\s*=>\s*_CLUSTER_SEED\)", motif)
 
     # an old entry with none of the new fields still reads
     append_run_log!(img, "segment.cellpose", "default")

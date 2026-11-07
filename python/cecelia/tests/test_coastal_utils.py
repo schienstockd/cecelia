@@ -1258,3 +1258,109 @@ class DeclaredSecondsModelTest(unittest.TestCase):
         # two drifting apart is the defect this whole class exists to pin down.
         self.assertIn(f'{ceiling:g} s/frame or finer', msg)
         self.assertIn('As trained', msg)
+
+
+class _FakeDist:
+    """`importlib.metadata.Distribution` reduced to what `coastal_build` reads: its file list and
+    `locate_file`. `direct_url.json` holds the bytes pip/pixi really wrote (PEP 610)."""
+
+    def __init__(self, root, direct_url):
+        from pathlib import PurePosixPath
+        self._root = root
+        with open(os.path.join(root, 'direct_url.json'), 'w', encoding='utf-8') as f:
+            f.write(direct_url)
+        self.files = [PurePosixPath('coastal-0.1.0.dist-info/INSTALLER'),
+                      PurePosixPath('direct_url.json')]
+
+    def locate_file(self, f):
+        return os.path.join(self._root, f.name)
+
+
+class CoastalBuildTest(unittest.TestCase):
+    """Which coastal ran — `coastal.__version__` is `0.1.0` and never moves, so the commit is the
+    identifier that means anything. pixi installs the pin as a source TARBALL (pixi.toml), whose
+    `direct_url.json` has no `vcs_info`: the commit is only in the archive URL."""
+
+    def _build(self, direct_url):
+        from unittest import mock
+        from cecelia.utils import coastal_utils
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch('importlib.metadata.distribution', return_value=_FakeDist(d, direct_url)):
+            return coastal_utils.coastal_build()
+
+    def test_a_tarball_pin_names_its_commit(self):
+        # copied from the installed env's coastal-0.1.0.dist-info/direct_url.json
+        sha = 'fad40f2b8308c2f231454c29a1bc66f8f8e13ceb'
+        build = self._build('{"url":"https://github.com/schienstockd/coastal/archive/'
+                            f'{sha}.tar.gz","archive_info":{{}}}}')
+        self.assertEqual(build.get('commit'), sha)
+
+    def test_a_vcs_install_names_its_commit(self):
+        sha = '0123456789abcdef0123456789abcdef01234567'
+        build = self._build('{"url":"https://github.com/schienstockd/coastal.git",'
+                            f'"vcs_info":{{"vcs":"git","commit_id":"{sha}"}}}}')
+        self.assertEqual(build.get('commit'), sha)
+
+    def test_the_installed_coastal(self):
+        from cecelia.utils import coastal_utils
+        build = coastal_utils.coastal_build()
+        if build is None:
+            self.skipTest('coastal not installed')
+        self.assertIn('version', build)
+        if 'commit' in build:
+            self.assertRegex(build['commit'], r'^[0-9a-f]{7,40}$')
+
+    def test_a_plain_archive_names_no_commit(self):
+        build = self._build('{"url":"file:///tmp/coastal-0.1.0.tar.gz","archive_info":{}}')
+        self.assertNotIn('commit', build or {})
+
+
+class RunEnvTest(unittest.TestCase):
+    """The run log's `env` for a coastal run: the device inference ran on (chosen at run time),
+    the engine build, and the shared base's tiling."""
+
+    def test_device_engine_and_tiling(self):
+        from unittest import mock
+        from cecelia.utils import coastal_utils
+        cu = _utils()
+        cu.use_gpu, cu.gpu_device = False, None
+        with mock.patch.object(coastal_utils, 'coastal_build',
+                               return_value={'version': '0.1.0', 'commit': 'fad40f2'}):
+            env = cu.run_env()
+        self.assertEqual(env['device'], 'cpu')
+        self.assertEqual(env['coastal'], '0.1.0+fad40f2')
+        self.assertEqual(env['overlap'], cu.overlap)
+        with mock.patch.object(coastal_utils, 'coastal_build', return_value=None):
+            self.assertNotIn('coastal', cu.run_env())      # unknown → absent, never a default
+
+
+class CoastalRunnerTest(unittest.TestCase):
+    """`segment/coastal_run.py` hands the env back in the QC sidecar, as cellpose_run.py does."""
+
+    def test_qc_sidecar_carries_run_env(self):
+        import importlib.util
+        from pathlib import Path
+        from unittest import mock
+        runner = (Path(__file__).resolve().parents[3]
+                  / 'app' / 'src' / 'tasks' / 'segment' / 'coastal_run.py')
+        if not runner.is_file():
+            self.skipTest(f'runner not present at {runner}')
+        spec = importlib.util.spec_from_file_location('coastal_run', runner)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        fake = mock.MagicMock(use_gpu=False, TEMPORAL_RADIUS=1, normalise_to_whole=False,
+                              object_stats=None)
+        fake.predict_or_stop.return_value = {'base': 3}
+        fake.run_env.return_value = {'device': 'cpu', 'blockSize': 512, 'overlap': 30}
+        frame = mock.MagicMock(shape=(2, 1, 8, 8))
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(mod.zarr_utils, 'open_as_zarr', return_value=([frame], None)), \
+                mock.patch.object(mod.ome_xml_utils, 'parse_meta'), \
+                mock.patch.object(mod, 'DimUtils'), \
+                mock.patch.object(mod, 'CoastalUtils', return_value=fake):
+            qc = os.path.join(d, 'qc.json')
+            mod.run({'imPath': 'x.zarr', 'taskDir': d, 'qcOutPath': qc})
+            with open(qc, encoding='utf-8') as f:
+                out = json.load(f)
+        self.assertEqual(out['runEnv'], {'device': 'cpu', 'blockSize': 512, 'overlap': 30})

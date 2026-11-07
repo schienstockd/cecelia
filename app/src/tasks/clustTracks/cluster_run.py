@@ -66,6 +66,7 @@ def run(params):
     adata.obs["label"]     = np.asarray(rows_label)
 
     # ── cluster the whole set at once (shared scanpy engine) ──
+    run_env = {}   # the device that actually ran (GPU may fall back to CPU) → run log `env`
     clustering_utils.find_populations(
         adata,
         resolution=script_utils.get_param(params, "resolution", default=1.0),
@@ -82,6 +83,7 @@ def run(params):
         backend="auto",
         random_state=script_utils.get_param(params, "randomState", default=0),
         log=log.log,
+        run_env=run_env,
     )
 
     # ── behaviour axes on the same neighbour graph (always on; cheap next to the UMAP) ──
@@ -107,7 +109,7 @@ def run(params):
     # fails the task. Same qcOutPath pattern as clustPops/cellpose runners.
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:
-        write_json_atomic(qc_out_path, qc)
+        write_json_atomic(qc_out_path, {**qc, "runEnv": run_env})
         log.log(f">> saved cluster QC: {qc['nClusters']} clusters over {len(qc['perSegment'])} segment(s)")
 
     log.log(">> cluster_tracks done")

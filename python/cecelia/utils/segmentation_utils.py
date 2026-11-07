@@ -374,6 +374,18 @@ class SegmentationUtils:
         self.tiling_note = f'auto: {why}'
         return self.block_size
 
+    def run_env(self):
+        """What this run resolved at run time, for the run log's `env` (app/src/run_log.jl): the tile
+        size (`auto` depends on the RAM/VRAM free when the run started) and the overlap. `blockSize`
+        is absent until `resolve_block_size` has run — never a guess. A subclass adds its device and
+        engine version on top (`env = super().run_env()`)."""
+        env = {}
+        if self.block_size is not None:
+            env['blockSize'] = int(self.block_size)
+        if self.overlap is not None:
+            env['overlap'] = int(self.overlap)
+        return env
+
     def predict_slice(self, tile, model_params, norm_params=None, window=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
 

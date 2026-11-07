@@ -126,6 +126,7 @@ class TestCellposeV4CallPath(unittest.TestCase):
         env = self.seg.run_env()
         self.assertEqual(env['device'], 'cpu')
         self.assertEqual(env['cellpose'], importlib.metadata.version('cellpose'))
+        self.assertEqual(env['overlap'], self.seg.overlap)       # the shared base's tiling rides along
 
     def test_default_model_is_a_v4_name(self):
         """The `.get('model', …)` fallback. A v3 name here would load `cpsam_v2` anyway, silently."""

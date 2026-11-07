@@ -191,7 +191,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
         "speed"        => [_nanless(x) for x in df[!, "live.cell.speed"]],
         "angle"        => [_nanless(x) for x in df[!, "live.cell.angle"]],
         "hmmState"     => [_nanless(x) for x in df[!, hmm_col]],
-        "randomState"  => 0)
+        "randomState"  => _CLUSTER_SEED)
 
     task_dir     = task_run_dir(imgs[1]._dir)
     results_path = joinpath(task_dir, "motif_discovery_results.$(string(rand(UInt32); base=16)).json")
@@ -321,5 +321,6 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
                      "classes"    => length(class_names),
                      "topK"       => p.topK,
                      "windowSize" => p.windowSize,
-                     "runStats"   => run_stats)
+                     "runStats"   => run_stats,
+                     "runEnv"     => Dict{String,Any}("seed" => _CLUSTER_SEED))   # Leiden seed → run log `env`
 end

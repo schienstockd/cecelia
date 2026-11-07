@@ -126,6 +126,9 @@ def run(params):
     create_umap = bool(script_utils.get_param(params, "createUmap", default=True))
     rs = int(script_utils.get_param(params, "randomState", default=0))
     method_c = script_utils.get_param(params, "clusterMethod", default="leiden")
+    # → run log `env`: the Leiden path names the device that ran (GPU may fall back to CPU); k-means is
+    # sklearn on the CPU with nothing to fall back from, so it reports none — Julia adds the seed.
+    run_env = {}
 
     if method_c == "kmeans":
         import scanpy as sc
@@ -143,7 +146,7 @@ def run(params):
             adata,
             resolution=float(script_utils.get_param(params, "resolution", default=1.0)),
             axis="NONE", transformation="NONE",
-            create_umap=create_umap, backend="auto", random_state=rs, log=log.log)
+            create_umap=create_umap, backend="auto", random_state=rs, log=log.log, run_env=run_env)
 
     # ── persist the composition vectors as continuous per-cell measures so the region-composition
     # heatmap reuses the cluster-heatmap (region × measures) — no new plot family (SPATIAL_REGIONS_PLAN
@@ -170,6 +173,7 @@ def run(params):
     qc["otherAllZero"] = other_all_zero
     qc["coverage"] = float(min(coverages)) if coverages else 0.0
     qc["graphMetrics"] = graph_metrics
+    qc["runEnv"] = run_env
 
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:
