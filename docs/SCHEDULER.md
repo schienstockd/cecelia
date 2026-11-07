@@ -497,6 +497,11 @@ record per invocation floods the task list, one per node lies about which run is
 set/image swap was like-for-like precisely because neither has that problem. Decide it, then route it
 the same way. See `docs/TODO.md` → *Incremental node subprocesses not killed on chain cancel*.
 
+Its **params** are already prepared like any run's: each invocation passes them through
+`resolve_run_params` (spec defaults incl. `formerKeys` renames, group order, axis guards across the
+batch) and `validate_params` before `_run_task`, so a saved chain's renamed key reaches the task and
+a bad value fails the node instead of running.
+
 A set-scope or incremental task launched from a **module page** is unaffected either way:
 `handle_task_run` already goes through `execute_task`.
 

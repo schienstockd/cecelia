@@ -1629,6 +1629,11 @@ working untouched; there is no migration.
   Explicit, never inferred from `valueName`: an image task reads one too but writes a new, fixed-name
   image. Declared by `tracking.bayesian_tracking`, `tracking.track_measures`, `tracking.correct`; a
   composite inherits its first step's.
+  The track-set delete reads the rebuild's `dims` + `windowMinutes` from the run log's latest done
+  measures run for the name, falling back to the by-name record only when the log has no
+  failed/cancelled/running run for it (dispatch writes the record whatever the outcome), then to what
+  the measures QC banked (`motionDims`, `windowMinutes`), and otherwise refuses before deleting
+  anything (`_track_measures_rebuild_params`).
 - **The name comes from the spec, not from a key.** `Cecelia.task_output_name(fun, params)` reads the
   `namespace` declaration, because six different keys can carry it. It is the Julia twin of
   `utils/taskOutput.taskOutput`, pinned against the same specs by *task_output_name agrees with the

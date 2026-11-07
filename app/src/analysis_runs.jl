@@ -155,13 +155,21 @@ end
 # The params `vn`'s track measures were last computed with, from either the standalone step or the
 # composite, whichever ran last for `vn`. Never the flat last-run blob: that may be another
 # segmentation's run, and rebuilding B with T's `dims` measures B differently from how it was measured.
+#
+# Answers `nothing` when the record is unknowable: no done run for `vn` in the log, but a failed,
+# cancelled or still-running one. `funParamsByName` is written at dispatch whatever the outcome, so
+# it then holds that run's params, not those of the run that produced the output. An empty Dict means
+# no record at all (output older than the log and the by-name record): the task's defaults apply.
 const _TRACK_MEASURE_FUNS = ("tracking.bayesian_track_measures", "tracking.track_measures")
-function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractString)::Dict{String,Any}
+function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractString)::Union{Dict{String,Any},Nothing}
+    unfinished = false
     for e in Iterators.reverse(read_run_log(ccid_dir))      # newest first
         r = run_log_row(e)
-        (r.fn in _TRACK_MEASURE_FUNS && r.status == "done" && !r.legacy) || continue
-        task_params_name(r.fn, r.params) == vn && return r.params
+        r.fn in _TRACK_MEASURE_FUNS && task_params_name(r.fn, r.params) == vn || continue
+        r.status == "done" || (unfinished = true; continue)
+        r.legacy || return r.params
     end
+    unfinished && return nothing
     # older than the run log: the exact by-name record, still never the flat blob
     for fun in _TRACK_MEASURE_FUNS
         hit = read_module_fun_params_by_name(String(ccid_dir), fun, vn)
@@ -170,14 +178,46 @@ function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractStrin
     Dict{String,Any}()
 end
 
+# The params to rebuild `vn`'s track measures with — its `dims` and tracklet `windowMinutes`: the run
+# record's, else what the existing measures were computed with, as banked by the measures run's QC
+# (`motionDims`; `windowMinutes`, absent when off) — written only once that run's output is — else
+# `nothing` (unknown).
+function _track_measures_rebuild_params(img, vn::AbstractString)::Union{Dict{String,Any},Nothing}
+    p = Dict{String,Any}("valueName" => vn, "forceRecompute" => true)
+    last = _last_track_measures_params(img._dir, vn)
+    if last !== nothing
+        p["dims"] = string(get(last, "dims", "auto"))
+        haskey(last, "windowMinutes") && (p["windowMinutes"] = last["windowMinutes"])
+        return p
+    end
+    qc = read_qc(img, "tracking.track_measures", vn)
+    m  = qc === nothing ? Dict() : get(qc, :metrics, Dict())
+    d  = get(m, :motionDims, nothing)
+    d in (2, 3) || return nothing
+    p["dims"] = "$(d)D"
+    p["windowMinutes"] = something(get(m, :windowMinutes, nothing), 0)
+    p
+end
+
 # Deleting a track set IS a re-run of its source with no tracks: the tracker's own lineage merge
 # deletes the rows, compacts the surviving ids and invalidates every track-derived `live.*` column
 # (speed/angle, HMM states, live contacts). Then the per-track table is rebuilt for what survives —
 # the second half of the `bayesian_track_measures` composite — or removed with its sidecar when
 # nothing does. Same end state a re-run leaves, so a delete has no rules of its own to drift.
+# The rebuild's params are resolved and validated BEFORE anything is deleted, so an unknowable or
+# invalid one refuses cleanly instead of leaving the track table stale.
 function _tracks_delete!(img, run; on_log = _ -> nothing)
     vn = run.value_name
     props = img_label_props_path(img, vn)
+    survivors = any(s -> something(s, "") != run.key, values(label_track_sources(img, vn)))
+    rebuild = nothing
+    if survivors
+        rebuild = _track_measures_rebuild_params(img, vn)
+        rebuild === nothing && error("can't tell which settings $vn's track measures were computed with: " *
+                                     "its last track-measures run did not finish. Re-run track measures for $vn, then delete")
+        rebuild = resolve_run_params(TrackMeasures(), rebuild, img)
+        validate_params(TrackMeasures(), rebuild)
+    end
     ok = run_py("tasks/tracking/delete_track_source_run.py",
                 (; propsPath = props, trackSource = run.key), task_run_dir(img._dir); on_log = on_log)
     ok || error("deleting track set '$(run.label)' failed — see the log")
@@ -186,11 +226,8 @@ function _tracks_delete!(img, run; on_log = _ -> nothing)
         _rm_if(_clustfeatures_path(img_track_props_path(img, vn)); on_log)
         return
     end
-    last = _last_track_measures_params(img._dir, vn)
-    res = _run_task(TrackMeasures(), img,
-                    Dict{String,Any}("valueName" => vn, "forceRecompute" => true,
-                                     "dims" => string(get(last, "dims", "auto")));
-                    on_log = on_log)
+    rebuild === nothing && error("track set deleted, but $vn still has tracks from other sources — re-run track measures")
+    res = _run_task(TrackMeasures(), img, rebuild; on_log = on_log)
     res === nothing && error("track set deleted, but rebuilding track measures for $vn failed — re-run track measures")
 end
 

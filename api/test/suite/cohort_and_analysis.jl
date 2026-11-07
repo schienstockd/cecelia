@@ -174,7 +174,10 @@ end
         e = d.images[1]
         @test [String(x.stage) for x in e.steps] == ["import", "segment", "track"]   # ordered pipeline
         @test any(x -> x.status == "failed", e.steps)                                # the failed track surfaces
-        @test "import" in d.rollup.pipeline && "track" in d.rollup.pipeline
+        # the rollup counts a stage as reached only from a done step: the failed track shows in `steps`
+        # (above) but nobody reached "track", so it is not part of the set's pipeline
+        @test "import" in d.rollup.pipeline && "segment" in d.rollup.pipeline
+        @test !("track" in d.rollup.pipeline)
         # scope to one image
         @test length(JSON3.read(_lin("?projectUid=$(proj.uid)&imageUid=$(img.uid)")[2]).images) == 1
     finally

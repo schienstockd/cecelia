@@ -497,6 +497,34 @@ end
     rm(proj.root; recursive=true)
 end
 
+# An incremental node's params are prepared like any run's (`resolve_run_params` + `validate_params`):
+# a saved chain's renamed key (`formerKeys`) reaches the task under its new name, and a param the node
+# never stored gets its spec default. The watcher used to only flatten sections, so `oldKey = false`
+# was dropped (the task ran with its own default) and a missing `extra` failed the node.
+@testset "Chain incremental node — params resolved like a run" begin
+    spec = joinpath(mktempdir(), "incrEcho.json")
+    write(spec, JSON3.write(Dict(
+        "fun_name" => "customTest.incrEcho", "task" => "incrEcho", "label" => "Incr echo",
+        "scope" => "set", "resource_pool" => "cpu",
+        "params" => Any[
+            Dict("key" => "newKey", "type" => "bool", "default" => true, "formerKeys" => ["oldKey"]),
+            Dict("key" => "extra", "type" => "int", "default" => 7)])))
+    register_task!("customTest.incrEcho", _IncrEchoTask(); spec = spec)
+    proj = create_project!(name="chain-incr-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img-a")
+    save_chain_template!(proj, ChainTemplate("incr-chain",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}()),
+         ChainNode(id="p1", fn="customTest.incrEcho", scope="incremental",
+                   params=Dict{String,Any}("oldKey" => false))],
+        [ChainEdge("n1", "p1")]))
+    run = run_chain(proj, [img.uid]; chain="incr-chain", on_log = _ -> nothing)
+    st = run.image_states[img.uid]["p1"]
+    @test st.status == NODE_DONE
+    @test st.result["newKey"] === false && st.result["extra"] == 7
+    rm(proj.root; recursive=true)
+end
+
 # ── Chain start dot — end-to-end run prunes to the reachable subgraph ─────
 # Reservation guard: pruning to a start dot must still work when the reachable subgraph contains a
 # picnic (set-scope barrier) node. The target becomes a root — its dropped upstream doesn't block
