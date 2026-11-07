@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { taskOutput, consumerField, normaliseField, isValueNameNamespace } from './taskOutput'
+import {
+  taskOutput, taskParamsName, namesParamsRecord, consumerField, normaliseField, isValueNameNamespace,
+} from './taskOutput'
 import { previewValueName } from './taskPreview'
 import type { TaskDef } from '../tasks/types'
 
@@ -71,6 +73,45 @@ describe('taskOutput', () => {
                  namespace: 'nonsense' as never, default: 'v' }],
     })
     expect(taskOutput(d, {})).toBeNull()
+  })
+})
+
+// The name a run's params are remembered under. Julia twin: `task_params_name` (image_model.jl).
+describe('taskParamsName', () => {
+  const tracking = def({
+    writesInto: 'valueName',
+    params: [{ key: 'valueName', label: 'Segmentation', type: 'valueNameSelection', default: 'default' }],
+  })
+
+  it('is the output name when the task names one', () => {
+    const d = def({ params: [{ key: 'outputValueName', label: 'n', type: 'valueNameInput', namespace: 'labels' }] })
+    expect(taskParamsName(d, { outputValueName: 'Tcell' })).toBe('Tcell')
+  })
+
+  it('is the input a task writes into, when it names no output', () => {
+    expect(taskParamsName(tracking, { valueName: 'B' })).toBe('B')
+    expect(taskParamsName(tracking, {})).toBe('default')
+  })
+
+  it('is null for a task that reads a valueName but declares no writesInto', () => {
+    const d = def({ params: [{ key: 'valueName', label: 'i', type: 'valueNameSelection' }] })
+    expect(taskParamsName(d, { valueName: 'B' })).toBeNull()
+  })
+})
+
+describe('namesParamsRecord', () => {
+  it('is true for the output-naming param and the writesInto input, false otherwise', () => {
+    const seg = def({ params: [
+      { key: 'valueName', label: 'i', type: 'valueNameSelection' },
+      { key: 'outputValueName', label: 'n', type: 'valueNameInput', namespace: 'labels' },
+    ] })
+    expect(namesParamsRecord(seg, 'outputValueName')).toBe(true)
+    // picking the INPUT image of a segmentation must not load the record of a label set that shares its name
+    expect(namesParamsRecord(seg, 'valueName')).toBe(false)
+    expect(namesParamsRecord(seg, 'version')).toBe(false)
+    const tracking = def({ writesInto: 'valueName',
+      params: [{ key: 'valueName', label: 's', type: 'valueNameSelection' }] })
+    expect(namesParamsRecord(tracking, 'valueName')).toBe(true)
   })
 })
 

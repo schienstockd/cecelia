@@ -14,6 +14,7 @@
   "category": "Tracking",
   "group": "Measure",
   "env": ["local"],
+  "writesInto": "valueName",
   "resource_pool": "cpu",
   "requires": { "axes": ["T"], "scale": ["xy", "t"] },
   "params": [

@@ -185,6 +185,9 @@ export interface TaskDef {
   outputField?: string    // which image field the output lands in ('filepath' | 'labels'); default 'filepath'.
                           // NOTE the singular spelling — consumer params say 'filepaths'. Normalise
                           // both through `utils/taskOutput.normaliseField`, never compare them raw.
+  writesInto?: string     // a task with no output of its own that writes INTO an input names that
+                          // input's param key (tracking → 'valueName'); its params are remembered
+                          // under that input. `taskParamsName` in utils/taskOutput.ts.
   outputNamespace?: string // the namespace a FIXED output lands in; supersedes outputField. Absent on
                            // every spec today — outputField still answers it for image versions/labels.
   qcPlot?: string         // plotDefinitions id of this task's default QC plot (e.g. "segmentation_qc"); if set,

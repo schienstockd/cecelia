@@ -356,6 +356,37 @@ function task_output_name(task::CciaTask, params::Dict{String,Any})::String
 end
 
 """
+    task_params_name(fun_name, params) -> String
+
+The name a run's params are banked and looked up under: its output name (`task_output_name`), or,
+for a task that writes INTO its input, the input's name. Tracking is the case: it writes track
+columns into the segmentation it read and declares no output of its own.
+
+A task opts in with a top-level `"writesInto": "<param key>"` in its spec, naming the input param.
+Explicit, not inferred from `valueName`: an image task (`cleanupImages.*`) also reads a `valueName`
+but writes a NEW image under a fixed name, and banking its params under the input would be wrong.
+The frontend twin is `taskParamsName` (`utils/taskOutput.ts`). `""` when neither applies.
+"""
+function task_params_name(fun_name::AbstractString, params::Dict{String,Any})::String
+    task = try
+        _task_from_fun_name(String(fun_name))
+    catch
+        nothing        # unknown fun_name, as `task_output_name`
+    end
+    isnothing(task) ? "" : task_params_name(task, params)
+end
+
+function task_params_name(task::CciaTask, params::Dict{String,Any})::String
+    out = task_output_name(task, params)
+    isempty(out) || return out
+    spec = _task_spec(task)
+    isnothing(spec) && return ""
+    key = string(something(get(spec, "writesInto", nothing), ""))
+    isempty(key) && return ""
+    strip(string(something(get(params, key, nothing), "")))
+end
+
+"""
     task_fixed_output(fun_name) -> String
 
 The output version a task ALWAYS writes, declared at its spec's top level (`"outputValueName":

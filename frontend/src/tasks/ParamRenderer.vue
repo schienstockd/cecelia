@@ -866,7 +866,7 @@ function onChannelUpdate(next: string[]) {
       <select
         class="select-input"
         :value="val as string"
-        @change="val = ($event.target as HTMLSelectElement).value"
+        @change="val = ($event.target as HTMLSelectElement).value; emit('commit', param.key, ($event.target as HTMLSelectElement).value)"
         v-tooltip.bottom="shownTip"
       >
         <option v-for="name in availableValueNames" :key="name" :value="name">{{ name }}</option>
