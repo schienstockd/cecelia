@@ -74,22 +74,27 @@ end
     prior = shared_workstation("aiAllowed")
     try
         set_shared_workstation!("aiAllowed", true)
-        @test ai_off_by("dora") == Cecelia.ai_on && ai_enabled("dora")          # no settings: the default
+        @test Cecelia.AI_PROFILE_DEFAULT[] === false                          # shipped default: opt-in
+        @test ai_off_by("dora") == Cecelia.ai_off_profile                      # no settings: off
+        patch_profile_settings!(Dict("aiEnabled" => true), "dora")             # what the opt-in dialog writes
+        @test ai_off_by("dora") == Cecelia.ai_on && ai_enabled("dora")
         @test ai_refusal("dora") === nothing
         patch_profile_settings!(Dict("aiEnabled" => false), "dora")
         @test ai_off_by("dora") == Cecelia.ai_off_profile
         @test ai_state("dora") == Dict{String,Any}("enabled" => false, "setBy" => "profile")
+        patch_profile_settings!(Dict("aiEnabled" => true), "erin")
         @test ai_enabled("erin")                                               # one profile's choice only
-        patch_profile_settings!(Dict("aiEnabled" => "nope"), "dora")           # hand-edit typo ⇒ default
-        @test ai_enabled("dora")
+        patch_profile_settings!(Dict("aiEnabled" => "nope"), "dora")           # hand-edit typo ⇒ default (off)
+        @test !ai_enabled("dora")
         patch_profile_settings!(Dict("aiEnabled" => true), "dora")
         set_shared_workstation!("aiAllowed", false)                            # the ceiling beats "on"
         @test ai_off_by("dora") == Cecelia.ai_off_workstation
         @test ai_refusal("dora") == Dict{String,Any}("error" => AI_OFF_MESSAGE, "setBy" => "workstation")
-        @test !ai_enabled("default")                                           # peanut too
+        @test !ai_enabled("default") && !ai_enabled("erin")                    # peanut too, and erin's "on"
     finally
         set_shared_workstation!("aiAllowed", prior)
         rm(Cecelia.profile_settings_dir("dora"); recursive = true, force = true)
+        rm(Cecelia.profile_settings_dir("erin"); recursive = true, force = true)
     end
 end
 

@@ -30,6 +30,10 @@ end
 using Test
 include(joinpath(@__DIR__, "..", "src", "server.jl"))   # defines handlers + shared state; does not start
 using JSON3
+# AI is opt-in (app/src/ai/ai_switch.jl). The suites below predate the switch and exercise the AI
+# paths (Kiwi turns, the claim review, terminal routes, the push), so the run starts with every profile
+# opted in; the AI-off testsets (api_token_gate.jl, kiwi_turn.jl) turn it off themselves.
+Cecelia.AI_PROFILE_DEFAULT[] = true
 # Stills render in a one-off process here, never through the preview worker: that route probes :7656,
 # where the developer's own backend may have a worker running (`STILLS_VIA`, movie_render.jl).
 STILLS_VIA[] = _stills_one_off

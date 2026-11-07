@@ -1,6 +1,8 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { observerApi } from '../utils/serviceApi'
+import { patchProfileSettings } from '../utils/profileSettingsApi'
+import { aiStateFromStatus, type AiState } from '../utils/aiSwitch'
 
 // The assistant's availability, its model allow-list and the user's terminal setup — what Kiwi's
 // prompt box and the lab log's setup button both read. The lab log's one-off "Ask Claude" pass (and
@@ -20,8 +22,13 @@ export const useObserverStore = defineStore('observer', () => {
   // 2026-09-27), so it must come from the real config — never from optimistic local state after a click.
   const terminalState = ref('')
 
+  // The AI switch (utils/aiSwitch.ts): what the server decided for this profile. Starts OFF so nothing
+  // AI flashes up before the first status reply; a backend without the switch reports on.
+  const ai = ref<AiState>({ enabled: false, setBy: 'profile' })
+
   async function refresh() {
     const s = await observerApi.status()
+    ai.value = aiStateFromStatus(s)
     available.value = s.available
     cliPath.value = s.cliPath ?? ''
     if (s.models?.length) models.value = s.models
@@ -54,8 +61,17 @@ export const useObserverStore = defineStore('observer', () => {
     } finally { registering.value = false }
   }
 
+  /** Set this profile's own AI preference (settings.toml `aiEnabled`, read by the server), then
+   *  re-read the effective state — the workstation ceiling can still say no. Turning ON goes through
+   *  the opt-in dialog; call this from its confirm, never from a bare toggle. */
+  async function setAiEnabled(on: boolean): Promise<boolean> {
+    const r = await patchProfileSettings({ aiEnabled: on })
+    await refresh()
+    return r.profile !== ''   // '' = the PATCH failed (profileSettingsApi's fallback)
+  }
+
   return { available, cliPath, models, mcpConfigPath, terminalState, registering, registerError,
-           refresh, registerMcp }
+           ai, refresh, registerMcp, setAiEnabled }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

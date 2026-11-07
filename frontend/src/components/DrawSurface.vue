@@ -39,6 +39,10 @@ import {
   ANNOTATION_STROKE_WIDTH_ORDER, DEFAULT_STROKE_WIDTH,
 } from '../utils/overlayCompose'
 
+import { useObserverStore } from '../stores/observer'
+// The capture hand-offs (Attach to Kiwi, Send to paired session) hide while AI is off (utils/aiSwitch.ts).
+const observer = useObserverStore()
+
 const props = defineProps<{
   visible: boolean
   // Short label shown in the floating toolbar (e.g. "IMG1 · t=3 · z=5") — orientation only.
@@ -849,11 +853,11 @@ const firstVertexMarker = computed(() => {
                booleans — attach and send are not mutually exclusive. Rendered only when the
                parent has wired the v-model. -->
           <div class="cc-row cc-row-loose ds-dests">
-            <CcToggle v-if="attachToKiwi !== null &amp;&amp; attachToKiwi !== undefined" class="ds-dest cc-fs-xs"
+            <CcToggle v-if="observer.ai.enabled &amp;&amp; attachToKiwi !== null &amp;&amp; attachToKiwi !== undefined" class="ds-dest cc-fs-xs"
                       :model-value="!!attachToKiwi" label="Attach to Kiwi"
                       @update:modelValue="(v: boolean) => emit('update:attachToKiwi', v)"
                       v-tooltip.bottom="'On save, drop this capture into the Kiwi prompt as a ref chip'" />
-            <CcToggle v-if="sendToPaired !== null &amp;&amp; sendToPaired !== undefined" class="ds-dest cc-fs-xs"
+            <CcToggle v-if="observer.ai.enabled &amp;&amp; sendToPaired !== null &amp;&amp; sendToPaired !== undefined" class="ds-dest cc-fs-xs"
                       :model-value="!!sendToPaired" label="Send to paired session"
                       @update:modelValue="(v: boolean) => emit('update:sendToPaired', v)"
                       v-tooltip.bottom="'On save, notify the paired Claude Code session over its inbox socket'" />

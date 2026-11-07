@@ -1,7 +1,7 @@
 # AI toggle: make every model-backed feature optional
 
 **Status:** **IN PROGRESS** (2026-11-07). D1–D3 locked. P0 done: [`AI_SURFACES_AUDIT.md`](AI_SURFACES_AUDIT.md),
-whose §9 has the full slice plan. P1 + P2 built (server-side gate, default still on; registry `AI_SURFACES`). Next step: P3.
+whose §9 has the full slice plan. P1–P5 built (gate, registry, default off + opt-in dialog, surfaces hidden, user docs); P3–P4 await the maintainer's visual pass. Still open: calls 3 (project-level off) and 9 (local model); audit slice 5 (provenance gaps).
 Brief: [`docs/archive/AI_SURFACES_AUDIT_PROMPT.md`](../archive/AI_SURFACES_AUDIT_PROMPT.md). Read its
 banner first, because four of the brief's premises had moved by the time it was archived.
 
@@ -119,10 +119,10 @@ Each phase is a standalone PR. Sizes, risks and tests per slice: audit §9.
   key, both default on until P3. This includes D1's backend refusal of
   requests from Claude. Small, per P0 (audit §8.7, slice 2), and it can start now.
 - **P2 · Registry** **Built:** `AI_SURFACES` in `frontend/src/lib/claudeTools.ts` (call 8: extend it), with the test that every model path is registered.
-- **P3 · Setting plus default plus opt-in dialog.** Blocked on calls 1–5. The dialog's "what is sent"
+- **P3 · Setting plus default plus opt-in dialog.** **Built** (calls 4–6 taken as the audit recommends: default off everywhere, the Kiwi launcher as the entry point with *Hide this button*, stored AI content shown and marked): `utils/aiSwitch.ts`, `AiOptInDialog.vue`, Preferences → Kiwi → *AI features*. Blocked on calls 1–5. The dialog's "what is sent"
   list is read from P2, and its egress lines reuse `CLAUDE_DATA_NOTICE` rather than repeating them. Link to Anthropic's terms rather than paraphrasing them.
-- **P4 · Hide surfaces one area at a time,** most visible first. Each mixed surface follows its
+- **P4 · Hide surfaces one area at a time,** **Built** for Kiwi, Add-to-Kiwi, capture hand-offs, Guides, the Claude tip (`docs/inventory/FRONTEND.md` → *The AI switch in the UI*); most visible first. Each mixed surface follows its
   degradation rule from P0.
-- **P5 · User docs:** what AI does in Cecelia, what it sends, and what keeps working with AI off.
+- **P5 · User docs:** **Built** (`user-docs/parts/bottom.md` → *Working with Claude*). what AI does in Cecelia, what it sends, and what keeps working with AI off.
 
 P0, P1 and P2 fit the hardening phase. P3 waits on the open calls.

@@ -10,10 +10,13 @@
 // teal = kiwi. The lab-log unseen badge overlays the icon so Claude/Cecelia notes still get noticed.
 import { computed } from 'vue'
 import { useSettingsStore } from '../stores/settings'
+import { useObserverStore } from '../stores/observer'
+import { showKiwiLauncher } from '../utils/aiSwitch'
 
 withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 
 const settings = useSettingsStore()
+const observer = useObserverStore()
 // lab-log badge: Cecelia digests colour by severity (⚠️/❌); Claude notes keep the accent tint.
 const labLogBadgeStyle = computed(() =>
   settings.labLogUnseenLevel === 'fail' ? { color: 'var(--cc-sev-fail)' }
@@ -59,7 +62,8 @@ const labLogBadgeStyle = computed(() =>
          :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'panel-launcher-badge']"
          :style="labLogBadgeStyle" />
     </button>
-    <button class="panel-launcher panel-launcher-kiwi cc-btn cc-btn-bare"
+    <button v-if="showKiwiLauncher(observer.ai, settings.kiwiHidden)"
+            class="panel-launcher panel-launcher-kiwi cc-btn cc-btn-bare"
             data-guide="sidebar.kiwiCta"
             :class="{ on: settings.kiwiOpen }"
             @click="settings.kiwiOpen = !settings.kiwiOpen"

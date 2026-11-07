@@ -15,6 +15,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
+import { useObserverStore } from '../../stores/observer'
 import { ref, computed } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useKiwiStore } from '../../stores/kiwi'
@@ -94,6 +95,7 @@ const emit = defineEmits<{
 }>()
 const g = useGatingStore()
 const kiwi = useKiwiStore()
+const observer = useObserverStore()   // "Add to Kiwi" hides while AI is off (utils/aiSwitch.ts)
 const log = useLogStore()
 const projectStore = useProjectStore()
 const settings = useSettingsStore()
@@ -665,7 +667,7 @@ function moveTo(target: string) {
             <div v-if="!moveTargets.length" class="cc-actions-head">nowhere else to put it</div>
           </template>
           <template v-else>
-            <button v-if="!actionsPop.transient && g.imageUid && g.valueName" class="cc-actions-item"
+            <button v-if="observer.ai.enabled && !actionsPop.transient && g.imageUid && g.valueName" class="cc-actions-item"
                     @click.stop="runAction(() => kiwi.addRef({ kind: 'population', imageUid: g.imageUid!,
                                                                valueName: g.valueName, popPath: actionsPop!.path }))">
               <i class="pi pi-at" /> Add to Kiwi

@@ -191,17 +191,25 @@ export const TIPS: WhatNewCard[] = [
 ]
 
 /** Deterministic daily index — same tip everywhere on the same date. Returns -1 on empty catalogue. */
-export function todayTipIndex(now: Date = new Date()): number {
-  if (TIPS.length === 0) return -1
+export function todayTipIndex(now: Date = new Date(), count: number = TIPS.length): number {
+  if (count === 0) return -1
   const start = new Date(Date.UTC(now.getUTCFullYear(), 0, 0))
   const dayOfYear = Math.floor((now.getTime() - start.getTime()) / 86_400_000)
-  return Math.abs(dayOfYear) % TIPS.length
+  return Math.abs(dayOfYear) % count
 }
 
+/** Tips that only make sense with AI on — left out while it is off (utils/aiSwitch.ts). */
+export const AI_ONLY_TIPS: readonly string[] = ['tip-claude-mcp']
+
+/** The catalogue for this person: everything, minus the AI-only tips while AI is off. */
+export const tipsFor = (aiEnabled: boolean): WhatNewCard[] =>
+  aiEnabled ? TIPS : TIPS.filter(t => !AI_ONLY_TIPS.includes(t.id))
+
 /** Deterministic daily pick — same tip everywhere on the same date. Empty catalogue → null. */
-export function pickDailyTip(now: Date = new Date()): WhatNewCard | null {
-  const i = todayTipIndex(now)
-  return i < 0 ? null : TIPS[i]
+export function pickDailyTip(now: Date = new Date(), aiEnabled = true): WhatNewCard | null {
+  const tips = tipsFor(aiEnabled)
+  const i = todayTipIndex(now, tips.length)
+  return i < 0 ? null : tips[i]
 }
 
 /** Today's date as YYYY-MM-DD for comparing against the persisted `tipsLastShown`. */

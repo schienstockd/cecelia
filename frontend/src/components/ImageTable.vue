@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useObserverStore } from '../stores/observer'
 import { useInlineEdit } from '../composables/useInlineEdit'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -38,6 +39,7 @@ const emit = defineEmits<{ (e: 'selectionChange', uids: string[]): void }>()
 
 const project     = useProjectStore()
 const kiwi        = useKiwiStore()
+const observer = useObserverStore()   // "Add to Kiwi" hides while AI is off (utils/aiSwitch.ts)
 const projectMeta = useProjectMetaStore()
 const log         = useLogStore()
 const route       = useRoute()
@@ -771,7 +773,7 @@ const unselectableUids = computed(() =>
       <button class="cc-actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
         <i class="pi pi-copy" /> Copy UID
       </button>
-      <button class="cc-actions-item" @click.stop="runAction(() => kiwi.addRef({ kind: 'image', imageUid: actionsImg!.uid }))">
+      <button v-if="observer.ai.enabled" class="cc-actions-item" @click.stop="runAction(() => kiwi.addRef({ kind: 'image', imageUid: actionsImg!.uid }))">
         <i class="pi pi-at" /> Add to Kiwi
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => setIncluded(actionsImg!, isExcluded(actionsImg!)))">

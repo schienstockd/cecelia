@@ -21,6 +21,7 @@ import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import CcToggle from './CcToggle.vue'
 import { useGuideStore } from '../stores/guide'
 import { useSettingsStore } from '../stores/settings'
+import { useObserverStore } from '../stores/observer'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { RECIPES, isWanted, guideById, isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides'
 import type { GuideDef } from '../lib/guides/types'
@@ -38,6 +39,9 @@ const emit = defineEmits<{ (e: 'open-group', heading: string): void }>()
 
 const guide = useGuideStore()
 const settings = useSettingsStore()
+// "AI help" counts only while AI is on — off, the map shows no AI at all and hides its toggle.
+const observer = useObserverStore()
+const showAi = computed(() => settings.guidesShowClaude && observer.ai.enabled)
 const layouts = useViewProfilesStore()
 const router = useRouter()
 
@@ -74,7 +78,7 @@ const assistTip = (s: RecipeStep) =>
       <span class="cc-eyebrow cc-fs-2xs">Recipes</span>
       <ChipSelect v-model="recipeId" :options="recipeOptions" allow-empty aria-label="Recipe" />
       <span class="gm-grow" />
-      <CcToggle v-model="settings.guidesShowClaude" label="AI help"
+      <CcToggle v-if="observer.ai.enabled" v-model="settings.guidesShowClaude" label="AI help"
                 v-tooltip.bottom="'Show where Kiwi or Claude Code helps — optional, needs a Claude plan'" />
     </div>
 
@@ -88,7 +92,7 @@ const assistTip = (s: RecipeStep) =>
             <span v-if="r.s.optional" class="cc-muted cc-fs-2xs">optional</span>
             <span v-if="!r.def" class="cc-muted cc-fs-2xs">no guide</span>
             <span v-if="isDone(r.def)" class="gm-done"><i class="pi pi-check" /></span>
-            <i v-if="settings.guidesShowClaude && r.s.assist" class="pi pi-sparkles gm-assist"
+            <i v-if="showAi && r.s.assist" class="pi pi-sparkles gm-assist"
                :aria-label="assistTip(r.s)" v-tooltip.top="assistTip(r.s)" />
           </div>
           <p class="gm-why cc-muted cc-fs-xs">{{ r.s.why }}</p>
@@ -109,9 +113,9 @@ const assistTip = (s: RecipeStep) =>
         </button>
         <button v-for="c in g.chips" :key="c.route"
                 :class="['gm-page cc-btn cc-btn-bare cc-fs-xs', { lit: c.lit, dim: c.dim, hidden: c.hidden }]"
-                v-tooltip.right="chipTip(c, settings.guidesShowClaude)" @click="go(c.route)">
+                v-tooltip.right="chipTip(c, showAi)" @click="go(c.route)">
           <i :class="['pi', c.icon]" /> {{ c.label }}
-          <i v-if="settings.guidesShowClaude && c.claude" class="pi pi-sparkles gm-assist" aria-label="Claude makes something here" />
+          <i v-if="showAi && c.claude" class="pi pi-sparkles gm-assist" aria-label="Claude makes something here" />
           <span v-if="chipDot(c.tier)" :class="['cc-dot', chipDot(c.tier), 'gm-tier']" :aria-label="tierLabel(c.tier)" />
         </button>
       </div>
@@ -128,7 +132,7 @@ const assistTip = (s: RecipeStep) =>
     <MaturityMap />
 
     <!-- Claude: the two ways in, in the same words as Kiwi's ? and its guide -->
-    <ClaudeWaysIn v-if="settings.guidesShowClaude" />
+    <ClaudeWaysIn v-if="showAi" />
 
     <p class="gm-ask cc-muted cc-fs-2xs">
       Not your kind of data?

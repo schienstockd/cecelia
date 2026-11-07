@@ -14,7 +14,8 @@ import { useAppControlStore } from '../stores/appControl'
 import { useUpdateCard, openWithTip, viewedTipIndex, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
 import { CECELIA_RELEASES_URL } from '../lib/links'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
-import { TIPS, todayTipIndex } from '../lib/tips'
+import { tipsFor, todayTipIndex } from '../lib/tips'
+import { useObserverStore } from '../stores/observer'
 
 const props = withDefaults(defineProps<{
   extraCards?: WhatNewCardT[]   // any additional cards a caller wants to prepend
@@ -29,20 +30,23 @@ const updateCard = useUpdateCard()
 // Today's tip goes to the top when the launch trigger opened the dialog (openWhatsNew({withTip:true})).
 // A pagination dot row lets the user browse the rest of the catalogue in-session; today's index is
 // the anchor (highlighted), viewedTipIndex tracks the user's current pick.
-const dailyIndex = computed(() => todayTipIndex())
+// AI-only tips drop out while AI is off (lib/tips.ts `tipsFor`)
+const observer = useObserverStore()
+const tips = computed(() => tipsFor(observer.ai.enabled))
+const dailyIndex = computed(() => todayTipIndex(new Date(), tips.value.length))
 const currentIndex = computed(() => viewedTipIndex.value ?? dailyIndex.value)
 const tipCard = computed<WhatNewCardT | null>(() => {
   if (!openWithTip.value) return null
-  return TIPS[currentIndex.value] ?? null
+  return tips.value[currentIndex.value] ?? null
 })
-const canCycle = computed(() => openWithTip.value && TIPS.length > 1)
+const canCycle = computed(() => openWithTip.value && tips.value.length > 1)
 const tipCounter = computed(() => {
-  if (!openWithTip.value || TIPS.length < 1) return ''
-  const label = `${currentIndex.value + 1} / ${TIPS.length}`
+  if (!openWithTip.value || tips.value.length < 1) return ''
+  const label = `${currentIndex.value + 1} / ${tips.value.length}`
   return currentIndex.value === dailyIndex.value ? `${label} · today` : label
 })
 function goToTip(i: number) {
-  const n = TIPS.length
+  const n = tips.value.length
   if (n < 1) return
   viewedTipIndex.value = ((i % n) + n) % n
 }
