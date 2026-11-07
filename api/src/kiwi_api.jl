@@ -87,6 +87,10 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
                          system_prompt::Union{Nothing,AbstractString} = nothing,
                          allowed_tools::Union{Nothing,AbstractVector} = nothing,
                          extra::AbstractDict = Dict{String,Any}(), on_done::Function = _ -> nothing)
+    # The AI switch (app/src/ai/ai_switch.jl): every in-app model turn — Kiwi and the claim review —
+    # starts here, so this one check keeps them all from spawning.
+    refusal = Cecelia.ai_refusal(profile)
+    refusal === nothing || return 403, refusal
     _kiwi_project_ok(puid) || return 404, Dict{String,Any}("error" => "no project $puid")
     isempty(strip(prompt)) && isempty(refs) && return 400, Dict{String,Any}("error" => "ask something or attach a ref")
     conv = isempty(follow_up) ? nothing : _kiwi_conversation(puid, follow_up)
