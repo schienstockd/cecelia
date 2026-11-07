@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 516" font-family="Georgia, 'Times New Roman', serif">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/></marker></defs>
+<rect width="1100" height="516" fill="#fafaf7"/>
+<line x1="194" y1="144" x2="194" y2="396" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="356" y1="144" x2="356" y2="396" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="520" y1="144" x2="520" y2="396" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="682" y1="144" x2="682" y2="396" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="846" y1="144" x2="846" y2="396" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="1008" y1="144" x2="1008" y2="396" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/>
+<text x="100" y="43" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>AI</tspan></text>
+<text x="100" y="61" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>optional</tspan></text>
+<rect x="118" y="16" width="966" height="56" rx="12" ry="12" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2" stroke-dasharray="7,5"/>
+<text x="601" y="40" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Optional AI assistant</tspan></text>
+<text x="601" y="59" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>reads the same record · everything below works with AI off</tspan></text>
+<text x="100" y="115" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Pipeline</tspan></text>
+<text x="100" y="133" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>what you do</tspan></text>
+<rect x="118" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="194" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Acquire</tspan></text>
+<text x="194" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>microscope</tspan></text>
+<line x1="269" y1="116" x2="280" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="281" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="356" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Import</tspan></text>
+<text x="356" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
+<line x1="432" y1="116" x2="443" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="444" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="520" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Process</tspan></text>
+<text x="520" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>segment · track</tspan></text>
+<line x1="595" y1="116" x2="606" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="607" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="682" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Populations</tspan></text>
+<text x="682" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>gating</tspan></text>
+<line x1="758" y1="116" x2="769" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="770" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="846" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analyse</tspan></text>
+<text x="846" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>plots, statistics</tspan></text>
+<line x1="921" y1="116" x2="932" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
+<rect x="933" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="1008" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Export</tspan></text>
+<text x="1008" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>figures, tables</tspan></text>
+<text x="100" y="206" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Record</tspan></text>
+<text x="100" y="224" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>what was done</tspan></text>
+<rect x="118" y="160" width="966" height="94" rx="12" ry="12" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="601" y="184" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Every task leaves a record</tspan></text>
+<text x="601" y="203" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>parameters, version, who and when</tspan></text>
+<rect x="126" y="216" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="194" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>file settings</tspan></text>
+<rect x="289" y="216" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="356" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
+<rect x="452" y="216" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="520" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
+<rect x="615" y="216" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="682" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates + author</tspan></text>
+<rect x="778" y="216" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="846" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>task log</tspan></text>
+<rect x="941" y="216" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="1008" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>CSV trace</tspan></text>
+<text x="100" y="316" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Checks</tspan></text>
+<text x="100" y="334" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>can it be trusted</tspan></text>
+<rect x="118" y="270" width="966" height="94" rx="12" ry="12" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="601" y="294" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Checks read the record</tspan></text>
+<text x="601" y="313" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>quality checks at each step · claim checks · warn, never block</tspan></text>
+<rect x="126" y="326" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="194" y="344" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>saturation</tspan></text>
+<rect x="289" y="326" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="356" y="344" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
+<rect x="452" y="326" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="520" y="344" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>per run + per set</tspan></text>
+<rect x="615" y="326" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="682" y="344" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates compared</tspan></text>
+<rect x="778" y="326" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="846" y="344" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>spatial QC</tspan></text>
+<rect x="941" y="326" width="135" height="26" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
+<text x="1008" y="344" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>export QC</tspan></text>
+<text x="100" y="407" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Replay</tspan></text>
+<text x="100" y="425" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>run it again</tspan></text>
+<rect x="118" y="380" width="966" height="56" rx="12" ry="12" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
+<text x="601" y="404" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Chains replay it</tspan></text>
+<text x="601" y="423" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>re-run the same steps on new images</tspan></text>
+<text x="601" y="470" font-size="20" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analysis you can hand off and check</tspan></text>
+<text x="601" y="494" font-size="14" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>Structure first. AI is an optional layer on top.</tspan></text>
+</svg>

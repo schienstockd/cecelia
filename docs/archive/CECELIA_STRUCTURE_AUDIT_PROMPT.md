@@ -2,7 +2,9 @@
 > time. It is not a description of how the code works now, and not instructions to re-run. Current
 > design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
 >
-> **Outcome:** not run as of archiving (2026-11-07, `origin/main` c7f0af6d); no
+> **Outcome:** this brief was an elaboration of a shorter ask (audit what the structure is, draw one
+> clear schematic, flag gaps). [`docs/todo/CECELIA_STRUCTURE_PLAN.md`](../todo/CECELIA_STRUCTURE_PLAN.md)
+> narrows it back to that ask and drops the property tests, new walks and replay runs. The brief itself was not run as of archiving (2026-11-07, `origin/main` c7f0af6d); no
 > `docs/todo/CECELIA_STRUCTURE_AUDIT.md` exists. Read against main, these premises had moved:
 >
 > 1. **"Seg/track params stored only as flat last-run values."** True of the P0 project's July runs,
@@ -21,8 +23,9 @@
 >    (`FEATURE_MATURITY_TIERS.md`), and `frontend/src/lib/guides/maturityRecords.ts` gives no
 >    feature Tested (14 Beta, 9 Experimental, 1 exempt). A schematic coloured by verified tier would
 >    have no Tested boxes.
-> 5. **Output location.** It asked for the audit in `docs/todo/`, which holds plans. An audit record
->    belongs in `docs/archive/`; only a resulting plan goes in `docs/todo/` (with a row in its README).
+> 5. **Output location.** It wanted a separate audit report. The plan keeps the structural
+>    description as a companion to the plan, to be promoted to `docs/STRUCTURE.md` once reviewed,
+>    because it describes how things work now rather than a one-off investigation.
 
 # CECELIA_STRUCTURE_AUDIT_PROMPT
 

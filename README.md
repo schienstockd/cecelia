@@ -22,12 +22,15 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## What Cecelia does
 
-<p align="center"><img src="frontend/public/readme-framework.svg" alt="Components: a browser (Vue 3 + TypeScript) hosting the WebGPU viewer, Analysis board, Notebooks and Task console; a Julia backend (HTTP + WebSocket, Cecelia.jl) with the chain scheduler, gating, data model and population manager; a Pixi-managed Python compute env with cellpose, btrack, scanpy, scikit-image and PyTorch; custom modules and plugins register into the Browser. Workflow: Raw → Import → Correct → Segment → Track → Gate → Cluster → Quantify → Analyse, with a View surface (WebGPU browser viewer + offline movie renderer) that stays in sync at every stage." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia structure. Pipeline: acquire, import, process (segment, track, correct), populations (gating, clusters), analyse (measures, plots, statistics), export. One scheduler runs every task, checks the params and logs the run. Underneath: the record of what was done, quality checks at each step plus claim checks (rules, no model), and chains that replay the steps on new images. On top: optional AI (Kiwi, Claude Code) that reads the same record." width="100%"></p>
 
-One browser window, one Julia backend, one Pixi-managed Python env. Every stage of the pipeline —
-import, correction, segmentation, tracking, gating, clustering, quantification, analysis — writes
-artifacts the viewer displays; a **chain** runs the stages you pick, per image, in parallel. The
-old two-app (napari + Shiny) arrangement is gone.
+Cecelia is a structured platform for image analysis: analysis you can hand off and check afterwards.
+Every step runs through one scheduler that checks its params and logs the run, so the **record** says
+what was done, by whom, with which version. **Checks** read that record: quality checks at each step,
+and claim checks that ask whether the images you compare were treated the same and the statistical
+unit is right. **Chains** replay the steps on new images. AI (Kiwi, Claude Code) is optional and reads
+the same record; everything works with it off. Where the structure still has gaps is tracked in
+[`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md).
 
 ---
 
