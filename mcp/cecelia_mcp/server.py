@@ -666,8 +666,9 @@ def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
 
     NARROW A SET-WIDE CALL: `kind` = "motility" (tracks: speed, displacement, straightness, …) or
     "phenotype" (per-cell intensities + morphology), and `value_names` = the segmentations you need
-    (e.g. ["B", "T"]). Unnarrowed, a set of 8 imaged channels returned ~200k characters — too large to
-    reach you at all; motility for two segmentations across the same set is a few thousand.
+    (e.g. ["B", "T"]). Motility for two segmentations across a 7-image set (43 population summaries) is
+    ~40k characters and fits; the same set unnarrowed is ~75k, at or past the cap on what reaches you.
+    Size grows with images × populations × measures — pass `image_uid` when one image will do.
 
     Summarised over the MEANINGFUL populations, not the raw segmentation (most labels are usually gated
     out): the user's gated pops when present (e.g. `T/_qc`), else the base `_tracked` population (all

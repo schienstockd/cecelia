@@ -137,5 +137,97 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(req.get_header("X-cecelia-session"), SID)
 
 
+# One image of a real `get_measure_summary(kind="motility", value_names=["B","T"])` reply, cut to one
+# summary × two measures (project 4kS67f, 2026-11-07).
+_MEASURE_SUMMARY = {"projectUid": "4kS67f", "images": [{
+    "uid": "LUkCpP", "name": "M1a-CD8-GFP-CD20-Tom_005", "included": True, "truncated": False,
+    "summaries": [{"population": "/qc", "valueName": "B", "kind": "motility", "n": 21, "measures": [
+        {"name": "num_cells", "n": 21, "median": 8.0, "q25": 6.0, "q75": 10.0},
+        {"name": "live.track.speed", "n": 21, "median": 3.061, "q25": 2.1, "q75": 4.167}]}]}]}
+
+
+def _compact(value):
+    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+class CompactOutputTest(unittest.TestCase):
+    """mcp 2.x renders a dict/list return as `indent=2` text, more than doubling it: a set-wide motility
+    summary went from fitting (~40k compact) to past Claude Code's MCP output cap (~90k). Every tool
+    call goes through `CallerMCPServer.call_tool`, which re-serialises that text compactly."""
+
+    def _call(self, srv, name, args=None):
+        return asyncio.run(srv.call_tool(name, args or {}, Context(mcp_server=srv)))
+
+    def test_dict_tool_text_is_compact(self):
+        srv = CallerMCPServer("t")
+
+        @srv.tool()
+        def summary() -> dict:
+            return _MEASURE_SUMMARY
+
+        out = self._call(srv, "summary")
+        self.assertEqual(len(out.content), 1)
+        text = out.content[0].text
+        self.assertNotIn("\n", text)
+        self.assertEqual(text, _compact(_MEASURE_SUMMARY))
+        self.assertEqual(json.loads(text), _MEASURE_SUMMARY)
+
+    def test_size_roughly_halves(self):
+        srv = CallerMCPServer("t")
+        img = _MEASURE_SUMMARY["images"][0]
+        big = {**_MEASURE_SUMMARY, "images": [img] * 7}   # the measured call was 7 images
+
+        @srv.tool()
+        def summary() -> dict:
+            return big
+
+        pretty = json.dumps(big, indent=2, ensure_ascii=False)
+        text = self._call(srv, "summary").content[0].text
+        self.assertLess(len(text), 0.5 * len(pretty))
+
+    def test_structured_output_is_untouched(self):
+        # A `-> list[dict]` tool publishes an outputSchema and wraps its structuredContent in
+        # {"result": …}; that must survive as built, only the per-item text blocks change.
+        srv = CallerMCPServer("t")
+        rows = [{"id": "a", "tags": ["x", "y"]}, {"id": "b", "tags": []}]
+
+        @srv.tool()
+        def plots() -> list[dict]:
+            return rows
+
+        tools = {t.name: t for t in asyncio.run(srv.list_tools())}
+        self.assertIsNotNone(tools["plots"].output_schema)
+        out = self._call(srv, "plots")
+        self.assertEqual(out.structured_content, {"result": rows})
+        self.assertEqual([b.text for b in out.content], [_compact(r) for r in rows])
+
+    def test_plain_text_is_untouched(self):
+        srv = CallerMCPServer("t")
+        texts = {"log": "line one\n  indented two\n", "brace": "{ not json\n  at all"}
+
+        @srv.tool()
+        def echo(key: str) -> str:
+            return texts[key]
+
+        for key, text in texts.items():
+            out = self._call(srv, "echo", {"key": key})
+            self.assertEqual(out.content[0].text, text)
+            self.assertEqual(out.structured_content, {"result": text})
+
+    def test_observer_tool_reply_is_compact(self):
+        # The real server, a real tool: proves the observer is built on CallerMCPServer.
+        from cecelia_mcp import server
+        with mock.patch.object(server._client, "get_measure_summary", return_value=_MEASURE_SUMMARY):
+            out = asyncio.run(server.mcp.call_tool(
+                "get_measure_summary", {"project_uid": "4kS67f", "set_uid": "XcPcu8", "kind": "motility",
+                                        "value_names": ["B", "T"]}))
+        self.assertNotIn("\n  ", out.content[0].text)
+        self.assertEqual(json.loads(out.content[0].text), _MEASURE_SUMMARY)
+
+    def test_autonomous_server_shares_the_hook(self):
+        from cecelia_mcp import autonomous_server
+        self.assertIsInstance(autonomous_server.mcp, CallerMCPServer)
+
+
 if __name__ == "__main__":
     unittest.main()
