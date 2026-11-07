@@ -339,6 +339,18 @@ end
         st, out = kiwi_start_turn("testpr", "q")
         @test st == 503 && occursin("Claude", out["error"])
 
+        # AI off for the asking profile ⇒ refused before anything spawns (app/src/ai/ai_switch.jl)
+        _KIWI_AGENT[] = m -> (push!(built, m); _KiwiFakeEngine(Any[], Tuple{String,String}[]))
+        n_built = length(built)
+        patch_profile_settings!(Dict("aiEnabled" => false), "aioff")
+        try
+            st, out = kiwi_start_turn("testpr", "q"; profile = "aioff")
+            @test st == 403 && out["error"] == Cecelia.AI_OFF_MESSAGE && out["setBy"] == "profile"
+            @test length(built) == n_built && !haskey(_KIWI_RUNNING, "testpr")   # no engine was built
+        finally
+            rm(Cecelia.profile_settings_dir("aioff"); recursive = true, force = true)
+        end
+
         # "plot this": the first click adds ONE board named after the plot, the second opens it
         pp = Dict("kind" => "proposedPlot", "plot" => "track_measures", "measure" => "live.track.duration")
         st, out = kiwi_open_proposed_plot("testpr", pp)

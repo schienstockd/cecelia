@@ -17,11 +17,15 @@
 #                        pasted text) are deleted when its session ends: Log out, quit, and — as the
 #                        backstop for a crash — the next profile pick. A person can also turn this on
 #                        for just themselves (Preferences → Kiwi). `ai/claude_conversations.jl`.
+#   aiAllowed          — the machine-wide AI ceiling, held by peanut (AI_TOGGLE_PLAN D2). Off ⇒ no
+#                        model turn starts and every request from Claude is refused, whatever a profile
+#                        chose in Preferences. One item, not a switch over the others. `ai/ai_switch.jl`.
 
 const SHARED_WORKSTATION_ITEMS = (
     (key = "oneClaudeLogin", default = false),
     (key = "claudeLogoutOnQuit", default = false),
     (key = "purgeClaudeConversations", default = false),
+    (key = "aiAllowed", default = true),
 )
 
 const _SHARED_WORKSTATION_TABLE = "sharedWorkstation"

@@ -448,6 +448,7 @@ include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log o
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
 include("ai/claude_conversations.jl")   # delete a profile's Claude conversations (shared workstation)
+include("ai/ai_switch.jl")   # is AI allowed for this profile? workstation ceiling + profile preference
 # HPC settings (site / profile identity / project override) + the ssh transport. After
 # profile_settings.jl (identity lives in the profile bag) and jobs.jl (`_kill_proc_tree`).
 # docs/todo/HPC_PLAN.md.
@@ -488,6 +489,7 @@ export active_profile_name, active_profile_dir, set_active_profile!, kiwi_termin
 export ClaudeAuth, claude_auth_status, claude_auth_logout!,
        claude_login_start!, claude_login_status, claude_login_code!, claude_login_cancel!
 export purge_claude_conversations!, purge_claude_conversations_wanted, claude_profile_in_use
+export AIOffBy, AI_OFF_MESSAGE, ai_off_by, ai_enabled, ai_state, ai_refusal
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export render_figure, figure_params, figure_source, figure_stale_reason, figure_style_schema, project_figure_style, set_project_figure_style!, clean_figure_style   # figures.jl — FIGURES_PLAN

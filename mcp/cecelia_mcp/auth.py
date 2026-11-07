@@ -15,3 +15,12 @@ def auth_headers() -> dict[str, str]:
     """`{"Authorization": "Bearer <token>"}`, or {} when there is no token."""
     tok = api_token()
     return {"Authorization": f"Bearer {tok}"} if tok else {}
+
+
+def request_headers() -> dict[str, str]:
+    """The headers EVERY request from the MCP servers carries, HTTP and WebSocket alike: the API token,
+    `X-Cecelia-Client: claude` (the server stamps writes `via: claude` and, with AI off, refuses the
+    request — AI_TOGGLE_PLAN D1), and the calling model + session when the caller hook supplied them.
+    Use this, never `auth_headers()` alone: a path without the client header slips past the AI switch."""
+    from cecelia_mcp.caller import caller_headers  # lazy: caller imports the MCP server package
+    return {"X-Cecelia-Client": "claude", **caller_headers(), **auth_headers()}

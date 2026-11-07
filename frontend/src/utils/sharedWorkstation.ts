@@ -32,6 +32,12 @@ export const SHARED_WORKSTATION_ITEMS: readonly SharedWorkstationItem[] = [
     tip: 'Log out, quit or the next pick deletes each profile\'s transcripts and prompt history',
     hint: 'Keeps login and memory · skips a profile with Claude still running',
   },
+  {
+    key: 'aiAllowed',
+    label: 'Allow AI features',
+    tip: 'Off turns AI off for every profile on this machine, whatever each one chose',
+    hint: 'Kiwi, claim review and Claude in the terminal · everything else works the same',
+  },
 ]
 
 export interface SharedWorkstationRow extends SharedWorkstationItem { value: boolean }

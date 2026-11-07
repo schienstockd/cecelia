@@ -44,8 +44,7 @@ import urllib.request
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
-from cecelia_mcp.auth import auth_headers
-from cecelia_mcp.caller import caller_headers
+from cecelia_mcp.auth import request_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 from cecelia_mcp.no_gui import no_gui_enabled
 
@@ -237,10 +236,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
         if q:
             query = "?" + urllib.parse.urlencode(q)
     data = None
-    # marks Claude-made writes so the server stamps them `via: claude` (author_stamp), plus the model +
-    # session making this call when the caller hook supplied them (caller.py)
-    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **caller_headers(),
-               **auth_headers()}
+    headers = {"Accept": "application/json", **request_headers()}  # token + client + caller (auth.py)
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"

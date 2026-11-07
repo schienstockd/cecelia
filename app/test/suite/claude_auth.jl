@@ -70,6 +70,29 @@ end
     end
 end
 
+@testset "ai switch — workstation ceiling, then the profile's own (AI_TOGGLE_PLAN D2/D3)" begin
+    prior = shared_workstation("aiAllowed")
+    try
+        set_shared_workstation!("aiAllowed", true)
+        @test ai_off_by("dora") == Cecelia.ai_on && ai_enabled("dora")          # no settings: the default
+        @test ai_refusal("dora") === nothing
+        patch_profile_settings!(Dict("aiEnabled" => false), "dora")
+        @test ai_off_by("dora") == Cecelia.ai_off_profile
+        @test ai_state("dora") == Dict{String,Any}("enabled" => false, "setBy" => "profile")
+        @test ai_enabled("erin")                                               # one profile's choice only
+        patch_profile_settings!(Dict("aiEnabled" => "nope"), "dora")           # hand-edit typo ⇒ default
+        @test ai_enabled("dora")
+        patch_profile_settings!(Dict("aiEnabled" => true), "dora")
+        set_shared_workstation!("aiAllowed", false)                            # the ceiling beats "on"
+        @test ai_off_by("dora") == Cecelia.ai_off_workstation
+        @test ai_refusal("dora") == Dict{String,Any}("error" => AI_OFF_MESSAGE, "setBy" => "workstation")
+        @test !ai_enabled("default")                                           # peanut too
+    finally
+        set_shared_workstation!("aiAllowed", prior)
+        rm(Cecelia.profile_settings_dir("dora"); recursive = true, force = true)
+    end
+end
+
 # ── Logging in (P9): the parts that don't need a real login ──
 
 @testset "resolve_private_browser" begin

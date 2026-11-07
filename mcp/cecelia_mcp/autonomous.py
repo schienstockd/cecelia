@@ -33,7 +33,7 @@ import time
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
-from cecelia_mcp.auth import auth_headers
+from cecelia_mcp.auth import request_headers
 from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
@@ -282,7 +282,7 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         for i, base in enumerate(bases):
             ws_url = api_url_to_ws(base)
             try:
-                ws = connect(ws_url, open_timeout=5, additional_headers=auth_headers(),
+                ws = connect(ws_url, open_timeout=5, additional_headers=request_headers(),
                              **ssl_kwargs(ws_url))
             except InvalidStatus:
                 loopback.remember(self.base_url, base)

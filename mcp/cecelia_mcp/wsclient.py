@@ -18,7 +18,7 @@ import threading
 import websockets
 
 from cecelia.utils import loopback
-from cecelia_mcp.auth import auth_headers
+from cecelia_mcp.auth import request_headers
 from cecelia_mcp.monitor import SessionMonitor, normalize_frame
 
 
@@ -66,7 +66,7 @@ async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event |
         url = urls[i]
         try:
             async with websockets.connect(url, ping_interval=20, open_timeout=5,
-                                          additional_headers=auth_headers(), **ssl_kwargs(url)) as ws:
+                                          additional_headers=request_headers(), **ssl_kwargs(url)) as ws:
                 delay = 0.0
                 async for raw in ws:
                     feed_raw(monitor, raw)
