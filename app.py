@@ -78,8 +78,9 @@ def _recorded_julia() -> str:
     Julia `Pkg.instantiate` ran under, so it beats whichever `julia` PATH happens to offer.
 
     The file is UTF-8 (install.ps1 pins it). An install made before that, by Windows PowerShell 5.1,
-    wrote it in the ANSI codepage, so bytes that aren't UTF-8 are decoded in the locale's encoding;
-    undecodable reads as absent, never a crash."""
+    wrote it in the ANSI codepage, so bytes that aren't UTF-8 are decoded in that one
+    (`locale.getencoding`, which UTF-8 mode doesn't override) — scripts/activate_juliaup.bat falls
+    back the same way. Undecodable reads as absent, never a crash."""
     try:
         with open(os.path.join(ROOT, ".cecelia-julia"), "rb") as f:
             raw = f.read()
@@ -90,7 +91,7 @@ def _recorded_julia() -> str:
     except UnicodeDecodeError:
         import locale
         try:
-            path = raw.decode(locale.getpreferredencoding(False)).strip()
+            path = raw.decode(locale.getencoding()).strip()
         except (UnicodeDecodeError, LookupError):
             return ""
     return path if path and os.path.isfile(path) else ""

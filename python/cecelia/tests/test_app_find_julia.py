@@ -9,7 +9,9 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -115,9 +117,15 @@ class FindJuliaTest(unittest.TestCase):
         julia = self._non_ascii_julia()
         with open(os.path.join(self.root, ".cecelia-julia"), "wb") as f:
             f.write(julia.encode("cp1252") + b"\r\n")
-        with mock.patch("locale.getpreferredencoding", return_value="cp1252"):
+        with mock.patch("locale.getencoding", return_value="cp1252"):
             self.assertEqual(self.app._recorded_julia(), julia)
-        with mock.patch("locale.getpreferredencoding", return_value="utf-8"):
+            # Python's UTF-8 mode (PYTHONUTF8=1, the default from 3.15) makes getpreferredencoding say
+            # utf-8; the ANSI fallback must still be the ANSI codepage.
+            flags = {k: getattr(sys.flags, k) for k in dir(sys.flags)
+                     if not k.startswith("_") and not callable(getattr(sys.flags, k))}
+            with mock.patch.object(sys, "flags", types.SimpleNamespace(**flags | {"utf8_mode": 1})):
+                self.assertEqual(self.app._recorded_julia(), julia)
+        with mock.patch("locale.getencoding", return_value="utf-8"):
             self.assertEqual(self.app._recorded_julia(), "")
 
     def test_without_it_path_julia_is_used_and_env_untouched(self):

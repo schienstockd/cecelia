@@ -323,6 +323,8 @@ if ($Scope -eq 'system') {
   # trailing empty entry) — same shape and reason as install.sh's launcher. `--as-is` because a plain
   # `pixi run` takes a write lock on the env, which non-admins can't (also as in install.sh).
   $Launch = Join-Path $InstallDir 'cecelia-launch.cmd'
+  # OEM, the codepage cmd decodes a .cmd in: the paths below come from CECELIA_HOME, which may hold a
+  # non-ASCII character, and ASCII would write it as `?` — a `cd /d` and PATH that don't exist.
   @"
 @echo off
 set "PIXI_HOME=$PixiHome"
@@ -336,7 +338,7 @@ cd /d "$InstallDir" && "$Pixi" run --as-is app
 goto :eof
 :args
 cd /d "$InstallDir" && "$Pixi" run --as-is %*
-"@ | Set-Content -Path $Launch -Encoding ASCII
+"@ | Set-Content -Path $Launch -Encoding Oem
   $Programs = [Environment]::GetFolderPath('CommonPrograms')
   $Lnk = Join-Path $Programs 'Cecelia.lnk'
   $Shell = New-Object -ComObject WScript.Shell
