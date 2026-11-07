@@ -327,8 +327,10 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     replicate — the statistical unit (["Mouse"], or ["Mouse", "Location"] when each site in each mouse
     counts once). Leave it unset only if the claim really has none — that is itself a finding.
 
-    Returns {findings, ran, skipped, notCompared, nRows, nUsed}. Each finding has level, code, short,
-    long and detail {stage, provenance, evidence}. Stages: S0 record gaps (image excluded, no data,
+    Returns {findings, checks, ran, skipped, notCompared, nRows, nUsed}. `checks` is one line per check
+    ({id, state: ok|warn|skipped, text}) — read it first: it is the list of facts. Each finding has
+    level, code, short, long and detail {stage, check, provenance, evidence}; the same finding for
+    several populations is one (pop "B and T", evidence pops/byPop). Stages: S0 record gaps (image excluded, no data,
     unit blank, params or track dims not recorded), S1 consistency (a setting differing across images,
     or between the compared populations — `claim.confounded` when it splits them completely), S2
     conventions (no unit, too few units for a per-unit test, several images per unit, uncalibrated).

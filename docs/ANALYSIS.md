@@ -350,14 +350,20 @@ hover toolbar appeared.
 ## Stating a claim from a plot
 
 A summary plot across a set can carry a **claim** (the claim recital, `docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md`):
-the ✓-badge button in the plot's footer (`components/canvas/ClaimStrip.vue`) takes one sentence and the
-**replicate** — the image attribute(s) whose values together count as one independent sample (Mouse, or
-Mouse × Location); the scope (set, the populations the plot draws, measure) is the plot's. The record
-checks run at once (`POST /api/claim/state`) and the footer shows one chip per stage — Record,
-Consistency, Conventions — with the findings on hover. "Review" runs the model review (~$1, a Kiwi turn
-with the analyst's notes withheld). The claim and its findings are a Blackboard entry, where each finding
-is marked Good / Bad / Unsure; the panel keeps the entry id in its persisted `ui`, so restating is a new
-round on the same entry. Opening the board re-checks the claim. Nothing is blocked.
+one button in the plot's footer (`components/canvas/ClaimStrip.vue`) shows the claim's open problems as a
+count and opens a popover. There the analyst states one sentence and the **replicate** — the image
+attribute(s) whose values together count as one independent sample (Mouse, or Mouse × Location); the scope
+(set, the populations the plot draws, measure) is the plot's. Two kinds of check, labelled as such:
+- **Checks · no model** run at once (`POST /api/claim/state`) and read as a list of facts — one line per
+  check (`claim_check_lines`): ✓ what it confirmed, or the problems it found (the same problem for several
+  populations is one line). What to do about a problem is its hover text.
+- **Model review** (~$1, about a minute, on request): one Kiwi turn that reads the claim and the record
+  but not the analyst's notes, and is told what the checks already found so it only adds what they missed.
+  Its points appear in the same popover when the turn finishes.
+
+The claim is a Blackboard entry with the same list — each problem a section marked Good / Bad / Unsure.
+The panel keeps the entry id in its persisted `ui`, so restating is a new round on the same entry.
+Opening the board re-checks the claim. Nothing is blocked.
 
 ## Export — one dropdown: figure (PDF / SVG) and/or CSV
 

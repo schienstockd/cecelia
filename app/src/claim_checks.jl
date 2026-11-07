@@ -217,6 +217,16 @@ end
 
 _claim_detail(stage, evidence) = Dict{String,Any}("stage" => stage, "provenance" => "inferred", "evidence" => evidence)
 _claim_imgs(rows) = sort!(unique(String[r["image"] for r in rows]))
+_claim_imgs_union(xs) = sort!(unique(reduce(vcat, [x["images"] for x in xs]; init = String[])))
+# Images as a finding names them: up to three by name, else a count.
+_claim_imgs_text(imgs) = length(imgs) <= 3 ? join(imgs, ", ") : string(length(imgs), " images")
+# A population as a finding names it: its segmentation when that tells the compared ones apart (`B`),
+# else the whole path.
+function _claim_pop_label(pop, scope)
+    vns = [_claim_pop_value_name(p) for p in scope.populations]
+    vn = _claim_pop_value_name(pop)
+    count(==(vn), vns) == 1 ? vn : String(pop)
+end
 
 # Most common value, the images holding each value, and whether the mode is a tie.
 function _claim_value_groups(vals::AbstractDict)
@@ -237,12 +247,13 @@ function _claim_s0(rows, scope)
     for r in rows; push!(get!(by_img, r["image"], Dict{String,Any}[]), r); end
 
     excl = _claim_imgs(filter(r -> !r["included"], rows))
-    isempty(excl) || push!(findings, qc_finding("warn", "claim.image_excluded"; n = length(excl),
+    isempty(excl) || push!(findings, qc_finding("warn", "claim.image_excluded"; n = length(excl), imgs = _claim_imgs_text(excl),
         detail = _claim_detail("S0", Dict{String,Any}("images" => excl))))
 
     for pop in scope.populations
         nodata = _claim_imgs(filter(r -> r["pop"] == pop && !r["hasData"], rows))
-        isempty(nodata) || push!(findings, qc_finding("warn", "claim.no_data"; pop = pop, n = length(nodata),
+        isempty(nodata) || push!(findings, qc_finding("warn", "claim.no_data"; pop = _claim_pop_label(pop, scope),
+            n = length(nodata), imgs = _claim_imgs_text(nodata),
             detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "images" => nodata,
                 "excluded" => filter(i -> i in excl, nodata), "measure" => scope.measure))))
     end
@@ -250,29 +261,31 @@ function _claim_s0(rows, scope)
     if !isempty(scope.unit_attrs)
         blank = _claim_imgs(filter(r -> isempty(r["unit"]), rows))
         isempty(blank) || push!(findings, qc_finding("warn", "claim.unit_blank"; attr = _claim_unit_label(scope),
-            n = length(blank), detail = _claim_detail("S0", Dict{String,Any}("attrs" => scope.unit_attrs,
+            n = length(blank), imgs = _claim_imgs_text(blank), detail = _claim_detail("S0", Dict{String,Any}("attrs" => scope.unit_attrs,
                 "images" => blank, "excluded" => filter(i -> i in excl, blank)))))
     end
 
-    # params: only where the claim has data — an image with no output has nothing to have params for
+    # params: only where the claim has data — an image with no output has nothing to have params for.
+    # One fact for every (population, step) gap, not one per pair: "B tracking (5 images), T segment (6 images)".
+    missing = Dict{String,Any}[]; flat = Dict{String,Any}[]
     for pop in scope.populations, kind in _claim_kinds(scope.measure)
         rs = filter(r -> r["pop"] == pop && r["hasData"], rows)
-        missing_imgs = _claim_imgs(filter(r -> isempty(r["paramsSource"][kind]), rs))
-        flat_only = _claim_imgs(filter(r -> !isempty(r["paramsSource"][kind]) &&
-                                            all(==("flat"), values(r["paramsSource"][kind])), rs))
-        isempty(missing_imgs) || push!(findings, qc_finding("warn", "claim.params_not_recorded";
-            kind = kind, pop = pop, n = length(missing_imgs),
-            detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => missing_imgs))))
-        isempty(flat_only) || push!(findings, qc_finding("info", "claim.params_last_run_only";
-            kind = kind, pop = pop, n = length(flat_only),
-            detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "kind" => kind, "images" => flat_only))))
+        m = _claim_imgs(filter(r -> isempty(r["paramsSource"][kind]), rs))
+        f = _claim_imgs(filter(r -> !isempty(r["paramsSource"][kind]) && all(==("flat"), values(r["paramsSource"][kind])), rs))
+        isempty(m) || push!(missing, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => m))
+        isempty(f) || push!(flat, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => f))
     end
+    gaps(xs) = join((string(_claim_pop_label(x["pop"], scope), " ", x["kind"], " (", _claim_imgs_text(x["images"]), ")") for x in xs), ", ")
+    isempty(missing) || push!(findings, qc_finding("warn", "claim.params_not_recorded"; what = gaps(missing),
+        detail = _claim_detail("S0", Dict{String,Any}("gaps" => missing, "images" => _claim_imgs_union(missing)))))
+    isempty(flat) || push!(findings, qc_finding("info", "claim.params_last_run_only"; what = gaps(flat),
+        detail = _claim_detail("S0", Dict{String,Any}("gaps" => flat, "images" => _claim_imgs_union(flat)))))
 
     if _claim_needs_tracking(scope.measure)
         for pop in scope.populations
             nodims = _claim_imgs(filter(r -> r["pop"] == pop && r["hasData"] && !haskey(r["vars"], "motionDims"), rows))
-            isempty(nodims) || push!(findings, qc_finding("warn", "claim.dims_not_recorded"; pop = pop,
-                n = length(nodims), detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "images" => nodims))))
+            isempty(nodims) || push!(findings, qc_finding("warn", "claim.dims_not_recorded"; pop = _claim_pop_label(pop, scope),
+                n = length(nodims), imgs = _claim_imgs_text(nodims), detail = _claim_detail("S0", Dict{String,Any}("pop" => pop, "images" => nodims))))
         end
     end
     findings
@@ -313,8 +326,8 @@ function _claim_s1_across(rows, scope)
                     push!(findings, qc_finding("info", "claim.within_tolerance"; variable = k,
                         detail = merge(_claim_detail("S1", ev), Dict{String,Any}("display" => true))))
                 else
-                    push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k, pop = pop,
-                        detail = _claim_detail("S1", ev)))
+                    push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k,
+                        pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
                 end
                 continue
             end
@@ -328,8 +341,8 @@ function _claim_s1_across(rows, scope)
                 ev["mode"] = g.mode
                 ev["images"] = sort!(reduce(vcat, [v for (val, v) in g.groups if val != g.mode]; init = String[]))
             end
-            push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k, pop = pop,
-                detail = _claim_detail("S1", ev)))
+            push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k,
+                pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
         end
     end
     findings
@@ -374,7 +387,7 @@ function _claim_s1_between(rows, scope)
             push!(findings, qc_finding("warn", "claim.confounded"; variable = k, detail = _claim_detail("S1", ev)))
         else
             push!(findings, qc_finding("warn", "claim.differs_between_groups"; variable = k,
-                n = length(within), detail = _claim_detail("S1", ev)))
+                n = length(within), imgs = _claim_imgs_text(within), detail = _claim_detail("S1", ev)))
         end
     end
     findings, not_compared
@@ -436,7 +449,7 @@ function _claim_s2(rows, scope)
             ev["design"] = "one group"; ev["minP"] = claim_min_p_paired(n)
         end
         ev["n"] = n
-        pmin = round(ev["minP"]; sigdigits = 2)
+        pmin = round(ev["minP"]; sigdigits = 3)
         if n == 0
             # no unit filled in where the claim has data — S0's `claim.unit_blank` already says so
         elseif ev["minP"] > CLAIM_ALPHA
@@ -464,10 +477,92 @@ function _claim_s2(rows, scope)
             end
         end
         isempty(bad) || push!(findings, qc_finding("warn", "claim.uncalibrated"; n = length(bad),
-            measure = scope.measure, detail = _claim_detail("S2", Dict{String,Any}("measure" => scope.measure,
+            imgs = _claim_imgs_text(sort!(collect(keys(bad)))), measure = scope.measure, detail = _claim_detail("S2", Dict{String,Any}("measure" => scope.measure,
                 "fields" => collect(fields), "images" => bad))))
     end
     findings
+end
+
+# ── the checks as a list of facts ──────────────────────────────────────────────────────────────
+
+# Every check in reading order. What each one looks at, and the fact it states when it finds nothing,
+# are copy: `claim.ok.<id>` in qc/text.jl. `S2.unit` always states a fact (the n), so it has no pass line.
+const CLAIM_CHECK_IDS = ("S0.membership", "S0.data", "S0.unit", "S0.params", "S0.dims",
+                         "S1.acrossImages", "S1.betweenGroups", "S2.unit", "S2.calibration")
+# The check each finding comes from.
+const CLAIM_CHECK_OF = Dict(
+    "claim.image_excluded" => "S0.membership", "claim.no_data" => "S0.data", "claim.unit_blank" => "S0.unit",
+    "claim.params_not_recorded" => "S0.params", "claim.params_last_run_only" => "S0.params",
+    "claim.dims_not_recorded" => "S0.dims",
+    "claim.differs_across_images" => "S1.acrossImages", "claim.within_tolerance" => "S1.acrossImages",
+    "claim.differs_between_groups" => "S1.betweenGroups", "claim.confounded" => "S1.betweenGroups",
+    "claim.not_compared" => "S1.betweenGroups",
+    "claim.no_unit" => "S2.unit", "claim.few_units" => "S2.unit", "claim.unit_count" => "S2.unit",
+    "claim.images_per_unit" => "S2.unit", "claim.uncalibrated" => "S2.calibration")
+
+# The same finding for several populations is ONE fact ("No B and T data on fHqhyb"): merged when
+# its code, its other subjects and its images agree — across-image differences by variable alone,
+# since each population's values differ in their own way. Also folds exact repeats (one per pop).
+function _claim_merge_pops(findings)
+    groups = Dict{Any,Vector{Any}}(); order = Any[]
+    for f in findings
+        subs = get(f, "subs", Dict{String,Any}())
+        ev = get(get(f, "detail", Dict()), "evidence", Dict())
+        imgs = f["code"] == "claim.differs_across_images" ? nothing : get(ev, "images", nothing)
+        k = (f["code"], f["level"], sort!([kv for kv in subs if kv[1] != "pop"]; by = first), imgs)
+        haskey(groups, k) || push!(order, k)
+        push!(get!(groups, k, Any[]), f)
+    end
+    out = Any[]
+    for k in order
+        fs = groups[k]
+        pops = unique(String[string(f["subs"]["pop"]) for f in fs if haskey(get(f, "subs", Dict()), "pop")])
+        if length(fs) == 1 || length(pops) < 2
+            push!(out, fs[1]); continue
+        end
+        f1 = fs[1]
+        subs = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in f1["subs"])
+        subs[:pop] = join(pops, " and ")
+        d = copy(f1["detail"])
+        evs = [f["detail"]["evidence"] for f in fs]
+        # what every population's evidence agrees on stays at the top; the rest is per population
+        common = Dict{String,Any}(k => v for (k, v) in evs[1] if k != "pop" && all(e -> get(e, k, nothing) == v, evs))
+        d["evidence"] = merge(common, Dict{String,Any}("pops" => pops, "byPop" => Dict(zip(pops, evs))))
+        push!(out, qc_finding(f1["level"], f1["code"]; detail = d, subs...))
+    end
+    for f in out
+        f["detail"]["check"] = get(CLAIM_CHECK_OF, f["code"], "")
+    end
+    out
+end
+
+"""
+    claim_check_lines(result) -> Vector{Dict}
+
+The checks as a list of facts, in reading order: `{id, state, text, tip}`. `state` is `warn` (its
+warnings are the findings with `detail.check == id`), `ok` (`text` is the fact it confirmed) or
+`skipped` (`text` says why). The plot's popover and the claim entry both read this.
+"""
+function claim_check_lines(result::AbstractDict)
+    lines = Dict{String,Any}[]
+    for id in CLAIM_CHECK_IDS
+        fs = filter(f -> get(f["detail"], "check", "") == id, result["findings"])
+        warn = any(f -> f["level"] == "warn", fs)
+        t = qc_text("claim.ok." * id)
+        state, text = if warn
+            "warn", ""
+        elseif haskey(result["skipped"], id)
+            "skipped", string(result["skipped"][id])
+        elseif id in result["ran"]
+            # a check that always states a fact (the n per replicate) says it in its info finding
+            info = filter(f -> f["level"] == "info", fs)
+            "ok", (id == "S2.unit" && !isempty(info)) ? info[1]["short"] : t.short
+        else
+            continue
+        end
+        push!(lines, Dict{String,Any}("id" => id, "state" => state, "text" => text, "tip" => t.long))
+    end
+    lines
 end
 
 """
@@ -507,10 +602,10 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
                 fun = _claim_param_fun(k)
                 push!(get!(by, isnothing(fun) ? k : "params." * fun, String[]), k)
             end
-            for (what, ks) in sort!(collect(by); by = first)
-                push!(findings, qc_finding("info", "claim.not_compared"; variable = what, n = length(ks),
-                    detail = _claim_detail("S1", Dict{String,Any}("variable" => what, "settings" => sort!(ks)))))
-            end
+            # one note: how many settings, from which steps
+            push!(findings, qc_finding("info", "claim.not_compared"; n = length(not_compared),
+                variable = join(sort!(collect(keys(by))), ", "),
+                detail = _claim_detail("S1", Dict{String,Any}("bySource" => Dict(k => sort!(v) for (k, v) in by)))))
         end
     end
     # S2 — conventions, over the rows the claim runs on
@@ -522,8 +617,10 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
             push!(ran, "S2.calibration")
         append!(findings, _claim_s2(table, scope))
     end
-    Dict{String,Any}("findings" => findings, "ran" => ran, "skipped" => skipped,
-                     "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))
+    out = Dict{String,Any}("findings" => _claim_merge_pops(findings), "ran" => ran, "skipped" => skipped,
+                           "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))
+    out["checks"] = claim_check_lines(out)
+    out
 end
 
 """

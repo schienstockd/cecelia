@@ -35,9 +35,12 @@ last: the claim as the record WOULD support it. If the record raises nothing, ab
 `note` what you checked. Never say the claim is true or false; say what the record can't support yet.
 """
 
-function claim_review_prompt(c::AbstractDict)::String
+function claim_review_prompt(c::AbstractDict, found::AbstractVector = String[])::String
     ua = _claim_unit_attrs(c)
     unit = isempty(ua) ? "none named" : join(ua, " × ")
+    known = isempty(found) ? "The rule checks found nothing." :
+        "The rule checks already found these — the analyst sees them, so do NOT repeat or rephrase them:\n" *
+        join(("- " * f for f in found), "\n")
     """
     Claim: “$(c["text"])”
     Set: $(c["setUid"])
@@ -45,7 +48,10 @@ function claim_review_prompt(c::AbstractDict)::String
     Measure: $(c["measure"])
     Replicate (image attributes; one value combination = one replicate): $(unit)
 
-    Does the record support this claim as stated?"""
+    $(known)
+
+    What else in the record bears on whether this claim can be made as stated? Report only what the
+    checks above don't already say; if that is nothing, abstain."""
 end
 
 """
@@ -60,7 +66,10 @@ function claim_review_start(uid::AbstractString, id::AbstractString; model::Abst
     meta === nothing && return 404, Dict{String,Any}("error" => "Entry not found")
     c = get(meta, "claim", nothing)
     c isa AbstractDict || return 400, Dict{String,Any}("error" => "Not a claim entry")
-    kiwi_start_turn(uid, claim_review_prompt(c); model,
+    # what the rule checks found, so the review spends its turn on what they can't see
+    result = _claim_run(uid, c)
+    found = result isa Tuple ? String[] : String[f["short"] for f in result["findings"]]
+    kiwi_start_turn(uid, claim_review_prompt(c, found); model,
                     system_prompt = claim_review_system_prompt(uid), allowed_tools = claim_review_tools(),
                     extra = Dict{String,Any}("claimReview" => Dict{String,Any}("entryId" => String(id),
                                                                               "round" => get(c, "round", 1))),

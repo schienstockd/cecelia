@@ -25,7 +25,10 @@
         ub = only(f for f in r.findings if f.code == "claim.unit_blank")
         sid = String(ub.sectionId)
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
-        @test occursin("### $sid · Record · ", md) && occursin("review (not run)", md)
+        @test occursin("### $sid · Mouse blank on ", md) && occursin("## Model review\n\nNot run.", md)
+        # the checks that found nothing are listed as facts, and the reply carries them
+        @test occursin("- ✓ Every image in the set is included", md)
+        @test any(l -> l.id == "S0.membership" && l.state == "ok", r.checks) && r.review === nothing
         @test sid in c["lastCheck"]["open"] && sid in meta["sectionIds"]
 
         # nothing changed: the re-check is a no-op revise, no snapshot
@@ -55,7 +58,7 @@
         st, r4 = post(api_claim_state, merge(scope, Dict("entryId" => id, "text" => "T cells move faster per image")))
         @test st == 200 && r4.round == 2
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
-        @test occursin("Round 2", md) && occursin("round 1: “T cells move faster than B cells”", md)
+        @test occursin("· round 2", md) && occursin("round 1: “T cells move faster than B cells”", md)
         # if Mouse goes blank again the finding comes back under the same section id
         imgs[1].attr["Mouse"] = ""; Cecelia.save!(imgs[1])
         st, r5 = post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
@@ -71,7 +74,7 @@
         st, r6 = post(api_claim_state, merge(scope, Dict("entryId" => id, "text" => "T cells move faster per image",
                                                           "unitAttrs" => ["Mouse", "Location"])))
         @test st == 200 && r6.round == 3
-        @test occursin("replicate: Mouse × Location", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
+        @test occursin("per Mouse × Location", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
 
         # not a claim entry
         st, bb = api_blackboard_create(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid, "title" => "note", "content" => "x"))))

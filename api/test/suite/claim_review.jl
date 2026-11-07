@@ -35,7 +35,7 @@ end
             "measure" => "live.track.speed", "unitAttrs" => ["Mouse"], "text" => "T cells move faster than B cells"))
         id = String(r.entryId)
         md0 = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
-        @test occursin("review (not run)", md0)
+        @test occursin("## Model review\n\nNot run.", md0)
 
         uid1 = imgs[1].uid
         ref = Dict("kind" => "image", "imageUid" => uid1)
@@ -53,6 +53,8 @@ end
         # the prompt names the claim and scope; the withheld tools never reach the engine
         sent = only(fake.seen_opts)
         @test occursin("T cells move faster than B cells", sent) && occursin("Replicate (image attributes; one value combination = one replicate): Mouse", sent)
+        # it is told what the rule checks found, so it doesn't spend the turn repeating them
+        @test occursin("do NOT repeat", sent) && occursin("- No B and T data on ", sent)
         @test !occursin("read_blackboard_entry", sent) && occursin("get_task_log", sent)
 
         meta = _read_bb_meta(proj.uid, id)
@@ -60,9 +62,9 @@ end
         @test rv["status"] == "done" && length(rv["claims"]) == 2
         sid = rv["claims"][1]["sectionId"]
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
-        @test occursin("### $sid · Review · Image i1 has no tracks for either population.", md)   # one line
-        @test occursin("What the record would support: Nothing about speed can be said yet.", md)
-        @test !occursin("review (not run)", md) && sid in meta["sectionIds"]
+        @test occursin("### $sid · Image i1 has no tracks for either population.", md)   # one line
+        @test occursin("## What the record would support\n\nNothing about speed can be said yet.", md)
+        @test !occursin("Not run.", md) && sid in meta["sectionIds"]
         # the analyst can mark a review finding like any other
         @test api_blackboard_section_outcome(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid,
             "entryId" => id, "sectionId" => sid, "verdict" => "bad", "note" => "it has tracks"))))[1] == 200
@@ -72,7 +74,7 @@ end
         post(api_claim_state, Dict("projectUid" => proj.uid, "entryId" => id, "setUid" => s.uid, "populations" => ["B/qc", "T/qc"],
             "measure" => "live.track.speed", "unitAttrs" => ["Mouse"], "text" => "T cells are faster per mouse"))
         @test !haskey(_read_bb_meta(proj.uid, id)["claim"], "review")
-        @test occursin("review (not run)", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
+        @test occursin("## Model review\n\nNot run.", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
     finally
         _KIWI_AGENT[] = old_agent
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")

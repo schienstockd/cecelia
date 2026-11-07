@@ -16,7 +16,7 @@ function _claim_scope_from_query(q::AbstractDict)
 end
 
 # GET /api/claim/checks?projectUid&setUid&pops&measure[&unitAttrs][&rows=1]
-# → {findings, ran, skipped, notCompared, nRows, nUsed[, rows]}. `rows` (the per-(image, population)
+# → {findings, checks, ran, skipped, notCompared, nRows, nUsed[, rows]}. `rows` (the per-(image, population)
 # record table the rules read) only on request: it carries every flattened param and is large.
 function api_claim_checks(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -51,7 +51,6 @@ function _claim_finding_key(f)::String
     f["code"] * "|" * join((string(k, "=", get(subs, k, "")) for k in _CLAIM_KEY_SUBS), "|")
 end
 
-const _CLAIM_STAGE_LABEL = Dict("S0" => "Record", "S1" => "Consistency", "S2" => "Conventions")
 
 # The section id for `key`: the one it had, else the next number after every id the claim has used.
 function _claim_section_id!(ids::AbstractDict, key::AbstractString)::String
@@ -68,16 +67,6 @@ function _claim_assign_ids!(ids::AbstractDict, findings)
     ids
 end
 
-function _claim_evidence_line(ev)::String
-    ev isa AbstractDict || return ""
-    imgs = get(ev, "images", nothing)
-    imgs isa AbstractVector && !isempty(imgs) && return "Images: " * join(string.(imgs), ", ")
-    imgs isa AbstractDict && !isempty(imgs) && return "Images: " * join(sort!(string.(collect(keys(imgs)))), ", ")
-    d = get(ev, "imagesDiffering", nothing)
-    d isa AbstractVector && !isempty(d) && return "Images: " * join(string.(d), ", ")
-    ""
-end
-
 # A claim's replicate attributes, from an entry or a request body: `unitAttrs` (a list), or the older
 # single `unitAttr` string; normalised by `claim_unit_attrs`.
 function _claim_unit_attrs(c)::Vector{String}
@@ -85,60 +74,63 @@ function _claim_unit_attrs(c)::Vector{String}
     claim_unit_attrs(something(field("unitAttrs"), field("unitAttr"), Some(nothing)))
 end
 
-_claim_scope_text(c) = string("set `", c["setUid"], "` · ", join(c["populations"], " vs "), " · `", c["measure"], "`",
-                              isempty(_claim_unit_attrs(c)) ? "" : " · replicate: " * join(_claim_unit_attrs(c), " × "))
+function _claim_scope_text(c)
+    ua = _claim_unit_attrs(c)
+    string(join(c["populations"], " vs "), " · `", c["measure"], "` · ",
+           isempty(ua) ? "no replicate named" : "per " * join(ua, " × "), " · set `", c["setUid"], "`")
+end
 
-# The entry's text for a claim and its latest check. No timestamp in it: a re-check that finds the
-# same thing leaves the text byte-identical, so the revise is a no-op and no snapshot is spent.
+# The entry's text for a claim and its latest check: a list of facts, one line each. Problems first,
+# each a `### sNN` section the analyst marks (what to do is the finding's `long`, shown on hover in
+# the plot, not repeated here); then what passed, notes, what wasn't checked, and the model review. No timestamp in it: a re-check that finds the same thing leaves the
+# text byte-identical, so the revise is a no-op and no snapshot is spent.
 function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
     io = IOBuffer()
-    println(io, "# ", c["text"], "\n")
-    println(io, "Scope: ", _claim_scope_text(c), "  ")
     r = Int(get(c, "round", 1))
+    println(io, "# ", c["text"], "\n")
+    println(io, _claim_scope_text(c), r > 1 ? " · round $r" : "", "\n")
+    warns = sort(filter(f -> f["level"] == "warn", result["findings"]); by = f -> f["sectionId"])
+    lines = get(result, "checks", Any[])
+    ok = filter(l -> l["state"] == "ok", lines); sk = filter(l -> l["state"] == "skipped", lines)
+    println(io, "## Checks · no model\n")
+    isempty(warns) && println(io, "Nothing found.\n")
+    for f in warns
+        println(io, "### ", f["sectionId"], " · ", f["short"], "\n")
+    end
+    if !isempty(ok) || !isempty(sk)
+        println(io, "## Passed\n")
+        for l in ok; println(io, "- ✓ ", l["text"]); end
+        for l in sk; println(io, "- Not checked: ", l["text"]); end
+        println(io)
+    end
+    notes = [f["short"] for f in result["findings"] if f["level"] != "warn" && f["code"] != "claim.unit_count"]
+    if !isempty(notes)
+        println(io, "## Notes\n")
+        for n in notes; println(io, "- ", n); end
+        println(io)
+    end
+    rv = get(c, "review", nothing)
+    println(io, "## Model review\n")
+    if !(rv isa AbstractDict)
+        println(io, "Not run.\n")
+    else
+        println(io, "One ", isempty(get(rv, "model", "")) ? "" : rv["model"] * " ",
+                "turn that read the claim and the record but not your notes — advisory; ", rv["status"], ".\n")
+        rs = filter(x -> x["kind"] != "interpretation", rv["claims"])
+        isempty(rs) && println(io, get(rv, "abstain", false) ? "Nothing raised. " * get(rv, "note", "") : "Nothing beyond the checks.", "\n")
+        for x in rs
+            println(io, "### ", x["sectionId"], " · ", x["text"], "\n")
+        end
+        for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
+            println(io, "## What the record would support\n\n", x["text"], "\n")
+        end
+    end
     if r > 1
-        println(io, "Round ", r, ". Earlier:  ")
+        println(io, "## Earlier rounds\n")
         for x in c["rounds"][1:end-1]
             println(io, "- round ", x["round"], ": “", x["text"], "” (", _claim_scope_text(x), ")")
         end
-    end
-    println(io)
-    println(io, "Checked: ", join(result["ran"], ", "), "  ")
-    sk = result["skipped"]
-    rv = get(c, "review", nothing)
-    println(io, "Not checked: ", join(vcat([string(k, " (", sk[k], ")") for k in sort!(collect(keys(sk)))],
-                                           rv isa AbstractDict ? String[] : ["review (not run)"]), ", "), "\n")
-    warns = filter(f -> f["level"] == "warn", result["findings"])
-    infos = filter(f -> f["level"] != "warn", result["findings"])
-    println(io, "## Findings\n")
-    isempty(warns) && println(io, "None from the checks that ran.\n")
-    for f in sort(warns; by = f -> f["sectionId"])
-        st = get(get(f, "detail", Dict()), "stage", "")
-        println(io, "### ", f["sectionId"], " · ", get(_CLAIM_STAGE_LABEL, st, st), " · ", f["short"], "\n")
-        println(io, f["long"])
-        ev = _claim_evidence_line(get(get(f, "detail", Dict()), "evidence", nothing))
-        prov = get(get(f, "detail", Dict()), "provenance", "")
-        line = join(filter(!isempty, [ev, isempty(prov) ? "" : prov * " from the record"]), " · ")
-        isempty(line) || println(io, "\n", line)
         println(io)
-    end
-    if rv isa AbstractDict
-        println(io, "## Review\n")
-        println(io, "Advisory: one model turn that read the claim and the record, not your notes — ",
-                rv["status"], isempty(get(rv, "model", "")) ? "" : ", " * rv["model"], ". Inferred from the record; nothing recomputed.\n")
-        rs = filter(x -> x["kind"] != "interpretation", rv["claims"])
-        isempty(rs) && println(io, get(rv, "abstain", false) ? "Nothing raised. " * get(rv, "note", "") : "No findings.", "\n")
-        for x in rs
-            println(io, "### ", x["sectionId"], " · Review · ", x["text"], "\n")
-        end
-        for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
-            println(io, "What the record would support: ", x["text"], "\n")
-        end
-    end
-    if !isempty(infos)
-        println(io, "## Notes\n")
-        for f in infos
-            println(io, "- ", f["short"])
-        end
     end
     String(take!(io))
 end
@@ -165,6 +157,11 @@ function _claim_write!(uid::AbstractString, id::AbstractString, c::AbstractDict,
     200, body
 end
 
+# The reply to a state or a check: the findings, the checks as facts, and the model review if it ran.
+_claim_reply(id, c, result; closed = String[]) = JSON3.write((; ok = true, entryId = id, round = c["round"],
+    text = c["text"], findings = result["findings"], checks = result["checks"], ran = result["ran"],
+    skipped = result["skipped"], review = get(c, "review", nothing), closed))
+
 function _claim_from_body(body)
     pops = get(body, :populations, nothing)
     pops isa AbstractVector || return nothing
@@ -181,7 +178,7 @@ _claim_same_round(a, b) = all(get(a, k, nothing) == get(b, k, nothing) for k in 
     POST /api/claim/state
 
 Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttrs?: [attr, …], text, entryId?, source? }`
-Reply: `{ ok, entryId, round, findings, ran, skipped }`
+Reply: `{ ok, entryId, round, text, findings, checks, ran, skipped, review, closed }`
 
 States a claim: runs the checks and writes them as a Blackboard entry (S0–S2 warnings as `### sNN`
 sections). With `entryId` it restates an existing claim: a changed text or scope starts a new round,
@@ -233,14 +230,13 @@ function api_claim_state(body_bytes::Vector{UInt8})
         st, rb = _claim_write!(uid, id, c, result)
         st == 200 || return st, rb
     end
-    200, JSON3.write((; ok = true, entryId = id, round = c["round"], findings = result["findings"],
-                      ran = result["ran"], skipped = result["skipped"]))
+    200, _claim_reply(id, c, result)
 end
 
 """
     POST /api/claim/check
 
-Body: `{ projectUid, entryId }` — Reply: `{ ok, entryId, round, findings, ran, skipped, closed }`
+Body: `{ projectUid, entryId }` — Reply: as `/api/claim/state`, with `closed` (section ids the record no longer shows)
 
 Re-runs a claim's checks against the current record and rewrites the entry (a no-op when nothing
 changed). `closed` lists the section ids open at the last check that the record no longer shows.
@@ -263,8 +259,7 @@ function api_claim_check(body_bytes::Vector{UInt8})
     st, rb = _claim_write!(uid, id, c, result)
     st == 200 || return st, rb
     closed = setdiff(was, c["lastCheck"]["open"])
-    200, JSON3.write((; ok = true, entryId = id, round = c["round"], findings = result["findings"],
-                      ran = result["ran"], skipped = result["skipped"], closed = closed))
+    200, _claim_reply(id, c, result; closed)
 end
 
 """

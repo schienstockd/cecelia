@@ -78,7 +78,7 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     imgs = _cc_clean(); imgs[3].meta["PhysicalSizeX"] = 0.5964
     r = _cc_run(imgs)
     @test isempty(_cc_codes(r))
-    @test length(_cc_find(r, "claim.within_tolerance")) == 2          # once per population
+    @test length(_cc_find(r, "claim.within_tolerance")) == 1          # one fact, not one per population
     @test _cc_find(r, "claim.within_tolerance")[1]["detail"]["display"] == true
 
     # ── one image excluded: S0 says so, S1 runs without it ──
@@ -87,13 +87,20 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     @test _cc_codes(r) == ["claim.image_excluded"]
     @test _cc_find(r, "claim.image_excluded")[1]["detail"]["evidence"]["images"] == ["b"]
     @test r["nUsed"] == 12
+    @test _cc_find(r, "claim.image_excluded")[1]["short"] == "Excluded from the set: b"
+    # the checks as facts: the one that found something is `warn`, the rest state what they confirmed
+    st = Dict(l["id"] => l["state"] for l in r["checks"])
+    @test st["S0.membership"] == "warn" && st["S0.data"] == "ok" && st["S2.calibration"] == "ok"
+    @test only(l["text"] for l in r["checks"] if l["id"] == "S2.unit") == "Mouse: n = 6"
 
     # ── one param changed on one image ──
     imgs = _cc_clean(); imgs[1] = _cc_image("a"; mouse = "1", diameter = 15)
     r = _cc_run(imgs)
     f = _cc_find(r, "claim.differs_across_images")
-    @test length(f) == 2                                                # B and T both segmented at 15
+    @test length(f) == 1                                                # B and T both segmented at 15: one fact
+    @test f[1]["short"] == "params.segment.cellposeMeasure.models.0.cellDiameter differs across images for B and T"
     ev = f[1]["detail"]["evidence"]
+    @test ev["pops"] == ["B", "T"] && f[1]["detail"]["check"] == "S1.acrossImages"
     @test ev["variable"] == "params.segment.cellposeMeasure.models.0.cellDiameter"
     @test ev["images"] == ["a"] && ev["mode"] == "10"
 
@@ -124,11 +131,11 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
 
     # ── params only in the flat last-run blob: the other population's run is gone ──
     r = _cc_run(_cc_clean(; flat_only = true))
-    nr = _cc_find(r, "claim.params_not_recorded")
-    @test Set((x["detail"]["evidence"]["pop"], x["detail"]["evidence"]["kind"]) for x in nr) ==
-          Set([("B/qc", "tracking"), ("T/qc", "segment")])
-    @test length(_cc_find(r, "claim.params_last_run_only")) == 2
-    @test !isempty(_cc_find(r, "claim.not_compared"))                  # one group has no record
+    nr = only(_cc_find(r, "claim.params_not_recorded"))                 # every gap in one fact
+    @test Set((x["pop"], x["kind"]) for x in nr["detail"]["evidence"]["gaps"]) == Set([("B/qc", "tracking"), ("T/qc", "segment")])
+    @test nr["short"] == "Processing params not on record: B tracking (7 images), T segment (7 images)"
+    @test length(_cc_find(r, "claim.params_last_run_only")) == 1
+    @test length(_cc_find(r, "claim.not_compared")) == 1                # one group has no record: one note
 
     # ── banked dims missing (a run from before track measures banked them) ──
     imgs = _cc_clean(); rm(qc_path(imgs[1], "tracking.track_measures", "T"))

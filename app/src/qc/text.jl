@@ -317,55 +317,85 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "{metric} differs from the set",
         long  = "This image has {metric} {value}, unlike most of the set — measures aren't comparable across it. Re-run with one setting for every image."),
 
-    # claim checks (claim_checks.jl) — S0: can the record say what was done?
+    # claim checks (claim_checks.jl). `short` is the fact, one line, naming the images ({imgs}: up to
+    # three by name, else a count); `long` is what to do. The claim entry is a list of these.
+    # S0: can the record say what was done?
     "claim.image_excluded" => (
-        short = "{n} image(s) in the set are excluded",
-        long  = "The claim runs without them — include them, or say in the claim why they are left out."),
+        short = "Excluded from the set: {imgs}",
+        long  = "Include them, or say in the claim why they are left out."),
     "claim.no_data" => (
-        short = "{n} image(s) have no data for {pop}",
-        long  = "The claim runs on fewer images than the set holds — run the missing step on them, or narrow the claim's scope."),
+        short = "No {pop} data on {imgs}",
+        long  = "Run the missing step on them, or narrow the claim's scope."),
     "claim.unit_blank" => (
-        short = "{attr} is blank on {n} image(s)",
-        long  = "Their replicate can't be counted — fill in {attr} before testing per replicate."),
+        short = "{attr} blank on {imgs}",
+        long  = "Fill in {attr}, or those images can't be counted as replicates."),
     "claim.params_not_recorded" => (
-        short = "No {kind} params recorded for {pop} on {n} image(s)",
-        long  = "Whether those images were processed the same way can't be checked — re-run the step to record it, or note how it was done."),
+        short = "Processing params not on record: {what}",
+        long  = "Re-run the step to record them, or note how it was done — otherwise whether all images were processed alike can't be checked."),
     "claim.params_last_run_only" => (
-        short = "{kind} params for {pop} only in the last-run record on {n} image(s)",
-        long  = "A later run of the same task under another name would overwrite them — re-run under this name to record them exactly."),
+        short = "Params only in the last-run record: {what}",
+        long  = "A later run under another name would overwrite them — re-run under this name to record them."),
     "claim.dims_not_recorded" => (
-        short = "Track dimensions not recorded for {pop} on {n} image(s)",
-        long  = "2D and 3D speeds can't be told apart — re-run track measures with dims set, or recompute both groups in 2D."),
+        short = "Track dimensions (2D/3D) not on record for {pop} on {imgs}",
+        long  = "Re-run track measures with dims set, or 2D and 3D speeds can't be told apart."),
     # S1: was everything compared treated the same?
     "claim.differs_across_images" => (
         short = "{variable} differs across images for {pop}",
-        long  = "Images in the comparison were processed differently — re-run the odd ones with matching settings, or restrict the claim to the matching images."),
+        long  = "Re-run the odd images with matching settings, or restrict the claim to the matching ones."),
     "claim.within_tolerance" => (
         short = "{variable} differs slightly across images",
-        long  = "Within tolerance — shown for the record, no action needed."),
+        long  = "Within tolerance — no action needed."),
     "claim.differs_between_groups" => (
-        short = "{variable} differs between the compared groups on {n} image(s)",
-        long  = "The groups were not measured the same way there — match the setting for both groups, or restrict the claim to the images where they match."),
+        short = "{variable} differs between the groups on {imgs}",
+        long  = "Match the setting for both groups, or restrict the claim to the images where they match."),
     "claim.not_compared" => (
-        short = "{variable}: {n} setting(s) not compared between groups",
-        long  = "Only one group has them on record, so whether the groups match there is unknown — record them for both before relying on the comparison."),
+        short = "{n} settings recorded for one population only — not compared",
+        long  = "Record them for both groups, or whether the groups match there is unknown."),
     # S2: is the claim built the way the field expects?
     "claim.no_unit" => (
         short = "No replicate named",
-        long  = "A pooled test counts every cell or track as independent — name the attribute(s) that identify one replicate (e.g. Mouse)."),
+        long  = "Name the attribute(s) that identify one replicate (e.g. Mouse) — a pooled test counts every cell or track as independent."),
     "claim.few_units" => (
-        short = "{attr}: n = {n}, so a rank test can't go below p = {p}",
-        long  = "A rank test across {n} replicates can't reach p < 0.05, and a t-test rests on normality it can't check — add replicates, or report the comparison as descriptive."),
+        short = "{attr}: n = {n} — a rank test can't go below p = {p}",
+        long  = "Add replicates, or report the comparison as descriptive."),
     "claim.unit_count" => (
-        short = "Tested per {attr}: n = {n}",
-        long  = "Report n as the number of replicates ({attr}), not cells or tracks."),
+        short = "{attr}: n = {n}",
+        long  = "Report n as the number of replicates, not cells or tracks."),
     "claim.images_per_unit" => (
         short = "{n_images} images from {n} replicates ({attr})",
-        long  = "A test per image counts some replicates more than once — summarise per replicate first."),
+        long  = "Summarise per replicate before testing — a test per image counts some replicates more than once."),
     "claim.uncalibrated" => (
-        short = "{n} image(s) lack calibration for {measure}",
-        long  = "The measure is in pixels or frames there, not physical units — fix the image metadata, then re-measure."),
+        short = "{measure} not calibrated on {imgs}",
+        long  = "Fix the image metadata, then re-measure — the measure is in pixels or frames there."),
     "claim.confounded" => (
         short = "{variable} splits the compared groups",
-        long  = "Every value of one group differs from every value of the other, so its effect can't be separated from the claim — match it before comparing."),
+        long  = "Match it before comparing — every value of one group differs from every value of the other."),
+    # claim checks that found nothing: the fact each confirms (`short`) and what it looked at (`long`)
+    "claim.ok.S0.membership" => (
+        short = "Every image in the set is included",
+        long  = "Looks for images in the set that are excluded."),
+    "claim.ok.S0.data" => (
+        short = "Every image has data for each population",
+        long  = "Looks for images with no measured data for a compared population."),
+    "claim.ok.S0.unit" => (
+        short = "Replicate filled in on every image",
+        long  = "Looks for images whose replicate attribute is blank."),
+    "claim.ok.S0.params" => (
+        short = "Processing params on record for every image",
+        long  = "Looks for images whose segmentation or tracking settings weren't recorded."),
+    "claim.ok.S0.dims" => (
+        short = "Track dimensions (2D/3D) on record",
+        long  = "Looks for tracks whose 2D/3D setting wasn't recorded."),
+    "claim.ok.S1.acrossImages" => (
+        short = "Same settings on every image",
+        long  = "Compares interval, pixel size, processing params and gates across images."),
+    "claim.ok.S1.betweenGroups" => (
+        short = "Same settings for the compared populations",
+        long  = "Compares the processing params of the populations, image by image."),
+    "claim.ok.S2.unit" => (
+        short = "Replicates counted",
+        long  = "Counts the replicates and the lowest p a rank test can reach with them."),
+    "claim.ok.S2.calibration" => (
+        short = "Calibrated in physical units on every image",
+        long  = "Looks for images whose pixel size or frame interval has no unit."),
 )

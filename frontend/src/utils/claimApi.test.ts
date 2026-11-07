@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { claimPopRef, claimScopeOf, claimUnitsOf, defaultUnitAttr, stageCounts, skippedLine, parseClaimResult } from './claimApi'
+import { claimPopRef, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, parseClaimResult } from './claimApi'
 
 const s = (valueName: string, pop: string) => ({ valueName, pop, popType: 'flow' })
 
@@ -27,18 +27,28 @@ describe('claimApi', () => {
     expect(claimUnitsOf({ claimUnit: '' })).toEqual([])
     expect(claimUnitsOf({})).toBeNull()
   })
-  it('counts warnings per stage, not info', () => {
-    const r = parseClaimResult({ entryId: 'bb-1', round: 2, ran: ['S0.data'], skipped: { 'S0.unit': 'no unit attribute given' },
+  it('groups findings under their check, and counts open problems with the review', () => {
+    const r = parseClaimResult({ entryId: 'bb-1', round: 2, text: 'T > B', ran: ['S0.data'],
+      skipped: { 'S0.unit': 'no replicate attribute given' },
+      checks: [{ id: 'S0.data', state: 'warn', text: '', tip: 't' }, { id: 'S0.unit', state: 'skipped', text: 'no replicate attribute given', tip: 't' },
+               { id: 'S2.calibration', state: 'nonsense', text: 'Calibrated', tip: 't' }],
       findings: [
-        { level: 'warn', code: 'claim.no_data', short: 'a', long: 'b', sectionId: 's01', detail: { stage: 'S0', evidence: { images: ['x'] } } },
-        { level: 'warn', code: 'claim.few_units', short: 'a', long: 'b', sectionId: 's02', detail: { stage: 'S2' } },
-        { level: 'info', code: 'claim.unit_count', short: 'a', long: 'b', detail: { stage: 'S2' } },
-      ] })!
+        { level: 'info', code: 'claim.unit_count', short: 'a', long: 'b', detail: { stage: 'S2', check: 'S2.unit' } },
+        { level: 'warn', code: 'claim.no_data', short: 'a', long: 'b', sectionId: 's01', detail: { stage: 'S0', check: 'S0.data', evidence: { images: ['x'] } } },
+        { level: 'warn', code: 'claim.few_units', short: 'a', long: 'b', sectionId: 's02', detail: { stage: 'S2', check: 'S2.unit' } },
+      ],
+      review: { turnId: 'kt-1', status: 'done', model: 'sonnet', claims: [
+        { kind: 'observation', text: 'o', sectionId: 's03' }, { kind: 'question', text: 'q', sectionId: 's04' },
+        { kind: 'interpretation', text: 'descriptive only' }] } })!
     expect(r.round).toBe(2)
-    expect(stageCounts(r.findings)).toEqual({ S0: 1, S1: 0, S2: 1 })
-    expect(r.findings[0].evidence).toEqual({ images: ['x'] })
-    expect(skippedLine(r.skipped)).toBe('Not checked: S0.unit (no unit attribute given)')
-    expect(skippedLine({})).toBe('')
+    expect(r.findings[1].evidence).toEqual({ images: ['x'] })
+    expect(r.checks.map(l => l.state)).toEqual(['warn', 'skipped', 'ok'])   // an unknown state reads as ok
+    expect(findingsOf(r, 'S2.unit').map(f => f.code)).toEqual(['claim.few_units', 'claim.unit_count'])  // warnings first
+    expect(r.review?.items.map(x => x.text)).toEqual(['o', 'q'])
+    expect(r.review?.supports).toBe('descriptive only')
+    expect(openCount(r)).toBe(4)            // 2 warnings + 2 review items; info doesn't count
+    expect(openCount(null)).toBe(0)
+    expect(parseClaimResult({ entryId: 'bb-2' })!.review).toBeNull()
   })
   it('rejects a reply that is not a claim result', () => {
     expect(parseClaimResult(null)).toBeNull()
