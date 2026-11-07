@@ -82,6 +82,22 @@ describe('buildLineageForest', () => {
     expect(forest.map(r => r.version)).toEqual(['child'])
     expect(forest[0].edge?.parent).toBe('gone')     // edge preserved, even though parent is gone
   })
+
+  it('cuts a cycle at its oldest edge instead of rendering nothing', () => {
+    // A mis-resolved output (a crop's new-image `default`) against a real drift edge: no root.
+    const log = [
+      entry({ fun: 'editImages.cropImage', valueName: 'driftCorrected', outputValueName: 'default',
+              at: '2026-07-24T12:45:15' }),
+      entry({ fun: 'cleanupImages.driftCorrect', valueName: 'default',
+              outputValueName: 'driftCorrected', at: '2026-10-01T12:36:44' }),
+      entry({ fun: 'cleanupImages.denoise', valueName: 'driftCorrected',
+              outputValueName: 'denoised', at: '2026-10-02T23:34:23' }),
+    ]
+    const rows = flattenLineage(buildLineageForest(['default', 'driftCorrected', 'denoised'], log))
+    expect(rows.map(r => [r.node.version, r.depth])).toEqual([
+      ['default', 0], ['driftCorrected', 1], ['denoised', 2],
+    ])
+  })
 })
 
 describe('flattenLineage', () => {

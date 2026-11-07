@@ -1560,6 +1560,13 @@ end
             @test sort(scodes(doc["findings"])) == ["seg.counts_unstable", "seg.fragmented"]
             @test doc["metrics"]["nCells"] == 200 && doc["metrics"]["diameterUm"] == 10.0
             @test count(l -> startswith(l, "[QC] seg."), logs) == 2
+            # the runner's `runEnv` comes back from the same parse (→ result → run log `env`);
+            # a file without one gives none
+            @test isempty(Cecelia.bank_segment_qc!(img, "segment.cellpose", "seg", qp))
+            write(qp, JSON3.write(Dict("labelCounts" => Dict("base" => 200),
+                                       "runEnv" => Dict("device" => "cuda", "cellpose" => "4.0.6"))))
+            @test Cecelia.bank_segment_qc!(img, "segment.cellpose", "seg", qp) ==
+                  Dict{String,Any}("device" => "cuda", "cellpose" => "4.0.6")
         end
 
         # metadata calibration findings (port of the old frontend fieldIssues) — codes + field

@@ -44,7 +44,8 @@ import urllib.request
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
-from cecelia_mcp.auth import request_headers
+from cecelia_mcp.auth import auth_headers
+from cecelia_mcp.caller import caller_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 from cecelia_mcp.no_gui import no_gui_enabled
 
@@ -222,6 +223,15 @@ def _trim_module_params(raw: dict) -> dict:
     return out
 
 
+def claude_headers() -> dict[str, str]:
+    """Marks a request as Claude's so the server stamps what it writes `via: claude` (author_stamp),
+    plus the model + session making this call when the caller hook supplied them (caller.py), plus
+    auth. Every MCP request to the API carries these — HTTP here, and the autonomous `/ws` connect
+    that starts tasks (the server binds them for the whole connection, so the run log's `author` says
+    which model launched a run)."""
+    return {"X-Cecelia-Client": "claude", **caller_headers(), **auth_headers()}
+
+
 def http_json(base_url: str, method: str, path: str, params: dict | None = None,
               body: dict | None = None, timeout: float = 60.0, raw: bool = False):
     """The one HTTP transport for the MCP clients (observer + autonomous): JSON in, JSON (or the
@@ -236,7 +246,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
         if q:
             query = "?" + urllib.parse.urlencode(q)
     data = None
-    headers = {"Accept": "application/json", **request_headers()}  # token + client + caller (auth.py)
+    headers = {"Accept": "application/json", **claude_headers()}
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"

@@ -91,6 +91,7 @@ export cohort_qc_summary_lines, cohort_has_outliers
 export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired
 export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
+export run_author, run_env_of, read_run_env
 export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
@@ -493,7 +494,7 @@ export AIOffBy, AI_OFF_MESSAGE, ai_off_by, ai_enabled, ai_state, ai_refusal
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export render_figure, figure_params, figure_source, figure_stale_reason, figure_style_schema, project_figure_style, set_project_figure_style!, clean_figure_style   # figures.jl — FIGURES_PLAN
-export REQUEST_VIA, REQUEST_CALLER, request_caller, author_stamp
+export REQUEST_VIA, REQUEST_CALLER, request_caller, author_stamp, caller_stamp
 export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_available, hpc_site,
        set_hpc_site!, hpc_identity, set_hpc_identity!, read_hpc_project_settings,
        set_hpc_project_account!, hpc_test_connection,
