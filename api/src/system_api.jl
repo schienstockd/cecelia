@@ -95,7 +95,7 @@ function api_system_envs_install(body_bytes)
 end
 
 # Shell `pixi install -e <name>` in the app root, stream lines through the task rail (task:log,
-# task:progress, task:status) so the Task Manager row + log rail show what pixi is doing — a
+# task:status) so the Task Manager row + log rail show what pixi is doing — a
 # ~500 MB install with no visible output looks like a hang. Register the subprocess with the job
 # registry so a cancel reaches it. Then a best-effort fetch of the env's built-in weights
 # (`_fetch_weights`) so the first segmentation doesn't stall on cellpose's server.
@@ -103,19 +103,19 @@ end
 # Task-rail semantics — the same pattern movie_rail.jl uses for background jobs:
 #   ws_status(..., "running", ...; fun = "system:install-env:<name>", pool = "job")
 #   ws_log     for each pixi/warm line
-#   ws_progress in coarse phases (start → install done → warm done)
+#   ws_progress only from the weight fetch, which reports real bytes. None while pixi installs:
+#               nothing says how far it is, and a fixed fraction held for minutes reads as a stuck
+#               bar (as `_run_hpc_env_install`, hpc_api.jl); the streamed log says what is happening.
 #   ws_status(..., "done"|"failed", ...)
 # `pool = "job"` marks it as a background job, not a scheduler task, in the rail.
 function _run_env_install(name::AbstractString, pixi::AbstractString, meta::NamedTuple,
                           job_id::AbstractString)
     fun = "system:install-env:$name"
     _log(msg)  = ws_log(nothing, job_id, msg)
-    _prog(frac) = ws_progress(nothing, job_id, Float64(frac))
     ok = false
     ws_status(nothing, job_id, "running", ""; fun = fun, pool = "job")
     try
         _log("pixi install -e $name  (~$(meta.approx_size_mb) MB)")
-        _prog(0.02)
         cmd = Cmd(`$pixi install -e $name`; dir = _SYSTEM_APP_ROOT)
         out = Pipe(); err = Pipe()
         proc = run(pipeline(cmd; stdout = out, stderr = err); wait = false)
@@ -132,13 +132,11 @@ function _run_env_install(name::AbstractString, pixi::AbstractString, meta::Name
             _log("[ERROR] pixi install exited with status $(proc.exitcode) / signal $(proc.termsignal)")
             return
         end
-        _prog(0.85)
         if !isempty(meta.weights)
             _log("fetching $(join(meta.weights, " / ")) model weights (one-time)…")
             _fetch_weights(job_id, meta.weights; env = Symbol(replace(name, "-" => "_")), on_log = _log) ||
                 _log("[WARN] weight fetch failed — models will download on first run")
         end
-        _prog(1.0)
         _log("[DONE] $name env ready")
         ok = _env_installed(name)
     catch e

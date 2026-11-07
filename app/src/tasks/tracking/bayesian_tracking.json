@@ -17,6 +17,7 @@
   "env": [
     "local"
   ],
+  "writesInto": "valueName",
   "resource_pool": "cpu",
   "requires": { "axes": ["T"], "scale": ["xy", "t"] },
   "params": [
@@ -24,7 +25,7 @@
       "key": "valueName",
       "label": "Segmentation",
       "type": "valueNameSelection",
-      "field": "labels",
+      "field": "labelPropsNames",
       "default": "default",
       "tip": "The segmentation (label set) whose cells to track"
     },

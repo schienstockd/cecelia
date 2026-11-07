@@ -268,6 +268,56 @@ end
     end
 end
 
+# A byte body that records which task wrote it: `write_http_body!` asks `isempty` (→ `size`) on the
+# writing task, so `seen[]` is the task that put the response on the socket.
+struct _WriterProbe <: AbstractVector{UInt8}
+    data::Vector{UInt8}
+    seen::Base.RefValue{Union{Task,Nothing}}
+end
+Base.size(p::_WriterProbe) = (p.seen[] = current_task(); size(p.data))
+Base.getindex(p::_WriterProbe, i::Int) = p.data[i]
+
+@testset "API: router responses are written from the pool task, byte-exact under concurrency" begin
+    # The same Phase 5 hop as the slab testset above, for every `handle_http` route: the binary gating
+    # bodies (plotdata/density/membership) used to be written by the connection's task on HTTP.jl's
+    # interactive thread, one response after another. Sent through `handle_stream` itself, 16 at once.
+    probes = Dict{Int,Tuple{_WriterProbe,Task}}()
+    lk = ReentrantLock()
+    route = "/api/__test/writer-probe"
+    _GET_ROUTES[route] = (req, _) -> begin
+        k = parse(Int, split(req.target, "=")[2])
+        p = _WriterProbe(UInt8.(mod.(k .+ (1:200_000), 256)), Ref{Union{Task,Nothing}}(nothing))
+        lock(() -> probes[k] = (p, current_task()), lk)
+        200, p
+    end
+    srv = HTTP.listen!(handle_stream, "127.0.0.1", 0)
+    try
+        port = HTTP.port(srv)
+        rs = fetch.([Threads.@spawn HTTP.get("http://127.0.0.1:$port$route?k=$k"; retry = false)
+                     for k in 1:16])
+        for (k, r) in enumerate(rs)
+            p, handler_task = probes[k]
+            @test r.status == 200
+            @test HTTP.header(r, "Content-Type") == "application/octet-stream"
+            @test r.body == p.data
+            @test p.seen[] === handler_task      # written by the pool task that ran the handler
+        end
+    finally
+        close(srv)
+        delete!(_GET_ROUTES, route)
+    end
+    # A write that fails in the pool task (client gone) reaches HTTP.jl as the IOError itself, which is
+    # what it logs at Debug — wrapped in a TaskFailedException it would log every disconnect as an Error.
+    @test_throws Base.IOError _fetch_unwrapped(Threads.@spawn throw(Base.IOError("gone", Base.UV_EPIPE)))
+    @test _fetch_unwrapped(Threads.@spawn 1 + 1) == 2
+    # Every pool hop that writes the response from the spawned task fetches it unwrapped — a bare
+    # `fetch(Threads.@spawn …)` in api/src would turn each client disconnect into an Error log.
+    for f in readdir(joinpath(@__DIR__, "..", "..", "src"); join = true)
+        endswith(f, ".jl") || continue
+        @test (basename(f), occursin(r"\bfetch\(Threads\.@spawn", read(f, String))) == (basename(f), false)
+    end
+end
+
 @testset "API: viewer slab — XY tile + pyramid level (spatial audit Phase 2)" begin
     # The pan/zoom viewer's access pattern: a rectangular TILE at a chosen pyramid LEVEL, out of a store
     # too big to slab whole. L0 of `f8gzA2` is 20329×16898 and 687 MB per channel; one 1024² chunk is

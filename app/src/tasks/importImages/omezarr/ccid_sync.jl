@@ -23,8 +23,9 @@ const _OME_DERIVED_META_KEYS = (
     "acquisition", "acquisitionMissing",
 )
 
-# Replaced even by a fill-only resync: what THIS read found, not a value a human set.
-const _STATUS_META_KEYS = ("acquisitionMissing",)
+# Replaced even by a fill-only resync: what THIS read found, not a value a human set. `acquisition`
+# reaches a resync's `zarr_meta` only when it was (re-)read from the source (`_resync_acquisition_settings!`).
+const _STATUS_META_KEYS = ("acquisitionMissing", "acquisition")
 
 """
 Reconcile the channel names a fresh store read produced with the ones already in `ccid.json`.

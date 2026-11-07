@@ -1049,6 +1049,14 @@ end
         @test !isempty(col.values) && Set(keys(col.values)) ⊆ Set(keys(col.paths))
         # an unknown column is "uncoloured", not an error
         @test track_group_paths(g; limit = 2, color_by = "nope.nope").color_kind == "none"
+        # a named per-track AGGREGATE colours too: `area.mean` already says which aggregate, so its
+        # base is derived and aggregated, as pop_df does — not dropped as "none"
+        agg = track_group_paths(gs4[1]; limit = 4, color_by = "area.mean")
+        @test agg.color_kind == "numeric" && agg.color_by == "area.mean"
+        @test !isempty(agg.values) && Set(keys(agg.values)) ⊆ Set(keys(agg.paths))
+        @test all(v -> v isa Float64 && v > 0, values(agg.values))
+        # a bare cell measure names no aggregate, so it stays uncoloured
+        @test track_group_paths(g; limit = 2, color_by = "area").color_kind == "none"
 
         # the diagnostics battery over a group, pooled through pooled_track_frame
         d = track_group_diagnostics(gs4[1]; max_lag = 4)

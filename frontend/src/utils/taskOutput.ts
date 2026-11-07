@@ -93,6 +93,37 @@ export function taskOutput(
   return null
 }
 
+/**
+ * The name a run's params are remembered under: `taskOutput`'s name, or, for a task that writes INTO
+ * its input (`def.writesInto`, tracking), that input's value. Julia twin: `task_params_name`.
+ */
+export function taskParamsName(
+  def: TaskDef | undefined | null,
+  params: ParamValues | undefined | null,
+): string | null {
+  const out = taskOutput(def, params)
+  if (out) return out.name
+  const key = def?.writesInto
+  if (!key) return null
+  const p = [...flatten(def.params)].find(d => d.key === key)
+  return str(p ? savedValueFor(p, params ?? {}) : params?.[key]) ?? str(p?.default)
+}
+
+/**
+ * Whether committing `key` names a params record — so picking it should restore that record. The
+ * output-naming params `taskOutput` reads, and the `writesInto` input. Not any other name param: an
+ * input image's name is not a record, and restoring under it would load an unrelated run.
+ */
+export function namesParamsRecord(def: TaskDef | undefined | null, key: string): boolean {
+  if (!def) return false
+  if (def.writesInto === key) return true
+  for (const p of flatten(def.params)) {
+    if (p.key !== key) continue
+    return isValueNameNamespace(p.namespace) || (p.key === 'outputValueName' && !p.namespace)
+  }
+  return false
+}
+
 /** The namespace a task's FIXED output lands in. `outputField` is the pre-registry spelling. */
 function namespaceOfDef(def: TaskDef): ValueNameNamespace {
   if (isValueNameNamespace(def.outputNamespace)) return def.outputNamespace
@@ -153,9 +184,24 @@ export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
  */
 export function normaliseField(field: string | undefined | null): ConsumerField {
   if (field === 'labels') return 'labels'
+  if (field === 'labelPropsNames') return 'labelPropsNames'
   if (field === 'spatialGraphs') return 'spatialGraphs'
   if (field === 'statsSuffixes' || field === 'clusterSuffixes' || field === 'regionSuffixes'
       || field === 'roiSuffixes' || field === 'patternSuffixes')
     return field
   return 'filepaths'
+}
+
+/**
+ * Does a consumer param declaring `field` take an upstream output that lands in `produced`? The chain
+ * whiteboard's edge-prefill test — compare through here, never `normaliseField(...) === produced`.
+ *
+ * Equal fields match. One cross-field match on top: a `labelPropsNames` consumer (a task that reads
+ * only the measurement table — tracking, gating, track measures) takes a `labels` output, because a
+ * segmentation's cells are measured into `label_props` under the SAME value name. Without it, a
+ * segmentation → tracking edge prefills nothing and the node silently tracks the spec default set.
+ */
+export function consumerAccepts(field: string | undefined | null, produced: ConsumerField): boolean {
+  const f = normaliseField(field)
+  return f === produced || (f === 'labelPropsNames' && produced === 'labels')
 }

@@ -37,14 +37,12 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
-import { taskMaturity, taskOptionSuffix, pageBadged } from '../utils/maturity'
-import { tierTip } from '../lib/guides/tiers'
-import { openMaturityRow } from '../lib/guideOpen'
-import ComingSoonBadge from '../components/ComingSoonBadge.vue'
-import ReportProblemButton from '../components/ReportProblemButton.vue'
+import { taskMaturity, taskOptionSuffix } from '../utils/maturity'
+import MaturityIndicator from '../components/MaturityIndicator.vue'
 import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
+import { useStoredSectionOpen } from '../utils/sectionOpen'
 import InlineNote from '../components/InlineNote.vue'
 import CcToggle from '../components/CcToggle.vue'
 import { useFieldDraft } from '../composables/useFieldDraft'
@@ -54,7 +52,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
-import { taskOutput } from '../utils/taskOutput'
+import { taskParamsName, namesParamsRecord } from '../utils/taskOutput'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -98,12 +96,9 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
-// the picked task's maturity badge — Experimental only in practice (a Coming soon task can't be picked);
+// the picked task's maturity, drawn exactly as the header draws a page's (`MaturityIndicator`);
 // docs/todo/FEATURE_MATURITY_PLAN.md → P2, `utils/maturity.ts` → taskMaturity
-const taskMat = computed(() => {
-  const m = taskDef.value ? taskMaturity(taskDef.value, props.defs) : null
-  return m && pageBadged(m.tier) ? m : null
-})
+const taskMat = computed(() => taskDef.value ? taskMaturity(taskDef.value, props.defs) : null)
 // picker sub-headings (Segment / Measure / Correct …); null = render the flat list
 const fnGroups = computed(() => groupTaskDefs(props.defs))
 
@@ -362,7 +357,7 @@ async function initParams(def: TaskDef | undefined) {
   const seq = ++paramReqSeq
   // The name the form is about to show — its own defaults on a first render, or whatever the last
   // scope change left. Asking WITH it means a form that opens on "Tcell" opens with Tcell's params.
-  const got = await fetchSavedParams(def, taskOutput(def, paramValues.value)?.name ?? '')
+  const got = await fetchSavedParams(def, taskParamsName(def, paramValues.value) ?? '')
   const saved = got?.params ?? null
   if (seq !== paramReqSeq) return
   // `null` → the load did not happen, so LEAVE THE FORM ALONE rather than stamping defaults over it.
@@ -426,6 +421,8 @@ function refreshOptionsForForm(def: TaskDef) {
 async function onParamCommit(key: string, value: unknown) {
   const def = taskDef.value
   if (!def || typeof value !== 'string' || !value) return
+  // Only a param that NAMES a params record restores one (the output name, or tracking's segmentation).
+  if (!namesParamsRecord(def, key)) return
   const seq = ++paramReqSeq
 
   let saved: ParamValues | null = null
@@ -632,13 +629,11 @@ watch(() => props.defs, (defs) => {
 const selectedImages = computed(() => paramContext.value.images)
 // What the selected task is for, and when it fits, straight under the picker (task spec fields,
 // docs/MODULES.md → `purpose`). A line naming a check is run over the selected images — ADVISORY,
-// never a gate on Run (utils/taskDiscovery.ts). The lines fold in a CollapsibleSection whose
-// open/closed state is remembered per user (open by default).
+// never a gate on Run (utils/taskDiscovery.ts). The lines fold under their own toggle whose
+// open/closed state is remembered per user (open by default) and follows `setSectionOpen`.
 const useLines = computed(() => (taskDef.value?.useWhen ?? []).map(l => checkLine(l, 'use', selectedImages.value)))
 const notLines = computed(() => (taskDef.value?.notWhen ?? []).map(l => checkLine(l, 'not', selectedImages.value)))
-const WHEN_OPEN_KEY = 'cc-task-about-open'
-const whenOpen = ref(profileStorage.getItem(WHEN_OPEN_KEY) !== '0')
-watch(whenOpen, v => { try { profileStorage.setItem(WHEN_OPEN_KEY, v ? '1' : '0') } catch { /* ignore */ } })
+const whenOpen = useStoredSectionOpen('cc-task-about-open')
 // ── Task runner down ──────────────────────────────────────────────────────────
 // Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
 // backend is a surprise: it works, but it dies with the next Restart, which is the one thing you
@@ -847,13 +842,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
         <div v-if="taskDef" class="section-heading-actions">
           <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
-          <template v-if="taskMat">
-            <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
-                    v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
-              <ComingSoonBadge :tier="taskMat.tier" dot />
-            </button>
-            <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
-          </template>
+          <MaturityIndicator :maturity="taskMat" :page="$route.path" />
         </div>
       </div>
       <select

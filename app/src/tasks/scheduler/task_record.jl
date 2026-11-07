@@ -94,8 +94,8 @@ mutable struct TaskRecord
     params::Dict{String,Any}
     # What the run WRITES, for the duplicate-run guard (`_conflicting_run`): every image it touches (the
     # whole vector for a set-scope task, so `image_uid` alone — the representative — is not enough) and
-    # the output name it writes under (`task_output_name`; `""` = the task names none, so every run of it
-    # writes to the same place).
+    # the name it writes under (`task_params_name`: its output, or for a `writesInto` task like tracking
+    # the input it writes into; `""` = neither, so every run of it writes to the same place).
     image_uids::Vector{String}
     output_name::String
     # Where the work runs, and the run's own cluster resource overrides (`{cpus, memGb, gpus,
@@ -130,6 +130,14 @@ Base.showerror(io::IO, e::DuplicateRunError) =
           isempty(e.output_name) ? "" : " → $(e.output_name)", " — wait for it or cancel it")
 
 _is_active(rec::TaskRecord) = rec.status in (TASK_QUEUED, TASK_RUNNING)
+
+# Whether a queued or running run is registered under `id`. A run's own terminal frame is sent after its
+# record turned terminal (`_set_status!`) or was deregistered, so a terminal frame arriving while this
+# holds belongs to some OTHER run under the id — `record_task_outcome!` must not touch the live run's start.
+_live_run_under(id::AbstractString) = lock(_TASKS_LOCK) do
+    r = get(_TASKS, String(id), nothing)
+    !isnothing(r) && _is_active(r)
+end
 
 # The run `new` would collide with, or `nothing`. Same id while the previous run under it is still
 # registered at all — even cancelled and winding down: its run-log close, outcome and status frames are

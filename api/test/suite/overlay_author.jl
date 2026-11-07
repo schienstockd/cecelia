@@ -400,6 +400,17 @@ end
             @test "/hid" in rows(Dict{Symbol,Any}(:showGatedTracks => true,
                                                  :ribbonEyes => Dict("B" => Dict("flow::/hid" => true))))
             @test !("/hid" in rows(Dict{Symbol,Any}(:ribbonEyes => Dict("B" => Dict("flow::/hid" => true)))))
+            # the unnamed track source on a mask with track clusters stands down whether or not
+            # `popValueName` names it — the "" source resolves like the pops (`_config_pop_segmentation`)
+            @test "B" in trackclust_segmentations(img)
+            for extra in (Dict{Symbol,Any}(), Dict{Symbol,Any}(:popValueName => "B"))
+                @test isempty(_track_source_items(merge(Dict{Symbol,Any}(:showTracks => true,
+                    :showTrackclust => true, :labelValueNames => ["B"]), extra), img))
+            end
+            # `popsFilter` does not scope a look's all-segmentation layers — the renderer draws them
+            # with no filter (`pops_filter = nothing`), so the card must still name the drawn pop
+            @test "/hid" in rows(Dict{Symbol,Any}(:popEyes => Dict("B" => Dict("flow::/hid" => true)),
+                                                 :popsFilter => ["/some/other/pop"]))
 
             # the *Colour* mask takes the point eyes (the viewer's `layerHidden`), else `show`
             @test !any(==(hid), values(mask_id_colours(img; value_name = "B", pop_type = "flow")))

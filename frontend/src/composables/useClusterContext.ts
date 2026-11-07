@@ -17,6 +17,7 @@ import { useImageMetaRefresh } from './useImageMetaRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
 import { channelLabel } from '../utils/channelNames'
 import { clusterFeatureOptions } from '../utils/clusterHeatmapFeatures'
+import { clusterStoreBinding, sameClusterStoreBinding } from '../utils/clusterStoreBinding'
 
 export interface ShownPop { path: string; name: string; colour: string; clusterIds: number[] }
 
@@ -118,13 +119,20 @@ export function useClusterContext(opts: {
   // the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
   // `resolvedVn` is a dependency (not just read): loadFeatures resolves it asynchronously, so without it
   // the tree could stay pinned to the initial 'default' after the real segmentation value_name lands.
+  // Gated on `loadedPopType` (like featureOptions): on a popType switch the members and value_name on
+  // hand are the previous popType's, so binding waits for the new response (clusterStoreBinding).
+  const currentBinding = () => clusterStoreBinding({ enabled: enabled.value, projectUid: projectUid.value,
+    validUids: validUids.value, resolvedVn: resolvedVn.value, popType: popType.value,
+    loadedPopType: loadedPopType.value })
   const bindStore = () => {
-    if (!enabled.value || !projectUid.value || !validUids.value.length) return
-    g.selectImage(validUids.value[0], resolvedVn.value, popType.value).then(() => {
-      g.mirrorUids = validUids.value.slice(1)
+    const b = currentBinding()
+    if (!b) return
+    g.selectImage(b.uid, b.vn, b.popType).then(() => {
+      // a newer bind superseded this one while it loaded — it sets the mirror set for its own run
+      if (sameClusterStoreBinding(b, currentBinding())) g.mirrorUids = b.mirror
     })
   }
-  watch([validUids, suffix, popType, projectUid, enabled, resolvedVn], bindStore, { immediate: true })
+  watch([validUids, suffix, popType, projectUid, enabled, resolvedVn, loadedPopType], bindStore, { immediate: true })
   // reload the run/feature metadata when the image set / project / popType changes (or on enable)
   watch([projectUid, () => imageUids.value.join(','), popType, enabled], loadFeatures, { immediate: true })
   // A task finishing on one of THESE images must also reload the run METADATA, not just the panels'

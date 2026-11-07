@@ -231,6 +231,12 @@ end
     @test _cluster_map_key("umap", "mv") == "X_umap.mv"
     @test _cluster_map_key("diffmap", "mv") == "X_diffmap.mv"
     @test _cluster_map_key("pca", "mv") === nothing
+    # the cluster map reads `_latest` throughout (embedding, codes, pop membership): a labels pin is
+    # refused up front, not silently ignored. Without one the request reaches the image lookup (404).
+    cm(qs) = api_plots_cluster_map(HTTP.Request("GET", "/api/plots/cluster-map?projectUid=NOPE&imageUid=x&pop=/gated$qs"))[1]
+    @test cm("&labelsVersion=v2") == 400
+    @test cm("&labelsVersion=") == 404
+    @test cm("") == 404
 
     # REGRESSION: an entry written BEFORE the `labels` field existed — i.e. any image not re-run since.
     # Reading it must not throw. `something(get(...), nothing)` did: with every argument `nothing`,

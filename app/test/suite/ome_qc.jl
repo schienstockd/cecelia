@@ -521,6 +521,33 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 @test [p["zFromStartUm"] for p in acq["brightZ"]["points"]] == [0.0, 60.0]
                 @test acq["scanner"]["type"] == "Resonant"
 
+                @test acq["readerVersion"] == Cecelia.ACQUISITION_READER_VERSIONS["oir"]
+                # A reader with no version yet (czi) is current, not re-read on every refresh.
+                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
+                # Settings with no `source` predate the .czi reader: an .oir read, so outdated at v1.
+                @test Cecelia._acquisition_outdated(Dict{String,Any}("system" => "FV4000"))
+                @test acq["channels"][1]["emissionFilter"] == "BA410-455"
+
+                # Settings from an older reader (no readerVersion, no filters) are re-read on resync…
+                old = init_object(proj.uid, img.uid)
+                stale = Dict{String,Any}("system" => "FV4000", "source" => "oir")
+                old.meta["acquisition"] = stale
+                save!(old)
+                @test Cecelia._acquisition_outdated(stale)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                @test init_object(proj.uid, img.uid).meta["acquisition"]["channels"][4]["emissionFilter"] == "ET720/60M"
+                # …but with the source gone, the older settings stay and no reason is recorded.
+                old = init_object(proj.uid, img.uid)
+                old.meta["acquisition"] = stale
+                save!(old)
+                mv(src, src * ".away")
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                kept = init_object(proj.uid, img.uid).meta
+                @test kept["acquisition"]["system"] == "FV4000" && !haskey(kept["acquisition"], "channels")
+                @test !haskey(kept, "acquisitionMissing")
+                mv(src * ".away", src)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))   # back to the current reader
+
                 # Fill-only: a second resync keeps what is there, even once the source is gone.
                 rm(src)
                 @test resync_ome_meta!(init_object(proj.uid, img.uid))

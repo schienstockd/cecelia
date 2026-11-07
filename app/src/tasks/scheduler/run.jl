@@ -87,13 +87,14 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     fun_name  = _fun_name_from_task(task)
     pool_name = effective_pool_name(task, pool_name)
     pool      = _pool(pool_name)
-    # Throws `DuplicateRunError` if this task is already queued/running on this image with this output.
+    # Throws `DuplicateRunError` if this task is already queued/running on this image with this output
+    # (`task_params_name`, so tracking B and tracking T, which write different files, do not collide).
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, by = by, params = params,
-                                 output_name = task_output_name(task, params),
+                                 output_name = task_params_name(task, params),
                                  target = target, hpc = hpc)
     _set_status!(rec, TASK_QUEUED)
 
@@ -150,7 +151,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, by = by, params = params,
                                  image_uids = [i.uid for i in imgs],
-                                 output_name = task_output_name(task, params))
+                                 output_name = task_params_name(task, params))
     _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
