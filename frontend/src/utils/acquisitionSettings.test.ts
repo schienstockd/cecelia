@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { acquisitionNotice, acquisitionRows, framesShortOf, microscopeName, type AcquisitionSettings } from './acquisitionSettings'
+import { acquiredAtText, microscopeLine, acquisitionNotice, acquisitionRows, depthRampName, framesShortOf, microscopeName, type AcquisitionSettings, type MicroscopeRequest } from './acquisitionSettings'
 
 // Shapes copied from `oir_meta.parse_settings` on test-data/acquisition/oir_*_imageProperties.xml.
 const FV4000: AcquisitionSettings = {
@@ -24,7 +24,11 @@ describe('acquisitionRows', () => {
     expect(row(rows, 'Laser')).toBe('MaiTai e HP DS-OL · 900 nm · 14.4 %')
     expect(row(rows, 'Scanner')).toBe('resonant · zoom 1.5× · dwell 0.033 µs')
     expect(row(rows, 'Integration')).toBe('frame ×2 · sum')
-    expect(row(rows, 'CH1')).toBe('SHG · MaiTai e HP DS-OL · BNDD1 · HV 0')
+    // Auto HV is on: the recorded HV 0 is not listed as the detector's setting
+    expect(row(rows, 'CH1')).toBe('SHG · MaiTai e HP DS-OL · BNDD1')
+    expect(row(rows, 'Auto HV')).toBe('on')
+    const manual = acquisitionRows({ ...FV4000, autoHV: false })
+    expect(row(manual, 'CH1')).toBe('SHG · MaiTai e HP DS-OL · BNDD1 · HV 0')
   })
 
   it('Bright Z on shows the ramp; off says off even when points are stored', () => {
@@ -58,18 +62,22 @@ describe('acquisitionRows', () => {
 })
 
 describe('acquisitionNotice — the section never vanishes silently', () => {
-  const url = (ext: string) => `issue:${ext}`
+  const url = (req: MicroscopeRequest) => `issue:${JSON.stringify(req)}`
   const acq = { system: 'FVMPE-RS', softwareVersion: '2.6.1.243' }
 
   it('says nothing more under a diagram', () => {
     expect(acquisitionNotice(acq, null, true, url)).toBeNull()
   })
-  it('says why there is no diagram for settings that are not two-photon', () => {
-    expect(acquisitionNotice(acq, null, false, url)?.text).toBe('Light-path diagram: two-photon only so far')
+  it('asks for the microscope when its settings are read but it is not two-photon', () => {
+    expect(acquisitionNotice(acq, null, false, url)).toEqual({
+      text: 'Light-path diagram and settings card: two-photon only so far',
+      action: { label: 'Request your microscope',
+                url: `issue:${JSON.stringify({ what: 'diagram', system: 'FVMPE-RS', softwareVersion: '2.6.1.243' })}` } })
   })
   it('asks for the microscope when the file type has no reader', () => {
     expect(acquisitionNotice(null, { reason: 'format', ext: '.czi' }, false, url)).toEqual({
-      text: 'Settings are not read from .czi files yet', action: { label: 'Request your microscope', url: 'issue:.czi' } })
+      text: 'Settings are not read from .czi files yet',
+      action: { label: 'Request your microscope', url: `issue:${JSON.stringify({ what: 'settings', ext: '.czi' })}` } })
   })
   it('names the other reasons, and an image never looked at', () => {
     expect(acquisitionNotice(null, { reason: 'source' }, false, url)?.text).toBe('Source file not reachable: refresh metadata when it is')
@@ -79,6 +87,16 @@ describe('acquisitionNotice — the section never vanishes silently', () => {
 })
 
 describe('microscope name and a stopped-early time-lapse', () => {
+  it('prints the acquisition time as the scope PC recorded it', () => {
+    expect(acquiredAtText({ acquiredAt: '2026-07-16T13:44:05.228+10:00' })).toBe('2026-07-16 13:44')
+    expect(acquiredAtText({})).toBeNull()
+    expect(acquiredAtText({ acquiredAt: 'garbage' })).toBeNull()
+  })
+  it('heads the diagram with system, software, stand and date', () => {
+    expect(microscopeLine({ system: 'FV4000', softwareVersion: '3.2.1.85', microscopeBody: 'BX63LF',
+                            acquiredAt: '2026-07-16T13:44:05.228+10:00' })).toBe('FV4000 · software 3.2.1.85 · BX63LF · 2026-07-16 13:44')
+    expect(microscopeLine({ microscopeBody: 'BX63LF' })).toBeNull()
+  })
   it('names the system with its software', () => {
     expect(microscopeName({ system: 'FVMPE-RS', softwareVersion: '2.6.1.243' })).toBe('FVMPE-RS · software 2.6.1.243')
     expect(microscopeName({})).toBeNull()
@@ -88,5 +106,20 @@ describe('microscope name and a stopped-early time-lapse', () => {
     expect(framesShortOf({ timelapse: { count: 45 } })).toBeNull()
     expect(acquisitionRows({ system: 'X', timelapse: { count: 45, acquired: 21 } }))
       .toContainEqual({ k: 'Time-lapse', v: '21 of 45 planned frames (stopped early or cropped)' })
+  })
+})
+
+describe('a Zeiss .czi names the depth ramp its own way', () => {
+  // Shape copied from `czi_meta.parse_settings` on test-data/acquisition/czi_lsm780_nlo_metadata.xml.
+  const czi: AcquisitionSettings = {
+    source: 'czi', system: 'LSM 780, AxioObserver', softwareVersion: '13.0.1.518',
+    lasers: [{ name: 'Chameleon', wavelengthNm: 775, transmissionPct: 2 }],
+    brightZ: { enabled: false, points: [] },
+  }
+  it('says Auto Z brightness for Zeiss and Bright Z otherwise', () => {
+    expect(depthRampName(czi)).toBe('Auto Z brightness')
+    expect(depthRampName({ ...czi, source: 'oir' })).toBe('Bright Z')
+    expect(depthRampName(null)).toBe('Bright Z')
+    expect(acquisitionRows(czi)).toContainEqual({ k: 'Auto Z brightness', v: 'off' })
   })
 })

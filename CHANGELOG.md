@@ -20,6 +20,8 @@ stack. Per-tag notes are also on the
 
 ### Fixed
 
+- **Tracking remembers settings per segmentation.** B no longer shows, or rebuilds deleted tracks
+  with, the settings of whichever population ran last.
 - **Copying gates matches channels by name, as the R version did.** Before, an image with another
   channel order gated whichever marker sat at that position.
 - **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
@@ -29,6 +31,8 @@ stack. Per-tag notes are also on the
 - **Stored units are now converted.** Intervals in ms or minutes, and pixel sizes in nm or mm, were
   read as seconds or µm. Re-run measures on such images.
 - **Metadata QC flags a unit it can't convert**, instead of assuming seconds or µm.
+- **Cohort QC flags a set whose tracks mix 2D and 3D.** Auto picks per image, so one set's speeds
+  could be measured both ways.
 - **Calibration fixes now reach the OME-XML.** Metadata edits, the import's z-spacing and interval
   fixes, and resync only updated the zarr scale. Resync older images to update them.
 

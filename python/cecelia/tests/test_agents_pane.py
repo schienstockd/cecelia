@@ -205,13 +205,31 @@ class LiveSessionsTest(_FakeHome):
         self.assertEqual([(s.pid, s.name, s.auto, s.judge, s.cwd) for s in live],
                          [(10, "auto-fix", True, False, "/ws/cecelia-fix-x")])
 
+    def test_the_auto_fix_agent_is_shown_through_a_forking_claude_wrapper(self):
+        def headless(pid, sid):
+            self.session(pid, "500", sid, transcript_cwds=["/ws/cecelia-fix-x"])
+            meta = json.loads((self.home / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
+            (self.home / "sessions" / f"{pid}.json").write_text(
+                json.dumps({**meta, "entrypoint": "sdk-cli"}), encoding="utf-8")
+        review = ("python", "scripts/judge/review.py", "--auto")
+        wrapper = ("/bin/sh", "/home/u/bin/claude", "-p")   # a shim with no `exec`
+        self.process(5, "100", comm="python", argv=review)
+        self.process(7, "100", comm="sh", ppid=5, argv=wrapper)
+        self.process(10, "500", ppid=7)                                                # the fix agent
+        self.process(6, "100", comm="python", ppid=10, argv=("python", "/ws/scripts/recital.py"))
+        self.process(8, "100", comm="sh", ppid=6, argv=wrapper)
+        self.process(11, "500", ppid=8)                                                # a reviewer
+        headless(10, "a")
+        headless(11, "b")
+        self.assertEqual([(s.pid, s.auto) for s in self.live()], [(10, True)])
+
     def test_the_daemons_warm_spare_is_not_a_session_but_a_background_job_is(self):
         for pid, extra in ((10, {"kind": "bg", "spare": True}), (11, {"kind": "bg"})):
             self.process(pid, "500")
             self.session(pid, "500", f"s{pid}", name=f"n{pid}")
             meta = json.loads((self.home / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
             (self.home / "sessions" / f"{pid}.json").write_text(json.dumps({**meta, **extra}), encoding="utf-8")
-        self.assertEqual([s.name for s in self.live()], ["n11"])
+        self.assertEqual([(s.name, s.bg) for s in self.live()], [("n11", True)])
 
     def test_no_sessions_folder_means_no_sessions(self):
         self.assertEqual(live_sessions(self.home / "missing", proc=self.proc), [])
@@ -469,6 +487,16 @@ class PrCiTest(unittest.TestCase):
         self.assertEqual(console._name_cell(AgentRow("auto-fix", "busy", "w", "x", auto=True)), "auto-fix^   ")
         self.assertEqual(console._name_cell(AgentRow("cecelia-prune-x", "idle", "w", "x", judge=True)),
                          "cecelia-pr…*")
+
+    def test_a_background_job_carries_an_ampersand_and_the_header_says_why(self):
+        rows = [AgentRow("FastTIFF repo audit", "idle", "w", "x", bg=True), AgentRow("cecelia-7e", "idle", "w", "y")]
+        self.assertEqual(console._name_cell(rows[0]), "FastTIFF r…&")
+        self.assertEqual(console._name_cell(rows[1]), "cecelia-7e  ")
+        state = console.DashboardState()
+        state.agents = rows
+        self.assertIn("& background, no window", console.agents_block(state, 100, use_colour=False)[0])
+        state.agents = rows[1:]
+        self.assertNotIn("&", console.agents_block(state, 100, use_colour=False)[0])
 
     def test_a_judge_review_session_waiting_on_ci_waits_with_the_others_but_leads_them(self):
         rows = [AgentRow("a", "idle", "w", "x", pr=1, pr_state="OPEN", ci="running"),

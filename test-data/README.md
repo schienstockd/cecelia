@@ -79,10 +79,26 @@ time-lapse with Bright Z OFF but ramp points still stored. Checked for user name
 committing (none). `test_oir_meta.py` parses them and wraps them in filler bytes to test the container
 scan; `ome_qc.jl` wraps the FV4000 one as a fake `.oir` source for the resync test.
 
+`czi_lsm780_nlo_metadata.xml` (32 KB) is the `ImageDocument` metadata XML, byte for byte, of a
+public ZEN black LSM 780 two-photon stack (Chameleon at 775 nm; Zenodo record 8411792, CC-BY 4.0);
+its only user field reads "LSM User". `czi_lsm780_nlo_headers.bin` (800 B) is the same file's first 512
+bytes (file header) and the 288-byte metadata segment header at its metadata offset.
+`czi_lsm800_zenblue_metadata.xml` (10 KB) is cut from a public ZEN blue LSM 800 file (Zenodo record
+19047136, CC-BY 4.0): the `Information` block without document and user fields, `Scaling`, and the
+path to `UseAutoBrightnessCorrection`, re-serialised by ElementTree. `test_czi_meta.py` parses both and
+rebuilds a container from the real headers. `czi_lsm780_multitrack_metadata.xml` (49 KB), byte for
+byte from another file of the same LSM 780 record: four sequential tracks with four lasers and four
+different pinholes, the case where one image-level pinhole would be wrong.
+
 `floor_photon_counted_fv4000.json` (4 KB): the low end (values 0–400) of the raw-value histogram of
 four mid-depth planes, first frame, every channel of a real FV4000 two-photon store, by `np.bincount`.
 Nothing from 1 to 18, then peaks every ~30: photon-counted output. `test_floor_stats.py` checks that
 `floor_stats` calls it photon-counted, not a background clipped at 0.
+
+`profile_fvmpe_session.json` (26 KB): `meta.saturation.channels` (index, saturated, per-plane `profile`)
+copied from two real FVMPE-RS two-photon movies of one session, as `importImages.omezarr` stored them:
+one ran to the end and fades over time, one stopped early with two channels clipped mostly deep.
+Summary numbers only, no pixels. `app/test/suite/qc_profile.jl` reads it.
 
 ## `run-logs/` — real run logs, for the chain-from-history builder
 

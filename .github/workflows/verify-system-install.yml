@@ -49,9 +49,9 @@ jobs:
 
       - name: Install (system scope, as ${{ matrix.how }})
         # Authenticates the installer's GitHub API lookups — anonymous ones share a 60/h limit per
-        # runner IP. Step-scoped, not job-scoped: no later step (alice's server) needs it. The sudo variant
-        # passes it and the job's CECELIA_* by name: the runner's sudo ignores `-E` ("preserving the
-        # entire environment is not supported"), which dropped CECELIA_INSTALL_SCOPE → a user install.
+        # runner IP. Step-scoped, not job-scoped: no later step (alice's server) needs it. The sudo
+        # variant names every variable the installer needs: Ubuntu 26.04's sudo ignores `-E`, which
+        # silently dropped them and installed the latest release in user scope instead.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -59,8 +59,9 @@ jobs:
           ROOTHOME=$( [ "$RUNNER_OS" = Linux ] && echo /root || echo /var/root )
           sudo find "$ROOTHOME" -maxdepth 3 2>/dev/null | sort > "$RUNNER_TEMP/roothome.before"
           if [ "${{ matrix.how }}" = sudo ]; then
-            sudo env "PATH=$PATH" "GITHUB_TOKEN=$GITHUB_TOKEN" "CECELIA_INSTALL_SCOPE=$CECELIA_INSTALL_SCOPE" \
-              "CECELIA_CHANNEL=$CECELIA_CHANNEL" "CECELIA_BRANCH=$CECELIA_BRANCH" sh ./install.sh
+            sudo env "PATH=$PATH" GITHUB_TOKEN="$GITHUB_TOKEN" \
+              CECELIA_INSTALL_SCOPE="$CECELIA_INSTALL_SCOPE" CECELIA_CHANNEL="$CECELIA_CHANNEL" \
+              CECELIA_BRANCH="$CECELIA_BRANCH" sh ./install.sh
           else
             sh ./install.sh
           fi

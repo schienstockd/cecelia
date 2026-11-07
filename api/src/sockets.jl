@@ -111,19 +111,22 @@ _ov_look_int(cfg, k::AbstractString, dflt::Int) = begin
 end
 
 # Which segmentation an animation's overlays come from: the look's `popValueName`, else its legacy
-# `valueName`, else `dflt`. Empty strings fall through.
-function _ov_look_seg(cfg, dflt::AbstractString)
+# `valueName`, else the request's `mask` (the segmentation it draws — what the 3D batch and title card
+# fall back to, `_config_pop_segmentation`), else `dflt`. Empty strings fall through.
+function _ov_look_seg(cfg, dflt::AbstractString; mask::Union{Nothing,AbstractString} = nothing)
     for k in ("popValueName", "valueName")
         v = _ov_look_str(cfg, k, "")
         isempty(v) || return v
     end
-    String(dflt)
+    (mask === nothing || isempty(mask)) ? String(dflt) : String(mask)
 end
 
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
-                   started_at="", finished_at="")
+                   started_at=nothing, finished_at="")
+    # `started_at` is passed only by a relay (the runner's stamp, authoritative even when ""); `nothing`
+    # lets `record_task_outcome!` derive it from this process's own note.
     if string(status) == "running"
-        seed = parse_iso_utc(started_at)
+        seed = isnothing(started_at) ? nothing : parse_iso_utc(started_at)
         isnothing(seed) ? note_task_started!(task_id) : note_task_started!(task_id, seed)
     end
     row = record_task_outcome!(task_id, status;
@@ -478,7 +481,7 @@ function handle_movie_record(ws, data)
         if ovs_cfg !== nothing
             # The SEGMENTATION the overlays come from. `popValueName` is the look's name for it (what
             # `viewerLook` writes); a bare `valueName` is what older animation looks carried.
-            ovs_cfg["valueName"] = _ov_look_seg(look_cfg, first_vn)
+            ovs_cfg["valueName"] = _ov_look_seg(look_cfg, first_vn; mask = kf_mask)
             # `look` carries the resolved per-set settings; a missing tailLength defaults to 30
             # (matches `_overlays_raw_from_config`).
             ovs_cfg["tailLength"] = _ov_look_int(look_cfg, "tailLength", 30)
@@ -740,15 +743,16 @@ end
 # Persist last-used params to each image dir + the set dir ({proj}/1/{uid}/ccid.json → meta.funParams).
 # Dir-based (no object load) — see write_module_fun_params! in app/src/model/image.jl.
 #
-# Also banked under the OUTPUT NAME this run wrote (`Cecelia.task_output_name`, which reads the spec's
-# `namespace` — the name lives under six different keys depending on the task). That is what lets the
-# form restore Tcell's parameters when you pick Tcell, instead of showing whatever ran last. `""` for a
-# task that names no output, and then only the flat blob is written, exactly as before.
+# Also banked under the name this run wrote (`Cecelia.task_params_name`: the spec's output `namespace`
+# — the name lives under six different keys depending on the task — or, for a task that writes into
+# its input like tracking, that input). That is what lets the form restore Tcell's parameters when
+# you pick Tcell, instead of showing whatever ran last. `""` for a task that names neither, and then
+# only the flat blob is written, exactly as before.
 function _remember_fun_params(proj_root::String, fun::String, params::Dict{String,Any},
                               image_uid::String, image_uids::Vector{String}, set_uid::String)
     uids = !isempty(image_uids) ? image_uids : (isempty(image_uid) ? String[] : [image_uid])
     try
-        vn = Cecelia.task_output_name(fun, params)
+        vn = Cecelia.task_params_name(fun, params)
         for u in uids
             write_module_fun_params!(joinpath(proj_root, "1", u), fun, params; value_name = vn)
         end

@@ -16,7 +16,8 @@ A headless `claude -p` run (the recital's reviewers) writes a session file too �
 is no one's window, so `sdk*` entrypoints are skipped, but for the fix agent `judge-review --auto`
 runs (`from_auto_fix`): it works a worktree unattended, and the pane shows it as `auto-fix`.
 Claude Code's daemon also keeps a `spare: true` background session warm for the next background
-job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background job is shown.
+job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background job is shown,
+marked `bg` — it has no window, so closing the terminal that was showing it doesn't end it.
 
 The transcript also carries Claude Code's recap — a `system` entry with `subtype: "away_summary"`,
 written while the window sits unattended — which `latest_recap` reads — and the session's last
@@ -68,6 +69,7 @@ class Session:
     judge: bool = False                    # opened by `pixi run judge-review` — `from_judge_review()`
     recital: bool = False                  # `pixi run recital` runs under it — `running_recital()`
     auto: bool = False                     # `judge-review --auto`'s headless fix agent — `from_auto_fix()`
+    bg: bool = False                       # a background job (`kind: "bg"`): the daemon keeps it, no window
 
 
 def claude_home() -> pathlib.Path:
@@ -110,10 +112,17 @@ def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
     return any(_runs_judge_review(argv) for argv in _parent_argvs(pid, proc, depth))
 
 
-def from_auto_fix(pid: int, proc: pathlib.Path) -> bool:
-    """Whether the session's parent is `review.py --auto`: its fix agent. Not a recital reviewer
-    under it, whose parent is `recital.py`."""
-    return any(_runs_judge_review(argv) and "--auto" in argv for argv in _parent_argvs(pid, proc, 1))
+def from_auto_fix(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
+    """Whether the session's nearest `review.py`/`recital.py` ancestor (within `depth`) is
+    `review.py --auto`: its fix agent. Not a recital reviewer under it, whose nearest one is
+    `recital.py`. Looking past the direct parent keeps the fix agent when `claude` is a wrapper
+    that forks the CLI rather than exec'ing it."""
+    for argv in _parent_argvs(pid, proc, depth):
+        if any(pathlib.PurePath(a).parts[-2:] == RECITAL_SCRIPT for a in argv):
+            return False
+        if _runs_judge_review(argv):
+            return "--auto" in argv
+    return False
 
 
 #: `pixi run recital` runs this script; under a session it means the session is mid-commit.
@@ -344,7 +353,8 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
         return dataclasses.replace(session, auto=True, asks=False)   # it never waits for the maintainer
     session = _transcript_session(pid, name, status, meta, sid, projects, context)
     return dataclasses.replace(session, judge=from_judge_review(pid, proc),
-                               recital=running_recital(pid, proc, children or {}))
+                               recital=running_recital(pid, proc, children or {}),
+                               bg=meta.get("kind") == "bg")
 
 
 def _transcript_session(pid: int, name: str, status: str, meta: dict, sid: str,
@@ -361,6 +371,21 @@ def _transcript_session(pid: int, name: str, status: str, meta: dict, sid: str,
                        asks=ends_with_question(transcript))
     except OSError:
         return Session(pid, name, status, None, readable=False, session_id=sid, context_pct=ctx)
+
+
+def under(path: str, root: str) -> bool:
+    """Whether `path` is `root` or inside it — by text, case-folded where the OS folds it."""
+    path, root = os.path.normcase(path), os.path.normcase(root).rstrip(os.sep)
+    return path == root or path.startswith(root + os.sep)
+
+
+def sessions_in(root: str, sessions: _t.Iterable[Session]) -> list[Session]:
+    """Every session that worked inside `root` recently — any of its recent folders, not only the
+    newest: its shell may have been reset to the workspace root while the work is still in this
+    worktree. Over-protecting is the safe failure. Used by `prune-worktrees`' in-use check and the
+    `worktree_cd_guard` hook."""
+    return [s for s in sessions
+            if any(under(c, root) for c in (s.recent_cwds or ((s.cwd,) if s.cwd else ())))]
 
 
 def live_sessions(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib.Path("/proc"),

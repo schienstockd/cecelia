@@ -51,6 +51,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'project', label: 'Your LabArchives notebook, once linked', tools: ['get_labarchives_context'], kiwi: false, terminal: true },
 
   { group: 'runs', label: 'QC flags, and cohort outliers for a step', tools: ['get_qc_metrics', 'get_cohort_qc'], kiwi: true, terminal: true },
+  { group: 'runs', label: 'What the record can’t support in a claim', tools: ['check_claim'], kiwi: true, terminal: true },
   { group: 'runs', label: 'Run logs and recent runs', tools: ['get_task_log', 'get_task_history'], kiwi: true, terminal: true },
   { group: 'runs', label: 'Step settings and their valid ranges', tools: ['get_module_params'], kiwi: true, terminal: true },
   { group: 'runs', label: 'Which step does what, and the guides', tools: ['get_task_catalogue', 'get_guide'], kiwi: true, terminal: true },
@@ -86,6 +87,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'builds', label: 'Blackboard entries it writes, revises and tags good/bad',
     tools: ['create_blackboard_entry', 'revise_blackboard_entry', 'set_blackboard_status', 'set_blackboard_outcome', 'set_blackboard_section_outcome'],
     kiwi: false, terminal: true },
+  { group: 'builds', label: 'A claim you state, as a Blackboard entry with its checks', tools: ['state_claim'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Dated lab-log lines', tools: ['append_lab_log'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Your LabArchives context, saved to the project', tools: ['set_labarchives_context'], kiwi: false, terminal: true },
   // Claude Code's own file tools, not an MCP tool — Kiwi runs with none (`--tools ""`)

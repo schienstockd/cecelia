@@ -610,9 +610,9 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # while the connection's task waits in `fetch`.
     #
     # Read errors are caught INSIDE the task, before anything is written, so they come back as a
-    # status; a failed WRITE (the client went away) propagates like any other handler error — there is
-    # no response left to shape.
-    r = fetch(Threads.@spawn begin
+    # status; a failed WRITE (the client went away) propagates — there is no response left to shape —
+    # as the IOError itself (`_fetch_unwrapped`), so HTTP.jl logs the disconnect at Debug, not Error.
+    r = _fetch_unwrapped(Threads.@spawn begin
         got = try
             t0 = time()
             vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)

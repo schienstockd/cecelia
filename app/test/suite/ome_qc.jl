@@ -521,6 +521,33 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 @test [p["zFromStartUm"] for p in acq["brightZ"]["points"]] == [0.0, 60.0]
                 @test acq["scanner"]["type"] == "Resonant"
 
+                @test acq["readerVersion"] == Cecelia.ACQUISITION_READER_VERSIONS["oir"]
+                # A reader with no version yet (czi) is current, not re-read on every refresh.
+                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
+                # Settings with no `source` predate the .czi reader: an .oir read, so outdated at v1.
+                @test Cecelia._acquisition_outdated(Dict{String,Any}("system" => "FV4000"))
+                @test acq["channels"][1]["emissionFilter"] == "BA410-455"
+
+                # Settings from an older reader (no readerVersion, no filters) are re-read on resync…
+                old = init_object(proj.uid, img.uid)
+                stale = Dict{String,Any}("system" => "FV4000", "source" => "oir")
+                old.meta["acquisition"] = stale
+                save!(old)
+                @test Cecelia._acquisition_outdated(stale)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                @test init_object(proj.uid, img.uid).meta["acquisition"]["channels"][4]["emissionFilter"] == "ET720/60M"
+                # …but with the source gone, the older settings stay and no reason is recorded.
+                old = init_object(proj.uid, img.uid)
+                old.meta["acquisition"] = stale
+                save!(old)
+                mv(src, src * ".away")
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))
+                kept = init_object(proj.uid, img.uid).meta
+                @test kept["acquisition"]["system"] == "FV4000" && !haskey(kept["acquisition"], "channels")
+                @test !haskey(kept, "acquisitionMissing")
+                mv(src * ".away", src)
+                @test resync_ome_meta!(init_object(proj.uid, img.uid))   # back to the current reader
+
                 # Fill-only: a second resync keeps what is there, even once the source is gone.
                 rm(src)
                 @test resync_ome_meta!(init_object(proj.uid, img.uid))
@@ -564,8 +591,11 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
 
                 # Why not, when not: a format with no reader, and a source that is gone
                 zm = Dict{String,Any}("SizeC" => 1)
-                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.czi", proj.root)
-                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".czi")
+                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.lif", proj.root)
+                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".lif")
+                zm = Dict{String,Any}("SizeC" => 1)     # .czi has a reader: past the gate, then gone
+                @test !Cecelia._recover_acquisition_settings!(zm, joinpath(proj.root, "gone.czi"), proj.root)
+                @test zm["acquisitionMissing"]["reason"] == "source"
                 zm = Dict{String,Any}("SizeC" => 1)
                 @test !Cecelia._recover_acquisition_settings!(zm, joinpath(proj.root, "gone.oir"), proj.root)
                 @test zm["acquisitionMissing"]["reason"] == "source"
@@ -653,7 +683,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
             @test all(ch -> ch["range"]["max"] == ch["topValue"], chans)
             @test all(ch -> length(ch["range"]["hist"]["counts"]) == 32, chans)
             @test all(ch -> haskey(ch["noise"], "snr"), chans)
-            # kinds = intensity_utils.FLOOR_KINDS. RESULT-REVIEW: result-13384462
+            # kinds = intensity_utils.FLOOR_KINDS
             @test all(ch -> ch["floor"]["kind"] in ("photon-counted", "clipped", "indeterminate", "none"), chans)
             # the facts line reads it straight back — one entry per probed channel, a number each
             facts = Cecelia.img_cleanup_facts(r1)
@@ -824,7 +854,11 @@ end
                      # motif.resolution_choice
                      "resolution", "numClasses", "medianConfidence", "boundaryFraction",
                      # HMM fit (behaviour.hmm_states) — hmm.not_converged
-                     "iterations"])
+                     "iterations",
+                     # claim checks (claim_checks.jl) — `pop` population path, `kind` "segment" /
+                     # "tracking", `attr` the unit attribute, `variable` a flattened record key,
+                     # `measure` the claim's measure, `n_images` images in scope, `p` a p-value floor
+                     "pop", "kind", "attr", "variable", "measure", "n_images", "p"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -1121,17 +1155,15 @@ end
         @test isempty(Cecelia.saturation_qc_findings(clean))
         @test Cecelia.saturation_metrics(clean)["nChannelsSaturated"] == 0
 
-        # TRACE clipping: structurally detected, but far too small to act on. This is the real measured
-        # case — 4 of 36 channels across nine kSUFux movies sit at 1.1-1.4e-6, i.e. ~500 voxels of
-        # 377 M. No finding (telling someone to lower the gain over 500 voxels is not actionable), but
-        # the metric MUST still record it: the cohort comparison is relative, so it is what surfaces an
-        # image clipping far more than its session peers.
-        # 7.2e-5 of SIGNAL voxels is the worst real case measured across nine movies — three orders
-        # below the smoke-alarm level, so it must not warn while still being banked.
+        # TRACE clipping: structurally detected but below the smoke-alarm level. Still an `info` finding
+        # — the channel did clip, and a clipped channel the user never hears about is how two movies
+        # clipping 0.03-0.19% of signal passed import silently. Never `warn`, and the metric still banks
+        # it: the cohort comparison is relative.
         trace = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
             mk(0, true; top = 4095, frac = 1.4e-6, n = 534, sigfrac = 7.2e-5),
         ]))
-        @test isempty(Cecelia.saturation_qc_findings(trace))
+        tf = Cecelia.saturation_qc_findings(trace)
+        @test length(tf) == 1 && tf[1]["level"] == "info" && tf[1]["code"] == "import.channel_saturated"
         tm = Cecelia.saturation_metrics(trace)
         @test tm["nChannelsSaturated"] == 1
         @test tm["maxClippedFrac"] == 1.4e-6
@@ -1141,14 +1173,14 @@ end
         material = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
             mk(0, true; top = 4095, frac = 2.0e-4, n = 75_000, sigfrac = 1.1e-2),
         ]))
-        @test length(Cecelia.saturation_qc_findings(material)) == 1
+        @test only(Cecelia.saturation_qc_findings(material))["level"] == "warn"
 
-        # the ALL-voxel fraction must not be what decides it: a channel with a large all-voxel fraction
-        # but trace signal clipping stays quiet, and vice versa. This is the whole point of the change.
+        # the ALL-voxel fraction must not be what decides the level: a large all-voxel fraction with
+        # trace signal clipping is `info`, not `warn`.
         allvox = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [
             mk(0, true; top = 4095, frac = 0.5, n = 999, sigfrac = 1.0e-6),
         ]))
-        @test isempty(Cecelia.saturation_qc_findings(allvox))
+        @test only(Cecelia.saturation_qc_findings(allvox))["level"] == "info"
 
         # a channel with no recorded fraction is not guessed at
         noneframe = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [

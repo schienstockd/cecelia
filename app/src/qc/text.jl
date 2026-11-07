@@ -63,6 +63,24 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Channel {channel} clipped at the detector",
         long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
 
+    # depth / time trends from the import profile (qc/profile.jl): the measurement, not a cause —
+    # bleaching, drift and cells leaving read the same here. One finding per kind, channels listed.
+    "import.signal_fades" => (
+        short = "Brightest signal falls up to {pct}% over the movie ({n} channel{s})",
+        long  = "Check before comparing intensity across frames — bleaching, drift or cells leaving. Channels: {channels}."),
+    "import.background_rises" => (
+        short = "Background rises up to {pct}% over the movie ({n} channel{s})",
+        long  = "Check before gating on intensity across frames. Channels: {channels}."),
+    "import.brighter_with_depth" => (
+        short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
+        long  = "Check the depth power ramp (Bright Z / Auto Z brightness) — power may rise faster than signal is lost. Channels: {channels}."),
+    "import.darker_with_depth" => (
+        short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
+        long  = "Check the depth power ramp (Bright Z / Auto Z brightness), or whether there are fewer cells deeper. Channels: {channels}."),
+    "import.clipped_deep" => (
+        short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
+        long  = "Lower the deep end of the depth power ramp (Bright Z / Auto Z brightness), or the HV. Channels: {channels}."),
+
     # acquisition stopped mid-volume (partial_timepoint_qc_findings): dropped at import, or still there
     "import.partial_timepoint_dropped" => (
         short = "Dropped an incomplete last timepoint",
@@ -294,4 +312,60 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "cohort.outlier" => (
         short = "{metric} is a cohort outlier",
         long  = "This image's {metric} ({value}) is far {dir} the set median ({median}) — check this image before trusting the run."),
+    # a categorical setting the set doesn't agree on (qc_cohort.jl `_cohort_minority`)
+    "cohort.mixed" => (
+        short = "{metric} differs from the set",
+        long  = "This image has {metric} {value}, unlike most of the set — measures aren't comparable across it. Re-run with one setting for every image."),
+
+    # claim checks (claim_checks.jl) — S0: can the record say what was done?
+    "claim.image_excluded" => (
+        short = "{n} image(s) in the set are excluded",
+        long  = "The claim runs without them — include them, or say in the claim why they are left out."),
+    "claim.no_data" => (
+        short = "{n} image(s) have no data for {pop}",
+        long  = "The claim runs on fewer images than the set holds — run the missing step on them, or narrow the claim's scope."),
+    "claim.unit_blank" => (
+        short = "{attr} is blank on {n} image(s)",
+        long  = "The statistical unit can't be counted for them — fill in {attr} before testing per unit."),
+    "claim.params_not_recorded" => (
+        short = "No {kind} params recorded for {pop} on {n} image(s)",
+        long  = "Whether those images were processed the same way can't be checked — re-run the step to record it, or note how it was done."),
+    "claim.params_last_run_only" => (
+        short = "{kind} params for {pop} only in the last-run record on {n} image(s)",
+        long  = "A later run of the same task under another name would overwrite them — re-run under this name to record them exactly."),
+    "claim.dims_not_recorded" => (
+        short = "Track dimensions not recorded for {pop} on {n} image(s)",
+        long  = "2D and 3D speeds can't be told apart — re-run track measures with dims set, or recompute both groups in 2D."),
+    # S1: was everything compared treated the same?
+    "claim.differs_across_images" => (
+        short = "{variable} differs across images for {pop}",
+        long  = "Images in the comparison were processed differently — re-run the odd ones with matching settings, or restrict the claim to the matching images."),
+    "claim.within_tolerance" => (
+        short = "{variable} differs slightly across images",
+        long  = "Within tolerance — shown for the record, no action needed."),
+    "claim.differs_between_groups" => (
+        short = "{variable} differs between the compared groups on {n} image(s)",
+        long  = "The groups were not measured the same way there — match the setting for both groups, or restrict the claim to the images where they match."),
+    "claim.not_compared" => (
+        short = "{variable}: {n} setting(s) not compared between groups",
+        long  = "Only one group has them on record, so whether the groups match there is unknown — record them for both before relying on the comparison."),
+    # S2: is the claim built the way the field expects?
+    "claim.no_unit" => (
+        short = "No statistical unit named",
+        long  = "A pooled test counts every cell or track as independent — name the attribute that identifies the animal or sample (e.g. Mouse)."),
+    "claim.few_units" => (
+        short = "{attr}: n = {n}, so a rank test can't go below p = {p}",
+        long  = "A rank test per {attr} can't reach p < 0.05 with this many, and a t-test rests on normality it can't check — add {attr}s, or report the comparison as descriptive."),
+    "claim.unit_count" => (
+        short = "Tested per {attr}: n = {n}",
+        long  = "Report n as the number of {attr}s, not cells or tracks."),
+    "claim.images_per_unit" => (
+        short = "{n_images} images from {n} distinct {attr}",
+        long  = "A test per image counts some {attr}s more than once — summarise per {attr} first."),
+    "claim.uncalibrated" => (
+        short = "{n} image(s) lack calibration for {measure}",
+        long  = "The measure is in pixels or frames there, not physical units — fix the image metadata, then re-measure."),
+    "claim.confounded" => (
+        short = "{variable} splits the compared groups",
+        long  = "Every value of one group differs from every value of the other, so its effect can't be separated from the claim — match it before comparing."),
 )

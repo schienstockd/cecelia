@@ -672,7 +672,7 @@ function api_analysis_measures(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     kind = get(q, "kind", "")
     kind in ("", "phenotype", "motility") || return 400, JSON3.write((; error = "kind must be phenotype or motility"))
-    vns = String[strip(v) for v in split(get(q, "valueNames", ""), ','; keepempty = false)]
+    vns = _query_list(q, "valueNames")
     _observer_summary_route(req, (p, i, s) -> measure_summary(p; image_uid = i, set_uid = s, kind, value_names = vns))
 end
 # GET /api/analysis/behaviour — HMM state distribution + transition counts. GET /api/analysis/clusters —

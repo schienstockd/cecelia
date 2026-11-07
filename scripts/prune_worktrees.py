@@ -32,7 +32,7 @@ import time
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness.claude_sessions import Session, live_sessions  # noqa: E402
+from cecelia.effectiveness.claude_sessions import Session, live_sessions, sessions_in, under  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, main_checkout, merged_pr_heads  # noqa: E402
 
 #: A worktree created this recently is never SAFE: an agent that has just bootstrapped one has no
@@ -250,24 +250,17 @@ def scan_processes(own_pid: int | None = None) -> list[tuple[int, str, list[str]
     return out
 
 
-def _under(path: str, root: str) -> bool:
-    path, root = os.path.normcase(path), os.path.normcase(root).rstrip(os.sep)
-    return path == root or path.startswith(root + os.sep)
-
-
 def pids_under(root: str, procs: list[tuple[int, str, list[str]]] | None) -> list[tuple[int, str]] | None:
     if procs is None:
         return None
     return [(pid, cmd) for pid, cmd, paths in procs
-            if any(_under(p, root) or root + os.sep in p for p in paths)]
+            if any(under(p, root) or root + os.sep in p for p in paths)]
 
 
 def sessions_under(root: str, sessions: list[Session]) -> list[tuple[str, str]]:
-    """(name, status) of every Claude Code session that worked inside `root` recently — any of
-    its recent folders, not only the newest: its shell may have been reset to the workspace root
-    while the work is still in this worktree. Over-protecting is the safe failure."""
-    return [(s.name, s.status) for s in sessions
-            if any(_under(c, root) for c in (s.recent_cwds or ((s.cwd,) if s.cwd else ())))]
+    """(name, status) of every Claude Code session that worked inside `root` recently
+    (`claude_sessions.sessions_in`)."""
+    return [(s.name, s.status) for s in sessions_in(root, sessions)]
 
 
 def stash_counts(primary: str) -> dict[str, int]:
@@ -288,7 +281,7 @@ def gather(entry: dict, primary: str, procs, stashes: dict[str, int], now: float
     branch = entry.get("branch", "").removeprefix("refs/heads/") or None
     f = Facts(path=path, branch=branch, head=entry.get("HEAD"), primary=os.path.normcase(path) == os.path.normcase(primary),
               locked="locked" in entry, exists=pathlib.Path(path).is_dir(),
-              managed=_under(path, str(pathlib.Path(primary).parent)))
+              managed=under(path, str(pathlib.Path(primary).parent)))
     if f.primary or not f.exists or f.locked or not f.managed:
         return f
     git_file = pathlib.Path(path) / ".git"

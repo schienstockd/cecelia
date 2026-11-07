@@ -516,8 +516,9 @@ function api_projects_rename(body_bytes::Vector{UInt8})
 end
 
 # delete → permanently remove a project directory from disk. Body {uid}. The frontend guards against
-# deleting the currently-open project; this is the raw removal (the recent list is a scan of
-# projects_dir, so it refreshes automatically). Destructive + irreversible.
+# deleting the currently-open project. `discard!` (app/src/discard.jl) moves the tree aside instantly,
+# so the project is gone from the list the moment this returns; the rm runs in the background.
+# Destructive + irreversible.
 function api_projects_delete(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body
@@ -526,14 +527,9 @@ function api_projects_delete(body_bytes::Vector{UInt8})
     proj_dir = joinpath(projects_dir(), uid)
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
     try
-        rm(proj_dir; recursive=true, force=true)
+        discard!(proj_dir)
     catch e
-        # Julia's recursive rm walks with readdir; on huge OME-ZARR trees (dimension_separator="/")
-        # a mid-walk readdir can hit ENOENT on a stale subpath and throw even though the top-level
-        # got torn down. If the target is gone the delete effectively succeeded — surface success
-        # so the UI refreshes instead of showing the raw error.
-        isdir(proj_dir) &&
-            return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, e)))
+        return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, e)))
     end
     200, JSON3.write((; ok=true, uid))
 end

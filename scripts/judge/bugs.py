@@ -367,7 +367,9 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
         return {"code": None, "symbol": None, "gone": None}
     now = git_output("show", f"{sha}:{file}", cwd=str(repo)) if file else None
     if now is None:
-        return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file else None}
+        # A binary blob reads as None too: it is there, it just has no code to excerpt.
+        there = file and git_output("cat-file", "-t", f"{sha}:{file}", cwd=str(repo)) is not None
+        return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file and not there else None}
     then = git_output("show", f"{b['commit']}:{file}", cwd=str(repo)) if b.get("commit") else None
     found = _enc.enclosing(then, line, file) if then else None
     symbol, at = (found[0], None) if found else (None, None)
@@ -451,8 +453,11 @@ def landed_fixes(keys: _t.Iterable[str], since: str | None, sha: str, repo: path
 
 
 def _merge(group: list[dict]) -> dict:
-    """One bug for findings on the same file + function: the carried (else oldest) one leads."""
-    lead = next((b for b in group if b.get("carried")), group[0])
+    """One bug for findings on the same file + function. The sweep's guards (`_verified_live`,
+    `_not_judged`, `_opened`) read only the lead, so it is: a carried one verify found live, else a
+    carried `open` one, else a carried one, else the oldest."""
+    lead = next((b for pick in (_verified_live, lambda b: b.get("was") == "open", lambda b: b.get("carried"))
+                 for b in group if pick(b)), group[0])
     sources = sorted({k for b in group for k in (b.get("sources") or [b["key"]])})
     also = [a for a in lead.get("also", [])]
     seen = {a["key"] for a in also} | {lead["key"]}

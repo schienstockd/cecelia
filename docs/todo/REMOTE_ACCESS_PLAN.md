@@ -52,8 +52,9 @@ Gateway, and remote-Jupyter workflows have used for years — well-understood, w
   - macOS: shipped since Mac OS X.
   - Windows 10 September 2018 Update onwards: OpenSSH client is a Windows Feature, enabled by
     default. `ssh.exe` is on `PATH` out of the box.
-- **The tunnel command is identical across all three:** `ssh -N -L 8080:localhost:8080 user@host`.
-  Backgrounding differs (`-f` on Linux/macOS, `Start-Process -WindowStyle Hidden` on Windows), but
+- **The tunnel command is identical across all three:** `ssh -N -L 8080:localhost:<api_port> user@host`,
+  where `<api_port>` is read from the VM's `~/.cecelia/cecelia.lock` at connect time (see §5 —
+  not a fixed 8080, which on a shared VM is slot 0's backend). Backgrounding differs (`-f` on Linux/macOS, `Start-Process -WindowStyle Hidden` on Windows), but
   the connect syntax is the same.
 - **Every cloud VM user has already placed a pubkey.** GCP / AWS / Azure / DigitalOcean / Hetzner /
   on-prem — VM creation always includes an "SSH key" step. That means by the time Cecelia's install
@@ -86,7 +87,11 @@ Gateway, and remote-Jupyter workflows have used for years — well-understood, w
    - `host` — cloud metadata endpoint if reachable (see Risks for URLs), else the value of
      `CECELIA_PUBLIC_HOST` env, else empty (user fills in).
    - `user` — `$USER`.
-   - `localPort`/`remotePort` — both 8080.
+   - `localPort`/`remotePort` — both 8080. `remotePort` is only a fallback: the install runs before
+     the VM's Cecelia picks a port slot, so on a VM shared by several OS users this user's backend
+     may be on 8080 + 10 × N. The launcher reads `api_port` from the VM's `~/.cecelia/cecelia.lock`
+     over SSH at connect time and tunnels there. It records that port in `tunnel.remote` and reuses a
+     live tunnel only when it matches (`test_remote_connect_port.py`).
    - `label` — hostname of the VM.
 
 6. **Per-OS delivery: scripts, not binaries.**
@@ -154,7 +159,8 @@ Gateway, and remote-Jupyter workflows have used for years — well-understood, w
 - Wizard imports a hand-authored connection.json, probes `ssh localhost echo ok` (against dev
   box's own sshd), succeeds, saves.
 - Wizard's failure path: bad host, `BatchMode=yes` refuses password, wizard prints diagnostic.
-- Launcher runs `ssh -N -L 8080:localhost:8080 $USER@localhost`, polls port, opens browser.
+- Launcher reads `api_port` from `~/.cecelia/cecelia.lock` (falls back to the profile's 8080), runs
+  `ssh -N -L 8080:localhost:<api_port> $USER@localhost`, polls port, opens browser.
 - Port-collision: bind `:8080` with `python3 -m http.server 8080`, launcher walks to `:8081`.
 
 **Requires a real VM (deferred until access):**

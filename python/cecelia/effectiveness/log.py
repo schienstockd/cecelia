@@ -34,6 +34,7 @@ import datetime as _dt
 import json
 import os
 import pathlib
+import re
 import typing as _t
 
 SCHEMA_VERSION = 1
@@ -117,6 +118,14 @@ EVENT_TYPES = frozenset({
     "claude_md_eval_suite",
     "claude_md_eval_ablation",
 })
+
+#: A finding slug as recital's `_slug` writes it — the one grammar recital, the commit hook and the
+#: maintainability lint's repro-marker check match on.
+SLUG_PATTERN = r"(?:fanout|conv|result)-[0-9a-f]{8}"
+
+#: The comment a committed result-review repro carries (`docs/ai-assist/RESULT_REVIEW.md`). The commit
+#: hook guards a file by it; the maintainability lint flags a marker this won't match.
+REPRO_MARKER = re.compile(rf"RESULT-REVIEW:\s*({SLUG_PATTERN})")
 
 #: Closed outcome vocabulary from docs/todo/EFFECTIVENESS_LOG_PLAN.md §Outcome vocabulary.
 #: Used on `fanout_audit_finding`, `convention_check_finding`, `ratchet_hit` payloads.

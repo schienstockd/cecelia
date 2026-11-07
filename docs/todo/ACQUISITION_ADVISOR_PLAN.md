@@ -19,9 +19,9 @@ Evident FV4000.
   only. No laser power, gain, pinhole, scan speed or detector settings are parsed anywhere.
 - **Acquisition QC that already runs on every import** (`qc.jl`, `importImages/saturation_run.py`,
   `intensity_utils.saturation_stats`):
-  - `import.channel_saturated` — clipping at the detector ceiling. Threshold
-    `_SATURATION_WARN_SIGNAL_FRAC = 1e-2` is a deliberate smoke alarm, ~140× above anything measured
-    (worst seen 0.007 % of signal voxels; 4 of 9 real movies clip a channel). Per-cell clipping is
+  - `import.channel_saturated` — clipping at the detector ceiling: `info` whenever detected, `warn`
+    from `_SATURATION_WARN_SIGNAL_FRAC = 1e-2`, a deliberate smoke alarm, set when the worst seen was
+    0.007 % of signal voxels (4 of 9 real movies clip a channel); worst since 0.19 %, still below it. Per-cell clipping is
     deferred until segmentation is dependable (`docs/FUTURE.md` → *Flag clipping per CELL*).
   - `import.photon_limited` — high zero fraction.
   - Cohort comparison: `nChannelsSaturated` / `maxClippedSignalFrac` per set (`qc_cohort.jl`).
@@ -109,6 +109,11 @@ Worked through in order; each is open until marked agreed.
      `fvLsmparam:maxPhoton` 8/32/128 (photon-count dynamic range). None of these reach the OME-XML.
    - **FV4000 "voltage 0" may not be missing data.** With `autoHV` on and a photon-count dynamic
      range, there may be no HV to record. Unverified; question for the facility or Evident.
+   - **Feature lines checked against the lab's files (14 `.oir`, 2026-11-06).** FV4000 (7): Bright Z
+     on, laser % at 2 depths 60 µm apart; Auto HV on, HV 0 everywhere. FVMPE-RS (7): Bright Z depths
+     set (12 → 15 % over 35 µm) but off in all 7; Auto HV on, yet HV 550 recorded. Stored per feature
+     as `seenInFiles`; `verified` stays false (interpolation and what Auto HV does on the FVMPE-RS
+     are questions for the facility).
    - **So no import flags are needed.** Two layers: (a) a key map per vendor and software version
      over the `OriginalMetadata` bioformats2raw already keeps; (b) a small reader for the OIR's
      embedded XML, for what Bio-Formats drops (dwell, line time, depth ramp, autoHV, dynamic
@@ -266,6 +271,12 @@ they and the diagram (P4) are useful without Claude.
   through `get_image_info` (MCP), which already carries the saturation facts.
   *Effort:* small–medium. *Risk:* touches a step every import runs; the thresholds need real data
   (the maintainer's bad images), as `_SATURATION_WARN_SIGNAL_FRAC` did.
+  **Built:** the profile (`PlaneProfile`, P4b) and the findings: `app/src/qc/profile.jl` raises `info`
+  for signal fading over the movie, background rising over it, brighter / darker with depth and
+  clipping concentrated deep, with `maxSignalFade` / `maxDepthChange` as cohort metrics, and the
+  Acquired-data panel shows each on its channel. Levels sit between the quiet and the clear channels
+  of the only profiled session (3 movies, 12 channels) — placeholders until P7's set. *Signal ending
+  at a depth* is not built: no real case yet to set a level from.
 - **P2 · OIR acquisition-settings reader** (point 3). Key map over `OriginalMetadata` plus a reader
   for the raw `.oir` XML (dwell, line time, Bright Z ramp pairs, auto HV, correction collar), for
   FV4000 3.2 and FVMPE-RS 2.3. Written to ccid `meta` at import and listed plainly in
@@ -350,6 +361,10 @@ they and the diagram (P4) are useful without Claude.
 Why these fit hardening: all three make an existing result easier to trust ("was this acquisition fit
 for the analysis?") without a new page, and both are useful without Claude.
 
+- **Settings card** — a printable card from one image's settings and landed numbers, to re-acquire
+  it at the scope. Own plan: [`ACQUISITION_CARD_PLAN.md`](ACQUISITION_CARD_PLAN.md) (its P0 also
+  fixes the reader dropping the `.oir` emission filters and acquisition date).
+
 ### Milestone 1 — offline advisory core (Experimental, before 1.0)
 
 - **P3 · Knowledge files** (point 5): two-photon explanations with citations, feature-name lines
@@ -371,6 +386,15 @@ for the analysis?") without a new page, and both are useful without Claude.
   evaluated (P7).
 - **P6 · Offline pilot** (point 6): run the project chain on a crop and map task QC and result
   review findings to stages. About 15 min for 256² × 41 t on zolIMa.
+  **Built (mapping):** each symptom in `acquisition_knowledge.json` lists the task QC codes that
+  measure it (`qcCodes`); the advisor reads them with `get_qc_metrics` after a run. A test keeps every
+  listed code a real `QC_TEXT` key. The pilot on a copy of zolIMa 20armH (256² × 31 z × 41 t, its
+  real chain) raised `drift.unreliable` (6.8 px disagreement), `drift.unregistered_frames` (2) and
+  `import.photon_limited`; motion had no symptom, so `moves-between-frames` (sample stage,
+  Vinegoni 2014) was added. Running the pilot stays manual: the chain is the project's own, run on a
+  crop through the usual tasks. Result-review findings are a commit-time mechanism and do not reach
+  a pilot run. Not built: codes with no symptom yet (`import.background_rises` over time,
+  `import.brighter_with_depth`), and segmentation / tracking QC, whose acquisition cause is a guess.
 - **P7 · Evaluation** (point 8): the maintainer's bad acquisitions with diagnoses written beforehand, good
   counterparts, the biology-not-optics case and a time-effect case.
   **Stop/go before Milestone 2** (proposed, to agree): the main cause is right on most cases; never
@@ -392,8 +416,11 @@ its own milestone so it is not absorbed into "later".
 
 Live session: save/transfer/load at the scope, screenshot lane (point 7, deferred), the fast
 feedback loop (import numbers + diagram; pilot stays offline unless timing improves), adoption test
-with a few real users on locked-down acquisition PCs. Confocal scopes (LSM 780/980, CZI reader) join
-here or later.
+with a few real users on locked-down acquisition PCs. Confocal scopes (LSM 780/980) join here or
+later. **CZI reader built** (`python/cecelia/utils/czi_meta.py`): same settings shape as the OIR
+reader, ZEN black and ZEN blue, tested on public files (an LSM 780 two-photon stack among them). Not
+read: auto Z brightness points (no file with it on), mean vs sum averaging, ZEN black detector mode.
+The dialog and light path name the ramp per vendor (`depthRampName`: "Auto Z brightness" for Zeiss).
 
 ### Later, optional
 

@@ -334,6 +334,30 @@ class SweepTest(_Repo):
         self.assertEqual(by["fanout-00000002"]["status"], "dismissed")   # unverified: the judge still decides
         self.assertEqual(self.sweep([], previous=previous, judge=self.judge("gone"))[0][0]["status"], "gone")
 
+    def test_a_verified_bug_merged_behind_another_carried_one_still_goes_back_to_verify(self):
+        # two carried bugs on one function; the verified one is second, so it must still lead the merge
+        bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        bugs[1] = {**bugs[1], "line": 2, "verify": {"verdict": "fix", "date": "2026-10-05", "effect": "it breaks"}}
+        again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs},
+                              judge=self.judge("not_a_bug"))
+        (lead,) = again
+        self.assertEqual((lead["key"], lead["status"], lead.get("verify")), ("fanout-00000002", "open", None))
+        self.assertIn("back to verify", lead["why"])
+        self.assertEqual([a["key"] for a in lead["also"]], ["fanout-00000001"])
+
+    def test_an_open_bug_merged_behind_an_unjudged_one_stays_open_when_the_judge_fails(self):
+        # two carried bugs on one function, the open one second: a lost verdict must not drop it to unjudged
+        bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        bugs[0]["status"] = "unjudged"
+        bugs[1] = {**bugs[1], "line": 2, "opened": "2026-09-28"}
+
+        def boom(prompt):
+            raise self.b._judge.JudgeError("no claude")
+        again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs}, judge=boom)
+        (lead,) = again
+        self.assertEqual((lead["key"], lead["status"], lead["opened"]), ("fanout-00000002", "open", "2026-09-28"))
+        self.assertEqual([a["key"] for a in lead["also"]], ["fanout-00000001"])
+
     def test_a_fix_session_is_carried_one_pass(self):
         bugs, _ = self.sweep([_finding("fanout-00000001")])
         bugs[0]["fix_session"] = "2026-10-06T01:00:00Z"   # started after this pass
@@ -678,6 +702,17 @@ class LandedTest(_Repo):
         self.assertEqual(got, {"rep-abc123": [{"commit": merge, "pr": 14,
                                                "subject": "Merge pull request #14 from me/fix-rep-abc123"}]})
         self.assertNotIn(quiet, str(got))
+
+
+class LocateTest(_Repo):
+    def test_a_binary_file_is_not_gone_just_not_text(self):
+        (self.repo / "x.bin").write_bytes(bytes([0x94, 0xff, 0x00, 0x80]) * 64)
+        self.git("add", "x.bin")
+        self.git("commit", "-q", "-m", "bin")
+        sha = self.git("rev-parse", "HEAD")
+        self.assertIsNone(self.b.locate({"file": "x.bin", "line": 1}, sha, self.repo)["gone"])
+        self.assertEqual(self.b.locate({"file": "nope.py", "line": 1}, sha, self.repo)["gone"],
+                         f"`nope.py` isn't in {sha[:8]}")
 
 
 class PrefilterTest(_Repo):

@@ -166,8 +166,11 @@ async function openSelected() {
 
 // Permanently delete a project from disk (armed via ConfirmDeleteButton). Never offered for the
 // currently-open project. Clears the selection if the deleted one was selected.
+// The row shows a spinner until the server answers, so a confirmed delete never looks ignored.
+const deletingUid = ref<string | null>(null)
 async function deleteProject(uid: string) {
-  await projectMeta.deleteProject(uid)
+  deletingUid.value = uid
+  try { await projectMeta.deleteProject(uid) } finally { deletingUid.value = null }
   if (selectedUid.value === uid) selectedUid.value = projectMeta.recent[0]?.uid ?? null
 }
 
@@ -422,7 +425,10 @@ function formatDate(iso: string | null): string {
               <i class="pi pi-download" />
             </button>
             <!-- delete a project (not the open one) — canonical arm→confirm single button -->
-            <ConfirmDeleteButton v-if="projectMeta.current?.uid !== p.uid"
+            <i v-if="deletingUid === p.uid" class="pi pi-spin pi-spinner pp-deleting"
+               v-tooltip.left="'Deleting…'" />
+            <ConfirmDeleteButton v-else-if="projectMeta.current?.uid !== p.uid"
+                                 :disabled="!!deletingUid"
                                  title="Delete this project from disk"
                                  armed-title="Click again to permanently delete"
                                  @confirm="deleteProject(p.uid)" />
@@ -670,6 +676,7 @@ function formatDate(iso: string | null): string {
 .pp-row-btn { transition: color 0.1s, background 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .pp-row-btn:hover:not(:disabled) { color: var(--cc-accent); background: var(--cc-surface-2); }
 .pp-row-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.pp-deleting { padding: 4px 6px; color: var(--cc-text-dim); }   /* same box as ConfirmDeleteButton */
 
 /* import bar + active export/import status */
 .pp-io {

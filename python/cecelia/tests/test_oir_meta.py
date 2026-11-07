@@ -70,6 +70,25 @@ class TestFV4000(unittest.TestCase):
         self.assertEqual(self.s['zStack'], {'stepUm': 2.0, 'count': 31.0})
         self.assertEqual(self.s['timelapse'], {'intervalS': 15.0, 'count': 181.0})
 
+    def test_date_and_body(self):
+        self.assertEqual(self.s['acquiredAt'], '2026-07-16T13:44:05.228+10:00')
+        self.assertEqual(self.s['microscopeBody'], 'BX63LF')
+
+    def test_emission_filter_per_channel(self):
+        # From the image-info block, matched to the acquisition channel by id, not by position.
+        self.assertEqual([c['emissionFilter'] for c in self.s['channels']],
+                         ['BA410-455', 'BA495-540', 'ET585/40M', 'ET720/60M'])
+
+    def test_dichroics_in_the_path(self):
+        # `dmSlider` is Empty on this file: kept, as recorded.
+        self.assertEqual(self.s['dichroics'], [
+            {'slot': 'excitationDM', 'name': 'MIRROR'},
+            {'slot': 'dmSlider', 'name': 'Empty'},
+            {'slot': 'irLaserDichroic', 'name': 'LCDM690-1050'},
+            {'slot': 'firstMirrorCube', 'name': 'DM760'},
+            {'slot': 'secondMirrorCube', 'name': 'MIRROR'},
+        ])
+
 
 class TestFVMPE(unittest.TestCase):
     """Galvo two-photon time-lapse with Bright Z OFF but ramp points still stored."""
@@ -96,6 +115,12 @@ class TestFVMPE(unittest.TestCase):
         # A second, inactive ZSTACK axis (3 um x 42) is also stored.
         self.assertEqual(self.s['zStack'], {'stepUm': 5.0, 'count': 8.0})
 
+    def test_date_filters_dichroics(self):
+        self.assertEqual(self.s['acquiredAt'], '2021-12-01T17:49:23.561+11:00')
+        self.assertEqual([c['emissionFilter'] for c in self.s['channels']],
+                         ['BA642-709', 'BA570-616', 'BA500-550', 'BA415-485'])
+        self.assertEqual([d['name'] for d in self.s['dichroics']], ['Empty', 'LCDM690-870', 'DM760', 'MIRROR'])
+
 
 class TestEdits(unittest.TestCase):
     """Variants of a real document, edited the way a different acquisition would differ."""
@@ -107,6 +132,26 @@ class TestEdits(unittest.TestCase):
         self.assertNotEqual(doc, _read(FV4000))
         names = [l['name'] for l in oir_meta.parse_settings(doc)['lasers']]
         self.assertEqual(names, ['MaiTai e HP DS-OL'])
+
+    def test_filter_follows_the_channel_id_not_the_position(self):
+        # Swap the image-info order of CH1 and CH2: each acquisition channel keeps its own filter.
+        doc = _read(FV4000)
+        a = b'<fvCommonphase:filterName>BA410-455</fvCommonphase:filterName>'
+        b = b'<fvCommonphase:filterName>BA495-540</fvCommonphase:filterName>'
+        doc = doc.replace(a, b'@@A@@', 1).replace(b, a, 1).replace(b'@@A@@', b, 1)
+        chans = oir_meta.parse_settings(doc)['channels']
+        self.assertEqual([c['emissionFilter'] for c in chans[:2]], ['BA495-540', 'BA410-455'])
+
+    def test_dichroic_slots_missing_from_the_file_give_an_empty_list(self):
+        # No slot element at all = not recorded ([]), unlike a recorded Empty slot.
+        doc = _read(FVMPE)
+        for tag in (b'irLaserLightpath', b'firstMirrorCube', b'secondMirrorCube', b'dmSlider', b'excitationDM'):
+            doc = doc.replace(b'fvLsmimage:' + tag, b'fvLsmimage:x' + tag).replace(b'fvCommonimage:' + tag, b'fvCommonimage:x' + tag)
+        self.assertEqual(oir_meta.parse_settings(doc)['dichroics'], [])
+
+    def test_no_image_info_means_no_filter(self):
+        doc = _read(FV4000).replace(b'<fvCommonphase:filterName>BA410-455</fvCommonphase:filterName>', b'', 1)
+        self.assertIsNone(oir_meta.parse_settings(doc)['channels'][0]['emissionFilter'])
 
 
 class TestContainer(unittest.TestCase):

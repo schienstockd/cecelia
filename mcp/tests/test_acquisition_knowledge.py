@@ -1,9 +1,14 @@
 """get_acquisition_knowledge serves the committed acquisition_knowledge.json — and the file holds
 together: every cited source exists with a DOI, every symptom says how to check it and what else it
 could be, stages are the light path's, and no scope feature claims to be verified by default."""
+import re
 import unittest
+from pathlib import Path
 
-from cecelia_mcp import server
+from cecelia_mcp import guidance, server
+
+# Task QC finding codes: the keys of QC_TEXT, where every finding's text lives.
+_QC_TEXT = Path(__file__).resolve().parents[2] / "app" / "src" / "qc" / "text.jl"
 
 # The light path's stages, in order — `frontend/src/utils/acquisitionLightPath.ts` (`lightPathStages`)
 # and the metadata dialog use the same keys, so a symptom lands at the stage the user is looking at.
@@ -53,11 +58,26 @@ class AcquisitionKnowledgeTest(unittest.TestCase):
                 with self.subTest(system=scope["system"], feature=f["name"]):
                     self.assertIn(f["stage"], LIGHT_PATH_STAGES)
                     self.assertIs(f["verified"], False)
+                    self.assertTrue(f["seenInFiles"].strip())   # what the lab's .oir files record
+
+    def test_symptom_qc_codes_are_real_task_qc_codes(self):
+        # A pilot's task QC reaches a stage through these: a renamed code would silently drop off.
+        known = set(re.findall(r'^\s*"([\w.]+)"\s*=>', _QC_TEXT.read_text(encoding="utf-8"), re.M))
+        mapped = [c for st in self.k["stages"] for sym in st["symptoms"] for c in sym["qcCodes"]]
+        self.assertIn("drift.unreliable", mapped)       # the pilot's own finding on a real crop
+        self.assertEqual(len(mapped), len(set(mapped)))  # one symptom per code
+        for code in mapped:
+            with self.subTest(code=code):
+                self.assertIn(code, known)
 
     def test_system_keeps_only_that_scope(self):
         out = server.get_acquisition_knowledge("fv4000")
         self.assertEqual(["FV4000"], [s["system"] for s in out["scopes"]])
         self.assertEqual([], server.get_acquisition_knowledge("LSM 980")["scopes"])
+
+    def test_briefing_compares_settings_within_a_set_first(self):
+        # a setting changed between movies is diffed before any optical or biological explanation
+        self.assertIn("compare their `acquisition` first", guidance.BRIEFING_GUIDANCE)
 
 
 if __name__ == "__main__":

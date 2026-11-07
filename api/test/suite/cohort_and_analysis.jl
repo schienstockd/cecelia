@@ -8,6 +8,7 @@
 #  - `API: analysis measures`
 #  - `API: analysis behaviour + clusters`
 #  - `API: analysis chains`
+#  - `API: claim checks`
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -275,5 +276,36 @@ end
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: claim checks" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _cc(t) = api_claim_checks(HTTP.Request("GET", "/api/claim/checks" * t))
+    try
+        proj = create_project!(name = "api-claim")
+        s    = add_set!(proj; name = "set-A")
+        for (nm, m) in [("i1", "1"), ("i2", "2")]
+            img = add_image!(s; name = nm, meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+            img.attr["Mouse"] = m
+            Cecelia.save!(img)
+        end
+        base = "?projectUid=$(proj.uid)&setUid=$(s.uid)"
+        @test _cc("")[1] == 400                                           # missing params
+        @test _cc("$base&measure=live.track.speed")[1] == 400             # no populations
+        @test _cc("?projectUid=$(proj.uid)&setUid=nope&pops=B/qc&measure=x")[1] == 404
+        st, body = _cc("$base&pops=B/qc,T/qc&measure=live.track.speed&unitAttr=Mouse")
+        @test st == 200
+        r = JSON3.read(body)
+        @test r.nRows == 4 && r.nUsed == 0                                # 2 images × 2 pops, no tracks yet
+        @test !haskey(r, :rows)                                           # the record table only on request
+        @test any(f -> f.code == "claim.no_data", r.findings)
+        @test "S0.unit" in r.ran
+        st, body = _cc("$base&pops=B/qc&measure=live.track.speed&rows=1")
+        @test st == 200 && length(JSON3.read(body).rows) == 2
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end
 end

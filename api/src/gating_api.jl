@@ -753,7 +753,7 @@ function api_gating_membership(req::HTTP.Request)
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
-    pops = split(get(q, "pops", ""), ","; keepempty = false)
+    pops = _query_list(q, "pops")
     isempty(pops) && return _gerr(400, "pops required")
     # one map serves every pop: `live` is `flow` plus the derived sets, so a mix of the two reads as live
     pts = unique(_read_pop_type(q, img, vn, p) for p in pops)
@@ -1067,6 +1067,11 @@ _cluster_map_key(basis, suffix) = basis in Cecelia.CLUSTER_MAP_BASES ? "X_$(basi
 
 function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
+    # The embedding, the codes and the `pop`/`colourPops` membership below all read `_latest`; a
+    # labels pin can't be honoured without reading every one of them at the pinned version. Refuse it
+    # rather than return a map whose membership silently ignores the pin the caller asked for.
+    _labels_version_pin(q) === nothing ||
+        return _gerr(400, "labelsVersion is not supported on /api/plots/cluster-map (it reads _latest)")
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     pop_type = get(q, "popType", "clust")
@@ -1096,7 +1101,7 @@ function api_plots_cluster_map(req::HTTP.Request)
     # its 0-based index in the ordered list, so a pop keeps one colour across segments. A point → the
     # FIRST picked pop it belongs to, else -1 (input pops are normally disjoint). See
     # docs/todo/UMAP_COLOUR_FACET_PLAN.md.
-    colour_toks = String[String(t) for t in split(get(q, "colourPops", ""), ',') if !isempty(t)]
+    colour_toks = _query_list(q, "colourPops")
     grain = track ? :track : :cell
     pop_of = Dict{Tuple{String,Int},Int}()              # (value_name, label) → popIdx (0-based)
     for (pi, tok) in enumerate(colour_toks)

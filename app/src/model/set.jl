@@ -165,8 +165,7 @@ dir ({proj}/1/{uid}) from disk, drops it from the set manifest, and persists the
 function delete_image!(s::CciaSet, image_uid::String)::CciaSet
     proj_dir = dirname(dirname(s._dir))   # s._dir = {proj}/1/{set_uid}
     for sub in ("0", "1")
-        d = joinpath(proj_dir, sub, image_uid)
-        isdir(d) && rm(d; recursive = true)
+        discard!(joinpath(proj_dir, sub, image_uid))   # instant; rm in the background
     end
     filter!(u -> u != image_uid, s.image_uids)
     filter!(img -> img.uid != image_uid, s._images)

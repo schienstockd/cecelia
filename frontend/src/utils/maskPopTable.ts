@@ -66,12 +66,19 @@ export interface MaskPopLayer {
 }
 
 /** The mask's layer when it is coloured by track clusters: the segmentation's trackclust pops, a pop
- *  shown by its manager `show` — the eye the trackclust ribbons draw by. */
+ *  shown by its eye — `eyeOn(path, show)`, the viewer's `popEyeOn` (a movie's mask takes a look's point
+ *  eyes the same way, `_mask_pop_layer`); without one, the manager's `show`. */
 export function trackclustMaskLayer(payload: {
   cells: { label?: readonly number[] }
   pops: readonly { path: string; colour: string; labels: readonly number[]; show?: boolean }[]
-}): MaskPopLayer {
-  return { payload, hidden: new Set(payload.pops.filter(p => p.show === false).map(p => p.path)) }
+}, eyeOn: (path: string, show: boolean) => boolean = (_path, show) => show): MaskPopLayer {
+  return { payload, hidden: new Set(payload.pops.filter(p => !eyeOn(p.path, p.show !== false)).map(p => p.path)) }
+}
+
+/** Whether a layer draws any pop of its own — one not in `hidden` (the viewer's *No track clusters on
+ *  this mask* note reads the layer it draws, not `show`). */
+export function maskLayerShowsAny(layer: MaskPopLayer): boolean {
+  return layer.payload.pops.some(p => !layer.hidden?.has(p.path))
 }
 
 const depthOf = (path: string) => path.split('/').filter(Boolean).length

@@ -110,7 +110,7 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
         for leaf in Cecelia.version_leaves(entry),         # every vN's store, not just `_latest`
             fn in (leaf isa AbstractVector ? leaf : [string(leaf)])
             p = joinpath(task_dir, subdir, string(fn))
-            ispath(p) && rm(p; recursive = true)
+            discard!(p)                                     # no-op when missing
         end
     end
 

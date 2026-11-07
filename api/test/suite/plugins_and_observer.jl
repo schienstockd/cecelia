@@ -152,6 +152,35 @@ end
     end
 end
 
+@testset "API: a custom composite whose steps bank cohort metrics gets the Check cohort button" begin
+    # cohortFuns drives the generic custom page's "Check cohort" button. A composite banks nothing
+    # itself — its steps do — so the list must resolve it the way the cohort routes do
+    # (`_has_cohort_answer`), not by a bare COHORT_METRICS lookup. register_task! does not yet fill
+    # `_COMPOSITE_SPEC_PATHS` for a custom composite, so the test does that by hand.
+    @test haskey(Cecelia.COHORT_METRICS, "segment.cellpose")
+    dir  = joinpath(Cecelia.config_dir(), "modules", "cohortcomp")
+    spec = joinpath(dir, "run.json")
+    mkpath(dir)
+    write(spec, JSON3.write(Dict("fun_name" => "cohortcomp.run", "label" => "Run",
+                                 "resource_pool" => "cpu", "scope" => "image", "params" => [],
+                                 "composite" => ["segment.cellpose"])))
+    try
+        Cecelia.register_task!("cohortcomp.run", Cecelia.CompositeTask("cohortcomp.run"); spec)
+        Cecelia._COMPOSITE_SPEC_PATHS["cohortcomp.run"] = spec
+        @test Cecelia.cohort_parts("cohortcomp.run") == ["segment.cellpose"]
+        byname = Dict(String(c.name) => c for c in _custom_module_categories())
+        @test haskey(byname, "cohortcomp")
+        @test "cohortcomp.run" ∈ String.(byname["cohortcomp"].cohortFuns)
+    finally
+        Cecelia._unregister_task!("cohortcomp.run")
+        delete!(Cecelia._COMPOSITE_SPEC_PATHS, "cohortcomp.run")
+        lock(Cecelia._SPEC_CACHE_LOCK) do
+            delete!(Cecelia._SPEC_CACHE, "CompositeTask:cohortcomp.run")
+        end
+        rm(dir; recursive = true, force = true)
+    end
+end
+
 # Observer (in-app AI assistant) — status shape + request validation. The actual agent spawn (a real
 # billed CLI call) is NOT exercised here; only the guard rails around it. See
 # docs/todo/OBSERVER_INTEGRATION_PLAN.md + app/src/ai/agent_runner.jl (pure pieces tested in app/test).

@@ -40,6 +40,9 @@ if [ -z "$HOST" ]; then
   exit 0
 fi
 
+# remotePort is slot 0's backend port and only a fallback: this runs at install, before Cecelia has
+# picked a port slot, so the launcher (remote-launcher/cecelia-connect.sh) reads the real one from
+# the VM's cecelia.lock at connect time.
 CONN_USER="${USER:-$(whoami 2>/dev/null || echo cecelia)}"
 LABEL=$(uname -n 2>/dev/null || echo cecelia-vm)
 

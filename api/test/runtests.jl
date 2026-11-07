@@ -180,6 +180,8 @@ include(joinpath(@__DIR__, "suite", "plugins_and_observer.jl"))
 # clustering run selector), analysis lineage, analysis populations, analysis measures,
 # analysis behaviour + clusters, analysis chains.
 include(joinpath(@__DIR__, "suite", "cohort_and_analysis.jl"))
+include(joinpath(@__DIR__, "suite", "claim_entries.jl"))
+include(joinpath(@__DIR__, "suite", "claim_review.jl"))
 
 # ── Misc read-side API testsets (briefing / storage / versions / fs / range / funparams) ─
 # Seven testsets covering /api/observer/briefing, /api/repl-api, /api/storage, /api/versions/*
@@ -263,7 +265,8 @@ include(joinpath(@__DIR__, "suite", "api_src_ratchets_and_chainsave.jl"))
 # ── Viewer slab + viewer meta (spatial audit LOD + labelDims) testsets ─
 # Four testsets: viewer slab (voxels for GPU upload without a transform), viewer slab XY
 # tile + pyramid level (spatial audit Phase 2), viewer meta per-level shapes (spatial audit
-# LOD), viewer meta labelDims (picker flags oversized masks).
+# LOD), viewer meta labelDims (picker flags oversized masks); plus router responses written from
+# the pool task (handle_stream's write hop).
 include(joinpath(@__DIR__, "suite", "viewer_slab_and_meta.jl"))
 
 # ── Movie-rail input translators + keyframe helpers testsets ─

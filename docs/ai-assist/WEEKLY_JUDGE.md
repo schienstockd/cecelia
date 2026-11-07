@@ -354,7 +354,14 @@ agent called not real, or left, stays in your queue with its reason on the card
 (`~/.cecelia-effectiveness/auto_fix.jsonl`) and isn't tried again; a failed session is removed and
 tried once more. A guard, recital, commit or push that stops puts the bundle back in your queue, `left`; its card
 names the worktree, and `[f]` opens a session on that work instead of a fresh worktree (not when
-the agent changed what runs outside its sandbox: then `[f]` starts fresh). The agent can't run recital itself (its
+the agent changed what runs outside its sandbox: then `[f]` starts fresh). Sessions run with
+`PYTHONDONTWRITEBYTECODE=1` (`agent_sandbox.agent_env`): their own commit hook imports
+`.claude/hooks/*.py`, and the `__pycache__` that left once stopped every fix of a run at the first guard.
+**`--resume-stopped`** takes such worktrees up again: one whose surface holds nothing but bytecode caches
+(`resume_problem`: this repo's worktree, no commits, anything else refused) gets the caches deleted, a
+recap session that reports the fix the stopped session never did (it changes no file), then recital, commit
+and PR as usual. It starts no fix session; smallest change first, so `--limit 1` is the trial; each bundle
+is tried once (`resumed` on its rows). The agent can't run recital itself (its
 reviewers are `claude -p` runs, which need the network), so this was deferred until the record
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.
@@ -456,7 +463,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
-| `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background) |
+| `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background, `--resume-stopped` for worktrees a run fixed but stopped before recital) |
 | `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |

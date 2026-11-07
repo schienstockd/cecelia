@@ -332,6 +332,14 @@ function api_task_definitions(req::HTTP.Request)
                         sw === nothing || (spec["sweep"] = sw; break)
                     end
                 end
+                # Same for `writesInto` (`task_params_name`): the form names the params record by the
+                # first step that declares it, so the tracking composite restores per segmentation.
+                if !haskey(spec, "writesInto")
+                    for fn_ref in composite
+                        wi = get(something(get(by_fun, string(fn_ref), nothing), Dict{String,Any}()), "writesInto", nothing)
+                        wi === nothing || (spec["writesInto"] = wi; break)
+                    end
+                end
                 hpc = get(spec, "hpc", nothing)
                 if hpc isa AbstractDict && !haskey(hpc, "mem") && !isempty(mem_models)
                     hpc["mem"] = mem_models
@@ -378,8 +386,9 @@ function _custom_module_categories()
         # cohortFuns = the category's funs that bank cohort-comparable metrics (Cecelia.COHORT_METRICS,
         # populated at load incl. custom modules' register_cohort_metrics!). Drives the "Check cohort"
         # button on the generic custom page WITHOUT any hardcoded per-page list — a custom module that
-        # declares its metrics gets the button automatically.
-        cohort_funs = String[f for f in funs if haskey(Cecelia.COHORT_METRICS, f)]
+        # declares its metrics gets the button automatically. A composite qualifies when its steps bank
+        # them — the same `_has_cohort_answer` the cohort routes gate on, so the button and the route agree.
+        cohort_funs = String[f for f in funs if _has_cohort_answer(f)]
         push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs,
                        cohortFuns = cohort_funs,
                        views = [(; v.view, v.label, v.plugin) for v in views if v.moduleName == category]))
@@ -468,7 +477,8 @@ end
 # Returns the last-used params for `fun`, resolved image → set → none (R parity). The frontend
 # passes imageUid only when exactly one image is selected (else the shared set-level default).
 #
-# `valueName` is the OUTPUT name the form is currently naming (e.g. the label set "Tcell"). Given one,
+# `valueName` is the name the form is currently naming (`task_params_name`: the output, e.g. the label
+# set "Tcell", or for tracking the segmentation it writes into). Given one,
 # each level prefers what was last run under that name and falls back to that level's flat blob — so
 # picking an existing output restores ITS parameters, and a new name still starts from the last run
 # rather than from bare defaults. Optional: omit it and this behaves exactly as it did.
@@ -494,7 +504,7 @@ function api_task_fun_params(req::HTTP.Request)
     imgu  = get(q, "imageUid", "")
     setu  = get(q, "setUid", "")
     vname = get(q, "valueName", "")
-    imgus = filter(!isempty, String.(split(get(q, "imageUids", ""), ',')))
+    imgus = _query_list(q, "imageUids")
     (isempty(proj) || isempty(fun)) &&
         return 400, JSON3.write((; error = "projectUid and fun are required"))
 
@@ -525,7 +535,7 @@ end
 #
 # Two data sources per image, unioned:
 #   • `meta.funParamsByName[fun]` keys — the exact record the by-name reader uses.
-#   • `run_log` entries whose status is "done" and whose `task_output_name(fun, params)` resolves — the
+#   • `run_log` entries whose status is "done" and whose `task_params_name(fun, params)` resolves — the
 #     retroactive half, so runs that predate the by-name record (or ran in `Cecelia.RUN_LOG_CAP`'s
 #     window but the by-name blob has since been overwritten by a different name) are still reachable.
 #     Same rule as `run_log_params_for_output`.
@@ -589,7 +599,10 @@ function api_task_fun_params_sources(req::HTTP.Request)
                 p = get(e, "params", get(e, :params, nothing))
                 p isa AbstractDict || continue
                 params = Dict{String,Any}(String(k) => v for (k, v) in p)
-                name = Cecelia.task_output_name(task, params)
+                # the log keeps `valueName` on the entry, not in params; tracking's name IS that input
+                vn = string(get(e, "valueName", get(e, :valueName, "")))
+                isempty(vn) || (params["valueName"] = vn)
+                name = Cecelia.task_params_name(task, params)
                 isempty(name) && continue
                 at = string(get(e, "at", get(e, :at, "")))
                 cur = get(seen, name, nothing)
@@ -1130,6 +1143,8 @@ end
 
 
 include(joinpath(@__DIR__, "routes", "image.jl"))
+
+include(joinpath(@__DIR__, "routes", "claim.jl"))   # claim recital checks (after image.jl: reuses _cohort_set)
 
 include(joinpath(@__DIR__, "routes", "metadata.jl"))
 

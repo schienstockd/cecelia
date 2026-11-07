@@ -76,6 +76,7 @@ include("plots_registry_api.jl") # bidirectional context — live plot registry 
 include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
 include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3)
 include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
+include("claim_review.jl")   # claim recital — the one model turn, run as a Kiwi turn with the analyst's reasoning withheld
 include("kiwi_profile_api.jl") # Kiwi profile roster + picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6)
 include("profile_settings_api.jl") # Per-profile settings (USER_PROFILE_PLAN Phase 4)
 include("hpc_api.jl")          # Settings → HPC: site/profile/project settings + connection test (HPC_PLAN P1)
@@ -263,6 +264,8 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/tasks/recent" => (req, body_bytes) -> (api_tasks_recent(req)),
     "/api/qc/cohort" => (req, body_bytes) -> (api_qc_cohort(req)),
     "/api/qc/cohort/runs" => (req, body_bytes) -> (api_qc_cohort_runs(req)),
+    "/api/claim/checks" => (req, body_bytes) -> (api_claim_checks(req)),
+    "/api/claim/open" => (req, body_bytes) -> (api_claim_open(req)),
     "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
     "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
     "/api/analysis/boards" => (req, body_bytes) -> (api_analysis_boards(req)),
@@ -431,6 +434,9 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/meta/set" => (req, body_bytes) -> (api_images_meta_set(body_bytes)),
     "/api/images/inclusion/set" => (req, body_bytes) -> (api_images_inclusion_set(body_bytes)),
     "/api/qc/cohort/check" => (req, body_bytes) -> (api_qc_cohort_check(body_bytes)),
+    "/api/claim/state" => (req, body_bytes) -> (api_claim_state(body_bytes)),
+    "/api/claim/check" => (req, body_bytes) -> (api_claim_check(body_bytes)),
+    "/api/claim/review" => (req, body_bytes) -> (api_claim_review(body_bytes)),
     "/api/lablog/append" => (req, body_bytes) -> (api_lablog_append(body_bytes)),
     "/api/lablog/capture" => (req, body_bytes) -> (api_lablog_capture(body_bytes)),
     "/api/observer/register" => (req, body_bytes) -> (api_observer_register(body_bytes)),
@@ -895,28 +901,45 @@ function handle_stream(stream::HTTP.Stream)
     # or other in-flight requests (a napari open would otherwise queue behind it). Under `-t 1` this is
     # just a cooperative task (no behaviour change); under `-t auto` it's real parallelism. Shared state
     # is already lock-guarded (WS clients, napari, chain runs) and Julia HDF5 is serialised via
-    # `_with_h5`. Error handling lives INSIDE the spawned task, so `fetch` always yields a (status, body)
-    # tuple and never rethrows a TaskFailedException.
-    status, body = fetch(Threads.@spawn begin
-        try
+    # `_with_h5`. A HANDLER error is caught inside the spawned task and becomes a 500.
+    #
+    # The response WRITE runs in that same pool task, for the reason `try_serve_slab` writes from its
+    # own (docs/todo/SLAB_READ_PERF_PLAN.md, Phase 5): this connection's task is on HTTP.jl's single
+    # `:interactive` thread, so writing here makes every concurrent response — multi-MB gating
+    # plotdata/density/membership bodies included — copy onto the socket one after another. Only one
+    # task touches the stream at a time: the pool task, while this one waits in `fetch`.
+    _fetch_unwrapped(Threads.@spawn begin
+        status, body = try
             handle_http(req, body_bytes)
         catch e
             @error "Unhandled error in $(req.method) $(req.target)" exception = (e, catch_backtrace())
             500, JSON3.write((; error = sprint(showerror, e)))
         end
+        _write_router_response!(stream, status, body)
     end)
+end
 
-    # Binary handlers (gating plotdata/density/membership) return a byte vector → octet-stream;
-    # everything else returns a JSON string.
+# A failed WRITE (the client went away) has no response left to shape, so it propagates — but as the
+# IOError itself, not wrapped in the TaskFailedException `fetch` raises: HTTP.jl logs a client
+# disconnect at Debug only when it can see the `IOError` (EPIPE/ECONNRESET), and at Error otherwise.
+function _fetch_unwrapped(t::Task)
+    try
+        fetch(t)
+    catch e
+        e isa TaskFailedException && throw(e.task.exception)
+        rethrow()
+    end
+end
+
+# The router's response: binary handlers (gating plotdata/density/membership) return a byte vector →
+# octet-stream; everything else returns a JSON string.
+function _write_router_response!(stream::HTTP.Stream, status::Integer, body)
     content_type = body isa AbstractVector{UInt8} ? "application/octet-stream" : "application/json"
-
-    HTTP.setstatus(stream, status)
-    HTTP.setheader(stream, "Content-Type"                 => content_type)
-    HTTP.setheader(stream, "Access-Control-Allow-Origin"  => "*")
-    HTTP.setheader(stream, "Access-Control-Allow-Methods" => "GET, POST, OPTIONS")
-    HTTP.setheader(stream, "Access-Control-Allow-Headers" => "Content-Type")
-    HTTP.startwrite(stream)
-    write_http_body!(stream, body)
+    _write_response!(stream, status, body,
+                     "Content-Type"                 => content_type,
+                     "Access-Control-Allow-Origin"  => "*",
+                     "Access-Control-Allow-Methods" => "GET, POST, OPTIONS",
+                     "Access-Control-Allow-Headers" => "Content-Type")
 end
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -1035,6 +1058,8 @@ function start(; host=HOST, port=PORT)
     end
     # The decoded-chunk cache is off until given a budget (chunk_cache.jl) — serving is when it is wanted.
     chunk_cache_budget!(Cecelia.viewer_chunk_cache_bytes())
+    # Finish any delete a previous run stopped mid-way (app/src/discard.jl) — off the start path.
+    errormonitor(Threads.@spawn sweep_discarded!())
     want_tls = Cecelia.tls_desired()
     tls = want_tls ? ensure_dev_cert() : nothing
     if tls === nothing

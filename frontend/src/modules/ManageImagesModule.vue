@@ -207,6 +207,7 @@ async function submitRegister() {
   <!-- file browser modal — rendered outside ModuleLayout so it overlays everything -->
   <FileBrowser
     v-if="showBrowser"
+    remember-key="cc.import.lastDir"
     @select="onFilesSelected"
     @close="showBrowser = false"
   />

@@ -26,7 +26,7 @@ const KIWI_READ_TOOLS = [
     "get_image_notes", "get_image_attributes", "get_populations", "get_measure_summary",
     "get_behaviour_summary", "get_cluster_summary", "get_region_clusters", "get_contact_stats",
     "get_spatial_patterns",   # one population clustered or random among the tissue's cells
-    "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "get_task_log", "get_task_history",
+    "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "list_plots", "get_available_plots", "get_analysis_boards",
     "get_landscape", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
     "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
@@ -47,7 +47,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "register_push_target" => "pairing", "set_observer_active" => "write",
     "append_lab_log" => "write", "create_blackboard_entry" => "write", "revise_blackboard_entry" => "write",
     "set_blackboard_status" => "write", "set_blackboard_outcome" => "write",
-    "set_blackboard_section_outcome" => "write", "create_chain" => "write",
+    "set_blackboard_section_outcome" => "write", "create_chain" => "write", "state_claim" => "write",
     "suggest_chain" => "drafts a chain for create_chain — Kiwi builds no chains",
     "create_notebook" => "write", "revise_notebook" => "write", "set_notebook_description" => "write",
     "add_analysis_board" => "write", "add_gate" => "write", "set_gate" => "write", "delete_gate" => "write",
@@ -515,7 +515,8 @@ that way. If nothing is left, abstain."""
                   session_id = "", mcp_config_path = …, timeout_s = 300,
                   on_progress = step -> …, on_process = proc -> …, prior_refs = []) -> Dict
 
-One Kiwi turn (see the top of this file). Returns
+One Kiwi turn (see the top of this file). `system_prompt` / `allowed_tools` default to Kiwi's own; the
+claim review (`claim_review.jl`) passes its own, with the analyst's reasoning withheld. Returns
 `{ok, abstain, claims, reasoning, errors, reasked, reaskErrors, sessionId, usage:{input,output}, toolCalls,
 seconds}` where `ok` means every claim passed validation, possibly after the one re-ask; `errors` lists
 what still failed and `reaskErrors` what the first attempt failed on (empty if no re-ask). Never
@@ -530,7 +531,9 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
                        mcp_config_path::AbstractString = _write_observer_mcp_config(; headless = true),
                        timeout_s::Real = 300, on_progress::Function = _ -> nothing,
                        on_process::Function = _ -> nothing, prior_refs = Any[],
-                       prior_results = Dict{String,Any}())::Dict{String,Any}
+                       prior_results = Dict{String,Any}(),
+                       system_prompt::AbstractString = kiwi_system_prompt(project_uid),
+                       allowed_tools::AbstractVector = _kiwi_allowed_tools())::Dict{String,Any}
     t0 = time()
     # resolved ONCE, when asked — validation reuses these (see `kiwi_validate_reply(; known)`)
     results = [resolve_kiwi_ref(project_uid, r) for r in refs]
@@ -547,8 +550,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     isempty(prior_pack) || (pack = isempty(pack) ? prior_pack : string(pack, "\n\n", prior_pack))
     full_prompt = isempty(pack) ? String(prompt) : string(prompt, "\n\n", pack)
     schema = kiwi_reply_schema(; reasoning)
-    opts = (; system_prompt = kiwi_system_prompt(project_uid), replace_system_prompt = true,
-              json_schema = schema, allowed_tools = _kiwi_allowed_tools(), strict_mcp = true,
+    opts = (; system_prompt = String(system_prompt), replace_system_prompt = true,
+              json_schema = schema, allowed_tools = String.(allowed_tools), strict_mcp = true,
               builtin_tools = "", stream = true, timeout_s,
               settings_path = _write_observer_hook_settings())
     usage = [0, 0]; tool_calls = 0; reask_errors = String[]

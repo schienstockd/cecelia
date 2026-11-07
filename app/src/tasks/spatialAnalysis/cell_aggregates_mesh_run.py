@@ -53,6 +53,7 @@ def run(params):
     t_axis = label_order.index("T") if "T" in label_order else None
     n_t = int(dict(zip(dim_utils.im_dim_order, dim_utils.im_dim)).get("T", 1))
     n_spatial = len(label_order) - (1 if t_axis is not None else 0)
+    mesh_utils.require_volume(n_spatial, "aggregatesMeshes")
     scale = phys[-n_spatial:]
 
     arr = zarr_utils.open_as_zarr(params["labelPath"])[0][0]

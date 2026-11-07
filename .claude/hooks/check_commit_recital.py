@@ -185,8 +185,13 @@ def _load_tool_call() -> dict:
 
 
 def _parse_pairs(command: str) -> list[tuple[str, str, str]]:
-    """Return the (slug, outcome, reason) triples the commit message quotes; reason "" when absent."""
-    return [(m.group(1), m.group(2), (m.group(3) or "").strip()) for m in _SLUG_PAIR.finditer(command)]
+    """Return the (slug, outcome, reason) triples the commit message quotes; reason "" when absent.
+    A pair inside backticks is prose — a reviewer quoting the tag syntax in the recital body — not a
+    tag (same rule as the finding markers). The pair's opening bracket decides; its reason may still
+    hold code spans."""
+    prose = outside_code(command)   # same length: offsets index `command`
+    return [(m.group(1), m.group(2), (m.group(3) or "").strip())
+            for m in _SLUG_PAIR.finditer(command) if prose[m.start()] == "["]
 
 
 def _finding_event_for_slug(slug: str) -> str | None:
@@ -283,7 +288,8 @@ def check(command: str) -> str | None:
     findings = _FINDING_MARKERS.findall(outside_code(command))
     # Strip slug pairs first: the outcome word inside `[fanout-…: fixed_pre_commit]` also
     # matches the bare pattern, which made every slug-tagged commit look bare-tagged.
-    bare_outcomes = _BARE_OUTCOME_TAGS.findall(_SLUG_PAIR.sub(" ", command))
+    # …and a quoted bare tag is prose too (a reviewer naming `fixed_pre_commit`), never an outcome.
+    bare_outcomes = _BARE_OUTCOME_TAGS.findall(outside_code(_SLUG_PAIR.sub(" ", command)))
     pairs = _parse_pairs(command)
 
     # Duplicate slugs in one commit are a red flag — the same finding can't have two outcomes.
@@ -445,8 +451,8 @@ def agent_recital_gate(message: str) -> str | None:
     return None
 
 
-#: The comment a committed result-review repro carries (`docs/ai-assist/RESULT_REVIEW.md`).
-REPRO_MARKER = re.compile(rf"RESULT-REVIEW:\s*({SLUG_PATTERN})")
+#: The comment a committed result-review repro carries — one definition, shared with the lint.
+from cecelia.effectiveness.log import REPRO_MARKER  # noqa: E402
 
 
 def _staged_changed_files() -> list[str]:

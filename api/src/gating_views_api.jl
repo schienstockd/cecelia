@@ -110,7 +110,7 @@ function api_gating_cells_image(req::HTTP.Request)
     img, err = _gating_image(pu, iu)
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
-    multi = [String(strip(p)) for p in split(get(q, "pops", ""), ","; keepempty = false)]
+    multi = _query_list(q, "pops")
     pop = get(q, "pop", isempty(multi) ? ROOT : first(multi))
     m = _live_map(img, vn, read_pop_type(img, vn, pop, "flow"))   # `live` for a derived `_tracked` set
     for p in (isempty(multi) ? [pop] : multi)
