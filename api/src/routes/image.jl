@@ -518,8 +518,10 @@ end
 # GET /api/tasks/history?projectUid[&limit] → recent task runs across all images, newest first.
 # Aggregates each image's runlog.json (fun, valueName, timestamp) plus the image's current status.
 # Read-only; backs the MCP observer's get_task_history tool. (Attempt counts arrive with the
-# per-node counter in a later slice.) limit caps the returned rows (default 100); `total` and
-# `truncated` say when it did, so a capped list never reads as the whole history.
+# per-node counter in a later slice.) limit caps the returned RUNS (default 100); `total` and
+# `truncated` say when it did, so a capped list never reads as the whole history. `skipped` rows (asked
+# for, never dispatched — `skip_run_log!`) are returned inside that window but do not use up the limit
+# or count in `total`: they are context for why an image has no output, not runs.
 function api_tasks_history(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)
@@ -547,6 +549,9 @@ function api_tasks_history(req::HTTP.Request)
             "params" => get(e, :params, get(e, "params", Dict{String,Any}())))
         by = _rl(e, "by")                     # the profile that launched it; absent on older entries
         isempty(by) || (row["by"] = by)
+        rsn = _rl(e, "reason")                # why a `skipped` run was left out; absent otherwise
+        isempty(rsn) || (row["reason"] = rsn)
+        row["ran"] = run_entry_ran(e)         # internal: dropped below, before the reply
         # what made it (run_log.jl header) — passed through only when the entry has it
         for k in ("author", "ceceliaVersion", "env")
             v = get(e, k, get(e, Symbol(k), nothing))
@@ -556,10 +561,19 @@ function api_tasks_history(req::HTTP.Request)
     end
     # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological
     sort!(rows, by = r -> r["at"], rev = true)
-    total = length(rows)
-    truncated = total > limit
-    truncated && (rows = rows[1:limit])
-    200, JSON3.write((; projectUid=project_uid, count=length(rows), total, truncated, history=rows))
+    is_run(r) = r["ran"]
+    total = count(is_run, rows)
+    kept, n = Vector{Any}(), 0
+    for r in rows
+        if is_run(r)
+            n == limit && break
+            n += 1
+        end
+        push!(kept, r)
+    end
+    foreach(r -> delete!(r, "ran"), kept)
+    200, JSON3.write((; projectUid=project_uid, count=length(kept), total, truncated = total > n,
+                        history=kept))
 end
 
 # The 400 for a fun with no cohort metrics and no steps that bank any (a composite is answered from

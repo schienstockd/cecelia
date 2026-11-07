@@ -393,8 +393,10 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         for tid in [t for t, s in state.items() if s == "unknown" and t in self._launched]:
             proj, fun, uid, at = self._launched[tid]
             def ours(row):
+                # a `skipped` row (an excluded image dropped at dispatch) shares the launch but is not
+                # a run — never let it stand in for the task's outcome
                 return row.get("fun") == fun and (not uid or row.get("imageUid") == uid) and \
-                    str(row.get("at", "")) >= at
+                    str(row.get("at", "")) >= at and row.get("runStatus") != "skipped"
             hist = self._request("GET", "/api/tasks/history", {"projectUid": proj, "limit": 200})
             row = next((r for r in hist.get("history", []) if ours(r)), None)
             if row is None and hist.get("truncated"):   # the run may sit past the cap: read them all

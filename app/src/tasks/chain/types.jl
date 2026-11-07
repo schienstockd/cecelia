@@ -123,9 +123,14 @@ mutable struct ImageNodeState
     task_id::Union{String,Nothing}
     result::Union{Dict{String,Any},Nothing}
     params_hash::Union{String,Nothing}      # sha256 of effective params — set on NODE_DONE, used for resume skip
+    # Why the node was :skipped for this image (missing axis/scale, an upstream step failed, ...). Set
+    # only alongside NODE_SKIPPED and cleared on any other transition, so a set-scope result that fit on
+    # fewer images says which were left out and why. `nothing` on run.json written before it existed.
+    reason::Union{String,Nothing}
 end
 
-ImageNodeState() = ImageNodeState(NODE_PENDING, nothing, nothing, nothing)
+ImageNodeState() = ImageNodeState(NODE_PENDING, nothing, nothing, nothing, nothing)
+ImageNodeState(status, task_id, result, params_hash) = ImageNodeState(status, task_id, result, params_hash, nothing)
 
 mutable struct ChainRun
     id::String
@@ -138,6 +143,10 @@ mutable struct ChainRun
     created_at::Float64
     by::String                              # profile that launched it ("" on runs from before)
     resumed_by::String                      # profile that last resumed it ("" = never) — see `chain_run_as`
+    # Images the asker dropped before the run started (uid => reason) — today only excluded images
+    # (`_drop_excluded`, api/src/sockets.jl). They are not in `image_uids`, so without this the record
+    # would not say the selection was larger. Empty on run.json written before it existed.
+    excluded_images::Dict{String,String}
     _dir::String                            # <project>/settings/chains/runs/<run_id>/
     _lock::ReentrantLock                    # guards image_states + disk writes
     _barriers::Dict{String,Channel{Nothing}}      # node_id => arrive channel (set-scope barrier)
@@ -146,11 +155,17 @@ mutable struct ChainRun
     # `chain_run_as`), handed to every node's `TaskRequest`. In memory only: a resume brings its own.
     caller::Dict{String,Any}
 end
-# Every pre-`caller` construction site (load, tests) — no caller known.
+# A run loaded from run.json: excluded images known, no caller (in memory only; a resume brings its own).
 ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
-         created_at, by, resumed_by, _dir, _lock, _barriers, _barriers_done) =
+         created_at, by, resumed_by, excluded_images::AbstractDict, _dir, _lock, _barriers, _barriers_done) =
     ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
-             created_at, by, resumed_by, _dir, _lock, _barriers, _barriers_done, Dict{String,Any}())
+             created_at, by, resumed_by, Dict{String,String}(excluded_images), _dir, _lock, _barriers,
+             _barriers_done, Dict{String,Any}())
+# The pre-`excluded_images`, pre-`caller` positional form, so callers that build a run by hand keep working.
+ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+         created_at, by, resumed_by, _dir::AbstractString, _lock, _barriers, _barriers_done) =
+    ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+             created_at, by, resumed_by, Dict{String,String}(), _dir, _lock, _barriers, _barriers_done)
 # NOTE: resource-pool concurrency is NOT a per-run concern. Every node runs via
 # `run_task`, which routes through the global scheduler pools (`_POOLS` in
 # scheduler.jl, sized from the [pools] section of config.toml). A `gpu` pool with

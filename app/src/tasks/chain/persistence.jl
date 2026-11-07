@@ -174,15 +174,7 @@ end
 function _save_run!(run::ChainRun)
     mkpath(run._dir)
     states = Dict{String,Any}(
-        uid => Dict{String,Any}(
-            nid => Dict{String,Any}(
-                "status"      => string(st.status),
-                "task_id"     => st.task_id,
-                "result"      => st.result,
-                "params_hash" => st.params_hash,
-            )
-            for (nid, st) in node_map
-        )
+        uid => Dict{String,Any}(nid => _node_state_doc(st) for (nid, st) in node_map)
         for (uid, node_map) in run.image_states
     )
     write_atomic(joinpath(run._dir, "run.json")) do io
@@ -196,6 +188,20 @@ function _save_run!(run::ChainRun)
             created_at     = run.created_at,
             by             = run.by,
             resumed_by     = run.resumed_by,
+            excluded_images = run.excluded_images,
         ))
     end
+end
+
+# One node state as stored in run.json. `reason` is written only when there is one (a skip), so a run
+# with no skips reads exactly as before; `load_chain_run` reads a missing one as `nothing`.
+function _node_state_doc(st::ImageNodeState)::Dict{String,Any}
+    d = Dict{String,Any}(
+        "status"      => string(st.status),
+        "task_id"     => st.task_id,
+        "result"      => st.result,
+        "params_hash" => st.params_hash,
+    )
+    isnothing(st.reason) || (d["reason"] = st.reason)
+    d
 end

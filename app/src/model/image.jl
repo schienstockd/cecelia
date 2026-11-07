@@ -112,6 +112,10 @@ Image-owned accessor so run-dispatch code asks the model, not the raw field.
 """
 image_included(img::CciaImage)::Bool = img.included
 
+# The reason recorded when a run drops an excluded image before dispatch — in the chain run record
+# (run.json `excluded_images`) or the image's own run log (`skip_run_log!`).
+const IMAGE_EXCLUDED_REASON = "image excluded from further processing"
+
 """The image's labelProps directory — `{proj}/1/{uid}/labelProps`."""
 img_label_props_dir(img::CciaImage)::String = joinpath(img._dir, "labelProps")
 

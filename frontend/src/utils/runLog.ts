@@ -11,8 +11,11 @@ export interface RunLogEntry {
   fun: string
   valueName?: string
   // An OPEN set: "done" | "failed" | "cancelled" | "interrupted" (a run whose process died, stamped by
-  // `reap_run_log!` on project load) | "running" (live right now). Missing ⇒ done, on legacy entries.
+  // `reap_run_log!` on project load) | "running" (live right now) | "skipped" (asked for, never
+  // dispatched — `skip_run_log!`; see `reason`). Missing ⇒ done, on legacy entries.
   status?: string
+  // Why a "skipped" entry was left out (e.g. the image is excluded). Absent on every other status.
+  reason?: string
   params?: Record<string, unknown>
   at: string
   // Both written by the modern open/close pair (`open_run_log!` + `close_run_log!`) and ABSENT on an
@@ -43,10 +46,17 @@ export function runStatus(e: RunLogEntry): string {
   return e.status && e.status.length ? e.status : 'done'
 }
 
-// The most recent run-log entry (the log is stored oldest→newest), or undefined when there is none.
+// A "skipped" entry records that a run was asked for and never dispatched — no run happened, so
+// every "what was done to this image" helper below passes over it.
+function ran(e: RunLogEntry): boolean {
+  return runStatus(e) !== 'skipped'
+}
+
+// The most recent run-log entry that is a real run (the log is stored oldest→newest), or undefined.
 export function lastRun(runLog?: RunLogEntry[] | null): RunLogEntry | undefined {
-  if (!runLog || runLog.length === 0) return undefined
-  return runLog[runLog.length - 1]
+  if (!runLog) return undefined
+  for (let i = runLog.length - 1; i >= 0; i--) if (ran(runLog[i])) return runLog[i]
+  return undefined
 }
 
 // The most recent SUCCESSFUL run-log entry (status not "failed"), or undefined when none succeeded.
@@ -55,7 +65,7 @@ export function lastRun(runLog?: RunLogEntry[] | null): RunLogEntry | undefined 
 export function lastSuccessfulRun(runLog?: RunLogEntry[] | null): RunLogEntry | undefined {
   if (!runLog) return undefined
   for (let i = runLog.length - 1; i >= 0; i--) {
-    if (runStatus(runLog[i]) !== 'failed') return runLog[i]
+    if (ran(runLog[i]) && runStatus(runLog[i]) !== 'failed') return runLog[i]
   }
   return undefined
 }
@@ -65,7 +75,7 @@ export function lastSuccessfulRun(runLog?: RunLogEntry[] | null): RunLogEntry | 
 export function funsRun(runLog?: RunLogEntry[] | null, succeededOnly = true): Set<string> {
   const out = new Set<string>()
   for (const e of runLog ?? []) {
-    if (!e.fun) continue
+    if (!e.fun || !ran(e)) continue
     if (succeededOnly && runStatus(e) === 'failed') continue
     out.add(e.fun)
   }

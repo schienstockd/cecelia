@@ -245,6 +245,18 @@ class TaskStatesHistoryFallback(unittest.TestCase):
         with mock.patch.object(c, "_request", side_effect=reply):
             self.assertEqual({"t1": "failed"}, c.task_states(["t1"]))
 
+    def test_a_skipped_row_is_not_the_outcome(self):
+        # a set-scope launch (uid "") that dropped an excluded member: its `skipped` row is newer and
+        # matches fun + time, but it is not a run — the task stays unknown until a real run row lands
+        c = au.AutonomousClient("http://x")
+        c._launched["t1"] = ("tSJpBI", "behaviour.hmm", "", "2026-10-27T10:00:00")
+        skip = {"fun": "behaviour.hmm", "imageUid": "img9", "at": "2026-10-27T10:00:01",
+                "runStatus": "skipped", "reason": "image excluded from further processing"}
+        reply = lambda m, route, *a, **k: ({"history": [skip], "total": 0, "truncated": False}
+                                           if route == "/api/tasks/history" else [])
+        with mock.patch.object(c, "_request", side_effect=reply):
+            self.assertEqual({"t1": "unknown"}, c.task_states(["t1"]))
+
 
 class RequireMeasured(unittest.TestCase):
     def test_refuses_when_api_resolves_a_different_value_name(self):
