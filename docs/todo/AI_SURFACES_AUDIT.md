@@ -283,7 +283,7 @@ reminder, and the dialog reuses its wording.
 > - **Risks:** data leaves your machine. The AI can be wrong or give different answers each time, and
 >   you stay responsible for the analysis. Use counts against your Claude account.
 > - {`CLAUDE_DATA_NOTICE.detail`: "Check your institute's rules for unpublished or patient data"}
-> - [Anthropic's terms](link). **Link, don't paraphrase.**
+> - Anthropic's terms, as a link. **Link, don't paraphrase.**
 >
 > You can turn this off at any time, and on a shared workstation it can be turned off for everyone. Everything
 > else in Cecelia works the same with AI off.
