@@ -240,9 +240,10 @@ end
 # if a dated step OR a produced artifact shows it (segmentations→segment, tracked→track, clusterRuns→
 # cluster, gatedPops→gate). This matters because the run log is a recent, capped window: a segmentation
 # or tracking that predates it leaves no step but its artifacts persist, so a step-only rollup would
-# false-flag "missing segment/track" on images that plainly have them.
+# false-flag "missing segment/track" on images that plainly have them. A step counts only once it is
+# done (legacy entries read "done"): a failed or cancelled segmentation never reached `segment`.
 function _image_stages(e)
-    st = String[s.stage for s in e.steps]
+    st = String[s.stage for s in e.steps if s.status == "done"]
     isempty(e.segmentations) || push!(st, "segment")
     isempty(e.tracked)       || push!(st, "track")
     isempty(e.clusterRuns)   || push!(st, "cluster")

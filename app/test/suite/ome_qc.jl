@@ -2406,6 +2406,16 @@ end
         noStep = (; uid = "x", name = "X", included = true, steps = NamedTuple[],
                     segmentations = ["A"], tracked = ["A"], clusterRuns = Any[], gatedPops = Any[])
         @test Set(Cecelia._image_stages(noStep)) == Set(["segment", "track"])
+        # a failed/cancelled step never reached its stage: the rollup must flag the image as missing it
+        failed = (; uid = "f", name = "F", included = true,
+                    steps = [(; stage = "import", status = "done"), (; stage = "segment", status = "failed"),
+                             (; stage = "track", status = "cancelled")],
+                    segmentations = String[], tracked = String[], clusterRuns = Any[], gatedPops = Any[])
+        @test Cecelia._image_stages(failed) == ["import"]
+        ok = (; failed..., uid = "o", name = "O", steps = [(; stage = "import", status = "done"),
+                                                           (; stage = "segment", status = "done")])
+        rf = Cecelia._lineage_rollup([failed, ok])
+        @test only(rf.divergences).uid == "f" && only(rf.divergences).missingStages == ["segment"]
         # scoping: one image, one set, unknown → empty
         @test length(analysis_lineage(proj; image_uid = "i1").images) == 1
         @test length(analysis_lineage(proj; set_uid = "linS").images) == 2

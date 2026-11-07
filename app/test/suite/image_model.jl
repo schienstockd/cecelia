@@ -616,6 +616,38 @@ end
     rm(proj.root; recursive=true)
 end
 
+# A failed run never counts as having produced something. `nuc`'s measures predate the run log; a
+# later 3D re-measure FAILED, but dispatch had already written its params into `funParamsByName`.
+# Rebuilding with that `dims` measures the surviving tracks in 3D when the table on disk is 2D.
+@testset "_tracks_delete! rebuild params ignore a failed run's by-name params" begin
+    proj = create_project!(name="trk-dims-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save!(img)
+    fun = "tracking.track_measures"
+    # no log entry at all: the by-name record is the pre-log record and stands
+    write_module_fun_params!(img._dir, fun, Dict{String,Any}("valueName" => "nuc", "dims" => "2D");
+                             value_name = "nuc")
+    @test Cecelia._last_track_measures_params(img._dir, "nuc")["dims"] == "2D"
+    # a failed run overwrites the by-name record at dispatch and logs `failed`
+    write_module_fun_params!(img._dir, fun, Dict{String,Any}("valueName" => "nuc", "dims" => "3D");
+                             value_name = "nuc")
+    append_run_log!(img, fun, "nuc", "failed", Dict{String,Any}("valueName" => "nuc", "dims" => "3D"))
+    @test Cecelia._last_track_measures_params(img._dir, "nuc") === nothing
+    rb(vn) = Cecelia._track_measures_rebuild_params(img, vn)
+    @test rb("nuc") === nothing                                        # unknowable → delete refuses
+    # the measures run's QC banked what the table on disk was computed with
+    write_qc(img, fun, "nuc", Any[]; metrics = Dict{String,Any}("motionDims" => 2, "windowMinutes" => 10.0))
+    @test rb("nuc")["dims"] == "2D" && rb("nuc")["windowMinutes"] == 10.0
+    write_qc(img, fun, "nuc", Any[]; metrics = Dict{String,Any}("motionDims" => 2))   # window off
+    @test rb("nuc")["windowMinutes"] == 0
+    # a done run after the failure is the record again — window included, not dropped to the default
+    append_run_log!(img, fun, "nuc", "done",
+                    Dict{String,Any}("valueName" => "nuc", "dims" => "3D", "windowMinutes" => 5.0))
+    @test rb("nuc")["dims"] == "3D" && rb("nuc")["windowMinutes"] == 5.0 && rb("nuc")["valueName"] == "nuc"
+    rm(proj.root; recursive=true)
+end
+
 # ── Channel names use the versioned convention ──────────────────────────────
 # Regression guard: channel names were stored unversioned under meta, where the
 # task/API readers (which use top-level versioned imChannelNames) never saw them.
