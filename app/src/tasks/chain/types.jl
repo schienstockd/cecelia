@@ -142,7 +142,15 @@ mutable struct ChainRun
     _lock::ReentrantLock                    # guards image_states + disk writes
     _barriers::Dict{String,Channel{Nothing}}      # node_id => arrive channel (set-scope barrier)
     _barriers_done::Dict{String,Channel{Nothing}} # node_id => done channel   (set-scope barrier)
+    # The rest of the author stamp of whoever started THIS execution (`caller_stamp()`, beside
+    # `chain_run_as`), handed to every node's `TaskRequest`. In memory only: a resume brings its own.
+    caller::Dict{String,Any}
 end
+# Every pre-`caller` construction site (load, tests) — no caller known.
+ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+         created_at, by, resumed_by, _dir, _lock, _barriers, _barriers_done) =
+    ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+             created_at, by, resumed_by, _dir, _lock, _barriers, _barriers_done, Dict{String,Any}())
 # NOTE: resource-pool concurrency is NOT a per-run concern. Every node runs via
 # `run_task`, which routes through the global scheduler pools (`_POOLS` in
 # scheduler.jl, sized from the [pools] section of config.toml). A `gpu` pool with

@@ -86,6 +86,7 @@ def run(params):
     adata.obs["label"]     = pooled["label"].to_numpy()
 
     # ── cluster the whole set at once ──
+    run_env = {}   # the device that actually ran (GPU may fall back to CPU) → run log `env`
     clustering_utils.find_populations(
         adata,
         resolution=script_utils.get_param(params, "resolution", default=1.0),
@@ -102,6 +103,7 @@ def run(params):
         backend="auto",
         random_state=script_utils.get_param(params, "randomState", default=0),
         log=log.log,
+        run_env=run_env,
     )
 
     # ── split back per segment and write into each cell labelProps (shared write-back) ──
@@ -113,7 +115,7 @@ def run(params):
     # (qc.jl). Best-effort; never fails the task. Same qcOutPath pattern as cellpose_run.py.
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:
-        write_json_atomic(qc_out_path, qc)
+        write_json_atomic(qc_out_path, {**qc, "runEnv": run_env})
         log.log(f">> saved cluster QC: {qc['nClusters']} clusters over {len(qc['perSegment'])} segment(s)")
 
     log.log(">> cluster_cells done")

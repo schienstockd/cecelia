@@ -138,6 +138,11 @@ end
     @test Cecelia._resolve_config_dir("/x", "/y", "/z") == "/x"       # explicit wins
     @test Cecelia._resolve_config_dir(nothing, "/y", "/z") == "/y"    # env beats .env
     @test Cecelia._resolve_config_dir(nothing, nothing, "/z") == "/z" # .env beats default
+    # An empty value (`CECELIA_DEV_DIR=` exported or in .env) is unset, as in the Python twin
+    # `loopback.config_dir`, not "" (the CWD), which would split launcher and server custom.toml.
+    @test Cecelia._resolve_config_dir(nothing, "", "/z") == "/z"
+    @test Cecelia._resolve_config_dir(nothing, "", "") == expand_user("~/.cecelia")
+    @test Cecelia._resolve_config_dir(nothing, nothing, "") == expand_user("~/.cecelia")
     # `expand_user`, NOT Base.expanduser: the latter is a no-op on Windows, so asserting against
     # it would compare two unexpanded strings and pass vacuously there.
     @test Cecelia._resolve_config_dir(nothing, nothing, nothing) ==   # installed-app default

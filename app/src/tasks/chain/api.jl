@@ -97,7 +97,8 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                    overrides::Dict{String,Any}    = Dict{String,Any}(),
                    on_log::Function               = line -> println(line),
                    on_cancel_check::Function      = _ -> false,
-                   by::String                     = active_profile_name())::ChainRun
+                   by::String                     = active_profile_name(),
+                   caller::AbstractDict           = Dict{String,Any}())::ChainRun
 
     if !isnothing(run_id)
         # Resume: restore run from disk, reset stale/failed nodes, keep :done ones. An explicit
@@ -110,6 +111,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                              skip = Set(n.id for n in ordered_nodes
                                         if all(s[n.id].status == NODE_DONE for s in values(run.image_states))))
         run.resumed_by = by
+        run.caller     = Dict{String,Any}(String(k) => v for (k, v) in caller)   # the resumer's, not persisted
         _save_run!(run)
     else
         isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
@@ -145,7 +147,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         run     = ChainRun(
             new_id, template.name, proj.uid, image_uids, template, hash,
             image_states, time(), by, "", run_dir, ReentrantLock(),
-            barriers, barriers_done,
+            barriers, barriers_done, Dict{String,Any}(String(k) => v for (k, v) in caller),
         )
         _save_run!(run)
     end
