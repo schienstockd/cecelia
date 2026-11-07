@@ -534,7 +534,8 @@ end
 # `/api/tasks/funparams?imageUid=<pick>&valueName=<pick>` (that endpoint already resolves it).
 #
 # Two data sources per image, unioned:
-#   • `meta.funParamsByName[fun]` keys — the exact record the by-name reader uses.
+#   • `meta.funParamsByName[fun]` keys — the per-name form defaults the by-name reader uses (written at
+#     dispatch, so a name whose only run failed is listed too: copying what was tried is the point).
 #   • `run_log` entries whose status is "done" and whose `task_params_name(fun, params)` resolves — the
 #     retroactive half, so runs that predate the by-name record (or ran in `Cecelia.RUN_LOG_CAP`'s
 #     window but the by-name blob has since been overwritten by a different name) are still reachable.
