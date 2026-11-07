@@ -319,30 +319,34 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
 
 @_tool
 def check_claim(project_uid: str, set_uid: str, populations: list[str], measure: str,
-                unit_attr: str | None = None) -> dict:
+                unit_attrs: list[str] | None = None) -> dict:
     """The claim recital's rule checks: before a comparison leaves Cecelia as a claim ("T cells move
     faster than B cells"), does the RECORD let it be made? Read-only, no model, no significance test.
 
     Scope: the set, the populations compared (pop paths, e.g. ["B/qc", "T/qc"]), the measure
-    ("live.track.speed") and `unit_attr`, the image attribute naming the statistical unit ("Mouse").
-    Leave `unit_attr` unset only if the claim really has none — that is itself a finding.
+    ("live.track.speed") and `unit_attrs`, the image attributes whose values together name one
+    replicate — the statistical unit (["Mouse"], or ["Mouse", "Location"] when each site in each mouse
+    counts once). Leave it unset only if the claim really has none — that is itself a finding.
 
-    Returns {findings, ran, skipped, notCompared, nRows, nUsed}. Each finding has level, code, short,
-    long and detail {stage, provenance, evidence}. Stages: S0 record gaps (image excluded, no data,
+    Returns {findings, checks, ran, skipped, notCompared, nRows, nUsed}. `checks` is one line per check
+    ({id, state: ok|warn|skipped, text}) — read it first: it is the list of facts. Each finding has
+    level, code, short, long and detail {stage, check, provenance, evidence}; the same finding for
+    several populations is one (pop "B and T", evidence pops/byPop). Stages: S0 record gaps (image excluded, no data,
     unit blank, params or track dims not recorded), S1 consistency (a setting differing across images,
     or between the compared populations — `claim.confounded` when it splits them completely), S2
     conventions (no unit, too few units for a per-unit test, several images per unit, uncalibrated).
     `ran` / `skipped` say what was checked: no findings is NOT a pass when checks were skipped.
     Report findings as questions back to the analyst ("this comparison can't support the claim yet,
     because…"), with the finding's `long` text as the options. Never as a verdict on the biology."""
-    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attr)
+    return _client.check_claim(project_uid, set_uid, populations, measure, unit_attrs)
 
 
 @_tool
 def state_claim(project_uid: str, set_uid: str, populations: list[str], measure: str, text: str,
-                unit_attr: str | None = None, entry_id: str | None = None) -> dict:
-    """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry with
-    the check_claim findings as its `### sNN` sections — each one the user marks good / bad / unsure.
+                unit_attrs: list[str] | None = None, entry_id: str | None = None) -> dict:
+    """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry listing
+    the check_claim results by category (Images, Processing record, Same processing, Replicates, Units)
+    — each problem with what to do. The checks are mechanical, so they carry no good / bad marks.
     Only when the user asks to state or record a claim; never for your own reading of the data.
 
     Same scope as check_claim, plus `text`, the claim in the user's words. With `entry_id` it
@@ -350,7 +354,7 @@ def state_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     on the entry — rewording to fit the data is a new round, not a fix); unchanged just re-checks.
     Returns {entryId, round, findings, ran, skipped}. Nothing is blocked or certified: say what the
     findings ask of the analysis, and which checks did not run."""
-    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attr, entry_id)
+    return _client.state_claim(project_uid, set_uid, populations, measure, text, unit_attrs, entry_id)
 
 
 # Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out
@@ -378,20 +382,23 @@ def get_task_log(project_uid: str, image_uid: str, fun: str, max_bytes: int = _T
 def get_task_history(project_uid: str, limit: int = 100) -> dict:
     """Recent task runs across all images, newest first: `{count, total, truncated, history}`.
     `truncated: true` means `limit` cut the list — `total` runs exist, raise `limit` to see older
-    ones. Each `history` row: `imageUid`, `imageName`, `fun`,
+    ones. `skipped` rows (below) ride along inside the window but are not runs: they count in neither
+    `limit` nor `total`, so `count` can exceed `limit`. Each `history` row: `imageUid`, `imageName`, `fun`,
     `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
     outcome — and **`params`**, the params that run used (the tuning trail; `{}` on older runs). Pair
     `params` with get_module_params + get_cohort_qc to suggest a param adjustment on an outlier: what
     was tried, the valid range, the direction to try. It is "what was tried", not a params→outcome
     relationship — suggest, don't predict.
 
-    `runStatus` is one of `done` · `failed` · `cancelled` · `interrupted` · `running`. The last three
-    mean **no output was produced**, so never read a result as belonging to one:
+    `runStatus` is one of `done` · `failed` · `cancelled` · `interrupted` · `running` · `skipped`.
+    All but the first two mean **no output was produced**, so never read a result as belonging to one:
       * `cancelled` — someone stopped it.
       * `interrupted` — its process died mid-run (a backend/runner Ctrl-C or crash). Nobody chose this
         and nobody was told; a user staring at a half-finished batch asking "what happened to the other
         three?" is answered HERE and almost nowhere else.
       * `running` — live right now, outcome not yet known.
+      * `skipped` — asked for and never dispatched; `reason` says why (e.g. the image is excluded).
+        Not a run: its `params` were never tried, so leave it out of any tuning trail.
     A long-running `fun` that keeps coming back `interrupted` is worth raising as a workflow problem
     (work is being lost to restarts), not as a param problem.
 

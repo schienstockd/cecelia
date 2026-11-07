@@ -154,6 +154,17 @@
             @test r.count == 1 && r.total == 2 && r.truncated == true
         end
         @test JSON3.read(hist("projectUid=$uid")[2]).truncated == false
+        # a skipped row (never dispatched) is returned but does not use up the limit or count as a run
+        skip_run_log!(img1, "segment.cellpose", IMAGE_EXCLUDED_REASON; at = "2999-01-01T00:00:00")
+        let r = JSON3.read(hist("projectUid=$uid&limit=1")[2])
+            @test [String(h.runStatus) for h in r.history] == ["skipped", "failed"] ||
+                  [String(h.runStatus) for h in r.history] == ["skipped", "done"]
+            @test r.count == 2 && r.total == 2 && r.truncated == true
+            @test String(r.history[1].reason) == IMAGE_EXCLUDED_REASON
+        end
+        let r = JSON3.read(hist("projectUid=$uid")[2])
+            @test r.count == 3 && r.total == 2 && r.truncated == false
+        end
         # bad requests
         @test hist("")[1] == 400                     # projectUid missing
         @test hist("projectUid=nope")[1] == 404

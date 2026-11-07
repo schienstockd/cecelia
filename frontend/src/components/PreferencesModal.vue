@@ -27,6 +27,8 @@ import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import { dotClass } from '../utils/statusDot'
 import { fetchSharedWorkstation } from '../utils/sharedWorkstation'
+import { AI_OFF_COPY } from '../utils/aiSwitch'
+import { openAiOptIn } from '../lib/aiOptInOpen'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          isValidProfileName, profileDisplayName,
          type ProfileRoster } from '../utils/profileApi'
@@ -73,6 +75,12 @@ async function refreshRoster() {
   }
 }
 onMounted(refreshRoster)
+
+// Kiwi → AI features: turning ON asks first (AiOptInDialog); turning OFF needs no consent.
+function onAiToggle(on: boolean) {
+  if (on) openAiOptIn()
+  else void observer.setAiEnabled(false)
+}
 
 // Kiwi → "Delete conversations on log out": the workstation policy is the floor — when it's on, the
 // personal switch shows on and locked. A failed read leaves the switch editable.
@@ -486,6 +494,18 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
         <!-- ── Kiwi ──────────────────────────────────────────────────────── -->
         <template v-else-if="active === 'kiwi'">
+          <!-- The AI switch for this profile (utils/aiSwitch.ts). ON goes through the opt-in dialog;
+               OFF is immediate. Locked when peanut turned AI off for the workstation. -->
+          <CcToggle :model-value="observer.ai.enabled" :disabled="observer.ai.setBy === 'workstation'"
+                    label="AI features"
+                    v-tooltip.bottom="observer.ai.setBy === 'workstation' ? AI_OFF_COPY.workstation
+                                      : 'Kiwi, claim review and Claude in the terminal'"
+                    @update:model-value="onAiToggle" />
+          <CcToggle v-if="!observer.ai.enabled" style="margin-top:0.4rem"
+                    :model-value="!settings.kiwiHidden" label="Show the Kiwi button"
+                    v-tooltip.bottom="'Opens a short note while AI is off'"
+                    @update:model-value="settings.kiwiHidden = !$event" />
+          <template v-if="observer.ai.enabled">
           <CcToggle v-model="settings.kiwiReasoning"
                     label="Think first (write reasoning before claims)"
                     v-tooltip.bottom="'~40% more tokens; no measurable quality gain in comparison'" />
@@ -496,6 +516,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
             <option value="sonnet">Sonnet</option>
             <option value="opus">Opus</option>
           </select>
+          </template>
           <!-- never peanut: its conversations are terminal claude's (claude_conversations.jl) -->
           <CcToggle v-if="appCtl.activeProfileName !== 'default'" style="margin-top:0.8rem"
                     :model-value="settings.purgeClaudeConversations || purgeForcedByWorkstation"
@@ -504,6 +525,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     v-tooltip.bottom="purgeForcedByWorkstation ? 'Required on this workstation'
                                       : 'Transcripts and prompt history; your Claude memory stays'"
                     @update:model-value="settings.purgeClaudeConversations = $event" />
+          <template v-if="observer.ai.enabled">
           <!-- The Cecelia plugin (observer MCP + caller hook) in this profile's Claude config — set up once per profile. -->
           <template v-if="observerRow">
             <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia plugin</div>
@@ -533,6 +555,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                 </button>
               </template>
             </div>
+          </template>
           </template>
         </template>
 

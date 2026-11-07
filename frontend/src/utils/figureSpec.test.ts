@@ -73,6 +73,10 @@ describe('applyFigureEdits', () => {
     expect((out as Record<string, unknown>).style).toEqual({ tileMm: 40 })
     expect(spec.frames).toEqual([64])                                   // the input is untouched
     expect(applyFigureEdits(spec, { scaleBarUm: null })).not.toHaveProperty('scaleBarUm')
+    // grid on writes the layout, off drops it (the renderer's default strip)
+    const g = applyFigureEdits(spec, { grid: true })
+    expect((g as Record<string, unknown>).layout).toBe('grid')
+    expect(applyFigureEdits(g, { grid: false })).not.toHaveProperty('layout')
   })
 })
 
@@ -96,6 +100,9 @@ describe('figureName / figureTipText', () => {
   it('names a still by its frame and a strip by its range', () => {
     expect(figureName('img', [64])).toBe('img_t64')
     expect(figureName('img', [50, 60, 110])).toBe('img_t50-110')
+    // the viewer's name field, as a movie's suffix; blank adds nothing
+    expect(figureName('img', [0, 175], ' ctrl ')).toBe('img_t0-175_ctrl')
+    expect(figureName('img', [64], '')).toBe('img_t64')
   })
   it('says which frames the button will take, auto included', () => {
     expect(figureTipText(figureFrames(50, 110, 10))).toBe('Save t50–110, every 10: 7 frames → Movies')

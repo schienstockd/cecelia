@@ -254,10 +254,11 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
 
     # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings
     # (`bank_segment_qc!`, segmentation.jl).
-    bank_segment_qc!(img, "segment.cellpose", p.outputValueName, qc_out_path;
-                     diameter_um = seg_given_diameter(models_converted), on_log = on_log)
+    run_env = bank_segment_qc!(img, "segment.cellpose", p.outputValueName, qc_out_path;
+                               diameter_um = seg_given_diameter(models_converted), on_log = on_log)
 
     Dict{String,Any}("outputValueName"  => p.outputValueName,
                      "labelValueName"   => p.outputValueName,
-                     "labelFiles"       => label_files)
+                     "labelFiles"       => label_files,
+                     "runEnv"           => run_env)   # device + cellpose version → run log `env`
 end

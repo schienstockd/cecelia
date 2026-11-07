@@ -97,6 +97,21 @@ describe('wasProcessedWith', () => {
   })
 })
 
+describe('a skipped entry is not a run', () => {
+  // `skip_run_log!`: the run was asked for on this (excluded) image and never dispatched.
+  const withSkip: RunLogEntry[] = [...log.slice(0, 2), e('segment.cellpose', '2026-07-12T11:00:00', 'skipped')]
+  it('is passed over by lastRun / lastSuccessfulRun', () => {
+    expect(lastRun(withSkip)?.fun).toBe('cleanupImages.smooth')
+    expect(lastSuccessfulRun(withSkip)?.fun).toBe('cleanupImages.smooth')
+    expect(lastRun([e('a', 'x', 'skipped')])).toBeUndefined()
+  })
+  it('does not count as processed, even with succeededOnly=false', () => {
+    expect(funsRun(withSkip, false).has('segment.cellpose')).toBe(false)
+    expect(wasProcessedWith(withSkip, 'segment.cellpose', 'ever', false)).toBe(false)
+    expect(wasProcessedWith(withSkip, 'cleanupImages.smooth', 'last')).toBe(true)
+  })
+})
+
 describe('funCategory / funModuleLabel', () => {
   it('splits the category off the fun_name', () => {
     expect(funCategory('cleanupImages.smooth')).toBe('cleanupImages')

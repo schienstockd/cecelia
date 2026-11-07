@@ -1,6 +1,6 @@
 # Cecelia structure — what it is, one clear schematic, and where it has holes
 
-**Status:** in progress (2026-11-07), branch `structure-audit-archive`. P1 done (draft, [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md)); P2 overview v1 in the README; three record fixes (#2011 + two with agents). The brief this came
+**Status:** in progress (2026-11-07), branch `structure-plan`. P1 done (draft, [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md)); P2 overview v1 in the README; record fixes #2011, #2016, #2020 merged; follow-ups #2023, #2024. The brief this came
 from, [`docs/archive/CECELIA_STRUCTURE_AUDIT_PROMPT.md`](../archive/CECELIA_STRUCTURE_AUDIT_PROMPT.md),
 was an elaboration of the ask below. This plan narrows it back to the ask.
 
@@ -86,14 +86,14 @@ first guesses: S = under a day, M = a few days, L = a design first.
 
 | Item | Kind | Size | Status |
 |---|---|---|---|
-| Run log stores no Cecelia/engine version, device, seed or author stamp | flaw | S | #2011 (env for track/region clustering + coastal to follow) |
+| Run log stores no Cecelia/engine version, device, seed or author stamp | flaw | S | done, #2011; remaining tasks #2024 |
 | Run log doesn't record which input version a run read (unless pinned) | flaw | S | open |
 | Re-runs overwrite labels, measures and branching. **By design** (maintainer, 2026-11-07): keeping every segmentation by default would pile up stores nobody needs, and `keep_previous_version()` is the opt-in for reprocessing. What the structure needs is that the record names the run that made the current output and says it replaced one | choice, record part open | S | open |
 | Gates are overwritten in place, so a plotted population can't be tied to the gate it was drawn with. Unlike stores, gate files are tiny, so history is cheap. `authored_labels_version` is always `v1` | flaw | M | open |
 | Board PDF/SVG carry no provenance; the Parameters CSV is rebuilt at export, not frozen with the plot | gap | M | open |
-| Remembered params are written at dispatch, even for failed or cancelled runs. Fine as a form default (retry what you tried); wrong where it's read as the record (the claim check's flat fallback, and the comment at `sockets.jl:799`) | flaw | S | agent (2026-11-07) |
+| Remembered params are written at dispatch, even for failed or cancelled runs. Fine as a form default (retry what you tried); wrong where it's read as the record (the claim check's flat fallback, and the comment at `sockets.jl:799`) | flaw | S | done, #2020 |
 | Run log is capped at 200 entries per image, and old entries drop silently | flaw | S | open |
-| Excluded or skipped images, and why, are not saved anywhere | gap | S | agent (2026-11-07) |
+| Excluded or skipped images, and why, are not saved anywhere | gap | S | done, #2016 |
 | Raw source is a path only, with no checksum | gap | S | open |
 | GUI gate edits are not tasks, so there's no run-log entry for them | gap | M | open |
 | Runs from before `runlog.json` existed have no recorded params | flaw (history) | — | stated limitation |

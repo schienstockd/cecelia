@@ -5,6 +5,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
                               task_id     = nothing,
                               result      = nothing,
                               params_hash = nothing,
+                              reason::Union{String,Nothing} = nothing,
                               waited::Bool = false)
     captured_result = Ref{Any}(nothing)
     # The scheduler task id this node ran as, captured under the lock alongside the result. It goes out
@@ -20,6 +21,8 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
         isnothing(task_id)     || (st.task_id     = task_id)
         isnothing(result)      || (st.result      = result)
         isnothing(params_hash) || (st.params_hash = params_hash)
+        # the skip reason is part of the :skipped outcome, so any other transition clears it
+        st.reason = status == NODE_SKIPPED ? reason : nothing
         captured_result[]  = st.result
         captured_task_id[] = something(st.task_id, "")
         _save_run!(run)
@@ -283,10 +286,13 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # Topo order guarantees every predecessor's status is already set when we reach this node.
         # Incremental (plot) predecessors never gate.
         let states = run.image_states[image_uid]
-            if any(p -> p ∉ incremental_ids && haskey(states, p) &&
-                        states[p].status ∈ (NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED),
-                   preds[node.id])
-                _update_node_state!(run, image_uid, node.id; status=NODE_SKIPPED, fn=node.fn)
+            i = findfirst(p -> p ∉ incremental_ids && haskey(states, p) &&
+                               states[p].status ∈ (NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED),
+                          preds[node.id])
+            if !isnothing(i)
+                p = preds[node.id][i]
+                _update_node_state!(run, image_uid, node.id; status=NODE_SKIPPED, fn=node.fn,
+                                    reason="upstream step $p $(string(states[p].status))")
                 continue
             end
         end
@@ -319,7 +325,8 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             reason = task_applicability_reason(task_struct, img)
             Base.invokelatest(on_log, "SKIP [$image_uid/$(node.id)] $reason")
             _update_node_state!(run, image_uid, node.id;
-                                status=NODE_SKIPPED, fn=node.fn, node_params=effective_params)
+                                status=NODE_SKIPPED, fn=node.fn, node_params=effective_params,
+                                reason=reason)
             continue
         end
 
@@ -361,7 +368,8 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                               params       = run_params,
                               chain_run_id = run.id,
                               chain_node_id = node.id,
-                              by           = chain_run_as(run));
+                              by           = chain_run_as(run),
+                              caller       = run.caller);
                 on_log      = line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"),
                 on_progress = (n, t) -> _fire_node_progress!(run, node, image_uid, tid, n, t),
                 # Only `running` is mirrored into node state: `queued` is already set above, and the
@@ -471,7 +479,8 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
 
     # Mark excluded images :skipped (successful_only policy only)
     for uid in setdiff(run.image_uids, participating_uids)
-        _update_node_state!(run, uid, node.id; status=NODE_SKIPPED, fn=node.fn)
+        _update_node_state!(run, uid, node.id; status=NODE_SKIPPED, fn=node.fn,
+                            reason="an upstream step failed or was cancelled (successful_only)")
     end
 
     # Load participating images
@@ -525,8 +534,10 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
             if task_applies(task_struct, img)
                 push!(keep_imgs, img); push!(keep_uids, uid)
             else
-                Base.invokelatest(on_log, "SKIP [$uid/$(node.id)] $(task_applicability_reason(task_struct, img))")
-                _update_node_state!(run, uid, node.id; status=NODE_SKIPPED, fn=node.fn, node_params=effective_params)
+                why = task_applicability_reason(task_struct, img)
+                Base.invokelatest(on_log, "SKIP [$uid/$(node.id)] $why")
+                _update_node_state!(run, uid, node.id; status=NODE_SKIPPED, fn=node.fn,
+                                    node_params=effective_params, reason=why)
             end
         end
         if isempty(keep_imgs)
@@ -561,7 +572,8 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                           params       = run_params,
                           chain_run_id = run.id,
                           chain_node_id = node.id,
-                          by           = chain_run_as(run));
+                          by           = chain_run_as(run),
+                          caller       = run.caller);
             on_log      = line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line"),
             on_progress = (n, t) -> _fire_node_progress!(run, node, first(imgs).uid, tid, n, t),
             # One task, N images: mirror the pool pick-up onto every participating image, so the whole
@@ -850,6 +862,7 @@ function _force_restart_from!(run::ChainRun, start_node::String)
         if st.status != NODE_PENDING
             st.status=NODE_PENDING; st.params_hash = nothing
             st.result = nothing;  st.task_id     = nothing
+            st.reason = nothing
             changed   = true
         end
     end
@@ -889,6 +902,7 @@ function _reset_stale_nodes!(run::ChainRun, overrides::Dict{String,Any},
                     st.params_hash = nothing
                     st.result      = nothing
                     st.task_id     = nothing
+                    st.reason      = nothing
                     any_changed    = true
                 end
             end

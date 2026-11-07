@@ -36,13 +36,14 @@ describe('taskHistoryEntries', () => {
   })
 
   it('maps every run-log status onto the five-state rail', () => {
-    const statuses = ['done', 'failed', 'cancelled', 'interrupted', 'running', 'nonsense']
+    const statuses = ['done', 'failed', 'cancelled', 'interrupted', 'running', 'skipped', 'nonsense']
     const rows = taskHistoryEntries([img('i1', 'A',
       statuses.map((s, i) => ({ fun: 'segment.cellpose', at: `2026-08-20T10:0${i}:00`, status: s })))], CTX)
     // newest first, so reverse to line back up with `statuses`
     expect(rows.map(r => r.status).reverse())
       // `interrupted` (the run's process died) reads as failed: the output is missing and it is news.
-      .toEqual(['done', 'failed', 'cancelled', 'failed', 'running', 'done'])
+      // `skipped` (never dispatched: the image was excluded) reads as cancelled — a decision, no output.
+      .toEqual(['done', 'failed', 'cancelled', 'failed', 'running', 'cancelled', 'done'])
   })
 
   it('drops a run that already has a live row, and keeps the ones that do not', () => {

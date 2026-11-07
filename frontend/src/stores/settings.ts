@@ -45,7 +45,7 @@ const PROFILE_KEYS = [
   'captureAttachToKiwi', 'captureSendToPaired',
   // Kiwi / lab log / tips / view profile
   'kiwiReasoning', 'kiwiModel', 'purgeClaudeConversations', 'labLogAutoContext', 'labLogShowNames',
-  'guidesShowClaude',
+  'guidesShowClaude', 'kiwiHidden',
   'tipsOnLaunch', 'tipsLastShown', 'viewProfile',
 ] as const
 type ProfileKey = typeof PROFILE_KEYS[number]
@@ -388,6 +388,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // The Guides map's Claude toggle: shows the loop and what Claude adds at each recipe step. Off by
   // default — everything in Cecelia works without Claude, and the map should say so first.
   const guidesShowClaude = ref(localStorage.getItem('cc.guidesShowClaude') === 'true')
+  // "Hide this button" on Kiwi's AI-off panel: with AI off, the sidebar's Kiwi launcher goes away for
+  // this profile. Ignored while AI is on (utils/aiSwitch.ts `showKiwiLauncher`); undone in
+  // Preferences → Kiwi. The AI switch itself is NOT here — the server owns it (stores/observer.ts).
+  const kiwiHidden = ref(localStorage.getItem('cc.kiwiHidden') === 'true')
   // Tip of the day (WHATS_NEW_PLAN.md → W4). On app launch, if these say "show + last shown was
   // not today", the What's New modal opens with today's tip prepended. Opt-out from a checkbox on
   // the tip card. Default ON — biologists opening the app benefit from a nudge; power users can
@@ -598,7 +602,8 @@ export const useSettingsStore = defineStore('settings', () => {
               // Which stretch of the timelapse to record, as FRAME INDICES — `tEnd` null/absent = the
               // last frame, which is what every recording did before the control existed. Deliberately
               // NOT the `cropT` pair above: that one is a 0-100 % crop range for making a new image.
-              tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean
+              tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean; figureGrid?: boolean
+              numberIfTaken?: boolean
               // 3D ray-cast quality (draft / standard / high). Per set, like the other viewer prefs.
               renderQuality?: RenderQuality
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
@@ -673,6 +678,8 @@ export const useSettingsStore = defineStore('settings', () => {
     tStart: number; tEnd: number | null
     figureEvery: number | null
     figureSplit: boolean
+    figureGrid: boolean
+    numberIfTaken: boolean
     matchViewer: boolean
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
@@ -703,6 +710,11 @@ export const useSettingsStore = defineStore('settings', () => {
     figureEvery: _setPrefs.value[setUid]?.movie?.figureEvery ?? null,
     // …and whether it adds one grey row per channel under the merge (`splitRows`)
     figureSplit: _setPrefs.value[setUid]?.movie?.figureSplit ?? false,
+    // …and whether it wraps a long series into a near-square matrix (`layout: 'grid'`)
+    figureGrid: _setPrefs.value[setUid]?.movie?.figureGrid ?? false,
+    // a movie / figure whose file name is taken: off = overwrite it (what recording always did),
+    // on = add _001, _002, … (`_numbered_if_taken`, movie_helpers.jl)
+    numberIfTaken: _setPrefs.value[setUid]?.movie?.numberIfTaken ?? false,
     // default ON — "record" means record what is on screen
     matchViewer: _setPrefs.value[setUid]?.movie?.matchViewer ?? true,
   })
@@ -715,7 +727,8 @@ export const useSettingsStore = defineStore('settings', () => {
                                    compareLayout?: CompareLayout
                                    compareContrast?: CompareContrast
                                    showTimestamp?: boolean; showScaleBar?: boolean
-                                   tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean
+                                   tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean; figureGrid?: boolean
+                                   numberIfTaken?: boolean
                                    matchViewer?: boolean }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
@@ -819,6 +832,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(hiddenMcpAccounts, v => profileStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
   watch(guidesShowClaude,         v => localStorage.setItem('cc.guidesShowClaude',         String(v)))
+  watch(kiwiHidden,               v => localStorage.setItem('cc.kiwiHidden',               String(v)))
   watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
   watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
   watch(tipsLastShown,            v => localStorage.setItem('cc.tipsLastShown',            v))
@@ -889,7 +903,7 @@ export const useSettingsStore = defineStore('settings', () => {
     correctionCockpitMode, correctionCockpitValueName,
     kiwiOpen, viewerSelectMode,
     captureAttachToKiwi, captureSendToPaired,
-    kiwiReasoning, kiwiModel, purgeClaudeConversations, labLogAutoContext, labLogShowNames,
+    kiwiReasoning, kiwiModel, purgeClaudeConversations, labLogAutoContext, labLogShowNames, kiwiHidden,
     guidesShowClaude,
     tipsOnLaunch, tipsLastShown, viewProfile,
   } as unknown as Record<ProfileKey, Ref<ProfileSettingsValue>>
@@ -986,7 +1000,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, guidesShowClaude, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

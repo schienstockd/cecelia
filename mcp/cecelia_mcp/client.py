@@ -223,6 +223,15 @@ def _trim_module_params(raw: dict) -> dict:
     return out
 
 
+def claude_headers() -> dict[str, str]:
+    """Marks a request as Claude's so the server stamps what it writes `via: claude` (author_stamp),
+    plus the model + session making this call when the caller hook supplied them (caller.py), plus
+    auth. Every MCP request to the API carries these — HTTP here, and the autonomous `/ws` connect
+    that starts tasks (the server binds them for the whole connection, so the run log's `author` says
+    which model launched a run)."""
+    return {"X-Cecelia-Client": "claude", **caller_headers(), **auth_headers()}
+
+
 def http_json(base_url: str, method: str, path: str, params: dict | None = None,
               body: dict | None = None, timeout: float = 60.0, raw: bool = False):
     """The one HTTP transport for the MCP clients (observer + autonomous): JSON in, JSON (or the
@@ -237,10 +246,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
         if q:
             query = "?" + urllib.parse.urlencode(q)
     data = None
-    # marks Claude-made writes so the server stamps them `via: claude` (author_stamp), plus the model +
-    # session making this call when the caller hook supplied them (caller.py)
-    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **caller_headers(),
-               **auth_headers()}
+    headers = {"Accept": "application/json", **claude_headers()}
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -428,13 +434,13 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         )
 
     def check_claim(self, project_uid: str, set_uid: str, populations: list[str], measure: str,
-                    unit_attr: str | None = None):
+                    unit_attrs: list[str] | None = None):
         return self._request(
             "GET",
             "/api/claim/checks",
             {
                 "projectUid": project_uid, "setUid": set_uid, "pops": ",".join(populations),
-                "measure": measure, "unitAttr": unit_attr,
+                "measure": measure, "unitAttrs": ",".join(unit_attrs) if unit_attrs else None,
             },
         )
 
@@ -442,11 +448,11 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         return self._request("GET", "/api/claim/open", {"projectUid": project_uid})
 
     def state_claim(self, project_uid: str, set_uid: str, populations: list[str], measure: str,
-                    text: str, unit_attr: str | None = None, entry_id: str | None = None):
+                    text: str, unit_attrs: list[str] | None = None, entry_id: str | None = None):
         body = {"projectUid": project_uid, "setUid": set_uid, "populations": populations,
                 "measure": measure, "text": text}
-        if unit_attr:
-            body["unitAttr"] = unit_attr
+        if unit_attrs:
+            body["unitAttrs"] = unit_attrs
         if entry_id:
             body["entryId"] = entry_id
         return self._request("POST", "/api/claim/state", body=body)

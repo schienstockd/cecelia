@@ -202,6 +202,10 @@ end
         append_run_log!(img, seg, "B", "failed")                       # a later re-run failed
         r = res(ran("funName" => seg))
         @test r["ok"] && occursin("failed", get(r, "detail", ""))      # still ran, but say the newest didn't
+        append_run_log!(img, seg, "B", "done")
+        Cecelia.skip_run_log!(img, seg, Cecelia.IMAGE_EXCLUDED_REASON; value_name = "B")
+        r = res(ran("funName" => seg))                                 # a skip wrote nothing: the done run
+        @test r["ok"] && !haskey(r, "detail")                          # is still the newest output
 
         # ui: format only — never claims existence
         @test res(Dict("kind" => "ui", "anchor" => "viewer.play"))["check"] == "format"

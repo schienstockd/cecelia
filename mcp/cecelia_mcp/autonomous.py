@@ -33,8 +33,7 @@ import time
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
-from cecelia_mcp.auth import auth_headers
-from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
+from cecelia_mcp.client import ApiError, DisallowedRoute, claude_headers, http_json
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
 
@@ -282,7 +281,9 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         for i, base in enumerate(bases):
             ws_url = api_url_to_ws(base)
             try:
-                ws = connect(ws_url, open_timeout=5, additional_headers=auth_headers(),
+                # Claude's headers, not bare auth: the server stamps the tasks this connection starts
+                # with them (run log `author`); without them an agent's run reads as launched from the app.
+                ws = connect(ws_url, open_timeout=5, additional_headers=claude_headers(),
                              **ssl_kwargs(ws_url))
             except InvalidStatus:
                 loopback.remember(self.base_url, base)
@@ -392,8 +393,10 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         for tid in [t for t, s in state.items() if s == "unknown" and t in self._launched]:
             proj, fun, uid, at = self._launched[tid]
             def ours(row):
+                # a `skipped` row (an excluded image dropped at dispatch) shares the launch but is not
+                # a run — never let it stand in for the task's outcome
                 return row.get("fun") == fun and (not uid or row.get("imageUid") == uid) and \
-                    str(row.get("at", "")) >= at
+                    str(row.get("at", "")) >= at and row.get("runStatus") != "skipped"
             hist = self._request("GET", "/api/tasks/history", {"projectUid": proj, "limit": 200})
             row = next((r for r in hist.get("history", []) if ours(r)), None)
             if row is None and hist.get("truncated"):   # the run may sit past the cap: read them all

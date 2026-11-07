@@ -256,6 +256,21 @@ end
     # survives reload — this is a durable record, which is the entire point
     @test read_run_log(init_object(proj.uid, img.uid))[end]["status"] == Cecelia.RUN_LOG_INTERRUPTED
 
+    # ── skipped: asked for, never dispatched (an excluded image dropped by `_drop_excluded`) ────────
+    skip_run_log!(img, "segment.cellposeMeasure", IMAGE_EXCLUDED_REASON;
+                  value_name = "default", params = Dict{String,Any}("cellDiameter" => 12, "_task_id" => "T5"),
+                  task_id = "T5", by = "alice")
+    e = read_run_log(init_object(proj.uid, img.uid))[end]
+    @test run_entry_status(e) == RUN_LOG_SKIPPED
+    @test e["reason"] == IMAGE_EXCLUDED_REASON
+    @test e["taskId"] == "T5"                     # the id the rest of the selection ran under
+    @test e["by"] == "alice" && e["params"]["cellDiameter"] == 12 && !haskey(e["params"], "_task_id")
+    @test reap_run_log!(img, String[]) == 0       # not a run, so never reaped as interrupted
+    @test read_run_log(img)[end]["status"] == RUN_LOG_SKIPPED
+    # never the params source for an output: no run produced anything from them
+    @test get(something(run_log_params_for_output(img._dir, "segment.cellposeMeasure", "default"),
+                        Dict{String,Any}()), "cellDiameter", nothing) != 12
+
     rm(proj.root; recursive=true)
 end
 

@@ -114,7 +114,9 @@ function api_observer_status(req::HTTP.Request)
                             "mcpConfigPath" => _write_observer_mcp_config(),
                             # is the user's OWN terminal set up? drives which button Kiwi's Terminal row
                             # shows (Set up / Fix vs Chat to Claude) — see _observer_terminal_state
-                            "terminal"      => _observer_terminal_state())
+                            "terminal"      => _observer_terminal_state(),
+                            # the AI switch for the active profile: `{enabled, setBy}` (ai_switch.jl)
+                            "ai"            => Cecelia.ai_state())
     200, JSON3.write(resp)
 end
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useObserverStore } from '../stores/observer'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
@@ -137,7 +138,10 @@ async function loadShared() {
 }
 async function changeShared(key: string, value: boolean) {
   sharedBusy.value = key; sharedError.value = ''
-  try { sharedRows.value = sharedWorkstationRows(await setSharedWorkstation(key, value)) }
+  try {
+    sharedRows.value = sharedWorkstationRows(await setSharedWorkstation(key, value))
+    if (key === 'aiAllowed') void useObserverStore().refresh()   // this window's AI state follows at once
+  }
   catch (e: any) { sharedError.value = e?.message ?? 'Could not change the setting' }
   finally { sharedBusy.value = '' }
 }

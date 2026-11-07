@@ -24,6 +24,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
                 !isnothing(get(st_raw, :result,      nothing)) ?
                     Dict{String,Any}(string(k) => v for (k, v) in st_raw[:result]) : nothing,
                 !isnothing(get(st_raw, :params_hash, nothing)) ? string(st_raw[:params_hash]) : nothing,
+                !isnothing(get(st_raw, :reason,      nothing)) ? string(st_raw[:reason])      : nothing,
             )
         end
     end
@@ -52,6 +53,7 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
         Float64(raw[:created_at]),
         string(get(raw, :by, "")),
         string(get(raw, :resumed_by, "")),
+        Dict{String,String}(string(k) => string(v) for (k, v) in get(raw, :excluded_images, Dict())),
         run_dir,
         ReentrantLock(),
         barriers,
@@ -89,15 +91,21 @@ params are skipped. `image_uids` is ignored in resume mode.
     run_chain(proj, String[]; run_id="abc12345")
 
 overrides: node_id => param overrides merged on top of template params.
+
+excluded: images the caller dropped from the selection before the run (uid => reason), recorded in
+run.json as `excluded_images` so the run says its selection was larger. Fresh runs only; a resume keeps
+the record it was created with.
 """
 function run_chain(proj::CciaProject, image_uids::Vector{String};
                    chain::String                  = "",
                    run_id::Union{String,Nothing}  = nothing,
                    start_node::Union{String,Nothing} = nothing,
                    overrides::Dict{String,Any}    = Dict{String,Any}(),
+                   excluded::AbstractDict         = Dict{String,String}(),
                    on_log::Function               = line -> println(line),
                    on_cancel_check::Function      = _ -> false,
-                   by::String                     = active_profile_name())::ChainRun
+                   by::String                     = active_profile_name(),
+                   caller::AbstractDict           = Dict{String,Any}())::ChainRun
 
     if !isnothing(run_id)
         # Resume: restore run from disk, reset stale/failed nodes, keep :done ones. An explicit
@@ -110,6 +118,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                              skip = Set(n.id for n in ordered_nodes
                                         if all(s[n.id].status == NODE_DONE for s in values(run.image_states))))
         run.resumed_by = by
+        run.caller     = Dict{String,Any}(String(k) => v for (k, v) in caller)   # the resumer's, not persisted
         _save_run!(run)
     else
         isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
@@ -144,8 +153,10 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         run_dir = joinpath(_runs_dir(proj), new_id)
         run     = ChainRun(
             new_id, template.name, proj.uid, image_uids, template, hash,
-            image_states, time(), by, "", run_dir, ReentrantLock(),
-            barriers, barriers_done,
+            image_states, time(), by, "",
+            Dict{String,String}(string(k) => string(v) for (k, v) in excluded),
+            run_dir, ReentrantLock(),
+            barriers, barriers_done, Dict{String,Any}(String(k) => v for (k, v) in caller),
         )
         _save_run!(run)
     end

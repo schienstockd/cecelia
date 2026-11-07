@@ -12,6 +12,7 @@ import { ref, computed, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
 import { useSettingsStore } from './settings'
 import { useWsStore } from './ws'
+import { useObserverStore } from './observer'
 import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
 import { draftAdd, draftRemove, parseDraft, upsertTurn, startKiwiTurn, cancelKiwiTurn, fetchKiwiTurns,
          clearKiwiTurns, resolveKiwiRefs, refKey, type KiwiDraft, type KiwiTurn } from '../utils/kiwiTurn'
@@ -49,11 +50,14 @@ export const useKiwiStore = defineStore('kiwi', () => {
 
   /** Attach a ref to the next question and open the cockpit. `puid` for a window that has no open
    *  project of its own — the pop-out viewer knows its project only from `?project=`. */
-  function addRef(ref: KiwiRef, puid: string = projectUid.value) {
-    if (!puid) return
+  /** Put a ref in Kiwi's prompt and open Kiwi. False when nothing was added: no project, or AI is off
+   *  (utils/aiSwitch.ts) — the one sink every "Add to Kiwi" and capture attach goes through. */
+  function addRef(ref: KiwiRef, puid: string = projectUid.value): boolean {
+    if (!puid || !useObserverStore().ai.enabled) return false
     draft.value = draftAdd(draft.value, puid, ref)
     saveDraft()
     settings.kiwiOpen = true
+    return true
   }
   function removeRef(ref: KiwiRef) { draft.value = draftRemove(draft.value, ref); saveDraft() }
   function clearDraft() { draft.value = { projectUid: projectUid.value, refs: [] }; saveDraft() }

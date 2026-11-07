@@ -49,6 +49,8 @@ import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { terminalCta, terminalSetupTooltip } from '../../utils/observerSetup'
 import { CLAUDE_DATA_NOTICE, CLAUDE_TERMINAL } from '../../lib/claudeOverview'
+import { AI_OFF_COPY, aiCanTurnOn, aiOffLine } from '../../utils/aiSwitch'
+import { openAiOptIn } from '../../lib/aiOptInOpen'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, fetchCaptureEnvelope, type CaptureEnvelope,
@@ -59,6 +61,7 @@ import { useCaptureFocus } from '../../composables/useCaptureFocus'
 import InlineNote from '../InlineNote.vue'
 import KiwiAsk from './KiwiAsk.vue'
 import { useKiwiStore } from '../../stores/kiwi'
+import { useSettingsStore } from '../../stores/settings'
 import { resolveAnchor } from '../../utils/guideAnchor'
 import { rectsOverlap } from '../../utils/panelBounds'
 import AddToKiwiButton from './AddToKiwiButton.vue'
@@ -79,6 +82,14 @@ const showAssistantOverview = ref(false)
 // otherwise the Assistant row's "Terminal: Registered/Stale/…" indicator (which resolves against
 // the ACTIVE profile server-side) lies until the panel is reopened.
 const observer = useObserverStore()
+const settingsStore = useSettingsStore()
+
+// AI off → "Hide this button": the sidebar launcher goes away for this profile while AI stays off
+// (`showKiwiLauncher`), and the panel closes. Undone in Preferences → Kiwi.
+function hideKiwi() {
+  settingsStore.kiwiHidden = true
+  settingsStore.kiwiOpen = false
+}
 
 // The sections below are one accordion (`accordion="cc.kiwi.openSection"`, docs/ui/PRIMITIVES.md):
 // one open at a time, so Ask can use the whole panel height and the tiny status rows above stay
@@ -309,7 +320,21 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <i class="pi pi-question-circle" />
       </button>
     </template>
-    <div class="kiwi-body">
+    <!-- AI off (utils/aiSwitch.ts): the launcher still opens, onto this short panel — the one way back
+         in. It never turns AI on itself: "Turn on…" opens the opt-in dialog. -->
+    <div v-if="!observer.ai.enabled" class="kiwi-body kiwi-off">
+      <div class="cc-fs-sm">{{ AI_OFF_COPY.title }}</div>
+      <div class="cc-muted cc-fs-xs">{{ aiOffLine(observer.ai) }}</div>
+      <div class="cc-row cc-row-tight">
+        <button v-if="aiCanTurnOn(observer.ai)" class="cc-btn cc-btn-primary cc-fs-xs"
+                @click="openAiOptIn()" v-tooltip.bottom="'Shows what is sent first'">
+          {{ AI_OFF_COPY.turnOn }}
+        </button>
+        <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="hideKiwi"
+                v-tooltip.bottom="'Bring it back in Preferences → Kiwi'">{{ AI_OFF_COPY.hide }}</button>
+      </div>
+    </div>
+    <div v-else class="kiwi-body">
       <!-- Standing data notice — always on, never dismissible (see CLAUDE_DATA_NOTICE). Above Account so
            it is the first line in every state, project open or not. -->
       <InlineNote class="kiwi-data-note cc-fs-sm" severity="warn"
@@ -560,6 +585,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
              height: 100%; min-height: 0; box-sizing: border-box; overflow: hidden; }
 /* Accordion fill (the open section takes the remaining height) is CollapsibleSection's `fill`. */
 .kiwi-empty { text-align: center; padding: 1rem 0.5rem; }
+.kiwi-off { padding: 1rem 0.8rem; }
 .kiwi-row { display: flex; align-items: center; gap: 0.5rem; }
 .kiwi-lbl { min-width: 4rem; }
 .kiwi-chip { padding-inline: 0.35rem; line-height: 1; align-self: center;

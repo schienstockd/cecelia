@@ -240,6 +240,7 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
         order    = Tuple{String,String}[]             # first-seen order, so the walk stays deterministic
         for e in read_run_log(img)
             startswith(String(get(e, "at", "")), day) || continue   # this day's runs only (local date)
+            run_entry_ran(e) || continue                            # skipped: never dispatched — not a run
             k = (String(get(e, "fun", "?")), String(get(e, "valueName", "")))
             haskey(last_run, k) || push!(order, k)
             run_entry_status(e) == "failed" && (n_failed[k] = get(n_failed, k, 0) + 1)

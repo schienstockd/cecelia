@@ -105,8 +105,10 @@ function api_kiwi_profiles_create(body_bytes::Vector{UInt8})
         return 409, JSON3.write((; ok = false, error = "Profile `$(name)` already exists."))
     end
     mkpath(dir)
-    200, JSON3.write((; ok = true, name = String(name), dir = dir,
-                        terminalCommand = kiwi_terminal_command(dir)))
+    # The terminal one-liner starts a model, so with AI off it is left out — like the gated
+    # GET /api/kiwi/terminal/command (app/src/ai/ai_switch.jl). The profile itself is not AI.
+    cmd = Cecelia.ai_enabled() ? kiwi_terminal_command(dir) : ""
+    200, JSON3.write((; ok = true, name = String(name), dir = dir, terminalCommand = cmd))
 end
 
 function api_kiwi_profiles_select(body_bytes::Vector{UInt8})

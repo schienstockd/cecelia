@@ -211,8 +211,8 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
     @testset "the preview prepares params with every step run_task uses" begin
         # `preview_params_for_run` mirrors `run_task`'s preparation, and each step it has ever been
         # missing was a silent bug: a nested `blockSize` defaulting to 512, then `<group>Order`
-        # ignored so the order chips did nothing. Neither failed loudly. So the LIST is pinned by
-        # reading both call sites, and this fails when `run_task` gains a step the preview does not.
+        # ignored so the order chips did nothing. Neither failed loudly. So both now prepare through
+        # one resolver (`resolve_run_params`), and this fails when either steps around it.
         # `task.jl` is a small aggregator; `preview_params_for_run` and the flatten/order/defaults
         # steps live in the split fragments under `tasks/task/*.jl`. Read the whole family so a
         # future move within the family stays invisible to this test.
@@ -230,24 +230,22 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
 
         prep = ["_flatten_sections", "_apply_group_order", "_apply_spec_defaults",
                 "_apply_param_requires"]
+        fbody(text, name) = (b = text[findfirst("function " * name, text)[1]:end]; b[1:findfirst("\nend", b)[1]])
 
-        # what the preview entry point calls, taken from its body rather than from this list
-        body = src[findfirst("function preview_params_for_run", src)[1]:end]
-        body = body[1:findfirst("\nend", body)[1]]
+        # the steps live in ONE resolver, and it applies every one of them
+        resolver = fbody(src, "resolve_run_params")
         for step in prep
-            occursin(step, body) || @error "preview_params_for_run is missing a run step" step
-            @test occursin(step, body)
+            occursin(step, resolver) || @error "resolve_run_params is missing a run step" step
+            @test occursin(step, resolver)
         end
-
-        # and every step the scheduler applies before `validate_params` is in that list
-        for step in prep
-            @test occursin(step, sched)
-        end
-        run_steps = [m.match for m in eachmatch(r"_apply_[a-z_]+|_flatten_sections", sched)]
-        for step in unique(run_steps)
-            step in prep ||
-                @error "run_task applies a preparation step the preview does not" step = step
-            @test step in prep
+        # the preview and both run_task scopes prepare through it, never step by step
+        @test occursin("resolve_run_params", fbody(src, "preview_params_for_run"))
+        @test count("resolve_run_params(", sched) >= 2
+        # any preparation call left in the scheduler is a step taken outside the resolver — so a new
+        # one belongs in `resolve_run_params`, where the preview gets it too
+        for m in eachmatch(r"(_apply_[a-z_]+|_flatten_sections)\(", sched)
+            @error "run_task prepares params outside resolve_run_params" step = m.captures[1]
+            @test false
         end
     end
 

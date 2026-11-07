@@ -28,7 +28,7 @@ class TestFigureSpec(unittest.TestCase):
                  (dict(rows=[{'channels': [{'c': 0, 'colour': 'pink'}]}]), 'colour'),
                  (dict(rows=[{'channels': []}]), 'rows[].channels'),
                  (dict(frames=list(range(65))), 'exceeds'),
-                 (dict(kind='zstack'), 't and planes')]
+                 (dict(kind='zstack'), 't and planes'), (dict(layout='matrix'), 'layout')]
         for kw, needle in cases:
             with self.subTest(kw=kw):
                 with self.assertRaises(rf.FigureSpecError) as e:
@@ -57,6 +57,38 @@ class TestFigureSpec(unittest.TestCase):
         self.assertEqual(len(on('all')), 6)
         with self.assertRaises(rf.FigureSpecError):
             rf._shows_bar('middle', 0, 0, 1, 1)
+
+    def test_grid_columns(self):
+        # strip = one line; grid = near-square, the last line as full as it can be
+        self.assertEqual(rf.grid_columns(8, 1, 'strip'), 8)
+        self.assertEqual(rf.validate(_spec())['layout'], 'strip')
+        self.assertEqual([rf.grid_columns(n, 1, 'grid') for n in (1, 2, 4, 8, 9, 10, 16, 64)],
+                         [1, 2, 2, 3, 3, 4, 4, 8])
+        # a split figure's frame is several tiles tall → more frames per line
+        self.assertEqual(rf.grid_columns(8, 4, 'grid'), 4)
+        self.assertEqual(rf.grid_columns(9, 3, 'grid'), 5)
+
+    def test_compose_grid_wraps_frames(self):
+        from PIL import Image
+        tile, n = 30, 8
+        style = dict(rf.STYLE, dpi=100)
+        tiles = [Image.new('RGB', (tile, tile), (10 * i + 5, 0, 0)) for i in range(n)]  # none black
+        labels = [f't{i}' for i in range(n)]
+        rows = [(tiles, [('A', (255, 0, 255))])]
+        strip = rf._compose(rows, labels, tile, style)
+        grid = rf._compose(rows, labels, tile, style, rf.grid_columns(n, 1, 'grid'))
+        gap = rf._px(style['gapMm'], style['dpi'])
+        self.assertEqual(strip.width, n * tile + (n - 1) * gap)
+        self.assertEqual(grid.width, 3 * tile + 2 * gap)
+        self.assertGreater(grid.height, 2.5 * strip.height)          # three lines of frames
+        # frame 3 opens the second line, at x = 0; frame 7 ends the third, in the middle column
+        blocks_y = [y for y in range(grid.height) if grid.getpixel((tile // 2, y)) == (35, 0, 0)]
+        self.assertTrue(blocks_y)
+        self.assertTrue(any(grid.getpixel((tile + gap + tile // 2, y)) == (75, 0, 0)
+                            for y in range(grid.height)))
+        # one row → one legend band (black) under the last line only: none between the lines
+        bands = [y for y in range(grid.height) if grid.getpixel((tile // 2, y)) == (0, 0, 0)]
+        self.assertTrue(all(y > blocks_y[-1] for y in bands) and bands)
 
 
 if __name__ == '__main__':

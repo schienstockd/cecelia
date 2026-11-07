@@ -367,6 +367,7 @@ function handle_movie_record(ws, data)
     fps         = Int(get(data, :fps, 15))
     size_x, size_y = _movie_size_params(data)   # blank = the viewer's canvas size
     suffix      = _wstr(data, :suffix)
+    numbered    = _wbool(data, :numbered)   # the viewer's "number if taken"
     kf_raw      = get(data, :keyframes, nothing)
     keyframes   = (kf_raw === nothing || length(kf_raw) == 0) ? nothing : kf_raw
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
@@ -505,7 +506,7 @@ function handle_movie_record(ws, data)
         end
         @async try
             run_single_keyframes_offline(task_id, project_uid, image_uid; fps = fps,
-                                          size_x = size_x, size_y = size_y, suffix = suffix,
+                                          size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                                           title_card = card, keyframes = keyframes,
                                           value_name = first_vn,
                                           render_quality = rq_sym,
@@ -539,7 +540,7 @@ function handle_movie_record(ws, data)
         compare_cfg[:compareContrast]  = String(get(data, :compareContrast, ""))
         @async try
             run_single_grid_offline(task_id, project_uid, image_uid; fps = fps,
-                                    size_x = size_x, size_y = size_y, suffix = suffix,
+                                    size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                                     title_card = card,
                                     compare_config = compare_cfg,
                                     share_contrast = share_ctr, layout = layout,
@@ -560,7 +561,7 @@ function handle_movie_record(ws, data)
     overlays_raw = get(data, :overlays, nothing)
     @async try
         run_single_offline(task_id, project_uid, image_uid; fps = fps,
-                           size_x = size_x, size_y = size_y, suffix = suffix,
+                           size_x = size_x, size_y = size_y, suffix = suffix, numbered = numbered,
                            title_card = card,
                            value_name = first_vn,
                            label_value_name = first_lvn,
@@ -623,15 +624,17 @@ end
 # Drop images the user has excluded from further processing (CciaImage.included == false) before a
 # run. This is the backend half of the include/exclude feature — the GUI already makes excluded
 # images unselectable, so this is belt-and-suspenders for run paths that bypass the checkboxes (chain
-# resume from disk, the REPL, a stale selection). Returns the included uids; `on_skip(uid)` is called
-# for each dropped one so the caller can log it (nothing is ever silently dropped). Images that fail
-# to load are kept — let the downstream loader report the real error.
+# resume from disk, the REPL, a stale selection). Returns the included uids; `on_skip(uid, img)` is
+# called for each dropped one so the caller can log AND record it (nothing is ever silently dropped):
+# a chain run banks them in run.json `excluded_images`, a task run writes a `skipped` entry into each
+# dropped image's run log. Images that fail to load are kept — let the downstream loader report the
+# real error.
 function _drop_excluded(project_uid::String, uids::Vector{String}, on_skip::Function)
     keep = String[]
     for u in uids
         obj = try init_object(project_uid, u) catch; nothing end
         if obj isa CciaImage && !image_included(obj)
-            on_skip(u)
+            on_skip(u, obj)
         else
             push!(keep, u)
         end
@@ -672,10 +675,13 @@ function handle_chain_run(ws, data)
     # here too was a wasted read of every ccid.json in the project on the dispatch path.
 
     # Hard-skip excluded images (belt-and-suspenders — the GUI already blocks selecting them).
+    excluded = Dict{String,String}()
     if !resuming
-        image_uids = _drop_excluded(project_uid, image_uids, u ->
+        image_uids = _drop_excluded(project_uid, image_uids, (u, _) -> begin
+            excluded[u] = IMAGE_EXCLUDED_REASON
             broadcast_ws(Dict{String,Any}("type" => "chain:log",
-                                          "line" => "[INFO] Skipping excluded image $u")))
+                                          "line" => "[INFO] Skipping excluded image $u"))
+        end)
         if isempty(image_uids)
             HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
                                                    error="All selected images are excluded")))
@@ -691,7 +697,8 @@ function handle_chain_run(ws, data)
     # Hand it to the detached runner if there is one. A REFUSAL is not a fallback: it means that run id
     # is already executing there, and starting a second execution would have two processes writing the
     # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
-    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, by = active_profile_name())
+    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, excluded,
+                          by = active_profile_name(), caller = caller_stamp())
     outcome = _submit_chain_to_runner(creq)
     outcome === :accepted && return
     if outcome === :refused
@@ -790,7 +797,21 @@ function handle_task_run(ws, data)
     end
 
     # Hard-skip excluded images before dispatch (belt-and-suspenders; the GUI already blocks them).
-    _skip(u) = ws_log(ws, task_id, "[INFO] Skipping excluded image $u")
+    # Each dropped image gets a `skipped` run-log entry under this task id, so the record says the run
+    # was asked for on it and why it was left out (once per image: `image_uid` may repeat in `image_uids`).
+    noted = Set{String}()
+    function _skip(u, img)
+        ws_log(ws, task_id, "[INFO] Skipping excluded image $u")
+        u in noted && return
+        push!(noted, u)
+        try
+            skip_run_log!(img, fun_name, IMAGE_EXCLUDED_REASON;
+                          value_name = string(get(params, "valueName", "")), params,
+                          task_id, by = active_profile_name())
+        catch e
+            @warn "Could not record skipped image in its run log" uid = u exception = e
+        end
+    end
     isempty(image_uids) || (image_uids = _drop_excluded(project_uid, image_uids, _skip))
     if !isempty(image_uid) && isempty(_drop_excluded(project_uid, [image_uid], _skip))
         image_uid = ""
@@ -802,9 +823,11 @@ function handle_task_run(ws, data)
     end
 
     # Remember the params for this run (R parity: saveModuleFunParams). Persist to each processed
-    # image (a record of what params produced it) and to the set (the shared last-used default) so
-    # the module-page form is pre-populated next time (image → set → task-defaults). Done here, at
-    # dispatch, so it sticks regardless of run outcome — like the old taskManager did at launch.
+    # image and to the set (the shared last-used default) so the module-page form is pre-populated
+    # next time (image → set → task-defaults). Done here, at dispatch, so it sticks regardless of run
+    # outcome — like the old taskManager did at launch: after a failure the form comes back with what
+    # was tried. So this is a FORM DEFAULT, not a record of what produced an output — that is the run
+    # log (`run_log_params_for_output`, done runs only).
     _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
     # Everything above is the ASKING side — guards and project-state edits this process owns. The run
@@ -813,7 +836,7 @@ function handle_task_run(ws, data)
     # detached runner executes the identical code rather than a second copy of it.
     # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
     req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params,
-                        target, hpc, by = active_profile_name())
+                        target, hpc, by = active_profile_name(), caller = caller_stamp())
 
     # Run it in THIS process — the fallback whenever no runner takes it. Dies with this server.
     run_in_process() = execute_task(req;

@@ -39,6 +39,12 @@ describe('announceShareOutcome', () => {
       message: 'Capture saved — prompt in your clipboard. Switch to Claude and paste.' })
   })
 
+  it('AI off: the server sent nothing and no Claude prompt is copied', async () => {
+    const out = await announceShareOutcome('ai_off', 'my notes')
+    expect(copyText).not.toHaveBeenCalled()
+    expect(out).toEqual({ kind: 'ok', message: 'Capture saved.' })
+  })
+
   it('falls back to a "copy manually" message when clipboard access fails', async () => {
     vi.mocked(copyText).mockResolvedValue(false)
     const out = await announceShareOutcome('fallback', undefined)

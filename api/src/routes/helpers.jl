@@ -157,20 +157,18 @@ end
 #      (see `_spec_output_value_name` in `app/src/tasks/task.jl` and the callsites in
 #      `app/src/tasks/cleanupImages/*.jl`).
 #
-# `outputValueName` is only added for tasks that WRITE A NEW IMAGE VERSION — `cleanupImages.*` and
-# `editImages.*`. Other task categories (`segment.*`, `tracking.*`, `behaviour.*`, `opticalFlow.*`,
-# `clustPops.*`, `clustTracks.*`, `clustRegions.*`, `spatialAnalysis.*`, `exportImages.*`) also
-# carry an `outputValueName`, but there it names a LABELS/TRACKS/MEASUREMENTS output rather than
-# an image version. Including those would inject spurious edges into the version tree — a
-# `segment.cellposeMeasure` writing labels named `default` from `intensityValueName="smoothed"`
-# would otherwise claim the `default` image version was produced from `smoothed` and close a
-# cycle with the real cleanupImages edges, hiding the whole tree.
+# `outputValueName` is only added for tasks that declare `task_output_effect(task) == "new-version"`
+# — the ones that write a new version INTO THIS image. Two other kinds also carry an
+# `outputValueName` and must not contribute an edge:
+#   - `"new-image"` tasks (crop, copy, bin, z/t-project, resampleZ, register) name the version in
+#     the NEW image they create (`default`), not in the source. A crop of `driftCorrected` would
+#     otherwise claim this image's `default` came from `driftCorrected` and, with the real
+#     `driftCorrect` edge, close a cycle with no root — hiding the whole tree.
+#   - segment / tracking / measure tasks name a LABELS/TRACKS output; they declare no effect.
 #
 # Wrapped per-entry so a removed task doesn't fail the payload.
-const _IMAGE_VERSION_WRITING_TASK_PREFIXES = ("cleanupImages.", "editImages.")
-
-function _fun_writes_image_version(fun::AbstractString)
-    any(p -> startswith(fun, p), _IMAGE_VERSION_WRITING_TASK_PREFIXES)
+function _fun_writes_image_version(task)
+    Cecelia.task_output_effect(task) == "new-version"
 end
 
 function _enriched_run_log(img::CciaImage)
@@ -179,21 +177,17 @@ function _enriched_run_log(img::CciaImage)
     for (i, e) in pairs(entries)
         d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
         fun = String(get(d, "fun", ""))
-        if _fun_writes_image_version(fun)
-            p = get(d, "params", nothing)
-            params = p isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in p) : Dict{String,Any}()
-            try
+        try
+            task = Cecelia._task_from_fun_name(fun)
+            if _fun_writes_image_version(task)
+                p = get(d, "params", nothing)
+                params = p isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in p) : Dict{String,Any}()
                 name = Cecelia.task_output_name(fun, params)
-                if isempty(name)
-                    task = Cecelia._task_from_fun_name(fun)
-                    if !isnothing(task)
-                        name = Cecelia._spec_output_value_name(task, "")
-                    end
-                end
+                isempty(name) && (name = Cecelia._spec_output_value_name(task, ""))
                 isempty(name) || (d["outputValueName"] = name)
-            catch
-                # unknown fun / spec load failure — leave outputValueName absent
             end
+        catch
+            # unknown fun (a removed task) / spec load failure — leave outputValueName absent
         end
         out[i] = d
     end

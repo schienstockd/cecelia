@@ -115,6 +115,25 @@ class TestFindPopulationsReadOnlyMatrix(unittest.TestCase):
         self.assertEqual(len(adata.obs["clusters"]), 60)
         self.assertLessEqual(float(adata.X.max()), 1.0)  # normalised in place
 
+    def test_run_env_names_the_path_that_ran(self):
+        """`run_env` is filled only once a path has succeeded — the GPU path falls back to CPU
+        silently, so the run log must record which one actually clustered."""
+        from unittest import mock
+
+        import anndata as ad
+        from cecelia.utils import clustering_utils
+
+        def fake_leiden(adata, key_added, **_kw):
+            adata.obs[key_added] = pd.Categorical(["0"] * adata.n_obs)
+
+        adata = ad.AnnData(np.random.default_rng(0).random((30, 3)).astype(np.float32))
+        env = {}
+        with mock.patch.object(clustering_utils, "_find_gpu", side_effect=RuntimeError("no CUDA")), \
+             mock.patch.object(clustering_utils.sc.pp, "neighbors"), \
+             mock.patch.object(clustering_utils.sc.tl, "leiden", side_effect=fake_leiden):
+            clustering_utils.find_populations(adata, create_umap=False, backend="gpu", run_env=env)
+        self.assertEqual(env, {"device": "cpu"})                 # the fallback, not the request
+
 
 def _continuum_adata(n=150, k=10, seed=0):
     """A 1-D behaviour continuum (t: slow → fast) with a kNN graph built WITHOUT `sc.pp.neighbors`

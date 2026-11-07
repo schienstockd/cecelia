@@ -245,8 +245,7 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
       let attachedToKiwi = false
       if (attachToKiwi) {
         try {
-          kiwiStore.addRef({ kind: 'capture', captureId }, puid)
-          attachedToKiwi = true
+          attachedToKiwi = kiwiStore.addRef({ kind: 'capture', captureId }, puid)   // false with AI off
         } catch { /* attach failure is silent — the capture itself succeeded */ }
       }
 

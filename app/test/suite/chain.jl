@@ -199,6 +199,35 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A chain node's run-log entry names its caller ─────────────────────────
+# A chain started by Claude (the autonomous MCP's `chain:run`) logged its node runs as `{profile}` only,
+# because the caller stopped at `ChainRequest`. It now rides `run_chain(; caller)` → `ChainRun.caller` →
+# each node's `TaskRequest`, so the node's entry says `via: claude` — and on a resume, the resumer's.
+@testset "Chain node run log carries the chain's caller" begin
+    proj = create_project!(name="chain-caller-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img-a")
+    mkpath(joinpath(dirname(dirname(img._dir)), "0", img.uid, "ccidImage.ome.zarr"))
+    img.filepath["default"] = "ccidImage.ome.zarr"; img.filepath["_active"] = "default"
+    img.status = IMAGE_DONE; save!(img)
+    save_chain_template!(proj, ChainTemplate("caller-chain",
+        [ChainNode(id="n1", fn="importImages.remove",
+                   params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default"))], ChainEdge[]))
+
+    caller = Dict{String,Any}("via" => "claude", "model" => "claude-opus-5-5")
+    run = run_chain(proj, [img.uid]; chain = "caller-chain", by = "alice", caller, on_log = _ -> nothing)
+    @test run.image_states[img.uid]["n1"].status == NODE_DONE
+    e = read_run_log(init_object(proj.uid, img.uid))[end]
+    @test String(e["author"]["via"]) == "claude" && String(e["author"]["model"]) == "claude-opus-5-5"
+    @test String(e["author"]["profile"]) == "alice"
+    # in memory only — run.json never stores it, so a resume cannot inherit a stale caller
+    @test !haskey(JSON3.read(read(joinpath(run._dir, "run.json"), String), Dict{String,Any}), "caller")
+    # the caller crosses the runner's wire inside the chain request
+    creq = Cecelia.ChainRequest(; project_uid = proj.uid, chain_name = "caller-chain", by = "alice", caller)
+    @test Cecelia.chain_request(JSON3.read(JSON3.write(Cecelia.chain_request_dict(creq)), Dict{String,Any})).caller == caller
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Chain resume — explicit start node (re-run from here) ─────────────────
 @testset "Chain resume — start node force-restart" begin
     # descendants: pure graph reachability over n1→n2→n3
@@ -353,6 +382,13 @@ end
         @test run.image_states[img.uid]["n1"].result["image_count"] == 2
     end
     @test any(l -> contains(l, "SKIP [$(imgs[1].uid)/n1]") && contains(l, "pixel size"), logs)
+    # the reason is in the RECORD, not only the log: the set-level result covers 2 of 3 images, and
+    # run.json says which one was left out and why
+    @test contains(something(run.image_states[imgs[1].uid]["n1"].reason, ""), "pixel size")
+    @test isnothing(run.image_states[imgs[2].uid]["n1"].reason)
+    reloaded = load_chain_run(proj, run.id)
+    @test reloaded.image_states[imgs[1].uid]["n1"].reason == run.image_states[imgs[1].uid]["n1"].reason
+    @test isnothing(reloaded.image_states[imgs[2].uid]["n1"].reason)
 
     # No image calibrated → the node is skipped, and the log names the scale, not axes.
     logs2 = String[]
@@ -541,6 +577,52 @@ end
     @test st3["b"].status == NODE_FAILED
     @test st3["c"].status == NODE_SKIPPED   # pred b failed
     @test st3["d"].status == NODE_SKIPPED   # pred c skipped → propagates
+
+    rm(proj.root; recursive=true)
+end
+
+# ── Skips and dropped images are in run.json, not just the log ───────────
+@testset "Chain run record — skip reasons and excluded images persist" begin
+    proj = create_project!(name="chain-skiprec-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img")
+    save_chain_template!(proj, ChainTemplate("skiprec",
+        [ChainNode(id="a", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
+         ChainNode(id="b", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
+        [ChainEdge("a","b")]))
+    # the dispatcher dropped an excluded image; the request carries it across the process boundary
+    req = Cecelia.chain_request(JSON3.read(JSON3.write(Cecelia.chain_request_dict(ChainRequest(;
+              project_uid = proj.uid, chain_name = "skiprec", image_uids = [img.uid],
+              excluded = Dict("gone1" => IMAGE_EXCLUDED_REASON))))))
+    @test req.excluded == Dict("gone1" => IMAGE_EXCLUDED_REASON)
+    run = run_chain(proj, req.image_uids; chain = req.chain_name, excluded = req.excluded,
+                    on_log = _ -> nothing)
+    @test run.image_states[img.uid]["b"].status == NODE_SKIPPED
+    @test run.image_states[img.uid]["b"].reason == "upstream step a failed"
+    @test isnothing(run.image_states[img.uid]["a"].reason)          # failed, not skipped
+
+    doc = JSON3.read(read(joinpath(run._dir, "run.json"), String))
+    @test doc[:excluded_images][:gone1] == IMAGE_EXCLUDED_REASON
+    @test doc[:image_states][Symbol(img.uid)][:b][:reason] == "upstream step a failed"
+    @test !haskey(doc[:image_states][Symbol(img.uid)][:a], :reason)  # written only for a skip
+    loaded = load_chain_run(proj, run.id)
+    @test loaded.excluded_images == Dict("gone1" => IMAGE_EXCLUDED_REASON)
+    @test loaded.image_states[img.uid]["b"].reason == "upstream step a failed"
+
+    # a retry clears the reason with the status — the reason belongs to the :skipped outcome
+    Cecelia._reset_stale_nodes!(loaded, Dict{String,Any}(), Cecelia._topo_sort(loaded.template_snapshot))
+    @test loaded.image_states[img.uid]["b"].status == NODE_PENDING
+    @test isnothing(loaded.image_states[img.uid]["b"].reason)
+
+    # run.json written before either field existed still loads
+    old = Dict{String,Any}(String(k) => v for (k, v) in doc if k != :excluded_images)
+    old["image_states"] = Dict(img.uid => Dict("a" => Dict("status" => "failed"),
+                                               "b" => Dict("status" => "skipped", "task_id" => nothing)))
+    write(joinpath(run._dir, "run.json"), JSON3.write(old))
+    legacy = load_chain_run(proj, run.id)
+    @test isempty(legacy.excluded_images)
+    @test legacy.image_states[img.uid]["b"].status == NODE_SKIPPED
+    @test isnothing(legacy.image_states[img.uid]["b"].reason)
 
     rm(proj.root; recursive=true)
 end

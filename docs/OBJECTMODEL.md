@@ -35,7 +35,7 @@ Sets group images for processing. An image belongs to one set but lives independ
       ccid.json             — CciaSet fields + image_uids list
     {image_uid}/
       ccid.json             — CciaImage fields
-      runlog.json           — per-run history (fun, valueName, params, status) — see run_log.jl
+      runlog.json           — per-run history (fun, valueName, params, status, by, author, ceceliaVersion, env?; `skipped` = dropped before dispatch) — see run_log.jl, docs/SCHEDULER.md → *a run is logged twice*
       data/                 — layer-props sidecars ({zarr}.json), image sidecars
       labels/               — segmentation label zarrs, one per value_name
       labelProps/           — per-cell measurements, {value_name}.h5ad
@@ -203,8 +203,15 @@ rename_set!(proj, other, "day 3"; force = true)   # deliberate duplicate
 ### `meta["funParams"]` — remembered task params
 
 `meta` also holds `funParams`: a `{ "<fun_name>": { …params… } }` map of the **last-used parameters
-for each task**, mirroring the old R `moduleFunParams`. Stored on both the **image** (a record of
-what params produced it) and the **set** (the shared last-used default). The module-page form
+for each task**, mirroring the old R `moduleFunParams`. Stored on both the **image** and the **set**
+(the shared last-used default), **at dispatch, whatever the run's outcome** — so after a failed run
+the form comes back with what was tried. It is a **form default, not a record** of what produced an
+output: the record is `runlog.json`'s latest `done` run for that output
+(`run_log_params_for_output`, `app/src/run_log.jl`). A reader that reports what produced a result
+(the claim checks' S0 params) reads the run log first and labels a funParams fallback as
+"last requested, outcome not recorded" (`claim.params_outcome_unrecorded`, naming the images), and
+never compares such an image with one read from the run log — different shapes, so a gap, not a
+difference. The module-page form
 populates from image → set → task-defaults (see `docs/MODULES.md` → *Remembering task params*).
 Written via the dir-based `write_module_fun_params!(ccid_dir, fun, params)` / read via
 `read_module_fun_params(ccid_dir, fun)` (`app/src/model/image.jl`) — a targeted `ccid.json`
@@ -214,7 +221,8 @@ same `funParams` key.
 
 ### `meta["funParamsByName"]` — remembered per OUTPUT name
 
-`{ "<fun_name>": { "<output name>": { …params… } } }` — what was last run under each output name, so
+`{ "<fun_name>": { "<output name>": { …params… } } }` — what was last *requested* under each output
+name (written at dispatch like `funParams`, so possibly a failed run's — a form default, not a record), so
 re-running a segmentation as `Tcell` restores Tcell's settings instead of whatever ran last. Written
 alongside (never instead of) `funParams`, which keeps tracking the most recent run because that is
 what a NEW name falls back to.

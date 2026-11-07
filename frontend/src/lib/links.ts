@@ -42,6 +42,9 @@ export const FEATURE_REQUEST_URL = `${CECELIA_NEW_ISSUE_URL}?${new URLSearchPara
 // question they would not have opened an issue for.
 export const CECELIA_CHAT_URL = 'https://cecelia.zulipchat.com/'
 
+/** Anthropic's terms — the AI opt-in dialog links them rather than paraphrasing (AiOptInDialog). */
+export const ANTHROPIC_TERMS_URL = 'https://www.anthropic.com/legal'
+
 /**
  * A "please support this file format for series picking" feature request, prefilled with the
  * extensions the user just hit. The picker only reads series from `.lif` today (readlif — pure
