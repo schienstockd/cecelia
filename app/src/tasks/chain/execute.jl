@@ -776,7 +776,8 @@ function _chain_produced_names(template::ChainTemplate, node_id::String)::Set{St
             pspec isa AbstractDict || continue
             string(get(pspec, "namespace", "")) == "models" || continue
             key  = string(get(pspec, "key", ""))
-            stem = strip(string(get(n.params, key, get(pspec, "default", ""))))
+            # saved node params may carry a renamed key's former spelling (`formerKeys`)
+            stem = strip(string(_saved_value_for(pspec, key, n.params)))
             isempty(stem) && continue
             # The stem the producer holds vs the filename the consumer's select carries — one helper,
             # never an inline `* ".pt"`.
