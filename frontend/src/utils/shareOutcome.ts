@@ -27,7 +27,7 @@ export type ShareOutcome = { kind: 'ok' | 'fail'; message: string }
 
 /**
  * Announce a successful capture POST. `pushOutcome` is the backend's `push` field —
- * `'sent' | 'fallback' | 'not_paired'` in practice, but treated as an opaque string so a future
+ * `'sent' | 'fallback' | 'not_paired' | 'ai_off'` in practice, but treated as an opaque string so a future
  * value doesn't need a code change here (anything not `'sent'` takes the clipboard path). On
  * `'sent'` no clipboard round-trip happens; the toast just tells the user delivery landed.
  * Otherwise we copy the prompt so the user can paste it into their Claude session, and the toast
@@ -55,7 +55,9 @@ export async function announceShareOutcome(
       ? 'Sent to your Claude session and attached to Kiwi.'
       : 'Sent to your Claude session — check for the incoming message.' }
   }
-  if (!sendRequested) {
+  // AI is off (utils/aiSwitch.ts): the server sent nothing, and a clipboard prompt for Claude would
+  // be an AI hand-off by another route — just confirm the save.
+  if (!sendRequested || pushOutcome === 'ai_off') {
     return { kind: 'ok', message: attached
       ? 'Capture saved and attached to Kiwi.'
       : 'Capture saved.' }

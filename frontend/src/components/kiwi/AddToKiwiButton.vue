@@ -6,6 +6,7 @@
 // its current selection) is read at click time. A getter returning null disables nothing — the click
 // is simply a no-op, because the state it reads can change between render and click.
 import { useKiwiStore } from '../../stores/kiwi'
+import { useObserverStore } from '../../stores/observer'
 import type { KiwiRef } from '../../utils/kiwiRef'
 
 const props = withDefaults(defineProps<{
@@ -17,6 +18,7 @@ const props = withDefaults(defineProps<{
 }>(), { size: 'micro', tip: 'Add to Kiwi' })
 
 const kiwi = useKiwiStore()
+const observer = useObserverStore()
 function add() {
   const r = typeof props.kiwiRef === 'function' ? props.kiwiRef() : props.kiwiRef
   if (r) kiwi.addRef(r, props.projectUid || undefined)
@@ -24,7 +26,8 @@ function add() {
 </script>
 
 <template>
-  <button class="cc-btn cc-btn-bare cc-btn-icon kiwi-add" :class="`cc-btn-${size}`"
+  <!-- hidden while AI is off (utils/aiSwitch.ts); kiwi.addRef refuses then too, for the menus that call it directly -->
+  <button v-if="observer.ai.enabled" class="cc-btn cc-btn-bare cc-btn-icon kiwi-add" :class="`cc-btn-${size}`"
           @mousedown.stop @click.stop="add" v-tooltip.bottom="tip">
     <i class="pi pi-at" />
   </button>

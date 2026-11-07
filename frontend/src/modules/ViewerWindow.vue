@@ -5605,8 +5605,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     let attachedToKiwi = false
     if (attachToKiwi && captureId) {
       try {
-        kiwiStore.addRef({ kind: 'capture', captureId }, projectUid)
-        attachedToKiwi = true
+        attachedToKiwi = kiwiStore.addRef({ kind: 'capture', captureId }, projectUid)   // false with AI off
       } catch { /* attach failure is silent — the capture itself succeeded */ }
     }
     // Announce the outcome — push landed OR fall back to the clipboard prompt. Shared with the

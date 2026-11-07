@@ -15,8 +15,10 @@
 """Which layer turned AI off — `ai_on` when nothing did."""
 @enum AIOffBy ai_on ai_off_workstation ai_off_profile
 
-"""The profile preference's default while AI defaults to on (AI_TOGGLE_PLAN P1); P3 flips it."""
-const AI_PROFILE_DEFAULT = true
+"""The profile preference's default: OFF — AI is opt-in, turned on through the dialog that says what
+is sent (AI_TOGGLE_PLAN P3, audit §8.3). A Ref only so a test suite written before the switch can run
+its AI paths without opting every profile in; nothing in the app writes it."""
+const AI_PROFILE_DEFAULT = Ref(false)
 
 """What every refusal says. The MCP surfaces it verbatim, so a Claude Code session reads it as-is."""
 const AI_OFF_MESSAGE = "AI is off in Cecelia"
@@ -29,8 +31,8 @@ The effective state for profile `name`: the workstation ceiling first, then the 
 """
 function ai_off_by(name::AbstractString = active_profile_name())::AIOffBy
     shared_workstation("aiAllowed") || return ai_off_workstation
-    v = get(read_profile_settings(name), "aiEnabled", AI_PROFILE_DEFAULT)
-    (v isa Bool ? v : AI_PROFILE_DEFAULT) ? ai_on : ai_off_profile
+    v = get(read_profile_settings(name), "aiEnabled", AI_PROFILE_DEFAULT[])
+    (v isa Bool ? v : AI_PROFILE_DEFAULT[]) ? ai_on : ai_off_profile
 end
 
 """`ai_enabled(name)` — true when neither layer turned AI off."""

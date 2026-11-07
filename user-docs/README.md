@@ -124,6 +124,13 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 
 ## Working with Claude (optional)
 
+**AI is off until you turn it on.** Turn it on in **Preferences → Kiwi → AI features**. A dialog
+first lists what is sent and what you gain. Turn it off there at any time. With AI off, Kiwi's button
+opens a short note, or you can hide it. Hand-offs to Kiwi and the AI parts of the Guides are hidden.
+Claude sessions in your terminal are refused, and nothing is sent to Anthropic. What Claude wrote
+earlier stays, marked ✦. On a shared workstation, peanut can turn AI off for everyone in
+**Settings → Shared workstation → Allow AI features**.
+
 Everything above works without Claude. Claude doesn't add steps to your analysis. It helps you
 **check** one: a segmentation that looks off, a gate, a cluster you can't name, a result you want to
 state carefully. There are two ways in, and either can come first; Kiwi's **?** and the guide

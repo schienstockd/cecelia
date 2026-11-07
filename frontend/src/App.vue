@@ -21,6 +21,8 @@ import { useTaskStore } from './stores/tasks'
 import { useProjectStore } from './stores/project'
 import { useLogStore } from './stores/log'
 import WhatsNewDialog from './components/WhatsNewDialog.vue'
+import AiOptInDialog from './components/AiOptInDialog.vue'
+import { isAiOptInOpen } from './lib/aiOptInOpen'
 import GuidesDialog from './components/GuidesDialog.vue'
 import IconLegendDialog from './components/IconLegendDialog.vue'
 import ColorLegendDialog from './components/ColorLegendDialog.vue'
@@ -229,6 +231,8 @@ const bare = computed(() => popout || route.meta.bare === true)
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
          State lives in lib/whatsNew.ts (isWhatsNewOpen); callers just call openWhatsNew(). -->
     <WhatsNewDialog v-if="isWhatsNewOpen" @close="closeWhatsNew" />
+    <!-- The one place AI is turned on (every "Turn on…" calls openAiOptIn()). -->
+    <AiOptInDialog v-if="isAiOptInOpen" />
     <!-- Guides: the picker (a modal) and the bubble (one mount, teleported, survives navigation).
          The bubble renders only while a guide is running — see stores/guide.ts. -->
     <GuidesDialog v-if="isGuidesOpen" />

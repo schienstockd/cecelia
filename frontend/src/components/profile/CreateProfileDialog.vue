@@ -31,12 +31,14 @@ import { createProfile, selectProfile,
          isValidProfileName } from '../../utils/profileApi'
 // serviceApi.observerApi lives under `../` from the previous location; unchanged now.
 import { observerApi } from '../../utils/serviceApi'
+import { useObserverStore } from '../../stores/observer'
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'created', name: string): void
 }>()
 
+const observer = useObserverStore()
 const name = ref('')
 const submitting = ref(false)
 const errorMsg = ref<string | null>(null)
@@ -72,6 +74,10 @@ async function onSubmit() {
     // tools and won't pair back to Cecelia. Best-effort: any failure is surfaced but does NOT
     // roll back create/select.
     let mcpReady = false
+    // A new profile starts with AI off (utils/aiSwitch.ts), and the server refuses the registration
+    // then — skip it; turning AI on later offers the setup in Kiwi / Preferences.
+    await observer.refresh()
+    if (!observer.ai.enabled) { created.value = { name: c.name, mcpReady }; return }
     try {
       const r = await observerApi.register()
       mcpReady = !!(r && (r as { ok?: boolean }).ok !== false)

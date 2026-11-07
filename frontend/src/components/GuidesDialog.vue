@@ -31,6 +31,8 @@ import BaseModal from './BaseModal.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 import { useGuideStore } from '../stores/guide'
 import { guidesByGroup, guideById } from '../lib/guides'
+import { useObserverStore } from '../stores/observer'
+import { guideGroupsFor } from '../utils/aiSwitch'
 import GuideMap from './GuideMap.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
@@ -40,7 +42,9 @@ import type { GuideDef } from '../lib/guides/types'
 import { tierTip as tierLine } from '../lib/guides/tiers'
 
 const guide = useGuideStore()
-const groups = computed(() => guidesByGroup())
+// AI-only guides drop out while AI is off (utils/aiSwitch.ts)
+const observer = useObserverStore()
+const groups = computed(() => guideGroupsFor(guidesByGroup(), observer.ai.enabled))
 
 // ── the map + the accordion: one view (WORKFLOW_RECIPES_PLAN → *The map*) ──────────────────────────
 // The map (GuideMap) holds the recipes; its group cards open the matching guide group here. One group

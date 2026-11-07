@@ -15,6 +15,8 @@ stack. Per-tag notes are also on the
 
 ### Read this first
 
+- **AI is off until you turn it on** in Preferences → Kiwi; a dialog first says what goes to
+  Anthropic. peanut can turn it off workstation-wide.
 - **Import drops an incomplete last timepoint**, left partly black when a recording stopped
   mid-volume. Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it.
 

@@ -4,6 +4,7 @@
 // exactly ONE place (the same reason app quit goes through the appControl store). App-level
 // lifecycle (quit / update / dev restart) stays in appControl — this is only the per-service
 // start/stop/restart controls.
+import type { AiSetBy } from './aiSwitch'
 
 /**
  * A failed service call. `code` is the backend's machine-readable reason (see docs/API.md); a caller
@@ -122,7 +123,7 @@ export interface ObserverTerminal {
 export const observerApi = {
   /** Availability (drives the disabled-with-why UI) + where the CLI was found, the model allow-list, and whether the user's own
    *  terminal is set up. Never throws → unavailable on error. */
-  status: async (): Promise<{ available: boolean; cliPath?: string; models?: string[]; defaultModel?: string; mcpConfigPath?: string; terminal?: ObserverTerminal }> => {
+  status: async (): Promise<{ available: boolean; cliPath?: string; models?: string[]; defaultModel?: string; mcpConfigPath?: string; terminal?: ObserverTerminal; ai?: { enabled: boolean; setBy: AiSetBy } }> => {
     try {
       const res = await fetch('/api/observer/status')
       return res.ok ? await res.json() : { available: false }
