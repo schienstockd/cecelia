@@ -17,6 +17,7 @@ import { useFieldDraft } from '../composables/useFieldDraft'
 import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import RangeSlider from './RangeSlider.vue'
+import CcToggle from './CcToggle.vue'
 import { RENDER_QUALITIES, type RenderQuality } from '../utils/batchMovie'
 
 const props = withDefaults(defineProps<{
@@ -29,6 +30,9 @@ const props = withDefaults(defineProps<{
   // suffixes already used in this project, offered as you type (`useMovieSuffixes`). Optional: omit
   // it and the field is exactly the plain input it was.
   suffixOptions?: string[]
+  // A taken file name: off = overwrite, on = add _001, _002, … Optional like the overlays: absent
+  // (null) = no toggle, the surface keeps its own rule.
+  numbered?: boolean | null
   // the browser viewer's canvas size (via useViewerMovieDefaults), used as the placeholder
   canvasX?: number | null
   canvasY?: number | null
@@ -61,12 +65,13 @@ const props = withDefaults(defineProps<{
 // `null` defaults for the two overlay props: a union alone does NOT suppress Vue's Boolean cast — the
 // cast-to-false branch fires whenever the prop is absent and has no `default`, whatever the union says.
 // Verified against Vue's own prop resolution rather than read off the docs.
-}>(), { timestamp: null, scaleBar: null })
+}>(), { timestamp: null, scaleBar: null, numbered: null })
 const emit = defineEmits<{
   (e: 'update:fps', v: number): void
   (e: 'update:sizeX', v: number | null): void
   (e: 'update:sizeY', v: number | null): void
   (e: 'update:suffix', v: string): void
+  (e: 'update:numbered', v: boolean): void
   (e: 'update:timestamp', v: boolean): void
   (e: 'update:scaleBar', v: boolean): void
   (e: 'update:show3D', v: boolean): void
@@ -177,6 +182,9 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
              input-class="cc-input-2xs mo-txt" placeholder="suffix"
              :tip="'Added to the file name; keeps versions apart'"
              @change="$emit('update:suffix', suffixDraft)" />
+      <CcToggle v-if="numbered !== null" :model-value="numbered" label="_001"
+                v-tooltip.bottom="'If the name is taken, add _001, _002, …; off = overwrite'"
+                @update:model-value="$emit('update:numbered', $event)" />
     </span>
 
     <!-- How much of the z stack the movie shows. ONE switch for both the image and the mask layers:
