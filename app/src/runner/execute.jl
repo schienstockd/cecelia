@@ -56,6 +56,9 @@ Base.@kwdef struct TaskRequest
     # The profile that asked for it. Set by the ASKING side: the runner is a separate process whose
     # active profile may predate a switch. "" ⇒ resolve here (a REPL caller, an older peer).
     by::String                   = ""
+    # The rest of the asker's author stamp (`caller_stamp()`: via, model?, session?), set by the same
+    # asking side. Empty ⇒ unknown — never filled in here, where the request's scope is gone.
+    caller::Dict{String,Any}     = Dict{String,Any}()
 end
 
 # JSON round-trip — the request IS the wire format, so it gets one canonical encoder/decoder rather
@@ -66,7 +69,8 @@ task_request_dict(r::TaskRequest)::Dict{String,Any} = Dict{String,Any}(
     "imageUid"   => r.image_uid, "imageUids"  => r.image_uids,
     "poolName"   => r.pool_name, "params"     => r.params,   "target"     => string(r.target),
     "hpc"        => r.hpc,
-    "chainRunId" => r.chain_run_id, "chainNodeId" => r.chain_node_id, "by" => r.by)
+    "chainRunId" => r.chain_run_id, "chainNodeId" => r.chain_node_id, "by" => r.by,
+    "caller"     => r.caller)
 
 function task_request(d::AbstractDict)::TaskRequest
     s(k, dflt = "") = string(get(d, k, dflt))
@@ -82,7 +86,8 @@ function task_request(d::AbstractDict)::TaskRequest
         hpc         = Dict{String,Any}(String(k) => v for (k, v) in get(d, "hpc", Dict{String,Any}())),
         chain_run_id  = s("chainRunId"),
         chain_node_id = s("chainNodeId"),
-        by            = s("by"))
+        by            = s("by"),
+        caller        = Dict{String,Any}(String(k) => v for (k, v) in get(d, "caller", Dict{String,Any}())))
 end
 
 """
@@ -173,6 +178,7 @@ function _execute_set_task(req::TaskRequest, task_struct, pool::String;
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
                           by               = _request_by(req),
+                          caller           = req.caller,
                           target           = req.target,
                           on_log           = on_log,
                           on_progress      = on_progress,
@@ -212,6 +218,7 @@ function _execute_image_task(req::TaskRequest, task_struct, pool::String;
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
                           by               = _request_by(req),
+                          caller           = req.caller,
                           target           = req.target,
                           hpc              = req.hpc,
                           on_hpc           = on_hpc,
@@ -258,6 +265,7 @@ Base.@kwdef struct ChainRequest
     # Carried so the run record can say so (run.json `excluded_images`) — the asker decides, the
     # executing process only records. Fresh runs only.
     excluded::Dict{String,String} = Dict{String,String}()
+    caller::Dict{String,Any}   = Dict{String,Any}()   # as TaskRequest.caller
 end
 
 # `req.by`, or this process's active profile when the asker didn't say.
@@ -266,7 +274,8 @@ _request_by(req)::String = isempty(req.by) ? active_profile_name() : req.by
 chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
     "runId" => r.run_id, "startNode" => r.start_node, "target" => string(r.target), "by" => r.by,
-    "excluded" => r.excluded)
+    "excluded" => r.excluded,
+    "caller" => r.caller)
 
 chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     project_uid = string(get(d, "projectUid", "")),
@@ -276,7 +285,8 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     start_node  = string(get(d, "startNode", "")),
     target      = run_target(string(get(d, "target", "local"))),
     by          = string(get(d, "by", "")),
-    excluded    = Dict{String,String}(string(k) => string(v) for (k, v) in get(d, "excluded", Dict())))
+    excluded    = Dict{String,String}(string(k) => string(v) for (k, v) in get(d, "excluded", Dict())),
+    caller      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "caller", Dict{String,Any}())))
 
 """
     execute_chain(req::ChainRequest; on_log, on_finished) -> Bool
@@ -300,10 +310,10 @@ function execute_chain(req::ChainRequest;
         req.target === TARGET_LOCAL || throw(ArgumentError("Chains run on this computer, not the cluster"))
         proj = load_project(req.project_uid)
         if isempty(req.run_id)
-            run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req),
+            run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req), caller = req.caller,
                       excluded = req.excluded, on_cancel_check = is_chain_cancelled, on_log = on_log)
         else
-            run_chain(proj, String[]; run_id = req.run_id, by = _request_by(req),
+            run_chain(proj, String[]; run_id = req.run_id, by = _request_by(req), caller = req.caller,
                       start_node = isempty(req.start_node) ? nothing : req.start_node,
                       on_cancel_check = is_chain_cancelled, on_log = on_log)
         end

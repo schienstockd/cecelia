@@ -223,6 +223,15 @@ def _trim_module_params(raw: dict) -> dict:
     return out
 
 
+def claude_headers() -> dict[str, str]:
+    """Marks a request as Claude's so the server stamps what it writes `via: claude` (author_stamp),
+    plus the model + session making this call when the caller hook supplied them (caller.py), plus
+    auth. Every MCP request to the API carries these — HTTP here, and the autonomous `/ws` connect
+    that starts tasks (the server binds them for the whole connection, so the run log's `author` says
+    which model launched a run)."""
+    return {"X-Cecelia-Client": "claude", **caller_headers(), **auth_headers()}
+
+
 def http_json(base_url: str, method: str, path: str, params: dict | None = None,
               body: dict | None = None, timeout: float = 60.0, raw: bool = False):
     """The one HTTP transport for the MCP clients (observer + autonomous): JSON in, JSON (or the
@@ -237,10 +246,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
         if q:
             query = "?" + urllib.parse.urlencode(q)
     data = None
-    # marks Claude-made writes so the server stamps them `via: claude` (author_stamp), plus the model +
-    # session making this call when the caller hook supplied them (caller.py)
-    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **caller_headers(),
-               **auth_headers()}
+    headers = {"Accept": "application/json", **claude_headers()}
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"

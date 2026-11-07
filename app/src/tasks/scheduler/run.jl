@@ -61,6 +61,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  caller::AbstractDict       = Dict{String,Any}(),
                   target::RunTarget          = TARGET_LOCAL,
                   hpc::Dict{String,Any}      = Dict{String,Any}(),
                   on_log::Function           = line -> println(line),
@@ -93,7 +94,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                                  img.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id, by = by, params = params,
+                                 chain_node_id = chain_node_id, by = by, caller = caller, params = params,
                                  output_name = task_params_name(task, params),
                                  target = target, hpc = hpc)
     _set_status!(rec, TASK_QUEUED)
@@ -121,6 +122,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  caller::AbstractDict       = Dict{String,Any}(),
                   target::RunTarget          = TARGET_LOCAL,
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
@@ -149,7 +151,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(rep),
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id, by = by, params = params,
+                                 chain_node_id = chain_node_id, by = by, caller = caller, params = params,
                                  image_uids = [i.uid for i in imgs],
                                  output_name = task_params_name(task, params))
     _set_status!(rec, TASK_QUEUED)
@@ -177,6 +179,7 @@ function run_task(proj_uid::String, img_uid::String;
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  caller::AbstractDict       = Dict{String,Any}(),
                   target::RunTarget          = TARGET_LOCAL,
                   hpc::Dict{String,Any}      = Dict{String,Any}(),
                   on_log::Function           = line -> println(line),
@@ -187,7 +190,7 @@ function run_task(proj_uid::String, img_uid::String;
     task = _task_from_fun_name(fun_name)
     img  = init_object(proj_uid, img_uid)
     img isa CciaImage || error("UID '$img_uid' in project '$proj_uid' is not an image")
-    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by, target, hpc,
+    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by, caller, target, hpc,
              on_log, on_progress, on_process, on_status_change, on_hpc)
 end
 

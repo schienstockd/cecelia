@@ -552,6 +552,11 @@ function api_tasks_history(req::HTTP.Request)
         rsn = _rl(e, "reason")                # why a `skipped` run was left out; absent otherwise
         isempty(rsn) || (row["reason"] = rsn)
         row["ran"] = run_entry_ran(e)         # internal: dropped below, before the reply
+        # what made it (run_log.jl header) — passed through only when the entry has it
+        for k in ("author", "ceceliaVersion", "env")
+            v = get(e, k, get(e, Symbol(k), nothing))
+            v === nothing || (row[k] = v)
+        end
         push!(rows, row)
     end
     # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological

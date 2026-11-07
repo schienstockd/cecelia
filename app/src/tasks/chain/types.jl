@@ -151,10 +151,19 @@ mutable struct ChainRun
     _lock::ReentrantLock                    # guards image_states + disk writes
     _barriers::Dict{String,Channel{Nothing}}      # node_id => arrive channel (set-scope barrier)
     _barriers_done::Dict{String,Channel{Nothing}} # node_id => done channel   (set-scope barrier)
+    # The rest of the author stamp of whoever started THIS execution (`caller_stamp()`, beside
+    # `chain_run_as`), handed to every node's `TaskRequest`. In memory only: a resume brings its own.
+    caller::Dict{String,Any}
 end
-# The pre-`excluded_images` positional form, so callers that build a run by hand keep working.
+# A run loaded from run.json: excluded images known, no caller (in memory only; a resume brings its own).
 ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
-         created_at, by, resumed_by, _dir, _lock, _barriers, _barriers_done) =
+         created_at, by, resumed_by, excluded_images::AbstractDict, _dir, _lock, _barriers, _barriers_done) =
+    ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+             created_at, by, resumed_by, Dict{String,String}(excluded_images), _dir, _lock, _barriers,
+             _barriers_done, Dict{String,Any}())
+# The pre-`excluded_images`, pre-`caller` positional form, so callers that build a run by hand keep working.
+ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+         created_at, by, resumed_by, _dir::AbstractString, _lock, _barriers, _barriers_done) =
     ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
              created_at, by, resumed_by, Dict{String,String}(), _dir, _lock, _barriers, _barriers_done)
 # NOTE: resource-pool concurrency is NOT a per-run concern. Every node runs via

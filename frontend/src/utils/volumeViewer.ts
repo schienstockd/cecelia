@@ -571,6 +571,19 @@ export function loadedPlanes(
 }
 
 /**
+ * Whether a z move can re-point the textures already allocated (`renderer.setZPlane`) instead of a
+ * full reallocate. It can whenever the number of loaded planes is unchanged — the single 2D plane
+ * AND the ±n window, whose `2n+1` planes keep their texture shape as the window slides. Only a
+ * depth change (the window clipped at a stack end) or the 2D tile path (no per-plane textures)
+ * needs the reallocate, which drops every cache and, for bricks, rebuilds a multi-GB atlas.
+ */
+export function canMovePlanesInPlace(
+  hasSetZPlane: boolean, useTiles: boolean, zDepth: number, allocatedZDepth: number | null,
+): boolean {
+  return hasSetZPlane && !useTiles && allocatedZDepth !== null && zDepth === allocatedZDepth
+}
+
+/**
  * The inverse of `loadedPlanes`: the z controls that load `range` — what restoring a view state's
  * `dims.zRange` sets. A range that IS `zPlane ± half` (clipped the same way) comes back as the window,
  * so the Plane slider moves it as it did when captured; any other 3D range (the whole stack included)

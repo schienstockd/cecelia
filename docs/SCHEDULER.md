@@ -1086,6 +1086,14 @@ executes: the detached runner is a separate process whose active profile can pre
 nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever last resumed it
 (`resumed_by`); a task sees it as `params["_by"]` beside `_task_id`.
 
+**What made it** — three more fields, each absent when unknown and on older entries, never guessed:
+
+| field | written | from |
+|---|---|---|
+| `ceceliaVersion` | at open | `cecelia_version()` of the process that RUNS it (the detached runner can lag the backend) |
+| `author` | at open | `run_author(by, caller)` — the `author_stamp()` shape `{profile, via?, model?, session?}`. `caller` is `caller_stamp()` captured where `by` is (`handle_task_run` → `TaskRequest.caller` → `TaskRecord.caller`). The router binds `via`/model/session for a `/ws` connection from its upgrade headers, so a `task:run` from the autonomous MCP (which sends `X-Cecelia-Client: claude` on its connect) reads `via: claude`. A chain carries it the same way: `ChainRequest.caller` → `run_chain(; caller)` → `ChainRun.caller` (in memory only; a resume brings its own) → each node's `TaskRequest`. A REPL `run_task` / `run_chain` has no caller → `{profile}` only |
+| `env` | at close | the task result's `"runEnv"` (`run_env_of`). A runner reports it through the sidecar it already hands back (`qcOutPath` JSON — a segmenter gets it back from `bank_segment_qc!`'s own parse, anything else via `read_run_env`). Today: `segment.cellpose` → `{device, cellpose}` (cellpose's own resolved `model.device`, installed version); `clustPops.cluster` → `{device, seed}` (`"cuda"`/`"cpu"`, whichever path actually ran) |
+
 `reap_run_log_for_project!` (`api/src/runner_api.jl`) closes those out at project open, converting
 stale `running` entries to `interrupted`. It reaps only what it can *prove* is dead — a task the
 detached runner is still executing must survive a backend restart untouched, since that is the runner's

@@ -70,6 +70,9 @@ mutable struct TaskRecord
     chain_node_id::String
     # The profile that launched it — stamped onto the run log and handed to the task as `_by`.
     by::String
+    # …and the rest of the launcher's author stamp, `caller_stamp()` as the ASKING side captured it
+    # ({via, model?, session?}); empty when the asker didn't say. `by` + this = the run log's `author`.
+    caller::Dict{String,Any}
     status::TaskStatus                      # see @enum TaskStatus above
     # When it was submitted, and when a pool slot actually admitted it (`nothing` until then, so a task
     # waiting on a busy GPU has a queue wait and no run time). Both UTC. Reported by `list_tasks()`; the
@@ -160,12 +163,14 @@ function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_st
                          live_outputs::Vector{LiveOutput} = LiveOutput[],
                          chain_node_id::String = "",
                          by::String = "",
+                         caller::AbstractDict = Dict{String,Any}(),
                          params::Dict{String,Any} = Dict{String,Any}(),
                          image_uids::Vector{String} = String[image_uid],
                          output_name::String = "",
                          target::RunTarget = TARGET_LOCAL,
                          hpc::Dict{String,Any} = Dict{String,Any}())
-    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by, TASK_QUEUED,
+    rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by,
+                     Dict{String,Any}(String(k) => v for (k, v) in caller), TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
                      on_status_change, live_outputs, params, image_uids, output_name, target, hpc, HPC_STAGE_NONE, "")
     lock(_TASKS_LOCK) do
