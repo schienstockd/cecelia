@@ -856,8 +856,9 @@ end
                      # HMM fit (behaviour.hmm_states) — hmm.not_converged
                      "iterations",
                      # claim checks (claim_checks.jl) — `pop` population path, `kind` "segment" /
-                     # "tracking", `attr` the unit attribute, `variable` a flattened record key
-                     "pop", "kind", "attr", "variable"])
+                     # "tracking", `attr` the unit attribute, `variable` a flattened record key,
+                     # `measure` the claim's measure, `n_images` images in scope, `p` a p-value floor
+                     "pop", "kind", "attr", "variable", "measure", "n_images", "p"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]

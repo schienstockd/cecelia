@@ -74,6 +74,8 @@ ALLOWED_ROUTES = frozenset(
                                          # board can compare by; the same route the summary canvas and the
                                          # UMAP colour/facet picker use, not a second attribute surface
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
+        ("GET", "/api/claim/checks"),    # claim recital: record / consistency / convention rules for a claim scope
+        ("GET", "/api/claim/open"),      # claim recital: open claim entries re-checked, nothing written (briefing)
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
         ("GET", "/api/analysis/measures"),  # per-pop phenotype + motility summaries (median/quantiles)
@@ -106,6 +108,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/notebooks/write"),  # write 2/8 — create-only (409 on existing); serialises cells to a Pluto notebook
         ("POST", "/api/notebooks/describe"),  # write 3/8 — edits ONLY a notebook's description string (registry sidecar); not its content
         ("POST", "/api/notebooks/revise"),  # write 4/8 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
+        ("POST", "/api/claim/state"),    # claim recital: state / restate a claim as a Blackboard entry with its checks
         ("POST", "/api/blackboard/create"),  # bidir Part 4 — new Markdown entry (title + content_md + optional attach_capture_ids)
         ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/status"),  # PROJECT_MEMORY_PLAN D3 — flip entry status open|resolved|parked (no snapshot; metadata-only)
@@ -423,6 +426,30 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
                 "valueName": value_name, "threshold": threshold,
             },
         )
+
+    def check_claim(self, project_uid: str, set_uid: str, populations: list[str], measure: str,
+                    unit_attr: str | None = None):
+        return self._request(
+            "GET",
+            "/api/claim/checks",
+            {
+                "projectUid": project_uid, "setUid": set_uid, "pops": ",".join(populations),
+                "measure": measure, "unitAttr": unit_attr,
+            },
+        )
+
+    def get_open_claims(self, project_uid: str):
+        return self._request("GET", "/api/claim/open", {"projectUid": project_uid})
+
+    def state_claim(self, project_uid: str, set_uid: str, populations: list[str], measure: str,
+                    text: str, unit_attr: str | None = None, entry_id: str | None = None):
+        body = {"projectUid": project_uid, "setUid": set_uid, "populations": populations,
+                "measure": measure, "text": text}
+        if unit_attr:
+            body["unitAttr"] = unit_attr
+        if entry_id:
+            body["entryId"] = entry_id
+        return self._request("POST", "/api/claim/state", body=body)
 
     # Shared caller for the observer's analysis/* summary routes — same (projectUid + optional
     # image/set scope) contract for every slice, so each tool method is a one-liner over its path.

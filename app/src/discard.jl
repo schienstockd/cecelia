@@ -1,9 +1,9 @@
-# Removing a big directory tree (a project, a set's images, an image) without making the caller wait.
-# A recursive rm over OME-ZARR stores walks tens of thousands of chunk files — seconds per image on
-# local NVMe, minutes on a network share. Every delete of project data goes through here: the tree is
-# RENAMED into `projects_dir()/.deleting/` (instant — same filesystem), so it is gone from its path and
-# the caller can update manifests and reply at once; the rm then runs in the background. Anything a
-# stopped server left there is finished by `sweep_discarded!` at startup.
+# Removing project data (a project, set, image, image version, label set, analysis run) without
+# making the caller wait. A recursive rm over OME-ZARR stores walks tens of thousands of chunk files —
+# seconds per image on local NVMe, minutes on a network share. Every delete of project data goes
+# through here: the tree is RENAMED into `projects_dir()/.deleting/` (instant — same filesystem), so
+# it is gone from its path and the caller can update manifests and reply at once; the rm then runs in
+# the background. Anything a stopped server left there is finished by `sweep_discarded!` at startup.
 #
 # `.deleting/` sits directly under projects_dir and has no `project.json` of its own, so every
 # one-level project scan (`_scan_projects_raw`, `rewrite_project_owners!`) skips it.

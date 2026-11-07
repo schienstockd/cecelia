@@ -69,7 +69,7 @@ _obs_suffixes(cols, prefix::AbstractString) =
     [c[ncodeunits(prefix)+1:end] for c in cols if startswith(c, prefix) && ncodeunits(c) > ncodeunits(prefix)]
 
 _rm_if(path::AbstractString; on_log = _ -> nothing) =
-    ispath(path) && (on_log("[INFO] Removing: $path"); rm(path; recursive = true); true)
+    ispath(path) && (on_log("[INFO] Removing: $path"); discard!(path); true)
 
 
 # ── clustering-family runs (cell clusters, track clusters, regions) ────────────────────────────

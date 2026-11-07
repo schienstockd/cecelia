@@ -300,7 +300,7 @@ function prune_inner_versions!(img::CciaImage, value_name::AbstractString,
             push!(paths, p)
             if apply
                 on_log("[INFO] Removing: $p")
-                rm(p; recursive = true)
+                discard!(p)                          # off its path at once; rm in the background
                 # Clean the emptied `{vn}/vN/` dirs (Q1 layout under `base`) — a stray empty dir would
                 # otherwise linger forever, since no writer sweeps it.
                 _sweep_empty_parents!(p, base)
@@ -364,7 +364,7 @@ function reset_image_analysis!(img::CciaImage; on_log::Function = _ -> nothing):
         p = joinpath(img._dir, entry)
         freed += _path_bytes(p)
         on_log("[INFO] Removing: $p")
-        rm(p; recursive = true)
+        discard!(p)
         push!(dropped, entry)
     end
 
@@ -423,7 +423,7 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
         p      = candidates[target]
         freed += _path_bytes(p)
         on_log("[INFO] Removing: $p")
-        rm(p; recursive = true)
+        discard!(p)
         _sweep_empty_parents!(p, data_dir)
     end
     on_log("[INFO] Done.")

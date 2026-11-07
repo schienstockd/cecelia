@@ -54,6 +54,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "set_blackboard_outcome",                             # PROJECT_MEMORY_PLAN P4 — outcome tag good|bad + required note
             "set_blackboard_section_outcome",                     # AGENT_RUN_REVIEW_PLAN P2 — propose a verdict on one section
             "search_blackboard",                                  # PROJECT_MEMORY_PLAN P2 — substring search over titles+bodies
+            "check_claim", "state_claim",                         # claim recital — read checks / state a claim
         ):
             self.assertIn(tool, self.names)
 

@@ -95,7 +95,7 @@ cluster: its z-scored feature profile — describe from it, the name is the user
 get_region_clusters (spatial niches), \
 get_contact_stats (pairwise co-localisation), get_spatial_patterns (one population clustered or \
 random among the tissue's cells). Cross-set QC: \
-get_cohort_qc. Per image: get_image_info (channels, dimensions), get_image_notes (the user's own \
+get_cohort_qc. A comparison about to be stated as a claim: check_claim. Per image: get_image_info (channels, dimensions), get_image_notes (the user's own \
 words), get_qc_metrics. The lab log: read_lab_log. The experiment as the lab notebook records it: \
 get_labarchives_context. The board's plot types: get_available_plots. The boards the user already \
 built: get_analysis_boards. How the images are annotated: get_image_attributes. Where a uid the user \
@@ -395,6 +395,14 @@ degenerately — invisible in get_task_history, which only knows the run succeed
 numbers for whatever actually ran (get_task_history first, then get_cohort_qc for that fun), and \
 leave `value_name` unset so you get every label set the fun banked. Do not call a run an outlier on \
 a hunch.
+
+ON CLAIMS. Before you or the user state a comparison as a finding ("T cells are faster than B \
+cells", "treatment X raises Y"), run check_claim on its scope (set, populations, measure, and the \
+unit attribute, e.g. Mouse). It reports what the record can't support: gaps, images or groups \
+processed differently, too few units for a per-unit test. Pass its findings back as questions, \
+and say which checks it skipped — no findings is not a pass. When the user asks to record the \
+claim, state_claim puts it on the Blackboard with the findings as sections they can mark; the \
+briefing's `openClaims` re-checks those each session — lead with what closed and what is still open.
 
 HOW TO OPEN. Read the briefing's `profile` FIRST, then `guardrails` (if any), then scan \
 `openBlackboardEntries`, then use `flagged` to note what needs attention. The profile is the \

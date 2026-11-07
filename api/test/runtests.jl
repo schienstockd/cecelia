@@ -180,6 +180,8 @@ include(joinpath(@__DIR__, "suite", "plugins_and_observer.jl"))
 # clustering run selector), analysis lineage, analysis populations, analysis measures,
 # analysis behaviour + clusters, analysis chains.
 include(joinpath(@__DIR__, "suite", "cohort_and_analysis.jl"))
+include(joinpath(@__DIR__, "suite", "claim_entries.jl"))
+include(joinpath(@__DIR__, "suite", "claim_review.jl"))
 
 # ── Misc read-side API testsets (briefing / storage / versions / fs / range / funparams) ─
 # Seven testsets covering /api/observer/briefing, /api/repl-api, /api/storage, /api/versions/*
