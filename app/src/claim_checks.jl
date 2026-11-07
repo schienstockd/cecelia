@@ -218,6 +218,23 @@ end
 _claim_detail(stage, evidence) = Dict{String,Any}("stage" => stage, "provenance" => "inferred", "evidence" => evidence)
 _claim_imgs(rows) = sort!(unique(String[r["image"] for r in rows]))
 _claim_imgs_union(xs) = sort!(unique(reduce(vcat, [x["images"] for x in xs]; init = String[])))
+# A processing variable as a finding names it: what it is, not its key (`meta.PhysicalSizeX` → "Pixel
+# size (x)", `params.segment.cellposeMeasure.models.0.cellDiameter` → "cellposeMeasure: models.0.cellDiameter").
+# Evidence keeps the key.
+const _CLAIM_VARIABLE_LABEL = Dict(
+    "meta.TimeIncrement" => "Frame interval", "meta.TimeIncrementUnit" => "Frame interval unit",
+    "meta.PhysicalSizeX" => "Pixel size (x)", "meta.PhysicalSizeY" => "Pixel size (y)",
+    "meta.PhysicalSizeZ" => "Z step", "meta.PhysicalSizeUnit" => "Pixel size unit", "meta.SizeZ" => "Number of z slices",
+    "gate.geometry" => "Gate shape", "motionDims" => "Track dimensions (2D/3D)")
+function _claim_variable_label(k::AbstractString)
+    haskey(_CLAIM_VARIABLE_LABEL, k) && return _CLAIM_VARIABLE_LABEL[k]
+    startswith(k, "gate.") && return "Gate " * replace(k[6:end], "_" => " ")
+    fun = _claim_param_fun(k)
+    fun === nothing && return String(k)
+    # the task, then the setting's path inside its params — one label per key, so two settings that
+    # share a leaf name (models.0 / models.1 cellDiameter) stay two findings
+    string(last(split(fun, ".")), ": ", k[length("params." * fun * ".")+1:end])
+end
 # Images as a finding names them: up to three by name, else a count.
 _claim_imgs_text(imgs) = length(imgs) <= 3 ? join(imgs, ", ") : string(length(imgs), " images")
 # A population as a finding names it: its segmentation when that tells the compared ones apart (`B`),
@@ -323,10 +340,10 @@ function _claim_s1_across(rows, scope)
                 rel = (hi - lo) / max(abs(hi), eps())
                 ev = Dict{String,Any}("pop" => pop, "variable" => k, "values" => vals, "relDiff" => round(rel; digits = 4))
                 if rel <= CLAIM_REL_TOLERANCE
-                    push!(findings, qc_finding("info", "claim.within_tolerance"; variable = k,
+                    push!(findings, qc_finding("info", "claim.within_tolerance"; variable = _claim_variable_label(k),
                         detail = merge(_claim_detail("S1", ev), Dict{String,Any}("display" => true))))
                 else
-                    push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k,
+                    push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = _claim_variable_label(k),
                         pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
                 end
                 continue
@@ -341,8 +358,9 @@ function _claim_s1_across(rows, scope)
                 ev["mode"] = g.mode
                 ev["images"] = sort!(reduce(vcat, [v for (val, v) in g.groups if val != g.mode]; init = String[]))
             end
-            push!(findings, qc_finding("warn", "claim.differs_across_images"; variable = k,
-                pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
+            # a gate is drawn per image, so a different shape is a judgement to check, not a setting to re-run
+            push!(findings, qc_finding("warn", startswith(k, "gate.") ? "claim.gate_differs" : "claim.differs_across_images";
+                variable = _claim_variable_label(k), pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
         end
     end
     findings
@@ -384,9 +402,9 @@ function _claim_s1_between(rows, scope)
         ev = Dict{String,Any}("variable" => k, "byPop" => per_pop, "imagesDiffering" => within,
                               "separable" => !disjoint)
         if disjoint
-            push!(findings, qc_finding("warn", "claim.confounded"; variable = k, detail = _claim_detail("S1", ev)))
+            push!(findings, qc_finding("warn", "claim.confounded"; variable = _claim_variable_label(k), detail = _claim_detail("S1", ev)))
         else
-            push!(findings, qc_finding("warn", "claim.differs_between_groups"; variable = k,
+            push!(findings, qc_finding("warn", "claim.differs_between_groups"; variable = _claim_variable_label(k),
                 n = length(within), imgs = _claim_imgs_text(within), detail = _claim_detail("S1", ev)))
         end
     end
@@ -489,12 +507,22 @@ end
 # are copy: `claim.ok.<id>` in qc/text.jl. `S2.unit` always states a fact (the n), so it has no pass line.
 const CLAIM_CHECK_IDS = ("S0.membership", "S0.data", "S0.unit", "S0.params", "S0.dims",
                          "S1.acrossImages", "S1.betweenGroups", "S2.unit", "S2.calibration")
+# What each check is about, for the reader: the categories the checks are listed under, in order
+# (labels in qc/text.jl, `claim.cat.<id>`). The model review uses the same ones, plus `data` (the
+# measured values themselves, which no rule reads) and `other`.
+const CLAIM_CATEGORIES = ("images", "record", "sameness", "replicates", "units", "data", "other")
+const CLAIM_CATEGORY_OF = Dict(
+    "S0.membership" => "images", "S0.data" => "images", "S0.unit" => "images",
+    "S0.params" => "record", "S0.dims" => "record",
+    "S1.acrossImages" => "sameness", "S1.betweenGroups" => "sameness",
+    "S2.unit" => "replicates", "S2.calibration" => "units")
 # The check each finding comes from.
 const CLAIM_CHECK_OF = Dict(
     "claim.image_excluded" => "S0.membership", "claim.no_data" => "S0.data", "claim.unit_blank" => "S0.unit",
     "claim.params_not_recorded" => "S0.params", "claim.params_last_run_only" => "S0.params",
     "claim.dims_not_recorded" => "S0.dims",
     "claim.differs_across_images" => "S1.acrossImages", "claim.within_tolerance" => "S1.acrossImages",
+    "claim.gate_differs" => "S1.acrossImages",
     "claim.differs_between_groups" => "S1.betweenGroups", "claim.confounded" => "S1.betweenGroups",
     "claim.not_compared" => "S1.betweenGroups",
     "claim.no_unit" => "S2.unit", "claim.few_units" => "S2.unit", "claim.unit_count" => "S2.unit",
@@ -508,7 +536,7 @@ function _claim_merge_pops(findings)
     for f in findings
         subs = get(f, "subs", Dict{String,Any}())
         ev = get(get(f, "detail", Dict()), "evidence", Dict())
-        imgs = f["code"] == "claim.differs_across_images" ? nothing : get(ev, "images", nothing)
+        imgs = f["code"] in ("claim.differs_across_images", "claim.gate_differs") ? nothing : get(ev, "images", nothing)
         k = (f["code"], f["level"], sort!([kv for kv in subs if kv[1] != "pop"]; by = first), imgs)
         haskey(groups, k) || push!(order, k)
         push!(get!(groups, k, Any[]), f)
@@ -560,9 +588,28 @@ function claim_check_lines(result::AbstractDict)
         else
             continue
         end
-        push!(lines, Dict{String,Any}("id" => id, "state" => state, "text" => text, "tip" => t.long))
+        push!(lines, Dict{String,Any}("id" => id, "category" => CLAIM_CATEGORY_OF[id], "state" => state,
+                                      "text" => text, "tip" => t.long))
     end
     lines
+end
+
+"""
+    claim_categories(lines) -> Vector{Dict}
+
+The categories the check lines fall in, in reading order: `{id, label, tip, state}` — `warn` if any of
+its checks found a problem, `ok` if one ran and none did, else `skipped`.
+"""
+function claim_categories(lines::AbstractVector)
+    out = Dict{String,Any}[]
+    for cat in CLAIM_CATEGORIES
+        ls = filter(l -> l["category"] == cat, lines)
+        isempty(ls) && continue
+        st = any(l -> l["state"] == "warn", ls) ? "warn" : any(l -> l["state"] == "ok", ls) ? "ok" : "skipped"
+        t = qc_text("claim.cat." * cat)
+        push!(out, Dict{String,Any}("id" => cat, "label" => t.short, "tip" => t.long, "state" => st))
+    end
+    out
 end
 
 """
@@ -620,6 +667,7 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
     out = Dict{String,Any}("findings" => _claim_merge_pops(findings), "ran" => ran, "skipped" => skipped,
                            "notCompared" => not_compared, "nRows" => length(table), "nUsed" => length(used))
     out["checks"] = claim_check_lines(out)
+    out["categories"] = claim_categories(out["checks"])
     out
 end
 

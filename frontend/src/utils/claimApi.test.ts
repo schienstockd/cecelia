@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { claimPopRef, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, parseClaimResult } from './claimApi'
+import { claimPopRef, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, reviewByCategory, parseClaimResult } from './claimApi'
 
 const s = (valueName: string, pop: string) => ({ valueName, pop, popType: 'flow' })
 
@@ -49,6 +49,22 @@ describe('claimApi', () => {
     expect(openCount(r)).toBe(4)            // 2 warnings + 2 review items; info doesn't count
     expect(openCount(null)).toBe(0)
     expect(parseClaimResult({ entryId: 'bb-2' })!.review).toBeNull()
+  })
+  it('reads categories and files the review points under them, in reading order', () => {
+    const r = parseClaimResult({ entryId: 'bb-3',
+      categories: [{ id: 'images', label: 'Images', tip: 't', state: 'warn' }, { id: 'units', label: 'Units', tip: 't', state: 'odd' }],
+      categoryLabels: { images: 'Images', replicates: 'Replicates', data: 'The data', other: 'Other' },
+      checks: [{ id: 'S0.data', category: 'images', state: 'warn', text: '', tip: '' }],
+      review: { turnId: 'kt', claims: [
+        { kind: 'observation', category: 'data', text: 'B tracks are short', action: 'set a minimum duration', sectionId: 's08' },
+        { kind: 'question', category: 'images', text: 'why is i1 out?', sectionId: 's09' },
+        { kind: 'observation', category: 'mystery', text: 'x', sectionId: 's10' }] } })!
+    expect(r.categories.map(c => c.state)).toEqual(['warn', 'ok'])
+    expect(r.checks[0].category).toBe('images')
+    const g = reviewByCategory(r)
+    expect(g.map(x => x.label)).toEqual(['Images', 'The data', 'mystery'])   // order of the labels; unknown last
+    expect(g[1].items[0].action).toBe('set a minimum duration')
+    expect(r.review?.items[1].action).toBe('')
   })
   it('rejects a reply that is not a claim result', () => {
     expect(parseClaimResult(null)).toBeNull()

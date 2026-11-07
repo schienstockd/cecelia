@@ -36,7 +36,7 @@ function _cc_image(uid; interval = 30, included = true, mouse = "1", diameter = 
         Cecelia.write_json_atomic(Cecelia.gating_path(img._dir, vn), Dict{String,Any}(
             "value_name" => vn, "pop_type" => "flow", "populations" => Any[Dict{String,Any}(
                 "name" => "qc", "children" => Any[],
-                "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "volume",
+                "gate" => Dict{String,Any}("kind" => "polygon", "x_channel" => "volume", "y_channel" => "area",
                                            "vertices" => [[0, 0], [1, 0], [1, 1]]))]))
         write_qc(img, "tracking.track_measures", vn, Dict{String,Any}[];
                  metrics = Dict{String,Any}("motionDims" => getfield(dims, Symbol(vn))))
@@ -92,13 +92,19 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     st = Dict(l["id"] => l["state"] for l in r["checks"])
     @test st["S0.membership"] == "warn" && st["S0.data"] == "ok" && st["S2.calibration"] == "ok"
     @test only(l["text"] for l in r["checks"] if l["id"] == "S2.unit") == "Mouse: n = 6"
+    # …grouped by what they are about: the excluded image makes Images a warning, the rest pass
+    cats = Dict(c["id"] => c["state"] for c in r["categories"])
+    @test [c["id"] for c in r["categories"]] == ["images", "record", "sameness", "replicates", "units"]
+    @test cats["images"] == "warn" && cats["units"] == "ok" && r["categories"][1]["label"] == "Images"
 
     # ── one param changed on one image ──
     imgs = _cc_clean(); imgs[1] = _cc_image("a"; mouse = "1", diameter = 15)
     r = _cc_run(imgs)
     f = _cc_find(r, "claim.differs_across_images")
     @test length(f) == 1                                                # B and T both segmented at 15: one fact
-    @test f[1]["short"] == "params.segment.cellposeMeasure.models.0.cellDiameter differs across images for B and T"
+    @test f[1]["short"] == "cellposeMeasure: models.0.cellDiameter differs across images for B and T"   # named, not keyed
+    @test Cecelia._claim_variable_label("params.segment.cellposeMeasure.models.1.cellDiameter") !=
+          Cecelia._claim_variable_label("params.segment.cellposeMeasure.models.0.cellDiameter")
     ev = f[1]["detail"]["evidence"]
     @test ev["pops"] == ["B", "T"] && f[1]["detail"]["check"] == "S1.acrossImages"
     @test ev["variable"] == "params.segment.cellposeMeasure.models.0.cellDiameter"
@@ -149,6 +155,18 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     f = _cc_find(r, "claim.differs_across_images")
     @test length(f) == 1 && f[1]["detail"]["evidence"]["images"] == ["c"]
     @test haskey(f[1]["detail"]["evidence"]["byValue"], "(not set)")
+
+    # ── a gate drawn differently on one image, for B and T: one fact, named plainly, gate advice ──
+    # (on the record table — the rules are pure; the synthetic gates aren't what this exercises)
+    sc = ClaimScope(_cc_set(_cc_clean()), ["B/qc", "T/qc"], "live.track.speed"; unit_attrs = ["Mouse"])
+    rows = claim_record_table(sc)
+    @test all(row -> row["hasGate"] && haskey(row["vars"], "gate.geometry"), rows)   # the fixture's gates load
+    for row in rows; row["vars"]["gate.geometry"] = row["image"] == "b" ? "beef0001" : "cafe0002"; end
+    r = claim_checks(rows, sc)
+    gd = only(_cc_find(r, "claim.gate_differs"))
+    @test gd["short"] == "Gate shape differs across images for B and T" && occursin("drawn per image", gd["long"])
+    @test gd["detail"]["evidence"]["variable"] == "gate.geometry"          # evidence keeps the key
+    @test isempty(_cc_find(r, "claim.differs_across_images"))
 
     # ── one population: S1 between groups is skipped and says why ──
     r1 = claim_checks(ClaimScope(_cc_set(_cc_clean()), ["B/qc"], "live.track.speed"))

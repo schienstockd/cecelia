@@ -2,7 +2,7 @@
 // The claim recital on a summary plot (docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md → GUI, B6). One
 // button in the plot's footer: the claim's open problems as a count. It opens a popover with the
 // claim, the rule checks as a list of facts (no model, instant) and the model review (one Kiwi turn,
-// about a minute and ~$1, on request). Scope = the plot's set, plotted populations and measure.
+// about a minute, on request). Scope = the plot's set, plotted populations and measure.
 // The findings live on a Blackboard entry, marked there Good / Bad / Unsure; the entry id is kept in
 // the panel's persisted `ui`, so restating is a new round on the SAME entry, not a second entry.
 import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
@@ -16,7 +16,7 @@ import { useKiwiStore } from '../../stores/kiwi'
 import { fetchImageAttrs } from '../../composables/useImageAttrs'
 import type { SeriesTarget } from '../../plots/types'
 import {
-  claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount,
+  claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, reviewByCategory,
   stateClaim, checkClaim, reviewClaim, type ClaimResult,
 } from '../../utils/claimApi'
 
@@ -145,36 +145,50 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
       </template>
 
       <template v-if="result">
-        <!-- the rule checks: one fact per check -->
+        <!-- the rule checks: one fact per check, grouped by what they are about; a problem says what to do -->
         <div class="claim-head cc-row cc-row-tight">
-          <span>Checks</span><span class="cc-muted" v-tooltip.top="'Rules over the record — no model, no cost'">· no model</span>
+          <span>Checks</span><span class="cc-muted" v-tooltip.top="'Rules over the record — no model'">· no model</span>
         </div>
-        <div class="claim-list">
-          <template v-for="l in result.checks" :key="l.id">
-            <InlineNote v-if="l.state === 'ok'" :short="l.text" :detail="l.tip" severity="ok" />
-            <InlineNote v-else-if="l.state === 'skipped'" :short="`Not checked: ${l.text}`" :detail="l.tip" icon="pi-minus-circle" />
-            <template v-else>
-              <InlineNote v-for="f in findingsOf(result, l.id)" :key="f.code + f.short" :short="f.short" :detail="f.long"
-                          :severity="f.level === 'warn' ? 'warn' : undefined" />
+        <div v-for="cat in result.categories" :key="cat.id" class="claim-cat">
+          <InlineNote class="claim-cat-head" :short="cat.label" :detail="cat.tip"
+                      :severity="cat.state === 'skipped' ? undefined : cat.state" :icon="cat.state === 'skipped' ? 'pi-minus-circle' : undefined" />
+          <div class="claim-list">
+            <template v-for="l in result.checks.filter(c => c.category === cat.id)" :key="l.id">
+              <InlineNote v-if="l.state === 'ok'" :short="l.text" :detail="l.tip" severity="ok" />
+              <InlineNote v-else-if="l.state === 'skipped'" :short="`Not checked: ${l.text}`" :detail="l.tip" icon="pi-minus-circle" />
+              <template v-for="f in findingsOf(result, l.id)" :key="f.code + f.short">
+                <InlineNote v-if="f.level === 'warn'" :short="f.short" severity="warn" />
+                <span v-if="f.level === 'warn'" class="claim-action cc-muted">→ {{ f.long }}</span>
+                <InlineNote v-else-if="f.code !== 'claim.unit_count'" :short="f.short" />
+              </template>
             </template>
-          </template>
+          </div>
         </div>
 
         <!-- the model review: on request -->
         <div class="claim-head cc-row cc-row-tight">
           <span>Model review</span>
-          <span class="cc-muted" v-tooltip.top="'One model turn reads the claim and the record, not your notes'">· ~$1, about a minute</span>
+          <span class="cc-muted" v-tooltip.top="'One model turn reads the claim and the record, not your notes'">· about a minute</span>
           <button class="cc-btn cc-btn-dense claim-review-btn" type="button" :disabled="!!reviewTurn" @click="review">
             <i v-if="reviewTurn" class="pi pi-spin pi-spinner" />
             {{ reviewTurn ? 'Reviewing…' : result.review ? 'Run again' : 'Run' }}
           </button>
         </div>
-        <div v-if="result.review" class="claim-list">
-          <InlineNote v-for="x in result.review.items" :key="x.sectionId ?? x.text" :short="x.text"
-                      :severity="x.kind === 'question' ? undefined : 'warn'" :icon="x.kind === 'question' ? 'pi-question-circle' : undefined" />
+        <template v-if="result.review">
+          <div v-for="g in reviewByCategory(result)" :key="g.id" class="claim-cat">
+            <span class="claim-cat-head">{{ g.label }}</span>
+            <div class="claim-list">
+              <template v-for="x in g.items" :key="x.sectionId ?? x.text">
+                <InlineNote :short="x.text" :severity="x.kind === 'question' ? undefined : 'warn'"
+                            :icon="x.kind === 'question' ? 'pi-question-circle' : undefined" />
+                <span v-if="x.action" class="claim-action cc-muted">→ {{ x.action }}</span>
+              </template>
+            </div>
+          </div>
           <InlineNote v-if="!result.review.items.length" short="Nothing beyond the checks" icon="pi-minus-circle" />
           <span v-if="result.review.supports" class="cc-muted claim-supports">Would support: {{ result.review.supports }}</span>
-        </div>
+          <span class="cc-muted cc-fs-2xs">Mark each point Good / Bad / Unsure on the Blackboard.</span>
+        </template>
       </template>
     </div>
   </TeleportPopover>
@@ -190,6 +204,9 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
 .claim-head { margin-top: 4px; font-weight: 600; }
 .claim-head .cc-muted { font-weight: normal; }
 .claim-review-btn { margin-left: auto; }
-.claim-list { display: flex; flex-direction: column; gap: 3px; }
+.claim-cat { display: flex; flex-direction: column; gap: 2px; }
+.claim-cat-head { font-weight: 600; }
+.claim-list { display: flex; flex-direction: column; gap: 3px; padding-left: 1.2rem; }
+.claim-action { padding-left: 1.2rem; }
 .claim-supports { font-style: italic; }
 </style>

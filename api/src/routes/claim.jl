@@ -33,11 +33,11 @@ end
 
 # ── Claim entries ────────────────────────────────────────────────────────────────────────────────
 # A stated claim is a Blackboard entry carrying a `claim` meta key (a passthrough field, like
-# `agentRun`): its scope, its rounds and the last check. The check's warnings are the entry's
-# `### sNN · …` sections, so the analyst marks each one Good / Bad / Unsure with the existing section
-# verdicts. A finding keeps its section id across re-checks (`findingIds`), so a verdict stays on it;
-# a finding the record no longer shows drops out of the text, which is how it closes — nobody closes
-# one by hand. Rewording the claim or changing its scope starts a new round; every round stays on
+# `agentRun`): its scope, its rounds and the last check. The checks' results are plain lines grouped
+# by category (mechanical, so nothing to mark); only the model review's points are `### sNN · …`
+# sections the analyst marks Good / Bad / Unsure. Every warning still keeps an id across re-checks
+# (`findingIds`) — that is how `closed` and the briefing's open claims track it; a finding the record
+# no longer shows drops out of the text, which is how it closes — nobody closes one by hand. Rewording the claim or changing its scope starts a new round; every round stays on
 # the entry.
 #
 #   claim = {setUid, populations, measure, unitAttrs, text, round, rounds: [{round, at, by, text,
@@ -80,33 +80,34 @@ function _claim_scope_text(c)
            isempty(ua) ? "no replicate named" : "per " * join(ua, " × "), " · set `", c["setUid"], "`")
 end
 
-# The entry's text for a claim and its latest check: a list of facts, one line each. Problems first,
-# each a `### sNN` section the analyst marks (what to do is the finding's `long`, shown on hover in
-# the plot, not repeated here); then what passed, notes, what wasn't checked, and the model review. No timestamp in it: a re-check that finds the same thing leaves the
-# text byte-identical, so the revise is a no-op and no snapshot is spent.
+# A review point's category label ("The data"); an unknown id reads as Other.
+_claim_category_label(id) = Cecelia.qc_text("claim.cat." * (id in Cecelia.CLAIM_CATEGORIES ? id : "other")).short
+
+# The entry's text for a claim and its latest check: a list of facts grouped by what they are about
+# (`result["categories"]`). A problem is one line — the fact, then → what to do. The checks are
+# mechanical, so they are plain lines; only the model review's points are `### sNN` sections, for the
+# analyst to mark Good / Bad / Unsure. No timestamp in it: a re-check that finds the same thing leaves
+# the text byte-identical, so the revise is a no-op and no snapshot is spent.
 function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
     io = IOBuffer()
     r = Int(get(c, "round", 1))
     println(io, "# ", c["text"], "\n")
     println(io, _claim_scope_text(c), r > 1 ? " · round $r" : "", "\n")
-    warns = sort(filter(f -> f["level"] == "warn", result["findings"]); by = f -> f["sectionId"])
+    mark = Dict("warn" => "⚠", "ok" => "✓", "skipped" => "–")
     lines = get(result, "checks", Any[])
-    ok = filter(l -> l["state"] == "ok", lines); sk = filter(l -> l["state"] == "skipped", lines)
-    println(io, "## Checks · no model\n")
-    isempty(warns) && println(io, "Nothing found.\n")
-    for f in warns
-        println(io, "### ", f["sectionId"], " · ", f["short"], "\n")
-    end
-    if !isempty(ok) || !isempty(sk)
-        println(io, "## Passed\n")
-        for l in ok; println(io, "- ✓ ", l["text"]); end
-        for l in sk; println(io, "- Not checked: ", l["text"]); end
-        println(io)
-    end
-    notes = [f["short"] for f in result["findings"] if f["level"] != "warn" && f["code"] != "claim.unit_count"]
-    if !isempty(notes)
-        println(io, "## Notes\n")
-        for n in notes; println(io, "- ", n); end
+    for cat in get(result, "categories", Any[])
+        println(io, "## ", cat["label"], " ", mark[cat["state"]], "\n")
+        for l in filter(l -> l["category"] == cat["id"], lines)
+            fs = filter(f -> get(f["detail"], "check", "") == l["id"], result["findings"])
+            for f in filter(f -> f["level"] == "warn", fs)
+                println(io, "- ⚠ ", f["short"], " → ", f["long"])
+            end
+            l["state"] == "ok"      && println(io, "- ✓ ", l["text"])
+            l["state"] == "skipped" && println(io, "- – Not checked: ", l["text"])
+            for f in filter(f -> f["level"] != "warn" && f["code"] != "claim.unit_count", fs)
+                println(io, "- ", f["short"])
+            end
+        end
         println(io)
     end
     rv = get(c, "review", nothing)
@@ -115,11 +116,15 @@ function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
         println(io, "Not run.\n")
     else
         println(io, "One ", isempty(get(rv, "model", "")) ? "" : rv["model"] * " ",
-                "turn that read the claim and the record but not your notes — advisory; ", rv["status"], ".\n")
+                "turn that read the claim and the record but not your notes — ", rv["status"],
+                ". Mark each point Good, Bad or Unsure.\n")
         rs = filter(x -> x["kind"] != "interpretation", rv["claims"])
         isempty(rs) && println(io, get(rv, "abstain", false) ? "Nothing raised. " * get(rv, "note", "") : "Nothing beyond the checks.", "\n")
-        for x in rs
-            println(io, "### ", x["sectionId"], " · ", x["text"], "\n")
+        order(x) = something(findfirst(==(get(x, "category", "other")), Cecelia.CLAIM_CATEGORIES), length(Cecelia.CLAIM_CATEGORIES))
+        for x in sort(rs; by = order)
+            act = get(x, "action", "")
+            println(io, "### ", x["sectionId"], " · ", _claim_category_label(get(x, "category", "other")), " · ",
+                    x["text"], isempty(act) ? "" : " → " * act, "\n")
         end
         for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
             println(io, "## What the record would support\n\n", x["text"], "\n")
@@ -159,7 +164,9 @@ end
 
 # The reply to a state or a check: the findings, the checks as facts, and the model review if it ran.
 _claim_reply(id, c, result; closed = String[]) = JSON3.write((; ok = true, entryId = id, round = c["round"],
-    text = c["text"], findings = result["findings"], checks = result["checks"], ran = result["ran"],
+    text = c["text"], findings = result["findings"], checks = result["checks"], categories = result["categories"],
+    categoryLabels = Dict(id => _claim_category_label(id) for id in Cecelia.CLAIM_CATEGORIES),
+    ran = result["ran"],
     skipped = result["skipped"], review = get(c, "review", nothing), closed))
 
 function _claim_from_body(body)
@@ -178,10 +185,10 @@ _claim_same_round(a, b) = all(get(a, k, nothing) == get(b, k, nothing) for k in 
     POST /api/claim/state
 
 Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttrs?: [attr, …], text, entryId?, source? }`
-Reply: `{ ok, entryId, round, text, findings, checks, ran, skipped, review, closed }`
+Reply: `{ ok, entryId, round, text, findings, checks, categories, categoryLabels, ran, skipped, review, closed }`
 
-States a claim: runs the checks and writes them as a Blackboard entry (S0–S2 warnings as `### sNN`
-sections). With `entryId` it restates an existing claim: a changed text or scope starts a new round,
+States a claim: runs the checks and writes them as a Blackboard entry (one line per check, grouped
+by category). With `entryId` it restates an existing claim: a changed text or scope starts a new round,
 the same one just re-checks. `source` (e.g. `{boardId, panelId}`) records where it was stated.
 """
 function api_claim_state(body_bytes::Vector{UInt8})

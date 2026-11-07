@@ -51,7 +51,27 @@ function claim_review_prompt(c::AbstractDict, found::AbstractVector = String[]):
     $(known)
 
     What else in the record bears on whether this claim can be made as stated? Report only what the
-    checks above don't already say; if that is nothing, abstain."""
+    checks above don't already say; if that is nothing, abstain.
+
+    Write each observation or question as `<Category>: <what is wrong, and where — name the images or
+    populations> → <what the analyst should do about it>`, with Category one of: $(_claim_review_category_list()).
+    """
+end
+
+# The category labels the review files its points under — the checks' own (qc/text.jl `claim.cat.*`).
+_claim_review_category_list() = join((_claim_category_label(c) for c in Cecelia.CLAIM_CATEGORIES), ", ")
+
+# A review point's text → `(category, text, action)`: the leading `<Category>:` names one of the
+# claim categories (else `other`, text kept whole), the trailing `→ …` is what to do ("" if absent).
+function _claim_review_point(text::AbstractString)
+    t = strip(text); cat = "other"
+    m = match(r"^([^:]{2,40}):\s*(.+)$"s, t)
+    if m !== nothing
+        hit = findfirst(c -> lowercase(_claim_category_label(c)) == lowercase(strip(m[1])), Cecelia.CLAIM_CATEGORIES)
+        hit === nothing || (cat = Cecelia.CLAIM_CATEGORIES[hit]; t = strip(m[2]))
+    end
+    parts = split(t, r"\s*(→|->)\s*"; limit = 2)
+    (cat, String(parts[1]), length(parts) == 2 ? String(parts[2]) : "")
 end
 
 """
@@ -94,15 +114,22 @@ function _claim_review_done!(rec::AbstractDict)
         "abstain" => reply isa AbstractDict && get(reply, "abstain", false) == true,
         "note" => reply isa AbstractDict ? string(get(reply, "note", "")) : "",
         # one line each: a finding's text becomes a `### sNN` heading
-        "claims" => [Dict{String,Any}("kind" => string(get(x, "kind", "")),
-                                      "text" => replace(strip(string(get(x, "text", ""))), r"\s*\n\s*" => " "))
-                     for x in claims])
+        "claims" => [_claim_review_item(x) for x in claims])
     result = _claim_run(uid, c)
     result isa Tuple && return nothing
     _claim_assign_ids!(c["findingIds"], result["findings"])
     _claim_assign_review_ids!(c)
     _claim_write!(uid, id, c, result)
     nothing
+end
+
+# One reply claim → a review point: one line, filed under its category, the action split off.
+function _claim_review_item(x)
+    kind = string(get(x, "kind", ""))
+    text = replace(strip(string(get(x, "text", ""))), r"\s*\n\s*" => " ")
+    kind == "interpretation" && return Dict{String,Any}("kind" => kind, "text" => text)
+    cat, t, act = _claim_review_point(text)
+    Dict{String,Any}("kind" => kind, "category" => cat, "text" => t, "action" => act)
 end
 
 # Review findings get section ids from the same counter, keyed by their text: a re-run that finds the

@@ -40,7 +40,7 @@ end
         uid1 = imgs[1].uid
         ref = Dict("kind" => "image", "imageUid" => uid1)
         reply = Dict("abstain" => false, "claims" => [
-            Dict("kind" => "observation", "text" => "Image i1 has no tracks for\neither population.", "refs" => [ref]),
+            Dict("kind" => "observation", "text" => "Images: Image i1 has no tracks for\neither population. → Re-run tracking on i1.", "refs" => [ref]),
             Dict("kind" => "interpretation", "text" => "Nothing about speed can be said yet.", "refs" => [ref])])
         fake = _ClaimReviewFake([Cecelia.AgentResult(true, "", 10, 20, "s1", "", JSON3.read(JSON3.write(reply)),
                                                      ["""{"uid":"$uid1"}"""])], String[])
@@ -55,14 +55,25 @@ end
         @test occursin("T cells move faster than B cells", sent) && occursin("Replicate (image attributes; one value combination = one replicate): Mouse", sent)
         # it is told what the rule checks found, so it doesn't spend the turn repeating them
         @test occursin("do NOT repeat", sent) && occursin("- No B and T data on ", sent)
-        @test !occursin("read_blackboard_entry", sent) && occursin("get_task_log", sent)
+        allowed = match(r":allowed_tools => \[([^\]]*)\]", sent)[1]
+        denied  = match(r":disallowed_tools => \[([^\]]*)\]", sent)[1]
+        @test !occursin("read_blackboard_entry", allowed) && occursin("get_task_log", allowed)
+        # …and denied by name: an allow-list alone doesn't stop a tool the user's settings permit
+        @test occursin("get_session_briefing", denied) && occursin("read_blackboard_entry", denied)
+        @test !occursin("get_task_log", denied)
 
+        # a point with no known category is Other, kept whole; no arrow, no action
+        @test _claim_review_point("Lighting: odd") == ("other", "Lighting: odd", "")
+        @test _claim_review_point("the data: B tracks are short -> set a minimum") == ("data", "B tracks are short", "set a minimum")
         meta = _read_bb_meta(proj.uid, id)
         rv = meta["claim"]["review"]
         @test rv["status"] == "done" && length(rv["claims"]) == 2
         sid = rv["claims"][1]["sectionId"]
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
-        @test occursin("### $sid · Image i1 has no tracks for either population.", md)   # one line
+        # one line, under its category, the action after the arrow
+        @test occursin("### $sid · Images · Image i1 has no tracks for either population. → Re-run tracking on i1.", md)
+        @test rv["claims"][1]["category"] == "images" && rv["claims"][1]["action"] == "Re-run tracking on i1."
+        @test occursin("Category one of: Images, Processing record, Same processing, Replicates, Units, The data, Other", sent)
         @test occursin("## What the record would support\n\nNothing about speed can be said yet.", md)
         @test !occursin("Not run.", md) && sid in meta["sectionIds"]
         # the analyst can mark a review finding like any other

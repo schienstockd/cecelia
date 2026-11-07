@@ -21,24 +21,25 @@
         meta = _read_bb_meta(proj.uid, id)
         c = meta["claim"]
         @test c["text"] == "T cells move faster than B cells" && length(c["rounds"]) == 1
-        # Mouse is blank on both images: a warning with its own section
+        # Mouse is blank on both images: a warning, under its category, with what to do. Mechanical, so
+        # a plain line — not a section to mark Good / Bad (that is for the model's points)
         ub = only(f for f in r.findings if f.code == "claim.unit_blank")
         sid = String(ub.sectionId)
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
-        @test occursin("### $sid · Mouse blank on ", md) && occursin("## Model review\n\nNot run.", md)
-        # the checks that found nothing are listed as facts, and the reply carries them
+        @test occursin("## Images ⚠\n\n", md) && occursin("- ⚠ Mouse blank on ", md) && occursin(" → Fill in Mouse", md)
+        @test !occursin("### s", md) && occursin("## Model review\n\nNot run.", md)
+        # the checks that found nothing are listed as facts, and the reply carries them by category
         @test occursin("- ✓ Every image in the set is included", md)
-        @test any(l -> l.id == "S0.membership" && l.state == "ok", r.checks) && r.review === nothing
-        @test sid in c["lastCheck"]["open"] && sid in meta["sectionIds"]
+        @test any(l -> l.id == "S0.membership" && l.state == "ok" && l.category == "images", r.checks) && r.review === nothing
+        @test [x.id for x in r.categories][1:2] == ["images", "record"] && r.categories[1].state == "warn"
+        @test sid in c["lastCheck"]["open"]
 
         # nothing changed: the re-check is a no-op revise, no snapshot
         st, r2 = post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test st == 200 && isempty(r2.closed)
         @test _read_bb_meta(proj.uid, id)["current"] == 0
 
-        # the analyst marks the finding; then fixes the record
-        @test api_blackboard_section_outcome(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid,
-            "entryId" => id, "sectionId" => sid, "verdict" => "good"))))[1] == 200
+        # the analyst fixes the record
         st, op = (r = api_claim_open(HTTP.Request("GET", "/api/claim/open?projectUid=$(proj.uid)")); (r[1], JSON3.read(r[2])))
         @test st == 200 && any(o -> o.sectionId == sid, only(op.claims).open)
         for (img, m) in zip(imgs, ("1", "2")); img.attr["Mouse"] = m; Cecelia.save!(img); end
@@ -46,11 +47,11 @@
         op = JSON3.read(api_claim_open(HTTP.Request("GET", "/api/claim/open?projectUid=$(proj.uid)"))[2])
         @test sid in only(op.claims).closed
         @test sid in _read_bb_meta(proj.uid, id)["claim"]["lastCheck"]["open"]
-        # the re-check writes it: the section leaves the text, the verdict stays stored
+        # the re-check writes it: the problem leaves the text
         st, r3 = post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test st == 200 && sid in r3.closed
         meta = _read_bb_meta(proj.uid, id)
-        @test !(sid in get(meta, "sectionIds", String[])) && haskey(meta["sectionOutcomes"], sid)
+        @test !occursin("Mouse blank on", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
         @test meta["current"] == 1
 
         # the same claim restated: no new round. Reworded: round 2, and the earlier one stays listed

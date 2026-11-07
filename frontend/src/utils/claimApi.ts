@@ -18,8 +18,12 @@ export interface ClaimFinding extends QcFinding {
 }
 /** One check as a fact: `ok` states what it confirmed, `warn` has findings (`detail.check` = id),
  *  `skipped` says why it didn't run. `tip` is what the check looks at. */
-export interface ClaimCheckLine { id: string; state: 'ok' | 'warn' | 'skipped'; text: string; tip: string }
-export interface ClaimReviewItem { kind: KiwiClaimKind; text: string; sectionId?: string }
+export type ClaimState = 'ok' | 'warn' | 'skipped'
+export interface ClaimCheckLine { id: string; category: string; state: ClaimState; text: string; tip: string }
+/** What a group of checks is about ("Images", "Same processing"), in reading order. */
+export interface ClaimCategory { id: string; label: string; tip: string; state: ClaimState }
+/** A model review point: one line under a category, with what to do split off (`action`, '' = none). */
+export interface ClaimReviewItem { kind: KiwiClaimKind; category: string; text: string; action: string; sectionId?: string }
 /** The model review, once a turn has finished (`claim.review` on the entry). */
 export interface ClaimReview {
   turnId: string; status: string; model: string; abstain: boolean; note: string
@@ -32,6 +36,8 @@ export interface ClaimResult {
   text: string
   findings: ClaimFinding[]
   checks: ClaimCheckLine[]
+  categories: ClaimCategory[]
+  categoryLabels: Record<string, string>   // every category id → its label, the review's ones included
   ran: string[]
   skipped: Record<string, string>
   review: ClaimReview | null
@@ -84,8 +90,16 @@ function parseFinding(v: unknown): ClaimFinding | null {
 function parseCheckLine(v: unknown): ClaimCheckLine | null {
   if (!v || typeof v !== 'object') return null
   const l = v as Record<string, unknown>
-  const st = l.state === 'warn' || l.state === 'skipped' ? l.state : 'ok'
-  return { id: String(l.id ?? ''), state: st, text: String(l.text ?? ''), tip: String(l.tip ?? '') }
+  return { id: String(l.id ?? ''), category: String(l.category ?? ''), state: parseState(l.state),
+           text: String(l.text ?? ''), tip: String(l.tip ?? '') }
+}
+
+function parseState(v: unknown): ClaimState { return v === 'warn' || v === 'skipped' ? v : 'ok' }
+
+function parseCategory(v: unknown): ClaimCategory | null {
+  if (!v || typeof v !== 'object') return null
+  const c = v as Record<string, unknown>
+  return { id: String(c.id ?? ''), label: String(c.label ?? ''), tip: String(c.tip ?? ''), state: parseState(c.state) }
 }
 
 function parseReview(v: unknown): ClaimReview | null {
@@ -93,7 +107,8 @@ function parseReview(v: unknown): ClaimReview | null {
   const r = v as Record<string, unknown>
   const all = Array.isArray(r.claims) ? r.claims.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object') : []
   const items = all.filter(x => x.kind !== 'interpretation').map(x => ({
-    kind: (x.kind === 'question' ? 'question' : 'observation') as KiwiClaimKind, text: String(x.text ?? ''),
+    kind: (x.kind === 'question' ? 'question' : 'observation') as KiwiClaimKind,
+    category: String(x.category ?? 'other'), text: String(x.text ?? ''), action: String(x.action ?? ''),
     ...(typeof x.sectionId === 'string' ? { sectionId: x.sectionId } : {}),
   }))
   return {
@@ -109,6 +124,14 @@ export function findingsOf(r: ClaimResult, checkId: string): ClaimFinding[] {
     .sort((a, b) => (a.level === b.level ? 0 : a.level === 'warn' ? -1 : 1))
 }
 
+/** The review's points grouped by category, in the categories' reading order (unknown ones last). */
+export function reviewByCategory(r: ClaimResult): { id: string; label: string; items: ClaimReviewItem[] }[] {
+  const order = Object.keys(r.categoryLabels)
+  const ids = [...new Set((r.review?.items ?? []).map(x => x.category))]
+    .sort((a, b) => (order.indexOf(a) + 1 || order.length + 1) - (order.indexOf(b) + 1 || order.length + 1))
+  return ids.map(id => ({ id, label: r.categoryLabels[id] ?? id, items: (r.review?.items ?? []).filter(x => x.category === id) }))
+}
+
 /** Open problems: the checks' warnings plus the review's observations and questions. */
 export function openCount(r: ClaimResult | null): number {
   if (!r) return 0
@@ -122,6 +145,9 @@ export function parseClaimResult(r: Record<string, unknown> | null): ClaimResult
   return {
     entryId: r.entryId, round: Number(r.round ?? 1), text: String(r.text ?? ''), findings,
     checks: Array.isArray(r.checks) ? r.checks.map(parseCheckLine).filter((l): l is ClaimCheckLine => !!l) : [],
+    categories: Array.isArray(r.categories) ? r.categories.map(parseCategory).filter((c): c is ClaimCategory => !!c) : [],
+    categoryLabels: (r.categoryLabels && typeof r.categoryLabels === 'object') ? Object.fromEntries(
+      Object.entries(r.categoryLabels as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {},
     review: parseReview(r.review),
     ran: Array.isArray(r.ran) ? r.ran.map(String) : [],
     skipped: (r.skipped && typeof r.skipped === 'object') ? Object.fromEntries(

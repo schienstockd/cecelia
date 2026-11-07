@@ -354,14 +354,19 @@ one button in the plot's footer (`components/canvas/ClaimStrip.vue`) shows the c
 count and opens a popover. There the analyst states one sentence and the **replicate** — the image
 attribute(s) whose values together count as one independent sample (Mouse, or Mouse × Location); the scope
 (set, the populations the plot draws, measure) is the plot's. Two kinds of check, labelled as such:
-- **Checks · no model** run at once (`POST /api/claim/state`) and read as a list of facts — one line per
-  check (`claim_check_lines`): ✓ what it confirmed, or the problems it found (the same problem for several
-  populations is one line). What to do about a problem is its hover text.
-- **Model review** (~$1, about a minute, on request): one Kiwi turn that reads the claim and the record
-  but not the analyst's notes, and is told what the checks already found so it only adds what they missed.
-  Its points appear in the same popover when the turn finishes.
+- **Checks · no model** run at once (`POST /api/claim/state`). They don't read the sentence: the scope is
+  the plot's and the replicate, and every check runs on every claim (the measure only decides whether
+  track dimensions and calibration apply). They read as facts grouped by what they are about —
+  Images, Processing record, Same processing, Replicates, Units (`claim_categories`) — each check one
+  line: ✓ what it confirmed, or a problem as "what is wrong, where → what to do". The same problem for
+  several populations is one line.
+- **Model review** (about a minute, on request): one Kiwi turn that reads the claim and the record
+  but not the analyst's notes (the withheld tools are denied by name, not just left off the allow-list),
+  and is told what the checks already found so it only adds what they missed. It files each point under
+  the same categories (plus The data, Other) with its own "→ what to do"; they appear in the popover.
 
-The claim is a Blackboard entry with the same list — each problem a section marked Good / Bad / Unsure.
+The claim is a Blackboard entry with the same list. The checks are mechanical, so their lines are plain;
+only the model's points are sections, marked Good / Bad / Unsure.
 The panel keeps the entry id in its persisted `ui`, so restating is a new round on the same entry.
 Opening the board re-checks the claim. Nothing is blocked.
 

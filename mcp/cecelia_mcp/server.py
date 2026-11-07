@@ -343,8 +343,9 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
 @_tool
 def state_claim(project_uid: str, set_uid: str, populations: list[str], measure: str, text: str,
                 unit_attrs: list[str] | None = None, entry_id: str | None = None) -> dict:
-    """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry with
-    the check_claim findings as its `### sNN` sections — each one the user marks good / bad / unsure.
+    """Record a claim the USER states ("T cells move faster than B cells") as a Blackboard entry listing
+    the check_claim results by category (Images, Processing record, Same processing, Replicates, Units)
+    — each problem with what to do. The checks are mechanical, so they carry no good / bad marks.
     Only when the user asks to state or record a claim; never for your own reading of the data.
 
     Same scope as check_claim, plus `text`, the claim in the user's words. With `entry_id` it
