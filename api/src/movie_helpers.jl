@@ -258,7 +258,8 @@ end
 #  • the shown `popType` pops (in `popsFilter`, when set) of the pops' segmentation — "shown" by a
 #    look's point eyes (`popEyes`) where it has them — points, and their
 #    cell-track ribbons ride on the same row, since the points ARE the pop's colour;
-#  • track-cluster ribbons — every segmentation's shown trackclust pops — ribbon-only rows (`ribbon`).
+#  • track-cluster ribbons — every segmentation's trackclust pops whose ribbon eye is on (a look's
+#    `ribbonEyes`, else `show`) — ribbon-only rows (`ribbon`).
 # Per-segmentation tracks are not pops — `_track_source_items` lists them.
 function _config_overlay_pops(img, config)
     out = Vector{Dict{String,Any}}()
@@ -297,10 +298,12 @@ function _config_overlay_pops(img, config)
         end
     end
     if Bool(get(config, :showTrackclust, false))
+        # drawn by a look's ribbon eye, else `show` — as `viewer_overlay_closure`'s trackclust loop
+        tc_eyes = overlay_track_plan(_overlays_raw_from_config(config, false)).ribbon_eyes
         for vn in trackclust_segmentations(img)
             try
                 for L in resolve_pops(img, "trackclust"; value_name = vn)
-                    L.show || continue
+                    look_eye_on(tc_eyes, vn, "trackclust", String(L.path), Bool(L.show)) || continue
                     push!(out, Dict{String,Any}("valueName" => vn, "popType" => "trackclust", "path" => L.path,
                                                 "ribbon" => true))
                 end

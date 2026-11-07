@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  maskPopTable, trackclustMaskLayer, isMaskColour, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
+  maskPopTable, trackclustMaskLayer, maskLayerShowsAny, isMaskColour, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
   type LabelTable, type MaskPopLayer,
 } from './maskPopTable'
 import { mix, parseHex } from './colour'
@@ -142,6 +142,24 @@ describe('trackclustMaskLayer', () => {
     expect(colourOf(t, 1)).toEqual(rgb255(RED))
     expect(colourOf(t, 2)).toEqual(rgb255(MASK_UNGATED_GREY))   // its cluster is hidden
     expect(colourOf(t, 3)).toEqual(rgb255(MASK_UNGATED_GREY))   // untracked
+  })
+  it('hides by the eye when given one — the viewer draws track clusters by their eyes, not show', () => {
+    const pops = [{ path: '/c1', colour: RED, labels: [1], show: true },
+                  { path: '/c2', colour: BLUE, labels: [2], show: false }]
+    const eyes: Record<string, boolean> = { '/c1': false, '/c2': true }
+    const l = trackclustMaskLayer({ cells: { label: [1, 2] }, pops }, (path, show) => eyes[path] ?? show)
+    expect([...l.hidden!]).toEqual(['/c1'])
+    const t = maskPopTable([l])!
+    expect(colourOf(t, 1)).toEqual(rgb255(MASK_UNGATED_GREY))
+    expect(colourOf(t, 2)).toEqual(rgb255(BLUE))
+  })
+  it('maskLayerShowsAny reads the eyes the layer draws by, not show', () => {
+    const pops = [{ path: '/c1', colour: RED, labels: [1], show: true }]
+    const off = trackclustMaskLayer({ cells: { label: [1] }, pops }, () => false)
+    expect(maskLayerShowsAny(off)).toBe(false)              // every eye off: the mask is all grey
+    const hidden = [{ path: '/c1', colour: RED, labels: [1], show: false }]
+    expect(maskLayerShowsAny(trackclustMaskLayer({ cells: { label: [1] }, pops: hidden }, () => true))).toBe(true)
+    expect(maskLayerShowsAny(trackclustMaskLayer({ cells: { label: [1] }, pops: [] }))).toBe(false)
   })
   it('with no track clusters draws every cell grey, as the movie does', () => {
     const t = maskPopTable([trackclustMaskLayer({ cells: { label: [1, 2] }, pops: [] })])!

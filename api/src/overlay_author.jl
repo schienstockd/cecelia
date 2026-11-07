@@ -970,12 +970,13 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         end
     end
 
-    # Track-cluster ribbons — every segmentation's, one source per shown pop.
+    # Track-cluster ribbons — every segmentation's, one source per pop whose ribbon eye is on (a look's
+    # `ribbonEyes`, else the manager's `show`) — the viewer's trackclust loop.
     for tvn in tc_vns
         parts = _overlay_parts(img; value_name = tvn, pop_type = "trackclust", include_tracks = true)
         has_t |= parts.hasT
         for L in _overlay_pops(img, tvn, "trackclust")
-            L.show || continue
+            look_eye_on(plan.ribbon_eyes, tvn, "trackclust", String(L.path), Bool(L.show)) || continue
             hops = _hops_of(parts.track_hist; group = String(L.path))
             isempty(hops) && continue
             key = "$(tvn)::trackclust::$(L.path)"
