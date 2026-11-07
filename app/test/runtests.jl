@@ -119,6 +119,14 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
 
+# A task that reports its run-time environment in its result, as a real task copies a runner's
+# `runEnv` (cellpose.jl) — used to assert the scheduler stamps it onto the run log as `env`.
+struct _RunEnvTask <: CciaTask end
+Cecelia._run_task(::_RunEnvTask, ::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    Dict{String,Any}("ok" => true, "runEnv" => Dict{String,Any}("device" => "cuda", "seed" => 0))
+
 # A task that stays running until it's told to stop, so a test can inspect the LIVE registry — the
 # scheduler's timestamps and `list_tasks()` only exist while the task is in flight (the record is
 # deregistered the instant it finishes).

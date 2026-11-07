@@ -238,6 +238,22 @@ class CellposeUtils(SegmentationUtils):
         self._model_cache[model_type] = model
         return model
 
+    def run_env(self):
+        """What this run actually ran on, for the run log's `env` (app/src/run_log.jl): `device` is
+        cellpose's OWN resolved device (`model.device` — it can fall back from the GPU we asked for),
+        `cellpose` the installed distribution's version. A key is absent when not known — no model was
+        loaded, or the version can't be read — never a default."""
+        env = {}
+        devices = {str(getattr(getattr(m, 'device', None), 'type', '') or '') for m in self._model_cache.values()}
+        devices.discard('')
+        if devices:
+            env['device'] = ','.join(sorted(devices))
+        try:
+            env['cellpose'] = importlib.metadata.version('cellpose')
+        except Exception:
+            pass
+        return env
+
     # ── Channel preparation ───────────────────────────────────────────────────
 
     def _prepare_channel(self, ch_data, model_params, norm_params, ch_idx):

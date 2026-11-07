@@ -547,6 +547,11 @@ function api_tasks_history(req::HTTP.Request)
             "params" => get(e, :params, get(e, "params", Dict{String,Any}())))
         by = _rl(e, "by")                     # the profile that launched it; absent on older entries
         isempty(by) || (row["by"] = by)
+        # what made it (run_log.jl header) — passed through only when the entry has it
+        for k in ("author", "ceceliaVersion", "env")
+            v = get(e, k, get(e, Symbol(k), nothing))
+            v === nothing || (row[k] = v)
+        end
         push!(rows, row)
     end
     # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological

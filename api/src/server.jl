@@ -231,11 +231,18 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     handler = get(table, path, nothing)   # SubString hashes as its String — no copy per request
     handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
     # Bind who's asking for the whole handler, so a writer stamps `author_stamp()` without threading it.
+    _with_request_author(() -> handler(req, body_bytes), req)
+end
+
+# Run `f` with REQUEST_VIA / REQUEST_CALLER bound from `req`'s headers. Used for every HTTP request AND
+# for a WebSocket upgrade — the bindings then hold for the whole connection, so a `task:run` from the
+# autonomous MCP (which marks its /ws connect like its HTTP calls) is stamped `via: claude`, not "app".
+function _with_request_author(f, req::HTTP.Request)
     via = HTTP.header(req, "X-Cecelia-Client", "") == "claude" ? "claude" : "app"
     caller = via == "claude" ?
         request_caller(HTTP.header(req, "X-Cecelia-Model", ""), HTTP.header(req, "X-Cecelia-Session", "")) :
         REQUEST_CALLER[]
-    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via, REQUEST_CALLER => caller)
+    Base.ScopedValues.with(f, REQUEST_VIA => via, REQUEST_CALLER => caller)
 end
 
 # ── GET ─────────────────────────────────────────────────────────────────────
@@ -867,7 +874,9 @@ function handle_stream(stream::HTTP.Stream)
     end
 
     if HTTP.WebSockets.isupgrade(req)
-        HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin) -> true)
+        _with_request_author(req) do
+            HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin) -> true)
+        end
         return
     end
 

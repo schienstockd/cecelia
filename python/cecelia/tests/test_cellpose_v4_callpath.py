@@ -116,6 +116,17 @@ class TestCellposeV4CallPath(unittest.TestCase):
         self.assertEqual(np.asarray(x[0]).shape, (8, 8, 2))   # per plane: [Y, X, C]
         self.assertEqual(out.shape, (3, 8, 8))
 
+    def test_run_env_reports_the_device_the_model_resolved(self):
+        """The run log's `env` comes from here: the device cellpose itself picked (`model.device`),
+        not the one we asked for, and nothing at all when no model reports one."""
+        import importlib.metadata
+        import torch
+        self.assertNotIn('device', self.seg.run_env())          # the fake model has no device → absent
+        self.model.device = torch.device('cpu')
+        env = self.seg.run_env()
+        self.assertEqual(env['device'], 'cpu')
+        self.assertEqual(env['cellpose'], importlib.metadata.version('cellpose'))
+
     def test_default_model_is_a_v4_name(self):
         """The `.get('model', …)` fallback. A v3 name here would load `cpsam_v2` anyway, silently."""
         self.seg._model_cache['cpsam_v2'] = self.model

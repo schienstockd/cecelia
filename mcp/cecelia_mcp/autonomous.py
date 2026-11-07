@@ -33,8 +33,7 @@ import time
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
-from cecelia_mcp.auth import auth_headers
-from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
+from cecelia_mcp.client import ApiError, DisallowedRoute, claude_headers, http_json
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
 
@@ -280,7 +279,9 @@ class AutonomousClient(gv.GatingClient, ft.FigureClient):
         try:
             # the scheme http_json found working (TLS may have been toggled since setup — cecelia/utils/loopback.py)
             ws_url = api_url_to_ws(loopback.resolve(self.base_url))
-            with connect(ws_url, open_timeout=5, additional_headers=auth_headers(),
+            # Claude's headers, not bare auth: the server stamps the tasks this connection starts with
+            # them (run log `author`), so without them an agent's run reads as launched from the app.
+            with connect(ws_url, open_timeout=5, additional_headers=claude_headers(),
                          **ssl_kwargs(ws_url)) as ws:
                 ws.send(json.dumps(message))
                 deadline = time.time() + wait_s
