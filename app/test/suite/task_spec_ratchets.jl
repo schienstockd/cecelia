@@ -388,8 +388,10 @@ end
     # anywhere said so. Three example specs had the same bug, in the files people copy.
     #
     # The rule is narrow on purpose: only a param whose own label or tip CALLS ITSELF a segmentation
-    # or a label set must read `labels`. "Image to segment" is not a claim about the picker's
-    # contents, so it stays exempt.
+    # or a label set must read a label-set field — `labels` (masks) or `labelPropsNames` (measured
+    # cells, which is what a task that only reads the h5ad needs). "Image to segment" is not a claim
+    # about the picker's contents, so it stays exempt.
+    SEG_FIELDS = ("labels", "labelPropsNames")
     bad = String[]
     each_spec() do label, spec
         function walk(ps)
@@ -399,7 +401,7 @@ end
                 if get(q, "type", "") == "valueNameSelection"
                     txt = lowercase(string(get(q, "label", ""), " ", get(q, "tip", "")))
                     claims = occursin("segmentation", txt) || occursin("label set", txt)
-                    claims && get(q, "field", "") != "labels" &&
+                    claims && !(get(q, "field", "") in SEG_FIELDS) &&
                         push!(bad, "$label → $(get(q, "key", "?")) (field=$(get(q, "field", "omitted")))")
                 end
                 walk(get(q, "params", nothing))
@@ -427,14 +429,10 @@ end
     MASK_ACCESS = r"img_labels_path|img\.labels|labelsPath|open_labels|labels_path|zarr"
 
     # Gates on `labels`, reads no mask, and that is DELIBERATE — with the reason, because a bare
-    # exemption list is how a real hit hides.
-    #
-    # `tracking.bayesian_tracking` reads centroids out of the h5ad and writes lineage columns back,
-    # so it touches no mask either. It stays on `labels` because it PRODUCES tracks rather than
-    # consuming them: every trackable set today comes from a segmentation (the importer only writes
-    # sets that are already tracked), so `labels` is not currently narrower than the truth. Revisit
-    # if anything ever registers untracked detections without a mask.
-    ALLOWED = Set(["bayesian_tracking.json"])
+    # exemption list is how a real hit hides. Empty: `tracking.bayesian_tracking` used to sit here,
+    # but it only needs `label_props` (centroids in, lineage columns out), so `labels` both hid
+    # trackable points-only sets and offered mask-only sets that then fail with "No labelProps".
+    ALLOWED = Set{String}()
 
     bad = String[]
     for dir in spec_dirs(), (root, _, files) in walkdir(dir), fname in files

@@ -36,7 +36,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
-import { taskOutput, consumerField, normaliseField, type ConsumerField } from '../utils/taskOutput'
+import { taskOutput, consumerField, consumerAccepts, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
@@ -1070,7 +1070,7 @@ function propagateValueName(sourceId: string, targetId: string) {
   const patch: Record<string, unknown> = {}
   const walk = (ps: ParamDef[] | undefined) => {
     for (const p of ps ?? []) {
-      if (p.type === 'valueNameSelection' && normaliseField(p.field) === out.field)
+      if (p.type === 'valueNameSelection' && consumerAccepts(p.field, out.field))
         patch[p.key] = out.name
       walk(p.params)
     }
