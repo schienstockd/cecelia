@@ -97,7 +97,6 @@ end
         @test occursin("hit your limit", rvf["lastError"]) && length(rvf["claims"]) == 2 && rvf["status"] == "done"
         mdf = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
         @test occursin("⚠ The last run failed: ", mdf) && occursin("### $sid", mdf) && !occursin("Nothing beyond", mdf)
-        @test JSON3.read(post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))[2] |> JSON3.write).reviewModel != ""
         # a re-check keeps the review; a new round drops it (it answered the earlier question)
         post(api_claim_check, Dict("projectUid" => proj.uid, "entryId" => id))
         @test haskey(_read_bb_meta(proj.uid, id)["claim"], "review")

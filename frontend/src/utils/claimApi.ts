@@ -39,7 +39,6 @@ export interface ClaimResult {
   checks: ClaimCheckLine[]
   categories: ClaimCategory[]
   categoryLabels: Record<string, string>   // every category id → its label, the review's ones included
-  reviewModel: string                       // the model a review run uses ('' = not reported)
   ran: string[]
   skipped: Record<string, string>
   review: ClaimReview | null
@@ -151,7 +150,6 @@ export function parseClaimResult(r: Record<string, unknown> | null): ClaimResult
     categoryLabels: (r.categoryLabels && typeof r.categoryLabels === 'object') ? Object.fromEntries(
       Object.entries(r.categoryLabels as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {},
     review: parseReview(r.review),
-    reviewModel: String(r.reviewModel ?? ''),
     ran: Array.isArray(r.ran) ? r.ran.map(String) : [],
     skipped: (r.skipped && typeof r.skipped === 'object') ? Object.fromEntries(
       Object.entries(r.skipped as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {},
@@ -172,8 +170,9 @@ export async function checkClaim(projectUid: string, entryId: string, apiBase = 
   return parseClaimResult(await postJson(`${apiBase}/api/claim/check`, { projectUid, entryId }))
 }
 
-/** POST /api/claim/review — start the model review (a Kiwi turn); the turn id, or '' when it couldn't. */
-export async function reviewClaim(projectUid: string, entryId: string, apiBase = ''): Promise<string> {
-  const r = await postJson(`${apiBase}/api/claim/review`, { projectUid, entryId })
+/** POST /api/claim/review — start the model review (a Kiwi turn) on `model`, the one the user picked
+ *  for Kiwi; the turn id, or '' when it couldn't. */
+export async function reviewClaim(projectUid: string, entryId: string, model: string, apiBase = ''): Promise<string> {
+  const r = await postJson(`${apiBase}/api/claim/review`, { projectUid, entryId, ...(model ? { model } : {}) })
   return typeof r?.turnId === 'string' ? r.turnId : ''
 }
