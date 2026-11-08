@@ -66,7 +66,7 @@ a file. *Checkpoint:* render reviewed by the maintainer.
 **v1 (2026-11-07):** one compact overview (1100 px wide), in the style of the README's earlier
 framework diagram: a band per layer with a short headline, a one- or two-word chip per stage, and the
 tagline "Analysis you can hand off and check". `structure_figures/structure_overview.svg` is the plan
-copy, with gaps in magenta italics. `make_structure_overview.py --readme` writes the README copy
+copy, with gaps in magenta italics (2026-11-09: none left; both copies now show the P3 fixes). `make_structure_overview.py --readme` writes the README copy
 (`frontend/public/readme-structure.svg`), which shows only what exists, because it is the first
 diagram a new reader sees. Maturity tiers are not shown yet. A ten-box paper version is still to do.
 

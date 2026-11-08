@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 570" font-family="Georgia, 'Times New Roman', serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 548" font-family="Georgia, 'Times New Roman', serif">
 <defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/></marker></defs>
-<rect width="1100" height="570" fill="#fafaf7"/>
-<line x1="194" y1="144" x2="194" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="356" y1="144" x2="356" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="520" y1="144" x2="520" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="682" y1="144" x2="682" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="846" y1="144" x2="846" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="1008" y1="144" x2="1008" y2="450" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/>
+<rect width="1100" height="548" fill="#fafaf7"/>
+<line x1="194" y1="144" x2="194" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="356" y1="144" x2="356" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="520" y1="144" x2="520" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="682" y1="144" x2="682" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="846" y1="144" x2="846" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="1008" y1="144" x2="1008" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/>
 <text x="100" y="43" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>AI</tspan></text>
 <text x="100" y="61" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>optional</tspan></text>
 <rect x="118" y="16" width="966" height="56" rx="12" ry="12" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2" stroke-dasharray="7,5"/>
@@ -41,18 +41,19 @@
 <text x="194" y="242" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>file settings</tspan></text>
 <rect x="289" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
 <text x="356" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
-<text x="356" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no checksum</tspan></text>
+<text x="356" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>source fingerprint</tspan></text>
 <rect x="452" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="520" y="242" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
+<text x="520" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
+<text x="520" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>read + replaced</tspan></text>
 <rect x="615" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
 <text x="682" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates + author</tspan></text>
-<text x="682" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no history</tspan></text>
+<text x="682" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gate history</tspan></text>
 <rect x="778" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="846" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>task log</tspan></text>
-<text x="846" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>plots: none</tspan></text>
+<text x="846" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
+<text x="846" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>frozen parameters</tspan></text>
 <rect x="941" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
 <text x="1008" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>CSV trace</tspan></text>
-<text x="1008" y="250" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>PDF: none</tspan></text>
+<text x="1008" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>PDF/SVG stamped</tspan></text>
 <text x="100" y="340" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Checks</tspan></text>
 <text x="100" y="358" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>can it be trusted</tspan></text>
 <rect x="118" y="286" width="966" height="110" rx="12" ry="12" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
@@ -63,21 +64,20 @@
 <rect x="289" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
 <text x="356" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
 <rect x="452" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="520" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>per run + per set</tspan></text>
+<text x="520" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>drift · counts · tracks</tspan></text>
 <rect x="615" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="682" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates compared</tspan></text>
-<text x="682" y="376" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>no QC</tspan></text>
+<text x="682" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>claim checks</tspan></text>
+<text x="682" y="376" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gating QC</tspan></text>
 <rect x="778" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
 <text x="846" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>spatial QC</tspan></text>
-<text x="846" y="376" font-size="12.5" fill="#d94a86" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>stats: no QC</tspan></text>
+<text x="846" y="376" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>statistics QC</tspan></text>
 <rect x="941" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1008" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>export QC</tspan></text>
+<text x="1008" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration kept</tspan></text>
 <text x="100" y="439" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Replay</tspan></text>
 <text x="100" y="457" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>run it again</tspan></text>
 <rect x="118" y="412" width="966" height="56" rx="12" ry="12" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
 <text x="601" y="436" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Chains replay it</tspan></text>
-<text x="601" y="455" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>re-run the same steps on new images · not from old templates</tspan></text>
+<text x="601" y="455" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>re-run the same steps on new images · or replay a past run exactly</tspan></text>
 <text x="601" y="502" font-size="20" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analysis you can hand off and check</tspan></text>
 <text x="601" y="526" font-size="14" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>Structure first. AI is an optional layer on top.</tspan></text>
-<text x="118" y="548" font-size="12" fill="#d94a86" text-anchor="start" xml:space="preserve" font-style="italic"><tspan>magenta italics = gap (docs/todo/CECELIA_STRUCTURE_PLAN.md)</tspan></text>
 </svg>
