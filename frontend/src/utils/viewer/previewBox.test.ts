@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moveBox, resizeBox, drawnBox, previewBoxNeeded, PREVIEW_BOX_MIN_SIDE } from './previewBox'
+import { moveBox, resizeBox, drawnBox, squareBox, previewBoxNeeded, PREVIEW_BOX_MIN_SIDE } from './previewBox'
 import { visibleRegion, PREVIEW_REGION_MAX_SIDE } from './visibleRegion'
 
 const lim = { imageW: 4000, imageH: 3000 }
@@ -80,5 +80,28 @@ describe('previewBoxNeeded', () => {
   it('either axis over the budget needs one', () => {
     expect(previewBoxNeeded(PREVIEW_REGION_MAX_SIDE + 1, 512)).toBe(true)
     expect(previewBoxNeeded(512, 4000)).toBe(true)
+  })
+})
+
+describe('square boxes (the crop box on the viewer)', () => {
+  const sq = { imageW: 4000, imageH: 3000, maxSide: Infinity, square: true }
+  it('a draw lands square on the longer side, from the press corner', () => {
+    expect(drawnBox([100, 100], [600, 300], sq)).toEqual({ x0: 100, y0: 100, x1: 600, y1: 600 })
+    expect(drawnBox([600, 600], [500, 100], sq)).toEqual({ x0: 100, y0: 100, x1: 600, y1: 600 })
+  })
+  it('shrinks to what the image leaves rather than leaving it', () => {
+    expect(drawnBox([3800, 100], [3990, 900], sq)).toEqual({ x0: 3800, y0: 100, x1: 4000, y1: 300 })
+  })
+  it('an edge handle leads with its own side', () => {
+    const b = { x0: 1000, y0: 1000, x1: 1400, y1: 1400 }
+    expect(resizeBox(b, 'e', 200, 0, sq)).toEqual({ x0: 1000, y0: 1000, x1: 1600, y1: 1600 })
+    expect(resizeBox(b, 'n', 0, 100, sq)).toEqual({ x0: 1000, y0: 1100, x1: 1300, y1: 1400 })
+  })
+  it('squareBox grows the short side in place', () => {
+    expect(squareBox(box, sq)).toEqual({ x0: 1000, y0: 1000, x1: 1500, y1: 1500 })
+  })
+  it('no budget: a crop box may span the whole image', () => {
+    const free = { imageW: 4000, imageH: 3000, maxSide: Infinity }
+    expect(drawnBox([0, 0], [4000, 3000], free)).toEqual({ x0: 0, y0: 0, x1: 4000, y1: 3000 })
   })
 })
