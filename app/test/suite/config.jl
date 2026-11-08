@@ -471,6 +471,7 @@ end
         # The spawned process is pinned to the constant that spawns it, so moving the file fails
         # HERE (pointing at the list) instead of at a user's first launch.
         @test rel(Cecelia.PREVIEW_WORKER) in required
+        @test rel(Cecelia.FIGURE_STYLE_FILE) in required
 
         for p in required
             @test covered(p)

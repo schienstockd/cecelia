@@ -58,6 +58,10 @@ scripts/activate_juliaup.bat
 # drift from the browser.
 frontend/src/lib/kiwiRef.schema.json
 frontend/src/plots/palettes.json
+# The figure house style, shared with the style editor. python/cecelia/writers/render_figure.py opens
+# it at import and app/src/figures.jl `figure_style_schema` reads it per style request — missing ⇒
+# every figure render and the style editor fail.
+frontend/src/lib/figureStyle.json
 # The viewer's shader directory, shared with Julia + Python. constants.json is read by
 # api/src/shader_constants.jl at server load — missing ⇒ server dies at load (same as #540). The
 # offline renderer (python/cecelia/utils/wgsl_utils.py SHADER_DIR) expands the *.wgsl from it for
@@ -66,6 +70,11 @@ frontend/src/plots/palettes.json
 frontend/src/lib/webgpu/shaders/constants.json
 frontend/src/lib/webgpu/shaders/uniforms.json
 frontend/src/lib/webgpu/shaders/mip.wgsl
+
+# ── the task console ─────────────────────────────────────────────────────────────────────────────
+# README + docs/INSTALL.md tell installed users to `pixi run console`; api/task_console.jl reads the
+# shared CVD-safe palette at load and errors without it — missing ⇒ the console dies at start.
+share/console_palette.json
 
 # ── example notebooks ────────────────────────────────────────────────────────────────────────────
 # api/src/notebooks_api.jl `_repo_notebooks_dir()` and pluto/launch.jl's default dir. Behind an isdir
