@@ -30,17 +30,8 @@ what was done, by whom, with which version. **Checks** read that record: quality
 and claim checks that ask whether the images you compare were treated the same and the statistical
 unit is right. **Chains** replay the steps on new images. AI (Kiwi, Claude Code) is optional and reads
 the same record; everything works with it off. Where the structure still has gaps is tracked in
-[`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md).
-
-**Checking a claim.** State a finding from a summary plot as one sentence ("T cells move faster
-than B cells") and name the replicate (e.g. Mouse). Checks without a model then read the record: are
-the images there, is each step's processing saved, were the compared images and groups processed the
-same way, how many replicates, are units calibrated. Each is a fact, or a problem with what to do.
-With AI on, a model review can add what the checks can't see; you mark its points Good, Bad or
-Unsure. Both land on one Blackboard entry, and the checks run again whenever the plot opens. Nothing
-is blocked. Plan: [`docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md`](docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md).
-
-<p align="center"><img src="frontend/public/readme-claim.svg" alt="Claim recital: a claim from a plot, checked against the record. A helper, not a gate: nothing is blocked, and no p-value is computed. State a claim: one sentence from a summary plot, naming the replicate (e.g. Mouse). Checks, no model: images, processing record, same processing, replicates, units; each line is a fact, a problem with what to do, or not checked. Model review, optional: with AI on, about a minute; it reads what was imaged, run and measured, not your notes, knows what the checks found and adds only what they miss. Both go to one Blackboard entry, every point by category with what to do; you mark the review's points Good, Bad or Unsure; restating starts a new round and clears the old review. Re-check: when the plot opens; a check finding closes once the analysis no longer shows it." width="100%"></p>
+[`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md). How a claim from a plot is checked:
+[*Checking a claim*](user-docs/README.md#checking-a-claim).
 
 ---
 
