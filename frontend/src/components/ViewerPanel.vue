@@ -26,6 +26,7 @@ import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import InlineNote from './InlineNote.vue'
 import CcToggle from './CcToggle.vue'
+import ColourPicker from './ColourPicker.vue'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { movieSizeParams } from '../utils/movieSize'
@@ -1160,10 +1161,10 @@ onUnmounted(() => {
                   ? `${item.label} — click the swatch to recolour`
                   : `population: ${item.label} — colour set in the population manager`">
             <!-- pop-backed → static swatch (its colour is the population's, edit it there);
-                 value with no population → editable colour input (it's not defined anywhere else) -->
+                 value with no population → the shared ColourPicker (its colour isn't defined anywhere else) -->
             <span v-if="!item.editable" class="cby-swatch" :style="{ background: item.hex }" />
-            <input v-else type="color" class="cby-swatch cby-swatch-edit" :value="item.hex"
-                   @change="onRecolour(item.value, ($event.target as HTMLInputElement).value)" />
+            <ColourPicker v-else :model-value="item.hex" tip=""
+                          @update:model-value="c => onRecolour(item.value, c)" />
             {{ item.label }}
           </span>
           <button class="cby-reset" @click="resetColours"
@@ -1322,11 +1323,6 @@ onUnmounted(() => {
 .cby-legend { margin-top: 0.25rem; }
 .cby-item { display: inline-flex; align-items: center; gap: 0.25rem; }
 .cby-swatch { width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid var(--cc-border); }
-/* editable swatch: a native colour input squeezed to swatch size (categories with no population) */
-.cby-swatch-edit { padding: 0; cursor: pointer; background: none; -webkit-appearance: none; appearance: none; }
-.cby-swatch-edit::-webkit-color-swatch-wrapper { padding: 0; }
-.cby-swatch-edit::-webkit-color-swatch { border: none; border-radius: var(--cc-radius-xs); }
-.cby-swatch-edit::-moz-color-swatch { border: none; border-radius: var(--cc-radius-xs); }
 .cby-reset {
   font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); background: none; border: none; cursor: pointer;
   padding: 0 0.2rem; text-decoration: underline; align-self: center;
