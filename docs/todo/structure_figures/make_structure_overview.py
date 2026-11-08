@@ -5,7 +5,7 @@
 
 One band per layer (headline + one line), with a chip per pipeline stage saying what exists there
 (code refs in CECELIA_STRUCTURE_AUDIT.md). The README copy is the first diagram a new reader sees, so it
-shows only what exists. The plan copy adds the gaps in magenta italics.
+shows only what exists. The plan copy adds open gaps in magenta italics (none open since #2056).
 """
 import sys
 from xml.sax.saxutils import escape
@@ -108,11 +108,11 @@ y += h + 16
 # ── record
 REC = [
     [("file settings", False)],
-    [("calibration", False), ("no checksum", True)],
-    [("run log", False)],
-    [("gates + author", False), ("no history", True)],
-    [("task log", False), ("plots: none", True)],
-    [("CSV trace", False), ("PDF: none", True)],
+    [("calibration", False), ("source fingerprint", False)],
+    [("run log", False), ("read + replaced", False)],
+    [("gates + author", False), ("gate history", False)],
+    [("run log", False), ("frozen parameters", False)],
+    [("CSV trace", False), ("PDF/SVG stamped", False)],
 ]
 n = max(len(r) for r in shown(REC))
 h = 56 + 10 + 16 * n + 12
@@ -126,10 +126,10 @@ y += h + 16
 QC = [
     [("saturation", False)],
     [("calibration", False)],
-    [("per run + per set", False)],
-    [("gates compared", False), ("no QC", True)],
-    [("spatial QC", False), ("stats: no QC", True)],
-    [("export QC", False)],
+    [("drift · counts · tracks", False)],
+    [("claim checks", False), ("gating QC", False)],
+    [("spatial QC", False), ("statistics QC", False)],
+    [("calibration kept", False)],
 ]
 n = max(len(r) for r in shown(QC))
 h = 56 + 10 + 16 * n + 12
@@ -143,8 +143,7 @@ y += h + 16
 h = 56
 label(y, h, "Replay", "run it again")
 band(y, h, PEACH, "Chains replay it",
-     "re-run the same steps on new images"
-     + ("" if README else " · not from old templates"))
+     "re-run the same steps on new images · or replay a past run exactly")
 y += h + 26
 
 # ── tagline
@@ -152,7 +151,7 @@ t(FULL_X + FULL_W / 2, y + 8, "Analysis you can hand off and check", size=20, we
 t(FULL_X + FULL_W / 2, y + 32, "Structure first. AI is an optional layer on top.", size=14, fill=SUB,
   italic=True)
 y += 46
-if not README:
+if not README and any(g for rows in REC + QC for _, g in rows):
     t(FULL_X, y + 8, "magenta italics = gap (docs/todo/CECELIA_STRUCTURE_PLAN.md)", size=12, fill=ACCENT,
       anchor="start", italic=True)
     y += 22
