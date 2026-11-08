@@ -24,6 +24,7 @@ the issue subcommands this needs and GETs on two API paths (D14). Bodies reach `
 Usage:
     pixi run judge-issues                  # what the newest record would file, close, reopen; nothing written
     pixi run judge-issues -- --apply       # do it, and record the issue numbers in the record
+    pixi run judge-issues -- --date D      # an older record, dry run only
 """
 from __future__ import annotations
 
@@ -598,10 +599,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--apply", action="store_true", help="file, close and reopen for real; record the numbers")
     args = ap.parse_args(argv)
     records = _record.pass_records()
+    newest = records[-1]["date"] if records else None
     if args.date:
         records = [r for r in records if r["date"] <= args.date]
     if not records:
         print("judge-issues: no pass record in the store", file=sys.stderr)
+        return 1
+    if args.apply and records[-1]["date"] != newest:
+        # the issues mirror the newest record: an older one would reopen or close them from superseded state
+        print(f"judge-issues: {records[-1]['date']} isn't the newest record ({newest}); --apply mirrors "
+              "only the newest", file=sys.stderr)
         return 1
     # `previous` with the owner's answers in, as the weekly pass has it: a dropped bug's close says why
     earlier = _load_sibling("review").applied_pass_records(before=records[-1]["date"])
