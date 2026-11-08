@@ -1651,8 +1651,10 @@ working untouched; there is no migration.
   names the input param, and `Cecelia.task_params_name` (Julia) / `taskParamsName` (TS) bank and look
   up params under it; picking that input on the form restores its record (`namesParamsRecord`).
   Explicit, never inferred from `valueName`: an image task reads one too but writes a new, fixed-name
-  image. Declared by `tracking.bayesian_tracking`, `tracking.track_measures`, `tracking.correct`; a
-  composite inherits its first step's.
+  image. Declared by `tracking.bayesian_tracking`, `tracking.track_measures`, `tracking.correct` and
+  `segment.measureLabels` (its `outputValueName` picks the label set it re-measures, so the run log records
+  the re-measure as a write INTO that set and its `replaces`); a composite inherits its first step's
+  (`task_writes_into_key` folds the same way).
   The track-set delete reads the rebuild's `dims` + `windowMinutes` from the run log's latest done
   measures run for the name, falling back to the by-name record only when the log has no
   failed/cancelled/running run for it (dispatch writes the record whatever the outcome), then to what

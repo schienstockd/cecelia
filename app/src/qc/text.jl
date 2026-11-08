@@ -50,6 +50,14 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Voxel depth has no unit",
         long  = "A Z step is recorded without a unit — re-enter it with a unit."),
 
+    # raw source (source_fingerprint_findings)
+    "source.missing" => (
+        short = "Raw file not found",
+        long  = "Nothing at the import path — reconnect the drive, or note where the original now lives."),
+    "source.changed" => (
+        short = "Raw file changed since import",
+        long  = "The file at the import path is not the one imported — check it before re-importing from it."),
+
     # a run that computed with an assumed scale (defaulted_scale_qc_findings, written by the scheduler)
     "calibration.xy_assumed" => (
         short = "Run used a placeholder pixel size ({value} {unit})",

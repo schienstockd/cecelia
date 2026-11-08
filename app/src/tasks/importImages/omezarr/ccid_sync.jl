@@ -142,6 +142,7 @@ short of re-importing: the metadata editor only syncs fields the user actually r
 Returns `false` (no-op) when the default zarr path is missing or has no usable metadata.
 """
 function resync_ome_meta!(img::CciaImage)::Bool
+    write_source_qc!(img)       # is the raw file still the one imported? (bounded read; warns only)
     zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     zarr_meta = read_ome_metadata(zarr_path)
