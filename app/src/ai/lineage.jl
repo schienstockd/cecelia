@@ -74,12 +74,18 @@ end
 function _image_lineage(img::CciaImage)
     segs    = sort(img_value_names(img))                                      # segmentations (label_props keys), stable order
     tracked = String[v for v in segs if isfile(img_track_props_path(img, v))]  # those with a __tracks table
+    st      = try stale_outputs_for(img) catch e                              # advisory: never fail the lineage
+        @warn "lineage: staleness lookup failed" uid = img.uid exception = e
+        (; stale = Any[], unknown = Any[])
+    end
     (; _observer_image_header(img)...,
        steps         = _run_log_steps(img),
        segmentations = segs,
        tracked       = tracked,
        clusterRuns   = _image_cluster_runs(img, segs),
-       gatedPops     = _image_gated_pops(img, segs))
+       gatedPops     = _image_gated_pops(img, segs),
+       stale         = st.stale,
+       staleUnknown  = st.unknown)
 end
 
 # Whiteboard chain templates wired for the project → name + the distinct task funs each wires (so the
@@ -270,7 +276,9 @@ end
     analysis_lineage(proj; image_uid="", set_uid="") -> NamedTuple
 
 Synthesize the analysis lineage for a project (optionally scoped to one `image_uid` or `set_uid`): per
-image the ordered pipeline `steps`, its `segmentations`/`tracked`/`clusterRuns`/`gatedPops` links, plus
+image the ordered pipeline `steps`, its `segmentations`/`tracked`/`clusterRuns`/`gatedPops` links, the
+outputs an upstream re-run made `stale` (`stale_outputs_for`; `staleUnknown` = the record cannot tell —
+see its docstring), plus
 project-level `chains` (wired templates) and `boards` (tab names) and a `rollup` (common pipeline +
 divergences). Summary-level only (names/counts/order), read-only. See OBSERVER_DATA_ACCESS_PLAN.md.
 """

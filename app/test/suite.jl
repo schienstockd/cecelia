@@ -211,6 +211,7 @@ include(joinpath(@__DIR__, "suite", "result_review_stats_floor_pair.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_stats_smallest_pairs.jl"))
 include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
+include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 

@@ -168,3 +168,129 @@ end
     @test Cecelia.RUN_LOG_ARCHIVE_FILE in Cecelia.ANALYSIS_KEEP
     rm(proj.root; recursive = true)
 end
+
+# ── Staleness from the record: an upstream re-run leaves its downstream outputs stale ──────────────
+# `stale_outputs_for` (correction_staleness.jl). A downstream output is stale when its maker read an
+# input a later run replaced, directly or through an upstream maker that is itself stale; a maker with
+# no recorded inputs is unknown, never stale.
+@testset "Run log: an upstream re-run marks downstream outputs stale, with the chain of why" begin
+    have_fixture(fixture_path("testpr")) || return @test_skip "testpr fixture missing"
+    dir = _rl_prov_fixture()
+    ccid = joinpath(dir, "testpr", "1", "KDIeEm", "ccid.json")
+    raw = JSON3.read(read(ccid, String), Dict{String,Any})
+    raw["filepath"]["afCorrected"] = "af.ome.zarr"
+    write(ccid, JSON3.write(raw))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    zarr = get!(Cecelia.cecelia_conf(), "zarr", Dict{String,Any}())
+    had_kpv = haskey(zarr, "keepPreviousVersion"); old_kpv = get(zarr, "keepPreviousVersion", nothing)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
+        zarr["keepPreviousVersion"] = false
+        img = init_object("testpr", "KDIeEm")
+        n = Ref(0)
+        # one run through the record as the scheduler writes it; `prov = false` = an entry from before
+        # inputs were recorded; `replaces` overrides what run_provenance would say
+        function run!(fn, p; prov = true, replaces = :auto)
+            tid = "st$(n[] += 1)"
+            pv = run_provenance(fn, img, p)
+            Cecelia.open_run_log!(img, fn, string(get(p, "valueName", "")), p; task_id = tid,
+                                  inputs = prov ? pv.inputs : Any[],
+                                  replaces = replaces === :auto ? pv.replaces : replaces)
+            close_run_log!(img, tid, "done")
+            tid
+        end
+        stale_names() = Set((d["name"], get(d, "into", false)) for d in stale_outputs_for(img).stale)
+        find(name; into = false) = only(filter(d -> d["name"] == name && get(d, "into", false) == into,
+                                               stale_outputs_for(img).stale))
+
+        # a legacy run of a task that reads names: unknown, not stale
+        run!("cleanupImages.afCorrect", Dict{String,Any}("valueName" => "default"); prov = false)
+        @test only(stale_outputs_for(img).unknown)["name"] == "afCorrected"
+
+        sm1  = run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default"))
+        seg1 = run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "smoothed", "outputValueName" => "B"))
+        trk  = run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        @test isempty(stale_outputs_for(img).stale)
+
+        # re-smooth: the segmentation read the `smoothed` it replaced; the tracking is stale through it
+        sm2 = run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default"))
+        @test stale_names() == Set([("B", false), ("B", true)])
+        b = find("B")
+        @test b["ns"] == "labels" && b["run"]["taskId"] == seg1
+        @test only(b["because"])["read"] == Dict{String,Any}("name" => "smoothed", "version" => "v1")
+        @test only(b["because"])["replacedBy"]["taskId"] == sm2
+        @test occursin("since replaced by cleanupImages.smooth", b["summary"])
+        t = find("B"; into = true)
+        @test t["run"]["taskId"] == trk && length(t["because"]) == 2
+        @test t["because"][1]["madeBy"]["taskId"] == seg1 && t["because"][2]["replacedBy"]["taskId"] == sm2
+
+        # re-segment: B is current again; the tracking now read a B that was replaced, directly
+        seg2 = run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "smoothed", "outputValueName" => "B"))
+        @test stale_names() == Set([("B", true)])
+        @test only(find("B"; into = true)["because"])["replacedBy"]["taskId"] == seg2
+        # …and re-tracking clears it
+        run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        @test isempty(stale_outputs_for(img).stale)
+        # re-tracking again (nothing upstream changed) does not stale or cloud the track before it: a
+        # track run reads the labels, not the earlier tracks it replaces
+        run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        @test isempty(stale_outputs_for(img).stale)
+        @test !any(d -> d["name"] == "B", stale_outputs_for(img).unknown)
+
+        # a pinned read is stale only when THAT version is replaced
+        run!("cleanupImages.afCorrect", Dict{String,Any}("valueName" => "default", "version" => "v1"))
+        @test isempty(stale_outputs_for(img).unknown)           # its current maker records inputs now
+        run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default");
+             replaces = Dict{String,Any}("name" => "default", "version" => "v2"))
+        @test !(("afCorrected", false) in stale_names())
+        run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default");
+             replaces = Dict{String,Any}("name" => "default", "version" => "v1"))
+        @test ("afCorrected", false) in stale_names()
+
+        # unknown propagates: a tracking that read a label set made by a run from before inputs were
+        # recorded is unknown too, not clean
+        run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "smoothed", "outputValueName" => "B"); prov = false)
+        run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        unk = stale_outputs_for(img).unknown
+        @test any(d -> d["name"] == "B" && !haskey(d, "into"), unk)
+        @test any(d -> d["name"] == "B" && get(d, "into", false) && occursin("cannot say", d["reason"]), unk)
+        # …and once the segmentation is re-run with its inputs recorded, both are known again
+        run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "smoothed", "outputValueName" => "B"))
+        run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        @test !any(d -> d["name"] == "B", stale_outputs_for(img).unknown)
+
+        # two runs wrote `smoothed` (v1, then a minted v2, so the second records no `replaces`): a
+        # segmentation pinned to v1 does not take the v2 maker's word for it. Only v1's maker is stale →
+        # the record cannot tell which made the version read: unknown, not clean
+        run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "afCorrected"))       # smoothed v1
+        run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default"); replaces = nothing)  # v2
+        run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "smoothed", "version" => "v1",
+                                                          "outputValueName" => "B"))
+        run!("cleanupImages.afCorrect", Dict{String,Any}("valueName" => "default"))      # replaces afCorrected
+        @test ("smoothed", false) ∉ stale_names()         # its current maker (v2) read `default` only
+        @test ("B", false) ∉ stale_names()
+        @test any(d -> d["name"] == "B" && !haskey(d, "into"), stale_outputs_for(img).unknown)
+
+        # a PINNED read whose only logged writer may not have made that version (v1 predates the log;
+        # the logged run minted v2): that writer going stale makes the reader unknown, not stale
+        Cecelia.cecelia_conf()["dirs"]["projects"] = _rl_prov_fixture()
+        img = init_object("testpr", "KDIeEm")
+        run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default"); replaces = nothing)  # smoothed v2
+        run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "smoothed", "version" => "v1",
+                                                          "outputValueName" => "B"))
+        @test isempty(stale_outputs_for(img).stale)
+        run!("cleanupImages.smooth", Dict{String,Any}("valueName" => "default", "outputValueName" => "x");
+             replaces = Dict{String,Any}("name" => "default", "version" => "v2"))   # `default` v2 replaced
+        @test ("B", false) ∉ stale_names()
+        @test any(d -> d["name"] == "B", stale_outputs_for(img).unknown)
+
+        # the lineage carries it, per image
+        lin = Cecelia._image_lineage(init_object("testpr", "KDIeEm"))
+        @test lin.stale == stale_outputs_for(img).stale
+        @test lin.staleUnknown isa AbstractVector
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        had_kpv ? (zarr["keepPreviousVersion"] = old_kpv) : delete!(zarr, "keepPreviousVersion")
+    end
+end

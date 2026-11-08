@@ -736,7 +736,8 @@ end
 # Global toggle for the guarded-writer path — see `Cecelia.keep_previous_version`. Default off;
 # users flip it on for the niche cases (A/B compare, publication freeze, chain branching,
 # regression investigation, sharing intermediates). Same knob future autonomous execution flips
-# programmatically so a Claude-triggered run can't overwrite user data.
+# programmatically so a Claude-triggered run can't overwrite user data. Image versions only: label
+# sets are always overwritten.
 function api_keep_previous_version_get(_req)
     200, JSON3.write((; current = Cecelia.keep_previous_version(),
                         default = Cecelia.KEEP_PREVIOUS_VERSION_DEFAULT))

@@ -619,13 +619,20 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
     omit both for the whole project.
 
     Returns:
-      - `images`: per image `{uid, name, included, steps, segmentations, tracked, clusterRuns, gatedPops}`.
+      - `images`: per image `{uid, name, included, steps, segmentations, tracked, clusterRuns, gatedPops,
+        stale, staleUnknown}`.
         - `steps`: the ordered pipeline from the run log — each `{stage, fun, valueName, status, at}`.
           `stage` ∈ import/cleanup/edit/segment/track/behaviour/cluster/other; `status` "done"/"failed".
           This IS the "denoised → segmented → tracked → clustered" story, in order, with what each wrote.
         - `segmentations`: the label-set value_names; `tracked`: those with a per-track table.
         - `clusterRuns`: `[{suffix, valueNames}]` — each clustering run and the label sets it clustered.
         - `gatedPops`: `[{valueName, popType, n, pops}]` — gate-defined populations (names/counts only).
+        - `stale`: outputs whose producing run read an input a LATER run replaced (a re-smooth under a
+          segmentation, a re-segmentation under its tracking) — `{name, ns?, into?, run, because,
+          summary}`; `because` is the chain of why, each link `{read, replacedBy}` or `{read, madeBy}`
+          (that maker is itself stale). Tell the user before quoting numbers from one. `staleUnknown`:
+          outputs the record cannot judge (`reason` says why: a maker from before inputs were recorded,
+          or a version read whose possible makers disagree) — unknown, not stale.
       - `chains`: wired chain templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
       - `boards`: analysis-board tab NAMES (best-effort). For what each board actually plots, use
         get_analysis_boards — this is the cheap name-only view.
