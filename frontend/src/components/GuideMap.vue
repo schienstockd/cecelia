@@ -114,9 +114,12 @@ const assistTip = (s: RecipeStep) =>
         <button v-for="c in g.chips" :key="c.route"
                 :class="['gm-page cc-btn cc-btn-bare cc-fs-xs', { lit: c.lit, dim: c.dim, hidden: c.hidden }]"
                 v-tooltip.right="chipTip(c, showAi)" @click="go(c.route)">
-          <i :class="['pi', c.icon]" /> {{ c.label }}
-          <i v-if="showAi && c.claude" class="pi pi-sparkles gm-assist" aria-label="Claude makes something here" />
-          <span v-if="chipDot(c.tier)" :class="['cc-dot', chipDot(c.tier), 'gm-tier']" :aria-label="tierLabel(c.tier)" />
+          <i :class="['pi', c.icon]" />
+          <span class="gm-label">{{ c.label }}</span>
+          <span class="gm-marks">
+            <i v-if="showAi && c.claude" class="pi pi-sparkles gm-assist" aria-label="Claude makes something here" />
+            <span v-if="chipDot(c.tier)" :class="['cc-dot', chipDot(c.tier)]" :aria-label="tierLabel(c.tier)" />
+          </span>
         </button>
       </div>
     </div>
@@ -161,10 +164,14 @@ const assistTip = (s: RecipeStep) =>
 .gm-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .gm-card { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .gm-card-head { font-weight: 600; justify-content: flex-start; padding: 2px 4px; }
-.gm-page { justify-content: flex-start; flex-wrap: wrap; gap: 2px 6px; padding: 2px 4px; text-align: left; }
-/* a quiet marker after the label — only where results need checking by hand; the full tier is in
-   the Maturity rows below, and in the button's tooltip */
-.gm-tier { margin-left: 0.3rem; flex-shrink: 0; }
+/* one line, never wraps: a wrapped row shifts every row below it out of line with the next card.
+   A label too long for the card truncates (the tooltip carries it in full). */
+.gm-page { justify-content: flex-start; gap: 4px; padding: 2px 4px; text-align: left; min-width: 0; }
+.gm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* the markers sit at the right edge, so the dots read as one column per card. The dot is a quiet
+   maturity marker; the full tier is in the Maturity rows below, and in the button's tooltip */
+.gm-marks { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.gm-marks:empty { display: none; }
 /* lit = on the path. Not colour alone: lit pages are full-strength AND bold */
 .gm-page.lit { font-weight: 600; }
 .gm-page.dim { opacity: 0.55; }
