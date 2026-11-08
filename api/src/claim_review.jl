@@ -72,6 +72,8 @@ function claim_review_prompt(c::AbstractDict, found::AbstractVector = String[]):
 
     Write each observation or question as `<Category>: <what is wrong, and where — name the images or
     populations> → <what the analyst should do about it>`, with Category one of: $(_claim_review_category_list()).
+    Each side of the arrow is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon:
+    two problems are two claims. The `interpretation` is one such sentence too.
     """
 end
 
@@ -88,7 +90,8 @@ function _claim_review_point(text::AbstractString)
         hit === nothing || (cat = Cecelia.CLAIM_CATEGORIES[hit]; t = strip(m[2]))
     end
     parts = split(t, r"\s*(→|->)\s*"; limit = 2)
-    (cat, String(parts[1]), length(parts) == 2 ? String(parts[2]) : "")
+    # the category was the sentence's start, so what's left starts mid-sentence ("on image 2 T is…")
+    (cat, uppercasefirst(String(parts[1])), length(parts) == 2 ? uppercasefirst(String(parts[2])) : "")
 end
 
 """
@@ -161,9 +164,12 @@ end
 function _claim_review_item(x)
     kind = string(get(x, "kind", ""))
     text = replace(strip(string(get(x, "text", ""))), r"\s*\n\s*" => " ")
-    kind == "interpretation" && return Dict{String,Any}("kind" => kind, "text" => text)
+    # the refs as Kiwi checked them (`{ref, result, seen}`), so the point links to what it is about
+    # the way any Kiwi claim does — the popover's chips and the entry's `kiwiRefs`
+    refs = Any[r for r in get(x, "refs", Any[]) if r isa AbstractDict && get(r, "ref", nothing) isa AbstractDict]
+    kind == "interpretation" && return Dict{String,Any}("kind" => kind, "text" => text, "refs" => refs)
     cat, t, act = _claim_review_point(text)
-    Dict{String,Any}("kind" => kind, "category" => cat, "text" => t, "action" => act)
+    Dict{String,Any}("kind" => kind, "category" => cat, "text" => t, "action" => act, "refs" => refs)
 end
 
 # Review findings get section ids from the same counter, keyed by their text: a re-run that finds the

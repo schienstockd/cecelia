@@ -59,6 +59,9 @@ end
         @test occursin("T cells move faster than B cells", sent) && occursin("Replicate (image attributes; one value combination = one replicate): Mouse", sent)
         # it is told what the rule checks found, so it doesn't spend the turn repeating them
         @test occursin("do NOT repeat", sent) && occursin("- No B and T data on ", sent)
+        # the review replaces Kiwi's system prompt, so it is told the one-fact shape it is checked against
+        # (every review re-asked when it wasn't)
+        @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", sent)
         allowed = match(r":allowed_tools => \[([^\]]*)\]", sent)[1]
         denied  = match(r":disallowed_tools => \[([^\]]*)\]", sent)[1]
         @test !occursin("read_blackboard_entry", allowed) && occursin("get_task_log", allowed)
@@ -69,7 +72,8 @@ end
 
         # a point with no known category is Other, kept whole; no arrow, no action
         @test _claim_review_point("Lighting: odd") == ("other", "Lighting: odd", "")
-        @test _claim_review_point("the data: B tracks are short -> set a minimum") == ("data", "B tracks are short", "set a minimum")
+        @test _claim_review_point("the data: B tracks are short -> set a minimum") == ("data", "B tracks are short", "Set a minimum")
+        @test _claim_review_point("The data: on k3Tx90 T is slower → show each mouse") == ("data", "On k3Tx90 T is slower", "Show each mouse")
         meta = _read_bb_meta(proj.uid, id)
         rv = meta["claim"]["review"]
         @test rv["status"] == "done" && length(rv["claims"]) == 2
@@ -92,6 +96,12 @@ end
         # one line, under its category, the action after the arrow
         @test occursin("### Images\n\n### $sid · Image i1 has no tracks for either population. → Re-run tracking on i1.", md)
         @test rv["claims"][1]["category"] == "images" && rv["claims"][1]["action"] == "Re-run tracking on i1."
+        # each point keeps its refs as Kiwi checked them, and the entry carries them as `kiwiRefs` (the
+        # sidecar a saved Kiwi turn has), so they are clickable chips on the Blackboard too
+        @test rv["claims"][1]["refs"][1]["ref"]["imageUid"] == uid1 && rv["claims"][1]["refs"][1]["result"]["ok"] == true
+        @test occursin(r"Re-run tracking on i1\.\n\n_refs:_ `i1[^`]*`\n", md)
+        kr = meta["kiwiRefs"]
+        @test length(kr) == 1 && only(values(kr))["ref"]["imageUid"] == uid1 && !isempty(only(values(kr))["label"])
         @test occursin("Category one of: Images, Processing record, Same processing, Replicates, Units, The data, Other", sent)
         @test occursin("## What the record would support\n\nNothing about speed can be said yet.", md)
         # a later round with review points renders (the category grouping must not clobber the claim)

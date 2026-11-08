@@ -132,6 +132,8 @@ function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
             for x in xs
                 act = get(x, "action", "")
                 println(io, "### ", x["sectionId"], " · ", x["text"], isempty(act) ? "" : " → " * act, "\n")
+                ls = _claim_ref_labels(x)
+                isempty(ls) || println(io, "_refs:_ ", join(("`" * l * "`" for l in ls), ", "), "\n")
             end
         end
         for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
@@ -167,7 +169,39 @@ function _claim_write!(uid::AbstractString, id::AbstractString, c::AbstractDict,
     st == 200 || return st, body
     c["lastCheck"] = _claim_last_check(result)
     _set_bb_meta_field!(uid, id, "claim", c)
+    # the create path's guards on the sidecar (a review has ≤ KIWI_MAX_CLAIMS points, so the cap is a
+    # backstop): over it, the entry keeps the `_refs:_` lines and loses only the chips
+    kr = _claim_kiwi_refs(c)
+    ok = !isempty(kr) && _valid_bb_kiwi_refs(kr) && length(codeunits(JSON3.write(kr))) <= _BB_KIWI_REFS_MAX_BYTES
+    _set_bb_meta_field!(uid, id, "kiwiRefs", ok ? kr : nothing)
     200, body
+end
+
+# A review point's refs as text, labelled as Kiwi resolved them — the line a saved Kiwi turn has under
+# each claim (`kiwiTurnSave.ts` `claimBullet`); the clickable chips are the entry's `kiwiRefs`.
+_claim_ref_labels(x) = unique!(String[string(get(r["result"], "label", ""))
+                                      for r in get(x, "refs", Any[]) if get(r, "result", nothing) isa AbstractDict &&
+                                      !isempty(string(get(r["result"], "label", "")))])
+
+# The review's refs as the entry's `kiwiRefs` sidecar, which the Blackboard renders as clickable chips:
+# `{key → {ref, label, savedAt}}`, one per distinct ref, labelled as Kiwi resolved it. The key follows
+# `refKey` (`kiwiTurn.ts`). Unlike a saved Kiwi turn (`kiwiTurnSave.ts`) it keeps every ref kind and
+# no `snapshot` (optional in the sidecar): a gone target shows "was: <label>". No review, no refs.
+function _claim_kiwi_refs(c::AbstractDict)::Dict{String,Any}
+    out = Dict{String,Any}()
+    rv = get(c, "review", nothing)
+    rv isa AbstractDict || return out
+    at = string(get(rv, "at", ""))
+    for x in get(rv, "claims", Any[]), r in get(x, "refs", Any[])
+        ref = get(r, "ref", nothing)
+        ref isa AbstractDict || continue
+        key = JSON3.write([[String(k), ref[k]] for k in sort!(collect(keys(ref)); by = string)])
+        haskey(out, key) && continue
+        res = get(r, "result", nothing)
+        label = res isa AbstractDict ? string(get(res, "label", "")) : ""
+        out[key] = Dict{String,Any}("ref" => ref, "label" => label, "savedAt" => at)
+    end
+    out
 end
 
 # The reply to a state or a check: the findings, the checks as facts, and the model review if it ran.
