@@ -10,6 +10,8 @@ import { useRouter } from 'vue-router'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect from '../ChipSelect.vue'
 import InlineNote from '../InlineNote.vue'
+import KiwiRefChip from '../kiwi/KiwiRefChip.vue'
+import { refKey } from '../../utils/kiwiTurn'
 import { SEVERITY } from '../../lib/severity'
 import { useToast } from '../../composables/useToast'
 import { useKiwiStore } from '../../stores/kiwi'
@@ -187,6 +189,9 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
                 <InlineNote :short="x.text" :severity="x.kind === 'question' ? undefined : 'warn'"
                             :icon="x.kind === 'question' ? 'pi-question-circle' : undefined" />
                 <span v-if="x.action" class="claim-action cc-muted">→ {{ x.action }}</span>
+                <div v-if="x.refs.length" class="cc-row cc-row-tight claim-refs">
+                  <KiwiRefChip v-for="r in x.refs" :key="refKey(r.ref)" :kiwi-ref="r.ref" :result="r.result" :seen="r.seen" />
+                </div>
               </template>
             </div>
           </div>
@@ -214,5 +219,6 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
 .claim-cat-head { font-weight: 600; }
 .claim-list { display: flex; flex-direction: column; gap: 3px; padding-left: 1.2rem; }
 .claim-action { padding-left: 1.2rem; }
+.claim-refs { padding-left: 1.2rem; }
 .claim-supports { font-style: italic; }
 </style>

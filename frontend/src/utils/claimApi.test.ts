@@ -71,6 +71,14 @@ describe('claimApi', () => {
     expect(f.review?.model).toBe('sonnet')
     expect(f.review?.lastError).toBe('You have hit your limit')
   })
+  it('keeps each review point\'s refs as Kiwi checked them, dropping a malformed one', () => {
+    const ok = { ref: { kind: 'image', imageUid: 'i1' }, result: { ok: true, label: 'i1', error: '', check: 'exists' }, seen: true }
+    const r = parseClaimResult({ entryId: 'bb-5', review: { status: 'done', claims: [
+      { kind: 'observation', category: 'images', text: 'x', refs: [ok, { ref: 'nope' }, null] },
+      { kind: 'question', category: 'images', text: 'y' }] } })!
+    expect(r.review?.items[0].refs).toEqual([ok])
+    expect(r.review?.items[1].refs).toEqual([])
+  })
   it('rejects a reply that is not a claim result', () => {
     expect(parseClaimResult(null)).toBeNull()
     expect(parseClaimResult({ error: 'x' })).toBeNull()

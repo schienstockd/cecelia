@@ -6,7 +6,7 @@
 import { postJson } from './blackboardApi'
 import type { SeriesTarget } from '../plots/types'
 import type { QcFinding } from '../lib/qc'
-import type { KiwiClaimKind } from './kiwiTurn'
+import type { KiwiClaimKind, KiwiClaimRef } from './kiwiTurn'
 
 export type ClaimStage = 'S0' | 'S1' | 'S2'
 /** A claim check's finding: a `qc_finding` (the backend builds them so), with its stage, section id
@@ -23,7 +23,10 @@ export interface ClaimCheckLine { id: string; category: string; state: ClaimStat
 /** What a group of checks is about ("Images", "Same processing"), in reading order. */
 export interface ClaimCategory { id: string; label: string; tip: string; state: ClaimState }
 /** A model review point: one line under a category, with what to do split off (`action`, '' = none). */
-export interface ClaimReviewItem { kind: KiwiClaimKind; category: string; text: string; action: string; sectionId?: string }
+export interface ClaimReviewItem {
+  kind: KiwiClaimKind; category: string; text: string; action: string; sectionId?: string
+  refs: KiwiClaimRef[]            // what the point is about, as Kiwi checked it — clickable chips
+}
 /** The model review, once a turn has finished (`claim.review` on the entry). */
 export interface ClaimReview {
   turnId: string; status: string; model: string; abstain: boolean; note: string
@@ -103,6 +106,13 @@ function parseCategory(v: unknown): ClaimCategory | null {
   return { id: String(c.id ?? ''), label: String(c.label ?? ''), tip: String(c.tip ?? ''), state: parseState(c.state) }
 }
 
+// A point's refs as the turn checked them (`{ref, result, seen}`); a malformed one is dropped.
+function parseRefs(v: unknown): KiwiClaimRef[] {
+  if (!Array.isArray(v)) return []
+  return v.filter((r): r is KiwiClaimRef => !!r && typeof r === 'object' && !!r.ref && typeof r.ref === 'object'
+    && typeof r.ref.kind === 'string' && !!r.result && typeof r.result === 'object')
+}
+
 function parseReview(v: unknown): ClaimReview | null {
   if (!v || typeof v !== 'object') return null
   const r = v as Record<string, unknown>
@@ -111,6 +121,7 @@ function parseReview(v: unknown): ClaimReview | null {
     kind: (x.kind === 'question' ? 'question' : 'observation') as KiwiClaimKind,
     category: String(x.category ?? 'other'), text: String(x.text ?? ''), action: String(x.action ?? ''),
     ...(typeof x.sectionId === 'string' ? { sectionId: x.sectionId } : {}),
+    refs: parseRefs(x.refs),
   }))
   return {
     turnId: String(r.turnId ?? ''), status: String(r.status ?? ''), model: String(r.model ?? ''),
