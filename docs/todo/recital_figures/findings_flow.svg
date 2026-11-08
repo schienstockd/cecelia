@@ -1,126 +1,146 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1010" viewBox="0 0 1800 1010" font-family="Helvetica, Arial, DejaVu Sans, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1060" viewBox="0 0 1800 1060" font-family="Helvetica, Arial, DejaVu Sans, sans-serif">
   <defs>
-    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#D55E00"/></marker>
-    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0072B2"/></marker>
     <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6b6964"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0072B2"/></marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#b0487e"/></marker>
   </defs>
-  <rect width="1800" height="1010" fill="#f9f8f4"/>
-  <text x="32" y="60" font-size="32" fill="#222"><tspan font-weight="700">Claim recital</tspan><tspan fill="#666"> · when a claim is stated</tspan></text>
-  <text x="32" y="100" font-size="21" fill="#666">Checks run as soon as the claim exists; one plain Review runs on request. Neither sees the chat</text>
-  <line x1="32" y1="124" x2="680" y2="124" stroke="#6b6964" stroke-width="2"/>
+  <rect width="1800" height="1060" fill="#f9f8f4"/>
+  <text x="32" y="60" font-size="32" fill="#222"><tspan font-weight="700">Claim recital</tspan><tspan fill="#666"> · as built</tspan></text>
+  <text x="32" y="98" font-size="20" fill="#666">State a claim from a plot. Rules check the record; a model reviews it on request.</text>
+  <text x="32" y="124" font-size="20" fill="#666">Both land on one Blackboard entry. Helper, not gate: nothing is blocked.</text>
+  <line x1="32" y1="140" x2="680" y2="140" stroke="#6b6964" stroke-width="2"/>
 
-  <!-- legend of sources -->
+  <!-- legend -->
   <g font-size="15" fill="#555">
-    <rect x="1010" y="40" width="22" height="16" rx="3" fill="#dde9f2" stroke="#222" stroke-width="2"/><text x="1040" y="54">Checks (code) — gives the verdict</text>
-    <rect x="1010" y="66" width="22" height="16" rx="3" fill="#f2e1ea" stroke="#222" stroke-width="2"/><text x="1040" y="80">Review (model) — advisory only</text>
-    <rect x="1340" y="40" width="22" height="16" rx="3" fill="none" stroke="#aaa" stroke-width="2" stroke-dasharray="4 3"/><text x="1370" y="54" fill="#999">parked after P2</text>
-    <rect x="1340" y="66" width="22" height="16" rx="3" fill="#fff" stroke="#7a5c00" stroke-width="2"/><text x="1370" y="80">Analyst verdict on a finding</text>
+    <rect x="1250" y="40" width="22" height="16" rx="3" fill="#dde9f2" stroke="#222" stroke-width="2"/><text x="1280" y="54">Checks (code), facts</text>
+    <rect x="1250" y="66" width="22" height="16" rx="3" fill="#f2e1ea" stroke="#222" stroke-width="2"/><text x="1280" y="80">Review (model), advisory</text>
+    <rect x="1250" y="92" width="22" height="16" rx="3" fill="#fff" stroke="#7a5c00" stroke-width="2"/><text x="1280" y="106">Analyst's verdict</text>
+    <rect x="1540" y="40" width="22" height="16" rx="3" fill="none" stroke="#aaa" stroke-width="2" stroke-dasharray="4 3"/><text x="1570" y="54" fill="#999">not built / parked</text>
+    <text x="1540" y="80" fill="#D55E00">orange = open point</text>
   </g>
 
-  <!-- gate -->
-  <text x="590" y="150" font-size="21" fill="#555" text-anchor="middle">fixed in the analysis?</text>
-  <rect x="500" y="172" width="180" height="548" rx="14" fill="none" stroke="#777" stroke-width="2" stroke-dasharray="7 6"/>
-  <text x="706" y="186" font-size="20" font-weight="700" fill="#222">no</text>
-  <text x="590" y="530" font-size="15" fill="#0b7a3e" text-anchor="middle">decided by re-running</text><text x="590" y="548" font-size="15" fill="#0b7a3e" text-anchor="middle">the checks on the</text><text x="590" y="566" font-size="15" fill="#0b7a3e" text-anchor="middle">current record, not a tag</text>
-  <text x="590" y="236" font-size="14" fill="#D55E00" text-anchor="middle">rewording the claim</text>
-  <text x="590" y="254" font-size="14" fill="#D55E00" text-anchor="middle">is a new round,</text>
-  <text x="590" y="272" font-size="14" fill="#D55E00" text-anchor="middle">not "fixed"</text>
-
-  <!-- left boxes -->
-  <g font-size="26" text-anchor="middle" fill="#222">
-    <rect x="32" y="162" width="400" height="76" rx="12" fill="#dde9f2" stroke="#222" stroke-width="5"/><text x="232" y="210">Record <tspan font-weight="700">gap</tspan></text>
-    <rect x="32" y="278" width="400" height="76" rx="12" fill="#dde9f2" stroke="#222" stroke-width="5"/><text x="232" y="326"><tspan font-weight="700">Inconsistent</tspan> images</text>
-    <rect x="32" y="394" width="400" height="76" rx="12" fill="#dde9f2" stroke="#222" stroke-width="5"/><text x="232" y="442">Convention <tspan font-weight="700">broken</tspan></text>
-    <rect x="32" y="510" width="400" height="76" rx="12" fill="none" stroke="#aaa" stroke-width="3" stroke-dasharray="9 6"/><text x="232" y="548" fill="#999">Claim reproduced</text><text x="232" y="574" font-size="15" fill="#999">perturbation sets: plain Review did it in P2</text>
-    <rect x="32" y="626" width="400" height="76" rx="12" fill="#f2e1ea" stroke="#222" stroke-width="5"/><text x="232" y="674">Review <tspan font-weight="700">inferred</tspan></text>
+  <!-- 1 · the claim -->
+  <rect x="32" y="176" width="330" height="430" rx="14" fill="#fff" stroke="#222" stroke-width="3"/>
+  <text x="56" y="214" font-size="24" font-weight="700" fill="#222">Claim</text>
+  <text x="56" y="240" font-size="15" fill="#666">from a summary plot's footer button</text>
+  <text x="56" y="282" font-size="19" fill="#222" font-style="italic">“T cells move faster</text>
+  <text x="56" y="306" font-size="19" fill="#222" font-style="italic">than B cells”</text>
+  <g font-size="16" fill="#333">
+    <text x="56" y="350"><tspan font-weight="700">Scope</tspan>, from the plot:</text>
+    <text x="70" y="376">set · the plotted populations</text>
+    <text x="70" y="400">(B/qc/_tracked vs T/qc/_tracked)</text>
+    <text x="70" y="424">· the measure (live.track.speed)</text>
+    <text x="56" y="462"><tspan font-weight="700">Replicate</tspan>: image attributes,</text>
+    <text x="70" y="486">one value combination = one n</text>
+    <text x="70" y="510">(Mouse, or Mouse × Location)</text>
   </g>
-  <g font-size="14" fill="#666">
-    <text x="440" y="252">S0</text><text x="440" y="368">S1</text><text x="440" y="484">S2 rules</text><text x="440" y="600" fill="#aaa">S3b</text>
+  <text x="56" y="552" font-size="15" fill="#0b7a3e">The sentence is read only by</text>
+  <text x="56" y="572" font-size="15" fill="#0b7a3e">the review; the checks use the scope.</text>
+
+  <!-- 2 · checks -->
+  <rect x="402" y="176" width="420" height="430" rx="14" fill="#dde9f2" stroke="#222" stroke-width="3"/>
+  <text x="426" y="214" font-size="24" font-weight="700" fill="#222">Checks</text>
+  <text x="426" y="240" font-size="15" fill="#555">code, no model · on stating and on every visit</text>
+  <g font-size="16" fill="#222">
+    <text x="426" y="282" font-weight="700">Images</text><text x="610" y="282" fill="#444">in the set · has data</text>
+    <text x="610" y="302" fill="#444">· replicate filled in</text>
+    <text x="426" y="336" font-weight="700">Processing record</text><text x="610" y="336" fill="#444">params and 2D/3D</text>
+    <text x="610" y="356" fill="#444">on record</text>
+    <text x="426" y="390" font-weight="700">Same processing</text><text x="610" y="390" fill="#444">across images · B vs T</text>
+    <text x="610" y="410" fill="#444">per image · gates · 2D/3D</text>
+    <text x="426" y="444" font-weight="700">Replicates</text><text x="610" y="444" fill="#444">n · rank-test floor ·</text>
+    <text x="610" y="464" fill="#444">images per replicate</text>
+    <text x="426" y="498" font-weight="700">Units</text><text x="610" y="498" fill="#444">calibrated</text>
+  </g>
+  <line x1="426" y1="522" x2="798" y2="522" stroke="#9db4c6" stroke-width="1.5"/>
+  <g font-size="15" fill="#333">
+    <text x="426" y="548">Each check is one line:  ✓ fact</text>
+    <text x="426" y="570">⚠ fact → what to do  ·  – not checked: why</text>
+    <text x="426" y="592" fill="#666">Plain lines, nothing to mark.</text>
   </g>
 
-  <!-- flows: orange to Claim check, blue to Rule count -->
-  <g fill="none" stroke-width="4">
-    <!-- 1 record gap: orange + blue -->
-    <path d="M440,200 L760,200" stroke="#222"/>
-    <path d="M760,200 C880,200 880,322 993,322" stroke="#D55E00" marker-end="url(#o)"/>
-    <path d="M760,200 C900,200 860,586 993,586" stroke="#0072B2" marker-end="url(#b)"/>
-    <!-- 2 inconsistent: orange -->
-    <path d="M440,316 L680,316 C840,316 840,354 993,354" stroke="#D55E00" marker-end="url(#o)"/>
-    <!-- 3 convention: orange + blue -->
-    <path d="M440,432 L760,432" stroke="#222"/>
-    <path d="M760,432 C880,432 880,386 993,386" stroke="#D55E00" marker-end="url(#o)"/>
-    <path d="M760,432 C880,432 860,620 993,620" stroke="#0072B2" marker-end="url(#b)"/>
-    <!-- 5 review inferred: orange + blue (ratchet) -->
-    <path d="M440,664 L760,664" stroke="#222"/>
-    <path d="M760,664 C890,664 860,446 993,446" stroke="#D55E00" marker-end="url(#o)"/>
-    <path d="M760,664 C880,664 880,654 993,654" stroke="#0072B2" marker-end="url(#b)"/>
+  <!-- 3 · review -->
+  <rect x="862" y="176" width="440" height="430" rx="14" fill="#f2e1ea" stroke="#222" stroke-width="3"/>
+  <text x="886" y="214" font-size="24" font-weight="700" fill="#222">Model review</text>
+  <text x="886" y="240" font-size="15" fill="#555">on request · one Kiwi turn on Kiwi's model, ~1 min</text>
+  <g font-size="16" fill="#222">
+    <text x="886" y="280"><tspan font-weight="700">Reads</text> the record through an allow-list</text>
+    <text x="886" y="302">of tools.</text>
+    <text x="886" y="330" fill="#555">Withheld: Blackboard, notes, briefing,</text>
+    <text x="886" y="352" fill="#555">captures, ELN, lab log, notebooks,</text>
+    <text x="886" y="374" fill="#555">other plots and figures, the viewer.</text>
+    <text x="886" y="408"><tspan font-weight="700">Told</tspan> what the checks found;</text>
+    <text x="886" y="430">adds only what they miss.</text>
+    <text x="886" y="464"><tspan font-weight="700">Points</tspan>: Category: what, where</text>
+    <text x="886" y="486">→ what to do. One sentence a side.</text>
+    <text x="886" y="508">Refs checked and seen; one re-ask.</text>
+    <text x="886" y="542">+ The data · Other · <tspan font-style="italic">what the</tspan></text>
+    <text x="886" y="564" font-style="italic">record would support</text>
   </g>
-  <g fill="#222"><circle cx="760" cy="200" r="9"/><circle cx="760" cy="432" r="9"/><circle cx="760" cy="664" r="9"/></g>
+  <text x="886" y="592" font-size="15" fill="#555">A failed run says why; the last review stays.</text>
 
-  <!-- yes -> ends -->
-  <line x1="590" y1="730" x2="590" y2="868" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <text x="606" y="840" font-size="20" font-weight="700" fill="#222">yes</text>
-  <rect x="32" y="874" width="400" height="88" rx="12" fill="#f0f0ee" stroke="#666" stroke-width="3"/>
-  <text x="232" y="908" font-size="22" text-anchor="middle" fill="#222"><tspan font-weight="700">Within tolerance</tspan> · display</text>
-  <text x="232" y="940" font-size="18" text-anchor="middle" fill="#666">S1 differences below tolerance</text>
-  <path d="M440,918 L462,918" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <rect x="470" y="880" width="240" height="72" rx="12" fill="#f0f0ee" stroke="#666" stroke-width="3"/>
-  <text x="590" y="914" font-size="22" text-anchor="middle" fill="#222">Ends at the stamp</text>
-  <text x="590" y="940" font-size="15" text-anchor="middle" fill="#666">on the export</text>
+  <!-- 4 · entry -->
+  <rect x="1342" y="176" width="426" height="430" rx="14" fill="#fff" stroke="#222" stroke-width="3"/>
+  <text x="1366" y="214" font-size="24" font-weight="700" fill="#222">Claim entry</text>
+  <text x="1366" y="240" font-size="15" fill="#555">one Blackboard entry per claim; the plot's</text>
+  <text x="1366" y="258" font-size="15" fill="#555">popover shows the same</text>
+  <g font-size="16" fill="#222">
+    <text x="1366" y="296">Checks and review grouped by the</text>
+    <text x="1366" y="318">same categories.</text>
+    <text x="1366" y="352">Review points are sections (sNN),</text>
+    <text x="1366" y="374">each with clickable refs.</text>
+  </g>
+  <rect x="1366" y="396" width="378" height="66" rx="10" fill="#fff" stroke="#7a5c00" stroke-width="2.5"/>
+  <text x="1384" y="424" font-size="17" font-weight="700" fill="#222">Good / Bad / Unsure</text>
+  <text x="1384" y="448" font-size="15" fill="#555">only on the review's points</text>
+  <g font-size="16" fill="#222">
+    <text x="1366" y="496">Restate → a new round: the review is</text>
+    <text x="1366" y="518">cleared, earlier rounds are listed.</text>
+  </g>
+  <text x="1366" y="556" font-size="15" fill="#D55E00">Point ids are keyed by wording: a reworded</text>
+  <text x="1366" y="576" font-size="15" fill="#D55E00">point is a new section and loses its mark.</text>
 
-  <!-- sinks -->
-  <rect x="1000" y="296" width="320" height="170" rx="16" fill="#fff" stroke="#D55E00" stroke-width="5"/>
-  <text x="1160" y="356" font-size="32" font-weight="700" text-anchor="middle" fill="#222">Claim check</text>
-  <text x="1160" y="400" font-size="21" text-anchor="middle" fill="#555">still applies to the</text>
-  <text x="1160" y="426" font-size="21" text-anchor="middle" fill="#555">current record?</text>
+  <!-- arrows between the four -->
+  <path d="M362,300 L398,300" stroke="#6b6964" stroke-width="3" fill="none" marker-end="url(#g)"/>
+  <path d="M822,300 L858,300" stroke="#0072B2" stroke-width="3" fill="none" marker-end="url(#b)"/>
+  <path d="M1302,300 L1338,300" stroke="#b0487e" stroke-width="3" fill="none" marker-end="url(#p)"/>
+  <path d="M612,606 L612,640 L1555,640 L1555,610" stroke="#0072B2" stroke-width="3" fill="none" marker-end="url(#b)"/>
+  <text x="1080" y="660" font-size="14" fill="#0072B2" text-anchor="middle">the checks' lines, written on the entry</text>
 
-  <rect x="1000" y="540" width="320" height="150" rx="16" fill="#fff" stroke="#0072B2" stroke-width="5"/>
-  <text x="1160" y="598" font-size="32" font-weight="700" text-anchor="middle" fill="#222">Rule count</text>
-  <text x="1160" y="640" font-size="21" text-anchor="middle" fill="#555">3+ claims?</text>
+  <!-- after a finding -->
+  <text x="32" y="716" font-size="22" font-weight="700" fill="#222">After a finding</text>
+  <rect x="32" y="736" width="400" height="104" rx="14" fill="#fff" stroke="#0072B2" stroke-width="3"/>
+  <text x="54" y="772" font-size="20" fill="#222">Re-check</text>
+  <text x="54" y="798" font-size="15" fill="#555">on every visit, and in the session briefing</text>
+  <text x="54" y="818" font-size="15" fill="#555">(openClaims), read by Kiwi and Claude Code</text>
+  <path d="M432,788 L478,788" stroke="#6b6964" stroke-width="3" fill="none" marker-end="url(#g)"/>
+  <rect x="482" y="736" width="360" height="104" rx="14" fill="#fff" stroke="#222" stroke-width="3"/>
+  <text x="504" y="772" font-size="20" fill="#222">Analyst acts</text>
+  <text x="504" y="798" font-size="15" fill="#555">re-analyse, restate, or retract</text>
+  <path d="M842,788 L888,788" stroke="#6b6964" stroke-width="3" fill="none" marker-end="url(#g)"/>
+  <rect x="892" y="736" width="410" height="104" rx="14" fill="#fff" stroke="#222" stroke-width="3"/>
+  <text x="914" y="772" font-size="20" fill="#222">Closed</text>
+  <text x="914" y="798" font-size="15" fill="#555">when the re-check no longer finds it;</text>
+  <text x="914" y="818" font-size="15" fill="#555">never by a tag</text>
 
-  <!-- brackets -->
-  <path d="M1350,300 Q1388,300 1388,330 L1388,440 Q1388,462 1350,462" fill="none" stroke="#777" stroke-width="2"/>
-  <text x="1404" y="372" font-size="20" fill="#666">per project, at the</text>
-  <text x="1404" y="398" font-size="20" fill="#666">next session briefing</text>
-  <path d="M1350,544 Q1388,544 1388,570 L1388,664 Q1388,686 1350,686" fill="none" stroke="#777" stroke-width="2"/>
-  <text x="1404" y="604" font-size="20" fill="#D55E00">across claims and</text>
-  <text x="1404" y="630" font-size="20" fill="#D55E00">projects — open: who</text>
-  <text x="1404" y="656" font-size="20" fill="#D55E00">sees them all?</text>
+  <!-- not built / parked -->
+  <rect x="1342" y="736" width="426" height="104" rx="14" fill="none" stroke="#aaa" stroke-width="2" stroke-dasharray="7 6"/>
+  <text x="1364" y="768" font-size="17" fill="#888">Not built yet</text>
+  <text x="1364" y="792" font-size="14" fill="#999">findings drawn on the plot's dots · the claim on</text>
+  <text x="1364" y="810" font-size="14" fill="#999">the plot · export stamp · review points in</text>
+  <text x="1364" y="828" font-size="14" fill="#999">openClaims · claims between treatment arms</text>
 
-  <!-- top chain -->
-  <line x1="1120" y1="290" x2="1120" y2="244" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <rect x="1000" y="144" width="240" height="90" rx="12" fill="#fff" stroke="#222" stroke-width="3"/>
-  <text x="1120" y="182" font-size="24" text-anchor="middle" fill="#222">Briefing item</text>
-  <text x="1120" y="212" font-size="17" text-anchor="middle" fill="#666">Kiwi / Claude Code</text>
-  <line x1="1246" y1="189" x2="1286" y2="189" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <rect x="1296" y="144" width="240" height="90" rx="12" fill="#fff" stroke="#222" stroke-width="3"/>
-  <text x="1416" y="182" font-size="24" text-anchor="middle" fill="#222">Analyst acts</text>
-  <text x="1416" y="212" font-size="17" text-anchor="middle" fill="#666">re-analyse or retract</text>
-  <line x1="1542" y1="189" x2="1582" y2="189" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <rect x="1592" y="144" width="180" height="90" rx="12" fill="#fff" stroke="#222" stroke-width="3"/>
-  <text x="1682" y="182" font-size="24" text-anchor="middle" fill="#222">Closed</text>
-  <text x="1682" y="212" font-size="17" text-anchor="middle" fill="#666">once gone</text>
+  <rect x="32" y="864" width="1270" height="84" rx="14" fill="none" stroke="#aaa" stroke-width="2" stroke-dasharray="7 6"/>
+  <text x="54" y="896" font-size="17" fill="#888">Parked</text>
+  <text x="54" y="922" font-size="15" fill="#999">Rule count (one finding kind on 3+ claims → a new rule or an app fix; a rule marked Bad on 3+ claims → sharpened or dropped) ·</text>
+  <text x="54" y="940" font-size="15" fill="#999">Translator (a model parses the sentence) · fixed perturbation sets · CONFIRM-style gates</text>
 
-  <!-- bottom chain -->
-  <line x1="1120" y1="696" x2="1120" y2="734" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <rect x="1000" y="740" width="270" height="90" rx="12" fill="#fff" stroke="#222" stroke-width="3"/>
-  <text x="1135" y="778" font-size="24" text-anchor="middle" fill="#222">Proposal</text>
-  <text x="1135" y="808" font-size="17" text-anchor="middle" fill="#666">new Check rule, or an app fix</text>
-  <line x1="1276" y1="785" x2="1316" y2="785" stroke="#6b6964" stroke-width="4" marker-end="url(#g)"/>
-  <rect x="1326" y="740" width="400" height="90" rx="12" fill="#fff" stroke="#222" stroke-width="3"/>
-  <text x="1526" y="778" font-size="24" text-anchor="middle" fill="#222">Rule added, or rejected</text>
-  <text x="1526" y="808" font-size="17" text-anchor="middle" fill="#666">Dominik, in a rules PR</text>
+  <g font-size="15" fill="#D55E00">
+    <text x="1342" y="878">Open: the review prompt still lists what the</text>
+    <text x="1342" y="898">hand-walk found on 4kS67f, and no held-out</text>
+    <text x="1342" y="918">project with treatment arms exists to test it.</text>
+  </g>
 
-  <text x="1000" y="880" font-size="16" fill="#666">A recurring <tspan font-weight="700">record gap</tspan> is a Cecelia bug (a task that doesn't bank its params) → app fix.</text>
-  <text x="1000" y="904" font-size="16" fill="#666">A recurring <tspan font-weight="700">Review inferred</tspan> becomes a Check rule: how the mechanical layer grows.</text>
-  <text x="1000" y="928" font-size="16" fill="#666">A recurring <tspan font-weight="700">convention</tspan> finding sharpens the S2 rule or its threshold.</text>
-  <text x="1000" y="952" font-size="16" fill="#0b7a3e">A rule marked <tspan font-weight="700">Bad</tspan> on 3+ claims is sharpened or dropped: its false-alarm rate.</text>
-  <text x="32" y="992" font-size="14" fill="#888">v2 2026-11-06, after P1 (#1969) and the P2 baseline. Orange = open point, green = changed in v2, grey dashed = parked. First draft 2026-11-05.</text>
-
-  <!-- v2: analyst verdict on a finding (existing Good / Bad / Unsure) -->
-  <rect x="32" y="738" width="400" height="88" rx="12" fill="#fff" stroke="#7a5c00" stroke-width="4"/>
-  <text x="232" y="774" font-size="22" text-anchor="middle" fill="#222">Finding marked <tspan font-weight="700">Bad</tspan></text>
-  <text x="232" y="804" font-size="16" text-anchor="middle" fill="#666">Good / Bad / Unsure, the blackboard's verdicts</text>
-  <path d="M440,782 L700,782 C880,782 880,676 993,676" fill="none" stroke="#7a5c00" stroke-width="4" stroke-dasharray="10 6" marker-end="url(#b)"/>
-  <text x="630" y="812" font-size="14" fill="#0b7a3e">a false alarm counts against the rule</text>
+  <text x="32" y="1006" font-size="14" fill="#888">v3 2026-11-08, as built after #1969–#2036 and live runs on 4kS67f. v2 (2026-11-06, the design before building) and v1 (2026-11-05) are in git history.</text>
+  <text x="32" y="1028" font-size="14" fill="#888">Changed from v2: no stage chips or Fixed tags · checks are facts by category with what to do · Good / Bad / Unsure only on model points · Unit → Replicate · the review is told the checks' findings.</text>
 </svg>

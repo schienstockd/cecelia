@@ -9,12 +9,15 @@ findings in the briefing's `openClaims`. P0 (by hand), P1
 (#1969) and the P2 baseline are below. Shape after P2: **rules + one plain review turn**; the Translator
 (S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate.
 
-The schematics are `recital_figures/findings_flow.svg` (what happens to a finding) and
-`recital_figures/gui_mockup.svg` (the GUI), v2 of 2026-11-06 (v1 is in git history). Check changes
-against them. What v2 changed: real P0/P2 findings instead of illustrative ticks; the statistical unit
-(`Mouse`, n) is part of the claim's scope; one plain Review instead of "Check claim" with a
-perturbation set; no Fixed / Acknowledged / False positive tags (see *Outcome* below); findings drawn
-on the dots they concern; the stamp says what didn't run.
+The schematics are `recital_figures/findings_flow.svg` (claim → checks → review → entry, and what
+happens after a finding) and `recital_figures/gui_mockup.svg` (the GUI), v3 of 2026-11-08: **as
+built** after #1969–#2036, with real text from 4kS67f. v2 (2026-11-06, the design before building)
+and v1 are in git history. Check changes against v3. What v3 changed: one footer button and a
+popover instead of a row of stage chips; checks are facts grouped by category (Images, Processing
+record, Same processing, Replicates, Units), each problem with what to do; Good / Bad / Unsure only
+on the model's points; Unit became Replicate; the review is told what the checks found, runs on
+Kiwi's model through an allow-list of record tools, and its points carry clickable refs. Findings
+on the dots and the export stamp are shown as not built.
 
 **Worth building?** The rules (S0–S2) yes: cheap, no model, and P0 found real problems with them.
 The model stages and the full mechanism only if they beat a plain "review this claim" prompt.
@@ -378,8 +381,10 @@ claim object (Q2), a record exporter, and the stamp on the export. Concrete orde
 ## Build (2026-11-06)
 
 Open after the build: claims between treatment arms (a `group_attr` on `ClaimScope`; today the groups
-are populations); review findings in the briefing's `openClaims`; a first real review run on 4kS67f to
-compare with the P2 baseline (the in-app review reads through the observer tools and can't recompute).
+are populations); review findings in the briefing's `openClaims`; review point ids are keyed by
+wording, so a reworded point loses its mark. Real review runs on 4kS67f (2026-11-07/08, Sonnet and
+Opus) found the per-mouse reversal (Mouse 2) and the 3w4IY5 B outlier without recomputing; their
+"a list of three or more facts" re-asks are the one shape problem left.
 
 One PR each, smallest and most backend first. The frontend steps need Dominik's eyes before merge.
 
@@ -390,8 +395,8 @@ One PR each, smallest and most backend first. The frontend steps need Dominik's 
 | B3 | **Route + MCP tool:** run the checks for a scope, read-only — **done** #1979 | `api/src/routes/`, `mcp/cecelia_mcp/server.py` + `guidance.py` |
 | B4 | **Claim entry:** a blackboard entry with a `claim` meta key holding the scope (the passthrough pattern of `agentRun` / `knowledge`, `_BB_PASSTHROUGH_KEYS`, not a new entry type); checks re-run on read; the session briefing lists claims with open findings — **done** #1981 | `api/src/blackboard*.jl`, briefing |
 | B5 | **Review turn:** one headless turn shaped like `run_kiwi_turn` (`api/src/kiwi_turn.jl`: read-only tools, headless MCP config, reply schema, ref validation), with only the claim and the record; findings saved as sections marked `inferred` / `recomputed` — **done** #1983 (not yet run on a real model) | `api/src/` |
-| B2b | **S1 coverage:** the preprocessing steps behind the segmented image (run-log lineage, not task names) and every parent gate are compared like seg/track params; `S1.dims` flags compared populations measured in 2D vs 3D on one image (`claim.dims_differ`, replaces the generic confound line for dims) | `app/src/claim_checks.jl`, `qc/text.jl` |
-| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export — **first slice merged** #1985: footer button + popover (claim, replicate, checks by category, model review), entry grouped the same way; findings on the dots, the export stamp and the claim text on the plot still to build | `frontend/src/components/canvas/` |
+| B2b | **S1 coverage:** the preprocessing steps behind the segmented image (run-log lineage, not task names) and every parent gate are compared like seg/track params; `S1.dims` flags compared populations measured in 2D vs 3D on one image (`claim.dims_differ`, replaces the generic confound line for dims) — **done** #2036 | `app/src/claim_checks.jl`, `qc/text.jl` |
+| B6 | **GUI:** state a claim from a summary plot, chips, findings on the plot (start from the plot point-out marks, `PlotPointOutMark.vue` / `plotMarks`; those expire, claim findings don't), stamp on export — **first slice merged** #1985: footer button + popover (claim, replicate, checks by category, model review), entry grouped the same way; findings on the dots, the export stamp and the claim text on the plot still to build. After use on 4kS67f: review hidden while AI is off #2026, allow-list of record tools #2028, Kiwi's model #2031, clickable refs + one-fact shape #2034 | `frontend/src/components/canvas/` |
 
 
 **Paper.** Not in the Nature Protocols paper beyond, at most, the export stamp. If P2 holds, the
