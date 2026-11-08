@@ -134,38 +134,134 @@ function _claim_params_for(img::CciaImage, vn::AbstractString, kind::AbstractStr
     found
 end
 
-# The gate of `path` inside the segmentation's gating file, flattened: kind, axes and transforms as
-# keys, the drawn geometry (keys sorted) as one value. Read through the one gating reader, read-only.
-# `nothing` when the population isn't there; empty when it has no gate (the segmentation root).
+# The gates of `path` inside the segmentation's gating file — the leaf AND every parent gate above it,
+# since a parent drawn differently changes which cells the leaf sees. Each flattened: kind, axes and
+# transforms as keys, the drawn geometry (keys sorted) as one value. The leaf's keys are `gate.<k>`, a
+# parent's `gate@<parent path>::<k>` (`_claim_gate_prefix`). Read through the one gating reader,
+# read-only. `nothing` when the population isn't there; empty when nothing on the path has a gate.
+_claim_gate_prefix(parent) = isnothing(parent) ? "gate." : "gate@" * parent * "::"
+_claim_is_gate_key(k::AbstractString) = startswith(k, "gate.") || startswith(k, "gate@")
 function _claim_gate_vars(img::CciaImage, vn::AbstractString, path::AbstractString)
     path == "/" && return Dict{String,Any}()
     m = try load_pop_map(img._dir, vn; backfill_save = false) catch; return nothing end
     has_pop(m, path) || return nothing
-    g = pop_at(m, path).gate
-    isnothing(g) && return Dict{String,Any}()
     out = Dict{String,Any}()
+    segs = split(path, "/"; keepempty = false)
+    for i in eachindex(segs)
+        p = "/" * join(segs[1:i], "/")
+        has_pop(m, p) || continue
+        _claim_gate_flatten!(out, pop_at(m, p).gate, i == length(segs) ? nothing : p)
+    end
+    out
+end
+function _claim_gate_flatten!(out::Dict{String,Any}, g, parent)
+    isnothing(g) && return out
+    pre = _claim_gate_prefix(parent)
     spec = gate_spec(g)
+    geo = ""
     for k in sort!(collect(keys(spec))); v = spec[k]
         ks = string(k)
         # kind, axes and transforms are compared as settings; everything else is the drawn shape
         if !(ks == "kind" || endswith(ks, "_channel") || endswith(ks, "_transform"))
-            out["gate.geometry"] = get(out, "gate.geometry", "") * JSON3.write(v)
+            geo *= JSON3.write(v)
         else
-            _claim_flatten!(out, "gate." * ks, v)
+            _claim_flatten!(out, pre * ks, v)
         end
     end
     # the drawn shape as a short digest: equal shapes compare equal, and evidence stays readable
-    haskey(out, "gate.geometry") && (out["gate.geometry"] = bytes2hex(SHA.sha256(out["gate.geometry"]))[1:8])
+    isempty(geo) || (out[pre * "geometry"] = bytes2hex(SHA.sha256(geo))[1:8])
     out
+end
+
+# ── preprocessing: what made the image a segmentation read ──────────────────────────────────────
+# A segmentation reads an image VERSION (`valueName`: "default", "denoised", …); a cleanup task wrote
+# that version from another one. The lineage is followed through the run log and the task specs, not
+# task names: a run's image inputs are its image-version pickers (`_history_leaves`: a
+# `valueNameSelection` that reads no label set or other namespace), and what it wrote is
+# `_history_output` (a named output, else the spec's fixed `outputValueName`). An import is the root.
+
+# The image versions a run read.
+function _claim_image_inputs(fn::AbstractString, params::AbstractDict)::Vector{String}
+    lv = _history_leaves(String(fn))
+    lv === nothing && return String[]
+    out = String[]
+    for (k, l) in lv
+        (l.writes || !isempty(l.ns) || l.type != "valueNameSelection") && continue
+        v = get(params, something(_stored_key(k, l.former, params), k), nothing)
+        (v isa AbstractString && !isempty(v)) && push!(out, String(v))
+    end
+    sort!(unique!(out))
+end
+
+# The newest finished run on or before `ceiling` (ISO; "" = any time) that wrote image version `v`:
+# `(fn, params, at)`, `:root` when an import wrote it, `nothing` when the log has no such run.
+function _claim_version_producer(entries, v::AbstractString, ceiling::AbstractString)
+    for e in Iterators.reverse(entries)
+        r = run_log_row(e)
+        (r.status == "done" && !r.legacy) || continue
+        (isempty(ceiling) || r.at <= ceiling) || continue
+        lv = _history_leaves(r.fn)
+        lv === nothing && continue
+        _history_output(r.fn, r.params, lv) == (String(v), "") || continue
+        return startswith(r.fn, "importImages.") ? :root : (r.fn, r.params, r.at)
+    end
+    nothing
+end
+
+"""
+    claim_preprocessing(img, inputs; ceiling = "") -> (; steps, params, unrecorded)
+
+Walk back from the image versions a segmentation read (`inputs`) through the run log: `steps` the
+producing task funs, upstream first; `params` each step's run-log params by fun; `unrecorded` the
+versions other than `default` that no finished run in the log wrote (a record gap). `ceiling` (ISO)
+skips runs after the consumer ran — a cleanup re-run since is not what it read. Read-only.
+"""
+function claim_preprocessing(img::CciaImage, inputs::AbstractVector; ceiling::AbstractString = "")
+    entries = read_run_log(img._dir)
+    steps = String[]; params = Dict{String,Dict{String,Any}}(); unrecorded = String[]
+    seen = Set{String}()
+    walk(v, lim) = begin
+        v in seen && return
+        push!(seen, v)
+        hit = _claim_version_producer(entries, v, lim)
+        if hit === nothing
+            v == VERSIONED_DEFAULT_VAL || push!(unrecorded, v)
+        elseif hit !== :root
+            fn, p, at = hit
+            foreach(u -> walk(u, at), _claim_image_inputs(fn, p))
+            haskey(params, fn) || (push!(steps, fn); params[fn] = p)
+        end
+    end
+    foreach(v -> walk(String(v), String(ceiling)), inputs)
+    (; steps, params, unrecorded = sort!(unrecorded))
+end
+
+# When the run that made `vn` ran (the newest finished one), or "" — the ceiling for its lineage.
+function _claim_run_at(img::CciaImage, fn::AbstractString, vn::AbstractString)::String
+    for e in Iterators.reverse(read_run_log(img._dir))
+        r = run_log_row(e)
+        (r.fn == fn && r.status == "done" && !r.legacy && _claim_run_output(r.fn, r.params) == vn) && return r.at
+    end
+    ""
+end
+
+# How many spatial axes a label set was measured in (2 or 3), from the centroid axes its table names
+# (`centroid_columns`), or `nothing` when that can't be read. Area is pixels in 2D, voxels in 3D.
+function _claim_measure_dims(path::AbstractString)
+    isfile(path) || return nothing
+    n = try length(centroid_columns(label_props(path))) catch; 0 end
+    n in (2, 3) ? n : nothing
 end
 
 """
     claim_record_table(scope::ClaimScope) -> Vector{Dict{String,Any}}
 
 One row per (image, population) over EVERY image in the set. Each row: `image`, `pop`, `valueName`,
-`included`, `hasData`, `unit` (the replicate: its attributes' values, `" × "`-joined), `paramsSource` (`kind => fun => source`)
-and `vars` — the processing variables as flat keys (`meta.*`, `params.<fun>.*`, `gate.*`,
-`motionDims`). Read-only.
+`included`, `hasData`, `unit` (the replicate: its attributes' values, `" × "`-joined), `paramsSource` (`kind => fun => source`;
+kind `preprocessing` for the cleanup steps behind the image the segmentation read, `claim_preprocessing`),
+`preprocessingUnrecorded` (image versions read that no logged run made) and `vars` — the processing
+variables as flat keys (`meta.*`, `params.<fun>.*`, `preprocessing`, `gate.*` and a parent gate's
+`gate@<path>::*`, `motionDims` for tracking measures, else `measureDims`). Read-only.
 """
 function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
     rows = Dict{String,Any}[]
@@ -182,15 +278,36 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
             isnothing(v) || (vars["meta." * k] = string(v))
         end
         sources = Dict{String,Any}()
+        addparams!(fun, p) = for (k, v) in _claim_flatten!(Dict{String,Any}(), "params." * fun, p)
+            occursin(_CLAIM_NAME_KEY, k) || (vars[k] = v)
+        end
+        inputs = Dict{String,String}()      # image version read => when the reading run ran ("" = unknown)
         for kind in _claim_kinds(scope.measure)
             found = _claim_params_for(img, vn, kind)
             sources[kind] = Dict{String,Any}(f => s for (f, (_, s)) in found)
-            for (fun, (p, _)) in found
-                flat = _claim_flatten!(Dict{String,Any}(), "params." * fun, p)
-                for (k, v) in flat
-                    occursin(_CLAIM_NAME_KEY, k) || (vars[k] = v)
+            for (fun, (p, s)) in found
+                addparams!(fun, p)
+                at = s == "runLog" ? _claim_run_at(img, fun, vn) : ""
+                for v in _claim_image_inputs(fun, p)
+                    inputs[v] = max(get(inputs, v, ""), at)
                 end
             end
+        end
+        # the cleanup steps that made the image the segmentation read, compared like its own params;
+        # `preprocessing` names the chain so an image with none differs from one with some
+        unrecorded = String[]
+        if !isempty(inputs)
+            steps = String[]; pre = Dict{String,Any}()
+            for (v, at) in sort!(collect(inputs))
+                lin = claim_preprocessing(img, [v]; ceiling = at)
+                append!(unrecorded, lin.unrecorded)
+                for fn in lin.steps
+                    fn in steps || push!(steps, fn)
+                    haskey(pre, fn) || (pre[fn] = "runLog"; addparams!(fn, lin.params[fn]))
+                end
+            end
+            sources["preprocessing"] = pre
+            isempty(unrecorded) && (vars["preprocessing"] = isempty(steps) ? "none" : join(steps, " → "))
         end
         gate = _claim_gate_vars(img, vn, _claim_pop_gate_path(pop))
         isnothing(gate) || merge!(vars, gate)
@@ -199,6 +316,9 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
             m = isnothing(doc) ? nothing : get(doc, :metrics, nothing)
             d = m isa AbstractDict ? get(m, :motionDims, nothing) : nothing
             isnothing(d) || (vars["motionDims"] = d)
+        else
+            d = _claim_measure_dims(img_label_props_path(img, vn))
+            isnothing(d) || (vars["measureDims"] = d)
         end
         # calibration problems, from the one metadata checker (qc.jl), as `field => [codes]`
         calib = Dict{String,Any}()
@@ -210,7 +330,7 @@ function claim_record_table(scope::ClaimScope)::Vector{Dict{String,Any}}
             "calibration" => calib,
             "hasData" => isfile(table), "hasGate" => !isnothing(gate),
             "unit" => isempty(scope.unit_attrs) ? "" : _claim_unit_of(img, scope.unit_attrs),
-            "paramsSource" => sources, "vars" => vars))
+            "paramsSource" => sources, "preprocessingUnrecorded" => sort!(unique!(unrecorded)), "vars" => vars))
     end
     rows
 end
@@ -227,10 +347,17 @@ const _CLAIM_VARIABLE_LABEL = Dict(
     "meta.TimeIncrement" => "Frame interval", "meta.TimeIncrementUnit" => "Frame interval unit",
     "meta.PhysicalSizeX" => "Pixel size (x)", "meta.PhysicalSizeY" => "Pixel size (y)",
     "meta.PhysicalSizeZ" => "Z step", "meta.PhysicalSizeUnit" => "Pixel size unit", "meta.SizeZ" => "Number of z slices",
-    "gate.geometry" => "Gate shape", "motionDims" => "Track dimensions (2D/3D)")
+    "gate.geometry" => "Gate shape", "motionDims" => "Track dimensions (2D/3D)",
+    "measureDims" => "Measured dimensions (2D/3D)", "preprocessing" => "Preprocessing steps")
+# The variables that say whether a population was measured in 2D or 3D — compared within an image by
+# `_claim_s1_dims`, so S1b leaves them out.
+const _CLAIM_DIMS_KEYS = ("motionDims", "measureDims")
 function _claim_variable_label(k::AbstractString)
     haskey(_CLAIM_VARIABLE_LABEL, k) && return _CLAIM_VARIABLE_LABEL[k]
     startswith(k, "gate.") && return "Gate " * replace(k[6:end], "_" => " ")
+    # a parent gate: `gate@/qc::geometry` → "Parent gate /qc: geometry"
+    m = match(r"^gate@(.*)::(.*)$", k)
+    isnothing(m) || return string("Parent gate ", m[1], ": ", m[2] == "geometry" ? "shape" : replace(m[2], "_" => " "))
     fun = _claim_param_fun(k)
     fun === nothing && return String(k)
     # the task, then the setting's path inside its params — one label per key, so two settings that
@@ -298,6 +425,11 @@ function _claim_s0(rows, scope)
         isempty(m) || push!(missing, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => m))
         isempty(f) || push!(flat, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => f))
         isempty(u) || push!(unrec, Dict{String,Any}("pop" => pop, "kind" => kind, "images" => u))
+    end
+    # an image version the segmentation read that no finished run in the log made
+    for pop in scope.populations
+        p = _claim_imgs(filter(r -> r["pop"] == pop && r["hasData"] && !isempty(get(r, "preprocessingUnrecorded", ())), rows))
+        isempty(p) || push!(missing, Dict{String,Any}("pop" => pop, "kind" => "preprocessing", "images" => p))
     end
     gaps(xs) = join((string(_claim_pop_label(x["pop"], scope), " ", x["kind"], " (", _claim_imgs_text(x["images"]), ")") for x in xs), ", ")
     isempty(unrec) || push!(findings, qc_finding("info", "claim.params_outcome_unrecorded"; what = gaps(unrec),
@@ -391,7 +523,7 @@ function _claim_s1_across(rows, scope)
                 ev["images"] = sort!(reduce(vcat, [v for (val, v) in g.groups if val != g.mode]; init = String[]))
             end
             # a gate is drawn per image, so a different shape is a judgement to check, not a setting to re-run
-            push!(findings, qc_finding("warn", startswith(k, "gate.") ? "claim.gate_differs" : "claim.differs_across_images";
+            push!(findings, qc_finding("warn", _claim_is_gate_key(k) ? "claim.gate_differs" : "claim.differs_across_images";
                 variable = _claim_variable_label(k), pop = _claim_pop_label(pop, scope), detail = _claim_detail("S1", ev)))
         end
     end
@@ -409,7 +541,7 @@ function _claim_s1_between(rows, scope)
     byip = Dict((r["image"], r["pop"]) => r for r in rows)
     keys_all = sort!(unique(reduce(vcat, [collect(keys(r["vars"])) for r in rows]; init = String[])))
     for k in keys_all
-        (startswith(k, "gate.") || occursin(_CLAIM_PER_POP_KEY, k)) && continue
+        (_claim_is_gate_key(k) || k in _CLAIM_DIMS_KEYS || occursin(_CLAIM_PER_POP_KEY, k)) && continue
         # the key as one population's params name it: params.<fun>.* is shared across pops by fun
         per_pop = Dict(p => Dict{String,String}() for p in pops)
         for img in imgs, p in pops
@@ -441,6 +573,26 @@ function _claim_s1_between(rows, scope)
         end
     end
     findings, not_compared
+end
+
+# S1 — were the compared populations measured in the same number of dimensions, image by image? A
+# 2D area is pixels, a 3D one voxels; a 2D speed ignores z. One fact for every image where they differ.
+function _claim_s1_dims(rows, scope)
+    k = _claim_needs_tracking(scope.measure) ? "motionDims" : "measureDims"
+    byimg = Dict{String,Dict{String,Any}}()
+    for r in rows
+        haskey(r["vars"], k) && (get!(byimg, r["image"], Dict{String,Any}())[r["pop"]] = r["vars"][k])
+    end
+    # only images where every compared population has its dims on record
+    full = filter(kv -> length(kv[2]) == length(scope.populations), byimg)
+    isempty(full) && return nothing
+    differ = sort!([img for (img, d) in full if length(unique(string.(values(d)))) > 1])
+    isempty(differ) && return Any[]
+    Any[qc_finding("warn", "claim.dims_differ"; variable = _claim_variable_label(k),
+        n = length(differ), imgs = _claim_imgs_text(differ),
+        detail = _claim_detail("S1", Dict{String,Any}("variable" => k, "images" => differ,
+            "everyImage" => length(differ) == length(full),
+            "byImage" => Dict(img => full[img] for img in differ))))]
 end
 
 # S2 — is the claim built the way the field expects? Counts only; no test is run.
@@ -538,7 +690,7 @@ end
 # Every check in reading order. What each one looks at, and the fact it states when it finds nothing,
 # are copy: `claim.ok.<id>` in qc/text.jl. `S2.unit` always states a fact (the n), so it has no pass line.
 const CLAIM_CHECK_IDS = ("S0.membership", "S0.data", "S0.unit", "S0.params", "S0.dims",
-                         "S1.acrossImages", "S1.betweenGroups", "S2.unit", "S2.calibration")
+                         "S1.acrossImages", "S1.betweenGroups", "S1.dims", "S2.unit", "S2.calibration")
 # What each check is about, for the reader: the categories the checks are listed under, in order
 # (labels in qc/text.jl, `claim.cat.<id>`). The model review uses the same ones, plus `data` (the
 # measured values themselves, which no rule reads) and `other`.
@@ -546,7 +698,7 @@ const CLAIM_CATEGORIES = ("images", "record", "sameness", "replicates", "units",
 const CLAIM_CATEGORY_OF = Dict(
     "S0.membership" => "images", "S0.data" => "images", "S0.unit" => "images",
     "S0.params" => "record", "S0.dims" => "record",
-    "S1.acrossImages" => "sameness", "S1.betweenGroups" => "sameness",
+    "S1.acrossImages" => "sameness", "S1.betweenGroups" => "sameness", "S1.dims" => "sameness",
     "S2.unit" => "replicates", "S2.calibration" => "units")
 # The check each finding comes from.
 const CLAIM_CHECK_OF = Dict(
@@ -557,7 +709,7 @@ const CLAIM_CHECK_OF = Dict(
     "claim.differs_across_images" => "S1.acrossImages", "claim.within_tolerance" => "S1.acrossImages",
     "claim.gate_differs" => "S1.acrossImages",
     "claim.differs_between_groups" => "S1.betweenGroups", "claim.confounded" => "S1.betweenGroups",
-    "claim.not_compared" => "S1.betweenGroups",
+    "claim.not_compared" => "S1.betweenGroups", "claim.dims_differ" => "S1.dims",
     "claim.no_unit" => "S2.unit", "claim.few_units" => "S2.unit", "claim.unit_count" => "S2.unit",
     "claim.images_per_unit" => "S2.unit", "claim.uncalibrated" => "S2.calibration")
 
@@ -686,6 +838,17 @@ function claim_checks(table::AbstractVector, scope::ClaimScope)::Dict{String,Any
             push!(findings, qc_finding("info", "claim.not_compared"; n = length(not_compared),
                 variable = join(sort!(collect(keys(by))), ", "),
                 detail = _claim_detail("S1", Dict{String,Any}("bySource" => Dict(k => sort!(v) for (k, v) in by)))))
+        end
+    end
+    # S1 — 2D vs 3D between the compared populations, image by image
+    if length(scope.populations) < 2
+        skipped["S1.dims"] = "one population — nothing to compare"
+    else
+        f = _claim_s1_dims(used, scope)
+        if isnothing(f)
+            skipped["S1.dims"] = "2D/3D not on record"
+        else
+            push!(ran, "S1.dims"); append!(findings, f)
         end
     end
     # S2 — conventions, over the rows the claim runs on

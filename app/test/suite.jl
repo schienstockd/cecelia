@@ -343,6 +343,7 @@ include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
 include(joinpath(@__DIR__, "suite", "claim_checks.jl"))
+include(joinpath(@__DIR__, "suite", "claim_checks_coverage.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_claim_same_source.jl"))
 include(joinpath(@__DIR__, "suite", "cohort_categorical.jl"))
 include(joinpath(@__DIR__, "suite", "qc_profile.jl"))
