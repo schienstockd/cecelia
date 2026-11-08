@@ -55,10 +55,14 @@ jobs:
           # load, and the offline renderer (wgsl_utils.py) reads the *.wgsl + JSON for stills/movies.
           # notebooks: the example notebooks (notebooks_api.jl `_repo_notebooks_dir`, pluto/launch.jl) —
           # an isdir guard hides their absence, so installs just show no examples.
+          # share: console_palette.json, read at load by api/task_console.jl — `pixi run console` is
+          # documented for installs (README, docs/INSTALL.md), and dies at start without it.
+          # frontend/src/lib/figureStyle.json: the figure house style — render_figure.py opens it at
+          # import (every figure render) and figures.jl `figure_style_schema` serves the style editor.
           tar -czf out/cecelia.tar.gz \
             api app pluto preview mcp python scripts app.py pixi.toml pixi.lock VERSION \
             frontend/dist frontend/src/lib/kiwiRef.schema.json frontend/src/plots/palettes.json \
-            frontend/src/lib/webgpu/shaders notebooks \
+            frontend/src/lib/figureStyle.json frontend/src/lib/webgpu/shaders notebooks share \
             install.sh install.ps1 uninstall.sh uninstall.ps1 README.md LICENSE THIRD_PARTY.md docs
           # SHA-256 beside the bundle, so the in-app updater and the installers can verify what they
           # downloaded. `cd out` first: sha256sum records the path it was GIVEN, and a digest naming
