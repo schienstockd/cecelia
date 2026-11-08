@@ -47,7 +47,7 @@ function api_images_register(body_bytes::Vector{UInt8})
         abs_path = isabspath(filepath) ? filepath : joinpath(FS_ROOT, filepath)
         isfile(abs_path) || begin; @warn "Skipping missing file" path=abs_path; continue; end
 
-        meta = Dict{String,Any}("ori_path" => abs_path)
+        meta = Dict{String,Any}("ori_path" => abs_path, "createdBy" => author_stamp())
         isnothing(series) || (meta["ori_series"] = series)
         base_name = isnothing(name_override) ? splitext(basename(abs_path))[1] : name_override
 
@@ -252,7 +252,7 @@ function api_import_register_legacy(body_bytes::Vector{UInt8})
             push!(registered, Dict{String,Any}(
                 "uid" => existing.uid, "name" => existing.name, "status" => "repaired"))
         else
-            meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid)
+            meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid, "createdBy" => author_stamp())
             isempty(rsc) || (meta["legacyRscript"] = rsc)
             img = add_image!(s; name=name, uid=uid, meta=meta)
             push!(registered, Dict{String,Any}(
@@ -886,7 +886,7 @@ function api_images_move(body_bytes::Vector{UInt8})
     if isempty(to_set_uid)
         existing = findfirst(s -> s.name == new_set_name, proj._sets)
         if isnothing(existing)
-            s = add_set!(proj; name=String(new_set_name))
+            s = add_set!(proj; name=String(new_set_name), meta=Dict{String,Any}("createdBy" => author_stamp()))
             to_set_uid = s.uid; to_name = s.name; created = true
         else
             s = proj._sets[existing]

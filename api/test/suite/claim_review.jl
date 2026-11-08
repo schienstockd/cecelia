@@ -68,6 +68,20 @@ end
         meta = _read_bb_meta(proj.uid, id)
         rv = meta["claim"]["review"]
         @test rv["status"] == "done" && length(rv["claims"]) == 2
+        # the write-back is the model's, not the app request that asked for it: `via: kiwi`, its model
+        # and engine session (the spawned turn would otherwise inherit the asker's `via: app`)
+        by = meta["updatedBy"]
+        @test by["via"] == "kiwi" && by["model"] == rv["model"] && by["session"] == "s1"
+        @test Cecelia.author_stamp()["via"] == "app"   # and nothing leaks out of the turn's scope
+        # a turn saved to the Blackboard (sourceKey kiwi:<turnId>) is stamped as the turn's, with its id
+        st, sv = post(api_blackboard_create, Dict("projectUid" => proj.uid, "title" => "saved", "content" => "x",
+                                                  "sourceKey" => "kiwi:$(rec.turnId)"))
+        sby = _read_bb_meta(proj.uid, String(sv.entryId))["createdBy"]
+        @test st == 200 && sby["via"] == "kiwi" && sby["turnId"] == rec.turnId && sby["session"] == "s1"
+        # …and one whose turn is no longer kept falls back to the request's own stamp
+        st, sv = post(api_blackboard_create, Dict("projectUid" => proj.uid, "title" => "old", "content" => "x",
+                                                  "sourceKey" => "kiwi:gone"))
+        @test st == 200 && _read_bb_meta(proj.uid, String(sv.entryId))["createdBy"]["via"] == "app"
         sid = rv["claims"][1]["sectionId"]
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
         # one line, under its category, the action after the arrow

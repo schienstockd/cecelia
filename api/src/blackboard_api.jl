@@ -275,6 +275,15 @@ function _write_bb_registry!(uid::AbstractString, reg::AbstractDict)
 end
 
 # ── Source index — one entry per Kiwi turn or claim ──────────────────────────
+# Who made a new entry: the request's `author_stamp()` — or, for an entry made from a Kiwi turn
+# (`sourceKey` `kiwi:<turnId>…`), the turn's stamp (`via: "kiwi"`, its model and session): the content is
+# the model's reply, the person only kept it. A turn no longer kept falls back to the request's stamp.
+function _bb_create_stamp(uid::AbstractString, source_key::AbstractString)
+    m = match(r"^kiwi:([^:]+)", source_key)
+    st = m === nothing ? nothing : kiwi_turn_stamp(uid, m.captures[1])
+    st === nothing ? author_stamp() : st
+end
+
 # `sourceKey` → entryId, beside the registry. Saving the same Kiwi turn (or claim) again — Save twice,
 # Save then Continue in terminal, or either after a reload — returns the entry it already made instead
 # of a duplicate. Its own file rather than a meta.json field because every revise rewrites meta whole.
@@ -993,7 +1002,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     _write_bb_meta!(uid, id;
         title = title, createdAt = ts, updatedAt = ts, current = 0,
         attachments = attachments, status = status, fingerprint = fingerprint,
-        kiwiRefs = kiwi_refs, createdBy = author_stamp())
+        kiwiRefs = kiwi_refs, createdBy = _bb_create_stamp(uid, source_key))
     agent_run === nothing || _set_bb_meta_field!(uid, id, "agentRun", agent_run)
 
     reg = _read_bb_registry(uid)

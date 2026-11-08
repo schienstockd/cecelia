@@ -75,11 +75,20 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     proj = try load_project(project_uid) catch e
         return 404, JSON3.write((; error=sprint(showerror, e)))
     end
+    # The tag says who wrote the block, so it must match the caller: a Claude session (REQUEST_VIA,
+    # bound from `X-Cecelia-Client`) writes as Claude or LabArchives, and only a Claude session writes as
+    # Claude. Otherwise a `[User]` block could be the model's, and a `[Claude]` one a person's.
+    kind = lab_log_author_kind(author)
+    claude = REQUEST_VIA[] == "claude"
+    claude && !(kind in ("claude", "labarchives")) &&
+        return 403, JSON3.write((; error = "A Claude session writes to the lab log as Claude or LabArchives"))
+    !claude && kind == "claude" &&
+        return 403, JSON3.write((; error = "Only a Claude session writes as Claude"))
     # A `[LabArchives]` tag is a PROVENANCE claim — "this came from the lab notebook" — and the caller
     # picks it, so nothing else verifies it. The one check the server can make honestly: you cannot
     # claim notebook provenance on a project with no notebook linked. It does not (and cannot) prove a
     # given line really came from the ELN; it removes the case where none of them could have.
-    if startswith(lowercase(strip(author)), "labarchives") &&
+    if kind == "labarchives" &&
        !get(read_la_doc(proj), "present", false)
         return 409, JSON3.write((; error =
             "No LabArchives notebook is linked to this project. Call set_labarchives_context first, " *
@@ -99,8 +108,8 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     # `labarchives` is excluded for the same reason as `claude`: a [LabArchives] block is written BY
     # the observer (through the MCP append tool), so notifying observers of it would feed the monitor
     # its own write — the loop this guard exists to prevent.
-    let a = lowercase(strip(author))
-        if !startswith(a, "claude") && !startswith(a, "cecelia") && !startswith(a, "labarchives")
+    let k = lab_log_author_kind(author)
+        if !(k in ("claude", "cecelia", "labarchives"))
             broadcast_ws(Dict{String,Any}(
                 "type" => "lab_log_entry_added", "projectUid" => project_uid,
                 "summary" => join(lines, " ")))

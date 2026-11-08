@@ -1,7 +1,7 @@
 # AI toggle: make every model-backed feature optional
 
-**Status:** **IN PROGRESS** (2026-11-07). D1–D3 locked. P0 done: [`AI_SURFACES_AUDIT.md`](AI_SURFACES_AUDIT.md),
-whose §9 has the full slice plan. P1–P5 built (gate, registry, default off + opt-in dialog, surfaces hidden, user docs); P3–P4 await the maintainer's visual pass. Still open: calls 3 (project-level off) and 9 (local model); audit slice 5 (provenance gaps).
+**Status:** **BUILT** (2026-11-08). D1–D7 locked. P0 done: [`AI_SURFACES_AUDIT.md`](AI_SURFACES_AUDIT.md),
+whose §9 has the full slice plan. P1–P5 built (gate, registry, default off + opt-in dialog, surfaces hidden, user docs), and audit slice 5 (provenance gaps). P3–P4 await the maintainer's visual pass. Parked: call 3 (a project-level off), until someone asks.
 Brief: [`docs/archive/AI_SURFACES_AUDIT_PROMPT.md`](../archive/AI_SURFACES_AUDIT_PROMPT.md). Read its
 banner first, because four of the brief's premises had moved by the time it was archived.
 
@@ -63,6 +63,15 @@ segmentation, tracking, and rule-based findings.
    D1). It is one item, not a switch over the section's other items.
 3. **Every other profile sets AI on or off in its own Preferences,** stored per profile on the
    server, within peanut's ceiling.
+4. **Two states, off and on; off by default** (2026-11-08, calls 2 and 4). No "on request" state until
+   something runs unprompted. Off by default on every install, single-user ones included.
+5. **When off, the Kiwi button opens a short "AI is off" panel** (call 5) with "Turn on…" and "Hide
+   this button". Nothing else nags.
+6. **Stored AI content stays visible, marked with who made it** (call 6). Hiding it would make a shared
+   project look different to two people. The mark is the authorship stamp: `via: claude` (a Claude
+   Code session) or `via: kiwi` (an in-app turn), with the model and session.
+7. **No local model is planned** (2026-11-08, call 9). The switch and the dialog stay worded as "sends
+   data to Anthropic". A local model would add a second axis then: "a model runs" vs "data leaves".
 
 ## Starting positions (from the brief, not locked)
 
@@ -87,21 +96,21 @@ it becomes a decision.
    with enforcement. `shared_workstation.jl` rejects a master switch, and its visibility gate is not
    security. Options: reverse that decision for AI specifically, or make the ceiling a separate kind of
    setting (a policy, not a convenience item) that lives somewhere else.~~ Decided: D2.
-2. **Which states to support:** off / on request / on. Is "on request" needed?
-3. **The user layer.** ~~Per profile?~~ Decided: D3. Still open: a project-level override?
-4. **Default state** for unmanaged single-user installs (the brief says off everywhere).
-5. **Entry point when AI is off:** a subtle Kiwi link that opens "AI is off", or the settings entry
-   plus a first-run message only.
-6. **Stored AI content when off:** hidden, or shown with a provenance mark. Stamps already record model
-   and session (#1826).
+2. ~~**Which states to support:** off / on request / on.~~ Decided: D4.
+3. **The user layer.** ~~Per profile?~~ Decided: D3. **Parked:** a project-level override. The real
+   case is a sensitive dataset opened by a profile with AI on, but nobody has asked, and it costs a
+   project check at every gate (MCP calls such as `list_projects` span projects, so results would need
+   filtering, not just refusing).
+4. ~~**Default state** for unmanaged single-user installs.~~ Decided: D4.
+5. ~~**Entry point when AI is off.**~~ Decided: D5.
+6. ~~**Stored AI content when off.**~~ Decided: D6.
 7. ~~The MCP observer and the terminal `claude`.~~ Decided: D1.
 8. **The registry's home.** The closest existing one is `frontend/src/lib/claudeTools.ts`
    (`CAPABILITIES` / `TOOL_GROUPS`, read by `ClaudeOverviewDialog`). It is already a user-worded list
    of what Kiwi and a Claude Code session can use, and its test fails when an MCP tool is missing.
    Extend it, add a column or filter to the hardening manifest (`HARDENING_AUDIT_PLAN.md` step 7), or
    keep a separate file only if the registry needs per-route data that neither of those carries. Related: does step 9's Experimental toggle merge with this one?
-9. **Is a local model planned?** If so, the toggle distinguishes "a model runs" from "data leaves
-   the machine".
+9. ~~**Is a local model planned?**~~ Decided: D7 (no).
 
 ## Phases
 

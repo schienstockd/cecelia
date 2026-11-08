@@ -4,6 +4,7 @@ import { parseAuthorStamp, authorLabel, authorSummary, profileLabel, claudePropo
 describe('authorStamp', () => {
   it('parses the server stamp and drops junk', () => {
     expect(parseAuthorStamp({ profile: 'alice', via: 'claude' })).toEqual({ profile: 'alice', via: 'claude' })
+    expect(parseAuthorStamp({ profile: 'alice', via: 'kiwi', model: 'm' })).toEqual({ profile: 'alice', via: 'kiwi' })
     expect(parseAuthorStamp({ profile: 'alice', via: 'weird' })).toEqual({ profile: 'alice', via: 'app' })
     expect(parseAuthorStamp({ via: 'app' })).toBeUndefined()
     expect(parseAuthorStamp(null)).toBeUndefined()
@@ -15,6 +16,8 @@ describe('authorStamp', () => {
     expect(authorLabel({ profile: 'alice', via: 'app' })).toBe('alice')
     expect(authorLabel({ profile: 'default', via: 'claude' })).toBe('Claude')
     expect(authorLabel({ profile: 'alice', via: 'claude' })).toBe('Claude for alice')
+    expect(authorLabel({ profile: 'default', via: 'kiwi' })).toBe('Kiwi')
+    expect(authorLabel({ profile: 'alice', via: 'kiwi' })).toBe('Kiwi for alice')
   })
 
   it('summarises creator and last editor in one line', () => {
