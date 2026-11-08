@@ -1,0 +1,26 @@
+{
+  "id": "population_over_time",
+  "label": "Populations over time",
+  "modules": {
+    "phenotype": ["flow", "clust"],
+    "behaviourAnalysis": ["flow", "live", "track", "trackclust"]
+  },
+  "family": "summary",
+  "chartTypes": ["count"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow",       "granularity": "cell", "label": "Gated" },
+      { "popType": "clust",      "granularity": "cell", "label": "Cell clusters" },
+      { "popType": "live",       "granularity": "cell", "label": "Tracked" },
+      { "popType": "track",      "granularity": "cell", "label": "Tracked (gated)" },
+      { "popType": "trackclust", "granularity": "cell", "label": "Track clusters" }
+    ],
+    "groupByOptions": ["centroid_t"],
+    "defaultGroupBy": "centroid_t"
+  },
+  "scopeModes": ["per_image", "summarised", "by_attr"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}

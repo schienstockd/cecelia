@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toSeconds, frameSeconds, frameSecondsByImage, sharedFrameSeconds, frameAxisLabel } from './timeAxis'
+import { toSeconds, frameSeconds, frameSecondsByImage, sharedFrameSeconds, frameAxisLabel, timeAxisUnit } from './timeAxis'
 import type { CciaImage } from '../stores/project'
 
 const img = (o: Partial<CciaImage>): CciaImage => ({ uid: 'x', name: 'x', ...o } as CciaImage)
@@ -107,5 +107,20 @@ describe('frameAxisLabel', () => {
 
   it('falls back to t when there is no groupBy at all', () => {
     for (const g of ['', undefined, null]) expect(frameAxisLabel(g)).toBe('t')
+  })
+})
+
+describe('timeAxisUnit', () => {
+  it('keeps seconds for a short span', () => {
+    expect(timeAxisUnit(90)).toEqual({ unit: 's', perUnit: 1 })
+  })
+  it('switches to minutes for a 45-minute movie (2,700 s)', () => {
+    expect(timeAxisUnit(2700)).toEqual({ unit: 'min', perUnit: 60 })
+  })
+  it('switches to hours past 3 h', () => {
+    expect(timeAxisUnit(4 * 3600)).toEqual({ unit: 'h', perUnit: 3600 })
+  })
+  it('treats a non-finite span as seconds', () => {
+    expect(timeAxisUnit(NaN).unit).toBe('s')
   })
 })

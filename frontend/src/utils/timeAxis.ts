@@ -81,3 +81,15 @@ export function frameAxisLabel(groupBy?: string | null): string {
   const g = groupBy ?? ''
   return g.toLowerCase() === 'centroid_t' ? 'Time (frames)' : (g || 't')
 }
+
+/**
+ * The unit a SECONDS axis is drawn in, picked from the longest elapsed time on it: seconds while the
+ * span is under 2 minutes, minutes up to 3 hours, hours beyond. A 45-minute movie read as
+ * "0 … 2,700 s", which nobody thinks in. `perUnit` is the seconds in one unit — divide by it.
+ */
+export function timeAxisUnit(maxSeconds: number): { unit: 's' | 'min' | 'h'; perUnit: number } {
+  const m = Number.isFinite(maxSeconds) ? Math.abs(maxSeconds) : 0
+  if (m < 120) return { unit: 's', perUnit: 1 }
+  if (m < 3 * 3600) return { unit: 'min', perUnit: 60 }
+  return { unit: 'h', perUnit: 3600 }
+}
