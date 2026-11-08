@@ -1061,6 +1061,14 @@ class DiscoveryToggleQcTest(unittest.TestCase):
         on = {"CECELIA_MCP_DISCOVERY": "on"}
         self.assertEqual(call(on, server.get_image_info, "p", "i1")["cleanupFacts"], facts)
 
+    def test_image_info_leaves_the_note_to_get_image_notes(self):
+        """The note has one tool, so the claim review withholds it by withholding get_image_notes."""
+        meta = {"image": {"uid": "i1", "name": "a", "note": "failed drift correction"}}
+        with unittest.mock.patch.object(server._client, "get_image_meta", lambda *a: meta):
+            self.assertNotIn("note", server.get_image_info("p", "i1"))
+            self.assertEqual(server.get_image_notes("p", "i1"), "failed drift correction")
+        self.assertIn("note", meta["image"])                              # source not mutated
+
     def test_default_and_on_keep_them(self):
         import os
         for env in ({}, {"CECELIA_MCP_DISCOVERY": "on"}):
