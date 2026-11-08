@@ -58,8 +58,17 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
         ReentrantLock(),
         barriers,
         barriers_done,
+        Dict{String,Any}(),
+        _node_dicts(get(raw, :overrides, nothing)),     # absent = unknown (`nothing`), not "none"
+        _node_dicts(get(raw, :node_params, nothing)),
+        string(something(get(raw, :from_run, nothing), "")),
     )
 end
+
+# A stored node_id => params map as plain Dicts (JSON3 hands back Symbol-keyed views — `_spec_value`
+# materialises them); `nothing` stays `nothing` — the field was not recorded.
+_node_dicts(::Nothing) = nothing
+_node_dicts(raw::AbstractDict)::Dict{String,Any} = _spec_value(raw)
 
 # ── run_chain — the public REPL entrypoint ────────────────────────────────────
 
@@ -86,7 +95,8 @@ has started does not change what that run is understood to have done.
 ## Resume
 Pass an existing `run_id` instead of a `chain` name. The run is loaded from disk,
 stale/failed nodes are reset to `:pending`, and already-done nodes with unchanged
-params are skipped. `image_uids` is ignored in resume mode.
+params are skipped. `image_uids` is ignored in resume mode. The run's recorded `overrides` are kept,
+with any given here on top.
 
     run_chain(proj, String[]; run_id="abc12345")
 
@@ -95,10 +105,21 @@ overrides: node_id => param overrides merged on top of template params.
 excluded: images the caller dropped from the selection before the run (uid => reason), recorded in
 run.json as `excluded_images` so the run says its selection was larger. Fresh runs only; a resume keeps
 the record it was created with.
+
+## Replay
+Pass `from_run` (a past run's id) instead of a `chain` name: a FRESH run of that run's frozen template
+(not the current one) with the overrides it recorded, `overrides` given here merged on top per node.
+Empty `image_uids` = the past run's images. The new run.json names its source as `from_run`. A source
+run from before overrides were recorded replays its template alone, and says so in the log.
+
+    run_chain(proj, String[]; from_run="abc12345")
+
+Every execution records its `overrides` and each node's params (`node_params`) in run.json.
 """
 function run_chain(proj::CciaProject, image_uids::Vector{String};
                    chain::String                  = "",
                    run_id::Union{String,Nothing}  = nothing,
+                   from_run::Union{String,Nothing} = nothing,
                    start_node::Union{String,Nothing} = nothing,
                    overrides::Dict{String,Any}    = Dict{String,Any}(),
                    excluded::AbstractDict         = Dict{String,String}(),
@@ -107,27 +128,55 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
                    by::String                     = active_profile_name(),
                    caller::AbstractDict           = Dict{String,Any}())::ChainRun
 
+    isnothing(run_id) || isnothing(from_run) ||
+        error("run_chain: `run_id` resumes a run and `from_run` starts a new one from it — pass one")
     if !isnothing(run_id)
         # Resume: restore run from disk, reset stale/failed nodes, keep :done ones. An explicit
         # `start_node` additionally force-restarts that node + everything downstream (re-run from here).
         run           = load_chain_run(proj, run_id)
+        # A resume continues the SAME run, so it keeps the overrides the run recorded, the caller's on
+        # top. Without this a GUI Resume (which sends none) of a run started with overrides — a REPL run,
+        # or a replay (↻) — would count every :done node stale and re-run it without them. A run.json
+        # from before overrides were recorded has none to keep (`nothing`), as before.
+        overrides     = _merge_overrides(something(run.overrides, Dict{String,Any}()), overrides)
         ordered_nodes = _topo_sort(run.template_snapshot)
         _reset_stale_nodes!(run, overrides, ordered_nodes)
         isnothing(start_node) || _force_restart_from!(run, start_node)
-        _validate_run_params(run.template_snapshot, overrides;
-                             skip = Set(n.id for n in ordered_nodes
-                                        if all(s[n.id].status == NODE_DONE for s in values(run.image_states))))
+        kept = Set(n.id for n in ordered_nodes
+                   if all(s[n.id].status == NODE_DONE for s in values(run.image_states)))
+        _validate_run_params(run.template_snapshot, overrides; skip = kept)
         run.resumed_by = by
         run.caller     = Dict{String,Any}(String(k) => v for (k, v) in caller)   # the resumer's, not persisted
+        run.overrides  = _copy_overrides(overrides)
+        # A step this resume will not re-run (:done on every image) keeps the params it RAN with: its
+        # resume hash ignores spec defaults and clamps, so re-resolving it against today's specs could
+        # record a default that changed since its outputs were made. Re-run steps get fresh params.
+        fresh = _record_node_params(run.template_snapshot, overrides)
+        prev  = something(run.node_params, Dict{String,Any}())
+        run.node_params = Dict{String,Any}(nid => (nid in kept && haskey(prev, nid) ? prev[nid] : p)
+                                           for (nid, p) in fresh)
         _save_run!(run)
     else
-        isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
+        src = nothing
+        if !isnothing(from_run)
+            # Replay: the source's frozen template (already pruned to its start dot when it ran) and the
+            # overrides it recorded, with this call's on top.
+            src = load_chain_run(proj, from_run)
+            template = src.template_snapshot
+            isempty(image_uids) && (image_uids = copy(src.image_uids))
+            if isnothing(src.overrides)
+                Base.invokelatest(on_log, "[INFO] Replaying run $from_run: it predates recorded overrides, " *
+                                          "so any it ran with are unknown — replaying its frozen template only")
+            end
+            overrides = _merge_overrides(something(src.overrides, Dict{String,Any}()), overrides)
+        else
+            isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
+            # UML start dot: if the template has start targets, run ONLY the reachable subgraph (the rest
+            # are drafts). Pruning here means every downstream stage (topo, states, resume) sees one clean
+            # effective template — targets are roots, unreachable branches simply don't exist for this run.
+            template = _prune_to_start(load_chain_template(proj, chain))
+        end
         isempty(image_uids) && error("run_chain requires at least one image UID")
-
-        # UML start dot: if the template has start targets, run ONLY the reachable subgraph (the rest
-        # are drafts). Pruning here means every downstream stage (topo, states, resume) sees one clean
-        # effective template — targets are roots, unreachable branches simply don't exist for this run.
-        template      = _prune_to_start(load_chain_template(proj, chain))
         isempty(template.nodes) && error("run_chain: start dot reaches no nodes (nothing to run)")
         _validate_run_params(template, overrides)
         ordered_nodes = _topo_sort(template)
@@ -157,7 +206,10 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
             Dict{String,String}(string(k) => string(v) for (k, v) in excluded),
             run_dir, ReentrantLock(),
             barriers, barriers_done, Dict{String,Any}(String(k) => v for (k, v) in caller),
+            _copy_overrides(overrides), _record_node_params(template, overrides),
+            isnothing(from_run) ? "" : from_run,
         )
+        isnothing(src) || _log_replay_drift(src, run, on_log)
         _save_run!(run)
     end
 
@@ -204,6 +256,38 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
     foreach(fetch, incr_tasks)
 
     run
+end
+
+# The overrides as recorded: node_id => a plain params Dict (the caller's dict is never aliased).
+_copy_overrides(ov::AbstractDict)::Dict{String,Any} =
+    Dict{String,Any}(string(k) => _spec_value(v) for (k, v) in ov)
+
+# A replay's overrides: the source run's, then the caller's on top, merged per node (a caller override
+# for one param of a node keeps the source's other overrides for that node).
+function _merge_overrides(base::AbstractDict, top::AbstractDict)::Dict{String,Any}
+    out = _copy_overrides(base)
+    for (nid, ov) in _copy_overrides(top)
+        prev = get(out, nid, nothing)
+        out[nid] = prev isa AbstractDict && ov isa AbstractDict ? merge(prev, ov) : ov
+    end
+    out
+end
+
+# A replay re-resolves params against TODAY's specs: a default that changed since, or a stored value now
+# clamped, makes a step run with something other than the source recorded. Say so, one line per value,
+# so a replay that is not a faithful one is visible in the log (both records are in the two run.json).
+function _log_replay_drift(src::ChainRun, run::ChainRun, on_log::Function)
+    isnothing(src.node_params) && return
+    for (nid, now) in something(run.node_params, Dict{String,Any}())
+        was = get(src.node_params, nid, nothing)
+        (was isa AbstractDict && now isa AbstractDict) || continue
+        for k in sort!(collect(union(keys(was), keys(now))))
+            a, b = get(was, k, nothing), get(now, k, nothing)
+            isequal(a, b) && continue
+            Base.invokelatest(on_log, "[INFO] Replaying run $(src.id): step $nid '$k' was " *
+                                      "$(repr(a)) there, now $(repr(b))")
+        end
+    end
 end
 
 """Convenience overload: run a chain over all images in a set."""

@@ -232,8 +232,11 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
                 "_apply_param_requires"]
         fbody(text, name) = (b = text[findfirst("function " * name, text)[1]:end]; b[1:findfirst("\nend", b)[1]])
 
-        # the steps live in ONE resolver, and it applies every one of them
+        # the steps live in ONE resolver, and it applies every one of them — the image-independent ones
+        # through its first half `resolve_params_unscoped` (shared with a chain run's recorded params)
         resolver = fbody(src, "resolve_run_params")
+        occursin("resolve_params_unscoped(", resolver) &&
+            (resolver *= fbody(src, "resolve_params_unscoped"))
         for step in prep
             occursin(step, resolver) || @error "resolve_run_params is missing a run step" step
             @test occursin(step, resolver)

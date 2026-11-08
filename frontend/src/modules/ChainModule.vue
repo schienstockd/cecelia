@@ -580,6 +580,15 @@ function resumeRun() {
   restartNodeId.value = null
 }
 
+// Replay: a NEW run of the selected run's frozen template + recorded overrides, on its images
+// (`fromRun`, docs/SCHEDULER.md → Replay). The current template is not read.
+function replayRun() {
+  const uid = projectMeta.current?.uid
+  const rid = selectedRunId.value
+  if (!uid || !rid) return
+  ws.send({ type: 'chain:run', projectUid: uid, fromRun: rid })
+}
+
 // ── Chain list & selection ───────────────────────────────────────────────────
 
 const chainNames   = ref<string[]>([])
@@ -1490,6 +1499,14 @@ onActivated(async () => {
               : 'Re-run failed, unfinished or changed nodes'"
         >
           <i class="pi pi-play" />
+        </button>
+        <button
+          v-if="selectedRunId"
+          class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"
+          @click="replayRun"
+          v-tooltip.bottom="'Re-run with these settings, as a new run'"
+        >
+          <i class="pi pi-replay" />
         </button>
         <button
           v-if="waitingCount"
