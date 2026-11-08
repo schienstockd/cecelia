@@ -380,6 +380,92 @@ end
     @test coverage >= 20
 end
 
+# ── QC-required ratchet ──────────────────────────────────────────────────────
+# "QC is required for every result-producing task" (app/CLAUDE.md, docs/MODULES.md → *QC — REQUIRED
+# for every new task*) was a rule no test enforced. Every registered task (`_fun_name_map`) must either
+# bank QC in the file(s) holding its `_run_task` method(s) — `write_qc`, or one of the shared QC
+# writers below — or be listed in `QC_EXEMPT` with its reason, AND carry the in-file `QC-EXEMPT:`
+# comment saying the same where the code is read. A composite is answered by its steps, which are
+# registered tasks themselves and checked as such. Custom modules are the user's code and not scanned.
+@testset "QC-required ratchet — every registered task writes QC or is an explained exemption" begin
+    # The shared writers a task may bank through instead of calling `write_qc` itself (each calls it).
+    QC_WRITERS = r"write_qc\(|write_cluster_qc!\(|bank_segment_qc!\(|write_metadata_qc!\("
+
+    # Exemptions — fun_name => why there is no objective signal to bank. Adding one is a reviewed act:
+    # the reason must say why the task's output has nothing to score, not that QC is pending.
+    QC_EXEMPT = Dict(
+        # deletes a registered version — no output; the image's QC is rewritten by whatever writes next
+        "importImages.remove"                => "no output — deletes a version",
+        # deterministic pixel operations: the output's shape/extent is fixed by the params, and the new
+        # image gets its own import-style QC from the downstream steps that measure it
+        "editImages.bin"                     => "deterministic downsample",
+        "editImages.copyImage"               => "byte-for-byte copy",
+        "editImages.cropImage"               => "deterministic geometric subset",
+        "editImages.dtype"                   => "deterministic value remap",
+        "editImages.flip"                    => "deterministic geometric op",
+        "editImages.register"                => "deterministic channel stack of registered cycles",
+        "editImages.resampleZ"               => "deterministic resample",
+        "editImages.tProject"                => "deterministic reduction",
+        "editImages.zProject"                => "deterministic reduction",
+        # a manual chain step: the user's gates are the result, and they are checked by gating QC
+        # (`gating.flow`/`gating.track`, app/src/qc_gating.jl) at the end of the chain
+        "gate.manual_gate"                   => "user gates are the result; gating QC checks them",
+        # composite plumbing around segment.correct → measureLabels: obs carried across the re-measure;
+        # the composite's QC is banked by segment.correct and segment.measureLabels
+        "segment.correct_carryover_snapshot" => "composite plumbing, no output of its own",
+        "segment.correct_carryover_restore"  => "composite plumbing, no output of its own",
+        # in-tree fixtures for the scheduler tests only — never shown to a user
+        "testTasks.image_task"               => "test fixture",
+        "testTasks.set_task"                 => "test fixture",
+        "testTasks.incremental_plot_task"    => "test fixture",
+    )
+    # Structural: test fixtures carry no in-file marker (they are not production code).
+    MARKER_OPTIONAL = Set(["testTasks.image_task", "testTasks.set_task", "testTasks.incremental_plot_task"])
+
+    # The files holding a task type's own `_run_task` methods — a Union method (the two staleness
+    # reports share one) counts for each member; the CciaTask/CompositeTask fallbacks do not.
+    function _run_task_files(T)
+        files = String[]
+        for m in methods(Cecelia._run_task)
+            ps = m.sig isa DataType ? m.sig.parameters : Base.unwrap_unionall(m.sig).parameters
+            length(ps) >= 2 || continue
+            A = ps[2]
+            (A isa Type && A !== Any && A !== CciaTask && T <: A) || continue
+            push!(files, String(m.file))
+        end
+        unique!(files)
+    end
+
+    missing_qc = String[]; stale = String[]; unmarked = String[]; checked = 0
+    for (fn, task) in Cecelia._fun_name_map()
+        task isa Cecelia.CompositeTask && continue
+        files = _run_task_files(typeof(task))
+        isempty(files) && (push!(missing_qc, "$fn: no `_run_task` method found to scan"); continue)
+        src = join((read(f, String) for f in files if isfile(f)), "\n")
+        writes = occursin(QC_WRITERS, src)
+        checked += 1
+        if haskey(QC_EXEMPT, fn)
+            writes && push!(stale, "$fn: banks QC now — remove it from QC_EXEMPT")
+            (fn in MARKER_OPTIONAL || occursin("QC-EXEMPT", src)) ||
+                push!(unmarked, "$fn: on QC_EXEMPT but $(join(relpath.(files, _app_src), ", ")) has no `# QC-EXEMPT: <reason>` comment")
+        elseif !writes
+            push!(missing_qc, "$fn ($(join(relpath.(files, _app_src), ", "))): bank QC via `write_qc` " *
+                              "(app/src/qc.jl) — or, if its output genuinely has nothing to score, add it " *
+                              "to QC_EXEMPT here with the reason AND a `# QC-EXEMPT: <reason>` comment by its `_run_task`")
+        end
+    end
+    isempty(missing_qc) || @error "QC-required ratchet: task(s) bank no QC:\n  " * join(sort!(missing_qc), "\n  ")
+    @test isempty(missing_qc)
+    isempty(stale) || @error "QC-required ratchet: stale exemption(s):\n  " * join(sort!(stale), "\n  ")
+    @test isempty(stale)
+    isempty(unmarked) || @error "QC-required ratchet:\n  " * join(sort!(unmarked), "\n  ")
+    @test isempty(unmarked)
+    # every exemption names a registered task (a renamed task must not leave a dead entry behind)
+    @test isempty(setdiff(keys(QC_EXEMPT), keys(Cecelia._fun_name_map())))
+    # sanity: a broken method lookup would scan nothing and pass vacuously
+    @test checked >= 40
+end
+
 # ── Julia zarr-access ratchet ────────────────────────────────────────────────
 # Companion to `python/cecelia/tests/test_zarr_access_convention.py`, for the Julia side. The
 # Python side goes through `zarr_utils`; the Julia side has one sanctioned reader —

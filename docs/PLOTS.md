@@ -530,6 +530,21 @@ proportions per image are a follow-up). Per-plot, persisted in the panel's `ui.s
 the raw CSV export honours it (rows become the per-image means/medians). Surfaced as the **Datapoint**
 control (+ a **Per image** mean/median select when set to image) in the plot options popover.
 
+**The between-group test reports on its own replicates.** `comparisons.findings` (`stats.jl`
+`stats_qc_findings`, catalog text) rides every test result and shows under the test name in the plot
+options' Stats section (`InlineNote`, warn): `stats.cells_as_replicates` when some group has more values
+than images (Datapoint = individual, so cells are counted as independent), and `stats.few_replicates`
+when the two groups' image counts can't reach p < 0.05 with an exact rank test
+(`claim_min_p_unpaired` / `CLAIM_ALPHA` — the claim recital's S2 rule, no constants of its own) —
+`stats.few_replicates_pairs` with 3+ groups: no bracket on the smallest group can reach it — the best
+floor over its pairs, times the Bonferroni factor the brackets carry (the omnibus can still be significant). The floor binds only an
+exact rank test, so it is claimed only when every pair on the smallest group ran exact (`rank_tests_exact` —
+HypothesisTests switches to a tie-corrected approximation past 10 values with ties), never after a
+t-test/ANOVA, and only once each value is an image (with pooled cells, the replicate finding comes first). Images
+per group = distinct `uID`s in the series (1 for a single-image frame). Never a sidecar: stats are
+ephemeral and cross-series (`docs/todo/STATS_ANNOTATIONS_PLAN.md` D10), so the QC travels with the
+result, and `plotSummaryText` carries it to Claude.
+
 ### Segmentation QC plot
 
 The segmentation-integrity plot is a **normal registry plot**, not a bespoke preset (see *Hosting*

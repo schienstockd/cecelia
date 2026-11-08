@@ -14,11 +14,16 @@ const cmp = (o: Partial<ComparisonsResult>): ComparisonsResult => ({
 describe('statsInfoOf', () => {
   it('carries the test and the reason together', () => {
     expect(statsInfoOf(cmp({ autoReason: '2 groups → Mann-Whitney U (rank-based)' })))
-      .toEqual({ note: 'Mann-Whitney U (two-sided)', reason: '2 groups → Mann-Whitney U (rank-based)' })
+      .toEqual({ note: 'Mann-Whitney U (two-sided)', reason: '2 groups → Mann-Whitney U (rank-based)', findings: [] })
   })
 
   it('has no reason when the user NAMED the test (nothing was chosen for them)', () => {
     expect(statsInfoOf(cmp({})).reason).toBe('')
+  })
+
+  it('carries the comparison QC findings from the server', () => {
+    const f = { level: 'warn' as const, code: 'stats.few_replicates', short: 'n = 3', long: 'Add images.' }
+    expect(statsInfoOf(cmp({ findings: [f] })).findings).toEqual([f])
   })
 
   it('is empty for no comparisons — the plot ran no test', () => {

@@ -172,19 +172,33 @@ function _stats_labels(groups)
     labels
 end
 
+# How many distinct images a series' finite values came from: its `uID`s, or 1 for a single-image
+# frame (`pop_df` on one image carries no `uID` column). Feeds `stats_qc_findings`.
+function _series_n_images(sub::DataFrame, measure::AbstractString)::Int
+    :uID in propertynames(sub) || return 1
+    col = sub[!, measure]
+    length(unique(String(sub.uID[i]) for i in eachindex(col)
+                  if col[i] isa Real && isfinite(col[i]) && !isempty(String(sub.uID[i]))))
+end
+
 function _stats_from_series(groups, measure::AbstractString, test::Symbol)
     isempty(measure) && return nothing
     labels = _stats_labels(groups)
     pairs = Pair{String,Vector{Float64}}[]
+    n_images = Int[]
     for (i, s) in enumerate(groups)
         (Symbol(measure) in propertynames(s.sub)) || continue
         vals = _finite(s.sub[!, measure])
         length(vals) < 2 && continue
         push!(pairs, labels[i] => vals)
+        push!(n_images, _series_n_images(s.sub, measure))
     end
     length(pairs) < 2 && return nothing
     try
-        _stats_result_dict(run_stats(pairs; test=test))
+        r = _stats_result_dict(run_stats(pairs; test=test))
+        r["findings"] = stats_qc_findings(r["n"], n_images; test = Symbol(r["test"]),
+                                         exact = rank_tests_exact(last.(pairs)))
+        r
     catch e
         Dict{String,Any}("error" => sprint(showerror, e))
     end

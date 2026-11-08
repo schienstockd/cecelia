@@ -255,8 +255,18 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
     foreach(fetch, set_tasks)
     foreach(fetch, incr_tasks)
 
+    # Cohort QC for what this run did — the same check the module pages' button runs (`cohort_check!`),
+    # over the run's sets: every step that finished on some image, plus the sets' gates. Skipped on a
+    # cancelled run (the user stopped it; a half-run cohort judges nothing). Never throws.
+    _is_cancelled() || chain_cohort_qc!(proj, run.image_uids, _chain_done_funs(run); on_log)
+
     run
 end
+
+# The fns of the steps that finished (:done) on at least one image — what the end-of-run cohort QC checks.
+_chain_done_funs(run::ChainRun)::Vector{String} =
+    unique!(String[n.fn for n in run.template_snapshot.nodes
+                   if any(s -> haskey(s, n.id) && s[n.id].status == NODE_DONE, values(run.image_states))])
 
 # The overrides as recorded: node_id => a plain params Dict (the caller's dict is never aliased).
 _copy_overrides(ov::AbstractDict)::Dict{String,Any} =

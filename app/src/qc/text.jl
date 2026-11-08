@@ -317,6 +317,29 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "{metric} differs from the set",
         long  = "This image has {metric} {value}, unlike most of the set — measures aren't comparable across it. Re-run with one setting for every image."),
 
+    # gating across a set's images (qc_gating.jl `gating_qc_findings`)
+    "gating.missing_column" => (
+        short = "Gate reads {column}, which this image lacks",
+        long  = "{n} population(s) are empty here because of it — re-measure this image, or redraw the gate on a column it has."),
+    "gating.empty_pop" => (
+        short = "{pop} is empty here, not on other images",
+        long  = "Check its gate fits this image's data (a copied gate can miss a shifted population); ignore if the cells are truly absent."),
+    "gating.pct_outlier" => (
+        short = "{pop} is {value}% of its parent",
+        long  = "Far {dir} the set median ({median}%) — check its gate fits this image's data; ignore if the difference is real."),
+
+    # between-group stats on a summary plot (stats.jl `stats_qc_findings`) — ride the plot's
+    # `comparisons`, never a sidecar
+    "stats.cells_as_replicates" => (
+        short = "Test counts each cell or track as a replicate",
+        long  = "Set Datapoint to image — cells from one image aren't independent samples."),
+    "stats.few_replicates" => (
+        short = "n = {n} — a rank test can't go below p = {p}",
+        long  = "Add images, or report the comparison as descriptive."),
+    "stats.few_replicates_pairs" => (
+        short = "n = {n} — no bracket on this group can go below p = {p}",
+        long  = "Add images to the smallest groups — the overall test can still be significant, but these pairs can't after the Bonferroni correction."),
+
     # claim checks (claim_checks.jl). `short` is the fact, one line, naming the images ({imgs}: up to
     # three by name, else a count); `long` is what to do. The claim entry is a list of these.
     # S0: can the record say what was done?
