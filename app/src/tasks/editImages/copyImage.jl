@@ -129,7 +129,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     copy_meta = _copied_meta(src_meta, img.uid, p.valueName)
 
     # register a NEW image in the destination set (new uid + {proj}/0|1/{uid} dirs, appended to manifest)
-    new_img = add_image!(dest; name = "$(img.name) (copy)", meta = copy_meta, attr = img.attr)
+    new_img = add_image!(dest; name = derived_image_name(proj, img.name, "copy"), meta = copy_meta, attr = img.attr)
 
     # No task subdirs are created for the new image (mirrors the import route / cropImage): each is made
     # by whoever writes into it. The `data/` sidecar copy below makes its own, which is why it still works.

@@ -105,6 +105,10 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
         # an image uid of the project, or "" for none — resolved by the handler, so only the shape here
         value isa AbstractString ||
             throw(ParamValidationError("'$key' must be an image uid, got: $value"))
+    elseif type_str == "setSelection"
+        # a set uid of the project, or "" for the image's own set — resolved by the handler
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a set uid, got: $value"))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end
