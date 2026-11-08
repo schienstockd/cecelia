@@ -17,7 +17,7 @@ end
 const _OME_DERIVED_META_KEYS = (
     "SizeC", "SizeT", "SizeZ",
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
-    "TimeIncrement", "TimeIncrementUnit",
+    "TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared",
     # Read from the SOURCE file, not the store, but the same rule holds: a re-import from another
     # source (or one whose settings can't be read) must not keep the previous source's settings.
     "acquisition", "acquisitionMissing",
@@ -150,10 +150,10 @@ function resync_ome_meta!(img::CciaImage)::Bool
     # An Imaris timelapse imported before the source-timing recovery existed has no interval anywhere
     # — not in the store, not in ccid — so re-reading the store can't produce one. Go back to the
     # source file, which is the whole point of this being the repair path that needs no re-import.
-    if get(zarr_meta, "SizeT", 1) > 1 && get(zarr_meta, "TimeIncrement", 0.0) == 0.0
-        src = string(get(img.meta, "ori_path", ""))
-        isempty(src) || _recover_ims_time_increment!(zarr_meta, src, task_run_dir(img._dir))
-    end
+    # File tier only: a declared interval applied at import is already in the store, and applying one
+    # here could override a file (now deleted) whose irregular timestamps vetoed it at import.
+    _fill_source_time_increment!(zarr_meta, img.meta, string(get(img.meta, "ori_path", "")),
+                                 task_run_dir(img._dir); declared = false)
     # Same repair for the acquisition settings (`_resync_acquisition_settings!`).
     _resync_acquisition_settings!(zarr_meta, img)
 

@@ -79,6 +79,7 @@ include(joinpath(@__DIR__, "..", "..", "app", "test", "distinct_segmentations.jl
 # pattern as app/test/suite/*.jl). The extracted file loads at top level here, so any helpers
 # defined earlier (_post, api_fixture, api_have_fixture) are still in scope (lexical include).
 include(joinpath(@__DIR__, "suite", "payload_and_query.jl"))
+include(joinpath(@__DIR__, "suite", "import_immunemap.jl"))
 
 # ── Admin + install/update + app-lifecycle API testsets ─────────
 # 13 testsets covering the server-admin / install / update / lifecycle surface: diagnostics,

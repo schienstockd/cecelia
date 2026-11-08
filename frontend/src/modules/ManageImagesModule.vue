@@ -8,6 +8,9 @@ import TaskRunner from '../tasks/TaskRunner.vue'
 import FileBrowser from '../components/FileBrowser.vue'
 import ImageFileActions from '../components/ImageFileActions.vue'
 import LegacyMigrateDialog from '../components/LegacyMigrateDialog.vue'
+import ImmunemapImportDialog from '../components/ImmunemapImportDialog.vue'
+import TeleportPopover from '../components/TeleportPopover.vue'
+import { IMPORT_SOURCES, type ImportSource } from '../lib/importSources'
 import SeriesPickerModal from '../components/SeriesPickerModal.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 import { buildRegisterRecords, isProbeableMultiSeriesPath,
@@ -29,6 +32,9 @@ const projectMeta = useProjectMetaStore()
 const activeSet   = computed(() => project.activeSet())
 const showBrowser = ref(false)
 const showMigrate = ref(false)
+const showImmunemap = ref(false)
+const importMenuOpen = ref(false)
+const importFromBtn = ref<HTMLElement | null>(null)
 
 // Series-picker queue: a multi-series file (LIF) shows one picker before it lands in the register
 // payload; a single-series file joins the payload as-is. `pickerQueue` is the deque of remaining
@@ -56,6 +62,28 @@ function openMigrate() {
     return
   }
   showMigrate.value = true
+}
+
+// One opener per `IMPORT_SOURCES` id — the menu is data, the dialogs are components.
+function openSource(id: ImportSource['id']) {
+  importMenuOpen.value = false
+  if (id === 'legacy') openMigrate()
+  else if (id === 'immunemap') openImmunemap()
+}
+
+function openImmunemap() {
+  if (!activeSet.value) {
+    log.warn('Create or select a set before importing from Immunemap.', { source: 'manageImages' })
+    return
+  }
+  showImmunemap.value = true
+}
+
+function onImmunemapImported(images: unknown[]) {
+  // the dialog stays open on its own next-step line; here the set just learns its new images
+  const set = activeSet.value
+  if (!set || !images.length) return
+  project.addImagesFromApi(set.uid, images as never[])
 }
 
 function onLegacyImported(images: unknown[]) {
@@ -220,6 +248,14 @@ async function submitRegister() {
     @close="showMigrate = false"
   />
 
+  <ImmunemapImportDialog
+    v-if="showImmunemap && activeSet && projectMeta.current"
+    :project-uid="projectMeta.current.uid"
+    :set-uid="activeSet.uid"
+    @imported="onImmunemapImported"
+    @close="showImmunemap = false"
+  />
+
   <SeriesPickerModal
     v-if="pickerCurrent"
     :key="pickerCurrent.path"
@@ -248,15 +284,23 @@ async function submitRegister() {
         <i class="pi pi-plus" /> Add images
       </button>
       <button
+        ref="importFromBtn"
         class="cc-btn"
+        :class="{ on: importMenuOpen }"
         :disabled="!hasSet"
-        @click="openMigrate"
-        v-tooltip.bottom="hasSet
-          ? 'Import images, segmentation and tracking from an old (R/Shiny) cecelia project'
-          : 'Create or select a set first'"
+        @click="importMenuOpen = !importMenuOpen"
+        v-tooltip.bottom="hasSet ? 'Import from another app or database' : 'Create or select a set first'"
       >
-        <i class="pi pi-history" /> Migrate legacy project
+        <i class="pi pi-download" /> Import from… <i class="pi pi-chevron-down" />
       </button>
+      <TeleportPopover v-model="importMenuOpen" :anchor="importFromBtn" placement="bottom-start" flush>
+        <div class="cc-actions-menu">
+          <button v-for="src in IMPORT_SOURCES" :key="src.id" class="cc-actions-item"
+                  v-tooltip.right="src.tip" @click="openSource(src.id)">
+            <i :class="src.icon" /> {{ src.label }}
+          </button>
+        </div>
+      </TeleportPopover>
 
       <!-- the standard file operations, applied to the whole checkbox selection. Import ONLY — no other
            module page can delete or re-file an image (see ImageFileActions.vue). -->

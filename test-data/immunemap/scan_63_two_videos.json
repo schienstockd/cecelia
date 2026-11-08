@@ -1,0 +1,113 @@
+{
+ "experiment": {
+  "id": 63,
+  "name": "Galectin-8 Favors the Presentation of Surface-Tethered Antigens by Stabilizing the B Cell Immune Synapse (Obino D. - A.M. Lennon)",
+  "url": "https://app.immunemap.org/experiment-public-view?id=63",
+  "dois": [
+   "10.1016/j.celrep.2018.11.052"
+  ],
+  "microscope": "LSM510 Meta (Zeiss) Two-photon laser-scanning microscope (TPLSM).",
+  "authors": [
+   "Dorian Obino",
+   "Ana-Maria Lennon-Duménil"
+  ]
+ },
+ "groups": [
+  {
+   "id": 101,
+   "name": "Control, before immunization",
+   "description": "B cells steady state migration in the popliteal lymph node ",
+   "nVideos": 2
+  },
+  {
+   "id": 102,
+   "name": "30 min post immunization, irrelevant antigens (BSA)",
+   "description": "B cell migration in the popliteal lymph node 30 min after mouse immunization with irrelevant antigens",
+   "nVideos": 3
+  },
+  {
+   "id": 103,
+   "name": "90 min post immunization, irrelevant antigens",
+   "description": "B cell migration in the popliteal lymph node 90 min after mouse immunization with irrelevant antigens",
+   "nVideos": 2
+  },
+  {
+   "id": 104,
+   "name": "30 min post immunization, specific antigens (HEL)",
+   "description": "B cell migration in the popliteal lymph node 30 min after mouse immunization with specific antigens",
+   "nVideos": 5
+  },
+  {
+   "id": 105,
+   "name": "90 min post immunization, specific antigens (HEL)",
+   "description": "Intravital imaging of GFP+ HEL-specific MD4+ B cells migration in the popliteal lymph node 90 min after mouse immunization with specific antigens (intravital imaging)",
+   "nVideos": 3
+  }
+ ],
+ "videos": [
+  {
+   "acquisitionId": 309,
+   "groupId": 101,
+   "condition": "Control, before immunization",
+   "name": "Obino-Movie1-SteadyState",
+   "fileName": "Obino-Movie1-SteadyState.ims",
+   "videoUid": "2JBABTBNRF8MR978J016GM606A",
+   "sizeBytes": 575530182,
+   "md5": "da279b07eb1994d5b09dea2ff77da1c1",
+   "sha1": "80c41bb1d44c03a0423d4deadb96b0ee76086f89",
+   "width": 512,
+   "height": 512,
+   "slices": 9,
+   "frames": 60,
+   "nChannels": 3,
+   "spacingXYZ": [
+    1.799537109375,
+    1.799537109375,
+    4
+   ],
+   "intervalSec": 30.000000010169284,
+   "intervalFromTimeStepsSec": 30.0,
+   "channelNames": [
+    "Microspheres (Rhodamine)",
+    "B cells (GFP)",
+    "Collagen (Autofluorescent)"
+   ],
+   "nCuratedTracks": 151,
+   "uploadStatus": 4,
+   "public": true,
+   "dois": [
+    "10.1016/j.celrep.2018.11.052"
+   ],
+   "notes": "Intravital imaging of GFP+ HEL-specific MD4+ B cells migration in the popliteal lymph node 30 min after mouse immunization with irrelevant antigens, steady state.",
+   "tags": [
+    "antigen-extraction",
+    "b-cells",
+    "b-lymphocytes",
+    "collagen",
+    "galectin-8",
+    "immune-synapse",
+    "migration",
+    "mouse-immunization",
+    "processing-and-presentation",
+    "steadystate"
+   ],
+   "recorded": "2012-11-07 12:20:55",
+   "importable": true,
+   "reason": ""
+  },
+  {
+   "acquisitionId": 310,
+   "groupId": 101,
+   "condition": "Control, before immunization",
+   "name": "310",
+   "importable": false,
+   "reason": "not public"
+  }
+ ],
+ "totals": {
+  "videos": 15,
+  "importable": 1,
+  "bytes": 575530182
+ },
+ "citation": "Data from Immunemap (Pizzagalli et al., EMBO J 2025, doi:10.1038/s44318-025-00629-4) and the contributing lab — cite the dataset's own DOI and check its terms before publishing."
+}

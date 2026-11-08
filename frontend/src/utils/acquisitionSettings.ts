@@ -19,8 +19,8 @@ export interface AcquisitionDichroic { slot: string; name: string }
 export interface AcquisitionSettings {
   /** `oir_meta.READER_VERSION`; absent on settings read before it existed. */
   readerVersion?: number | null
-  /** Which reader produced it: `oir_meta` or `czi_meta`. */
-  source?: 'oir' | 'czi' | null
+  /** Which reader produced it: `oir_meta`, `czi_meta` or `ims_meta`. */
+  source?: 'oir' | 'czi' | 'ims' | null
   system?: string | null
   softwareVersion?: string | null
   /** As recorded: ISO 8601 with the acquisition PC's UTC offset. */
