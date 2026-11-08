@@ -35,7 +35,8 @@ Sets group images for processing. An image belongs to one set but lives independ
       ccid.json             — CciaSet fields + image_uids list
     {image_uid}/
       ccid.json             — CciaImage fields
-      runlog.json           — per-run history (fun, valueName, params, status, by, author, ceceliaVersion, env?; `skipped` = dropped before dispatch) — see run_log.jl, docs/SCHEDULER.md → *a run is logged twice*
+      runlog.json           — per-run history, newest RUN_LOG_CAP (fun, valueName, params, status, by, author, ceceliaVersion, env?, inputs?, replaces?; `skipped` = dropped before dispatch) — see run_log.jl, docs/SCHEDULER.md → *a run is logged twice*
+      runlog.archive.jsonl  — older run-log entries rotated out of runlog.json, one JSON per line, append-only (kept by an analysis reset)
       data/                 — layer-props sidecars ({zarr}.json), image sidecars
       labels/               — segmentation label zarrs, one per value_name
       labelProps/           — per-cell measurements, {value_name}.h5ad
@@ -250,8 +251,10 @@ keeps no run log) — an index over the log, not a second copy of the truth.
 
 **Only a run that finished `"done"` counts**, so the two halves of the feature name the same set: the
 picker offers what EXISTS in the namespace, and a failed or in-flight run wrote nothing there. The
-reverse (a name in the picker with nothing to restore — written by another task, or by a run older
-than `RUN_LOG_CAP`) is the harmless direction: `matched` is false and the form is left alone.
+reverse (a name in the picker with nothing to restore — written by another task, or before the run
+log existed) is the harmless direction: `matched` is false and the form is left alone. A run older
+than `RUN_LOG_CAP` is still found: it was rotated into `runlog.archive.jsonl`, which the lookup
+searches when `runlog.json` has no answer.
 
 ---
 
@@ -332,7 +335,7 @@ Two details worth knowing:
 - It is a **keep-list, not a delete-list**. `ccid.json` is the only non-derived file in the dir, so a
   delete-list would silently leak whatever analysis dir is added next. The `analysis keep-list`
   assertion in `app/test/suite.jl` fails until a new sibling is deliberately classified.
-- `runlog.json` **survives**, which means the image table's run tag then describes *history, not current
+- `runlog.json` (and its archive) **survives**, which means the image table's run tag then describes *history, not current
   state* — an image whose outputs are gone still shows its last successful run. Deliberate: losing the
   record of what was done is worse than a stale-looking tag. `qc/` does not survive, since its findings
   score outputs that no longer exist.

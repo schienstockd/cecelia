@@ -1076,7 +1076,7 @@ end
 # asserted by NAME rather than by count, so adding a new analysis dir to the image layout fails here
 # until it is deliberately classified (Decision 7 — a delete-list would have leaked it silently).
 @testset "Analysis reset keeps the image and drops the numbers" begin
-    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json", "gating", "roiReviews"])
+    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json", "runlog.archive.jsonl", "gating", "roiReviews"])
 
     proj = create_project!(name="reset-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")

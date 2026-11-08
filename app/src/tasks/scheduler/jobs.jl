@@ -90,10 +90,14 @@ function _execute_job!(job::TaskJob)
         # OPEN the run-log entry before the work, not after it. An append-on-finish log cannot record
         # a run that never reaches its finish — a killed runner takes its in-flight tasks with it and
         # no Julia code here ever runs again. See run_log.jl's header. Never fail a task over its log.
+        # Each entry also names what the run READS and what it REPLACES (`run_provenance`), resolved
+        # here — before the work, so the inputs are the versions it will read and the output is still
+        # the one it overwrites.
         try
             for tgt in log_targets
+                prov = run_provenance(fun_name, tgt, job.params)
                 open_run_log!(tgt, fun_name, value_name, job.params; task_id = job.id, pool = rec.pool_name,
-                              by = rec.by, caller = rec.caller)
+                              by = rec.by, caller = rec.caller, inputs = prov.inputs, replaces = prov.replaces)
             end
         catch e
             @warn "run-log open failed" task_id = job.id exception = e

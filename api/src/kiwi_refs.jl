@@ -372,8 +372,9 @@ function _kiwi_resolve_task(puid, ref)
         (try Cecelia.task_output_name(task, Dict{String,Any}(String(k) => v for (k, v) in p)) catch; "" end) == vn
     end
     # a `skipped` entry was never dispatched and wrote nothing, so it is not a run here — counting it
-    # would report "latest run skipped" as if the output might not be the done run's
-    runs = [e for e in read_run_log(img) if Cecelia._rl_str(e, "fun") == fn &&
+    # would report "latest run skipped" as if the output might not be the done run's. The whole history
+    # (archive included): a run rotated out of `runlog.json` still ran.
+    runs = [e for e in read_run_log_history(img) if Cecelia._rl_str(e, "fun") == fn &&
                                             run_entry_ran(e) && touches(e)]
     on = vn === nothing ? img.name : "$(img.name) · $vn"
     i = findlast(e -> run_entry_status(e) == "done", runs)
