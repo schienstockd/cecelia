@@ -9,15 +9,13 @@ findings in the briefing's `openClaims`. P0 (by hand), P1
 (#1969) and the P2 baseline are below. Shape after P2: **rules + one plain review turn**; the Translator
 (S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate.
 
-The schematics are `recital_figures/findings_flow.svg` (claim → checks → review → entry, and what
-happens after a finding) and `recital_figures/gui_mockup.svg` (the GUI), v3 of 2026-11-08: **as
-built** after #1969–#2036, with real text from 4kS67f. v2 (2026-11-06, the design before building)
-and v1 are in git history. Check changes against v3. What v3 changed: one footer button and a
-popover instead of a row of stage chips; checks are facts grouped by category (Images, Processing
-record, Same processing, Replicates, Units), each problem with what to do; Good / Bad / Unsure only
-on the model's points; Unit became Replicate; the review is told what the checks found, runs on
-Kiwi's model through an allow-list of record tools, and its points carry clickable refs. Findings
-on the dots and the export stamp are shown as not built.
+The schematic is `recital_figures/findings_flow.svg` (claim → checks → review → entry, and what
+happens after a finding), v3 of 2026-11-08: **as built** after #1969–#2036. The GUI is built, so
+the GUI mockup is gone; it and v1–v2 of the flow are in git history. What v3 changed: checks are
+facts grouped by category (Images, Processing record, Same processing, Replicates, Units), each
+problem with what to do; Good / Bad / Unsure only on the model's points; Unit became Replicate; the
+review is told what the checks found, runs on Kiwi's model through an allow-list of record tools,
+and its points carry clickable refs. Findings on the dots and the export stamp are not built.
 
 **Worth building?** The rules (S0–S2) yes: cheap, no model, and P0 found real problems with them.
 The model stages and the full mechanism only if they beat a plain "review this claim" prompt.
@@ -104,7 +102,7 @@ Status: **guess** (unchecked), **tested** (a phase checked it), **fails** (doesn
   try is visible? **Leaning (2026-11-06): show rounds, don't charge for them.** Each tried variant
   of a claim is recorded with a hash, and the log sets the count, not the analyst (after CONFIRM's
   hashed hypothesis signatures, `RECITAL_PRIOR_ART.md` §7). The entry and the export stamp show the
-  round count and what changed between rounds (as in the mockup: "passing on round 5 shows rounds
+  round count and what changed between rounds (e.g. "passing on round 5 shows rounds
   1–4"). The threshold does **not** move. A **variant** is a change to what is claimed or how it's
   tested (measure, populations, unit, image subset, wording); fixing a flagged problem (re-measuring
   with matched dims) is logged as a fix, not a variant.
@@ -301,7 +299,7 @@ Each finding is either fixed in the analysis or not.
 - **Open:** who sees findings across all projects for the rule count. The weekly judge reads one
   codebase; these sit in many projects on many machines (Q8).
 
-## GUI (2026-11-05, v2 mockup 2026-11-06)
+## GUI (design 2026-11-05; as built: see the schematic note at the top)
 
 Cheap checks run automatically, the expensive one on request, like an IDE: the linter underlines as
 you type, and review is something you ask for. Everything sits on surfaces that already exist.
@@ -329,7 +327,7 @@ you type, and review is something you ask for. Everything sits on surfaces that 
    figure gets a footer stamp linking back to the entry.
 
 This mostly answers Q1 (checks run when a claim is *stated*; export only reads the result) and leans
-Q4 toward the stamp. The mockup (2026-11-05) is `recital_figures/gui_mockup.svg`.
+Q4 toward the stamp.
 
 ## Phases
 
