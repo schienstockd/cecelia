@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
   parseBrickSlabShape, brickBounds, brickSlabQuery, brickSlabUrl, brickLabelSlabUrl,
-  brickShapeError, padBrickPayload,
+  brickShapeError, padBrickPayload, fetchBrick, fetchLabelBrick,
 } from './brickLoader'
+import { createBrickPayloadRing } from './brickPayloadRing'
+import type { ViewerMeta } from './volumeViewer'
 
 describe('parseBrickSlabShape', () => {
   it('parses the 4-tuple header emitted with cTo', () => {
@@ -206,5 +208,44 @@ describe('padBrickPayload', () => {
     expect(Array.from(out.subarray(0, 4))).toEqual([0xAA, 0xAA, 0x00, 0x00])
     // Channel 1 starts at byte 32. First row: 0xBB, 0xBB, 0, 0.
     expect(Array.from(out.subarray(32, 36))).toEqual([0xBB, 0xBB, 0x00, 0x00])
+  })
+})
+
+describe('fetchBrick — the payload-ring lease always comes back', () => {
+  // A brick aborted while its body is still streaming (a plane change aborts every request in flight)
+  // makes `reader.read()` reject. The lease taken for it must return to the ring: the ring holds one
+  // buffer per in-flight slot, so each one lost is a slot gone for the atlas's lifetime, and once all
+  // are gone every fetch waits forever for a lease while holding its in-flight slot — "Loading bricks…"
+  // with nothing on the wire.
+  const meta = { bytesPerVoxel: 2 } as unknown as ViewerMeta
+  const erroringBody = () => new ReadableStream<Uint8Array>({
+    pull(c) { c.error(new DOMException('The user aborted a request.', 'AbortError')) },
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('returns the lease when the body errors mid-stream', async () => {
+    const ring = createBrickPayloadRing({ capacity: 1, payloadBytes: 1024 })
+    vi.stubGlobal('fetch', async () => new Response(erroringBody(), {
+      headers: { 'X-Slab-Shape': '1,1,16,16' },
+    }))
+    await expect(fetchBrick('/x', meta, 1, [16, 16, 1], undefined, ring)).resolves.toBeNull()
+    // The ring's only buffer is free again: a lease resolves at once rather than queueing forever.
+    const got = await Promise.race([ring.lease().then(() => 'leased'),
+                                    new Promise(r => setTimeout(() => r('stuck'), 50))])
+    expect(got).toBe('leased')
+  })
+
+  it('is null, not a throw, when the body errors without a ring', async () => {
+    vi.stubGlobal('fetch', async () => new Response(erroringBody(), {
+      headers: { 'X-Slab-Shape': '1,1,16,16' },
+    }))
+    await expect(fetchBrick('/x', meta, 1, [16, 16, 1])).resolves.toBeNull()
+  })
+
+  it('a label brick whose body errors is null, not a throw', async () => {
+    vi.stubGlobal('fetch', async () => new Response(erroringBody(), {
+      headers: { 'X-Slab-Shape': '1,1,16,16' },
+    }))
+    await expect(fetchLabelBrick('/x', [16, 16, 1])).resolves.toBeNull()
   })
 })
