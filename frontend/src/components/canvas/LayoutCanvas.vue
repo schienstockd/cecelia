@@ -331,8 +331,11 @@ function toggleTarget(valueName: string, pop: string, pt: string) {
 // let a single-population plot draw one of several and say nothing
 watch(activeSinglePop, single => {
   if (!single) return
-  if (scope.value === 'global') gSel.value = narrowToSingle(gSel.value)
-  else if (activeContent.value) st(activeContent.value).sel = narrowToSingle(st(activeContent.value).sel ?? [])
+  if (scope.value === 'global') {
+    gSel.value = narrowToSingle(gSel.value)
+    // narrow the staged set too, or Apply puts the dropped pops back on a single-pop plot
+    if (manualApply.value) stagedSel.value = narrowToSingle(stagedSel.value)
+  } else if (activeContent.value) st(activeContent.value).sel = narrowToSingle(st(activeContent.value).sel ?? [])
 })
 function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }

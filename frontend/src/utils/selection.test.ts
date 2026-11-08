@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toggleSelected, narrowToSingle } from './selection'
+import { toggleSelected, narrowToSingle, addSelected } from './selection'
 
 describe('toggleSelected', () => {
   it('appends — pick order is meaningful (chips render in it, canvases plot in it)', () => {
@@ -56,5 +56,17 @@ describe('one implementation', () => {
     const { toggleValue } = await import('./chipSelect')
     for (const [sel, v] of [[[], 'a'], [['a'], 'a'], [['a', 'b'], 'c']] as [string[], string][])
       expect(toggleValue(sel, v)).toEqual(toggleSelected(sel, v))
+  })
+})
+
+describe('addSelected', () => {
+  it('appends only missing keys, in order, without mutating', () => {
+    const sel = ['a']
+    expect(addSelected(sel, ['b', 'a', 'c'])).toEqual(['a', 'b', 'c'])
+    expect(sel).toEqual(['a'])
+  })
+  it('returns the same reference when nothing is missing', () => {
+    const sel = ['a', 'b']
+    expect(addSelected(sel, ['b'])).toBe(sel)
   })
 })

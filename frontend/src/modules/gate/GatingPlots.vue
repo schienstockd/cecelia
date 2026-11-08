@@ -17,6 +17,7 @@
 import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
+import { addBypassingStaging } from '../../utils/manualApplyStaging'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch, onMounted } from 'vue'
@@ -451,9 +452,12 @@ watch(() => props.imageUid, () => {
   load()
 })
 // a transient pop (viewer cell selection) appears → auto-highlight it on every plot so the
-// spatially-selected cells light up in channel space immediately (linked brushing)
+// spatially-selected cells light up in channel space immediately (linked brushing). Bypasses
+// manual-apply on purpose, so the staged set gets it too — else it reads as a pending removal.
 watch(() => g.transientPaths, (paths) => {
-  for (const p of paths) if (!gHL.value.includes(p)) gHL.value = [...gHL.value, p]
+  const next = addBypassingStaging(gHL.value, stagedSel.value, paths, manualApply.value)
+  if (next.live !== gHL.value) gHL.value = [...next.live]
+  if (next.staged !== stagedSel.value) stagedSel.value = [...next.staged]
 }, { deep: true })
 // a pop disappeared or was renamed → remap highlights (and each panel's parent gate) to the new
 // path, or drop them on delete. `makePopPathRemap` follows uid → new path so a rename doesn't wipe
