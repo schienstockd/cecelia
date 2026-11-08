@@ -174,7 +174,6 @@ end
 _claim_reply(id, c, result; closed = String[]) = JSON3.write((; ok = true, entryId = id, round = c["round"],
     text = c["text"], findings = result["findings"], checks = result["checks"], categories = result["categories"],
     categoryLabels = Dict(id => _claim_category_label(id) for id in Cecelia.CLAIM_CATEGORIES),
-    reviewModel = observer_default_model(),   # the model a review run would use
     ran = result["ran"],
     skipped = result["skipped"], review = get(c, "review", nothing), closed))
 
@@ -194,7 +193,7 @@ _claim_same_round(a, b) = all(get(a, k, nothing) == get(b, k, nothing) for k in 
     POST /api/claim/state
 
 Body: `{ projectUid, setUid, populations: [pop, …], measure, unitAttrs?: [attr, …], text, entryId?, source? }`
-Reply: `{ ok, entryId, round, text, findings, checks, categories, categoryLabels, reviewModel, ran, skipped, review, closed }`
+Reply: `{ ok, entryId, round, text, findings, checks, categories, categoryLabels, ran, skipped, review, closed }`
 
 States a claim: runs the checks and writes them as a Blackboard entry (one line per check, grouped
 by category). With `entryId` it restates an existing claim: a changed text or scope starts a new round,

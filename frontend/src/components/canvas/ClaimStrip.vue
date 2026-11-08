@@ -14,6 +14,7 @@ import { SEVERITY } from '../../lib/severity'
 import { useToast } from '../../composables/useToast'
 import { useKiwiStore } from '../../stores/kiwi'
 import { useObserverStore } from '../../stores/observer'
+import { useSettingsStore } from '../../stores/settings'
 import { fetchImageAttrs } from '../../composables/useImageAttrs'
 import type { SeriesTarget } from '../../plots/types'
 import {
@@ -35,6 +36,7 @@ const toast = useToast()
 const router = useRouter()
 const kiwi = useKiwiStore()
 const observer = useObserverStore()   // the AI switch: the model review is a Kiwi turn, hidden while AI is off
+const settings = useSettingsStore()   // the review runs on the model picked for Kiwi
 
 const scope = computed(() => claimScopeOf({ setUid: props.setUid, series: props.series, measure: props.measure }))
 const result = ref<ClaimResult | null>(null)
@@ -90,7 +92,7 @@ watch(() => kiwi.turns, ts => {
 })
 async function review() {
   if (!props.ui.claimEntryId || reviewTurn.value || !observer.ai.enabled) return
-  const tid = await reviewClaim(props.projectUid, props.ui.claimEntryId)
+  const tid = await reviewClaim(props.projectUid, props.ui.claimEntryId, settings.kiwiModel)
   if (!tid) { toast.add({ severity: 'warn', life: 5000, summary: 'Kiwi is busy — try again when it’s done' }); return }
   reviewTurn.value = tid
 }
@@ -170,8 +172,8 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
         <!-- the model review: on request, and only while AI is on (the server refuses it otherwise) -->
         <div v-if="observer.ai.enabled" class="claim-head cc-row cc-row-tight">
           <span>Model review</span>
-          <span class="cc-muted" v-tooltip.top="'One model turn reads the claim and the record, not your notes'">
-            · {{ result.review?.model || result.reviewModel || 'model' }}, about a minute</span>
+          <span class="cc-muted" v-tooltip.top="'Kiwi’s model reads the claim and the record, not your notes'">
+            · {{ settings.kiwiModel }}, about a minute{{ result.review?.model && result.review.model !== settings.kiwiModel ? ` (last run: ${result.review.model})` : '' }}</span>
           <button class="cc-btn cc-btn-dense claim-review-btn" type="button" :disabled="!!reviewTurn" @click="review">
             <i v-if="reviewTurn" class="pi pi-spin pi-spinner" />
             {{ reviewTurn ? 'Reviewing…' : result.review ? 'Run again' : 'Run' }}

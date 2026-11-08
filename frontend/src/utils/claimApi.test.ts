@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { claimPopRef, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, reviewByCategory, parseClaimResult } from './claimApi'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { claimPopRef, reviewClaim, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, reviewByCategory, parseClaimResult } from './claimApi'
 
 const s = (valueName: string, pop: string) => ({ valueName, pop, popType: 'flow' })
 
@@ -66,13 +66,20 @@ describe('claimApi', () => {
     expect(g[1].items[0].action).toBe('set a minimum duration')
     expect(r.review?.items[1].action).toBe('')
     expect(r.review?.lastError).toBe('')
-    const f = parseClaimResult({ entryId: 'bb-4', reviewModel: 'sonnet',
+    const f = parseClaimResult({ entryId: 'bb-4',
       review: { status: 'failed', model: 'sonnet', claims: [], lastError: 'You have hit your limit' } })!
-    expect(f.reviewModel).toBe('sonnet')
+    expect(f.review?.model).toBe('sonnet')
     expect(f.review?.lastError).toBe('You have hit your limit')
   })
   it('rejects a reply that is not a claim result', () => {
     expect(parseClaimResult(null)).toBeNull()
     expect(parseClaimResult({ error: 'x' })).toBeNull()
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+  it('runs the review on the model picked for Kiwi', async () => {
+    const fetch = vi.fn(async (_u: string, _init: { body: string }) => ({ ok: true, status: 200, json: async () => ({ turnId: 'kt-1' }) }))
+    vi.stubGlobal('fetch', fetch)
+    expect(await reviewClaim('p1', 'bb-1', 'opus')).toBe('kt-1')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ projectUid: 'p1', entryId: 'bb-1', model: 'opus' })
   })
 })
