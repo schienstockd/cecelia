@@ -630,7 +630,8 @@ thread loop. A failed plot never kills the pipeline. The `incremental_ids` set i
 `POST /api/chains/preflight`) reads a template against each target image before a run: a
 `channelSelection` name the image lacks and a `valueNameSelection` input neither on the image nor made by
 an ancestor node are **fail**; a step `task_applies` rejects (it will be `:skipped`) and an output that
-already exists (with `keep_previous_version()` off) are **warn**. Advisory — the whiteboard offers
+already exists are **warn** — a label set always (its writers never version), an image version only with
+`keep_previous_version()` off. Advisory — the whiteboard offers
 *Run anyway*; fault isolation still keeps a bad image from stopping the rest. It reuses the history
 builder's spec reading (`_history_leaves`), so "what does this param read" has one answer.
 
@@ -769,6 +770,9 @@ are exclusive (resume continues a run; replay starts another).
   any overrides it ran with are unknown.
 - Not on the autonomous MCP's `run_chain` yet: its lock check reads the current template's params, so
   a replay needs that check run against the frozen nodes first.
+- **The record is enough to reproduce.** `Chain replay reproduces a real step's measures (CONTMESH)`
+  (`app/test/suite/chain_replay.jl`) runs a real measure step with overrides the template lacks, moves the
+  template on, then replays: the cell table comes back equal, every column (CPU, deterministic, so exact).
 
 A single task run has no run record of its own, so an image it drops is recorded in **that image's**
 `runlog.json` instead: a `skipped` entry with a `reason`, under the task id the rest of the selection
@@ -823,6 +827,21 @@ per-image sparkline (`POST /api/plot_data`, `popType=labels` + `chartType=count`
 per image, re-run as images clear the stage — incremental fill), and expands on click to the full
 `SummaryCanvas module="segment"`. All of it reuses the canonical plot framework — no bespoke QC route or
 panel. Distinct from user-dragged plot nodes (a separate, later mechanism).
+
+### Cohort QC at the end of a run
+
+When every image thread, set node and incremental watcher has returned, `run_chain` runs
+`chain_cohort_qc!` (`app/src/qc_cohort.jl`) — the **same** `cohort_check!` the module pages' *Check
+cohort consistency* button posts to (`POST /api/qc/cohort/check`), not a parallel pipeline. For every
+set holding one of the run's images it checks each step that finished (`:done`) on some image and that
+the check can answer (`cohort_has_answer`: banked `COHORT_METRICS`, or a composite's steps), judging
+the **newest** clustering/HMM run as the button's run selector does; then, where the set has
+hand-drawn gates, the gating check (`gating.flow`/`gating.track`, `app/src/qc_gating.jl`) — a run that
+re-segments or re-tracks changes what every gate selects. Same artefacts as the button: the set
+sidecar, per-image `cohort.{fun}` / `gating.*` findings, and a *Cecelia — Cohort check* lab-log entry
+for whatever flagged; one `[INFO]`/`[WARN]` line per check goes to the run's log. Skipped on a
+cancelled run, and when no step finished (a resume with nothing left to do). It never throws: a failed
+check is logged, and the run's outcome is the steps', as always (QC warns, never blocks).
 
 ### Loading past runs into the Live view
 
@@ -1153,6 +1172,19 @@ what says it happened. Both fields are absent on older entries and when there is
 |---|---|
 | `inputs` | `[{param, name, ns?, version?, pinned?}]` — every `valueNameSelection` param that does not write (the leaves `_history_leaves` reads for pre-flight and chain-from-history). An empty picker is resolved to the active name it meant. `version` is the pin (`params["version"]`, `pinned: true`) for `valueName`, else `_latest` of a fresh `ccid.json` read — on image versions and label sets; other namespaces carry the name only. Populations stay in `params` (`run_pop_reads`) |
 | `replaces` | `{name, ns?, version?, taskId?, at?, fun?}` when the output already existed and this run overwrites it: an image version (unless `keepPreviousVersion`), a label set (always — label writers never version), or for a write-into task (tracking) its earlier run on that label set. `taskId`/`at`/`fun` name the newest `done` run that made it, from the log or its archive; absent = the output predates the log or came from outside it |
+
+**What is stale downstream** — `stale_outputs_for(img)` (`app/src/correction_staleness.jl`, beside the
+correction staleness enumerator) reads the two fields back. An output is stale when its current maker
+(the newest `done` run that wrote it) read an input a later `done` run `replaces`, or read one whose own
+maker is stale; each entry carries `because`, the chain of links (`{read, replacedBy}` /
+`{read, madeBy}`). A `replaces` with a version matches a read of that version only, so a step pinned to
+`v1` is not stale when `v2` is overwritten. A maker with no `inputs` for a task that reads names was
+logged before inputs were recorded: `unknown`, never stale — and so is what was made from it, and a read
+whose version has several possible makers that disagree (several writers, or a pinned version its one
+logged writer may not have made: a minted version records no `replaces`). A track run reads the labels,
+so a re-track neither stales nor clouds the one before it. Archive included. Surfaced per image as
+`stale` / `staleUnknown` in the analysis lineage (`GET /api/analysis/lineage`, MCP
+`get_analysis_lineage`). Report only — nothing is deleted or re-run.
 
 **The cap moves entries, it never drops them.** `runlog.json` is rewritten whole on every open and
 close, so it holds the newest `RUN_LOG_CAP` (200); the overflow is appended to `runlog.archive.jsonl`

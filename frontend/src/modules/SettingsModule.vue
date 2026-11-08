@@ -1051,7 +1051,7 @@ async function switchWt(path: string) {
         <CcToggle class="toggle-row"
           :model-value="keepPrev.current" :disabled="keepPrevBusy"
           label="Keep previous version on reprocess"
-          v-tooltip.bottom="'A re-run of a task mints a new vN sibling instead of overwriting the current output'"
+          v-tooltip.bottom="'A re-run keeps the old image version as a vN sibling; label sets are still overwritten'"
           @update:model-value="changeKeepPrev" />
         <span class="field-hint cc-muted cc-fs-xs">Off by default; the current output is overwritten on re-run</span>
       </div>

@@ -203,8 +203,15 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 include(joinpath(@__DIR__, "suite", "chain.jl"))
 include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
+# Gating + statistics QC and the chain's end-of-run cohort QC (CECELIA_STRUCTURE_PLAN rank 8).
+include(joinpath(@__DIR__, "suite", "structure_qc.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_floor.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_ties.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_floor_pair.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_smallest_pairs.jl"))
 include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
+include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 

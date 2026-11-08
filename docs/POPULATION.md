@@ -661,6 +661,26 @@ the output). The picker params are `acrossSegmentations:false`, so all refs shar
 first decides it; a mismatch `@warn`s). This is why picking a population fully determines both which
 cells are read **and** where any output/annotation is written.
 
+## Gating QC
+
+Gating has no task run, so its QC is a **set check** (`app/src/qc_gating.jl`), run where cohort QC
+runs: the *Check cohort consistency* button on the Gating page (`gating.flow`) and the Tracking page
+(`gating.track`), and the end of every chain run (`chain_cohort_qc!`, docs/SCHEDULER.md → *Cohort QC at
+the end of a run*). Per included image and segmentation with a stored hand-drawn map, it evaluates the
+map (`computed_pop_map`, `pop_stats`, `missing_gate_columns`) and the pure `gating_qc_findings` flags:
+
+| code | when |
+|---|---|
+| `gating.missing_column` | a gate/filter reads a column this image's table lacks — names the pops it empties (`recompute!` makes them empty with only a log warning) |
+| `gating.empty_pop` | the pop has no cells here, its parent has cells here, and it has cells on another image — the copied-gate-misses-a-shifted-population case |
+| `gating.pct_outlier` | its % of parent is a cohort outlier against the other images (`_cohort_outliers`, the cohort thresholds — no gating constants) |
+
+Findings and `metrics` (`nPops`, `nEmptyPops`, `nMissingColumns`) are banked per image as
+`qc/gating.{flow|track}/{vn}.json`, so they show wherever per-image QC shows. Advisory, like all QC: an
+empty or odd population can be biology, which is what the `long` text says. **A GUI gate edit does not
+re-run the check** — the docs stand as of the last check, as cohort findings do; press the button again
+after fixing a gate. The GET cohort route computes the same answer without writing.
+
 ## Gating engine
 
 - Lives in Julia; operates on H5AD read via `label_props`.

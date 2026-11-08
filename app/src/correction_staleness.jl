@@ -1,5 +1,6 @@
 # correction_staleness.jl — enumerate downstream artefacts made stale by a label/track correction
-# (docs/todo/CORRECTION_PLAN.md, P3 / Decision 5).
+# (docs/todo/CORRECTION_PLAN.md, P3 / Decision 5), and — at the bottom — outputs made stale by an
+# upstream re-run, read from the run log's `inputs` / `replaces` (`stale_outputs_for`).
 #
 # WHY THIS EXISTS. A correction rewrites labels or tracks; several SEPARATE artefacts derived from
 # that row set are then silently stale — the per-track table, cluster runs, gating populations, the
@@ -261,4 +262,163 @@ function _count_by_kind(artefacts::Vector{Dict{String,Any}})::Dict{String,Int}
         counts[k] = get(counts, k, 0) + 1
     end
     counts
+end
+
+# ── Run-record staleness: an output whose producing run read an input since replaced ──────────────────
+#
+# The second staleness question, answered from the run log instead of disk presence. `run_provenance`
+# stamps each run's `inputs` (name + version read) and `replaces` (the output it overwrote); a re-run
+# upstream therefore leaves, in the record, a `replaces` naming what a downstream run read. Here the
+# downstream output is the one whose CURRENT maker (the newest `done` run that wrote it) read an input a
+# later `done` run replaced — directly, or through an upstream run that is itself stale. A run with no
+# `inputs` for a task that reads names was logged before inputs were recorded: its output, and anything
+# made from it, is `unknown`, never guessed stale or clean — as is a read whose version has several
+# possible makers that disagree (see `upstream`). A `replaces` with a version matches a read of that version only, so re-running
+# `default` v2 does not stale a step pinned to v1. Report, don't auto-delete — as for corrections.
+
+# ("name", "ns") of one `{name, ns?, version?}` record, and its version ("" = not recorded)
+_stale_ref(d) = (_rl_str(d, "name"), _rl_str(d, "ns"))
+_stale_ver(d) = _rl_str(d, "version")
+
+# the run an entry is, as the chain names it
+_stale_run(e) = Dict{String,Any}("fun" => _rl_str(e, "fun"), "taskId" => _rl_str(e, "taskId"), "at" => _rl_str(e, "at"))
+
+# Does the task read any name? Only then can missing `inputs` mean "not recorded" rather than "none".
+_stale_reads_names(leaves) =
+    leaves !== nothing && any(l -> l.type == "valueNameSelection" && !l.writes, values(leaves))
+
+"""
+    stale_outputs_for(img) -> (; stale, unknown)
+
+Outputs on `img` whose producing run read an input that has since been replaced, from the run log
+(archive included). `stale` = `[{name, ns?, into?, run: {fun, taskId, at}, because: [link…], summary}]`,
+where each link is `{read: {name, ns?, version?}, replacedBy: {fun, taskId, at}}` (the input was
+overwritten by that later run) or `{read, madeBy: {fun, taskId, at}}` (the input's maker is itself
+stale; the next link says why). `unknown` = `[{name, ns?, into?, run, reason}]` — the maker, or the
+maker of something it read, predates recorded inputs, or the version it read has several possible
+makers (several logged writers, or a pinned version its one logged writer may not have made) that
+disagree. An output no longer on the image is left out. Read-only.
+"""
+function stale_outputs_for(img::CciaImage)
+    entries = [e for e in read_run_log_history(img) if e isa AbstractDict]
+    leaves  = Dict{String,Any}()
+    lv(fn)  = get!(() -> _history_leaves(fn), leaves, fn)
+    done    = Int[]                                     # indices of done runs with params
+    ident   = Dict{Int,Tuple{String,String,Bool}}()     # i => (name, ns, into) it wrote
+    for (i, e) in enumerate(entries)
+        run_entry_status(e) == "done" || continue
+        _rl_get(e, "params", nothing) isa AbstractDict || continue
+        push!(done, i)
+        r = run_log_row(e)
+        l = lv(r.fn); l === nothing && continue
+        id = try _run_output_identity(r.fn, r.params, l) catch; ("", "", false) end
+        isempty(id[1]) || (ident[i] = id)
+    end
+    # A run that writes INTO what it reads (tracking into its label set) reads the labels, not an earlier
+    # write-into of them: for it, a later re-track is not a replaced input, and an earlier track run is
+    # not the maker of what it read. Without this every re-track would stale the one before it.
+    into_self(i, ref) = haskey(ident, i) && ident[i][3] && (ident[i][1], ident[i][2]) == ref
+    writes_into(j)    = haskey(ident, j) && ident[j][3]
+    # a later done run that replaced (name, ns) at the version `i` read
+    function replaced_after(i, inp)
+        ref, ver = _stale_ref(inp), _stale_ver(inp)
+        skip_into = into_self(i, ref)
+        for j in done
+            j > i || continue
+            (skip_into && writes_into(j)) && continue
+            rep = _rl_get(entries[j], "replaces", nothing)
+            rep isa AbstractDict && _stale_ref(rep) == ref || continue
+            rv = _stale_ver(rep)
+            (isempty(ver) || isempty(rv) || rv == ver) && return j
+        end
+        nothing
+    end
+    # The maker of the version run `i` read: the newest done run before `i` that wrote (name, ns), as a
+    # write or a write-into. It is taken at its word when the read names no version, when it overwrote
+    # exactly the version read (`replaces`), or when it is the only writer of a read that follows the
+    # latest. Otherwise (several writers, or a pinned read) the record cannot say which run made the
+    # version read — a run minting a version records no `replaces`, and one before the log is not in it —
+    # so all candidates are asked: all clean is clean, and any stale one makes the answer `:unknown`.
+    function upstream(i, inp)
+        ref, ver = _stale_ref(inp), _stale_ver(inp)
+        skip_into = into_self(i, ref)
+        ks = Int[j for j in done if j < i && haskey(ident, j) && (ident[j][1], ident[j][2]) == ref &&
+                                    !(skip_into && writes_into(j))]
+        isempty(ks) && return (nothing, 0)
+        k   = last(ks)
+        rep = _rl_get(entries[k], "replaces", nothing)
+        pinned = _rl_get(inp, "pinned", false) === true
+        (isempty(ver) || (rep isa AbstractDict && _stale_ver(rep) == ver) || (length(ks) == 1 && !pinned)) &&
+            return (chain(k), k)
+        rs = Any[chain(j) for j in ks]
+        all(isnothing, rs) ? (nothing, k) : (:unknown, k)
+    end
+    # why run `i` is stale (the chain of links), `:unknown` (its record, or an input's maker's, predates
+    # recorded inputs), or nothing. Stale on any input beats unknown on another.
+    memo = Dict{Int,Any}()
+    function chain(i)
+        haskey(memo, i) && return memo[i]
+        memo[i] = nothing                               # indices only decrease below; this is a guard
+        e = entries[i]
+        inputs = _rl_get(e, "inputs", nothing)
+        inputs isa AbstractVector ||
+            return memo[i] = (_stale_reads_names(lv(_rl_str(e, "fun"))) ? :unknown : nothing)
+        unk = false
+        for inp in inputs
+            inp isa AbstractDict || continue
+            read = Dict{String,Any}("name" => _rl_str(inp, "name"))
+            isempty(_rl_str(inp, "ns")) || (read["ns"] = _rl_str(inp, "ns"))
+            isempty(_stale_ver(inp)) || (read["version"] = _stale_ver(inp))
+            j = replaced_after(i, inp)
+            j === nothing ||
+                return memo[i] = Any[Dict{String,Any}("read" => read, "replacedBy" => _stale_run(entries[j]))]
+            up, k = upstream(i, inp)
+            up isa AbstractVector &&
+                return memo[i] = vcat(Any[Dict{String,Any}("read" => read, "madeBy" => _stale_run(entries[k]))], up)
+            up === :unknown && (unk = true)
+        end
+        memo[i] = unk ? :unknown : nothing
+    end
+    # the current maker of each output: the newest done run that wrote it
+    current = Dict{Tuple{String,String,Bool},Int}()
+    for i in done
+        haskey(ident, i) && (current[ident[i]] = i)
+    end
+    stale, unknown = Any[], Any[]
+    for ((name, ns, into), i) in sort!(collect(current); by = last)
+        into || _run_has_output(img, name, ns) !== false || continue
+        e = entries[i]
+        d = Dict{String,Any}("name" => name, "run" => _stale_run(e))
+        isempty(ns) || (d["ns"] = ns)
+        into && (d["into"] = true)
+        why = chain(i)
+        why === nothing && continue
+        if why === :unknown
+            d["reason"] = _rl_get(e, "inputs", nothing) isa AbstractVector ?
+                "the record cannot say whether what it read is current (an older maker, or a version " *
+                "the log does not say who made)" :
+                "made by a run from before inputs were recorded"
+            push!(unknown, d)
+            continue
+        end
+        d["because"] = why
+        d["summary"] = _stale_summary(name, e, why)
+        push!(stale, d)
+    end
+    (; stale, unknown)
+end
+
+# "B (segment.cellposeMeasure, 2026-…) read 'default' v2, which cleanupImages.smooth replaced at …"
+function _stale_summary(name, e, why)
+    parts = String[]
+    for l in why
+        r = l["read"]
+        v = haskey(r, "version") ? " $(r["version"])" : ""
+        if haskey(l, "replacedBy")
+            push!(parts, "read '$(r["name"])'$v, since replaced by $(l["replacedBy"]["fun"]) at $(l["replacedBy"]["at"])")
+        else
+            push!(parts, "read '$(r["name"])'$v made by $(l["madeBy"]["fun"]) at $(l["madeBy"]["at"]), which")
+        end
+    end
+    "'$name' ($(_rl_str(e, "fun")) at $(_rl_str(e, "at"))) " * join(parts, " ")
 end

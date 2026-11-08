@@ -1,4 +1,5 @@
 import type { ComparisonsResult } from './types'
+import type { QcFinding } from '../lib/qc'
 
 /**
  * The stats readout the population picker shows for the ACTIVE plot: which test ran, and why.
@@ -10,9 +11,10 @@ import type { ComparisonsResult } from './types'
 export interface StatsInfo {
   note: string      // the test that ran, e.g. "Mann-Whitney U (two-sided)"
   reason: string    // why `auto` chose it, e.g. "2 groups → Mann-Whitney U (rank-based)"; '' if named
+  findings: QcFinding[]   // QC on the comparison (stats.jl `stats_qc_findings`), shown under the test name
 }
 
-export const emptyStatsInfo = (): StatsInfo => ({ note: '', reason: '' })
+export const emptyStatsInfo = (): StatsInfo => ({ note: '', reason: '', findings: [] })
 
 /**
  * Read it off a plot response.
@@ -23,5 +25,5 @@ export const emptyStatsInfo = (): StatsInfo => ({ note: '', reason: '' })
  * back to naming what ran.
  */
 export function statsInfoOf(cmp: ComparisonsResult | undefined | null): StatsInfo {
-  return { note: cmp?.methodNote ?? '', reason: cmp?.autoReason ?? '' }
+  return { note: cmp?.methodNote ?? '', reason: cmp?.autoReason ?? '', findings: cmp?.findings ?? [] }
 }

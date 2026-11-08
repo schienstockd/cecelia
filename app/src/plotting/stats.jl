@@ -6,6 +6,8 @@
 # are locked in docs/todo/STATS_ANNOTATIONS_PLAN.md → S0.
 #
 # No `write_qc` — cross-series, ephemeral, no `value_name`. See STATS_ANNOTATIONS_PLAN.md → D10.
+# Its QC rides the result instead: `stats_qc_findings` (below) → `comparisons.findings`, catalog
+# text like every other finding, shown under the test name in the plot options.
 #
 # Test selection follows Prism defaults (non-parametric):
 #   2 groups   → Mann-Whitney U (`:mannwhitney`); Welch's t-test (`:ttest`) opt-in.
@@ -102,6 +104,48 @@ function run_stats(groups; test::Symbol=:auto)::StatsResult
 
     StatsResult(test, labels, ns, means, medians, stat, p, _significance(p), note, auto_reason,
                 pairs, letters)
+end
+
+"""
+    stats_qc_findings(n, n_images; test = :mannwhitney) -> Vector{Dict}
+
+PURE. QC for a between-group test, from each group's value count `n`, the number of distinct images its
+values came from `n_images` (parallel vectors), and the test that ran. The replicate is the image:
+- `stats.cells_as_replicates` — some group has more values than images, so the test counts cells or
+  tracks (not images) as independent samples;
+- `stats.few_replicates` (2 groups) — with this many images per group the exact rank test can't reach
+  `CLAIM_ALPHA` (`claim_min_p_unpaired`, the claim recital's S2 rule), whatever the data;
+- `stats.few_replicates_pairs` (>2 groups) — no bracket on the smallest group can reach it: the best
+  floor over its pairs, times the number of pairs (the Bonferroni factor `_pairwise` applies to the
+  brackets). The omnibus test still can be significant.
+The floor binds only an EXACT rank test, so it is claimed only when `test` is a rank test
+(`:mannwhitney`, `:kruskal`), `exact` (every pair on the smallest group ran exact — `rank_tests_exact`; the
+tie-corrected approximation HypothesisTests switches to has no such floor), and every value is an image
+(with pooled cells the test's n is cells, and `stats.cells_as_replicates` already says to fix that
+first). No thresholds of its own: the floor and alpha are the claim checks'.
+"""
+function stats_qc_findings(n::AbstractVector{<:Integer}, n_images::AbstractVector{<:Integer};
+                           test::Symbol = :mannwhitney, exact::Bool = true)
+    findings = Any[]
+    k = length(n)
+    k >= 2 && k == length(n_images) || return findings
+    units = [min(a, b) for (a, b) in zip(n, n_images)]
+    if any(n_images .< n)
+        push!(findings, qc_finding("warn", "stats.cells_as_replicates";
+            detail = Dict{String,Any}("n" => collect(n), "nImages" => collect(n_images))))
+        return findings
+    end
+    (exact && test in (:mannwhitney, :kruskal)) || return findings
+    # the smallest group's brackets: the best any of them can reach, Bonferroni included
+    s = argmin(units)
+    npairs = k == 2 ? 1 : k * (k - 1) ÷ 2
+    floor = min(1.0, minimum(claim_min_p_unpaired(units[s], units[j]) for j in 1:k if j != s) * npairs)
+    floor > CLAIM_ALPHA && push!(findings, qc_finding("warn",
+        k == 2 ? "stats.few_replicates" : "stats.few_replicates_pairs";
+        n = units[s], p = round(floor; sigdigits = 3),
+        detail = Dict{String,Any}("units" => units, "minP" => floor, "nPairs" => npairs,
+                                  "alpha" => CLAIM_ALPHA)))
+    findings
 end
 
 function _run_omnibus(test::Symbol, vals::Vector{Vector{Float64}})
@@ -208,6 +252,21 @@ end
 
 # Pairwise post-hoc between every pair of groups, Bonferroni-corrected. For a 2-group test the
 # omnibus IS the pair, so this returns [].
+"""
+    rank_tests_exact(vals) -> Bool
+
+Whether every Mann-Whitney on the SMALLEST group (fewest values) runs EXACT — the brackets the
+replicate floor in `stats_qc_findings` speaks about — by HypothesisTests' own choice (`MannWhitneyUTest`
+picks the exact test at ≤10 values, or ≤50 with no ties; otherwise the tie-corrected normal
+approximation, which no exact floor binds). Pairs between other groups don't matter: the floor says
+nothing about them.
+"""
+function rank_tests_exact(vals::AbstractVector)::Bool
+    length(vals) >= 2 || return false
+    s = argmin(length.(vals))
+    all(MannWhitneyUTest(vals[s], vals[j]) isa ExactMannWhitneyUTest for j in eachindex(vals) if j != s)
+end
+
 function _pairwise(vals::Vector{Vector{Float64}}, labels::Vector{String}, test::Symbol)
     n = length(vals)
     n == 2 && return Tuple{String,String,Float64,String}[]

@@ -552,6 +552,116 @@ function cohort_reply_docs(reply::AbstractDict)::Vector{Any}
     Any[reply]
 end
 
+# ── The check action, one code path for the button and the chain ─────────────────────────────────
+#
+# The "Check cohort consistency" button (POST /api/qc/cohort/check) and the end of a chain run
+# (`chain_cohort_qc!`) both run THIS: compute + persist the cohort docs, then write a lab-log entry
+# for whatever flagged.
+
+"""
+    cohort_has_answer(fun_name) -> Bool
+
+A fun the cohort check can answer: it banks cohort metrics (`COHORT_METRICS`), it is a composite whose
+steps do (`cohort_parts`), or it is a gating QC fun (`gating.flow` / `gating.track`, `qc_gating.jl`),
+which is computed across the set rather than read from banked metrics.
+"""
+cohort_has_answer(fun_name::AbstractString) =
+    haskey(COHORT_METRICS, fun_name) || is_gating_qc_fun(fun_name) || !isempty(cohort_parts(fun_name))
+
+"""
+    cohort_reply(set, fun_name; value_name="", threshold, run="", persist=false) -> Dict
+
+The cohort answer for one fun in the route's shape: its own reply (`cohort_qc_reply`), a composite's
+steps (`cohort_qc_by_step`), or — for a gating QC fun — the set-wide gating check (`gating_qc!`, which
+writes its per-image docs only when `persist`).
+"""
+function cohort_reply(set::CciaSet, fun_name::AbstractString; value_name::AbstractString = "",
+                      threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "",
+                      persist::Bool = false)::Dict{String,Any}
+    is_gating_qc_fun(fun_name) && return gating_qc!(set, gating_qc_pop_type(fun_name);
+                                                    value_name, threshold, write = persist)
+    haskey(COHORT_METRICS, fun_name) ?
+        cohort_qc_reply(set, fun_name; value_name, threshold, run, persist) :
+        cohort_qc_by_step(set, fun_name; value_name, threshold, run, persist)
+end
+
+# The lab-log lines for one doc of a check reply: a gating doc has its own summary, every other doc the
+# cohort one.
+_check_summary_lines(d::AbstractDict) = is_gating_qc_fun(string(get(d, "funName", ""))) ?
+    gating_qc_summary_lines(d) : cohort_qc_summary_lines(d)
+
+"""
+    cohort_check!(proj, set, fun_name; value_name="", threshold, run="") -> Dict
+
+The explicit check action: `cohort_reply(...; persist = true)` — the set sidecar and the per-image
+`cohort.{fun}` findings (or the gating docs) — then a "Cecelia — Cohort check" lab-log entry for each
+doc that flagged (an all-clear is not logged). The lab-log write is best-effort: a failure there never
+fails the check. Shared by `POST /api/qc/cohort/check` and `chain_cohort_qc!`.
+"""
+function cohort_check!(proj::CciaProject, set::CciaSet, fun_name::AbstractString;
+                       value_name::AbstractString = "", threshold::Real = _COHORT_MODZ_THRESHOLD,
+                       run::AbstractString = "")::Dict{String,Any}
+    reply = cohort_reply(set, fun_name; value_name, threshold, run, persist = true)
+    flagged = [d for d in cohort_reply_docs(reply) if d isa AbstractDict && cohort_has_outliers(d)]
+    try
+        for d in flagged
+            append_lab_log!(proj, "Cecelia — Cohort check", _check_summary_lines(d))
+        end
+    catch e
+        @warn "cohort check: lab-log append failed" exception = e
+    end
+    reply
+end
+
+# The run a chain-end check should judge for a fun: clustering and HMM bank QC per run, and the run a
+# chain node just made is the newest — the same default the button's run selector picks. "" for a fun
+# that keeps no runs, and for a composite (its steps are judged whole, as the button does).
+function _newest_cohort_run(set::CciaSet, fun_name::AbstractString)::String
+    haskey(COHORT_METRICS, fun_name) || return ""
+    runs = cohort_runs(set, fun_name)
+    isempty(runs) ? "" : String(first(runs).run)
+end
+
+"""
+    chain_cohort_qc!(proj, image_uids, fun_names; on_log) -> Vector{Dict}
+
+Cohort QC at the end of a chain run: for every set holding one of the run's images, `cohort_check!` each
+of `fun_names` the check can answer (clustering/HMM: the newest run), then the gating check on that
+set's hand-drawn gates (`gating.flow`, `gating.track`) — a chain that re-segments or re-tracks changes
+what every gate selects. Writes one log line per check and returns `[{setUid, funName, flagged}]`.
+Never throws: QC is advisory, and a failed check must not turn a finished chain into a failed one.
+"""
+function chain_cohort_qc!(proj::CciaProject, image_uids::AbstractVector, fun_names::AbstractVector;
+                          on_log::Function = _ -> nothing)::Vector{Dict{String,Any}}
+    out = Dict{String,Any}[]
+    want = Set{String}(String.(image_uids))
+    funs = unique!(String[String(f) for f in fun_names if cohort_has_answer(String(f))])
+    # the gates only after a run that did something (a resume with nothing left to do changes nothing)
+    isempty(fun_names) || append!(funs, (gating_qc_fun(pt) for pt in GATING_POP_TYPES))
+    for set in sets(proj)
+        any(in(want), set.image_uids) || continue
+        for fun in funs
+            # the gating check only where the set has gates of that kind — otherwise there is nothing to say
+            is_gating_qc_fun(fun) && !set_has_gating(set, gating_qc_pop_type(fun)) && continue
+            try
+                reply = cohort_check!(proj, set, fun; run = _newest_cohort_run(set, fun))
+                docs = [d for d in cohort_reply_docs(reply) if d isa AbstractDict]
+                n = length(unique(String(string(u)) for d in docs
+                                  for m in values(get(d, "metrics", Dict())) if m isa AbstractDict
+                                  for u in keys(get(m, "outliers", Dict()))))
+                push!(out, Dict{String,Any}("setUid" => set.uid, "funName" => fun, "flagged" => n))
+                Base.invokelatest(on_log, n == 0 ?
+                    "[INFO] Cohort QC $(fun) on set $(set.uid): no outliers" :
+                    "[WARN] Cohort QC $(fun) on set $(set.uid): $(n) image(s) flagged — see the lab log")
+            catch e
+                Base.invokelatest(on_log, "[WARN] Cohort QC $(fun) on set $(set.uid) failed: " *
+                                          sprint(showerror, e))
+            end
+        end
+    end
+    out
+end
+
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
     (p = cohort_qc_path(set, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)
 

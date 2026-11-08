@@ -68,6 +68,7 @@ _carryover_result_path(task_dir::AbstractString, phase::AbstractString) =
     joinpath(task_run_dir(task_dir), "correct_carryover_$(phase)_result.json")
 
 # ── snapshot ───────────────────────────────────────────────────────────────────
+# QC-EXEMPT: composite plumbing, no output to score (segment.correct + measureLabels bank the QC).
 
 function _run_task(task::SegmentCorrectCarryOverSnapshot, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
