@@ -47,7 +47,6 @@ include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
 include("shader_constants.jl") # the defaults the viewer, its shaders and the movie renderer share
 include("overlay_author.jl") # resolves populations/tracks into the primitives' columnar shape
-include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
 include("movie_render.jl")   # the offline renderer's timelapse sweep — builds on image_render.jl + read_slab
 include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
@@ -357,8 +356,6 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/examples" => (req, body_bytes) -> (api_gating_examples(req)),
     "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
-    "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
-    "/api/crop/frame" => (req, body_bytes) -> (api_crop_frame(req)),
     "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),

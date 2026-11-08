@@ -14,7 +14,7 @@
 # was the first consumer. None of it is crop-specific — the crop panel just
 # happened to ask first. Pulled out here so the second consumer (the anisotropy grid-size advisory)
 # reuses it instead of growing a parallel reader. The same audit then found the RENDERER wasn't
-# crop-specific either, so that became `image_render.jl` and `crop_api.jl` is now just the two routes.
+# crop-specific either, so that became `image_render.jl`. (The crop routes themselves are gone.)
 #
 # This inherits `image_render.jl`'s SANCTIONED, NARROW carve-out of the "one canonical image reader"
 # rule: Julia touches the zarr directly (Zarr.jl) only for lightweight metadata/preview work; Python

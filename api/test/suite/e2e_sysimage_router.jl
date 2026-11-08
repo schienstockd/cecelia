@@ -268,7 +268,6 @@ end
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs", "/api/chains/suggest", "/api/chains/history-params",
-        "/api/crop/frame", "/api/crop/info",
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
         "/api/viewer/overlays",
@@ -503,7 +502,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 188
+    @test length(GET_ROUTES) == 122 && length(POST_ROUTES) == 188
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
