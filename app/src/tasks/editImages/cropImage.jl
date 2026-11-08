@@ -94,7 +94,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     # provenance: a crop derives from the source's original file, so carry `ori_path` forward. Best-effort
     # — images imported before source-path tracking have none, so the crop's dialog still reads "not
     # recorded" (it inherits the source's gap rather than inventing one).
-    haskey(src_meta, "ori_path") && (crop_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(crop_meta, src_meta)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
     new_img = add_image!(s; name = derived_image_name(proj, img.name, crop_name_suffix(p.nameSuffix)),

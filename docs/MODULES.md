@@ -641,6 +641,17 @@ would go stale the moment the metadata is fixed, and the row's "Include in proce
 have to lie. Exclusion is a choice; blocking is a fact about the file. They share the row's
 presentation and nothing else.
 
+**What the gate does not cover is warned, never blocked.** No task declares `"z"` (a z-stack with no
+voxel depth would otherwise refuse every spatial task), and an unrecognised unit passes the gate. So
+for any task declaring a `scale`, the scheduler asks `img_defaulted_scale(img, need)` which axes the
+run computes with no recorded value for — a 3D image's missing or invalid z step (spatial need ⇒ z on a z-stack), a
+missing interval, a unit `length_unit_um`/`time_unit_seconds` doesn't know — and, when any: writes a
+`[WARN]` line to the task log at start, stamps `env.scaleDefaulted` (`{axis: {reason: "missing"|"invalid"|"unknownUnit", used}}`, `used` = the value the run computed with (`img_physical_sizes`; µm/px or min/frame — not always 1.0), via `run_scale_defaults`)
+on the run-log entry at close, and banks `calibration.*_assumed` findings under
+`qc/calibration.{fun}/` once the run is done (`write_defaulted_scale_qc!`; a re-run with the scale set
+clears them). A task needs nothing for this beyond its `scale` declaration. Import QC
+(`metadata_qc_findings`) still flags the image itself; this flags the run that used the default.
+
 **Do not** hand-roll `img.meta["SizeT"] > 1` inside a task — reach for `task_applies` (or `img_axes`
 if you truly need the axis set). Tests: `app/test/runtests.jl` → *Axis gating — img_axes +
 task_applies*.

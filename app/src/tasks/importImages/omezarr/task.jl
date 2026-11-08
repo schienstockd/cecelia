@@ -49,6 +49,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         on_log("[ERROR] Source file not found: $(isempty(src_path) ? "(no src_path)" : src_path)")
         return nothing
     end
+    src_fingerprint = import_source_fingerprint(src_path)   # before the read: what was imported
 
     # Two write modes — decided ONCE per run via the shared writer helper (see
     # `docs/audit/vn-versioning-p4-design.md`): flat legacy overwrite (default), or the next `vN`
@@ -278,6 +279,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         sync_zarr_calibration!(resolved_zarr, zarr_meta)
     end
 
+    isempty(src_fingerprint) || (zarr_meta["oriFingerprint"] = src_fingerprint)
     _update_image_status!(img, IMAGE_DONE)
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
                                 zarr_filename  = store_rel,

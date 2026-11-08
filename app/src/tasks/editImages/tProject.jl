@@ -74,7 +74,7 @@ function _run_task(task::TProject, img::CciaImage, params::Dict{String,Any};
         "tproj_source_value_name" => p.valueName,
         "tproj_op"                => p.op)
     merge!(proj_meta, _tproj_inherited_meta(src_meta))
-    haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(proj_meta, src_meta)
 
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "t-$(p.op)"), meta = proj_meta, attr = img.attr)
 

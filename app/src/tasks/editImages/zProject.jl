@@ -78,7 +78,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
         "zproj_source_value_name" => p.valueName,
         "zproj_op"                => p.op)
     merge!(proj_meta, _zproj_inherited_meta(src_meta))
-    haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(proj_meta, src_meta)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to set manifest)
     new_img = add_image!(s; name = derived_image_name(proj, img.name, "z-$(p.op)"), meta = proj_meta, attr = img.attr)

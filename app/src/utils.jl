@@ -310,6 +310,38 @@ security says nothing about.
 """
 _file_sha256(path::AbstractString)::String = open(io -> bytes2hex(SHA.sha256(io)), path)
 
+const SOURCE_FINGERPRINT_SAMPLE = 1 << 20   # bytes hashed from each end of the file
+
+"""
+    source_fingerprint(path; sample_bytes = SOURCE_FINGERPRINT_SAMPLE) -> Dict{String,Any}
+
+A cheap identity for a raw source file — a FINGERPRINT, not a checksum: `size`, `mtime` (UTC ISO) and
+`sample` = SHA-256 of the first and last `sample_bytes` (the whole file when it is smaller than both),
+plus `path`, `method` and `sampleBytes` so a later comparison knows what was hashed. At most
+2 × `sample_bytes` are read whatever the file's size, because raw files run to many GB on slow shares.
+
+What it can tell: a different file at the same path (size or sample differ). What it cannot: an edit
+confined to the unsampled middle with the size unchanged. `mtime` moves on a plain copy, so it says
+"touched", not "changed". Empty Dict when `path` is not a file.
+"""
+function source_fingerprint(path::AbstractString; sample_bytes::Integer = SOURCE_FINGERPRINT_SAMPLE)::Dict{String,Any}
+    st = stat(path)
+    isfile(st) || return Dict{String,Any}()
+    n = Int(st.size)
+    ctx = SHA.SHA2_256_CTX()
+    open(path) do io
+        SHA.update!(ctx, read(io, min(n, sample_bytes)))
+        if n > sample_bytes
+            tail = max(sample_bytes, n - sample_bytes)   # never re-hash bytes the head already covered
+            seek(io, tail)
+            SHA.update!(ctx, read(io, n - tail))
+        end
+    end
+    Dict{String,Any}("path" => String(path), "method" => "sha256-head-tail", "sampleBytes" => Int(sample_bytes),
+                     "size" => n, "mtime" => Dates.format(Dates.unix2datetime(st.mtime), "yyyy-mm-ddTHH:MM:SS") * "Z",
+                     "sample" => bytes2hex(SHA.digest!(ctx)))
+end
+
 """
     _sha256_matches(path, digest_file_contents) -> Bool
 

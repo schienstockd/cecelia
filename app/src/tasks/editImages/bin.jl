@@ -94,7 +94,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
         "bin_factor_y"          => p.factorY,
         "bin_op"                => p.op)
     merge!(bin_meta, _bin_inherited_meta(src_meta, p.factorX, p.factorY))
-    haskey(src_meta, "ori_path") && (bin_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(bin_meta, src_meta)
 
     tag     = p.factorX == p.factorY ? "bin$(p.factorX)" : "bin$(p.factorX)x$(p.factorY)"
     new_img = add_image!(s; name = derived_image_name(proj, img.name, tag), meta = bin_meta, attr = img.attr)

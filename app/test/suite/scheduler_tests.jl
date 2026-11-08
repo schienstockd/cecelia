@@ -122,6 +122,41 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A run that computed with an assumed scale says so ───────────────────────
+# `img_physical_sizes` reads a missing axis as 1.0, and the gate blocks only a missing DECLARED scale —
+# no task declares z, so a µm task on a z-stack with no z step ran on 1 µm with nothing on the run.
+# The run log's env names the assumed axis, the task log warns, QC banks it, a fixed re-run clears it.
+@testset "A run that assumed a scale records and warns, never blocks" begin
+    proj = create_project!(name="rl-scale-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img",
+                      meta = Dict{String,Any}("SizeC" => 1, "SizeT" => 1, "SizeZ" => 12,
+                                              "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5))
+    logs = String[]
+    tid  = "scale$(rand(1000:9999))"
+    @test run_task(_ScaleTask(), img, Dict{String,Any}("valueName" => "default");
+                   task_id = tid, on_log = l -> push!(logs, l)) !== nothing        # warned, not blocked
+    e = only(filter(e -> String(get(e, "taskId", "")) == tid, read_run_log(img)))
+    zd = e["env"]["scaleDefaulted"]["z"]
+    @test String(zd["reason"]) == "missing" && zd["used"] == 1.0
+    @test any(l -> occursin("[WARN]", l) && occursin("z scale missing", l) && occursin("1.0 µm/px", l), logs)
+    fun = "calibration." * Cecelia._fun_name_from_task(_ScaleTask())
+    doc = Cecelia.read_qc(img, fun, "default")
+    @test [String(f[:code]) for f in doc[:findings]] == ["calibration.z_assumed"]
+
+    # the z step set → the next run records nothing assumed and clears the warning
+    img.meta["PhysicalSizeZ"] = 2.0
+    tid2 = "scale2$(rand(1000:9999))"
+    run_task(_ScaleTask(), img, Dict{String,Any}("valueName" => "default"); task_id = tid2)
+    e2 = only(filter(e -> String(get(e, "taskId", "")) == tid2, read_run_log(img)))
+    @test !haskey(e2, "env")
+    @test isempty(Cecelia.read_qc(img, fun, "default")[:findings])
+    # a task that declares no scale never gets a calibration doc
+    run_task(_RunEnvTask(), img, Dict{String,Any}())
+    @test !isdir(Cecelia.qc_fun_dir(img, "calibration." * Cecelia._fun_name_from_task(_RunEnvTask())))
+    forget_task_start!(tid); forget_task_start!(tid2)
+    rm(proj.root; recursive=true)
+end
+
 # ── A cancelled run is RECORDED, and it is recorded before the work starts ───
 # Regression, and the expensive one. The run log used to be appended on finish and only for
 # :done/:failed — `:cancelled` was skipped as "the user aborted, not an outcome worth logging". So a

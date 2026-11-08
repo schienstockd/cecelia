@@ -705,6 +705,56 @@ function write_metadata_qc!(img::CciaImage)
     end
 end
 
+# ── A run that computed with an assumed scale ────────────────────────────────────
+# Import QC says the image lacks a scale; these say a RUN used the fallback — banked on the run, so the
+# warning sits next to the numbers it affects. Under `calibration.{fun}`, beside the task's own
+# `{fun}` doc (the `cohort.{fun}` pattern), so neither overwrites the other.
+
+const _DEFAULTED_SCALE_KEYS = Dict(
+    "xy" => "calibration.xy_assumed", "z" => "calibration.z_assumed", "t" => "calibration.t_assumed")
+const _DEFAULTED_UNIT_KEYS = Dict(
+    "xy" => "calibration.length_unit_assumed", "z" => "calibration.length_unit_assumed",
+    "t" => "calibration.time_unit_assumed")
+
+"""
+    defaulted_scale_qc_findings(defaulted) -> Vector
+
+One `warn` per axis in `defaulted` (`run_scale_defaults`'s `{axis: {reason, used}}`), each with
+`detail.field` (`xy`/`z`/`t`), `detail.reason` and `detail.used` (the value the run computed with —
+µm/px or min/frame). PURE — unit-tested. Advisory: the run has already happened.
+"""
+function defaulted_scale_qc_findings(defaulted::AbstractDict)
+    fs = Dict{String,Any}[]
+    for ax in ("xy", "z", "t")
+        x = get(defaulted, ax, nothing)
+        x isa AbstractDict || continue
+        reason = string(get(x, "reason", ""))
+        key = get(reason == "unknownUnit" ? _DEFAULTED_UNIT_KEYS : _DEFAULTED_SCALE_KEYS, ax, nothing)
+        isnothing(key) && continue
+        used = get(x, "used", nothing)
+        detail = Dict{String,Any}("field" => ax, "reason" => reason, "used" => used)
+        push!(fs, reason == "unknownUnit" ? qc_finding("warn", key; detail = detail) :
+                  qc_finding("warn", key; detail = detail,
+                             value = used isa Real ? round(used; sigdigits = 3) : string(used),
+                             unit = ax == "t" ? "min/frame" : "µm"))
+    end
+    fs
+end
+
+"""
+    write_defaulted_scale_qc!(img, fun_name, value_name, defaulted)
+
+Bank `defaulted_scale_qc_findings` under `calibration.{fun_name}`. Writes only when there is a finding
+or to CLEAR an earlier one (a re-run after the scale was set un-flags), never an empty placeholder.
+"""
+function write_defaulted_scale_qc!(img::CciaImage, fun_name::AbstractString,
+                                   value_name::AbstractString, defaulted::AbstractDict)
+    fun = "calibration." * string(fun_name)
+    findings = defaulted_scale_qc_findings(defaulted)
+    (isempty(findings) && !isfile(qc_path(img, fun, value_name))) && return nothing
+    write_qc(img, fun, value_name, findings)
+end
+
 # ── Objective count metrics (QC banking) ─────────────────────────────────────────
 # Tasks bank objective counts (cells measured, tracks + mean length) into the qc/ sidecar so future
 # cohort stats can flag anomalies (a run that produced 10× fewer cells/tracks than usual). There is
