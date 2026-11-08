@@ -12,6 +12,7 @@
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
+import { isTrackPopType } from '../../utils/measureGroups'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
@@ -58,7 +59,7 @@ function exportAs(kind: string) {
   else if (kind === 'png' || kind === 'svg') plotRef.value?.toImageURL(kind).then(url => url && downloadDataUrl(`${stem}.${kind}`, url))
 }
 
-const granularity = computed(() => (props.popType === 'trackclust' ? 'track' : 'cell'))
+const granularity = computed(() => (isTrackPopType(props.popType) ? 'track' : 'cell'))
 const features = computed(() => props.state.features ?? [])
 const heatmap = ref<PlotDataResponse | null>(null)
 const loading = ref(false)

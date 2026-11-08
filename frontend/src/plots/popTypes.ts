@@ -27,6 +27,8 @@
 // but cell-grained for `cell_properties` (a measure plot). So granularity cannot be derived from the
 // pop type alone — each spec states it, per option.
 
+import { popTypeInfo } from './popTypeRegistry'
+
 export interface PopTypeOption {
   popType: string
   granularity: 'cell' | 'track'
@@ -61,20 +63,10 @@ export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
   spec.dataSource.matrix?.mode === 'interaction' || spec.dataSource.precomputed === 'hmmFit' ||
   !!spec.dataSource.imageMetric
 
-// Default display names, so a spec need not repeat them. Deliberately user-facing wording ("Gated",
-// not "flow") — the pop-type ids are an implementation detail.
-const DEFAULT_LABELS: Record<string, string> = {
-  flow: 'Gated',
-  clust: 'Cell clusters',
-  live: 'Tracked',
-  track: 'Tracked (gated)',
-  trackclust: 'Track clusters',
-  region: 'Regions',
-  labels: 'All cells',
-}
-
+// Default display names come from the pop-type registry, so a spec need not repeat them. Deliberately
+// user-facing wording ("Gated", not "flow") — the pop-type ids are an implementation detail.
 export function popTypeLabel(o: PopTypeOption): string {
-  return o.label ?? DEFAULT_LABELS[o.popType] ?? o.popType
+  return o.label ?? popTypeInfo(o.popType)?.label ?? o.popType
 }
 
 /**

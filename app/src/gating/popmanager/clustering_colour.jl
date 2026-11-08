@@ -134,10 +134,14 @@ end
 # uniformly. `clust`/`trackclust` filter `clusters.{suffix}` (clustPops/clustTracks); `region` filters
 # `regions.{suffix}` (clustRegions) — spatial regions are region-clustering output, stored + shared with
 # the identical mechanism as cell/track clusters (see docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 5).
-_is_cluster_pop_type(pop_type)::Bool = string(pop_type) in ("clust", "trackclust", "region")
+# `_is_cluster_pop_type` is the registry's `cluster` flag (registry.jl).
 
-# The obs-column family a cluster-style pop type filters over — the one place the prefix is decided.
-_cluster_measure_prefix(pop_type)::String = string(pop_type) == "region" ? "regions." : "clusters."
+# The obs-column family a cluster-style pop type filters over — the registry's `cluster_prefix`; any
+# non-cluster type keeps the `clusters.` answer it always had.
+function _cluster_measure_prefix(pop_type)::String
+    i = pop_type_info(pop_type)
+    (i !== nothing && i.cluster) ? i.cluster_prefix : "clusters."
+end
 # …and the same decision without the dot, for the clustfeatures sidecar key (`{family}.{suffix}`) and
 # any caller that needs the bare family name. Derived, never re-decided.
 _cluster_measure_family(pop_type)::String = chopsuffix(_cluster_measure_prefix(pop_type), ".")

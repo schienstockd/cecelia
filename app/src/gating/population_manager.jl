@@ -8,6 +8,7 @@ using JSON3
 # See docs/POPULATION.md.
 #
 #   types.jl              — path helpers + PopType / BoolMembership / FilterFun / FilterCondition.
+#   registry.jl           — the pop-type registry (one row per type; every pop-type list derives here).
 #   population.jl         — Population + PopulationMap (tree per value_name + traversal).
 #   boolean.jl            — Boolean populations (Decision 16 combinators — filter, not stored).
 #   mutations.jl          — the write API (add/rename/move/remove/gate/filter/colour swaps).
@@ -19,6 +20,7 @@ using JSON3
 #   mixed_resolution.jl   — mixed-type resolver for module-function pickers (any-pop-type row list).
 
 include("popmanager/types.jl")
+include("popmanager/registry.jl")
 include("popmanager/population.jl")
 include("popmanager/boolean.jl")
 include("popmanager/mutations.jl")

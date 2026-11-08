@@ -77,9 +77,10 @@ function stale_artefacts_for(img::CciaImage, value_name::AbstractString;
     end
 
     # Gating: flow pops (`gating/{vn}.json`) are label-keyed → stale on :labels; track pops
-    # (`gating/{vn}__tracks.json`) are track_id-keyed → stale on :tracks.
-    for (pop_type, applies) in (("flow", changed === :labels), ("track", changed === :tracks))
-        applies || continue
+    # (`gating/{vn}__tracks.json`) are track_id-keyed → stale on :tracks. Filter pops (clusters,
+    # regions, branches) re-derive from their column on read, so only the gate-drawn types go stale.
+    for pop_type in GATING_POP_TYPES
+        (is_track_grained(pop_type) ? changed === :tracks : changed === :labels) || continue
         gpath = gating_path(img._dir, vn; pop_type = pop_type)
         isfile(gpath) || continue
         n_pops = _gating_pop_count(gpath)

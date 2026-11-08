@@ -547,15 +547,14 @@ end
 
 # gating/{from}[__…].json — load, rewrite the map's own value_name plus every population's, save under
 # the new path, remove the old file. `save_pop_map!(m, task_dir)` uses `m.pop_type` to pick the suffix,
-# so the load pop_type must match the file's suffix; we enumerate the known suffixes explicitly.
-const _GATING_POP_TYPES = ("flow", "track", "clust", "trackclust", "region", "branch")
+# so the load pop_type must match the file's suffix; we walk every stored type (`STORED_POP_TYPES`).
 
 function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_log)
     dir = joinpath(img._dir, "gating")
     isdir(dir) || return nothing
     # under the gating lock (gating/popmanager/copy.jl): an edit landing mid-rename would otherwise be
     # overwritten, or rewrite the old path after it was removed
-    with_popmap_lock() do; for pt in _GATING_POP_TYPES
+    with_popmap_lock() do; for pt in STORED_POP_TYPES
         old_path = gating_path(img._dir, from; pop_type = pt)
         isfile(old_path) || continue
         m = load_pop_map(img._dir, from; pop_type = pt)

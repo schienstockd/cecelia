@@ -373,7 +373,9 @@ end
 #  • populations: [{name, colour}] for each requested point/track pop (deduped by name); `colour` is
 #    `nothing` (no swatch) for tracks coloured by track id / speed.
 function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides)
-    pt_all  = ("trackclust", "track", "clust", "flow")
+    # POP-TYPES-OK: priority order (first pop wins a shared value); every type that can filter a
+    # cell or track colour column — branch pops filter the branch table, never a colour-by column
+    pt_all  = ("trackclust", "track", "clust", "region", "flow")
     colours = _apply_user_overrides!(_colour_overrides_for(img, column, pt_all), user_overrides)
     labels  = _pop_labels_for(img, column, pt_all)
     cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))

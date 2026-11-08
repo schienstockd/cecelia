@@ -27,7 +27,7 @@ import { openViewerWindow } from '../utils/viewerWindow'
 import { cropPickFromValue } from '../utils/viewer/cropPick'
 import { profileStorage } from '../utils/profileStorage'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
-import { measureGroups } from '../utils/measureGroups'
+import { measureGroups, isTrackPopType } from '../utils/measureGroups'
 import { channelLabel } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -458,7 +458,7 @@ async function loadCols() {
     // additionally has a "Track measures" (whole-track motility) group.
     //  • track: motility in `columns`, the per-track-aggregatable cell vars in `cellMeasures`
     //  • flow:  the cell vars are `columns`; behaviour is the cell obs `live.*`
-    const track = popType === 'track' || popType === 'trackclust'
+    const track = isTrackPopType(popType)
     const groups = measureGroups(track
       ? { trackColumns: vars, columns: (d.cellMeasures ?? []).filter(c => !COL_DENYLIST.has(c)),
           channels: d.channels,

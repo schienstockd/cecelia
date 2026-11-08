@@ -17,11 +17,10 @@
 
 # `_split_pop_ref` (pop_df.jl) is THE pop-ref grammar these resolvers share.
 
-# Probe order for pops whose type is unknown from the value alone. A `_tracked` (or any reserved
-# derived) leaf resolves to its registered pop_type (`live`) up front; otherwise the first stored map
-# that CONTAINS the path wins (name collisions across types are pathological). `flow` is probed first so
-# a plain gate resolves to cells, not to a like-named cluster/region pop.
-const _POP_TYPE_PROBE_ORDER = ("flow", "clust", "region", "track", "trackclust", "branch")
+# Probe order for pops whose type is unknown from the value alone: `POP_TYPE_PROBE_ORDER` (registry.jl).
+# A `_tracked` (or any reserved derived) leaf resolves to its registered pop_type (`live`) up front;
+# otherwise the first stored map that CONTAINS the path wins (name collisions across types are
+# pathological).
 
 """
     resolve_pop_type(img, value_name, path) -> String
@@ -29,7 +28,7 @@ const _POP_TYPE_PROBE_ORDER = ("flow", "clust", "region", "track", "trackclust",
 The `pop_type` a single selected population must be fetched under, discovered from the stored maps —
 because the picker value carries only the path, not the type. A reserved derived leaf (`_tracked`)
 → its registered pop_type (`live`); the all-cells root → `flow`; otherwise the first map in
-`_POP_TYPE_PROBE_ORDER` that contains the path. Unknown → `flow` (membership then resolves empty
+`POP_TYPE_PROBE_ORDER` that contains the path. Unknown → `flow` (membership then resolves empty
 downstream rather than erroring). This is why `pop_df_multi` can accept a mix of gates, clusters,
 regions and tracked cells from one picker.
 """
@@ -44,7 +43,7 @@ function resolve_pop_type(img::CciaImage, value_name::AbstractString, path::Abst
     # user renames to disambiguate). Reusing a name across types is allowed — only a *collision that is
     # actually selected* is flagged, and only where discovery must guess.
     matches = String[]
-    for pt in _POP_TYPE_PROBE_ORDER
+    for pt in POP_TYPE_PROBE_ORDER
         m = try; load_pop_map(img; value_name=value_name, pop_type=pt); catch; continue; end
         has_pop(m, String(path)) && push!(matches, pt)
     end
@@ -195,9 +194,8 @@ function pops_value_name(pops; default::AbstractString="default")::String
     first(vns)
 end
 
-# Pop types that hold user-named populations (the name-guard scans all of them). `live` is not stored
-# (it reads the flow gates), so `flow` covers it.
-const _NAME_GUARD_POP_TYPES = ("flow", "track", "clust", "trackclust", "region", "branch")
+# The name-guard scans every stored pop type (`STORED_POP_TYPES`). `live` is not stored (it reads the
+# flow gates), so `flow` covers it.
 
 """
     pop_name_conflict(img, value_name, path; pop_type) -> Union{String,Nothing}
@@ -214,10 +212,9 @@ function pop_name_conflict(img::CciaImage, value_name::AbstractString, path::Abs
                            pop_type::PopTypeArg)::Union{String,Nothing}
     p = String(path)
     (is_root(p) || is_reserved_pop_name(pop_name(p))) && return nothing
-    same_as_flow = string(pop_type) in ("flow", "live")
-    for pt in _NAME_GUARD_POP_TYPES
-        (same_as_flow && pt == "flow") && continue
-        pt == string(pop_type) && continue
+    own_map = pop_map_type(pop_type)          # live → flow: one map, one type
+    for pt in STORED_POP_TYPES
+        (pt == own_map || pt == string(pop_type)) && continue
         m = try; load_pop_map(img; value_name=value_name, pop_type=pt); catch; continue; end
         has_pop(m, p) && return pt
     end

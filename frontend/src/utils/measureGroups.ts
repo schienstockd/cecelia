@@ -15,6 +15,7 @@
 // can be desynchronised by a heading.
 
 import { isCentroidAxis } from './gatingAxes'
+import { popTypeInfo } from '../plots/popTypeRegistry'
 
 /** One titled block of a picker: an `<optgroup>`, or a titled chip/checkbox list. */
 export interface MeasureGroup {
@@ -48,8 +49,8 @@ export const isIntensityColumn = (col: string): boolean => INTENSITY_COL.test(co
 // (`live.track.speed`, `…straightness`) — not morphology. A caller that knows only the popType (the
 // gate axis picker) gets that routing for free; one that receives BOTH lists (the clustering feature
 // picker: motility on `columns`, cell vars on `cellMeasures`) names them explicitly instead.
-const TRACK_POP_TYPES = new Set(['track', 'trackclust'])
-export const isTrackPopType = (popType?: string): boolean => TRACK_POP_TYPES.has(popType ?? '')
+// Track-grained = the registry's `grain: 'track'` (track, trackclust).
+export const isTrackPopType = (popType?: string): boolean => popTypeInfo(popType)?.grain === 'track'
 
 /** A motility column without its `live.track.` family (`live.track.speed` → `speed`); other names pass
  *  through. Display-only — for a stat row, a card footer or an axis title, where the family is implied. */

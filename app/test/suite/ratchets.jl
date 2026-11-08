@@ -759,3 +759,40 @@ end
     @test isfile(owner_path)
     @test occursin(r"\bfunction\s+_dir_bytes\b", read(owner_path, String))
 end
+
+@testset "pop-type registry ratchet — pop-type lists derive from `POP_TYPE_REGISTRY`" begin
+    # A comma-separated run of two pop-type literals is a hand-written list, and those drifted (an
+    # observer walk lacked `branch`, a legend lacked `region`). Read the registry
+    # (app/src/gating/popmanager/registry.jl) instead; a deliberate subset or priority order says why on
+    # its line or within the 3 lines above with `POP-TYPES-OK: <reason>`. `labels` is left out of the pattern —
+    # it is also a field and a scope name. Frontend twin: frontend/src/utils/popTypeRegistry.test.ts.
+    pt   = "(?:flow|live|track|clust|trackclust|region|branch)"
+    list = Regex("\"($pt)\"\\s*,\\s*\"($pt)\"")
+    owner = joinpath("app", "src", "gating", "popmanager", "registry.jl")
+    offenders = String[]
+    for root in (_app_src, _api_src), (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f); rel = relpath(path, _repo)
+        rel == owner && continue
+        lines = split(read(path, String), '\n')
+        in_doc = false
+        for (i, line) in enumerate(lines)
+            # docstrings are prose: skip from an opening `"""` to its close
+            isodd(count("\"\"\"", line)) && (in_doc = !in_doc; continue)
+            (in_doc || startswith(lstrip(line), "#")) && continue
+            code = replace(line, r"\s#\s.*$" => "")          # a trailing comment is prose
+            m = match(list, code)
+            (m === nothing || m.captures[1] == m.captures[2]) && continue
+            # the marker sits on the line or within the 3 above (a comment block, a wrapped list)
+            any(j -> occursin("POP-TYPES-OK:", lines[j]), max(1, i - 3):i) && continue
+            push!(offenders, "$rel:$i: `$(strip(line))`")
+        end
+    end
+    isempty(offenders) || @error "pop-type registry ratchet: hand-written pop-type list(s) — derive " *
+        "them from POP_TYPE_REGISTRY (registry.jl) or mark a deliberate subset `POP-TYPES-OK: <reason>`.\n  " *
+        join(offenders, "\n  ")
+    @test isempty(offenders)
+    # the pattern still bites
+    @test match(list, "const X = (\"flow\", \"track\")") !== nothing
+    @test isfile(joinpath(_repo, owner))
+end

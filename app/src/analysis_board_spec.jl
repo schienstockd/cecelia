@@ -99,6 +99,8 @@ the gating sidecars misses `/_tracked` and would have rejected `B/qc/_tracked` â
 project's real boards actually plot.
 """
 function board_spec_populations(proj::CciaProject;
+                                # POP-TYPES-OK: priority order (first type a pop resolves under wins); no
+                                # plot spec offers `branch`, so the board vocabulary leaves it out
                                 pop_types::Vector{String} = ["live", "track", "flow", "trackclust",
                                                              "clust", "region", "labels"])
     imgs = CciaImage[]
@@ -380,8 +382,10 @@ const CLUSTER_MAP_BASES = ("umap", "diffmap")
 _view_initial_state(key) = key == "clusterMap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
     BOARD_VIEWS[key].cluster ? Dict{String,Any}("hl" => Any[]) : Dict{String,Any}()
 
-const _TRACK_FAMILIES = ("live", "track", "trackclust")   # interactiveViews.ts TRACK_FAMILIES
-const _CLUST_POP_TYPES = ("clust", "trackclust")
+const _TRACK_FAMILIES = TRACK_FAMILY_POP_TYPES   # interactiveViews.ts TRACK_FAMILIES (same registry)
+# the clustering-run families a cluster panel shows: cluster types on a `clusters.{suffix}` column
+# (clust, trackclust) â€” region runs write `regions.{suffix}` and have no cluster panel.
+const _CLUST_POP_TYPES = Tuple(pt for pt in CLUSTER_POP_TYPES if pop_type_info(pt).cluster_prefix == "clusters.")
 
 """
     board_spec_cluster_suffixes(proj) -> Dict{String,Set{String}}
