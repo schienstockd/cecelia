@@ -39,6 +39,17 @@
 #   env            — facts decided at run time (device, engine version, seed), stamped at close from the
 #                    task result's `"runEnv"` (`run_env_of`). A task that reports none gets none.
 #
+# ── Format: `format` ───────────────────────────────────────────────────────────────────────────────
+# Every entry written since formats were numbered carries `format` = RUN_LOG_FORMAT, stamped on the path
+# that CREATES it (open, a close with nothing to patch, a skip, `append_run_log!`); a close keeps the
+# number its open wrote. ABSENT = format 0 = written before this field existed. Migration rule: entries
+# are never rewritten to a newer format — readers stay tolerant of every older one (missing fields read
+# as "not recorded", never as a guess), and a reader that needs a field only a newer format guarantees
+# asks `run_entry_format(e)` first. Bump the number when an entry field changes MEANING or a reader
+# would otherwise misread an older entry, not for a new optional field. History:
+#   0 — before `format` (all fields optional; legacy entries may lack status/params/taskId)
+#   1 — `format` added; same fields as 0
+#
 # ── A run is written TWICE: opened when it starts, closed when it ends ─────────────────────────────
 #
 # It used to be appended once, on finish, and ONLY for :done/:failed — `:cancelled` was skipped on the
@@ -87,6 +98,7 @@
 # `run_pop_reads`, the guard on editing a gate runs depend on — read it too (`read_run_log_history`). The
 # history views (the task-history dialog, lineage, the lab-log context) show the recent window by design.
 const RUN_LOG_CAP = 200
+const RUN_LOG_FORMAT = 1      # see *Format* above; absent on an entry = 0
 const RUN_LOG_ARCHIVE_FILE = "runlog.archive.jsonl"
 
 # The one non-terminal status, and the one a reaped run gets. Named because three files test for them.
@@ -240,6 +252,9 @@ run_entry_status(e)::String = (s = _rl_str(e, "status"); isempty(s) ? "done" : s
 # `skip_run_log!`). The one rule every "what ran on this image" reader passes over skips with.
 run_entry_ran(e)::Bool = run_entry_status(e) != RUN_LOG_SKIPPED
 
+# An entry's format number (see *Format* in the header): absent → 0, written before formats were numbered.
+run_entry_format(e)::Int = (v = _rl_get(e, "format", 0); v isa Integer ? Int(v) : something(tryparse(Int, string(v)), 0))
+
 """
     run_author(by, caller) -> Dict{String,Any}
 
@@ -286,6 +301,7 @@ end
 
 # The fields every entry gets on the path that CREATES it (open, or a close with nothing to patch).
 function _run_log_stamp!(e::Dict{String,Any}, by::AbstractString, author::AbstractDict)
+    e["format"] = RUN_LOG_FORMAT
     isempty(by) || (e["by"] = String(by))
     a = run_author(by, author)
     isempty(a) || (e["author"] = a)
@@ -359,31 +375,49 @@ end
 
 # (name, ns, into) a run writes: its named or fixed output (`_history_output`), else — for a task that
 # writes INTO its input (`writesInto`, tracking) — that input, with `into = true`. ("", "", false) = none.
+# A name `_history_output` found under no writing param (the pre-registry `outputValueName` spelling,
+# ns "") that IS the declared `writesInto` input is that input too: `segment.measureLabels` picks the
+# label set it re-measures under `outputValueName`, and its measures go INTO that set — not into an
+# image version of the same name, which is what ns "" would claim.
 function _run_output_identity(fn::AbstractString, params::Dict{String,Any}, leaves)
     name, ns = _history_output(String(fn), params, leaves)
-    isempty(name) || return (name, ns, false)
+    key = task_writes_into_key(String(fn))      # folds a composite to the step that declares it
+    l = get(leaves, key, nothing)
+    if !isempty(name)
+        (ns == "" && l !== nothing && !l.writes &&
+         strip(string(something(get(params, key, nothing), ""))) == name) || return (name, ns, false)
+        return (name, l.ns, true)
+    end
     into = task_params_name(String(fn), params)
     isempty(into) && return ("", "", false)
-    key = try string(something(get(_task_spec(_task_from_fun_name(String(fn))), "writesInto", nothing), "")) catch; "" end
-    l = get(leaves, key, nothing)
     (into, l === nothing ? "" : l.ns, true)
 end
 
-# The newest `done` entry in `entries` that wrote (name, ns) — for an `into` output, a run of the same
-# task on it (the segmentation that made the label set did not make its tracks).
+# A task and its composite steps, by name — what two runs must share for one to have made what the
+# other writes into (`_run_maker`).
+_run_step_funs(fn::AbstractString)::Set{String} =
+    (t = try _task_from_fun_name(String(fn)) catch; nothing end;
+     Set{String}(vcat(String(fn), t === nothing ? String[] : _composite_step_names(t))))
+
+# The newest `done` entry in `entries` that wrote (name, ns). For an `into` output, a run that SHARES A
+# STEP with `fun_name` and wrote or wrote into that name: a re-measure's maker is the segment + measure
+# composite that measured the label set (both run `segment.measureLabels`), a re-track's the tracking
+# composite — but never the segmentation that made the label set its tracks were written into.
 function _run_maker(entries, fun_name::AbstractString, name::AbstractString, ns::AbstractString, into::Bool,
                     leaves_cache::Dict{String,Any})
+    mine = into ? _run_step_funs(fun_name) : Set{String}()
+    steps_cache = Dict{String,Set{String}}()
     for e in Iterators.reverse(entries)
         run_entry_status(e) == "done" || continue
         # no params at all = logged before params were recorded: its output name is unknowable. (Not
         # `r.legacy`, which also reads a run whose only param was its `valueName` as legacy.)
         _rl_get(e, "params", nothing) isa AbstractDict || continue
         r = run_log_row(e)
-        into && r.fn != fun_name && continue
+        into && isdisjoint(mine, get!(() -> _run_step_funs(r.fn), steps_cache, r.fn)) && continue
         lv = get!(() -> _history_leaves(r.fn), leaves_cache, r.fn)
         lv === nothing && continue
         (n2, ns2, into2) = try _run_output_identity(r.fn, r.params, lv) catch; ("", "", false) end
-        (n2 == name && ns2 == ns && into2 == into) && return e
+        (n2 == name && ns2 == ns && (into || !into2)) && return e
     end
     nothing
 end
@@ -560,7 +594,8 @@ function skip_run_log!(img::CciaImage, fun_name::AbstractString, reason::Abstrac
         e = Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
             "status" => RUN_LOG_SKIPPED, "reason" => string(reason),
-            "params" => _run_log_params(params), "at" => String(at), "taskId" => string(task_id))
+            "params" => _run_log_params(params), "at" => String(at), "taskId" => string(task_id),
+            "format" => RUN_LOG_FORMAT)
         isempty(by) || (e["by"] = String(by))
         push!(entries, e)
         entries
@@ -680,7 +715,7 @@ function append_run_log!(img::CciaImage, fun_name::AbstractString, value_name::A
         push!(entries, Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name), "status" => string(status),
             "params" => _run_log_params(params),
-            "at" => String(at), "taskId" => ""))
+            "at" => String(at), "taskId" => "", "format" => RUN_LOG_FORMAT))
         entries
     end
 end

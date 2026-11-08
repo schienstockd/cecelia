@@ -155,6 +155,15 @@ function task_params_name(task::CompositeTask, params::Dict{String,Any})::String
     ""
 end
 
+# Same fold for `task_writes_into_key`: the first step that declares one (a composite's own spec never does).
+function task_writes_into_key(task::CompositeTask)::String
+    for sub in _composite_steps(task)
+        key = task_writes_into_key(sub)
+        isempty(key) || return key
+    end
+    ""
+end
+
 # Composite: union `requires.axes` across the steps (plus the composite's own, if any). So an HMM
 # composite (states → transitions) inherits :T from its steps without repeating it in its own JSON.
 function task_requires_axes(task::CompositeTask)::Set{Symbol}
@@ -252,6 +261,7 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
     result             = nothing
     intermediate_files = String[]   # filenames created by non-final steps
 
+    run_env = Dict{String,Any}()
     for (i, step_fun_name) in enumerate(steps)
         on_log("[INFO] Composite step $i/$n_steps: $step_fun_name")
         step_task = try
@@ -272,6 +282,7 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
                            on_log, on_progress = step_on_progress, on_process)
 
         isnothing(result) && return nothing   # step failed — abort chain
+        merge!(run_env, run_env_of(result))   # a step's run-time facts (device, weights) → the composite's
 
         # Track intermediate output files (all steps except the last)
         if i < n_steps && result isa AbstractDict
@@ -349,7 +360,17 @@ function _run_task(task::CompositeTask, img::CciaImage, params::Dict{String,Any}
         end
     end
 
-    result
+    _with_steps_run_env(result, run_env)
+end
+
+# The composite's result carries every step's `runEnv`, merged in step order (a later step's key wins):
+# the scheduler stamps the run log's `env` from the result it gets back (`run_env_of`), which is the
+# LAST step's — so without this a segment + measure run recorded none of its segmenter's env.
+function _with_steps_run_env(result, run_env::Dict{String,Any})
+    (result isa AbstractDict && !isempty(run_env)) || return result
+    out = Dict{String,Any}(String(k) => v for (k, v) in pairs(result))
+    out["runEnv"] = run_env
+    out
 end
 
 # Set-scope composite: run each step's set-scope form over the whole image vector, in sequence

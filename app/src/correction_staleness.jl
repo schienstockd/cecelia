@@ -380,13 +380,27 @@ function stale_outputs_for(img::CciaImage)
         end
         memo[i] = unk ? :unknown : nothing
     end
-    # the current maker of each output: the newest done run that wrote it
-    current = Dict{Tuple{String,String,Bool},Int}()
+    # The current makers: each done run that wrote something, minus those a later run superseded. A
+    # plain write is superseded by a later plain write of the same (name, ns). A write-into is superseded
+    # by a later run of the same (name, ns), plain or into, that SHARES A STEP with it (the `_run_maker`
+    # rule): a re-segment + measure supersedes a lone re-measure, a re-track a track correction — but a
+    # re-measure never supersedes the tracks written into the same label set, so stale tracks stay visible.
+    steps = Dict{String,Set{String}}()
+    st(i) = (fn = _rl_str(entries[i], "fun"); get!(() -> _run_step_funs(fn), steps, fn))
+    cur = Int[]
     for i in done
-        haskey(ident, i) && (current[ident[i]] = i)
+        haskey(ident, i) || continue
+        (name, ns, into) = ident[i]
+        filter!(cur) do k
+            (n2, ns2, into2) = ident[k]
+            (n2, ns2) == (name, ns) || return true
+            into2 ? isdisjoint(st(k), st(i)) : into
+        end
+        push!(cur, i)
     end
+    current = [(ident[i], i) for i in cur]
     stale, unknown = Any[], Any[]
-    for ((name, ns, into), i) in sort!(collect(current); by = last)
+    for ((name, ns, into), i) in current
         into || _run_has_output(img, name, ns) !== false || continue
         e = entries[i]
         d = Dict{String,Any}("name" => name, "run" => _stale_run(e))
