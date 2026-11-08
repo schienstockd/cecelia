@@ -70,6 +70,20 @@ symmetry:
 Regenerate with `pixi run python python/cecelia/tests/make_aniso_fixture.py` (which also documents
 the layout) after any change to the anisotropy `uns` block; keep it tiny.
 
+## `immunemap/` — real `api.immunemap.org` responses
+
+Captured 2026-11-08, for `python/cecelia/tests/test_immunemap.py` and
+`api/test/suite/import_immunemap.jl`. Replayed, never fetched by a test. Contributors' email addresses
+are replaced with `redacted@example.org`; nothing reads them.
+
+```
+immunemap/experiment_63.json        /experiment/63 as served (5 groups, 15 acquisitions)
+immunemap/acquisition_309.json      /acquisition/309 (video 2JBABTBNRF8MR978J016GM606A), re-serialised
+immunemap/scan_63_two_videos.json   experiment_manifest() over the two above, cut to acquisitions
+                                    309 + 310; 310 is marked private (a replayed 401) to cover a
+                                    non-importable row — it is public on Immunemap
+```
+
 ## `acquisition/` — microscope settings documents cut from real source files
 
 `oir_fv4000_3.2.1_imageProperties.xml` (135 KB) and `oir_fvmpe-rs_2.3.2_imageProperties.xml` (48 KB)

@@ -240,11 +240,9 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     end
 
     # Imaris sources: Bio-Formats hands over no timing whatsoever, so a timelapse arrives with no
-    # interval. Recover it from the source file (see `_recover_ims_time_increment!`). Only when the
-    # store genuinely has none — a real value from bioformats2raw always wins.
-    if get(zarr_meta, "SizeT", 1) > 1 && get(zarr_meta, "TimeIncrement", 0.0) == 0.0
-        _recover_ims_time_increment!(zarr_meta, src_path, task_run_dir(img._dir); on_log = on_log)
-    end
+    # interval. Recover it from the source file, else a declared one (Immunemap) — only when the store
+    # genuinely has none; a real value from bioformats2raw always wins (`source_timing.jl`).
+    _fill_source_time_increment!(zarr_meta, img.meta, src_path, task_run_dir(img._dir); on_log = on_log)
 
     # Acquisition settings Bio-Formats drops (laser power and its depth ramp, scan timing, detector
     # settings). Read from the source file; advisory, a failure never fails the import.

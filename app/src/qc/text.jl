@@ -81,6 +81,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
         long  = "Lower the deep end of the depth power ramp (Bright Z / Auto Z brightness), or the HV. Channels: {channels}."),
 
+    # Import from Immunemap (immunemap_fetch_qc_findings): the file and Immunemap disagree on voxel size
+    "import.immunemap_spacing" => (
+        short = "Voxel size differs from Immunemap",
+        long  = "The file says {file} µm (x, y, z), Immunemap {published} µm. The import used the file's. If Immunemap's is right, correct it under Image metadata before measuring speeds."),
+
     # acquisition stopped mid-volume (partial_timepoint_qc_findings): dropped at import, or still there
     "import.partial_timepoint_dropped" => (
         short = "Dropped an incomplete last timepoint",

@@ -3,14 +3,14 @@
 
 """Source formats with a settings reader. Keep in step with `_READERS` in
 `read_acquisition_settings_run.py` — this gate stops a Python spawn for formats it has no reader for."""
-const ACQUISITION_SETTINGS_FORMATS = (".oir", ".czi")
+const ACQUISITION_SETTINGS_FORMATS = (".oir", ".czi", ".ims")
 
 """Each settings reader's version, by the `source` it stamps (`READER_VERSION` in
 `python/cecelia/utils/oir_meta.py`, kept in step by the "language boundaries agree on their protocol"
 table in app/test/suite/segmentation.jl; `czi_meta` has no version yet, i.e. 1). Settings stored by an
 older reader lack fields the newer one returns, so Refresh metadata re-reads them
 (`_resync_acquisition_settings!`)."""
-const ACQUISITION_READER_VERSIONS = Dict("oir" => 2, "czi" => 1)
+const ACQUISITION_READER_VERSIONS = Dict("oir" => 2, "czi" => 1, "ims" => 1)
 
 """Whether stored settings came from an older version of their reader (no version = the first)."""
 function _acquisition_outdated(acq)::Bool

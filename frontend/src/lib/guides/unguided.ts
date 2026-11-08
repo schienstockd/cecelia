@@ -119,6 +119,16 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('A test that migrating fills the frame interval')],
   }) },
+  { id: 'import-immunemap', title: 'Import from Immunemap', group: 'Data', maturity: covering(['importImages.immunemap', 'importImages.immunemapFetch'], {
+    tier: 'experimental', testedOn: 'Immunemap experiment 63 (15 videos, one lab)',
+    evidence: [
+      { path: 'python/cecelia/tests/test_immunemap.py', test: 'test_resumes_after_a_dropped_connection',
+        failsIf: 'a dropped download restarts instead of resuming' },
+      { path: 'api/test/suite/import_immunemap.jl', test: 'API: /api/import/register-immunemap',
+        failsIf: 'a registered video lacks its condition, channel labels or frame interval' },
+    ],
+    next: [todo('Import a second Immunemap experiment with a different microscope')],
+  }) },
   { id: 'export-ome-tiff', title: 'Export as OME-TIFF', group: 'Data', maturity: covering(['exportImages.ome_tiff'], {
     tier: 'experimental', testedOn: 'Synthetic',
     evidence: [

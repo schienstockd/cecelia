@@ -24,6 +24,8 @@ stack. Per-tag notes are also on the
 
 ### Fixed
 
+- **Imaris frame interval.** Imaris files whose timestamps carry nine decimal places (converted from
+  Zeiss `.lsm`) were read as having no timing; their measured interval is now used.
 - **Tracking remembers settings per segmentation.** B no longer shows, or rebuilds deleted tracks
   with, the settings of whichever population ran last.
 - **Copying gates matches channels by name, as the R version did.** Before, an image with another
@@ -39,6 +41,13 @@ stack. Per-tag notes are also on the
   could be measured both ways.
 - **Calibration fixes now reach the OME-XML.** Metadata edits, the import's z-spacing and interval
   fixes, and resync only updated the zarr scale. Resync older images to update them.
+
+### Added
+
+- **Import from Immunemap.** *Import from… → Immunemap*: paste an experiment link, split its groups
+  into attributes (time is filled in), then run *Import from Immunemap*.
+- **Imaris acquisition settings.** `.ims` files now show the microscope, objective, excitation and
+  emission filters in *Acquisition metadata*.
 
 ## [0.2.12] — 2026-11-02
 
