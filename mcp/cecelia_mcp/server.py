@@ -334,8 +334,10 @@ def check_claim(project_uid: str, set_uid: str, populations: list[str], measure:
     ({id, state: ok|warn|skipped, text}) — read it first: it is the list of facts. Each finding has
     level, code, short, long and detail {stage, check, provenance, evidence}; the same finding for
     several populations is one (pop "B and T", evidence pops/byPop). Stages: S0 record gaps (image excluded, no data,
-    unit blank, params or track dims not recorded), S1 consistency (a setting differing across images,
-    or between the compared populations — `claim.confounded` when it splits them completely), S2
+    unit blank, params — preprocessing included — or track dims not recorded), S1 consistency (a
+    setting differing across images — preprocessing steps and parent gates included — or between the
+    compared populations, `claim.confounded` when it splits them completely; `claim.dims_differ` when
+    they were measured in 2D vs 3D on the same image), S2
     conventions (no unit, too few units for a per-unit test, several images per unit, uncalibrated).
     `ran` / `skipped` say what was checked: no findings is NOT a pass when checks were skipped.
     Report findings as questions back to the analyst ("this comparison can't support the claim yet,

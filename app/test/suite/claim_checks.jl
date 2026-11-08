@@ -110,15 +110,13 @@ _cc_clean(; kw...) = [_cc_image(u; mouse = m, kw...) for (u, m) in zip(("a", "b"
     @test ev["variable"] == "params.segment.cellposeMeasure.models.0.cellDiameter"
     @test ev["images"] == ["a"] && ev["mode"] == "10"
 
-    # ── B 2D vs T 3D in every image: the variable splits the groups ──
+    # ── B 2D vs T 3D: its own check (S1.dims), not a generic between-group difference ──
+    # (the cases are in claim_checks_coverage.jl)
     r = _cc_run(_cc_clean(; dims = (B = 2, T = 3)))
-    @test _cc_codes(r) == ["claim.confounded"]
-    @test _cc_find(r, "claim.confounded")[1]["detail"]["evidence"]["variable"] == "motionDims"
-    # …in one image only: a within-image difference, not a confound
+    @test _cc_codes(r) == ["claim.dims_differ"]
+    @test _cc_find(r, "claim.dims_differ")[1]["detail"]["evidence"]["variable"] == "motionDims"
     imgs = _cc_clean(); imgs[2] = _cc_image("b"; mouse = "2", dims = (B = 2, T = 3))
     r = _cc_run(imgs)
-    @test "claim.differs_between_groups" in _cc_codes(r)
-    @test _cc_find(r, "claim.differs_between_groups")[1]["detail"]["evidence"]["imagesDiffering"] == ["b"]
     # the channel each population was segmented from differs by design: never a between-group finding
     @test !any(f -> occursin("cellChannels", get(f["detail"]["evidence"], "variable", "")), r["findings"])
 
