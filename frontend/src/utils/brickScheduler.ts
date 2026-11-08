@@ -309,6 +309,10 @@ export function viewFootprintAabb(
  *
  * `focalPx` = canvas height / (2 × VIEW_HALF_ANGLE) — the pinhole equivalent of the half-height rule
  * the shader uses. Governs the SSE picker; wrong here = wrong LOD.
+ *
+ * `zDepth` is the SHOWN box's depth, which can be fewer planes than the brick grid holds (a ±n window
+ * at a stack end, `heldPlanes`); `zOffsetPlanes` is where the shown planes start inside the held ones,
+ * so the footprint lands on the bricks the shader actually reads (`voxelAt` in brick_common.wgsl).
  */
 export function brickViewportFromCamera(
   cam: OrbitCamera,
@@ -318,8 +322,10 @@ export function brickViewportFromCamera(
   aspect: number,
   zDepth: number,
   ortho = true,
+  zOffsetPlanes = 0,
 ): BrickViewport {
   const [ex, ey, ez] = extentUm(meta, zDepth)
+  const zShift = zOffsetPlanes * (meta.voxelUm[2] || 1)
   const focalPx = canvasHeightPx / Math.max(2 * VIEW_HALF_ANGLE, 1e-3)
   const distanceUm = Math.max(cam.dist, 1e-3)
   const box = viewFootprintAabb(cam, [ex, ey, ez], aspect, ortho)
@@ -331,7 +337,7 @@ export function brickViewportFromCamera(
       centreUm: [
         (box.min[0] + box.max[0]) / 2 + ex / 2,
         (box.min[1] + box.max[1]) / 2 + ey / 2,
-        (box.min[2] + box.max[2]) / 2 + ez / 2,
+        (box.min[2] + box.max[2]) / 2 + ez / 2 + zShift,
       ],
       halfWUm: (box.max[0] - box.min[0]) / 2,
       halfHUm: (box.max[1] - box.min[1]) / 2,
@@ -345,7 +351,7 @@ export function brickViewportFromCamera(
   const aim = [0, 1, 2].map(a => right[a] * cam.panX + up[a] * cam.panY)
   return {
     t,
-    centreUm: [ex / 2 + aim[0], ey / 2 + aim[1], ez / 2 + aim[2]],
+    centreUm: [ex / 2 + aim[0], ey / 2 + aim[1], ez / 2 + aim[2] + zShift],
     halfWUm: halfH * Math.max(aspect, 1e-3),
     halfHUm: halfH,
     halfDUm: ez / 2,

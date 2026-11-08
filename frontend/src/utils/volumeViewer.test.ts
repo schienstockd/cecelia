@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
+  slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -487,10 +487,14 @@ describe('canMovePlanesInPlace — z moves without a reallocate', () => {
   it('a single 2D plane moves in place', () => {
     expect(canMovePlanesInPlace(true, false, 1, 1)).toBe(true)
   })
-  it('reallocates when the window clips at a stack end (depth changes)', () => {
-    const mid = loadedPlanes('plane', 2, [0, 40], 2, 41)
-    const edge = loadedPlanes('plane', 1, [0, 40], 2, 41)
-    expect(canMovePlanesInPlace(true, false, edge[1] - edge[0] + 1, mid[1] - mid[0] + 1)).toBe(false)
+  it('reallocates when the held depth changes', () => {
+    expect(canMovePlanesInPlace(true, false, 3, 5)).toBe(false)
+  })
+  it('the held window keeps its depth across a stack end, so every step moves in place', () => {
+    const depth = (r: [number, number]) => r[1] - r[0] + 1
+    for (let z = 0; z < 41; z++) {
+      expect(canMovePlanesInPlace(true, false, depth(heldPlanes('plane', z, [0, 40], 2, 41)), 5)).toBe(true)
+    }
   })
   it('reallocates on the tile path, before the first allocation, or without setZPlane', () => {
     expect(canMovePlanesInPlace(true, true, 1, 1)).toBe(false)
@@ -892,5 +896,32 @@ describe('shownStoresChanged', () => {
 
   it('missing fingerprints (older server) count as changed', () => {
     expect(shownStoresChanged(meta(), meta({ storeRevs: revs }), '')).toBe(true)
+  })
+})
+
+describe('heldPlanes — the planes fetched, which always contain the planes shown', () => {
+  it('is loadedPlanes without a window', () => {
+    expect(heldPlanes('plane', 7, [0, 40], 0, 41)).toEqual([7, 7])
+    expect(heldPlanes('volume', 7, [3, 9], 0, 41)).toEqual([3, 9])
+  })
+  it('is the window itself away from the ends', () => {
+    expect(heldPlanes('plane', 14, [0, 40], 2, 41)).toEqual([12, 16])
+  })
+  it('slides inwards at a stack end, where the shown window clips', () => {
+    expect(loadedPlanes('plane', 1, [0, 40], 3, 41)).toEqual([0, 4])
+    expect(heldPlanes('plane', 1, [0, 40], 3, 41)).toEqual([0, 6])
+    expect(loadedPlanes('plane', 40, [0, 40], 3, 41)).toEqual([37, 40])
+    expect(heldPlanes('plane', 40, [0, 40], 3, 41)).toEqual([34, 40])
+  })
+  it('never exceeds the stack, and contains the shown planes at every z', () => {
+    expect(heldPlanes('plane', 2, [0, 5], 3, 6)).toEqual([0, 5])
+    for (const [nZ, half] of [[41, 2], [41, 3], [6, 3], [7, 3], [2, 1]]) {
+      for (let z = 0; z < nZ; z++) {
+        const [hl, hh] = heldPlanes('volume', z, [0, nZ - 1], half, nZ)
+        const [sl, sh] = loadedPlanes('volume', z, [0, nZ - 1], half, nZ)
+        expect(hh - hl + 1).toBe(Math.min(2 * half + 1, nZ))
+        expect(hl <= sl && sh <= hh && hl >= 0 && hh <= nZ - 1).toBe(true)
+      }
+    }
   })
 })

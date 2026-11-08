@@ -132,7 +132,7 @@ fn labAt(vi: vec3<i32>) -> u32 {
   for (var s = 0; s < n; s = s + 1) {
     let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
     let uvw = (wp + h) / p.ext.xyz;
-    let vi = vec3<i32>(uvw * p.dims.xyz);
+    let vi = voxelAt(uvw);
     if (vi.x < 0 || vi.y < 0 || vi.z < 0 ||
         vi.x >= i32(p.dims.x) || vi.y >= i32(p.dims.y) || vi.z >= i32(p.dims.z)) { continue; }
     if (p.lab.x > 0.0 && labId == 0u) {

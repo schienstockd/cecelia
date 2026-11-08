@@ -357,6 +357,14 @@ describe('brickViewportFromCamera', () => {
     expect(v.halfDUm).toBeCloseTo(4, 6)
   })
 
+  it('a shown sub-range lands on the held planes it reads, not the first ones', () => {
+    // The last 2 of 4 held planes shown (a window clipped at the stack top): the footprint must cover
+    // held z 4–8 µm (planes 2–3 at 2 µm), which is what `voxelAt` reads, not 0–4 µm.
+    const v = brickViewportFromCamera(cam, META, 0, 1024, 1.0, 2, true, 2)
+    expect(v.centreUm[2]).toBeCloseTo(6, 6)
+    expect(v.halfDUm).toBeCloseTo(2, 6)
+  })
+
   it('focalPx = canvasHeight / (2 × VIEW_HALF_ANGLE) — same pinhole the shader implies', () => {
     const v = brickViewportFromCamera(cam, META, 0, 1024, 1.0, META.nZ)
     expect(v.focalPx).toBeCloseTo(1024 / (2 * VIEW_HALF_ANGLE), 6)

@@ -535,7 +535,8 @@ export function shownStoresChanged(
  *
  * `lo` is the only thing here the renderer cannot supply: it knows how deep it is, not where the slab
  * starts. Getting it wrong shows the wrong planes at the right size, so the shape guard cannot catch
- * it — which is why it comes from `loadedPlanes` and nothing else derives it.
+ * it — which is why it comes from `heldPlanes` (the planes the renderer holds, NOT `loadedPlanes`,
+ * the planes it shows) and nothing else derives it.
  */
 export function slabZ(
   textureDepth: number, nZ: number, zPlane: number, lo = 0,
@@ -547,7 +548,8 @@ export function slabZ(
 }
 
 /**
- * The planes the viewer LOADS, `[lo, hi]` inclusive — the one place the three z controls resolve:
+ * The planes the viewer SHOWS, `[lo, hi]` inclusive — the one place the three z controls resolve
+ * (what it fetches and holds is `heldPlanes`, which contains these):
  *
  *  - 2D, no window — the single plane `zPlane`.
  *  - 3D, no window — the Depth slider's `zRange`.
@@ -571,11 +573,29 @@ export function loadedPlanes(
 }
 
 /**
+ * The planes the renderer HOLDS, `[lo, hi]` inclusive — what is fetched and what the textures are sized
+ * for. Equal to `loadedPlanes` except with a window: there it is always `min(2n+1, nZ)` planes, slid
+ * inwards at a stack end, while `loadedPlanes` (what is SHOWN) stays clipped. The shader draws the
+ * shown planes out of the held block (`setShownPlanes`), so the window keeps its meaning at the ends
+ * while the texture keeps one shape everywhere — a clipped depth that changed per step reallocated per
+ * step, which for bricks is a fresh multi-GB atlas each time (`canMovePlanesInPlace`).
+ */
+export function heldPlanes(
+  mode: 'plane' | 'volume', zPlane: number, zRange: [number, number], half: number, nZ: number,
+): [number, number] {
+  if (half <= 0) return loadedPlanes(mode, zPlane, zRange, half, nZ)
+  const n = Math.max(nZ, 1)
+  const depth = Math.min(2 * half + 1, n)
+  const lo = Math.max(0, Math.min(n - depth, Math.round(zPlane) - half))
+  return [lo, lo + depth - 1]
+}
+
+/**
  * Whether a z move can re-point the textures already allocated (`renderer.setZPlane`) instead of a
- * full reallocate. It can whenever the number of loaded planes is unchanged — the single 2D plane
- * AND the ±n window, whose `2n+1` planes keep their texture shape as the window slides. Only a
- * depth change (the window clipped at a stack end) or the 2D tile path (no per-plane textures)
- * needs the reallocate, which drops every cache and, for bricks, rebuilds a multi-GB atlas.
+ * full reallocate. It can whenever the number of HELD planes (`heldPlanes`) is unchanged — the single
+ * 2D plane, and the ±n window everywhere, stack ends included. Only the 2D tile path (no per-plane
+ * textures) or a real depth change needs the reallocate, which drops every cache and, for bricks,
+ * rebuilds a multi-GB atlas.
  */
 export function canMovePlanesInPlace(
   hasSetZPlane: boolean, useTiles: boolean, zDepth: number, allocatedZDepth: number | null,

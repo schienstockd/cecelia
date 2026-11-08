@@ -1908,10 +1908,15 @@ gear holds renderer, cache, quality, 3D projection and the cache-map toggles —
 canvas's top-right column, under the overview/axes and the same size, never on the overview), then one row per slider —
 label column, slider, readout column, ± square — so Depth/Plane, ± planes, Timepoint (play + loop sit in
 the label column) and Fps start and end on the same x.
-`loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes load; the window is off on
-the 2D tile path. The view state publishes them (`dims.zRange`), so a recording draws the same planes
+`loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes are SHOWN; the window is
+off on the 2D tile path. The view state publishes them (`dims.zRange`), so a recording draws the same planes
 (Match viewer, keyframes, Fill from view → a batch's **max** / 3D range) and restoring a keyframe puts
-the window or Depth back (`zControlsForLoaded`). Changing the plane or the mode drops
+the window or Depth back (`zControlsForLoaded`). What the renderer HOLDS is `heldPlanes`: the same,
+except that a window keeps `2n+1` planes at a stack end where the shown window clips, and the shader
+draws only the shown ones (`setShownPlanes` → the `zwin` uniform, `voxelAt` in `mip_common.wgsl` /
+`brick_common.wgsl`). So moving the plane never changes the texture shape: it re-points the held block
+(`setZPlane`, a refetch of the planes only — no texture or atlas rebuild) or, near an end where the
+block stops moving, just redraws. Changing the mode, the window width or the Depth range drops
 every cached texture (different shape, different pixels) and refetches — ~4 s for a plane movie, ~90 s
 for the volume, which is why 2D is the default rather than something you opt into.
 

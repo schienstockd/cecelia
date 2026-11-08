@@ -182,7 +182,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   for (var s = 0; s < n; s = s + 1) {
     let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
     let uvw = (wp + h) / p.ext.xyz;
-    let vi = vec3<i32>(uvw * p.dims.xyz);
+    let vi = voxelAt(uvw);
     if (p.lab.x > 0.0 && labId == 0u) {
       let id = labAtlasSample(vi);
       if (id != 0u && labShown(id)) { labId = id; labVi = vi; }
