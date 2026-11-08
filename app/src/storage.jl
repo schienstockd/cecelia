@@ -138,7 +138,8 @@ survive a reset nobody realised had stopped being complete. Adding a sibling her
 the `analysis keep-list` testset fails until it is made.
 
 - `ccid.json` — identity, calibration, versioned filepaths. Not output.
-- `runlog.json` — the record of what was RUN (Decision 8). Kept on purpose, which means the image
+- `runlog.json` + `runlog.archive.jsonl` (its rotated-out older entries) — the record of what was RUN
+  (Decision 8). Kept on purpose, which means the image
   table's run tag reflects **history, not current state**: an image whose outputs are gone still shows
   its last successful run. Losing the provenance is worse than a stale-looking tag.
 - `gating/` — the gate definitions (`{vn}.json`, `{vn}__tracks.json`). Hand-drawn polygons are **user
@@ -154,7 +155,7 @@ the `analysis keep-list` testset fails until it is made.
 verdict about nothing. `populations/`, `stats/`, `mesh/`, `cl/`, `spatialGraph/`, `spatialStats/`, `spatialPattern/` and the
 rest ARE output — every one is recomputable from the labels plus a task run.
 """
-const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", "gating", "roiReviews"])
+const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", RUN_LOG_ARCHIVE_FILE, "gating", "roiReviews"])
 
 """
     analysis_bytes_of(img) -> Int
@@ -676,20 +677,42 @@ end
 # (`rename_label_set_in_params`). Without the params half, the task-history dialog, chain-from-history
 # and the own-gate routes' `used_by_runs` check (`run_pop_reads`) lose every run that read a population
 # of the renamed segmentation. Bulk update through the same `_update_run_log!` lock the writers use.
+#
+# The archive (`runlog.archive.jsonl`) is renamed the same way, under the same lock: it is the older
+# half of the same record, and `run_log_params_for_output` falls back to it — left unrenamed it would
+# answer for a name that no longer exists, or for a new set that reuses the old name.
 function _rename_run_log!(img::CciaImage, from::String, to::String)
     leaves = Dict{String,Any}()
+    # an `inputs` / `replaces` record naming the label set (`ns: "labels"`)
+    ren_ref(r) = r isa AbstractDict && _rl_str(r, "ns") == "labels" && _rl_str(r, "name") == from ?
+        merge(Dict{String,Any}(String(k) => v for (k, v) in pairs(r)), Dict{String,Any}("name" => to)) : r
+    function ren(e)
+        e isa AbstractDict || return e
+        d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
+        _rl_str(e, "valueName") == from && (d["valueName"] = to)
+        fn = _rl_str(e, "fun")
+        lv = get!(() -> _history_leaves(fn), leaves, fn)
+        p = get(d, "params", nothing)
+        (lv !== nothing && p isa AbstractDict) && (d["params"] = rename_label_set_in_params(p, lv, from, to))
+        ins = get(d, "inputs", nothing)
+        ins isa AbstractVector && (d["inputs"] = Any[ren_ref(x) for x in ins])
+        haskey(d, "replaces") && (d["replaces"] = ren_ref(d["replaces"]))
+        d
+    end
     _update_run_log!(img) do entries
         for (i, e) in pairs(entries)
-            e isa AbstractDict || continue
-            d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
-            _rl_str(e, "valueName") == from && (d["valueName"] = to)
-            fn = _rl_str(e, "fun")
-            lv = get!(() -> _history_leaves(fn), leaves, fn)
-            p = get(d, "params", nothing)
-            (lv !== nothing && p isa AbstractDict) && (d["params"] = rename_label_set_in_params(p, lv, from, to))
-            entries[i] = d
+            entries[i] = ren(e)
         end
         entries
+    end
+    lock(_RUN_LOG_LOCK) do
+        archived = read_run_log_archive(img)
+        isempty(archived) && return
+        write_atomic(run_log_archive_path(img)) do io
+            for e in archived
+                JSON3.write(io, ren(e)); write(io, '\n')
+            end
+        end
     end
     nothing
 end

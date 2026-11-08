@@ -163,7 +163,7 @@ end
 const _TRACK_MEASURE_FUNS = ("tracking.bayesian_track_measures", "tracking.track_measures")
 function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractString)::Union{Dict{String,Any},Nothing}
     unfinished = false
-    for e in Iterators.reverse(read_run_log(ccid_dir))      # newest first
+    for e in Iterators.reverse(read_run_log_history(ccid_dir))   # newest first, archive included
         r = run_log_row(e)
         r.fn in _TRACK_MEASURE_FUNS && task_params_name(r.fn, r.params) == vn || continue
         r.status == "done" || (unfinished = true; continue)

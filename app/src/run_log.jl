@@ -5,7 +5,23 @@
 # (internal `_…` keys and the redundant `valueName` dropped — see `_run_log_params`); `pool` is the
 # resource pool it ran in (`effective_pool_name`; absent on entries written before it was recorded); `by`
 # is the profile that launched it (absent on older entries and when unknown). Stored as a
-# sidecar `{1/uid}/runlog.json` (a JSON array), mirroring the QC sidecars. Capped to RUN_LOG_CAP.
+# sidecar `{1/uid}/runlog.json` (a JSON array), mirroring the QC sidecars. Holds the newest
+# RUN_LOG_CAP entries; older ones are MOVED to `runlog.archive.jsonl`, never dropped (see *Archive*).
+#
+# ── What it read, and what it replaced: `inputs`, `replaces` ───────────────────────────────────────
+# Stamped at open by `run_provenance`, from the task spec alone (one place, every task):
+#   inputs   — one {param, name, ns?, version?, pinned?} per name the run READ: every `valueNameSelection`
+#              param that does not write. An empty picker (= "the active one") is resolved to the name
+#              it meant. `version` is the `vN` it read — the pin in `params["version"]` for `valueName`,
+#              else `_latest` — on image versions (ns absent) and label sets (`ns: "labels"`); other
+#              namespaces carry the name only. Populations are not repeated here: they are in `params`
+#              and `run_pop_reads` derives them.
+#   replaces — present only when the run's output already existed and the run overwrites it
+#              (re-runs overwrite BY DESIGN; `keep_previous_version()` is the opt-in that keeps image
+#              versions instead, and then nothing is replaced). {name, ns?, version?} plus the
+#              {taskId, at, fun} of the newest `done` run that made it, when the log (or its archive)
+#              has one; without them the output predates the log or came from outside it.
+# Both are ABSENT on entries written before they were recorded, and on runs that read/replace nothing.
 #
 # ── What made it: `ceceliaVersion`, `author`, `env` ────────────────────────────────────────────────
 # So a result can say which code, which launcher and which machine made it. All three are ABSENT on
@@ -52,7 +68,21 @@
 # off) — not a fittable dataset. Readers (incl. Claude) must treat `params` as "what was tried", never
 # as a relationship to extrapolate from. See docs/ai-assist/OBSERVER.md → Phase 2 (param-suggestion
 # boundary + the deferred tier-3 per-run QC snapshot).
+#
+# ── Archive: the cap moves entries, it never drops them ────────────────────────────────────────────
+# `runlog.json` is rewritten whole on every open/close, so it is kept to the newest RUN_LOG_CAP
+# entries. The overflow is APPENDED to `runlog.archive.jsonl` beside it (one JSON entry per line,
+# oldest first) before the main file is rewritten — so a kill between the two duplicates an entry in
+# the archive rather than losing it, and a failed append keeps the entries in the main file instead.
+# Readers of a torn last line skip it. Append-only, except that a label-set rename rewrites names in it
+# exactly as it does in the main file (`_rename_run_log!`).
+#
+# Who reads it: the readers that answer "what made this output" — `run_log_params_for_output`, the
+# `replaces` lookup, the claim checks' lineage, the last track-measure params, Kiwi's task refs — and
+# `run_pop_reads`, the guard on editing a gate runs depend on — read it too (`read_run_log_history`). The
+# history views (the task-history dialog, lineage, the lab-log context) show the recent window by design.
 const RUN_LOG_CAP = 200
+const RUN_LOG_ARCHIVE_FILE = "runlog.archive.jsonl"
 
 # The one non-terminal status, and the one a reaped run gets. Named because three files test for them.
 const RUN_LOG_RUNNING     = "running"
@@ -73,6 +103,8 @@ const _RUN_LOG_LOCK = ReentrantLock()
 
 run_log_path(ccid_dir::AbstractString) = joinpath(String(ccid_dir), "runlog.json")
 run_log_path(img::CciaImage) = run_log_path(img._dir)
+run_log_archive_path(ccid_dir::AbstractString) = joinpath(String(ccid_dir), RUN_LOG_ARCHIVE_FILE)
+run_log_archive_path(img::CciaImage) = run_log_archive_path(img._dir)
 
 # the run log as a Vector of Dicts ({fun, valueName, status, params, at, taskId, finishedAt}),
 # oldest→newest; [] when none. Legacy entries may lack `status`/`params`/`taskId`; readers treat a
@@ -90,6 +122,54 @@ function read_run_log(ccid_dir::AbstractString)::Vector{Any}
     catch
         Any[]   # corrupt/legacy file → treat as empty rather than throwing on image load
     end
+end
+
+"""
+    read_run_log_archive(ccid_dir | img) -> Vector
+
+The entries rotated out of `runlog.json` (see *Archive* in the header), oldest→newest; [] when none.
+A line that does not parse (a torn last append) is skipped, not fatal.
+"""
+read_run_log_archive(img::CciaImage)::Vector{Any} = read_run_log_archive(img._dir)
+function read_run_log_archive(ccid_dir::AbstractString)::Vector{Any}
+    p = run_log_archive_path(ccid_dir)
+    isfile(p) || return Any[]
+    out = Any[]
+    for line in eachline(p)
+        isempty(strip(line)) && continue
+        e = try JSON3.read(line) catch; nothing end
+        e isa AbstractDict && push!(out, e)
+    end
+    out
+end
+
+"""
+    read_run_log_history(ccid_dir | img) -> Vector
+
+The whole record, archive then main file, oldest→newest. For a reader that must find an old run; a
+view of recent runs reads `read_run_log`.
+"""
+read_run_log_history(img::CciaImage)::Vector{Any} = read_run_log_history(img._dir)
+read_run_log_history(ccid_dir::AbstractString)::Vector{Any} =
+    vcat(read_run_log_archive(ccid_dir), read_run_log(ccid_dir))
+
+# Append rotated-out entries to the archive in ONE write (one line each), so concurrent readers see
+# whole lines. Called under `_RUN_LOG_LOCK`. Append mode, like the lab log: this file is never rewritten
+# by a writer, so tmp-then-rename (which would copy the whole history per rotation) buys nothing.
+function _append_run_log_archive!(ccid_dir::AbstractString, overflow::AbstractVector)
+    isempty(overflow) && return
+    buf = IOBuffer()
+    for e in overflow
+        JSON3.write(buf, e)
+        write(buf, '\n')
+    end
+    p = run_log_archive_path(ccid_dir)
+    mkpath(dirname(p))
+    # a torn last line (a kill mid-append) must stay ONE bad line: start ours on a fresh one, or the
+    # first entry appended after it would be glued on and unreadable too
+    torn = isfile(p) && filesize(p) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8)), p) != UInt8('\n')
+    open(io -> (torn && write(io, '\n'); write(io, take!(buf))), p, "a")
+    nothing
 end
 
 # One run-log entry as plain values: `params` with the entry's `valueName` put back in (the log keeps
@@ -115,7 +195,8 @@ run left nothing that depends on its input. Read through the task specs' populat
 function run_pop_reads(img::CciaImage)::Dict{Tuple{String,String},Vector{String}}
     out = Dict{Tuple{String,String},Vector{String}}()
     leaves = Dict{String,Any}()
-    for e in read_run_log(img)
+    # the whole history: this guards a gate edit against runs that depend on it, however old
+    for e in read_run_log_history(img)
         r = run_log_row(e)
         r.status in ("done", RUN_LOG_RUNNING) || continue
         lv = get!(() -> _history_leaves(r.fn), leaves, r.fn)
@@ -150,7 +231,16 @@ function _update_run_log!(f::Function, img::CciaImage)
     lock(_RUN_LOG_LOCK) do
         entries = read_run_log(img)
         entries = f(entries)
-        length(entries) > RUN_LOG_CAP && (entries = entries[(end - RUN_LOG_CAP + 1):end])
+        if length(entries) > RUN_LOG_CAP
+            # archive FIRST: a kill before the rewrite below duplicates, never loses (see *Archive*)
+            n = length(entries) - RUN_LOG_CAP
+            try
+                _append_run_log_archive!(img._dir, entries[1:n])
+                entries = entries[(n + 1):end]
+            catch e
+                @warn "run-log archive append failed; keeping the entries in runlog.json" exception = e
+            end
+        end
         write_json_atomic(run_log_path(img), entries)
         entries
     end
@@ -222,10 +312,160 @@ function _run_log_stamp!(e::Dict{String,Any}, by::AbstractString, author::Abstra
     e
 end
 
+# ── Provenance stamped at open: what the run reads, and what it replaces ─────────────────────────
+# Resolved from the task spec's declared params (`_history_leaves` — the same leaf reading the chain
+# pre-flight and chain-from-history use), so every task gets it with no per-task code.
+
+# The image field a name in namespace `ns` lives in, for a version lookup; `nothing` = no versions
+# there. The namespace → field table is the chain pre-flight's (`_preflight_fields`).
+_run_input_field(ns::AbstractString) = (fs = _preflight_fields(String(ns)); fs === nothing ? nothing : first(fs))
+
+# Does `img` hold `name` in namespace `ns`? `nothing` = not checkable from the image (models, clusters, …).
+_run_has_output(img::CciaImage, name::AbstractString, ns::AbstractString) =
+    _preflight_fields(String(ns)) === nothing ? nothing : _preflight_has(img, String(name), String(ns))
+
+# The version `img` holds `name` at, or "" when it does not hold it / the namespace has none.
+function _run_name_version(img::CciaImage, name::AbstractString, ns::AbstractString)::String
+    f = _run_input_field(ns)
+    (f === nothing || !img_has_value_name(img, name; field = f)) && return ""
+    resolve_version(img, f, name)
+end
+
+"""
+    run_inputs(fun_name, img, params) -> Vector{Dict}
+
+The names a run of `fun_name` with `params` reads on `img` — one `{param, name, ns?, version?, pinned?}`
+per non-writing `valueNameSelection` value (nested groups and multi-selects included). See the header.
+"""
+function run_inputs(fun_name::AbstractString, img::CciaImage, params::AbstractDict)::Vector{Any}
+    leaves = _history_leaves(String(fun_name))
+    leaves === nothing && return Any[]
+    # a renamed param's saved key (`formerKeys`) reads as the leaf it now is
+    bykey = Dict{String,Tuple{String,Any}}()
+    for (k, l) in leaves
+        bykey[k] = (k, l)
+        for f in l.former; haskey(bykey, f) || (bykey[f] = (k, l)); end
+    end
+    pin = string(something(get(params, "version", nothing), ""))
+    out = Any[]
+    seen = Set{Tuple{String,String}}()
+    for (sk, v) in _keyed_strings(params)
+        hit = get(bykey, sk, nothing)
+        hit === nothing && continue
+        k, l = hit
+        (l.type == "valueNameSelection" && !l.writes) || continue
+        name = String(strip(v))
+        if isempty(name)              # an empty picker means the active one — name it
+            name = l.ns == "" ? versioned_active(img.filepath) :
+                   l.ns == "labels" ? resolve_value_name(img) : ""
+            isempty(name) && continue
+        end
+        (k, name) in seen && continue
+        push!(seen, (k, name))
+        d = Dict{String,Any}("param" => k, "name" => name)
+        isempty(l.ns) || (d["ns"] = l.ns)
+        if k == "valueName" && l.ns == "" && !isempty(pin)
+            d["version"] = pin; d["pinned"] = true    # the read is pinned (chain pinning, P3)
+        else
+            ver = _run_name_version(img, name, l.ns)
+            isempty(ver) || (d["version"] = ver)
+        end
+        push!(out, d)
+    end
+    out
+end
+
+# (name, ns, into) a run writes: its named or fixed output (`_history_output`), else — for a task that
+# writes INTO its input (`writesInto`, tracking) — that input, with `into = true`. ("", "", false) = none.
+function _run_output_identity(fn::AbstractString, params::Dict{String,Any}, leaves)
+    name, ns = _history_output(String(fn), params, leaves)
+    isempty(name) || return (name, ns, false)
+    into = task_params_name(String(fn), params)
+    isempty(into) && return ("", "", false)
+    key = try string(something(get(_task_spec(_task_from_fun_name(String(fn))), "writesInto", nothing), "")) catch; "" end
+    l = get(leaves, key, nothing)
+    (into, l === nothing ? "" : l.ns, true)
+end
+
+# The newest `done` entry in `entries` that wrote (name, ns) — for an `into` output, a run of the same
+# task on it (the segmentation that made the label set did not make its tracks).
+function _run_maker(entries, fun_name::AbstractString, name::AbstractString, ns::AbstractString, into::Bool,
+                    leaves_cache::Dict{String,Any})
+    for e in Iterators.reverse(entries)
+        run_entry_status(e) == "done" || continue
+        # no params at all = logged before params were recorded: its output name is unknowable. (Not
+        # `r.legacy`, which also reads a run whose only param was its `valueName` as legacy.)
+        _rl_get(e, "params", nothing) isa AbstractDict || continue
+        r = run_log_row(e)
+        into && r.fn != fun_name && continue
+        lv = get!(() -> _history_leaves(r.fn), leaves_cache, r.fn)
+        lv === nothing && continue
+        (n2, ns2, into2) = try _run_output_identity(r.fn, r.params, lv) catch; ("", "", false) end
+        (n2 == name && ns2 == ns && into2 == into) && return e
+    end
+    nothing
+end
+
+"""
+    run_replaces(fun_name, img, params) -> Dict | nothing
+
+What a run of `fun_name` with `params` will overwrite on `img`, or `nothing`. See the header.
+"""
+function run_replaces(fun_name::AbstractString, img::CciaImage, params::AbstractDict)
+    leaves = _history_leaves(String(fun_name))
+    leaves === nothing && return nothing
+    p = Dict{String,Any}(String(k) => v for (k, v) in params)
+    name, ns, into = _run_output_identity(fun_name, p, leaves)
+    isempty(name) && return nothing
+    # a fixed `default` output is a NEW image's (bin, crop, the projections) or a file (export) — the
+    # source image's `default` is never written over. Same exclusion as the chain pre-flight.
+    (ns == "" && !into && name == VERSIONED_DEFAULT_VAL) && return nothing
+    # an image version under keepPreviousVersion is minted beside the old one, not over it
+    (ns == "" && !into && keep_previous_version()) && return nothing
+    # existence: read off the image where the namespace allows it; else (and for a write-into) a run made it
+    on_img = into ? nothing : _run_has_output(img, name, ns)
+    on_img === false && return nothing          # a new output: no log walk at all
+    cache = Dict{String,Any}()
+    maker = _run_maker(read_run_log(img), fun_name, name, ns, into, cache)
+    maker === nothing && (maker = _run_maker(read_run_log_archive(img), fun_name, name, ns, into, cache))
+    (on_img === true || maker !== nothing) || return nothing
+    d = Dict{String,Any}("name" => name)
+    isempty(ns) || (d["ns"] = ns)
+    ver = into ? "" : _run_name_version(img, name, ns)
+    isempty(ver) || (d["version"] = ver)
+    if maker !== nothing
+        d["taskId"] = _rl_str(maker, "taskId")
+        d["at"]     = _rl_str(maker, "at")
+        d["fun"]    = _rl_str(maker, "fun")
+    end
+    d
+end
+
+"""
+    run_provenance(fun_name, img, params) -> (; inputs, replaces)
+
+`run_inputs` + `run_replaces` for one image, read from a FRESH copy of its `ccid.json` (an earlier step
+of the same chain may have written a version since `img` was loaded). Never throws: provenance is not
+worth failing a run over, so a lookup that errors answers "nothing recorded".
+"""
+function run_provenance(fun_name::AbstractString, img::CciaImage, params::AbstractDict)
+    fresh = try _load_image(img._dir) catch; img end
+    inputs = try run_inputs(fun_name, fresh, params) catch e
+        @warn "run-log inputs lookup failed" fun_name exception = e
+        Any[]
+    end
+    replaces = try run_replaces(fun_name, fresh, params) catch e
+        @warn "run-log replaces lookup failed" fun_name exception = e
+        nothing
+    end
+    (; inputs, replaces)
+end
+
 """
     open_run_log!(img, fun_name, value_name, params; task_id, pool, by, caller, at) -> entries
 
 Record that a run has STARTED, with status `"running"`. Pair with `close_run_log!` on every exit path.
+`inputs` / `replaces` are `run_provenance`'s answer for this image (see the header); empty = not stamped.
 
 The entry is written before the work, so a run whose process is killed outright still leaves a trace —
 that is the whole reason the log is not append-on-finish (see the header). `task_id` is what
@@ -234,12 +474,15 @@ that is the whole reason the log is not append-on-finish (see the header). `task
 function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = "",
                        params = nothing; task_id::AbstractString = "", pool::AbstractString = "",
                        by::AbstractString = "", caller::AbstractDict = Dict{String,Any}(),
+                       inputs::AbstractVector = Any[], replaces = nothing,
                        at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         e = Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
             "status" => RUN_LOG_RUNNING, "params" => _run_log_params(params),
             "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
+        isempty(inputs) || (e["inputs"] = collect(Any, inputs))
+        replaces isa AbstractDict && (e["replaces"] = replaces)
         push!(entries, _run_log_stamp!(e, by, caller))
         entries
     end
@@ -364,14 +607,15 @@ Two deliberate choices:
     without it would silently reset which version the task runs on.
 
 The reverse mismatch stays possible and is the harmless direction: a name in the picker with nothing
-to restore (written by a different task, or by a run older than `RUN_LOG_CAP`) answers `nothing`, and
-the form is left alone rather than overwritten.
+to restore (written by a different task, or before the run log existed) answers `nothing`, and the
+form is left alone rather than overwritten. A run older than `RUN_LOG_CAP` is still found: it was
+rotated into the archive, which is searched when the main file has no answer.
 """
 function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString,
                                    value_name::AbstractString)::Union{Dict{String,Any},Nothing}
     (isempty(fun) || isempty(value_name)) && return nothing
     entries = read_run_log(ccid_dir)
-    isempty(entries) && return nothing
+    isempty(entries) && !isfile(run_log_archive_path(ccid_dir)) && return nothing
 
     # Resolved once so an entry for a task that no longer exists costs one lookup, not one per entry.
     # The per-entry call stays `task_params_name` rather than its pure `_spec_output_name` half: that
@@ -385,6 +629,13 @@ function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString
     end
     isnothing(task) && return nothing
 
+    hit = _params_for_output_in(entries, task, fun, value_name)
+    isnothing(hit) || return hit
+    # not in the recent window: the run may have been rotated into the archive (see *Archive*)
+    _params_for_output_in(read_run_log_archive(ccid_dir), task, fun, value_name)
+end
+
+function _params_for_output_in(entries, task, fun::AbstractString, value_name::AbstractString)
     for e in Iterators.reverse(entries)          # newest first — the most recent run under the name
         # legacy entries carry no status and are historical successes (the log was append-on-finish
         # for :done/:failed only — see the header). `running` is skipped with the rest: a run in
