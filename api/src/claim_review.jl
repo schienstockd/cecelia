@@ -72,6 +72,8 @@ function claim_review_prompt(c::AbstractDict, found::AbstractVector = String[]):
 
     Write each observation or question as `<Category>: <what is wrong, and where — name the images or
     populations> → <what the analyst should do about it>`, with Category one of: $(_claim_review_category_list()).
+    Each side of the arrow is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon:
+    two problems are two claims. The `interpretation` is one such sentence too.
     """
 end
 

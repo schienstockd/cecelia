@@ -59,6 +59,9 @@ end
         @test occursin("T cells move faster than B cells", sent) && occursin("Replicate (image attributes; one value combination = one replicate): Mouse", sent)
         # it is told what the rule checks found, so it doesn't spend the turn repeating them
         @test occursin("do NOT repeat", sent) && occursin("- No B and T data on ", sent)
+        # the review replaces Kiwi's system prompt, so it is told the one-fact shape it is checked against
+        # (every review re-asked when it wasn't)
+        @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", sent)
         allowed = match(r":allowed_tools => \[([^\]]*)\]", sent)[1]
         denied  = match(r":disallowed_tools => \[([^\]]*)\]", sent)[1]
         @test !occursin("read_blackboard_entry", allowed) && occursin("get_task_log", allowed)
