@@ -1,6 +1,6 @@
 # Cecelia structure — what it is, one clear schematic, and where it has holes
 
-**Status:** in progress (2026-11-07), branch `structure-plan`. P1 done (draft, [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md)); P2 overview v1 in the README; record fixes #2011, #2016, #2020 merged; follow-ups #2023, #2024, btrack #2027 merged. P3 ranked (2026-11-08), waves A–B below in progress. The brief this came
+**Status:** in progress (2026-11-07), branch `structure-plan`. P1 done (draft, [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md)); P2 overview v1 in the README; record fixes #2011, #2016, #2020 merged; follow-ups #2023, #2024, btrack #2027 merged. P3 ranked (2026-11-08); waves A–C and follow-ups merged 2026-11-09 (#2036–#2055). Open: maintainer calls listed under *Open calls*. The brief this came
 from, [`docs/archive/CECELIA_STRUCTURE_AUDIT_PROMPT.md`](../archive/CECELIA_STRUCTURE_AUDIT_PROMPT.md),
 was an elaboration of the ask below. This plan narrows it back to the ask.
 
@@ -99,6 +99,19 @@ parallel PRs don't conflict.
 **Stated limitations, not fixed:** runs from before `runlog.json` existed have no params; nothing
 blocks (warn, never block) stays a choice for the maintainer to state in the paper.
 
+## Open calls (maintainer, from the P3 fixes)
+
+- **Warn, never block** — state it in the paper as a choice, or treat it as a gap.
+- **Resume keeps recorded overrides** (#2043) — changed from dropping them; replay ↻ button unseen in the app.
+- **Gate-edit guard is wider** (#2052) — a track run now counts as reading the cell gate above it.
+- **`authored_labels_version`** stays `v1` (#2052) — keep as documented, retire the drift banner, or stamp the labels' run.
+- **Board export** (#2050) — plots stay live, only the Parameters table is frozen; old boards snapshot on first plot change. Export a PDF/SVG once to check.
+- **Staleness noise** (#2051) — outputs downstream of pre-`inputs` runs show `staleUnknown` until re-run.
+- **Label pixels vs measures** (#2055) — the run log can't tell which a reader used, so a re-measure flags pixel readers (branching) and misses population readers (clustering).
+- **Source check** (#2055) — runs on metadata resync only; a missing raw file is info, not a warning.
+- **Pop-type registry JSON direction** (#2054) — Julia writes it (figureStyle goes the other way).
+- **Needs eyes:** stats warning line + Check cohort on Gating (#2053), keep-previous Settings tooltip (#2051), replay ↻ (#2043), PDF/SVG export (#2050).
+
 ## Gap list (from P1; ranked and sized in P3)
 
 Evidence for each row is in [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md). Sizes are
@@ -109,41 +122,41 @@ first guesses: S = under a day, M = a few days, L = a design first.
 | Item | Kind | Size | Status |
 |---|---|---|---|
 | Run log stores no Cecelia/engine version, device, seed or author stamp | flaw | S | done, #2011; remaining tasks #2024 |
-| Run log doesn't record which input version a run read (unless pinned) | flaw | S | open |
-| Re-runs overwrite labels, measures and branching. **By design** (maintainer, 2026-11-07): keeping every segmentation by default would pile up stores nobody needs, and `keep_previous_version()` is the opt-in for reprocessing. What the structure needs is that the record names the run that made the current output and says it replaced one | choice, record part open | S | open |
-| Gates are overwritten in place, so a plotted population can't be tied to the gate it was drawn with. Unlike stores, gate files are tiny, so history is cheap. `authored_labels_version` is always `v1` | flaw | M | open |
-| Board PDF/SVG carry no provenance; the Parameters CSV is rebuilt at export, not frozen with the plot | gap | M | open |
+| Run log doesn't record which input version a run read (unless pinned) | flaw | S | done, #2039 |
+| Re-runs overwrite labels, measures and branching. **By design** (maintainer, 2026-11-07): keeping every segmentation by default would pile up stores nobody needs, and `keep_previous_version()` is the opt-in for reprocessing. What the structure needs is that the record names the run that made the current output and says it replaced one | choice, record part open | S | done, #2039 (`replaces`); re-measure #2055; downstream staleness #2051 |
+| Gates are overwritten in place, so a plotted population can't be tied to the gate it was drawn with. Unlike stores, gate files are tiny, so history is cheap. `authored_labels_version` is always `v1` | flaw | M | done, #2052 (history + hashes; `v1` is by design, documented) |
+| Board PDF/SVG carry no provenance; the Parameters CSV is rebuilt at export, not frozen with the plot | gap | M | done, #2050 |
 | Remembered params are written at dispatch, even for failed or cancelled runs. Fine as a form default (retry what you tried); wrong where it's read as the record (the claim check's flat fallback, and the comment at `sockets.jl:799`) | flaw | S | done, #2020 |
-| Run log is capped at 200 entries per image, and old entries drop silently | flaw | S | open |
+| Run log is capped at 200 entries per image, and old entries drop silently | flaw | S | done, #2039 (archive) |
 | Excluded or skipped images, and why, are not saved anywhere | gap | S | done, #2016 |
-| Raw source is a path only, with no checksum | gap | S | open |
-| GUI gate edits are not tasks, so there's no run-log entry for them | gap | M | open |
+| Raw source is a path only, with no checksum | gap | S | done, #2040 (fingerprint); compared on resync #2055 |
+| GUI gate edits are not tasks, so there's no run-log entry for them | gap | M | done, #2052 (gate history is their record) |
 | Runs from before `runlog.json` existed have no recorded params | flaw (history) | — | stated limitation |
 
 **Contracts**
 
 | Item | Kind | Size | Status |
 |---|---|---|---|
-| Missing calibration silently becomes 1.0 µm/px and 1 min/frame outside `requires.scale` tasks; z is never required | flaw | S–M | open |
-| No check that two populations in one image were measured the same way (2D/3D) | gap | S | open |
-| Population types have no registry; hard-coded lists already disagree | flaw | M | open |
-| QC is "required" for new tasks, but no test enforces it | gap | S | open |
+| Missing calibration silently becomes 1.0 µm/px and 1 min/frame outside `requires.scale` tasks; z is never required | flaw | S–M | done, #2040 (recorded + QC warning) |
+| No check that two populations in one image were measured the same way (2D/3D) | gap | S | done, #2036 |
+| Population types have no registry; hard-coded lists already disagree | flaw | M | done, #2054 |
+| QC is "required" for new tasks, but no test enforces it | gap | S | done, #2053 |
 
 **QC and checks**
 
 | Item | Kind | Size | Status |
 |---|---|---|---|
-| Gating and statistics have no QC; the claim checks are their only check | gap | M | open |
-| Cohort QC runs only from a button; chains never run it | gap | S | open |
-| Claim checks compare only segmentation/tracking params (not preprocessing) and only the leaf gate | gap | S | open |
+| Gating and statistics have no QC; the claim checks are their only check | gap | M | done, #2053 |
+| Cohort QC runs only from a button; chains never run it | gap | S | done, #2053 |
+| Claim checks compare only segmentation/tracking params (not preprocessing) and only the leaf gate | gap | S | done, #2036 |
 | Nothing blocks. Is that a choice to state in the paper, or a gap? | question | — | maintainer call |
 
 **Replay**
 
 | Item | Kind | Size | Status |
 |---|---|---|---|
-| A new chain run uses the current template; there's no way to start one from an old run's frozen template | gap | S–M | open |
-| A chain run stores only a params hash, not the effective params or REPL overrides | flaw | S | open |
+| A new chain run uses the current template; there's no way to start one from an old run's frozen template | gap | S–M | done, #2043 |
+| A chain run stores only a params hash, not the effective params or REPL overrides | flaw | S | done, #2043 |
 | btrack's optimiser time limit. The 10-min limit never applied (btrack nested it), so tracking always ran unlimited; now explicit, because a timeout returns unmerged tracks | flaw | S | done, #2027 |
 
 **Worth expanding (strong and underused)**
