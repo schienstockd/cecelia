@@ -10,7 +10,8 @@ findings in the briefing's `openClaims`. P0 (by hand), P1
 (S3a) and the fixed perturbation sets (S3b) are parked. Helper, not gate.
 
 The schematic is `recital_figures/findings_flow.svg` (claim → checks → review → entry, and what
-happens after a finding), v3 of 2026-11-08: **as built** after #1969–#2036. The GUI is built, so
+happens after a finding), v3 of 2026-11-08: **as built** after #1969–#2036; its README version, for
+users, is `frontend/public/readme-claim.svg` (keep the two in sync). The GUI is built, so
 the GUI mockup is gone; it and v1–v2 of the flow are in git history. What v3 changed: checks are
 facts grouped by category (Images, Processing record, Same processing, Replicates, Units), each
 problem with what to do; Good / Bad / Unsure only on the model's points; Unit became Replicate; the
