@@ -26,7 +26,7 @@ end
 # project/zarr on disk (mirrors `_crop_inherited_meta`).
 const _COPY_META_KEYS = ("SizeC", "SizeZ", "SizeT",
                          "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeZ_raw",
-                         "PhysicalSizeUnit", "TimeIncrement", "TimeIncrementUnit", SOURCE_META_KEYS...)
+                         "PhysicalSizeUnit", TIME_META_KEYS..., SOURCE_META_KEYS...)
 function _copied_meta(src_meta::AbstractDict, src_uid::AbstractString,
                       value_name::AbstractString)::Dict{String,Any}
     out = Dict{String,Any}("copy_source_uid" => src_uid, "copy_source_value_name" => value_name)

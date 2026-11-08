@@ -901,6 +901,12 @@ end
 comes from the same acquisition, so it carries both — `copy_source_meta!` is the one place that does."""
 const SOURCE_META_KEYS = ("ori_path", "oriFingerprint")
 
+"""The `meta` keys that make up an image's frame interval: the value, its unit, and where it came
+from when it was declared rather than read (`TimeIncrementDeclared`, Immunemap). A derived image that
+keeps the source's timing carries all three, so the interval never arrives without its provenance —
+splat this into an inherited-meta key list instead of naming `TimeIncrement*` by hand."""
+const TIME_META_KEYS = ("TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared")
+
 copy_source_meta!(dst::AbstractDict, src::AbstractDict) =
     (for k in SOURCE_META_KEYS; haskey(src, k) && (dst[k] = src[k]); end; dst)
 

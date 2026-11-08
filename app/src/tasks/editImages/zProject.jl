@@ -26,7 +26,7 @@ end
 function _zproj_inherited_meta(src_meta::AbstractDict)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
-              "PhysicalSizeZ_raw", "TimeIncrement", "TimeIncrementUnit", "SizeC", "SizeT")
+              "PhysicalSizeZ_raw", TIME_META_KEYS..., "SizeC", "SizeT")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
     out["SizeZ"] = 1

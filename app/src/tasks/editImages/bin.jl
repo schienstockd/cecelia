@@ -28,7 +28,7 @@ end
 function _bin_inherited_meta(src_meta::AbstractDict, factor_x::Int, factor_y::Int)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeUnit", "PhysicalSizeZ", "PhysicalSizeZ_raw",
-              "TimeIncrement", "TimeIncrementUnit", "SizeC", "SizeZ", "SizeT")
+              TIME_META_KEYS..., "SizeC", "SizeZ", "SizeT")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
     if haskey(src_meta, "SizeX")

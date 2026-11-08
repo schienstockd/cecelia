@@ -44,7 +44,7 @@ end
 function _register_inherited_meta(ref_meta::AbstractDict, total_c::Integer)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
-              "TimeIncrement", "TimeIncrementUnit", "SizeX", "SizeY", "SizeZ", "SizeT")
+              TIME_META_KEYS..., "SizeX", "SizeY", "SizeZ", "SizeT")
         haskey(ref_meta, k) && (out[k] = ref_meta[k])
     end
     out["SizeC"] = Int(total_c)
