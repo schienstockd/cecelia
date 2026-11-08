@@ -116,7 +116,9 @@ creates a track by hand (see correction, below) must follow that convention; wri
   frame to frame under `maxSearchRadius` (per STEP) and `maxLost`. Then
   `tracker.optimize()` runs the global hypothesis optimiser, which **joins finished track
   ends** under `distThresh` / `timeThresh` / `thetaDist` / `lambdaDist`. `maxSearchRadius`
-  and `maxLost` are not consulted there.
+  and `maxLost` are not consulted there. The optimiser runs with **no time limit**, on
+  purpose: a GLPK timeout returns the tracks unmerged, so a limit would make results depend
+  on machine speed.
 
   Two consequences that read as bugs and are not:
 
