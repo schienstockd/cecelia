@@ -138,6 +138,46 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── img_defaulted_scale: what a run past the gate still assumes ──────────────
+@testset "img_defaulted_scale + defaulted_scale_qc_findings" begin
+    mk(meta) = (i = CciaImage(; uid = "ds", name = "ds", dir = ""); i.meta = Dict{String,Any}(meta); i)
+    xy = Set([:XY])
+    stack = mk(Dict("SizeZ" => 10, "SizeT" => 1, "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5))
+    @test img_defaulted_scale(stack, xy) == Dict("z" => "missing")              # the ungated axis
+    @test isempty(img_defaulted_scale(stack, Set{Symbol}()))                    # a task with no scale
+    plane = mk(Dict("SizeZ" => 1, "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5))
+    @test isempty(img_defaulted_scale(plane, xy))                               # 2D assumes no z
+    # an unrecognised unit is used as µm / s — reported, while an ABSENT unit is OME's µm / s
+    odd = mk(Dict("SizeZ" => 4, "SizeT" => 5, "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5,
+                  "PhysicalSizeZ" => 2.0, "PhysicalSizeUnit" => "furlong",
+                  "TimeIncrement" => 3.0, "TimeIncrementUnit" => "fortnight"))
+    @test img_defaulted_scale(odd, Set([:XY, :T])) ==
+          Dict("xy" => "unknownUnit", "z" => "unknownUnit", "t" => "unknownUnit")
+    @test isempty(img_defaulted_scale(mk(Dict("SizeT" => 5, "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5,
+                                              "TimeIncrement" => 3.0)), Set([:XY, :T])))
+    # :T counts only for a task that declares it, and only on a timelapse
+    nointerval = mk(Dict("SizeT" => 5, "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5))
+    @test isempty(img_defaulted_scale(nointerval, xy))
+    @test img_defaulted_scale(nointerval, Set([:XY, :T])) == Dict("t" => "missing")
+
+    # The record names the value the run USED (img_physical_sizes), which is not always 1.0: a zero
+    # z step stays 0, and a missing one under a nm unit is 0.001 µm.
+    zero_z = mk(Dict("SizeZ" => 10, "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5, "PhysicalSizeZ" => 0))
+    @test run_scale_defaults(zero_z, xy) == Dict{String,Any}("z" => Dict{String,Any}("reason" => "invalid", "used" => 0.0))
+    nm_z = mk(Dict("SizeZ" => 10, "PhysicalSizeX" => 500, "PhysicalSizeY" => 500, "PhysicalSizeUnit" => "nm"))
+    @test run_scale_defaults(nm_z, xy)["z"] == Dict{String,Any}("reason" => "missing", "used" => 0.001)
+    @test run_scale_defaults(nointerval, Set([:XY, :T]))["t"]["used"] == 1.0
+    @test isempty(run_scale_defaults(plane, xy))
+
+    fs = Cecelia.defaulted_scale_qc_findings(Dict(
+        "z" => Dict("reason" => "missing", "used" => 0.001), "t" => Dict("reason" => "unknownUnit", "used" => 3.0)))
+    @test [f["code"] for f in fs] == ["calibration.z_assumed", "calibration.time_unit_assumed"]
+    @test all(f -> f["level"] == "warn" && !occursin("{", f["short"] * f["long"]), fs)
+    @test occursin("0.001 µm", fs[1]["short"])                     # the number used, not a guess
+    @test fs[1]["detail"] == Dict{String,Any}("field" => "z", "reason" => "missing", "used" => 0.001)
+    @test isempty(Cecelia.defaulted_scale_qc_findings(Dict{String,String}()))
+end
+
 # ── Per-param image gating (`param.requires.axes`) ────────────────────────────
 # The image-side twin of showIf: a param whose axes the image does not carry is deleted from the
 # effective run BEFORE validation, and the handler's `get(params, key, default)` returns the "off"

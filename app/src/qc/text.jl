@@ -50,6 +50,23 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Voxel depth has no unit",
         long  = "A Z step is recorded without a unit — re-enter it with a unit."),
 
+    # a run that computed with an assumed scale (defaulted_scale_qc_findings, written by the scheduler)
+    "calibration.xy_assumed" => (
+        short = "Run used a placeholder pixel size ({value} {unit})",
+        long  = "No usable pixel size was recorded, so distances are not in microns — set it in the metadata editor, then re-run."),
+    "calibration.z_assumed" => (
+        short = "Run used a placeholder Z step ({value} {unit})",
+        long  = "No usable Z step was recorded, so depths and 3D distances may be wrong — set the voxel depth, then re-run."),
+    "calibration.t_assumed" => (
+        short = "Run used a placeholder frame interval ({value} {unit})",
+        long  = "No usable frame interval was recorded, so speeds may be wrong — set the interval, then re-run."),
+    "calibration.length_unit_assumed" => (
+        short = "Run read pixel size as µm",
+        long  = "The pixel size unit isn't recognised — re-enter the pixel size in µm, then re-run."),
+    "calibration.time_unit_assumed" => (
+        short = "Run read frame interval as seconds",
+        long  = "The frame interval unit isn't recognised — re-enter it in seconds or minutes, then re-run."),
+
     # pyramid depth (pyramid_qc_findings). The user picks `pyramidLevels` in the import form BEFORE
     # anything reads the source, so a big image imported at the default (2 levels) has no zoomed-out
     # view — every viewport pull at low zoom stays a per-tile fetch. This finding measures the store

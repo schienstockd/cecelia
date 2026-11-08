@@ -58,6 +58,11 @@ struct TaskJob
     on_hpc::Function            # (stage, job_id) — a cluster run's progress (HPC_PLAN Q4)
 end
 
+# The run's env plus `scaleDefaulted` ({axis: {reason, used}}, see `run_scale_defaults`) when it
+# assumed a scale.
+_run_env_with_scale(env::AbstractDict, d) =
+    (d === nothing || isempty(d)) ? env : merge(env, Dict{String,Any}("scaleDefaulted" => d))
+
 """
 Run one job to completion and post its result to `job.done` — **exactly once, unconditionally**.
 
@@ -85,8 +90,28 @@ function _execute_job!(job::TaskJob)
     log_targets = all_images(job.target)
     fun_name    = _fun_name_from_task(job.task)
     value_name  = string(get(job.params, "valueName", ""))
+    # Scales this run computes with no recorded value for (`run_scale_defaults`: a 3D image's missing or
+    # invalid z step, an unknown unit) and the value it uses instead — the gate only blocks a missing
+    # DECLARED scale. Warned in the task log now, stamped on the
+    # run log's `env.scaleDefaulted` at close, and banked as QC once the run is done. Never blocks.
+    defaulted = Dict{String,Dict{String,Any}}()   # image uid → axis → {reason, used}
+    try
+        need = task_requires_scale(job.task)
+        for tgt in log_targets
+            d = run_scale_defaults(tgt, need)
+            isempty(d) || (defaulted[tgt.uid] = d)
+        end
+    catch e
+        @warn "scale-default check failed" task_id = job.id exception = e
+    end
     try
         _set_status!(rec, TASK_RUNNING)
+        for (uid, d) in defaulted, (ax, x) in d
+            try
+                Base.invokelatest(job.on_log, "[WARN] $uid: $ax scale $(x["reason"]) — this run uses " *
+                                  "$(x["used"]) $(ax == "t" ? "min/frame" : "µm/px")")
+            catch; end
+        end
         # OPEN the run-log entry before the work, not after it. An append-on-finish log cannot record
         # a run that never reaches its finish — a killed runner takes its in-flight tasks with it and
         # no Julia code here ever runs again. See run_log.jl's header. Never fail a task over its log.
@@ -151,10 +176,18 @@ function _execute_job!(job::TaskJob)
                 close_run_log!(tgt, job.id, string(final);
                                fun_name = fun_name, value_name = value_name, params = job.params,
                                pool = rec.pool_name, by = rec.by, caller = rec.caller,
-                               env = run_env_of(result))
+                               env = _run_env_with_scale(run_env_of(result), get(defaulted, tgt.uid, nothing)))
             end
         catch e
             @warn "run-log close failed" task_id = job.id exception = e
+        end
+        # QC for the output a finished run made; a re-run with the scale set clears the old warning.
+        final === TASK_DONE && try
+            for tgt in log_targets
+                write_defaulted_scale_qc!(tgt, fun_name, value_name, get(defaulted, tgt.uid, Dict{String,Any}()))
+            end
+        catch e
+            @warn "scale-default QC failed" task_id = job.id exception = e
         end
         post!(result)
     catch e
@@ -174,7 +207,8 @@ function _execute_job!(job::TaskJob)
             for tgt in log_targets
                 close_run_log!(tgt, job.id, "failed";
                                fun_name = fun_name, value_name = value_name, params = job.params,
-                               pool = rec.pool_name, by = rec.by, caller = rec.caller)
+                               pool = rec.pool_name, by = rec.by, caller = rec.caller,
+                               env = _run_env_with_scale(Dict{String,Any}(), get(defaulted, tgt.uid, nothing)))
             end
         catch; end
     finally

@@ -95,7 +95,7 @@ function _run_task(task::ResampleZ, img::CciaImage, params::Dict{String,Any};
         "resampleZ_source_value_name" => p.valueName,
         "resampleZ_order"             => p.order)
     merge!(resamp_meta, _resample_z_inherited_meta(src_meta))
-    haskey(src_meta, "ori_path") && (resamp_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(resamp_meta, src_meta)
 
     new_img = add_image!(s; name = "$(img.name) (iso-z)", meta = resamp_meta, attr = img.attr)
 

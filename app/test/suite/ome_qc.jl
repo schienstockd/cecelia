@@ -2892,3 +2892,41 @@ end
     # an unknown unit is left as-is (QC flags it)
     @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 30.0, "TimeIncrementUnit" => "fortnight")))[2] ≈ 0.5
 end
+
+# ── Raw source fingerprint: bounded read, named for what it is ──────────────
+@testset "source_fingerprint + import_source_fingerprint" begin
+    dir = mktempdir()
+    small = joinpath(dir, "small.tif"); write(small, rand(UInt8, 1000))
+    fp = Cecelia.source_fingerprint(small)
+    @test fp["size"] == 1000 && fp["method"] == "sha256-head-tail" && fp["path"] == small
+    @test fp["sample"] == bytes2hex(Cecelia.SHA.sha256(read(small)))           # small file: the whole file
+    @test endswith(fp["mtime"], "Z")
+    @test isempty(Cecelia.source_fingerprint(joinpath(dir, "nope.tif")))
+
+    # A file larger than both samples: only head + tail are read. A mid-file edit is invisible (and
+    # documented as such); a head or tail edit, or a size change, moves the fingerprint.
+    k = 1024
+    big = joinpath(dir, "big.oir"); bytes = rand(UInt8, 5k); write(big, bytes)
+    a = Cecelia.source_fingerprint(big; sample_bytes = k)
+    @test a["sample"] == bytes2hex(Cecelia.SHA.sha256(vcat(bytes[1:k], bytes[end-k+1:end])))
+    mid = copy(bytes); mid[2k] ⊻= 0xff; write(big, mid)
+    @test Cecelia.source_fingerprint(big; sample_bytes = k)["sample"] == a["sample"]
+    tail = copy(bytes); tail[end] ⊻= 0xff; write(big, tail)
+    @test Cecelia.source_fingerprint(big; sample_bytes = k)["sample"] != a["sample"]
+    # head and tail overlap (size between 1× and 2× the sample): no byte hashed twice
+    ov = joinpath(dir, "ov.bin"); ob = rand(UInt8, k + 10); write(ov, ob)
+    @test Cecelia.source_fingerprint(ov; sample_bytes = k)["sample"] == bytes2hex(Cecelia.SHA.sha256(ob))
+
+    # an OIR's companions carry the pixels: counted and sized from stat alone
+    write(joinpath(dir, "big_00001"), rand(UInt8, 300)); write(joinpath(dir, "big_00002"), rand(UInt8, 200))
+    ifp = Cecelia.import_source_fingerprint(big)
+    @test ifp["companions"] == Dict{String,Any}("count" => 2, "bytes" => 500)
+    @test !haskey(Cecelia.import_source_fingerprint(small), "companions")
+    @test isempty(Cecelia.import_source_fingerprint(joinpath(dir, "nope.tif")))   # never throws
+
+    # a derived image carries the source record with its path
+    dst = Cecelia.copy_source_meta!(Dict{String,Any}(), Dict{String,Any}("ori_path" => big,
+                                    "oriFingerprint" => ifp, "PhysicalSizeX" => 1.0))
+    @test Set(keys(dst)) == Set(["ori_path", "oriFingerprint"])
+    @test "oriFingerprint" in Cecelia._COPY_META_KEYS
+end

@@ -138,6 +138,14 @@ Cecelia._run_task(::_RunEnvTask, ::CciaImage, ::Dict{String,Any};
                   on_process::Function = _ -> nothing) =
     Dict{String,Any}("ok" => true, "runEnv" => Dict{String,Any}("device" => "cuda", "seed" => 0))
 
+# A task that computes in microns (declares `requires.scale = [xy]`, as cellNeighbours does) — used to
+# assert the scheduler records and warns about a scale it had to assume (a 3D image's z step).
+struct _ScaleTask <: CciaTask end
+Cecelia.task_requires_scale(::_ScaleTask) = Set([:XY])
+Cecelia._run_task(::_ScaleTask, ::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) = Dict{String,Any}("ok" => true)
+
 # A task that stays running until it's told to stop, so a test can inspect the LIVE registry — the
 # scheduler's timestamps and `list_tasks()` only exist while the task is in flight (the record is
 # deregistered the instant it finishes).

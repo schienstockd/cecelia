@@ -138,7 +138,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         "register_do_affine_2d"   => p.doAffine2d,
         "register_do_affine_3d"   => p.doAffine3d)
     merge!(reg_meta, _register_inherited_meta(ref_meta, total_c))
-    haskey(ref_meta, "ori_path") && (reg_meta["ori_path"] = ref_meta["ori_path"])
+    copy_source_meta!(reg_meta, ref_meta)
 
     new_img = add_image!(s; name = "$(ref_img.name) (registered)", meta = reg_meta)
     out_filename = "ccidRegistered.ome.zarr"
