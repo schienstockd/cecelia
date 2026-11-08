@@ -18,7 +18,7 @@
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElbow'
-import { frameAxisLabel } from '../utils/timeAxis'
+import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
 import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx } from './axisLabelFit'
@@ -920,6 +920,12 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     const e = lines.get(k) ?? lines.set(k, { fkey: facetKeyOf(o, s, k), pts: [] }).get(k)!
     e.pts.push({ x, y })
   }
+  // seconds → the unit that reads (min for a 45-min movie): rescaled BEFORE the fit, which is
+  // unaffected — LOESS neighbourhoods are a fraction of the points, not a width in x
+  let xMax = 0
+  for (const e of lines.values()) for (const p of e.pts) if (p.x > xMax) xMax = p.x
+  const tu = timeAxisUnit(o.timeScale ? xMax : 0)
+  if (o.timeScale && tu.perUnit !== 1) for (const e of lines.values()) for (const p of e.pts) p.x /= tu.perUnit
   const span = Math.min(1, Math.max(0.05, (o.smooth ?? 30) / 100)), floor = o.nonNegative && !o.logScale
   const fit: { series: string; fkey: string; x: number; y: number; lo: number; hi: number }[] = []
   let hi = 0
@@ -971,9 +977,9 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const opts: Record<string, unknown> = {
     ...THEME, color, marginTop: topPad,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    // "Time (s)" only when the frames were actually converted — otherwise the axis IS the frame index
-    // and must keep saying so rather than implying a unit it doesn't have
-    x: { label: o.labX || (o.timeScale ? 'Time (s)' : frameAxisLabel(r.groupBy)), grid: o.grid,
+    // "Time (<unit>)" only when the frames were actually converted — otherwise the axis IS the frame
+    // index and must keep saying so rather than implying a unit it doesn't have
+    x: { label: o.labX || (o.timeScale ? `Time (${tu.unit})` : frameAxisLabel(r.groupBy)), grid: o.grid,
          ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
          ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },

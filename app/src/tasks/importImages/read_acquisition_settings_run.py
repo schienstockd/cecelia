@@ -1,4 +1,4 @@
-"""Read the acquisition settings an `.oir` or `.czi` source records but Bio-Formats drops.
+"""Read the acquisition settings an `.oir`, `.czi` or `.ims` source records but Bio-Formats drops.
 
 Called by the `importImages.omezarr` task after the conversion, and by `resync_ome_meta!` for images
 imported before this existed. Thin by design: the logic and its tests live in `cecelia.utils.oir_meta`
@@ -11,11 +11,12 @@ import os
 
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
-from cecelia.utils import czi_meta, oir_meta
+from cecelia.utils import czi_meta, ims_meta, oir_meta
 
 #: Source formats with a settings reader. Others get a reason, not an error. Keep in step with
 #: `ACQUISITION_SETTINGS_FORMATS` in `omezarr/acquisition.jl`, which gates the call.
-_READERS = {'.oir': oir_meta.acquisition_settings, '.czi': czi_meta.acquisition_settings}
+_READERS = {'.oir': oir_meta.acquisition_settings, '.czi': czi_meta.acquisition_settings,
+            '.ims': ims_meta.acquisition_settings}
 
 
 def run(params):

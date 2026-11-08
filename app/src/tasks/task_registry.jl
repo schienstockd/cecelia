@@ -13,6 +13,10 @@ function _spec_path(::MigrateLegacy)
     joinpath(@__DIR__, "importImages", "migrateLegacy.json")
 end
 
+function _spec_path(::ImmunemapFetch)
+    joinpath(@__DIR__, "importImages", "immunemapFetch.json")
+end
+
 function _spec_path(::CellposeSegment)
     joinpath(@__DIR__, "segment", "cellpose.json")
 end
@@ -213,6 +217,9 @@ function _spec_path(::IncrementalPlotTask)
     joinpath(@__DIR__, "testTasks", "incremental_plot_task.json")
 end
 
+_COMPOSITE_SPEC_PATHS["importImages.immunemap"] =
+    joinpath(@__DIR__, "importImages", "immunemap.json")
+
 _COMPOSITE_SPEC_PATHS["segment.cellposeMeasure"] =
     joinpath(@__DIR__, "segment", "cellpose_measure.json")
 
@@ -238,6 +245,8 @@ function _fun_name_map()::Dict{String, CciaTask}
         "importImages.omezarr"              => ImportOmezarr(),
         "importImages.remove"               => RemoveImage(),
         "importImages.migrateLegacy"        => MigrateLegacy(),
+        "importImages.immunemapFetch"       => ImmunemapFetch(),
+        "importImages.immunemap"            => CompositeTask("importImages.immunemap"),
         "segment.cellpose"                  => CellposeSegment(),
         "segment.coastal"                   => CoastalSegment(),
         "opticalFlow.train"                 => TrainFlowModel(),

@@ -858,7 +858,10 @@ end
                      # claim checks (claim_checks.jl) — `pop` population path, `kind` "segment" /
                      # "tracking", `attr` the unit attribute, `variable` a flattened record key,
                      # `measure` the claim's measure, `n_images` images in scope, `p` a p-value floor
-                     "pop", "kind", "attr", "variable", "measure", "n_images", "p", "imgs", "what"])
+                     "pop", "kind", "attr", "variable", "measure", "n_images", "p", "imgs", "what",
+                     # Immunemap download (immunemap_fetch_qc_findings) — the file's and Immunemap's
+                     # voxel size — see import.immunemap_spacing
+                     "file", "published"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -2891,4 +2894,45 @@ end
     @test Cecelia.img_physical_sizes(mk(merge(base, Dict("PhysicalSizeUnit" => "nm", "PhysicalSizeZUnit" => "µm"))))[1] ≈ [2.0, 0.0005, 0.0005]
     # an unknown unit is left as-is (QC flags it)
     @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 30.0, "TimeIncrementUnit" => "fortnight")))[2] ≈ 0.5
+end
+
+@testset "Import from Immunemap — declared interval + download QC" begin
+    # The tier below every interval read from the store or the file: only when there is none.
+    meta = Dict{String,Any}("SizeT" => 60)
+    dt   = Dict{String,Any}("declaredTimeIncrement" => Dict{String,Any}(
+        "value" => 30.0, "unit" => "second", "source" => "Immunemap acquisition 309 (timestamps)"))
+    @test Cecelia._apply_declared_time_increment!(meta, dt)
+    @test meta["TimeIncrement"] == 30.0 && meta["TimeIncrementUnit"] == "second"
+    @test meta["TimeIncrementDeclared"] == "Immunemap acquisition 309 (timestamps)"
+    @test isempty(filter(f -> f["detail"]["field"] == "t", Cecelia.metadata_qc_findings(meta)))
+    # nothing declared, or nonsense declared → nothing applied
+    @test !Cecelia._apply_declared_time_increment!(Dict{String,Any}(), Dict{String,Any}())
+    @test !Cecelia._apply_declared_time_increment!(Dict{String,Any}(),
+        Dict{String,Any}("declaredTimeIncrement" => Dict{String,Any}("value" => 0)))
+    # a re-import clears the provenance with the interval it describes
+    @test "TimeIncrementDeclared" in Cecelia._OME_DERIVED_META_KEYS
+
+    # The tier order, through the one entry point import and resync share. `recover` stands in for
+    # the file reader: measured → wins; irregular → nothing, declared NOT applied; absent → declared.
+    fill(rec; m = Dict{String,Any}("SizeT" => 60)) =
+        (Cecelia._fill_source_time_increment!(m, dt, "/src.ims", tempdir(); recover = rec), m)
+    measured(zm, src, dir; irregular, kw...) = (zm["TimeIncrement"] = 29.5; true)
+    paused(zm, src, dir; irregular, kw...)   = (irregular[] = true; false)
+    absent(zm, src, dir; irregular, kw...)   = false
+    ok, m = fill(measured); @test ok && m["TimeIncrement"] == 29.5 && !haskey(m, "TimeIncrementDeclared")
+    ok, m = fill(paused);   @test !ok && !haskey(m, "TimeIncrement")      # RESULT-REVIEW: result-ee2a25f0
+    ok, m = fill(absent);   @test ok && m["TimeIncrement"] == 30.0
+    ok, m = fill(absent; m = Dict{String,Any}("SizeT" => 1)); @test !ok && !haskey(m, "TimeIncrement")
+    ok, m = fill(absent; m = Dict{String,Any}("SizeT" => 60, "TimeIncrement" => 5.0)); @test !ok && m["TimeIncrement"] == 5.0
+    # no source file at all: straight to the declared tier at import…
+    m = Dict{String,Any}("SizeT" => 60)
+    @test Cecelia._fill_source_time_increment!(m, dt, "", tempdir(); recover = paused) && m["TimeIncrement"] == 30.0
+    # …but never on resync, where a deleted irregular file can no longer veto it (result-fb89585c)
+    m = Dict{String,Any}("SizeT" => 60)
+    @test !Cecelia._fill_source_time_increment!(m, dt, "", tempdir(); recover = absent, declared = false)
+    @test !haskey(m, "TimeIncrement")
+
+    @test isempty(Cecelia.immunemap_fetch_qc_findings(String[], [1.8, 1.8, 4.0], [1.8, 1.8, 4.0]))
+    f = Cecelia.immunemap_fetch_qc_findings(["x", "y"], [0.45, 0.45, 4.0], [1.8, 1.8, 4.0])
+    @test length(f) == 1 && f[1]["code"] == "import.immunemap_spacing" && f[1]["level"] == "warn"
 end

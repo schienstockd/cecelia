@@ -21,7 +21,11 @@ import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
          scopeValueName, scopeValueNames, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
-import ImagePickerModal from '../components/ImagePickerModal.vue'
+import { useViewerStore } from '../stores/viewer'
+import { useSettingsStore } from '../stores/settings'
+import { openViewerWindow } from '../utils/viewerWindow'
+import { cropPickFromValue } from '../utils/viewer/cropPick'
+import { profileStorage } from '../utils/profileStorage'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
 import { channelLabel } from '../utils/channelNames'
@@ -95,6 +99,9 @@ const shownTip = computed(() => resolveParamTip(props.param, props.context?.imag
 const projectStore = useProjectStore()
 const projectImageOptions = computed(() => props.param.type !== 'imageSelection' ? [] :
   projectStore.sets.flatMap(s => s.images.map(i => ({ uid: i.uid, label: `${s.name} / ${i.name}` }))))
+// setSelection — a set of the open project; '' = the image's own set
+const projectSetOptions = computed(() => props.param.type !== 'setSelection' ? [] :
+  projectStore.sets.map(s => ({ uid: s.uid, label: s.name })))
 // a select listing a model vault gets origin headings + the vault's View toggles (VaultModelSelect)
 const vaultKind = computed(() => vaultKindForSource(props.param.optionsFrom))
 
@@ -217,11 +224,45 @@ const availableChannels = computed(() => {
 })
 
 // imagePicker — a task param whose value is a spatial selection on ONE image (v1: `box3d` for crop).
-// The modal renders the preview + drawing surface (ImagePickerModal); this closure resolves which
-// image to draw on and which value_name to preview it as (the sibling valueNameSelection, so the
-// picker draws over the same version the task will read). A task that runs against N images uses
-// the same box for all of them — image[0] is the preview + the box applies to the rest.
-const pickerOpen = ref(false)
+// Drawn ON THE VIEWER: Draw opens the viewer window on image[0] at the version the task will read
+// (the sibling valueNameSelection) and asks it for a crop area through `viewerStore.cropPick`
+// (`utils/viewer/cropPick.ts`); the viewer's Use answers with the task's box. A task that runs
+// against N images uses the same box for all of them.
+const viewerStore = useViewerStore()
+const settingsStore = useSettingsStore()
+// `cc.cropSquare`: the Square choice carries to the next crop — per person, so profile storage.
+const K_CROP_SQUARE = 'cc.cropSquare'
+const pickerRequestId = ref<string | null>(null)
+const pickerWaiting = computed(() => {
+  const p = viewerStore.cropPick
+  return !!pickerRequestId.value && p?.requestId === pickerRequestId.value && p.status === 'drawing'
+})
+function openPickerOnViewer() {
+  const img = pickerImage.value, projectUid = props.context?.projectUid
+  if (!img || !projectUid) return
+  const id = `${img.uid}:${Date.now()}`
+  pickerRequestId.value = id
+  // the viewer shows the version the task reads — the box is in that version's pixels
+  settingsStore.setImageVersion(img.uid, pickerValueName.value)
+  viewerStore.setCropPick(cropPickFromValue(id, img.uid, pickerValueName.value,
+    val.value as Record<string, number> | null, profileStorage.getItem(K_CROP_SQUARE) === 'true'))
+  openViewerWindow({ projectUid, imageUid: img.uid, valueName: pickerValueName.value })
+}
+watch(() => viewerStore.cropPick, p => {
+  const id = pickerRequestId.value
+  if (!id) return
+  if (!p || p.requestId !== id) { pickerRequestId.value = null; return }   // cancelled / superseded
+  if (p.status !== 'done' || !p.result) return
+  val.value = p.result
+  profileStorage.setItem(K_CROP_SQUARE, String(p.square))
+  pickerRequestId.value = null
+  viewerStore.setCropPick(null)
+})
+function cancelPicker() {
+  if (pickerWaiting.value) viewerStore.setCropPick(null)
+  pickerRequestId.value = null
+}
+onUnmounted(cancelPicker)
 const pickerImage = computed(() => props.context?.images?.[0])
 const pickerValueName = computed(() => {
   const vnKey = siblingKeyOfType(props.context?.params, 'valueNameSelection')
@@ -242,9 +283,6 @@ const pickerSummary = computed(() => {
   if ((v.t0 ?? -1) >= 0 && (v.t1 ?? -1) >= 0) parts.push(`t:${v.t0}–${v.t1 - 1}`)
   return parts.join(', ')
 })
-function onPickerSave(box: Record<string, number> | null) {
-  val.value = box
-}
 
 // popSelection — two modes:
 //  • single (default): a dropdown of ONE pop map's populations for ONE segmentation (the sibling
@@ -861,6 +899,17 @@ function onChannelUpdate(next: string[]) {
       <option v-for="o in projectImageOptions" :key="o.uid" :value="o.uid">{{ o.label }}</option>
     </select>
 
+    <!-- setSelection: one set of the project, or the image's own -->
+    <select v-else-if="param.type === 'setSelection'"
+      class="select-input"
+      :value="(val as string) ?? ''"
+      @change="val = ($event.target as HTMLSelectElement).value"
+      v-tooltip.bottom="shownTip"
+    >
+      <option value="">Same set</option>
+      <option v-for="o in projectSetOptions" :key="o.uid" :value="o.uid">{{ o.label }}</option>
+    </select>
+
     <!-- valueNameSelection: dropdown of available filepath keys from selected images -->
     <template v-else-if="param.type === 'valueNameSelection'">
       <select
@@ -962,15 +1011,19 @@ function onChannelUpdate(next: string[]) {
     <!-- imagePicker — visual spatial selection (crop box today; box2d/point/line/polygon later).
          The row shows a summary + Draw button; the modal owns preview + drawing. -->
     <div v-else-if="param.type === 'imagePicker'" class="cc-row cc-row-tight image-picker">
-      <span class="image-picker-summary cc-muted cc-fs-xs">{{ pickerSummary }}</span>
-      <button class="cc-btn cc-btn-primary cc-btn-sm" :disabled="!pickerCanDraw"
-              @click="pickerOpen = true"
+      <span class="image-picker-summary cc-muted cc-fs-xs">
+        {{ pickerWaiting ? 'Drawing on the viewer…' : pickerSummary }}
+        <template v-if="pickerExtra > 0 && !pickerWaiting"> · all {{ pickerExtra + 1 }} images</template>
+      </span>
+      <button v-if="pickerWaiting" class="cc-btn cc-btn-ghost cc-btn-sm" @click="cancelPicker">Cancel</button>
+      <button v-else class="cc-btn cc-btn-primary cc-btn-sm" :disabled="!pickerCanDraw"
+              @click="openPickerOnViewer"
               v-tooltip.top="pickerCanDraw
-                ? 'Open the image and draw the region'
+                ? 'Draw the region on the viewer'
                 : 'Select one image first'">
         <i class="pi pi-image" /> {{ val ? 'Redraw…' : 'Draw…' }}
       </button>
-      <button v-if="val" class="cc-btn cc-btn-ghost cc-btn-sm" @click="val = null"
+      <button v-if="val && !pickerWaiting" class="cc-btn cc-btn-ghost cc-btn-sm" @click="val = null"
               v-tooltip.top="'Clear the picked region'">Clear</button>
     </div>
 
@@ -981,17 +1034,6 @@ function onChannelUpdate(next: string[]) {
       {{ param.type }}
     </div>
 
-    <!-- imagePicker modal — teleported by BaseModal (fixed overlay). Only mounted when open, so no
-         MIP fetch runs until the user clicks Draw. -->
-    <ImagePickerModal v-if="pickerOpen && pickerImage && context?.projectUid"
-      :project-uid="context.projectUid"
-      :image-uid="pickerImage.uid"
-      :image-name="pickerImage.name"
-      :value-name="pickerValueName"
-      :geometry="((param as { geometry?: 'box3d' }).geometry) ?? 'box3d'"
-      :extra-image-count="pickerExtra"
-      @save="onPickerSave"
-      @close="pickerOpen = false" />
 
     <!-- The figure this param offers, if the spec named one. Below the control rather than beside the
          label, for a reason the layout does not show: a wrapper around the label moves it a level

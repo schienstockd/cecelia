@@ -15,7 +15,8 @@
     "measureOptions": [
       "live.cell.speed",
       "live.cell.angle"
-    ]
+    ],
+    "groupByOptions": ["centroid_t"]
   },
   "scopeModes": ["per_image", "summarised"],
   "params": [

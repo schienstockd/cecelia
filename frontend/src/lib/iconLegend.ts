@@ -112,6 +112,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-save', lucide: 'save', means: 'Save' },
       { icon: 'pi-copy', lucide: 'copy', means: 'Copy — to the clipboard, or a copy of this' },
       { icon: 'pi-download', lucide: 'download', means: 'Bring it in from a file, or set up the observer' },
+      { icon: 'pi-cloud-download', lucide: 'cloud-download', means: 'Bring it in from an online database' },
       { icon: 'pi-upload', lucide: 'upload', means: 'Import' },
       { icon: 'pi-camera', lucide: 'camera', means: 'Freeze this version as a snapshot' },
       { icon: 'pi-video', lucide: 'video', means: 'Record a movie' },

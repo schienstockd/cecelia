@@ -6,11 +6,13 @@ using Statistics: median
 # does for chain.jl / task.jl. Nothing here `module`s the sub-files — the runtime is one namespace,
 # and struct/const definitions load top-down, function bodies resolve at call time.
 #
-#   reader.jl      — pure metadata reads. `_delta_t_fallback` + `_recover_ims_time_increment!` (OME
-#                    time-interval recovery), the NGFF/series structural readers (`series_base`,
+#   reader.jl      — pure metadata reads. `_delta_t_fallback` (OME time-interval recovery), the NGFF/series structural readers (`series_base`,
 #                    `bf2raw_series_subdir`, `ngff_attrs`, `ngff_multiscales`, `ngff_version`,
 #                    `zarr_array_meta`), and `read_ome_metadata` — the single flat-Dict reader
 #                    every consumer (api/image_geometry.jl, qc.jl, coastal, this task) shares.
+#   source_timing.jl — `_fill_source_time_increment!`: the interval for a store with none — what the
+#                    source file measured (`_recover_ims_time_increment!`), else what the publisher
+#                    declared at registration (`_apply_declared_time_increment!`, Immunemap).
 #   fingerprint.jl — `store_rev`, a stat-only "did this store change" fingerprint (the viewer's
 #                    reload-only-on-change gate, `/api/viewer/meta` → `storeRevs`).
 #   calibration.jl — metadata WRITERS. `update_ome_scale!` (NGFF axis scale + unit) and
@@ -34,6 +36,7 @@ using Statistics: median
 #                    `parse_import_omezarr_params`, and the `_run_task` that stitches everything above
 #                    together.
 include(joinpath(@__DIR__, "omezarr", "reader.jl"))
+include(joinpath(@__DIR__, "omezarr", "source_timing.jl"))
 include(joinpath(@__DIR__, "omezarr", "fingerprint.jl"))
 include(joinpath(@__DIR__, "omezarr", "calibration.jl"))
 include(joinpath(@__DIR__, "omezarr", "ccid_sync.jl"))

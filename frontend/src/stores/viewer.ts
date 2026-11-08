@@ -18,6 +18,7 @@ import { ref, watch, type Ref } from 'vue'
 import type { VisibleRegion } from '../utils/viewer/visibleRegion'
 import type { L0Rect } from '../utils/viewerPick'
 import type { ViewerViewState } from '../utils/viewer/viewState'
+import type { CropPick } from '../utils/viewer/cropPick'
 import { expiresAtFrom, msUntil, liveOrNull } from '../utils/viewer/markLifetime'
 import { nextUpdateStamp } from '../utils/updateStamp'
 
@@ -47,6 +48,7 @@ const K_TRACK_HIGHLIGHT  = 'cc.viewer.trackHighlight'
 const K_LABELS_DIM_MISMATCH = 'cc.viewer.labelsDimMismatch'
 const K_PICK_HIGHLIGHT   = 'cc.viewer.pickHighlight'
 const K_PREVIEW_BOX      = 'cc.viewer.previewBox'
+const K_CROP_PICK        = 'cc.viewer.cropPick'
 
 /** The task preview's region as a box the user owns (`utils/viewer/previewBox.ts`), in L0 px of
  *  `imageUid`. The viewer seeds it from the first preview and publishes it as the region from then on;
@@ -317,6 +319,8 @@ export const useViewerStore = defineStore('viewer', () => {
   const openImage     = ref<OpenImage | null>(_readJson<OpenImage>(K_OPEN_IMAGE))
   const visibleRegion = ref<VisibleRegion | null>(_readJson<VisibleRegion>(K_VISIBLE_REGION))
   const previewBox    = ref<PreviewBox | null>(_readJson<PreviewBox>(K_PREVIEW_BOX))
+  /** The crop area being drawn on the viewer for a task form (`utils/viewer/cropPick.ts`). */
+  const cropPick      = ref<CropPick | null>(_readJson<CropPick>(K_CROP_PICK))
   const viewState        = ref<ViewerViewState | null>(_readJson<ViewerViewState>(K_VIEW_STATE))
   // Seeded from localStorage: `openViewerWindow` handoffs (analysis-strip zoom-to-source) may write
   // the pending BEFORE the popup mounts, and a popup that started null would never see it.
@@ -364,6 +368,13 @@ export const useViewerStore = defineStore('viewer', () => {
     if (!next && !previewBox.value) return
     previewBox.value = next
     _writeJson(K_PREVIEW_BOX, next)
+  }
+
+  /** The form asks (`status: 'drawing'`), the viewer answers (`'done'`), the form clears it. */
+  function setCropPick(next: CropPick | null) {
+    if (!next && !cropPick.value) return
+    cropPick.value = next
+    _writeJson(K_CROP_PICK, next)
   }
 
   /** ViewerWindow calls this on every pan/zoom/z/t/ndisplay/channel change — same debounced sink as
@@ -596,11 +607,13 @@ export const useViewerStore = defineStore('viewer', () => {
         pickHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_BOX) {
         previewBox.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_CROP_PICK) {
+        cropPick.value = e.newValue ? JSON.parse(e.newValue) : null
       }
     })
   }
 
-  return { openImage, visibleRegion, previewBox, setPreviewBox, viewState, pendingViewState, previewLabels, previewImages, liveLabels,
+  return { openImage, visibleRegion, previewBox, setPreviewBox, cropPick, setCropPick, viewState, pendingViewState, previewLabels, previewImages, liveLabels,
            trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
            uiMarks, freeformMarks, plotMarks, tileMarks,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,

@@ -361,6 +361,7 @@ end
         "/api/images/version/remove",
         "/api/import/peek-pyramid",
         "/api/import/register-legacy", "/api/import/scan-legacy",
+        "/api/import/register-immunemap", "/api/import/scan-immunemap",
         "/api/import/series/probe",
         "/api/lablog/append", "/api/lablog/capture",
         "/api/lablog/dismiss",
@@ -460,6 +461,7 @@ end
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
         "/api/import/register-legacy", "/api/import/scan-legacy",
+        "/api/import/register-immunemap", "/api/import/scan-immunemap",
         "/api/import/series/probe",
         "/api/notebooks/build-sysimage", "/api/notebooks/launch",
         "/api/notebooks/restart", "/api/notebooks/shutdown",
@@ -501,7 +503,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 186
+    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 188
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

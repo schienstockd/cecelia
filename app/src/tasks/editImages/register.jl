@@ -140,7 +140,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
     merge!(reg_meta, _register_inherited_meta(ref_meta, total_c))
     haskey(ref_meta, "ori_path") && (reg_meta["ori_path"] = ref_meta["ori_path"])
 
-    new_img = add_image!(s; name = "$(ref_img.name) (registered)", meta = reg_meta)
+    new_img = add_image!(s; name = derived_image_name(proj, ref_img.name, "registered"), meta = reg_meta)
     out_filename = "ccidRegistered.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
     on_log("[INFO] Reference: $(ref_img.uid) ($(ref_img.name))")
