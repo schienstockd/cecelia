@@ -2,6 +2,7 @@
 // and the /api/plot_data aggregation response. Mirrors the JSON shapes — see docs/API.md.
 import type { HmmFitSummary } from '../utils/hmmFitNote'
 import type { HmmFitCurve } from '../utils/hmmElbow'
+import type { QcFinding } from '../lib/qc'
 
 export interface PlotParam {
   key: string
@@ -176,6 +177,9 @@ export interface ComparisonsResult {
   autoReason?: string
   comparisonPairs: StatsComparisonPair[]   // Bonferroni-adjusted; empty for 2-group tests (the omnibus IS the pair)
   letters?: string[]      // Compact Letter Display, per group (parallel to `groups`); groups sharing a letter don't differ
+  // QC on the comparison itself (stats.jl `stats_qc_findings`): cells counted as replicates, too few
+  // images for any test to reach p < 0.05. Catalog text, same shape as a per-image QC finding.
+  findings?: QcFinding[]
 }
 
 export interface PlotDataResponse {

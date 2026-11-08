@@ -17,6 +17,7 @@ import { computed } from 'vue'
 import { facetMode, type VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
+import InlineNote from '../InlineNote.vue'
 import { emptyReadout, overrideFor, type PlotReadout } from '../../plots/plotReadout'
 import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
 import { useFieldDraft } from '../../composables/useFieldDraft'
@@ -172,6 +173,9 @@ const has = (s: SectionKey) => props.sections.includes(s)
         <div v-if="vis.statsEnabled && (vis.statsTest ?? 'auto') === 'auto' && readout.stats.note"
              class="po-note cc-muted cc-fs-2xs"
              v-tooltip.top="readout.stats.reason || 'Test the active plot ran'">{{ readout.stats.note }}</div>
+        <!-- QC on the comparison (stats.jl `stats_qc_findings`): the problem, the action on hover -->
+        <InlineNote v-for="f in (vis.statsEnabled ? readout.stats.findings : [])" :key="f.code"
+                    class="po-note cc-fs-2xs" severity="warn" :short="f.short" :detail="f.long" />
         <div v-if="vis.statsEnabled" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'One letter per group; shared letter = no difference'"><span>Compact letters</span>
           <CcToggle aria-label="Compact letters" :model-value="!!vis.statsUseLetters" @update:model-value="set({ statsUseLetters: $event })" /></div>
         <div v-if="vis.statsEnabled && !vis.statsUseLetters" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Also show non-significant brackets'"><span>Show ns</span>

@@ -824,6 +824,21 @@ per image, re-run as images clear the stage — incremental fill), and expands o
 `SummaryCanvas module="segment"`. All of it reuses the canonical plot framework — no bespoke QC route or
 panel. Distinct from user-dragged plot nodes (a separate, later mechanism).
 
+### Cohort QC at the end of a run
+
+When every image thread, set node and incremental watcher has returned, `run_chain` runs
+`chain_cohort_qc!` (`app/src/qc_cohort.jl`) — the **same** `cohort_check!` the module pages' *Check
+cohort consistency* button posts to (`POST /api/qc/cohort/check`), not a parallel pipeline. For every
+set holding one of the run's images it checks each step that finished (`:done`) on some image and that
+the check can answer (`cohort_has_answer`: banked `COHORT_METRICS`, or a composite's steps), judging
+the **newest** clustering/HMM run as the button's run selector does; then, where the set has
+hand-drawn gates, the gating check (`gating.flow`/`gating.track`, `app/src/qc_gating.jl`) — a run that
+re-segments or re-tracks changes what every gate selects. Same artefacts as the button: the set
+sidecar, per-image `cohort.{fun}` / `gating.*` findings, and a *Cecelia — Cohort check* lab-log entry
+for whatever flagged; one `[INFO]`/`[WARN]` line per check goes to the run's log. Skipped on a
+cancelled run, and when no step finished (a resume with nothing left to do). It never throws: a failed
+check is logged, and the run's outcome is the steps', as always (QC warns, never blocks).
+
 ### Loading past runs into the Live view
 
 The whiteboard Live tab renders runs from **two sources**, normalised to one task-like shape:

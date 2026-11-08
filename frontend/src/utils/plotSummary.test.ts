@@ -18,8 +18,12 @@ describe('plotSummaryText', () => {
     const r = { chartType: 'frequency', measure: 'hmm', granularity: 'cell', categories: ['Directed', 'Scanning'],
                 series: [{ pop: 'B/qc', value_name: 'B', values: [0.4, 0.6] }],
                 comparisons: { test: 'mannwhitney', methodNote: 'Mann-Whitney U', groups: ['B', 'T'], pValue: 0.0012,
-                               significance: '**', comparisonPairs: [] } } as unknown as PlotDataResponse
+                               significance: '**', comparisonPairs: [],
+                               findings: [{ level: 'warn', code: 'stats.cells_as_replicates',
+                                            short: 'Test counts each cell or track as a replicate', long: 'x' }] } } as unknown as PlotDataResponse
     const t = plotSummaryText(r)
+    // the comparison's QC rides the text Claude reads, so a p over pooled cells is never quoted bare
+    expect(t).toContain('  stats QC: Test counts each cell or track as a replicate')
     expect(t).toContain('B/qc | all | - | Directed=0.400 Scanning=0.600')
     expect(t).toContain('stats: Mann-Whitney U across B, T → p=0.00120 (**)')
     const bar = { chartType: 'bar', measure: 'm', series: [{ pop: 'B/qc', value_name: 'B', n: 5, value: 12.5, sd: 2 }] } as unknown as PlotDataResponse

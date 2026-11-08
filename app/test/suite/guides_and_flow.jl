@@ -39,8 +39,8 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
         end
         @test !isempty(stages)
 
-        # every fun the frontend lists must actually bank cohort metrics
-        unknown = [f for fs in values(stages) for f in fs if !haskey(COHORT_METRICS, f)]
+        # every fun the frontend lists must be one the check can answer (banked metrics, or gating QC)
+        unknown = [f for fs in values(stages) for f in fs if !cohort_has_answer(f)]
         @test isempty(unknown)
 
         # …and every cohort-bearing fun in a category that HAS a button must be listed

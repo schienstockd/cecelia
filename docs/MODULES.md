@@ -263,7 +263,12 @@ only where one code carries two wordings — see the note on the catalog. The fo
   `write_qc` per image), so counting stays where the data is.
 - **Genuinely no objective signal** (e.g. a denoising/correction whose only failure mode is
   perceptual)? Say so in a comment and skip QC deliberately — do **not** invent a meaningless metric.
-  This is the *only* exemption, and it must be explicit.
+  This is the *only* exemption, and it must be explicit: a `# QC-EXEMPT: <reason>` comment by the
+  `_run_task` **and** an entry in `QC_EXEMPT` (fun_name → reason) in the `QC-required ratchet` testset
+  (`app/test/suite/ratchets.jl`). That ratchet scans the file(s) holding every registered task's
+  `_run_task` for `write_qc` (or a shared writer: `write_cluster_qc!`, `bank_segment_qc!`,
+  `write_metadata_qc!`) and fails a task that has neither QC nor the two-part exemption — and an
+  exemption that has gone stale because the task now banks QC.
 
 Reuse the shared helpers in `qc.jl` rather than re-deriving: `qc_finding`, `write_qc`,
 `qc_canvas_expansion` (spatial-transform tasks), `category_dist_metrics` (state/label distributions),

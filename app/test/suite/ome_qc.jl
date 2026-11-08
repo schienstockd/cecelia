@@ -859,6 +859,8 @@ end
                      # "tracking", `attr` the unit attribute, `variable` a flattened record key,
                      # `measure` the claim's measure, `n_images` images in scope, `p` a p-value floor
                      "pop", "kind", "attr", "variable", "measure", "n_images", "p", "imgs", "what",
+                     # gating QC (qc_gating.jl) — `column` a gate column the image's table lacks
+                     "column",
                      # Immunemap download (immunemap_fetch_qc_findings) — the file's and Immunemap's
                      # voxel size — see import.immunemap_spacing
                      "file", "published"])

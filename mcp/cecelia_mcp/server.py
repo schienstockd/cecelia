@@ -315,7 +315,14 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     One metric is a CATEGORY, not a count: `motionDims` (tracks measured in 2 or 3 dimensions). Its
     `median` is the set's most common value (null on a tie), and an outlier entry is {value, majority}:
     say the image was measured in <value>D while most of the set was <majority>D, so its speeds and
-    angles aren't comparable with the rest."""
+    angles aren't comparable with the rest.
+
+    GATES: fun_name "gating.flow" (cell gates) or "gating.track" (track gates) checks the set's
+    hand-drawn gates instead — computed, not banked, and nothing is written. Same {funName, valueNames,
+    byValueName} shape, but <doc>.metrics keys are the kinds of problem — `missingColumn` (a gate reads a
+    column the image lacks), `emptyPop` (empty here, has cells on other images), `pctOutlier` (% of
+    parent far from the set) — and each outlier entry is {pops: [...]}. Name the image and the pops; an
+    empty or odd population can be real biology, so say "check the gate", not "the gate is wrong"."""
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
