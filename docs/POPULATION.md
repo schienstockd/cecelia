@@ -122,6 +122,40 @@ matching labels + labelProps — `ccid.json` stays lean:
 Plain JSON — readable by Julia and Python. (This supersedes the earlier
 `ARCHITECTURE.md:248` "gating in ccid.json" plan.)
 
+**Gate history + content hashes** (`gating/popmanager/history.jl`). The sidecar is the CURRENT
+strategy and is overwritten in place; what a population or a run was made with is kept beside it:
+
+- **One writer.** Every gating write — the GUI routes, the MCP `add_gate` / `set_gate` / `delete_gate`
+  routes, gate copy, tasks, the REPL, a label-set rename — goes through `save_pop_map!`. When a write
+  changes any population's DEFINITION, it first appends the previous state to
+  `gating/{vn}[__type].history.jsonl` (one JSON per line, append-only, `append_jsonl!`):
+  `{at, author, valueName, popType, kind, changes:[{kind, path, previousPath?, hash?, previousHash?}], previous}`.
+  `author` is `author_stamp()`; `kind` is `add` / `delete` / `change` / `move` (a rename or re-parent,
+  matched by uid), `edit` for a mix, `rename` for a label-set rename; `previous` is the whole prior tree
+  (`null` on the first write). Colour, show and a uid backfill change no definition and record nothing.
+  GUI gate edits are not tasks, so this file — not the run log — is their record.
+- **Content hash.** `pop_gate_hashes(m)` → 16 hex chars of a SHA-256 per population over its gate
+  definition: its gate / filter / boolean record, its parent's hash (so moving a parent gate changes
+  every hash below it), the hashes of a boolean's terms, and — for a gate on a position axis — the map's
+  `spatial_unit`. Name, path, uid, colour and author stamps are not in it — a rename keeps the hash, a
+  copy of the gate onto another image has the same hash. It names the GATE, not the data: a
+  re-segmentation or a corrected pixel size changes the cells under the same hash.
+- **Runs record it.** The scheduler stamps the run-log entry's `gates` — `{valueName, path, hash,
+  popType?}` for every gated population the run reads through any population picker (`run_gates`; a
+  track analysis on `B/qc/_tracked` records the cell gate `/qc`, a track gate carries `popType:
+  "track"`) — so a run is tied to the exact gate. `gate_state_for_hash(task_dir, vn, hash)` finds that gate in the sidecar or
+  its history.
+- Absent history (projects from before it) = unknown; readers that list `gating/*.json` never see the
+  `.jsonl`. No UI browses the history yet.
+
+**`authored_labels_version` is always `v1` — not a bug.** `save_pop_map!(m, img)` stamps
+`resolve_version(img, :label_props, vn)`, the labels vN current at save. Segmentation and measurement
+overwrite their label set in place by design (only the pixel writers mint a `vN` under
+`keep_previous_version()`), so a label set never gets a `v2` and the breadcrumb (and its drift banner,
+`docs/todo/VN_VERSIONING_PLAN.md` → P3b) never moves. It still works for a hand-versioned label set.
+Which segmentation run a gate was drawn on is not recorded on the gate; the run log's `replaces` says
+when a label set was overwritten.
+
 **`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
 server → `POST /api/gating/pop/add-gate`) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
 `Population.created_by` round-trips it, and the manager marks the row with ✦ (`claudeProposal`,

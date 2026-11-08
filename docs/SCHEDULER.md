@@ -1147,11 +1147,12 @@ nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever 
 **What it read and what it replaced** — stamped at open by `run_provenance` (`app/src/run_log.jl`),
 from the task spec alone, so every task gets it with no per-task code. Re-runs overwriting their
 output is by design (`keep_previous_version()` is the opt-in that keeps image versions); the record is
-what says it happened. Both fields are absent on older entries and when there is nothing to say:
+what says it happened. All three fields are absent on older entries and when there is nothing to say:
 
 | field | what |
 |---|---|
 | `inputs` | `[{param, name, ns?, version?, pinned?}]` — every `valueNameSelection` param that does not write (the leaves `_history_leaves` reads for pre-flight and chain-from-history). An empty picker is resolved to the active name it meant. `version` is the pin (`params["version"]`, `pinned: true`) for `valueName`, else `_latest` of a fresh `ccid.json` read — on image versions and label sets; other namespaces carry the name only. Populations stay in `params` (`run_pop_reads`) |
+| `gates` | `[{valueName, path, hash, popType?}]` — every gated population the run reads (`run_gates`: every population picker, track pickers included — `B/qc/_tracked` reads the cell gate `/qc`; `popType: "track"` for a track gate; cluster/region pops are not gates), with the content hash of its gate definition when the run started (`pop_gate_hashes`; covers the parent chain — it names the gate, not the data: a re-segmentation changes cells under the same hash). Gates are edited in place; `gate_state_for_hash` finds the gate a hash names in the sidecar or `gating/{vn}.history.jsonl` (`docs/POPULATION.md` → Storage). A population not in the sidecar is left out |
 | `replaces` | `{name, ns?, version?, taskId?, at?, fun?}` when the output already existed and this run overwrites it: an image version (unless `keepPreviousVersion`), a label set (always — label writers never version), or for a write-into task (tracking) its earlier run on that label set. `taskId`/`at`/`fun` name the newest `done` run that made it, from the log or its archive; absent = the output predates the log or came from outside it |
 
 **The cap moves entries, it never drops them.** `runlog.json` is rewritten whole on every open and

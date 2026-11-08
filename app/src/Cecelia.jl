@@ -29,7 +29,7 @@ export viewer_chunk_cache_setting, viewer_chunk_cache_bytes, viewer_chunk_cache_
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
-export write_atomic, write_json_atomic
+export write_atomic, write_json_atomic, append_jsonl!, read_jsonl
 export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources
 export write_http_body!
 export safe_name_part, name_suffix, NAME_SUFFIX_MAX, numbered_name, derived_image_name
@@ -89,7 +89,7 @@ export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, rea
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
 export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired, claim_unit_attrs
-export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces
+export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces, run_gates
 export open_run_log!, close_run_log!, reap_run_log!, skip_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED, RUN_LOG_SKIPPED
 export run_author, run_env_of, read_run_env
 export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, lab_log_author_kind, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
@@ -136,6 +136,7 @@ export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
 export copy_gating!, with_popmap_lock
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
