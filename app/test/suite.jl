@@ -246,6 +246,7 @@ include(joinpath(@__DIR__, "suite", "gating.jl"))
 # this file's aggregating testset scope, so any helpers defined earlier in suite.jl are
 # still in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "pop_types.jl"))
+include(joinpath(@__DIR__, "suite", "pop_type_registry.jl"))
 
 # ── Filter-pop + compound + FilterFun/FilterCondition testsets ──────────
 # Five sections covering region composition column naming, compound filter populations

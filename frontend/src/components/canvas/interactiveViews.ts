@@ -1,6 +1,7 @@
 import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
-import type { PopTypeOption, PopTypeSpecLike } from '../../plots/popTypes'
+import { popTypeLabel, type PopTypeOption, type PopTypeSpecLike } from '../../plots/popTypes'
+import { TRACK_FAMILY_POP_TYPES } from '../../plots/popTypeRegistry'
 import ClusterMapView from '../plots/ClusterMapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
@@ -68,11 +69,8 @@ export interface InteractiveView {
 // population summary declares for the behaviour page, because it is the same question: which populations
 // of tracks. `granularity: 'track'` is what the picker lists; the plots then read those tracks' CELLS to
 // draw a path or measure a displacement, which is a property of the plot, not of the family.
-const TRACK_FAMILIES: PopTypeOption[] = [
-  { popType: 'live', granularity: 'track', label: 'Tracked' },
-  { popType: 'track', granularity: 'track', label: 'Tracked (gated)' },
-  { popType: 'trackclust', granularity: 'track', label: 'Track clusters' },
-]
+const TRACK_FAMILIES: PopTypeOption[] = TRACK_FAMILY_POP_TYPES.map(popType =>
+  ({ popType, granularity: 'track', label: popTypeLabel({ popType, granularity: 'track' }) }))
 
 // The flags are the surface "checkboxes": each host builds its picker with `pageViews`/`boardViews`
 // below, so a view appears on a surface with no host-side wiring (see docs/UI.md).

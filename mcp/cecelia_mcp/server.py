@@ -652,10 +652,11 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
     Per image `populations` is a flat list; each: `{path, name, parent, popType, valueName, colour,
     isTrack, gate, filter}`.
       - `path`/`parent` give the tree (a pop's cells are its gate/filter ∩ its parent).
-      - `popType`: flow/track = gate-drawn; clust/trackclust = cluster pops.
+      - `popType`: flow/track = gate-drawn; clust/trackclust/region = cluster pops; branch = filters on
+        skeleton branches (e.g. `branch-type`).
       - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
         …geometry}` — the drawn gate on two channels. null for filter pops.
-      - `filter` (clust/live): `{measure, fun, values}` — e.g. a cluster pop is
+      - `filter` (clust/trackclust/region/branch): `{measure, fun, values}` — e.g. a cluster pop is
         `{measure: "clusters.movement", fun: "in", values: [3]}`, which also ties it to that clustering run.
     `truncated: true` means the list was capped (many pops); the definitions are cheap sidecar reads.
 

@@ -5,10 +5,13 @@
 // region panel. Behaviour-preserving: returns "clusters." for every existing type, "regions." only for
 // the new `region` type.
 
+import { popTypeInfo } from '../plots/popTypeRegistry'
+
 export type ClusterPopType = 'clust' | 'trackclust' | 'region'
 
 export function clusterMeasurePrefix(popType: string): string {
-  return popType === 'region' ? 'regions.' : 'clusters.'
+  const i = popTypeInfo(popType)
+  return i?.cluster ? i.clusterPrefix : 'clusters.'
 }
 
 export function clusterMeasure(popType: string, suffix: string): string {
@@ -16,7 +19,7 @@ export function clusterMeasure(popType: string, suffix: string): string {
 }
 
 export function isClusterPopType(popType: string): boolean {
-  return popType === 'clust' || popType === 'trackclust' || popType === 'region'
+  return !!popTypeInfo(popType)?.cluster
 }
 
 // The HAND-DRAWN pop types — the frontend mirror of Julia's `GATING_POP_TYPES` (flow = cells,
@@ -24,5 +27,5 @@ export function isClusterPopType(popType: string): boolean {
 // population is a shape somebody drew, which is why they are the ones that carry undo/redo
 // (docs/POPULATION.md — a wrong drag destroys work no re-tick can restore).
 export function isGatingPopType(popType: string): boolean {
-  return popType === 'flow' || popType === 'track'
+  return !!popTypeInfo(popType)?.gating
 }

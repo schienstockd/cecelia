@@ -570,3 +570,28 @@ end
     end
   end
 end
+
+@testset "API: overlay legend — a region population colours its regions column" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    # The renderer colours a region overlay by `regions.{suffix}` from the region pops' own colours;
+    # the legend gathered pop colours from every pop type but `region`, so the key under that picture
+    # showed no region colours at all. Its types now come from the registry's cluster/gating types.
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        img, _ = _gating_image("testpr", "KDIeEm")
+        m = PopulationMap(; pop_type = "region", value_name = "B")
+        add_pop!(m, "niche"; filter_measure = "regions.r1", filter_fun = "in", filter_values = [1],
+                 colour = "#123456")
+        save_pop_map!(m, img)
+        items = overlay_legend_content(img, "regions.r1", nothing, nothing).colourBy["items"]
+        @test any(it -> it["value"] == "1" && it["colour"] == "#123456" && it["label"] == "niche", items)
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

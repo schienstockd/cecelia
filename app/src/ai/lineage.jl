@@ -62,7 +62,7 @@ end
 const _LINEAGE_POP_CAP = 100
 function _image_gated_pops(img::CciaImage, segs::AbstractVector)
     out = Vector{Any}()
-    for v in segs, pt in ("flow", "track")
+    for v in segs, pt in GATING_POP_TYPES
         isfile(gating_path(img._dir, v; pop_type = pt)) || continue
         ps = pop_paths(load_pop_map(img; value_name = v, pop_type = pt))
         isempty(ps) && continue

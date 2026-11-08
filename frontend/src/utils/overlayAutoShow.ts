@@ -17,6 +17,8 @@ import type { InFlightTaskRow } from './runningTasks'
 // (membership is track_ids) and render as ribbons via show-tracks. ONE list — the ViewerPanel toggle
 // row and the autoshow both derive from it, so adding a pop type can't restore-but-not-show (or the
 // reverse).
+// A literal tuple so `CellPopType` keys the toggle UI; popTypeRegistry.test.ts pins it to the registry.
+// POP-TYPES-OK: equals STORED_CELL_POP_TYPES, kept literal for the type
 export const CELL_POP_TYPES = ['flow', 'clust', 'region'] as const
 
 

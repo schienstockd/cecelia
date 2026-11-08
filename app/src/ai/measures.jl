@@ -50,6 +50,8 @@ end
 function _gated_by_value_name(img::CciaImage)
     d = Dict{String,Vector{Population}}()
     _observer_each_population(img) do p
+        # measure summaries are per cell or per track; a branch pop's rows are skeleton branches
+        p.pop_type === POP_BRANCH && return
         push!(get!(d, p.value_name, Population[]), p)
     end
     d

@@ -757,7 +757,7 @@ function api_gating_membership(req::HTTP.Request)
     isempty(pops) && return _gerr(400, "pops required")
     # one map serves every pop: `live` is `flow` plus the derived sets, so a mix of the two reads as live
     pts = unique(_read_pop_type(q, img, vn, p) for p in pops)
-    pt = length(pts) == 1 ? only(pts) : issubset(pts, ("flow", "live")) ? "live" : get(q, "popType", "flow")
+    pt = length(pts) == 1 ? only(pts) : all(p -> pop_map_type(p) == "flow", pts) ? "live" : get(q, "popType", "flow")
     m = _live_map(img, vn, pt; labels_version = _labels_version_pin(q))
     for p in pops
         (is_root(p) || has_pop(m, p)) || return _pop_not_found(m, p)

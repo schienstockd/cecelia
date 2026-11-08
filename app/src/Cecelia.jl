@@ -130,7 +130,8 @@ export boolean_dependents, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,
        parse_filter_fun, FilterCondition
 export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, tracked_pop_parents
-export GATING_POP_TYPES, is_gating_pop_type
+export GATING_POP_TYPES, is_gating_pop_type, STORED_POP_TYPES, CLUSTER_POP_TYPES, TRACK_FAMILY_POP_TYPES
+export POP_TYPE_REGISTRY, POP_TYPE_PROBE_ORDER, PopTypeInfo, pop_type_info, pop_map_type
 export SPATIAL_UNIT_PX, SPATIAL_UNIT_UM, is_spatial_axis, has_spatial_gate
 export flatten_pop_tree, plot_pop_types, plot_population_groups
 export is_track_pop, pop_category, population_scope_groups, population_accept_groups

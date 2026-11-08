@@ -21,16 +21,15 @@ end
 # The identity header every per-image summary entry starts with, so builders don't each re-spell it.
 _observer_image_header(img::CciaImage) = (; uid = img.uid, name = img.name, included = image_included(img))
 
-# The gate/pop_type flavours a value_name can carry a persisted gating file for (flow/track = gate-drawn;
-# clust/trackclust = cluster pops). "live" derived pops (e.g. _tracked) are NOT persisted maps — they're
-# addressed directly through pop_df, not enumerated here.
-const _OBSERVER_POP_TYPES = ("flow", "track", "clust", "trackclust", "region")
+# Every pop_type a value_name can carry a persisted gating file for is `STORED_POP_TYPES` (registry.jl),
+# branch included. "live" derived pops (e.g. _tracked) are NOT persisted maps — they're addressed
+# directly through pop_df, not enumerated here.
 
 # Iterate every persisted (non-transient) population on an image — `f(pop)` per pop, across the image's
 # segmentations × pop_type flavours. The shared enumerator for the population-based summary tools
 # (definitions AND measures), so the "walk the gating maps" loop lives once.
 function _observer_each_population(f::Function, img::CciaImage)
-    for v in sort(img_value_names(img)), pt in _OBSERVER_POP_TYPES
+    for v in sort(img_value_names(img)), pt in STORED_POP_TYPES
         # A CLUSTER pop_type often has NO sidecar of its own: cluster pops are global to a run and
         # shared across its co-clustered segmentations, so the names are authored under one of them
         # (e.g. B) and `load_pop_map` lends them, relabeled, to every sibling that carries the same

@@ -14,7 +14,8 @@
 #    "flow" is an alias for "live" (both read the same flow gate map). Each surviving population is
 #    tagged (granularity, category) via `is_track_pop`/`pop_category` so the picker groups it. ──────
 
-const ACCEPT_TOKENS = ("live", "flow", "clust", "trackclust", "region", "track", "branch")
+# every stored type names a map to load; `live` is the derived view of flow's map (registry.jl).
+const ACCEPT_TOKENS = ("live", STORED_POP_TYPES...)
 
 # canonicalise: fold "flow"→"live", dedup, preserve order.
 _normalise_accepts(accepts) = unique(String[String(a) == "flow" ? "live" : String(a) for a in accepts])
@@ -75,7 +76,7 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
                                   derived_ok::Function = (_v, _pt, _parent, _dpath) -> true)
     acc = _normalise_accepts(accepts)
     isempty(acc) && error("accepts is empty — a popSelection must declare at least one pop_type")
-    bad = setdiff(acc, ("live", "clust", "trackclust", "region", "track", "branch"))
+    bad = setdiff(acc, ACCEPT_TOKENS)
     isempty(bad) || error("unknown accepts token(s): $(join(bad, ", ")) " *
                           "(expected any of live/flow, clust, trackclust, region, track, branch)")
     groups = plot_population_groups(imgs, value_names_for, load_map, _accept_pop_types(acc);
@@ -111,10 +112,13 @@ end
 # ours to migrate), and the UMAP view's colour-by picker (`ClusterMapView.vue`, `popScope` +
 # `includeClusters=false` on /api/plots/populations). Delete it only when both are gone.
 function _scope_accepts(scope::AbstractString, include_clusters::Bool)::Vector{String}
+    # the scope's cluster tokens = the registry's cluster types of that grain (cells: clust, region;
+    # tracks: trackclust)
+    clusters_of(grain) = String[pt for pt in CLUSTER_POP_TYPES if pop_type_info(pt).grain === grain]
     if String(scope) == "tracks"
-        acc = ["track"]; include_clusters && push!(acc, "trackclust")
+        acc = ["track"]; include_clusters && append!(acc, clusters_of(:track))
     elseif String(scope) == "cells"
-        acc = ["live"]; include_clusters && append!(acc, ("clust", "region"))
+        acc = ["live"]; include_clusters && append!(acc, clusters_of(:cell))
     else
         error("unknown popScope: $scope (expected \"cells\" or \"tracks\")")
     end

@@ -20,6 +20,19 @@ gating module. Gating is one way to *define* a population; the manager, the unif
 | `region` | a filter on the **spatial region** column (`filter_fun="in"` over `regions.{suffix}`) | cell H5AD `.obs` column (clustRegions) | `gating/{vn}__region.json` |
 | `branch` | filters on **per-branch** properties (typically `branch-type`) | branch sidecar `labelProps/{vn}__branch.h5ad` | `gating/{vn}__branch.json` |
 
+**One registry.** The table above lives in code as `POP_TYPE_REGISTRY`
+(`app/src/gating/popmanager/registry.jl`): per type its label, sidecar suffix, the map its pops live
+in (`live` → `flow`), whether it is hand-drawn gating, a cluster filter (and on which column family),
+its grain (cell / track / branch), picker category and whether it is a board track family. Every list
+of pop types derives from it — `STORED_POP_TYPES` (every walk of an image's gating maps),
+`GATING_POP_TYPES`, `CLUSTER_POP_TYPES`, `TRACK_FAMILY_POP_TYPES`, `POP_TYPE_PROBE_ORDER`,
+`POP_MAP_SUFFIX`. The frontend reads the same rows from `frontend/src/plots/popTypeRegistry.json`
+(`write_pop_type_registry_json()`; a test fails when it is stale) through `plots/popTypeRegistry.ts`
+— a static import, because the predicates run in render paths that can't wait on a fetch. A
+hand-written list of pop-type literals fails the `pop-type registry ratchet` (Julia, `ratchets.jl`)
+and `utils/popTypeRegistry.test.ts` (TS); a deliberate subset or priority order carries
+`POP-TYPES-OK: <reason>` on its line. Adding a type = a `PopType` value + a registry row.
+
 All types share: a population tree (name, colour, path, parent, show), a `pop_df`
 accessor returning a filtered `DataFrame` regardless of type, and membership that is
 **derived**, never duplicated into the H5AD.

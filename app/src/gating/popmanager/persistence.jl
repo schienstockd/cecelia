@@ -124,24 +124,10 @@ end
 # ── Persistence: {task_dir}/gating/{value_name}[__tracks].json ───────────────────
 # Each pop_type with its OWN stored map gets a distinct sidecar suffix, mirroring the data source
 # it gates over: `flow` → `gating/{vn}.json` (cell gates); `track` → `gating/{vn}__tracks.json`
-# (per-track gates); `clust`/`trackclust` → `gating/{vn}__clust.json` / `__trackclust.json`
-# (cluster-membership pops — a filter on the `clusters.{suffix}` column written by clustPops/
-# clustTracks). The tree format + engine are identical across types (only the data source +
-# membership rule differ). `live` is NOT here: it is derived off the `flow` map (no own file).
-const POP_MAP_SUFFIX = Dict{String,String}(
-    "track"      => TRACK_PROPS_SUFFIX,   # "__tracks"
-    "clust"      => "__clust",
-    "trackclust" => "__trackclust",
-    "region"     => "__region",           # spatial region pops — a filter on `regions.{suffix}`
-    "branch"     => BRANCH_PROPS_SUFFIX,  # "__branch" — skeleton branch pops (docs/todo/BRANCHING_PLAN.md)
-)
-
-# The pop types that are hand-drawn *gating* (a gate geometry per pop), as opposed to the
-# filter/membership pop types (clust/trackclust) and the derived `live`. `flow` gates cells, `track`
-# gates tracks — one abstraction over both so gating features (e.g. copy-to-images, the defining-plot
-# view) treat them uniformly instead of special-casing flow. Single source of truth.
-const GATING_POP_TYPES = ("flow", "track")
-is_gating_pop_type(pop_type) = string(pop_type) in GATING_POP_TYPES
+# (per-track gates); `clust`/`trackclust`/`region`/`branch` → `gating/{vn}__<type>.json`. The tree
+# format + engine are identical across types (only the data source + membership rule differ). `live`
+# has no own file: it is derived off the `flow` map. The suffixes (`POP_MAP_SUFFIX`) and the gating
+# types (`GATING_POP_TYPES`, `is_gating_pop_type`) come from the pop-type registry (registry.jl).
 gating_dir(task_dir::AbstractString) = joinpath(task_dir, "gating")
 gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::PopTypeArg="flow") =
     joinpath(gating_dir(task_dir), value_name * get(POP_MAP_SUFFIX, string(pop_type), "") * ".json")

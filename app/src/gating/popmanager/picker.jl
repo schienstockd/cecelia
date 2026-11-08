@@ -166,12 +166,11 @@ function pop_category(pop_type::PopTypeArg, path::AbstractString)::String
     leaf = String(last(split(String(path), '/')))
     leaf == AGGREGATED_POP_NAME && return "aggregated"
     haskey(_DERIVED_POPS, leaf) && return "tracked"        # e.g. _tracked
-    pt = string(pop_type)
-    pt == "region" && return "region"
-    pt in ("clust", "trackclust") && return "clustered"
-    # branch pops: hand-drawn / ensure_filter_pop!-created filters on the branch table (typically
-    # `branch-type`) — same category as flow gates. Granularity = "branch" is what distinguishes them.
-    "gated"
+    # the registry's category: region → "region", clust/trackclust → "clustered", the rest "gated" —
+    # branch pops (filters on the branch table, typically `branch-type`) included; granularity
+    # "branch" is what distinguishes them.
+    i = pop_type_info(pop_type)
+    i === nothing ? "gated" : i.category
 end
 
 """
