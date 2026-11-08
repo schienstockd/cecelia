@@ -215,6 +215,7 @@ export async function setChunkCache(value: string): Promise<{ current: string; s
 /**
  * VN versioning: when true, a re-run of a producing task mints the next `vN` alongside the current
  * version instead of overwriting. Backend routes through `version_write!` (the P2 guarded writer).
+ * Image versions only: label sets are always overwritten, whatever the toggle says.
  *
  * Server-side setting persisted as `[zarr].keepPreviousVersion`, default off — a niche opt-in for
  * humans (A/B comparison, publication freeze, chain branching, regression investigation, sharing

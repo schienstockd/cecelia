@@ -8,7 +8,7 @@
 #   fail — the step cannot work here: a channel the image lacks, an input that is neither on the image
 #          nor made earlier in the chain
 #   warn — it will run, but not as you may expect: skipped (missing axis / pixel size), or it replaces
-#          an output the image already has
+#          an output the image already has (an image version only while keepPreviousVersion is off)
 
 # The image field a name in namespace `ns` lives in ("" = image versions). `nothing` = not checkable here.
 function _preflight_fields(ns::String)
@@ -69,8 +69,10 @@ function chain_preflight(proj::CciaProject, t::ChainTemplate, image_uids::Vector
                 end
             end
             out, ns = _history_output(n.fn, n.params, leaves)
+            # keepPreviousVersion mints a new version only for image versions (ns ""); a label set is
+            # always overwritten (its writers never version), so it warns whatever the toggle says
             if !isempty(out) && out != VERSIONED_DEFAULT_VAL && _preflight_fields(ns) !== nothing &&
-               _preflight_has(img, out, ns) && !keep_previous_version()
+               _preflight_has(img, out, ns) && (ns != "" || !keep_previous_version())
                 add!(uid, n, "warn", "replaces the existing '$out'")
             end
         end

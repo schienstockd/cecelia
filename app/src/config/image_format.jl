@@ -438,7 +438,8 @@ end
 # `[zarr].keepPreviousVersion` — when true, a re-run of a producing task (starting with ingest) mints
 # the next `vN` alongside the current one via `version_write!` (the P2 infra guarded writer), so the
 # prior version's store survives on disk. When false (default), the task overwrites in place — the
-# behaviour every existing user relies on.
+# behaviour every existing user relies on. Image versions only: label sets (labels / label_props /
+# branch_labels) are always overwritten, toggle or not (`unversioned_set_field!`).
 #
 # The toggle is a niche opt-in for humans (A/B compare, publication freeze, chain branching,
 # regression investigation, sharing intermediates); the same knob is what future autonomous execution

@@ -205,6 +205,7 @@ include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
 include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
+include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
 

@@ -217,7 +217,7 @@ export flow_model_filename
 export MeasureLabels, SegmentCorrect, parse_label_ops
 export SegmentCorrectCarryOverSnapshot, SegmentCorrectCarryOverRestore
 export SegmentStalenessReport, TrackingStalenessReport
-export stale_artefacts_for, staleness_sidecar_path
+export stale_artefacts_for, staleness_sidecar_path, stale_outputs_for
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
