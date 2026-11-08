@@ -18,6 +18,8 @@ import { buildBoardSvgs } from '../../plots/boardSvg'
 import { downloadBlob, downloadText, svgSizeWarning } from '../../plots/export'
 import { zipTextFiles } from '../../utils/zip'
 import { historyParamsUrl, historyParamsCsv, type HistoryParamsRow, type BoardParamsScope } from '../../utils/chainFromHistory'
+import { boardProvenanceUrl, buildProvenanceRecord, recordForBoard, resolveParamsExport, snapshotScope,
+         type BoardProvenanceResponse, type ParamsSnapshot, type ProvenanceBoardIn } from '../../utils/boardProvenance'
 import { waitForPlotsIdle } from '../../utils/plotReady'
 import { walkAssetRefs, collectAssetIds } from '../../utils/boardAssets'
 import { useLogStore } from '../../stores/log'
@@ -116,7 +118,8 @@ function onDrop(targetId: number) {
 type CapturedPage = { aspect: number; slots: { rect: { x: number; y: number; w: number; h: number }; png: string | null; svg?: string | null; name?: string; csv?: string | null }[] }
 const layoutRef = useTemplateRef<{ capturePage: (vector?: boolean) => Promise<CapturedPage>
   collectCsvs: () => Promise<{ name: string; csv: string | null }[]>
-  paramsScope: () => BoardParamsScope }>('layoutRef')
+  paramsScope: () => BoardParamsScope
+  paramsSnapshot: () => ParamsSnapshot | null }>('layoutRef')
 // ONE export pass for the whole board — a single spinner, a single walk over the tabs. Figure and CSV
 // share the exact same "visit each tab, let it render, capture" dance, so the dropdown offers combined
 // items (PDF + CSV, …) that do BOTH in one pass: no second click, no two spinners, and no chance of two
@@ -130,6 +133,8 @@ async function runExport(figure: 'pdf' | 'svg' | null, csv: boolean) {
   try {
     const pages: { title: string; aspect: number; slots: CapturedPage['slots'] }[] = []
     const csvFiles: { name: string; text: string }[] = []
+    // the provenance each figure embeds, one entry per captured page (null = it could not be read)
+    const prov: (ProvenanceBoardIn | null)[] = []
     for (const t of tabs.value) {
       tabsStore.setActive(groupKey, t.id)
       await nextTick()
@@ -139,7 +144,10 @@ async function runExport(figure: 'pdf' | 'svg' | null, csv: boolean) {
       if (figure) {
         // raster page for PDF, vector page for SVG (same layout math, different slot content)
         const page = await layoutRef.value?.capturePage?.(figure === 'svg')
-        if (page) pages.push({ title: t.name, aspect: page.aspect, slots: page.slots })
+        if (page) {
+          pages.push({ title: t.name, aspect: page.aspect, slots: page.slots })
+          prov.push(await boardProvenance(t.name))
+        }
       }
       if (csv) {
         for (const { name, csv: data } of (await layoutRef.value?.collectCsvs?.()) ?? []) {
@@ -150,13 +158,16 @@ async function runExport(figure: 'pdf' | 'svg' | null, csv: boolean) {
     tabsStore.setActive(groupKey, original)
     await nextTick()
 
+    // one record across the boards, or none at all: a record missing a board would misdescribe the file
+    const record = prov.every(Boolean) ? buildProvenanceRecord(prov as ProvenanceBoardIn[], new Date().toISOString()) : null
+    if (figure && pages.length && !record) log.warn('Exported without provenance — could not read it.', { source: 'analysis' })
     if (figure === 'pdf' && pages.length) {
-      await exportTabsToPdf(pages, 'analysis.pdf')
+      await exportTabsToPdf(pages, 'analysis.pdf', record)
       log.info('Exported analysis boards to PDF.', { source: 'analysis' })
     } else if (figure === 'svg' && pages.length) {
       // stitch one SVG per board (same A4 layout as the PDF); dots/gates/summary are editable vector,
       // image + HMM slots embed as raster. One `.svg` for a single board; a `.zip` when several.
-      const boards = buildBoardSvgs(pages)
+      const boards = buildBoardSvgs(pages, i => (record ? JSON.stringify(recordForBoard(record, i)) : undefined))
       // non-blocking heads-up if a board came out heavy (a big UMAP/point cloud kept as vector)
       for (const b of boards) { const warn = svgSizeWarning(b.svg, `Board “${b.title}”`); if (warn) log.warn(warn, { source: 'analysis' }) }
       if (boards.length === 1) downloadText(`${safe(boards[0].title) || 'analysis'}.svg`, boards[0].svg, 'image/svg+xml')
@@ -175,6 +186,17 @@ async function runExport(figure: 'pdf' | 'svg' | null, csv: boolean) {
     log.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
   } finally { exporting.value = false }
 }
+// What the mounted board shows, for its figure's provenance record (`board_export_provenance`).
+async function boardProvenance(title: string): Promise<ProvenanceBoardIn | null> {
+  const scope = layoutRef.value?.paramsScope()
+  if (!scope || !props.imageUids.length) return null
+  try {
+    const res = await fetch(boardProvenanceUrl(projectUid.value, props.imageUids, scope))
+    if (!res.ok) return null
+    return { title, server: await res.json() as BoardProvenanceResponse, snapshot: layoutRef.value?.paramsSnapshot() ?? null,
+             scope: snapshotScope(props.imageUids, scope) }
+  } catch { return null }
+}
 // dropdown value → (figure format, include CSV)
 function exportBoard(kind: string) {
   const map: Record<string, ['pdf' | 'svg' | null, boolean]> = {
@@ -187,7 +209,9 @@ function exportBoard(kind: string) {
 }
 
 // The ACTIVE board's parameter table: the steps behind its plots, cut from the run history of the
-// images it shows (`history_params_table` with the board's populations + cluster run).
+// images it shows (`history_params_table` with the board's populations + cluster run). Exported from
+// the board's frozen snapshot when it has one, with today's differing rows added and flagged
+// (`resolveParamsExport`); an older board without one exports the rebuild, marked `rebuilt`.
 async function exportParams() {
   const scope = layoutRef.value?.paramsScope()
   if (exporting.value || !scope || !props.imageUids.length) return
@@ -196,10 +220,12 @@ async function exportParams() {
     const res = await fetch(historyParamsUrl(projectUid.value, props.imageUids, scope))
     const d = await res.json() as { rows?: HistoryParamsRow[]; error?: string }
     if (!res.ok || !d.rows) throw new Error(d.error ?? res.statusText)
-    if (!d.rows.length) { log.info('No recorded steps behind this board.', { source: 'analysis' }); return }
+    const out = resolveParamsExport(layoutRef.value?.paramsSnapshot(), d.rows, snapshotScope(props.imageUids, scope))
+    if (!out.rows.length) { log.info('No recorded steps behind this board.', { source: 'analysis' }); return }
     const name = tabs.value.find(t => t.id === activeId.value)?.name ?? 'board'
-    downloadText(`${safe(name)}_parameters.csv`, historyParamsCsv(d.rows), 'text/csv')
-    log.info(`Exported the parameters behind "${name}".`, { source: 'analysis' })
+    downloadText(`${safe(name)}_parameters.csv`, historyParamsCsv(out.rows), 'text/csv')
+    if (out.differs) log.warn(`"${name}": parameters changed since its plots were made — CSV lists both.`, { source: 'analysis' })
+    else log.info(`Exported the parameters behind "${name}"${out.source === 'rebuilt' ? ' (rebuilt — board predates snapshots)' : ''}.`, { source: 'analysis' })
   } catch (e) {
     log.error(`Parameter export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
   } finally { exporting.value = false }

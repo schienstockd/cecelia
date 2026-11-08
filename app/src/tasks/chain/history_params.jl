@@ -91,7 +91,7 @@ _hp_show(v) = _hp_empty(v) ? "(none)" : v isa AbstractString ? v :
 
 One row per step that ran on `image_uids` (grouped as `chain_from_history` groups them), for a Methods
 table: `step`, `task`, `output`, `images` (`"n/N"`), `lastRun`, `relation` (scoped only: `made` /
-`ran on`), `changedFromDefault` (`key=value; …`,
+`ran on`), `taskIds` (the run-log task ids behind the row), `changedFromDefault` (`key=value; …`,
 only params every image ran with the same non-default value), `conflicts` (`key: a (n) | b (m); …`,
 params the images disagree on), `note` (why a step is not something a chain replays, or why its
 params are unknown).
@@ -162,7 +162,10 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
             "output" => out_name, "images" => "$(length(by_img))/$N",
             "lastRun" => maximum(r.at for r in values(by_img)),
             "changedFromDefault" => join(changed, "; "), "conflicts" => join(conflicts, "; "),
-            "note" => note, "relation" => relation))
+            "note" => note, "relation" => relation,
+            # the run-log task ids of the runs this row reports (one per image's latest run; a chain
+            # record or an entry from before task ids were logged has none) — the export provenance
+            "taskIds" => sort!(unique(String[r.taskId for r in values(by_img) if !isempty(r.taskId)]))))
     end
 
     # runs with no params to report — logged before params were recorded, or a task that is gone —
@@ -181,14 +184,14 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
     for ((fn, w), uids) in sort!(collect(lost); by = first)
         push!(out, Dict{String,Any}("step" => fn, "task" => fn, "output" => "", "images" => "$(length(uids))/$N",
                                     "lastRun" => "", "changedFromDefault" => "", "conflicts" => "",
-                                    "note" => "parameters unknown — $w", "relation" => ""))
+                                    "note" => "parameters unknown — $w", "relation" => "", "taskIds" => String[]))
     end
     # what the board shows that no recorded run made: said, so a gap never reads as a complete answer
     for (what, _) in unmade
         push!(out, Dict{String,Any}("step" => what, "task" => "", "output" => "", "images" => "",
                                     "lastRun" => "", "changedFromDefault" => "", "conflicts" => "",
                                     "note" => "no recorded run made this — ran before the run log, or outside Cecelia",
-                                    "relation" => "made"))
+                                    "relation" => "made", "taskIds" => String[]))
     end
     out
 end

@@ -261,7 +261,7 @@ end
 #    removing a route without updating it fails here rather than in production.
 @testset "HTTP router — the full route table still dispatches" begin
     GET_ROUTES = [
-        "/api/analysis/behaviour", "/api/analysis/boards",
+        "/api/analysis/behaviour", "/api/analysis/board-provenance", "/api/analysis/boards",
         "/api/analysis/chains",
         "/api/analysis/clusters", "/api/analysis/lineage",
         "/api/analysis/measures", "/api/analysis/populations",
@@ -501,7 +501,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 123 && length(POST_ROUTES) == 186
+    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 186
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

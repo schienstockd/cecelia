@@ -119,18 +119,25 @@ export interface HistoryParamsRow {
   conflicts: string          // "key: a (n) | b (m); …" — the images disagree
   note: string               // why it is not something a chain repeats, or why its params are unknown
   relation?: HistoryRelation // board-scoped only
+  taskIds?: string[]         // the run-log task ids behind the row (export provenance; not a CSV column)
+  recorded?: string          // board export only: frozen <time> / rebuilt / now (differs) — utils/boardProvenance
 }
 
 /** What an analysis board shows, for cutting the table to it: population keys + its cluster runs. */
 export interface BoardParamsScope { pops: string[]; clusterRuns: string[] }
 
 export function historyParamsUrl(projectUid: string, imageUids: string[], scope?: BoardParamsScope): string {
+  return `/api/chains/history-params?${boardScopeQuery(projectUid, imageUids, scope)}`
+}
+
+/** The query every board-scoped read takes (backend `_board_scope_query`): history-params, board-provenance. */
+export function boardScopeQuery(projectUid: string, imageUids: string[], scope?: BoardParamsScope): URLSearchParams {
   const q = new URLSearchParams({ projectUid, imageUids: imageUids.join(',') })
   if (scope) {   // JSON, not a comma list: population names may hold commas
     q.set('pops', JSON.stringify(scope.pops))
     q.set('clusterRuns', JSON.stringify(scope.clusterRuns))
   }
-  return `/api/chains/history-params?${q}`
+  return q
 }
 
 /**
@@ -153,11 +160,14 @@ export function boardParamsScope(
 
 /**
  * The table as CSV, columns in a fixed order (the backend's JSON objects carry no key order). A
- * board-scoped table adds `relation` after `output`; the whole-history one has none to say.
+ * board-scoped table adds `relation` after `output`; the whole-history one has none to say. A board
+ * export leads with `recorded` — whether each row is the board's frozen snapshot or a rebuild.
  */
 export function historyParamsCsv(rows: HistoryParamsRow[]): string {
   const scoped = rows.some(r => r.relation)
+  const recorded = rows.some(r => r.recorded)
   return rowsToCsv(rows.map(r => ({
+    ...(recorded ? { recorded: r.recorded ?? '' } : {}),
     step: r.step, task: r.task, output: r.output, ...(scoped ? { relation: r.relation ?? '' } : {}),
     images: r.images, last_run: r.lastRun,
     changed_from_default: r.changedFromDefault, differs_between_images: r.conflicts, note: r.note,

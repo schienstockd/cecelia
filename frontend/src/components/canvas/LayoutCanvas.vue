@@ -17,7 +17,7 @@
 -->
 <script setup lang="ts">
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
-import { computed, watch, ref, provide, nextTick, useTemplateRef } from 'vue'
+import { computed, watch, ref, provide, nextTick, useTemplateRef, onBeforeUnmount } from 'vue'
 import { awaitIdle, anyBusy } from '../../utils/awaitIdle'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import CanvasZoomControl from './CanvasZoomControl.vue'
@@ -40,7 +40,10 @@ import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
 import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
-import { boardParamsScope, type BoardParamsScope } from '../../utils/chainFromHistory'
+import { boardParamsScope, historyParamsUrl, type BoardParamsScope, type HistoryParamsRow } from '../../utils/chainFromHistory'
+import { snapshotScope, paramsScopeKey, snapshotDue } from '../../utils/boardProvenance'
+import { debouncedLatest } from '../../utils/debouncedLatest'
+import { waitForPlotsIdle } from '../../utils/plotReady'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
 import ModelVault from '../../modules/modelTraining/ModelVault.vue'
@@ -549,7 +552,33 @@ function paramsScope(): BoardParamsScope {
   }))
   return boardParamsScope(slots, { popType: clustPopType.value, suffix: clustSuffix.value })
 }
-defineExpose({ capturePage, collectCsvs, paramsScope })
+// ── Frozen Parameters snapshot (utils/boardProvenance) ──────────────────────
+// Re-taken when a plot is added, replaced or re-scoped, so the export can say what the board was made
+// with instead of rebuilding it. Taken once the board's plots are idle (a selection still settling is
+// not an edit) and re-checked then; the debounce makes a burst of edits one request.
+const plotSig = computed(() => entry.value.contents.map(c => (c ? `${c.kind}:${c.ref}` : '')))
+// the slots the board was OPENED with; a board replaced from disk (another client's write → `load()`)
+// is opened afresh, so its new slots are not an edit made here
+let baselinePlots = [...plotSig.value]
+watch(entry, (n, o) => { if (n !== o) baselinePlots = [...plotSig.value] })
+function snapKeyNow() {
+  const sc = snapshotScope(props.imageUids, paramsScope())
+  return { sc, key: paramsScopeKey(sc, plotSig.value) }
+}
+const snapshotter = debouncedLatest<void>(async (_arg, isCurrent) => {
+  await waitForPlotsIdle()
+  const { sc, key } = snapKeyNow()
+  if (!projectUid.value || !sc.imageUids.length || !isCurrent() ||
+      !snapshotDue(entry.value.paramsSnapshot, key, plotSig.value, baselinePlots)) return
+  const res = await fetch(historyParamsUrl(projectUid.value, sc.imageUids, { pops: sc.pops, clusterRuns: sc.clusterRuns }))
+  const d = await res.json().catch(() => null) as { rows?: HistoryParamsRow[] } | null
+  if (!res.ok || !d?.rows || !isCurrent() || snapKeyNow().key !== key) return
+  entry.value.paramsSnapshot = { takenAt: new Date().toISOString(), key, scope: sc, rows: d.rows }
+}, { wait: 1500, onError: e => console.warn('[board] parameters snapshot failed', e) })
+watch(() => snapKeyNow().key, () => snapshotter.schedule(), { immediate: true })
+onBeforeUnmount(() => snapshotter.cancel())
+
+defineExpose({ capturePage, collectCsvs, paramsScope, paramsSnapshot: () => entry.value.paramsSnapshot ?? null })
 
 // ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
 // LayoutCanvas is a GRID canvas — docked CanvasPanels skip `setGeom`, so the composable's default

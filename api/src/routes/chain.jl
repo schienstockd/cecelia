@@ -133,6 +133,14 @@ end
 # `pops` (a JSON array of board population keys — pop names may hold commas) + `clusterRuns` (JSON array
 # of `"popType:suffix"`) cut it to what an analysis board shows; absent = the whole history.
 function api_chains_history_params(req::HTTP.Request)
+    s = _board_scope_query(req)
+    s isa Tuple{Int,String} && return s
+    200, JSON3.write((; rows = history_params_table(s.proj, s.uids; s.pops, cluster_runs = something(s.runs, String[]))))
+end
+
+# The query both board-scoped reads take: `projectUid`, `imageUids`, and the JSON-array `pops` +
+# `clusterRuns`. Returns `(; proj, uids, pops, runs)`, or an `(status, body)` error tuple.
+function _board_scope_query(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     uid  = get(q, "projectUid", "")
     uids = _query_list(q, "imageUids")
@@ -142,7 +150,20 @@ function api_chains_history_params(req::HTTP.Request)
         return 400, JSON3.write((; error="pops and clusterRuns must be JSON arrays of strings"))
     end
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
-    200, JSON3.write((; rows = history_params_table(proj, uids; pops, cluster_runs = something(runs, String[]))))
+    (; proj, uids, pops, runs)
+end
+
+# GET /api/analysis/board-provenance?projectUid&imageUids&pops&clusterRuns → the provenance record one
+# board's exported figure embeds (`board_export_provenance`: version, project, images, populations +
+# gate files, the runs behind it), plus `author` — the `author_stamp()` of whoever is exporting.
+# Read-only; the client adds the export time and assembles the boards (utils/boardProvenance.ts).
+function api_analysis_board_provenance(req::HTTP.Request)
+    s = _board_scope_query(req)
+    s isa Tuple{Int,String} && return s
+    rec = board_export_provenance(s.proj, s.uids; pops = something(s.pops, String[]),
+                                  cluster_runs = something(s.runs, String[]))
+    rec["author"] = author_stamp()
+    200, JSON3.write(rec)
 end
 
 # POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,
