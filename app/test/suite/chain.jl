@@ -655,6 +655,154 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Chain run record — effective params + overrides, and replay from a past run ──
+# docs/SCHEDULER.md → *Template vs run record* / *Replay*. A run records what it was asked to run with
+# (the caller's overrides + each step's params with spec defaults filled), and a new run can start from
+# a past run's FROZEN template + those overrides instead of the current template.
+@testset "Chain run record — effective params, overrides and replay" begin
+    proj = create_project!(name="chain-replay-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm) end
+    uids = [i.uid for i in imgs]
+    save_chain_template!(proj, ChainTemplate("replay-chain",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
+                   params=Dict{String,Any}("message" => "from template"))],
+        ChainEdge[]))
+
+    run = run_chain(proj, uids; chain = "replay-chain", on_log = _ -> nothing,
+                    overrides = Dict{String,Any}("n1" => Dict("waitMs" => 1)))
+    @test all(run.image_states[u]["n1"].status == NODE_DONE for u in uids)
+    @test run.overrides == Dict{String,Any}("n1" => Dict{String,Any}("waitMs" => 1))
+    # waitMs from the override, message from the template
+    @test run.node_params["n1"]["waitMs"] == 1
+    @test run.node_params["n1"]["message"] == "from template"
+    @test run.from_run == ""
+
+    # run.json round-trip
+    doc = JSON3.read(read(joinpath(run._dir, "run.json"), String))
+    @test doc[:overrides][:n1][:waitMs] == 1
+    @test doc[:node_params][:n1][:message] == "from template"
+    @test !haskey(doc, :from_run)                         # written only on a replay
+    loaded = load_chain_run(proj, run.id)
+    @test loaded.overrides == run.overrides
+    @test loaded.node_params == run.node_params
+    @test loaded.from_run == ""
+
+    # a spec default nobody set is in the record: drop `message` from a fresh template
+    save_chain_template!(proj, ChainTemplate("defaults-chain",
+        [ChainNode(id="d1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
+        ChainEdge[]))
+    drun = run_chain(proj, uids[1:1]; chain = "defaults-chain", on_log = _ -> nothing)
+    @test drun.overrides == Dict{String,Any}()            # known: none (not `nothing`)
+    @test drun.node_params["d1"] == Dict{String,Any}("waitMs" => 0, "message" => "imageTask ran")
+
+    # Replay: the CURRENT template has moved on, the replay runs the frozen one + recorded overrides
+    save_chain_template!(proj, ChainTemplate("replay-chain",
+        [ChainNode(id="n1", fn="testTasks.image_task", scope="image",
+                   params=Dict{String,Any}("message" => "edited since"))],
+        ChainEdge[]))
+    rerun = run_chain(proj, String[]; from_run = run.id, on_log = _ -> nothing)
+    @test rerun.id != run.id
+    @test rerun.from_run == run.id
+    @test rerun.chain_name == "replay-chain"
+    @test sort(rerun.image_uids) == sort(uids)            # empty image_uids = the source's images
+    @test rerun.template_hash == run.template_hash
+    @test rerun.node_params == run.node_params            # message "from template", waitMs 1
+    @test all(rerun.image_states[u]["n1"].status == NODE_DONE for u in uids)
+    @test JSON3.read(read(joinpath(rerun._dir, "run.json"), String))[:from_run] == run.id
+    @test load_chain_run(proj, rerun.id).from_run == run.id
+
+    # a caller override on a replay merges per node over the recorded ones
+    rerun2 = run_chain(proj, uids[1:1]; from_run = run.id, on_log = _ -> nothing,
+                       overrides = Dict{String,Any}("n1" => Dict("message" => "now")))
+    @test rerun2.image_uids == uids[1:1]
+    @test rerun2.overrides["n1"] == Dict{String,Any}("waitMs" => 1, "message" => "now")
+    @test rerun2.node_params["n1"]["message"] == "now"
+
+    # a replay whose re-resolved params differ from the source's record says so, per value
+    src_doc = JSON3.read(read(joinpath(run._dir, "run.json"), String), Dict{String,Any})
+    src_doc["node_params"]["n1"]["message"] = "what an older spec filled"
+    write(joinpath(run._dir, "run.json"), JSON3.write(src_doc))
+    lines = String[]
+    run_chain(proj, uids[1:1]; from_run = run.id, on_log = l -> push!(lines, l))
+    @test any(l -> occursin("step n1 'message' was \"what an older spec filled\" there, now \"from template\"", l), lines)
+
+    # RESULT-REVIEW: result-84fa9e9d — a resume (the GUI's sends no overrides) keeps the run's recorded
+    # ones, so its :done nodes are not re-run without them
+    task_before = run.image_states[uids[1]]["n1"].task_id
+    resumed = run_chain(proj, String[]; run_id = run.id, on_log = _ -> nothing)
+    @test resumed.overrides == run.overrides
+    @test resumed.image_states[uids[1]]["n1"].task_id == task_before   # kept, not re-run
+    # RESULT-REVIEW: result-9c1189c6 — a step the resume does not re-run keeps the params it RAN with
+    # (here the drifted record written above), not today's re-resolution
+    @test resumed.node_params["n1"]["message"] == "what an older spec filled"
+    # ... and a caller override on a resume merges over the recorded ones and re-runs the step fresh
+    resumed2 = run_chain(proj, String[]; run_id = run.id, on_log = _ -> nothing,
+                         overrides = Dict{String,Any}("n1" => Dict("message" => "resumed")))
+    @test resumed2.overrides["n1"] == Dict{String,Any}("waitMs" => 1, "message" => "resumed")
+    @test resumed2.node_params["n1"]["message"] == "resumed"
+    @test resumed2.image_states[uids[1]]["n1"].task_id != task_before
+
+    # RESULT-REVIEW: fanout-6258984e — "From history" reads a run record with the overrides it recorded
+    # (the run-log rows carry filled defaults, so a row without `waitMs` is a template-only chain row)
+    hrows = [r for r in Cecelia._history_rows(proj, uids[1:1])
+             if get(r.params, "message", "") in ("from template", "now", "resumed")]   # replay-chain runs
+    @test !isempty(hrows) && all(r -> haskey(r.params, "waitMs"), hrows)
+
+    # resume and replay are exclusive
+    @test_throws ErrorException run_chain(proj, String[]; run_id = run.id, from_run = run.id,
+                                          on_log = _ -> nothing)
+
+    # the replay crosses the runner boundary
+    req = Cecelia.chain_request(JSON3.read(JSON3.write(Cecelia.chain_request_dict(
+              ChainRequest(; project_uid = proj.uid, from_run = run.id)))))
+    @test req.from_run == run.id
+    @test Cecelia.execute_chain(req)
+    # RESULT-REVIEW: fanout-5e2263c3 — the runner accepts a replay with no chain name, as the WS path does
+    nruns() = count(d -> isfile(joinpath(d, "run.json")), readdir(Cecelia._runs_dir(proj); join = true))
+    before = nruns()
+    st, _ = Cecelia._runner_submit_chain(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid,
+                                                                       "fromRun" => run.id))))
+    @test st == 200
+    @test Cecelia._runner_submit_chain(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid))))[1] == 400
+    t0 = time()      # it runs in the background — wait for its record so the rest of the testset is alone
+    while time() - t0 < 30
+        done = [d for d in readdir(Cecelia._runs_dir(proj); join = true)
+                if isfile(joinpath(d, "run.json")) &&
+                   all(st -> st.status == NODE_DONE,
+                       (s for m in values(load_chain_run(proj, basename(d)).image_states) for s in values(m)))]
+        nruns() > before && length(done) == nruns() && break
+        sleep(0.2)
+    end
+    @test nruns() == before + 1
+
+    # Legacy run.json (before overrides/node_params/from_run): loads, fields UNKNOWN, still replays
+    legacy_doc = Dict{String,Any}(String(k) => v for (k, v) in
+                                  JSON3.read(read(joinpath(drun._dir, "run.json"), String))
+                                  if k ∉ (:overrides, :node_params, :from_run))
+    write(joinpath(drun._dir, "run.json"), JSON3.write(legacy_doc))
+    legacy = load_chain_run(proj, drun.id)
+    @test isnothing(legacy.overrides) && isnothing(legacy.node_params) && legacy.from_run == ""
+    Cecelia._save_run!(legacy)                            # unknown stays unknown on re-save
+    redoc = JSON3.read(read(joinpath(drun._dir, "run.json"), String))
+    @test !haskey(redoc, :overrides) && !haskey(redoc, :node_params)
+    lines = String[]
+    lrun = run_chain(proj, String[]; from_run = drun.id, on_log = l -> push!(lines, l))
+    @test any(l -> occursin("predates recorded overrides", l), lines)
+    @test lrun.from_run == drun.id
+    @test lrun.node_params["d1"]["message"] == "imageTask ran"
+
+    # the pre-replay positional constructor still builds a run, with the new fields unknown
+    old = Cecelia.ChainRun("rid", "c", proj.uid, uids, run.template_snapshot, "h",
+                           Dict{String,Dict{String,Cecelia.ImageNodeState}}(), time(), "", "",
+                           Dict{String,String}(), joinpath(Cecelia._runs_dir(proj), "rid"),
+                           ReentrantLock(), Dict{String,Channel{Nothing}}(),
+                           Dict{String,Channel{Nothing}}(), Dict{String,Any}())
+    @test isnothing(old.overrides) && isnothing(old.node_params) && old.from_run == ""
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Picnic node — require_all aborts if any image failed upstream ────────
 @testset "Picnic node — require_all policy" begin
     proj = create_project!(name="picnic-req-$(rand(1000:9999))")

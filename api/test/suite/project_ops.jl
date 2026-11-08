@@ -267,6 +267,53 @@ end
     end
 end
 
+# A run's record of what it ran with (`overrides`, `nodeParams`, `fromRun`) is served beside its frozen
+# template, `null` when unknown (a run.json from before they were recorded); the replay launch reads its
+# source's header through `_chain_run_header`, which refuses anything that is not a plain run id.
+@testset "API: chain run record carries overrides, node params and replay source" begin
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-chain-replay")
+        uid  = proj.uid
+        img  = add_image!(add_set!(proj; name="s"); name="i")
+        save_chain_template!(proj, ChainTemplate("c",
+            [ChainNode(id="n1", fn="testTasks.image_task", scope="image", params=Dict{String,Any}())],
+            ChainEdge[]))
+        run   = run_chain(proj, [img.uid]; chain="c", on_log=_->nothing,
+                          overrides=Dict{String,Any}("n1" => Dict("waitMs" => 1)))
+        rerun = run_chain(proj, String[]; from_run=run.id, on_log=_->nothing)
+        get_run(rid) = JSON3.read(api_chains_run(HTTP.Request("GET",
+                           "/api/chains/run?projectUid=$uid&runId=$rid"))[2])
+
+        r = get_run(run.id)
+        @test r.overrides.n1.waitMs == 1
+        @test r.nodeParams.n1.waitMs == 1 && r.nodeParams.n1.message == "imageTask ran"
+        @test r.fromRun == ""
+        @test get_run(rerun.id).fromRun == run.id
+        runs = JSON3.read(api_chains_runs(HTTP.Request("GET", "/api/chains/runs?projectUid=$uid"))[2]).runs
+        @test Dict(String(x.runId) => String(x.fromRun) for x in runs) == Dict(run.id => "", rerun.id => run.id)
+
+        # legacy run.json: the fields are unknown, served as null — not as "no overrides"
+        rj  = joinpath(run._dir, "run.json")
+        doc = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(rj, String))
+                               if k ∉ (:overrides, :node_params))
+        write(rj, JSON3.write(doc))
+        r = get_run(run.id)
+        @test isnothing(r.overrides) && isnothing(r.nodeParams)
+
+        @test String(_chain_run_header(uid, run.id).id) == run.id
+        @test isnothing(_chain_run_header(uid, "nope"))
+        @test isnothing(_chain_run_header(uid, "../$(run.id)"))
+        @test isnothing(_chain_run_header(uid, ""))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: set rename" begin
     # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
     conf = cecelia_conf()

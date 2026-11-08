@@ -158,7 +158,10 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
             uid in want || continue
             st = get(run.image_states[uid], node.id, nothing)
             (st === nothing || st.status != NODE_DONE) && continue
-            push!(rows, (; fn = node.fn, params = Dict{String,Any}(node.params), at, uid, legacy = false))
+            # with the overrides the run recorded — what the step ran with, not just the template's values
+            params = _apply_overrides(Dict{String,Any}(node.params), node.id,
+                                      something(run.overrides, Dict{String,Any}()))
+            push!(rows, (; fn = node.fn, params, at, uid, legacy = false))
         end
     end
     rows

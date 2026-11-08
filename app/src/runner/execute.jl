@@ -250,6 +250,10 @@ path — the executing process resolves them against its own `projects_dir()`.
 than start a fresh one; `start_node` additionally force-restarts that node and everything downstream
 ("resume from here"). When resuming, `chain_name`/`image_uids` come from the persisted run, so they are
 not required.
+
+`from_run` non-empty means **replay**: a fresh run of that past run's frozen template and recorded
+overrides (`run_chain(...; from_run)`). `chain_name` is then not needed, and empty `image_uids` means
+the past run's images.
 """
 Base.@kwdef struct ChainRequest
     project_uid::String
@@ -257,6 +261,7 @@ Base.@kwdef struct ChainRequest
     image_uids::Vector{String} = String[]
     run_id::String             = ""
     start_node::String         = ""
+    from_run::String           = ""
     # Chains run locally (docs/todo/HPC_PLAN.md → Non-goals); typed like TaskRequest's so a chain asked
     # to run elsewhere is refused by `execute_chain` rather than quietly run here.
     target::RunTarget          = TARGET_LOCAL
@@ -273,7 +278,7 @@ _request_by(req)::String = isempty(req.by) ? active_profile_name() : req.by
 
 chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
-    "runId" => r.run_id, "startNode" => r.start_node, "target" => string(r.target), "by" => r.by,
+    "runId" => r.run_id, "startNode" => r.start_node, "fromRun" => r.from_run, "target" => string(r.target), "by" => r.by,
     "excluded" => r.excluded,
     "caller" => r.caller)
 
@@ -283,6 +288,7 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     image_uids  = String[string(u) for u in get(d, "imageUids", String[])],
     run_id      = string(get(d, "runId", "")),
     start_node  = string(get(d, "startNode", "")),
+    from_run    = string(get(d, "fromRun", "")),
     target      = run_target(string(get(d, "target", "local"))),
     by          = string(get(d, "by", "")),
     excluded    = Dict{String,String}(string(k) => string(v) for (k, v) in get(d, "excluded", Dict())),
@@ -311,6 +317,7 @@ function execute_chain(req::ChainRequest;
         proj = load_project(req.project_uid)
         if isempty(req.run_id)
             run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req), caller = req.caller,
+                      from_run = isempty(req.from_run) ? nothing : req.from_run,
                       excluded = req.excluded, on_cancel_check = is_chain_cancelled, on_log = on_log)
         else
             run_chain(proj, String[]; run_id = req.run_id, by = _request_by(req), caller = req.caller,

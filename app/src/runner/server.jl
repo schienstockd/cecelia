@@ -161,8 +161,8 @@ function _runner_submit_chain(body_bytes::Vector{UInt8})
         return _json(400, (; error = "bad request: " * sprint(showerror, e)))
     end
     isempty(creq.project_uid) && return _json(400, (; error = "projectUid required"))
-    (isempty(creq.chain_name) && isempty(creq.run_id)) &&
-        return _json(400, (; error = "chain or runId required"))
+    (isempty(creq.chain_name) && isempty(creq.run_id) && isempty(creq.from_run)) &&
+        return _json(400, (; error = "chain, runId or fromRun required"))
     _claim_chain_run!(creq.run_id) ||
         return _json(409, (; error = "run $(creq.run_id) is already executing on this runner"))
 

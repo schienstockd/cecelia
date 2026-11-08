@@ -2733,6 +2733,10 @@ accent) are highlighted; a ✕ clears the pick. Resume is disabled while the run
 (`selectedRunTasks`), so skipped `:done` nodes stay on the graph while the re-run section updates
 live, rather than the graph collapsing to only the re-run nodes.
 
+**Re-run with these settings** (`replayRun`, the ↻ beside Resume): a NEW run of the selected run's
+frozen template + recorded overrides, on its images — WS `chain:run` with `fromRun`. The current
+template is not read, so editing the chain since does not change it (`docs/SCHEDULER.md` → *Replay*).
+
 **Manual steps** (`docs/SCHEDULER.md` → *Manual steps*): a node parked for the user shows `waiting`
 (amber, `pi-pause`) with a **Continue** button on the node, tooltip = the spec's `manual.prompt`, and
 an **Open** button when the spec's `manual.open` names a page (label + icon from that page's nav item,

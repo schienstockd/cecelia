@@ -189,6 +189,10 @@ function _save_run!(run::ChainRun)
             by             = run.by,
             resumed_by     = run.resumed_by,
             excluded_images = run.excluded_images,
+            # Written only when known, so "absent" keeps meaning "unknown" (a run from before them).
+            (isnothing(run.overrides)   ? (;) : (; overrides   = run.overrides))...,
+            (isnothing(run.node_params) ? (;) : (; node_params = run.node_params))...,
+            (isempty(run.from_run)      ? (;) : (; from_run    = run.from_run))...,
         ))
     end
 end
