@@ -137,8 +137,8 @@ end
 # ── collection ──
 
 function _history_rows(proj::CciaProject, exemplars::Vector{String})
-    rows = NamedTuple{(:fn, :params, :at, :uid, :legacy),
-                      Tuple{String,Dict{String,Any},String,String,Bool}}[]
+    rows = NamedTuple{(:fn, :params, :at, :uid, :legacy, :taskId),
+                      Tuple{String,Dict{String,Any},String,String,Bool,String}}[]
     want = Set(exemplars)
     for uid in exemplars
         img = init_object(proj.uid, uid)
@@ -146,7 +146,7 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
         for e in read_run_log(img)
             r = run_log_row(e)
             r.status == "done" || continue
-            push!(rows, (; r.fn, r.params, r.at, uid, r.legacy))
+            push!(rows, (; r.fn, r.params, r.at, uid, r.legacy, r.taskId))
         end
     end
     # chain run records: a run's frozen template + per-image status, from before the run log existed
@@ -161,7 +161,7 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
             # with the overrides the run recorded — what the step ran with, not just the template's values
             params = _apply_overrides(Dict{String,Any}(node.params), node.id,
                                       something(run.overrides, Dict{String,Any}()))
-            push!(rows, (; fn = node.fn, params, at, uid, legacy = false))
+            push!(rows, (; fn = node.fn, params, at, uid, legacy = false, taskId = ""))   # a chain record holds no task id
         end
     end
     rows

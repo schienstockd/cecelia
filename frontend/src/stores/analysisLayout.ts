@@ -6,6 +6,7 @@ import { relBoardKey, rekeyBoards } from '../utils/boardKeys'
 import { boardsPayload, tabGroupOf, shouldReloadBoards, type BoardsDoc } from '../utils/boardDoc'
 import { shortId } from '../utils/id'
 import { debouncedSave } from '../utils/debouncedSave'
+import type { ParamsSnapshot } from '../utils/boardProvenance'
 
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
@@ -32,6 +33,9 @@ interface LayoutEntry {
   contents: (SlotContent | null)[]     // aligned 1:1 with slotAreas
   activeIndex: number
   shared: Record<string, unknown>      // canvas-level view-state for useSummaryData (compare/scope/sel/vis)
+  // The steps behind the board's plots, frozen when a plot was last added/replaced/re-scoped — what the
+  // Parameters CSV and the figure provenance export (utils/boardProvenance). Absent on older boards.
+  paramsSnapshot?: ParamsSnapshot
 }
 
 export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {

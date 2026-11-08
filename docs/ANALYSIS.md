@@ -404,6 +404,39 @@ two exports can't interleave over the shared active-tab slot (only the active bo
   which "ran on" step one plot reads is not knowable; the column says the weaker thing, never guesses.
   "Used" = the latest done run on disk, as everywhere in the history table; a step with no recorded run
   (e.g. tracking from before the run log) is simply absent.
+  **Frozen with the plot.** The table is rebuilt from the run log, so on its own it says what made the
+  board's populations *now*. Each board therefore keeps a snapshot of it (`paramsSnapshot` on its layout
+  entry, persisted in `analysisBoards.json`), re-taken by `LayoutCanvas` whenever a plot is added,
+  replaced or re-scoped (`utils/boardProvenance.ts` `snapshotDue`: key = images + populations + cluster
+  run + each slot's `kind:ref`; checked once the plots are idle, debounced). The export uses the snapshot
+  (`resolveParamsExport`) and leads every row with a `recorded` column: `frozen <time>` — and when a
+  rebuild today differs (a step re-ran since), the rebuild's differing rows follow as `now (differs)` and
+  the log warns; nothing is silently swapped. A snapshot taken for other images or populations than the
+board shows now (the shared image selection moved before it was re-taken) is not used — the rebuild
+is exported, marked `rebuilt`. Rows are compared with their run-log task ids, so two images that ran
+one step identically in one chain run are still told apart. A board without a snapshot — from before this, or added by
+  Claude (`append_board`) — exports the rebuild marked `rebuilt`, and only gets a snapshot once a plot on
+  it is added, replaced or removed: opening an old board (or having it replaced by another client's
+  write) never stamps today's table as what it was made with. Changing a plot's measure or chart type does not re-take it (the table depends only on what is
+  shown, not how). Plots themselves stay live, so a `now (differs)` row means the figure may already be
+  drawn from the newer run.
+- **Provenance in the figure.** Every exported PDF / SVG carries one machine-readable JSON record
+  (`cecelia.board-provenance/1`): `exportedAt`, `ceceliaVersion`, `author` (the exporter's
+  `author_stamp()`), `project`, `images`, and per board its `populations` (key + `gateFiles`, the
+  project-relative gating sidecars that define each one), its `runs` (step, task, output, relation,
+  lastRun, run-log `taskIds`, `recorded`) — the same rows the Parameters CSV exports, so the frozen
+  snapshot's plus, after a re-run, today's differing rows (plots are live: the newer run may be the one
+  that drew the figure) — and `parameters`
+  (`{source: frozen|rebuilt, takenAt, differs}`). Per board the backend answers
+  `GET /api/analysis/board-provenance` (`board_export_provenance`, `app/src/analysis_export_provenance.jl`
+  — the same board-scoped `history_params_table` cut as the Parameters CSV, so the two never name
+  different runs); `buildProvenanceRecord` adds the time and folds the boards. **PDF:** a custom
+  document-info entry `CeceliaProvenance` (pypdf: `PdfReader(f).metadata["/CeceliaProvenance"]`), plus
+  Creator `Cecelia <version>`, Author = profile, a one-line Subject (`applyPdfProvenance`; pdf-lib has no
+  XMP writer). **SVG:** `<metadata id="cecelia-provenance">` as CDATA, first child of each board's
+  `<svg>` — each file carries only its own board. If any board's record can't be read the figure exports
+  without one and the log says so. Gates are named by file path, not content: a gate edited after the
+  export is not detectable from the record.
 
 An **info icon** by the dropdown says which slot types stay raster and that a huge point cloud warns —
 no silent surprise.

@@ -9,8 +9,9 @@ import { layoutPages, type PdfPage } from './pdf'
 
 export interface BoardSvg { title: string; svg: string }
 
-export function buildBoardSvgs(pages: PdfPage[]): BoardSvg[] {
-  return layoutPages(pages).map(lp => {
+// `metadata(i)` (optional) = the text board i's SVG carries as `<metadata>` — its provenance record.
+export function buildBoardSvgs(pages: PdfPage[], metadata?: (i: number) => string | undefined): BoardSvg[] {
+  return layoutPages(pages).map((lp, i) => {
     let body = ''
     // page title (top-origin, baseline just below the top margin — mirrors the PDF's drawText)
     body += svgText(16, 16 + lp.titleSize, lp.title, { fill: '#111', size: lp.titleSize, weight: 600 })
@@ -21,6 +22,6 @@ export function buildBoardSvgs(pages: PdfPage[]): BoardSvg[] {
       if (slot.svg) body += nestSvg(slot.svg, ls.x, ls.imgTop, ls.w, ls.imgH)
       else if (slot.png) body += svgImage(slot.png, ls.x, ls.imgTop, ls.w, ls.imgH, 'meet')
     }
-    return { title: lp.title, svg: svgDoc({ width: lp.pageW, height: lp.pageH, background: '#ffffff', body }) }
+    return { title: lp.title, svg: svgDoc({ width: lp.pageW, height: lp.pageH, background: '#ffffff', body, metadata: metadata?.(i) }) }
   })
 }

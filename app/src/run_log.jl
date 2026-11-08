@@ -161,7 +161,8 @@ function run_log_row(e)
     legacy = isempty(p)
     vn = _rl_str(e, "valueName")
     isempty(vn) || (p["valueName"] = vn)
-    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = run_entry_status(e), legacy)
+    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = run_entry_status(e), legacy,
+       taskId = _rl_str(e, "taskId"))
 end
 
 """

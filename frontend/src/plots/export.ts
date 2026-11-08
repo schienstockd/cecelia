@@ -202,12 +202,17 @@ export function svgEsc(s: string): string {
 // The `xlink` namespace is declared unconditionally because `svgImage` emits `xlink:href` — see the
 // measurement on that function. An undeclared prefix makes the whole document malformed, so this is not
 // optional for the emitters that use it, and it costs 40 bytes for the ones that don't.
-export function svgDoc(o: { width: number; height: number; background?: string; body: string }): string {
+// `metadata` (optional) = machine-readable text put first in the document as
+// `<metadata id="cecelia-provenance">` (CDATA, so JSON needs no entity escaping; a literal `]]>` is split
+// across two sections). The board SVG export carries its provenance record here (utils/boardProvenance).
+export function svgDoc(o: { width: number; height: number; background?: string; body: string; metadata?: string }): string {
   const bg = o.background && o.background !== 'transparent'
     ? `<rect width="100%" height="100%" fill="${o.background}"/>` : ''
+  const meta = o.metadata
+    ? `<metadata id="cecelia-provenance"><![CDATA[${o.metadata.replace(/]]>/g, ']]]]><![CDATA[>')}]]></metadata>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ` +
          `width="${r1(o.width)}" height="${r1(o.height)}" ` +
-         `viewBox="0 0 ${r1(o.width)} ${r1(o.height)}">${bg}${o.body}</svg>`
+         `viewBox="0 0 ${r1(o.width)} ${r1(o.height)}">${meta}${bg}${o.body}</svg>`
 }
 
 // one colour-bucket of points as a group of <circle>s. Group-level fill/opacity = the recolour hook:
