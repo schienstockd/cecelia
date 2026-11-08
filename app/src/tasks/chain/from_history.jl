@@ -319,15 +319,18 @@ end
 # take gated cell populations (`accepts` has "live", or none declared). A bare path (`/qc/frags`) is on
 # the step's own `valueName`; `B/qc/_tracked` names its label set. System segments (`_tracked`, …) are
 # cut: what must exist is the gated population above them. A segment naming a run (`clusters.immune`)
-# is a population a task produces, not a gate, so that reference is skipped.
+# is a population a task produces, not a gate, so that reference is skipped. `all_pickers = true` takes
+# every population picker, track pickers included (`run_gates`: a track analysis on `B/qc/_tracked`
+# reads the flow gate `/qc` too); the caller then resolves which sidecar each path lives in.
 _history_pop_refs(s::HistoryStep, lv) = gated_pop_refs(s.params, lv)
 
-function gated_pop_refs(params::AbstractDict, lv)::Vector{Tuple{String,String}}
+function gated_pop_refs(params::AbstractDict, lv; all_pickers::Bool = false)::Vector{Tuple{String,String}}
     refs = Tuple{String,String}[]
     own = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
     for (k, str) in _keyed_strings(params)
         l = get(lv, k, nothing)
-        (l !== nothing && l.type == "popSelection" && (isempty(l.accepts) || "live" in l.accepts)) || continue
+        (l !== nothing && l.type == "popSelection" &&
+         (all_pickers || isempty(l.accepts) || "live" in l.accepts)) || continue
         str in ("", "NONE", "root", "/") && continue
         ls, path = _split_pop_ref(str, own)
         segs = String[]

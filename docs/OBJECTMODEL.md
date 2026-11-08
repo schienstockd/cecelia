@@ -41,7 +41,7 @@ Sets group images for processing. An image belongs to one set but lives independ
       labels/               — segmentation label zarrs, one per value_name
       labelProps/           — per-cell measurements, {value_name}.h5ad
       branchLabels/         — skeleton label zarrs (segment.branching)
-      gating/               — {value_name}.json population definitions (docs/POPULATION.md)
+      gating/               — {value_name}.json population definitions + {value_name}.history.jsonl, the append-only gate history (docs/POPULATION.md → Storage)
       spatialStats/ spatialGraph/  — spatial analysis output
       rois/                 — ROI sets, {suffix}.json (spatialAnalysis.roiDiscovery; docs/todo/ROI_TRIAGE_PLAN.md)
       roiReviews/           — reviews of those ROIs, {suffix}.json — user work, kept by an analysis reset

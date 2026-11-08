@@ -179,21 +179,15 @@ the predicate for "does copying this map to another image need that image to be 
 (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7). A map of intensity/morphology gates is portable
 regardless of calibration.
 """
-function has_spatial_gate(m::PopulationMap)::Bool
-    for path in m.order
-        p = m.pops[path]
-        if p.gate !== nothing
-            (is_spatial_axis(String(p.gate.x_channel)) || is_spatial_axis(String(p.gate.y_channel))) &&
-                return true
-        end
-        p.filter_measure === nothing ||
-            (is_spatial_axis(String(p.filter_measure)) && return true)
-        p.filter_conditions === nothing && continue
-        # conditions are normalised NamedTuples (`_normalise_conditions`), so `.measure` is a String
-        for c in p.filter_conditions
-            is_spatial_axis(String(c.measure)) && return true
-        end
-    end
+has_spatial_gate(m::PopulationMap)::Bool = any(path -> pop_has_spatial_gate(m.pops[path]), m.order)
+
+"""`has_spatial_gate` for ONE population: its gate axes, filter measure or conditions name a spatial axis."""
+function pop_has_spatial_gate(p::Population)::Bool
+    p.gate !== nothing &&
+        (is_spatial_axis(String(p.gate.x_channel)) || is_spatial_axis(String(p.gate.y_channel))) && return true
+    p.filter_measure !== nothing && is_spatial_axis(String(p.filter_measure)) && return true
+    # conditions are normalised NamedTuples (`_normalise_conditions`), so `.measure` is a String
+    p.filter_conditions !== nothing && any(c -> is_spatial_axis(String(c.measure)), p.filter_conditions) && return true
     false
 end
 

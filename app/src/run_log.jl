@@ -21,7 +21,12 @@
 #              versions instead, and then nothing is replaced). {name, ns?, version?} plus the
 #              {taskId, at, fun} of the newest `done` run that made it, when the log (or its archive)
 #              has one; without them the output predates the log or came from outside it.
-# Both are ABSENT on entries written before they were recorded, and on runs that read/replace nothing.
+#   gates    — one {valueName, path, hash} per gated population the run READ (`run_pop_reads`' refs,
+#              `gated_pop_refs`): the content hash of that population's gate as it was when the run
+#              started (`pop_gate_hashes`, gating/popmanager/history.jl — it covers the whole parent
+#              chain). Gates are edited in place; `gate_state_for_hash` finds the gate a hash names in
+#              the sidecar or its history (`gating/{vn}.history.jsonl`).
+# All three are ABSENT on entries written before they were recorded, and on runs that read/replace nothing.
 #
 # ── What made it: `ceceliaVersion`, `author`, `env` ────────────────────────────────────────────────
 # So a result can say which code, which launcher and which machine made it. All three are ABSENT on
@@ -131,17 +136,7 @@ The entries rotated out of `runlog.json` (see *Archive* in the header), oldest�
 A line that does not parse (a torn last append) is skipped, not fatal.
 """
 read_run_log_archive(img::CciaImage)::Vector{Any} = read_run_log_archive(img._dir)
-function read_run_log_archive(ccid_dir::AbstractString)::Vector{Any}
-    p = run_log_archive_path(ccid_dir)
-    isfile(p) || return Any[]
-    out = Any[]
-    for line in eachline(p)
-        isempty(strip(line)) && continue
-        e = try JSON3.read(line) catch; nothing end
-        e isa AbstractDict && push!(out, e)
-    end
-    out
-end
+read_run_log_archive(ccid_dir::AbstractString)::Vector{Any} = read_jsonl(run_log_archive_path(ccid_dir))
 
 """
     read_run_log_history(ccid_dir | img) -> Vector
@@ -153,24 +148,9 @@ read_run_log_history(img::CciaImage)::Vector{Any} = read_run_log_history(img._di
 read_run_log_history(ccid_dir::AbstractString)::Vector{Any} =
     vcat(read_run_log_archive(ccid_dir), read_run_log(ccid_dir))
 
-# Append rotated-out entries to the archive in ONE write (one line each), so concurrent readers see
-# whole lines. Called under `_RUN_LOG_LOCK`. Append mode, like the lab log: this file is never rewritten
-# by a writer, so tmp-then-rename (which would copy the whole history per rotation) buys nothing.
-function _append_run_log_archive!(ccid_dir::AbstractString, overflow::AbstractVector)
-    isempty(overflow) && return
-    buf = IOBuffer()
-    for e in overflow
-        JSON3.write(buf, e)
-        write(buf, '\n')
-    end
-    p = run_log_archive_path(ccid_dir)
-    mkpath(dirname(p))
-    # a torn last line (a kill mid-append) must stay ONE bad line: start ours on a fresh one, or the
-    # first entry appended after it would be glued on and unreadable too
-    torn = isfile(p) && filesize(p) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8)), p) != UInt8('\n')
-    open(io -> (torn && write(io, '\n'); write(io, take!(buf))), p, "a")
-    nothing
-end
+# Append rotated-out entries to the archive in ONE write (`append_jsonl!`). Called under `_RUN_LOG_LOCK`.
+_append_run_log_archive!(ccid_dir::AbstractString, overflow::AbstractVector) =
+    append_jsonl!(run_log_archive_path(ccid_dir), overflow)
 
 # One run-log entry as plain values: `params` with the entry's `valueName` put back in (the log keeps
 # it beside the params), `legacy` = logged before the run log recorded params, `status` per
@@ -201,7 +181,8 @@ function run_pop_reads(img::CciaImage)::Dict{Tuple{String,String},Vector{String}
         r.status in ("done", RUN_LOG_RUNNING) || continue
         lv = get!(() -> _history_leaves(r.fn), leaves, r.fn)
         lv === nothing && continue
-        for ref in gated_pop_refs(r.params, lv)
+        # every population picker: a track analysis on `B/qc/_tracked` reads the cell gate `/qc` too
+        for ref in gated_pop_refs(r.params, lv; all_pickers = true)
             fns = get!(out, ref, String[])
             r.fn in fns || push!(fns, r.fn)
         end
@@ -442,9 +423,38 @@ function run_replaces(fun_name::AbstractString, img::CciaImage, params::Abstract
 end
 
 """
-    run_provenance(fun_name, img, params) -> (; inputs, replaces)
+    run_gates(fun_name, img, params) -> Vector{Dict}
 
-`run_inputs` + `run_replaces` for one image, read from a FRESH copy of its `ccid.json` (an earlier step
+The gated populations a run of `fun_name` with `params` reads on `img`, each `{valueName, path, hash}`
+(+ `popType: "track"` for a track gate) with the content hash of its gate now (`pop_gate_hashes`). Every
+population picker counts, track pickers too: `B/qc/_tracked` is read through the cell gate `/qc`. A path
+is looked up in the sidecar `resolve_pop_type` finds it in; cluster/region pops are not gates and a
+population in no sidecar is left out.
+"""
+function run_gates(fun_name::AbstractString, img::CciaImage, params::AbstractDict)::Vector{Any}
+    leaves = _history_leaves(String(fun_name))
+    leaves === nothing && return Any[]
+    p = Dict{String,Any}(String(k) => v for (k, v) in params)
+    hashes = Dict{Tuple{String,String},Dict{String,String}}()
+    out = Any[]
+    for (vn, path) in gated_pop_refs(p, leaves; all_pickers = true)
+        pt = resolve_pop_type(img, vn, path)
+        is_gating_pop_type(pt) || continue
+        hs = get!(() -> pop_gate_hashes(load_pop_map(img._dir, vn; pop_type = pt, backfill_save = false)),
+                  hashes, (vn, pt))
+        h = get(hs, path, nothing)
+        h === nothing && continue
+        d = Dict{String,Any}("valueName" => vn, "path" => path, "hash" => h)
+        pt == "flow" || (d["popType"] = pt)
+        push!(out, d)
+    end
+    out
+end
+
+"""
+    run_provenance(fun_name, img, params) -> (; inputs, replaces, gates)
+
+`run_inputs` + `run_replaces` + `run_gates` for one image, read from a FRESH copy of its `ccid.json` (an earlier step
 of the same chain may have written a version since `img` was loaded). Never throws: provenance is not
 worth failing a run over, so a lookup that errors answers "nothing recorded".
 """
@@ -458,14 +468,18 @@ function run_provenance(fun_name::AbstractString, img::CciaImage, params::Abstra
         @warn "run-log replaces lookup failed" fun_name exception = e
         nothing
     end
-    (; inputs, replaces)
+    gates = try run_gates(fun_name, fresh, params) catch e
+        @warn "run-log gate lookup failed" fun_name exception = e
+        Any[]
+    end
+    (; inputs, replaces, gates)
 end
 
 """
     open_run_log!(img, fun_name, value_name, params; task_id, pool, by, caller, at) -> entries
 
 Record that a run has STARTED, with status `"running"`. Pair with `close_run_log!` on every exit path.
-`inputs` / `replaces` are `run_provenance`'s answer for this image (see the header); empty = not stamped.
+`inputs` / `replaces` / `gates` are `run_provenance`'s answer for this image (see the header); empty = not stamped.
 
 The entry is written before the work, so a run whose process is killed outright still leaves a trace —
 that is the whole reason the log is not append-on-finish (see the header). `task_id` is what
@@ -475,7 +489,7 @@ function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::Abs
                        params = nothing; task_id::AbstractString = "", pool::AbstractString = "",
                        by::AbstractString = "", caller::AbstractDict = Dict{String,Any}(),
                        inputs::AbstractVector = Any[], replaces = nothing,
-                       at::AbstractString = _run_log_now())
+                       gates::AbstractVector = Any[], at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         e = Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
@@ -483,6 +497,7 @@ function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::Abs
             "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
         isempty(inputs) || (e["inputs"] = collect(Any, inputs))
         replaces isa AbstractDict && (e["replaces"] = replaces)
+        isempty(gates) || (e["gates"] = collect(Any, gates))
         push!(entries, _run_log_stamp!(e, by, caller))
         entries
     end

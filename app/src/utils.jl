@@ -172,6 +172,48 @@ indentation.
 """
 write_json_atomic(path::AbstractString, data) = write_atomic(io -> _pretty_json(io, data), path)
 
+"""
+    append_jsonl!(path, entries) -> nothing
+
+Append `entries` to an append-only JSON-lines history in ONE write (one compact JSON per line), so a
+concurrent reader sees whole lines. The counterpart of `write_json_atomic` for a file that is never
+rewritten — tmp-then-rename would copy the whole history per append and buy nothing. Used by the
+run-log archive (`runlog.archive.jsonl`) and the gate history (`gating/{vn}.history.jsonl`).
+Read back with `read_jsonl`.
+"""
+function append_jsonl!(path::AbstractString, entries::AbstractVector)
+    isempty(entries) && return nothing
+    buf = IOBuffer()
+    for e in entries
+        JSON3.write(buf, e)
+        write(buf, '\n')
+    end
+    mkpath(dirname(path))
+    # a torn last line (a kill mid-append) must stay ONE bad line: start ours on a fresh one, or the
+    # first entry appended after it would be glued on and unreadable too
+    torn = isfile(path) && filesize(path) > 0 &&
+           open(io -> (seekend(io); skip(io, -1); read(io, UInt8)), path) != UInt8('\n')
+    open(io -> (torn && write(io, '\n'); write(io, take!(buf))), path, "a")
+    nothing
+end
+
+"""
+    read_jsonl(path) -> Vector
+
+The dict entries of a JSON-lines file written by `append_jsonl!`, oldest first; [] when absent. A
+line that does not parse (a torn last append) is skipped, not fatal.
+"""
+function read_jsonl(path::AbstractString)::Vector{Any}
+    isfile(path) || return Any[]
+    out = Any[]
+    for line in eachline(path)
+        isempty(strip(line)) && continue
+        e = try JSON3.read(line) catch; nothing end
+        e isa AbstractDict && push!(out, e)
+    end
+    out
+end
+
 # Pretty-printer that keeps `JSON3.write`'s escaping for keys and scalars. Format target: 4-space
 # indent; non-empty containers span multiple lines; empty containers stay on one line (`{}` / `[]`).
 # See `write_json_atomic` above for why this exists rather than `JSON3.pretty`.
