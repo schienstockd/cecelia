@@ -133,7 +133,11 @@ end
         @test !isempty(taught)
 
         # fun_name => why teaching the bare task is right even though a composite wraps it
-        bare_by_design = Dict{String,String}()
+        bare_by_design = Dict{String,String}(
+            # the ordinary import of a file on disk; `importImages.immunemap` only puts a download
+            # in front of it, for images registered from Immunemap
+            "importImages.omezarr" => "file import; the Immunemap composite adds a download step",
+        )
 
         # every composite's constituent steps, from the registry
         wrapped_by = Dict{String,Vector{String}}()

@@ -29,8 +29,8 @@ def _chars(s):
     return np.frombuffer(s.encode(), dtype='S1')
 
 
-def _ims(path, births_s=None, stamps=None, oir_step=None):
-    """A miniature .ims carrying whichever of the three timing sources the test needs."""
+def _ims(path, births_s=None, stamps=None, oir_step=None, lsm_interval=None):
+    """A miniature .ims carrying whichever of the timing sources the test needs."""
     with h5py.File(path, 'w') as f:
         if births_s is not None:
             rows = [(i, int(b * 1e9), int(b * 1e9) + 1, 0) for i, b in enumerate(births_s)]
@@ -43,6 +43,9 @@ def _ims(path, births_s=None, stamps=None, oir_step=None):
         if oir_step is not None:
             g = f.create_group('DataSetInfo/OIR Dataset Size')
             g.attrs.create('Time Step', _chars(oir_step))
+        if lsm_interval is not None:
+            g = f.create_group('DataSetInfo/LSM Dataset Size')
+            g.attrs.create('Time Interval [s]', _chars(lsm_interval))
 
 
 class SummariseGapsTest(unittest.TestCase):
@@ -104,6 +107,24 @@ class TimeIncrementTest(unittest.TestCase):
                                 '2026-07-29 14:01:00'])
         self.assertEqual(ims_meta.time_increment(self._p())['TimeIncrement'], 30.0)
 
+    def test_nanosecond_stamps_parse(self):
+        # Imaris 7.7 writes nine fractional digits for a file converted from a Zeiss .lsm — the first
+        # three stamps of Immunemap video 2JBABTBNRF8MR978J016GM606A, verbatim. `%f` takes six, so
+        # these once failed to parse and the whole series read as "no timing in the file".
+        _ims(self._p(), stamps=['2012-11-07 12:20:54.742000000', '2012-11-07 12:21:24.743000000',
+                                '2012-11-07 12:21:54.743000000'])
+        r = ims_meta.time_increment(self._p())
+        self.assertAlmostEqual(r['TimeIncrement'], 30.0, places=2)
+        self.assertEqual(r['source'], 'DataSetInfo/TimeInfo')
+
+    def test_falls_back_to_the_nominal_lsm_interval(self):
+        # `DataSetInfo/LSM Dataset Size` of the same file: the Zeiss counterpart of the Olympus step.
+        _ims(self._p(), lsm_interval='30.000')
+        r = ims_meta.time_increment(self._p())
+        self.assertEqual(r['TimeIncrement'], 30.0)
+        self.assertTrue(r['nominal'])
+        self.assertEqual(r['source'], 'DataSetInfo/LSM Dataset Size')
+
     def test_no_unit_is_returned_with_the_interval(self):
         # The value is seconds by construction and the unit is the STORING tier's business — ccid/NGFF
         # want `second`, OME-XML wants `s`. Emitting one here is the bypass `test_ome_unit_symbols`
@@ -153,6 +174,109 @@ class TimeIncrementTest(unittest.TestCase):
         _ims(self._p(), stamps=['2026-07-29 14:00:00.000', 'not a date',
                                 '2026-07-29 14:01:00.000'])
         self.assertNotIn('TimeIncrement', ims_meta.time_increment(self._p()))
+
+
+
+# `DataSetInfo/Image` of Immunemap video 2JBABTBNRF8MR978J016GM606A (Obino-Movie1-SteadyState.ims),
+# copied verbatim from the downloaded file — a 10x overview, so 1.8 µm pixels.
+_REAL_IMAGE_ATTRS = {'ExtMin0': '0', 'ExtMin1': '0', 'ExtMin2': '0',
+                     'ExtMax0': '921.363', 'ExtMax1': '921.363', 'ExtMax2': '36',
+                     'X': '512', 'Y': '512', 'Z': '9', 'Unit': 'um'}
+
+
+def _ims_image(path, attrs):
+    with h5py.File(path, 'w') as f:
+        g = f.create_group('DataSetInfo/Image')
+        for k, v in attrs.items():
+            g.attrs.create(k, _chars(v))
+
+
+@unittest.skipUnless(HAVE_H5PY, 'h5py not installed')
+class VoxelSizeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, 'x.ims')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_real_header_gives_extent_over_count(self):
+        _ims_image(self.path, _REAL_IMAGE_ATTRS)
+        r = ims_meta.voxel_size(self.path)
+        x, y, z = r['voxelSizeXYZ']
+        self.assertAlmostEqual(x, 921.363 / 512)   # 1.7995 — what Immunemap publishes as 1.7995
+        self.assertAlmostEqual(y, 921.363 / 512)
+        self.assertAlmostEqual(z, 4.0)
+
+    def test_nanometre_unit_is_converted(self):
+        _ims_image(self.path, {**_REAL_IMAGE_ATTRS, 'Unit': 'nm', 'ExtMax0': '921363'})
+        self.assertAlmostEqual(ims_meta.voxel_size(self.path)['voxelSizeXYZ'][0], 921.363 / 512)
+
+    def test_missing_extent_yields_nothing_not_a_guess(self):
+        attrs = {k: v for k, v in _REAL_IMAGE_ATTRS.items() if k != 'ExtMax2'}
+        _ims_image(self.path, attrs)
+        r = ims_meta.voxel_size(self.path)
+        self.assertIsNone(r['voxelSizeXYZ'])
+        self.assertIn('reason', r)
+
+    def test_missing_file(self):
+        self.assertIsNone(ims_meta.voxel_size(os.path.join(self.tmp, 'nope.ims'))['voxelSizeXYZ'])
+
+
+
+# `DataSetInfo` groups of the same Immunemap video, verbatim (an Imaris 7.7 file converted from a
+# Zeiss .lsm): what `acquisition_settings` reads.
+_REAL_INFO = {
+    'Image': {**_REAL_IMAGE_ATTRS, 'Description': 'Objective: Plan-Neofluar 10x/0.3',
+              'NumericalAperture': '0.3', 'RecordingDate': '2012-11-07 12:20:54.742'},
+    'Channel 0': {'Name': 'ChD-T1', 'LSMExcitationWavelength': '890.000',
+                  'LSMEmissionWavelength': 'BP 612/69', 'LSMPinhole': '0.000',
+                  'Objective': 'Plan-Neofluar 10x/0.3'},
+    'Channel 1': {'Name': 'NDD2-T1', 'LSMEmissionWavelength': 'BP 520/35', 'LSMPinhole': '0.000',
+                  'Objective': 'Plan-Neofluar 10x/0.3'},
+    'Manufactor Information': {'Manufactor Model': 'LSM 510 or LSM 710', 'Manufactor String': 'Zeiss',
+                               'Manufactor Type': 'LSM', 'Microscope Mode': 'not known'},
+    'LSM Dataset Size': {'Number of Timepoints (Dimension T)': '60',
+                         'Number of Z-Slices (Dimension Z)': '9', 'Time Interval [s]': '30.000',
+                         'Voxelsize Z [um]': '4.000'},
+}
+
+
+@unittest.skipUnless(HAVE_H5PY, 'h5py not installed')
+class AcquisitionSettingsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, 'x.ims')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, groups):
+        with h5py.File(self.path, 'w') as f:
+            for name, attrs in groups.items():
+                g = f.create_group(f'DataSetInfo/{name}')
+                for k, v in attrs.items():
+                    g.attrs.create(k, _chars(v))
+
+    def test_real_lsm_sourced_file(self):
+        self._write(_REAL_INFO)
+        a = ims_meta.acquisition_settings(self.path)
+        self.assertEqual(a['source'], 'ims')
+        self.assertEqual(a['system'], 'Zeiss LSM 510 or LSM 710')
+        self.assertEqual(a['acquiredAt'], '2012-11-07T12:20:54')
+        self.assertEqual(a['objective']['magnification'], 10.0)
+        self.assertEqual(a['objective']['na'], 0.3)
+        self.assertEqual([c['emissionFilter'] for c in a['channels']], ['BP 612/69', 'BP 520/35'])
+        # only the channel whose excitation is RECORDED says so — the other is not assumed to share it
+        self.assertEqual([c['laser'] for c in a['channels']], ['890 nm', None])
+        self.assertEqual(a['lasers'], [{'name': '890 nm', 'wavelengthNm': 890.0, 'transmissionPct': None}])
+        self.assertIsNone(a['channels'][0]['pinholeUm'])      # 0 = non-descanned, not a 0 µm pinhole
+        self.assertEqual(a['zStack'], {'stepUm': 4.0, 'count': 9})
+        self.assertEqual(a['timelapse'], {'intervalS': 30.0, 'count': 60})
+
+    def test_no_metadata_is_a_reason_not_an_error(self):
+        self._write({'Imaris': {'Version': '7.7'}})
+        self.assertIn('reason', ims_meta.acquisition_settings(self.path))
 
 
 if __name__ == '__main__':

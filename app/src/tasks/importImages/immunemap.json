@@ -1,0 +1,13 @@
+{
+  "task": "immunemap",
+  "fun_name": "importImages.immunemap",
+  "label": "Import from Immunemap",
+  "purpose": "Download Immunemap videos registered in this set and convert them",
+  "useWhen": ["Videos added with Import from Immunemap: this downloads and converts them"],
+  "notWhen": ["Images added from disk: use Convert to OME-ZARR"],
+  "category": "import",
+  "group": "Import",
+  "env": ["local"],
+  "resource_pool": "io",
+  "composite": ["importImages.immunemapFetch", "importImages.omezarr"]
+}

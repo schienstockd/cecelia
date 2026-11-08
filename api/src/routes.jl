@@ -1144,6 +1144,7 @@ end
 
 
 include(joinpath(@__DIR__, "routes", "image.jl"))
+include(joinpath(@__DIR__, "routes", "immunemap.jl"))   # Import from Immunemap (scan + register)
 
 include(joinpath(@__DIR__, "routes", "claim.jl"))   # claim recital checks (after image.jl: reuses _cohort_set)
 

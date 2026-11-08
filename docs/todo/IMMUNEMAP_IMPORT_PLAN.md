@@ -1,12 +1,61 @@
 # Immunemap import — plan
 
-> **Status: parked (2026-09-17) — revisit when a real need lands.** No
-> branch. Sits alongside `docs/todo/MOTIF_DISCOVERY_PLAN.md` (motif work's
-> P3 lists validation baselines as a to-do — an Immunemap track is one
-> candidate) and `docs/todo/BEHAVIOUR_READOUT_PLAN.md` (also parked). The
-> discovery work — the Immunemap format spec, the existing
-> `ccia-importTracks` plugin's fit — is captured here so the next session
-> starts from the answer, not the search.
+> **Status: images built (2026-11-08), branch `feat/immunemap-import`; curated tracks not built.**
+> Read *Built 2026-11-08* first, then *Revision 2026-11-08*. The driving use changed: Immunemap is
+> a source of public intravital datasets **with several treatment conditions**, to show Cecelia's
+> analysis across conditions. The curated-track benchmark is a nice-to-have, not the point. That
+> makes it Option B, in core rather than a plugin (the maintainer, 2026-11-08). D1, D3 and D6 are
+> superseded for images; they still describe the track side, which isn't built.
+
+## Built 2026-11-08 — Import from Immunemap (images)
+
+Same shape as legacy migration: preview → register placeholders → a per-image task does the work.
+
+| Piece | Where |
+|---|---|
+| Client: experiment manifest, channel labels, resumable verified download | `python/cecelia/utils/immunemap.py` (tests `test_immunemap.py`, real fixtures in `test-data/immunemap/`) |
+| Imaris voxel size, to cross-check Immunemap's | `ims_meta.voxel_size` |
+| `POST /api/import/scan-immunemap`, `POST /api/import/register-immunemap` | `api/src/routes/immunemap.jl` |
+| `importImages.immunemap` = composite of `importImages.immunemapFetch` (download into the image folder, set `ori_path`) → `importImages.omezarr` | `app/src/tasks/importImages/immunemap*.{jl,json}` |
+| Dialog: paste the experiment link, scan, tick videos, add | `ImmunemapImportDialog.vue` on Manage images; logic in `utils/immunemapImport.ts` |
+
+Decisions — B1, B3 and the one-set half of B2 are the maintainer's (2026-11-08); the rest were
+made while building and are open to his review:
+
+- **B1. Core, not a plugin** (maintainer). Public data needs no credentials, so the reason for a plugin is gone.
+  The cost: core depends on `api.immunemap.org` staying up for this one feature.
+- **B2. One experiment = one new set** (maintainer); **the condition is the image's `condition`
+  attribute** (proposed). The raw
+  Immunemap group name, unparsed. Compare by attribute groups on it. (Answers Q7.)
+- **B3. The download is deleted after a successful import** (maintainer). The composite deletes step 1's file
+  once `omezarr` succeeds. A failed run keeps the file or its `.partial`, and the next run resumes.
+  `ori_path` then points at a deleted file, which a metadata refresh already tolerates.
+- **B4. Frame interval from Immunemap when the file has none** (proposed). The first import read
+  "no timing in the file": wrong — `TimeInfo` holds a stamp per frame, but Imaris writes nine
+  fractional digits and `ims_meta` parsed six, so the series was dropped. Fixed (and the nominal
+  `LSM Dataset Size/Time Interval [s]` added as a tier), so the file's own measured interval is used
+  now. The declared tier stays as the backstop for a file that really has none. Registration stores `meta.declaredTimeIncrement` (the timestamps' median gap, else
+  1/fps), and `omezarr` applies it **last**, after the store and the file, recording the source as
+  `TimeIncrementDeclared`. Any source can use the tier; only Immunemap does today.
+- **B5. The file's voxel size wins** (proposed); a disagreement with Immunemap's `spacing` is a QC warning
+  (`import.immunemap_spacing`). On experiment 63 they agree everywhere, including video 309's
+  1.8 µm, which is a 10× overview (the header names a 10x/0.3 objective), not an error.
+
+Provenance per image lives in `meta.immunemap`: acquisition and video ids, experiment and group,
+DOIs, checksums, Immunemap's calibration, and when it was retrieved (with `md5Verified`).
+
+**Acquisition settings from Imaris files**: `ims_meta.acquisition_settings` reads what Imaris
+copies from the source microscope (system, objective + NA, per-channel excitation, emission filter
+and pinhole, planned z-stack and time-lapse). It is not Immunemap-specific: every `.ims` import gets it.
+The Zeiss `Subblock*` laser and detector entries are left unread — their active flags are unverified.
+
+**Group attributes (Q9, built):** the dialog shows a group × attribute table; `time` is prefilled from
+the group names (`timeFromGroupName`, `utils/immunemapImport.ts`), other columns are added and typed by
+the user, and each becomes an image attribute beside the raw `condition`
+(`immunemap_image_attrs`, `api/src/routes/immunemap.jl`).
+
+**Not built:** curated tracks (Q6, Q8 below), and a guide (the feature is listed in
+`lib/guides/unguided.ts`).
 
 ## Goal
 
@@ -44,6 +93,51 @@ Two independent reasons:
   integration is exactly the "one way to do each thing" trap
   `CLAUDE.md` warns about. Answer them once, deliberately, when a second
   API-driven plugin appears.
+
+## Revision 2026-11-08 — premises that moved
+
+Triggered by a full-importer brief (`docs/archive/IMMUNEMAP_IMPORT_PROMPT.md`), which adds a third
+use case: **curated tracks as ground truth for benchmarking Cecelia's tracking**. Re-probed
+`api.immunemap.org` unauthenticated, using acquisition 309, video 409 (uid `2JBABTBNRF8MR978J016GM606A`)
+and experiment 101:
+
+- **Public data needs no JWT.** `/acquisition/{id}`, `/experiment/{id}`, `/video/{id}`,
+  `/video/{id}/tracks` and `/video/{uid}/ims` all return 200 with no token. The IMS download is
+  `application/octet-stream`, and its `Content-Length` equals `original_file.size`, so it is the
+  original file and can be checked against `original_file.md5`/`sha1`. Visibility is
+  `access.public` on each acquisition. This removes D6's blocker for public data, so Option B no
+  longer needs credential storage.
+- **Track frames are 0-based** (`t` 0–59 for 60 frames). The old line `frame_base = 1` was wrong.
+- **Curated tracks are 2D on a 3D video.** Video 409 has 9 slices, but every point has `z = 1`.
+  x/y are sub-pixel pixel coordinates. A benchmark against Cecelia's 3D tracks must compare in xy
+  only. Whether that is true of every video is untested.
+- **Track fields:** `id`, `label` (the source CSV name), `color`, `author`, `video`, `date`,
+  `points`, `cellTypeName` (e.g. "B cells") and `cellTypeObject`.
+- **Experiment and group IDs are different ID spaces.** Acquisition 309 has
+  `experimental_group: 101`, but `/experiment/101` is a neutrophil study whose only group is 155
+  (acquisitions 526–528). To enumerate an experiment, read `/experiment/{id}` →
+  `experimental_groups[].acquisition[]` and fetch each one. Groups have no endpoint of their own
+  (404), and auto-created groups are called "Default Group".
+- **Metadata the old plan didn't have** (from `/acquisition/{id}`):
+  - Channel identity comes from `cell_stainings[].channels[].selected` with `class` and
+    `fluorophore`. `channel.name` is null, and `channel_configuration` lists 6 virtual channels
+    for 3 real ones.
+  - Each acquisition has a DOI (`links[].doi`), `tags`, `notes` and `area`.
+  - `time_steps` gives ISO timestamps to cross-check against `1/fps`.
+  - `upload_status` is a number (4 seen); its meaning is unknown.
+- **Recall only.** The curated tracks are a hand-picked subset of cells, so recall against them
+  means something and precision does not.
+- **There is no arrest coefficient to benchmark against yet.** Today arrest exists only as a
+  fraction of time in a state: the HMM `arrested`-state frequency through `track_props`
+  (`{m}.{cat}`). The designed route is `MOTILITY_METRICS_PLAN.md` D1/Q2, which is time in a gated
+  slow population with dwell bouts, P3b. It isn't built. The plan answered Q3 with no smoothed
+  arrest column.
+- **D7 caveat:** in `attach` mode the import writes `track_id`, the column
+  `tracking.bayesian_tracking` writes, so it replaces Cecelia's tracks on that segmentation. Ground
+  truth that must stay separate goes in through `create`.
+
+**Reopened:** D3 (manual two-step flow) and D6 (JWT out of scope). Their reasons assumed a login,
+and public data needs none. Whether to promote to Option B is open question 5.
 
 ## Locked decisions
 
@@ -105,7 +199,7 @@ is what the choice would look like if the workflow evolves.
 - **Files added, in the plugin repo** (`github.com/schienstockd/ccia-importTracks`):
   - `templates/immunemap.json` — column mapping for the flattened Immunemap
     tracks JSON (`points[]` → per-spot rows with `id, t, x, y, z`,
-    frame_base = 1, spotUnit = pixel).
+    frame_base = 0 — corrected 2026-11-08, spotUnit = pixel).
   - `python/track_readers.py` — new `read_immunemap_json(path)` branch,
     called when file extension is `.json` and template = `immunemap`.
     Flattens `[{id, points: [[t,x,y,z], …]}]` to a per-spot dataframe.
@@ -181,8 +275,9 @@ Array of track objects:
 ```
 
 Plus `/acquisition/{id}`, `/experiment/{id}`, `/search?q=…`, `/user`,
-`/register`. Everything except `/video/` (route registry) and
-`/search` requires JWT. Register at `api.immunemap.org/register`.
+`/register`. ~~Everything except `/video/` and `/search` requires JWT.~~
+**Corrected 2026-11-08:** public data is served without a JWT (see *Revision*). The 2026-09-17
+probe either predates that or tested non-public items.
 
 ### What Cecelia already handles
 
@@ -192,7 +287,7 @@ Plus `/acquisition/{id}`, `/experiment/{id}`, `/search?q=…`, `/user`,
   makes a "points segmentation" with the motility-only caveat. The
   earlier concern about needing to invent a data-model kind for
   centroids-only is void — the plugin already ships this.
-- **Column-mapping**: `spotUnit = pixel` + `frameBase = 1` + per-column
+- **Column-mapping**: `spotUnit = pixel` + `frameBase = 0` (corrected 2026-11-08) + per-column
   select boxes on the form cover Immunemap's default coordinate/frame
   convention without a code change.
 
@@ -223,6 +318,24 @@ at that point.
    design question, not an Immunemap one. Do not answer it in this plan;
    flag it in `docs/todo/PLUGINS_PLAN.md` if Option B ever becomes real.
 
+5. ~~**(2026-11-08) Option A or B?**~~ **Answered: B, in core** (B1).
+6. **(2026-11-08) Where curated tracks live.** `create` mode, a points segmentation named e.g.
+   `immunemap`, is separate today. Does the benchmark need them on the *same* cells as a Cecelia
+   segmentation, which is `attach` without overwriting and would need a second track column?
+7. ~~**(2026-11-08) Experiment mapping.**~~ **Answered:** one set per experiment, condition as an
+   attribute (B2).
+8. **(2026-11-08) Benchmark scope.** Recall, ID switches and length coverage in xy (curated tracks
+   are 2D, see *Revision*), plus motility comparison on the measures that exist. Arrest waits for
+   `MOTILITY_METRICS_PLAN` P3b, or uses HMM state frequency in the meantime?
+
+9. **(2026-11-08) Facets from group names.** The maintainer wants conditions chunked "more
+   naturally" than one raw `condition`. A rule split gets the time reliably (`30 min`, `24 h`) and
+   little else: "irrelevant antigens (BSA)" vs "irrelevant antigens", brackets meaning an agent in one
+   experiment and "(for anti-beta1 integrin)" in another. Proposal: a group × facet table in the
+   dialog, time prefilled, the rest typed or corrected by the user, stored as one attribute per facet
+   beside the raw `condition`. **Answered: build it** (maintainer, 2026-11-08). Built as proposed;
+   only time is parsed (a time written unit-first, "Day 3", is left blank rather than guessed).
+
 ## References
 
 Repo-relative paths.
@@ -246,6 +359,10 @@ Repo-relative paths.
   captured in its Verdict.
 - `docs/archive/behavior-readout-standardization-prompt.md` — the
   original prompt whose Immunemap reference triggered this discovery.
+- `docs/archive/IMMUNEMAP_IMPORT_PROMPT.md` — a later full-importer brief
+  (2026-11-08, not run). Its outcome note lists what it adds: the
+  acquisition JSON's `cell_stainings` channel mapping, and the point that
+  only recall is meaningful against the curated tracks.
 
 External (source of the format spec):
 

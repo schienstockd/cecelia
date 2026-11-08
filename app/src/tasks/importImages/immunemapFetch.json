@@ -1,0 +1,14 @@
+{
+  "task": "immunemapFetch",
+  "fun_name": "importImages.immunemapFetch",
+  "label": "Download from Immunemap",
+  "purpose": "Download a registered Immunemap video, checked against its checksum",
+  "useWhen": ["Step 1 of Import from Immunemap, run by it — not on its own"],
+  "notWhen": ["Images added from disk: they have nothing to download"],
+  "category": "import",
+  "group": "Import",
+  "env": ["local"],
+  "hidden": true,
+  "resource_pool": "io",
+  "params": []
+}

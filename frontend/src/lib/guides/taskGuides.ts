@@ -670,15 +670,16 @@ export const preprocessImagesGuide = moduleTaskGuide({
   ],
   params: [
     'Source image — which version of this image to crop; defaults to the active one.',
-    'Crop area — draw a box on the preview; z/t unset = keep the whole axis.',
+    'Crop area — Draw… opens the viewer: drag a box (Square keeps it square), set z/t, then Use.',
+    'Name / Put in set — the crop is a new image, <name>_crop (_001, _002 if taken), in the set you pick.',
   ],
   after: [
     {
       anchor: 'images.table',
       route: '/preprocess',
       placement: 'top-start',
-      title: 'It made a new version',
-      text: 'The row picks up an extra version — the info icon lists every version this image has.',
+      title: 'Crop makes a new image',
+      text: 'A new row appears in the chosen set. MIP, bin and resample add a version instead — the info icon lists them.',
       bullets: [
         'Everything downstream reads the ACTIVE version.',
         'Nothing is destroyed — flip back by making the original active.',

@@ -81,7 +81,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
     haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to set manifest)
-    new_img = add_image!(s; name = "$(img.name) (z-$(p.op))", meta = proj_meta, attr = img.attr)
+    new_img = add_image!(s; name = derived_image_name(proj, img.name, "z-$(p.op)"), meta = proj_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

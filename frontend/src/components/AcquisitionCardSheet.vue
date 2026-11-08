@@ -36,42 +36,48 @@ const glyph = (c: { source: CardCell['source'] }) => CARD_GLYPH[c.source]
 
     <h2>1 · Settings, in light-path order</h2>
     <table>
-      <tr><th /><th>Setting</th><th>Last time</th><th class="acs-run">This run</th></tr>
-      <tr v-for="r in card.settings" :key="r.label">
-        <td class="acs-n">{{ r.n }}</td>
-        <td class="acs-k">{{ r.label }}</td>
-        <td>
-          <div v-for="(it, i) in r.items" :key="i" :class="{ 'acs-blank': it.source === 'missing' }">
-            {{ glyph(it) }} {{ it.text }}<span v-if="it.unverified" class="acs-q"> ?</span>
-          </div>
-        </td>
-        <td class="acs-run" />
-      </tr>
+      <thead><tr><th /><th>Setting</th><th>Last time</th><th class="acs-run">This run</th></tr></thead>
+      <tbody>
+        <tr v-for="r in card.settings" :key="r.label">
+          <td class="acs-n">{{ r.n }}</td>
+          <td class="acs-k">{{ r.label }}</td>
+          <td>
+            <div v-for="(it, i) in r.items" :key="i" :class="{ 'acs-blank': it.source === 'missing' }">
+              {{ glyph(it) }} {{ it.text }}<span v-if="it.unverified" class="acs-q"> ?</span>
+            </div>
+          </td>
+          <td class="acs-run" />
+        </tr>
+      </tbody>
     </table>
 
     <h2>2 · Detectors, per channel</h2>
     <table>
-      <tr><th>Channel</th><th>Dye preset</th><th>Laser</th><th>Detector</th><th>Emission filter</th><th>HV</th><th>Gain · offset</th><th class="acs-run">This run</th></tr>
-      <tr v-for="(d, i) in card.detectors" :key="d.channel">
-        <td><b>{{ d.channel }}</b></td><td>{{ d.dye }}</td><td>{{ d.laser }}</td><td>{{ d.detector }}</td>
-        <td :class="{ 'acs-blank': d.filter.source === 'missing' }">{{ glyph(d.filter) }} {{ d.filter.text }}</td>
-        <td v-if="card.autoHV && i === 0" :rowspan="card.detectors.length" class="acs-hv">
-          {{ glyph(card.autoHV) }} {{ card.autoHV.text }}<span v-if="card.autoHV.unverified" class="acs-q"> ?</span>
-        </td>
-        <td v-else-if="d.hv" :class="{ 'acs-blank': d.hv.source === 'missing' }">{{ glyph(d.hv) }} {{ d.hv.text }}</td>
-        <td :class="{ 'acs-blank': d.gainOffset.source === 'missing' }">{{ glyph(d.gainOffset) }} {{ d.gainOffset.text }}</td>
-        <td class="acs-run" />
-      </tr>
+      <thead><tr><th>Channel</th><th>Dye preset</th><th>Laser</th><th>Detector</th><th>Emission filter</th><th>HV</th><th>Gain · offset</th><th class="acs-run">This run</th></tr></thead>
+      <tbody>
+        <tr v-for="(d, i) in card.detectors" :key="d.channel">
+          <td><b>{{ d.channel }}</b></td><td>{{ d.dye }}</td><td>{{ d.laser }}</td><td>{{ d.detector }}</td>
+          <td :class="{ 'acs-blank': d.filter.source === 'missing' }">{{ glyph(d.filter) }} {{ d.filter.text }}</td>
+          <td v-if="card.autoHV && i === 0" :rowspan="card.detectors.length" class="acs-hv">
+            {{ glyph(card.autoHV) }} {{ card.autoHV.text }}<span v-if="card.autoHV.unverified" class="acs-q"> ?</span>
+          </td>
+          <td v-else-if="d.hv" :class="{ 'acs-blank': d.hv.source === 'missing' }">{{ glyph(d.hv) }} {{ d.hv.text }}</td>
+          <td :class="{ 'acs-blank': d.gainOffset.source === 'missing' }">{{ glyph(d.gainOffset) }} {{ d.gainOffset.text }}</td>
+          <td class="acs-run" />
+        </tr>
+      </tbody>
     </table>
 
     <h2>3 · Target — check your first snap against this</h2>
     <table>
-      <tr><th>Channel</th><th>Clipped (of signal)</th><th>Zeros</th><th>Brightest 1 %, top → bottom</th><th>Brightest 1 %, first → last frame</th><th class="acs-run">Your snap</th></tr>
-      <tr v-for="t in card.targets" :key="t.channel">
-        <td><b>{{ t.channel }}</b></td>
-        <td v-for="(c, i) in [t.clipped, t.zeros, t.byDepth, t.byTime]" :key="i" :class="{ 'acs-blank': c.source === 'missing' }">{{ glyph(c) }} {{ c.text }}</td>
-        <td class="acs-run" />
-      </tr>
+      <thead><tr><th>Channel</th><th>Clipped (of signal)</th><th>Zeros</th><th>Brightest 1 %, top → bottom</th><th>Brightest 1 %, first → last frame</th><th class="acs-run">Your snap</th></tr></thead>
+      <tbody>
+        <tr v-for="t in card.targets" :key="t.channel">
+          <td><b>{{ t.channel }}</b></td>
+          <td v-for="(c, i) in [t.clipped, t.zeros, t.byDepth, t.byTime]" :key="i" :class="{ 'acs-blank': c.source === 'missing' }">{{ glyph(c) }} {{ c.text }}</td>
+          <td class="acs-run" />
+        </tr>
+      </tbody>
     </table>
     <div v-if="card.targetsMissing" class="acs-small">Not measured: Refresh metadata in Cecelia before printing.</div>
 
