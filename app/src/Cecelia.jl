@@ -32,7 +32,7 @@ export gen_uid, UID_LENGTH
 export write_atomic, write_json_atomic
 export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources
 export write_http_body!
-export safe_name_part
+export safe_name_part, name_suffix, NAME_SUFFIX_MAX, numbered_name, derived_image_name
 
 # ── Log rail (console records, the server tee, child-process capture) ─────────
 # `log_record`/`TeeLogger`/`install_log_tee!` are what a SERVER installs to forward the package's own
@@ -366,6 +366,7 @@ include("tasks/cleanupImages/flow_register.jl")
 include("tasks/cleanupImages/smooth.jl")
 include("tasks/cleanupImages/denoise.jl")
 include("tasks/opticalFlow/train_support_denoise.jl")
+include("tasks/editImages/cropImage_box.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/editImages/zProject.jl")

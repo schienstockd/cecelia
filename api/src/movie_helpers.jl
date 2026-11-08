@@ -88,15 +88,12 @@ end
 
 # `path`, or — when `numbered` and a file is already there — the first free `<stem>_001<ext>`,
 # `_002`, … beside it. Off = the caller overwrites, which is what a re-record of one view wants; on =
-# "keep the last one too". One rule for movies and figures (`_figure_filename`).
+# "keep the last one too". One rule for movies and figures (`_figure_filename`) — and, through the
+# package's `numbered_name`, for a cropped image's name.
 function _numbered_if_taken(path::AbstractString, numbered::Bool)::String
-    (numbered && isfile(path)) || return String(path)
+    numbered || return String(path)
     stem, ext = splitext(path)
-    k = 1
-    while isfile("$(stem)_$(lpad(k, 3, '0'))$ext")
-        k += 1
-    end
-    "$(stem)_$(lpad(k, 3, '0'))$ext"
+    numbered_name(stem, isfile; ext)
 end
 
 # A user-supplied filename addition → a safe `_suffix` fragment, or "" for none. Same character rule as
@@ -106,12 +103,9 @@ end
 # import and the second overwrites the first, with nothing in the name to say which is which. The
 # frontend prefills it with the open image VERSION (the usual reason two movies of one image differ),
 # but it is free text — the comparison someone wants to label is not always a version.
-const MOVIE_SUFFIX_MAX = 40
-function _movie_suffix(raw)::String
-    safe = _safe_name_part(raw)                         # shared rule: no leading/trailing separators
-    isempty(safe) && return ""
-    "_" * first(safe, MOVIE_SUFFIX_MAX)
-end
+# The rule is the package's `name_suffix`, shared with a cropped image's name.
+const MOVIE_SUFFIX_MAX = NAME_SUFFIX_MAX
+_movie_suffix(raw)::String = name_suffix(raw)
 
 # Sentinel token in `file_attrs` meaning "the shown channel names joined by '-'" — mirrors the
 # frontend MOVIE_CHANNELS_TOKEN (utils/batchMovie.ts); keep the two in sync.
