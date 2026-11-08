@@ -274,7 +274,7 @@ const groupByOpts = computed<string[]>(() => {
   const discovered = obsCols.value.filter(c => CATEGORICAL_OBS.test(c))
   return [...new Set([...hints, ...discovered])]
 })
-const groupBy = computed<string>({ get: () => props.ui.groupBy ?? '', set: v => (props.ui.groupBy = v) })
+const groupBy = computed<string>({ get: () => props.ui.groupBy ?? props.spec.dataSource.defaultGroupBy ?? '', set: v => (props.ui.groupBy = v) })
 
 // ── Compare groups (between-group hypothesis test) ────────────────────────────────
 // Only meaningful for chart types where between-series comparison reads (bar, boxplot, points,

@@ -194,6 +194,29 @@ end
     let p = Cecelia.parse_crop_image_params(Dict{String,Any}("valueName" => "x"))
         @test p.cropBox.x0 === 0 && p.cropBox.z0 === -1
     end
+    # target set + name addition: absent / null → "" (the source's set, the "crop" name)
+    let p = Cecelia.parse_crop_image_params(Dict{String,Any}("toSetUid" => "S1", "nameSuffix" => "left lobe"))
+        @test p.toSetUid == "S1" && p.nameSuffix == "left lobe"
+    end
+    let p = Cecelia.parse_crop_image_params(Dict{String,Any}("toSetUid" => nothing))
+        @test p.toSetUid == "" && p.nameSuffix == ""
+    end
+    # The crop's name follows the movie rule: <name>_<suffix>, then _001, _002 when taken — so two
+    # crops of one image never read the same (they used to both be "<name> (cropped)").
+    let taken = Set(["img A", "img A_crop", "img A_crop_001", "img A_left_lobe"])
+        @test derived_image_name("img B", Cecelia.crop_name_suffix(""), in(taken)) == "img B_crop"
+        @test derived_image_name("img A", Cecelia.crop_name_suffix(""), in(taken)) == "img A_crop_002"
+        @test derived_image_name("img A", Cecelia.crop_name_suffix("  "), in(taken)) == "img A_crop_002"
+        @test derived_image_name("img A", Cecelia.crop_name_suffix("left lobe"), in(taken)) == "img A_left_lobe_001"
+        @test derived_image_name("img A", Cecelia.crop_name_suffix("../x"), in(taken)) == "img A_x"
+    end
+    # Every task that makes a NEW image names it the same way (bin, projections, resample, copy,
+    # register): <name>_<tag>, numbered when taken.
+    let taken = Set(["img A_z-max", "img A_copy", "img A_copy_001"])
+        @test derived_image_name("img A", "z-max", in(taken)) == "img A_z-max_001"
+        @test derived_image_name("img A", "copy", in(taken)) == "img A_copy_002"
+        @test derived_image_name("img A", "bin2", in(taken)) == "img A_bin2"
+    end
 
     # DtypeConvert — dtype + rescale are LOWERCASED at parse (the handler's whitelist reads the
     # lowered value).

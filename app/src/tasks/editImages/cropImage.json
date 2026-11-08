@@ -31,7 +31,22 @@
       "geometry": "box3d",
       "required": true,
       "default": null,
-      "tip": "Draw the region to keep; z/t unset = keep whole axis"
+      "tip": "Draw the region to keep on the viewer"
+    },
+    {
+      "key": "nameSuffix",
+      "label": "Name",
+      "type": "text",
+      "default": "",
+      "placeholder": "crop",
+      "tip": "Added to the image name; a taken name gets _001, _002"
+    },
+    {
+      "key": "toSetUid",
+      "label": "Put in set",
+      "type": "setSelection",
+      "default": "",
+      "tip": "Set the cropped image goes into"
     }
   ]
 }

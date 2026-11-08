@@ -97,7 +97,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     copy_source_meta!(bin_meta, src_meta)
 
     tag     = p.factorX == p.factorY ? "bin$(p.factorX)" : "bin$(p.factorX)x$(p.factorY)"
-    new_img = add_image!(s; name = "$(img.name) ($tag)", meta = bin_meta, attr = img.attr)
+    new_img = add_image!(s; name = derived_image_name(proj, img.name, tag), meta = bin_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

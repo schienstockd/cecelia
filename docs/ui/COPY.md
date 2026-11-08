@@ -261,7 +261,7 @@ Two mappings exist, both display-only:
 |---|---|---|
 | `mean_intensity_0`, … | the channel name (`CD3`) | `gating.colLabel` |
 | `centroid_x` / `_y` / `_z` | `X position` / `Y position` / `Z position` | `utils/gatingAxes.ts` → `centroidLabel` |
-| `centroid_t` | `Time` (`Time (frames)` on a frame axis, `Time (s)` once converted) | `centroidLabel`, `timeAxis.ts` → `frameAxisLabel` |
+| `centroid_t` | `Time` (`Time (frames)` on a frame axis, `Time (s)` / `(min)` / `(h)` once converted, unit by span) | `centroidLabel`, `timeAxis.ts` → `frameAxisLabel` |
 
 `centroid_t` is the one that made the rule: it was the option you pick to split a movie into
 timepoints, and it read as neither "time" nor anything else a biologist measures. `centroid_x` had the

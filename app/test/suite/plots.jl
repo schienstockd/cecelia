@@ -278,6 +278,45 @@ end
     @test byattr[("KO","A/q")]["n"] == 1 && byattr[("KO","A/q")]["median"] == 2.0
 end
 
+@testset "plot count over time — per-frame proportion + zero frames" begin
+    # Populations over time: count split by `centroid_t`. Image x, segmentation A:
+    #   frame 0: /p=3 /q=1  (total 4) · frame 1: /p=2 /q=0 (total 2) · frame 2: /p=1 /q=1 (total 2)
+    df = DataFrame("value_name" => fill("A", 8),
+                   "pop" => ["/p","/p","/p","/q", "/p","/p", "/p","/q"],
+                   "uID" => fill("x", 8),
+                   "centroid_t" => [0, 0, 0, 0, 1, 1, 2, 2])
+    key(r) = Dict((s["pop"], s["group"]) => s["value"] for s in r["series"])
+    prop = Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                normalize=:fraction, by_image=true, group_by="centroid_t")
+    k = key(prop)
+    # the denominator is the FRAME's plotted cells, not the image's across all frames (8)
+    @test k[("A/p","0")] ≈ 3/4 && k[("A/q","0")] ≈ 1/4
+    @test k[("A/p","2")] ≈ 1/2 && k[("A/q","2")] ≈ 1/2
+    # frame 1 has no /q: an explicit 0, so the line dips instead of bridging frame 0 → 2
+    @test k[("A/p","1")] ≈ 1.0 && k[("A/q","1")] == 0.0
+    # every frame's shares sum to 1 (mutually exclusive pops)
+    for t in ("0","1","2"); @test k[("A/p",t)] + k[("A/q",t)] ≈ 1.0; end
+    raw = key(Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                   normalize=:none, by_image=true, group_by="centroid_t"))
+    @test raw[("A/q","1")] == 0.0 && raw[("A/p","0")] == 3.0
+    # the raw CSV export carries the same per-frame numbers (not one per-image total)
+    ex = Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                              normalize=:fraction, by_image=true, group_by="centroid_t", raw=true)
+    @test ex["chartType"] == "raw" && ex["groupBy"] == "centroid_t" && ex["measure"] == "proportion"
+    er = Dict((r["pop"], r["group"]) => r["value"] for r in ex["rows"])
+    @test length(er) == 6 && er[("/q","1")] == 0.0 && er[("/p","0")] ≈ 3/4
+    @test all(r["value_name"] == "A" && r["uID"] == "x" for r in ex["rows"])
+    # a CATEGORICAL split keeps the image-wide denominator: one pop split by state reads as its
+    # state distribution, not 1.0 per state — and nothing is zero-filled
+    dfc = DataFrame("value_name" => fill("A", 4), "pop" => fill("/p", 4), "uID" => fill("x", 4),
+                    "live.cell.hmm.state.movement" => ["1", "1", "1", "2"])
+    kc = key(Cecelia._summary_agg(dfc, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                  normalize=:fraction, by_image=true,
+                                  group_by="live.cell.hmm.state.movement"))
+    @test kc[("A/p","1")] ≈ 3/4 && kc[("A/p","2")] ≈ 1/4
+    @test length(kc) == 2
+end
+
 @testset "plot raw (per-datapoint export)" begin
     # raw=true → one tidy row per datapoint (identity + value) for re-plotting externally, instead of
     # collapsing to box stats. Deterministic frame with label + a groupBy column; last row NaN measure.

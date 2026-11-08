@@ -127,6 +127,9 @@ function images(proj::CciaProject)::Vector{CciaImage}
     vcat(map(images, proj._sets)...)
 end
 
+derived_image_name(proj::CciaProject, src_name::AbstractString, suffix)::String =
+    derived_image_name(src_name, suffix, in(Set(String(i.name) for i in images(proj))))
+
 """
     image_by_uid(proj::CciaProject; uid) -> Union{CciaImage,Nothing}
 

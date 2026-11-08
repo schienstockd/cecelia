@@ -339,6 +339,50 @@ function safe_name_part(raw)::String
     String(strip(s, ['_', '.']))
 end
 
+const NAME_SUFFIX_MAX = 40
+
+"""
+    name_suffix(raw) -> String
+
+A user's name addition as a `_suffix` fragment (`safe_name_part`, capped at `NAME_SUFFIX_MAX`), or `""`
+for none. ONE rule for every output that is named "<image name>_<suffix>": a recorded movie
+(`_movie_suffix`) and every new image a task derives (`derived_image_name`) — so two outputs of one image are told apart
+the same way everywhere.
+"""
+function name_suffix(raw)::String
+    safe = safe_name_part(raw)
+    isempty(safe) && return ""
+    "_" * first(safe, NAME_SUFFIX_MAX)
+end
+
+"""
+    numbered_name(stem, taken; ext = "") -> String
+
+`stem * ext`, or — when `taken` says it is in use — the first free `<stem>_001<ext>`, `_002`, …. The ONE
+collision rule for named outputs: movies and figures (`_numbered_if_taken`, `taken = isfile`) and
+derived images (`derived_image_name`, `taken` = the project's image names).
+"""
+function numbered_name(stem::AbstractString, taken::Function; ext::AbstractString = "")::String
+    name = string(stem, ext)
+    taken(name) || return name
+    k = 1
+    while taken("$(stem)_$(lpad(k, 3, '0'))$ext")
+        k += 1
+    end
+    "$(stem)_$(lpad(k, 3, '0'))$ext"
+end
+
+"""
+    derived_image_name(src_name, suffix, taken) -> String
+
+The name of a NEW image a task makes from `src_name` (crop, bin, projections, resample, copy,
+register): `<src_name>_<suffix>` (`name_suffix`) numbered by `numbered_name` when `taken` — the movie
+rule, so a second output of one image never reads the same as the first. The `CciaProject` method
+checks against every image name in the project.
+"""
+derived_image_name(src_name::AbstractString, suffix, taken::Function)::String =
+    numbered_name(string(src_name, name_suffix(suffix)), taken)
+
 """
     git_probe(args...; dir = pwd()) -> String
 

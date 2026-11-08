@@ -2,14 +2,7 @@ struct CropImage <: CciaTask end
 
 task_output_effect(::CropImage) = "new-image"
 
-# The half-open crop box in full-res pixels. `z0/z1 = -1` and `t0/t1 = -1` mean "keep the whole
-# axis" (2D image / no time trim). Emitted by napari's 3D-crop draw via `crop_box` on the bridge.
-Base.@kwdef struct CropBox
-    x0::Int = 0;  x1::Int = 0
-    y0::Int = 0;  y1::Int = 0
-    z0::Int = -1; z1::Int = -1
-    t0::Int = -1; t1::Int = -1
-end
+# The box, provenance and the crop's name: `cropImage_box.jl`.
 
 # Typed shape of what `_run_task(::CropImage, …)` reads from `params`. `cropBox` arrives nested
 # because the `imagePicker` widget emits one param whose value is the whole box; parsed into a
@@ -17,33 +10,9 @@ end
 Base.@kwdef struct CropImageParams
     valueName::String = VERSIONED_DEFAULT_VAL
     cropBox::CropBox  = CropBox()
+    toSetUid::String  = ""   # set the crop is registered in; "" = the source image's set
+    nameSuffix::String = ""  # the crop's name addition; "" = "crop" (`crop_name_suffix`)
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
-end
-
-function parse_crop_box(d::AbstractDict)::CropBox
-    # JSON3 yields Symbol keys; coerce to String so the getters work for both shapes.
-    b = Dict{String,Any}(String(k) => v for (k, v) in pairs(d))
-    CropBox(;
-        x0 = Int(get(b, "x0", 0)),  x1 = Int(get(b, "x1", 0)),
-        y0 = Int(get(b, "y0", 0)),  y1 = Int(get(b, "y1", 0)),
-        z0 = Int(get(b, "z0", -1)), z1 = Int(get(b, "z1", -1)),
-        t0 = Int(get(b, "t0", -1)), t1 = Int(get(b, "t1", -1)))
-end
-
-"""
-    crop_source(meta) -> (; uid, value_name, box::CropBox) | nothing
-
-Where a cropped image came from, as `_run_task(::CropImage, …)` recorded it in the new image's meta:
-the source image uid, the source VERSION it cropped, and the box (`parse_crop_box`). Adding
-`(x0, y0, z0, t0)` to a coordinate in the crop maps it back into the source (skip an axis at `-1`).
-`nothing` when the image isn't a crop (no `crop_source_uid`).
-"""
-function crop_source(meta::AbstractDict)
-    uid = meta_str(meta, "crop_source_uid")
-    isnothing(uid) && return nothing
-    raw_box = get(meta, "crop_box", nothing)
-    (; uid, value_name = meta_str(meta, "crop_source_value_name"),
-       box = raw_box isa AbstractDict ? parse_crop_box(raw_box) : CropBox())
 end
 
 function parse_crop_image_params(d::AbstractDict)::CropImageParams
@@ -52,38 +21,14 @@ function parse_crop_image_params(d::AbstractDict)::CropImageParams
     CropImageParams(;
         valueName = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         cropBox   = box,
+        toSetUid  = string(something(get(d, "toSetUid", ""), "")),
+        nameSuffix = string(something(get(d, "nameSuffix", ""), "")),
         version = parse_version_pin(d))
 end
 
-# Pure: derive the crop's inherited calibration meta from the SOURCE image's `meta` + the (half-open)
-# crop `box`. A crop keeps the same physical pixel size, channels and frame interval — only the extent
-# shrinks — so the physical scale/unit and channel count carry over unchanged; the Z/T counts shrink to
-# the box when that axis is trimmed (a `-1` bound means "keep the whole axis"). Kept out of `_run_task`
-# so it's unit-testable without a project/zarr on disk. See the crop-metadata note in `_run_task`.
-# The counts are provisional: the source IMAGE's SizeZ can differ from the cropped VERSION's (drift
-# correction pads Z), so `adopt_store_counts!` re-reads them from the written crop.
-function _crop_inherited_meta(src_meta::AbstractDict, box::NamedTuple)::Dict{String,Any}
-    out = Dict{String,Any}()
-    for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
-              "PhysicalSizeZ_raw", "TimeIncrement", "TimeIncrementUnit", "SizeC")
-        haskey(src_meta, k) && (out[k] = src_meta[k])
-    end
-    if box.z0 != -1 && box.z1 != -1
-        out["SizeZ"] = box.z1 - box.z0
-    elseif haskey(src_meta, "SizeZ")
-        out["SizeZ"] = src_meta["SizeZ"]
-    end
-    if box.t0 != -1 && box.t1 != -1
-        out["SizeT"] = box.t1 - box.t0
-    elseif haskey(src_meta, "SizeT")
-        out["SizeT"] = src_meta["SizeT"]
-    end
-    out
-end
-
-# Crop an image to a pixel bounding box and register the result as a NEW image in the same set (a crop
-# changes the extent, so it can't be a version of the source — it's a new image). The box (full-res
-# pixels, half-open) comes from the napari 3D-crop draw (bridge `crop_box`); z0/z1/t0/t1 are -1 when
+# Crop an image to a pixel bounding box and register the result as a NEW image — in the source's set,
+# or `toSetUid` (a crop changes the extent, so it can't be a version of the source). The box (full-res
+# pixels, half-open) is drawn on the viewer (`utils/viewer/cropPick.ts`); z0/z1/t0/t1 are -1 when
 # that axis isn't cropped. Combines the correction runners' "read→transform→write zarr" pattern with
 # the import route's `add_image!` registration.
 # QC-EXEMPT: a crop is a deterministic geometric subset with no measurement output. The output
@@ -123,9 +68,11 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
 
     # the task is handed only the image — recover the set that owns it so we can register a new image
     proj    = load_project(proj_uid)
-    set_idx = findfirst(s -> img.uid in s.image_uids, proj._sets)
+    set_idx = isempty(p.toSetUid) ? findfirst(s -> img.uid in s.image_uids, proj._sets) :
+                                    findfirst(s -> s.uid == p.toSetUid, proj._sets)
     if isnothing(set_idx)
-        on_log("[ERROR] Could not find the set containing image $(img.uid)")
+        on_log(isempty(p.toSetUid) ? "[ERROR] Could not find the set containing image $(img.uid)" :
+                                     "[ERROR] Destination set not found: $(p.toSetUid)")
         return nothing
     end
     s = proj._sets[set_idx]
@@ -150,7 +97,8 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     copy_source_meta!(crop_meta, src_meta)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to the set manifest)
-    new_img = add_image!(s; name = "$(img.name) (cropped)", meta = crop_meta, attr = img.attr)
+    new_img = add_image!(s; name = derived_image_name(proj, img.name, crop_name_suffix(p.nameSuffix)),
+                         meta = crop_meta, attr = img.attr)
 
     # No task subdirs are created for the new image (mirrors the import route): each is made by whoever
     # writes into it. The `data/` sidecar copy below makes its own, which is why it still works.

@@ -5,6 +5,9 @@
 //
 // The drag gesture itself is `drawGeometry.ts`'s rectangle state machine in canvas px; the viewer
 // converts its corners to L0 (`screenToL0`) and hands them here.
+//
+// The crop box drawn on the viewer (`viewerStore.cropPick`) is the same box with other limits: no
+// budget (`maxSide: Infinity`) and, when asked, `square` — every gesture then lands on equal sides.
 
 import type { L0Rect } from '../viewerPick'
 import { PREVIEW_REGION_MAX_SIDE } from './visibleRegion'
@@ -18,7 +21,15 @@ export const BOX_HANDLES: Exclude<BoxHandle, 'move'>[] = ['n', 's', 'e', 'w', 'n
 /** Smallest side a resize may leave, L0 px — below this the model sees no whole cell. */
 export const PREVIEW_BOX_MIN_SIDE = 16
 
-interface Limits { imageW: number; imageH: number; maxSide?: number }
+export interface BoxLimits {
+  imageW: number; imageH: number; maxSide?: number
+  /** Keep the sides equal. Which side leads is the gesture's (`SquareLead`). */
+  square?: boolean
+}
+type Limits = BoxLimits
+
+/** Which side sets a square's size: the one an edge handle moves, or the longer one (a corner, a draw). */
+type SquareLead = 'x' | 'y' | 'max'
 
 /** Integer bounds inside the image, each side within [min, max]. Shrinks from the end that moved
  *  (`anchorX`/`anchorY` say which end stays): a resize past the budget stops at it rather than
@@ -43,13 +54,30 @@ function fit(r: L0Rect, { imageW, imageH, maxSide = PREVIEW_REGION_MAX_SIDE }: L
   return { x0, y0, x1, y1 }
 }
 
+/** `fit`, then equal sides when `lim.square`: the lead side's length, shrunk to what the image leaves
+ *  on the far side of each anchor, laid out from the anchors so the fixed corner stays put. */
+function fitBox(r: L0Rect, lim: Limits, anchorX: 'lo' | 'hi', anchorY: 'lo' | 'hi',
+                lead: SquareLead): L0Rect {
+  const b = fit(r, lim, anchorX, anchorY)
+  if (!lim.square) return b
+  const w = b.x1 - b.x0, h = b.y1 - b.y0
+  const want = lead === 'x' ? w : lead === 'y' ? h : Math.max(w, h)
+  const roomX = anchorX === 'lo' ? Math.floor(lim.imageW) - b.x0 : b.x1
+  const roomY = anchorY === 'lo' ? Math.floor(lim.imageH) - b.y0 : b.y1
+  const side = Math.max(1, Math.min(want, roomX, roomY, lim.maxSide ?? PREVIEW_REGION_MAX_SIDE))
+  const [x0, x1] = anchorX === 'lo' ? [b.x0, b.x0 + side] : [b.x1 - side, b.x1]
+  const [y0, y1] = anchorY === 'lo' ? [b.y0, b.y0 + side] : [b.y1 - side, b.y1]
+  return { x0, y0, x1, y1 }
+}
+
 /** Whether the image needs a preview box at all: one that fits the budget on both axes is previewed
  *  whole, so there is nothing to restrict and no box is shown. */
 export function previewBoxNeeded(imageW: number, imageH: number, maxSide = PREVIEW_REGION_MAX_SIDE): boolean {
   return imageW > maxSide || imageH > maxSide
 }
 
-/** Translate by (dx, dy) L0 px, sliding along an image edge rather than leaving it. */
+/** Translate by (dx, dy) L0 px, sliding along an image edge rather than leaving it. A move never
+ *  reshapes the box — `square` is the resize and draw gestures' business, not a move's. */
 export function moveBox(b: L0Rect, dx: number, dy: number, lim: Limits): L0Rect {
   const w = b.x1 - b.x0, h = b.y1 - b.y0
   const x0 = Math.round(Math.max(0, Math.min(lim.imageW - w, b.x0 + dx)))
@@ -69,13 +97,20 @@ export function resizeBox(b: L0Rect, handle: BoxHandle, dx: number, dy: number, 
     viewportW: lim.imageW, viewportH: lim.imageH,
     bounds: { minX: 0, minY: 0, maxX: lim.imageW, maxY: lim.imageH },
   })
-  return fit({ x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h }, lim,
-             edges.w ? 'hi' : 'lo', edges.n ? 'hi' : 'lo')
+  const lead: SquareLead = (edges.e || edges.w) && (edges.n || edges.s) ? 'max' : edges.e || edges.w ? 'x' : 'y'
+  return fitBox({ x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h }, lim,
+                edges.w ? 'hi' : 'lo', edges.n ? 'hi' : 'lo', lead)
 }
 
 /** A freshly drawn box from its drag corners (start, end), clamped to the image and the budget —
  *  the start corner stays where the user pressed. */
 export function drawnBox(start: [number, number], end: [number, number], lim: Limits): L0Rect {
-  return fit({ x0: start[0], y0: start[1], x1: end[0], y1: end[1] }, lim,
-             end[0] >= start[0] ? 'lo' : 'hi', end[1] >= start[1] ? 'lo' : 'hi')
+  return fitBox({ x0: start[0], y0: start[1], x1: end[0], y1: end[1] }, lim,
+                end[0] >= start[0] ? 'lo' : 'hi', end[1] >= start[1] ? 'lo' : 'hi', 'max')
+}
+
+/** The box made square in place (the Square toggle switched on over an existing box): the shorter
+ *  side grows to the longer from the top-left, shrinking where the image runs out. */
+export function squareBox(b: L0Rect, lim: Limits): L0Rect {
+  return fitBox(b, { ...lim, square: true }, 'lo', 'lo', 'max')
 }

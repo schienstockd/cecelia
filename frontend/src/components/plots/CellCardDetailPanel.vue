@@ -134,10 +134,12 @@ function timeLabel(t: number, t_s?: number): string {
       <!-- Full stats: every measure on the same shared scale as the grid, laid out one per row like
            the card footer. Taller row here so shape and whisker length read at a glance. -->
       <table class="ccd-stats">
-        <tr v-for="s in card.stats" :key="s.name">
-          <td class="ccd-stat-name cc-muted cc-fs-xs">{{ shortTrackMeasure(s.name) }}</td>
-          <td class="ccd-plot"><StatBox :stat="s" :scale="scaleFor(s)" :w="360" :h="22" /></td>
-        </tr>
+        <tbody>
+          <tr v-for="s in card.stats" :key="s.name">
+            <td class="ccd-stat-name cc-muted cc-fs-xs">{{ shortTrackMeasure(s.name) }}</td>
+            <td class="ccd-plot"><StatBox :stat="s" :scale="scaleFor(s)" :w="360" :h="22" /></td>
+          </tr>
+        </tbody>
       </table>
     </div>
   </FloatingPanel>

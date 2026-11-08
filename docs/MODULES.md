@@ -835,8 +835,11 @@ each other channel `competing` / `af` / unused.
 ```
 
 **`imagePicker`** — a spatial selection AUTHORED on the image. Instead of eight int fields, the row
-shows a summary + a **Draw…** button that opens `ImagePickerModal` — a coloured z-MIP + rectangle
-draw + z/t range sliders (backend: the reused `/api/crop/*` endpoints in `api/src/crop_api.jl`). The
+shows a summary + a **Draw…** button that opens the **viewer window** on `context.images[0]`, at the
+version the task reads, in crop mode: the viewer's preview box (`utils/viewer/previewBox.ts`, no size
+budget, optional **Square**) draws the XY area and `ViewerCropBar` adds the z/t ranges and Use /
+Cancel. The two windows talk through `viewerStore.cropPick` (`utils/viewer/cropPick.ts`): the form
+writes a request, the viewer answers with the task's box on Use, the form clears it. The
 `geometry` field says what to draw:
 
 | `geometry` | Value shape | Use |
@@ -853,13 +856,18 @@ Preview version comes from the sibling `valueNameSelection` — the widget draws
 the task will read. The task runs against every selected image; the preview is `context.images[0]`
 and the same value applies to all of them. Reach for this whenever a task consumes a spatial region
 of an image; a follow-up geometry (`box2d`, `point2d`, `line2d`, `polygon2d`) is a matter of
-extending the modal's drawing branch. Handler reads the value as a nested dict — coerce JSON3 keys
+a new viewer mode beside the box. Handler reads the value as a nested dict — coerce JSON3 keys
 with `pairs(box)` before unpacking.
 
 **`imageSelection`** — one image of the open project, by uid; `""` = none. A plain select listing
 `Set / image` for every image the frontend has loaded (`ParamRenderer.vue`). The validator treats it as a
 string, and the handler resolves it with `init_object(img_project_uid(img), uid)`. Use it when a task
 names ANOTHER image than the one it runs on — today `gate.manual_gate`'s `copyFrom` exemplar.
+
+**`setSelection`** — one set of the open project, by uid; `""` = the source image's own set (shown as
+*Same set*). Validated as a string; the handler resolves it against `proj._sets` and fails the run on
+an unknown uid. Use it when a task makes a NEW image and the user may want it elsewhere — today
+`editImages.cropImage`'s `toSetUid`.
 
 ### Which picker — decide this before writing the param
 
