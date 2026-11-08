@@ -255,6 +255,30 @@ class MipRenderTest(unittest.TestCase):
         want[0:4, 0:5] = _srgb_encode(self.palette[3, :3] / 255)
         self.assertLessEqual(int(np.abs(got - want).max()), 2)
 
+    def test_shown_sub_range_draws_only_those_planes(self):
+        """``zwin``: the texture holds all NZ planes, the box shows planes 2-4. Face-on that is the MIP
+        of those planes alone — what a ±n window at a stack end draws out of its 2n+1 held planes."""
+        lo, n = 2, 3
+        img = self.host.render(self.NX, self.NY, self._uniforms(
+            **{"ext.z": n, "cam.steps": 8 * n, "zwin.off": lo, "zwin.shown": n}))
+        acc = np.zeros((self.NY, self.NX, 3))
+        for c, (wlo, whi) in enumerate(self.windows):
+            mx = self.vol[c, lo:lo + n].max(axis=0).astype(np.float64)
+            acc += _ramp(self.lut[c], (mx - wlo) / max(whi - wlo, 1), self.stops)
+        got = img[..., :3].astype(np.int32)
+        self.assertLessEqual(int(np.abs(got - _srgb_encode(acc)).max()), 2, "zwin != MIP of the shown planes")
+
+    def test_shown_sub_range_matches_holding_only_those_planes_when_rotated(self):
+        """Rotated, the shown box must sample exactly what a texture holding only those planes does."""
+        lo, n = 2, 3
+        rot = {"cam.yaw": 0.6, "cam.pitch": 0.4, "vp.ortho": 0, "cam.steps": 64, "ext.z": n}
+        held = self.host.render(self.NX, self.NY, self._uniforms(**rot, **{"zwin.off": lo, "zwin.shown": n}))
+        self.host.set_volume(np.ascontiguousarray(self.vol[:, lo:lo + n]))
+        alone = self.host.render(self.NX, self.NY, self._uniforms(
+            **rot, **{"dims.nz": n, "dims.zPerChannel": n}))
+        self.assertGreater(int(alone[..., :3].max()), 0, "rotated view drew nothing; the check is vacuous")
+        self.assertLessEqual(int(np.abs(held.astype(np.int32) - alone.astype(np.int32)).max()), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

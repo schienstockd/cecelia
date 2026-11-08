@@ -17,6 +17,7 @@ struct BU {
   prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
   trail:    vec4<f32>,  // track tail fade: newest end timepoint shown, tail length (frames); µm per overlay size unit (0 = screen px), _
+  zwin:     vec4<f32>,  // first shown plane within the held ones, shown plane count (0 = all), at this level; _, _ — see voxelAt
   ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
 };
 @group(0) @binding(0) var<uniform> p: BU;
@@ -63,3 +64,5 @@ fn pxPerUm(w: f32) -> f32 {
 fn boxCentre() -> vec3<f32> {
   return vec3(p.ext.x * 0.5, p.ext.y * 0.5, p.ext.w + p.ext.z * 0.5);
 }
+
+#include "voxel_at.wgsl"

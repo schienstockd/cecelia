@@ -345,6 +345,14 @@ export interface VolumeRenderer {
    */
   setZPlane?(zLo: number): void
   /**
+   * The planes DRAWN, `[lo, hi]` absolute and inclusive — a sub-range of the planes HELD (`zLo` from
+   * `setImage`/`setZPlane`, `zDepth` deep). A ±n window at a stack end shows fewer planes than it
+   * holds (`heldPlanes`), so moving it never changes the texture shape. Sets the box (`ext.z`), its z
+   * origin for the overlays, and the shader's `zwin`; a range outside the held planes draws all of
+   * them. Persists across `setImage`/`setZPlane`; the caller redraws.
+   */
+  setShownPlanes?(lo: number, hi: number): void
+  /**
    * Brick renderer only: snapshot of the atlas residency for the Debug mini map. Returns
    * every resident brick's virtual key plus the in-flight fetch keys — the caller filters
    * by `t + level` to draw the current-timepoint grid. Cheap (a `pageTable.entries()` walk
@@ -587,6 +595,9 @@ export async function createVolumeRenderer(
   const recap = () => { capacity = Math.max(2, Math.min(byteCap, requested, allowed)) }
   /** z planes per timepoint actually loaded — `meta.nZ` in 3D, 1 in the 2D plane view. */
   let depth = 1
+  /** First plane HELD (`setImage`/`setZPlane`'s `zLo`) and the planes DRAWN of them (`setShownPlanes`). */
+  let heldLo = 0
+  let shownPlanes: [number, number] | null = null
   /** XY dimensions actually loaded — `meta.nX`/`meta.nY` at level 0, else the coarser pyramid level's
    *  dimensions. Set by `setImage`, used by `uploadFrame`'s texture allocation and by the u12/u13
    *  shader uniform (dims.x/y). Level does NOT change the physical extent — a level-1 volume of a 3.3
@@ -688,6 +699,21 @@ export async function createVolumeRenderer(
   }
 
   const pushUniforms = () => { if (usable()) device.queue.writeBuffer(uniforms, 0, u) }
+  // The box is the SHOWN planes; the texture holds `depth` planes from `heldLo`. `ext.z` and its
+  // origin (`ext.w`, which the overlays are placed against) describe what is drawn, `zwin` where it sits
+  // in the texture — see `voxelAt` in mip_common.wgsl.
+  const applyShownPlanes = () => {
+    if (!meta) return
+    let lo = heldLo, n = depth
+    if (shownPlanes) {
+      const a = Math.max(heldLo, shownPlanes[0]), b = Math.min(heldLo + depth - 1, shownPlanes[1])
+      if (a <= b) { lo = a; n = b - a + 1 }
+    }
+    u[U.ext.z] = extentUm(meta, n)[2]
+    u[U.ext.zOriginUm] = Math.max(0, lo) * (meta.voxelUm[2] || 1)
+    u[U.zwin.off] = lo - heldLo
+    u[U.zwin.shown] = n === depth ? 0 : n
+  }
 
   /**
    * Encode the volume and, optionally, the overlays into an open pass. ONE encoder for both the canvas
@@ -787,15 +813,17 @@ export async function createVolumeRenderer(
       recap()
       // Extent is the PHYSICAL box (µm), not the pixel grid — a coarser level is the SAME 3.3 mm image
       // at fewer voxels, so `extentUm` stays on `m.nX`/`m.nY`. Only the texture dimensions shrink.
-      const [ex, ey, ez] = extentUm(m, depth)
-      u[U.ext.x] = ex; u[U.ext.y] = ey; u[U.ext.z] = ez
-      // ext.w — where the loaded slab STARTS up the stack, in µm. Overlay coordinates are absolute, so
-      // without this a cropped 3D view would draw them against a box that no longer begins at zero.
-      u[U.ext.zOriginUm] = Math.max(0, zLo) * (m.voxelUm[2] || 1)
+      const [ex, ey] = extentUm(m, depth)
+      u[U.ext.x] = ex; u[U.ext.y] = ey
+      // ext.z/ext.w — the shown box's depth and where it STARTS up the stack, in µm. Overlay
+      // coordinates are absolute, so without the origin a cropped 3D view would draw them against a
+      // box that no longer begins at zero.
+      heldLo = Math.max(0, zLo)
       // dims.z is ONE channel's own depth, not the stacked height: the ray marches one channel's box
       // and the shader offsets by `c * zpc` to reach the others. Using the stacked height here squashes
       // every channel into 1/nch of the volume — a render that looks like a thin slab of real data.
       u[U.dims.nx] = renderNX; u[U.dims.ny] = renderNY; u[U.dims.nz] = depth; u[U.dims.zPerChannel] = depth
+      applyShownPlanes()
       u[U.vp.nch] = nch
       setChannels(m.channels)
     },
@@ -1026,7 +1054,8 @@ export async function createVolumeRenderer(
       // textures age out lazily via `dropSlot` inside uploadFrame's re-upload path — no
       // upfront destroy loop.
       if (!meta || !usable()) return
-      u[U.ext.zOriginUm] = Math.max(0, zLo) * (meta.voxelUm[2] || 1)
+      heldLo = Math.max(0, zLo)
+      applyShownPlanes()
       pushUniforms()
       planeVersion++
       // The currently-drawn slot is now stale — release the bind group so the next `draw` sees
@@ -1034,6 +1063,12 @@ export async function createVolumeRenderer(
       // `zPump`) fires gotoT/showT immediately after, which kicks the fetch.
       bindGroup = null
       boundT = -1
+    },
+
+    setShownPlanes(lo: number, hi: number) {
+      shownPlanes = [Math.floor(lo), Math.floor(hi)]
+      applyShownPlanes()
+      pushUniforms()
     },
 
     setOverlayPoints(data: Float32Array) {

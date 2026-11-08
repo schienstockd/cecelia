@@ -393,6 +393,18 @@ export async function createBrickVolumeRenderer(
    *  mode, `zRange[0]` in a cropped volume. The brick fetch URL adds this to each brick's `bz *
    *  brickZ` so plane mode sees the user's plane rather than plane 0 of the store. */
   let currentZLo = 0
+  /** The planes DRAWN of the held ones, absolute — `setShownPlanes`. `null` draws them all. */
+  let shownPlanes: [number, number] | null = null
+  /** Where the shown planes sit in the held ones: `off` planes in, `n` deep (`n === currentZDepth`
+   *  when everything held is shown, or the shown range falls outside it). */
+  const shownBox = (): { off: number; n: number } => {
+    if (shownPlanes !== null) {
+      const a = Math.max(currentZLo, shownPlanes[0])
+      const b = Math.min(currentZLo + currentZDepth - 1, shownPlanes[1])
+      if (a <= b) return { off: a - currentZLo, n: b - a + 1 }
+    }
+    return { off: 0, n: currentZDepth }
+  }
   let boundT = 0
   /** Timepoint the SHADER is currently drawing via `pageTableCpu`. Splits from `boundT` the
    *  moment `show(t)` runs but core bricks at `t` haven't landed yet: `boundT` moves so the
@@ -1149,9 +1161,7 @@ export async function createBrickVolumeRenderer(
       const lvl = atlas.currentLevel
       const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
       const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
-      const view = brickViewportFromCamera(
-        camState, currentMeta, displayT, canvas.height, aspect, currentZDepth, uniform.ortho,
-      )
+      const view = viewportAt(currentMeta, displayT, aspect)
       const scheduled = bricksIntersectingViewport(view, world, lvl)
       for (const s of scheduled) {
         if (s.ring !== 0) continue
@@ -1205,13 +1215,18 @@ export async function createBrickVolumeRenderer(
    *  Not free: rebuilds the intersect list every call. Called at most once per frame for
    *  `show`, once per playback tick for `hasTimepoint` — a few hundred grid entries either way.
    *  Cheap in absolute terms, but worth not calling in a per-brick hot loop. */
+  /** The scheduler's viewport for timepoint `t` — over the SHOWN box, placed on the held bricks it
+   *  reads (`brickViewportFromCamera`'s `zOffsetPlanes`). */
+  const viewportAt = (meta: ViewerMeta, t: number, aspect: number) => {
+    const sb = shownBox()
+    return brickViewportFromCamera(camState, meta, t, canvas.height, aspect, sb.n, uniform.ortho, sb.off)
+  }
+
   const coreBricksResident = (t: number): boolean => {
     if (atlas === null || currentMeta === null) return false
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
-    const view = brickViewportFromCamera(
-      camState, currentMeta, t, canvas.height, aspect, currentZDepth, uniform.ortho,
-    )
+    const view = viewportAt(currentMeta, t, aspect)
     const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     for (const s of scheduled) {
       if (s.ring !== 0) continue
@@ -1242,9 +1257,7 @@ export async function createBrickVolumeRenderer(
     }
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
-    const view = brickViewportFromCamera(
-      camState, currentMeta, boundT, canvas.height, aspect, currentZDepth, uniform.ortho,
-    )
+    const view = viewportAt(currentMeta, boundT, aspect)
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
     const decRaw = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor, schedulerKnobs)
 
@@ -1429,10 +1442,16 @@ export async function createBrickVolumeRenderer(
     uniformCpu[BU.VP + 3] = uniform.ortho ? 1 : 0
     uniformCpu[BU.EXT + 0] = uniform.ext[0]
     uniformCpu[BU.EXT + 1] = uniform.ext[1]
-    uniformCpu[BU.EXT + 2] = uniform.ext[2]
-    // Per-channel contrast windows go in `p.ch[c]` below; the leading `p.ext.w` slot is unused
-    // now that the shader normalises via each channel's own (lo, hi).
-    uniformCpu[BU.EXT + 3] = 0
+    // The box is the SHOWN planes (`setShownPlanes`): its depth, and where it starts up the stack —
+    // the overlay passes place their absolute coordinates against that (`boxCentre`). `zwin` is where
+    // the shown planes sit in the held bricks, in this level's voxels (`voxelAt`).
+    const sb = shownBox()
+    const vz = currentMeta?.voxelUm[2] || 1
+    uniformCpu[BU.EXT + 2] = currentMeta !== null ? extentUm(currentMeta, sb.n)[2] : uniform.ext[2]
+    uniformCpu[BU.EXT + 3] = (currentZLo + sb.off) * vz
+    const zScale = Math.pow(2, atlas?.currentLevel ?? 0)
+    uniformCpu[BU.ZWIN + 0] = sb.off / zScale
+    uniformCpu[BU.ZWIN + 1] = sb.n === currentZDepth ? 0 : sb.n / zScale
     if (currentMeta !== null) {
       // Voxel dims AT THE CURRENT LOD LEVEL — the shader treats `p.dims` as "voxels along each
       // axis at this level" and `vi = uvw * dims.xyz`. Wrong dims here = wrong per-voxel address.
@@ -1795,7 +1814,13 @@ export async function createBrickVolumeRenderer(
 
     resize,
     draw,
-    uniformState: () => ({ ...uniform }),
+    // `ext` as drawn — the SHOWN box, as the flat renderer reports it — not the held depth `setImage` set.
+    uniformState: () => ({
+      ...uniform,
+      ext: currentMeta !== null
+        ? [uniform.ext[0], uniform.ext[1], extentUm(currentMeta, shownBox().n)[2]] as [number, number, number]
+        : uniform.ext,
+    }),
 
     async sampleFrame(withOverlays = false): Promise<FrameSample | null> {
       if (destroyed || atlas === null) return null
@@ -1907,6 +1932,11 @@ export async function createBrickVolumeRenderer(
       needsRedraw?.()
     },
 
+    setShownPlanes(lo, hi) {
+      shownPlanes = [Math.floor(lo), Math.floor(hi)]
+      needsRedraw?.()
+    },
+
     brickResidency() {
       if (atlas === null) {
         return {
@@ -1944,9 +1974,7 @@ export async function createBrickVolumeRenderer(
       if (currentMeta !== null && displayT >= 0) {
         const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
         const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
-        const view = brickViewportFromCamera(
-          camState, currentMeta, displayT, canvas.height, aspect, currentZDepth, uniform.ortho,
-        )
+        const view = viewportAt(currentMeta, displayT, aspect)
         const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
         // Same viewport intersect used for both counts — geometry doesn't depend on t, only the
         // pageTable key does. One walk instead of two keeps per-frame cost flat when the chip is up.

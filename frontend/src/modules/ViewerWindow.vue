@@ -70,7 +70,7 @@ import { MAX_ATLASES, atlasCountForBudget } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
@@ -915,9 +915,11 @@ watch(colourBy, () => { void loadOverlays() })
  */
 /** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
 let allocatedBricks: boolean | null = null
-/** The loaded-plane count (`zDepth`) the latest `reallocate()` sized the textures for — the z pump
- *  moves the planes in place only while this still matches. `null` before the first allocation. */
+/** The held-plane block (`zHeld`) the latest `reallocate()` / z move gave the renderer — the z pump
+ *  moves the planes in place only while the depth still matches, and refetches only when the first
+ *  plane moved. `null` before the first allocation. */
 let allocatedZDepth: number | null = null
+let allocatedZLo: number | null = null
 function pickLabelName(names: string[]): string {
   if (!imageUid || !names.length) return ''
   const vis = settings.getLabelVisibility(imageUid, names)
@@ -1294,12 +1296,19 @@ const zWindowActive = computed(() => {
   const m = meta.value
   return zWindowOn.value && !!m && m.nZ > 1 && (mode.value === 'volume' || !needsTiling.value)
 })
-/** The planes actually LOADED, `[lo, hi]` inclusive — every fetch, texture origin and overlay z-cut
- *  reads this, never `zPlane`/`zRange` directly. See `loadedPlanes`. */
+/** The planes SHOWN, `[lo, hi]` inclusive — the box, overlay z-cut and view state read this, never
+ *  `zPlane`/`zRange` directly; fetches and the texture origin read `zHeld`. See `loadedPlanes`. */
 const zLoaded = computed<[number, number]>(() => loadedPlanes(
   mode.value, zPlane.value, zRange.value,
   zWindowActive.value ? zWindowHalf.value : 0, meta.value?.nZ ?? 1))
 const zDepth = computed(() => zLoaded.value[1] - zLoaded.value[0] + 1)
+/** The planes FETCHED and held by the renderer — `zLoaded` plus, for a window at a stack end, the
+ *  planes that keep it `2n+1` deep, so z moves never change the texture shape. The renderer draws
+ *  only `zLoaded` of them (`setShownPlanes`). See `heldPlanes`. */
+const zHeld = computed<[number, number]>(() => heldPlanes(
+  mode.value, zPlane.value, zRange.value,
+  zWindowActive.value ? zWindowHalf.value : 0, meta.value?.nZ ?? 1))
+const zHeldDepth = computed(() => zHeld.value[1] - zHeld.value[0] + 1)
 /** A single plane on screen — the 2D view without a window. Steps = 1, fast plane switch, no MIP. */
 const singlePlane = computed(() => mode.value === 'plane' && !zWindowActive.value)
 /**
@@ -2273,7 +2282,7 @@ async function fetchMaskSlab(
   const r = renderer.value
   if (!r) return null
   const zd = r.cache.zDepth
-  const zq = slabZ(zd, m.nZ, zPlane.value, zLoaded.value[0])
+  const zq = slabZ(zd, m.nZ, zPlane.value, zHeld.value[0])
   const lvl = slabLevel.value
   const expectNX = renderNX.value, expectNY = renderNY.value
   const enc = settings.viewerCompress ? 'zstd' : 'identity'
@@ -2353,7 +2362,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // not holding — see `slabZ`. The view mode authors that depth (via `reallocate`); it does not get a
     // second say in what is fetched.
     const zd = r.cache.zDepth
-    const zq = slabZ(zd, m.nZ, zPlane.value, zLoaded.value[0])
+    const zq = slabZ(zd, m.nZ, zPlane.value, zHeld.value[0])
     const lvl = slabLevel.value
     const expectNX = renderNX.value, expectNY = renderNY.value
     // The MASK goes with the channels, in the same round trip and into the same timepoint's slot, which
@@ -2864,8 +2873,8 @@ const brickMapGrid = computed(() => {
   const [bx, by, bz] = brickSizeVox.value
   const scale = Math.pow(2, lvl)
   // A single plane fetches one z-brick per t (brickZ collapses to 1 in the renderer); 3D and the
-  // ±n window span the loaded depth.
-  const zd = zDepth.value
+  // ±n window span the held depth.
+  const zd = zHeldDepth.value
   const nBx = Math.max(1, Math.ceil(m.nX / (bx * scale)))
   const nBy = Math.max(1, Math.ceil(m.nY / (by * scale)))
   const nBz = Math.max(1, Math.ceil(zd / (bz * scale)))
@@ -3446,19 +3455,28 @@ const zPump = debouncedLatest<number>(async () => {
   // Fast plane switch — both renderers implement setZPlane, so skip the full reallocate
   // (which destroys textures / atlas — a 200 ms-2 s main-thread freeze, and with the ±n window
   // on, a fresh multi-GB brick atlas per step that out-ran Dawn's deferred free into
-  // VK_ERROR_OUT_OF_DEVICE_MEMORY). Moving the loaded planes keeps every texture's SHAPE as
-  // long as their count does, so the window moves in place too; only a depth change (the
-  // window clipped at a stack end) or the tile path needs the reallocate. Abort any in-flight
-  // slab fetches first: their URLs carry the OLD planes and would land in a slot stamped with
-  // the NEW planeVersion, leaving wrong bytes on a "fresh" slot.
-  // The planes to load are `zLoaded`, which already reads the latest `zPlane` — not the scheduled arg.
+  // VK_ERROR_OUT_OF_DEVICE_MEMORY). The renderer HOLDS `zHeld`, which keeps one depth as the window
+  // moves — stack ends included — so a move is at most a re-point (`setZPlane`) plus the shown
+  // sub-range (`setShownPlanes`); near an end, where the held block stops moving, it is the shown
+  // range alone, with nothing to refetch. Abort any in-flight slab fetches before a re-point: their
+  // URLs carry the OLD planes and would land in a slot stamped with the NEW planeVersion, leaving
+  // wrong bytes on a "fresh" slot.
+  // The planes are `zHeld`/`zLoaded`, which already read the latest `zPlane` — not the scheduled arg.
   const r = renderer.value
-  if (canMovePlanesInPlace(!!r?.setZPlane, useTiles.value, zDepth.value, allocatedZDepth)) {
+  if (canMovePlanesInPlace(!!r?.setZPlane, useTiles.value, zHeldDepth.value, allocatedZDepth)) {
+    const [lo, hi] = zLoaded.value
+    if (zHeld.value[0] === allocatedZLo) {
+      r!.setShownPlanes?.(lo, hi)
+      frame.redraw()
+      return
+    }
     for (const ac of aborts.values()) ac.abort()
     aborts.clear()
     inflight.clear()
     pump.cancel()
-    r!.setZPlane!(zLoaded.value[0])
+    allocatedZLo = zHeld.value[0]
+    r!.setZPlane!(allocatedZLo)
+    r!.setShownPlanes?.(lo, hi)
     gotoT(t.value)
     return
   }
@@ -4329,7 +4347,8 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
   allocatedMaskRoom = maskRoom.value
   appliedMaskSource = maskSourceId.value
   allocatedBricks = bricksEnabled.value
-  allocatedZDepth = zDepth.value
+  allocatedZDepth = zHeldDepth.value
+  allocatedZLo = zHeld.value[0]
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
   // (chunks are the same size at every level), keeps in-flight fetches (many will still be wanted at the
@@ -4384,9 +4403,10 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
     // different image or a different mode swap and would poison the summary.
     if (benchEnabled.value) benchReset()
-    r.setImage(m, effectiveCacheBytes.value, zDepth.value,
-               zLoaded.value[0], wantLabels,
+    r.setImage(m, effectiveCacheBytes.value, zHeldDepth.value,
+               zHeld.value[0], wantLabels,
                renderNX.value, renderNY.value)
+    r.setShownPlanes?.(zLoaded.value[0], zLoaded.value[1])
     // Channels/LUT: the renderer is freshly built (or its LUT texture was reset by a preceding
     // destroy). Without this, a mode-toggle swap (e.g. 2D→3D flat→brick) leaves the new
     // renderer's LUT at its zero-initialised state — the raycast accumulates zeros and the
