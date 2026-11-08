@@ -221,8 +221,11 @@ class BayesianTrackingUtils:
             tracker.max_search_radius = self.max_search_radius
             tracker.append(objects)
             tracker.track(step_size=100)
-            # run the optimizer for up to 10 minutes before timing out
-            tracker.optimize(options={"tm_lim": 60_000 * 10})
+            # No time limit, on purpose. A GLPK timeout returns the tracks unmerged, so a limit
+            # would make results depend on machine speed. Pass `options={}` explicitly: with no
+            # options btrack falls back to its GLPK_OPTIONS = {"tm_lim": 60_000} (60 s). And
+            # `optimize(**kw)` nests kwargs as options={"options": ...}, which GLPK ignores.
+            tracker.optimise(options={})
             tracks = tracker.tracks
 
         frames = [pd.DataFrame(x.to_dict(), columns=_TRACK_COLS) for x in tracks]
