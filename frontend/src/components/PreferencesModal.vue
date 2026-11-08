@@ -512,9 +512,8 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
           <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Model</div>
           <select class="pref-input" v-model="settings.kiwiModel"
                   v-tooltip.bottom="'Which Claude model Kiwi turns run under'">
-            <option value="haiku">Haiku</option>
-            <option value="sonnet">Sonnet</option>
-            <option value="opus">Opus</option>
+            <!-- the ONE Kiwi model picker; options are the backend allow-list (OBSERVER_MODELS) -->
+            <option v-for="m in observer.models" :key="m" :value="m">{{ m.charAt(0).toUpperCase() + m.slice(1) }}</option>
           </select>
           </template>
           <!-- never peanut: its conversations are terminal claude's (claude_conversations.jl) -->
