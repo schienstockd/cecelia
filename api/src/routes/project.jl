@@ -37,7 +37,7 @@ function api_projects_create(body_bytes::Vector{UInt8})
     # Project-wide static/live/flow distinction was dropped — applicability is per-image, derived
     # from axes (see Cecelia.img_axes / task_applies). `kind` is retained on the struct as a
     # vestigial no-op so pre-existing project.json files still round-trip.
-    proj = create_project!(name=name)
+    proj = create_project!(name=name, meta=Dict{String,Any}("createdBy" => author_stamp()))
     # Stamp the active profile as the sole owner — a fresh project is not the "pre-identity" case
     # Decision 8 defaults ([]) to cover, so we skip the Claim round trip. Symmetric with the claim
     # endpoint; kept inline (no shared helper) because the create-time set is trivially `[profile]`

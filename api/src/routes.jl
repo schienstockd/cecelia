@@ -1080,7 +1080,7 @@ function api_sets_create(body_bytes::Vector{UInt8})
     # `add_set!`'s (so the REPL and the copy/move paths get it too); this only maps it to a status.
     set_name_taken(proj, name) &&
         return 409, JSON3.write((; error="A set named \"$name\" already exists in this project"))
-    s    = add_set!(proj; name=String(name))
+    s    = add_set!(proj; name=String(name), meta=Dict{String,Any}("createdBy" => author_stamp()))
     @info "Created set" name uid=s.uid project=project_uid
     200, JSON3.write((; uid=s.uid, name=s.name))
 end

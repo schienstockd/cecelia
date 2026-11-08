@@ -86,6 +86,22 @@ function append_lab_log!(proj::CciaProject, author::AbstractString, lines;
 end
 
 """
+    lab_log_author_kind(author) -> String
+
+Who an author tag says wrote the block: `"correction"`, `"labarchives"`, `"cecelia"`, `"claude"`,
+`"user"` or `"other"`, read from the tag before any ` · ` suffix (a profile or model name can't change
+the kind). The one classification on the server; mirrors `authorKind` in `frontend/src/utils/labLog.ts`
+(same order — "User — correction" contains "user").
+"""
+function lab_log_author_kind(author::AbstractString)::String
+    a = lowercase(strip(first(split(author, " · "))))
+    for k in ("correction", "labarchives", "cecelia", "claude", "user")
+        occursin(k, a) && return k
+    end
+    "other"
+end
+
+"""
     lab_log_user_author(author, profile) -> String
 
 Stamp a human-written author tag with the profile that wrote it: `"User"` → `"User · alice"`,
@@ -95,7 +111,7 @@ The frontend classifies on the part before ` · ` (`authorKind` in `frontend/src
 """
 function lab_log_user_author(author::AbstractString, profile::AbstractString)::String
     a = strip(author)
-    (startswith(lowercase(a), "user") && !isempty(profile) && profile != "default" &&
+    (lab_log_author_kind(a) in ("user", "correction") && !isempty(profile) && profile != "default" &&
      !occursin(" · ", a)) || return String(a)
     "$(a) · $(profile)"
 end
@@ -110,7 +126,7 @@ or a tag that already carries a suffix passes through.
 """
 function lab_log_claude_author(author::AbstractString, model::AbstractString)::String
     a = strip(author)
-    (startswith(lowercase(a), "claude") && !isempty(model) && !occursin(" · ", a)) || return String(a)
+    (lab_log_author_kind(a) == "claude" && !isempty(model) && !occursin(" · ", a)) || return String(a)
     "$(a) · $(model)"
 end
 

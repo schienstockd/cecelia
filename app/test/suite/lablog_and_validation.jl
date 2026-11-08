@@ -67,6 +67,13 @@ end
     @test Cecelia.lab_log_claude_author("Claude", "claude-opus-5-5") == "Claude · claude-opus-5-5"
     @test Cecelia.lab_log_claude_author("Claude", "") == "Claude"
     @test Cecelia.lab_log_claude_author("User", "claude-opus-5-5") == "User"
+    # the tag's kind, as the frontend's authorKind reads it: before ` · `, correction before user
+    @test Cecelia.lab_log_author_kind("Claude · claude-opus-5-5") == "claude"
+    @test Cecelia.lab_log_author_kind("User — correction · alice") == "correction"
+    @test Cecelia.lab_log_author_kind("User · claudette") == "user"   # a profile name can't change it
+    @test Cecelia.lab_log_author_kind("LabArchives") == "labarchives"
+    @test Cecelia.lab_log_author_kind("Cecelia — Cohort check") == "cecelia"
+    @test Cecelia.lab_log_author_kind("Someone") == "other"
     @test Cecelia.lab_log_claude_author("Claude · x", "claude-opus-5-5") == "Claude · x"
     # …and it still parses back as a Claude entry with the full tag
     e = only(parse_lab_log(Cecelia._format_lab_block("Claude · claude-opus-5-5", ["a line"], Date(2026, 10, 29))))

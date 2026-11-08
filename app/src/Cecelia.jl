@@ -92,7 +92,7 @@ export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_
 export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran
 export open_run_log!, close_run_log!, reap_run_log!, skip_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED, RUN_LOG_SKIPPED
 export run_author, run_env_of, read_run_env
-export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
+export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, lab_log_author_kind, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
 export attr_value_counts, image_attr_groups

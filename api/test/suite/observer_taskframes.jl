@@ -63,7 +63,9 @@
         # the observer's own [Claude] append must NOT re-broadcast entry_added (would loop) — but it
         # STILL emits lab_log_updated so an open panel reloads (the external-append bug fix)
         drain()
-        @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"Claude", "lines"=>["noted"]))[1] == 200
+        @test Base.ScopedValues.with(REQUEST_VIA => "claude") do
+            _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"Claude", "lines"=>["noted"]))
+        end[1] == 200
         let f = drain()
             @test isempty(filter(x -> x.type == "lab_log_entry_added", f))
             @test length(filter(x -> x.type == "lab_log_updated", f)) == 1

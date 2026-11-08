@@ -45,6 +45,31 @@ end
 
 _kiwi_now() = string(Dates.now())
 
+# Who made what a turn writes: Kiwi, through the turn's model and engine session — `author_stamp()` with
+# `via: "kiwi"`. Bound around a turn's `on_done`, so the claim review's write-back is stamped as the
+# model's, not as the app request that started it (a spawned task inherits the asker's scope).
+function _kiwi_caller(rec::AbstractDict)
+    reply = get(rec, "reply", nothing)
+    request_caller(string(get(rec, "model", "")),
+                   reply isa AbstractDict ? string(get(reply, "sessionId", "")) : "")
+end
+_with_kiwi_author(f, rec::AbstractDict) =
+    Base.ScopedValues.with(f, REQUEST_VIA => "kiwi", REQUEST_CALLER => _kiwi_caller(rec))
+
+"""
+    kiwi_turn_stamp(puid, turn_id) -> Union{Dict,Nothing}
+
+The `author_stamp()` of a kept Kiwi turn — `{profile, via: "kiwi", model?, session?, turnId}` — for content
+made from its reply (a turn saved to the Blackboard). `nothing` when the turn is no longer kept.
+"""
+function kiwi_turn_stamp(puid::AbstractString, turn_id::AbstractString)
+    turns = _kiwi_read_turns(puid)
+    i = findlast(t -> string(get(t, "turnId", "")) == turn_id, turns)
+    i === nothing && return nothing
+    rec = JSON3.read(JSON3.write(turns[i]), Dict{String,Any})
+    _with_kiwi_author(() -> merge(author_stamp(), Dict{String,Any}("turnId" => String(turn_id))), rec)
+end
+
 # The conversation a follow-up continues: the earlier turn's engine session, and every ref that
 # conversation has attached or validly cited (resolved + seen) — which a follow-up may cite without
 # re-reading, since the engine saw them earlier in the same session. `nothing` when `tid` isn't a kept
@@ -150,7 +175,7 @@ function _kiwi_run_turn!(rec::Dict{String,Any}, agent, refs; session_id::Abstrac
         finish_job!(tid)
         try _kiwi_append_turn!(puid, rec) catch e; @warn "Kiwi: could not save turn $tid" exception = e end
         # the caller's follow-up on the finished record (the claim review writes onto its entry)
-        try on_done(rec) catch e; @warn "Kiwi: the turn's on_done failed" turn = tid exception = e end
+        try _with_kiwi_author(() -> on_done(rec), rec) catch e; @warn "Kiwi: the turn's on_done failed" turn = tid exception = e end
         lock(_KIWI_LOCK) do; delete!(_KIWI_RUNNING, puid); end
         broadcast_ws(Dict{String,Any}("type" => "kiwi:done", "projectUid" => puid, "turnId" => tid, "turn" => rec))
     end

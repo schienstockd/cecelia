@@ -35,7 +35,8 @@
 
         # append accepts a string OR an array; server injects the date + author tag
         @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"User","lines"=>"single line"))[1] == 200
-        st, body = _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["a","b"]))
+        as_claude(f) = Base.ScopedValues.with(f, REQUEST_VIA => "claude")
+        st, body = as_claude(() -> _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["a","b"])))
         @test st == 200
         j = JSON3.read(body)
         @test startswith(j.block, "## ") && occursin("[Claude]", j.block)
@@ -57,7 +58,7 @@
         @test occursin("set_labarchives_context", JSON3.read(body_la).error)
         @test !occursin("[LabArchives]", read_ll().content)          # and nothing was written
         # …every other author is unaffected by the guard
-        @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["ok"]))[1] == 200
+        @test as_claude(() -> _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["ok"])))[1] == 200
 
         # once a notebook IS linked, the same append is accepted
         write_la_doc!(load_project(uid); source = Dict("notebookName" => "Ailsa"),
@@ -65,6 +66,15 @@
         st_ok, body_ok = _post(api_lablog_append,
             Dict("projectUid"=>uid,"author"=>"LabArchives","lines"=>["from the ELN"]))
         @test st_ok == 200 && occursin("[LabArchives]", JSON3.read(body_ok).block)
+
+        # the tag must match the caller: an app request can't write as Claude, and a Claude session
+        # writes only as Claude or LabArchives — nothing is written on a refusal
+        before = read_ll().content
+        @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["impostor"]))[1] == 403
+        @test as_claude(() -> _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"User","lines"=>["impostor"])))[1] == 403
+        @test as_claude(() -> _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Cecelia","lines"=>["impostor"])))[1] == 403
+        @test read_ll().content == before
+        @test as_claude(() -> _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"LabArchives","lines"=>["ok"])))[1] == 200
 
 
         # ── capture (auto [Cecelia] activity digest) ──

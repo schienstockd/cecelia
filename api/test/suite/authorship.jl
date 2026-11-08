@@ -113,6 +113,21 @@
             @test stamp(JSON3.read(read(cpath("m3"), String)).createdBy) == alice_app
             @test author_stamp() == alice_app   # unbound again outside the request
 
+            # ── What the autonomous server creates — a project, a set, its images — says who made it ──
+            st, body = via_router("/api/projects/create", Dict("name" => "auto-made"); claude = true)
+            puid = String(JSON3.read(body).project.uid)
+            @test st == 200 && stamp(load_project(puid).meta["createdBy"]) == alice_claude
+            st, body = via_router("/api/sets/create", Dict("projectUid" => puid, "name" => "s"); claude = true)
+            suid = String(JSON3.read(body).uid)
+            @test st == 200 && stamp(only(load_project(puid)._sets).meta["createdBy"]) == alice_claude
+            src = joinpath(tmp, "x.tif"); write(src, "x")
+            st, body = via_router("/api/images/register",
+                Dict("projectUid" => puid, "setUid" => suid, "filepaths" => [src]); claude = true)
+            @test st == 200
+            @test stamp(only(only(load_project(puid)._sets)._images).meta["createdBy"]) == alice_claude
+            st, body = via_router("/api/sets/create", Dict("projectUid" => puid, "name" => "by hand"))
+            @test stamp(last(load_project(puid)._sets).meta["createdBy"]) == alice_app
+
             # ── Task requests carry the asker across the wire to the runner ───────────────
             req = Cecelia.task_request(Cecelia.task_request_dict(
                 Cecelia.TaskRequest(; task_id = "t", fun_name = "f", project_uid = uid, by = "alice")))
