@@ -34,7 +34,10 @@ const PACKED_STORE_EXT = ".tar"
 # bug in `open_as_zarr`: a store identified by its name stops being recognised the moment it's staged.
 const _SKIP_DIR_SUFFIXES = (".bak.ome.zarr", ".rechunk_tmp", ".export_tmp", ".import_tmp",
                             STORE_TMP_SUFFIXES...)
-const _SKIP_FILES        = (".cecelia.lock",)
+# Files never bundled: the lockfile, and the Claude pairing record (`settings/push_target.json`,
+# api/src/push_api.jl), which holds this machine's socket token — a credential, not project content.
+# The importer pairs again on its own machine.
+const _SKIP_FILES        = (".cecelia.lock", "push_target.json")
 
 # Concurrency for parallel pack/unpack. Modest by default — too many concurrent readers thrash even an
 # SSD, and it's I/O- not CPU-bound. Overridable per call.

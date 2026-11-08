@@ -2736,6 +2736,8 @@ end
             lp = joinpath(proj.root, "1", "img1", "labelProps"); mkpath(lp)
             write(joinpath(lp, "base.h5ad"), "hdf-bytes")
             write(joinpath(proj.root, ".cecelia.lock"), "")
+            mkpath(joinpath(proj.root, "settings"))
+            write(joinpath(proj.root, "settings", "push_target.json"), "{\"token\":\"secret\"}")
             # staging debris from a cancelled run. Matches neither `_is_store_dir` (no `.zarr`
             # suffix) nor the skip list, so the mirror walker used to RECURSE and copy every
             # chunk in as a loose file — gigabytes of unusable bytes in the bundle.
@@ -2756,6 +2758,7 @@ end
             @test isfile(joinpath(bundle, "1", "img1", "labels", "labels.zarr.tar"))
             @test !any(endswith(n, ".zarr") for (_, ds, _) in walkdir(bundle) for n in ds)  # packed, not unpacked
             @test !ispath(joinpath(bundle, ".cecelia.lock"))                                # lock skipped
+            @test !ispath(joinpath(bundle, "settings", "push_target.json"))                 # pairing token skipped
             # staging debris excluded entirely — neither packed nor mirrored as loose chunks
             @test !any(any(s -> endswith(n, s), Cecelia.STORE_TMP_SUFFIXES)
                        for (_, ds, _) in walkdir(bundle) for n in ds)

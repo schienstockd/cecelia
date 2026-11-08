@@ -200,7 +200,7 @@ route: only handlers that call `author_stamp()` (`app/src/config/profile_setting
 | LabArchives context | `<proj>/settings/labarchives.json` | `updatedBy` + free-text `syncedBy` | — |
 | Projects, sets and images created by the autonomous server; WS task and chain runs | various | profile only (`sockets.jl:691,812`: "No `via`") | **unstamped** |
 | Claude transcripts | profile `CLAUDE_CONFIG_DIR` (`~/.claude` for `default`) | — | **inferred** kept (no persistence-off flag in `_build_claude_cmd`); purged only by policy or opt-in, never for `default` |
-| Pairing record | `<proj>/settings/push_target.json`, **including the socket token** | — | travels in `.ccbundle` (the export skips only `.cecelia.lock`, `project_io.jl:37`) |
+| Pairing record | `<proj>/settings/push_target.json`, **including the socket token** | — | ~~travels in `.ccbundle`~~ skipped by the export since 2026-11-08 (`_SKIP_FILES`, `project_io.jl`) |
 
 ## 6. Tests that exist
 
@@ -407,8 +407,9 @@ one route, plus one header fix and the push writer. Nothing needs consolidating 
 7. ~~MCP observer~~: decided, plan D1.
 8. **Registry home:** extend `claudeTools.ts` (recommended), or a separate file?
 9. **Is a local model planned?** If so, the switch splits into "a model runs" and "data leaves".
-10. **New: should a shared project show the previous person's Kiwi turns?** They are stored per project
-    (`<proj>/kiwi/turns.json`) and travel in bundles, as does the pairing token.
+10. ~~**Should a shared project show the previous person's Kiwi turns?**~~ **Decided (2026-11-08):**
+    yes. The turns stay with the project as the record behind saved claims. The pairing token no
+    longer travels in a `.ccbundle` (`_SKIP_FILES`, `app/src/project_io.jl`).
 11. **New: should AI off also stop the MCP server's own `[Claude]` lab-log observations?** They are
     written with no model involved. D1 refuses the write anyway; confirm that is what you want.
 
