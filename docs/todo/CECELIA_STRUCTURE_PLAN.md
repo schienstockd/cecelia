@@ -1,6 +1,6 @@
 # Cecelia structure — what it is, one clear schematic, and where it has holes
 
-**Status:** in progress (2026-11-07), branch `structure-plan`. P1 done (draft, [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md)); P2 overview v1 in the README; record fixes #2011, #2016, #2020 merged; follow-ups #2023, #2024. The brief this came
+**Status:** in progress (2026-11-07), branch `structure-plan`. P1 done (draft, [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md)); P2 overview v1 in the README; record fixes #2011, #2016, #2020 merged; follow-ups #2023, #2024, btrack #2027 merged. P3 ranked (2026-11-08), waves A–B below in progress. The brief this came
 from, [`docs/archive/CECELIA_STRUCTURE_AUDIT_PROMPT.md`](../archive/CECELIA_STRUCTURE_AUDIT_PROMPT.md),
 was an elaboration of the ask below. This plan narrows it back to the ask.
 
@@ -77,6 +77,28 @@ The checklist for spotting them: traceability, consistency, gaps shown as gaps (
 QC per stage, replay, mechanical review, hand-off from the record alone, works with AI off.
 *Checkpoint:* the ranked table below, plus an order of work.
 
+## P3 ranking and order of work (2026-11-08)
+
+Ranked by what a reader of the record or a reviewer of a claim would trip on first, then by size.
+Fix all of them except the two stated limitations at the end. Waves group the work by code area, so
+parallel PRs don't conflict.
+
+| # | Gap (rows below) | Why this rank | Wave |
+|---|---|---|---|
+| 1 | Missing calibration silently becomes 1.0 µm/px and 1 min/frame; z never required | A wrong unit is a wrong number with no error, which is the worst kind of hole | A |
+| 2 | Run log doesn't name the input version read, or that a run replaced an earlier output | The record can't trace a number back without it | A |
+| 3 | Run log cap drops old entries silently | A record that forgets is not a record. Archive, don't drop | A |
+| 4 | Chain run stores only a params hash; no start from an old frozen template | Replay is one of the four layers in the schematic | A |
+| 5 | Claim checks miss preprocessing params and parent gates; no 2D/3D consistency check | The mechanical review is the punchline's evidence | A |
+| 6 | Raw source has no fingerprint | The trace ends at a path that can change underneath | A |
+| 7 | Gates overwritten in place; GUI gate edits leave no run-log entry | The trace breaks at the gate (audit, trace walk) | B |
+| 8 | Gating and statistics have no QC; the QC-required rule isn't enforced; cohort QC never runs in chains | The two stages with no checks | B |
+| 9 | Board PDF/SVG carry no provenance; Parameters CSV rebuilt at export | The exported figure is what leaves the lab | B |
+| 10 | Population types have no registry | Internal consistency, refactor-sized; last so it doesn't collide | C |
+
+**Stated limitations, not fixed:** runs from before `runlog.json` existed have no params; nothing
+blocks (warn, never block) stays a choice for the maintainer to state in the paper.
+
 ## Gap list (from P1; ranked and sized in P3)
 
 Evidence for each row is in [`CECELIA_STRUCTURE_AUDIT.md`](CECELIA_STRUCTURE_AUDIT.md). Sizes are
@@ -122,7 +144,7 @@ first guesses: S = under a day, M = a few days, L = a design first.
 |---|---|---|---|
 | A new chain run uses the current template; there's no way to start one from an old run's frozen template | gap | S–M | open |
 | A chain run stores only a params hash, not the effective params or REPL overrides | flaw | S | open |
-| btrack's 10-min wall-clock limit makes results machine-speed dependent | flaw | S | open |
+| btrack's optimiser time limit. The 10-min limit never applied (btrack nested it), so tracking always ran unlimited; now explicit, because a timeout returns unmerged tracks | flaw | S | done, #2027 |
 
 **Worth expanding (strong and underused)**
 - **The scheduler gives every task a run log, validation and an applicability check for free.** This
