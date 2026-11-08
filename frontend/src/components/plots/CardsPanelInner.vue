@@ -340,10 +340,12 @@ useVisualPanel(
             </span>
           </div>
           <table class="ccv-stats">
-            <tr v-for="s in c.stats.slice(0, 6)" :key="s.name">
-              <td class="ccv-stat-name cc-muted cc-fs-2xs">{{ statLabelFor(s.name) }}</td>
-              <td class="ccv-stat-plot"><StatBox :stat="s" :scale="scaleFor(s)" :w="120" :h="14" /></td>
-            </tr>
+            <tbody>
+              <tr v-for="s in c.stats.slice(0, 6)" :key="s.name">
+                <td class="ccv-stat-name cc-muted cc-fs-2xs">{{ statLabelFor(s.name) }}</td>
+                <td class="ccv-stat-plot"><StatBox :stat="s" :scale="scaleFor(s)" :w="120" :h="14" /></td>
+              </tr>
+            </tbody>
           </table>
         </div>
       </div>
