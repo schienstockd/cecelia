@@ -61,6 +61,9 @@ export interface PlotSpec {
     // optional categorical columns the user may split a measure by (the generic groupBy sub-axis,
     // e.g. an HMM state); '' / absent → no split. Reusable for any categorical obs column.
     groupByOptions?: string[]
+    // the split a fresh panel starts with (one of groupByOptions) — `centroid_t` makes a plot a time
+    // series by default (populations over time); the user can still clear it.
+    defaultGroupBy?: string
     // heatmap (matrix) defaults — `mode` seeds the panel's matrix mode (profile = measures×category
     // signature; crosstab = a "from_to" categorical → transition matrix). `category` optionally pins
     // the default category column (used if present in the discovered obs columns); otherwise the panel
