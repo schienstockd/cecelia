@@ -48,3 +48,12 @@ export function toggleSelected(
 export function narrowToSingle(selected: readonly string[]): string[] {
   return selected.length > 1 ? [selected[0]] : [...selected]
 }
+
+/**
+ * Append every key in `keys` that `selected` lacks, in order. Returns `selected` itself (same
+ * reference) when nothing was missing, so a caller can skip a no-op write. Never mutates.
+ */
+export function addSelected(selected: readonly string[], keys: readonly string[]): readonly string[] {
+  const missing = keys.filter(k => !selected.includes(k))
+  return missing.length ? [...selected, ...missing] : selected
+}

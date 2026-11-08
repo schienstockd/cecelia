@@ -99,6 +99,13 @@ end
     @test occursin("semicolon", kiwi_claim_bundling("17 tracks in A; 25 in B."))
     @test occursin("sentence", kiwi_claim_bundling("A has 17 tracks. B has 25."))
     @test occursin("longer", kiwi_claim_bundling(repeat("x", KIWI_CLAIM_MAX_CHARS + 1)))
+    # "finding → what to do" is one fact plus one action: each side is checked on its own, so the
+    # action doesn't push a one-fact finding over the length (every claim review re-asked for this)
+    long = repeat("x", KIWI_CLAIM_MAX_CHARS - 20)
+    @test kiwi_claim_bundling(long * " → " * repeat("y", 200)) == ""
+    @test kiwi_claim_bundling("B tracks are short -> Set a minimum length. Then re-derive speed.") ==
+          "what to do: more than one sentence"
+    @test kiwi_claim_bundling("A has 17 tracks. B has 25. → Check both.") == "the finding: more than one sentence"
 
     img = Dict("kind" => "image", "imageUid" => "3w4IY5")
     pop(p) = Dict("kind" => "population", "imageUid" => "3w4IY5", "valueName" => "B", "popPath" => p)

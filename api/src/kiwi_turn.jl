@@ -351,9 +351,23 @@ const KIWI_CLAIM_MAX_CHARS = 260
 
 Why `text` reads as more than one fact, or "" if it doesn't: over `KIWI_CLAIM_MAX_CHARS`, a
 semicolon join, a second sentence, or a list of three or more facts (inline or in
-parentheses — a list of names is one fact, see `_kiwi_clause_list`). Thousands separators ("1,449") don't count as list commas. PURE → tested.
+parentheses — a list of names is one fact, see `_kiwi_clause_list`). Thousands separators ("1,449") don't count as list commas.
+A claim written "finding → what to do" (the claim review's format) is one fact plus one action, so
+each side is checked on its own. PURE → tested.
 """
 function kiwi_claim_bundling(text::AbstractString)::String
+    parts = split(text, r"\s*(?:→|->)\s*"; limit = 2)
+    if length(parts) == 2
+        for (side, p) in zip(("the finding", "what to do"), parts)
+            why = _kiwi_one_fact(p)
+            isempty(why) || return "$side: $why"
+        end
+        return ""
+    end
+    _kiwi_one_fact(text)
+end
+
+function _kiwi_one_fact(text::AbstractString)::String
     length(text) > KIWI_CLAIM_MAX_CHARS && return "longer than $KIWI_CLAIM_MAX_CHARS characters"
     t = replace(text, r"(?<=\d),(?=\d{3}\b)" => "", r"\b(e\.g|i\.e|vs|approx)\." => s"\1")
     occursin(';', t) && return "two facts joined by a semicolon"

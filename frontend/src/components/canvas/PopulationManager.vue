@@ -16,7 +16,7 @@
 -->
 <script setup lang="ts">
 import { useObserverStore } from '../../stores/observer'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useKiwiStore } from '../../stores/kiwi'
 import { useLogStore } from '../../stores/log'
@@ -337,6 +337,10 @@ function resetBoolForm() {
 }
 // `seed` = the ⋯ → "Combine with…" entry: the row you opened the menu on becomes the first term and
 // its parent the new pop's parent, so the common case is two clicks and a second population.
+// One form at a time: opening either (create button or ⋯ → Edit) closes the other. Done here rather
+// than at the four open sites so a future opener can't forget it.
+watch(showFilterForm, on => { if (on) showBoolForm.value = false })
+watch(showBoolForm, on => { if (on) showFilterForm.value = false })
 function openCreateBool(seed?: FlatPop) {
   resetBoolForm()
   if (seed) {
@@ -450,12 +454,14 @@ function moveTo(target: string) {
            Decision 15: filter pop = AND-ed filter on any obs measure. Same form creates AND edits.
            Decision 16: combined pop = "nuc-GFP OR mem-TOM", which no single 2D gate can draw.  -->
       <div v-if="!readonly && !clusterMode" class="pm-add cc-row cc-row-tight">
-        <button class="pm-add-icon cc-btn cc-btn-primary"
+        <button class="pm-add-icon cc-btn cc-btn-ghost" :class="{ 'cc-btn-on cc-btn-on-tint': showFilterForm }"
+                :aria-pressed="showFilterForm"
                 @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
                 v-tooltip.bottom="'New filter population'" aria-label="New filter population">
           <i class="pi pi-plus" /><i class="pi pi-filter" />
         </button>
-        <button class="pm-add-icon cc-btn cc-btn-primary"
+        <button class="pm-add-icon cc-btn cc-btn-ghost" :class="{ 'cc-btn-on cc-btn-on-tint': showBoolForm }"
+                :aria-pressed="showBoolForm"
                 @click="showBoolForm ? (showBoolForm = false) : openCreateBool()"
                 v-tooltip.bottom="'Combine populations'" aria-label="Combine populations">
           <i class="pi pi-plus" /><i class="pi pi-link" />
@@ -479,7 +485,7 @@ function moveTo(target: string) {
         <div class="pm-ff-head">
           <input v-model="fpName" class="pm-ff-name" placeholder="Population name"
                  v-tooltip.top="'Name for the new population'" />
-          <input v-model="fpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
+          <ColourPicker v-model="fpColour" />
         </div>
         <label class="pm-ff-row cc-muted cc-fs-xs">Under
           <select v-model="fpParent" v-tooltip.top="'Parent population — its cells are the ones this filters'">
@@ -518,7 +524,7 @@ function moveTo(target: string) {
         <div class="pm-ff-head">
           <input v-model="bpName" class="pm-ff-name" placeholder="Population name"
                  v-tooltip.top="'Name for the new population'" />
-          <input v-model="bpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
+          <ColourPicker v-model="bpColour" />
         </div>
         <!-- parent + operator on ONE line: two short selects, and the sentence reads across them
              ("Under (all cells), in any of"). `cc-row-group` keeps each label with its own select if
@@ -850,8 +856,6 @@ function moveTo(target: string) {
   background: var(--cc-surface-1); }
 .pm-ff-head { display: flex; gap: 5px; align-items: center; }
 .pm-ff-name { flex: 1; font-size: var(--cc-fs-xs); padding: 3px 6px; border-radius: var(--cc-radius-xs); }
-.pm-ff-colour { width: 24px; height: 24px; padding: 0; border-radius: var(--cc-radius-xs);
-  background: none; cursor: pointer; }
 .pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; }
 .pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: var(--cc-fs-xs); padding: 2px 4px;
   border-radius: var(--cc-radius-xs); }

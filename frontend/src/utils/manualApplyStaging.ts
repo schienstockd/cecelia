@@ -1,3 +1,5 @@
+import { addSelected } from './selection'
+
 // Pure staging comparators for the manual-apply subsystem in `composables/useSummaryData.ts`.
 // Two questions with deliberately different semantics — pinned so a future refactor cannot
 // silently make them agree:
@@ -34,4 +36,16 @@ export function stagedChangeCount(staged: readonly string[], live: readonly stri
   for (const k of stg) if (!cur.has(k)) n++
   for (const k of cur) if (!stg.has(k)) n++
   return n
+}
+
+/**
+ * Add `keys` to the LIVE selection immediately, bypassing manual-apply (e.g. a viewer cell
+ * selection that must light up at once). With staging on, the staged set gets them too — a key in
+ * live but not staged reads as a pending removal, so Apply would drop the very highlight just made.
+ * Returns the input references unchanged where nothing was added, so callers can skip no-op writes.
+ */
+export function addBypassingStaging(
+  live: readonly string[], staged: readonly string[], keys: readonly string[], manualApply: boolean,
+): { live: readonly string[]; staged: readonly string[] } {
+  return { live: addSelected(live, keys), staged: manualApply ? addSelected(staged, keys) : staged }
 }

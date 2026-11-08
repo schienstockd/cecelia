@@ -107,7 +107,7 @@ end
 #              other population's params are gone — the S0 gap this reports).
 function _claim_params_for(img::CciaImage, vn::AbstractString, kind::AbstractString)
     found = Dict{String,Tuple{Dict{String,Any},String}}()
-    for e in read_run_log(img._dir)
+    for e in read_run_log_history(img._dir)
         r = run_log_row(e)
         (startswith(r.fn, kind * ".") && !haskey(found, r.fn) && r.status == "done" && !r.legacy) || continue
         _claim_run_output(r.fn, r.params) == vn || continue
@@ -217,7 +217,7 @@ versions other than `default` that no finished run in the log wrote (a record ga
 skips runs after the consumer ran — a cleanup re-run since is not what it read. Read-only.
 """
 function claim_preprocessing(img::CciaImage, inputs::AbstractVector; ceiling::AbstractString = "")
-    entries = read_run_log(img._dir)
+    entries = read_run_log_history(img._dir)   # archive included: an old cleanup still made the version
     steps = String[]; params = Dict{String,Dict{String,Any}}(); unrecorded = String[]
     seen = Set{String}()
     walk(v, lim) = begin
@@ -238,7 +238,7 @@ end
 
 # When the run that made `vn` ran (the newest finished one), or "" — the ceiling for its lineage.
 function _claim_run_at(img::CciaImage, fn::AbstractString, vn::AbstractString)::String
-    for e in Iterators.reverse(read_run_log(img._dir))
+    for e in Iterators.reverse(read_run_log_history(img._dir))
         r = run_log_row(e)
         (r.fn == fn && r.status == "done" && !r.legacy && _claim_run_output(r.fn, r.params) == vn) && return r.at
     end

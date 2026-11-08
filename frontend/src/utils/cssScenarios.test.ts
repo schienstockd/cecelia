@@ -397,10 +397,7 @@ describe('form controls', () => {
   // re-stating the base defensively to beat a more specific rule, or because the class is shared with a
   // non-input element. Each survivor says which.
   const ALLOWED = [
-    // .cby-swatch is on BOTH a <span> (static swatch) and an <input type="color"> (editable one).
-    // A <span> gets nothing from the input base, so this border is load-bearing for that half.
-    'components/ViewerPanel.vue | .cby-swatch | border: 1px solid var(--cc-border)',
-    // Same shape: .mono is on the REPL <input> and on plain <span>s. The span inherits body size, so
+    // .mono is on the REPL <input> and on plain <span>s. The span inherits body size, so
     // dropping this would push those spans up a tier. (`.field-input.mono` needs both classes and is
     // input-only, so that one was removed.)
     'modules/SettingsModule.vue | .mono | font-size: var(--cc-fs-sm)',

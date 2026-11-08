@@ -1104,6 +1104,24 @@ nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever 
 image's missing or invalid z step, an unrecognised unit), as `{axis: {reason: "missing"|"invalid"|"unknownUnit", used}}`, `used` = the value the run computed with (`img_physical_sizes`; µm/px or min/frame — not always 1.0) (`run_scale_defaults`). Also on a
 failed run's entry. Absent when nothing was assumed. `docs/MODULES.md` → *Requires*.
 
+**What it read and what it replaced** — stamped at open by `run_provenance` (`app/src/run_log.jl`),
+from the task spec alone, so every task gets it with no per-task code. Re-runs overwriting their
+output is by design (`keep_previous_version()` is the opt-in that keeps image versions); the record is
+what says it happened. Both fields are absent on older entries and when there is nothing to say:
+
+| field | what |
+|---|---|
+| `inputs` | `[{param, name, ns?, version?, pinned?}]` — every `valueNameSelection` param that does not write (the leaves `_history_leaves` reads for pre-flight and chain-from-history). An empty picker is resolved to the active name it meant. `version` is the pin (`params["version"]`, `pinned: true`) for `valueName`, else `_latest` of a fresh `ccid.json` read — on image versions and label sets; other namespaces carry the name only. Populations stay in `params` (`run_pop_reads`) |
+| `replaces` | `{name, ns?, version?, taskId?, at?, fun?}` when the output already existed and this run overwrites it: an image version (unless `keepPreviousVersion`), a label set (always — label writers never version), or for a write-into task (tracking) its earlier run on that label set. `taskId`/`at`/`fun` name the newest `done` run that made it, from the log or its archive; absent = the output predates the log or came from outside it |
+
+**The cap moves entries, it never drops them.** `runlog.json` is rewritten whole on every open and
+close, so it holds the newest `RUN_LOG_CAP` (200); the overflow is appended to `runlog.archive.jsonl`
+beside it (one entry per line) *before* the rewrite, so a kill in between duplicates rather than loses.
+A failed append keeps the entries in the main file. The readers that answer "what made this output"
+fall back to it (`run_log_params_for_output`, the `replaces` lookup, the claim checks, `_last_track_measures_params`, Kiwi's task-ref check, and `run_pop_reads` — the guard on editing a gate that runs read — via
+`read_run_log_history`); the history views show the recent window. A label-set rename rewrites names
+in both files; an analysis reset keeps both (`ANALYSIS_KEEP`).
+
 `reap_run_log_for_project!` (`api/src/runner_api.jl`) closes those out at project open, converting
 stale `running` entries to `interrupted`. It reaps only what it can *prove* is dead — a task the
 detached runner is still executing must survive a backend restart untouched, since that is the runner's

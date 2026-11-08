@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hasStagedChanges, stagedChangeCount } from './manualApplyStaging'
+import { hasStagedChanges, stagedChangeCount, addBypassingStaging } from './manualApplyStaging'
 
 // The two comparators are DELIBERATELY different — this file pins the split so a future refactor
 // that "unifies" them silently breaks the UX. Contract:
@@ -61,5 +61,26 @@ describe('stagedChangeCount (set-based)', () => {
   it('duplicates within an input do not over-count', () => {
     // Not a realistic UI input (pop keys are unique), but a broken caller shouldn't inflate the chip.
     expect(stagedChangeCount(['A', 'A', 'B'], ['A', 'B'])).toBe(0)
+  })
+})
+
+describe('addBypassingStaging', () => {
+  it('manual-apply on: the bypassing key lands in BOTH sets, so nothing reads as pending', () => {
+    const r = addBypassingStaging(['a'], ['a', 'b'], ['t'], true)
+    expect(r.live).toEqual(['a', 't'])
+    expect(r.staged).toEqual(['a', 'b', 't'])
+    // staged = live → no pending chip, and Apply would not drop `t`
+    const synced = addBypassingStaging(['a'], ['a'], ['t'], true)
+    expect(hasStagedChanges(synced.staged, synced.live)).toBe(false)
+  })
+  it('manual-apply off: staged untouched (the composable mirrors live into it)', () => {
+    const staged = ['a']
+    expect(addBypassingStaging(['a'], staged, ['t'], false).staged).toBe(staged)
+  })
+  it('returns the same references when every key is already present', () => {
+    const live = ['a', 't'], staged = ['t']
+    const r = addBypassingStaging(live, staged, ['t'], true)
+    expect(r.live).toBe(live)
+    expect(r.staged).toBe(staged)
   })
 })
