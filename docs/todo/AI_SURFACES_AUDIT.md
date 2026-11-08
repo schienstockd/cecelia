@@ -145,7 +145,7 @@ No frontend code calls a model provider directly (see §1, frontend sweep).
 summaries, QC, task logs and params, chains, boards, blackboard, lab log, notebooks, guides — and
 **pixels**: `gate_cells_view`, `gate_examples` (crops), `get_capture` /
 `get_capture_landscape_tiles` return PNG images (`mcp/cecelia_mcp/server.py:2311`). The claim review
-uses the same list minus the analyst's reasoning (`CLAIM_REVIEW_WITHHELD`, `api/src/claim_review.jl:12`).
+uses an allow-list of record tools (`CLAIM_REVIEW_TOOLS`, `api/src/claim_review.jl`); the rest are withheld with a reason (`CLAIM_REVIEW_WITHHELD`).
 For B1–B3 the user's own session can call any observer tool, so the egress is "anything the observer
 tools return", decided by the model and the user, not by Cecelia.
 

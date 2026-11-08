@@ -215,7 +215,7 @@ The observer session becomes more valuable over time, not immediately. Early in 
 |---|---|---|
 | `get_project_info` | `GET /api/projects` (`routes.jl:313`) + `POST /api/projects/load` (`routes.jl:340-411`, richest state) | **exists** |
 | `list_images` | `sets[].images` from `/api/projects/load` (`_image_payload`, `routes.jl:977-1024`) | **exists** (optional thin `GET /api/images?projectUid` for a lighter call) |
-| `get_image_info` | `GET /api/images/meta?projectUid&imageUid` (`routes.jl:668-684`) — returns channels/dims/physical sizes/labels/`note`, plus `qc=read_all_qc(img)` and `runLog=read_run_log(img)` | **exists** |
+| `get_image_info` | `GET /api/images/meta?projectUid&imageUid` (`routes.jl:668-684`) — returns channels/dims/physical sizes/labels/`note` (the MCP tool drops `note`; `get_image_notes` is its one reader), plus `qc=read_all_qc(img)` and `runLog=read_run_log(img)` | **exists** |
 | `get_image_notes` | the `note` field inside `_image_payload` (`routes.jl` note field); no separate call needed | **exists** |
 | `get_qc_metrics` | `GET /api/gating/stats` (`gating_api.jl:364`) for gating; `qc` block in `_image_payload` for per-stage findings; per-set cohort sidecar (`QC-PROCESS.md` step 3) | **partly new** (cohort route) |
 | `get_task_log` | **NEW** `GET /api/images/tasklog?projectUid&imageUid&fun` → reads `{img._dir}/logs/{fun}.log` (`scheduler.jl:321-335`) | **new** |

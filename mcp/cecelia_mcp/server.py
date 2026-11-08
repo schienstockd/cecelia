@@ -230,7 +230,7 @@ def list_images(project_uid: str) -> list:
     """Every image in the project: uid, name, processing status, which set it belongs to, `attr` (its
     attribute ASSIGNMENT, e.g. `{"Mouse": "3", "Location": "b"}`), and `included` — false means
     EXCLUDED from analysis (a silent member; downstream/cohort counts should drop it). An excluded
-    image that is still "done" is intentional but easy to miss — see its note.
+    image that is still "done" is intentional but easy to miss — get_image_notes says why.
 
     Use `attr` to size the groups before choosing a cross-image plot: get_image_attributes says what you
     MAY group by, this says how many images land in each group once the excluded ones are dropped. A
@@ -240,7 +240,7 @@ def list_images(project_uid: str) -> list:
 
 @_tool
 def get_image_info(project_uid: str, image_uid: str) -> dict:
-    """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log, note,
+    """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log,
     and for a crop `cropSource` {uid, valueName, box} — add box x0/y0/z0/t0 to map its coordinates
     into the source (-1 = axis kept whole). `acquisition` (when the source format has a reader) holds
     the microscope settings as recorded: lasers + transmission %, Bright Z (`enabled` says whether the
@@ -248,8 +248,10 @@ def get_image_info(project_uid: str, image_uid: str) -> dict:
     channel, the dichroic slots as recorded (`Empty` = nothing in that slot), and when it was acquired. `cleanupFacts` is
     what was measured in the file at import, per channel: zero / clipped %, and where measured a
     `profile` of per-depth (`byZ`) and per-frame (`byT`) p50, p99, zero fraction and clipped count.
-    Read both against get_acquisition_knowledge."""
-    return _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
+    Read both against get_acquisition_knowledge. The user's note is not here: get_image_notes reads it
+    (one tool, so a turn that must not see the analyst's notes withholds just that one)."""
+    img = _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
+    return {k: v for k, v in img.items() if k != "note"} if isinstance(img, dict) else img
 
 
 @_tool

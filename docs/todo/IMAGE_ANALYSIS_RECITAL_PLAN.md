@@ -313,7 +313,10 @@ you type, and review is something you ask for. Everything sits on surfaces that 
 3. **"Review" runs one plain review turn (S4) in a fresh context** (v2; v1 ran S3a, S3b and S4). The user states the claim, and
    Kiwi can help phrase it as a structured claim with refs. The *review* must not see the analyst's
    conversation (the recital's withheld-reasoning rule), so it runs as a separate headless Kiwi turn
-   with only the claim and the record. Claims Kiwi makes itself go through the same check. The model
+   with only the claim and the record. The record is an allow-list of tools (`CLAIM_REVIEW_TOOLS`);
+   the lab log, notebooks and the analyst's other plots are withheld too. Cost of that: the 7 repeated
+   07-27 tests were only visible in the lab log, so the review can no longer find them. A rule over the
+   stats runs would have to. Claims Kiwi makes itself go through the same check. The model
    calls cost about $1 and take about a minute, so it's always the analyst's call. The button shows the fixed
    perturbation set before running.
 4. **Findings live on the blackboard.** The claim is an entry and the findings are sections, with

@@ -14,11 +14,15 @@ function Cecelia._run_agent_once(a::_ClaimReviewFake, prompt, cfg; session_id, k
 end
 
 @testset "API: claim review" begin
-    # the review never sees where the analyst's reasoning lives, and keeps every other read tool
+    # the review reads an allow-list of record tools; every Kiwi read tool is classified, allowed or
+    # withheld with a reason — a read tool added later fails here until someone decides
     tools = claim_review_tools()
-    @test !any(t -> any(w -> endswith(t, "__" * w), CLAIM_REVIEW_WITHHELD), tools)
+    @test !any(t -> any(w -> endswith(t, "__" * w), keys(CLAIM_REVIEW_WITHHELD)), tools)
     @test any(endswith("__get_task_log"), tools) && any(endswith("__check_claim"), tools)
-    @test all(w -> w in KIWI_READ_TOOLS || haskey(KIWI_EXCLUDED_TOOLS, w), CLAIM_REVIEW_WITHHELD)
+    @test all(t -> t in KIWI_READ_TOOLS, CLAIM_REVIEW_TOOLS)
+    @test all(w -> w in KIWI_READ_TOOLS || haskey(KIWI_EXCLUDED_TOOLS, w), keys(CLAIM_REVIEW_WITHHELD))
+    @test isempty(intersect(Set(CLAIM_REVIEW_TOOLS), keys(CLAIM_REVIEW_WITHHELD)))
+    @test isempty(setdiff(Set(KIWI_READ_TOOLS), union(Set(CLAIM_REVIEW_TOOLS), keys(CLAIM_REVIEW_WITHHELD))))
 
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
@@ -60,6 +64,7 @@ end
         @test !occursin("read_blackboard_entry", allowed) && occursin("get_task_log", allowed)
         # …and denied by name: an allow-list alone doesn't stop a tool the user's settings permit
         @test occursin("get_session_briefing", denied) && occursin("read_blackboard_entry", denied)
+        @test occursin("read_lab_log", denied) && occursin("get_analysis_boards", denied) && !occursin("read_lab_log", allowed)
         @test !occursin("get_task_log", denied)
 
         # a point with no known category is Other, kept whole; no arrow, no action

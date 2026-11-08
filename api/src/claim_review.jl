@@ -8,12 +8,29 @@
 # `inferred`, go on the claim entry as `### sNN · …` sections under a `### <Category>` heading, which the analyst marks, and never
 # change what the checks found. It reads through the observer tools only, so it can't recompute.
 
-# What the review must not see: where the analyst's own reasoning lives.
-const CLAIM_REVIEW_WITHHELD = ("list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
-    "get_session_briefing", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
-    "get_image_notes", "get_labarchives_context")
-claim_review_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in KIWI_READ_TOOLS
-                              if !(t in CLAIM_REVIEW_WITHHELD)]
+# What the review may read: the RECORD — what was imaged, run, measured and gated. An allow-list, so a
+# read tool added to Kiwi later reaches the review only once someone puts it here; every Kiwi read tool
+# is in exactly one of these two lists (test-enforced).
+const CLAIM_REVIEW_TOOLS = (
+    "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes",
+    "get_populations", "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
+    "get_region_clusters", "get_contact_stats", "get_spatial_patterns", "get_analysis_lineage",
+    "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
+    "get_module_params", "get_chains", "get_object_ids", "get_task_catalogue", "get_guide",
+    "get_acquisition_knowledge", "gate_plot", "gate_cells_view", "gate_histogram", "gate_stats",
+    "gate_examples", "get_available_plots")
+# What the review must not see, and why: where the analyst's own reasoning lives, and their other
+# plots — a review that reads those critiques the plots, not the claim.
+const CLAIM_REVIEW_WITHHELD = Dict(
+    "list_blackboard_entries" => "the analyst's entries", "read_blackboard_entry" => "the analyst's entries",
+    "search_blackboard" => "the analyst's entries", "get_session_briefing" => "summarises the entries and notes",
+    "get_recent_captures" => "what the analyst pointed at", "get_capture" => "what the analyst pointed at",
+    "get_capture_landscape_tiles" => "what the analyst pointed at", "get_image_notes" => "the analyst's notes",
+    "get_labarchives_context" => "the analyst's ELN", "read_lab_log" => "session notes, the analyst's and the assistant's",
+    "list_notebooks" => "the analyst's notebooks", "get_notebook" => "the analyst's notebooks",
+    "get_analysis_boards" => "the analyst's other plots", "list_plots" => "the analyst's open plots",
+    "list_figures" => "the analyst's figures and captions", "get_landscape" => "the analyst's live viewer")
+claim_review_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in CLAIM_REVIEW_TOOLS]
 
 claim_review_system_prompt(project_uid::AbstractString) = """
 You review one claim an analyst wants to make from an image-analysis project in Cecelia. You are a
@@ -25,8 +42,8 @@ with the tools before you answer. You can only read; you cannot recompute.
 
 Look for what would change the analysis: images in scope missing data or processed differently;
 populations measured differently from each other (2D vs 3D tracks, other parameters, other gates); the
-statistical unit (cells or tracks pooled vs animals); the same test run many times; images that left
-the set; anything in the task logs that was flagged and not followed up.
+statistical unit (cells or tracks pooled vs animals); images that left the set; anything in the task
+logs that was flagged and not followed up.
 
 Reply ONLY through the structured output. Each claim is ONE finding about the record, with refs to the
 images, populations or plots it concerns: `observation` for a problem you saw in a tool result,
