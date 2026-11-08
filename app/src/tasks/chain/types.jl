@@ -154,7 +154,24 @@ mutable struct ChainRun
     # The rest of the author stamp of whoever started THIS execution (`caller_stamp()`, beside
     # `chain_run_as`), handed to every node's `TaskRequest`. In memory only: a resume brings its own.
     caller::Dict{String,Any}
+    # What the latest execution (the fresh run, or the last resume) was asked to run with, so the run
+    # can be read and replayed without the current template (`run_chain(...; from_run)`):
+    #   overrides   — the caller's per-node overrides (node_id => params; REPL `run_chain(...; overrides)`)
+    #   node_params — node_id => the params each step runs with, before the per-image steps: stored
+    #                 params clamped to the spec, the overrides on top, sections lifted, spec defaults
+    #                 filled (`_record_node_params`). The per-image resolution is in each image's runlog.
+    # `nothing` = unknown: a run.json written before these existed. Never read as "no overrides".
+    overrides::Union{Nothing,Dict{String,Any}}
+    node_params::Union{Nothing,Dict{String,Any}}
+    from_run::String                        # the run this one replays (`from_run`); "" = started from a template
 end
+# The pre-replay form: overrides and node params unknown, not a replay.
+ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+         created_at, by, resumed_by, excluded_images::AbstractDict, _dir, _lock, _barriers, _barriers_done,
+         caller::AbstractDict) =
+    ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
+             created_at, by, resumed_by, Dict{String,String}(excluded_images), _dir, _lock, _barriers,
+             _barriers_done, Dict{String,Any}(caller), nothing, nothing, "")
 # A run loaded from run.json: excluded images known, no caller (in memory only; a resume brings its own).
 ChainRun(id, chain_name, project_uid, image_uids, template_snapshot, template_hash, image_states,
          created_at, by, resumed_by, excluded_images::AbstractDict, _dir, _lock, _barriers, _barriers_done) =

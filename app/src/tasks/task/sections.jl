@@ -298,8 +298,18 @@ is what the form SENT, so the two are different shapes (`modelsOrder`, filled de
 does not compare them (claim checks: `_claim_same_source`).
 """
 function resolve_run_params(task::CciaTask, params::AbstractDict, scope)::Dict{String,Any}
+    _apply_param_requires(task, scope, resolve_params_unscoped(task, params))
+end
+
+"""
+    resolve_params_unscoped(task, params) -> Dict
+
+The image-independent first half of [`resolve_run_params`](@ref): sections lifted, group order
+resolved, spec defaults filled — everything but the per-image axis guard. A chain run records each
+step's params through this (run.json `node_params`), before any image is in hand.
+"""
+function resolve_params_unscoped(task::CciaTask, params::AbstractDict)::Dict{String,Any}
     p = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
     p = _apply_group_order(task, p)
-    p = _apply_spec_defaults(task, p)
-    _apply_param_requires(task, scope, p)
+    _apply_spec_defaults(task, p)
 end
