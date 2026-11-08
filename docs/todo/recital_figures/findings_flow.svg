@@ -64,7 +64,7 @@
   <text x="886" y="214" font-size="24" font-weight="700" fill="#222">Model review</text>
   <text x="886" y="240" font-size="15" fill="#555">on request · one Kiwi turn on Kiwi's model, ~1 min</text>
   <g font-size="16" fill="#222">
-    <text x="886" y="280"><tspan font-weight="700">Reads</text> the record through an allow-list</text>
+    <text x="886" y="280"><tspan font-weight="700">Reads</tspan> the record through an allow-list</text>
     <text x="886" y="302">of tools.</text>
     <text x="886" y="330" fill="#555">Withheld: Blackboard, notes, briefing,</text>
     <text x="886" y="352" fill="#555">captures, ELN, lab log, notebooks,</text>
