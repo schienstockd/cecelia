@@ -189,3 +189,30 @@ end
     @test read(joinpath(dst, "0", "chunk"), String) == "abc"
     @test read(joinpath(dst, "0", "sub", "deep"), String) == "xyz"  # nested tree preserved
 end
+
+@testset "Every derived image keeps the frame interval WITH its provenance (TIME_META_KEYS)" begin
+    # A declared interval (Immunemap) records its source in `TimeIncrementDeclared`. Each derive
+    # helper named `TimeIncrement*` by hand, so the source note was dropped while the value
+    # travelled — a crop of an Immunemap video read as if its interval came from the file.
+    src = Dict{String,Any}(
+        "SizeC" => 2, "SizeZ" => 9, "SizeT" => 60, "SizeX" => 512, "SizeY" => 512,
+        "PhysicalSizeX" => 1.8, "PhysicalSizeY" => 1.8, "PhysicalSizeZ" => 4.0,
+        "PhysicalSizeUnit" => "micrometer",
+        "TimeIncrement" => 30.0, "TimeIncrementUnit" => "second",
+        "TimeIncrementDeclared" => "Immunemap acquisition 309 (timestamps)")
+    derived = Dict(
+        "copy"     => Cecelia._copied_meta(src, "abc", "default"),
+        "crop"     => Cecelia._crop_inherited_meta(src, (; x0=0, x1=100, y0=0, y1=100, z0=-1, z1=-1, t0=-1, t1=-1)),
+        "zProject" => Cecelia._zproj_inherited_meta(src),
+        "tProject" => Cecelia._tproj_inherited_meta(src),
+        "bin"      => Cecelia._bin_inherited_meta(src, 2, 2),
+        "resample" => Cecelia._resample_z_inherited_meta(src),
+        "register" => Cecelia._register_inherited_meta(src, 2))
+    for (what, m) in derived
+        @test (what, get(m, "TimeIncrementDeclared", nothing)) == (what, src["TimeIncrementDeclared"])
+        @test (what, get(m, "TimeIncrement", nothing)) == (what, 30.0)
+    end
+    # a source with no declared interval gains no key
+    plain = delete!(copy(src), "TimeIncrementDeclared")
+    @test !haskey(Cecelia._bin_inherited_meta(plain, 2, 2), "TimeIncrementDeclared")
+end

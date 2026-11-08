@@ -50,7 +50,7 @@ crop_name_suffix(suffix) = isempty(name_suffix(suffix)) ? "crop" : suffix
 function _crop_inherited_meta(src_meta::AbstractDict, box::NamedTuple)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
-              "PhysicalSizeZ_raw", "TimeIncrement", "TimeIncrementUnit", "SizeC")
+              "PhysicalSizeZ_raw", TIME_META_KEYS..., "SizeC")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
     if box.z0 != -1 && box.z1 != -1

@@ -27,7 +27,7 @@ end
 function _resample_z_inherited_meta(src_meta::AbstractDict)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeUnit", "PhysicalSizeZUnit",
-              "TimeIncrement", "TimeIncrementUnit", "SizeC", "SizeT", "SizeX", "SizeY")
+              TIME_META_KEYS..., "SizeC", "SizeT", "SizeX", "SizeY")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
     # the ratio in µm (per-axis units may differ); the Z size written back stays in Z's own unit

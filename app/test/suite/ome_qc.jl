@@ -93,15 +93,25 @@
             r = Cecelia._delta_t_fallback(d)
             @test 30.2 <= r <= 30.3                              # diffs [34.69, 30.26, 30.27] → 30.27
         end
-        # A paused frame mid-run must not skew the recorded rate: [30, 170, 30] → 30 (median).
+        # A paused acquisition has no single interval: [30, 170, 30] → nothing, not the median 30,
+        # which would make every speed across the pause ~5× wrong with no warning (same rule as the
+        # Imaris reader, `ims_meta.summarise_gaps`).
         mktempdir() do d
             make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
                       planes = [(z = 0, t = 0, dt = 0.0,   unit = "s"),
                                 (z = 0, t = 1, dt = 30.0,  unit = "s"),
                                 (z = 0, t = 2, dt = 200.0, unit = "s"),
                                 (z = 0, t = 3, dt = 230.0, unit = "s")])
-            @test Cecelia._delta_t_fallback(d) == 30.0
+            @test Cecelia._delta_t_fallback(d) === nothing
         end
+        # The rule itself: jitter passes, a pause anywhere after the first gap refuses, a long first
+        # gap (warm-up) is allowed only when there are later gaps to judge the series by.
+        @test Cecelia._uniform_interval([30.0, 30.4, 29.8]) ≈ 30.1     # median of the gaps after the first
+        @test Cecelia._uniform_interval([34.69, 30.26, 30.27]) ≈ 30.265
+        @test Cecelia._uniform_interval([30.0, 30.0, 30.0, 600.0]) === nothing
+        @test Cecelia._uniform_interval([34.69, 30.26]) === nothing    # two gaps: nothing to excuse it by
+        @test Cecelia._uniform_interval([12.0]) == 12.0
+        @test Cecelia._uniform_interval(Float64[]) === nothing
         # bf2raw wrapper layout: OME/METADATA.ome.xml is at the STORE ROOT, and the caller may pass
         # the series subdir (`.../store/0`) instead — which is what `img_filepath` returns and what
         # the import task's `resolved_zarr` is. Must find the sidecar via `dirname(zarr_path)`.
