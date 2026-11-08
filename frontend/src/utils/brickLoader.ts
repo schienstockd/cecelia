@@ -172,7 +172,10 @@ export async function fetchLabelBrick(
   const header = res.headers.get('X-Slab-Shape')
   const shape = parseBrickSlabShape(header)
   if (!shape) return null
-  const buf = await res.arrayBuffer()
+  // A body that fails mid-stream (abort, connection reset) is a failure like any other: `null`, never
+  // a throw — the caller's bookkeeping lives in `.then`, so a rejection leaves its in-flight entry held.
+  let buf: ArrayBuffer
+  try { buf = await res.arrayBuffer() } catch { return null }
   // Labels are always u32 ids -- 4 bytes/voxel, nc=1. Skip brickShapeError (which is
   // channel-aware) and roll a smaller check inline.
   const [ebx, eby, ebz] = expectedBrickSize
@@ -312,14 +315,26 @@ export async function fetchBrick(
       // Ring was destroyed while we waited (level swap, unmount). Drop.
       return null
     }
-    const written = await drainResponseIntoBuffer(res.body!, lease.buffer)
+    // The lease goes back on EVERY way out. An abort while the body streams (a plane change aborts
+    // every request in flight) makes the read reject; escaping here with the lease held loses one of
+    // the ring's buffers for the atlas's lifetime, and once all are lost every fetch waits forever
+    // for a lease while holding its in-flight slot — the atlas stops fetching ("Loading bricks…").
+    let written: number | null
+    try {
+      written = await drainResponseIntoBuffer(res.body!, lease.buffer)
+    } catch {
+      lease.release()
+      return null
+    }
     if (written === null) {
       lease.release()
       return null
     }
     bytes = new Uint8Array(lease.buffer, 0, written)
   } else {
-    const buf = await res.arrayBuffer()
+    // Same rule as the ring path: a body that fails mid-stream is `null`, not a throw.
+    let buf: ArrayBuffer
+    try { buf = await res.arrayBuffer() } catch { return null }
     bytes = new Uint8Array(buf)
   }
 
