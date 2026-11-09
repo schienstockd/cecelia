@@ -329,7 +329,9 @@ non-integer store).
 
 Advisory, like all QC — but this is the one import finding a user can only act on *before* the
 experiment: clipped values are gone, so no correction, threshold or rescale recovers them. Hence the
-imperative long text points at the acquisition, not at a parameter.
+imperative long text points at the acquisition, not at a parameter — except at an 8-bit file's own
+ceiling with no 8-bit detector on record (`_clipped_at_export_ceiling`), where it points at the
+original file: an export rescaled to 8 bits clips there whatever the detector did.
 
 Detection lives in `intensity_utils.is_saturated` and is structural (a pile-up in the brightest
 occupied bin), so it holds for a 12-bit sensor stored in 16-bit words — where the obvious
@@ -347,16 +349,63 @@ function saturation_qc_findings(meta::AbstractDict)
         isnothing(frac) && continue
         level = frac < _SATURATION_WARN_SIGNAL_FRAC ? "info" : "warn"
         i = _cal_int(get(ch, "index", nothing), 0)
+        export_ceiling = _clipped_at_export_ceiling(meta, ch, i)
         push!(fs, qc_finding(level, "import.channel_saturated"; channel = i,
+            key = export_ceiling ? "import.channel_saturated_export" : "import.channel_saturated",
             # the COUNT plus the SIGNAL-relative percentage. Not the all-voxel fraction: measured on a
             # real session that is ~1e-6, which rounds to "0.0001%" and says more about how much blank
             # frame there is than about the clipping.
             detail = Dict{String,Any}("channel"        => i,
                                       "topValue"       => _cal_num(get(ch, "topValue", nothing)),
                                       "clippedVoxels"  => _cal_num(get(ch, "topCount", nothing)),
-                                      "clippedSignalPct" => round(frac * 100, digits = 3))))
+                                      "clippedSignalPct" => round(frac * 100, digits = 3),
+                                      "exportCeiling"  => export_ceiling)))
     end
     fs
+end
+
+"""
+    _clipped_at_export_ceiling(meta, ch, i) -> Bool
+
+Whether channel `i`'s pile-up sits at an 8-bit file's own ceiling (stored in 8 bits, top value 255)
+and the source's settings do not record an 8-bit detector for it. A file rescaled to 8 bits on export
+(Imaris, Fiji "Save as 8-bit", a data portal) clips there whatever the detector did, so the gain advice
+would be a guess: the original acquisition file is what shows detector clipping. A recorded
+`bitDepth` of 8 (an LSM that acquired in 8 bits) is the detector's own ceiling and keeps the gain
+advice; an unrecorded one (no settings read, or a reader without detector bits) counts as an export.
+"""
+function _clipped_at_export_ceiling(meta::AbstractDict, ch::AbstractDict, i::Int)::Bool
+    _cal_int(get(ch, "containerBits", nothing), 0) == 8 || return false
+    _cal_int(get(ch, "topValue", nothing), -1) == 255 || return false
+    acq = get(meta, "acquisition", nothing)
+    acq isa AbstractDict || return true
+    chans = get(Dict{String,Any}(String(k) => v for (k, v) in acq), "channels", nothing)
+    chans isa AbstractVector || return true
+    for c in chans
+        c isa AbstractDict || continue
+        c = Dict{String,Any}(String(k) => v for (k, v) in c)
+        _cal_int(get(c, "order", nothing), 0) == i + 1 || continue      # `order` is 1-based
+        return _cal_int(get(c, "bitDepth", nothing), 0) != 8
+    end
+    true
+end
+
+"""
+    export_ceiling_channels(meta) -> Vector{Int}
+
+The 0-based channels whose import probe tops out at an 8-bit export's ceiling
+(`_clipped_at_export_ceiling`): for the tasks downstream of import that report clipping (denoise's
+saturation gate, AF correction's saturated input), so none of them gives gain advice there either.
+`meta` is the image's `meta` — String or Symbol keys.
+"""
+function export_ceiling_channels(meta::AbstractDict)::Vector{Int}
+    m = Dict{String,Any}(String(k) => v for (k, v) in meta)
+    out = Int[]
+    for ch in _saturation_channels(m)
+        i = _cal_int(get(ch, "index", nothing), -1)
+        i >= 0 && _clipped_at_export_ceiling(m, ch, i) && push!(out, i)
+    end
+    out
 end
 
 """

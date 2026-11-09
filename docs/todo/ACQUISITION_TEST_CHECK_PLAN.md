@@ -124,9 +124,10 @@ What this does and doesn't show (reasoning; review on PR #2066):
    beads are counted objects. "Brighter with depth is bead placement" is a judgement for the review.
 3. **Where it lives.** A step in the import flow ("what will you do with this?"), or an action on an
    imported image. The metadata dialog's light path stays the echo-back.
-4. **Finding-text fixes, separate from this plan:** `import.channel_saturated` gives gain advice on
-   rescaled 8-bit exports (the Immunemap lymphatic set); `brighter_with_depth` / `clipped_deep` name
-   Bright Z when no settings were read.
+4. **Finding-text fixes — done (branch `fix/import-finding-text`):** clipping at an 8-bit file's 255 with
+   no 8-bit detector on record points at the original file, not the gain (`_clipped_at_export_ceiling`);
+   the depth findings name Bright Z only when `.oir` settings record it ON (`_depth_ramp_key`), else
+   generic text.
 
 ## Built so far (2026-11-09, branch `feat/acq-test-checks`)
 

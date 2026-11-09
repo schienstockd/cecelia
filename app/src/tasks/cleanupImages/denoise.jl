@@ -35,11 +35,15 @@ function parse_denoise_params(d::AbstractDict)::DenoiseParams
         version = parse_version_pin(d))
 end
 
-function _denoise_qc_findings(meta)
+# `export_channels`: the image's `export_ceiling_channels` — when every skipped channel is at an 8-bit
+# export's ceiling, the text points at the original file instead of the gain.
+function _denoise_qc_findings(meta; export_channels::Vector{Int} = Int[])
     findings = Dict{String,Any}[]
     skipped = collect(Int, get(meta, "channelsSkipped", Int[]))
     if !isempty(skipped)
+        from_export = all(in(export_channels), skipped)
         push!(findings, qc_finding("warn", "denoise.channel_saturated";
+            key = from_export ? "denoise.channel_saturated_export" : "denoise.channel_saturated",
             value = length(skipped),
             detail = Dict{String,Any}("channels" => skipped,
                                       "reason" => "at sensor ceiling — denoise on saturated data is a no-op")))
@@ -157,9 +161,13 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     saturated = _denoise_saturated_channels(meta, channel_idx)
     if !isempty(saturated)
         if length(saturated) == length(channel_idx)
+            action = all(in(export_ceiling_channels(meta)), saturated) ?
+                "Uncheck those channels; this 8-bit file looks like a rescaled export, so judge detector " *
+                "clipping on the original acquisition file." :
+                "Uncheck those channels or re-acquire at lower gain."
             on_log("[ERROR] Every selected channel ($(channel_idx)) is at the sensor ceiling — " *
                    "SUPPORT/DeepCAD-RT-family denoisers assume shot noise and do nothing on saturated data. " *
-                   "Uncheck those channels or re-acquire at lower gain.")
+                   action)
             return nothing
         else
             keep = [c for c in channel_idx if !(c in saturated)]
@@ -221,7 +229,7 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     if isfile(qc_out_path)
         try
             qmeta = JSON3.read(read(qc_out_path, String))
-            findings = _denoise_qc_findings(qmeta)
+            findings = _denoise_qc_findings(qmeta; export_channels = export_ceiling_channels(meta))
             write_qc(img, "cleanupImages.denoise", out_value_name, findings;
                      metrics = Dict{String,Any}(
                          "channelsRun"     => length(get(qmeta, "channelsRun", Int[])),
