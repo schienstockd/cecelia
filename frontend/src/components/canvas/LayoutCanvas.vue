@@ -163,7 +163,7 @@ watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 
 // shared summary-plot data + view-state (same composable the free-floating canvas uses)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, localSelRemap, reload,
+  specs, specById, segPops, seriesColor, reloadToken, panelReloadToken, anyPopChange, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
@@ -445,8 +445,9 @@ function clusterPanelProps(i: number) {
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c), state: c.state,
     persistKey: `${props.canvasKey}:slot:${i}`,
-    // the rail's Reload plots button — cluster panels refetch on it, same as ClusterPlots' bag
-    reloadToken: reloadToken.value,
+    // the rail's Reload plots button — cluster panels refetch on it, same as ClusterPlots' bag — and on
+    // any gate write (their pops are cluster-run keys the targeted summary rule can't match)
+    reloadToken: reloadToken.value + anyPopChange.value,
     ...(CLUSTER_PANELS[c.ref].props?.(ctx) ?? {}),
   }
 }
@@ -802,7 +803,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
                           :group-attr="panelGroupAttr" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
-                          :reload-token="reloadToken" :persist-key="`${canvasKey}:slot:${i}`"
+                          :reload-token="panelReloadToken(panelSeries(i, entry.contents[i]!))" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
                           @readout="readouts[i] = $event" />
             <!-- cluster PANEL (heatmap / HMM …) — rendered GENERICALLY from the CLUSTER_PANELS registry

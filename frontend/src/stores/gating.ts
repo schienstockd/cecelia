@@ -9,6 +9,7 @@ import { clusterMeasure } from '../utils/clusterMeasure'
 import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
 import { channelLabel } from '../utils/channelNames'
 import { popPath } from '../utils/popName'
+import { gateSignatures, changedPopPaths, booleanDeps } from '../utils/popChanges'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
 // leaf names beginning with `_`. Hand-drawn gates may not use that prefix — mirrors the backend
@@ -81,23 +82,6 @@ function flatten(tree: PopTree): FlatPop[] {
   }
   walk(tree.populations ?? [], 'root', 0)
   return out
-}
-
-// path → serialised gate spec, to diff trees and find membership-affecting changes
-function gateSignatures(tree: PopTree): Map<string, string> {
-  const m = new Map<string, string>()
-  const walk = (nodes: PopNode[], parent: string) => {
-    for (const n of nodes) {
-      const path = popPath(parent, n.name)
-      // include membership_sig so explicit-label pops (the viewer selection) bump their version
-      // when their cell set changes — they have no gate/filter to diff on.
-      m.set(path, JSON.stringify(n.gate ?? null) + '|' + JSON.stringify(n.filter ?? null)
-                  + '|' + JSON.stringify(n.boolean ?? null) + '|' + (n.membership_sig ?? ''))
-      walk(n.children ?? [], path)
-    }
-  }
-  walk(tree.populations ?? [], 'root')
-  return m
 }
 
 // ── The gating store: ONE PER CANVAS, owned by it ──────────────────────────────────────────────────
@@ -217,21 +201,14 @@ export function createGatingStore(initialPopType: string) {
   }
 
   // single entry point for tree updates: diff vs current, bump the membership version of every
-  // pop whose gate/filter changed AND its descendants (parent∩child propagation), refresh stats.
+  // pop whose definition changed AND everything that follows it — descendants and boolean pops
+  // combining it (`utils/popChanges.ts`) — then refresh stats.
   function setTree(next: PopTree, missing?: Record<string, string[]>) {
-    const oldSig = gateSignatures(tree.value)
+    const oldSig = gateSignatures(tree.value.populations ?? [])
     tree.value = next
     missingColumns.value = missing ?? {}
-    const newSig = gateSignatures(next)
-    const changed = new Set<string>()
-    for (const [p, s] of newSig) if (oldSig.get(p) !== s) changed.add(p)
-    for (const p of oldSig.keys()) if (!newSig.has(p)) changed.add(p)   // deleted
-    if (changed.size) {
-      const toBump = new Set<string>(changed)
-      for (const p of newSig.keys())
-        for (const c of changed) if (p === c || p.startsWith(c + '/')) { toBump.add(p); break }
-      toBump.forEach(bump)
-    }
+    const pops = next.populations ?? []
+    changedPopPaths(oldSig, gateSignatures(pops), booleanDeps(pops)).forEach(bump)
     fetchStats()
   }
 
@@ -271,10 +248,8 @@ export function createGatingStore(initialPopType: string) {
       _setHistory(data)
       // Any pop mutation (add/delete/rename/setGate/updatePop) changes what the viewer draws — the
       // /viewer-window popup has its own store, so it needs the localStorage ping to refetch its
-      // overlays. Silent + cheap; a matching-imageUid viewer will loadOverlays() on receive.
-      if (typeof localStorage !== 'undefined' && imageUid.value) {
-        localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
-      }
+      // overlays. Held for Apply in manual-apply mode (`holdViewerPings`).
+      _pingViewerAfterApply()
       return true
     } catch (e) {
       log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -490,13 +465,30 @@ export function createGatingStore(initialPopType: string) {
       localStorage.setItem('cc.viewerOverlaysTick', `${imageUid.value}:${Date.now()}`)
     }
   }
+  // Manual apply holds the viewer reload a gate write triggers, so a hierarchy can be built on a
+  // large image before the viewer draws any of it. The owning canvas hands in its Apply queue
+  // (`usePopSelectionMode.deferUntilApply`); without one the ping goes out at once. An explicit
+  // reload (`pingViewer`) does what a held one would, so it drops it.
+  let _viewerHold: { defer: (run: () => void) => void; drop: () => void } | null = null
+  const holdViewerPings = (h: typeof _viewerHold) => { _viewerHold = h }
+  function _pingViewerAfterApply() {
+    const uid = imageUid.value
+    const ping = () => {
+      if (typeof localStorage === 'undefined' || !uid) return
+      if (uid === imageUid.value) _publishGatingCurrent()
+      localStorage.setItem('cc.viewerOverlaysTick', `${uid}:${Date.now()}`)
+    }
+    if (_viewerHold) _viewerHold.defer(ping)
+    else ping()
+  }
+  const pingViewer = () => { _viewerHold?.drop(); _pingViewer() }
   // Refresh POPULATIONS on the WebGPU viewer after a per-pop visibility change.
   // PopulationManager's per-pop checkbox is the primary surface, so a change here MUST reach the
   // popup window.
-  const refreshPops = () => { _pingViewer(); return Promise.resolve(true) }
+  const refreshPops = () => { pingViewer(); return Promise.resolve(true) }
   // Unified refresh used by the manager's per-pop visibility toggle — the WebGPU viewer routes to
   // tracks or points itself based on `popType`, so this is just a ping.
-  const refreshOverlays = () => { _pingViewer(); return Promise.resolve(true) }
+  const refreshOverlays = () => { pingViewer(); return Promise.resolve(true) }
   // Clear the transient cell-selection pop: the server drops it from the registry, re-broadcasts
   // the tree without it. Used by the × button in `CellSelectionTools`; the WebGPU picker writes
   // into the same registry (`_set_pick_selection!`), so this clear is symmetric.
@@ -528,7 +520,8 @@ export function createGatingStore(initialPopType: string) {
     addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
     renamePop, updatePop, applyBroadcast,
     canUndo, canRedo, undo, redo,
-    refreshPops, refreshOverlays, clearSelection, pingViewer: _pingViewer,
+    refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,
+    pingViewerAfterApply: _pingViewerAfterApply,
     // P3b — labels-version pin
     authoredLabelsVersion, currentLatestLabelsVersion, labelsVersionPin, driftDetected,
     pinToAuthored, clearLabelsVersionPin,
@@ -547,8 +540,9 @@ export function provideGatingStore(popType: string): GatingStore {
   const g = reactive(createGatingStore(popType))
   provide(GATING_STORE, g)
   // Back on screen: the viewer follows the VISIBLE pop manager — tell it which document that is
-  // (the publish watchers above were paused while the page was hidden).
-  onActivated(() => g.pingViewer())
+  // (the publish watchers above were paused while the page was hidden). Held like a gate write:
+  // coming back to a half-built hierarchy must not draw it.
+  onActivated(() => g.pingViewerAfterApply())
   return g
 }
 
