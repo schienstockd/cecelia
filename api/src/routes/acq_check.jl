@@ -37,6 +37,7 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
     p = a["plan"]
     objs = join([string(get(o, "name", ""), get(o, "kind", "cells") == "points" ? " (points)" : "") for o in get(p, "objects", Any[])], ", ")
     println(io, "Plan: ", isempty(strip(string(get(p, "text", "")))) ? "compare $(objs)" : p["text"],
+            Cecelia.acq_stage(p) == "final" ? " · final data" : "",
             Int(get(a, "round", 1)) > 1 ? " · round $(a["round"])" : "", "\n")
     mark = Dict("warn" => "⚠", "info" => "–", "ok" => "✓")
     line(f) = string("- ", mark[f["level"]], " ", f["short"], " → ", f["long"],
@@ -55,7 +56,7 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
     end
     _review_md!(io, get(a, "review", nothing); categories = Cecelia.ACQ_CATEGORIES, label = _acq_category_label,
                 intro = "read the plan, the movies' record and the acquisition knowledge.",
-                nothing_more = "Nothing beyond the checks.", supports_heading = "Before acquiring the rest")
+                nothing_more = "Nothing beyond the checks.", supports_heading = acq_verdict_heading(p))
     String(take!(io))
 end
 
@@ -69,7 +70,7 @@ function _acq_reply(uid, set, id)
     a = meta === nothing ? nothing : _to_str_dict(meta["acqCheck"])
     plan = a === nothing ? nothing : a["plan"]
     result = Cecelia.acq_check(plan, facts)
-    JSON3.write((; ok = true, entryId = id, round = a === nothing ? 0 : get(a, "round", 1), plan,
+    JSON3.write((; ok = true, entryId = id, round = a === nothing ? 0 : get(a, "round", 1), plan, stage = result["stage"],
                  suggestedDesigns = Cecelia.acq_suggest_designs(facts), findings = result["findings"],
                  rows = result["rows"], ran = result["ran"], skipped = result["skipped"],
                  nImages = result["nImages"], nMeasured = result["nMeasured"], nOpen = length(Cecelia.acq_open(result)),
@@ -110,14 +111,15 @@ function _acq_plan_from(p)::Union{Dict{String,Any},Nothing}
         "measure" => String[string(m) for m in get(pd, "measure", Any[])],
         "compare" => String[string(m) for m in get(pd, "compare", Any[])],
         "expectation" => strip(string(get(pd, "expectation", ""))),
-        "text" => strip(string(get(pd, "text", ""))))
+        "text" => strip(string(get(pd, "text", ""))),
+        "stage" => Cecelia.acq_stage(pd))
 end
 
 """
     POST /api/acqcheck/plan
 
 Body: `{ projectUid, setUid, plan: {designs, objects: [{name, kind, channels: {designId: channelName}}],
-references, measure, compare, expectation, text} }` — Reply: as `GET /api/acqcheck`.
+references, measure, compare, expectation, text, stage: "test"|"final"} }` — Reply: as `GET /api/acqcheck`.
 
 Saves the set's plan as its Blackboard entry (created on first save) and writes the check into it. A
 changed plan starts a new round on the same entry; the same plan only re-records the check.
@@ -143,7 +145,9 @@ function api_acqcheck_plan(body_bytes::Vector{UInt8})
         id = String(JSON3.read(rb).entryId)
     else
         a = _to_str_dict(_read_bb_meta(uid, id)["acqCheck"])
-        if JSON3.write(a["plan"]) != JSON3.write(plan)
+        # compared as parsed values; a plan saved before the stage existed was a test acquisition
+        was = JSON3.read(JSON3.write(a["plan"]), Dict{String,Any}); get!(was, "stage", "test")
+        if was != JSON3.read(JSON3.write(plan), Dict{String,Any})
             a["plan"] = plan; a["round"] = Int(get(a, "round", 1)) + 1
             push!(a["rounds"], Dict{String,Any}("round" => a["round"], "at" => at, "by" => by, "plan" => plan))
             delete!(a, "review")   # it answered the earlier plan

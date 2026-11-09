@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, reviewBlocked, rowsByDesign } from './acqCheck'
+import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, reviewBlocked, rowsByDesign, verdictHeading } from './acqCheck'
 import { parseAcqResult, type AcqCheckResult, type AcqPlan, type AcqRow } from './acqCheckApi'
 import type { TaskStatus } from '../stores/tasks'
 
@@ -16,7 +16,7 @@ const row = (uid: string, design: string): AcqRow => ({
   ratio: null, dimmest: null, sharedR: null, driftUm: null, registers: null,
 })
 const result = (over: Partial<AcqCheckResult> = {}): AcqCheckResult => ({
-  entryId: '', round: 0, plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
+  entryId: '', round: 0, stage: 'test', plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
   nImages: 0, nMeasured: 0, nOpen: 0, review: null, categoryLabels: {}, ...over,
 })
 
@@ -102,6 +102,10 @@ describe('findingSeverity / findingLines', () => {
   it('lines are labelled by what they hold: the movies per value, what to do, what it means for the analysis', () => {
     expect(findingLines(f('warn'))).toEqual([{ label: 'Next', text: 'Do this.' }])
     expect(findingLines(f('warn', 'Check it.')).map(l => l.label)).toEqual(['Next', 'Analysis'])
+    // final data: the action is the analysis one
+    expect(findingLines(f('warn'), 'final')).toEqual([{ label: 'Analysis', text: 'Do this.' }])
+    expect(verdictHeading('final')).toBe('Before analysing')
+    expect(verdictHeading('test')).toBe('Before acquiring the rest')
     const w = findingLines(f('warn', undefined, '10/10 %: a, b · 8/15 %: c'))
     expect(w[0]).toEqual({ label: 'Movies', text: '10/10 %: a, b · 8/15 %: c' })
     expect(findingLines(f('info', undefined, 'x', 'Designs'))[0].label).toBe('Designs')

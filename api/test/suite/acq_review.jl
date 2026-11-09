@@ -45,6 +45,19 @@ end
     @test occursin("The rule checks found nothing.", acq_review_prompt(plan, String[]))
     @test occursin("before the rest of the experiment is acquired", acq_review_system_prompt("pX")) &&
           occursin("`pX`", acq_review_system_prompt("pX"))
+    @test !occursin("expected, NOT a problem", p)
+    # an info finding is listed as expected, so the verdict doesn't act on it
+    pn = acq_review_prompt(plan, String[], String[], ["Different laser setting between the label designs"])
+    @test occursin("expected, NOT a problem — don't act on them:\n- Different laser setting between the label designs", pn)
+    # final data: the analysis is the question, the scope is off the table, and the verdict is about analysing
+    fin = merge(plan, Dict{String,Any}("stage" => "final"))
+    pf = acq_review_prompt(fin, ["m1 — uidA"])
+    @test occursin("what should the analysis do about it?", pf) && occursin("→ <what to do in the analysis", pf)
+    @test occursin("\"Analyse as planned.\" or \"Before comparing:", pf) && occursin("These movies can answer:", pf)
+    @test !occursin("Ready to acquire", pf)
+    sf = acq_review_system_prompt("pX", "final")
+    @test occursin("FINAL data", sf) && occursin("never suggest it", sf) && occursin("correct for in the analysis", sf)
+    @test acq_verdict_heading(fin) == "Before analysing" && acq_verdict_heading(plan) == "Before acquiring the rest"
 
     # points: the acquisition check's categories, the action after the arrow; unknown → Other, whole
     @test _acq_review_point("Shared structure: GFP shows in the bead channel in m1 → use a narrower filter") ==

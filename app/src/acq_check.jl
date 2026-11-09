@@ -204,12 +204,21 @@ _acq_lasers_text(l) = l === nothing || isempty(l) ? "—" :
     join((p === nothing ? "?" : string(round(p; digits = 1)) |> s -> replace(s, r"\.0$" => "") for (_, p) in l), "/") * " %"
 
 """
+    acq_stage(plan) -> "test" | "final"
+
+Where the plan's movies stand: a `test` acquisition, the rest still to be acquired (the default), or the
+`final` data, all there is to analyse. It picks which action a finding leads with.
+"""
+acq_stage(plan) = plan isa AbstractDict && string(_ag(plan, "stage", "test")) == "final" ? "final" : "test"
+
+"""
     acq_check(plan, facts) -> Dict
 
 The check. `plan` may be `nothing` (no plan yet): then only what needs none runs — settings that differ,
 Bright Z, detector range, drift, unmeasured movies. Returns
-`{findings, rows, ran, skipped}`: `findings` are `qc_finding`s with `scope` ("set" or an image uid),
-`thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one),
+`{stage, findings, rows, ran, skipped}`: `findings` are `qc_finding`s with `scope` ("set" or an image uid),
+`thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one; on
+`final` data that IS the finding's `long`, and `thisData` is dropped),
 `where` (which movies or designs hold which value, for a setting that differs) and
 `detail`; `rows` one per image for the per-movie table.
 """
@@ -223,7 +232,10 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         f["category"] = get(ACQ_CATEGORY_OF, code, "other")
         # which movies (or designs) hold which value; the line's label says which it lists
         where === nothing || (f["where"] = where; f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
-        data === nothing || (f["thisData"] = qc_text(data; subs...).long)
+        # what it means for analysing these movies: the code's `.data` entry (a movie's finding reads its
+        # set finding's), unless a call names one ("" = none)
+        dk = something(data, replace(code, r"_image$" => "") * ".data")
+        haskey(QC_TEXT, dk) && (f["thisData"] = qc_text(dk; subs...).long)
         push!(findings, f)
     end
     probed = filter(f -> f["probed"], facts)
@@ -301,7 +313,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         per_design = join((dlabel[id] * ": " * join(sort!(collect(vals(id))), ", ") for id in ids), " · ")
         if within_only || !has_plan
             add!("info", "acq.settings_by_design", "set"; variable = variable, where = per_design,
-                 data = has_plan ? "acq.settings_by_design.data" : nothing, detail = groups_detail(gs))
+                 data = has_plan ? "acq.settings_by_design.data" : "", detail = groups_detail(gs))
         else
             add!("warn", "acq.settings_by_design_cross", "set"; variable = variable, where = per_design,
                  detail = groups_detail(gs))
@@ -428,11 +440,19 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     end
     isempty(drift_ok) || add!("ok", "acq.drift_ok", "set"; n = length(drift_ok), value = round(Int, maximum(drift_ok)))
 
+    # final data: the movies are all there is, so a finding's action is what to do in the analysis
+    stage = acq_stage(plan)
+    if stage == "final"
+        for f in findings
+            haskey(f, "thisData") && (f["long"] = pop!(f, "thisData"))
+        end
+    end
+
     ran = String["settings", "Bright Z", "detector range", "drift"]
     skipped = String[]
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])
-    Dict{String,Any}("findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
+    Dict{String,Any}("stage" => stage, "findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
                      "nImages" => length(facts), "nMeasured" => length(probed))
 end
 

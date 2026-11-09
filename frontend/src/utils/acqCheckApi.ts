@@ -19,7 +19,12 @@ export type AcqObjectKind = 'cells' | 'points'
 /** A plan object (segmented or tracked) or reference channel: its channel name per design id (an
  *  index is still read, for a plan written before). */
 export interface AcqPlanChannel { name: string; kind?: AcqObjectKind; channels: Record<string, string | number> }
+/** Where the plan's movies stand: a test, the rest still to acquire, or the final data — all there is.
+ *  It picks which action a finding leads with, and the review's question. */
+export type AcqStage = 'test' | 'final'
 export interface AcqPlan {
+  /** absent on a plan saved before the stage existed = 'test' */
+  stage?: AcqStage
   designs: AcqDesign[]
   objects: AcqPlanChannel[]
   references: AcqPlanChannel[]
@@ -62,6 +67,8 @@ export interface AcqRow {
 export interface AcqCheckResult {
   entryId: string
   round: number
+  /** the stage the check ran for: on 'final' a finding's `long` is the analysis action, no `thisData` */
+  stage: AcqStage
   plan: AcqPlan | null
   suggestedDesigns: AcqDesign[]
   findings: AcqFinding[]
@@ -80,7 +87,8 @@ export interface AcqCheckResult {
 /** A GET / plan reply → `AcqCheckResult`, the review normalised; null when it isn't one. */
 export function parseAcqResult(r: Record<string, unknown> | null): AcqCheckResult | null {
   if (!r || typeof r.entryId !== 'string') return null
-  return { ...(r as unknown as AcqCheckResult), review: parseReview(r.review), categoryLabels: parseCategoryLabels(r.categoryLabels) }
+  return { ...(r as unknown as AcqCheckResult), stage: r.stage === 'final' ? 'final' : 'test',
+           review: parseReview(r.review), categoryLabels: parseCategoryLabels(r.categoryLabels) }
 }
 
 export async function fetchAcqCheck(projectUid: string, setUid: string): Promise<AcqCheckResult | null> {

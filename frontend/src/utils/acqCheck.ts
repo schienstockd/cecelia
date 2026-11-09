@@ -1,7 +1,7 @@
 // Pure helpers for the acquisition check modal (AcqCheckDialog / AcqPlanForm): the plan sentence, a
 // fresh plan from the suggested designs, what keeps a plan from saving, and the per-movie table grouped
 // by design. Types and calls: acqCheckApi.ts.
-import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow } from './acqCheckApi'
+import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow, AcqStage } from './acqCheckApi'
 import type { Severity } from '../lib/severity'
 import { isLiveStatus } from '../lib/taskStatus'
 import { AI_OFF_COPY, aiOffLine, type AiState } from './aiSwitch'
@@ -29,6 +29,7 @@ export function planSentence(plan: AcqPlan | null): string {
 /** A plan to start the form from: the suggested designs, no objects yet. */
 export function emptyPlan(designs: AcqDesign[]): AcqPlan {
   return {
+    stage: 'test',
     designs: designs.map(d => ({ id: d.id, key: d.key, label: d.label ?? d.key })),
     objects: [], references: [], measure: [], compare: [], expectation: '',
   }
@@ -117,12 +118,18 @@ export function badgeOf(result: AcqCheckResult | null): { n: number; tip: string
 export const findingSeverity = (f: AcqFinding): Severity | undefined =>
   f.level === 'warn' ? 'warn' : f.level === 'ok' ? 'ok' : undefined
 
+/** The stage picker's options, and the heading over the review's verdict for each stage. */
+export const ACQ_STAGES: { value: AcqStage; label: string }[] = [
+  { value: 'test', label: 'Test acquisition' }, { value: 'final', label: 'Final data' }]
+export const verdictHeading = (stage: AcqStage) => stage === 'final' ? 'Before analysing' : 'Before acquiring the rest'
+
 /** A finding's lines under its short text, each labelled by what it holds: which movies (or designs)
- *  have which value, what to do next, and what it means for the analysis. */
-export function findingLines(f: AcqFinding): { label: string; text: string }[] {
+ *  have which value, what to do next, and what it means for the analysis. On final data the action IS
+ *  the analysis one (the check sends no `thisData` then). */
+export function findingLines(f: AcqFinding, stage: AcqStage = 'test'): { label: string; text: string }[] {
   return [
     ...(f.where ? [{ label: f.whereLabel ?? 'Movies', text: f.where }] : []),
-    { label: 'Next', text: f.long },
+    { label: stage === 'final' ? 'Analysis' : 'Next', text: f.long },
     ...(f.thisData ? [{ label: 'Analysis', text: f.thisData }] : []),
   ]
 }

@@ -13,7 +13,7 @@ import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import { useProjectStore } from '../stores/project'
 import { useToast } from '../composables/useToast'
 import { fetchAcqCheck, reviewAcqCheck, saveAcqPlan, type AcqCheckResult, type AcqPlan, type AcqRow } from '../utils/acqCheckApi'
-import { brightZText, measuringCount, emptyPlan, findingImageUids, findingLines, findingSeverity, findingsFor, fmt, planSentence, reviewBlocked, rowsByDesign } from '../utils/acqCheck'
+import { brightZText, measuringCount, emptyPlan, findingImageUids, findingLines, findingSeverity, findingsFor, fmt, planSentence, reviewBlocked, rowsByDesign, verdictHeading } from '../utils/acqCheck'
 import { stepLabel } from '../utils/kiwiTurn'
 import ModelReviewPoints from './ModelReviewPoints.vue'
 import { useKiwiStore } from '../stores/kiwi'
@@ -140,6 +140,7 @@ const metaImage = computed(() => {
           <q v-if="plan">{{ plan.text || planSentence(plan) }}</q>
           <span v-else class="cc-muted">None yet — photons, balance and shared structure need one</span>
           <span class="cc-muted cc-fs-xs">{{ result.nMeasured }}/{{ result.nImages }} measured
+            <template v-if="plan && result.stage === 'final'"> · final data</template>
             <template v-if="result.round > 1"> · round {{ result.round }}</template></span>
           <button class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-xs edit" @click="editing = true">
             {{ plan ? 'Edit' : 'Set a plan' }}
@@ -152,7 +153,7 @@ const metaImage = computed(() => {
       <div class="cc-eyebrow cc-fs-2xs">Across the set</div>
       <ul class="findings">
         <li v-for="(f, i) in setFindings" :key="i">
-          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f)">
+          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage)">
             <button v-if="f.code === 'acq.not_measured' && unmeasured.length" class="cc-btn cc-btn-dense cc-fs-xs"
                     :disabled="measuring" @click="measure"
                     v-tooltip.top="'Runs in the background, about a minute per movie — progress in the task manager'">
@@ -178,7 +179,7 @@ const metaImage = computed(() => {
       <template v-if="result.review">
         <div class="cc-fs-xs review-points">
           <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels"
-                             supports-label="Before acquiring the rest" />
+                             :supports-label="verdictHeading(result.stage)" />
         </div>
         <button v-if="result.review.items.length" class="cc-btn cc-btn-bare cc-fs-2xs mark-link" type="button"
                 v-tooltip.top="'Open on the Blackboard'" @click="openEntry">Mark each point Good / Bad / Unsure</button>
@@ -197,7 +198,7 @@ const metaImage = computed(() => {
         </SelectionTable>
         <ul v-if="openRow && g.rows.some(r => r.uid === openRow)" class="findings row-findings">
           <li v-for="(f, i) in rowFindings(openRow)" :key="i">
-            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f)" />
+            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage)" />
           </li>
           <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this movie.</li>
         </ul>

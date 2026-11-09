@@ -3,7 +3,7 @@
 # docs/todo/ACQUISITION_TEST_CHECK_PLAN.md → the review row of the recital table. The claim review's
 # mechanism (claim_review.jl; shared pieces in review_turn.jl) with a plan instead of a claim: one Kiwi
 # turn reads the set's plan, the movies' record and the acquisition knowledge, and says what to change
-# before the rest of the experiment is acquired. The user's own reasoning is WITHHELD (notes, Blackboard,
+# before the rest of the experiment is acquired — or, on final data, what the analysis must watch for. The user's own reasoning is WITHHELD (notes, Blackboard,
 # captures, briefing, ELN, lab log), and so is the analysis record — this is before analysis. Advisory:
 # its points are `inferred`, go on the set's acqCheck entry as `### sNN · …` sections under a
 # `### <Category>` heading, which the user marks, and never change what the rule checks found.
@@ -36,11 +36,40 @@ const ACQ_REVIEW_WITHHELD = Dict(
     "gate_stats" => _ACQ_ANALYSIS, "gate_examples" => _ACQ_ANALYSIS)
 acq_review_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in ACQ_REVIEW_TOOLS]
 
-acq_review_system_prompt(project_uid::AbstractString) = """
+# The two stages a plan's movies can be at (`Cecelia.acq_stage`): a test, the rest still to acquire, or
+# the final data, all there is. The stage picks the review's question, its verdict and the verdict's heading.
+const _ACQ_STAGE_INTRO = Dict(
+    "test" => """
 You review a TEST acquisition in Cecelia before the rest of the experiment is acquired. The user has
 imaged a few movies and written a plan: which objects they will segment or track, in which channel,
 what they will measure and compare, and what they expect. You judge whether that plan can work on data
-acquired like this, and what to change at the microscope (or in the plan) before acquiring the rest.
+acquired like this, and what to change at the microscope (or in the plan) before acquiring the rest.""",
+    "final" => """
+You review FINAL data in Cecelia before it is analysed: the user has acquired every movie there will be
+and cannot image more. They wrote a plan: which objects they will segment or track, in which channel,
+what they will measure and compare, and what they expect. You judge whether that plan can work on these
+movies, and what to watch for, correct or leave out in the analysis. Changing the microscope is no
+longer an option — never suggest it.""")
+const _ACQ_STAGE_LOOK = Dict(
+    "test" => "anything the knowledge says to change at the scope.",
+    "final" => "anything the knowledge says to correct for in the analysis.")
+const _ACQ_STAGE_ASK = Dict(
+    "test" => "What else in these movies would get in the way of the plan, and what should change before the rest is\nacquired?",
+    "final" => "What else in these movies would get in the way of the plan, and what should the analysis do about it?")
+const _ACQ_STAGE_ARROW = Dict("test" => "what to change at the scope or in the plan",
+                              "final" => "what to do in the analysis, or how to narrow the plan")
+const _ACQ_STAGE_VERDICT = Dict(
+    "test" => """Either "Ready to acquire as planned." or "Change before acquiring: <the one to three changes that matter
+most for this plan, most important first>." Don't narrow the plan into a different one.""",
+    "final" => """Either "Analyse as planned." or "Before comparing: <the one to three analysis steps that matter most
+for this plan, most important first>." If these movies cannot answer the plan at all, say instead
+"These movies can answer: <the narrower question they can>." """)
+
+"""The heading over the review's verdict on the plan's entry and in the dialog, by the plan's stage."""
+acq_verdict_heading(plan) = Cecelia.acq_stage(plan) == "final" ? "Before analysing" : "Before acquiring the rest"
+
+acq_review_system_prompt(project_uid::AbstractString, stage::AbstractString = "test") = """
+$(_ACQ_STAGE_INTRO[stage])
 
 The project is `$(project_uid)` — pass exactly that as `project_uid` in every tool call. Read the movies'
 record (image info: acquisition settings, the import probe's photons, shared structure, drift, fading;
@@ -48,7 +77,7 @@ QC metrics; task logs) and the acquisition knowledge before you answer. You can 
 
 Look for what would stop the plan: an object too dim or too noisy to segment; a channel that carries
 another's signal where the plan needs them apart; settings that differ between movies the plan compares;
-signal fading or drift that would break tracking; anything the knowledge says to change at the scope.
+signal fading or drift that would break tracking; $(_ACQ_STAGE_LOOK[stage])
 Say "consistent with" until the cause is separated — a channel dimming over time can be bleaching or
 cells leaving.
 
@@ -80,10 +109,16 @@ function _acq_plan_lines(plan::AbstractDict)::String
     String(take!(io))
 end
 
-function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::AbstractVector = String[])::String
+# `found` are the rule findings as lines; `noted` the ones that are expected, not a problem (an info
+# finding — "different laser between designs, compare within each").
+function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::AbstractVector = String[],
+                           noted::AbstractVector = String[])::String
+    stage = Cecelia.acq_stage(plan)
     known = isempty(found) ? "The rule checks found nothing." :
         "The rule checks already found these — the user sees them, so do NOT repeat or rephrase them:\n" *
         join(("- " * f for f in found), "\n")
+    isempty(noted) || (known *= "\n\nThey also noted these as expected, NOT a problem — don't act on them:\n" *
+                                 join(("- " * f for f in noted), "\n"))
     text = strip(string(get(plan, "text", "")))
     """
     Plan: “$(isempty(text) ? "(no sentence)" : text)”
@@ -93,19 +128,16 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
 
     $(known)
 
-    What else in these movies would get in the way of the plan, and what should change before the rest is
-    acquired? Report only what the checks above don't already say; if that is nothing, abstain.
+    $(_ACQ_STAGE_ASK[stage]) Report only what the checks above don't already say; if that is nothing, abstain.
 
     Write each observation or question as `<Category>: <what is wrong, and where — name the movies and
-    channels> → <what to change at the scope or in the plan>`, with Category one of: $(_acq_review_category_list()).
+    channels> → <$(_ACQ_STAGE_ARROW[stage])>`, with Category one of: $(_acq_review_category_list()).
     Each side of the arrow is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon:
     two problems are two claims.
 
     End with the `interpretation`: the verdict on the plan above, weighing the rule findings AND your points.
-    Either "Ready to acquire as planned." or "Change before acquiring: <the one to three changes that matter
-    most for this plan, most important first>." Name the plan's objects and channels. Don't make the plan
-    depend on something the record lacks, and don't narrow the plan into a different one. One sentence of
-    at most $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
+    $(_ACQ_STAGE_VERDICT[stage]) Name the plan's objects and channels. Don't make the plan depend on something
+    the record lacks. One sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
     """
 end
 
@@ -114,9 +146,12 @@ _acq_review_category_list() = join((_acq_category_label(c) for c in Cecelia.ACQ_
 # A review point's text → `(category, text, action)`, filed under the acquisition check's categories.
 _acq_review_point(text::AbstractString) = _review_point(text, Cecelia.ACQ_CATEGORIES, _acq_category_label)
 
-# The rule findings as the prompt lists them: a movie's finding names the movie.
-_acq_found_lines(result, names) = String[f["scope"] == "set" ? f["short"] : string(f["short"], " (", get(names, f["scope"], f["scope"]), ")")
-                                         for f in result["findings"]]
+# The rule findings as the prompt lists them, `(found, noted)`: a movie's finding names the movie; an
+# info finding is `noted` (expected, nothing to do).
+function _acq_found_lines(result, names)
+    line(f) = f["scope"] == "set" ? f["short"] : string(f["short"], " (", get(names, f["scope"], f["scope"]), ")")
+    String[line(f) for f in result["findings"] if f["level"] != "info"], String[line(f) for f in result["findings"] if f["level"] == "info"]
+end
 
 """
     acq_review_start(project_uid, set_uid; model) -> (status, record)
@@ -136,8 +171,9 @@ function acq_review_start(uid::AbstractString, set_uid::AbstractString; model::A
     result = Cecelia.acq_check(plan, facts)
     names = Dict(f["uid"] => f["name"] for f in facts)
     movies = [string(f["name"], " — ", f["uid"]) for f in facts]
-    kiwi_start_turn(uid, acq_review_prompt(plan, movies, _acq_found_lines(result, names)); model,
-                    system_prompt = acq_review_system_prompt(uid), allowed_tools = acq_review_tools(),
+    found, noted = _acq_found_lines(result, names)
+    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted); model,
+                    system_prompt = acq_review_system_prompt(uid, Cecelia.acq_stage(plan)), allowed_tools = acq_review_tools(),
                     extra = Dict{String,Any}("acqReview" => Dict{String,Any}("entryId" => id, "setUid" => String(set_uid),
                                                                             "round" => get(a, "round", 1))),
                     on_done = _acq_review_done!)

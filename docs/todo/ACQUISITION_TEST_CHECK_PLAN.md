@@ -211,8 +211,20 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   `get_acquisition_knowledge` only (`ACQ_REVIEW_TOOLS`); notes, Blackboard, captures, briefing, ELN, lab
   log and the analysis record are withheld. Points file under the check's own categories (`ACQ_CATEGORIES`,
   plus `fading` — no rule reads it yet) as `### sNN` sections on the set's entry, marked Good / Bad /
-  Unsure there; a new plan round drops the review. **Not run on a real model yet** — scored on m5uLPh
-  against the diagnosis above is still to do.
+  Unsure there; a new plan round drops the review. Run on lfGUDg (2026-11-10); scoring on m5uLPh against
+  the diagnosis above is still to do.
+- **The review closes with a verdict on the plan as written** (the maintainer, 2026-11-10): "Ready to
+  acquire as planned." / "Change before acquiring: …", weighing the rule findings too, heading *Before
+  acquiring the rest*. The first run's "what these movies would support" (the claim review's closing
+  question) narrowed the plan, ignored the rule findings and leaned on a Mouse attribute the set lacks.
+  Info findings go to the model as "expected, not a problem" — the next run acted on one.
+- **Stage: test acquisition or final data** (the maintainer, 2026-11-10 — "I have no more samples, what
+  should I watch for when I analyse these"): a toggle on the plan (`plan.stage`, default `test`; the
+  record can't tell whether the experiment is finished). On final data each finding leads with its
+  analysis action (its `.data` catalog line; a finding without one has a `long` that holds at either
+  stage), the review asks what the analysis must do and never suggests the scope, and the verdict is
+  "Analyse as planned." / "Before comparing: …" — or, when the movies can't answer the plan, "These
+  movies can answer: …" (the narrowed question fits finished data). Heading *Before analysing*.
 
 ## Resume when
 
