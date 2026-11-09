@@ -39,6 +39,7 @@ describe('vaultMatchesQuery', () => {
   it.each(['CYTO', 'tdtom', 'bob', 'mertk', 'zolima'])('matches %s, case-insensitively', q =>
     expect(vaultMatchesQuery(m, q)).toBe(true))
   it('misses', () => expect(vaultMatchesQuery(m, 'denoise')).toBe(false))
+  it('words may hit different fields', () => expect(vaultMatchesQuery(m, 'cyto bob')).toBe(true))
   it('finds the default profile by its display name', () => {
     const d = { stem: 'x', createdBy: 'default' }
     expect(vaultMatchesQuery(d, vaultUserLabel(d).slice(0, 3))).toBe(true)
