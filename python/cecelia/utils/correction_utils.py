@@ -713,6 +713,7 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
                    smoothness=DRIFT_DEFAULT_SMOOTHNESS,
                    trajectory_smooth_sigma=DRIFT_DEFAULT_SMOOTH_SIGMA,
                    robust=True, per_plane=False, z_smoothness=0.0,
+                   measured_frames=None,
                    time_idx=None, channel_idx=None, on_progress=None):
     """Per-frame drift of ``image_array`` on ``phase_shift_channel``, as a `DriftEstimate`.
 
@@ -743,13 +744,51 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
     Does NOT correct Z-direction shifts — phase correlation is 2D per plane by construction. Design:
     `docs/todo/DRIFT_PERPLANE_PLAN.md`.
 
+    ``measured_frames`` — estimate on the first N frames only; frames N.. are not registered and are
+    held at frame N-1's position (and angle), so the trajectory still covers every frame. For a
+    last timepoint the acquisition stopped mid-volume (ccid ``meta["partialTimepoint"]``, kept at
+    import): its zero-filled planes register as movement — a ~24 px excursion on a still movie —
+    which the trajectory smoother then spreads over the complete frames. Held frames are not listed
+    in ``interpolated``: they were placed by this rule, not predicted from neighbours.
+
     ``on_progress(n, total)`` is called once per frame transformed.
     """
     if estimator not in ('multiLag', 'chain', 'sitkRigid'):
         raise ValueError(
             f"unknown drift estimator '{estimator}' (multiLag | chain | sitkRigid)")
+    n_all = dim_utils.dim_val('T')
+    n_measured = n_all if measured_frames is None else int(measured_frames)
+    if not 1 <= n_measured <= n_all:
+        raise ValueError(f'measured_frames must be 1..{n_all}, got {measured_frames}')
+    est = _estimate_drift(image_array, phase_shift_channel, dim_utils, n_measured,
+                          upsample_factor, normalisation, estimator, max_lag, max_angle_deg,
+                          smoothness, trajectory_smooth_sigma, robust, per_plane, z_smoothness,
+                          time_idx, channel_idx, on_progress)
+    if n_measured == 1:
+        # One frame is the reference with nothing to pair it with — nothing was predicted for it.
+        est = est._replace(interpolated={} if est.per_plane else [])
+    return _hold_last_position(est, n_all)
 
-    n_t = dim_utils.dim_val('T')
+
+def _hold_last_position(est, n_all):
+    """``est`` extended to ``n_all`` frames, each extra frame at the last estimated position/angle."""
+    positions = np.asarray(est.positions, dtype=np.float64)
+    n_extra = n_all - len(positions)
+    if n_extra <= 0:
+        return est
+    positions = np.concatenate([positions, np.repeat(positions[-1:], n_extra, axis=0)])
+    angles = est.angles
+    if angles is not None:
+        angles = np.asarray(angles, dtype=np.float64)
+        angles = np.concatenate([angles, np.repeat(angles[-1:], n_extra)])
+    return est._replace(positions=positions, shifts=np.diff(positions, axis=0), angles=angles)
+
+
+def _estimate_drift(image_array, phase_shift_channel, dim_utils, n_t,
+                    upsample_factor, normalisation, estimator, max_lag, max_angle_deg,
+                    smoothness, trajectory_smooth_sigma, robust, per_plane, z_smoothness,
+                    time_idx, channel_idx, on_progress):
+    """`estimate_drift` on the first ``n_t`` frames — the trajectory has exactly ``n_t`` rows."""
     axes = ['Z', 'Y', 'X'] if dim_utils.is_3D() else ['Y', 'X']
 
     if estimator == 'sitkRigid':
