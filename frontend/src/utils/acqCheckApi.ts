@@ -1,0 +1,77 @@
+// The set-level acquisition check (docs/todo/ACQUISITION_TEST_CHECK_PLAN.md): the import probe's numbers
+// and the acquisition settings read against the set's plan. The check runs live on GET (nothing written);
+// saving a plan writes the set's Blackboard entry. Routes: api/src/routes/acq_check.jl; rules:
+// app/src/acq_check.jl.
+import { postJson } from './blackboardApi'
+import type { QcFinding } from '../lib/qc'
+
+/** A label design: images whose names differ only in mouse/run/stack numbers (`acq_design_key`). */
+export interface AcqDesign {
+  id: string
+  key: string
+  label?: string
+  imageUids?: string[]
+  channels?: { index: number; name: string; filter: string | null }[]
+}
+export type AcqObjectKind = 'cells' | 'points'
+/** A plan object (segmented or tracked) or reference channel: its channel index per design id. */
+export interface AcqPlanChannel { name: string; kind?: AcqObjectKind; channels: Record<string, number> }
+export interface AcqPlan {
+  designs: AcqDesign[]
+  objects: AcqPlanChannel[]
+  references: AcqPlanChannel[]
+  measure: string[]
+  compare: string[]
+  expectation: string
+  text?: string
+}
+/** A finding: a `qc_finding` plus its scope ("set" or an image uid) and, where it has one, what it
+ *  means for analysing these movies (`thisData`). */
+export interface AcqFinding extends QcFinding {
+  scope: string
+  key?: string
+  subs?: Record<string, unknown>
+  thisData?: string
+}
+export interface AcqObjectCell { channel: number; p50: number | null; p99: number | null }
+export interface AcqRow {
+  uid: string
+  name: string
+  design: string | null
+  lasers: string
+  brightZ: boolean | null
+  probed: boolean
+  depthPct: [number, number] | null
+  objects: Record<string, AcqObjectCell>
+  ratio: number | null
+  dimmest: string | null
+  sharedR: number | null
+  driftUm: number | null
+  registers: boolean | null
+}
+export interface AcqCheckResult {
+  entryId: string
+  round: number
+  plan: AcqPlan | null
+  suggestedDesigns: AcqDesign[]
+  findings: AcqFinding[]
+  rows: AcqRow[]
+  ran: string[]
+  skipped: string[]
+  nImages: number
+  nMeasured: number
+  nOpen: number
+}
+
+export async function fetchAcqCheck(projectUid: string, setUid: string): Promise<AcqCheckResult | null> {
+  try {
+    const res = await fetch(`/api/acqcheck?${new URLSearchParams({ projectUid, setUid })}`)
+    if (!res.ok) return null
+    return await res.json() as AcqCheckResult
+  } catch { return null }
+}
+
+export async function saveAcqPlan(projectUid: string, setUid: string, plan: AcqPlan): Promise<AcqCheckResult | null> {
+  const r = await postJson('/api/acqcheck/plan', { projectUid, setUid, plan: plan as unknown as Record<string, unknown> })
+  return r as unknown as AcqCheckResult | null
+}

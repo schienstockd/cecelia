@@ -19,6 +19,8 @@
 #                      only `via: "app"` (a person). A proposal never replaces a person's verdict.
 #   claim            — a stated claim: its scope, rounds and last check (`api/src/routes/claim.jl`,
 #                      claim recital). Its `### sNN` sections are the checks' findings.
+#   acqCheck         — a set's acquisition plan: the plan, its rounds and the last check
+#                      (`api/src/routes/acq_check.jl`, test-acquisition check). Plain lines, no sections.
 #   knowledge        — `{by, at, from?: {entryId, sectionId}}`. Marks the entry as lab knowledge for
 #                      this project (P4, Decision 11): the run harness carries these entries, and only
 #                      these, into a run's copy. `from` names the run section it was promoted from.
@@ -31,7 +33,7 @@
 # not counted; the page lists it under the entry, where a person can clear it. The revise reply
 # names the person-marked sections it removed (`removedMarked`) so a Claude caller can say so.
 
-const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge", "claim")
+const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge", "claim", "acqCheck")
 const _BB_SECTION_VERDICTS = ("good", "bad", "unsure")
 const _BB_SECTION_CAUSES = ("guide", "platform", "agent")
 const _BB_SECTION_ID_RE = r"^[dms][0-9]{2,3}$"

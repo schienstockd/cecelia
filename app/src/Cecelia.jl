@@ -336,6 +336,7 @@ include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
 include("qc_gating.jl")   # after qc_cohort.jl — gating QC reuses its outlier test
 include("claim_checks.jl")   # after qc_cohort.jl — claim recital S0/S1 over a set
+include("acq_check.jl")      # test-acquisition check over a set (reads meta only)
 include("lab_log.jl")
 include("lab_log_context.jl")
 # the one reader/writer of settings/analysisBoards.json — after CciaProject (model/project.jl), and

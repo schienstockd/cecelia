@@ -58,6 +58,7 @@ import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
 import CohortCheckButton from './CohortCheckButton.vue'
+import AcqCheckButton from './AcqCheckButton.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
@@ -321,6 +322,8 @@ const visibleUids = computed<string[]>(() =>
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Cohort consistency: self-hides unless this module banks cohort metrics (cohortStages) -->
             <CohortCheckButton :module="module" :set-uid="activeSet.uid" :funs="cohortFuns" />
+            <!-- The set's acquisition check against its plan (docs/todo/ACQUISITION_TEST_CHECK_PLAN.md) -->
+            <AcqCheckButton :set-uid="activeSet.uid" />
 
             <!-- CSV export: the whole table, including excluded images + their notes -->
             <button class="filter-toggle" @click="exportCsv"

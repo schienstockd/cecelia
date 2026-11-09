@@ -1,7 +1,7 @@
 # Test-acquisition check — plan
 
-**Status:** **IN PROGRESS** (2026-11-09). Measures 1–5 built (*Built so far*, below); the slice (6) waits
-on the maintainer's look at the numbers. Written from one set used as a stand-in (below).
+**Status:** **IN PROGRESS** (2026-11-09). Measures built (#2072); slice 1 — rules, storage, API, set modal — built
+(*Slice 1 built*, below), awaiting the maintainer's visual pass; the review turn is next. Written from one set used as a stand-in (below).
 Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md) — that plan's Decision 1/2 ("test
 acquisition imported into the user's project") given a concrete shape. Reuses the mechanism of
 [`IMAGE_ANALYSIS_RECITAL_PLAN.md`](IMAGE_ANALYSIS_RECITAL_PLAN.md).
@@ -167,6 +167,28 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   frame left out. RSQxFI is the only one whose
   own measurements disagree (3.7 px RMS, over the 2 px limit); several others move 40–57 px in X while
   registering cleanly.
+
+## Slice 1 built (2026-11-09, branch `feat/acq-set-check`, stacked on #2072)
+
+- **Rules** `app/src/acq_check.jl`, pure over facts read from image meta: settings that differ (and
+  whether they split along the label designs), dimming with depth where Bright Z is off, a detector
+  range under 20 photons, photon-starved objects (median p50 < 3; points exempt), reporter balance
+  (p99 ratio ≥ 2), an object's channel sharing structure with another object's (warn) or a reference
+  (info) (r ≥ 0.5), drift that doesn't register (drift correction's 2 px), movies not measured. All
+  thresholds are named `ACQ_*` placeholders. Without a plan only the plan-free checks run.
+- **Storage**: the set's plan is a Blackboard entry carrying `acqCheck` meta (a passthrough, like
+  `claim`); saving a changed plan is a new round on it. `GET /api/acqcheck` runs the check live and
+  writes nothing; `POST /api/acqcheck/plan` saves and records.
+- **GUI**: an "Acquisition" button in the image panel's action bar (open-warning count) opens the set
+  modal — plan echo + form, across the set, per movie grouped by design; a row shows its findings, the
+  name opens its metadata. The image metadata dialog has one line linking to it. Needs the
+  maintainer's visual pass.
+- **On lfGUDg** (16 movies, read-only, probe numbers from #2072 overlaid): laser and Bright Z settings
+  split along the two designs; Bright Z off and signal −16 to −29 % with depth in 4 December movies;
+  P14 / OT-I / gBT median 1.6 / 1.6 / 2.1 photons per voxel; objects up to 4.2× apart, OT-I dimmest in
+  10 of 16; OT-I ~ gBT and P14 ~ gBT shared structure in one movie each; OT-I ~ the empty 570–616
+  channel in 6, P14 ~ the empty 642–709 channel in 8; all register.
+- **Not in this slice**: the Kiwi review turn; the briefing's open acquisition checks.
 
 ## Resume when
 
