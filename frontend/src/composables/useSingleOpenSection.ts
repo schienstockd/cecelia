@@ -13,8 +13,8 @@ import {
  * group the map points at. Same key ⇒ the same state object as the sections', never a second copy
  * (`utils/singleOpen.ts`: one registry per app instance, keyed by name).
  *
- * A profile switch reloads the page (`profileStorage.adoptLiveProfileBag`), so the registry never
- * holds another person's choice.
+ * A profile switch, or a bag that changes the mirror, reloads the page
+ * (`profileStorage.adoptLiveProfileBag`), so the registry never holds another person's choice.
  */
 export type SingleOpenSection = SingleOpenGroup
 

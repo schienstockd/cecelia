@@ -7,8 +7,12 @@
 //
 // The mirror records whose it is (`cc.profileMirrorOf`). `adoptProfileBag` runs once per boot when the
 // settings store hydrates:
-//   • same owner (or none yet — a browser from before this mirror existed) → the bag wins over the
-//     mirror for keys it has; mirror-only keys are bootstrapped up into the bag.
+//   • same owner (or none yet — a fresh origin, or a browser from before this mirror existed) → the
+//     bag wins over the mirror for keys it has; mirror-only keys are bootstrapped up into the bag.
+//     If that changed any mirror value, the caller reloads too: hydration is not awaited, so the
+//     guide store and the first page's components (a `HintCallout`'s dismissed flag) have already
+//     read the old mirror and would keep it for the session. One reload per changed bag, not one
+//     reactive signal threaded through every reader.
 //   • different owner → another person used this browser last. Their mirror is cleared, the bag is
 //     written down, and the caller reloads so every store and component re-reads from the new person's
 //     state — including defaults for anything the new profile has never set.
@@ -35,7 +39,7 @@ export interface KV {
 }
 
 export interface AdoptPlan {
-  /** True when the mirror belonged to someone else and was replaced — the caller must reload. */
+  /** True when the mirror's values changed under readers that already read it — the caller must reload. */
   reload: boolean
   /** Mirror keys present locally but absent from the bag — PATCH these up. */
   bootstrap: Record<string, string>
@@ -63,7 +67,8 @@ export function adoptProfileBag(kv: KV, profile: string, bag: Record<string, Pro
     for (const [k, v] of Object.entries(bagLs)) kv.setItem(k, v)
     writeIndex(kv, new Set(Object.keys(bagLs)))
     kv.setItem(OWNER_KEY, profile)
-    return { reload: true, bootstrap: {} }
+    // Same loop guard as below: an owner write that didn't stick would take this branch every boot.
+    return { reload: kv.getItem(OWNER_KEY) === profile, bootstrap: {} }
   }
 
   const bootstrap: Record<string, string> = {}
@@ -72,10 +77,14 @@ export function adoptProfileBag(kv: KV, profile: string, bag: Record<string, Pro
     const v = kv.getItem(k)
     if (v !== null) bootstrap[k] = v
   }
+  const changed = Object.entries(bagLs).filter(([k, v]) => kv.getItem(k) !== v)
   for (const [k, v] of Object.entries(bagLs)) { kv.setItem(k, v); index.add(k) }
   writeIndex(kv, index)
   kv.setItem(OWNER_KEY, profile)
-  return { reload: false, bootstrap }
+  // Only reload when the writes stuck: a mirror that can't hold them (private mode) would differ
+  // again on the next boot and reload forever.
+  const reload = changed.length > 0 && changed.every(([k, v]) => kv.getItem(k) === v)
+  return { reload, bootstrap }
 }
 
 /** Point the mirror at a profile's new name, so a rename isn't mistaken for a change of person. */
@@ -128,14 +137,17 @@ export const profileStorage: KV = {
   removeItem(k) { _register(k); _ls.removeItem(k); _queue(k, null) },
 }
 
-/** Boot-time reconcile against the live localStorage; queues the bootstrap PATCH. */
-export function adoptLiveProfileBag(profile: string, bag: Record<string, ProfileSettingsValue>,
-                                    extraMirrorKeys: readonly string[]): boolean {
+/** Boot-time reconcile against the live localStorage. Sends the bootstrap PATCH — before resolving
+ *  when the caller is about to reload, so the page going away can't drop it. */
+export async function adoptLiveProfileBag(profile: string, bag: Record<string, ProfileSettingsValue>,
+                                          extraMirrorKeys: readonly string[]): Promise<boolean> {
   const plan = adoptProfileBag(_ls, profile, bag, extraMirrorKeys)
   _known = null
-  if (plan.reload) return true
   for (const [k, v] of Object.entries(plan.bootstrap)) _queue(k, v)
-  return false
+  if (plan.reload && Object.keys(plan.bootstrap).length) {
+    try { await _save.flush() } catch { /* the keys stay in the mirror's index, so the next boot bootstraps them again */ }
+  }
+  return plan.reload
 }
 
 export function renameLiveMirrorOwner(from: string, to: string): void { renameMirrorOwner(_ls, from, to) }

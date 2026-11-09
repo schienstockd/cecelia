@@ -991,11 +991,12 @@ export const useSettingsStore = defineStore('settings', () => {
     // restarted to pick up the /api/profile/settings routes (api/src/ is NOT Revise-tracked).
     try {
       const r = await fetchProfileSettings()
-      // Someone else used this browser last: their localStorage mirror is replaced with this
-      // profile's bag and the page reloads, so every ref starts from this profile's values — or the
+      // The bag changed the localStorage mirror under readers that already read it — someone else
+      // used this browser last (their mirror is replaced), or this origin is fresh / behind the bag.
+      // The page reloads, so every ref and component starts from this profile's values — or the
       // defaults, never the previous person's (utils/profileStorage.ts). Skipped when the fetch
       // failed: the fallback's 'default' name is not a real answer to "who is this".
-      if (r.ok && adoptLiveProfileBag(r.profile, r.settings, PROFILE_KEYS.map(k => `cc.${k}`))) {
+      if (r.ok && await adoptLiveProfileBag(r.profile, r.settings, PROFILE_KEYS.map(k => `cc.${k}`))) {
         useAppControlStore().markProfileJustPicked(r.profile)
         // Stays un-hydrated: the mirror was just cleared, so these refs are defaults, not this
         // profile's values — nothing keyed off the flag (App.vue's launch tip) may act on them.
