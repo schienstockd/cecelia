@@ -8,7 +8,7 @@
 
 import type { ParamDef } from '../tasks/types'
 
-export interface PopOption { label: string; value: string; colour?: string }
+export interface PopOption { label: string; value: string; colour?: string; path?: string[] }
 export interface PopGroupDef { title: string; opts: PopOption[] }
 
 export interface RawPop {
@@ -31,7 +31,8 @@ const ORDER = [
 function optOf(g: RawGroup, p: RawPop): PopOption {
   const value = `${g.valueName}${p.path}`              // "A" + "/_tracked" → "A/_tracked"
   const label = p.path === '/' ? `${g.valueName} · all` : value   // backend all-cells root
-  return { label, value, colour: p.colour }
+  // `path` lets ChipSelect draw the gating tree, each chip showing only its own name.
+  return { label, value, colour: p.colour, path: [g.valueName, ...p.path.split('/').filter(Boolean)] }
 }
 
 /**

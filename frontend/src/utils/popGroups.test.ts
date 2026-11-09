@@ -91,3 +91,11 @@ describe('singlePopType', () => {
     expect(singlePopType({})).toBe('flow')
   })
 })
+
+describe('groupPopulations — tree path', () => {
+  it('gives each option its value_name-rooted path segments', () => {
+    const g = groupPopulations([{ valueName: 'B', populations: [
+      { path: '/', name: 'all' }, { path: '/kat-/frag', name: 'frag' } ] }])
+    expect(g[0].opts.map(o => o.path)).toEqual([['B'], ['B', 'kat-', 'frag']])
+  })
+})

@@ -97,3 +97,63 @@ export function syncGroupOrder(
   const added = nextKeys.filter(k => !before.has(k) && !kept.includes(k))
   return [...kept, ...added]
 }
+
+/** One line of a hierarchical chip list: an optional `head` (the parent node — a pickable option, or
+ *  plain text when the parent itself is not an option), followed inline by its LEAF children. Parents
+ *  with children of their own get their own line one `depth` deeper. */
+export interface ChipTreeRow<O> { depth: number; head: O | string | null; leaves: O[] }
+
+interface TrieNode<O> { seg: string; opt?: O; kids: TrieNode<O>[] }
+
+/**
+ * Lay out options carrying a `path` (segments, root first) as an indented tree, so each chip shows
+ * only its own segment instead of repeating every ancestor — a 30-population gating tree reads as
+ * ~a dozen short lines instead of a wall of `A/kat-/frag/nucmem/_aggregated_nuc_in_clump` pills.
+ *
+ * Leaves sit inline after their parent; parents with children start a new, deeper line. Top-level
+ * leaves (e.g. segmentations that are only an all-cells root) share the first, head-less line.
+ * Order follows first appearance in `options`. Intermediate segments that are not options themselves
+ * render as text heads. Options without a `path` are treated as top-level leaves.
+ */
+export function chipTree<O extends { path?: readonly string[] }>(options: readonly O[]): ChipTreeRow<O>[] {
+  const root: TrieNode<O> = { seg: '', kids: [] }
+  for (const o of options) {
+    const segs = o.path && o.path.length ? o.path : [String((o as { value?: unknown }).value ?? '')]
+    let node = root
+    for (const s of segs) {
+      let next = node.kids.find(k => k.seg === s)
+      if (!next) { next = { seg: s, kids: [] }; node.kids.push(next) }
+      node = next
+    }
+    node.opt = o
+  }
+  const rows: ChipTreeRow<O>[] = []
+  const walk = (node: TrieNode<O>, depth: number, head: O | string | null) => {
+    const leaves = node.kids.filter(k => k.kids.length === 0 && k.opt).map(k => k.opt!)
+    if (head !== null || leaves.length) rows.push({ depth, head, leaves })
+    for (const k of node.kids) if (k.kids.length) walk(k, depth + (head === null ? 0 : 1), k.opt ?? k.seg)
+  }
+  walk(root, 0, null)
+  return rows
+}
+
+/** Above this many options a pill list collapses (see `visibleChips`). Chosen so a typical channel
+ *  list (≤ 8) never collapses, while a gating tree or a measure-column list does. */
+export const CHIP_COLLAPSE_ABOVE = 12
+
+/**
+ * Which options a LONG pill list shows. Collapsed, it shows only what is picked — the answer to "what
+ * is this set to?" — and the rest sits behind a "+N more" toggle; expanded, everything. A non-empty
+ * `filter` overrides both and shows every option whose label, value or path contains it (any case),
+ * so finding one chip in 40 is typing, not scanning. Order always follows `options`.
+ */
+export function visibleChips<O extends { value: string; label?: string; path?: readonly string[] }>(
+  options: readonly O[], selected: readonly string[], view: { expanded: boolean; filter: string },
+): O[] {
+  const q = view.filter.trim().toLowerCase()
+  if (q) return options.filter(o =>
+    [o.label ?? '', o.value, ...(o.path ?? [])].some(s => s.toLowerCase().includes(q)))
+  if (view.expanded) return options.slice()
+  const sel = new Set(selected)
+  return options.filter(o => sel.has(o.value))
+}
