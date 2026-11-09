@@ -70,6 +70,8 @@ export interface SelectionColumn {
   sticky?: boolean
   /** Exclude from the drag-resize path — a fixed-width column (an icon, a badge, a count). */
   fixed?: boolean
+  /** hover help on the header — what a short label means ("Balance": brightest ÷ dimmest). */
+  tip?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -489,10 +491,11 @@ function colStyle(c: SelectionColumn) {
         <th v-for="(c, ci) in columns" :key="c.key" :class="{ 'sel-sticky': c.sticky }"
             :style="stickyStyle(c.key)">
           <span v-if="c.sortable" class="sel-th-sort" :class="{ active: sortActive(c.key) }"
-                v-tooltip.bottom="`${c.label} — click to sort`"
+                v-tooltip.bottom="`${c.tip ?? c.label} — click to sort`"
                 @click="toggleSort(c)">
             {{ c.kind === 'link' ? '' : c.label }} <i :class="['sel-sort-ico', sortIcon(c.key)]" />
           </span>
+          <span v-else-if="c.tip" v-tooltip.bottom="c.tip">{{ c.label }}</span>
           <template v-else>{{ c.kind === 'link' ? '' : c.label }}</template>
           <!-- extra header chrome for this column (a select-flagged button, a re-sync) -->
           <slot :name="`head-${c.key}`" :column="c" />
@@ -576,6 +579,8 @@ function colStyle(c: SelectionColumn) {
   font-weight: 500;
   color: var(--cc-text-dim);
   padding: 0.15rem 0.55rem;
+  /* one line, like the cells: a two-word label ("Bright Z") wrapping makes the header row ragged */
+  white-space: nowrap;
 }
 .sel-table td {
   padding: 0.2rem 0.55rem;

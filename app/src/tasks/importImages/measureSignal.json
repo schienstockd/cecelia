@@ -1,0 +1,11 @@
+{
+  "task": "measureSignal",
+  "fun_name": "importImages.measureSignal",
+  "label": "Measure signal",
+  "category": "Manage images",
+  "group": "Manage",
+  "env": ["local"],
+  "hidden": true,
+  "resource_pool": "io",
+  "params": []
+}

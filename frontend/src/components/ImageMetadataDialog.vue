@@ -8,7 +8,7 @@
   /api/images/labels/rename → app/src/storage.jl:rename_value_name!).
 -->
 <script setup lang="ts">
-import { computed, ref, nextTick, onMounted } from 'vue'
+import { computed, defineAsyncComponent, ref, nextTick, onMounted } from 'vue'
 import { acquisitionRows, acquisitionNotice, microscopeLine } from '../utils/acquisitionSettings'
 import { acquisitionSupportRequestUrl } from '../lib/links'
 import { isMultiphoton } from '../utils/acquisitionLightPath'
@@ -33,11 +33,26 @@ import { formatPhysicalSize, formatTimeIncrement } from '../utils/physicalSize'
 import { buildLineageForest, flattenLineage } from '../utils/versionLineage'
 import { cropSourceLine } from '../utils/cropSource'
 import { useTaskDefsStore } from '../stores/taskDefs'
+import { fetchAcqCheck, type AcqCheckResult } from '../utils/acqCheckApi'
+import { findingsFor } from '../utils/acqCheck'
+// lazily: the set's check dialog opens this one for a movie, so a static import would be circular
+const AcqCheckDialog = defineAsyncComponent(() => import('./AcqCheckDialog.vue'))
 
 const props = defineProps<{ image: CciaImage }>()
 defineEmits<{ (e: 'close'): void }>()
 
 const img = computed(() => props.image)
+
+// One line pointing at the set's acquisition check (the check is set-level: its own dialog)
+const acqSet = computed(() => project.sets.find(s => s.images.some(i => i.uid === props.image.uid)) ?? null)
+const acq = ref<AcqCheckResult | null>(null)
+const showAcq = ref(false)
+const acqLine = computed(() => {
+  if (!acq.value) return null
+  const mine = findingsFor(acq.value, props.image.uid).filter(f => f.level === 'warn').length
+  const set = findingsFor(acq.value, 'set').filter(f => f.level === 'warn').length
+  return mine + set ? `Acquisition check: ${mine} for this movie, ${set} across the set` : null
+})
 const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
 const log = useLogStore()
@@ -112,6 +127,10 @@ const funLabel = (fun: string) => taskDefs.labelFor(fun)
 type StoreInfo = { bytes: number, label?: string } & StoreEncoding
 const stores = ref<{ versions: Record<string, StoreInfo | null>, labels: Record<string, StoreInfo> }>(
   { versions: {}, labels: {} })
+onMounted(async () => {
+  const uid = projectMeta.current?.uid
+  if (uid && acqSet.value) acq.value = await fetchAcqCheck(uid, acqSet.value.uid)
+})
 onMounted(async () => {
   // Warm the task-defs cache so lineage captions carry the pretty task label ('Drift correct')
   // rather than the fun's last segment ('driftCorrect'). Awaited alongside the store walk since
@@ -241,6 +260,13 @@ async function saveEditVn() {
           <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
         </button>
       </div>
+
+      <div v-if="acqLine" class="md-acq cc-row cc-fs-sm">
+        <InlineNote :short="acqLine" severity="warn" />
+        <button class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-xs" @click="showAcq = true">Open check</button>
+      </div>
+      <AcqCheckDialog v-if="showAcq && acqSet && projectMeta.current" :project-uid="projectMeta.current.uid"
+                      :set-uid="acqSet.uid" :set-name="acqSet.name" @close="showAcq = false" />
 
       <!-- headline: the original source file this image was converted from -->
       <section class="md-section">
@@ -573,4 +599,5 @@ async function saveEditVn() {
    label row would fight the size readout for attention. */
 .md-vn-edit { opacity: 0.5; }
 .md-store:hover .md-vn-edit:not(:disabled) { opacity: 1; }
+.md-acq { gap: 0.4rem; padding: 0.3rem 0; }
 </style>

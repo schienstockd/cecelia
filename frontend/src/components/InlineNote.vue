@@ -26,6 +26,9 @@ const props = defineProps<{
   severity?: Severity
   /** Override the icon — for a note whose meaning is not severity (e.g. the re-run history hint). */
   icon?: string
+  /** Labelled lines under the short text — a finding's "Movies: …" / "Next: …" / "Analysis: …". Shown, not on
+   *  hover: they are what to do, which a list of findings is read for. */
+  lines?: { label: string; text: string }[]
 }>()
 
 const iconClass = computed(() =>
@@ -34,7 +37,7 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
 </script>
 
 <template>
-  <span class="inline-note" :class="severity ? `sev-${severity}` : 'cc-muted'">
+  <span class="inline-note" :class="[severity ? `sev-${severity}` : 'cc-muted', { 'has-lines': lines?.length }]">
     <i class="pi" :class="iconClass" :style="color ? { color } : undefined" />
     <!-- the tooltip hangs off the TEXT, not the row: a host may add its own trailing control with a
          tooltip of its own, and a row-level one fires on top of it (docs/UI.md → nested tooltips)
@@ -46,8 +49,15 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
          ends by re-applying itself with no bounds check. A note annotates the control ABOVE it, so
          `.bottom` points the detail away from that control; and being fixed, it is one decision
          rather than a knob every call site re-guesses. See `docs/UI.md` → *Tooltip placement*. -->
-    <span v-tooltip.bottom="detail">{{ short }}</span>
-    <slot />
+    <span v-if="!lines?.length" v-tooltip.bottom="detail">{{ short }}</span>
+    <span v-else class="note-body">
+      <span v-tooltip.bottom="detail">{{ short }}</span>
+      <span v-for="l in lines" :key="l.label" class="note-line cc-fs-xs"><span class="cc-muted">{{ l.label }}</span> {{ l.text }}</span>
+      <!-- with lines, the host's control (an action for the finding) gets its own row under them,
+           indented with the text — not squeezed in after the last line -->
+      <span v-if="$slots.default" class="note-action"><slot /></span>
+    </span>
+    <slot v-if="!lines?.length" />
   </span>
 </template>
 
@@ -65,6 +75,12 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
    carries two facts (see `paramAdvisors.ts::pyramidLevelsAdvisory`). Harmless when the caller has
    no newline — `pre-line` collapses ordinary whitespace runs the same as the default `normal`. */
 .inline-note > span { white-space: pre-line; }
+/* with lines: the icon sits by the first line, the lines stack under the short text in body colour */
+.inline-note.has-lines { align-items: flex-start; }
+.inline-note.has-lines > .pi { margin-top: 0.25em; }
+.note-body { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; }
+.note-action { margin-top: 0.2rem; }
+.note-line { color: var(--cc-text); }
 /* Colour follows the severity, but never alone — the icon shape already carries it. */
 .inline-note.sev-warn { color: var(--cc-sev-warn); }
 .inline-note.sev-fail { color: var(--cc-sev-fail); }

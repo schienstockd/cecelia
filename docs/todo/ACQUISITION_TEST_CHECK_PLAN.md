@@ -1,7 +1,7 @@
 # Test-acquisition check — plan
 
-**Status:** **IN PROGRESS** (2026-11-09). Measures 1–5 built (*Built so far*, below); the slice (6) waits
-on the maintainer's look at the numbers. Written from one set used as a stand-in (below).
+**Status:** **IN PROGRESS** (2026-11-09). Measures built (#2072); slice 1 — rules, storage, API, set modal — built
+(*Slice 1 built*, below), awaiting the maintainer's visual pass; the review turn is next. Written from one set used as a stand-in (below).
 Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md) — that plan's Decision 1/2 ("test
 acquisition imported into the user's project") given a concrete shape. Reuses the mechanism of
 [`IMAGE_ANALYSIS_RECITAL_PLAN.md`](IMAGE_ANALYSIS_RECITAL_PLAN.md).
@@ -168,6 +168,40 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   frame left out. RSQxFI is the only one whose
   own measurements disagree (3.7 px RMS, over the 2 px limit); several others move 40–57 px in X while
   registering cleanly.
+
+## Slice 1 built (2026-11-09, branch `feat/acq-set-check`, stacked on #2072)
+
+- **Rules** `app/src/acq_check.jl`, pure over facts read from image meta: settings that differ (within a design,
+  and between designs), Bright Z off with a saved ramp, a detector
+  range under 20 photons, photon-starved objects (median p50 < 3; points exempt), reporter balance
+  (p99 ratio ≥ 2), an object's channel sharing structure with another object's (warn) or a reference
+  (info) (r ≥ 0.5), drift that doesn't register (drift correction's 2 px), movies not measured. All
+  thresholds are named `ACQ_*` placeholders. Without a plan only the plan-free checks run.
+- **Settings** are read within a design (movies compared directly — a warning naming the movies per
+  setting) and between designs (info when every compared object is in each design, else a warning).
+- **Depth is settings-only:** Bright Z off with a ramp saved is a warning naming the ramp; off with none
+  is a note. Whole-plane p99 per Z mixed cell count with brightness on sparse cells, so it was dropped;
+  whether real cells dim with depth is a post-segmentation check (claim recital side), not the advisor's.
+- **Measure N movies** runs the probe as background tasks (`importImages.measureSignal`, io pool) —
+  `POST /api/images/meta/resync` with `measure: true` probes inside the request, fine for one image only.
+- **Label designs** are the movies that share a channel-name list, in channel order — never read off file
+  names. Default names (`CH1`…) put every movie in one design and raise one finding asking for names.
+  The plan picks each object's channel by name, per design.
+- **Storage**: the set's plan is a Blackboard entry carrying `acqCheck` meta (a passthrough, like
+  `claim`); saving a changed plan is a new round on it. `GET /api/acqcheck` runs the check live and
+  writes nothing; `POST /api/acqcheck/plan` saves and records.
+- **GUI**: an "Acquisition" button in the image panel's action bar (open-warning count) opens the set
+  modal — plan echo + form, across the set, per movie grouped by design; a row shows its findings, the
+  name opens its metadata. The image metadata dialog has one line linking to it. Needs the
+  maintainer's visual pass.
+- **On lfGUDg** (16 movies, read-only; channel names as set by the maintainer — `P14-CTDR · AF · OTI-uGFP ·
+  gBT-CTV`, 7 movies; `AF · P14-ubiTom · gBT-uGFP · OTI-CTV`, 9 — probe numbers from #2072 overlaid where not
+  yet stored): laser settings differ within the ubTomato design (8/15 % on 4 movies, 10/10 % on 5);
+  lasers differ between the designs (info: every compared cell type is in each design); Bright Z off with
+  the saved 12→15 % ramp in all 7 CTDR movies; P14 / OT-I / gBT median 1.6 / 1.6 / 2.1 photons per voxel;
+  objects up to 4.2× apart, OT-I dimmest in 10 of 16; OT-I ~ gBT and P14 ~ gBT shared structure in one movie
+  each; OT-I ~ AF in 6, P14 ~ AF in 9; all register.
+- **Not in this slice**: the Kiwi review turn; the briefing's open acquisition checks.
 
 ## Resume when
 
