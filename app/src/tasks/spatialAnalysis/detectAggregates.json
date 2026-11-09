@@ -2,10 +2,11 @@
   "task": "detectAggregates",
   "fun_name": "spatialAnalysis.detectAggregates",
   "label": "Detect aggregates",
-  "purpose": "Find groups of a population's cells packed close together",
+  "purpose": "Find groups of a population's cells packed close together, or cells alone",
   "useWhen": [
     "Aggregates by centre-to-centre distance, per timepoint for movies",
-    "You need an aggregated population for later steps"
+    "Single cells with nothing near them, e.g. debris away from intact cells",
+    "You need an aggregated or isolated population for later steps"
   ],
   "notWhen": [
     "Grouping by measured features: use Cluster cells",
@@ -15,8 +16,17 @@
   "group": "Aggregates",
   "env": ["local"],
   "resource_pool": "cpu",
+  "sweep": { "output": "aggregateName", "params": ["clustDiameter", "minCells"] },
   "requires": { "scale": ["xy"] },
   "params": [
+    {
+      "key": "aggregateName",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "obsCols",
+      "default": "default",
+      "tip": "Output name; each name keeps its own columns and settings"
+    },
     {
       "key": "pops",
       "label": "Population",
@@ -35,7 +45,7 @@
       "max": 100,
       "step": 1,
       "default": 15,
-      "tip": "DBSCAN eps in microns — cells within this distance are linked into the same aggregate"
+      "tip": "Cells within this distance link into one aggregate"
     },
     {
       "key": "minCells",
@@ -45,7 +55,17 @@
       "max": 100,
       "step": 1,
       "default": 5,
-      "tip": "Minimum number of cells for a group to count as an aggregate (DBSCAN minPts)"
+      "tip": "Fewest cells that make an aggregate"
+    },
+    {
+      "key": "maxCells",
+      "label": "Max cells",
+      "type": "int",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 0,
+      "tip": "Larger groups don't count; 0 = no limit"
     },
     {
       "key": "perTimepoint",
@@ -53,6 +73,104 @@
       "type": "bool",
       "default": true,
       "tip": "Detect aggregates within each frame; off = pool all frames"
+    },
+    {
+      "key": "exclusion",
+      "label": "Exclude",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "excludePops",
+          "label": "Near population",
+          "type": "popSelection",
+          "accepts": ["live", "clust", "region", "track", "trackclust"],
+          "multiple": true,
+          "acrossSegmentations": false,
+          "default": [],
+          "tip": "Optional: cells near these are left out, e.g. intact cells"
+        },
+        {
+          "key": "excludeDistance",
+          "label": "Within (µm)",
+          "type": "float",
+          "min": 0,
+          "max": 100,
+          "step": 0.5,
+          "default": 5,
+          "tip": "Distance to the excluded population"
+        }
+      ]
+    },
+    {
+      "key": "overTime",
+      "label": "Over time",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "linkEvents",
+          "label": "Link across frames",
+          "type": "bool",
+          "default": false,
+          "tip": "Follow each aggregate and isolated cell over frames"
+        },
+        {
+          "key": "linkFrames",
+          "showIf": { "linkEvents": true },
+          "label": "Max gap (frames)",
+          "type": "int",
+          "min": 1,
+          "max": 20,
+          "step": 1,
+          "default": 3,
+          "tip": "Frames an event may vanish and still continue"
+        },
+        {
+          "key": "linkDistance",
+          "showIf": { "linkEvents": true },
+          "label": "Max step (µm)",
+          "type": "float",
+          "min": 0,
+          "max": 100,
+          "step": 0.5,
+          "default": 5,
+          "tip": "Furthest an event moves between frames"
+        },
+        {
+          "key": "precededPops",
+          "showIf": { "linkEvents": true },
+          "label": "Preceded by",
+          "type": "popSelection",
+          "accepts": ["live", "clust", "region", "track", "trackclust"],
+          "multiple": true,
+          "acrossSegmentations": false,
+          "default": [],
+          "tip": "Optional: was this population there before the event began?"
+        },
+        {
+          "key": "precededFrames",
+          "showIf": { "linkEvents": true },
+          "label": "Look back (frames)",
+          "type": "int",
+          "min": 1,
+          "max": 100,
+          "step": 1,
+          "default": 12,
+          "tip": "Frames before the event to look in"
+        },
+        {
+          "key": "precededDistance",
+          "showIf": { "linkEvents": true },
+          "label": "Look within (µm)",
+          "type": "float",
+          "min": 0,
+          "max": 100,
+          "step": 0.5,
+          "default": 8,
+          "tip": "Distance from where the event began"
+        }
+      ]
     }
   ]
 }

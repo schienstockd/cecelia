@@ -23,9 +23,13 @@ stack. Per-tag notes are also on the
   mid-volume. Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it.
 - **New images are named like movies:** `<image>_crop`, `_bin2`, `_copy` …, then `_001` when taken.
 - **Crop is drawn on the viewer**, optionally square, with a name and a target set.
+- **Aggregate runs have names.** Columns gain `#<name>` (`flow.cell.is.aggregate#default`), and the
+  population is `_aggregated_<name>`. Plots and gates on older aggregate columns need re-picking after a re-run.
 
 ### Fixed
 
+- **Detect aggregates creates its population again.** The *aggregated* population was never added
+  for a run started from the app.
 - **Imaris frame interval.** Imaris files whose timestamps carry nine decimal places (converted from
   Zeiss `.lsm`) were read as having no timing; their measured interval is now used.
 - **Tracking remembers settings per segmentation.** B no longer shows, or rebuilds deleted tracks
@@ -48,6 +52,9 @@ stack. Per-tag notes are also on the
 
 - **Import from Immunemap.** *Import from… → Immunemap*: paste an experiment link, split its groups
   into attributes (time is filled in), then run *Import from Immunemap*.
+- **Named aggregate runs** sit side by side and restore their settings. New: *Max cells*, *Exclude*,
+  an *isolated* population, and *Over time* (link events; was a population there first?).
+- **Find ROIs: Group by.** Pick an id column (an aggregate event, a track): each id becomes one ROI.
 - **Imaris acquisition settings.** `.ims` files now show the microscope, objective, excitation and
   emission filters in *Acquisition metadata*.
 

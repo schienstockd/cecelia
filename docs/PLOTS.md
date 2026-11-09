@@ -429,7 +429,7 @@ the panel intersects with what's valid for the measure.
 
 "What % of B cells are in contact with a T cell?" and "how many T cells are clustered?" are one
 question: the fraction of a population whose 0/1 measure is positive
-(`<popType>.cell.contact#<target>`, `<popType>.cell.is.aggregate`). Both were previously reachable
+(`<popType>.cell.contact#<target>`, `<popType>.cell.is.aggregate#<run>`, `…is.isolated#<run>`). Both were previously reachable
 only as a `bar` of the **mean** — an unlabelled fraction between 0 and 1, which reads as neither.
 
 `chart_type = "percent"` returns, per series, `value` = observed % positive, `nPositive`/`n`, and the

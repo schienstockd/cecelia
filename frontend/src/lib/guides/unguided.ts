@@ -197,6 +197,8 @@ export const UNGUIDED: UnguidedFeature[] = [
       evidence: [
         { path: 'app/test/suite/spatial_neighbours.jl', test: 'aggregate DBSCAN is per frame',
           failsIf: 'a slow track reads as an aggregate' },
+        { path: 'app/test/suite/spatial_neighbours.jl', test: 'detectAggregates named runs coexist (KDIeEm)',
+          failsIf: 'a second named run overwrites the first' },
       ],
       next: [todo('A result test for aggregates from meshes')],
     }) },

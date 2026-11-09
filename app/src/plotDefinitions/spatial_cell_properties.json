@@ -20,6 +20,9 @@
       { "match": ".cell.contained_by#", "label": "enclosed by" },
       { "match": ".cell.contains_n#",   "label": "holds" },
       { "match": ".cell.is.aggregate",  "label": "aggregated" },
+      { "match": ".cell.is.isolated",   "label": "isolated" },
+      { "match": ".cell.aggregate.frames#",   "label": "event frames" },
+      { "match": ".cell.aggregate.preceded#", "label": "preceded" },
       { "match": "spatial.comp.",       "label": "composition" }
     ]
   },

@@ -6,7 +6,8 @@
 # surfaces matter (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11). Meshes are built on the fly per
 # timepoint in Python (`cell_aggregates_mesh_run.py`); Julia resolves membership + the label-zarr path
 # + physical sizes. Writes the same `<popType>.cell.is.aggregate` / `.aggregate.id` slot as the points
-# route (alternative methods for the one annotation). Reuses `_label_zarr_path`/`_aggregate_qc_findings`.
+# route (alternative methods for the one annotation), under a run NAME like it (`aggregate_runs.jl`).
+# Reuses `_label_zarr_path`/`_aggregate_qc_findings`.
 
 using DataFrames: nrow
 
@@ -14,6 +15,7 @@ struct AggregatesMeshes <: CciaTask end
 
 Base.@kwdef struct AggregatesMeshesParams
     pops::Vector{String}      = String[]
+    aggregateName::String     = AGGREGATE_DEFAULT_NAME
     maxClusterDist::Float64   = 5.0
     minCells::Int             = 5
 end
@@ -21,6 +23,7 @@ end
 function parse_aggregates_meshes_params(d::AbstractDict)::AggregatesMeshesParams
     AggregatesMeshesParams(;
         pops           = _str_list(d, "pops"),
+        aggregateName  = aggregate_run_name(d),
         maxClusterDist = Float64(get(d, "maxClusterDist", 5.0)),
         minCells       = Int(get(d, "minCells", 5)))
 end
@@ -50,16 +53,25 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
         "imPath" => img_filepath(img), "labelPath" => _label_zarr_path(img, value_name),
         "labels" => Int.(mem.label), "physicalSizes" => sizes,
         "maxClusterDist" => p.maxClusterDist, "minCells" => p.minCells, "popType" => pop_type,
+        "isAggregateCol" => aggregate_col(pop_type, "is.aggregate", p.aggregateName),
+        "aggregateIdCol" => aggregate_col(pop_type, "aggregate.id", p.aggregateName),
         "propsPath" => img_label_props_path(img, value_name), "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_aggregates_mesh_run.py", task_params, task_run_dir(img._dir);
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] aggregatesMeshes: Python runner failed"); return nothing)
 
+    # a re-run under this name replaces it whole — the points route's isolated/event columns too
+    props_path = img_label_props_path(img, value_name)
+    stale = vcat(setdiff(aggregate_run_cols(pop_type, p.aggregateName),
+                         [aggregate_col(pop_type, k, p.aggregateName) for k in ("is.aggregate", "aggregate.id")]),
+                 legacy_aggregate_cols(col_names(label_props(props_path); data_type = :obs), pop_type, p.aggregateName))
+    label_props(props_path) |> drop_obs(stale) |> save!
+
     # Auto-create the reusable "aggregated" population (Decision 14) — same as the points route
-    # (detectAggregates): a filter pop under each input pop on `<popType>.cell.is.aggregate > 0`.
-    agg_paths = ensure_filter_pop!(img, pop_type, value_name, p.pops, AGGREGATED_POP_NAME;
-                                   filter_measure = "$(pop_type).cell.is.aggregate",
+    # (detectAggregates): a filter pop under each input pop on the run's `is.aggregate` flag.
+    agg_paths = ensure_filter_pop!(img, pop_type, value_name, p.pops, first(aggregate_pop_names(p.aggregateName));
+                                   filter_measure = aggregate_col(pop_type, "is.aggregate", p.aggregateName),
                                    filter_fun = "gt", filter_values = 0)
     isempty(agg_paths) || on_log("[INFO] aggregatesMeshes: aggregated population → $(join(agg_paths, ", "))")
 
@@ -67,7 +79,7 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
         qc = JSON3.read(read(qc_out_path, String), Dict{String,Any})
         n_cells = Int(get(qc, "nCells", 0)); n_agg = Int(get(qc, "nAggregates", 0))
         frac = Float64(get(qc, "fracAggregated", 0.0))
-        write_qc(img, "spatialAnalysis.aggregatesMeshes", value_name,
+        write_qc(img, "spatialAnalysis.aggregatesMeshes", aggregate_qc_key(value_name, p.aggregateName),
                  _aggregate_qc_findings(n_cells, frac);
                  metrics = Dict{String,Any}("nCells" => n_cells, "nAggregates" => n_agg, "fracAggregated" => frac))
         on_log("[QC] mesh aggregates: $(n_agg), $(round(Int, frac*100))% of cells.")

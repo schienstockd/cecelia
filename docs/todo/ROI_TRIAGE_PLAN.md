@@ -277,3 +277,10 @@ against the threshold-6 run; % of its 25 sites still found. Figure:
 8. **Built in Feijoa, as a viewer side-rail section.**
 9. **Sites group windows of one place** (box IoU ≥ 0.3, transitive).
 10. **Review labels belong to the ROI set** (2026-10-27), chosen on the run.
+11. **`Group by` takes the groups from an id column** (2026-11-09). An optional single obs column
+    (`labelPropsColsSelection`); objects sharing a positive id are ONE ROI spanning every frame the
+    id lasts, ranked by its object count, or with a *Rank by* measure by the mean of it (summed, a bigger event outranks a smaller one whatever its measure) — no 12-frame window, no background excess (a given group is
+    already one event, not a pile-up to tell from a passing crowd). *Min objects* still drops small
+    groups. Made for detectAggregates' linked events (`aggregate.event_id#<name>`, ranked by
+    `aggregate.preceded#<name>`) — SPATIAL_REGIONS_PLAN Decision 17 — and works on `track_id` too.
+    Without it, discovery is unchanged.

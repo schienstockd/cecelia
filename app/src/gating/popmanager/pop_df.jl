@@ -494,6 +494,9 @@ const _DERIVED_POPS = Dict{String,DerivedPopSpec}(
 # at read by `pop_df`). The `_` prefix keeps it in the reserved namespace (protected from user
 # rename/delete, no name collision) and lets `pop_category` tag it "aggregated" for the picker.
 const AGGREGATED_POP_NAME = "_aggregated"
+# A NAMED aggregate run suffixes its pops `_aggregated_<name>` / `_isolated_<name>` (the cells with no
+# neighbour) — `aggregate_pop_names`, tasks/spatialAnalysis/aggregate_runs.jl.
+const ISOLATED_POP_PREFIX = "_isolated"
 
 """True if `name` is in the reserved derived-population namespace (leaf begins with `_`)."""
 is_reserved_pop_name(name::AbstractString) = startswith(String(name), DERIVED_POP_PREFIX)

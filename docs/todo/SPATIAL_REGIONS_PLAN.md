@@ -424,6 +424,42 @@ per-population-PAIR. Needs a decision (see docs/TODO.md).
 **BUILT — Phase 8 (behaviour regions, e4cc6da):** `clustRegions` `perTimepoint` → per-frame
 block-diagonal neighbourhood graph (`build_block_diagonal_graph`); regions vary over time. test-py 97.
 
+### Decision 17 — aggregate runs are NAMED, and find single cells and events too (2026-11-09)
+
+The maintainer's ask: find dying-cell debris on a fragment segmentation inside the app, not in scripts —
+a naked nucleus alone, a loose clump of 4–5 membrane fragments, a nucleus fragment with membrane
+fragments around it — and compare those scenarios on one segmentation. Before this an aggregate run was
+a singleton per (segmentation, pop type): a second run overwrote the first.
+
+1. **Named runs.** Both routes take `aggregateName` (`valueNameInput`, namespace `obsCols`), so each
+   run's params are banked and restored under its name like a cluster suffix (`task_params_name`,
+   TaskRunner `onParamCommit`). Columns are `<pt>.cell.<kind>#<name>` — the contacts' `#` run separator,
+   so `aggregate.id#…` / `aggregate.event_id#…` stay id-like to the measure picker. Columns without
+   `#<name>` predate this and list/delete as the unnamed run. Pops are `_aggregated_<name>` /
+   `_isolated_<name>`; QC is keyed `<vn>.<name>` as HMM's is. The runs list has one row per name.
+2. **Points route only** gains the scenario options (the mesh route takes the name and nothing else —
+   its grouping lives in Python, and nothing has asked for it there):
+   - **Max cells** — a ceiling (0 = none), for loose clumps rather than big aggregates.
+   - **Exclude near a population** — cells within *d* µm of it (an intact cell) join no group and are
+     never isolated. They still count as company when judging isolation.
+   - **Isolated** — `is.isolated#<name>`: no other selected cell within the neighbourhood, its own
+     population. A single naked nucleus is `nuc` run beside `mem` + `nucmem`, read from `nuc/_isolated_<name>`.
+   - **Link across frames** (opt-in) — aggregates (at their members' mean) and isolated cells become
+     EVENTS linked frame to frame (greedy nearest, one event per track per frame, max gap / max step):
+     `aggregate.event_id#`, `aggregate.frames#` (how long it lasted).
+   - **Preceded by** — `aggregate.preceded#`: the share of the look-back frames in which the chosen
+     population lay near where the event began ("an intact cell was here before the debris"). This was
+     the discriminating test in the scripted analysis: it cut 345 persistent naked-nucleus tracks to 50.
+3. **Into Find ROIs.** The run's populations feed *Find ROIs* with *Group by* =
+   `aggregate.event_id#<name>` and *Rank by* = `aggregate.preceded#<name>`: one ROI per event, for
+   review in the viewer (ROI_TRIAGE_PLAN Decision 11). The whole debris search is two GUI tasks.
+4. **Defaults leave results as they were** except for the names: linking off, no exclusion, no cap.
+   Pure steps live in `tasks/spatialAnalysis/aggregate_runs.jl`, unit-tested without an image.
+
+Found while building it: `ensure_filter_pop!` compared the task's segmentation-prefixed pop refs
+(`"T/qc"`) with map paths (`"/qc"`), so no run started from the app ever created its `_aggregated`
+population. It now resolves the ref first.
+
 ### Decision 12 — two module pages, both REPL-runnable
 
 **Spatial Analysis** and **Region Clustering** are separate first-class pages (like segment/track/gate),

@@ -318,22 +318,32 @@ function _contacts_delete!(img, run; on_log = _ -> nothing)
     on_log("[INFO] contacts $(run.label): dropped")
 end
 
-# `{pt}.cell.is.aggregate` + `.aggregate.id` — singleton per (segmentation, pt). Its auto-created
-# `_aggregated` filter pop stays (gating is never deleted — it applies again on a re-run).
+# Aggregate runs — one per (segmentation, pt, name): `{pt}.cell.is.aggregate#{name}` and the rest of
+# the run's family (`aggregate_run_cols`). A column without `#{name}` predates named runs and lists as
+# the unnamed run. Its auto-created filter pops stay (gating is never deleted — they apply again on a
+# re-run under the same name). Both aggregate routes write the same family, so one kind covers both.
+const _AGGREGATE_RE = r"^([^.]+)\.cell\.is\.aggregate(?:#(.+))?$"
+
 function _aggregates_list(img)
     out = AnalysisRun[]
     for vn in _run_segs(img), c in _run_obs_cols(img_label_props_path(img, vn))
-        endswith(c, ".cell.is.aggregate") || continue
-        pt = String(split(c, "."; limit = 2)[1])
-        push!(out, AnalysisRun(; kind = "aggregates", key = pt, value_name = vn,
-                                 label = vn, detail = pt, value_names = [vn]))
+        mt = match(_AGGREGATE_RE, c)
+        mt === nothing && continue
+        pt, name = String(mt.captures[1]), String(something(mt.captures[2], ""))
+        push!(out, AnalysisRun(; kind = "aggregates", key = isempty(name) ? pt : "$pt#$name", value_name = vn,
+                                 label = isempty(name) ? vn : "$vn → $name", detail = pt, value_names = [vn]))
     end
     out
 end
 
-_aggregates_delete!(img, run; on_log = _ -> nothing) =
-    label_props(img_label_props_path(img, run.value_name)) |>
-        drop_obs(["$(run.key).cell.is.aggregate", "$(run.key).cell.aggregate.id"]) |> save!
+function _aggregates_delete!(img, run; on_log = _ -> nothing)
+    pt, name = occursin("#", run.key) ? split(run.key, "#"; limit = 2) : (run.key, "")
+    label_props(img_label_props_path(img, run.value_name)) |> drop_obs(aggregate_run_cols(pt, name)) |> save!
+    isempty(name) && return
+    for fun in ("spatialAnalysis.detectAggregates", "spatialAnalysis.aggregatesMeshes")
+        _rm_if(qc_path(img, fun, aggregate_qc_key(run.value_name, name)); on_log)
+    end
+end
 
 # ── motifs: singleton per segmentation ─────────────────────────────────────────────────────────
 

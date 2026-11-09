@@ -63,7 +63,10 @@ end
                 "live.cell.hmm.state.movement", "live.cell.hmm.transitions.movement",
                 "flow.cell.contact#flow.T", "flow.cell.min_distance#flow.T", "flow.cell.contact_id#flow.T",
                 "flow.cell.approach#flow.T",   # derived by trackMeasures — must go with its run
-                "flow.cell.is.aggregate", "flow.cell.aggregate.id", "track_id"]
+                "flow.cell.is.aggregate", "flow.cell.aggregate.id",
+                # two NAMED aggregate runs beside the unnamed legacy one — each deletes alone
+                "flow.cell.is.aggregate#single", "flow.cell.aggregate.id#single", "flow.cell.is.isolated#single",
+                "flow.cell.aggregate.frames#single", "flow.cell.is.aggregate#clumps", "track_id"]
         df = DataFrame("label" => labs)
         for c in cols; df[!, c] = c == "track_id" ? [i <= 3 ? 1.0 : NaN for i in 1:n] : ones(n); end
         label_props(props) |> add_obs(df) |> save!
@@ -91,6 +94,7 @@ end
         has(kind, key, vn = "") = any(r -> r.kind == kind && r.key == key && r.value_name == vn, runs)
         @test has("clusters", "alpha") && has("regions", "alpha") && has("hmm", "movement")
         @test has("contacts", "flow#flow.T", "B") && has("aggregates", "flow", "B")
+        @test has("aggregates", "flow#single", "B") && has("aggregates", "flow#clumps", "B")
         @test has("graphs", "g1") && has("stats", "s1")
         @test has("tracks", "", "B")                         # legacy, unattributed tracks
         @test only(filter(r -> r.kind == "clusters", runs)).value_names == ["B"]
@@ -117,7 +121,13 @@ end
         @test delete_analysis_run!(img, "contacts", "flow#flow.T", "B")
         @test !any(c -> occursin("#flow.T", c), obs())
         @test !("flow.track.approachIndex#flow.T" in col_names(label_props(tprops); data_type = :obs))
+        aqc = Cecelia.qc_path(img, "spatialAnalysis.detectAggregates", "B.single"); mkpath(dirname(aqc)); write(aqc, "{}")
+        @test delete_analysis_run!(img, "aggregates", "flow#single", "B")
+        @test !any(c -> endswith(c, "#single"), obs()) && !isfile(aqc)
+        @test "flow.cell.is.aggregate#clumps" in obs() && "flow.cell.is.aggregate" in obs()
         @test delete_analysis_run!(img, "aggregates", "flow", "B")
+        @test !("flow.cell.is.aggregate" in obs()) && "flow.cell.is.aggregate#clumps" in obs()
+        @test delete_analysis_run!(img, "aggregates", "flow#clumps", "B")
         @test !any(c -> occursin("aggregate", c), obs())
         @test delete_analysis_run!(img, "graphs", "g1") && !isfile(Cecelia.img_spatial_graph_path(img, "g1"))
         @test delete_analysis_run!(img, "stats", "s1")  && !isfile(Cecelia.img_stats_path(img, "s1"))

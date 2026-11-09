@@ -7,7 +7,9 @@ cellClustersMeshes). The surface counterpart to the fast points DBSCAN route (de
 for live images (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11). Meshes built on the fly per timepoint.
 
 Membership + label-zarr path come from Julia (aggregatesMeshes.jl). Params: imPath, labelPath, labels
-(member ids), physicalSizes [sz,sy,sx], maxClusterDist (µm), minCells, popType, propsPath, qcOutPath.
+(member ids), physicalSizes [sz,sy,sx], maxClusterDist (µm), minCells, popType, propsPath, qcOutPath,
+isAggregateCol / aggregateIdCol — the named run's column names, built Julia-side (`aggregate_col` in
+aggregate_runs.jl) so the naming rule lives in one place; absent → the unnamed legacy columns.
 """
 
 import numpy as np
@@ -40,6 +42,8 @@ def run(params):
     max_dist  = float(script_utils.get_param(params, "maxClusterDist", default=5.0))
     min_cells = int(script_utils.get_param(params, "minCells", default=5))
     pop_type  = script_utils.get_param(params, "popType", default="flow")
+    col_is    = script_utils.get_param(params, "isAggregateCol", default=f"{pop_type}.cell.is.aggregate")
+    col_id    = script_utils.get_param(params, "aggregateIdCol", default=f"{pop_type}.cell.aggregate.id")
     props     = params["propsPath"]
     qc_path   = params.get("qcOutPath")
 
@@ -79,8 +83,8 @@ def run(params):
     is_agg = (ids > 0).astype(float)
     df = pd.DataFrame({
         "label": lbls,
-        f"{pop_type}.cell.is.aggregate": is_agg,
-        f"{pop_type}.cell.aggregate.id": ids,
+        col_is: is_agg,
+        col_id: ids,
     })
     LabelPropsView(props).add_obs(df).save()
 

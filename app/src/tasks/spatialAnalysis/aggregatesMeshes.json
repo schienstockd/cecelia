@@ -18,6 +18,14 @@
   "requires": { "scale": ["xy"] },
   "params": [
     {
+      "key": "aggregateName",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "obsCols",
+      "default": "default",
+      "tip": "Output name; each name keeps its own columns and settings"
+    },
+    {
       "key": "pops",
       "required": true,
       "requiredMessage": "Select a population",
