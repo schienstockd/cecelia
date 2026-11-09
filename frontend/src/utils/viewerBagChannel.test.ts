@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { decodeViewerBagEvent, decodeScalarPrefEvent } from './viewerBagChannel'
 
 describe('decodeViewerBagEvent', () => {
+  it('decodes the ticked ROIs', () => {
+    const v = { 'img-A/debris': ['r1', 'r4'] }
+    expect(decodeViewerBagEvent('cc.viewerRoiChecked', JSON.stringify(v))).toEqual({ kind: 'roiChecked', value: v })
+  })
+
   it('decodes label visibility', () => {
     const v = { 'img-A': { seg1: true, seg2: false } }
     expect(decodeViewerBagEvent('cc.viewerLabelVisibility', JSON.stringify(v)))

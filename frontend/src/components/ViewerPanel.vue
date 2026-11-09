@@ -26,6 +26,9 @@ import MovieOptionsButton from './MovieOptionsButton.vue'
 import MovieCompareControls from './MovieCompareControls.vue'
 import InlineNote from './InlineNote.vue'
 import CcToggle from './CcToggle.vue'
+import ChipSelect from './ChipSelect.vue'
+import { fetchRois, type RoiList, type RoiStatus } from '../utils/rois'
+import { roiRecordSelection, roiRecordBlock, roiFigureSpec, type RecordWhat } from '../utils/roiMovie'
 import ColourPicker from './ColourPicker.vue'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
@@ -39,7 +42,7 @@ import { normaliseItems, compareSuffix, compareActionTip, compareShape,
 import { publishViewerCacheClear } from '../lib/viewerCacheClearChannel'
 import { useViewerMovieDefaults } from '../composables/useViewerMovieDefaults'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
-import { figureSpecFromView, niceFigureBarUm, figureFrames, figureName, figureTipText } from '../utils/figureSpec'
+import { figureSpecFromView, niceFigureBarUm, figureFrames, figureName, figureTipText, type FigureSpec } from '../utils/figureSpec'
 import { pixelSizeUm } from '../utils/physicalSize'
 import type { Severity } from '../lib/severity'
 
@@ -294,6 +297,50 @@ const matchViewer = computed<boolean>({
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { matchViewer: v }) } })
 const recordNote = ref<{ severity: Severity; short: string; detail?: string } | null>(null)
 
+// What Record / Save as figure take: the view, or each ROI of the viewer's ROI set — the set and status
+// filter the viewer window's ROI list shows (`settings.viewerRoiSuffix` / `viewerRoiStatus`), so the
+// movies are of the ROIs you are reviewing (docs/todo/ROI_TRIAGE_PLAN.md Decision 12).
+const recordWhat = computed<RecordWhat>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).recordWhat : 'view',
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { recordWhat: v }) } })
+const roiMax = computed<number>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).roiMax : 12,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { roiMax: v }) } })
+const roiSheet = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).roiSheet : false,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { roiSheet: v }) } })
+const roiList = ref<RoiList | null>(null)
+const hasRois = computed(() => (roiList.value?.rois.length ?? 0) > 0)
+const recordingRois = computed(() => hasRois.value && recordWhat.value === 'rois')
+const recordWhatOptions = [{ value: 'view', label: 'View' }, { value: 'rois', label: 'ROIs' }]
+async function loadRoiList() {
+  const uid = projectStore.openImageUid, pu = projectMeta.current?.uid
+  roiList.value = uid && pu ? await fetchRois(pu, uid, settings.viewerRoiSuffix) : null
+}
+watch(() => [projectStore.openImageUid, projectMeta.current?.uid, settings.viewerRoiSuffix], loadRoiList,
+      { immediate: true })
+// a review elsewhere (the ROI list, Claude) — the same refresh the ROI list does
+function onRoisChanged(data: Record<string, unknown>) {
+  if (String(data.imageUid ?? '') === projectStore.openImageUid) loadRoiList()
+}
+onMounted(() => ws.on('rois:changed', onRoisChanged))
+onUnmounted(() => ws.off('rois:changed', onRoisChanged))
+// how many of the ticked ROIs the list's filter shows — 0 = none ticked, the "most" count applies
+const roiTicked = computed(() => {
+  const list = roiList.value
+  const ids = list ? settings.getRoiChecked(projectStore.openImageUid ?? '', list.suffix) : []
+  return ids.length ? roiRecordSelection(list!.rois, settings.viewerRoiStatus as RoiStatus | 'all', 0, ids).length : 0
+})
+// the ROIs a record takes right now — re-read first, so a review made since counts
+async function currentRoiPick() {
+  await loadRoiList()
+  const list = roiList.value
+  return list ? { suffix: list.suffix,
+                  rows: roiRecordSelection(list.rois, settings.viewerRoiStatus as RoiStatus | 'all', roiMax.value,
+                                           settings.getRoiChecked(projectStore.openImageUid ?? '', list.suffix)) }
+              : null
+}
+
 // Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The selection IS the mode: none
 // records what's on screen (unchanged), two or more record a column per version into one movie.
 const compareVersions = computed<string[]>({
@@ -453,8 +500,10 @@ async function saveFigure() {
   // the Record range, every Nth frame — a one-frame range is a single still
   const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
   const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value,
-                                                                           grid: figureGrid.value })
+                                                                           grid: figureGrid.value,
+                                                                           ownCrop: recordingRois.value })
   if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
+  if (recordingRois.value) { await saveRoiFigures(projectUid, img, r.spec); return }
   r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
   savingFigure.value = true
   try {
@@ -477,6 +526,62 @@ async function saveFigure() {
   }
 }
 
+// Save as figure, one per ROI: each the view's figure (channels, contrast, split, grid) framed on the
+// ROI's box over its frames, named after the set and the ROI's rank.
+async function saveRoiFigures(projectUid: string, img: NonNullable<typeof openedImage.value>, base: FigureSpec) {
+  const pick = await currentRoiPick()
+  if (!pick?.rows.length) { recordNote.value = { severity: 'warn', short: 'No ROIs under the ROI list filter' }; return }
+  savingFigure.value = true
+  let saved = 0
+  try {
+    for (const roi of pick.rows) {
+      const spec = roiFigureSpec(base, roi, figureEvery.value)
+      spec.scaleBarUm = niceFigureBarUm(spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
+      const res = await fetch('/api/figures/render', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectUid, imageUid: img.uid, spec, replace: !numberIfTaken.value, roiSuffix: pick.suffix,
+                               name: figureName(img.name ?? img.uid, spec.frames,
+                                                [pick.suffix, `r${roi.rank}`, movieSuffix.value].filter(Boolean).join('_')) }),
+      })
+      if (res.ok) saved++
+    }
+    recordNote.value = saved === pick.rows.length
+      ? { severity: 'ok', short: `Saved ${saved} ROI figure(s)`, detail: 'Open them on the Movies page.' }
+      : { severity: 'fail', short: `Saved ${saved} of ${pick.rows.length} ROI figures` }
+  } catch (e) {
+    recordNote.value = { severity: 'fail', short: 'Could not save the ROI figures', detail: String(e) }
+  } finally {
+    savingFigure.value = false
+  }
+}
+
+// Record, one movie per ROI (+ a sheet when "sheet" is on): the viewer's look, as Match viewer records,
+// with each ROI's box, planes and frames (`api/src/movie_rois.jl`).
+async function recordRois(uid: string, projectUid: string) {
+  const img = openedImage.value
+  const snapshot = viewerStore.viewState as unknown as ViewerViewState | null
+  const look = img ? readViewerLook(img, currentSetUid.value ?? '') : null
+  if (!img || !snapshot || !look) {
+    recordNote.value = { severity: 'warn', short: 'Open the image in the viewer first' }
+    return
+  }
+  const pick = await currentRoiPick()
+  if (!pick?.rows.length) { recordNote.value = { severity: 'warn', short: 'No ROIs under the ROI list filter' }; return }
+  const t = taskStore.add({
+    module: 'viewer', label: `Record ${pick.rows.length} ROI(s) of ${img.name ?? 'image'}`,
+    imageUid: uid, imageName: img.name ?? '', status: 'queued',
+    taskName: 'movie.record', funName: 'movie.record', params: {}, projectUid,
+  })
+  ws.send({ type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
+            suffix: movieSuffix.value, numbered: numberIfTaken.value, matchViewer: true,
+            valueNames: look.valueNames ?? [], look: lookForRender(look),
+            labelValueNames: look.labelValueNames ?? [], labelContour: look.labelContour ?? 0,
+            showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
+            viewState: hexViewState(snapshot),
+            rois: roiRecordBlock(pick.suffix, pick.rows, roiSheet.value),
+            ...movieSizeParams(movieSizeX.value, movieSizeY.value) })
+}
+
 async function recordTimelapse() {
   // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whenever any viewer
   // has the image. Was `viewerImageUid`, which stayed null when only the popup viewer was open,
@@ -485,6 +590,7 @@ async function recordTimelapse() {
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid || recording.value || recordingTask.value) return
   recordNote.value = null
+  if (recordingRois.value) { await recordRois(uid, projectUid); return }
   if (matchViewer.value) { await recordViewerMatch(uid, projectUid); return }
   recording.value = true
   try {
@@ -1196,11 +1302,15 @@ onUnmounted(() => {
            (the common case) shows just the two buttons. -->
       <div class="viewer-section" data-guide="viewer.movieSection">
         <div class="viewer-section-title cc-eyebrow cc-fs-2xs">Movie</div>
+        <!-- the view, or each ROI the viewer's ROI list shows (its set + filter) — only with an ROI set -->
+        <ChipSelect v-if="hasRois" v-model="recordWhat" :options="recordWhatOptions" variant="segmented"
+                    aria-label="What to record" class="cc-fs-xs"
+                    v-tooltip.bottom="'ROIs: one movie per ticked ROI in the ROI list'" />
         <div class="movie-row">
           <div class="movie-versions">
-            <CcToggle v-model="matchViewer" label="Match viewer" class="cc-fs-xs"
+            <CcToggle v-if="!recordingRois" v-model="matchViewer" label="Match viewer" class="cc-fs-xs"
                       v-tooltip.bottom="'Record exactly what the viewer shows'" />
-            <MovieCompareControls v-if="!matchViewer" :available="valueNames"
+            <MovieCompareControls v-if="!matchViewer && !recordingRois" :available="valueNames"
                                   :available-segmentations="labelNames"
                                   v-model:versions="compareVersions"
                                   v-model:segmentations="compareSegmentations"
@@ -1209,6 +1319,7 @@ onUnmounted(() => {
                                   v-model:contrast="compareContrast" />
           </div>
           <MovieOptionsButton class="opt-btn">
+            <div class="mob-head cc-eyebrow cc-fs-2xs">Output</div>
             <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
                                  v-model:suffix="movieSuffix" v-model:numbered="numberIfTaken" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                                  v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
@@ -1216,27 +1327,53 @@ onUnmounted(() => {
                                  v-model:zSlice="zSlice" :default-z="viewerZ"
                                  v-model:renderQuality="renderQuality" />
             <!-- Only for an actual timelapse — nothing to trim on a single frame -->
-            <MovieTimeRange v-if="(openedImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
-                            v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1"
-                            show-every v-model:every="figureEvery" :every-auto="figureRange.every" />
+            <template v-if="(openedImage?.sizeT ?? 1) > 1">
+              <div class="mob-head cc-eyebrow cc-fs-2xs">Frames</div>
+              <MovieTimeRange v-model:tStart="movieTStart"
+                              v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1"
+                              show-every v-model:every="figureEvery" :every-auto="figureRange.every" />
+            </template>
+            <template v-if="recordingRois">
+              <div class="mob-head cc-eyebrow cc-fs-2xs">ROIs</div>
+              <div v-if="roiTicked" class="cc-muted cc-fs-2xs">{{ roiTicked }} ticked in the ROI list</div>
+              <div v-else class="cc-row">
+                <span class="cc-row-group">
+                  <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">most</span>
+                  <input type="number" min="1" max="100" step="1" class="cc-input-2xs" v-model.number="roiMax"
+                         aria-label="Most ROIs to record"
+                         v-tooltip.bottom="'None ticked: the first this many in the ROI list'" />
+                </span>
+              </div>
+              <div class="cc-row">
+                <span class="cc-row-group">
+                  <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
+                        v-tooltip.bottom="'Also one contact sheet of all the ROI movies'">sheet</span>
+                  <CcToggle v-model="roiSheet" aria-label="Also record a contact sheet" />
+                </span>
+              </div>
+            </template>
+            <div class="mob-head cc-eyebrow cc-fs-2xs">Figure</div>
             <div class="cc-row">
               <span class="cc-row-group">
                 <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
                       v-tooltip.bottom="'Save as figure: one grey row per channel under the merge'">split</span>
                 <CcToggle v-model="figureSplit" aria-label="Split channels in the figure" />
               </span>
+            </div>
+            <div class="cc-row">
               <span class="cc-row-group">
                 <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
                       v-tooltip.bottom="'Save as figure: wrap the frames into a square grid'">grid</span>
                 <CcToggle v-model="figureGrid" aria-label="Frames as a grid in the figure" />
               </span>
             </div>
+            <div class="mob-head cc-eyebrow cc-fs-2xs">Title card</div>
             <TitleCardControls v-model="movieTitleCardModel" />
           </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" data-guide="viewer.record"
                   :class="{ 'cc-btn-on cc-btn-on-tint': recording || recordingTask }" :disabled="recording || recordingTask"
                   @click="recordTimelapse"
-                  v-tooltip.bottom="matchViewer ? 'Record the viewer over time → mp4 in movies/'
+                  v-tooltip.bottom="recordingRois ? 'Record each ROI → mp4s in movies/' : matchViewer ? 'Record the viewer over time → mp4 in movies/'
                     : compareActionTip(compareShapeNow,
                     'Record the current view over the time axis → mp4 in the project\'s movies/ folder')">
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />

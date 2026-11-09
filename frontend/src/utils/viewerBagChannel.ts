@@ -14,7 +14,7 @@
 import { POP_EYES_KEYS } from './viewer/popEyes'
 
 export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs' | 'imageVersion' | 'trackPopHidden'
-  | 'popEyes' | 'ribbonEyes'
+  | 'popEyes' | 'ribbonEyes' | 'roiChecked'
 
 export interface ViewerBagEvent {
   kind: ViewerBagKind
@@ -49,6 +49,8 @@ export function decodeViewerBagEvent(
     // the viewer's per-pop point / ribbon eyes — a movie recorded from the main window draws them
     case POP_EYES_KEYS.points:        return { kind: 'popEyes',      value }
     case POP_EYES_KEYS.ribbons:       return { kind: 'ribbonEyes',   value }
+    // the ROIs ticked in the viewer's list — Record → ROIs in the main window takes them
+    case 'cc.viewerRoiChecked':       return { kind: 'roiChecked',   value }
     default:                          return null
   }
 }

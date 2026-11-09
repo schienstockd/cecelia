@@ -24,7 +24,10 @@ import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          type MovieEntry, type MovieRow } from '../utils/movies'
 import { sortRows, parseSortState, type SortState, type SortValue } from '../utils/sortRows'
 import { rafCoalesce } from '../utils/rafCoalesce'
-import { RESTORE_ROUTE, fetchMovieEntry, type RestoreKind } from '../utils/movieRestore'
+import { RESTORE_ROUTE, ROI_CONFIG_KIND, fetchMovieEntry, roiRerecordRequest, roiMovieFocus, type RestoreKind } from '../utils/movieRestore'
+import { fetchRois, roiFocusTarget } from '../utils/rois'
+import { buildFocusViewState } from '../utils/viewer/focusOnCell'
+import { useWsStore } from '../stores/ws'
 import FigureEditor from '../components/FigureEditor.vue'
 import FigureStyleEditor from '../components/FigureStyleEditor.vue'
 import InlineNote from '../components/InlineNote.vue'
@@ -34,6 +37,7 @@ import { useInlineEdit } from '../composables/useInlineEdit'
 import CcToggle from '../components/CcToggle.vue'
 import ModulePage from '../components/ModulePage.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import ChipOverflow from '../components/ChipOverflow.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
@@ -465,24 +469,53 @@ async function openSource(r: MovieRow) {
   catch { /* no entry — open the image anyway */ }
   const src = sourceOf(entry, figureViewState)
   if (!src) return
+  // an ROI movie opens at its ROI (as the ROI list focuses one), not at whatever was on screen when it
+  // was recorded — and the ROI list shows that ROI's set
+  const focus = entry.configKind === ROI_CONFIG_KIND ? roiMovieFocus(entry.config as Record<string, unknown>) : null
+  if (focus) {
+    const row = (await fetchRois(projectUid.value, src.imageUid, focus.suffix)).rois.find(x => x.id === focus.id)
+    if (row) {
+      settings.viewerRoiSuffix = focus.suffix
+      src.viewState = buildFocusViewState(src.viewState as ViewerViewState | null, roiFocusTarget(row)) ?? src.viewState
+    }
+  }
   if (src.viewState) viewer.setPendingViewState(src.viewState as ViewerViewState)
   openViewerWindow({ projectUid: projectUid.value, imageUid: src.imageUid, valueName: src.valueName })
 }
 const styleDialog = ref(false)       // the project's figure style editor
 const sourceTip = (r: MovieRow) => r.kind === 'figure'
   ? 'Open the image in the viewer at this figure\'s view'
+  : r.configKind === ROI_CONFIG_KIND ? 'Open the image in the viewer at this ROI'
   : r.configKind === 'keyframes' ? 'Open the image in the viewer at the first keyframe'
   : r.producedBy === 'viewer' ? 'Open the image in the viewer at the recorded view' : 'Open the image in the viewer'
 
-const canEdit = (r: MovieRow) => r.hasConfig && r.configKind in RESTORE_ROUTE
+const canEdit = (r: MovieRow) => r.hasConfig && (r.configKind in RESTORE_ROUTE || r.configKind === ROI_CONFIG_KIND)
+const ws = useWsStore()
 function editConfig(r: MovieRow) {
   if (!canEdit(r)) return
+  if (r.configKind === ROI_CONFIG_KIND) { void rerecordRoiMovie(r); return }
   router.push({ path: RESTORE_ROUTE[r.configKind as RestoreKind], query: { fromMovie: r.name } })
+}
+// An ROI movie (Record → What: ROIs) has no page to edit it on — the Batch page has no ROIs — so it is
+// recorded again, as it was: its own ROI(s), the saved look (`roiRerecordRequest`).
+async function rerecordRoiMovie(r: MovieRow) {
+  if (!projectUid.value) return
+  try {
+    const q = roiRerecordRequest((await fetchMovieEntry(projectUid.value, r.name)).config)
+    if (!q) { log.warn(`${r.name}: no ROIs saved with this movie`, { source: 'movies' }); return }
+    const t = tasks.add({ module: 'movies', label: `Re-record ${r.label}`, imageUid: String(q.imageUid),
+                          imageName: r.imageName, status: 'queued', taskName: 'movie.record',
+                          funName: 'movie.record', params: {}, projectUid: projectUid.value })
+    ws.send({ ...q, taskId: t.id, projectUid: projectUid.value })
+  } catch (e) {
+    log.error(`Could not re-record ${r.name}: ${e}`, { source: 'movies' })
+  }
 }
 // The bytes on disk are from a LATER run than the config banked against them (Decision 5) — the movie
 // was re-recorded, and this config is not what made the file you are looking at. It still opens; the
 // tooltip is where that gets said, since the config is the only thing being reused.
-const editTip = (r: MovieRow) => r.configStale
+const editTip = (r: MovieRow) => r.configKind === ROI_CONFIG_KIND ? 'Record this ROI movie again, as it was'
+  : r.configStale
   ? 'Edit the saved settings — this movie was re-recorded since, so they may not be what made it'
   : 'Edit the settings that made this movie'
 
@@ -802,8 +835,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                        @blur="saveTags(row)" />
                 <span v-else class="mov-tags" @click.stop="beginTags(row)"
                       v-tooltip.right="'Click to edit tags'">
-                  <span v-for="t in row.tags" :key="t" class="cc-tag cc-fs-2xs">{{ t }}</span>
-                  <span v-if="!row.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
+                  <ChipOverflow v-if="row.tags.length" :items="row.tags" />
+                  <span v-else class="cc-muted cc-fs-xs">+ tag</span>
                 </span>
               </template>
             </SelectionTable>
@@ -873,7 +906,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-meta { align-items: baseline; }
 .mov-name-edit { flex: 1 1 12rem; max-width: 24rem; }
 .mov-tag-edit { flex: 1 1 10rem; max-width: 20rem; }
-.mov-tags { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; cursor: text; }
+.mov-tags { display: inline-flex; align-items: center; cursor: text; min-width: 0; }
 /* Star — dim until hovered when unset, so a column of unset stars doesn't compete with the row text.
    Same treatment as ImageTable's per-image star. */
 .mov-star { opacity: .25; }

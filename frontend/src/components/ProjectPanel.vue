@@ -11,6 +11,7 @@ import FileBrowser from './FileBrowser.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CcProgressBar from './CcProgressBar.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import ChipOverflow from './ChipOverflow.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import CcToggle from './CcToggle.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -378,19 +379,18 @@ function formatDate(iso: string | null): string {
                   v-tooltip.bottom="'No owner — visible to every profile on this box'">
               shared
             </span>
-            <span v-else class="owner-chips">
-              <span class="owner-chip" :class="{ me: p._owners[0] === activeProfile }"
-                    v-tooltip.bottom="p._owners[0] === activeProfile
-                      ? 'You are an owner of this project'
-                      : `Profile ${profileNameLabel(p._owners[0])} owns this project`">
-                <i class="pi pi-user" />{{ profileNameLabel(p._owners[0]) }}
-              </span>
-              <button v-if="p._owners.length > 1" type="button" class="owner-chip owner-more"
-                      v-tooltip.bottom="`${p._owners.length - 1} more owner${p._owners.length - 1 === 1 ? '' : 's'} — click to see all`"
-                      @click.stop="toggleOwners(p.uid, $event)">
-                +{{ p._owners.length - 1 }}
-              </button>
-            </span>
+            <ChipOverflow v-else class="owner-chips" :items="p._owners" more-class="owner-chip owner-more"
+                          :more-tip="(rest: string[]) => `${rest.length} more owner${rest.length === 1 ? '' : 's'} — click to see all`"
+                          @more="(e: MouseEvent) => { e.stopPropagation(); toggleOwners(p.uid, e) }">
+              <template #chip="{ item: o }">
+                <span class="owner-chip" :class="{ me: o === activeProfile }"
+                      v-tooltip.bottom="o === activeProfile
+                        ? 'You are an owner of this project'
+                        : `Profile ${profileNameLabel(o)} owns this project`">
+                  <i class="pi pi-user" />{{ profileNameLabel(o) }}
+                </span>
+              </template>
+            </ChipOverflow>
           </template>
           <template #cell-uid="{ row: p }">
             <!-- Tooltip carries the full on-disk path — the only reason someone reads a project id
@@ -732,7 +732,7 @@ function formatDate(iso: string | null): string {
    line grows every row's height (and the whole table's) for one small badge — the popover already
    handles the overflow case, so no wrap is needed here. */
 .owner-chips { display: inline-flex; flex-wrap: nowrap; gap: 0.25rem; align-items: center; }
-.owner-chip {
+.owner-chip, .owner-chips :deep(.owner-more) {
   display: inline-flex; align-items: center; gap: 0.25rem;
   font-size: var(--cc-fs-xs); line-height: 1;
   padding: 0.15rem 0.5rem;
@@ -743,10 +743,9 @@ function formatDate(iso: string | null): string {
 .owner-chip .pi { font-size: var(--cc-fs-2xs); }
 .owner-chip.me { color: var(--cc-text); border-color: var(--cc-kiwi); }
 .owner-chip.shared { font-style: italic; opacity: 0.7; }
-/* +N overflow chip — visually the same pill but declared as a real button so keyboard focus works
-   and the tinted hover reads as "this opens something". */
-button.owner-more { cursor: pointer; font-variant-numeric: tabular-nums; }
-button.owner-more:hover { color: var(--cc-text); border-color: var(--cc-kiwi);
+/* +N overflow chip (ChipOverflow's button, hence :deep) — the same pill, with a tinted hover that
+   reads as "this opens something". */
+.owner-chips :deep(.owner-more:hover) { color: var(--cc-text); border-color: var(--cc-kiwi);
   background: color-mix(in srgb, var(--cc-kiwi) 12%, var(--cc-surface-2)); }
 
 /* Owners popover contents — TeleportPopover supplies the surface + border, this is just padding

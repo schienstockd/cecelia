@@ -377,6 +377,49 @@ _single_record_look(look_cfg, label_contour::Int) =
 # task console keep working unchanged. Uses `jobs.jl` for cancel (the encoder is a subprocess of
 # `record_view_movie` via `run_py`, tracked via `on_process`) AND a between-frame flag (`cancelled = ()
 # -> job_cancelled(...)`, checked before each frame). One taskId → one job.
+# What every 2D single-view record resolves before it renders, shared by the plain record and the
+# ROI record (`movie_rois.jl`): the frame (store path, array, axes, display specs), the overlays +
+# mask closures, the channel count and the native size. The display comes from the viewer when
+# `match_viewer` (its live contrast) else the saved props, then the look's channel picks. Returns the
+# error text instead when the frame can't be resolved. `full_stack` keeps every plane (an ROI picks
+# its own z range per movie) instead of choosing between one plane and the all-Z max by `z_slice`.
+function _prepare_single_record(task_id::AbstractString, project_uid::AbstractString,
+                                image_uid::AbstractString, img;
+                                value_name::AbstractString = "",
+                                label_value_name::Union{AbstractString,Nothing} = nothing,
+                                label_contour::Int = 1,
+                                z_slice = nothing, overlays_raw = nothing,
+                                view_state::Union{Nothing,AbstractDict} = nothing,
+                                match_viewer::Bool = false, look_cfg = nothing,
+                                full_stack::Bool = false)
+    frame = _resolve_frame_for_record(project_uid, image_uid, value_name;
+                                      max_projection = !full_stack && z_slice === nothing)
+    frame[5] === nothing || return String(frame[5])
+    zp, arr, caxes, specs, _ = frame
+    d  = axis_dims(caxes, ndims(arr))
+    nc = haskey(d, "c") ? size(arr, d["c"]) : 1
+    native_h = haskey(d, "y") ? size(arr, d["y"]) : 0
+    native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
+    # Overlays: an explicit `overlays_raw` on the request wins (smoke-route shape). Otherwise, translate
+    # the on-screen `look` into that shape so the offline record doesn't regress to channels-only.
+    has_mask = label_value_name !== nothing
+    effective_overlays = overlays_raw isa AbstractDict ? overlays_raw :
+        _overlays_raw_from_config(_single_record_look(look_cfg, label_contour), has_mask)
+    vnn = isempty(value_name) ? nothing : String(value_name)
+    if match_viewer && view_state !== nothing && native_h > 0 && native_w > 0
+        specs = _live_specs(view_state, something(channel_names(img; value_name = vnn), String[]),
+                            specs, Int(native_h), Int(native_w))
+    end
+    # the batch/`look` channel picks on top of the props-derived specs (`_apply_channel_picks`)
+    specs = _apply_channel_picks(specs, look_cfg, img, vnn)
+    ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
+                                       label_value_name === nothing ? vnn : String(label_value_name);
+                                       mask_value_name = label_value_name === nothing ? nothing : String(label_value_name),
+                                       tally = false,
+                                       on_log = line -> ws_log(nothing, task_id, line))
+    (; zp, arr, caxes, specs, ov, nc, native_h = Int(native_h), native_w = Int(native_w))
+end
+
 function run_single_offline(task_id::String, project_uid::String, image_uid::String;
                             fps::Int = 15,
                             size_x::Union{Int,Nothing} = nothing,
@@ -412,28 +455,23 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    # Match the viewer's plane when the request didn't pin one. A 2D browser viewer shows ONE z (or
-    # the max over its ±n window — then a range), so a movie that MIPs the whole stack for lack of an
-    # explicit `zSlice` diverges from what the user was looking at when they hit Record.
-    # `z_from_view_state` returns `nothing` for 3D and for snapshots without a usable step, leaving
-    # the render at its previous all-Z MIP fallback.
     z_slice === nothing && (z_slice = z_from_view_state(view_state))
-    frame = _resolve_frame_for_record(project_uid, image_uid, value_name; max_projection = z_slice === nothing)
-    if frame[5] !== nothing
-        ws_log(nothing, task_id, "[ERROR] " * String(frame[5]))
+    prep = _prepare_single_record(task_id, project_uid, image_uid, img;
+                                  value_name, label_value_name, label_contour, z_slice,
+                                  overlays_raw, view_state, match_viewer,
+                                  look_cfg = movie_config === nothing ? nothing : movie_config.look)
+    if prep isa AbstractString
+        ws_log(nothing, task_id, "[ERROR] " * prep)
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    zp, arr, caxes, specs, _ = frame
-
+    (; zp, arr, caxes, specs, ov, nc, native_h, native_w) = prep
     ts = _record_ts_range(arr, caxes, t_start, t_end)
     if isempty(ts)
         ws_log(nothing, task_id, "[ERROR] no timepoints in range (image is single-frame or range is empty)")
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    d  = axis_dims(caxes, ndims(arr))
-    nc = haskey(d, "c") ? size(arr, d["c"]) : 1
     max_px = _max_px_from_size(size_x, size_y)
     # Blank size fields → fall back to the viewer's canvas long side, so the mp4 caps at the size the
     # viewer showed rather than at the native crop's pixel count. See `_max_px_from_view_state`.
@@ -442,33 +480,8 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     # `crop`. Native H/W come from the store, not from the snapshot's canvas — `crop_from_view_state`
     # clamps against these so a stale snapshot can't index off the edge of the image. `nothing` here
     # falls through to the previous behaviour (whole image, native aspect).
-    native_h = haskey(d, "y") ? size(arr, d["y"]) : 0
-    native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
     view_crop = (native_h > 0 && native_w > 0) ?
         crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
-    # Overlays: an explicit `overlays_raw` on the request wins (smoke-route shape). Otherwise, translate
-    # the on-screen `look` (banked in `movie_config`) into that shape so the offline record doesn't
-    # regress to channels-only. `has_mask` reflects the request's `labelValueNames`.
-    look_cfg = movie_config === nothing ? nothing : movie_config.look
-    has_mask = label_value_name !== nothing
-    effective_overlays = if overlays_raw isa AbstractDict
-        overlays_raw
-    else
-        _overlays_raw_from_config(_single_record_look(look_cfg, label_contour), has_mask)
-    end
-    vnn = isempty(value_name) ? nothing : String(value_name)
-    # Apply the batch/`look` channel picks on top of the props-derived specs — same override the
-    # compare grid uses (see `_apply_channel_picks`).
-    if match_viewer && view_state !== nothing && native_h > 0 && native_w > 0
-        specs = _live_specs(view_state, something(channel_names(img; value_name = vnn), String[]),
-                            specs, Int(native_h), Int(native_w))
-    end
-    specs = _apply_channel_picks(specs, look_cfg, img, vnn)
-    ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
-                                       label_value_name === nothing ? vnn : String(label_value_name);
-                                       mask_value_name = label_value_name === nothing ? nothing : String(label_value_name),
-                                       tally = false,
-                                       on_log = line -> ws_log(nothing, task_id, line))
 
     out_path = _numbered_if_taken(_movie_named_path(img, image_uid; suffix = _movie_suffix(suffix)), numbered)
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")

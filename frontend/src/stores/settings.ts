@@ -1,3 +1,4 @@
+import { RECORD_WHAT_DEFAULT, ROI_MAX_DEFAULT, roiCheckedKey, type RecordWhat } from '../utils/roiMovie'
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch, type Ref } from 'vue'
 import { TITLE_CARD_DEFAULT, RENDER_QUALITY_DEFAULT, type TitleCardCfg, type BatchMovieCfg, type RenderQuality } from '../utils/batchMovie'
@@ -215,6 +216,18 @@ export const useSettingsStore = defineStore('settings', () => {
   const viewerRoiStatus = ref(localStorage.getItem('cc.viewerRoiStatus') ?? 'all')
   // dim everything outside the active ROI's box, so the eye lands on it (RoiSection's spotlight toggle)
   const viewerRoiSpotlight = ref(localStorage.getItem('cc.viewerRoiSpotlight') !== 'false')
+  // the ROIs ticked in the list, per image + set — what Record → ROIs takes (utils/roiMovie.ts)
+  const _roiChecked = ref<Record<string, string[]>>(
+    JSON.parse(localStorage.getItem('cc.viewerRoiChecked') ?? '{}'))
+  const getRoiChecked = (imageUid: string, suffix: string): string[] =>
+    _roiChecked.value[roiCheckedKey(imageUid, suffix)] ?? []
+  function setRoiChecked(imageUid: string, suffix: string, ids: string[]) {
+    const next = { ..._roiChecked.value }
+    if (ids.length) next[roiCheckedKey(imageUid, suffix)] = [...ids]
+    else delete next[roiCheckedKey(imageUid, suffix)]
+    _roiChecked.value = next
+    localStorage.setItem('cc.viewerRoiChecked', JSON.stringify(next))
+  }
   // after accept / reject / flag, move to the next ROI (RoiSection)
   const viewerRoiAutoNext = ref(localStorage.getItem('cc.viewerRoiAutoNext') === 'true')
   // Segmentation mask overlay (P4). `viewerLabelOpacity` is the fill opacity (default 0.7) and
@@ -604,6 +617,8 @@ export const useSettingsStore = defineStore('settings', () => {
               // NOT the `cropT` pair above: that one is a 0-100 % crop range for making a new image.
               tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean; figureGrid?: boolean
               numberIfTaken?: boolean
+              // Record / Save as figure: the view, or each ROI of the viewer's ROI set (`utils/roiMovie.ts`)
+              recordWhat?: RecordWhat; roiMax?: number; roiSheet?: boolean
               // 3D ray-cast quality (draft / standard / high). Per set, like the other viewer prefs.
               renderQuality?: RenderQuality
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
@@ -681,6 +696,9 @@ export const useSettingsStore = defineStore('settings', () => {
     figureGrid: boolean
     numberIfTaken: boolean
     matchViewer: boolean
+    recordWhat: RecordWhat
+    roiMax: number
+    roiSheet: boolean
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
     sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
@@ -717,6 +735,10 @@ export const useSettingsStore = defineStore('settings', () => {
     numberIfTaken: _setPrefs.value[setUid]?.movie?.numberIfTaken ?? false,
     // default ON — "record" means record what is on screen
     matchViewer: _setPrefs.value[setUid]?.movie?.matchViewer ?? true,
+    // the view, as every recording was before ROIs could be recorded
+    recordWhat: _setPrefs.value[setUid]?.movie?.recordWhat ?? RECORD_WHAT_DEFAULT,
+    roiMax: _setPrefs.value[setUid]?.movie?.roiMax ?? ROI_MAX_DEFAULT,
+    roiSheet: _setPrefs.value[setUid]?.movie?.roiSheet ?? false,
   })
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
@@ -729,7 +751,8 @@ export const useSettingsStore = defineStore('settings', () => {
                                    showTimestamp?: boolean; showScaleBar?: boolean
                                    tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean; figureGrid?: boolean
                                    numberIfTaken?: boolean
-                                   matchViewer?: boolean }) {
+                                   matchViewer?: boolean
+                                   recordWhat?: RecordWhat; roiMax?: number; roiSheet?: boolean }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)
@@ -858,6 +881,7 @@ export const useSettingsStore = defineStore('settings', () => {
         case 'trackPopHidden': _trackPopHiddenStore.value = ev.value as Record<string, Record<string, string[]>>; break
         case 'popEyes':      _popEyesStores.points.value  = ev.value as Record<string, Record<string, Record<string, boolean>>>; break
         case 'ribbonEyes':   _popEyesStores.ribbons.value = ev.value as Record<string, Record<string, Record<string, boolean>>>; break
+        case 'roiChecked':   _roiChecked.value        = ev.value as Record<string, string[]>; break
       }
     })
     // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
@@ -868,6 +892,9 @@ export const useSettingsStore = defineStore('settings', () => {
       if (e.key === 'cc.viewerSelectMode') {
         viewerSelectMode.value = e.newValue === 'select' ? 'select' : 'off'
       }
+      // the ROI list lives in the viewer window, Record → ROIs in this one: its set and filter (the ticks go through the bag decoder above)
+      if (e.key === 'cc.viewerRoiSuffix') viewerRoiSuffix.value = e.newValue ?? ''
+      if (e.key === 'cc.viewerRoiStatus') viewerRoiStatus.value = e.newValue ?? 'all'
     })
   }
 
@@ -1000,7 +1027,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

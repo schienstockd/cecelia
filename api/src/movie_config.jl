@@ -77,6 +77,10 @@ Base.@kwdef struct MovieRecordConfig <: MovieConfig
     # The viewer snapshot (camera, dims, channels) the recording was made from — what the Movies
     # page's "open at source" restores. Nothing for a recording that sent none.
     viewState::Any                          = nothing
+    # Record → What: ROIs — `{suffix, ids, padFrames, sheet}`: which ROIs of which set this movie is of
+    # (one id for an ROI's movie, all of them on a contact sheet). Banked with config kind "rois", so
+    # the Movies page re-records it the same way instead of handing a whole-view look to the Batch page.
+    rois::Any                               = nothing
 end
 
 # The batch flavour. `config` is the AUTHORED config the batch is applying (not a `look` snapshot);

@@ -41,6 +41,11 @@ async function load() {
   loading.value = false
 }
 
+// the ticked ROIs — what Record → ROIs in the control panel takes (settings syncs them across windows)
+const checked = computed<string[]>({
+  get: () => settings.getRoiChecked(props.imageUid, list.value?.suffix ?? settings.viewerRoiSuffix),
+  set: ids => settings.setRoiChecked(props.imageUid, list.value?.suffix ?? settings.viewerRoiSuffix, ids) })
+
 const rows = computed(() =>
   filterRois(list.value?.rois ?? [], settings.viewerRoiStatus as RoiStatus | 'all'))
 const index = computed(() => clampIndex(rows.value.findIndex(r => r.id === activeId.value), rows.value.length))
@@ -203,6 +208,7 @@ defineExpose({ step, onKey })
       </div>
       <div class="roi-list">
         <SelectionTable :columns="columns" :rows="tableRows" id-key="id" :model-value="activeId"
+                        selection-mode="multi" pick-by="box" v-model:selected="checked"
                         density="compact" sticky-header follow-selection column-width-key="cc.vw.rois.colw" :row-tooltip="rowTooltip"
                         @update:model-value="(id: string) => { const r = rows.find(x => x.id === id); if (r) goto(r) }">
           <!-- the label as a pill, like a movie's tags -->

@@ -38,6 +38,10 @@ export async function fetchMovieEntry(projectUid: string, name: string): Promise
   return ((await res.json()) as { entry?: MovieRegistryEntry & Record<string, unknown> }).entry ?? {}
 }
 
+/** An ROI movie's config kind (`ROI_CONFIG_KIND`, api/src/movie_rois.jl). It has no editing page —
+ *  the Batch page has no ROIs — so the Movies page re-records it (`roiRerecordRequest`). */
+export const ROI_CONFIG_KIND = 'rois'
+
 /** The two config kinds (Decision 7), and the page that owns each. */
 export type RestoreKind = 'look' | 'keyframes'
 export const RESTORE_ROUTE: Record<RestoreKind, string> = {
@@ -284,4 +288,39 @@ export function restoreNote(missing: string[], dropped: string[]): string {
   const all = [...missing, ...dropped]
   if (!all.length) return ''
   return `Not restored: ${all.join(', ')}`
+}
+
+/**
+ * An ROI movie's banked config (kind `rois`, `MovieRecordConfig`) → the `movie:record` request that
+ * records it again: the same look, masks, output and the movie's own ROIs (one, or a sheet's). `null`
+ * when the config has no ROIs to record. The caller adds `taskId` + `projectUid`.
+ */
+export function roiRerecordRequest(config: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!isObj(config) || !isObj(config.rois) || typeof config.imageUid !== 'string' || !config.imageUid) return null
+  const r = config.rois
+  const ids = strList(r.ids) ?? []
+  if (typeof r.suffix !== 'string' || !ids.length) return null
+  const out: Record<string, unknown> = {
+    type: 'movie:record', imageUid: config.imageUid, matchViewer: true,
+    rois: { suffix: r.suffix, ids, sheet: r.sheet === true, padFrames: num(r.padFrames) ?? 2 },
+    valueNames: strList(config.valueNames) ?? [],
+    labelValueNames: strList(config.labelValueNames) ?? [],
+    labelContour: num(config.labelContour) ?? 0,
+    fps: num(config.fps) ?? 15,
+    suffix: typeof config.suffix === 'string' ? config.suffix : '',
+    showTimestamp: config.showTimestamp !== false, showScaleBar: config.showScaleBar !== false,
+  }
+  if (isObj(config.look)) out.look = config.look
+  if (isObj(config.viewState)) out.viewState = config.viewState
+  if (num(config.sizeX) !== undefined) out.sizeX = config.sizeX
+  if (num(config.sizeY) !== undefined) out.sizeY = config.sizeY
+  return out
+}
+
+/** Which ROI an ROI movie's *Open at source* goes to: its set and its (first) ROI — a sheet opens at
+ *  its first tile. `null` when the config names none. */
+export function roiMovieFocus(config: Record<string, unknown> | null | undefined): { suffix: string, id: string } | null {
+  if (!isObj(config) || !isObj(config.rois) || typeof config.rois.suffix !== 'string') return null
+  const id = (strList(config.rois.ids) ?? [])[0]
+  return id ? { suffix: config.rois.suffix, id } : null
 }

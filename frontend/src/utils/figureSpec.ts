@@ -31,10 +31,14 @@ export interface FigureSpec {
 /** Why a view can't become a figure, or the spec. Figures are 2D: a 3D view has no single crop. */
 export function figureSpecFromView(vs: ViewerViewState | null | undefined, channelNames: string[],
                                    opts: { valueName?: string; scaleBarUm?: number; frames?: number[];
-                                           split?: boolean; grid?: boolean } = {}):
+                                           split?: boolean; grid?: boolean
+                                           /** the caller replaces the crop and z window (an ROI's
+                                            *  figure, `roiFigureSpec`), so a 3D view's channels and
+                                            *  contrast are all it takes from the view */
+                                           ownCrop?: boolean } = {}):
   { spec: FigureSpec } | { error: string } {
   if (!vs || !vs.canvas?.height) return { error: 'Open the image in the viewer first' }
-  if (vs.dims.ndisplay === 3) return { error: 'Figures are 2D — switch the viewer to 2D' }
+  if (vs.dims.ndisplay === 3 && !opts.ownCrop) return { error: 'Figures are 2D — switch the viewer to 2D' }
   const zoom = vs.camera.zoom > 0 ? vs.camera.zoom : 1
   // The square the camera frames: the shorter side of the visible region, in level-0 pixels.
   const visH = vs.canvas.height / zoom

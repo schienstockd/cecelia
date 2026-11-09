@@ -75,7 +75,7 @@ export interface SelectionColumn {
 const props = withDefaults(defineProps<{
   columns: SelectionColumn[]
   rows: Row[]
-  /** the chosen row id (`selectionMode: 'single'`). Ignored by the other two modes. */
+  /** the chosen row id (`selectionMode: 'single'`), or the current row (`multi` + `pickBy: 'box'`). */
   modelValue?: string
   /**
    * The chosen row ids (`selectionMode: 'multi'`), as `v-model:selected`.
@@ -214,6 +214,15 @@ const props = withDefaults(defineProps<{
    * move. Opt-in: a table whose selection is set elsewhere for other reasons should not jump.
    */
   followSelection?: boolean
+  /**
+   * What ticks a row in `multi`:
+   *
+   *  - `row` (default) a click anywhere on the row toggles it — the checkbox is only a visual.
+   *  - `box` only the checkbox toggles; a row click makes that row the CURRENT one instead
+   *          (`modelValue`, highlighted, followed by `followSelection`). For a list you both step
+   *          through and pick from — the viewer's ROI list: click to go to an ROI, tick to record it.
+   */
+  pickBy?: 'row' | 'box'
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -228,6 +237,7 @@ const props = withDefaults(defineProps<{
   selectAll: true,
   density: 'default',
   headerless: false,
+  pickBy: 'row',
 })
 
 const emit = defineEmits<{
@@ -258,6 +268,9 @@ const selectedIds = computed<string[]>(() =>
   props.selectionMode === 'multi' ? (props.selected ?? [])
     : props.modelValue ? [props.modelValue] : [])
 const isPicked = (row: Row) => selectedIds.value.includes(idOf(row))
+// `pickBy: 'box'` splits the two: the checkbox is the pick, the highlight is the current row
+const boxPicks = computed(() => props.selectionMode === 'multi' && props.pickBy === 'box')
+const isOn = (row: Row) => boxPicks.value ? idOf(row) === props.modelValue : isPicked(row)
 
 // Two quick clicks on a control inside a row (a cell-slot button, arm→confirm) also fire the row's
 // dblclick — only a double-click on the row itself means "activate this row". The pick column's
@@ -273,6 +286,7 @@ function pick(row: Row) {
   const id = idOf(row)
   // `disabledIds` greys the checkbox; the ROW is the hit target, so it has to refuse here too or a
   // click anywhere else on the row selects what the checkbox says cannot be selected
+  if (boxPicks.value) { if (id !== props.modelValue) emit('update:modelValue', id); return }
   if (props.disabledIds.includes(id)) return
   if (props.selectionMode === 'multi') {
     emit('update:selected', toggleOneSelection(id, selectedIds.value))
@@ -290,6 +304,11 @@ const selectableIds = computed(() =>
   sortedRows.value.map(idOf).filter(id => !props.disabledIds.includes(id)))
 const allSelected  = computed(() => allChosen(selectableIds.value, selectedIds.value))
 const someSelected = computed(() => someChosen(selectableIds.value, selectedIds.value))
+function toggleBox(row: Row) {
+  const id = idOf(row)
+  if (props.disabled || props.disabledIds.includes(id)) return
+  emit('update:selected', toggleOneSelection(id, selectedIds.value))
+}
 function toggleAll() {
   if (props.disabled) return
   emit('update:selected', toggleAllSelection(selectableIds.value, selectedIds.value))
@@ -495,13 +514,14 @@ function colStyle(c: SelectionColumn) {
     </thead>
     <tbody>
       <template v-for="row in sortedRows" :key="idOf(row)">
-      <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isPicked(row) }, rowClass?.(row)]"
+      <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isOn(row) }, rowClass?.(row)]"
           v-tooltip.top="tipOf(row)"
           @click="pick(row)" @dblclick="onRowDblClick(row, $event)">
         <td v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input :type="selectionMode === 'multi' ? 'checkbox' : 'radio'"
                  :checked="isPicked(row)"
-                 :disabled="disabled || disabledIds.includes(idOf(row))" tabindex="-1">
+                 :disabled="disabled || disabledIds.includes(idOf(row))" tabindex="-1"
+                 @click="boxPicks && ($event.stopPropagation(), toggleBox(row))">
         </td>
         <td v-for="c in columns" :key="c.key"
             :class="{ 'sel-ellipsis': c.ellipsis, 'sel-sticky': c.sticky }" :style="stickyStyle(c.key)">
