@@ -110,6 +110,96 @@ end
     @test Cecelia.parse_detect_aggregates_params(Dict{String,Any}()).perTimepoint === true
 end
 
+# The pure steps of a named aggregate run (aggregate_runs.jl) — each on the smallest case that shows
+# its rule. Coordinates in µm, one row per cell.
+@testset "aggregate run steps: exclude, isolate, cap, link, preceded" begin
+    # exclusion is per frame: the reference cell in frame 1 does not exclude a frame-0 cell beside it
+    c = [0.0 0.0; 10.0 0.0]; f = [0.0, 0.0]
+    @test Cecelia._within_mask(c, f, [1.0 0.0], [0.0], 2.0) == [true, false]
+    @test Cecelia._within_mask(c, f, [1.0 0.0], [1.0], 2.0) == [false, false]
+    @test Cecelia._within_mask(c, f, [1.0 0.0], [0.0], 0.0) == [false, false]      # 0 µm = off
+    # isolated = no other cell within eps in ITS frame; a lone row in a frame is isolated
+    c = [0.0 0.0; 1.0 0.0; 20.0 0.0; 0.5 0.0]; f = [0.0, 0.0, 0.0, 1.0]
+    @test Cecelia._isolated_mask(c, f, 2.0) == [false, false, true, true]
+    # the size cap drops whole aggregates above it; 0 = no cap
+    @test Cecelia._cap_aggregates([1, 1, 1, 2, 2, 0], 2) == [0, 0, 0, 2, 2, 0]
+    @test Cecelia._cap_aggregates([1, 1, 1], 0) == [1, 1, 1]
+    # linking: nearest open track within the step, across a gap ≤ max_gap; one event per track per frame
+    fr = [0.0, 1.0, 3.0, 9.0]; cc = [0.0 0.0; 1.0 0.0; 2.0 0.0; 2.0 0.0]
+    ev = Cecelia._link_events(fr, cc, 2, 1.5)
+    @test ev[1] == ev[2] == ev[3] && ev[4] != ev[1]                                  # 3→9 is past the gap
+    two = Cecelia._link_events([0.0, 1.0, 1.0], [0.0 0.0; 0.2 0.0; 0.4 0.0], 1, 1.0)
+    @test two[2] == two[1] && two[3] != two[1]                                       # never two per frame
+    # preceded: share of the look-back frames with a reference point near where the event began
+    ref = Cecelia._points_by_frame([0.0 0.0; 0.0 0.0; 50.0 0.0], [2.0, 3.0, 4.0])
+    @test Cecelia._preceded_fraction(5.0, [0.0, 0.0], ref, 4, 1.0, 0.0) ≈ 0.5      # frames 1–4: 2 and 3 hit
+    @test isnan(Cecelia._preceded_fraction(0.0, [0.0, 0.0], ref, 4, 1.0, 0.0))      # nothing before frame 0
+    # events: an aggregate links as ONE event at its members' mean; isolated cells link on their own
+    ids = [1, 1, 0, 2, 2, 0]; iso = [false, false, true, false, false, true]
+    cs  = [0.0 0.0; 1.0 0.0; 30.0 0.0; 0.2 0.0; 1.2 0.0; 30.5 0.0]; fs = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    e = Cecelia._aggregate_events(ids, iso, cs, fs, 1, 2.0)
+    @test e[1] == e[2] == e[4] == e[5] && e[3] == e[6] && e[3] != e[1]
+    @test Cecelia._event_frames(e, fs) == fill(2.0, 6)
+    @test Cecelia._event_frames([0, 1], [0.0, 0.0])[1] |> isnan
+    # names: the `#<name>` run separator; "" = the unnamed legacy columns; the run's own pops and QC key
+    @test Cecelia.aggregate_col("flow", "is.aggregate", "single") == "flow.cell.is.aggregate#single"
+    @test Cecelia.aggregate_col("flow", "is.aggregate", "") == "flow.cell.is.aggregate"
+    @test Cecelia.aggregate_pop_names("single") == ("_aggregated_single", "_isolated_single")
+    @test Cecelia.pop_category("flow", "/frag/_isolated_single") == "aggregated"
+    @test Cecelia.aggregate_run_name(Dict{String,Any}()) == "default"
+    # the name is what a run's params are banked and restored under (TaskRunner `onParamCommit`)
+    @test Cecelia.task_params_name("spatialAnalysis.detectAggregates", Dict{String,Any}("aggregateName" => "single")) == "single"
+    @test Cecelia.task_params_name("spatialAnalysis.aggregatesMeshes", Dict{String,Any}("aggregateName" => "clumps")) == "clumps"
+    # the run's flags and event measures plot as quantities, its ids stay out of the measure picker
+    @test !Cecelia._is_categorical_col([0, 1, 1], "flow.cell.is.isolated#single")
+    @test !Cecelia._is_categorical_col([2, 5, 5], "flow.cell.aggregate.frames#single")
+end
+
+# Two named runs on one segmentation sit side by side; a re-run under a name replaces only that name,
+# including the event columns an earlier run of it wrote and this one does not.
+@testset "detectAggregates named runs coexist (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "detectAggregates named runs (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        m = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
+        save_pop_map!(m, img)
+        run(ps) = Cecelia._run_task(DetectAggregates(), img, Dict{String,Any}(ps...); on_log = _ -> nothing)
+        obs() = col_names(label_props(img; value_name="B"); data_type = :obs)
+        @test run(["pops" => ["B/all"], "aggregateName" => "clumps", "clustDiameter" => 30.0, "minCells" => 3]) !== nothing
+        @test run(["pops" => ["B/all"], "aggregateName" => "single", "clustDiameter" => 10.0, "minCells" => 3,
+                   "linkEvents" => true, "precededPops" => ["B/all"]]) !== nothing
+        @test all(c -> c in obs(), ["flow.cell.is.aggregate#clumps", "flow.cell.is.isolated#clumps",
+                                    "flow.cell.is.aggregate#single", "flow.cell.aggregate.event_id#single",
+                                    "flow.cell.aggregate.frames#single", "flow.cell.aggregate.preceded#single"])
+        @test !("flow.cell.aggregate.event_id#clumps" in obs())                    # linking was off
+        d = label_props(img; value_name="B") |>
+            select_cols(["flow.cell.is.isolated#single", "flow.cell.aggregate.event_id#single",
+                         "flow.cell.aggregate.frames#single", "flow.cell.is.aggregate#single"]) |> as_df
+        iso = coalesce.(d[!, "flow.cell.is.isolated#single"], 0.0) .> 0
+        @test any(iso)
+        @test all(coalesce.(d[iso, "flow.cell.aggregate.event_id#single"], 0.0) .> 0)  # every isolated cell is an event
+        @test !any(iso .& (coalesce.(d[!, "flow.cell.is.aggregate#single"], 0.0) .> 0)) # never both
+        @test all(≥(1), skipmissing(filter(!isnan, d[iso, "flow.cell.aggregate.frames#single"])))
+        # both runs' populations exist under the input pop
+        pm = load_pop_map(img; value_name="B", pop_type="flow")
+        @test all(p -> p in pop_paths(pm), ["/all/_aggregated_clumps", "/all/_isolated_single"])
+        # re-run "single" without linking: its event columns go, "clumps" is untouched
+        before = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id#clumps"]) |> as_df
+        @test run(["pops" => ["B/all"], "aggregateName" => "single", "clustDiameter" => 10.0, "minCells" => 3]) !== nothing
+        @test !any(c -> startswith(c, "flow.cell.aggregate.") && endswith(c, "#single") &&
+                        !endswith(c, "aggregate.id#single"), obs())
+        after = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id#clumps"]) |> as_df
+        @test isequal(before, after)
+        rm(td; recursive=true)
+    end
+end
+
 # End to end on a real tracked timecourse with DEFAULT params: every aggregate lies within one frame.
 @testset "detectAggregates aggregates within a frame (KDIeEm)" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
@@ -127,9 +217,10 @@ end
                                 Dict{String,Any}("pops" => ["B/all"], "clustDiameter" => 30.0, "minCells" => 3);
                                 on_log = _ -> nothing)
         @test res !== nothing
-        out = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id", "centroid_t"]) |> as_df
+        # an unnamed run is the `default` run
+        out = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id#default", "centroid_t"]) |> as_df
         frames_of = Dict{Float64,Set{Float64}}()
-        for (a, t) in zip(out[!, "flow.cell.aggregate.id"], out.centroid_t)
+        for (a, t) in zip(out[!, "flow.cell.aggregate.id#default"], out.centroid_t)
             (ismissing(a) || a <= 0) && continue
             push!(get!(frames_of, a, Set{Float64}()), t)
         end

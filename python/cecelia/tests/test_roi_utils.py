@@ -105,6 +105,22 @@ class TestRois(unittest.TestCase):
         self.assertAlmostEqual(rois[0]["score"], 15 - exp[0])
         self.assertEqual(roi_utils.build_rois(groups, xyz, t, w, shape, expected={0: 99, 1: 99}), [])
 
+    def test_group_by_an_id_makes_one_roi_per_id_over_its_frames(self):
+        # an id the population already carries (an aggregate event) IS the group: one ROI spanning
+        # every frame the id lasts — not cut at the 12-frame window — and nothing found by density
+        t = np.array([0, 5, 11, 12, 20, 30, 3, 4, 7])
+        xyz = np.array([[10, 10, 1]] * 6 + [[50, 50, 1]] * 2 + [[80, 80, 1]], dtype=float)
+        ids = np.array([1, 1, 1, 1, 1, 1, 2, 2, np.nan])
+        shape = {"t": 40, "z": 3, "y": 100, "x": 100}
+        rois, groups = roi_utils.find_rois(xyz, xyz, t, shape, min_objects=2, group_ids=ids)
+        self.assertEqual(len(rois), 2)
+        top = rois[0]
+        self.assertEqual((top["nObjects"], top["nFrames"]), (6, 6))
+        self.assertEqual((top["t0"], top["t1"]), (0, 31))                # spans past one window
+        self.assertEqual(groups[-1], -1)                                  # no id → in no group
+        # a group below the minimum is dropped; ids ≤ 0 mean "no event"
+        self.assertEqual(list(roi_utils.given_groups([1, 1, 2, 0, -1], 2)), [0, 0, -1, -1, -1])
+
     def test_overlapping_boxes_share_the_best_rank_as_site(self):
         b = lambda x0: {"x0": x0, "x1": x0 + 9, "y0": 0, "y1": 9, "z0": 0, "z1": 4}
         rois = [{"rank": 1, "box": b(0)}, {"rank": 2, "box": b(50)}, {"rank": 3, "box": b(1)},

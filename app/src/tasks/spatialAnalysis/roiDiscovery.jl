@@ -5,6 +5,8 @@
 # containment columns) — so the task needs no cue of its own. It pools the population's objects over
 # fixed 12-frame windows, finds groups in each (HDBSCAN: no radius) and ranks them by summed object
 # weight (1 each, or the mean percentile of the measures picked to rank by): `rois/{suffix}.json`.
+# `Group by` takes the groups from an id column instead — an aggregate EVENT (detectAggregates with
+# linking) or a track — so each event is one ROI over the frames it lasts.
 # No tracking, no pixels.
 #
 # Division of labour: Julia resolves the population to a label list (`pop_df_multi`, so membership
@@ -20,6 +22,7 @@ const ROI_LABEL_MAX_CHARS = 40
 Base.@kwdef struct RoiDiscoveryParams
     pops::Vector{String}   = String[]
     rankBy::Vector{String} = String[]
+    groupBy::String        = ""            # an id column whose values ARE the groups (one ROI each)
     minObjects::Int        = 20
     maxRois::Int           = 50
     reviewLabels::String   = ROI_LABELS_DEFAULT
@@ -30,6 +33,8 @@ function parse_roi_discovery_params(d::AbstractDict)::RoiDiscoveryParams
     RoiDiscoveryParams(;
         pops         = _str_list(d, "pops"),
         rankBy       = _str_list(d, "rankBy"),
+        # one column, picked in a multi-select like motif discovery's HMM state — the first counts
+        groupBy      = (g = _str_list(d, "groupBy"); isempty(g) ? "" : first(g)),
         minObjects   = Int(get(d, "minObjects", 20)),
         maxRois      = Int(get(d, "maxRois", 50)),
         reviewLabels = string(something(get(d, "reviewLabels", ROI_LABELS_DEFAULT), "")),
@@ -80,13 +85,14 @@ function _run_task(::RoiDiscovery, img::CciaImage, params::Dict{String,Any};
     rois_path = img_rois_path(img, p.roisSuffix)
     mkpath(dirname(rois_path))
     qc_out_path = joinpath(task_run_dir(img._dir), "roi_discovery_qc.json")
-    on_log("[INFO] roiDiscovery: $(length(labels)) objects in $(join(p.pops, ", ")), groups of ≥$(p.minObjects) per window" *
+    on_log("[INFO] roiDiscovery: $(length(labels)) objects in $(join(p.pops, ", ")), groups of ≥$(p.minObjects) " *
+           (isempty(p.groupBy) ? "per window" : "by $(p.groupBy)") *
            (isempty(p.rankBy) ? "" : ", ranked by $(join(p.rankBy, ", "))") * " → rois/$(p.roisSuffix).json")
 
     task_params = Dict{String,Any}(
         "propsPath" => img_label_props_path(img, vn), "labelsPath" => img_labels_path(img, vn),
         "imPath" => something(img_filepath(img), ""), "roisPath" => rois_path, "qcOutPath" => qc_out_path,
-        "suffix" => p.roisSuffix, "valueName" => vn, "labels" => labels, "rankBy" => p.rankBy,
+        "suffix" => p.roisSuffix, "valueName" => vn, "labels" => labels, "rankBy" => p.rankBy, "groupBy" => p.groupBy,
         "minObjects" => p.minObjects, "maxRois" => p.maxRois,
         "reviewLabels" => roi_review_labels(p.reviewLabels),
         # the user's params, verbatim, so the ROI set records how it was made (reproducible)

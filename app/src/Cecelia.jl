@@ -405,6 +405,7 @@ include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
 include("tasks/spatialAnalysis/spatialPattern.jl")
 include("tasks/spatialAnalysis/roiDiscovery.jl")
+include("tasks/spatialAnalysis/aggregate_runs.jl")
 include("tasks/spatialAnalysis/detectAggregates.jl")
 include("tasks/spatialAnalysis/contact_targets.jl")   # target grouping shared by both contact routes
 include("tasks/spatialAnalysis/cellContacts.jl")

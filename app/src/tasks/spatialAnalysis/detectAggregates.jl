@@ -7,8 +7,11 @@
 # Julia-native: the legacy used the R `dbscan` package; here it's a from-scratch port onto Clustering.jl
 # (`dbscan`). Membership AND µm centroids come from ONE `pop_df(…; centroids = :physical)` call, and
 # DBSCAN on centroids is a simple density op — so this needs no Python round-trip (the celltrackR
-# track-measures precedent). Writes `<popType>.cell.is.aggregate` (0/1) + `<popType>.cell.aggregate.id`
-# back via the sanctioned label-props writer.
+# track-measures precedent). Writes a NAMED run (`aggregateName`) back via the sanctioned label-props
+# writer — `<popType>.cell.is.aggregate#<name>`, `.aggregate.id#<name>`, `.is.isolated#<name>`, and with
+# linking on the event columns (`aggregate_runs.jl`, where the naming and the pure steps live). Several
+# named runs sit side by side, so one segmentation can hold different scenarios (single debris cells,
+# loose fragment clumps) and each run's settings come back with its name.
 #
 # Per timepoint on a timecourse BY DEFAULT: pooled x/y/z would cluster a cell with where its neighbours
 # were (or it itself was) in other frames, so a slow track alone reads as an "aggregate". Pooling all
@@ -20,18 +23,38 @@ using Clustering: dbscan
 struct DetectAggregates <: CciaTask end
 
 Base.@kwdef struct DetectAggregatesParams
-    pops::Vector{String}     = String[]
-    clustDiameter::Float64   = 15.0
-    minCells::Int            = 5
-    perTimepoint::Bool       = true
+    pops::Vector{String}          = String[]
+    aggregateName::String         = AGGREGATE_DEFAULT_NAME
+    clustDiameter::Float64        = 15.0
+    minCells::Int                 = 5
+    maxCells::Int                 = 0          # 0 = no cap
+    excludePops::Vector{String}   = String[]
+    excludeDistance::Float64      = 5.0
+    perTimepoint::Bool            = true
+    linkEvents::Bool              = false      # link aggregates + isolated cells across frames
+    linkFrames::Int               = 3
+    linkDistance::Float64         = 5.0
+    precededPops::Vector{String}  = String[]
+    precededFrames::Int           = 12
+    precededDistance::Float64     = 8.0
 end
 
 function parse_detect_aggregates_params(d::AbstractDict)::DetectAggregatesParams
     DetectAggregatesParams(;
-        pops          = _str_list(d, "pops"),
-        clustDiameter = Float64(get(d, "clustDiameter", 15.0)),
-        minCells      = Int(get(d, "minCells", 5)),
-        perTimepoint  = Bool(get(d, "perTimepoint", true)))
+        pops             = _str_list(d, "pops"),
+        aggregateName    = aggregate_run_name(d),
+        clustDiameter    = Float64(get(d, "clustDiameter", 15.0)),
+        minCells         = Int(get(d, "minCells", 5)),
+        maxCells         = Int(get(d, "maxCells", 0)),
+        excludePops      = _str_list(d, "excludePops"),
+        excludeDistance  = Float64(get(d, "excludeDistance", 5.0)),
+        perTimepoint     = Bool(get(d, "perTimepoint", true)),
+        linkEvents       = Bool(get(d, "linkEvents", false)),
+        linkFrames       = Int(get(d, "linkFrames", 3)),
+        linkDistance     = Float64(get(d, "linkDistance", 5.0)),
+        precededPops     = _str_list(d, "precededPops"),
+        precededFrames   = Int(get(d, "precededFrames", 12)),
+        precededDistance = Float64(get(d, "precededDistance", 8.0)))
 end
 
 # DBSCAN cluster ids for one coord block (rows = points, cols = spatial dims); 0 = noise, 1..k = cluster.
@@ -73,49 +96,78 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
     # segmentation derived from the populations (value_name-prefixed picks) — no dropdown (legacy parity)
     value_name = pops_value_name(p.pops)
     # pops may mix types (flow gates, clusters, regions, tracked cells) — resolve across types and
-    # namespace output by cell kind (tracked → live.cell.*, else flow.cell.*). Was hardcoded to "flow".
+    # namespace output by cell kind (tracked → live.cell.*, else flow.cell.*)
     pop_type   = pop_namespace(img, p.pops; value_name = value_name)
     on_progress(1, 3)
 
-    # member cells of the population WITH their µm coordinates, in ONE read: `pop_df` is the accessor
-    # for population data (docs/POPULATION.md), and `centroids = :physical` pushes the coordinate columns
-    # into that same read and converts them via the shared `scale_centroids!`.
+    # member cells WITH their µm coordinates in ONE read (`pop_df` is the population accessor,
+    # docs/POPULATION.md); the exclude / preceded populations are read the same way
     cdf = pop_df_multi(img, p.pops; value_name = value_name, granularity = :cell,
                        restrict_to = value_name, centroids = :physical)
     nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(p.pops)"); return nothing)
-
-    props = img_label_props_path(img, value_name)
-    lp    = label_props(props)
-    scols = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only
-    tcols = temporal_columns(lp)
-    coords = hcat((Float64.(cdf[!, c]) for c in scols)...)
+    # µm point cloud + frames — the contacts' assembly (`_centroid_matrix`); pooling drops the frames
+    pts(df) = (m = _centroid_matrix(img, value_name, df); (m[1], p.perTimepoint ? m[3] : nothing))
+    coords, frames = pts(cdf)
+    ref(pops) = pts(pop_df_multi(img, pops; value_name = value_name, granularity = :cell,
+                                 restrict_to = value_name, centroids = :physical))
     on_progress(2, 3)
 
-    frames = (p.perTimepoint && !isempty(tcols) && tcols[1] in names(cdf)) ? cdf[!, tcols[1]] : nothing
-    ids = _aggregate_ids_by_frame(coords, frames, p.clustDiameter, p.minCells)
+    # a cell beside an excluded population (an intact cell) is left out of every group, and is never isolated
+    excluded = isempty(p.excludePops) ? falses(nrow(cdf)) :
+               _within_mask(coords, frames, ref(p.excludePops)..., p.excludeDistance)
+    keep = findall(.!excluded)
+    ids  = zeros(Int, nrow(cdf))
+    ids[keep] = _aggregate_ids_by_frame(coords[keep, :], frames === nothing ? nothing : frames[keep],
+                                        p.clustDiameter, p.minCells)
+    ids = _cap_aggregates(ids, p.maxCells)
+    # isolated = no other selected cell within the neighbourhood (excluded cells still count as company)
+    isolated = _isolated_mask(coords, frames, p.clustDiameter) .& .!excluded
 
-    is_agg = Float64.(ids .> 0)
+    name = p.aggregateName
     out = DataFrame("label" => cdf.label,
-                    "$(pop_type).cell.is.aggregate" => is_agg,
-                    "$(pop_type).cell.aggregate.id" => Float64.(ids))
-    label_props(props) |> add_obs(out) |> save!
+                    aggregate_col(pop_type, "is.aggregate", name) => Float64.(ids .> 0),
+                    aggregate_col(pop_type, "aggregate.id", name) => Float64.(ids),
+                    aggregate_col(pop_type, "is.isolated", name) => Float64.(isolated))
+    linked = frames !== nothing && p.linkEvents
+    if linked
+        ev = _aggregate_events(ids, isolated, coords, frames, p.linkFrames, p.linkDistance)
+        out[!, aggregate_col(pop_type, "aggregate.event_id", name)] = Float64.(ev)
+        out[!, aggregate_col(pop_type, "aggregate.frames", name)]   = _event_frames(ev, frames)
+        isempty(p.precededPops) || (out[!, aggregate_col(pop_type, "aggregate.preceded", name)] =
+            _event_preceded(ev, coords, frames, _points_by_frame(ref(p.precededPops)...),
+                            p.precededFrames, p.precededDistance; first_frame = 0))
+    end
+    # a re-run under this name replaces it whole: drop the columns this run does not write (a previous
+    # run's event columns), never another name's — and a `default` run supersedes the unnamed one
+    props_path = img_label_props_path(img, value_name)
+    legacy = legacy_aggregate_cols(col_names(label_props(props_path); data_type = :obs), pop_type, name)
+    stale  = vcat(setdiff(aggregate_run_cols(pop_type, name), names(out)), legacy)
+    label_props(props_path) |> drop_obs(stale) |> add_obs(out) |> save!
+    isempty(legacy) || on_log("[INFO] detectAggregates: replaced the unnamed aggregate run — its " *
+                              "`$(AGGREGATED_POP_NAME)` populations are now `$(first(aggregate_pop_names(name)))`")
 
-    # Auto-create the reusable "aggregated" population (Decision 14): a filter pop under each input pop
-    # selecting the aggregated cells (`<popType>.cell.is.aggregate > 0`), resolved lazily by pop_df — so
-    # the aggregate flows into any downstream popSelection like a normal pop, no hand-drawn gate needed.
-    agg_paths = ensure_filter_pop!(img, pop_type, value_name, p.pops, AGGREGATED_POP_NAME;
-                                   filter_measure = "$(pop_type).cell.is.aggregate",
+    # the reusable populations (Decision 14): aggregated and isolated cells under each input pop,
+    # resolved lazily by pop_df — so either flows into any downstream popSelection, no hand-drawn gate
+    agg_pop, iso_pop = aggregate_pop_names(name)
+    agg_paths = ensure_filter_pop!(img, pop_type, value_name, p.pops, agg_pop;
+                                   filter_measure = aggregate_col(pop_type, "is.aggregate", name),
                                    filter_fun = "gt", filter_values = 0)
+    ensure_filter_pop!(img, pop_type, value_name, p.pops, iso_pop;
+                       filter_measure = aggregate_col(pop_type, "is.isolated", name),
+                       filter_fun = "gt", filter_values = 0)
 
     n_agg = length(unique(ids[ids .> 0]))
-    frac  = sum(is_agg) / nrow(cdf)
-    write_qc(img, "spatialAnalysis.detectAggregates", value_name,
+    frac  = count(>(0), ids) / nrow(cdf)
+    write_qc(img, "spatialAnalysis.detectAggregates", aggregate_qc_key(value_name, name),
              _aggregate_qc_findings(nrow(cdf), frac);
              metrics = Dict{String,Any}("nCells" => nrow(cdf), "nAggregates" => n_agg,
-                                        "fracAggregated" => frac))
-    on_log("[INFO] detectAggregates: $(n_agg) aggregate(s), $(round(Int, frac*100))% of cells aggregated.")
-    isempty(agg_paths) || on_log("[INFO] detectAggregates: aggregated population → $(join(agg_paths, ", "))")
+                                        "fracAggregated" => frac, "nIsolated" => count(isolated),
+                                        "nExcluded" => count(excluded)))
+    on_log("[INFO] detectAggregates '$name': $(n_agg) aggregate(s), $(round(Int, frac*100))% of cells aggregated, " *
+           "$(count(isolated)) isolated, $(count(excluded)) excluded.")
+    isempty(agg_paths) || on_log("[INFO] detectAggregates: populations → $(join(agg_paths, ", ")) (+ $iso_pop)")
     on_progress(3, 3)
 
-    Dict{String,Any}("valueName" => value_name, "nAggregates" => n_agg, "fracAggregated" => frac)
+    Dict{String,Any}("valueName" => value_name, "aggregateName" => name,
+                     "nAggregates" => n_agg, "fracAggregated" => frac)
 end

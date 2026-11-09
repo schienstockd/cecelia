@@ -164,7 +164,8 @@ groups on tags the backend sends, with no second derivation (mirrors how `pop_ty
 """
 function pop_category(pop_type::PopTypeArg, path::AbstractString)::String
     leaf = String(last(split(String(path), '/')))
-    leaf == AGGREGATED_POP_NAME && return "aggregated"
+    # `_aggregated` / `_aggregated_<name>` / `_isolated_<name>` — a (named) aggregate run's pops
+    (startswith(leaf, AGGREGATED_POP_NAME) || startswith(leaf, ISOLATED_POP_PREFIX)) && return "aggregated"
     haskey(_DERIVED_POPS, leaf) && return "tracked"        # e.g. _tracked
     # the registry's category: region → "region", clust/trackclust → "clustered", the rest "gated" —
     # branch pops (filters on the branch table, typically `branch-type`) included; granularity
@@ -200,7 +201,11 @@ function ensure_filter_pop!(img::CciaImage, pop_type::PopTypeArg, value_name::Ab
         m = load_pop_map(img; value_name = value_name, pop_type = pop_type)
         created = String[]
         for parent in parents
-            par = is_root(parent) ? ROOT : String(parent)
+            # a task passes its popSelection values, which are segmentation-prefixed (`"T/qc"`); the
+            # map's paths are not. A ref from another segmentation has no parent in this map.
+            vn, path = _split_pop_ref(parent, value_name)
+            vn == value_name || continue
+            par = is_root(path) ? ROOT : path
             (par == ROOT || has_pop(m, par)) || continue         # skip parents not in this map
             path = pop_path(par, name)
             has_pop(m, path) && del_pop!(m, path)                # idempotent redefine

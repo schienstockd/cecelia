@@ -20,12 +20,14 @@ _finite_vals(x) = Float64[Float64(v) for v in x if v isa Real && isfinite(v)]
 const _MAX_CATEGORICAL_LEVELS = 20
 
 # Spatial-analysis obs columns that are quantities, not code sets — see the name-rule in
-# `_is_categorical_col`. `contact#`/`is.aggregate` are 0/1 flags whose MEAN is the fraction in
-# contact / aggregated; `contained_by#` is a 0–1 enclosure share (its mean is the average
+# `_is_categorical_col`. `contact#`/`is.aggregate`/`is.isolated` are 0/1 flags whose MEAN is the
+# fraction in contact / aggregated / alone (a named aggregate run suffixes them `#<name>`);
+# `aggregate.frames#` is how many frames an event lasts and `aggregate.preceded#` a 0–1 share;
+# `contained_by#` is a 0–1 enclosure share (its mean is the average
 # enclosure); `contains_n#` is a count of held cells; `min_distance#` is µm; `spatial.comp.*` is a
 # neighbourhood fraction.
 const _SPATIAL_NUMERIC_MEASURE =
-    r"(\.cell\.min_distance#|\.cell\.contact#|\.cell\.contained_by#|\.cell\.contains_n#|\.cell\.is\.aggregate$|^spatial\.comp\.)"
+    r"(\.cell\.min_distance#|\.cell\.contact#|\.cell\.contained_by#|\.cell\.contains_n#|\.cell\.is\.(aggregate|isolated)(#|$)|\.cell\.aggregate\.(frames|preceded)#|^spatial\.comp\.)"
 
 # Detect categorical vs numeric automatically from the decoded column — no config map (the old R
 # version used `config.yml` `parameters.labelStats`). Three cases, matching the real data:

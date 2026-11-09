@@ -120,6 +120,7 @@ include(joinpath(@__DIR__, "suite", "qc_af.jl"))
 # scope, so any helpers defined earlier in suite.jl are still in scope for the extracted
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "spatial_neighbours.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_preceded.jl"))
 
 # ── ROI discovery + reviews (docs/todo/ROI_TRIAGE_PLAN.md) ─────────────
 include(joinpath(@__DIR__, "suite", "rois.jl"))

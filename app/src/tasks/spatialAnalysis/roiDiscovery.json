@@ -58,6 +58,7 @@
       "default": [],
       "tip": "Optional: measures that make an object count more; none = count objects"
     },
+
     {
       "key": "minObjects",
       "label": "Min objects",
@@ -66,7 +67,7 @@
       "max": 200,
       "step": 1,
       "default": 20,
-      "tip": "Fewest objects, pooled over 12 frames, that make an ROI"
+      "tip": "Fewest objects that make an ROI, over 12 frames or one id"
     },
     {
       "key": "maxRois",
@@ -86,6 +87,23 @@
       "max": 12,
       "default": "of interest, artefact, unsure",
       "tip": "The answers you select per ROI, e.g. ingested, contact only, artefact"
+    },
+    {
+      "key": "grouping",
+      "label": "Grouping",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "groupBy",
+          "label": "Group by",
+          "type": "labelPropsColsSelection",
+          "multiple": true,
+          "allObs": true,
+          "default": [],
+          "tip": "Optional: one id column; each id is one ROI, e.g. an aggregate event"
+        }
+      ]
     }
   ]
 }

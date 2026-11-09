@@ -126,8 +126,9 @@ def background_expected(group_ids, xyz, t, weight, voxel_um, window=None):
 
 
 def build_rois(cluster_ids, px, t, weight, shape, objects=None, max_rois=50, pad_frac=0.2,
-               expected=None):
-    """One ROI dict per group, ranked by score = summed weight − `expected[group]` (0 when absent).
+               expected=None, score_by="sum"):
+    """One ROI dict per group, ranked by score = summed weight − `expected[group]` (0 when absent), or
+    with `score_by="mean"` its mean weight (given groups ranked by a measure — `find_rois`).
 
     Groups scoring ≤ 0 (no denser than the background) are dropped. px: (n, 3) pixel centroids in
     (x, y, z) order. shape: dict with t/z/y/x extents (the STORE's shape — never ccid meta, which can
@@ -143,7 +144,7 @@ def build_rois(cluster_ids, px, t, weight, shape, objects=None, max_rois=50, pad
     for cid in sorted(set(int(c) for c in cluster_ids if c >= 0)):
         idx = np.flatnonzero(np.asarray(cluster_ids) == cid)
         exp = float(expected.get(cid, 0.0))
-        score = float(weight[idx].sum()) - exp
+        score = float(weight[idx].mean()) if score_by == "mean" else float(weight[idx].sum()) - exp
         if score <= 0:
             continue
         lo, hi = px[idx].min(axis=0), px[idx].max(axis=0)
@@ -214,13 +215,40 @@ def assign_sites(rois, min_iou=0.3):
     return rois
 
 
+def given_groups(ids, min_objects):
+    """Group id per object from an id the population already carries (`Group by`, e.g. an aggregate
+    event or a track): objects sharing an id are one group, whatever frames it spans. A missing or
+    non-positive id is in no group (-1), and a group of fewer than `min_objects` objects is dropped."""
+    ids = np.asarray(ids, dtype=float)
+    out = np.full(len(ids), -1, dtype=int)
+    ok = np.isfinite(ids) & (ids > 0)
+    if not ok.any():
+        return out
+    vals, inv, counts = np.unique(ids[ok], return_inverse=True, return_counts=True)
+    keep = counts >= max(1, int(min_objects))
+    out[np.flatnonzero(ok)] = np.where(keep[inv], inv, -1)
+    return out
+
+
 def find_rois(xyz_um, px, t, shape, min_objects, voxel_um=(1.0, 1.0, 1.0), weight=None, objects=None,
-              max_rois=50, window=None):
+              max_rois=50, window=None, group_ids=None):
     """The whole pipeline: groups per pooled window → ROIs ranked by excess over the background →
     sites. `voxel_um` is (x, y, z) µm per pixel, the floor of a box's thickness. Returns
-    `(rois, group_ids)`."""
+    `(rois, group_ids)`.
+
+    With `group_ids` (one id per object — `Group by`) the groups are GIVEN, not found: each id is one
+    ROI over the frames it spans, ranked by its summed weight. No window and no background, because a
+    given group is not a pile-up to be told from a passing crowd — it is already one event."""
     n = len(np.asarray(t))
     weight = np.ones(n) if weight is None else np.asarray(weight, dtype=float)
+    if group_ids is not None:
+        groups = given_groups(group_ids, min_objects)
+        # Ranked by a measure, a given group scores its MEAN weight: summed, a bigger event outranks a
+        # smaller one whatever its measure (percentile weights are never 0), so "rank by preceded" would
+        # rank by size. With no measure every weight is 1 and the sum is the object count, as before.
+        by = "sum" if np.allclose(weight, 1.0) else "mean"
+        return build_rois(groups, px, t, weight, shape, objects=objects, max_rois=max_rois,
+                          score_by=by), groups
     groups = window_groups(xyz_um, t, min_objects, window)
     expected = background_expected(groups, xyz_um, t, weight, voxel_um, window)
     return build_rois(groups, px, t, weight, shape, objects=objects, max_rois=max_rois,

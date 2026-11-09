@@ -3,7 +3,8 @@ spatialAnalysis.roiDiscovery (image-scope) — Python runner.
 
 Where do the objects of one population gather (docs/todo/ROI_TRIAGE_PLAN.md)? The question is in
 the population — segmentation + gating, filter populations on any measure — so this only finds the
-places: groups in each time window's pooled positions (HDBSCAN), ranked by how many more objects
+places: groups in each time window's pooled positions (HDBSCAN) — or, with `groupBy`, the groups an
+id column already defines (an aggregate event, a track) — ranked by how many more objects
 (or how much more rank-measure weight) they hold than the window's average density would put there
 (`roi_utils.find_rois`). Optional rank measures weight each object
 by their mean percentile; without them every object counts 1.
@@ -48,6 +49,7 @@ def run(params):
     rank_by = [str(c) for c in script_utils.get_param(params, "rankBy", default=[]) or []]
     min_objects = int(script_utils.get_param(params, "minObjects", default=20))
     max_rois = int(script_utils.get_param(params, "maxRois", default=50))
+    group_by = str(script_utils.get_param(params, "groupBy", default="") or "")
 
     if not members:
         log.log("[ERROR] roiDiscovery: no objects")
@@ -62,13 +64,14 @@ def run(params):
     sz, sy, sx = _spatial_scale(labels_path, axes)
 
     view = LabelPropsView(params["propsPath"]).view_centroid_cols().filter_by_label(members)
-    if rank_by:
-        view = view.view_cols(rank_by)
+    extra = rank_by + ([group_by] if group_by and group_by not in rank_by else [])
+    if extra:
+        view = view.view_cols(extra)
     df = view.as_df()
     for col in ("centroid_t", "centroid_z"):
         if col not in df.columns:
             df[col] = 0.0
-    missing = [c for c in rank_by if c not in df.columns]
+    missing = [c for c in extra if c not in df.columns]
     if missing:
         log.log(f"[ERROR] roiDiscovery: no such measure(s): {', '.join(missing)}")
         _dump(qc_path, {"nObjects": len(df), "nRois": 0})
@@ -80,7 +83,9 @@ def run(params):
     measures = [pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float) for c in rank_by]
     weight = roi_utils.object_weights(measures, len(df))
     log.log(f">> {len(df)} objects over {len(np.unique(t))} frames"
+            + (f"; grouped by {group_by}" if group_by else "")
             + (f"; ranked by {', '.join(rank_by)}" if rank_by else "; ranked by count"))
+    group_ids = pd.to_numeric(df[group_by], errors="coerce").to_numpy(dtype=float) if group_by else None
 
     labels = df["label"].to_numpy()
 
@@ -92,7 +97,8 @@ def run(params):
         return o
 
     rois, groups = roi_utils.find_rois(um, px, t, shape, min_objects, voxel_um=(sx, sy, sz), weight=weight,
-                                       objects=[_obj(i) for i in range(len(df))], max_rois=max_rois)
+                                       objects=[_obj(i) for i in range(len(df))], max_rois=max_rois,
+                                       group_ids=group_ids)
     print("[PROGRESS] 1/1", flush=True)
     write_json_atomic(rois_path, {
         "version": 2, "suffix": params.get("suffix", "default"), "valueName": params.get("valueName"),
@@ -100,6 +106,7 @@ def run(params):
         "params": params.get("taskParams", {}),
         "labels": list(params.get("reviewLabels", [])),
         "rankBy": rank_by,
+        "groupBy": group_by or None,
         "geometry": {"shape": {k: int(v) for k, v in shape.items()},
                      "umPerPx": {"x": sx, "y": sy, "z": sz},
                      "frameIntervalS": zarr_utils.read_time_increment(params["imPath"]) if params.get("imPath") else None},

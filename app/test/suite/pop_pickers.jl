@@ -308,6 +308,12 @@ end
     created2 = ensure_filter_pop!(img, "flow", "B", ["/nonexistent", "/"], AGGREGATED_POP_NAME;
                  filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
     @test created2 == ["/" * AGGREGATED_POP_NAME]
+
+    # what a task actually passes: its popSelection values, segmentation-prefixed ("B/qc", "B/" for
+    # all cells). A ref from another segmentation is skipped — it has no parent in B's map.
+    created3 = ensure_filter_pop!(img, "flow", "B", ["B/qc", "B/", "T/qc"], "_isolated_x";
+                 filter_measure="flow.cell.is.isolated#x", filter_fun="gt", filter_values=0)
+    @test created3 == ["/qc/_isolated_x", "/_isolated_x"]
     rm(td; recursive=true)
 end
 
