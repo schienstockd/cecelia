@@ -121,7 +121,7 @@ function copyAll() {
 .mini-btn:hover:not(:disabled) { color: var(--cc-text); }
 .mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.grp-head { display: flex; align-items: baseline; gap: 0.5rem; font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); margin: 0.85rem 0 0.4rem; position: sticky; top: 0; background: var(--cc-surface-1); padding: 0.2rem 0; }
+.grp-head { display: flex; align-items: baseline; gap: 0.5rem; font-size: var(--cc-fs-md); font-weight: 600; color: var(--cc-text); margin: 0.85rem 0 0.4rem; position: sticky; top: calc(-1 * var(--cc-scroll-pad-top)); background: var(--cc-surface-1); padding: 0.2rem 0; }
 .grp-head:first-child { margin-top: 0.2rem; }
 
 .grp-count { margin-left: auto; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); background: var(--cc-surface-2); border-radius: var(--cc-radius-pill); padding: 0.05rem 0.5rem; }

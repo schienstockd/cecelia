@@ -15,6 +15,9 @@
 :root {
   /* a slider's fill, 0–100% — written per element by `v-range-fill` (Sliders, below) */
   --cc-range-pct: 0%;
+  /* a padded scroll box's top padding, set on that box (BaseModal's body) so a sticky table header
+     inside it can lift over the padding strip — read by SelectionTable `stickyHeader` */
+  --cc-scroll-pad-top: 0px;
   /* backgrounds */
   --cc-bg:         #0f1117;
   --cc-surface-1:  #161b22;
