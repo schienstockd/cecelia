@@ -22,14 +22,17 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## What Cecelia does
 
-<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia structure. Pipeline: acquire, import, process (segment, track, correct), populations (gating, clusters), analyse (measures, plots, statistics), export. One scheduler runs every task, checks the params and logs the run. Underneath: the record of what was done, quality checks at each step plus claim checks (rules, no model), and chains that replay the steps on new images. On top: optional AI (Kiwi, Claude Code) that reads the same record." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia structure. Pipeline: acquire, import, process (segment, track), populations (gating), analyse (plots, statistics), export. Underneath, every task leaves a record: parameters, version, who and when, plus the raw file's fingerprint, what each run read and replaced, gate history, frozen board parameters and stamped PDF/SVG exports. Checks read the record: quality checks at each step, gating and statistics included, and claim checks; they warn, never block. Chains re-run the steps on new images or replay a past run exactly. On top: an optional AI assistant that reads the same record." width="100%"></p>
 
 Cecelia is a structured platform for image analysis: analysis you can hand off and check afterwards.
 Every step runs through one scheduler that checks its params and logs the run, so the **record** says
-what was done, by whom, with which version. **Checks** read that record: quality checks at each step,
-and claim checks that ask whether the images you compare were treated the same and the statistical
-unit is right. **Chains** replay the steps on new images. AI (Kiwi, Claude Code) is optional and reads
-the same record; everything works with it off. Where the structure still has gaps is tracked in
+what was done, by whom, with which version, what it read and what it replaced. Raw files are
+fingerprinted at import, gates keep their history, and exported figures carry their provenance.
+**Checks** read that record: quality checks at each step, gating and statistics included, and claim
+checks that ask whether the images you compare were treated the same and the statistical unit is
+right. Checks warn; they never block. **Chains** re-run the steps on new images, or replay a past run
+with its exact settings. AI (Kiwi, Claude Code) is optional and reads the same record; everything works
+with it off. How the structure was audited, and the decisions still open, are in
 [`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md).
 
 ---
