@@ -40,6 +40,8 @@ end
     @test occursin("do NOT repeat", p) && occursin("- Frames don't register (m1)", p)
     @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", p)
     @test occursin("Category one of: Movies and channels, Settings, Depth, Photons, Balance, Shared structure, Drift, Fading, Other", p)
+    # the closing interpretation is a verdict on the plan as written, weighing the rule findings too
+    @test occursin("\"Ready to acquire as planned.\" or \"Change before acquiring:", p) && occursin("the rule findings AND your points", p)
     @test occursin("The rule checks found nothing.", acq_review_prompt(plan, String[]))
     @test occursin("before the rest of the experiment is acquired", acq_review_system_prompt("pX")) &&
           occursin("`pX`", acq_review_system_prompt("pX"))
@@ -94,7 +96,7 @@ end
         ref = Dict("kind" => "image", "imageUid" => uid1)
         reply = Dict("abstain" => false, "claims" => [
             Dict("kind" => "observation", "text" => "Drift: m1 shifts 40 µm\nin X over the movie. → Stabilise the preparation.", "refs" => [ref]),
-            Dict("kind" => "interpretation", "text" => "Tracking B cells works on movies like m2.", "refs" => [ref])])
+            Dict("kind" => "interpretation", "text" => "Change before acquiring: B cells need more light.", "refs" => [ref])])
         fake = _AcqReviewFake([Cecelia.AgentResult(true, "", 10, 20, "s1", "", JSON3.read(JSON3.write(reply)),
                                                    ["""{"uid":"$uid1"}"""])], String[])
         _KIWI_AGENT[] = m -> fake
@@ -139,7 +141,7 @@ end
         @test sid == "s01" && a["reviewIds"]["review|" * x["text"]] == sid
         md = entry_md(proj.uid, id)
         @test occursin("### Drift\n\n### s01 · M1 shifts 40 µm in X over the movie. → Stabilise the preparation.", md)
-        @test occursin("## What these movies would support\n\nTracking B cells works on movies like m2.", md)
+        @test occursin("## Before acquiring the rest\n\nChange before acquiring: B cells need more light.", md)
         @test occursin("## Across the set", md)                          # the rule findings stay
         meta_e = _read_bb_meta(proj.uid, id)
         @test sid in meta_e["sectionIds"] && length(meta_e["kiwiRefs"]) == 1

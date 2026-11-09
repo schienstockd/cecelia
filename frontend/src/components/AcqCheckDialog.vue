@@ -177,7 +177,8 @@ const metaImage = computed(() => {
       <div v-if="reviewTurn" class="cc-muted cc-fs-xs">{{ reviewStep || 'starting' }}</div>
       <template v-if="result.review">
         <div class="cc-fs-xs review-points">
-          <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels" />
+          <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels"
+                             supports-label="Before acquiring the rest" />
         </div>
         <button v-if="result.review.items.length" class="cc-btn cc-btn-bare cc-fs-2xs mark-link" type="button"
                 v-tooltip.top="'Open on the Blackboard'" @click="openEntry">Mark each point Good / Bad / Unsure</button>

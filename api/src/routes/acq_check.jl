@@ -55,7 +55,7 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
     end
     _review_md!(io, get(a, "review", nothing); categories = Cecelia.ACQ_CATEGORIES, label = _acq_category_label,
                 intro = "read the plan, the movies' record and the acquisition knowledge.",
-                nothing_more = "Nothing beyond the checks.", supports_heading = "What these movies would support")
+                nothing_more = "Nothing beyond the checks.", supports_heading = "Before acquiring the rest")
     String(take!(io))
 end
 

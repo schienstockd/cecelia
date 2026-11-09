@@ -54,8 +54,8 @@ cells leaving.
 
 Reply ONLY through the structured output. Each claim is ONE point, with refs to the movies it concerns:
 `observation` for a problem you saw in a tool result, `question` for something the user must answer
-that the record can't. At most one `interpretation`, last: the plan as data acquired like this WOULD
-support it. If nothing would change, abstain and say in `note` what you checked.
+that the record can't. Then one `interpretation`, last: the verdict on the plan as the user wrote it.
+If nothing would change, abstain and say in `note` what you checked.
 """
 
 # The plan as the prompt states it: each object and reference with its channel per design.
@@ -99,7 +99,13 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
     Write each observation or question as `<Category>: <what is wrong, and where — name the movies and
     channels> → <what to change at the scope or in the plan>`, with Category one of: $(_acq_review_category_list()).
     Each side of the arrow is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon:
-    two problems are two claims. The `interpretation` is one such sentence too.
+    two problems are two claims.
+
+    End with the `interpretation`: the verdict on the plan above, weighing the rule findings AND your points.
+    Either "Ready to acquire as planned." or "Change before acquiring: <the one to three changes that matter
+    most for this plan, most important first>." Name the plan's objects and channels. Don't make the plan
+    depend on something the record lacks, and don't narrow the plan into a different one. One sentence of
+    at most $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
     """
 end
 

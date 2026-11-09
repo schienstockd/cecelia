@@ -1,16 +1,18 @@
 <script setup lang="ts">
 // A model review's points on a Blackboard entry (utils/modelReview.ts), grouped by category: each point
 // an InlineNote (a question is a question, an observation a warning), what to do after an arrow, its refs
-// as clickable chips; then a failed last run, "nothing beyond the checks", and what the record would
-// support. Used by the claim popover (ClaimStrip) and the acquisition check (AcqCheckDialog). Marking a
-// point Good / Bad / Unsure happens on the Blackboard.
+// as clickable chips; then a failed last run, "nothing beyond the checks", and the closing interpretation
+// (what the record would support, or the acquisition verdict). Used by the claim popover (ClaimStrip) and
+// the acquisition check (AcqCheckDialog). Marking a point Good / Bad / Unsure happens on the Blackboard.
 import { computed } from 'vue'
 import InlineNote from './InlineNote.vue'
 import KiwiRefChip from './kiwi/KiwiRefChip.vue'
 import { refKey } from '../utils/kiwiTurn'
 import { reviewGroups, type ModelReview } from '../utils/modelReview'
 
-const props = defineProps<{ review: ModelReview; categoryLabels: Record<string, string> }>()
+// supportsLabel heads the closing interpretation: what a claim's record would support, or an acquisition verdict.
+const props = withDefaults(defineProps<{ review: ModelReview; categoryLabels: Record<string, string>; supportsLabel?: string }>(),
+  { supportsLabel: 'Would support' })
 const groups = computed(() => reviewGroups(props.review, props.categoryLabels))
 </script>
 
@@ -31,7 +33,7 @@ const groups = computed(() => reviewGroups(props.review, props.categoryLabels))
   <InlineNote v-if="review.lastError" :short="`The last run failed: ${review.lastError}`" severity="fail" />
   <InlineNote v-if="review.status === 'done' && !review.items.length" icon="pi-minus-circle"
               :short="review.abstain && review.note ? `Nothing raised — ${review.note}` : 'Nothing beyond the checks'" />
-  <span v-if="review.supports" class="cc-muted mr-supports">Would support: {{ review.supports }}</span>
+  <span v-if="review.supports" class="cc-muted mr-supports">{{ supportsLabel }}: {{ review.supports }}</span>
 </template>
 
 <style scoped>
