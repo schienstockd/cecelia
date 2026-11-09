@@ -140,16 +140,13 @@ onMounted(async () => {
   // Tip of the day (WHATS_NEW_PLAN.md W4). Opens the What's New modal once per day with today's
   // tip on top. The `Don't show tips on launch` checkbox on any tip card sets tipsOnLaunch=false
   // permanently. We stamp the date BEFORE opening so a crash mid-open doesn't re-trigger.
-  const today = todayKey()
-  if (!popout && settings.tipsOnLaunch && settings.tipsLastShown !== today) {
-    // First-ever launch is now signalled by `tipsEverShown` (a machine-scoped localStorage flag,
-    // kept OUT of PROFILE_KEYS on purpose). `tipsLastShown` is per-profile — it drives the daily
-    // tip cadence — so a new profile inheriting an empty stamp would otherwise re-fire the
-    // orientation tour for every second person on a shared workstation. The tour is chrome-only;
-    // one run per install is the right shape (compass still opens it on demand).
-    firstEverTips = !settings.tipsEverShown
-    settings.tipsLastShown = today
-    openWhatsNew({ withTip: true })
+  // Decided only once the profile bag has hydrated: before that, `tipsOnLaunch`/`tipsLastShown` are
+  // the localStorage mirror, which is empty (→ default "show") on a new origin or after another
+  // profile used this browser — the opt-out lives in the profile's settings.toml.
+  // The flag only ever goes false → true, so `once` fires exactly on hydration.
+  if (!popout) {
+    if (settings.profileHydrated) maybeOpenLaunchTip()
+    else watch(() => settings.profileHydrated, maybeOpenLaunchTip, { once: true })
   }
 
   // Call-for-Datasets deep link: `?ask=<id>` opens the modal at that card. Handled here (not in
@@ -160,6 +157,20 @@ onMounted(async () => {
     if (ask) openCallForDatasets(ask)
   }
 })
+
+function maybeOpenLaunchTip() {
+  const today = todayKey()
+  if (settings.tipsOnLaunch && settings.tipsLastShown !== today) {
+    // First-ever launch is now signalled by `tipsEverShown` (a machine-scoped localStorage flag,
+    // kept OUT of PROFILE_KEYS on purpose). `tipsLastShown` is per-profile — it drives the daily
+    // tip cadence — so a new profile inheriting an empty stamp would otherwise re-fire the
+    // orientation tour for every second person on a shared workstation. The tour is chrome-only;
+    // one run per install is the right shape (compass still opens it on demand).
+    firstEverTips = !settings.tipsEverShown
+    settings.tipsLastShown = today
+    openWhatsNew({ withTip: true })
+  }
+}
 
 // `bare` routes (e.g. the standalone console window) render full-window without the app shell
 // (header / sidebar / docked console). See the /console route in main.ts.

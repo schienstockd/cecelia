@@ -984,6 +984,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function hydrateFromProfile() {
     if (profileHydrated.value) return
+    let reloading = false
     // `profileHydrated` MUST land true whether the round-trip succeeded or not — the store is
     // still fully usable on the localStorage values, and any UI keyed off this flag (e.g. a
     // "loading your profile" hint) would otherwise hang forever if the backend hasn't been
@@ -996,6 +997,9 @@ export const useSettingsStore = defineStore('settings', () => {
       // failed: the fallback's 'default' name is not a real answer to "who is this".
       if (r.ok && adoptLiveProfileBag(r.profile, r.settings, PROFILE_KEYS.map(k => `cc.${k}`))) {
         useAppControlStore().markProfileJustPicked(r.profile)
+        // Stays un-hydrated: the mirror was just cleared, so these refs are defaults, not this
+        // profile's values — nothing keyed off the flag (App.vue's launch tip) may act on them.
+        reloading = true
         window.location.reload()
         return
       }
@@ -1023,7 +1027,7 @@ export const useSettingsStore = defineStore('settings', () => {
       // next real setting change (the ref value stays put, next PATCH re-includes it).
       if (Object.keys(bootstrap).length) void patchProfileSettings(bootstrap)
     } finally {
-      profileHydrated.value = true
+      if (!reloading) profileHydrated.value = true
     }
   }
 
