@@ -11,7 +11,7 @@ import { refKey } from '../utils/kiwiTurn'
 import { reviewGroups, type ModelReview } from '../utils/modelReview'
 
 // supportsLabel heads the closing interpretation: what a claim's record would support, or an acquisition verdict.
-// shown(text) is how a point's text reads — the acquisition check swaps image names for uids with it.
+// supportsLabel '' leaves the interpretation to the caller. shown(text) is how a point's text reads — the acquisition check swaps image names for uids with it.
 const props = withDefaults(defineProps<{ review: ModelReview; categoryLabels: Record<string, string>; supportsLabel?: string;
                                          shown?: (text: string) => string }>(),
   { supportsLabel: 'Would support', shown: (t: string) => t })
@@ -35,7 +35,7 @@ const groups = computed(() => reviewGroups(props.review, props.categoryLabels))
   <InlineNote v-if="review.lastError" :short="`The last run failed: ${review.lastError}`" severity="fail" />
   <InlineNote v-if="review.status === 'done' && !review.items.length" icon="pi-minus-circle"
               :short="review.abstain && review.note ? `Nothing raised — ${shown(review.note)}` : 'Nothing beyond the checks'" />
-  <span v-if="review.supports" class="cc-muted mr-supports">{{ supportsLabel }}: {{ shown(review.supports) }}</span>
+  <span v-if="review.supports && supportsLabel" class="cc-muted mr-supports">{{ supportsLabel }}: {{ shown(review.supports) }}</span>
 </template>
 
 <style scoped>

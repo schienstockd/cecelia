@@ -165,6 +165,14 @@ end
     far = deepcopy(plan); far["objects"][1]["channels"] = Dict("A" => 9, "B" => 1)
     @test "acq.channel_missing" in _acq_codes(Cecelia.acq_check(far, facts); scope = "a1")
 
+    # the verdict's rule part: one step per warning code, the objects listed, per stage
+    @test r["verdict"] == "Collect more light for OT-I, P14 and gBT; separate the P14 ~ gBT channels; brighten OT-I; use one laser setting per design."
+    fv = Cecelia.acq_verdict(Cecelia.acq_check(merge(plan, Dict{String,Any}("stage" => "final")), facts)["findings"], "final")[2]
+    @test startswith(fv, "Denoise OT-I, P14 and gBT; correct bleed-through between P14 ~ gBT; check detection per object") && !occursin("laser", fv)
+    @test Cecelia.acq_verdict(Dict{String,Any}[], "final")[2] == "Analyse as planned." &&
+          Cecelia.acq_verdict(Dict{String,Any}[], "test")[2] == "Ready to acquire as planned."
+    @test Cecelia._acq_list(["A", "B", "C"]) == "A, B and C"
+
     # final data: the same findings, each leading with what to do in the analysis
     @test r["stage"] == "test" && Cecelia.acq_stage(nothing) == "test" && Cecelia.acq_stage(Dict("stage" => "x")) == "test"
     fr = Cecelia.acq_check(merge(plan, Dict{String,Any}("stage" => "final")), facts)

@@ -115,10 +115,10 @@ _review_ref_labels(x) = unique!(String[string(get(r["result"], "label", ""))
 The entry's `## Model review` block: "Not run." without a review; else the last failure (if any), what
 the turn read (`intro`), its points as `### sNN · text → action` sections under a `### <Category>`
 heading (not a section — it has no id — so it closes the previous point's section), and the one
-interpretation under `supports_heading`.
+interpretation under `supports_heading` (`nothing`: the caller writes it, as the acquisition verdict does).
 """
 function _review_md!(io::IO, rv; categories, label::Function, intro::AbstractString,
-                     nothing_more::AbstractString, supports_heading::AbstractString)
+                     nothing_more::AbstractString, supports_heading::Union{AbstractString,Nothing})
     println(io, "## Model review\n")
     if !(rv isa AbstractDict)
         println(io, "Not run.\n")
@@ -143,6 +143,7 @@ function _review_md!(io::IO, rv; categories, label::Function, intro::AbstractStr
             isempty(ls) || println(io, "_refs:_ ", join(("`" * l * "`" for l in ls), ", "), "\n")
         end
     end
+    supports_heading === nothing && return io   # the caller writes the interpretation itself
     for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
         println(io, "## ", supports_heading, "\n\n", x["text"], "\n")
     end

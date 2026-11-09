@@ -40,11 +40,13 @@ end
     @test occursin("do NOT repeat", p) && occursin("- Frames don't register (m1)", p)
     @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", p)
     @test occursin("Category one of: Movies and channels, Settings, Depth, Photons, Balance, Shared structure, Drift, Fading, Other", p)
-    # the closing interpretation is a verdict on the plan as written, weighing the rule findings too
-    @test occursin("\"Ready to acquire as planned.\" or the one to three changes", p) && occursin("the rule findings AND your points", p)
-    # no lead-in that repeats the heading; the rule warnings first; movies by full name (the app swaps in uids)
-    @test occursin("so don't start with a lead-in like \"Change before acquiring:\"", p)
-    @test occursin("Start from the rule checks' warnings", p) && occursin("by its full name exactly as listed", p)
+    # the verdict's rule part is the app's: the model is shown it and adds one step, or "Nothing to add."
+    pv = acq_review_prompt(plan, ["m1 — uidA"]; verdict = "Collect more light for B cells.")
+    @test occursin("these steps from the rule checks —\n“Collect more light for B cells.”", pv)
+    @test occursin("ONE most important thing to change at the scope or in the plan", pv) && occursin("\"Nothing to add.\"", pv)
+    @test !occursin("These movies can answer", pv)
+    # movies by full name (the app swaps in uids)
+    @test occursin("by its full name exactly as listed", p)
     @test occursin("The rule checks found nothing.", acq_review_prompt(plan, String[]))
     @test occursin("before the rest of the experiment is acquired", acq_review_system_prompt("pX")) &&
           occursin("`pX`", acq_review_system_prompt("pX"))
@@ -56,9 +58,7 @@ end
     fin = merge(plan, Dict{String,Any}("stage" => "final"))
     pf = acq_review_prompt(fin, ["m1 — uidA"])
     @test occursin("what should the analysis do about it?", pf) && occursin("→ <what to do in the analysis", pf)
-    @test occursin("\"Analyse as planned.\" or the one to three analysis steps", pf) && occursin("These movies can answer:", pf)
-    @test occursin("like \"Before comparing:\"", pf)
-    @test !occursin("Ready to acquire", pf)
+    @test occursin("ONE most important thing to do in the analysis", pf) && occursin("These movies can answer:", pf)
     sf = acq_review_system_prompt("pX", "final")
     @test occursin("FINAL data", sf) && occursin("never suggest it", sf) && occursin("correct for in the analysis", sf)
     @test acq_verdict_heading(fin) == "Before analysing" && acq_verdict_heading(plan) == "Before acquiring the rest"
@@ -113,7 +113,7 @@ end
         ref = Dict("kind" => "image", "imageUid" => uid1)
         reply = Dict("abstain" => false, "claims" => [
             Dict("kind" => "observation", "text" => "Drift: m1 shifts 40 µm\nin X over the movie. → Stabilise the preparation.", "refs" => [ref]),
-            Dict("kind" => "interpretation", "text" => "Change before acquiring: B cells need more light.", "refs" => [ref])])
+            Dict("kind" => "interpretation", "text" => "Add a bead-only control movie.", "refs" => [ref])])
         fake = _AcqReviewFake([Cecelia.AgentResult(true, "", 10, 20, "s1", "", JSON3.read(JSON3.write(reply)),
                                                    ["""{"uid":"$uid1"}"""])], String[])
         _KIWI_AGENT[] = m -> fake
@@ -158,7 +158,12 @@ end
         @test sid == "s01" && a["reviewIds"]["review|" * x["text"]] == sid
         md = entry_md(proj.uid, id)
         @test occursin("### Drift\n\n### s01 · M1 shifts 40 µm in X over the movie. → Stabilise the preparation.", md)
-        @test occursin("## Before acquiring the rest\n\nChange before acquiring: B cells need more light.", md)
+        # the verdict: the rule checks' steps, then the model's one added step
+        @test occursin(r"## Before acquiring the rest\n\n[^\n]+\.\n\nModel adds: Add a bead-only control movie\.", md)
+        @test !occursin("## Model review\n\n## ", md)
+        @test _acq_model_step(rv) == "Add a bead-only control movie."
+        @test _acq_model_step(Dict("claims" => [Dict("kind" => "interpretation", "text" => "Nothing to add.")])) == "" &&
+              _acq_model_step(nothing) == ""
         @test occursin("## Across the set", md)                          # the rule findings stay
         meta_e = _read_bb_meta(proj.uid, id)
         @test sid in meta_e["sectionIds"] && length(meta_e["kiwiRefs"]) == 1

@@ -203,6 +203,50 @@ _acq_lasers_text(l) = l === nothing || isempty(l) ? "—" :
     join((string(round(Int, w)) for (w, _) in l), "/") * " nm · " *
     join((p === nothing ? "?" : string(round(p; digits = 1)) |> s -> replace(s, r"\.0$" => "") for (_, p) in l), "/") * " %"
 
+# The verdict's steps, from the rule warnings: per finding code, what to do at a `test` acquisition and on
+# `final` data (`nothing` = no step at that stage). `{whats}` is every finding of the code's `what`,
+# listed ("OTI, P14 and gBT"); `{variable}` its setting. In the order the verdict lists them.
+const ACQ_VERDICT_STEPS = [
+    "acq.not_measured"             => (test = "measure the remaining movies", final = "measure the remaining movies"),
+    "acq.channels_unnamed"         => (test = "name the channels", final = "name the channels"),
+    "acq.few_photons"              => (test = "collect more light for {whats}", final = "denoise {whats}"),
+    "acq.gain_high"                => (test = "lower the detector gain", final = "check bright cells for clipping"),
+    "acq.shares_object"            => (test = "separate the {whats} channels", final = "correct bleed-through between {whats}"),
+    "acq.balance"                  => (test = "brighten {whats}", final = "check detection per object"),
+    "acq.settings_within_design"   => (test = "use one {variable} per design", final = nothing),
+    "acq.settings_differ"          => (test = "use one {variable} for every compared movie", final = nothing),
+    "acq.settings_by_design_cross" => (test = "put every compared object in each design", final = "compare within each design"),
+    "acq.brightz_ramp_unused"      => (test = "turn Bright Z on", final = "check whether cells dim with depth"),
+    "acq.drift_unreliable"         => (test = "stabilise the preparation", final = "check the movies that don't register for jumps"),
+    "acq.drift_ok"                 => (test = nothing, final = "drift-correct before tracking")]
+
+"""
+    acq_verdict(findings, stage) -> (steps, text)
+
+The rule part of the verdict on a plan: one step per warning code with a step at this stage (see
+`ACQ_VERDICT_STEPS`; drift correction on final data from the ok finding too), and the sentence they make —
+"Denoise OTI, P14 and gBT; drift-correct before tracking." — or, with none, "Ready to acquire as planned." /
+"Analyse as planned.". The model review adds at most one step of its own after it.
+"""
+function acq_verdict(findings::AbstractVector, stage::AbstractString)
+    steps = String[]
+    for (code, st) in ACQ_VERDICT_STEPS
+        t = getproperty(st, Symbol(stage))
+        t === nothing && continue
+        fs = filter(f -> f["code"] == code && f["scope"] == "set" && (f["level"] == "warn" || code == "acq.drift_ok"), findings)
+        isempty(fs) && continue
+        sub(k) = unique(string(get(get(f, "subs", Dict()), k, "")) for f in fs)
+        for v in (occursin("{variable}", t) ? sub("variable") : [""])
+            push!(steps, replace(t, "{whats}" => _acq_list(filter(!isempty, sub("what"))), "{variable}" => v))
+        end
+    end
+    text = isempty(steps) ? (stage == "final" ? "Analyse as planned." : "Ready to acquire as planned.") :
+                            uppercasefirst(join(steps, "; ")) * "."
+    steps, text
+end
+
+_acq_list(xs) = length(xs) <= 1 ? join(xs) : join(xs[1:end-1], ", ") * " and " * xs[end]
+
 """
     acq_stage(plan) -> "test" | "final"
 
@@ -216,7 +260,7 @@ acq_stage(plan) = plan isa AbstractDict && string(_ag(plan, "stage", "test")) ==
 
 The check. `plan` may be `nothing` (no plan yet): then only what needs none runs — settings that differ,
 Bright Z, detector range, drift, unmeasured movies. Returns
-`{stage, findings, rows, ran, skipped}`: `findings` are `qc_finding`s with `scope` ("set" or an image uid),
+`{stage, steps, verdict, findings, rows, ran, skipped}` (`steps`/`verdict`: `acq_verdict`): `findings` are `qc_finding`s with `scope` ("set" or an image uid),
 `thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one; on
 `final` data that IS the finding's `long`, and `thisData` is dropped),
 `where` (which movies or designs hold which value, for a setting that differs; for movies also
@@ -457,7 +501,8 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     skipped = String[]
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])
-    Dict{String,Any}("stage" => stage, "findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
+    steps, verdict = acq_verdict(findings, stage)
+    Dict{String,Any}("stage" => stage, "steps" => steps, "verdict" => verdict, "findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
                      "nImages" => length(facts), "nMeasured" => length(probed))
 end
 

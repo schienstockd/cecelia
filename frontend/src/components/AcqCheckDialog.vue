@@ -179,7 +179,7 @@ const metaImage = computed(() => {
         <span class="cc-muted" v-tooltip.top="'Kiwi’s model reads the plan, the movies and acquisition knowledge — not your notes'">
           · {{ settings.kiwiModel }}, about a minute</span>
         <button class="cc-btn cc-btn-dense cc-fs-xs review-btn" type="button" :disabled="!!reviewTip"
-                v-tooltip.top="reviewTip || 'What to change before acquiring the rest'" @click="review">
+                v-tooltip.top="reviewTip || (result.stage === 'final' ? 'What to watch for in the analysis' : 'What to change before acquiring the rest')" @click="review">
           <i v-if="reviewTurn" class="pi pi-spin pi-spinner" />
           {{ reviewTurn ? 'Reviewing…' : result.review ? 'Run again' : 'Review' }}
         </button>
@@ -188,10 +188,16 @@ const metaImage = computed(() => {
       <template v-if="result.review">
         <div class="cc-fs-xs review-points">
           <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels"
-                             :supports-label="verdictHeading(result.stage)" :shown="reviewText" />
+                             supports-label="" :shown="reviewText" />
         </div>
         <button v-if="result.review.items.length" class="cc-btn cc-btn-bare cc-fs-2xs mark-link" type="button"
                 v-tooltip.top="'Open on the Blackboard'" @click="openEntry">Mark each point Good / Bad / Unsure</button>
+      </template>
+
+      <template v-if="plan">
+        <div class="cc-eyebrow cc-fs-2xs">{{ verdictHeading(result.stage) }}</div>
+        <p class="verdict">{{ result.verdict }}</p>
+        <p v-if="result.modelStep" class="verdict cc-fs-xs"><span class="cc-muted">Model adds:</span> {{ reviewText(result.modelStep) }}</p>
       </template>
 
       <div class="cc-eyebrow cc-fs-2xs">Per movie</div>
@@ -235,5 +241,6 @@ const metaImage = computed(() => {
 .review-head .cc-muted { text-transform: none; letter-spacing: normal; }
 .review-btn { margin-left: auto; }
 .review-points { display: flex; flex-direction: column; gap: 0.35rem; }
+.verdict { margin: 0; }
 .mark-link { align-self: flex-start; color: var(--cc-accent); }
 </style>

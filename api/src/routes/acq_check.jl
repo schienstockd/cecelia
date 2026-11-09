@@ -56,8 +56,20 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
     end
     _review_md!(io, get(a, "review", nothing); categories = Cecelia.ACQ_CATEGORIES, label = _acq_category_label,
                 intro = "read the plan, the movies' record and the acquisition knowledge.",
-                nothing_more = "Nothing beyond the checks.", supports_heading = acq_verdict_heading(p))
+                nothing_more = "Nothing beyond the checks.", supports_heading = nothing)
+    # the verdict: the rule checks' steps, then the one step the model review adds
+    println(io, "## ", acq_verdict_heading(p), "\n\n", result["verdict"], "\n")
+    add = _acq_model_step(get(a, "review", nothing))
+    isempty(add) || println(io, "Model adds: ", add, "\n")
     String(take!(io))
+end
+
+# The step the model review adds to the verdict: its interpretation, "" when it has none or adds nothing.
+function _acq_model_step(rv)::String
+    rv isa AbstractDict || return ""
+    i = findfirst(x -> x["kind"] == "interpretation", rv["claims"])
+    t = i === nothing ? "" : strip(string(rv["claims"][i]["text"]))
+    occursin(r"^nothing to add\.?$"i, t) ? "" : String(t)
 end
 
 # A finding or review category's label ("Shared structure"); an unknown id reads as Other.
@@ -73,8 +85,9 @@ function _acq_reply(uid, set, id)
     JSON3.write((; ok = true, entryId = id, round = a === nothing ? 0 : get(a, "round", 1), plan, stage = result["stage"],
                  suggestedDesigns = Cecelia.acq_suggest_designs(facts), findings = result["findings"],
                  rows = result["rows"], ran = result["ran"], skipped = result["skipped"],
-                 nImages = result["nImages"], nMeasured = result["nMeasured"], nOpen = length(Cecelia.acq_open(result)),
+                 nImages = result["nImages"], nMeasured = result["nMeasured"], verdict = result["verdict"], steps = result["steps"], nOpen = length(Cecelia.acq_open(result)),
                  review = a === nothing ? nothing : get(a, "review", nothing),
+                 modelStep = _acq_model_step(a === nothing ? nothing : get(a, "review", nothing)),
                  categoryLabels = Dict(c => _acq_category_label(c) for c in Cecelia.ACQ_CATEGORIES)))
 end
 
@@ -82,8 +95,9 @@ end
     GET /api/acqcheck?projectUid&setUid
 
 The set's acquisition check, run now against the current image meta; nothing is written.
-Reply: `{ok, entryId ("" = no plan yet), round, plan, suggestedDesigns, findings, rows, ran, skipped,
-nImages, nMeasured, nOpen}` — without a plan only the checks that need none run (`skipped` says which).
+Reply: `{ok, entryId ("" = no plan yet), round, plan, stage, suggestedDesigns, findings, rows, ran, skipped,
+nImages, nMeasured, verdict, steps, nOpen, review, modelStep, categoryLabels}` (`verdict`: the rule checks' steps as a
+sentence, `Cecelia.acq_verdict`; `modelStep`: the one step the review adds, "" = none) — without a plan only the checks that need none run (`skipped` says which).
 """
 function api_acqcheck(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))

@@ -16,7 +16,7 @@ const row = (uid: string, design: string): AcqRow => ({
   ratio: null, dimmest: null, sharedR: null, driftUm: null, registers: null,
 })
 const result = (over: Partial<AcqCheckResult> = {}): AcqCheckResult => ({
-  entryId: '', round: 0, stage: 'test', plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
+  entryId: '', round: 0, stage: 'test', steps: [], verdict: '', modelStep: '', plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
   nImages: 0, nMeasured: 0, nOpen: 0, review: null, categoryLabels: {}, ...over,
 })
 

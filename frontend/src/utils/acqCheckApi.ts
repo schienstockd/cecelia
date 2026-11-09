@@ -80,6 +80,11 @@ export interface AcqCheckResult {
   nImages: number
   nMeasured: number
   nOpen: number
+  /** the rule checks' steps for this stage, and the sentence they make (the verdict's rule part) */
+  steps: string[]
+  verdict: string
+  /** the one step the model review adds to the verdict ('' = none, or it had nothing to add) */
+  modelStep: string
   /** the model review of the saved plan, once a turn finished (null = not run) */
   review: ModelReview | null
   /** every category id → its label, the review's own ones included */
@@ -90,6 +95,7 @@ export interface AcqCheckResult {
 export function parseAcqResult(r: Record<string, unknown> | null): AcqCheckResult | null {
   if (!r || typeof r.entryId !== 'string') return null
   return { ...(r as unknown as AcqCheckResult), stage: r.stage === 'final' ? 'final' : 'test',
+           modelStep: typeof r.modelStep === 'string' ? r.modelStep : '',
            review: parseReview(r.review), categoryLabels: parseCategoryLabels(r.categoryLabels) }
 }
 

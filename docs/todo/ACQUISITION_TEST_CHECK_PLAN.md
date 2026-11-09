@@ -218,6 +218,11 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   acquiring the rest*. The first run's "what these movies would support" (the claim review's closing
   question) narrowed the plan, ignored the rule findings and leaned on a Mouse attribute the set lacks.
   Info findings go to the model as "expected, not a problem" — the next run acted on one.
+- **The verdict's rule part is the app's** (the maintainer, 2026-11-10): two runs ignored "start from the
+  rule warnings", so `Cecelia.acq_verdict` writes it — one step per warning code per stage
+  (`ACQ_VERDICT_STEPS`: "Denoise OTI, P14 and gBT; correct bleed-through between …; drift-correct before
+  tracking.") — shown even without a review. The model is shown that sentence and adds ONE step it
+  doesn't cover ("Model adds: …"), or "Nothing to add.".
 - **Stage: test acquisition or final data** (the maintainer, 2026-11-10 — "I have no more samples, what
   should I watch for when I analyse these"): a toggle on the plan (`plan.stage`, default `test`; the
   record can't tell whether the experiment is finished). On final data each finding leads with its

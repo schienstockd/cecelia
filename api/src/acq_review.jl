@@ -58,16 +58,11 @@ const _ACQ_STAGE_ASK = Dict(
     "final" => "What else in these movies would get in the way of the plan, and what should the analysis do about it?")
 const _ACQ_STAGE_ARROW = Dict("test" => "what to change at the scope or in the plan",
                               "final" => "what to do in the analysis, or how to narrow the plan")
-# The verdict sits under its heading (`acq_verdict_heading`), so it starts with no lead-in of its own.
-const _ACQ_STAGE_VERDICT = Dict(
-    "test" => """Either "Ready to acquire as planned." or the one to three changes that matter most for this plan, most
-important first, as one imperative sentence ("Raise the OTI laser, …"). It sits under the heading "Before
-acquiring the rest", so don't start with a lead-in like "Change before acquiring:". Don't narrow the plan
-into a different one.""",
-    "final" => """Either "Analyse as planned." or the one to three analysis steps that matter most for this plan, most
-important first, as one imperative sentence ("Denoise OTI, …"). It sits under the heading "Before
-analysing", so don't start with a lead-in like "Before comparing:". If these movies cannot answer the plan
-at all, say instead "These movies can answer: <the narrower question they can>." """)
+# The verdict's rule part is the app's (`Cecelia.acq_verdict`); the model adds at most one step to it.
+const _ACQ_STAGE_STEP = Dict("test" => "change at the scope or in the plan", "final" => "do in the analysis")
+# finished data that can't answer the plan: the narrower question it can (a test can still change)
+const _ACQ_STAGE_NARROW = Dict("test" => "",
+    "final" => " If these movies cannot answer the plan at all, write instead \"These movies can answer: <the narrower question they can>.\"")
 
 """The heading over the review's verdict on the plan's entry and in the dialog, by the plan's stage."""
 acq_verdict_heading(plan) = Cecelia.acq_stage(plan) == "final" ? "Before analysing" : "Before acquiring the rest"
@@ -87,7 +82,7 @@ cells leaving.
 
 Reply ONLY through the structured output. Each claim is ONE point, with refs to the movies it concerns:
 `observation` for a problem you saw in a tool result, `question` for something the user must answer
-that the record can't. Then one `interpretation`, last: the verdict on the plan as the user wrote it.
+that the record can't. Then one `interpretation`, last: the one step you add to the verdict on the plan.
 If nothing would change, abstain and say in `note` what you checked.
 """
 
@@ -116,7 +111,7 @@ end
 # `found` are the rule findings as lines; `noted` the ones that are expected, not a problem (an info
 # finding — "different laser between designs, compare within each").
 function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::AbstractVector = String[],
-                           noted::AbstractVector = String[])::String
+                           noted::AbstractVector = String[]; verdict::AbstractString = "")::String
     stage = Cecelia.acq_stage(plan)
     known = isempty(found) ? "The rule checks found nothing." :
         "The rule checks already found these — the user sees them, so do NOT repeat or rephrase them:\n" *
@@ -139,11 +134,11 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
     Each side of the arrow is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon:
     two problems are two claims.
 
-    End with the `interpretation`: the verdict on the plan above, weighing the rule findings AND your points.
-    $(_ACQ_STAGE_VERDICT[stage])
-    Start from the rule checks' warnings on the compared objects (photons, balance, drift, shared structure),
-    then add your own most important point. Name the plan's objects and channels. A step that needs something
-    the record lacks (a Mouse attribute, a control) says to add it first. One sentence of at most
+    End with the `interpretation`: the app already closes with these steps from the rule checks —
+    “$(isempty(verdict) ? "(none)" : verdict)” — so add only the ONE most important thing to $(_ACQ_STAGE_STEP[stage])
+    that they don't cover, as one imperative sentence with no lead-in, naming the plan's objects and
+    channels. A step that needs something the record lacks (a Mouse attribute, a control) says to add it
+    first. If nothing matters beyond those steps, write exactly "Nothing to add."$(_ACQ_STAGE_NARROW[stage]) At most
     $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
 
     Name a movie in your text by its full name exactly as listed above — never shortened, never by its uid:
@@ -182,7 +177,7 @@ function acq_review_start(uid::AbstractString, set_uid::AbstractString; model::A
     names = Dict(f["uid"] => f["name"] for f in facts)
     movies = [string(f["name"], " — ", f["uid"]) for f in facts]
     found, noted = _acq_found_lines(result, names)
-    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted); model,
+    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted; verdict = result["verdict"]); model,
                     system_prompt = acq_review_system_prompt(uid, Cecelia.acq_stage(plan)), allowed_tools = acq_review_tools(),
                     extra = Dict{String,Any}("acqReview" => Dict{String,Any}("entryId" => id, "setUid" => String(set_uid),
                                                                             "round" => get(a, "round", 1))),
