@@ -361,6 +361,9 @@ include(joinpath(@__DIR__, "suite", "acquisition_settings.jl"))
 include(joinpath(@__DIR__, "suite", "acq_signal.jl"))
 # test-acquisition check over a set (acq_check.jl): seeded facts, each rule firing and not
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
 include(joinpath(@__DIR__, "suite", "claim_checks.jl"))
 include(joinpath(@__DIR__, "suite", "claim_checks_coverage.jl"))

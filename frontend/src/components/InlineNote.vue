@@ -26,7 +26,7 @@ const props = defineProps<{
   severity?: Severity
   /** Override the icon — for a note whose meaning is not severity (e.g. the re-run history hint). */
   icon?: string
-  /** Labelled lines under the short text — a finding's "Next: …" / "These movies: …". Shown, not on
+  /** Labelled lines under the short text — a finding's "Movies: …" / "Next: …" / "Analysis: …". Shown, not on
    *  hover: they are what to do, which a list of findings is read for. */
   lines?: { label: string; text: string }[]
 }>()
@@ -53,8 +53,11 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
     <span v-else class="note-body">
       <span v-tooltip.bottom="detail">{{ short }}</span>
       <span v-for="l in lines" :key="l.label" class="note-line cc-fs-xs"><span class="cc-muted">{{ l.label }}</span> {{ l.text }}</span>
+      <!-- with lines, the host's control (an action for the finding) gets its own row under them,
+           indented with the text — not squeezed in after the last line -->
+      <span v-if="$slots.default" class="note-action"><slot /></span>
     </span>
-    <slot />
+    <slot v-if="!lines?.length" />
   </span>
 </template>
 
@@ -75,7 +78,8 @@ const color = computed(() => props.severity ? SEVERITY[props.severity].color : u
 /* with lines: the icon sits by the first line, the lines stack under the short text in body colour */
 .inline-note.has-lines { align-items: flex-start; }
 .inline-note.has-lines > .pi { margin-top: 0.25em; }
-.note-body { display: flex; flex-direction: column; gap: 0.1rem; }
+.note-body { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; }
+.note-action { margin-top: 0.2rem; }
 .note-line { color: var(--cc-text); }
 /* Colour follows the severity, but never alone — the icon shape already carries it. */
 .inline-note.sev-warn { color: var(--cc-sev-warn); }

@@ -3,7 +3,7 @@
 // off across the set, and a per-movie table grouped by label design. Runs live on open (nothing
 // written); saving the plan writes the set's Blackboard entry. Data: utils/acqCheckApi.ts; logic:
 // utils/acqCheck.ts; rules: app/src/acq_check.jl.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import AcqPlanForm from './AcqPlanForm.vue'
@@ -11,13 +11,16 @@ import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import { useProjectStore } from '../stores/project'
 import { useToast } from '../composables/useToast'
 import { fetchAcqCheck, saveAcqPlan, type AcqCheckResult, type AcqPlan, type AcqRow } from '../utils/acqCheckApi'
-import { emptyPlan, findingLines, findingSeverity, findingsFor, fmt, formatDepth, planSentence, rowsByDesign } from '../utils/acqCheck'
+import { brightZText, measuringCount, emptyPlan, findingImageUids, findingLines, findingSeverity, findingsFor, fmt, planSentence, rowsByDesign } from '../utils/acqCheck'
+import { MEASURE_FUN, submitMeasure } from '../utils/acqMeasureRun'
+import { useTaskStore } from '../stores/tasks'
 import InlineNote from './InlineNote.vue'
 
 const props = defineProps<{ projectUid: string; setUid: string; setName?: string }>()
 const emit = defineEmits<{ close: []; changed: [AcqCheckResult] }>()
 const project = useProjectStore()
 const toast = useToast()
+const taskStore = useTaskStore()
 
 const result = ref<AcqCheckResult | null>(null)
 const loading = ref(true)
@@ -49,24 +52,31 @@ async function save(p: AcqPlan) {
 }
 
 const setFindings = computed(() => (result.value ? findingsFor(result.value, 'set') : []))
+
+// Measure the movies the probe hasn't read yet: background tasks (io pool), one per movie. The button
+// follows the task store, so it stays busy across a closed and reopened modal; the check reloads once
+// the last one finishes.
+const unmeasured = computed(() => findingImageUids(result.value?.findings.find(f => f.code === 'acq.not_measured')))
+const measureLeft = computed(() => measuringCount(taskStore.tasks, MEASURE_FUN, unmeasured.value))
+const measuring = computed(() => measureLeft.value > 0)
+function measure() { if (!measuring.value) submitMeasure(props.projectUid, props.setUid, unmeasured.value) }
+watch(measuring, (now, was) => { if (was && !now) load() })
 const groups = computed(() => (result.value ? rowsByDesign(result.value) : []))
 
 const objectNames = computed(() => plan.value?.objects.map(o => o.name) ?? [])
 const columns = computed<SelectionColumn[]>(() => [
   { key: 'name', label: 'Movie', ellipsis: true, width: 220 },
   { key: 'lasers', label: 'Lasers', width: 150 },
-  { key: 'brightZ', label: 'Bright Z', width: 60 },
-  { key: 'depth', label: 'Depth p99', width: 90 },
-  ...objectNames.value.map(n => ({ key: `o:${n}`, label: n, width: 55 })),
-  ...(objectNames.value.length > 1 ? [{ key: 'ratio', label: '÷', width: 45 }] : []),
-  { key: 'sharedR', label: 'Shared r', width: 60 },
-  { key: 'drift', label: 'Drift', width: 60 },
+  { key: 'brightZ', label: 'Bright Z', width: 60, tip: 'Off · ramp saved: a ramp was set but not applied' },
+  ...objectNames.value.map(n => ({ key: `o:${n}`, label: n, width: 55, tip: `${n}: p99 photons on its cells` })),
+  ...(objectNames.value.length > 1 ? [{ key: 'ratio', label: 'Balance', width: 60, tip: 'Brightest ÷ dimmest object (p99 photons)' }] : []),
+  { key: 'sharedR', label: 'Shared r', width: 60, tip: 'Highest structure r between a plan channel and another' },
+  { key: 'drift', label: 'Drift', width: 60, tip: 'Largest XY drift over the movie' },
 ])
 // the table renders strings: one display row per movie
 const display = (r: AcqRow) => ({
   ...r,
-  brightZ: r.brightZ === null ? '—' : r.brightZ ? 'on' : 'off',
-  depth: formatDepth(r.depthPct),
+  brightZ: brightZText(r),
   ratio: r.ratio === null ? '—' : `${fmt(r.ratio, 1)}×`,
   sharedR: fmt(r.sharedR, 2),
   drift: r.driftUm === null ? '—' : `${fmt(r.driftUm)} µm${r.registers === false ? ' ⚠' : ''}`,
@@ -104,7 +114,14 @@ const metaImage = computed(() => {
       <div class="cc-eyebrow cc-fs-2xs">Across the set</div>
       <ul class="findings">
         <li v-for="(f, i) in setFindings" :key="i">
-          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, 'These movies')" />
+          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f)">
+            <button v-if="f.code === 'acq.not_measured' && unmeasured.length" class="cc-btn cc-btn-dense cc-fs-xs"
+                    :disabled="measuring" @click="measure"
+                    v-tooltip.top="'Runs in the background, about a minute per movie — progress in the task manager'">
+              <i v-if="measuring" class="pi pi-spin pi-spinner" />
+              {{ measuring ? `Measuring… ${measureLeft} left` : `Measure ${unmeasured.length} movie${unmeasured.length === 1 ? '' : 's'}` }}
+            </button>
+          </InlineNote>
         </li>
         <li v-if="!setFindings.length" class="cc-muted">Nothing across the set.</li>
       </ul>
@@ -122,7 +139,7 @@ const metaImage = computed(() => {
         </SelectionTable>
         <ul v-if="openRow && g.rows.some(r => r.uid === openRow)" class="findings row-findings">
           <li v-for="(f, i) in rowFindings(openRow)" :key="i">
-            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, 'This movie')" />
+            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f)" />
           </li>
           <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this movie.</li>
         </ul>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { badgeOf, cleanPlan, emptyPlan, planByName, findingLines, findingSeverity, findingsFor, formatDepth, listWords, planProblems, planSentence, rowsByDesign } from './acqCheck'
+import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, rowsByDesign } from './acqCheck'
 import type { AcqCheckResult, AcqPlan, AcqRow } from './acqCheckApi'
+import type { TaskStatus } from '../stores/tasks'
 
 const designs = [{ id: 'd1', key: 'P14-CTDR · empty-570 · OTI-uGFP · gBT-CTV' }, { id: 'd2', key: 'empty-642 · P14-ubTomato · gBT-uGFP · OTI-CTV' }]
 const plan = (): AcqPlan => ({
@@ -11,7 +12,7 @@ const plan = (): AcqPlan => ({
   measure: ['movement'], compare: ['P14', 'OT-I', 'gBT'], expectation: 'naive — expected the same',
 })
 const row = (uid: string, design: string): AcqRow => ({
-  uid, name: uid, design, lasers: '', brightZ: null, probed: true, depthPct: null, objects: {},
+  uid, name: uid, design, lasers: '', brightZ: null, brightZRamp: null, probed: true, objects: {},
   ratio: null, dimmest: null, sharedR: null, driftUm: null, registers: null,
 })
 const result = (over: Partial<AcqCheckResult> = {}): AcqCheckResult => ({
@@ -64,13 +65,26 @@ describe('rowsByDesign / findingsFor', () => {
   })
 })
 
-describe('formatDepth / badgeOf', () => {
-  it('writes the depth range top to bottom with real minus signs', () => {
-    expect(formatDepth([-17.2, -3.4])).toBe('−3 to −17 %')
-    expect(formatDepth([0, 9])).toBe('+9 to 0 %')
-    expect(formatDepth([-5, -5])).toBe('−5 %')
-    expect(formatDepth(null)).toBe('—')
+describe('brightZText / findingImageUids / measuringCount', () => {
+  it('says whether a saved ramp went unused', () => {
+    expect(brightZText({ brightZ: true, brightZRamp: '12→15 % over 35 µm' })).toBe('on')
+    expect(brightZText({ brightZ: false, brightZRamp: '12→15 % over 35 µm' })).toBe('off · ramp saved')
+    expect(brightZText({ brightZ: false, brightZRamp: null })).toBe('off')
+    expect(brightZText({ brightZ: null, brightZRamp: null })).toBe('—')
   })
+  it('reads the movies off a finding', () => {
+    expect(findingImageUids({ detail: { imageUids: ['a', 3, 'b'] } } as never)).toEqual(['a', 'b'])
+    expect(findingImageUids(undefined)).toEqual([])
+  })
+  it('counts this batch’s live tasks only — other funs, other images and finished ones don’t', () => {
+    const t = (funName: string, imageUid: string, status: TaskStatus) => ({ funName, imageUid, status })
+    const tasks = [t('m', 'a', 'running'), t('m', 'b', 'queued'), t('m', 'c', 'done'), t('x', 'a', 'running'), t('m', 'z', 'running')]
+    expect(measuringCount(tasks, 'm', ['a', 'b', 'c'])).toBe(2)
+    expect(measuringCount(tasks, 'm', ['c'])).toBe(0)
+  })
+})
+
+describe('badgeOf', () => {
   it('the badge counts open warnings and asks for a plan when there is none', () => {
     expect(badgeOf(result({ nOpen: 3 })).tip).toMatch(/set a plan/)
     expect(badgeOf(result({ nOpen: 4, plan: plan() }))).toEqual({ n: 4, tip: '4 to look at' })
@@ -79,15 +93,18 @@ describe('formatDepth / badgeOf', () => {
 })
 
 describe('findingSeverity / findingLines', () => {
-  const f = (level: 'warn' | 'info' | 'ok', thisData?: string) =>
-    ({ level, code: 'x', short: 's', long: 'Do this.', scope: 'set', thisData }) as never
+  const f = (level: 'warn' | 'info' | 'ok', thisData?: string, where?: string, whereLabel?: string) =>
+    ({ level, code: 'x', short: 's', long: 'Do this.', scope: 'set', thisData, where, whereLabel }) as never
   it('info carries no severity, so the note claims no verdict', () => {
     expect(findingSeverity(f('info'))).toBeUndefined()
     expect(findingSeverity(f('warn'))).toBe('warn')
   })
-  it('lines: what to do next, then what it means for the data when there is a line for it', () => {
-    expect(findingLines(f('warn'), 'These movies')).toEqual([{ label: 'Next', text: 'Do this.' }])
-    expect(findingLines(f('warn', 'Check it.'), 'This movie')[1]).toEqual({ label: 'This movie', text: 'Check it.' })
+  it('lines are labelled by what they hold: the movies per value, what to do, what it means for the analysis', () => {
+    expect(findingLines(f('warn'))).toEqual([{ label: 'Next', text: 'Do this.' }])
+    expect(findingLines(f('warn', 'Check it.')).map(l => l.label)).toEqual(['Next', 'Analysis'])
+    const w = findingLines(f('warn', undefined, '10/10 %: a, b · 8/15 %: c'))
+    expect(w[0]).toEqual({ label: 'Movies', text: '10/10 %: a, b · 8/15 %: c' })
+    expect(findingLines(f('info', undefined, 'x', 'Designs'))[0].label).toBe('Designs')
   })
 })
 

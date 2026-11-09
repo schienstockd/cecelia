@@ -9,6 +9,10 @@ function _spec_path(::RemoveImage)
     joinpath(@__DIR__, "importImages", "remove.json")
 end
 
+function _spec_path(::MeasureSignal)
+    joinpath(@__DIR__, "importImages", "measureSignal.json")
+end
+
 function _spec_path(::MigrateLegacy)
     joinpath(@__DIR__, "importImages", "migrateLegacy.json")
 end
@@ -244,6 +248,7 @@ function _fun_name_map()::Dict{String, CciaTask}
     Dict{String, CciaTask}(
         "importImages.omezarr"              => ImportOmezarr(),
         "importImages.remove"               => RemoveImage(),
+        "importImages.measureSignal"        => MeasureSignal(),
         "importImages.migrateLegacy"        => MigrateLegacy(),
         "importImages.immunemapFetch"       => ImmunemapFetch(),
         "importImages.immunemap"            => CompositeTask("importImages.immunemap"),

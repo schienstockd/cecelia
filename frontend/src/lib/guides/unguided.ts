@@ -129,6 +129,16 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Import a second Immunemap experiment with a different microscope')],
   }) },
+  { id: 'acquisition-check', title: 'Acquisition check', group: 'Data', maturity: covering(['importImages.measureSignal'], {
+    tier: 'experimental', testedOn: 'One intravital 2-photon set (16 movies, two label designs)',
+    evidence: [
+      { path: 'app/test/suite/acq_check.jl', test: 'acq_check — with a plan: designs, photons, balance, shared structure',
+        failsIf: 'laser settings differing within a label design are not flagged' },
+      { path: 'api/test/suite/acq_check_routes.jl', test: 'API: acquisition check',
+        failsIf: 'reading the check writes anything, or a changed plan is not a new round' },
+    ],
+    next: [REVIEW, todo('Thresholds set on more than two stand-in sets')],
+  }) },
   { id: 'export-ome-tiff', title: 'Export as OME-TIFF', group: 'Data', maturity: covering(['exportImages.ome_tiff'], {
     tier: 'experimental', testedOn: 'Synthetic',
     evidence: [

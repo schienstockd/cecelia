@@ -1,5 +1,5 @@
 # Test-acquisition check over a set (docs/todo/ACQUISITION_TEST_CHECK_PLAN.md): the import probe's numbers
-# (`meta["saturation"]` — photons, shared structure, drift, per-depth profile) and the acquisition
+# (`meta["saturation"]` — photons, shared structure, drift) and the acquisition
 # settings (`meta["acquisition"]`), read against the user's PLAN for the set — which objects they will
 # segment or track, in which channel per label design, and what they will compare. Pure over facts:
 # `acq_image_facts` reads one image's meta, `acq_check(plan, facts)` gives the findings. The route and
@@ -10,8 +10,6 @@
 const ACQ_BALANCE_RATIO = 2.0
 #: shared-structure r between an object's channel and another plan channel that flags it
 const ACQ_SHARED_R = 0.5
-#: p99 change from the top plane to the bottom one (%) that flags dimming with depth, Bright Z off
-const ACQ_DEPTH_FALL_PCT = -15.0
 #: median photons per voxel on an object's channel below which it is photon-starved
 const ACQ_FEW_PHOTONS = 3.0
 #: photons the detector range holds below which the gain is too high for the light collected
@@ -39,10 +37,47 @@ function acq_design_key(names::AbstractVector)::String
 end
 
 """
+    acq_bright_z_ramp(bz) -> Union{String,Nothing}
+
+The Bright Z ramp saved with a movie (`acquisition.brightZ.points`: transmission and HV per depth), as
+text — `"12→15 % over 35 µm"` (lasers joined by `/`, HV added when it changes) — or `nothing` when no
+point differs from the first (no ramp). Whether Bright Z was ON is `brightZ.enabled`, read separately.
+"""
+function acq_bright_z_ramp(bz)::Union{String,Nothing}
+    pts = [p for p in _ag(bz, "points", Any[]) if p isa AbstractDict]
+    length(pts) < 2 && return nothing
+    sort!(pts; by = p -> something(_anum(_ag(p, "zFromStartUm")), 0.0))
+    # per laser (or detector), the values that were READ, in depth order — a value the reader couldn't
+    # read is unknown, not a change, so it is skipped (not a NaN that differs from everything). A laser
+    # read at fewer than two points says nothing about a ramp.
+    series(k) = begin
+        ds = [_ag(p, k) for p in pts]
+        ks = unique!(sort!([string(x) for d in ds if d isa AbstractDict for x in keys(d)]))
+        vs = [Float64[v for v in (_anum(_ag(d, x)) for d in ds) if v !== nothing] for x in ks]
+        filter(v -> length(v) >= 2, vs)
+    end
+    num(v) = replace(string(round(v; digits = 1)), r"\.0$" => "")
+    tx = series("transmissionPct"); hv = series("hv")
+    ramps(xs) = any(v -> any(!=(v[1]), v), xs)
+    tx_ramps = ramps(tx); hv_ramps = ramps(hv)
+    (tx_ramps || hv_ramps) || return nothing
+    dz = something(_anum(_ag(pts[end], "zFromStartUm")), 0.0) - something(_anum(_ag(pts[1], "zFromStartUm")), 0.0)
+    parts = String[]
+    tx_ramps && push!(parts, join((num(v[1]) for v in tx), "/") * "→" * join((num(v[end]) for v in tx), "/") * " %")
+    hv_ramps && push!(parts, "HV " * join(unique(num(v[1]) for v in hv), "/") * "→" * join(unique(num(v[end]) for v in hv), "/"))
+    join(parts, ", ") * " over " * num(dz) * " µm"
+end
+
+# Whether any Bright Z point has a transmission or HV value the reader couldn't read.
+_acq_ramp_has_gaps(bz) = any(p -> p isa AbstractDict && any(k -> (d = _ag(p, k); d isa AbstractDict &&
+                                                                  any(v -> !(v isa Real), values(d))), ("transmissionPct", "hv")),
+                             _ag(bz, "points", Any[]))
+
+"""
     acq_image_facts(uid, name, meta; channel_names = String[]) -> Dict
 
 What the check reads from one image: settings (`lasers`, `brightZ`, `objective`, `pixelSize`), per
-channel the depth change and photons (`channels[i]`), the shared-structure r per channel pair (`shared`,
+channel the photons (`channels[i]`), the Bright Z ramp saved with the movie (`brightZRamp`, text or `nothing`), the shared-structure r per channel pair (`shared`,
 "a-b" keys), drift (`drift`) and whether the signal pass ran (`probed`). Absent fields stay `nothing`.
 """
 function acq_image_facts(uid::AbstractString, name::AbstractString, meta::AbstractDict;
@@ -58,15 +93,12 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
     probed = false
     for (i, ch) in enumerate(sat isa AbstractDict ? _ag(sat, "channels", Any[]) : Any[])
         idx = something(_anum(_ag(ch, "index")), Float64(i - 1)) |> Int
-        p99 = _ag(_ag(_ag(ch, "profile"), "byZ"), "p99")
-        depth = (p99 isa AbstractVector && length(p99) > 1 && _anum(p99[1]) !== nothing && p99[1] > 0) ?
-                100 * (Float64(p99[end]) / Float64(p99[1]) - 1) : nothing
         ph = _ag(ch, "photons")
         objs = _ag(ph, "objects")
         probed |= ph isa AbstractDict
         chans[idx] = Dict{String,Any}(
             "name" => idx + 1 <= length(channel_names) ? String(channel_names[idx + 1]) : "Channel $(idx + 1)",
-            "filter" => get(filters, idx, nothing), "depthChangePct" => depth,
+            "filter" => get(filters, idx, nothing),
             "greyPerPhoton" => _anum(_ag(_ag(ph, "fit"), "greyPerPhoton")),
             "p50Photons" => _anum(_ag(objs, "p50Photons")), "p99Photons" => _anum(_ag(objs, "p99Photons")),
             "ceilingPhotons" => _anum(_ag(objs, "ceilingPhotons")))
@@ -90,7 +122,11 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
     nch = max(length(channel_names), isempty(chans) ? 0 : maximum(keys(chans)) + 1)
     Dict{String,Any}("uid" => String(uid), "name" => String(name), "designKey" => acq_design_key(channel_names),
         "channelNames" => String[i <= length(channel_names) ? String(channel_names[i]) : "Channel $i" for i in 1:nch],
-        "lasers" => lasers, "brightZ" => bz isa Bool ? bz : nothing, "objective" => obj, "pixelSize" => px,
+        "lasers" => lasers, "brightZ" => bz isa Bool ? bz : nothing,
+        "brightZRamp" => acq isa AbstractDict ? acq_bright_z_ramp(_ag(acq, "brightZ")) : nothing,
+        # no ramp found while some ramp value went unread: whether one was saved is unknown
+        "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ")) !== nothing ||
+                              !_acq_ramp_has_gaps(_ag(acq, "brightZ")), "objective" => obj, "pixelSize" => px,
         "channels" => chans, "shared" => shared, "drift" => drift, "probed" => probed)
 end
 
@@ -157,17 +193,21 @@ _acq_lasers_text(l) = l === nothing || isempty(l) ? "—" :
     acq_check(plan, facts) -> Dict
 
 The check. `plan` may be `nothing` (no plan yet): then only what needs none runs — settings that differ,
-dimming with depth, detector range, drift, unmeasured movies. Returns
+Bright Z, detector range, drift, unmeasured movies. Returns
 `{findings, rows, ran, skipped}`: `findings` are `qc_finding`s with `scope` ("set" or an image uid),
-`thisData` (what it means for analysing these movies — the `.data` catalog entry's `long`, when there is one) and
+`thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one),
+`where` (which movies or designs hold which value, for a setting that differs) and
 `detail`; `rows` one per image for the per-movie table.
 """
 function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     has_plan = plan isa AbstractDict && !isempty(_ag(plan, "objects", Any[]))
+    plan_objs = has_plan ? _ag(plan, "objects", Any[]) : Any[]
     findings = Dict{String,Any}[]
-    add!(level, code, scope; data = nothing, detail = nothing, subs...) = begin
+    add!(level, code, scope; data = nothing, where = nothing, detail = nothing, subs...) = begin
         f = qc_finding(level, code; detail = detail, subs...)
         f["scope"] = scope
+        # which movies (or designs) hold which value; the line's label says which it lists
+        where === nothing || (f["where"] = where; f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
         data === nothing || (f["thisData"] = qc_text(data; subs...).long)
         push!(findings, f)
     end
@@ -180,27 +220,77 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     unnamed = [f["uid"] for f in facts if isempty(f["designKey"])]
     isempty(unnamed) || add!("warn", "acq.channels_unnamed", "set"; detail = Dict("imageUids" => unnamed))
 
-    # settings that differ between movies — and whether they split along the designs
+    # settings that differ — within a design (movies compared directly were imaged differently), and
+    # between designs (matters only to a comparison that crosses designs). Bright Z is read on its own,
+    # below: its one fix is the same whichever way it splits.
+    dlabel = Dict{Any,String}()
+    for f in facts
+        id = design[f["uid"]]
+        haskey(dlabel, id) && continue
+        pd = has_plan ? findfirst(d -> string(_ag(d, "id", "")) == string(id), _ag(plan, "designs", Any[])) : nothing
+        lab = pd === nothing ? (id === nothing ? "" : string(id)) : string(something(_ag(_ag(plan, "designs")[pd], "label"), _ag(_ag(plan, "designs")[pd], "key"), ""))
+        dlabel[id] = has_plan && id === nothing ? "Not in the plan" : isempty(lab) ? "Channels not named" : lab
+    end
+    # a movie whose channel names match none of the plan's designs: say so, and keep it out of every
+    # design's comparison (its channels can't be read as the plan's objects)
+    outside = has_plan ? filter(f -> design[f["uid"]] === nothing, facts) : Dict{String,Any}[]
+    isempty(outside) || add!("warn", "acq.not_in_plan", "set"; n = length(outside), s = length(outside) == 1 ? "" : "s",
+                             where = join((f["name"] for f in outside), ", "), detail = Dict("imageUids" => [f["uid"] for f in outside]))
+    # does the plan's comparison stay inside one design? Every compared object has a channel in every design
+    cmp_names = has_plan ? (isempty(_ag(plan, "compare", Any[])) ? [string(_ag(o, "name", "")) for o in plan_objs] :
+                            string.(_ag(plan, "compare", Any[]))) : String[]
+    pdesigns = has_plan ? [string(_ag(d, "id", "")) for d in _ag(plan, "designs", Any[])] : String[]
+    within_only = has_plan && all(cmp_names) do n
+        o = findfirst(x -> string(_ag(x, "name", "")) == n, plan_objs)
+        o !== nothing && all(d -> _ag(_ag(plan_objs[o], "channels"), d) !== nothing, pdesigns)
+    end
+    group_by(fs, get_v, same) = begin
+        gs = Vector{Vector{Dict{String,Any}}}()
+        for f in fs
+            g = findfirst(g -> same(get_v(g[1]), get_v(f)), gs)
+            g === nothing ? push!(gs, [f]) : push!(gs[g], f)
+        end
+        gs
+    end
+    where_of(gs, value_of) = join((value_of(g[1]) * ": " * join((f["name"] for f in g), ", ") for g in gs), " · ")
     for (variable, get_v, same) in (
             ("laser setting", f -> f["lasers"], ==),
-            ("Bright Z setting", f -> f["brightZ"], ==),
+                # on/off, and whether a ramp is saved — not the ramp's text, which an unread value changes;
+                # a movie whose ramp is unknown (values unread) sits out
+            ("Bright Z setting", f -> (f["brightZ"] === nothing || !f["brightZRampKnown"]) ? nothing :
+                                    (f["brightZ"], f["brightZRamp"] !== nothing), ==),
             ("objective", f -> f["objective"], ==),
             ("pixel size", f -> f["pixelSize"], (a, b) -> a !== nothing && b !== nothing && abs(a - b) <= ACQ_REL_TOLERANCE * max(abs(a), abs(b))))
-        known = filter(f -> get_v(f) !== nothing, facts)
+        known = filter(f -> get_v(f) !== nothing && !(has_plan && design[f["uid"]] === nothing), facts)
         length(known) < 2 && continue
-        groups = Vector{Vector{Dict{String,Any}}}()
-        for f in known
-            g = findfirst(g -> same(get_v(g[1]), get_v(f)), groups)
-            g === nothing ? push!(groups, [f]) : push!(groups[g], f)
+        value_of(f) = (v = get_v(f); variable == "laser setting" ? _acq_lasers_text(v) :
+                       variable == "Bright Z setting" ? (v[1] ? "on" : "off") * (v[2] ? " · ramp saved" : "") : string(v))
+        groups_detail(gs) = Dict("groups" => [Dict("value" => value_of(g[1]), "imageUids" => [f["uid"] for f in g]) for g in gs])
+        gs = group_by(known, get_v, same)
+        length(gs) < 2 && continue
+        ids = unique(design[f["uid"]] for f in known)
+        # within each design
+        for id in ids
+            dg = group_by(filter(f -> design[f["uid"]] == id, known), get_v, same)
+            length(dg) < 2 && continue
+            # one design in the set (or channels not named): every movie is compared with every other
+            length(ids) == 1 ?
+                add!("warn", "acq.settings_differ", "set"; variable = variable, where = where_of(dg, value_of), detail = groups_detail(dg)) :
+                add!("warn", "acq.settings_within_design", "set"; variable = variable, what = dlabel[id],
+                     where = where_of(dg, value_of), detail = merge(groups_detail(dg), Dict("design" => something(id, ""))))
         end
-        length(groups) < 2 && continue
-        by_design = all(g -> length(unique(design[f["uid"]] for f in g)) == 1, groups) &&
-                    length(unique(design[f["uid"]] for f in known)) > 1
-        value_of(v) = variable == "laser setting" ? _acq_lasers_text(v) : variable == "Bright Z setting" ? (v ? "on" : "off") : string(v)
-        add!("warn", by_design ? "acq.settings_by_design" : "acq.settings_differ", "set"; variable = variable,
-             data = by_design ? "acq.settings_by_design.data" : nothing,
-             detail = Dict("groups" => [Dict("value" => value_of(get_v(g[1])), "imageUids" => [f["uid"] for f in g],
-                                             "designs" => unique(something(design[f["uid"]], "") for f in g)) for g in groups]))
+        # between designs: the designs' sets of values differ
+        length(ids) < 2 && continue
+        vals(id) = Set(value_of(f) for f in known if design[f["uid"]] == id)
+        allequal(vals(id) for id in ids) && continue
+        per_design = join((dlabel[id] * ": " * join(sort!(collect(vals(id))), ", ") for id in ids), " · ")
+        if within_only || !has_plan
+            add!("info", "acq.settings_by_design", "set"; variable = variable, where = per_design,
+                 data = has_plan ? "acq.settings_by_design.data" : nothing, detail = groups_detail(gs))
+        else
+            add!("warn", "acq.settings_by_design_cross", "set"; variable = variable, where = per_design,
+                 detail = groups_detail(gs))
+        end
     end
 
     # which channels count: the plan's objects, else every channel
@@ -209,12 +299,11 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     obj_ch(f, m) = has_plan ? _acq_channels(plan, "objects", design[f["uid"]], f, m) : Tuple{String,Int}[]
     all_ch(f) = sort!(collect(keys(f["channels"])))
     ref_ch(f, m) = has_plan ? _acq_channels(plan, "references", design[f["uid"]], f, m) : Tuple{String,Int}[]
-    plan_objs = has_plan ? _ag(plan, "objects", Any[]) : Any[]
     kind_of(name) = (i = findfirst(o -> string(_ag(o, "name", "")) == name, plan_objs);
                      i === nothing ? "cells" : string(_ag(plan_objs[i], "kind", "cells")))
 
     rows = Dict{String,Any}[]
-    depth_hits = Dict{String,Any}[]; few = Dict{String,Vector{Float64}}(); ceil_hits = Dict{String,Any}[]
+    few = Dict{String,Vector{Float64}}(); ceil_hits = Dict{String,Any}[]
     balance = Dict{String,Any}[]; shared_hits = Dict{String,Any}[]; ref_hits = Dict{String,Any}[]
     drift_ok = Float64[]
     for f in facts
@@ -227,12 +316,9 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
                                "lasers" => _acq_lasers_text(f["lasers"]), "brightZ" => f["brightZ"],
                                "probed" => f["probed"], "objects" => Dict{String,Any}())
         chs = has_plan ? [c for (_, c) in objs if haskey(f["channels"], c)] : all_ch(f)
-        dz = [f["channels"][c]["depthChangePct"] for c in chs if f["channels"][c]["depthChangePct"] !== nothing]
-        row["depthPct"] = isempty(dz) ? nothing : [minimum(dz), maximum(dz)]
-        if f["brightZ"] === false && !isempty(dz) && minimum(dz) <= ACQ_DEPTH_FALL_PCT
-            push!(depth_hits, Dict("uid" => f["uid"], "pct" => minimum(dz)))
-            add!("warn", "acq.depth_falls_image", f["uid"]; pct = round(Int, minimum(dz)))
-        end
+        row["brightZRamp"] = f["brightZRamp"]
+        f["brightZ"] === false && f["brightZRamp"] !== nothing &&
+            add!("warn", "acq.brightz_ramp_unused_image", f["uid"]; what = f["brightZRamp"])
         p99 = Tuple{String,Float64}[]
         for (name, c) in objs
             ch = get(f["channels"], c, nothing)
@@ -283,8 +369,23 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         push!(rows, row)
     end
 
-    isempty(depth_hits) || add!("warn", "acq.depth_falls", "set"; n = length(depth_hits), s = length(depth_hits) == 1 ? "" : "s",
-                                 pct = round(Int, minimum(h["pct"] for h in depth_hits)), detail = Dict("images" => depth_hits))
+    # Bright Z off: with a ramp saved it was meant to be on (a warning, naming the movies per ramp);
+    # with none, nothing says the depth was compensated — a note. Whether cells really dim with depth is
+    # read after segmentation, on the cells (whole-plane intensity mixes cell count with brightness).
+    unused = filter(f -> f["brightZ"] === false && f["brightZRamp"] !== nothing, facts)
+    if !isempty(unused)
+        rg = Vector{Vector{Dict{String,Any}}}()
+        for f in unused
+            g = findfirst(g -> g[1]["brightZRamp"] == f["brightZRamp"], rg)
+            g === nothing ? push!(rg, [f]) : push!(rg[g], f)
+        end
+        add!("warn", "acq.brightz_ramp_unused", "set"; n = length(unused), s = length(unused) == 1 ? "" : "s",
+             where = join((g[1]["brightZRamp"] * ": " * join((f["name"] for f in g), ", ") for g in rg), " · "),
+             detail = Dict("imageUids" => [f["uid"] for f in unused]))
+    end
+    noramp = filter(f -> f["brightZ"] === false && f["brightZRamp"] === nothing, facts)
+    isempty(noramp) || add!("info", "acq.brightz_off", "set"; n = length(noramp), s = length(noramp) == 1 ? "" : "s",
+                            where = join((f["name"] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
     isempty(ceil_hits) || add!("warn", "acq.gain_high", "set"; n = round(Int, minimum(h["photons"] for h in ceil_hits)),
                                 detail = Dict("images" => ceil_hits))
     for (name, xs) in sort!(collect(few); by = first)
@@ -312,7 +413,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     end
     isempty(drift_ok) || add!("ok", "acq.drift_ok", "set"; n = length(drift_ok), value = round(Int, maximum(drift_ok)))
 
-    ran = String["settings", "depth", "detector range", "drift"]
+    ran = String["settings", "Bright Z", "detector range", "drift"]
     skipped = String[]
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])

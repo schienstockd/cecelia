@@ -10,7 +10,7 @@
     get_(uid, set) = (r = api_acqcheck(HTTP.Request("GET", "/api/acqcheck?projectUid=$uid&setUid=$set")); (r[1], JSON3.read(r[2])))
     meta(bz) = Dict{String,Any}("PhysicalSizeX" => 0.5,
         "acquisition" => Dict("lasers" => [Dict("wavelengthNm" => 850, "transmissionPct" => 15)],
-                              "brightZ" => Dict("enabled" => bz), "objective" => Dict("name" => "25x")),
+                              "brightZ" => Dict("enabled" => bz), "objective" => Dict("name" => bz ? "25x" : "20x")),
         "saturation" => Dict("channels" => [Dict("index" => 0, "profile" => Dict("byZ" => Dict("p99" => [200.0, 150.0])),
                                                  "photons" => Dict("fit" => Dict("greyPerPhoton" => 30.0),
                                                                    "objects" => Dict("p50Photons" => 1.0, "p99Photons" => 10.0)))],
@@ -24,6 +24,7 @@
         # no plan: the plan-free checks run, nothing is written
         st, r = get_(proj.uid, s.uid)
         @test st == 200 && r.entryId == "" && r.plan === nothing
+        @test any(f -> f.code == "acq.settings_differ" && f.subs.variable == "objective", r.findings)
         @test any(f -> f.code == "acq.settings_differ" && f.subs.variable == "Bright Z setting", r.findings)
         @test "photons" in r.skipped && length(r.suggestedDesigns) == 1 && r.nOpen >= 1
         @test any(f -> f.code == "acq.channels_unnamed", r.findings)      # no names yet: asks, doesn't guess

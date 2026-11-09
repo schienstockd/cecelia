@@ -442,6 +442,7 @@ const NOT_RUN_TASKS = Dict{String,String}(
     "importImages.omezarr" => "image import", "importImages.migrateLegacy" => "image import",
     "importImages.immunemap" => "image import", "importImages.immunemapFetch" => "image import",
     "importImages.remove" => "deletes, produces nothing",
+    "importImages.measureSignal" => "image metadata (the import probe), not a run",
     "gate.manual_gate" => "copies gates — user work, never a run's to delete",
     "exportImages.ome_tiff" => "writes outside the project",
     # new label sets → the dialog's Label sets scope

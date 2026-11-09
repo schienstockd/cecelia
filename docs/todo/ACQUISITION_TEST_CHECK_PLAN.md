@@ -170,12 +170,19 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
 
 ## Slice 1 built (2026-11-09, branch `feat/acq-set-check`, stacked on #2072)
 
-- **Rules** `app/src/acq_check.jl`, pure over facts read from image meta: settings that differ (and
-  whether they split along the label designs), dimming with depth where Bright Z is off, a detector
+- **Rules** `app/src/acq_check.jl`, pure over facts read from image meta: settings that differ (within a design,
+  and between designs), Bright Z off with a saved ramp, a detector
   range under 20 photons, photon-starved objects (median p50 < 3; points exempt), reporter balance
   (p99 ratio ≥ 2), an object's channel sharing structure with another object's (warn) or a reference
   (info) (r ≥ 0.5), drift that doesn't register (drift correction's 2 px), movies not measured. All
   thresholds are named `ACQ_*` placeholders. Without a plan only the plan-free checks run.
+- **Settings** are read within a design (movies compared directly — a warning naming the movies per
+  setting) and between designs (info when every compared object is in each design, else a warning).
+- **Depth is settings-only:** Bright Z off with a ramp saved is a warning naming the ramp; off with none
+  is a note. Whole-plane p99 per Z mixed cell count with brightness on sparse cells, so it was dropped;
+  whether real cells dim with depth is a post-segmentation check (claim recital side), not the advisor's.
+- **Measure N movies** runs the probe as background tasks (`importImages.measureSignal`, io pool) —
+  `POST /api/images/meta/resync` with `measure: true` probes inside the request, fine for one image only.
 - **Label designs** are the movies that share a channel-name list, in channel order — never read off file
   names. Default names (`CH1`…) put every movie in one design and raise one finding asking for names.
   The plan picks each object's channel by name, per design.
@@ -186,12 +193,13 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   modal — plan echo + form, across the set, per movie grouped by design; a row shows its findings, the
   name opens its metadata. The image metadata dialog has one line linking to it. Needs the
   maintainer's visual pass.
-- **On lfGUDg** (16 movies, read-only, probe numbers from #2072 overlaid). As stored (CH1–CH4): one design,
-  "Channels not named", settings differ, depth falls in 4, all register. With the maintainer's names overlaid: laser and Bright Z settings
-  split along the two designs; Bright Z off and signal −16 to −29 % with depth in 4 December movies;
-  P14 / OT-I / gBT median 1.6 / 1.6 / 2.1 photons per voxel; objects up to 4.2× apart, OT-I dimmest in
-  10 of 16; OT-I ~ gBT and P14 ~ gBT shared structure in one movie each; OT-I ~ the empty 570–616
-  channel in 6, P14 ~ the empty 642–709 channel in 8; all register.
+- **On lfGUDg** (16 movies, read-only; channel names as set by the maintainer — `P14-CTDR · AF · OTI-uGFP ·
+  gBT-CTV`, 7 movies; `AF · P14-ubiTom · gBT-uGFP · OTI-CTV`, 9 — probe numbers from #2072 overlaid where not
+  yet stored): laser settings differ within the ubTomato design (8/15 % on 4 movies, 10/10 % on 5);
+  lasers differ between the designs (info: every compared cell type is in each design); Bright Z off with
+  the saved 12→15 % ramp in all 7 CTDR movies; P14 / OT-I / gBT median 1.6 / 1.6 / 2.1 photons per voxel;
+  objects up to 4.2× apart, OT-I dimmest in 10 of 16; OT-I ~ gBT and P14 ~ gBT shared structure in one movie
+  each; OT-I ~ AF in 6, P14 ~ AF in 9; all register.
 - **Not in this slice**: the Kiwi review turn; the briefing's open acquisition checks.
 
 ## Resume when

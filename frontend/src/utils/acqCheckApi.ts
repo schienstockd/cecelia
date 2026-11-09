@@ -36,6 +36,9 @@ export interface AcqFinding extends Omit<QcFinding, 'level'> {
   key?: string
   subs?: Record<string, unknown>
   thisData?: string
+  /** which movies (or designs) hold which value, for a setting that differs; `whereLabel` says which */
+  where?: string
+  whereLabel?: string
 }
 export interface AcqObjectCell { channel: number; p50: number | null; p99: number | null }
 export interface AcqRow {
@@ -45,7 +48,7 @@ export interface AcqRow {
   lasers: string
   brightZ: boolean | null
   probed: boolean
-  depthPct: [number, number] | null
+  brightZRamp: string | null      // the ramp saved with the movie ("12→15 % over 35 µm"), null = none
   objects: Record<string, AcqObjectCell>
   ratio: number | null
   dimmest: string | null

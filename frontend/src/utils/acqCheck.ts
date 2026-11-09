@@ -3,6 +3,8 @@
 // by design. Types and calls: acqCheckApi.ts.
 import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow } from './acqCheckApi'
 import type { Severity } from '../lib/severity'
+import { isLiveStatus } from '../lib/taskStatus'
+import type { TaskStatus } from '../stores/tasks'
 
 /** What the plan says it will measure, in the order the form offers it. */
 export const ACQ_MEASURES = ['movement', 'contacts', 'uptake', 'counts', 'shape'] as const
@@ -81,12 +83,22 @@ export function findingsFor(result: AcqCheckResult, scope: string): AcqFinding[]
   return result.findings.filter(f => f.scope === scope).sort((a, b) => (rank[a.level] ?? 3) - (rank[b.level] ?? 3))
 }
 
-/** A depth range as "−3 to −17 %", top plane to bottom, with real minus signs. */
-export function formatDepth(d: [number, number] | null): string {
-  if (!d) return '—'
-  const s = (v: number) => (Math.round(v) < 0 ? '−' : Math.round(v) > 0 ? '+' : '') + Math.abs(Math.round(v))
-  const [lo, hi] = d
-  return Math.round(lo) === Math.round(hi) ? `${s(lo)} %` : `${s(hi)} to ${s(lo)} %`
+/** The Bright Z cell: on, off, or off with a ramp saved (the ramp in the tooltip). */
+export function brightZText(r: Pick<AcqRow, 'brightZ' | 'brightZRamp'>): string {
+  if (r.brightZ === null) return '—'
+  return r.brightZ ? 'on' : r.brightZRamp ? 'off · ramp saved' : 'off'
+}
+
+/** The movies a finding is about (`detail.imageUids`) — the "Measure N movies" targets. */
+export function findingImageUids(f: AcqFinding | undefined): string[] {
+  const d = f?.detail as { imageUids?: unknown } | undefined
+  return Array.isArray(d?.imageUids) ? d!.imageUids.filter((u): u is string => typeof u === 'string') : []
+}
+
+/** How many tasks of `funName` on these images are still queued or running — the batch is done at 0. */
+export function measuringCount(tasks: { funName?: string; imageUid?: string; status: TaskStatus }[],
+                               funName: string, imageUids: string[]): number {
+  return tasks.filter(t => t.funName === funName && imageUids.includes(t.imageUid ?? '') && isLiveStatus(t.status)).length
 }
 
 /** A number or a dash, rounded to `digits`. */
@@ -104,9 +116,14 @@ export function badgeOf(result: AcqCheckResult | null): { n: number; tip: string
 export const findingSeverity = (f: AcqFinding): Severity | undefined =>
   f.level === 'warn' ? 'warn' : f.level === 'ok' ? 'ok' : undefined
 
-/** A finding's lines under its short text: what to do next, and what it means for these movies. */
-export function findingLines(f: AcqFinding, dataLabel: string): { label: string; text: string }[] {
-  return [{ label: 'Next', text: f.long }, ...(f.thisData ? [{ label: dataLabel, text: f.thisData }] : [])]
+/** A finding's lines under its short text, each labelled by what it holds: which movies (or designs)
+ *  have which value, what to do next, and what it means for the analysis. */
+export function findingLines(f: AcqFinding): { label: string; text: string }[] {
+  return [
+    ...(f.where ? [{ label: f.whereLabel ?? 'Movies', text: f.where }] : []),
+    { label: 'Next', text: f.long },
+    ...(f.thisData ? [{ label: 'Analysis', text: f.thisData }] : []),
+  ]
 }
 
 /** A plan with every channel as its name — an older plan stored the index, which the form's channel
