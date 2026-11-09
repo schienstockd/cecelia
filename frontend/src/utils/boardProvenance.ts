@@ -17,6 +17,8 @@
 //     snapshot existed has none and exports the rebuild, marked as such.
 
 import { boardScopeQuery, type BoardParamsScope, type HistoryParamsRow } from './chainFromHistory'
+import { rowsToCsv } from '../plots/export'
+import { paramTree, paramLeaves, splitParams, insertParam, type ParamNode } from './paramTree'
 
 export const PROVENANCE_SCHEMA = 'cecelia.board-provenance/1'
 /** The PDF document-info key the record is stored under (a custom Info entry, JSON text). */
@@ -135,11 +137,19 @@ export interface ProvenanceBoardIn {
   scope?: ParamsSnapshotScope      // what the board shows now — a snapshot for another scope is not used
 }
 
+/** One step behind a board, as the record names it. `params` = its non-default settings ("key=value; …"),
+ *  absent in records written before it was added; `differs` = the settings that differ between images. */
+export interface ProvenanceRun {
+  step: string; task: string; output: string; relation: string; lastRun: string; taskIds: string[]
+  note: string; recorded: string; params?: string
+  /** settings the images ran with DIFFERENT values: `key: a (n) | b (m); …` (`conflicts`), absent in older records */
+  differs?: string
+}
 /** One board in the record: what it shows, the runs behind it, and where its parameters came from. */
 export interface ProvenanceBoard {
   title: string
   populations: BoardProvenanceResponse['populations']
-  runs: { step: string; task: string; output: string; relation: string; lastRun: string; taskIds: string[]; note: string; recorded: string }[]
+  runs: ProvenanceRun[]
   parameters: { source: ParamsSource; takenAt?: string; differs: boolean }
 }
 export interface ProvenanceRecord {
@@ -173,7 +183,8 @@ export function buildProvenanceRecord(boards: readonly ProvenanceBoardIn[], expo
       return {
         title: b.title, populations: b.server.populations,
         runs: p.rows.map(r => ({ step: r.step, task: r.task, output: r.output, relation: r.relation ?? '',
-                                 lastRun: r.lastRun, taskIds: r.taskIds ?? [], note: r.note, recorded: r.recorded })),
+                                 lastRun: r.lastRun, taskIds: r.taskIds ?? [], note: r.note, recorded: r.recorded,
+                                 params: r.changedFromDefault, differs: r.conflicts })),
         parameters: { source: p.source, ...(p.takenAt ? { takenAt: p.takenAt } : {}), differs: p.differs },
       }
     }),
@@ -211,4 +222,135 @@ export function applyPdfProvenance(doc: PdfDocLike, lib: PdfLibLike, rec: Proven
   doc.setKeywords(['cecelia', PROVENANCE_SCHEMA])
   const info = doc.context.lookup(doc.context.trailerInfo.Info, lib.PDFDict) as { set(k: unknown, v: unknown): void }
   info.set(lib.PDFName.of(PDF_PROVENANCE_KEY), lib.PDFHexString.fromText(JSON.stringify(rec)))
+}
+
+// ── reading a record back (the board record view, `BoardRecordModal`) ───────────────────────────────
+
+/** A parsed record, or null when the text is not one (another schema, malformed JSON). */
+export function parseProvenanceRecord(text: string | null | undefined): ProvenanceRecord | null {
+  if (!text) return null
+  try {
+    const r = JSON.parse(text) as Partial<ProvenanceRecord>
+    if (r?.schema !== PROVENANCE_SCHEMA || !Array.isArray(r.boards) || !r.project) return null
+    return r as ProvenanceRecord
+  } catch { return null }
+}
+
+/** The record a board SVG carries (`<metadata id="cecelia-provenance">`, CDATA — a `]]>` in the JSON is
+ *  split across two sections when written, so the sections are joined back). */
+export function svgProvenanceText(svg: string): string | null {
+  const m = /<metadata id="cecelia-provenance">([\s\S]*?)<\/metadata>/.exec(svg)
+  if (!m) return null
+  const parts = [...m[1].matchAll(/<!\[CDATA\[([\s\S]*?)\]\]>/g)].map(x => x[1])
+  return parts.length ? parts.join('') : m[1]
+}
+
+/** The record an exported PDF carries (document info `CeceliaProvenance`), or null. Loads pdf-lib lazily. */
+export async function pdfProvenanceText(bytes: ArrayBuffer | Uint8Array): Promise<string | null> {
+  const lib = await import('pdf-lib')
+  const doc = await lib.PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true })
+  const info = doc.context.lookup(doc.context.trailerInfo.Info, lib.PDFDict)
+  const v = info?.lookup(lib.PDFName.of(PDF_PROVENANCE_KEY))
+  return v instanceof lib.PDFHexString || v instanceof lib.PDFString ? v.decodeText() : null
+}
+
+/** Read a figure file the user picked: a board PDF or SVG. null = no Cecelia record in it. */
+export async function readFigureRecord(name: string, bytes: ArrayBuffer): Promise<ProvenanceRecord | null> {
+  if (/\.svg$/i.test(name)) return parseProvenanceRecord(svgProvenanceText(new TextDecoder().decode(bytes)))
+  if (/\.pdf$/i.test(name)) return parseProvenanceRecord(await pdfProvenanceText(bytes).catch(() => null))
+  return null
+}
+
+/** One step as the record view shows it, and how it stands against `since`. */
+export type RowStatus = 'same' | 'changed' | 'reran' | 'absent'
+export interface RecordRow {
+  step: string; task: string; output: string; params: string; differs: string; lastRun: string; status: RowStatus
+}
+
+const stepKey = (r: { step: string; task: string; output: string }) => JSON.stringify([r.step, r.task, r.output])
+const isNow = (r: ProvenanceRun) => r.recorded.startsWith('now')
+
+/**
+ * A board's recorded steps for the record view. A record carries the FROZEN rows plus, when a step ran
+ * again before the record was made, today's differing rows marked `now (differs)` (`resolveParamsExport`).
+ * The figure's plots are live, so for a step with both, the `now` row is what was drawn: the frozen one it
+ * replaced is left out here.
+ *
+ * - `now === null` — the board on screen: a step with a `now` row is `changed` since the board was
+ *   frozen (ran again, or new); the rest are `same`.
+ * - `now` = today's table for the same images and populations — a figure file: each step is `same`
+ *   (today has it with the same run-log task ids), `reran` (other task ids: it ran again since the
+ *   export) or `absent` (today has no such step). A step recorded without task ids can't be compared
+ *   and is shown as `same`, never flagged on a guess.
+ */
+export function recordRows(runs: readonly ProvenanceRun[], now: readonly HistoryParamsRow[] | null): RecordRow[] {
+  const replaced = new Set(runs.filter(isNow).map(stepKey))
+  const today = new Map<string, Set<string>>()
+  for (const r of now ?? []) {
+    const ids = today.get(stepKey(r)) ?? new Set<string>()
+    for (const t of r.taskIds ?? []) ids.add(t)
+    today.set(stepKey(r), ids)
+  }
+  return runs.filter(r => isNow(r) || !replaced.has(stepKey(r))).map(r => {
+    let status: RowStatus = 'same'
+    if (!now) status = isNow(r) ? 'changed' : 'same'
+    else if (!today.has(stepKey(r))) status = 'absent'
+    else if (r.taskIds.length && !r.taskIds.every(t => today.get(stepKey(r))!.has(t))) status = 'reran'
+    return { step: r.step, task: r.task, output: r.output, params: r.params ?? '', differs: r.differs ?? '', lastRun: r.lastRun, status }
+  })
+}
+
+/**
+ * A step's settings as a tree: the non-default ones (`paramTree`), then each setting the images ran
+ * with DIFFERENT values, its value the spread as written (`0.5 (1) | -1 (1)`) marked as differing — so a
+ * step whose settings only differ between images never reads as "defaults".
+ */
+export function rowParamTree(r: Pick<RecordRow, 'params' | 'differs'>): ParamNode[] {
+  const tree = paramTree(r.params)
+  for (const e of splitParams(r.differs)) {
+    const c = e.indexOf(': ')
+    const spread = c < 0 ? '' : `${e.slice(c + 2)} — `
+    insertParam(tree, c < 0 ? e : e.slice(0, c), last => ({ key: last, value: `${spread}differs between images` }))
+  }
+  return tree
+}
+
+/**
+ * The record view's steps as CSV, ONE ROW PER SETTING (`paramLeaves`: `imageTiling.blockSize` → `4096`)
+ * so it filters and sorts as a Methods table, with one header across boards and a `board` column (numbered
+ * when there are several: tab names need not be unique). A
+ * step with no setting to list keeps one row with an empty `parameter`, so no step drops out.
+ */
+export function recordRowsCsv(boards: readonly { title: string; rows: readonly RecordRow[] }[],
+                              statusLabel: (s: RowStatus) => string): string {
+  return rowsToCsv(boards.flatMap((b, bi) => b.rows.flatMap(r => {
+    const base = { board: boards.length > 1 ? `${bi + 1} · ${b.title}` : b.title, step: r.step, task: r.task, output: r.output }
+    const tail = { last_run: r.lastRun, since: statusLabel(r.status) }
+    const leaves = paramLeaves(rowParamTree(r))
+    return (leaves.length ? leaves : [{ path: '', value: '' }]).map(l => ({ ...base, parameter: l.path, value: l.value, ...tail }))
+  })))
+}
+
+/** Every gating sidecar a record's boards name, once. */
+export function recordGateFiles(rec: ProvenanceRecord): string[] {
+  return [...new Set(rec.boards.flatMap(b => b.populations.flatMap(p => p.gateFiles)))]
+}
+
+/** `POST /api/analysis/gate-edits` → one per gate file (`gate_file_edits`). */
+export type GateEditStatus = 'edited' | 'unchanged' | 'unknown' | 'missing' | 'invalid'
+export interface GateEdit { file: string; status: GateEditStatus; edits: number; lastAt: string }
+
+/**
+ * One population's gates against `since`, from its gate files' answers: `edited` when any file was, or
+ * when today's gate files (`nowFiles`) include one the record didn't (a gate added to another image
+ * since), then `missing`, then `unknown`; `unchanged` only when every file says so. A population with
+ * no gate file then or now (a `labels` key: the objects themselves) has nothing to change: `null`.
+ */
+export function popGateStatus(files: readonly string[], byFile: ReadonlyMap<string, GateEdit>,
+                              nowFiles: readonly string[] = []): GateEditStatus | null {
+  if (nowFiles.some(f => !files.includes(f))) return 'edited'   // a gate drawn or copied onto another image since
+  if (!files.length) return null
+  const st = files.map(f => byFile.get(f)?.status ?? 'unknown')
+  for (const s of ['edited', 'missing', 'invalid', 'unknown'] as const) if (st.includes(s)) return s
+  return 'unchanged'
 }

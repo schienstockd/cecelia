@@ -5,6 +5,8 @@ import {
   snapshotScope, paramsScopeKey, snapshotDue, sameParamRows, resolveParamsExport,
   buildProvenanceRecord, recordForBoard, applyPdfProvenance, boardProvenanceUrl,
   PROVENANCE_SCHEMA, PDF_PROVENANCE_KEY, type ParamsSnapshot, type BoardProvenanceResponse,
+  parseProvenanceRecord, svgProvenanceText, pdfProvenanceText, readFigureRecord, recordGateFiles,
+  popGateStatus,
 } from './boardProvenance'
 import { historyParamsCsv, type HistoryParamsRow } from './chainFromHistory'
 import { buildBoardSvgs } from '../plots/boardSvg'
@@ -132,5 +134,58 @@ describe('provenance in the exported files', () => {
     const text = [...m![1].matchAll(/<!\[CDATA\[(.*?)\]\]>/gs)].map(x => x[1]).join('')
     expect(JSON.parse(text)).toEqual(tricky)
     expect(buildBoardSvgs([{ title: 't', aspect: 1, slots: [] }])[0].svg).not.toContain('<metadata')
+  })
+})
+
+describe('reading a record back from an exported figure', () => {
+  const rec = buildProvenanceRecord([{ title: 'Fig 1', server: server() }], '2026-11-08T01:02:03.000Z')!
+  const bytes = (s: string) => new TextEncoder().encode(s).buffer as ArrayBuffer
+  it('reads the PDF the exporter writes', async () => {
+    const doc = await PDFDocument.create()
+    applyPdfProvenance(doc, pdfLib, rec)
+    doc.addPage([100, 100])
+    const saved = await doc.save()
+    expect(parseProvenanceRecord(await pdfProvenanceText(saved))).toEqual(rec)
+    expect(await readFigureRecord('figure.PDF', saved.slice().buffer)).toEqual(rec)
+  })
+  it('reads the SVG the exporter writes, ]]> in a title included', async () => {
+    const tricky = buildProvenanceRecord([{ title: 'x]]>y', server: server() }], 'now')!
+    const [b] = buildBoardSvgs([{ title: 'x]]>y', aspect: 1, slots: [] }], () => JSON.stringify(tricky))
+    expect(parseProvenanceRecord(svgProvenanceText(b.svg))).toEqual(tricky)
+    expect(await readFigureRecord('board.svg', bytes(b.svg))).toEqual(tricky)
+  })
+  it('says null for a figure with no Cecelia record, or another file type', async () => {
+    const [plain] = buildBoardSvgs([{ title: 't', aspect: 1, slots: [] }])
+    expect(await readFigureRecord('plain.svg', bytes(plain.svg))).toBeNull()
+    const doc = await PDFDocument.create(); doc.addPage([10, 10])
+    expect(await readFigureRecord('plain.pdf', (await doc.save()).slice().buffer)).toBeNull()
+    expect(await readFigureRecord('notes.txt', bytes('{}'))).toBeNull()
+    expect(parseProvenanceRecord('{"schema":"other/1","boards":[],"project":{}}')).toBeNull()
+    expect(parseProvenanceRecord('not json')).toBeNull()
+  })
+  it('carries the non-default parameters of each step', () => {
+    expect(rec.boards[0].runs.map(r => r.params)).toEqual(server().runs.map(r => r.changedFromDefault))
+  })
+  it('lists the gate files once across boards', () => {
+    const two = buildProvenanceRecord([{ title: 'A', server: server() }, { title: 'B', server: server() }], 'now')!
+    expect(recordGateFiles(two)).toEqual([...new Set(server().populations.flatMap(p => p.gateFiles))])
+  })
+})
+
+describe('a population gates since the record', () => {
+  const ge = (file: string, status: 'edited' | 'unchanged' | 'unknown' | 'missing') => [file, { file, status, edits: 0, lastAt: '' }] as const
+  it('edited wins, unchanged needs every file, no files = nothing to change', () => {
+    const m = new Map([ge('a', 'unchanged'), ge('b', 'edited'), ge('c', 'unknown')])
+    expect(popGateStatus(['a', 'b'], m)).toBe('edited')
+    expect(popGateStatus(['a', 'c'], m)).toBe('unknown')
+    expect(popGateStatus(['a'], m)).toBe('unchanged')
+    expect(popGateStatus(['a', 'zz'], m)).toBe('unknown')
+    expect(popGateStatus([], m)).toBeNull()
+  })
+  it('a gate file today that the record lacked is a change (a gate added to another image since)', () => {
+    const m = new Map([ge('a', 'unchanged')])
+    expect(popGateStatus(['a'], m, ['a', 'b'])).toBe('edited')
+    expect(popGateStatus([], m, ['b'])).toBe('edited')
+    expect(popGateStatus(['a'], m, ['a'])).toBe('unchanged')
   })
 })

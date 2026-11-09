@@ -25,6 +25,7 @@ import { walkAssetRefs, collectAssetIds } from '../../utils/boardAssets'
 import { useLogStore } from '../../stores/log'
 import { useSettingsStore } from '../../stores/settings'
 import LayoutCanvas from './LayoutCanvas.vue'
+import BoardRecordModal from './BoardRecordModal.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import CcToggle from '../CcToggle.vue'
 
@@ -197,6 +198,11 @@ async function boardProvenance(title: string): Promise<ProvenanceBoardIn | null>
              scope: snapshotScope(props.imageUids, scope) }
   } catch { return null }
 }
+// "What made this board": the record an export would embed for the active board, readable on screen
+// (and, from the same dialog, the record inside an exported figure file).
+const recordOpen = ref(false)
+const activeTitle = computed(() => tabs.value.find(t => t.id === activeId.value)?.name ?? '')
+const loadCurrentRecord = () => boardProvenance(activeTitle.value)
 // dropdown value → (figure format, include CSV)
 function exportBoard(kind: string) {
   const map: Record<string, ['pdf' | 'svg' | null, boolean]> = {
@@ -276,6 +282,8 @@ async function exportParams() {
       <!-- one export control: figure (PDF/SVG), data (CSV), or both in a single pass -->
       <CcToggle v-model="settings.csvIncludeAttrs" label="Attributes" class="tab-attrs cc-fs-xs"
                 v-tooltip.bottom="'Add image name + attributes to plot CSVs'" />
+      <button class="tab-record cc-btn cc-btn-bare cc-btn-icon cc-btn-dense" type="button" v-tooltip.bottom="'What made this board'"
+              aria-label="What made this board" @click="recordOpen = true"><i class="pi pi-history" /></button>
       <select class="tab-pdf" data-guide="board.export" :disabled="exporting" v-tooltip.bottom="'Export each board — figure, data, or both'"
               @change="exportBoard(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Export' }}</option>
@@ -292,6 +300,7 @@ async function exportParams() {
 
     <!-- only the active board is mounted; keyed by its canvas key so a tab switch re-binds the layout -->
     <LayoutCanvas ref="layoutRef" :key="activeKey" :canvas-key="activeKey" :module="module" :image-uids="imageUids" />
+    <BoardRecordModal v-if="recordOpen" :project-uid="projectUid" :load-current="loadCurrentRecord" @close="recordOpen = false" />
   </div>
 </template>
 

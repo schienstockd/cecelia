@@ -342,7 +342,7 @@ end
         "/api/cell_cards",   # docs/todo/CELL_CARDS_PLAN.md — snapshot cards on the offline renderer
         "/api/motif_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 2 — motif-class snapshot cards
         "/api/hmm_state_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 3 — HMM-state snapshot cards
-        "/api/chains/create", "/api/chains/delete", "/api/chains/preflight",
+        "/api/chains/create", "/api/chains/delete", "/api/chains/preflight", "/api/analysis/gate-edits",
         "/api/chains/rename", "/api/chains/save",
         "/api/gating/copy", "/api/gating/pop/add", "/api/gating/pop/add-gate",
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
@@ -502,7 +502,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 122 && length(POST_ROUTES) == 188
+    @test length(GET_ROUTES) == 122 && length(POST_ROUTES) == 189
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

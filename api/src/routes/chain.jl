@@ -166,6 +166,22 @@ function api_analysis_board_provenance(req::HTTP.Request)
     200, JSON3.write(rec)
 end
 
+# POST /api/analysis/gate-edits { projectUid, since, files } → { files: [{file, status, edits, lastAt}] }:
+# whether each gating sidecar a board record names (`gateFiles`) changed after `since` (ISO, UTC — the
+# figure's export time or the board's frozen-parameters time). `gate_file_edits` reads the gate history;
+# a path outside the project's gating files is answered `invalid`, never read. Read-only.
+function api_analysis_gate_edits(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid   = _wstr(body, :projectUid)
+    files = get(body, :files, nothing)
+    since = parse_iso_utc(_wstr(body, :since))   # the client sends `toISOString()`
+    (isempty(uid) || !(files isa AbstractVector) || since === nothing) &&
+        return 400, JSON3.write((; error="projectUid, files (array) and since (ISO time) required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    200, JSON3.write((; files = gate_file_edits(proj, String.(files), since)))
+end
+
 # POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,
 # message}] } — what the run will hit on each image, before it starts (`chain_preflight`,
 # tasks/chain/preflight.jl). The chain's start dot is honoured, so only the steps that will run are read.
