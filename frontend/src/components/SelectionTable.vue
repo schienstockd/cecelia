@@ -207,7 +207,8 @@ const props = withDefaults(defineProps<{
    * Keep the header row in view while the rows scroll VERTICALLY inside the caller's scroll box (a
    * list under fixed controls). Opt-in: on a table that scrolls with its page, a pinned header would
    * stick to the page top instead. The header sits above the pinned pick column, so its radios never
-   * draw over the column titles.
+   * draw over the column titles. A scroll box with top padding must set `--cc-scroll-pad-top` to it
+   * (BaseModal's body does), or rows show through the padding strip above the pinned header.
    */
   stickyHeader?: boolean
   /**
@@ -632,7 +633,9 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
    cells (z 2); a header cell that is also a pinned column is above both. Opaque, and the bottom rule is
    a shadow because a collapsed border does not travel with a sticky cell. Out-ranks `.sized th`. */
 .sel-table.sticky-head thead th {
-  position: sticky; top: 0; z-index: 3; background: var(--cc-bg);
+  /* `top: 0` sticks at the scroll box's PADDING edge, so rows show through a strip above the header;
+     a padded scroll box publishes its top padding as `--cc-scroll-pad-top` (BaseModal's body does). */
+  position: sticky; top: calc(-1 * var(--cc-scroll-pad-top)); z-index: 3; background: var(--cc-bg);
   box-shadow: inset 0 -1px 0 var(--cc-border);
 }
 .sel-table.sticky-head thead th.sel-sticky { z-index: 4; }

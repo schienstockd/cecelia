@@ -343,7 +343,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
   color: var(--cc-text-dim);
   padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--cc-border);
-  position: sticky; top: 0;
+  position: sticky; top: calc(-1 * var(--cc-scroll-pad-top));   /* flush over the modal body padding */
   background: var(--cc-surface-1);
 }
 .col-chk  { width: 36px; }
