@@ -3,7 +3,7 @@
   Opens from the project block in AppSidebar.
 -->
 <script setup lang="ts">
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
@@ -19,6 +19,7 @@ import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
 import { runningTaskCount } from '../utils/runningTasks'
 import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
+import { matchesQuery } from '../utils/textQuery'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -112,8 +113,17 @@ function visibleUnderActive(p: { uid: string; owners?: string[] }): boolean {
   return !os || os.length === 0 || os.includes(activeProfile.value)
 }
 
-const projectRows = computed(() => projectMeta.recent
-  .filter(visibleUnderActive)
+// Free-text search over name, ID and owners — the list grows with every project and agent run, so
+// scrolling for one is the slow path. Per-lookup, so a plain ref (like the task manager's search).
+const query = ref('')
+const searchEl = ref<HTMLInputElement | null>(null)
+function matchesSearch(p: { name: string; uid: string; owners?: string[] }): boolean {
+  return matchesQuery([p.name, p.uid, ...(p.owners ?? []).map(profileNameLabel)], query.value)
+}
+
+const scopedProjects = computed(() => projectMeta.recent.filter(visibleUnderActive))
+const projectRows = computed(() => scopedProjects.value
+  .filter(matchesSearch)
   .map(p => ({
     ...p,
     dateText: formatDate(p.lastOpenedAt),
@@ -153,11 +163,20 @@ function toggleOwners(uid: string, e: MouseEvent) {
   openOwnersUid.value = uid
 }
 
-const hiddenCount = computed(() => projectMeta.recent.length - projectRows.value.length)
+const hiddenCount = computed(() => projectMeta.recent.length - scopedProjects.value.length)
 
 async function claimSelected(uid: string) { await projectMeta.claimProject(uid) }
 async function unclaimSelected(uid: string) { await projectMeta.unclaimProject(uid) }
 async function shareSelected(uid: string) { await projectMeta.shareProject(uid) }
+
+// Enter in the search box opens the picked row when it survived the filter, else the top match.
+function openFromSearch() {
+  const rows = projectRows.value
+  if (!rows.length) return
+  if (!rows.some(r => r.uid === selectedUid.value)) selectedUid.value = rows[0].uid
+  if (selectedUid.value === projectMeta.current?.uid) return   // already open
+  openSelected()
+}
 
 async function openSelected() {
   if (!selectedUid.value) return
@@ -288,6 +307,7 @@ onMounted(async () => {
   } else {
     // Auto-select the most recent project (first in the sorted list)
     selectedUid.value = projectMeta.current?.uid ?? projectMeta.recent[0].uid
+    void nextTick(() => searchEl.value?.focus())   // the row renders once the list is non-empty
   }
 })
 
@@ -329,23 +349,31 @@ function formatDate(iso: string | null): string {
           <i class="pi pi-plus" /> New project
         </button>
       </div>
-    </template>
-
-      <!-- ── RECENT tab ─────────────────────────────────────────────────── -->
-      <div v-if="tab === 'recent'" class="pp-body">
-
-        <!-- Ownership filter (USER_PROFILE_PLAN Phase 5). Hidden on a single-profile install —
-             nothing to filter by, and a two-chip picker with a single meaningful option is noise. -->
-        <div v-if="profileCount > 1" class="pp-filter cc-fs-xs">
-          <span class="cc-muted cc-eyebrow cc-fs-2xs">Show</span>
+      <!-- Search + ownership filter, pinned under the tabs so they stay in reach while the list
+           scrolls. The scope picker (USER_PROFILE_PLAN Phase 5) is hidden on a single-profile
+           install — nothing to filter by. -->
+      <div v-if="tab === 'recent' && projectMeta.recent.length > 0" class="pp-filter cc-fs-xs">
+        <input ref="searchEl" v-model="query" class="pp-search cc-input-xs" type="search"
+               placeholder="Search" aria-label="Search projects"
+               @keydown.enter.prevent="openFromSearch"
+               v-tooltip.bottom="'Filter by name, ID or owner — Enter opens'" />
+        <template v-if="profileCount > 1">
           <ChipSelect variant="segmented" :options="SCOPE_OPTIONS"
                       :model-value="scope"
                       aria-label="Project visibility scope"
                       @update:model-value="scope = $event as 'mine' | 'all'" />
           <span v-if="scope === 'mine' && hiddenCount > 0" class="cc-muted">
-            · {{ hiddenCount }} hidden
+            {{ hiddenCount }} hidden
           </span>
-        </div>
+        </template>
+        <span class="pp-count cc-muted">
+          {{ query.trim() ? `${projectRows.length} of ${scopedProjects.length}` : scopedProjects.length }}
+        </span>
+      </div>
+    </template>
+
+      <!-- ── RECENT tab ─────────────────────────────────────────────────── -->
+      <div v-if="tab === 'recent'" class="pp-body">
 
         <div v-if="projectMeta.recent.length === 0" class="pp-empty cc-empty">
           <i class="pi pi-folder" style="font-size:2rem; opacity:0.2" />
@@ -357,8 +385,16 @@ function formatDate(iso: string | null): string {
 
         <!-- The canonical table (docs/UI.md). It was hand-rolled here before `SelectionTable` could do
              single-select with row actions; the sortable headers come for free with the move. -->
+        <div v-else-if="projectRows.length === 0" class="pp-empty cc-empty">
+          <p>No projects match “{{ query.trim() }}”.</p>
+          <button class="cc-btn cc-btn-ghost" @click="query = ''">
+            <i class="pi pi-times" /> Clear search
+          </button>
+        </div>
+
         <SelectionTable v-else class="proj-table" :columns="PROJECT_COLUMNS" :rows="projectRows"
                         v-model="selectedUidModel" id-key="uid" sort-storage-key="cc.projects.sort"
+                        sticky-header
                         :row-class="p => ({ active: projectMeta.current?.uid === p.uid })"
                         :row-tooltip="p => p.uid === projectMeta.current?.uid
                           ? 'This project is already open'
@@ -663,10 +699,14 @@ function formatDate(iso: string | null): string {
 
 .pp-empty { gap: 0.75rem; padding: 3rem 1rem; }
 .pp-empty p { margin: 0; }
-/* Filter row above the table — kept subtle since the whole point is that a single-profile install
-   never sees this and a multi-profile install already understands its own filter default. */
-.pp-filter { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.15rem 0.5rem; }
-.pp-filter label { display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer; }
+/* Search + scope row in BaseModal's pinned #toolbar slot, so it stays put while the list scrolls. */
+.pp-filter {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.45rem 1.15rem;   /* toolbar slot is flush — inset to the body's padding */
+  border-bottom: 1px solid var(--cc-border);
+}
+.pp-search { flex: 1; min-width: 0; max-width: 18rem; }
+.pp-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 
 /* project table — the header, row, hover, selected and cell padding are all SelectionTable's now.
    What is left is only what this panel means: the already-open project reads as a tint. */

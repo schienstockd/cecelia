@@ -14,6 +14,7 @@
  * the project of a pre-stamp model, recovered from its source image uids.
  */
 import { profileNameLabel } from './profileApi'
+import { matchesQuery } from './textQuery'
 import type { DetailGroup } from './flowManifest'
 import type { ParamDef } from '../tasks/types'
 
@@ -47,13 +48,11 @@ export const vaultUserLabel = (m: VaultOrigin): string => m.createdBy
 /** The project as the list shows it: its name, else its uid (it may have been deleted), else ''. */
 export const vaultProjectLabel = (m: VaultOrigin): string => m.projectName || m.projectUid || ''
 
-/** Case-insensitive substring over everything a row shows: name, channels, user, project. */
+/** The vault's search box over everything a row shows: name, channels, user, project
+ *  (`matchesQuery` — every word must hit some field). */
 export function vaultMatchesQuery(m: VaultOrigin & { stem: string; label?: string },
                                   query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (!q) return true
-  return [m.stem, m.label, m.createdBy, vaultUserLabel(m), m.projectName, m.projectUid]
-    .some(v => !!v && v.toLowerCase().includes(q))
+  return matchesQuery([m.stem, m.label, m.createdBy, vaultUserLabel(m), m.projectName, m.projectUid], query)
 }
 
 /** The details modal's Origin group — recorded or recovered, said which. */

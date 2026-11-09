@@ -20,6 +20,7 @@ import { taskElapsed } from './taskElapsed'
 import { canCancelTask, canRerunTask } from './taskRerun'
 import { taskProjectLabel } from './taskScope'
 import { hpcStageLabel, hpcShownStatus } from './hpcRun'
+import { matchesQuery } from './textQuery'
 
 /** One task, flattened for a table. `entry` rides along so a row action doesn't re-look-up by id. */
 export interface TaskRow {
@@ -157,8 +158,5 @@ export function taskPoolOptions(tasks: TaskEntry[]): string[] {
  * everything.
  */
 export function taskMatchesQuery(t: TaskEntry, query: string): boolean {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
-  if (!words.length) return true
-  const hay = [t.imageName, t.imageUid, t.label, t.funName, t.module, t.pool ?? ''].join(' ').toLowerCase()
-  return words.every(w => hay.includes(w))
+  return matchesQuery([t.imageName, t.imageUid, t.label, t.funName, t.module, t.pool], query)
 }
