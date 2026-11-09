@@ -147,17 +147,21 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   gain far too high for the light collected. The old `snr` (39–75) counted single-photon spikes above
   the triangle level as signal.
 - **Bleed-through: not identifiable from one image; shared structure instead.** Every channel pair
-  shares structure (Pearson r 0.17–0.74 on smoothed voxels, within planes), and both leak directions fit equally well
+  shares structure (Pearson r 0.17–0.71 on band-passed planes, 15 movies), and both leak directions fit equally well
   (one 890 nm line excites all three). The envelope and TLS slopes swung 0.13–0.93 on RSQxFI with the
   threshold and estimator. What does show it: the steady-state movies (no beads injected) have B-cell
   shapes and granules in the bead channel. So the check reports shared structure per pair and, for an
   uptake plan, asks for a no-bead control — this set already has one.
-- **Shared structure is correlated within planes** (each plane centred before pooling): pooled raw, two
-  independent channels that both dim with depth read r 0.99 (result review; `test_signal_pass_shared_structure.py`).
+- **Shared structure is correlated on band-passed planes** (cell-scale: σ1.5 smooth minus σ25 background,
+  each plane centred). Pooled raw, two independent channels that both dim with depth read r 0.99
+  (`test_signal_pass_shared_structure.py`); centred only, a shared vignette alone read r 0.97
+  (`test_signal_pass_vignette.py`).
 - **Second case, RFtn9f set lfGUDg** (naive P14 / OT-I / gBT, two label designs, FVMPE-RS; the
   maintainer's own data): the two designs were acquired with different lasers and with Bright Z on (Nov)
   vs off (Dec, signal −3 to −28 % with depth); reporters differ up to 4× in photons, OT-I dimmest in 6 of
-  9; uGFP shows in 570–616 (r 0.54–0.87), which is the P14 channel in the ubTomato design. The GUI
+  9. uGFP shows in 570–616: band-passed r 0.34–0.86 in the CTDR design (7 movies), where that channel
+  holds no label; in the ubTomato design it is the P14 channel and r splits 0.32–0.51 (jcRERt, TKufLV,
+  7b1jqm, VNvvA8) vs 0.09–0.16 (the other 5). The GUI
   moved to a set-level modal (mockup kept outside the repo); the image metadata modal links to it.
 - **Drift:** drift correction's estimator on the whole movie (10–14 s), a stopped acquisition's last
   frame left out. RSQxFI is the only one whose
