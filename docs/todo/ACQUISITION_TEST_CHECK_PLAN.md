@@ -39,20 +39,23 @@ and the most common warning is on a channel the plan doesn't use.
 
 ## The checks (the maintainer, 2026-11-09)
 
-| Check | What it measures | Exists today | When |
-|---|---|---|---|
-| **Noise** | Signal over noise *on the objects* | `noise.snr` (P4b-1), but it disagrees with the maintainer's eye (below) | import |
-| **Dynamic range on the objects** | How much of the detector range the cells and beads use, against what sets the ceiling | not built; `range` and `hist` are over all non-zero voxels | import |
-| **Bleed-through** | Signal from one channel in another | AF correction's `maxBleedthrough` (pilot); P4b-2 at import waits | pilot (import later) |
-| **Signal fading** | Loss over the movie per channel | `import.signal_fades` (`byT`) | import |
-| **Drift** | Sample movement between frames | `drift.unreliable`, `drift.unregistered_frames` | pilot |
-| **Uneven z intensity** | Signal change with depth | `import.brighter_with_depth` / `darker_with_depth` / `clipped_deep` (`byZ`) | import |
+All six run at import, in seconds. Anything that needs the user's pipeline has to wait for that pipeline to be chosen.
+
+| Check | What it measures | Exists today |
+|---|---|---|
+| **Noise** | Signal over noise *on the objects* | `noise.snr` (P4b-1) has the wrong denominator for this (below) |
+| **Dynamic range on the objects** | How much of the detector range the cells and beads use, against what sets the ceiling | not built; `range` and `hist` are over all non-zero voxels, mostly background in a sparse movie |
+| **Bleed-through** | Signal from one channel in another | not at import. A rough version can use existing pieces: `coloc_utils.envelope_slope` (what AF correction uses to tell leak from autofluorescence; `tls_slope` beside it) and the paired sampling in `correction_utils.af_bleedthrough_alphas`, applied to the bead channel against GFP and collagen at non-bead voxels. AF correction's `maxBleedthrough` comes only after processing |
+| **Signal fading** | Loss over the movie per channel | `import.signal_fades` (`byT`) |
+| **Drift** | Sample movement between frames | only after drift correction runs. At import: a shift estimate between a few frames (drift correction's estimator on a subset), not built |
+| **Uneven z intensity** | Signal change with depth | `import.brighter_with_depth` / `darker_with_depth` / `clipped_deep` (`byZ`) |
 
 Read every check per channel against the plan. Tracked and measured channels count. A context channel
 (collagen here) gets one line: "not used by your plan".
 
-**Pilot** is the project's own steps run on a crop (advisor P6, ~15 min for 256² × 41 t on zolIMa). Open
-question: does the check run it itself (an app action; MCP can't start work), or ask the user to?
+**No pilot (the maintainer, 2026-11-09).** A pilot is a chain run on a crop, and the user or Claude can
+already do that with the existing crop task and chains. Nothing to build here. Advisor P6's mapping from
+task QC codes to stages still applies if someone does run one.
 
 ## Stand-in case — Immunemap XbeT2l, set m5uLPh (Obino 2018, Exp 63)
 
@@ -61,7 +64,9 @@ These are already-acquired public movies, treated as if one were the test image.
 
 **The maintainer's diagnosis (2026-11-09), written before any check exists:** the main problems are
 **noise**, **low dynamic range on the actual cells and beads**, and **bleed-through between channels**.
-This is the expected answer the first slice is scored against (advisor P7).
+This is the expected answer the first slice is scored against (advisor P7). For now the public set is
+the test bed (the maintainer, 2026-11-09). Score on several of its movies, not one. One judge is a known
+limit; a second (facility staff) and the lab's own bad acquisitions come later.
 
 ### Settings (re-imported 2026-11-09 with the `.ims` reader, #2064: J1ha0v, JW7Qr0, JIThPI, niHekF)
 
@@ -82,18 +87,21 @@ This is the expected answer the first slice is scored against (advisor P7).
 | B cells (GFP) | 117–118 / 11–12 | 133–159 | yes, 0.9–1.3 % | 57–62 % | 45–51 |
 | Collagen | 142–143 / 11 | 147 | yes, 1.4–1.9 % | 72–75 % | 61–63 |
 
-What this shows (reasoning):
-- **Low dynamic range is visible in the numbers.** In every channel the median sits within ~45 grey
-  levels of the background, while 1–3 % of voxels clip at 4095. A few bright objects set the ceiling,
-  and the bulk of the signal uses a few percent of the range. That matches the diagnosis.
-- **The noise number disagrees with the eye.** An `snr` of 39–75 would read as clean. Two likely
-  reasons, neither checked yet: the estimator takes the median of voxels above background, which bright
-  objects pull up; and it measures the spread of background voxels capped at the background level, which
-  underestimates the noise. The noise the eye sees is on the dim cells, at signal level. First step on
-  resume: measure noise on object voxels (or estimate gain and noise from the single image, Heintzmann 2016, per
-  `ACQUISITION_ADVISOR_PRIOR_ART.md`), and keep the number only if it matches his call on these movies.
-- **Bleed-through can't be read at import yet.** RSQxFI's AF correction (an earlier pilot-type run)
-  found 41 % collagen and 10 % GFP signal in the bead channel.
+What this does and doesn't show (reasoning; review on PR #2066):
+- **These numbers don't show low range on the objects.** The movies are sparse, so the median non-zero
+  voxel and the bottom-6 % share are mostly background (beads: median 60–62 against a background of 56).
+  A few clipped bright objects can also mean correctly exposed sparse objects. It needs an object mask
+  first.
+- **The noise number has the wrong denominator.** `snr` = (median of voxels above `bgLevel` − background
+  median) / background spread (`intensity_utils.noise_stats`). The numerator does describe the typical
+  above-background voxel, but the spread is background-only, and its own docstring says this understates
+  the Poisson noise on brighter structure. Noise has to be measured at signal level, e.g. variance against
+  mean (photon transfer) or single-image gain estimation (Heintzmann 2016, `ACQUISITION_ADVISOR_PRIOR_ART.md`).
+  Validate on synthetic Poisson–Gaussian images with a known gain (golden values) as well as against the
+  maintainer's call.
+- **Bleed-through matters most for this plan.** Uptake means bead signal inside B cells. RSQxFI's AF
+  correction found 41 % collagen and 10 % GFP signal in the bead channel; that makes false beads inside
+  cells and inflates uptake.
 
 ### Next steps the check should be able to give (to confirm with the maintainer)
 
@@ -109,22 +117,25 @@ What this shows (reasoning):
 
 ## Open decisions
 
-1. **Turning the plan sentence into structure.** Either a model parses it and the user confirms
-   (recital's parked Translator), or a small GUI form (objects, channel per object, event). Not a config
-   file.
-2. **Pilot: run it or ask for it**, and on what crop.
-3. **Rules vs. review.** "Let beads clip if you only track and count them" is a rule once the plan says
+1. **Plan → structure: a small form** (proposed on PR #2066 review): objects, channel per object, event;
+   the sentence is shown back, not parsed. Not a config file.
+2. **Rules vs. review.** "Let beads clip if you only track and count them" is a rule once the plan says
    beads are counted objects. "Brighter with depth is bead placement" is a judgement for the review.
-4. **Where it lives.** A step in the import flow ("what will you do with this?"), or an action on an
+3. **Where it lives.** A step in the import flow ("what will you do with this?"), or an action on an
    imported image. The metadata dialog's light path stays the echo-back.
-5. **Finding-text fixes, separate from this plan:** `import.channel_saturated` gives gain advice on
+4. **Finding-text fixes, separate from this plan:** `import.channel_saturated` gives gain advice on
    rescaled 8-bit exports (the Immunemap lymphatic set); `brighter_with_depth` / `clipped_deep` name
    Bright Z when no settings were read.
 
 ## Resume when
 
-1. A noise measure that agrees with the maintainer's call on these movies (above).
-2. A dynamic-range-on-objects measure (above-background voxels, clipped ones excluded, against the
-   ceiling).
-3. Then the smallest slice: plan entry + import-only checks + one review turn, scored on one Achroplan
-   movie against the diagnosis above. Bleed-through and drift join when the pilot question is settled.
+In this order:
+1. **Object mask at import:** above-background voxels per channel. Everything below depends on it.
+2. **Bleed-through proxy:** bead channel against GFP and collagen at non-bead voxels, from
+   `coloc_utils`. Compare it with AF correction's `maxBleedthrough` on RSQxFI once.
+3. **Range on the objects:** mask voxels, clipped ones excluded, against the ceiling.
+4. **Noise at signal level**, golden-tested on synthetic Poisson–Gaussian images, then checked against
+   the maintainer's call.
+5. **Drift shift estimate** on a few frames.
+6. Then the smallest slice: the form + these checks + one review turn, scored on several m5uLPh movies
+   against the diagnosis above.
