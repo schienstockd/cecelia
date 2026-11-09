@@ -504,6 +504,36 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   are distinguishable by filename, not just `Board_1_Track_measures`. `zip.ts` still disambiguates any
   genuine remaining collision with a ` (2)` suffix.
 
+## What made this board — reading the record
+
+The tab bar's history button (`BoardRecordModal`, opened from `TabbedCanvas`) shows the record an export
+would embed for the active board, readable: images, each population with its gates, and the steps
+behind the plots with their non-default parameters (`params` in the record's runs). The dialog's
+**Read a figure file…** parses an exported PDF (`pdfProvenanceText`, pdf-lib) or board SVG
+(`svgProvenanceText`) in the browser (nothing is uploaded) and shows that record the same way.
+
+What changed since the record's time — the frozen-parameters time for the board on screen, the export
+time for a file — is flagged in words with a tooltip (`InlineNote`). A step's row opens to its parameters as a tree
+(`rowParamTree`: the non-default settings, then those the images ran with different values, with their
+spread — the record's `differs`, from the table's `conflicts`), and the steps download as CSV with one
+header, a `board` column and one row per setting (`recordRowsCsv`: `imageTiling.blockSize` → `4096`; a
+step with none keeps one row), unlike the one-row-per-step Parameters export. A gate whose change can't
+be determined (no history from then, or the check failed) is flagged **gate ?**, never shown as unchanged:
+- **Steps** — `recordRows`. A record holds the frozen rows plus `now (differs)` rows for steps that ran
+  again before it was made; plots are live, so the `now` row is what was drawn and the frozen row it
+  replaced is left out. On screen, a `now` row is **changed** since the freeze. For a file, each step is
+  compared with today's board-scoped table (`/api/analysis/board-provenance` with the record's images
+  and population keys): **re-ran** (other run-log task ids) or **not found**. Cluster runs aren't in the
+  record, so a step only a cluster run reaches comes back *not found*, never wrongly unchanged; a step
+  recorded without task ids is never flagged.
+- **Gates** — `POST /api/analysis/gate-edits` (`gate_file_edits`): **gate changed** when a gate file's
+  history has an entry after the time, or when today the population has a gate file the record didn't
+  (`popGateStatus` with today's `gateFiles`: a gate added to another image); **gate gone** when the file
+  is missing. Cosmetic writes leave no history entry, so they don't count.
+
+A file from another project is shown but not compared. A board that was never frozen has nothing to
+compare against, so nothing is flagged.
+
 ## Rendering a board headless
 
 The agent-run record (`scripts/agent_eval/run_record.py` → `stage_boards.py`) puts each pipeline

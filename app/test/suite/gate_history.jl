@@ -184,3 +184,39 @@ end
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end
 end
+
+@testset "Gate history: which of a record's gate files changed since it was made" begin
+    root = mktempdir()
+    td = joinpath(root, "1", "imgA")
+    m = PopulationMap(pop_type = "flow", value_name = "B")
+    add_pop!(m, "cd4"; parent = ROOT, gate = _gh_rect(0.0, 10.0), colour = "#f00")
+    save_pop_map!(m, td)
+    rel = replace(relpath(Cecelia.gating_path(td, "B"), root), '\\' => '/')
+    at(e) = DateTime(string(e["at"]))
+    first_at = at(only(read_gating_history(td, "B")))
+    # history `at` is local wall time; offset 0 makes it the UTC time the caller passes
+    edits(since) = only(gate_file_edits(root, [rel], since; local_offset = Dates.Minute(0)))
+    @test edits(first_at - Dates.Minute(1))["status"] == "edited"
+    @test edits(first_at)["status"] == "unchanged"                      # nothing AFTER since
+    sleep(1.1)
+    set_gate!(m, "/cd4", _gh_rect(2.0, 10.0)); save_pop_map!(m, td)
+    e = edits(first_at)
+    @test e["status"] == "edited" && e["edits"] == 1 && endswith(e["lastAt"], "Z")
+    # history `at` is local: with local = UTC+2 the same wall times are two hours earlier in UTC,
+    # so both edits fall before `first_at` read as UTC
+    @test only(gate_file_edits(root, [rel], first_at; local_offset = Dates.Hour(2)))["status"] == "unchanged"
+    # cosmetic writes don't count
+    m.pops["/cd4"].colour = "#00f"; save_pop_map!(m, td)
+    @test edits(at(read_gating_history(td, "B")[end]))["status"] == "unchanged"
+    # gone, outside the project, not a gating file: answered, never read
+    rm(Cecelia.gating_path(td, "B"))
+    @test edits(first_at)["status"] == "missing"
+    @test [x["status"] for x in gate_file_edits(root, ["../etc/passwd.json", "1/imgA/notes.json", "/abs/gating/B.json"],
+                                                first_at)] == ["invalid", "invalid", "invalid"]
+    # no history beside the sidecar: unchanged if not written since, else unknown
+    other = joinpath(td, "gating", "C.json"); write(other, "{}")
+    relc = replace(relpath(other, root), '\\' => '/')
+    @test only(gate_file_edits(root, [relc], Dates.now(Dates.UTC) + Dates.Hour(1)))["status"] == "unchanged"
+    @test only(gate_file_edits(root, [relc], DateTime(2000)))["status"] == "unknown"
+    rm(root; recursive = true)
+end

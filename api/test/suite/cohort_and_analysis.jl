@@ -186,6 +186,32 @@ end
     end
 end
 
+@testset "API: gate edits since a board record" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _ge(d) = api_analysis_gate_edits(Vector{UInt8}(JSON3.write(d)))
+    try
+        proj = create_project!(name = "api-gate-edits")
+        s    = add_set!(proj; name = "set-A")
+        img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        gp   = Cecelia.gating_path(img._dir, "B"); mkpath(dirname(gp)); write(gp, "{}")
+        rel  = replace(relpath(gp, proj.root), '\\' => '/')
+        @test _ge(Dict("projectUid" => proj.uid, "files" => [rel]))[1] == 400              # no since
+        @test _ge(Dict("projectUid" => proj.uid, "since" => "nope", "files" => [rel]))[1] == 400
+        @test _ge(Dict("projectUid" => "nope", "since" => "2026-11-08T01:02:03.000Z", "files" => [rel]))[1] == 404
+        # the client sends JS `toISOString()`: milliseconds + Z
+        st, body = _ge(Dict("projectUid" => proj.uid, "since" => "2000-01-01T00:00:00.000Z",
+                            "files" => [rel, "../../etc/gating/x.json"]))
+        @test st == 200
+        f = JSON3.read(body).files
+        @test [String(x.status) for x in f] == ["unknown", "invalid"]   # no history, written after 2000
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: analysis populations" begin
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)

@@ -24,11 +24,12 @@
 
 const GATING_HISTORY_SUFFIX = ".history.jsonl"
 
+"""The gate history file beside a gating sidecar path (`…/gating/B.json` → `…/gating/B.history.jsonl`)."""
+gating_history_file(sidecar::AbstractString) = sidecar[1:end-length(".json")] * GATING_HISTORY_SUFFIX
+
 """`gating/{value_name}[__type].history.jsonl` — the gate history beside the sidecar `gating_path` names."""
-function gating_history_path(task_dir::AbstractString, value_name::AbstractString; pop_type::PopTypeArg="flow")
-    p = gating_path(task_dir, value_name; pop_type = pop_type)
-    p[1:end-length(".json")] * GATING_HISTORY_SUFFIX
-end
+gating_history_path(task_dir::AbstractString, value_name::AbstractString; pop_type::PopTypeArg="flow") =
+    gating_history_file(gating_path(task_dir, value_name; pop_type = pop_type))
 
 """The history entries for one sidecar, oldest first; [] when there is none (see the file header)."""
 read_gating_history(task_dir::AbstractString, value_name::AbstractString; pop_type::PopTypeArg="flow") =
