@@ -18,6 +18,7 @@
 // The first two are one kind (`look`) and land on the Batch page; the third lands on Animation. That
 // is Decision 7, and it is why there are two destinations for three producers.
 
+import { roiPadFrames } from './roiMovie'
 import { TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from './batchMovie'
 import { COMPARE_LAYOUTS, type CompareLayout } from './movieCompare'
 
@@ -302,7 +303,8 @@ export function roiRerecordRequest(config: Record<string, unknown> | null | unde
   if (typeof r.suffix !== 'string' || !ids.length) return null
   const out: Record<string, unknown> = {
     type: 'movie:record', imageUid: config.imageUid, matchViewer: true,
-    rois: { suffix: r.suffix, ids, sheet: r.sheet === true, padFrames: num(r.padFrames) ?? 2 },
+    rois: { suffix: r.suffix, ids, sheet: r.sheet === true, sheetOnly: r.sheetOnly === true,
+            padFrames: roiPadFrames(num(r.padFrames)), nFrames: num(r.nFrames) ?? 0 },
     valueNames: strList(config.valueNames) ?? [],
     labelValueNames: strList(config.labelValueNames) ?? [],
     labelContour: num(config.labelContour) ?? 0,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { roiRecordSelection, roiRecordBlock, roiCheckedKey, roiFigureSpec, ROI_MAX_DEFAULT, ROI_PAD_FRAMES } from './roiMovie'
+import { roiRecordSelection, roiRecordBlock, roiCheckedKey, roiPadFrames, ROI_PAD_MAX, roiFigureSpec, ROI_MAX_DEFAULT, ROI_PAD_FRAMES } from './roiMovie'
 import type { RoiRow } from './rois'
 import type { FigureSpec } from './figureSpec'
 
@@ -35,9 +35,20 @@ describe('roiCheckedKey', () => {
 
 describe('roiRecordBlock', () => {
   it('carries the ids in order; a sheet of one ROI is just its movie', () => {
-    expect(roiRecordBlock('debris', [row('b', 2), row('a', 1)], true))
-      .toEqual({ suffix: 'debris', ids: ['b', 'a'], sheet: true, padFrames: ROI_PAD_FRAMES })
-    expect(roiRecordBlock('debris', [row('a', 1)], true).sheet).toBe(false)
+    expect(roiRecordBlock('debris', [row('b', 2), row('a', 1)], 'both'))
+      .toEqual({ suffix: 'debris', ids: ['b', 'a'], sheet: true, sheetOnly: false, padFrames: ROI_PAD_FRAMES })
+    expect(roiRecordBlock('debris', [row('a', 1)], 'both').sheet).toBe(false)
+    // sheet only, unless there is one ROI — then it is just its movie
+    expect(roiRecordBlock('debris', [row('b', 2), row('a', 1)], 'sheet')).toMatchObject({ sheet: true, sheetOnly: true })
+    expect(roiRecordBlock('debris', [row('a', 1)], 'sheet')).toMatchObject({ sheet: false, sheetOnly: false })
+    expect(roiRecordBlock('debris', [row('b', 2), row('a', 1)], 'movies')).toMatchObject({ sheet: false, sheetOnly: false })
+  })
+  it('the pad is whole frames in 0…ROI_PAD_MAX; blank is the default', () => {
+    expect(roiRecordBlock('d', [row('a', 1)], 'movies', 10).padFrames).toBe(10)
+    expect(roiPadFrames(-3)).toBe(0)
+    expect(roiPadFrames(1e6)).toBe(ROI_PAD_MAX)
+    expect(roiPadFrames(null)).toBe(ROI_PAD_FRAMES)
+    expect(roiPadFrames(Number.NaN)).toBe(ROI_PAD_FRAMES)
   })
 })
 
@@ -51,5 +62,12 @@ describe('roiFigureSpec', () => {
     expect([s.z, s.zHalf]).toEqual([6, 2])
     expect(s.frames).toEqual([10, 15, 20])
     expect(s.layout).toBe('grid')                    // the view's layout and display carry over
+  })
+  it('a pad widens the frames, inside the movie', () => {
+    const base = { kind: 'sequence', center: [0, 0], sizePx: 512, z: 0, zHalf: 0, frames: [0],
+                   rows: [], display: { ranges: {} } } as FigureSpec
+    expect(roiFigureSpec(base, row('a', 1), 5, 5).frames).toEqual([5, 10, 15, 20, 25])
+    expect(roiFigureSpec(base, row('a', 1), 5, 20, 24).frames[0]).toBe(0)
+    expect(roiFigureSpec(base, row('a', 1), 5, 20, 24).frames.at(-1)).toBeLessThanOrEqual(23)
   })
 })

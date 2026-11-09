@@ -16,6 +16,11 @@
     # frames clamp to the movie, planes to the stack; a box over several planes is their max
     w2 = roi_record_window(roi("a", 1, 0, 9; z0 = 0, z1 = 7), 10, 3, 500, 500; pad_frames = 2)
     @test w2.ts == 0:9 && w2.z == 0:2
+    # a sheet's tile: widened to n_frames, centred, shifted inside the movie, never past it
+    @test roi_record_window(roi("a", 1, 3, 5), 20, 3, 500, 500; pad_frames = 2, n_frames = 11).ts == 0:10
+    @test roi_record_window(roi("a", 1, 10, 12), 30, 3, 500, 500; pad_frames = 2, n_frames = 11).ts == 6:16
+    @test roi_record_window(roi("a", 1, 25, 27), 30, 3, 500, 500; pad_frames = 2, n_frames = 11).ts == 19:29
+    @test roi_record_window(roi("a", 1, 3, 5), 6, 3, 500, 500; pad_frames = 2, n_frames = 11).ts == 0:5
     # the pick keeps the ROI list's order, skips ids the set no longer has; none picked = all, by rank
     rs = [roi("a", 2, 0, 1), roi("b", 1, 0, 1), roi("c", 3, 0, 1)]
     @test [r["id"] for r in roi_pick(rs, ["c", "gone", "a"])] == ["c", "a"]
@@ -69,12 +74,24 @@
             e1 = reg["img_debris_r1.mp4"]; es = reg["img_debris_sheet.mp4"]
             @test e1["configKind"] == "rois" && collect(String, e1["config"]["rois"]["ids"]) == ["r1"]
             @test e1["config"]["rois"]["sheet"] == false
+            # with a sheet, a kept movie is cut to the sheet's length and banks it, so a re-record matches
+            @test e1["config"]["rois"]["nFrames"] > 0 && e1["config"]["rois"]["nFrames"] == es["config"]["rois"]["nFrames"]
             # tagged by what they are; a user's tag survives a re-record, which adds the auto ones back
             @test collect(String, e1["tags"]) == ["roi", "debris"] && collect(String, es["tags"]) == ["roi", "debris", "sheet"]
             reg["img_debris_r1.mp4"]["tags"] = ["keep"]; _write_movies_registry!(proj.uid, reg)
             register_movie!(proj.uid, "img_debris_r1.mp4"; auto_tags = ["roi"])
             @test collect(String, _read_movies_registry(proj.uid)["img_debris_r1.mp4"]["tags"]) == ["keep", "roi"]
             @test collect(String, es["config"]["rois"]["ids"]) == ["r2", "r1"] && es["config"]["rois"]["sheet"] == true
+            # sheet only: the sheet is written and registered, the tiles are not kept
+            run_roi_offline("t-roi-only", proj.uid, img.uid; roi_suffix = "debris", roi_ids = ["r2", "r1"],
+                            sheet = true, sheet_only = true, suffix = "only", min_px = 64, match_viewer = false,
+                            show_timestamp = false, show_scale_bar = false,
+                            movie_config = MovieRecordConfig(; imageUid = img.uid))
+            @test isfile(joinpath(mdir, "img_debris_only_sheet.mp4"))
+            @test !isfile(joinpath(mdir, "img_debris_only_r1.mp4")) && !isfile(joinpath(mdir, "img_debris_only_r2.mp4"))
+            reg2 = _read_movies_registry(proj.uid)
+            @test reg2["img_debris_only_sheet.mp4"]["config"]["rois"]["sheetOnly"] == true
+            @test !any(k -> occursin("only_r", k), keys(reg2))
             # a set that isn't there fails cleanly, writing nothing
             run_roi_offline("t-roi2", proj.uid, img.uid; roi_suffix = "nope")
             @test !any(f -> occursin("nope", f), readdir(mdir))

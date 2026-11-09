@@ -23,6 +23,7 @@ Base.@kwdef struct RoiDiscoveryParams
     pops::Vector{String}   = String[]
     rankBy::Vector{String} = String[]
     groupBy::String        = ""            # an id column whose values ARE the groups (one ROI each)
+    mergeGap::Int          = -1            # merge groups at one spot ≤ this many frames apart; -1 = off
     minObjects::Int        = 20
     maxRois::Int           = 50
     reviewLabels::String   = ROI_LABELS_DEFAULT
@@ -35,6 +36,7 @@ function parse_roi_discovery_params(d::AbstractDict)::RoiDiscoveryParams
         rankBy       = _str_list(d, "rankBy"),
         # one column, picked in a multi-select like motif discovery's HMM state — the first counts
         groupBy      = (g = _str_list(d, "groupBy"); isempty(g) ? "" : first(g)),
+        mergeGap     = get(d, "mergeNearby", false) === true ? max(0, Int(get(d, "mergeGap", 5))) : -1,
         minObjects   = Int(get(d, "minObjects", 20)),
         maxRois      = Int(get(d, "maxRois", 50)),
         reviewLabels = string(something(get(d, "reviewLabels", ROI_LABELS_DEFAULT), "")),
@@ -87,13 +89,14 @@ function _run_task(::RoiDiscovery, img::CciaImage, params::Dict{String,Any};
     qc_out_path = joinpath(task_run_dir(img._dir), "roi_discovery_qc.json")
     on_log("[INFO] roiDiscovery: $(length(labels)) objects in $(join(p.pops, ", ")), groups of ≥$(p.minObjects) " *
            (isempty(p.groupBy) ? "per window" : "by $(p.groupBy)") *
-           (isempty(p.rankBy) ? "" : ", ranked by $(join(p.rankBy, ", "))") * " → rois/$(p.roisSuffix).json")
+           (isempty(p.rankBy) ? "" : ", ranked by $(join(p.rankBy, ", "))") *
+           (p.mergeGap < 0 ? "" : ", merging one spot within $(p.mergeGap) frames") * " → rois/$(p.roisSuffix).json")
 
     task_params = Dict{String,Any}(
         "propsPath" => img_label_props_path(img, vn), "labelsPath" => img_labels_path(img, vn),
         "imPath" => something(img_filepath(img), ""), "roisPath" => rois_path, "qcOutPath" => qc_out_path,
         "suffix" => p.roisSuffix, "valueName" => vn, "labels" => labels, "rankBy" => p.rankBy, "groupBy" => p.groupBy,
-        "minObjects" => p.minObjects, "maxRois" => p.maxRois,
+        "minObjects" => p.minObjects, "maxRois" => p.maxRois, "mergeGap" => p.mergeGap,
         "reviewLabels" => roi_review_labels(p.reviewLabels),
         # the user's params, verbatim, so the ROI set records how it was made (reproducible)
         "taskParams" => Dict{String,Any}(String(k) => v for (k, v) in params))

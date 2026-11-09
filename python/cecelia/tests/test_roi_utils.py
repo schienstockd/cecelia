@@ -130,6 +130,44 @@ class TestRois(unittest.TestCase):
         self.assertAlmostEqual(roi_utils.box_iou(b(0), b(0)), 1.0)
         self.assertEqual(roi_utils.box_iou(b(0), b(50)), 0.0)
 
+    def test_merge_joins_one_spot_split_into_a_chain_of_events(self):
+        # one clump whose linking broke into three events (t 0–4, 7–10, 12–15) plus one elsewhere and one
+        # at the same spot much later: within 3 frames the chain becomes ONE ROI on all its objects
+        spot = [[20, 20, 2], [24, 22, 2], [22, 26, 2]]
+        far = [[80, 80, 2]] * 3
+        xyz, t, ids = [], [], []
+        for eid, (t0, t1, pts) in enumerate([(0, 4, spot), (7, 10, spot), (12, 15, spot),
+                                             (0, 4, far), (40, 44, spot)], start=1):
+            for tt in range(t0, t1 + 1):
+                xyz += pts; t += [tt] * len(pts); ids += [eid] * len(pts)
+        xyz, t, ids = np.array(xyz, dtype=float), np.array(t), np.array(ids, dtype=float)
+        shape = {"t": 60, "z": 5, "y": 100, "x": 100}
+        rois, _ = roi_utils.find_rois(xyz, xyz, t, shape, min_objects=2, group_ids=ids, merge_gap=3)
+        self.assertEqual(len(rois), 3)
+        top = rois[0]
+        self.assertEqual((top["t0"], top["t1"], top["nObjects"]), (0, 16, 3 * (5 + 4 + 4)))
+        # off leaves them apart; "within" counts the frames BETWEEN: 2 between (t 5, 6) needs 2, and
+        # 1 between (t 11) merges at 1 — so at 1 only the second link holds
+        self.assertEqual(len(roi_utils.find_rois(xyz, xyz, t, shape, 2, group_ids=ids)[0]), 5)
+        self.assertEqual(len(roi_utils.find_rois(xyz, xyz, t, shape, 2, group_ids=ids, merge_gap=2)[0]), 3)
+        self.assertEqual(len(roi_utils.find_rois(xyz, xyz, t, shape, 2, group_ids=ids, merge_gap=1)[0]), 4)
+        self.assertEqual(len(roi_utils.find_rois(xyz, xyz, t, shape, 2, group_ids=ids, merge_gap=0)[0]), 5)
+
+    def test_merge_within_zero_joins_back_to_back_groups(self):
+        # t 0–4 then 5–8 at one spot: nothing between, so Within = 0 merges them
+        xyz = np.array([[20, 20, 2]] * 9, dtype=float)
+        t = np.arange(9)
+        ids = np.array([1] * 5 + [2] * 4, dtype=float)
+        shape = {"t": 20, "z": 5, "y": 100, "x": 100}
+        self.assertEqual(len(roi_utils.find_rois(xyz, xyz, t, shape, 2, group_ids=ids, merge_gap=0)[0]), 1)
+
+    def test_same_spot_is_overlap_of_the_smaller_box_with_planes_touching(self):
+        b = lambda x0, w=10, z0=0: {"x0": x0, "x1": x0 + w - 1, "y0": 0, "y1": 9, "z0": z0, "z1": z0 + 4}
+        self.assertTrue(roi_utils.same_spot(b(0), b(4)))                    # 6 of 10 columns shared
+        self.assertFalse(roi_utils.same_spot(b(0), b(6)))                   # 4 of 10
+        self.assertTrue(roi_utils.same_spot(b(0, 40), b(10)))              # a small box inside a big one
+        self.assertFalse(roi_utils.same_spot(b(0), b(0, z0=10)))            # other planes
+
 
 if __name__ == "__main__":
     unittest.main()

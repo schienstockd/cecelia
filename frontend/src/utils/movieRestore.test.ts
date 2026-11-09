@@ -282,7 +282,7 @@ describe('roiRerecordRequest', () => {
   it('records the movie again: its own ROI, the same look and output', () => {
     const q = roiRerecordRequest(cfg)!
     expect(q.type).toBe('movie:record')
-    expect(q.rois).toEqual({ suffix: 'debris', ids: ['r7'], sheet: false, padFrames: 3 })
+    expect(q.rois).toEqual({ suffix: 'debris', ids: ['r7'], sheet: false, sheetOnly: false, padFrames: 3, nFrames: 0 })
     expect([q.imageUid, q.fps, q.suffix, q.labelContour]).toEqual(['img1', 12, 'x', 1])
     expect(q.look).toEqual({ colourBy: 'pop' })
     expect([q.showTimestamp, q.showScaleBar]).toEqual([true, false])

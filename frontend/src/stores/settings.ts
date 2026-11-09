@@ -1,4 +1,4 @@
-import { RECORD_WHAT_DEFAULT, ROI_MAX_DEFAULT, roiCheckedKey, type RecordWhat } from '../utils/roiMovie'
+import { RECORD_WHAT_DEFAULT, ROI_MAX_DEFAULT, ROI_OUTPUT_DEFAULT, ROI_PAD_FRAMES, roiCheckedKey, type RecordWhat, type RoiOutput } from '../utils/roiMovie'
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, watch, type Ref } from 'vue'
 import { TITLE_CARD_DEFAULT, RENDER_QUALITY_DEFAULT, type TitleCardCfg, type BatchMovieCfg, type RenderQuality } from '../utils/batchMovie'
@@ -618,7 +618,7 @@ export const useSettingsStore = defineStore('settings', () => {
               tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean; figureGrid?: boolean
               numberIfTaken?: boolean
               // Record / Save as figure: the view, or each ROI of the viewer's ROI set (`utils/roiMovie.ts`)
-              recordWhat?: RecordWhat; roiMax?: number; roiSheet?: boolean
+              recordWhat?: RecordWhat; roiMax?: number; roiSheet?: boolean; roiOutput?: RoiOutput; roiPad?: number
               // 3D ray-cast quality (draft / standard / high). Per set, like the other viewer prefs.
               renderQuality?: RenderQuality
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
@@ -698,7 +698,8 @@ export const useSettingsStore = defineStore('settings', () => {
     matchViewer: boolean
     recordWhat: RecordWhat
     roiMax: number
-    roiSheet: boolean
+    roiOutput: RoiOutput
+    roiPad: number
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
     sizeX: _setPrefs.value[setUid]?.movie?.sizeX ?? null,
@@ -738,7 +739,10 @@ export const useSettingsStore = defineStore('settings', () => {
     // the view, as every recording was before ROIs could be recorded
     recordWhat: _setPrefs.value[setUid]?.movie?.recordWhat ?? RECORD_WHAT_DEFAULT,
     roiMax: _setPrefs.value[setUid]?.movie?.roiMax ?? ROI_MAX_DEFAULT,
-    roiSheet: _setPrefs.value[setUid]?.movie?.roiSheet ?? false,
+    // `roiSheet` (a bool) came first: on meant movies + sheet
+    roiOutput: _setPrefs.value[setUid]?.movie?.roiOutput
+      ?? (_setPrefs.value[setUid]?.movie?.roiSheet ? 'both' : ROI_OUTPUT_DEFAULT),
+    roiPad: _setPrefs.value[setUid]?.movie?.roiPad ?? ROI_PAD_FRAMES,
   })
   function setMovieConfig(setUid: string,
                           patch: { fps?: number; sizeX?: number | null; sizeY?: number | null;
@@ -752,7 +756,7 @@ export const useSettingsStore = defineStore('settings', () => {
                                    tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean; figureGrid?: boolean
                                    numberIfTaken?: boolean
                                    matchViewer?: boolean
-                                   recordWhat?: RecordWhat; roiMax?: number; roiSheet?: boolean }) {
+                                   recordWhat?: RecordWhat; roiMax?: number; roiSheet?: boolean; roiOutput?: RoiOutput; roiPad?: number }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)

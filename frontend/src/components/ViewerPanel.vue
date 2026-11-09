@@ -28,7 +28,8 @@ import InlineNote from './InlineNote.vue'
 import CcToggle from './CcToggle.vue'
 import ChipSelect from './ChipSelect.vue'
 import { fetchRois, type RoiList, type RoiStatus } from '../utils/rois'
-import { roiRecordSelection, roiRecordBlock, roiFigureSpec, type RecordWhat } from '../utils/roiMovie'
+import { roiRecordSelection, roiRecordBlock, roiFigureSpec, roiPadFrames, ROI_OUTPUT_DEFAULT, ROI_PAD_FRAMES, ROI_PAD_MAX,
+         type RecordWhat, type RoiOutput } from '../utils/roiMovie'
 import ColourPicker from './ColourPicker.vue'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
@@ -306,9 +307,18 @@ const recordWhat = computed<RecordWhat>({
 const roiMax = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).roiMax : 12,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { roiMax: v }) } })
-const roiSheet = computed<boolean>({
-  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).roiSheet : false,
-  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { roiSheet: v }) } })
+const roiOutput = computed<RoiOutput>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).roiOutput : ROI_OUTPUT_DEFAULT,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { roiOutput: v }) } })
+const roiOutputOptions = [
+  { value: 'movies', label: 'movies', tip: 'One movie per ROI' },
+  { value: 'both', label: '+ sheet', tip: 'One movie per ROI and a contact sheet of them all' },
+  { value: 'sheet', label: 'sheet', tip: 'Only the contact sheet' },
+]
+// frames of context before and after each ROI's window, for the movies and the figures
+const roiPad = computed<number>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).roiPad : ROI_PAD_FRAMES,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { roiPad: roiPadFrames(v) }) } })
 const roiList = ref<RoiList | null>(null)
 const hasRois = computed(() => (roiList.value?.rois.length ?? 0) > 0)
 const recordingRois = computed(() => hasRois.value && recordWhat.value === 'rois')
@@ -535,7 +545,7 @@ async function saveRoiFigures(projectUid: string, img: NonNullable<typeof opened
   let saved = 0
   try {
     for (const roi of pick.rows) {
-      const spec = roiFigureSpec(base, roi, figureEvery.value)
+      const spec = roiFigureSpec(base, roi, figureEvery.value, roiPad.value, img.sizeT ?? Infinity)
       spec.scaleBarUm = niceFigureBarUm(spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
       const res = await fetch('/api/figures/render', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -578,7 +588,7 @@ async function recordRois(uid: string, projectUid: string) {
             labelValueNames: look.labelValueNames ?? [], labelContour: look.labelContour ?? 0,
             showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
             viewState: hexViewState(snapshot),
-            rois: roiRecordBlock(pick.suffix, pick.rows, roiSheet.value),
+            rois: roiRecordBlock(pick.suffix, pick.rows, roiOutput.value, roiPad.value),
             ...movieSizeParams(movieSizeX.value, movieSizeY.value) })
 }
 
@@ -1346,9 +1356,17 @@ onUnmounted(() => {
               </div>
               <div class="cc-row">
                 <span class="cc-row-group">
-                  <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
-                        v-tooltip.bottom="'Also one contact sheet of all the ROI movies'">sheet</span>
-                  <CcToggle v-model="roiSheet" aria-label="Also record a contact sheet" />
+                  <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">pad</span>
+                  <input type="number" min="0" :max="ROI_PAD_MAX" step="1" class="cc-input-2xs" v-model.number="roiPad"
+                         aria-label="Frames of context before and after"
+                         v-tooltip.bottom="'Frames of context before and after each ROI'" />
+                </span>
+              </div>
+              <div class="cc-row">
+                <span class="cc-row-group">
+                  <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">make</span>
+                  <ChipSelect v-model="roiOutput" :options="roiOutputOptions" variant="segmented" class="cc-fs-xs"
+                              aria-label="What an ROI record writes" />
                 </span>
               </div>
             </template>

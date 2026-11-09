@@ -102,6 +102,24 @@
           "allObs": true,
           "default": [],
           "tip": "Optional: one id column; each id is one ROI, e.g. an aggregate event"
+        },
+        {
+          "key": "mergeNearby",
+          "label": "Merge same spot",
+          "type": "bool",
+          "default": false,
+          "tip": "Merge groups at the same spot into one ROI before ranking"
+        },
+        {
+          "key": "mergeGap",
+          "showIf": { "mergeNearby": true },
+          "label": "Within (frames)",
+          "type": "int",
+          "min": 0,
+          "max": 60,
+          "step": 1,
+          "default": 5,
+          "tip": "Most frames between two groups that still merge"
         }
       ]
     }
