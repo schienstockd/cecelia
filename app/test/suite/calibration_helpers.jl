@@ -33,6 +33,42 @@
     @test m2["SizeT"] == 30 && m2["SizeC"] == 2 && !haskey(m2, "SizeZ")
 end
 
+@testset "Crop/copy inherit source acquisition settings (pure helpers)" begin
+    # Read back through JSON3 the way a ccid.json is: nested values arrive immutable, Symbol-keyed.
+    src = Cecelia.JSON3.read(Cecelia.JSON3.write(Dict(
+        "ori_path" => "/data/raw.oir",
+        "acquisition" => Dict("system" => "FV4000", "zStack" => Dict("stepUm" => 2.0, "count" => 31),
+            "timelapse" => Dict("intervalS" => 15.0, "count" => 181),
+            "channels" => [Dict("detector" => "D1"), Dict("detector" => "D2")],
+            "brightZ" => Dict("enabled" => true, "points" => [
+                Dict("zFromStartUm" => 0.0, "transmissionPct" => Dict("MaiTai" => 10.0)),
+                Dict("zFromStartUm" => 60.0, "transmissionPct" => Dict("MaiTai" => 30.0))])))))
+    store  = Dict{String,Any}("SizeC" => 2, "SizeZ" => 31, "SizeT" => 181)   # the cropped version
+    padded = Dict{String,Any}("SizeC" => 2, "SizeZ" => 41, "SizeT" => 181)   # drift-corrected: Z padded
+    box(; z0 = -1, z1 = -1, t0 = -1, t1 = -1) = (; x0 = 0, x1 = 8, y0 = 0, y1 = 8, z0, z1, t0, t1)
+    # XY only: the settings hold as they are
+    a = Cecelia.crop_acquisition(src, box(), store)["acquisition"]
+    @test a["zStack"]["count"] == 31 && !haskey(a["timelapse"], "acquired")
+    @test [p["zFromStartUm"] for p in a["brightZ"]["points"]] == [0.0, 60.0]
+    # Z [5,15) + T [10,40): plane count, ramp from the crop's first plane, frames kept
+    a = Cecelia.crop_acquisition(src, box(z0 = 5, z1 = 15, t0 = 10, t1 = 40), store)["acquisition"]
+    @test a["zStack"]["count"] == 10 && a["zStack"]["stepUm"] == 2.0
+    @test [p["zFromStartUm"] for p in a["brightZ"]["points"]] == [-10.0, 50.0]
+    @test a["timelapse"]["acquired"] == 30 && a["timelapse"]["count"] == 181
+    # the source is not mutated
+    @test src[:acquisition][:brightZ][:points][1][:zFromStartUm] == 0.0
+    # a padded (drift-corrected) version is not the acquired stack: neither crop nor copy claims it
+    for m in (Cecelia.crop_acquisition(src, box(z0 = 5, z1 = 15), padded), Cecelia.inherited_acquisition(src, padded))
+        @test !haskey(m, "acquisition")
+        @test m["acquisitionMissing"] == Dict{String,Any}("reason" => "other-stack", "ext" => ".oir")
+    end
+    @test Cecelia.inherited_acquisition(src, store)["acquisition"]["system"] == "FV4000"   # a copy
+    # no settings: the source's reason carries; nothing read yet: nothing
+    miss = Dict{String,Any}("acquisitionMissing" => Dict{String,Any}("reason" => "format", "ext" => ".lif"))
+    @test Cecelia.crop_acquisition(miss, box(), store)["acquisitionMissing"]["reason"] == "format"
+    @test isempty(Cecelia.inherited_acquisition(Dict{String,Any}("SizeC" => 2), store))
+end
+
 
 @testset "ZProject inherits source calibration (pure helper)" begin
     # A Z-projection collapses SizeZ to 1 while every other calibration field carries over
