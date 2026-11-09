@@ -1,0 +1,141 @@
+# Test-acquisition check — plan
+
+**Status:** **PARKED** (2026-11-09). Nothing built. Written from one set used as a stand-in (below).
+Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md) — that plan's Decision 1/2 ("test
+acquisition imported into the user's project") given a concrete shape. Reuses the mechanism of
+[`IMAGE_ANALYSIS_RECITAL_PLAN.md`](IMAGE_ANALYSIS_RECITAL_PLAN.md).
+
+## Goal
+
+Before the user processes anything, and before they acquire the rest of the experiment:
+
+> "Here is my image. I'm planning to track the uptake of beads by B cells. Is that OK, or should I
+> change anything before acquiring the other images?"
+
+The answer is a short list. Each item names a problem in this image that gets in the way of that
+plan, the change to make at the microscope, and what the change costs. Changes for the next
+acquisitions come first. What it means for this image comes second.
+
+## Route — the recital mechanism, with a plan instead of a claim (the maintainer, 2026-11-09)
+
+The plan sentence plays the role a claim plays in recital: it scopes what matters.
+
+| Recital | Test-acquisition check |
+|---|---|
+| Claim: "T faster than B" | Plan: "track bead uptake by B cells" |
+| Translator (parked there) → populations, measure, replicate | **Needed here**: plan → objects (B cells, beads), the channel for each, the event (uptake), context channels. The user confirms |
+| Checks: record gaps, cohort consistency, replicate floors | Checks: the six below, read per channel against the plan |
+| Review: one Kiwi turn, advisory, Good/Bad/Unsure | Review: one Kiwi turn reading `get_acquisition_knowledge`; "consistent with" until the cause is separated |
+| A Blackboard entry, re-checked each session | Same: the plan is an entry, re-checked when the next test image lands |
+| Popover: facts grouped by category, "what, where → what to do" | Same layout |
+
+**Before analysis vs. after (the maintainer, 2026-11-09).** This plan covers *before*: a test image and a
+plan, and advice for the next acquisitions. Asking which acquisition problems affect a claimed result is
+*after*, and belongs to claim recital: a recital check that reads the import findings on the channels the
+claim uses. Don't build a per-set "affects your analysis" report here.
+
+**Not the import QC badge.** The badge reports everything on every image. Every m5uLPh image is flagged,
+and the most common warning is on a channel the plan doesn't use.
+
+## The checks (the maintainer, 2026-11-09)
+
+All six run at import, in seconds. Anything that needs the user's pipeline has to wait for that pipeline to be chosen.
+
+| Check | What it measures | Exists today |
+|---|---|---|
+| **Noise** | Signal over noise *on the objects* | `noise.snr` (P4b-1) has the wrong denominator for this (below) |
+| **Dynamic range on the objects** | How much of the detector range the cells and beads use, against what sets the ceiling | not built; `range` and `hist` are over all non-zero voxels, mostly background in a sparse movie |
+| **Bleed-through** | Signal from one channel in another | not at import. A rough version can use existing pieces: `coloc_utils.envelope_slope` (what AF correction uses to tell leak from autofluorescence; `tls_slope` beside it) and the paired sampling in `correction_utils.af_bleedthrough_alphas`, applied to the bead channel against GFP and collagen at non-bead voxels. AF correction's `maxBleedthrough` comes only after processing |
+| **Signal fading** | Loss over the movie per channel | `import.signal_fades` (`byT`) |
+| **Drift** | Sample movement between frames | only after drift correction runs. At import: a shift estimate between a few frames (drift correction's estimator on a subset), not built |
+| **Uneven z intensity** | Signal change with depth | `import.brighter_with_depth` / `darker_with_depth` / `clipped_deep` (`byZ`) |
+
+Read every check per channel against the plan. Tracked and measured channels count. A context channel
+(collagen here) gets one line: "not used by your plan".
+
+**No pilot (the maintainer, 2026-11-09).** A pilot is a chain run on a crop, and the user or Claude can
+already do that with the existing crop task and chains. Nothing to build here. Advisor P6's mapping from
+task QC codes to stages still applies if someone does run one.
+
+## Stand-in case — Immunemap XbeT2l, set m5uLPh (Obino 2018, Exp 63)
+
+These are already-acquired public movies, treated as if one were the test image. Channels:
+`Microspheres (Rhodamine)`, `B cells (GFP)`, `Collagen (Autofluorescent)`.
+
+**The maintainer's diagnosis (2026-11-09), written before any check exists:** the main problems are
+**noise**, **low dynamic range on the actual cells and beads**, and **bleed-through between channels**.
+This is the expected answer the first slice is scored against (advisor P7). For now the public set is
+the test bed (the maintainer, 2026-11-09). Score on several of its movies, not one. One judge is a known
+limit; a second (facility staff) and the lab's own bad acquisitions come later.
+
+### Settings (re-imported 2026-11-09 with the `.ims` reader, #2064: J1ha0v, JW7Qr0, JIThPI, niHekF)
+
+- Zeiss LSM 510/710, two-photon, **one 890 nm laser for all three channels**. Emission filters are
+  BP 612/69 (beads), BP 520/35 (GFP) and BP 472/30 (collagen). So the channels are separated only by
+  emission filters, and excitation can't be done sequentially with one line.
+- Not recorded: laser power, detector HV, gain, offset. Advice can give a direction, not a value.
+- 9 planes at 4 µm, 30 s frames, 12-bit.
+- **J1ha0v used a different objective** (Plan-Neofluar 10x/0.3, 1.8 µm pixels) from the other three
+  (Achroplan 40x/0.8 W, 0.45 µm). For a test image this becomes a consistency check: acquire the rest
+  with the same objective and zoom.
+
+### Numbers from the import probe (`meta.saturation.channels`, the 3 Achroplan images)
+
+| Channel | Background median / spread | p50 non-zero | Ceiling 4095 hit | Voxels in the bottom 6 % of range (0–255) | `snr` |
+|---|---|---|---|---|---|
+| Beads | 56 / 9–11 | 60–62 | yes, 0.1–2.7 % of signal | 74–79 % | 39–42 |
+| B cells (GFP) | 117–118 / 11–12 | 133–159 | yes, 0.9–1.3 % | 57–62 % | 45–51 |
+| Collagen | 142–143 / 11 | 147 | yes, 1.4–1.9 % | 72–75 % | 61–63 |
+
+What this does and doesn't show (reasoning; review on PR #2066):
+- **These numbers don't show low range on the objects.** The movies are sparse, so the median non-zero
+  voxel and the bottom-6 % share are mostly background (beads: median 60–62 against a background of 56).
+  A few clipped bright objects can also mean correctly exposed sparse objects. It needs an object mask
+  first.
+- **The noise number has the wrong denominator.** `snr` = (median of voxels above `bgLevel` − background
+  median) / background spread (`intensity_utils.noise_stats`). The numerator does describe the typical
+  above-background voxel, but the spread is background-only, and its own docstring says this understates
+  the Poisson noise on brighter structure. Noise has to be measured at signal level, e.g. variance against
+  mean (photon transfer) or single-image gain estimation (Heintzmann 2016, `ACQUISITION_ADVISOR_PRIOR_ART.md`).
+  Validate on synthetic Poisson–Gaussian images with a known gain (golden values) as well as against the
+  maintainer's call.
+- **Bleed-through matters most for this plan.** Uptake means bead signal inside B cells. RSQxFI's AF
+  correction found 41 % collagen and 10 % GFP signal in the bead channel; that makes false beads inside
+  cells and inflates uptake.
+
+### Next steps the check should be able to give (to confirm with the maintainer)
+
+| Finding | Next acquisition | Cost / caveat |
+|---|---|---|
+| Low range on cells; a few bright objects clip | If the clipping objects are beads, raise power or HV for the cells and let the beads clip. A clipped bead still has a centre, so tracking and object counts survive | Uptake measured by bead intensity is lost; count bead objects |
+| Noise on dim cells | Frame or line averaging, or more power | Longer frames (30 s now) or more bleaching; check fading after |
+| Bleed-through, one excitation line | Narrower emission filter on the receiving channel, or a second excitation wavelength for one dye | Hardware-dependent; otherwise correct afterwards (AF correction) |
+| Fading over the movie | If it's bleaching: less power on that dye, fewer planes or a longer interval | Bead counts per frame first: beads leaving or being taken up look the same in intensity |
+| Drift | Stabilise the preparation; a larger z-range as margin | Correctable afterwards up to a point; unregistered frames break tracks |
+| Uneven z intensity | Depth power ramp, if the scope has one | Beads collecting at a depth looks the same; "consistent with" only |
+| Different objective in the set | Use the test image's objective and zoom for the rest | — |
+
+## Open decisions
+
+1. **Plan → structure: a small form** (proposed on PR #2066 review): objects, channel per object, event;
+   the sentence is shown back, not parsed. Not a config file.
+2. **Rules vs. review.** "Let beads clip if you only track and count them" is a rule once the plan says
+   beads are counted objects. "Brighter with depth is bead placement" is a judgement for the review.
+3. **Where it lives.** A step in the import flow ("what will you do with this?"), or an action on an
+   imported image. The metadata dialog's light path stays the echo-back.
+4. **Finding-text fixes, separate from this plan:** `import.channel_saturated` gives gain advice on
+   rescaled 8-bit exports (the Immunemap lymphatic set); `brighter_with_depth` / `clipped_deep` name
+   Bright Z when no settings were read.
+
+## Resume when
+
+In this order:
+1. **Object mask at import:** above-background voxels per channel. Everything below depends on it.
+2. **Bleed-through proxy:** bead channel against GFP and collagen at non-bead voxels, from
+   `coloc_utils`. Compare it with AF correction's `maxBleedthrough` on RSQxFI once.
+3. **Range on the objects:** mask voxels, clipped ones excluded, against the ceiling.
+4. **Noise at signal level**, golden-tested on synthetic Poisson–Gaussian images, then checked against
+   the maintainer's call.
+5. **Drift shift estimate** on a few frames.
+6. Then the smallest slice: the form + these checks + one review turn, scored on several m5uLPh movies
+   against the diagnosis above.

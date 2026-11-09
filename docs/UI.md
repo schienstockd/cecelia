@@ -350,6 +350,14 @@ tally and the fill, or the toggle strands at partial with no way to reach all. E
 in the task-param form turns it on (`ParamRenderer`: `chipSelect`, `channelSelection`,
 `labelPropsColsSelection`, multi `popSelection`); on a grouped list each group gets its own All.
 
+**Long lists collapse.** A pill list with more than `collapseAbove` options (default
+`CHIP_COLLAPSE_ABOVE` = 12; `0` = never) shows only the picked chips, a dashed **+N more** chip that
+expands to everything, and a filter box that narrows by label / value / path. Every long chip list
+gets this for free — no per-caller flag. **Hierarchical options** (`path: string[]` on each option —
+population pickers set it via `groupPopulations`) lay out as an indented tree: one line per parent,
+its leaf children inline after a `›`, each chip showing only its own segment with the full label in
+the tooltip. Layout and filtering are `chipTree` / `visibleChips` in `utils/chipSelect.ts` (tested).
+
 Active colour is `--cc-accent`. **Don't** use it for: independent-boolean toolbars that also fire
 actions or open dropdowns (e.g. `ModuleLayout`'s filter-toggle bar, gate arrange/nav clusters),
 colour-swatch grids (`PopulationManager` palette, `SwatchSelect`), the cluster-assignment matrix

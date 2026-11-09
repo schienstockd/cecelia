@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toggleValue, moveItem, partitionOptions, selectAllState, syncGroupOrder } from './chipSelect'
+import { toggleValue, moveItem, partitionOptions, selectAllState, syncGroupOrder, chipTree, visibleChips } from './chipSelect'
 
 describe('toggleValue', () => {
   it('appends a new value at the end (pick order)', () => {
@@ -119,5 +119,40 @@ describe('syncGroupOrder', () => {
   it('is a no-op when nothing about the group changed', () => {
     const sel = ['1', '0']
     expect(syncGroupOrder(['0', '1'], ['0', '1'], sel)).toEqual(sel)
+  })
+})
+
+describe('chipTree', () => {
+  const o = (path: string) => ({ value: path, path: path.split('/') })
+  it('puts leaves inline after their parent and parents on deeper lines', () => {
+    const rows = chipTree(['B', 'B/qc', 'B/qc/cd169', 'B/qc/cd169/mac', 'B/qc/cd169/macfrag', 'B/qc/x', 'S'].map(o))
+    expect(rows.map(r => [r.depth, typeof r.head === 'string' || r.head === null ? r.head : r.head.value,
+                           r.leaves.map(l => l.value)])).toEqual([
+      [0, null, ['S']],
+      [0, 'B', []],
+      [1, 'B/qc', ['B/qc/x']],
+      [2, 'B/qc/cd169', ['B/qc/cd169/mac', 'B/qc/cd169/macfrag']],
+    ])
+  })
+  it('renders a parent that is not itself an option as a text head', () => {
+    const rows = chipTree([o('B/_tracked'), o('B/t/a')])
+    expect(rows.map(r => [r.depth, r.head, r.leaves.map(l => l.value)])).toEqual([
+      [0, 'B', ['B/_tracked']],
+      [1, 't', ['B/t/a']],
+    ])
+  })
+})
+
+describe('visibleChips', () => {
+  const opts = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Beta', path: ['B', 'kat'] }, { value: 'c' }]
+  it('collapsed shows only the picked options, in option order', () => {
+    expect(visibleChips(opts, ['c', 'a'], { expanded: false, filter: '' }).map(o => o.value)).toEqual(['a', 'c'])
+  })
+  it('expanded shows everything', () => {
+    expect(visibleChips(opts, [], { expanded: true, filter: '' })).toHaveLength(3)
+  })
+  it('a filter matches label, value or path segment, any case, and overrides collapse', () => {
+    expect(visibleChips(opts, [], { expanded: false, filter: 'KAT' }).map(o => o.value)).toEqual(['b'])
+    expect(visibleChips(opts, [], { expanded: false, filter: 'alp' }).map(o => o.value)).toEqual(['a'])
   })
 })
