@@ -1,6 +1,6 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
-> time. It is not a description of how the code works now, and not instructions to re-run. No plan
-> exists yet; the audit's output would be `docs/todo/GUI_CLARITY_AUDIT.md`.
+> time. It is not a description of how the code works now, and not instructions to re-run. Current
+> design lives in [`docs/todo/GUI_CLARITY_PLAN.md`](../todo/GUI_CLARITY_PLAN.md) (parked).
 >
 > **Outcome:** not run as of archiving (2026-11-10, `origin/main` 71509170). Read against main, six
 > premises had moved:
