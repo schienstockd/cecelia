@@ -514,8 +514,9 @@ function formatDate(iso: string | null): string {
 
       </div>
 
-      <!-- footer -->
-      <div class="pp-footer">
+      <!-- Pinned in BaseModal's footer, so Open project stays in reach however long the list is. -->
+      <template #footer>
+        <span class="pp-spacer" />
         <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
           v-tooltip.top="'Close without changes'">
           Cancel
@@ -545,7 +546,7 @@ function formatDate(iso: string | null): string {
             Create project
           </button>
         </template>
-      </div>
+      </template>
 
       <!-- Export / import — a secondary utility, so it lives in a collapsed section BELOW the primary
            list + Open project action (rather than wedged between them). Recent tab only. The live
@@ -823,13 +824,7 @@ function formatDate(iso: string | null): string {
 }
 
 /* footer */
-.pp-footer {
-  display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem;
-  padding: 0.65rem 1rem;
-  border-top: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  flex-shrink: 0;
-}
+.pp-spacer { flex: 1; }
 
 /* buttons use the global .cc-btn utilities (style.css) */
 .pp-danger-note {
