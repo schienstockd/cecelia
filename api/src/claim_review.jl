@@ -7,6 +7,7 @@
 # ELN context — so the review reads the claim and the record only. Advisory: its findings are
 # `inferred`, go on the claim entry as `### sNN · …` sections under a `### <Category>` heading, which the analyst marks, and never
 # change what the checks found. It reads through the observer tools only, so it can't recompute.
+# The parsing, write-back and rendering it shares with the acquisition review live in review_turn.jl.
 
 # What the review may read: the RECORD — what was imaged, run, measured and gated. An allow-list, so a
 # read tool added to Kiwi later reaches the review only once someone puts it here; every Kiwi read tool
@@ -80,19 +81,8 @@ end
 # The category labels the review files its points under — the checks' own (qc/text.jl `claim.cat.*`).
 _claim_review_category_list() = join((_claim_category_label(c) for c in Cecelia.CLAIM_CATEGORIES), ", ")
 
-# A review point's text → `(category, text, action)`: the leading `<Category>:` names one of the
-# claim categories (else `other`, text kept whole), the trailing `→ …` is what to do ("" if absent).
-function _claim_review_point(text::AbstractString)
-    t = strip(text); cat = "other"
-    m = match(r"^([^:]{2,40}):\s*(.+)$"s, t)
-    if m !== nothing
-        hit = findfirst(c -> lowercase(_claim_category_label(c)) == lowercase(strip(m[1])), Cecelia.CLAIM_CATEGORIES)
-        hit === nothing || (cat = Cecelia.CLAIM_CATEGORIES[hit]; t = strip(m[2]))
-    end
-    parts = split(t, r"\s*(→|->)\s*"; limit = 2)
-    # the category was the sentence's start, so what's left starts mid-sentence ("on image 2 T is…")
-    (cat, uppercasefirst(String(parts[1])), length(parts) == 2 ? uppercasefirst(String(parts[2])) : "")
-end
+# A review point's text → `(category, text, action)`, filed under the claim categories (`_review_point`).
+_claim_review_point(text::AbstractString) = _review_point(text, Cecelia.CLAIM_CATEGORIES, _claim_category_label)
 
 """
     claim_review_start(project_uid, entry_id; model) -> (status, record)
@@ -117,69 +107,20 @@ function claim_review_start(uid::AbstractString, id::AbstractString; model::Abst
 end
 
 # The finished review onto the claim entry: its claims become review sections; the round it was asked
-# for must still be the claim's round (a reworded claim's review would answer the wrong question).
+# for must still be the claim's round (`_review_target`). A turn that didn't finish keeps the last review
+# that did and says why (`_review_from_turn`).
 function _claim_review_done!(rec::AbstractDict)
-    cr = get(rec, "claimReview", nothing)
-    cr isa AbstractDict || return nothing
-    uid, id = String(rec["projectUid"]), String(cr["entryId"])
-    meta = _read_bb_meta(uid, id)
-    (meta === nothing || !(get(meta, "claim", nothing) isa AbstractDict)) && return nothing
-    c = Dict{String,Any}(String(k) => v for (k, v) in meta["claim"])
-    get(c, "round", 1) == get(cr, "round", 1) || return nothing
-    reply = get(rec, "reply", nothing)
-    if rec["status"] != "done"
-        # a turn that didn't finish (usage limit, no CLI, cancelled) is not "nothing found": say why,
-        # and keep the last review that did finish
-        errs = reply isa AbstractDict ? get(reply, "errors", Any[]) : Any[]
-        why = !isempty(errs) ? string(first(errs)) : string(get(rec, "error", rec["status"]))
-        prev = get(c, "review", nothing)
-        rv = prev isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in prev) :
-             Dict{String,Any}("status" => rec["status"], "model" => get(rec, "model", ""), "claims" => Any[],
-                              "abstain" => false, "note" => "", "turnId" => rec["turnId"])
-        rv["lastError"] = replace(strip(why), r"\s*\n\s*" => " ")
-        c["review"] = rv
-        result = _claim_run(uid, c)
-        result isa Tuple && return nothing
-        _claim_assign_ids!(c["findingIds"], result["findings"])
-        _claim_write!(uid, id, c, result)
-        return nothing
-    end
-    claims = reply isa AbstractDict ? collect(get(reply, "claims", Any[])) : Any[]
-    c["review"] = Dict{String,Any}(
-        "turnId" => rec["turnId"], "at" => get(rec, "finishedAt", string(Dates.now())),
-        "status" => rec["status"], "model" => get(rec, "model", ""),
-        "abstain" => reply isa AbstractDict && get(reply, "abstain", false) == true,
-        "note" => reply isa AbstractDict ? string(get(reply, "note", "")) : "",
-        # one line each: a finding's text becomes a `### sNN` heading
-        "claims" => [_claim_review_item(x) for x in claims])
+    t = _review_target(rec, "claimReview", "claim")
+    t === nothing && return nothing
+    uid, id, c, _ = t
+    c["review"] = _review_from_turn(rec, get(c, "review", nothing);
+                                    categories = Cecelia.CLAIM_CATEGORIES, label = _claim_category_label)
     result = _claim_run(uid, c)
     result isa Tuple && return nothing
     _claim_assign_ids!(c["findingIds"], result["findings"])
-    _claim_assign_review_ids!(c)
+    _review_assign_ids!(c["review"], c["findingIds"])
     _claim_write!(uid, id, c, result)
     nothing
-end
-
-# One reply claim → a review point: one line, filed under its category, the action split off.
-function _claim_review_item(x)
-    kind = string(get(x, "kind", ""))
-    text = replace(strip(string(get(x, "text", ""))), r"\s*\n\s*" => " ")
-    # the refs as Kiwi checked them (`{ref, result, seen}`), so the point links to what it is about
-    # the way any Kiwi claim does — the popover's chips and the entry's `kiwiRefs`
-    refs = Any[r for r in get(x, "refs", Any[]) if r isa AbstractDict && get(r, "ref", nothing) isa AbstractDict]
-    kind == "interpretation" && return Dict{String,Any}("kind" => kind, "text" => text, "refs" => refs)
-    cat, t, act = _claim_review_point(text)
-    Dict{String,Any}("kind" => kind, "category" => cat, "text" => t, "action" => act, "refs" => refs)
-end
-
-# Review findings get section ids from the same counter, keyed by their text: a re-run that finds the
-# same thing keeps the id (and its verdict); a new wording is a new section.
-function _claim_assign_review_ids!(c::AbstractDict)
-    for x in get(get(c, "review", Dict()), "claims", Any[])
-        x["kind"] == "interpretation" && continue
-        x["sectionId"] = _claim_section_id!(c["findingIds"], "review|" * x["text"])
-    end
-    c
 end
 
 """

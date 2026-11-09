@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
-  entryId, decisionPrefill, isRatable, resolveImageRefs, visibleEntries,
+  entryId, decisionPrefill, isRatable, resolveImageRefs, imageNamesToRefs, showImageRefs, visibleEntries,
   hasLabArchives, labArchivesLabel, labArchivesSyncedOn, labArchivesGapText,
   type LabLogEntry,
 } from './labLog'
@@ -174,5 +174,19 @@ describe('LabArchives entries in the panel', () => {
   it('a correction OF one is still a correction', () => {
     expect(authorKind('User — correction')).toBe('correction')
     expect(isRatable('User — correction')).toBe(false)
+  })
+})
+
+describe('imageNamesToRefs / showImageRefs', () => {
+  const map = { rEIQnG: 'M1-1-naive-z200_0001', Qpzc4V: 'M1-1-naive-z200', ab1: 'x1' }
+  it('swaps names for uids, longest first, whole tokens only', () => {
+    expect(imageNamesToRefs('10/10 %: M1-1-naive-z200_0001, M1-1-naive-z200', map)).toBe('10/10 %: rEIQnG, Qpzc4V')
+    expect(imageNamesToRefs('`M1-1-naive-z200`', map)).toBe('`Qpzc4V`')
+    expect(imageNamesToRefs('M1-1-naive-z2000 stays', map)).toBe('M1-1-naive-z2000 stays')
+    expect(imageNamesToRefs('x1 is too short to swap', map)).toBe('x1 is too short to swap')
+  })
+  it('shows either way, whichever way the text was written', () => {
+    expect(showImageRefs('in rEIQnG and M1-1-naive-z200', map, false)).toBe('in rEIQnG and Qpzc4V')
+    expect(showImageRefs('in rEIQnG and M1-1-naive-z200', map, true)).toBe('in M1-1-naive-z200_0001 and M1-1-naive-z200')
   })
 })

@@ -20,7 +20,8 @@
 #   claim            — a stated claim: its scope, rounds and last check (`api/src/routes/claim.jl`,
 #                      claim recital). Its `### sNN` sections are the checks' findings.
 #   acqCheck         — a set's acquisition plan: the plan, its rounds and the last check
-#                      (`api/src/routes/acq_check.jl`, test-acquisition check). Plain lines, no sections.
+#                      (`api/src/routes/acq_check.jl`, test-acquisition check). The checks are plain
+#                      lines; the model review's points (api/src/acq_review.jl) are `### sNN` sections.
 #   knowledge        — `{by, at, from?: {entryId, sectionId}}`. Marks the entry as lab knowledge for
 #                      this project (P4, Decision 11): the run harness carries these entries, and only
 #                      these, into a run's copy. `from` names the run section it was promoted from.

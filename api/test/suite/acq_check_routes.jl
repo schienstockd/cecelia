@@ -57,6 +57,15 @@
         @test st == 200 && r3.round == 2 && r3.entryId == id
         @test length(_read_bb_meta(proj.uid, id)["acqCheck"]["rounds"]) == 2
         @test !any(f -> f.code == "acq.few_photons", r3.findings)        # points are counted, not read for noise
+        @test r3.stage == "test" && r3.plan.stage == "test"
+        # a plan saved before the stage existed reads as a test acquisition: re-saving it is no new round
+        a = _read_bb_meta(proj.uid, id)["acqCheck"]; delete!(a["plan"], "stage"); _set_bb_meta_field!(proj.uid, id, "acqCheck", a)
+        @test post(api_acqcheck_plan, Dict("projectUid" => proj.uid, "setUid" => s.uid, "plan" => plan))[2].round == 2
+        # final data: a new round, said on the entry, findings leading with the analysis
+        plan = merge(Dict{String,Any}(plan), Dict{String,Any}("stage" => "final"))
+        st, r4 = post(api_acqcheck_plan, Dict("projectUid" => proj.uid, "setUid" => s.uid, "plan" => plan))
+        @test st == 200 && r4.round == 3 && r4.stage == "final" && all(f -> !haskey(f, :thisData), r4.findings)
+        @test occursin(" · final data · round 3", read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String))
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

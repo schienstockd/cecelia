@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, rowsByDesign } from './acqCheck'
-import type { AcqCheckResult, AcqPlan, AcqRow } from './acqCheckApi'
+import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, reviewBlocked, rowsByDesign, verdictHeading } from './acqCheck'
+import { parseAcqResult, type AcqCheckResult, type AcqFinding, type AcqPlan, type AcqRow } from './acqCheckApi'
 import type { TaskStatus } from '../stores/tasks'
 
 const designs = [{ id: 'd1', key: 'P14-CTDR · empty-570 · OTI-uGFP · gBT-CTV' }, { id: 'd2', key: 'empty-642 · P14-ubTomato · gBT-uGFP · OTI-CTV' }]
@@ -16,8 +16,8 @@ const row = (uid: string, design: string): AcqRow => ({
   ratio: null, dimmest: null, sharedR: null, driftUm: null, registers: null,
 })
 const result = (over: Partial<AcqCheckResult> = {}): AcqCheckResult => ({
-  entryId: '', round: 0, plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
-  nImages: 0, nMeasured: 0, nOpen: 0, ...over,
+  entryId: '', round: 0, stage: 'test', steps: [], verdict: '', modelStep: '', plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
+  nImages: 0, nMeasured: 0, nOpen: 0, review: null, categoryLabels: {}, ...over,
 })
 
 describe('planSentence', () => {
@@ -102,6 +102,15 @@ describe('findingSeverity / findingLines', () => {
   it('lines are labelled by what they hold: the movies per value, what to do, what it means for the analysis', () => {
     expect(findingLines(f('warn'))).toEqual([{ label: 'Next', text: 'Do this.' }])
     expect(findingLines(f('warn', 'Check it.')).map(l => l.label)).toEqual(['Next', 'Analysis'])
+    // final data: the action is the analysis one
+    expect(findingLines(f('warn'), 'final')).toEqual([{ label: 'Analysis', text: 'Do this.' }])
+    // movie lists by image uid unless names are asked for; a list of designs has no uid form
+    const m = { ...(f('warn', undefined, '10/10 %: M1-2-long-name') as AcqFinding), whereIds: '10/10 %: aB3dE9' }
+    expect(findingLines(m, 'test', false)[0].text).toBe('10/10 %: aB3dE9')
+    expect(findingLines(m)[0].text).toBe('10/10 %: M1-2-long-name')
+    expect(findingLines(f('info', undefined, 'A: x', 'Designs'), 'test', false)[0].text).toBe('A: x')
+    expect(verdictHeading('final')).toBe('Before analysing')
+    expect(verdictHeading('test')).toBe('Before acquiring the rest')
     const w = findingLines(f('warn', undefined, '10/10 %: a, b · 8/15 %: c'))
     expect(w[0]).toEqual({ label: 'Movies', text: '10/10 %: a, b · 8/15 %: c' })
     expect(findingLines(f('info', undefined, 'x', 'Designs'))[0].label).toBe('Designs')
@@ -115,5 +124,28 @@ describe('planByName', () => {
     const r = planByName(p, ds)
     expect(r.objects[0].channels.d1).toBe('P14-CTDR')
     expect(r.objects[1].channels.d1).toBe('OTI')
+  })
+  it('says why the review can’t run: AI off (and by whom), no plan, already running', () => {
+    const on = { enabled: true, setBy: null } as const
+    expect(reviewBlocked({ ai: on, hasPlan: true, running: false })).toBe('')
+    expect(reviewBlocked({ ai: on, hasPlan: false, running: false })).toBe('Save a plan first')
+    expect(reviewBlocked({ ai: on, hasPlan: true, running: true })).toBe('Reviewing…')
+    expect(reviewBlocked({ ai: { enabled: false, setBy: 'profile' }, hasPlan: true, running: false })).toBe('AI features are off')
+    expect(reviewBlocked({ ai: { enabled: false, setBy: 'workstation' }, hasPlan: true, running: false }))
+      .toBe('AI features are off — turned off for this workstation')
+  })
+  it('reads the review and its category labels off a check reply', () => {
+    expect(parseAcqResult(null)).toBeNull()
+    expect(parseAcqResult({ error: 'x' })).toBeNull()
+    const none = parseAcqResult({ entryId: '', findings: [], rows: [] })!
+    expect(none.review).toBeNull()
+    expect(none.categoryLabels).toEqual({})
+    const r = parseAcqResult({ entryId: 'bb-1', categoryLabels: { drift: 'Drift', other: 'Other' },
+      review: { status: 'done', model: 'sonnet', claims: [
+        { kind: 'observation', category: 'drift', text: 'M1 shifts', action: 'Stabilise', sectionId: 's01' },
+        { kind: 'interpretation', text: 'Tracking works on m2.' }] } })!
+    expect(r.review?.items.map(x => [x.category, x.action, x.sectionId])).toEqual([['drift', 'Stabilise', 's01']])
+    expect(r.review?.supports).toBe('Tracking works on m2.')
+    expect(r.categoryLabels.drift).toBe('Drift')
   })
 })

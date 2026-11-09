@@ -1,9 +1,10 @@
 // Pure helpers for the acquisition check modal (AcqCheckDialog / AcqPlanForm): the plan sentence, a
 // fresh plan from the suggested designs, what keeps a plan from saving, and the per-movie table grouped
 // by design. Types and calls: acqCheckApi.ts.
-import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow } from './acqCheckApi'
+import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow, AcqStage } from './acqCheckApi'
 import type { Severity } from '../lib/severity'
 import { isLiveStatus } from '../lib/taskStatus'
+import { AI_OFF_COPY, aiOffLine, type AiState } from './aiSwitch'
 import type { TaskStatus } from '../stores/tasks'
 
 /** What the plan says it will measure, in the order the form offers it. */
@@ -28,6 +29,7 @@ export function planSentence(plan: AcqPlan | null): string {
 /** A plan to start the form from: the suggested designs, no objects yet. */
 export function emptyPlan(designs: AcqDesign[]): AcqPlan {
   return {
+    stage: 'test',
     designs: designs.map(d => ({ id: d.id, key: d.key, label: d.label ?? d.key })),
     objects: [], references: [], measure: [], compare: [], expectation: '',
   }
@@ -116,12 +118,19 @@ export function badgeOf(result: AcqCheckResult | null): { n: number; tip: string
 export const findingSeverity = (f: AcqFinding): Severity | undefined =>
   f.level === 'warn' ? 'warn' : f.level === 'ok' ? 'ok' : undefined
 
+/** The stage picker's options, and the heading over the review's verdict for each stage. */
+export const ACQ_STAGES: { value: AcqStage; label: string }[] = [
+  { value: 'test', label: 'Test acquisition' }, { value: 'final', label: 'Final data' }]
+export const verdictHeading = (stage: AcqStage) => stage === 'final' ? 'Before analysing' : 'Before acquiring the rest'
+
 /** A finding's lines under its short text, each labelled by what it holds: which movies (or designs)
- *  have which value, what to do next, and what it means for the analysis. */
-export function findingLines(f: AcqFinding): { label: string; text: string }[] {
+ *  have which value (by name, or by image uid when `names` is off), what to do next, and what it means
+ *  for the analysis. On final data the action IS the analysis one (the check sends no `thisData` then). */
+export function findingLines(f: AcqFinding, stage: AcqStage = 'test', names = true): { label: string; text: string }[] {
+  const where = names ? f.where : (f.whereIds ?? f.where)
   return [
-    ...(f.where ? [{ label: f.whereLabel ?? 'Movies', text: f.where }] : []),
-    { label: 'Next', text: f.long },
+    ...(where ? [{ label: f.whereLabel ?? 'Movies', text: where }] : []),
+    { label: stage === 'final' ? 'Analysis' : 'Next', text: f.long },
     ...(f.thisData ? [{ label: 'Analysis', text: f.thisData }] : []),
   ]
 }
@@ -136,3 +145,13 @@ export function planByName(plan: AcqPlan, designs: AcqDesign[]): AcqPlan {
   })
   return { ...plan, objects: plan.objects.map(conv), references: plan.references.map(conv) }
 }
+
+/** Why the Review button can't run ('' = it can): AI off (and by whom), no saved plan, or a turn
+ *  already running. */
+export function reviewBlocked(o: { ai: AiState; hasPlan: boolean; running: boolean }): string {
+  if (!o.ai.enabled) return o.ai.setBy === 'workstation' ? `${AI_OFF_COPY.title} — ${aiOffLine(o.ai).toLowerCase()}` : AI_OFF_COPY.title
+  if (!o.hasPlan) return 'Save a plan first'
+  if (o.running) return 'Reviewing…'
+  return ''
+}
+

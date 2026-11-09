@@ -10,8 +10,7 @@ import { useRouter } from 'vue-router'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect from '../ChipSelect.vue'
 import InlineNote from '../InlineNote.vue'
-import KiwiRefChip from '../kiwi/KiwiRefChip.vue'
-import { refKey } from '../../utils/kiwiTurn'
+import ModelReviewPoints from '../ModelReviewPoints.vue'
 import { SEVERITY } from '../../lib/severity'
 import { useToast } from '../../composables/useToast'
 import { useKiwiStore } from '../../stores/kiwi'
@@ -20,7 +19,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { fetchImageAttrs } from '../../composables/useImageAttrs'
 import type { SeriesTarget } from '../../plots/types'
 import {
-  claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, reviewByCategory,
+  claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount,
   stateClaim, checkClaim, reviewClaim, type ClaimResult,
 } from '../../utils/claimApi'
 
@@ -182,22 +181,7 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
           </button>
         </div>
         <template v-if="result.review">
-          <div v-for="g in reviewByCategory(result)" :key="g.id" class="claim-cat">
-            <span class="claim-cat-head">{{ g.label }}</span>
-            <div class="claim-list">
-              <template v-for="x in g.items" :key="x.sectionId ?? x.text">
-                <InlineNote :short="x.text" :severity="x.kind === 'question' ? undefined : 'warn'"
-                            :icon="x.kind === 'question' ? 'pi-question-circle' : undefined" />
-                <span v-if="x.action" class="claim-action cc-muted">→ {{ x.action }}</span>
-                <div v-if="x.refs.length" class="cc-row cc-row-tight claim-refs">
-                  <KiwiRefChip v-for="r in x.refs" :key="refKey(r.ref)" :kiwi-ref="r.ref" :result="r.result" :seen="r.seen" />
-                </div>
-              </template>
-            </div>
-          </div>
-          <InlineNote v-if="result.review.lastError" :short="`The last run failed: ${result.review.lastError}`" severity="fail" />
-          <InlineNote v-if="result.review.status === 'done' && !result.review.items.length" short="Nothing beyond the checks" icon="pi-minus-circle" />
-          <span v-if="result.review.supports" class="cc-muted claim-supports">Would support: {{ result.review.supports }}</span>
+          <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels" />
           <span v-if="result.review.items.length" class="cc-muted cc-fs-2xs">Mark each point Good / Bad / Unsure on the Blackboard.</span>
         </template>
       </template>
@@ -219,6 +203,4 @@ watch(() => props.projectUid, () => { reviewTurn.value = ''; result.value = null
 .claim-cat-head { font-weight: 600; }
 .claim-list { display: flex; flex-direction: column; gap: 3px; padding-left: 1.2rem; }
 .claim-action { padding-left: 1.2rem; }
-.claim-refs { padding-left: 1.2rem; }
-.claim-supports { font-style: italic; }
 </style>

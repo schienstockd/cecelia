@@ -53,9 +53,15 @@ import { loadImg } from '../plots/export'
 import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
 import type { KiwiRefSidecar } from '../utils/kiwiTurnSave'
 import { resolveKiwiRefs } from '../utils/kiwiTurn'
+import { showImageRefs } from '../utils/labLog'
+import { useProjectStore } from '../stores/project'
+import { useSettingsStore } from '../stores/settings'
+import CcToggle from '../components/CcToggle.vue'
 
 const projectMeta = useProjectMetaStore()
 const bbStore = useBlackboardStore()
+const project = useProjectStore()
+const settings = useSettingsStore()
 const route = useRoute()
 
 // List-pane width: draggable + persisted, same composable Tasks + Chain use so the "grab the
@@ -214,9 +220,13 @@ interface AttachmentSlot {
 const captureCache = ref<Record<string, AttachmentSlot>>({})
 
 // Rendered markdown HTML for the entry pane (viewer OR history preview). `v-html` target.
+// Image references read as names or as short uids ("Show names"), whichever way the entry wrote them.
+const imageNameByUid = computed(() => project.loadedProjectUid !== projectUid.value ? {} :
+  Object.fromEntries(project.sets.flatMap(s => s.images.map(i => [i.uid, i.name] as const))))
 const paneContent = computed(() => {
   if (mode.value !== 'view' || !selected.value) return ''
-  return viewingVersion.value !== null ? viewingContent.value : selected.value.content
+  const md = viewingVersion.value !== null ? viewingContent.value : selected.value.content
+  return showImageRefs(md, imageNameByUid.value, settings.showImageNames)
 })
 // Title map for `[[bb-…]]` cross-refs — drives the wiki-link resolver so a bare id in the markdown
 // renders as a clickable title. Rebuilt from the CURRENT entries list; if a linked entry has been
@@ -774,6 +784,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
                       v-tooltip.bottom="'Restore this version as current; the current live content is snapshotted first'">
                 <i class="pi pi-history" /> Restore v{{ viewingVersion }}
               </button>
+              <CcToggle v-model="settings.showImageNames" label="Show names" aria-label="Show image names"
+                        v-tooltip.bottom="'Image names instead of image IDs'" />
               <button class="cc-btn cc-btn-ghost cc-btn-dense" data-guide="blackboard.edit"
                       @click="beginEditExisting"
                       v-tooltip.bottom="'Edit; a snapshot is taken automatically before saving'">

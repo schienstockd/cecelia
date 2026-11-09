@@ -17,6 +17,20 @@ const ACQ_CEILING_PHOTONS = 20.0
 #: relative difference in pixel size treated as a different setting
 const ACQ_REL_TOLERANCE = 0.01
 
+# What each finding is about, for the reader and the model review (labels in qc/text.jl, `acq.cat.<id>`).
+# The review uses the same ones, plus `fading` (signal lost over the movie — no rule reads it yet) and `other`.
+const ACQ_CATEGORIES = ("movies", "settings", "depth", "photons", "balance", "shared", "drift", "fading", "other")
+const ACQ_CATEGORY_OF = Dict(
+    "acq.not_measured" => "movies", "acq.channels_unnamed" => "movies", "acq.channel_missing" => "movies",
+    "acq.not_in_plan" => "movies",
+    "acq.settings_differ" => "settings", "acq.settings_within_design" => "settings",
+    "acq.settings_by_design" => "settings", "acq.settings_by_design_cross" => "settings",
+    "acq.brightz_ramp_unused" => "depth", "acq.brightz_ramp_unused_image" => "depth", "acq.brightz_off" => "depth",
+    "acq.gain_high" => "photons", "acq.few_photons" => "photons", "acq.balance" => "balance",
+    "acq.shares_object" => "shared", "acq.shares_object_image" => "shared",
+    "acq.shares_reference" => "shared", "acq.shares_reference_image" => "shared",
+    "acq.drift_unreliable" => "drift", "acq.drift_ok" => "drift")
+
 # a field of a String- or Symbol-keyed dict (meta read back through JSON3 can be either)
 _ag(d, k, default = nothing) = d isa AbstractDict ? something(get(d, k, nothing), get(d, Symbol(k), nothing), Some(default)) : default
 _anum(v) = v isa Real ? Float64(v) : nothing
@@ -189,14 +203,68 @@ _acq_lasers_text(l) = l === nothing || isempty(l) ? "—" :
     join((string(round(Int, w)) for (w, _) in l), "/") * " nm · " *
     join((p === nothing ? "?" : string(round(p; digits = 1)) |> s -> replace(s, r"\.0$" => "") for (_, p) in l), "/") * " %"
 
+# The verdict's steps, from the rule warnings: per finding code, what to do at a `test` acquisition and on
+# `final` data (`nothing` = no step at that stage). `{whats}` is every finding of the code's `what`,
+# listed ("OTI, P14 and gBT"); `{variable}` its setting. In the order the verdict lists them.
+const ACQ_VERDICT_STEPS = [
+    "acq.not_measured"             => (test = "measure the remaining movies", final = "measure the remaining movies"),
+    "acq.channels_unnamed"         => (test = "name the channels", final = "name the channels"),
+    "acq.few_photons"              => (test = "collect more light for {whats}", final = "denoise {whats}"),
+    "acq.gain_high"                => (test = "lower the detector gain", final = "check bright cells for clipping"),
+    "acq.shares_object"            => (test = "separate the {whats} channels", final = "correct bleed-through between {whats}"),
+    "acq.balance"                  => (test = "brighten {whats}", final = "check detection per object"),
+    "acq.settings_within_design"   => (test = "use one {variable} per design", final = nothing),
+    "acq.settings_differ"          => (test = "use one {variable} for every compared movie", final = nothing),
+    "acq.settings_by_design_cross" => (test = "put every compared object in each design", final = "compare within each design"),
+    "acq.brightz_ramp_unused"      => (test = "turn Bright Z on", final = "check whether cells dim with depth"),
+    "acq.drift_unreliable"         => (test = "stabilise the preparation", final = "check the movies that don't register for jumps"),
+    "acq.drift_ok"                 => (test = nothing, final = "drift-correct before tracking")]
+
+"""
+    acq_verdict(findings, stage) -> (steps, text)
+
+The rule part of the verdict on a plan: one step per warning code with a step at this stage (see
+`ACQ_VERDICT_STEPS`; drift correction on final data from the ok finding too), and the sentence they make —
+"Denoise OTI, P14 and gBT; drift-correct before tracking." — or, with none, "Ready to acquire as planned." /
+"Analyse as planned.". The model review adds at most one step of its own after it.
+"""
+function acq_verdict(findings::AbstractVector, stage::AbstractString)
+    steps = String[]
+    for (code, st) in ACQ_VERDICT_STEPS
+        t = getproperty(st, Symbol(stage))
+        t === nothing && continue
+        fs = filter(f -> f["code"] == code && f["scope"] == "set" && (f["level"] == "warn" || code == "acq.drift_ok"), findings)
+        isempty(fs) && continue
+        sub(k) = unique(string(get(get(f, "subs", Dict()), k, "")) for f in fs)
+        for v in (occursin("{variable}", t) ? sub("variable") : [""])
+            push!(steps, replace(t, "{whats}" => _acq_list(filter(!isempty, sub("what"))), "{variable}" => v))
+        end
+    end
+    text = isempty(steps) ? (stage == "final" ? "Analyse as planned." : "Ready to acquire as planned.") :
+                            uppercasefirst(join(steps, "; ")) * "."
+    steps, text
+end
+
+_acq_list(xs) = length(xs) <= 1 ? join(xs) : join(xs[1:end-1], ", ") * " and " * xs[end]
+
+"""
+    acq_stage(plan) -> "test" | "final"
+
+Where the plan's movies stand: a `test` acquisition, the rest still to be acquired (the default), or the
+`final` data, all there is to analyse. It picks which action a finding leads with.
+"""
+acq_stage(plan) = plan isa AbstractDict && string(_ag(plan, "stage", "test")) == "final" ? "final" : "test"
+
 """
     acq_check(plan, facts) -> Dict
 
 The check. `plan` may be `nothing` (no plan yet): then only what needs none runs — settings that differ,
 Bright Z, detector range, drift, unmeasured movies. Returns
-`{findings, rows, ran, skipped}`: `findings` are `qc_finding`s with `scope` ("set" or an image uid),
-`thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one),
-`where` (which movies or designs hold which value, for a setting that differs) and
+`{stage, steps, verdict, findings, rows, ran, skipped}` (`steps`/`verdict`: `acq_verdict`): `findings` are `qc_finding`s with `scope` ("set" or an image uid),
+`thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one; on
+`final` data that IS the finding's `long`, and `thisData` is dropped),
+`where` (which movies or designs hold which value, for a setting that differs; for movies also
+`whereIds`, the same with image uids) and
 `detail`; `rows` one per image for the per-movie table.
 """
 function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
@@ -206,9 +274,17 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     add!(level, code, scope; data = nothing, where = nothing, detail = nothing, subs...) = begin
         f = qc_finding(level, code; detail = detail, subs...)
         f["scope"] = scope
+        f["category"] = get(ACQ_CATEGORY_OF, code, "other")
         # which movies (or designs) hold which value; the line's label says which it lists
-        where === nothing || (f["where"] = where; f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
-        data === nothing || (f["thisData"] = qc_text(data; subs...).long)
+        # `where` is the text, or for movies a function of the field naming them: the names as `where`,
+        # the uids as `whereIds` (the dialog shows either — a set of long names reads as a wall)
+        where === nothing || (f["where"] = where isa Function ? where("name") : where;
+                              where isa Function && (f["whereIds"] = where("uid"));
+                              f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
+        # what it means for analysing these movies: the code's `.data` entry (a movie's finding reads its
+        # set finding's), unless a call names one ("" = none)
+        dk = something(data, replace(code, r"_image$" => "") * ".data")
+        haskey(QC_TEXT, dk) && (f["thisData"] = qc_text(dk; subs...).long)
         push!(findings, f)
     end
     probed = filter(f -> f["probed"], facts)
@@ -235,7 +311,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     # design's comparison (its channels can't be read as the plan's objects)
     outside = has_plan ? filter(f -> design[f["uid"]] === nothing, facts) : Dict{String,Any}[]
     isempty(outside) || add!("warn", "acq.not_in_plan", "set"; n = length(outside), s = length(outside) == 1 ? "" : "s",
-                             where = join((f["name"] for f in outside), ", "), detail = Dict("imageUids" => [f["uid"] for f in outside]))
+                             where = k -> join((f[k] for f in outside), ", "), detail = Dict("imageUids" => [f["uid"] for f in outside]))
     # does the plan's comparison stay inside one design? Every compared object has a channel in every design
     cmp_names = has_plan ? (isempty(_ag(plan, "compare", Any[])) ? [string(_ag(o, "name", "")) for o in plan_objs] :
                             string.(_ag(plan, "compare", Any[]))) : String[]
@@ -252,7 +328,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         end
         gs
     end
-    where_of(gs, value_of) = join((value_of(g[1]) * ": " * join((f["name"] for f in g), ", ") for g in gs), " · ")
+    where_of(gs, value_of) = k -> join((value_of(g[1]) * ": " * join((f[k] for f in g), ", ") for g in gs), " · ")
     for (variable, get_v, same) in (
             ("laser setting", f -> f["lasers"], ==),
                 # on/off, and whether a ramp is saved — not the ramp's text, which an unread value changes;
@@ -286,7 +362,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         per_design = join((dlabel[id] * ": " * join(sort!(collect(vals(id))), ", ") for id in ids), " · ")
         if within_only || !has_plan
             add!("info", "acq.settings_by_design", "set"; variable = variable, where = per_design,
-                 data = has_plan ? "acq.settings_by_design.data" : nothing, detail = groups_detail(gs))
+                 data = has_plan ? "acq.settings_by_design.data" : "", detail = groups_detail(gs))
         else
             add!("warn", "acq.settings_by_design_cross", "set"; variable = variable, where = per_design,
                  detail = groups_detail(gs))
@@ -380,12 +456,12 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
             g === nothing ? push!(rg, [f]) : push!(rg[g], f)
         end
         add!("warn", "acq.brightz_ramp_unused", "set"; n = length(unused), s = length(unused) == 1 ? "" : "s",
-             where = join((g[1]["brightZRamp"] * ": " * join((f["name"] for f in g), ", ") for g in rg), " · "),
+             where = k -> join((g[1]["brightZRamp"] * ": " * join((f[k] for f in g), ", ") for g in rg), " · "),
              detail = Dict("imageUids" => [f["uid"] for f in unused]))
     end
     noramp = filter(f -> f["brightZ"] === false && f["brightZRamp"] === nothing, facts)
     isempty(noramp) || add!("info", "acq.brightz_off", "set"; n = length(noramp), s = length(noramp) == 1 ? "" : "s",
-                            where = join((f["name"] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
+                            where = k -> join((f[k] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
     isempty(ceil_hits) || add!("warn", "acq.gain_high", "set"; n = round(Int, minimum(h["photons"] for h in ceil_hits)),
                                 detail = Dict("images" => ceil_hits))
     for (name, xs) in sort!(collect(few); by = first)
@@ -413,11 +489,20 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     end
     isempty(drift_ok) || add!("ok", "acq.drift_ok", "set"; n = length(drift_ok), value = round(Int, maximum(drift_ok)))
 
+    # final data: the movies are all there is, so a finding's action is what to do in the analysis
+    stage = acq_stage(plan)
+    if stage == "final"
+        for f in findings
+            haskey(f, "thisData") && (f["long"] = pop!(f, "thisData"))
+        end
+    end
+
     ran = String["settings", "Bright Z", "detector range", "drift"]
     skipped = String[]
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])
-    Dict{String,Any}("findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
+    steps, verdict = acq_verdict(findings, stage)
+    Dict{String,Any}("stage" => stage, "steps" => steps, "verdict" => verdict, "findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
                      "nImages" => length(facts), "nMeasured" => length(probed))
 end
 

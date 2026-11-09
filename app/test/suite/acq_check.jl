@@ -116,9 +116,18 @@ end
     by = only(filter(f -> f["code"] == "acq.settings_by_design" && f["subs"]["variable"] == "laser setting", r["findings"]))
     @test by["level"] == "info" && by["whereLabel"] == "Designs"
     @test haskey(by, "thisData")
+    # without a plan nothing says the comparison stays within a design
+    np = only(filter(f -> f["code"] == "acq.settings_by_design" && f["subs"]["variable"] == "laser setting",
+                     Cecelia.acq_check(nothing, facts)["findings"]))
+    @test !haskey(np, "thisData")
     # ...and within the ubTomato design two settings: a warning naming the movies per setting
     wi = only(filter(f -> f["code"] == "acq.settings_within_design", r["findings"]))
     @test wi["level"] == "warn" && occursin("8/15 %: b1", wi["where"]) && occursin("10/10 %: b2", wi["where"])
+    # ...and the same list by image uid, for the dialog's uid view; a list of designs has none
+    named = Cecelia.acq_check(nothing, [Cecelia.acq_image_facts(u, "movie-" * u, m; channel_names = _ACQ_TOM) for (u, m) in (("b1", b), ("b2", b2))])
+    nw = only(filter(f -> f["code"] == "acq.settings_differ", named["findings"]))
+    @test occursin("movie-b1", nw["where"]) && occursin(": b1", nw["whereIds"]) && !occursin("movie-", nw["whereIds"])
+    @test !haskey(by, "whereIds")
     # Bright Z off in one design, on in the other: still the one fix
     @test !("acq.settings_by_design_cross" in codes)
     # a movie whose channel names match no plan design: reported, and kept out of the designs' comparisons
@@ -155,6 +164,28 @@ end
     @test !("acq.channel_missing" in _acq_codes(rb; scope = "a1"))
     far = deepcopy(plan); far["objects"][1]["channels"] = Dict("A" => 9, "B" => 1)
     @test "acq.channel_missing" in _acq_codes(Cecelia.acq_check(far, facts); scope = "a1")
+
+    # the verdict's rule part: one step per warning code, the objects listed, per stage
+    @test r["verdict"] == "Collect more light for OT-I, P14 and gBT; separate the P14 ~ gBT channels; brighten OT-I; use one laser setting per design."
+    fv = Cecelia.acq_verdict(Cecelia.acq_check(merge(plan, Dict{String,Any}("stage" => "final")), facts)["findings"], "final")[2]
+    @test startswith(fv, "Denoise OT-I, P14 and gBT; correct bleed-through between P14 ~ gBT; check detection per object") && !occursin("laser", fv)
+    @test Cecelia.acq_verdict(Dict{String,Any}[], "final")[2] == "Analyse as planned." &&
+          Cecelia.acq_verdict(Dict{String,Any}[], "test")[2] == "Ready to acquire as planned."
+    @test Cecelia._acq_list(["A", "B", "C"]) == "A, B and C"
+
+    # final data: the same findings, each leading with what to do in the analysis
+    @test r["stage"] == "test" && Cecelia.acq_stage(nothing) == "test" && Cecelia.acq_stage(Dict("stage" => "x")) == "test"
+    fr = Cecelia.acq_check(merge(plan, Dict{String,Any}("stage" => "final")), facts)
+    @test fr["stage"] == "final" && _acq_codes(fr) == codes
+    @test !any(f -> haskey(f, "thisData"), fr["findings"])
+    for (t, f) in zip(r["findings"], fr["findings"])
+        @test f["long"] == get(t, "thisData", t["long"])
+    end
+    @test only(filter(f -> f["code"] == "acq.settings_within_design", fr["findings"]))["long"] ==
+          "Compare intensities only between movies with the same laser setting; check detection in each group."
+    # a movie's finding reads its set finding's analysis line
+    @test first(filter(f -> f["code"] == "acq.shares_object_image", r["findings"]))["thisData"] ==
+          Cecelia.qc_text("acq.shares_object.data").long
 end
 
 @testset "acq_check — every finding renders from the catalog" begin
@@ -164,7 +195,15 @@ end
     m = _acq_meta(objs = Dict(0 => (1.0, 30.0, 10.0), 1 => (1.0, 3.0, nothing)), shared = Dict("0-1" => 0.9),
                   brightz = false, depth = Dict(0 => -30.0, 1 => -30.0))
     r = Cecelia.acq_check(plan, [Cecelia.acq_image_facts("a", "x", m), Cecelia.acq_image_facts("b", "y", m)])   # unnamed
-    @test all(f -> haskey(Cecelia.QC_TEXT, f["key"]) && !occursin("{", f["short"] * f["long"]), r["findings"])
+    @test all(f -> haskey(Cecelia.QC_TEXT, f["key"]) && !occursin("{", f["short"] * f["long"] * get(f, "thisData", "")), r["findings"])
+    # every `.data` line belongs to a finding
+    @test all(k -> haskey(Cecelia.QC_TEXT, k[1:end-5]), [k for k in keys(Cecelia.QC_TEXT) if startswith(k, "acq.") && endswith(k, ".data")])
+
+    # every finding names what it is about — a category the model review files its points under too
+    @test all(f -> f["category"] in Cecelia.ACQ_CATEGORIES && f["category"] != "other", r["findings"])
+    codes = [k for k in keys(Cecelia.QC_TEXT) if startswith(k, "acq.") && !endswith(k, ".data") && !startswith(k, "acq.cat.")]
+    @test sort(codes) == sort(collect(keys(Cecelia.ACQ_CATEGORY_OF)))
+    @test all(c -> haskey(Cecelia.QC_TEXT, "acq.cat." * c), Cecelia.ACQ_CATEGORIES)
 end
 
 @testset "acq_check — the measure task is registered and runs per image" begin

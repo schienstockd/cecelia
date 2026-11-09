@@ -6,7 +6,7 @@
 import { postJson } from './blackboardApi'
 import type { SeriesTarget } from '../plots/types'
 import type { QcFinding } from '../lib/qc'
-import type { KiwiClaimKind, KiwiClaimRef } from './kiwiTurn'
+import { parseCategoryLabels, parseReview, type ModelReview, type ReviewItem } from './modelReview'
 
 export type ClaimStage = 'S0' | 'S1' | 'S2'
 /** A claim check's finding: a `qc_finding` (the backend builds them so), with its stage, section id
@@ -22,18 +22,9 @@ export type ClaimState = 'ok' | 'warn' | 'skipped'
 export interface ClaimCheckLine { id: string; category: string; state: ClaimState; text: string; tip: string }
 /** What a group of checks is about ("Images", "Same processing"), in reading order. */
 export interface ClaimCategory { id: string; label: string; tip: string; state: ClaimState }
-/** A model review point: one line under a category, with what to do split off (`action`, '' = none). */
-export interface ClaimReviewItem {
-  kind: KiwiClaimKind; category: string; text: string; action: string; sectionId?: string
-  refs: KiwiClaimRef[]            // what the point is about, as Kiwi checked it — clickable chips
-}
-/** The model review, once a turn has finished (`claim.review` on the entry). */
-export interface ClaimReview {
-  turnId: string; status: string; model: string; abstain: boolean; note: string
-  lastError: string               // why the last run didn't finish ('' = it did); earlier points are kept
-  items: ClaimReviewItem[]        // observations and questions
-  supports: string                // the one interpretation: what the record would support ('' = none)
-}
+/** A model review point and the review — shared with the acquisition check (modelReview.ts). */
+export type ClaimReviewItem = ReviewItem
+export type ClaimReview = ModelReview
 export interface ClaimResult {
   entryId: string
   round: number
@@ -106,42 +97,10 @@ function parseCategory(v: unknown): ClaimCategory | null {
   return { id: String(c.id ?? ''), label: String(c.label ?? ''), tip: String(c.tip ?? ''), state: parseState(c.state) }
 }
 
-// A point's refs as the turn checked them (`{ref, result, seen}`); a malformed one is dropped.
-function parseRefs(v: unknown): KiwiClaimRef[] {
-  if (!Array.isArray(v)) return []
-  return v.filter((r): r is KiwiClaimRef => !!r && typeof r === 'object' && !!r.ref && typeof r.ref === 'object'
-    && typeof r.ref.kind === 'string' && !!r.result && typeof r.result === 'object')
-}
-
-function parseReview(v: unknown): ClaimReview | null {
-  if (!v || typeof v !== 'object') return null
-  const r = v as Record<string, unknown>
-  const all = Array.isArray(r.claims) ? r.claims.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object') : []
-  const items = all.filter(x => x.kind !== 'interpretation').map(x => ({
-    kind: (x.kind === 'question' ? 'question' : 'observation') as KiwiClaimKind,
-    category: String(x.category ?? 'other'), text: String(x.text ?? ''), action: String(x.action ?? ''),
-    ...(typeof x.sectionId === 'string' ? { sectionId: x.sectionId } : {}),
-    refs: parseRefs(x.refs),
-  }))
-  return {
-    turnId: String(r.turnId ?? ''), status: String(r.status ?? ''), model: String(r.model ?? ''),
-    abstain: r.abstain === true, note: String(r.note ?? ''), items, lastError: String(r.lastError ?? ''),
-    supports: String(all.find(x => x.kind === 'interpretation')?.text ?? ''),
-  }
-}
-
 /** The findings under one check, warnings first. */
 export function findingsOf(r: ClaimResult, checkId: string): ClaimFinding[] {
   return r.findings.filter(f => f.detail?.check === checkId)
     .sort((a, b) => (a.level === b.level ? 0 : a.level === 'warn' ? -1 : 1))
-}
-
-/** The review's points grouped by category, in the categories' reading order (unknown ones last). */
-export function reviewByCategory(r: ClaimResult): { id: string; label: string; items: ClaimReviewItem[] }[] {
-  const order = Object.keys(r.categoryLabels)
-  const ids = [...new Set((r.review?.items ?? []).map(x => x.category))]
-    .sort((a, b) => (order.indexOf(a) + 1 || order.length + 1) - (order.indexOf(b) + 1 || order.length + 1))
-  return ids.map(id => ({ id, label: r.categoryLabels[id] ?? id, items: (r.review?.items ?? []).filter(x => x.category === id) }))
 }
 
 /** Open problems: the checks' warnings plus the review's observations and questions. */
@@ -158,8 +117,7 @@ export function parseClaimResult(r: Record<string, unknown> | null): ClaimResult
     entryId: r.entryId, round: Number(r.round ?? 1), text: String(r.text ?? ''), findings,
     checks: Array.isArray(r.checks) ? r.checks.map(parseCheckLine).filter((l): l is ClaimCheckLine => !!l) : [],
     categories: Array.isArray(r.categories) ? r.categories.map(parseCategory).filter((c): c is ClaimCategory => !!c) : [],
-    categoryLabels: (r.categoryLabels && typeof r.categoryLabels === 'object') ? Object.fromEntries(
-      Object.entries(r.categoryLabels as Record<string, unknown>).map(([k, v]) => [k, String(v)])) : {},
+    categoryLabels: parseCategoryLabels(r.categoryLabels),
     review: parseReview(r.review),
     ran: Array.isArray(r.ran) ? r.ran.map(String) : [],
     skipped: (r.skipped && typeof r.skipped === 'object') ? Object.fromEntries(
