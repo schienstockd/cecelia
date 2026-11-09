@@ -66,17 +66,37 @@ function profile_trends(meta::AbstractDict)
     out
 end
 
-function _profile_finding(code, trends, key, hit, pct)
+function _profile_finding(code, trends, key, hit, pct; text_key = code)
     hits = [t for t in trends if haskey(t, key) && hit(t[key])]
     isempty(hits) && return nothing
     chans = [t["channel"] for t in hits]
     worst = maximum(pct(t[key]) for t in hits)
     n = length(hits)
-    qc_finding("info", code; n = n, s = (n == 1 ? "" : "s"), pct = worst,
+    qc_finding("info", code; key = text_key, n = n, s = (n == 1 ? "" : "s"), pct = worst,
                channels = join(chans, ", "),
                detail = Dict{String,Any}("channels" => chans, "worstPct" => worst,
                                          "perChannel" => [Dict{String,Any}("channel" => t["channel"],
                                                                            key => t[key]) for t in hits]))
+end
+
+"""
+    _depth_ramp_key(code, meta) -> String
+
+The catalog key for a depth finding: `code * "_bright_z"` when the source's settings were read
+(`meta["acquisition"]`) from an Evident `.oir` and record Bright Z switched ON, else `code` — whose text
+names no vendor setting, because without that record the finding can't assume a ramp was used. Only
+`.oir` gets the name: it is Evident's on every system the acquisition knowledge's `scopes` map lists
+(FV4000, FVMPE-RS); Zeiss's ramp ("Auto Z brightness", `utils/acquisitionSettings.ts` →
+`depthRampName`) has not been seen ON in a file, so it reads the generic text.
+"""
+function _depth_ramp_key(code::AbstractString, meta::AbstractDict)::String
+    acq = get(meta, "acquisition", nothing)
+    acq isa AbstractDict || return String(code)
+    acq = Dict{String,Any}(String(k) => v for (k, v) in acq)
+    bz = get(acq, "brightZ", nothing)
+    on = bz isa AbstractDict && any(k -> String(k) == "enabled" && bz[k] === true, keys(bz))
+    # no `source` = settings from before `.czi` was read, i.e. the `.oir` reader (`_acquisition_outdated`)
+    (on && string(get(acq, "source", "oir")) == "oir") ? string(code, "_bright_z") : String(code)
 end
 
 """
@@ -89,12 +109,16 @@ when no channel has a profile (an image probed before it existed — Refresh met
 function profile_qc_findings(meta::AbstractDict)
     tr = profile_trends(meta)
     pct(x) = round(abs(x) * 100, digits = 0)
+    ramp(code) = _depth_ramp_key(code, meta)
     fs = [
         _profile_finding("import.signal_fades", tr, "fade", ≥(_FADE_OVER_TIME), pct),
         _profile_finding("import.background_rises", tr, "backgroundRise", ≥(_BACKGROUND_RISE), x -> pct(x - 1)),
-        _profile_finding("import.brighter_with_depth", tr, "depthChange", ≥(_DEPTH_CHANGE), pct),
-        _profile_finding("import.darker_with_depth", tr, "depthChange", ≤(-_DEPTH_CHANGE), pct),
-        _profile_finding("import.clipped_deep", tr, "clippedDeepShare", ≥(_CLIPPED_DEEP_SHARE), pct),
+        _profile_finding("import.brighter_with_depth", tr, "depthChange", ≥(_DEPTH_CHANGE), pct;
+                         text_key = ramp("import.brighter_with_depth")),
+        _profile_finding("import.darker_with_depth", tr, "depthChange", ≤(-_DEPTH_CHANGE), pct;
+                         text_key = ramp("import.darker_with_depth")),
+        _profile_finding("import.clipped_deep", tr, "clippedDeepShare", ≥(_CLIPPED_DEEP_SHARE), pct;
+                         text_key = ramp("import.clipped_deep")),
     ]
     Dict{String,Any}[f for f in fs if !isnothing(f)]
 end

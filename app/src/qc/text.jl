@@ -87,6 +87,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "import.channel_saturated" => (
         short = "Channel {channel} clipped at the detector",
         long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
+    # the same pile-up at an 8-bit file's own ceiling (255) with no record of an 8-bit detector: an
+    # export rescaled to 8 bits clips there whatever the detector did (emitted under the same code)
+    "import.channel_saturated_export" => (
+        short = "Channel {channel} clipped at the 8-bit file's ceiling",
+        long  = "Judge detector clipping on the original acquisition file — this 8-bit file looks like a rescaled export, so its ceiling need not be the detector's."),
 
     # depth / time trends from the import profile (qc/profile.jl): the measurement, not a cause —
     # bleaching, drift and cells leaving read the same here. One finding per kind, channels listed.
@@ -96,15 +101,28 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "import.background_rises" => (
         short = "Background rises up to {pct}% over the movie ({n} channel{s})",
         long  = "Check before gating on intensity across frames. Channels: {channels}."),
+    # The depth ones name the vendor's depth power ramp only when the settings say it was ON
+    # (`_depth_ramp_key`); otherwise — settings not read, no ramp record, or the ramp off — they
+    # can't assume one. "Bright Z" is Evident's name on both its two-photon systems (FV4000,
+    # FVMPE-RS: the `scopes` map in mcp/cecelia_mcp/acquisition_knowledge.json).
     "import.brighter_with_depth" => (
         short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
-        long  = "Check the depth power ramp (Bright Z / Auto Z brightness) — power may rise faster than signal is lost. Channels: {channels}."),
+        long  = "Check whether laser power or gain was raised with depth — it may rise faster than signal is lost. Channels: {channels}."),
+    "import.brighter_with_depth_bright_z" => (
+        short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
+        long  = "Check the Bright Z ramp — power may rise faster than signal is lost. Channels: {channels}."),
     "import.darker_with_depth" => (
         short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
-        long  = "Check the depth power ramp (Bright Z / Auto Z brightness), or whether there are fewer cells deeper. Channels: {channels}."),
+        long  = "Check whether laser power was raised with depth, or whether there are fewer cells deeper. Channels: {channels}."),
+    "import.darker_with_depth_bright_z" => (
+        short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
+        long  = "Check the Bright Z ramp, or whether there are fewer cells deeper. Channels: {channels}."),
     "import.clipped_deep" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
-        long  = "Lower the deep end of the depth power ramp (Bright Z / Auto Z brightness), or the HV. Channels: {channels}."),
+        long  = "Lower the laser power at depth if it was raised there, or the HV. Channels: {channels}."),
+    "import.clipped_deep_bright_z" => (
+        short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
+        long  = "Lower the deep end of the Bright Z ramp, or the HV. Channels: {channels}."),
 
     # Import from Immunemap (immunemap_fetch_qc_findings): the file and Immunemap disagree on voxel size
     "import.immunemap_spacing" => (
