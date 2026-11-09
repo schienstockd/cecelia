@@ -15,7 +15,6 @@ import ConfirmButton from '../ConfirmButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import SelectionTable, { type SelectionColumn } from '../SelectionTable.vue'
 import InlineNote from '../InlineNote.vue'
-import AgentModelSelect from '../AgentModelSelect.vue'
 import KiwiRefChip from './KiwiRefChip.vue'
 import { useKiwiStore } from '../../stores/kiwi'
 import { useSettingsStore } from '../../stores/settings'
@@ -234,7 +233,6 @@ function pick(c: RefCandidate) {
         <CcToggle v-model="settings.kiwiReasoning" aria-label="Think first"
                   v-tooltip.bottom="'Write reasoning before the claims — slower, more tokens'" />
       </span>
-      <AgentModelSelect v-if="observer.available" v-model="settings.kiwiModel" tip="Model Kiwi runs" />
       <span class="kiwi-grow" />
       <button v-if="!kiwi.busy" class="cc-btn cc-btn-primary cc-fs-xs" :disabled="!canAsk" @click="kiwi.ask()"
               v-tooltip.bottom="'Ask Kiwi'">

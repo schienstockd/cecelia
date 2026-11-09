@@ -1,4 +1,5 @@
 import { downloadBlob } from './export'
+import { applyPdfProvenance, type ProvenanceRecord } from '../utils/boardProvenance'
 
 // pdf-lib is large and only needed when the user actually exports — dynamic-import it inside
 // exportTabsToPdf so it lands in its own chunk fetched on export, not the initial bundle.
@@ -64,9 +65,12 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 
 const safe = (s: string) => s.replace(/[^\w.-]+/g, '_')
 
-export async function exportTabsToPdf(pages: PdfPage[], filename = 'analysis.pdf') {
-  const { PDFDocument, StandardFonts } = await import('pdf-lib')
+// `provenance` (optional) goes into the document info (`applyPdfProvenance` — the board export's record).
+export async function exportTabsToPdf(pages: PdfPage[], filename = 'analysis.pdf', provenance?: ProvenanceRecord | null) {
+  const lib = await import('pdf-lib')
+  const { PDFDocument, StandardFonts } = lib
   const doc = await PDFDocument.create()
+  if (provenance) applyPdfProvenance(doc, lib, provenance)
   const font = await doc.embedFont(StandardFonts.Helvetica)   // for centring slot titles (needs width metrics)
   for (const lp of layoutPages(pages)) {   // shared layout (identical to the board SVG)
     const p = doc.addPage([lp.pageW, lp.pageH])

@@ -28,7 +28,7 @@ end
 function _bin_inherited_meta(src_meta::AbstractDict, factor_x::Int, factor_y::Int)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeUnit", "PhysicalSizeZ", "PhysicalSizeZ_raw",
-              "TimeIncrement", "TimeIncrementUnit", "SizeC", "SizeZ", "SizeT")
+              TIME_META_KEYS..., "SizeC", "SizeZ", "SizeT")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
     if haskey(src_meta, "SizeX")
@@ -94,10 +94,10 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
         "bin_factor_y"          => p.factorY,
         "bin_op"                => p.op)
     merge!(bin_meta, _bin_inherited_meta(src_meta, p.factorX, p.factorY))
-    haskey(src_meta, "ori_path") && (bin_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(bin_meta, src_meta)
 
     tag     = p.factorX == p.factorY ? "bin$(p.factorX)" : "bin$(p.factorX)x$(p.factorY)"
-    new_img = add_image!(s; name = "$(img.name) ($tag)", meta = bin_meta, attr = img.attr)
+    new_img = add_image!(s; name = derived_image_name(proj, img.name, tag), meta = bin_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

@@ -380,6 +380,92 @@ end
     @test coverage >= 20
 end
 
+# ── QC-required ratchet ──────────────────────────────────────────────────────
+# "QC is required for every result-producing task" (app/CLAUDE.md, docs/MODULES.md → *QC — REQUIRED
+# for every new task*) was a rule no test enforced. Every registered task (`_fun_name_map`) must either
+# bank QC in the file(s) holding its `_run_task` method(s) — `write_qc`, or one of the shared QC
+# writers below — or be listed in `QC_EXEMPT` with its reason, AND carry the in-file `QC-EXEMPT:`
+# comment saying the same where the code is read. A composite is answered by its steps, which are
+# registered tasks themselves and checked as such. Custom modules are the user's code and not scanned.
+@testset "QC-required ratchet — every registered task writes QC or is an explained exemption" begin
+    # The shared writers a task may bank through instead of calling `write_qc` itself (each calls it).
+    QC_WRITERS = r"write_qc\(|write_cluster_qc!\(|bank_segment_qc!\(|write_metadata_qc!\("
+
+    # Exemptions — fun_name => why there is no objective signal to bank. Adding one is a reviewed act:
+    # the reason must say why the task's output has nothing to score, not that QC is pending.
+    QC_EXEMPT = Dict(
+        # deletes a registered version — no output; the image's QC is rewritten by whatever writes next
+        "importImages.remove"                => "no output — deletes a version",
+        # deterministic pixel operations: the output's shape/extent is fixed by the params, and the new
+        # image gets its own import-style QC from the downstream steps that measure it
+        "editImages.bin"                     => "deterministic downsample",
+        "editImages.copyImage"               => "byte-for-byte copy",
+        "editImages.cropImage"               => "deterministic geometric subset",
+        "editImages.dtype"                   => "deterministic value remap",
+        "editImages.flip"                    => "deterministic geometric op",
+        "editImages.register"                => "deterministic channel stack of registered cycles",
+        "editImages.resampleZ"               => "deterministic resample",
+        "editImages.tProject"                => "deterministic reduction",
+        "editImages.zProject"                => "deterministic reduction",
+        # a manual chain step: the user's gates are the result, and they are checked by gating QC
+        # (`gating.flow`/`gating.track`, app/src/qc_gating.jl) at the end of the chain
+        "gate.manual_gate"                   => "user gates are the result; gating QC checks them",
+        # composite plumbing around segment.correct → measureLabels: obs carried across the re-measure;
+        # the composite's QC is banked by segment.correct and segment.measureLabels
+        "segment.correct_carryover_snapshot" => "composite plumbing, no output of its own",
+        "segment.correct_carryover_restore"  => "composite plumbing, no output of its own",
+        # in-tree fixtures for the scheduler tests only — never shown to a user
+        "testTasks.image_task"               => "test fixture",
+        "testTasks.set_task"                 => "test fixture",
+        "testTasks.incremental_plot_task"    => "test fixture",
+    )
+    # Structural: test fixtures carry no in-file marker (they are not production code).
+    MARKER_OPTIONAL = Set(["testTasks.image_task", "testTasks.set_task", "testTasks.incremental_plot_task"])
+
+    # The files holding a task type's own `_run_task` methods — a Union method (the two staleness
+    # reports share one) counts for each member; the CciaTask/CompositeTask fallbacks do not.
+    function _run_task_files(T)
+        files = String[]
+        for m in methods(Cecelia._run_task)
+            ps = m.sig isa DataType ? m.sig.parameters : Base.unwrap_unionall(m.sig).parameters
+            length(ps) >= 2 || continue
+            A = ps[2]
+            (A isa Type && A !== Any && A !== CciaTask && T <: A) || continue
+            push!(files, String(m.file))
+        end
+        unique!(files)
+    end
+
+    missing_qc = String[]; stale = String[]; unmarked = String[]; checked = 0
+    for (fn, task) in Cecelia._fun_name_map()
+        task isa Cecelia.CompositeTask && continue
+        files = _run_task_files(typeof(task))
+        isempty(files) && (push!(missing_qc, "$fn: no `_run_task` method found to scan"); continue)
+        src = join((read(f, String) for f in files if isfile(f)), "\n")
+        writes = occursin(QC_WRITERS, src)
+        checked += 1
+        if haskey(QC_EXEMPT, fn)
+            writes && push!(stale, "$fn: banks QC now — remove it from QC_EXEMPT")
+            (fn in MARKER_OPTIONAL || occursin("QC-EXEMPT", src)) ||
+                push!(unmarked, "$fn: on QC_EXEMPT but $(join(relpath.(files, _app_src), ", ")) has no `# QC-EXEMPT: <reason>` comment")
+        elseif !writes
+            push!(missing_qc, "$fn ($(join(relpath.(files, _app_src), ", "))): bank QC via `write_qc` " *
+                              "(app/src/qc.jl) — or, if its output genuinely has nothing to score, add it " *
+                              "to QC_EXEMPT here with the reason AND a `# QC-EXEMPT: <reason>` comment by its `_run_task`")
+        end
+    end
+    isempty(missing_qc) || @error "QC-required ratchet: task(s) bank no QC:\n  " * join(sort!(missing_qc), "\n  ")
+    @test isempty(missing_qc)
+    isempty(stale) || @error "QC-required ratchet: stale exemption(s):\n  " * join(sort!(stale), "\n  ")
+    @test isempty(stale)
+    isempty(unmarked) || @error "QC-required ratchet:\n  " * join(sort!(unmarked), "\n  ")
+    @test isempty(unmarked)
+    # every exemption names a registered task (a renamed task must not leave a dead entry behind)
+    @test isempty(setdiff(keys(QC_EXEMPT), keys(Cecelia._fun_name_map())))
+    # sanity: a broken method lookup would scan nothing and pass vacuously
+    @test checked >= 40
+end
+
 # ── Julia zarr-access ratchet ────────────────────────────────────────────────
 # Companion to `python/cecelia/tests/test_zarr_access_convention.py`, for the Julia side. The
 # Python side goes through `zarr_utils`; the Julia side has one sanctioned reader —
@@ -672,4 +758,41 @@ end
     owner_path = joinpath(_app_src, "utils.jl")
     @test isfile(owner_path)
     @test occursin(r"\bfunction\s+_dir_bytes\b", read(owner_path, String))
+end
+
+@testset "pop-type registry ratchet — pop-type lists derive from `POP_TYPE_REGISTRY`" begin
+    # A comma-separated run of two pop-type literals is a hand-written list, and those drifted (an
+    # observer walk lacked `branch`, a legend lacked `region`). Read the registry
+    # (app/src/gating/popmanager/registry.jl) instead; a deliberate subset or priority order says why on
+    # its line or within the 3 lines above with `POP-TYPES-OK: <reason>`. `labels` is left out of the pattern —
+    # it is also a field and a scope name. Frontend twin: frontend/src/utils/popTypeRegistry.test.ts.
+    pt   = "(?:flow|live|track|clust|trackclust|region|branch)"
+    list = Regex("\"($pt)\"\\s*,\\s*\"($pt)\"")
+    owner = joinpath("app", "src", "gating", "popmanager", "registry.jl")
+    offenders = String[]
+    for root in (_app_src, _api_src), (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f); rel = relpath(path, _repo)
+        rel == owner && continue
+        lines = split(read(path, String), '\n')
+        in_doc = false
+        for (i, line) in enumerate(lines)
+            # docstrings are prose: skip from an opening `"""` to its close
+            isodd(count("\"\"\"", line)) && (in_doc = !in_doc; continue)
+            (in_doc || startswith(lstrip(line), "#")) && continue
+            code = replace(line, r"\s#\s.*$" => "")          # a trailing comment is prose
+            m = match(list, code)
+            (m === nothing || m.captures[1] == m.captures[2]) && continue
+            # the marker sits on the line or within the 3 above (a comment block, a wrapped list)
+            any(j -> occursin("POP-TYPES-OK:", lines[j]), max(1, i - 3):i) && continue
+            push!(offenders, "$rel:$i: `$(strip(line))`")
+        end
+    end
+    isempty(offenders) || @error "pop-type registry ratchet: hand-written pop-type list(s) — derive " *
+        "them from POP_TYPE_REGISTRY (registry.jl) or mark a deliberate subset `POP-TYPES-OK: <reason>`.\n  " *
+        join(offenders, "\n  ")
+    @test isempty(offenders)
+    # the pattern still bites
+    @test match(list, "const X = (\"flow\", \"track\")") !== nothing
+    @test isfile(joinpath(_repo, owner))
 end

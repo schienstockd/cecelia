@@ -89,7 +89,9 @@ import {
   screenToImagePx, cameraViewL0, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES, screenToL0, type L0Rect,
 } from '../utils/viewerPick'
 import { placeBox } from '../utils/anchorPosition'
-import { BOX_HANDLES, resizeBox, drawnBox, previewBoxNeeded, type BoxHandle } from '../utils/viewer/previewBox'
+import { BOX_HANDLES, resizeBox, drawnBox, squareBox, previewBoxNeeded, type BoxHandle, type BoxLimits } from '../utils/viewer/previewBox'
+import { cropTaskBox, type CropPick } from '../utils/viewer/cropPick'
+import ViewerCropBar from '../components/ViewerCropBar.vue'
 import { overviewNeedsLoad, overviewKey } from '../utils/viewer/overviewThumb'
 import { beginRect, updateRect, finishRect, type RectDraft } from '../utils/drawGeometry'
 import { debouncedSave } from '../utils/debouncedSave'
@@ -3780,7 +3782,67 @@ const boxDraft = ref<L0Rect | null>(null)
 /** the pencil was pressed: the next canvas drag draws a new box */
 const boxDrawing = ref(false)
 let boxRectDraft: RectDraft | null = null
-const boxLimits = () => ({ imageW: meta.value?.nX ?? 1, imageH: meta.value?.nY ?? 1 })
+
+// ── Crop mode ─────────────────────────────────────────────────────────────────
+// A crop task form asked for an area on THIS image (`utils/viewer/cropPick.ts`): the same box, with
+// no budget and optionally square, edits the crop area instead of the preview region until Use or
+// Cancel. The box is in the L0 px of the version on screen, so Use waits for the form's version.
+const cropPickHere = computed<CropPick | null>(() => {
+  const p = viewerStore.cropPick
+  return p && p.status === 'drawing' && p.imageUid === imageUid ? p : null
+})
+// The version whose pixels the box is in: the LOADED meta's, not the picker's — `changeVersion` sets
+// `valueName` before the new meta lands, and until then nX/nZ/nT are still the old version's.
+const cropShownVersion = computed(() => meta.value?.valueName || valueName.value || '')
+const cropVersionOk = computed(() => {
+  const p = cropPickHere.value, shown = cropShownVersion.value
+  return !p || !p.valueName || !shown || p.valueName === shown
+})
+// A box drawn over one version is in that version's pixels; any version change drops it (and re-arms
+// the pencil), so a box can never carry over to another extent.
+watch(cropShownVersion, (now, before) => {
+  if (!cropPickHere.value || !before || now === before) return
+  if (cropPickHere.value.box) patchCropPick({ box: null })
+  boxDraft.value = null; boxRectDraft = null
+  boxDrawing.value = true
+})
+const cropBlocked = computed(() =>
+  !cropVersionOk.value ? `Show version ${cropPickHere.value?.valueName} to crop it`
+  : mode.value !== 'plane' ? 'Switch to 2D to draw'
+  : !cropPickHere.value?.box ? 'Draw the area first'
+  : '')
+function patchCropPick(patch: Partial<CropPick>) {
+  const p = cropPickHere.value
+  if (!p) return
+  const next = { ...p, ...patch }
+  // Square switched on over an existing box: square it now, not on the next drag.
+  if (patch.square && next.box) next.box = squareBox(next.box, boxLimits())
+  viewerStore.setCropPick(next)
+}
+function useCropPick() {
+  const p = cropPickHere.value, m = meta.value
+  if (!p?.box || !m || cropBlocked.value) return
+  viewerStore.setCropPick({ ...p, status: 'done', result: cropTaskBox(p.box, p.z, p.t, m.nZ, m.nT) })
+}
+// Entering crop mode with no area yet arms the pencil, so the first drag draws it.
+watch(() => cropPickHere.value?.requestId, id => {
+  boxDraft.value = null; boxRectDraft = null
+  boxDrawing.value = !!id && !cropPickHere.value?.box
+}, { immediate: true })
+
+/** The box the handles edit: the crop area in crop mode, else the preview region. */
+const activeBox = computed<L0Rect | null>(() =>
+  cropPickHere.value ? cropPickHere.value.box : ownPreviewBox.value)
+function commitBox(b: L0Rect) {
+  if (cropPickHere.value) patchCropPick({ box: b })
+  else viewerStore.setPreviewBox({ imageUid, ...b })
+}
+const boxLimits = (): BoxLimits => {
+  const lim = { imageW: meta.value?.nX ?? 1, imageH: meta.value?.nY ?? 1 }
+  const p = cropPickHere.value
+  return p ? { ...lim, maxSide: Infinity, square: p.square } : lim
+}
+const boxNoun = computed(() => cropPickHere.value ? 'crop area' : 'preview region')
 
 // Seed: the first preview that lands for this image becomes the box.
 watch(previewedRegion, r => {
@@ -3790,7 +3852,7 @@ watch(previewedRegion, r => {
 
 /** The box (or the drag in flight) in canvas CSS px — follows pan and zoom, it is anchored to the image. */
 const previewBoxScreen = computed(() => {
-  const r = boxDraft.value ?? ownPreviewBox.value
+  const r = boxDraft.value ?? activeBox.value
   const m = meta.value, { w, h } = canvasSize.value
   if (!r || !m || mode.value !== 'plane' || h <= 0) return null
   return l0RectToScreen(r, cam.value, m, w, h)
@@ -3844,7 +3906,7 @@ function eventL0(e: PointerEvent): [number, number] | null {
 
 let boxGrab: { handle: BoxHandle; from: [number, number]; box: L0Rect } | null = null
 function onBoxDown(e: PointerEvent, handle: BoxHandle) {
-  const b = ownPreviewBox.value, p = eventL0(e)
+  const b = activeBox.value, p = eventL0(e)
   if (!b || !p) return
   boxGrab = { handle, from: p, box: { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 } }
   ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
@@ -3856,7 +3918,7 @@ function onBoxMove(e: PointerEvent) {
                              boxLimits())
 }
 function onBoxUp() {
-  if (boxGrab && boxDraft.value) viewerStore.setPreviewBox({ imageUid, ...boxDraft.value })
+  if (boxGrab && boxDraft.value) commitBox(boxDraft.value)
   boxGrab = null
   boxDraft.value = null
 }
@@ -3864,6 +3926,12 @@ function onBoxUp() {
 function previewBoxToView() {
   const m = meta.value, c = canvas.value
   if (!m || !c) return
+  if (cropPickHere.value) {
+    // crop: what is on screen, clipped to the image — no budget
+    const v = cameraViewL0(cam.value, m, Math.max(1, c.clientWidth), Math.max(1, c.clientHeight))
+    commitBox(drawnBox([v.x0, v.y0], [v.x1, v.y1], boxLimits()))
+    return
+  }
   const r = computeVisibleRegion({
     view: cameraViewL0(cam.value, m, Math.max(1, c.clientWidth), Math.max(1, c.clientHeight)),
     imageW: m.nX, imageH: m.nY, currentZ: 0, currentT: 0, ndisplay: 2,
@@ -3899,7 +3967,7 @@ function boxDrawUp(e: PointerEvent): boolean {
     return [s.x, s.y]
   }
   if (p && finishRect({ start: toPx(boxRectDraft.start), cur: toPx(p) }, toPx(p))) {
-    viewerStore.setPreviewBox({ imageUid, ...drawnBox(boxRectDraft.start, p, boxLimits()) })
+    commitBox(drawnBox(boxRectDraft.start, p, boxLimits()))
   }
   boxRectDraft = null
   boxDraft.value = null
@@ -5808,6 +5876,10 @@ onUnmounted(() => {
              :style="{ left: previewBoxScreen.x + 'px', top: previewBoxScreen.y + 'px',
                        width: previewBoxScreen.w + 'px', height: previewBoxScreen.h + 'px' }">
           <template v-if="!boxDrawing">
+            <!-- crop mode: the interior drags the box (the preview box keeps it pan-through) -->
+            <div v-if="cropPickHere" class="vw-pbox-body"
+                 @pointerdown.stop="onBoxDown($event, 'move')" @pointermove="onBoxMove"
+                 @pointerup="onBoxUp" @pointercancel="onBoxUp" />
             <div v-for="h in BOX_HANDLES" :key="h" :class="['vw-pbox-h', `vw-pbox-h-${h}`]"
                  @pointerdown.stop="onBoxDown($event, h)" @pointermove="onBoxMove"
                  @pointerup="onBoxUp" @pointercancel="onBoxUp" />
@@ -5815,18 +5887,22 @@ onUnmounted(() => {
         </div>
         <div v-if="!boxDrawing" :ref="measurePboxBar" class="vw-pbox-bar" :style="previewBarStyle">
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-pbox-grip"
-                  v-tooltip.top="'Move preview region'" aria-label="Move preview region"
+                  v-tooltip.top="`Move ${boxNoun}`" :aria-label="`Move ${boxNoun}`"
                   @pointerdown.stop="onBoxDown($event, 'move')" @pointermove="onBoxMove"
                   @pointerup="onBoxUp" @pointercancel="onBoxUp"><i class="pi pi-arrows-alt" /></button>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                  v-tooltip.top="'Draw a new preview region'" aria-label="Draw a new preview region"
+                  v-tooltip.top="`Draw a new ${boxNoun}`" :aria-label="`Draw a new ${boxNoun}`"
                   @click="boxDrawing = true"><i class="pi pi-pencil" /></button>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                  v-tooltip.top="'Preview the current view'" aria-label="Preview the current view"
+                  v-tooltip.top="cropPickHere ? 'Crop the current view' : 'Preview the current view'"
+                  :aria-label="cropPickHere ? 'Crop the current view' : 'Preview the current view'"
                   @click="previewBoxToView"><i class="pi pi-refresh" /></button>
         </div>
       </div>
-      <div v-if="boxDrawing && !boxDraft" class="vw-status-chip vw-pbox-hint">Drag to draw the preview region</div>
+      <div v-if="boxDrawing && !boxDraft" class="vw-status-chip vw-pbox-hint">Drag to draw the {{ boxNoun }}</div>
+      <ViewerCropBar v-if="cropPickHere && meta" :pick="cropPickHere" :n-z="meta.nZ" :n-t="meta.nT"
+                     :blocked="cropBlocked" @update="patchCropPick" @use="useCropPick"
+                     @cancel="viewerStore.setCropPick(null)" />
       <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
            35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
       <StillOverlay
@@ -7188,6 +7264,7 @@ onUnmounted(() => {
 /* Resize strips along the edges and squares at the corners — the only parts of the box that take the
    pointer, so the interior stays pannable. */
 .vw-pbox-h { position: absolute; pointer-events: auto; }
+.vw-pbox-body { position: absolute; inset: 0; pointer-events: auto; cursor: move; }
 .vw-pbox-h-n, .vw-pbox-h-s { left: 6px; right: 6px; height: 8px; cursor: ns-resize; }
 .vw-pbox-h-e, .vw-pbox-h-w { top: 6px; bottom: 6px; width: 8px; cursor: ew-resize; }
 .vw-pbox-h-n { top: -4px; }

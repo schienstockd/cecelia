@@ -158,8 +158,10 @@ function continue_parked_on_disk!(proj::CciaProject, run_id::AbstractString, nod
     isnothing(i) && error("run $run_id has no node '$node_id'")
     node = run.template_snapshot.nodes[i]
     task = _task_from_fun_name(node.fn)
-    params = _node_run_params(task, node, Dict{String,Any}(), _ -> nothing)
-    ph     = _params_hash(_apply_overrides(node.params, node.id, Dict{String,Any}()))
+    # the run's recorded overrides — the resume that follows keeps them (`run_chain`), so the hash must too
+    ov     = something(run.overrides, Dict{String,Any}())
+    params = _node_run_params(task, node, ov, _ -> nothing)
+    ph     = _params_hash(_apply_overrides(node.params, node.id, ov))
     waiting = [uid for uid in run.image_uids if run.image_states[uid][node.id].status == NODE_WAITING]
     isnothing(image_uids) || node.scope == CHAIN_SET ||
         (waiting = [u for u in waiting if u in Set(String.(image_uids))])

@@ -230,6 +230,25 @@ function _node_run_params(task, node::ChainNode, overrides::Dict{String,Any}, lo
     _apply_overrides(clamped, node.id, overrides)
 end
 
+# What run.json records per node as `node_params` (types.jl → `ChainRun.node_params`): `_node_run_params`
+# (no log — the executor logs a clamp when the node runs), then `resolve_params_unscoped` (the
+# image-independent half of `resolve_run_params`: sections, group order, spec defaults) — so a reader sees
+# the values a default supplied, not only the ones somebody set. The per-image step (axis-guarded params
+# dropped) is left to each image's run log. A node whose task no longer resolves records its params as
+# stored + overrides, so the record is never empty for a step that was in the template.
+function _record_node_params(t::ChainTemplate, overrides::Dict{String,Any})::Dict{String,Any}
+    out = Dict{String,Any}()
+    for node in t.nodes
+        out[node.id] = try
+            task = _task_from_fun_name(node.fn)
+            resolve_params_unscoped(task, _node_run_params(task, node, overrides, _ -> nothing))
+        catch
+            _apply_overrides(node.params, node.id, overrides)
+        end
+    end
+    out
+end
+
 function _execute_image_chain!(run::ChainRun, image_uid::String,
                                 ordered_nodes::Vector{ChainNode},
                                 overrides::Dict{String,Any};

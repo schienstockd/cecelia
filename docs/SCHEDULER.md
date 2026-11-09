@@ -630,7 +630,8 @@ thread loop. A failed plot never kills the pipeline. The `incremental_ids` set i
 `POST /api/chains/preflight`) reads a template against each target image before a run: a
 `channelSelection` name the image lacks and a `valueNameSelection` input neither on the image nor made by
 an ancestor node are **fail**; a step `task_applies` rejects (it will be `:skipped`) and an output that
-already exists (with `keep_previous_version()` off) are **warn**. Advisory — the whiteboard offers
+already exists are **warn** — a label set always (its writers never version), an image version only with
+`keep_previous_version()` off. Advisory — the whiteboard offers
 *Run anyway*; fault isolation still keeps a bad image from stopping the rest. It reuses the history
 builder's spec reading (`_history_leaves`), so "what does this param read" has one answer.
 
@@ -726,6 +727,53 @@ template afterwards can't rewrite history, and `run.json` stays compact.
   could not say its selection was larger. Carried across the runner boundary as
   `ChainRequest.excluded`; a resume keeps the record it was created with.
 
+**What the run was asked to run with is in the record too**, so it can be read — and replayed —
+without the current template. Each execution (the fresh run, or the latest resume) writes:
+
+- `overrides` — the caller's per-node overrides, `{node_id: {param: value}}` (`run_chain(...;
+  overrides)`; the GUI sends none, so `{}`). **A resume keeps them**, with any it is given merged on top
+  per node: it continues the same run, and before they were recorded a GUI Resume (which sends none)
+  of a run started with overrides re-ran every `:done` node without them. A run.json from before them
+  has none to keep. `continue_parked_on_disk!` hashes with them for the same reason.
+- `node_params` — `{node_id: params}`, what each step runs with before the per-image steps
+  (`_record_node_params`): stored params clamped to the current spec, the overrides on top, sections
+  lifted, group order resolved, spec defaults filled. So a value a default supplied is on record, not
+  only the ones somebody set. The per-image step (`_apply_param_requires` dropping an axis-guarded
+  param) is in each image's `runlog.json`, which records the fully resolved params of every run.
+  A resume keeps the recorded entry of a step it does not re-run (`:done` on every image) — its resume
+  hash ignores defaults and clamps, so re-resolving it could record a default changed since its
+  outputs were made — and records fresh params for the steps it re-runs. A step re-run on only some
+  images records the new params; the kept images' values are in their run logs.
+
+Both are **absent on a run.json written before them, and absent means unknown** (`nothing` in
+`ChainRun`), never "no overrides"; a re-save keeps them absent. `GET /api/chains/run` returns them as
+`overrides` / `nodeParams`, `null` when unknown. `params_hash` stays the resume key; these are the
+readable record beside it.
+
+### Replay — a new run from a past run's settings
+
+`run_chain(proj, image_uids; from_run = "<run id>")` starts a **fresh** run (new id, new run.json)
+from the past run's **frozen** template — the cached content its `template_hash` names, already pruned
+to its start dot — with the overrides it recorded, plus any `overrides` given now merged on top per node.
+Empty `image_uids` = the past run's images. The new run.json says `from_run`. `run_id` and `from_run`
+are exclusive (resume continues a run; replay starts another).
+
+- **Same path as any launch.** WS `chain:run` with `fromRun` (`handle_chain_run` reads the source's
+  `chain_name` / `image_uids` from its run.json when not sent, then the usual guards —
+  `_drop_excluded` included — and `ChainRequest.from_run` across the runner boundary). The Live
+  toolbar's ↻ sends it for the selected run. No HTTP launch route, as for every chain run.
+- **A replay re-resolves against today's specs.** Spec defaults and range clamps are read now, so a
+  default changed in a release since makes a step run with a different value. When the source
+  recorded `node_params`, the replay logs one line per value that differs (`_log_replay_drift`:
+  `step n1 'x' was 5 there, now 3`); both records are in the two run.json files.
+- **A source from before overrides were recorded** replays its frozen template alone and logs that
+  any overrides it ran with are unknown.
+- Not on the autonomous MCP's `run_chain` yet: its lock check reads the current template's params, so
+  a replay needs that check run against the frozen nodes first.
+- **The record is enough to reproduce.** `Chain replay reproduces a real step's measures (CONTMESH)`
+  (`app/test/suite/chain_replay.jl`) runs a real measure step with overrides the template lacks, moves the
+  template on, then replays: the cell table comes back equal, every column (CPU, deterministic, so exact).
+
 A single task run has no run record of its own, so an image it drops is recorded in **that image's**
 `runlog.json` instead: a `skipped` entry with a `reason`, under the task id the rest of the selection
 ran with (`skip_run_log!`, `app/src/run_log.jl`).
@@ -780,6 +828,21 @@ per image, re-run as images clear the stage — incremental fill), and expands o
 `SummaryCanvas module="segment"`. All of it reuses the canonical plot framework — no bespoke QC route or
 panel. Distinct from user-dragged plot nodes (a separate, later mechanism).
 
+### Cohort QC at the end of a run
+
+When every image thread, set node and incremental watcher has returned, `run_chain` runs
+`chain_cohort_qc!` (`app/src/qc_cohort.jl`) — the **same** `cohort_check!` the module pages' *Check
+cohort consistency* button posts to (`POST /api/qc/cohort/check`), not a parallel pipeline. For every
+set holding one of the run's images it checks each step that finished (`:done`) on some image and that
+the check can answer (`cohort_has_answer`: banked `COHORT_METRICS`, or a composite's steps), judging
+the **newest** clustering/HMM run as the button's run selector does; then, where the set has
+hand-drawn gates, the gating check (`gating.flow`/`gating.track`, `app/src/qc_gating.jl`) — a run that
+re-segments or re-tracks changes what every gate selects. Same artefacts as the button: the set
+sidecar, per-image `cohort.{fun}` / `gating.*` findings, and a *Cecelia — Cohort check* lab-log entry
+for whatever flagged; one `[INFO]`/`[WARN]` line per check goes to the run's log. Skipped on a
+cancelled run, and when no step finished (a resume with nothing left to do). It never throws: a failed
+check is logged, and the run's outcome is the steps', as always (QC warns, never blocks).
+
 ### Loading past runs into the Live view
 
 The whiteboard Live tab renders runs from **two sources**, normalised to one task-like shape:
@@ -802,7 +865,8 @@ The whiteboard Live tab renders runs from **two sources**, normalised to one tas
 
 Every `ImageNodeState` stores a `params_hash`: SHA-256 of the canonical (sorted-key) JSON of the
 effective params at the time the node ran. "Effective params" = node params merged with any
-per-node overrides passed to `run_chain`.
+per-node overrides passed to `run_chain` (on a resume, the run's recorded `overrides` with the new
+ones on top).
 
 On resume, `_execute_image_chain!` skips a node if:
 ```julia
@@ -1097,17 +1161,38 @@ nodes run as `chain_run_as(run)` — the launcher (`run.json` `by`), or whoever 
 |---|---|---|
 | `ceceliaVersion` | at open | `cecelia_version()` of the process that RUNS it (the detached runner can lag the backend) |
 | `author` | at open | `run_author(by, caller)` — the `author_stamp()` shape `{profile, via?, model?, session?}`. `caller` is `caller_stamp()` captured where `by` is (`handle_task_run` → `TaskRequest.caller` → `TaskRecord.caller`). The router binds `via`/model/session for a `/ws` connection from its upgrade headers, so a `task:run` from the autonomous MCP (which sends `X-Cecelia-Client: claude` on its connect) reads `via: claude`. A chain carries it the same way: `ChainRequest.caller` → `run_chain(; caller)` → `ChainRun.caller` (in memory only; a resume brings its own) → each node's `TaskRequest`. A REPL `run_task` / `run_chain` has no caller → `{profile}` only |
-| `env` | at close | the task result's `"runEnv"` (`run_env_of`). A runner reports it through the sidecar it already hands back (`qcOutPath` JSON — a segmenter gets it back from `bank_segment_qc!`'s own parse, anything else via `read_run_env`). Today: `segment.cellpose` → `{device, cellpose, blockSize, overlap}` (cellpose's own resolved `model.device`, installed version); `segment.coastal` → `{device, coastal, blockSize, overlap}` (the torch device inference ran on — `cuda`/`mps`/`cpu`, chosen at run time; `coastal_utils.coastal_build()` as `<version>+<commit>`, the commit read from the install's `direct_url.json`). `blockSize`/`overlap` come from the shared base (`SegmentationUtils.run_env`): the tile size `auto` resolved from the RAM/VRAM free at run time, and the overlap. `clustPops.cluster` / `clustTracks.cluster` / `clustRegions.cluster` → `{device, seed}` (`_cluster_run_env`, `qc.jl`: `"cuda"`/`"cpu"`, whichever path of `find_populations` actually ran; region k-means reports the seed only); `behaviour.motif_discovery` → `{seed}` (its Leiden runs on the CPU only) |
+| `env` | at close | the task result's `"runEnv"` (`run_env_of`). A runner reports it through the sidecar it already hands back (`qcOutPath` JSON — a segmenter gets it back from `bank_segment_qc!`'s own parse, anything else via `read_run_env`). Today: `segment.cellpose` → `{device, cellpose, blockSize, overlap}` (cellpose's own resolved `model.device`, installed version); `segment.coastal` → `{device, coastal, blockSize, overlap}` (the torch device inference ran on — `cuda`/`mps`/`cpu`, chosen at run time; `coastal_utils.coastal_build()` as `<version>+<commit>`, the commit read from the install's `direct_url.json`). `blockSize`/`overlap` come from the shared base (`SegmentationUtils.run_env`): the tile size `auto` resolved from the RAM/VRAM free at run time, and the overlap. `clustPops.cluster` / `clustTracks.cluster` / `clustRegions.cluster` → `{device, seed}` (`_cluster_run_env`, `qc.jl`: `"cuda"`/`"cpu"`, whichever path of `find_populations` actually ran; region k-means reports the seed only); `behaviour.motif_discovery` → `{seed}` (its Leiden runs on the CPU only). A custom checkpoint (cellpose) and every coastal model add `modelWeights`: one `source_fingerprint` per weights file (`segment_model_weights_env`); a built-in cellpose model is pinned by name + `cellpose` and gets none. A composite's result carries every step's `runEnv` merged in step order (`_with_steps_run_env`), so a segment + measure run records its segmenter's |
+
+`env.scaleDefaulted` is the scheduler's own addition, not a task's: for a task declaring
+`requires.scale`, the axes the run computed with no recorded value for (`img_defaulted_scale` — a 3D
+image's missing or invalid z step, an unrecognised unit), as `{axis: {reason: "missing"|"invalid"|"unknownUnit", used}}`, `used` = the value the run computed with (`img_physical_sizes`; µm/px or min/frame — not always 1.0) (`run_scale_defaults`). Also on a
+failed run's entry. Absent when nothing was assumed. `docs/MODULES.md` → *Requires*.
+
+**Format.** Every entry written now carries `format` (`RUN_LOG_FORMAT`, 1), stamped where the entry is created; a close keeps the number its open wrote. Absent = format 0, written before the field existed. Entries are never migrated in place: readers stay tolerant of every older format (a missing field reads as not recorded) and check `run_entry_format(e)` only when they need a field a newer format guarantees. The number is bumped when a field changes meaning, not for a new optional field (`run_log.jl` → *Format*).
 
 **What it read and what it replaced** — stamped at open by `run_provenance` (`app/src/run_log.jl`),
 from the task spec alone, so every task gets it with no per-task code. Re-runs overwriting their
 output is by design (`keep_previous_version()` is the opt-in that keeps image versions); the record is
-what says it happened. Both fields are absent on older entries and when there is nothing to say:
+what says it happened. All three fields are absent on older entries and when there is nothing to say:
 
 | field | what |
 |---|---|
 | `inputs` | `[{param, name, ns?, version?, pinned?}]` — every `valueNameSelection` param that does not write (the leaves `_history_leaves` reads for pre-flight and chain-from-history). An empty picker is resolved to the active name it meant. `version` is the pin (`params["version"]`, `pinned: true`) for `valueName`, else `_latest` of a fresh `ccid.json` read — on image versions and label sets; other namespaces carry the name only. Populations stay in `params` (`run_pop_reads`) |
-| `replaces` | `{name, ns?, version?, taskId?, at?, fun?}` when the output already existed and this run overwrites it: an image version (unless `keepPreviousVersion`), a label set (always — label writers never version), or for a write-into task (tracking) its earlier run on that label set. `taskId`/`at`/`fun` name the newest `done` run that made it, from the log or its archive; absent = the output predates the log or came from outside it |
+| `gates` | `[{valueName, path, hash, popType?}]` — every gated population the run reads (`run_gates`: every population picker, track pickers included — `B/qc/_tracked` reads the cell gate `/qc`; `popType: "track"` for a track gate; cluster/region pops are not gates), with the content hash of its gate definition when the run started (`pop_gate_hashes`; covers the parent chain — it names the gate, not the data: a re-segmentation changes cells under the same hash). Gates are edited in place; `gate_state_for_hash` finds the gate a hash names in the sidecar or `gating/{vn}.history.jsonl` (`docs/POPULATION.md` → Storage). A population not in the sidecar is left out |
+| `replaces` | `{name, ns?, version?, taskId?, at?, fun?}` when the output already existed and this run overwrites it: an image version (unless `keepPreviousVersion`), a label set (always — label writers never version), or for a write-into task (tracking, `segment.measureLabels`) the newest earlier run that shares a step with it and wrote that label set — a re-measure names the segment + measure run, a re-track the tracking composite, never the segmentation the tracks went into. `taskId`/`at`/`fun` name the newest `done` run that made it, from the log or its archive; absent = the output predates the log or came from outside it |
+
+**What is stale downstream** — `stale_outputs_for(img)` (`app/src/correction_staleness.jl`, beside the
+correction staleness enumerator) reads the two fields back. An output is stale when its current maker
+(the newest `done` run that wrote it) read an input a later `done` run `replaces`, or read one whose own
+maker is stale; each entry carries `because`, the chain of links (`{read, replacedBy}` /
+`{read, madeBy}`). A `replaces` with a version matches a read of that version only, so a step pinned to
+`v1` is not stale when `v2` is overwritten. A maker with no `inputs` for a task that reads names was
+logged before inputs were recorded: `unknown`, never stale — and so is what was made from it, and a read
+whose version has several possible makers that disagree (several writers, or a pinned version its one
+logged writer may not have made: a minted version records no `replaces`). A track run reads the labels,
+so a re-track neither stales nor clouds the one before it. A write-into stays current until a later run of the same label set that shares a step with it supersedes it (a re-segment + measure supersedes a lone re-measure, a re-track a track correction); a re-measure shares no step with tracking, so it does not hide stale tracks. A re-measure `replaces` the label set as a whole: the record does not tell a reader of its pixels (branching) from a reader of its measures, so the first is flagged too, and a population reader (clustering) is not followed at all (populations are not `inputs`). Archive included. Surfaced per image as
+`stale` / `staleUnknown` in the analysis lineage (`GET /api/analysis/lineage`, MCP
+`get_analysis_lineage`). Report only — nothing is deleted or re-run.
 
 **The cap moves entries, it never drops them.** `runlog.json` is rewritten whole on every open and
 close, so it holds the newest `RUN_LOG_CAP` (200); the overflow is appended to `runlog.archive.jsonl`
@@ -1212,6 +1297,10 @@ run.image_states[uid]["n2"].params_hash # SHA-256 of effective params at run tim
 
 # Load a completed run from disk
 run = load_chain_run(proj, run_id)
+run.overrides; run.node_params           # what it was asked to run with (`nothing` = unknown, old run)
+
+# Replay: a NEW run of that run's frozen template + recorded overrides (empty uids = its images)
+rerun = run_chain(proj, String[]; from_run = run.id)
 ```
 
 ---

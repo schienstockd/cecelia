@@ -263,7 +263,12 @@ only where one code carries two wordings — see the note on the catalog. The fo
   `write_qc` per image), so counting stays where the data is.
 - **Genuinely no objective signal** (e.g. a denoising/correction whose only failure mode is
   perceptual)? Say so in a comment and skip QC deliberately — do **not** invent a meaningless metric.
-  This is the *only* exemption, and it must be explicit.
+  This is the *only* exemption, and it must be explicit: a `# QC-EXEMPT: <reason>` comment by the
+  `_run_task` **and** an entry in `QC_EXEMPT` (fun_name → reason) in the `QC-required ratchet` testset
+  (`app/test/suite/ratchets.jl`). That ratchet scans the file(s) holding every registered task's
+  `_run_task` for `write_qc` (or a shared writer: `write_cluster_qc!`, `bank_segment_qc!`,
+  `write_metadata_qc!`) and fails a task that has neither QC nor the two-part exemption — and an
+  exemption that has gone stale because the task now banks QC.
 
 Reuse the shared helpers in `qc.jl` rather than re-deriving: `qc_finding`, `write_qc`,
 `qc_canvas_expansion` (spatial-transform tasks), `category_dist_metrics` (state/label distributions),
@@ -636,6 +641,17 @@ would go stale the moment the metadata is fixed, and the row's "Include in proce
 have to lie. Exclusion is a choice; blocking is a fact about the file. They share the row's
 presentation and nothing else.
 
+**What the gate does not cover is warned, never blocked.** No task declares `"z"` (a z-stack with no
+voxel depth would otherwise refuse every spatial task), and an unrecognised unit passes the gate. So
+for any task declaring a `scale`, the scheduler asks `img_defaulted_scale(img, need)` which axes the
+run computes with no recorded value for — a 3D image's missing or invalid z step (spatial need ⇒ z on a z-stack), a
+missing interval, a unit `length_unit_um`/`time_unit_seconds` doesn't know — and, when any: writes a
+`[WARN]` line to the task log at start, stamps `env.scaleDefaulted` (`{axis: {reason: "missing"|"invalid"|"unknownUnit", used}}`, `used` = the value the run computed with (`img_physical_sizes`; µm/px or min/frame — not always 1.0), via `run_scale_defaults`)
+on the run-log entry at close, and banks `calibration.*_assumed` findings under
+`qc/calibration.{fun}/` once the run is done (`write_defaulted_scale_qc!`; a re-run with the scale set
+clears them). A task needs nothing for this beyond its `scale` declaration. Import QC
+(`metadata_qc_findings`) still flags the image itself; this flags the run that used the default.
+
 **Do not** hand-roll `img.meta["SizeT"] > 1` inside a task — reach for `task_applies` (or `img_axes`
 if you truly need the axis set). Tests: `app/test/runtests.jl` → *Axis gating — img_axes +
 task_applies*.
@@ -824,8 +840,11 @@ each other channel `competing` / `af` / unused.
 ```
 
 **`imagePicker`** — a spatial selection AUTHORED on the image. Instead of eight int fields, the row
-shows a summary + a **Draw…** button that opens `ImagePickerModal` — a coloured z-MIP + rectangle
-draw + z/t range sliders (backend: the reused `/api/crop/*` endpoints in `api/src/crop_api.jl`). The
+shows a summary + a **Draw…** button that opens the **viewer window** on `context.images[0]`, at the
+version the task reads, in crop mode: the viewer's preview box (`utils/viewer/previewBox.ts`, no size
+budget, optional **Square**) draws the XY area and `ViewerCropBar` adds the z/t ranges and Use /
+Cancel. The two windows talk through `viewerStore.cropPick` (`utils/viewer/cropPick.ts`): the form
+writes a request, the viewer answers with the task's box on Use, the form clears it. The
 `geometry` field says what to draw:
 
 | `geometry` | Value shape | Use |
@@ -842,13 +861,18 @@ Preview version comes from the sibling `valueNameSelection` — the widget draws
 the task will read. The task runs against every selected image; the preview is `context.images[0]`
 and the same value applies to all of them. Reach for this whenever a task consumes a spatial region
 of an image; a follow-up geometry (`box2d`, `point2d`, `line2d`, `polygon2d`) is a matter of
-extending the modal's drawing branch. Handler reads the value as a nested dict — coerce JSON3 keys
+a new viewer mode beside the box. Handler reads the value as a nested dict — coerce JSON3 keys
 with `pairs(box)` before unpacking.
 
 **`imageSelection`** — one image of the open project, by uid; `""` = none. A plain select listing
 `Set / image` for every image the frontend has loaded (`ParamRenderer.vue`). The validator treats it as a
 string, and the handler resolves it with `init_object(img_project_uid(img), uid)`. Use it when a task
 names ANOTHER image than the one it runs on — today `gate.manual_gate`'s `copyFrom` exemplar.
+
+**`setSelection`** — one set of the open project, by uid; `""` = the source image's own set (shown as
+*Same set*). Validated as a string; the handler resolves it against `proj._sets` and fails the run on
+an unknown uid. Use it when a task makes a NEW image and the user may want it elsewhere — today
+`editImages.cropImage`'s `toSetUid`.
 
 ### Which picker — decide this before writing the param
 
@@ -1627,8 +1651,10 @@ working untouched; there is no migration.
   names the input param, and `Cecelia.task_params_name` (Julia) / `taskParamsName` (TS) bank and look
   up params under it; picking that input on the form restores its record (`namesParamsRecord`).
   Explicit, never inferred from `valueName`: an image task reads one too but writes a new, fixed-name
-  image. Declared by `tracking.bayesian_tracking`, `tracking.track_measures`, `tracking.correct`; a
-  composite inherits its first step's.
+  image. Declared by `tracking.bayesian_tracking`, `tracking.track_measures`, `tracking.correct` and
+  `segment.measureLabels` (its `outputValueName` picks the label set it re-measures, so the run log records
+  the re-measure as a write INTO that set and its `replaces`); a composite inherits its first step's
+  (`task_writes_into_key` folds the same way).
   The track-set delete reads the rebuild's `dims` + `windowMinutes` from the run log's latest done
   measures run for the name, falling back to the by-name record only when the log has no
   failed/cancelled/running run for it (dispatch writes the record whatever the outcome), then to what

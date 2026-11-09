@@ -20,6 +20,19 @@ gating module. Gating is one way to *define* a population; the manager, the unif
 | `region` | a filter on the **spatial region** column (`filter_fun="in"` over `regions.{suffix}`) | cell H5AD `.obs` column (clustRegions) | `gating/{vn}__region.json` |
 | `branch` | filters on **per-branch** properties (typically `branch-type`) | branch sidecar `labelProps/{vn}__branch.h5ad` | `gating/{vn}__branch.json` |
 
+**One registry.** The table above lives in code as `POP_TYPE_REGISTRY`
+(`app/src/gating/popmanager/registry.jl`): per type its label, sidecar suffix, the map its pops live
+in (`live` → `flow`), whether it is hand-drawn gating, a cluster filter (and on which column family),
+its grain (cell / track / branch), picker category and whether it is a board track family. Every list
+of pop types derives from it — `STORED_POP_TYPES` (every walk of an image's gating maps),
+`GATING_POP_TYPES`, `CLUSTER_POP_TYPES`, `TRACK_FAMILY_POP_TYPES`, `POP_TYPE_PROBE_ORDER`,
+`POP_MAP_SUFFIX`. The frontend reads the same rows from `frontend/src/plots/popTypeRegistry.json`
+(`write_pop_type_registry_json()`; a test fails when it is stale) through `plots/popTypeRegistry.ts`
+— a static import, because the predicates run in render paths that can't wait on a fetch. A
+hand-written list of pop-type literals fails the `pop-type registry ratchet` (Julia, `ratchets.jl`)
+and `utils/popTypeRegistry.test.ts` (TS); a deliberate subset or priority order carries
+`POP-TYPES-OK: <reason>` on its line. Adding a type = a `PopType` value + a registry row.
+
 All types share: a population tree (name, colour, path, parent, show), a `pop_df`
 accessor returning a filtered `DataFrame` regardless of type, and membership that is
 **derived**, never duplicated into the H5AD.
@@ -121,6 +134,40 @@ matching labels + labelProps — `ccid.json` stays lean:
 `gating/{value_name}.json` holds the population tree: `{name, gate, transform, children:[…]}`.
 Plain JSON — readable by Julia and Python. (This supersedes the earlier
 `ARCHITECTURE.md:248` "gating in ccid.json" plan.)
+
+**Gate history + content hashes** (`gating/popmanager/history.jl`). The sidecar is the CURRENT
+strategy and is overwritten in place; what a population or a run was made with is kept beside it:
+
+- **One writer.** Every gating write — the GUI routes, the MCP `add_gate` / `set_gate` / `delete_gate`
+  routes, gate copy, tasks, the REPL, a label-set rename — goes through `save_pop_map!`. When a write
+  changes any population's DEFINITION, it first appends the previous state to
+  `gating/{vn}[__type].history.jsonl` (one JSON per line, append-only, `append_jsonl!`):
+  `{at, author, valueName, popType, kind, changes:[{kind, path, previousPath?, hash?, previousHash?}], previous}`.
+  `author` is `author_stamp()`; `kind` is `add` / `delete` / `change` / `move` (a rename or re-parent,
+  matched by uid), `edit` for a mix, `rename` for a label-set rename; `previous` is the whole prior tree
+  (`null` on the first write). Colour, show and a uid backfill change no definition and record nothing.
+  GUI gate edits are not tasks, so this file — not the run log — is their record.
+- **Content hash.** `pop_gate_hashes(m)` → 16 hex chars of a SHA-256 per population over its gate
+  definition: its gate / filter / boolean record, its parent's hash (so moving a parent gate changes
+  every hash below it), the hashes of a boolean's terms, and — for a gate on a position axis — the map's
+  `spatial_unit`. Name, path, uid, colour and author stamps are not in it — a rename keeps the hash, a
+  copy of the gate onto another image has the same hash. It names the GATE, not the data: a
+  re-segmentation or a corrected pixel size changes the cells under the same hash.
+- **Runs record it.** The scheduler stamps the run-log entry's `gates` — `{valueName, path, hash,
+  popType?}` for every gated population the run reads through any population picker (`run_gates`; a
+  track analysis on `B/qc/_tracked` records the cell gate `/qc`, a track gate carries `popType:
+  "track"`) — so a run is tied to the exact gate. `gate_state_for_hash(task_dir, vn, hash)` finds that gate in the sidecar or
+  its history.
+- Absent history (projects from before it) = unknown; readers that list `gating/*.json` never see the
+  `.jsonl`. No UI browses the history yet.
+
+**`authored_labels_version` is always `v1` — not a bug.** `save_pop_map!(m, img)` stamps
+`resolve_version(img, :label_props, vn)`, the labels vN current at save. Segmentation and measurement
+overwrite their label set in place by design (only the pixel writers mint a `vN` under
+`keep_previous_version()`), so a label set never gets a `v2` and the breadcrumb (and its drift banner,
+`docs/todo/VN_VERSIONING_PLAN.md` → P3b) never moves. It still works for a hand-versioned label set.
+Which segmentation run a gate was drawn on is not recorded on the gate; the run log's `replaces` says
+when a label set was overwritten.
 
 **`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
 server → `POST /api/gating/pop/add-gate`) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
@@ -660,6 +707,26 @@ segmentation dropdown for the point/aggregate tasks, and used the one on `cellNe
 the output). The picker params are `acrossSegmentations:false`, so all refs share one value_name (the
 first decides it; a mismatch `@warn`s). This is why picking a population fully determines both which
 cells are read **and** where any output/annotation is written.
+
+## Gating QC
+
+Gating has no task run, so its QC is a **set check** (`app/src/qc_gating.jl`), run where cohort QC
+runs: the *Check cohort consistency* button on the Gating page (`gating.flow`) and the Tracking page
+(`gating.track`), and the end of every chain run (`chain_cohort_qc!`, docs/SCHEDULER.md → *Cohort QC at
+the end of a run*). Per included image and segmentation with a stored hand-drawn map, it evaluates the
+map (`computed_pop_map`, `pop_stats`, `missing_gate_columns`) and the pure `gating_qc_findings` flags:
+
+| code | when |
+|---|---|
+| `gating.missing_column` | a gate/filter reads a column this image's table lacks — names the pops it empties (`recompute!` makes them empty with only a log warning) |
+| `gating.empty_pop` | the pop has no cells here, its parent has cells here, and it has cells on another image — the copied-gate-misses-a-shifted-population case |
+| `gating.pct_outlier` | its % of parent is a cohort outlier against the other images (`_cohort_outliers`, the cohort thresholds — no gating constants) |
+
+Findings and `metrics` (`nPops`, `nEmptyPops`, `nMissingColumns`) are banked per image as
+`qc/gating.{flow|track}/{vn}.json`, so they show wherever per-image QC shows. Advisory, like all QC: an
+empty or odd population can be biology, which is what the `long` text says. **A GUI gate edit does not
+re-run the check** — the docs stand as of the last check, as cohort findings do; press the button again
+after fixing a gate. The GET cohort route computes the same answer without writing.
 
 ## Gating engine
 

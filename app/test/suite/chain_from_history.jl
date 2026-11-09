@@ -216,3 +216,36 @@ end
     @test any(r -> r["step"] == "label set B", t)          # this log holds no segmentation of B
     rm(proj.root; recursive = true)
 end
+
+# ── Board export provenance (analysis_export_provenance.jl) ──
+@testset "Board export provenance — runs carry their task ids, populations their gate files" begin
+    proj, uids = _history_project("u" => "zolIMa_UMq4v3")
+    img = init_object(proj.uid, uids["u"])
+    log = read_run_log(img)
+    for (i, e) in enumerate(log)
+        e["taskId"] = "task-$i"
+    end
+    write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+    pops = ["live::Bcells/qc/cells/_tracked"]
+    # the parameter table names the run behind each row
+    trk = only(_hprow(history_params_table(proj, [uids["u"]]; pops), "tracking.bayesian_track_measures"))
+    want = [e["taskId"] for e in log if e["fun"] == "tracking.bayesian_track_measures" &&
+            get(e["params"], "popsToTrack", "") == "/qc/cells" && get(e, "status", "done") == "done"]
+    @test trk["taskIds"] == [want[end]]
+    # no gate file yet: the population is named, with nothing to point at
+    rec = board_export_provenance(proj, [uids["u"]]; pops)
+    @test rec["project"]["uid"] == proj.uid && rec["images"][1]["uid"] == uids["u"]
+    @test rec["ceceliaVersion"] == cecelia_version()
+    p = only(rec["populations"])
+    @test p["valueName"] == "Bcells" && p["pop"] == "/qc/cells/_tracked" && isempty(p["gateFiles"])
+    @test only(r for r in rec["runs"] if r["task"] == "tracking.bayesian_track_measures")["taskIds"] == [want[end]]
+    # a `live` population is defined by the flow gating sidecar — project-relative, forward slashes
+    gp = Cecelia.gating_path(img._dir, "Bcells"; pop_type = "live")
+    mkpath(dirname(gp)); write(gp, "{}")
+    g = only(only(board_export_provenance(proj, [uids["u"]]; pops)["populations"])["gateFiles"])
+    @test !isabspath(g) && !occursin('\\', g) && endswith(g, "gating/Bcells.json")
+    @test isfile(joinpath(proj.root, g))
+    # a segmentation QC key draws the objects: no gate behind it
+    @test isempty(only(board_export_provenance(proj, [uids["u"]]; pops = ["labels::Bcells/labels"])["populations"])["gateFiles"])
+    rm(proj.root; recursive = true)
+end

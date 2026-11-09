@@ -46,6 +46,7 @@ export function plotSummaryText(r: PlotDataResponse, imageName: (uid: string) =>
   if (c) {
     lines.push(`stats: ${c.methodNote || c.test} across ${c.groups.join(', ')} → p=${num(c.pValue)} (${c.significance})`)
     for (const p of c.comparisonPairs ?? []) lines.push(`  ${p.a} vs ${p.b}: p_adj=${num(p.pAdj)} (${p.significance})`)
+    for (const f of c.findings ?? []) lines.push(`  stats QC: ${f.short}`)
   }
   let out = lines.join('\n')
   if (out.length > SUMMARY_MAX_CHARS) {

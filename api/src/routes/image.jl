@@ -577,10 +577,11 @@ function api_tasks_history(req::HTTP.Request)
 end
 
 # The 400 for a fun with no cohort metrics and no steps that bank any (a composite is answered from
-# its steps instead — see _cohort_reply).
+# its steps instead — see cohort_reply).
 function _no_cohort_metrics(fun_name::AbstractString)
     400, JSON3.write((; error = cohort_no_metrics_message(fun_name), parts = cohort_parts(fun_name),
-                       known = sort(collect(keys(COHORT_METRICS)))))
+                       known = sort(vcat(collect(keys(COHORT_METRICS)),
+                                         [Cecelia.gating_qc_fun(pt) for pt in Cecelia.GATING_POP_TYPES]))))
 end
 
 # GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&threshold]
@@ -593,7 +594,7 @@ function api_qc_cohort(req::HTTP.Request)
     fun_name    = get(q, "funName", "")
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    _has_cohort_answer(fun_name) || return _no_cohort_metrics(fun_name)
+    cohort_has_answer(fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = get(q, "valueName", "")
     # joined onto each image's qc/ dir to read — keep it one path component
     isempty(vn_param) || (bad = _value_name_400(vn_param)) === nothing || return bad
@@ -608,16 +609,12 @@ function api_qc_cohort(req::HTTP.Request)
     # caller that doesn't know the suffix still gets all cohorts. An explicit valueName returns just that
     # one cohort (single doc, backward-compatible). A composite answers from its steps (`byStep`).
     reply = try
-        _cohort_reply(set, fun_name; value_name = vn_param, threshold = thr, run = run_param, persist = false)
+        cohort_reply(set, fun_name; value_name = vn_param, threshold = thr, run = run_param, persist = false)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
     200, JSON3.write(reply)
 end
-
-# A fun the cohort routes can answer: it banks metrics, or it is a composite whose steps do.
-_has_cohort_answer(fun_name::AbstractString) =
-    haskey(COHORT_METRICS, fun_name) || !isempty(cohort_parts(fun_name))
 
 # The set a cohort route reads, or the (404, body) error tuple.
 function _cohort_set(project_uid::AbstractString, set_uid::AbstractString)
@@ -629,11 +626,6 @@ function _cohort_set(project_uid::AbstractString, set_uid::AbstractString)
         (404, JSON3.write((; error = sprint(showerror, e))))
     end
 end
-
-# Both cohort routes' answer: the fun's own reply, or — for a composite with no metrics of its own —
-# its steps' replies keyed per step (`cohort_qc_by_step`).
-_cohort_reply(set, fun_name; kw...) = haskey(COHORT_METRICS, fun_name) ?
-    cohort_qc_reply(set, fun_name; kw...) : cohort_qc_by_step(set, fun_name; kw...)
 
 # GET /api/qc/cohort/runs?projectUid&setUid&funName — the distinct clustering / HMM RUNS a fun banked across
 # the set (cheap: scans QC filenames + reads each doc's runSuffix, no cohort math). Powers the Check-
@@ -795,7 +787,7 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     fun_name    = _wstr(body, :funName)
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    _has_cohort_answer(fun_name) || return _no_cohort_metrics(fun_name)
+    cohort_has_answer(fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = _wstr(body, :valueName)
     # joined onto the set's cohort/ dir AND each image's qc/ dir, then written (`cohort_qc!`) — a vn
     # with a separator would put the sidecar anywhere on disk
@@ -805,32 +797,19 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD
     set = _cohort_set(project_uid, set_uid)
     set isa Tuple && return set
-    # Cecelia authors a "Cohort check" lab-log entry ONLY for docs that flagged (an all-clear would be
-    # noise). This is the cross-image analysis — image UIDs (stable; the panel resolves uid→name on
-    # demand), the metric, its value vs the cohort median — the durable record the amber button points
-    # at (no toast). Best-effort; a lab-log hiccup never fails the check. Author "Cecelia — …" so the
-    # append route treats it as a Cecelia entry.
-    log_flagged(docs) = begin
-        flagged = [d for d in docs if d isa AbstractDict && Cecelia.cohort_has_outliers(d)]
-        isempty(flagged) && return
-        try
-            proj = load_project(project_uid)
-            for d in flagged
-                Cecelia.append_lab_log!(proj, "Cecelia — Cohort check",
-                                        Cecelia.cohort_qc_summary_lines(d))
-            end
-        catch e
-            @warn "cohort check: lab-log append failed" exception = e
-        end
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error = sprint(showerror, e)))
     end
-    # No valueName → check EVERY value_name the fun banked (per label set); else just the one. A
-    # composite checks each of its steps (`byStep`).
+    # `cohort_check!` (app/src/qc_cohort.jl) is the ONE check path — the chain's end-of-run pass runs it
+    # too: persist (set sidecar + per-image `cohort.{fun}` findings, or the gating docs for
+    # `gating.flow`/`gating.track`), then a "Cecelia — Cohort check" lab-log entry for each doc that
+    # flagged (image uids, the metric, its value vs the median — the record the amber button points at).
+    # No valueName → every value_name the fun banked; a composite checks each of its steps (`byStep`).
     reply = try
-        _cohort_reply(set, fun_name; value_name = vn_param, threshold = thr, run = run_param, persist = true)
+        cohort_check!(proj, set, fun_name; value_name = vn_param, threshold = thr, run = run_param)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
-    log_flagged(cohort_reply_docs(reply))
     200, JSON3.write(reply)
 end
 

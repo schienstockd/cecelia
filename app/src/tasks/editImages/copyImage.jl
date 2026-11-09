@@ -21,12 +21,12 @@ end
 
 # Pure: the meta a copy inherits from its SOURCE image. A copy is a faithful duplicate of ONE version,
 # so every calibration field carries over UNCHANGED (unlike a crop, which shrinks SizeZ/SizeT) — plus
-# `ori_path` provenance (same underlying acquisition) and a `copy_source_*` breadcrumb. Non-calibration
+# source provenance (`SOURCE_META_KEYS`: same underlying acquisition) and a `copy_source_*` breadcrumb. Non-calibration
 # keys (e.g. a source `crop_box`) stay behind. Kept out of `_run_task` so it's unit-testable without a
 # project/zarr on disk (mirrors `_crop_inherited_meta`).
 const _COPY_META_KEYS = ("SizeC", "SizeZ", "SizeT",
                          "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeZ_raw",
-                         "PhysicalSizeUnit", "TimeIncrement", "TimeIncrementUnit", "ori_path")
+                         "PhysicalSizeUnit", TIME_META_KEYS..., SOURCE_META_KEYS...)
 function _copied_meta(src_meta::AbstractDict, src_uid::AbstractString,
                       value_name::AbstractString)::Dict{String,Any}
     out = Dict{String,Any}("copy_source_uid" => src_uid, "copy_source_value_name" => value_name)
@@ -129,7 +129,7 @@ function _run_task(task::CopyImage, img::CciaImage, params::Dict{String,Any};
     copy_meta = _copied_meta(src_meta, img.uid, p.valueName)
 
     # register a NEW image in the destination set (new uid + {proj}/0|1/{uid} dirs, appended to manifest)
-    new_img = add_image!(dest; name = "$(img.name) (copy)", meta = copy_meta, attr = img.attr)
+    new_img = add_image!(dest; name = derived_image_name(proj, img.name, "copy"), meta = copy_meta, attr = img.attr)
 
     # No task subdirs are created for the new image (mirrors the import route / cropImage): each is made
     # by whoever writes into it. The `data/` sidecar copy below makes its own, which is why it still works.

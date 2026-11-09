@@ -106,6 +106,56 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
     out
 end
 
+# The one temporal column — `label_props` refuses any other name (`_check_centroid_names`).
+const _TIME_COL = "centroid_t"
+
+# COMPLETE CASES over time (the per-frame twin of `_population_metric_frame`'s completion): within
+# each (image, segmentation), every plotted pop gets a series for every frame ANY of them occupies, so
+# a frame where a pop has no cells is a 0 rather than a gap the trend line silently bridges. No-op
+# unless the split is the time column. Rendering sorts by frame, so the filled series are appended.
+function _complete_time_groups(groups::AbstractVector, group_col)
+    (group_col == _TIME_COL && !isempty(groups)) || return groups
+    frames = Dict{Tuple{String,String},Set{String}}()
+    pops   = Dict{Tuple{String,String},Vector{String}}()
+    have   = Set{NTuple{4,String}}()
+    tmpl   = Dict{Tuple{String,String,String},Any}()
+    for g in groups
+        k = (g.uid, g.vn)
+        push!(get!(frames, k, Set{String}()), g.grp)
+        ps = get!(pops, k, String[]); g.sid in ps || push!(ps, g.sid)
+        push!(have, (g.uid, g.vn, g.sid, g.grp))
+        haskey(tmpl, (g.uid, g.vn, g.sid)) || (tmpl[(g.uid, g.vn, g.sid)] = g.sub[1:0, :])
+    end
+    out = collect(groups)
+    for (k, ps) in pops, sid in ps, t in _sort_cats(collect(frames[k]))
+        (k[1], k[2], sid, t) in have && continue
+        push!(out, (uid=k[1], vn=k[2], sid=sid, grp=t, sub=tmpl[(k[1], k[2], sid)]))
+    end
+    out
+end
+
+# The `count` chart's numbers, one per series group: row count, or (`normalize` :fraction/:total) its
+# FRACTION of the plotted total within its own tracked population per image — keyed by (uID,
+# value_name), so B and T clusters are each a share of their own cells. Split by TIME (`centroid_t`)
+# is "populations over time": the denominator is then per FRAME — (uID, value_name, t) — and frames a
+# plotted pop is absent from are zero-filled (`_complete_time_groups`). A categorical split keeps the
+# image-wide denominator: "share within a level" would read 1.0 for a single plotted pop. Shared by
+# the plotted series and the raw CSV export, so the two cannot disagree.
+function _count_series(groups::AbstractVector, normalize::Symbol, group_col)
+    groups = _complete_time_groups(groups, group_col)
+    frac = normalize == :fraction || normalize == :total
+    tkey(g) = group_col == _TIME_COL ? (g.uid, g.vn, g.grp) : (g.uid, g.vn, "")
+    totals = Dict{Tuple{String,String,String},Int}()
+    frac && for g in groups; k = tkey(g); totals[k] = get(totals, k, 0) + nrow(g.sub); end
+    map(groups) do g
+        n = nrow(g.sub); tot = get(totals, tkey(g), 0)
+        (g = g, n = n, value = frac ? (tot == 0 ? 0.0 : n / tot) : Float64(n))
+    end
+end
+
+# a series group's population as the raw export names it — without the value_name prefix `sid` carries
+_raw_pop(g) = (!isempty(g.vn) && startswith(g.sid, g.vn * "/")) ? g.sid[ncodeunits(g.vn)+1:end] : g.sid
+
 # finite Float64 values of a measure column
 _finite(vals) = Float64[Float64(v) for v in vals if v isa Real && isfinite(v)]
 
@@ -172,19 +222,33 @@ function _stats_labels(groups)
     labels
 end
 
+# How many distinct images a series' finite values came from: its `uID`s, or 1 for a single-image
+# frame (`pop_df` on one image carries no `uID` column). Feeds `stats_qc_findings`.
+function _series_n_images(sub::DataFrame, measure::AbstractString)::Int
+    :uID in propertynames(sub) || return 1
+    col = sub[!, measure]
+    length(unique(String(sub.uID[i]) for i in eachindex(col)
+                  if col[i] isa Real && isfinite(col[i]) && !isempty(String(sub.uID[i]))))
+end
+
 function _stats_from_series(groups, measure::AbstractString, test::Symbol)
     isempty(measure) && return nothing
     labels = _stats_labels(groups)
     pairs = Pair{String,Vector{Float64}}[]
+    n_images = Int[]
     for (i, s) in enumerate(groups)
         (Symbol(measure) in propertynames(s.sub)) || continue
         vals = _finite(s.sub[!, measure])
         length(vals) < 2 && continue
         push!(pairs, labels[i] => vals)
+        push!(n_images, _series_n_images(s.sub, measure))
     end
     length(pairs) < 2 && return nothing
     try
-        _stats_result_dict(run_stats(pairs; test=test))
+        r = _stats_result_dict(run_stats(pairs; test=test))
+        r["findings"] = stats_qc_findings(r["n"], n_images; test = Symbol(r["test"]),
+                                         exact = rank_tests_exact(last.(pairs)))
+        r
     catch e
         Dict{String,Any}("error" => sprint(showerror, e))
     end
@@ -548,6 +612,17 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # chart collapses to per-image counts (the boxplot/violin/… population summary already substituted a
     # metric above); non-finite/missing values are dropped to mirror the plotted distribution. Matrix is
     # handled earlier and never reaches here.
+    if raw && measure === nothing && chart_type == "count" && gb == _TIME_COL && gb in names(df)
+        # populations over time: one row per (image, segmentation, pop, frame) — exactly the plotted
+        # numbers, zero frames included (the per-image collapse below would drop the time axis)
+        mcol = normalize in (:fraction, :total) ? "proportion" : "count"
+        rows = [Dict{String,Any}("uID" => c.g.uid, "value_name" => c.g.vn, "pop" => _raw_pop(c.g),
+                                 "group" => c.g.grp, "value" => c.value)
+                for c in _count_series(sgroups(df), normalize, gb)]
+        return Dict{String,Any}("chartType" => "raw", "measure" => mcol, "measureType" => mtype,
+                                "granularity" => String(granularity), "groupBy" => gb,
+                                "rows" => rows, "series" => Any[])
+    end
     if raw
         rdf = df; mcol = measure === nothing ? nothing : String(measure)
         if mcol === nothing
@@ -709,19 +784,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # visible). Series shape mirrors `bar` (`value` = count) so the frontend renders it as a bar
         # or a line over the ordered group (t). See docs/PLOTS.md → Segmentation QC plot.
         #
-        # `normalize` (:fraction/:total) → each series' FRACTION of the plotted total WITHIN its own
-        # tracked population, per image: the denominator is keyed by (uID, value_name), so a plot
-        # spanning several segmentations/tracked pops (e.g. B and T) reports each cluster's share of
-        # *that* population's cells — not pooled across B+T. Pooled scope (uID="") folds over images.
-        groups = sgroups(df)
-        frac = normalize == :fraction || normalize == :total
-        totals = Dict{Tuple{String,String},Int}()
-        frac && for g in groups; k = (g.uid, g.vn); totals[k] = get(totals, k, 0) + nrow(g.sub); end
-        series = map(groups) do g
-            n = nrow(g.sub); tot = get(totals, (g.uid, g.vn), 0)
-            v = frac ? (tot == 0 ? 0.0 : n / tot) : Float64(n)
-            merge(base(g), Dict("value" => v, "n" => n))
-        end
+        # `normalize` → a fraction; the denominators (per image, or per frame when split by time) are
+        # `_count_series`'s.
+        series = [merge(base(c.g), Dict("value" => c.value, "n" => c.n))
+                  for c in _count_series(sgroups(df), normalize, gb)]
         return withgb(Dict{String,Any}("chartType" => "count", "measureType" => "numeric",
                                 "normalize" => String(normalize),
                                 "granularity" => String(granularity), "series" => series))

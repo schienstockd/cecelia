@@ -387,8 +387,8 @@ function _custom_module_categories()
         # populated at load incl. custom modules' register_cohort_metrics!). Drives the "Check cohort"
         # button on the generic custom page WITHOUT any hardcoded per-page list — a custom module that
         # declares its metrics gets the button automatically. A composite qualifies when its steps bank
-        # them — the same `_has_cohort_answer` the cohort routes gate on, so the button and the route agree.
-        cohort_funs = String[f for f in funs if _has_cohort_answer(f)]
+        # them — the same `cohort_has_answer` the cohort routes gate on, so the button and the route agree.
+        cohort_funs = String[f for f in funs if cohort_has_answer(f)]
         push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs,
                        cohortFuns = cohort_funs,
                        views = [(; v.view, v.label, v.plugin) for v in views if v.moduleName == category]))
@@ -736,7 +736,8 @@ end
 # Global toggle for the guarded-writer path — see `Cecelia.keep_previous_version`. Default off;
 # users flip it on for the niche cases (A/B compare, publication freeze, chain branching,
 # regression investigation, sharing intermediates). Same knob future autonomous execution flips
-# programmatically so a Claude-triggered run can't overwrite user data.
+# programmatically so a Claude-triggered run can't overwrite user data. Image versions only: label
+# sets are always overwritten.
 function api_keep_previous_version_get(_req)
     200, JSON3.write((; current = Cecelia.keep_previous_version(),
                         default = Cecelia.KEEP_PREVIOUS_VERSION_DEFAULT))
@@ -1144,6 +1145,7 @@ end
 
 
 include(joinpath(@__DIR__, "routes", "image.jl"))
+include(joinpath(@__DIR__, "routes", "immunemap.jl"))   # Import from Immunemap (scan + register)
 
 include(joinpath(@__DIR__, "routes", "claim.jl"))   # claim recital checks (after image.jl: reuses _cohort_set)
 

@@ -119,7 +119,7 @@ end
 # Deliberately NOT `api_preview_run`. That route exists to keep the viewer honest: it refuses unless
 # the image is the one open in napari, because a preview draws INTO the viewer. A canvas plot has no
 # such coupling and must work with napari closed, so it resolves the store from `ccid.json` the way
-# `api_crop_frame` does instead of from the open layer.
+# `api_image_geometry` does instead of from the open layer.
 #
 # The compute is the resident preview worker (`opticalFlow.inspect` backend) — already loaded with
 # coastal, the model and the temporal-window logic, and reached through the same `preview_request`

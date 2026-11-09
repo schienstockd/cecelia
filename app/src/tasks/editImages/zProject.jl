@@ -26,7 +26,7 @@ end
 function _zproj_inherited_meta(src_meta::AbstractDict)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
-              "PhysicalSizeZ_raw", "TimeIncrement", "TimeIncrementUnit", "SizeC", "SizeT")
+              "PhysicalSizeZ_raw", TIME_META_KEYS..., "SizeC", "SizeT")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
     out["SizeZ"] = 1
@@ -78,10 +78,10 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
         "zproj_source_value_name" => p.valueName,
         "zproj_op"                => p.op)
     merge!(proj_meta, _zproj_inherited_meta(src_meta))
-    haskey(src_meta, "ori_path") && (proj_meta["ori_path"] = src_meta["ori_path"])
+    copy_source_meta!(proj_meta, src_meta)
 
     # register a NEW image in the set (new uid + {proj}/0|1/{uid} dirs, appended to set manifest)
-    new_img = add_image!(s; name = "$(img.name) (z-$(p.op))", meta = proj_meta, attr = img.attr)
+    new_img = add_image!(s; name = derived_image_name(proj, img.name, "z-$(p.op)"), meta = proj_meta, attr = img.attr)
 
     out_filename = "ccidImage.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)

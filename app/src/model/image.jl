@@ -836,6 +836,81 @@ function img_scale_axes(img::CciaImage)::Set{Symbol}
 end
 
 """
+    img_defaulted_scale(img, need::Set{Symbol}) -> Dict{String,String}
+
+Which scales a run needing `need` (a task's `requires.scale`, codes `:XY`/`:Z`/`:T`) will compute with
+something other than a recorded value — axis (`"xy"`/`"z"`/`"t"`) → `"missing"` (no value), `"invalid"`
+(a value `img_scale_axes` does not accept: zero, negative, unparseable) or `"unknownUnit"` (a unit the
+converter does not know, so the number is used as if in µm / seconds). Empty = nothing assumed. What the
+run then actually USES is `img_physical_sizes`'s answer — see `run_scale_defaults`.
+
+The gate (`task_missing_scale`) blocks a missing DECLARED scale, so on a run that got past it this
+reports what the gate does not cover, without blocking: a 3D image's z step (no task declares `:Z`,
+and every spatial task on a z-stack computes with one) and a unit the converter does not know. Only
+axes the image carries count — a 2D image assumes no z, a static one no interval. An absent unit is
+not reported: OME defines it as µm / s, which is what `img_physical_sizes` reads it as.
+"""
+function img_defaulted_scale(img::CciaImage, need::Set{Symbol})::Dict{String,String}
+    out = Dict{String,String}()
+    isempty(need) && return out
+    m, axes, have = img.meta, img_axes(img), img_scale_axes(img)
+    absent(keys...) = any(k -> (v = get(m, k, nothing); isnothing(v) || v == ""), keys)
+    bad(keys...) = absent(keys...) ? "missing" : "invalid"
+    if :XY ∈ need || :Z ∈ need
+        if :XY ∉ have
+            out["xy"] = bad("PhysicalSizeX", "PhysicalSizeY")
+        elseif any(a -> length_unit_um(_meta_axis_length_unit(m, a)) === nothing, ("X", "Y"))
+            out["xy"] = "unknownUnit"
+        end
+        if :Z ∈ axes
+            if :Z ∉ have
+                out["z"] = bad("PhysicalSizeZ")
+            elseif length_unit_um(_meta_axis_length_unit(m, "Z")) === nothing
+                out["z"] = "unknownUnit"
+            end
+        end
+    end
+    if :T ∈ need && :T ∈ axes
+        if :T ∉ have
+            out["t"] = bad("TimeIncrement")
+        elseif time_unit_seconds(get(m, "TimeIncrementUnit", nothing)) === nothing
+            out["t"] = "unknownUnit"
+        end
+    end
+    out
+end
+
+"""
+    run_scale_defaults(img, need) -> Dict{String,Any}
+
+`img_defaulted_scale` with the value the run will really compute with beside each reason —
+`{axis: {"reason", "used"}}`, `used` from `img_physical_sizes` (µm/px for xy — x; z; min/frame for t).
+Not always 1.0: a missing z with a nm unit is 0.001 µm, a zero stays 0. This is what the scheduler
+records, so the record names the number the result was made with.
+"""
+function run_scale_defaults(img::CciaImage, need::Set{Symbol})::Dict{String,Any}
+    d = img_defaulted_scale(img, need)
+    isempty(d) && return Dict{String,Any}()
+    (sz, _, sx), ts = img_physical_sizes(img)
+    used = Dict("xy" => sx, "z" => sz, "t" => ts)
+    Dict{String,Any}(ax => Dict{String,Any}("reason" => r, "used" => used[ax]) for (ax, r) in d)
+end
+
+"""The `meta` keys that say which raw file an image came from: `ori_path` and its `oriFingerprint`
+(`source_fingerprint`, banked at import). A derived image (crop, bin, projection, copy, registration)
+comes from the same acquisition, so it carries both — `copy_source_meta!` is the one place that does."""
+const SOURCE_META_KEYS = ("ori_path", "oriFingerprint")
+
+"""The `meta` keys that make up an image's frame interval: the value, its unit, and where it came
+from when it was declared rather than read (`TimeIncrementDeclared`, Immunemap). A derived image that
+keeps the source's timing carries all three, so the interval never arrives without its provenance —
+splat this into an inherited-meta key list instead of naming `TimeIncrement*` by hand."""
+const TIME_META_KEYS = ("TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared")
+
+copy_source_meta!(dst::AbstractDict, src::AbstractDict) =
+    (for k in SOURCE_META_KEYS; haskey(src, k) && (dst[k] = src[k]); end; dst)
+
+"""
     physical_size_for_axis(img_or_sizes, axis::Symbol) -> Float64
 
 Physical pixel size (µm/px) for ONE spatial axis (`:x`/`:y`/`:z`). Explicit per-axis lookup so a

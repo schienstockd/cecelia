@@ -172,6 +172,48 @@ indentation.
 """
 write_json_atomic(path::AbstractString, data) = write_atomic(io -> _pretty_json(io, data), path)
 
+"""
+    append_jsonl!(path, entries) -> nothing
+
+Append `entries` to an append-only JSON-lines history in ONE write (one compact JSON per line), so a
+concurrent reader sees whole lines. The counterpart of `write_json_atomic` for a file that is never
+rewritten — tmp-then-rename would copy the whole history per append and buy nothing. Used by the
+run-log archive (`runlog.archive.jsonl`) and the gate history (`gating/{vn}.history.jsonl`).
+Read back with `read_jsonl`.
+"""
+function append_jsonl!(path::AbstractString, entries::AbstractVector)
+    isempty(entries) && return nothing
+    buf = IOBuffer()
+    for e in entries
+        JSON3.write(buf, e)
+        write(buf, '\n')
+    end
+    mkpath(dirname(path))
+    # a torn last line (a kill mid-append) must stay ONE bad line: start ours on a fresh one, or the
+    # first entry appended after it would be glued on and unreadable too
+    torn = isfile(path) && filesize(path) > 0 &&
+           open(io -> (seekend(io); skip(io, -1); read(io, UInt8)), path) != UInt8('\n')
+    open(io -> (torn && write(io, '\n'); write(io, take!(buf))), path, "a")
+    nothing
+end
+
+"""
+    read_jsonl(path) -> Vector
+
+The dict entries of a JSON-lines file written by `append_jsonl!`, oldest first; [] when absent. A
+line that does not parse (a torn last append) is skipped, not fatal.
+"""
+function read_jsonl(path::AbstractString)::Vector{Any}
+    isfile(path) || return Any[]
+    out = Any[]
+    for line in eachline(path)
+        isempty(strip(line)) && continue
+        e = try JSON3.read(line) catch; nothing end
+        e isa AbstractDict && push!(out, e)
+    end
+    out
+end
+
 # Pretty-printer that keeps `JSON3.write`'s escaping for keys and scalars. Format target: 4-space
 # indent; non-empty containers span multiple lines; empty containers stay on one line (`{}` / `[]`).
 # See `write_json_atomic` above for why this exists rather than `JSON3.pretty`.
@@ -268,6 +310,38 @@ security says nothing about.
 """
 _file_sha256(path::AbstractString)::String = open(io -> bytes2hex(SHA.sha256(io)), path)
 
+const SOURCE_FINGERPRINT_SAMPLE = 1 << 20   # bytes hashed from each end of the file
+
+"""
+    source_fingerprint(path; sample_bytes = SOURCE_FINGERPRINT_SAMPLE) -> Dict{String,Any}
+
+A cheap identity for a raw source file — a FINGERPRINT, not a checksum: `size`, `mtime` (UTC ISO) and
+`sample` = SHA-256 of the first and last `sample_bytes` (the whole file when it is smaller than both),
+plus `path`, `method` and `sampleBytes` so a later comparison knows what was hashed. At most
+2 × `sample_bytes` are read whatever the file's size, because raw files run to many GB on slow shares.
+
+What it can tell: a different file at the same path (size or sample differ). What it cannot: an edit
+confined to the unsampled middle with the size unchanged. `mtime` moves on a plain copy, so it says
+"touched", not "changed". Empty Dict when `path` is not a file.
+"""
+function source_fingerprint(path::AbstractString; sample_bytes::Integer = SOURCE_FINGERPRINT_SAMPLE)::Dict{String,Any}
+    st = stat(path)
+    isfile(st) || return Dict{String,Any}()
+    n = Int(st.size)
+    ctx = SHA.SHA2_256_CTX()
+    open(path) do io
+        SHA.update!(ctx, read(io, min(n, sample_bytes)))
+        if n > sample_bytes
+            tail = max(sample_bytes, n - sample_bytes)   # never re-hash bytes the head already covered
+            seek(io, tail)
+            SHA.update!(ctx, read(io, n - tail))
+        end
+    end
+    Dict{String,Any}("path" => String(path), "method" => "sha256-head-tail", "sampleBytes" => Int(sample_bytes),
+                     "size" => n, "mtime" => Dates.format(Dates.unix2datetime(st.mtime), "yyyy-mm-ddTHH:MM:SS") * "Z",
+                     "sample" => bytes2hex(SHA.digest!(ctx)))
+end
+
 """
     _sha256_matches(path, digest_file_contents) -> Bool
 
@@ -306,6 +380,50 @@ function safe_name_part(raw)::String
     s = replace(strip(String(raw === nothing ? "" : raw)), r"[^A-Za-z0-9._-]+" => "_")
     String(strip(s, ['_', '.']))
 end
+
+const NAME_SUFFIX_MAX = 40
+
+"""
+    name_suffix(raw) -> String
+
+A user's name addition as a `_suffix` fragment (`safe_name_part`, capped at `NAME_SUFFIX_MAX`), or `""`
+for none. ONE rule for every output that is named "<image name>_<suffix>": a recorded movie
+(`_movie_suffix`) and every new image a task derives (`derived_image_name`) — so two outputs of one image are told apart
+the same way everywhere.
+"""
+function name_suffix(raw)::String
+    safe = safe_name_part(raw)
+    isempty(safe) && return ""
+    "_" * first(safe, NAME_SUFFIX_MAX)
+end
+
+"""
+    numbered_name(stem, taken; ext = "") -> String
+
+`stem * ext`, or — when `taken` says it is in use — the first free `<stem>_001<ext>`, `_002`, …. The ONE
+collision rule for named outputs: movies and figures (`_numbered_if_taken`, `taken = isfile`) and
+derived images (`derived_image_name`, `taken` = the project's image names).
+"""
+function numbered_name(stem::AbstractString, taken::Function; ext::AbstractString = "")::String
+    name = string(stem, ext)
+    taken(name) || return name
+    k = 1
+    while taken("$(stem)_$(lpad(k, 3, '0'))$ext")
+        k += 1
+    end
+    "$(stem)_$(lpad(k, 3, '0'))$ext"
+end
+
+"""
+    derived_image_name(src_name, suffix, taken) -> String
+
+The name of a NEW image a task makes from `src_name` (crop, bin, projections, resample, copy,
+register): `<src_name>_<suffix>` (`name_suffix`) numbered by `numbered_name` when `taken` — the movie
+rule, so a second output of one image never reads the same as the first. The `CciaProject` method
+checks against every image name in the project.
+"""
+derived_image_name(src_name::AbstractString, suffix, taken::Function)::String =
+    numbered_name(string(src_name, name_suffix(suffix)), taken)
 
 """
     git_probe(args...; dir = pwd()) -> String

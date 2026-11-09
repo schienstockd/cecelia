@@ -257,6 +257,8 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     run_env = bank_segment_qc!(img, "segment.cellpose", p.outputValueName, qc_out_path;
                                diameter_um = seg_given_diameter(models_converted), on_log = on_log)
 
+    merge!(run_env, segment_model_weights_env(models_converted))   # custom weights, by fingerprint
+
     Dict{String,Any}("outputValueName"  => p.outputValueName,
                      "labelValueName"   => p.outputValueName,
                      "labelFiles"       => label_files,

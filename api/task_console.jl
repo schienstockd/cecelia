@@ -63,7 +63,7 @@ end
 # starting point.
 const _PALETTE_JSON = joinpath(@__DIR__, "..", "share", "console_palette.json")
 const _PALETTE = let
-    isfile(_PALETTE_JSON) || error("shared palette missing at $_PALETTE_JSON; both dev consoles need it")
+    isfile(_PALETTE_JSON) || error("shared palette missing at $_PALETTE_JSON; the task console and the recital console both need it (release bundles ship share/)")
     JSON3.read(read(_PALETTE_JSON, String))
 end
 _swatch(name::AbstractString) = _hex_to_ansi(String(_PALETTE.swatches[Symbol(name)]))

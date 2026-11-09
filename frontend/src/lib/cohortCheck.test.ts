@@ -41,7 +41,8 @@ describe('cohortStages', () => {
   it('maps cohort-bearing modules to their fun_names; others empty', () => {
     expect(cohortFunsFor('segment')).toContain('segment.cellpose')
     expect(cohortFunsFor('clustPops')).toEqual(['clustPops.cluster'])
-    expect(cohortFunsFor('gate')).toEqual([])          // no cohort metrics
+    expect(cohortFunsFor('gate')).toEqual(['gating.flow'])   // gating QC across the set (qc_gating.jl)
+    expect(cohortFunsFor('preprocess')).toEqual([])    // no cohort metrics
     expect(cohortFunsFor(undefined)).toEqual([])
   })
   it('every mapped fun is dotted category.task', () => {

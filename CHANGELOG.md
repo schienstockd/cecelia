@@ -15,13 +15,19 @@ stack. Per-tag notes are also on the
 
 ### Read this first
 
+- **A paused time-lapse gets no frame interval.** Irregular per-plane timestamps used to record
+  their median, making speeds across the pause wrong. Re-import flags it instead; set the interval.
 - **AI is off until you turn it on** in Preferences → Kiwi; a dialog first says what goes to
   Anthropic. peanut can turn it off workstation-wide.
 - **Import drops an incomplete last timepoint**, left partly black when a recording stopped
   mid-volume. Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it.
+- **New images are named like movies:** `<image>_crop`, `_bin2`, `_copy` …, then `_001` when taken.
+- **Crop is drawn on the viewer**, optionally square, with a name and a target set.
 
 ### Fixed
 
+- **Imaris frame interval.** Imaris files whose timestamps carry nine decimal places (converted from
+  Zeiss `.lsm`) were read as having no timing; their measured interval is now used.
 - **Tracking remembers settings per segmentation.** B no longer shows, or rebuilds deleted tracks
   with, the settings of whichever population ran last.
 - **Copying gates matches channels by name, as the R version did.** Before, an image with another
@@ -37,6 +43,13 @@ stack. Per-tag notes are also on the
   could be measured both ways.
 - **Calibration fixes now reach the OME-XML.** Metadata edits, the import's z-spacing and interval
   fixes, and resync only updated the zarr scale. Resync older images to update them.
+
+### Added
+
+- **Import from Immunemap.** *Import from… → Immunemap*: paste an experiment link, split its groups
+  into attributes (time is filled in), then run *Import from Immunemap*.
+- **Imaris acquisition settings.** `.ims` files now show the microscope, objective, excitation and
+  emission filters in *Acquisition metadata*.
 
 ## [0.2.12] — 2026-11-02
 

@@ -26,14 +26,43 @@ sources (including ones bioformats2raw converts) carry no single `TimeIncrement`
 only per-`Plane` `DeltaT` — the elapsed seconds since T=0 for each frame. Scrapes
 bioformats2raw's `OME/METADATA.ome.xml` sidecar with a plain regex (ports the same idea as the old
 R `cciaImage.R::omeXMLTimelapseInfo` crutch; no XML dependency, see `image.jl` header note).
-Returns the **median** of successive frame intervals across every `TheZ="0"` plane, so a single
-warm-up gap or paused frame can't skew the recorded rate. Falls back to `nothing` if the file/tag
-isn't there or there aren't enough planes to form an interval.
+Returns the interval from successive `TheZ="0"` planes by `_uniform_interval`: their median, as long
+as the series really has one. `nothing` if the file/tag isn't there, there aren't enough planes, or
+the gaps are irregular (a paused acquisition) — then the image says it has no interval rather than
+carrying one that is wrong across the pause.
 
 Uses the median rather than a single sample: a Leica LIF from a working microscope showed the
 first interval at 34.69 s (a scanner warm-up) while every other interval clustered at 30.26 s. The
 old logic sampled `TheT="1"` alone and would have baked in the outlier.
 """
+# Fractional tolerance on a frame gap — the Julia twin of `ims_meta.UNIFORM_TOL` (Python): clock
+# jitter passes, a pause does not.
+const DELTA_T_UNIFORM_TOL = 0.05
+# How much LONGER the first gap may run (scanner warm-up). The case that set it was +15%; a first gap
+# beyond this is a pause, not a warm-up, and a shorter-than-normal one is never excused.
+const DELTA_T_WARMUP_TOL = 0.25
+
+"""
+    _uniform_interval(diffs; tol = DELTA_T_UNIFORM_TOL) -> Union{Float64,Nothing}
+
+The median of `diffs` when the series has a single frame interval, else `nothing`. The same rule as
+the Imaris reader (`ims_meta.summarise_gaps`): an irregular series — a paused acquisition — has no
+interval, and its median would make every speed across the pause wrong with no warning. One
+allowance: with three or more gaps the FIRST may run up to `warmup` longer than the rest, because a
+scanner warm-up lengthens it (the Leica case below, +15%) without the series being irregular. The
+interval is the median of the later gaps. Pure.
+"""
+function _uniform_interval(diffs::AbstractVector{<:Real}; tol::Real = DELTA_T_UNIFORM_TOL,
+                           warmup::Real = DELTA_T_WARMUP_TOL)
+    isempty(diffs) && return nothing
+    rest = length(diffs) > 2 ? diffs[2:end] : diffs
+    med  = median(rest)
+    med > 0 || return nothing
+    all(g -> abs(g - med) / med <= tol, rest) || return nothing
+    first_ok = length(diffs) <= 2 || -tol <= (diffs[1] - med) / med <= warmup
+    first_ok ? Float64(med) : nothing
+end
+
 function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
     xml_file = _ome_xml_file(zarr_path)
     isnothing(xml_file) && return nothing
@@ -64,62 +93,13 @@ function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
         ts = sort!(collect(keys(deltas)))
         length(ts) < 2 && return nothing
         diffs = Float64[deltas[ts[i+1]] - deltas[ts[i]] for i in 1:length(ts)-1]
-        return median(diffs)
+        dt = _uniform_interval(diffs)
+        isnothing(dt) && @warn "Per-plane DeltaT gaps are irregular — no single frame interval recorded" zarr_path gaps = extrema(diffs)
+        return dt
     catch e
         @warn "Could not read OME-XML for DeltaT fallback" zarr_path exception = e
     end
     nothing
-end
-
-"""
-    _recover_ims_time_increment!(zarr_meta, src_path, run_dir; on_log) -> Bool
-
-Fill `TimeIncrement`/`TimeIncrementUnit` from an Imaris `.ims` SOURCE when the converted store has
-none. Returns whether it filled anything.
-
-Bio-Formats' `ImarisHDFReader` reports no `TimeIncrement` and no per-plane `DeltaT` at all — it loads
-the file's timing into the unstructured original-metadata table (what ImageJ's "Show Info" prints)
-and never promotes it into the OME model. So bioformats2raw writes a store with no interval, and
-`_delta_t_fallback` above has nothing to scrape: the number is in the source file and only reachable
-by reading it directly. Same shape as the ImageJ Z-spacing fix in the task below, and for the same
-reason — a source-specific calibration recovery Bio-Formats doesn't hand us.
-
-Only ever ADDS a value: if the store already carried an interval, that is what bioformats2raw
-actually found and it wins. An irregular series yields nothing (the runner refuses to flatten it to a
-median) — logged, because "no interval" and "an interval we declined to guess" are different answers
-and only the second is worth acting on.
-"""
-function _recover_ims_time_increment!(zarr_meta::Dict{String,Any}, src_path::AbstractString,
-                                      run_dir::AbstractString;
-                                      on_log::Function = _ -> nothing)::Bool
-    endswith(lowercase(src_path), ".ims") || return false
-    isfile(src_path) || return false
-
-    result_file = joinpath(run_dir, "read_ims_time_interval.$(string(rand(UInt32); base = 16)).result.json")
-    try
-        ok = run_py("tasks/importImages/read_ims_time_interval_run.py",
-                    (; imPath = src_path, resultPath = result_file), run_dir; on_log = on_log)
-        (ok && isfile(result_file)) || return false
-        res = JSON3.read(read(result_file, String))
-        if haskey(res, :TimeIncrement)
-            zarr_meta["TimeIncrement"] = Float64(res[:TimeIncrement])
-            # The runner returns SECONDS and no unit, on purpose: ccid/NGFF spell it `second` and
-            # OME-XML spells it `s`, so the unit belongs to whoever stores the value. Stamped here
-            # exactly as the `_delta_t_fallback` path does; `sync_zarr_calibration!` converts at the
-            # OME-XML boundary (enforced by `test_ome_unit_symbols.py`).
-            zarr_meta["TimeIncrementUnit"] = "second"
-            nominal = get(res, :nominal, false) === true
-            on_log("[INFO] Frame interval $(zarr_meta["TimeIncrement"]) s recovered from the Imaris " *
-                   "source ($(get(res, :source, "?"))$(nominal ? ", nominal" : ""))")
-            return true
-        end
-        on_log("[WARN] No frame interval in the Imaris source: $(get(res, :reason, "unknown"))")
-    catch e
-        @warn "Could not read Imaris time interval" src_path exception = e
-    finally
-        rm(result_file; force = true)
-    end
-    false
 end
 
 """

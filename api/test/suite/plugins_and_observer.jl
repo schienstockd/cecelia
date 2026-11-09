@@ -155,7 +155,7 @@ end
 @testset "API: a custom composite whose steps bank cohort metrics gets the Check cohort button" begin
     # cohortFuns drives the generic custom page's "Check cohort" button. A composite banks nothing
     # itself — its steps do — so the list must resolve it the way the cohort routes do
-    # (`_has_cohort_answer`), not by a bare COHORT_METRICS lookup. register_task! does not yet fill
+    # (`cohort_has_answer`), not by a bare COHORT_METRICS lookup. register_task! does not yet fill
     # `_COMPOSITE_SPEC_PATHS` for a custom composite, so the test does that by hand.
     @test haskey(Cecelia.COHORT_METRICS, "segment.cellpose")
     dir  = joinpath(Cecelia.config_dir(), "modules", "cohortcomp")

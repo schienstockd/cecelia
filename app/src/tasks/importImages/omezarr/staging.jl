@@ -64,3 +64,27 @@ function _stage_source!(src_path::AbstractString, stage_dir::AbstractString;
     joinpath(stage_dir, basename(src_path))
 end
 
+
+"""
+    import_source_fingerprint(src_path; sample_bytes) -> Dict{String,Any}
+
+`source_fingerprint` of the file the import read, plus — for a multi-file format (Olympus OIR) — the
+companions' `count` and total `bytes` from `stat` alone (no reads), since the bulk of the pixels live
+in them and the main file's sample would not see them change. Banked as `meta.oriFingerprint`.
+Empty (and a `@warn`) when it can't be taken — a record, so it never fails the import.
+"""
+function import_source_fingerprint(src_path::AbstractString;
+                                   sample_bytes::Integer = SOURCE_FINGERPRINT_SAMPLE)::Dict{String,Any}
+    try
+        fp = source_fingerprint(src_path; sample_bytes = sample_bytes)
+        isempty(fp) && return fp
+        dir, main = dirname(abspath(src_path)), basename(src_path)
+        comps = filter(!=(main), _companion_files(readdir(dir), main))
+        isempty(comps) || (fp["companions"] = Dict{String,Any}("count" => length(comps),
+            "bytes" => sum(f -> filesize(joinpath(dir, f)), comps; init = 0)))
+        fp
+    catch e
+        @warn "Could not fingerprint the import source" src_path exception = e
+        Dict{String,Any}()
+    end
+end

@@ -131,7 +131,7 @@ function _kiwi_pop_type(img, vn::AbstractString, path::AbstractString)
         d === nothing || return (; popType = d.pop_type, name = path, fixed = true)
     end
     is_root(path) && return (; popType = "flow", name = "all cells", fixed = true)
-    for pt in Cecelia._POP_TYPE_PROBE_ORDER
+    for pt in Cecelia.POP_TYPE_PROBE_ORDER
         m = try load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false) catch; continue end
         has_pop(m, path) && return (; popType = pt, name = pop_at(m, path).name, fixed = false)
     end

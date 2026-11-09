@@ -21,7 +21,12 @@
 #              versions instead, and then nothing is replaced). {name, ns?, version?} plus the
 #              {taskId, at, fun} of the newest `done` run that made it, when the log (or its archive)
 #              has one; without them the output predates the log or came from outside it.
-# Both are ABSENT on entries written before they were recorded, and on runs that read/replace nothing.
+#   gates    — one {valueName, path, hash} per gated population the run READ (`run_pop_reads`' refs,
+#              `gated_pop_refs`): the content hash of that population's gate as it was when the run
+#              started (`pop_gate_hashes`, gating/popmanager/history.jl — it covers the whole parent
+#              chain). Gates are edited in place; `gate_state_for_hash` finds the gate a hash names in
+#              the sidecar or its history (`gating/{vn}.history.jsonl`).
+# All three are ABSENT on entries written before they were recorded, and on runs that read/replace nothing.
 #
 # ── What made it: `ceceliaVersion`, `author`, `env` ────────────────────────────────────────────────
 # So a result can say which code, which launcher and which machine made it. All three are ABSENT on
@@ -33,6 +38,17 @@
 #                    call, a chain node — see `run_author`).
 #   env            — facts decided at run time (device, engine version, seed), stamped at close from the
 #                    task result's `"runEnv"` (`run_env_of`). A task that reports none gets none.
+#
+# ── Format: `format` ───────────────────────────────────────────────────────────────────────────────
+# Every entry written since formats were numbered carries `format` = RUN_LOG_FORMAT, stamped on the path
+# that CREATES it (open, a close with nothing to patch, a skip, `append_run_log!`); a close keeps the
+# number its open wrote. ABSENT = format 0 = written before this field existed. Migration rule: entries
+# are never rewritten to a newer format — readers stay tolerant of every older one (missing fields read
+# as "not recorded", never as a guess), and a reader that needs a field only a newer format guarantees
+# asks `run_entry_format(e)` first. Bump the number when an entry field changes MEANING or a reader
+# would otherwise misread an older entry, not for a new optional field. History:
+#   0 — before `format` (all fields optional; legacy entries may lack status/params/taskId)
+#   1 — `format` added; same fields as 0
 #
 # ── A run is written TWICE: opened when it starts, closed when it ends ─────────────────────────────
 #
@@ -82,6 +98,7 @@
 # `run_pop_reads`, the guard on editing a gate runs depend on — read it too (`read_run_log_history`). The
 # history views (the task-history dialog, lineage, the lab-log context) show the recent window by design.
 const RUN_LOG_CAP = 200
+const RUN_LOG_FORMAT = 1      # see *Format* above; absent on an entry = 0
 const RUN_LOG_ARCHIVE_FILE = "runlog.archive.jsonl"
 
 # The one non-terminal status, and the one a reaped run gets. Named because three files test for them.
@@ -131,17 +148,7 @@ The entries rotated out of `runlog.json` (see *Archive* in the header), oldest�
 A line that does not parse (a torn last append) is skipped, not fatal.
 """
 read_run_log_archive(img::CciaImage)::Vector{Any} = read_run_log_archive(img._dir)
-function read_run_log_archive(ccid_dir::AbstractString)::Vector{Any}
-    p = run_log_archive_path(ccid_dir)
-    isfile(p) || return Any[]
-    out = Any[]
-    for line in eachline(p)
-        isempty(strip(line)) && continue
-        e = try JSON3.read(line) catch; nothing end
-        e isa AbstractDict && push!(out, e)
-    end
-    out
-end
+read_run_log_archive(ccid_dir::AbstractString)::Vector{Any} = read_jsonl(run_log_archive_path(ccid_dir))
 
 """
     read_run_log_history(ccid_dir | img) -> Vector
@@ -153,24 +160,9 @@ read_run_log_history(img::CciaImage)::Vector{Any} = read_run_log_history(img._di
 read_run_log_history(ccid_dir::AbstractString)::Vector{Any} =
     vcat(read_run_log_archive(ccid_dir), read_run_log(ccid_dir))
 
-# Append rotated-out entries to the archive in ONE write (one line each), so concurrent readers see
-# whole lines. Called under `_RUN_LOG_LOCK`. Append mode, like the lab log: this file is never rewritten
-# by a writer, so tmp-then-rename (which would copy the whole history per rotation) buys nothing.
-function _append_run_log_archive!(ccid_dir::AbstractString, overflow::AbstractVector)
-    isempty(overflow) && return
-    buf = IOBuffer()
-    for e in overflow
-        JSON3.write(buf, e)
-        write(buf, '\n')
-    end
-    p = run_log_archive_path(ccid_dir)
-    mkpath(dirname(p))
-    # a torn last line (a kill mid-append) must stay ONE bad line: start ours on a fresh one, or the
-    # first entry appended after it would be glued on and unreadable too
-    torn = isfile(p) && filesize(p) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8)), p) != UInt8('\n')
-    open(io -> (torn && write(io, '\n'); write(io, take!(buf))), p, "a")
-    nothing
-end
+# Append rotated-out entries to the archive in ONE write (`append_jsonl!`). Called under `_RUN_LOG_LOCK`.
+_append_run_log_archive!(ccid_dir::AbstractString, overflow::AbstractVector) =
+    append_jsonl!(run_log_archive_path(ccid_dir), overflow)
 
 # One run-log entry as plain values: `params` with the entry's `valueName` put back in (the log keeps
 # it beside the params), `legacy` = logged before the run log recorded params, `status` per
@@ -181,7 +173,8 @@ function run_log_row(e)
     legacy = isempty(p)
     vn = _rl_str(e, "valueName")
     isempty(vn) || (p["valueName"] = vn)
-    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = run_entry_status(e), legacy)
+    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = run_entry_status(e), legacy,
+       taskId = _rl_str(e, "taskId"))
 end
 
 """
@@ -201,7 +194,8 @@ function run_pop_reads(img::CciaImage)::Dict{Tuple{String,String},Vector{String}
         r.status in ("done", RUN_LOG_RUNNING) || continue
         lv = get!(() -> _history_leaves(r.fn), leaves, r.fn)
         lv === nothing && continue
-        for ref in gated_pop_refs(r.params, lv)
+        # every population picker: a track analysis on `B/qc/_tracked` reads the cell gate `/qc` too
+        for ref in gated_pop_refs(r.params, lv; all_pickers = true)
             fns = get!(out, ref, String[])
             r.fn in fns || push!(fns, r.fn)
         end
@@ -258,6 +252,9 @@ run_entry_status(e)::String = (s = _rl_str(e, "status"); isempty(s) ? "done" : s
 # `skip_run_log!`). The one rule every "what ran on this image" reader passes over skips with.
 run_entry_ran(e)::Bool = run_entry_status(e) != RUN_LOG_SKIPPED
 
+# An entry's format number (see *Format* in the header): absent → 0, written before formats were numbered.
+run_entry_format(e)::Int = (v = _rl_get(e, "format", 0); v isa Integer ? Int(v) : something(tryparse(Int, string(v)), 0))
+
 """
     run_author(by, caller) -> Dict{String,Any}
 
@@ -304,6 +301,7 @@ end
 
 # The fields every entry gets on the path that CREATES it (open, or a close with nothing to patch).
 function _run_log_stamp!(e::Dict{String,Any}, by::AbstractString, author::AbstractDict)
+    e["format"] = RUN_LOG_FORMAT
     isempty(by) || (e["by"] = String(by))
     a = run_author(by, author)
     isempty(a) || (e["author"] = a)
@@ -377,31 +375,49 @@ end
 
 # (name, ns, into) a run writes: its named or fixed output (`_history_output`), else — for a task that
 # writes INTO its input (`writesInto`, tracking) — that input, with `into = true`. ("", "", false) = none.
+# A name `_history_output` found under no writing param (the pre-registry `outputValueName` spelling,
+# ns "") that IS the declared `writesInto` input is that input too: `segment.measureLabels` picks the
+# label set it re-measures under `outputValueName`, and its measures go INTO that set — not into an
+# image version of the same name, which is what ns "" would claim.
 function _run_output_identity(fn::AbstractString, params::Dict{String,Any}, leaves)
     name, ns = _history_output(String(fn), params, leaves)
-    isempty(name) || return (name, ns, false)
+    key = task_writes_into_key(String(fn))      # folds a composite to the step that declares it
+    l = get(leaves, key, nothing)
+    if !isempty(name)
+        (ns == "" && l !== nothing && !l.writes &&
+         strip(string(something(get(params, key, nothing), ""))) == name) || return (name, ns, false)
+        return (name, l.ns, true)
+    end
     into = task_params_name(String(fn), params)
     isempty(into) && return ("", "", false)
-    key = try string(something(get(_task_spec(_task_from_fun_name(String(fn))), "writesInto", nothing), "")) catch; "" end
-    l = get(leaves, key, nothing)
     (into, l === nothing ? "" : l.ns, true)
 end
 
-# The newest `done` entry in `entries` that wrote (name, ns) — for an `into` output, a run of the same
-# task on it (the segmentation that made the label set did not make its tracks).
+# A task and its composite steps, by name — what two runs must share for one to have made what the
+# other writes into (`_run_maker`).
+_run_step_funs(fn::AbstractString)::Set{String} =
+    (t = try _task_from_fun_name(String(fn)) catch; nothing end;
+     Set{String}(vcat(String(fn), t === nothing ? String[] : _composite_step_names(t))))
+
+# The newest `done` entry in `entries` that wrote (name, ns). For an `into` output, a run that SHARES A
+# STEP with `fun_name` and wrote or wrote into that name: a re-measure's maker is the segment + measure
+# composite that measured the label set (both run `segment.measureLabels`), a re-track's the tracking
+# composite — but never the segmentation that made the label set its tracks were written into.
 function _run_maker(entries, fun_name::AbstractString, name::AbstractString, ns::AbstractString, into::Bool,
                     leaves_cache::Dict{String,Any})
+    mine = into ? _run_step_funs(fun_name) : Set{String}()
+    steps_cache = Dict{String,Set{String}}()
     for e in Iterators.reverse(entries)
         run_entry_status(e) == "done" || continue
         # no params at all = logged before params were recorded: its output name is unknowable. (Not
         # `r.legacy`, which also reads a run whose only param was its `valueName` as legacy.)
         _rl_get(e, "params", nothing) isa AbstractDict || continue
         r = run_log_row(e)
-        into && r.fn != fun_name && continue
+        into && isdisjoint(mine, get!(() -> _run_step_funs(r.fn), steps_cache, r.fn)) && continue
         lv = get!(() -> _history_leaves(r.fn), leaves_cache, r.fn)
         lv === nothing && continue
         (n2, ns2, into2) = try _run_output_identity(r.fn, r.params, lv) catch; ("", "", false) end
-        (n2 == name && ns2 == ns && into2 == into) && return e
+        (n2 == name && ns2 == ns && (into || !into2)) && return e
     end
     nothing
 end
@@ -442,9 +458,38 @@ function run_replaces(fun_name::AbstractString, img::CciaImage, params::Abstract
 end
 
 """
-    run_provenance(fun_name, img, params) -> (; inputs, replaces)
+    run_gates(fun_name, img, params) -> Vector{Dict}
 
-`run_inputs` + `run_replaces` for one image, read from a FRESH copy of its `ccid.json` (an earlier step
+The gated populations a run of `fun_name` with `params` reads on `img`, each `{valueName, path, hash}`
+(+ `popType: "track"` for a track gate) with the content hash of its gate now (`pop_gate_hashes`). Every
+population picker counts, track pickers too: `B/qc/_tracked` is read through the cell gate `/qc`. A path
+is looked up in the sidecar `resolve_pop_type` finds it in; cluster/region pops are not gates and a
+population in no sidecar is left out.
+"""
+function run_gates(fun_name::AbstractString, img::CciaImage, params::AbstractDict)::Vector{Any}
+    leaves = _history_leaves(String(fun_name))
+    leaves === nothing && return Any[]
+    p = Dict{String,Any}(String(k) => v for (k, v) in params)
+    hashes = Dict{Tuple{String,String},Dict{String,String}}()
+    out = Any[]
+    for (vn, path) in gated_pop_refs(p, leaves; all_pickers = true)
+        pt = resolve_pop_type(img, vn, path)
+        is_gating_pop_type(pt) || continue
+        hs = get!(() -> pop_gate_hashes(load_pop_map(img._dir, vn; pop_type = pt, backfill_save = false)),
+                  hashes, (vn, pt))
+        h = get(hs, path, nothing)
+        h === nothing && continue
+        d = Dict{String,Any}("valueName" => vn, "path" => path, "hash" => h)
+        pt == "flow" || (d["popType"] = pt)
+        push!(out, d)
+    end
+    out
+end
+
+"""
+    run_provenance(fun_name, img, params) -> (; inputs, replaces, gates)
+
+`run_inputs` + `run_replaces` + `run_gates` for one image, read from a FRESH copy of its `ccid.json` (an earlier step
 of the same chain may have written a version since `img` was loaded). Never throws: provenance is not
 worth failing a run over, so a lookup that errors answers "nothing recorded".
 """
@@ -458,14 +503,18 @@ function run_provenance(fun_name::AbstractString, img::CciaImage, params::Abstra
         @warn "run-log replaces lookup failed" fun_name exception = e
         nothing
     end
-    (; inputs, replaces)
+    gates = try run_gates(fun_name, fresh, params) catch e
+        @warn "run-log gate lookup failed" fun_name exception = e
+        Any[]
+    end
+    (; inputs, replaces, gates)
 end
 
 """
     open_run_log!(img, fun_name, value_name, params; task_id, pool, by, caller, at) -> entries
 
 Record that a run has STARTED, with status `"running"`. Pair with `close_run_log!` on every exit path.
-`inputs` / `replaces` are `run_provenance`'s answer for this image (see the header); empty = not stamped.
+`inputs` / `replaces` / `gates` are `run_provenance`'s answer for this image (see the header); empty = not stamped.
 
 The entry is written before the work, so a run whose process is killed outright still leaves a trace —
 that is the whole reason the log is not append-on-finish (see the header). `task_id` is what
@@ -475,7 +524,7 @@ function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::Abs
                        params = nothing; task_id::AbstractString = "", pool::AbstractString = "",
                        by::AbstractString = "", caller::AbstractDict = Dict{String,Any}(),
                        inputs::AbstractVector = Any[], replaces = nothing,
-                       at::AbstractString = _run_log_now())
+                       gates::AbstractVector = Any[], at::AbstractString = _run_log_now())
     _update_run_log!(img) do entries
         e = Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
@@ -483,6 +532,7 @@ function open_run_log!(img::CciaImage, fun_name::AbstractString, value_name::Abs
             "at" => String(at), "taskId" => string(task_id), "pool" => String(pool))
         isempty(inputs) || (e["inputs"] = collect(Any, inputs))
         replaces isa AbstractDict && (e["replaces"] = replaces)
+        isempty(gates) || (e["gates"] = collect(Any, gates))
         push!(entries, _run_log_stamp!(e, by, caller))
         entries
     end
@@ -544,7 +594,8 @@ function skip_run_log!(img::CciaImage, fun_name::AbstractString, reason::Abstrac
         e = Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name),
             "status" => RUN_LOG_SKIPPED, "reason" => string(reason),
-            "params" => _run_log_params(params), "at" => String(at), "taskId" => string(task_id))
+            "params" => _run_log_params(params), "at" => String(at), "taskId" => string(task_id),
+            "format" => RUN_LOG_FORMAT)
         isempty(by) || (e["by"] = String(by))
         push!(entries, e)
         entries
@@ -664,7 +715,7 @@ function append_run_log!(img::CciaImage, fun_name::AbstractString, value_name::A
         push!(entries, Dict{String,Any}(
             "fun" => string(fun_name), "valueName" => string(value_name), "status" => string(status),
             "params" => _run_log_params(params),
-            "at" => String(at), "taskId" => ""))
+            "at" => String(at), "taskId" => "", "format" => RUN_LOG_FORMAT))
         entries
     end
 end

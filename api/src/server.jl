@@ -47,7 +47,6 @@ include("image_geometry.jl")
 include("image_render.jl")   # builds on image_geometry.jl
 include("shader_constants.jl") # the defaults the viewer, its shaders and the movie renderer share
 include("overlay_author.jl") # resolves populations/tracks into the primitives' columnar shape
-include("crop_api.jl")       # routes only; builds on both
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
 include("movie_render.jl")   # the offline renderer's timelapse sweep — builds on image_render.jl + read_slab
 include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
@@ -287,6 +286,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/claim/checks" => (req, body_bytes) -> (api_claim_checks(req)),
     "/api/claim/open" => (req, body_bytes) -> (api_claim_open(req)),
     "/api/analysis/lineage" => (req, body_bytes) -> (api_analysis_lineage(req)),
+    "/api/analysis/board-provenance" => (req, body_bytes) -> (api_analysis_board_provenance(req)),
     "/api/analysis/populations" => (req, body_bytes) -> (api_analysis_populations(req)),
     "/api/analysis/boards" => (req, body_bytes) -> (api_analysis_boards(req)),
     # NB same path as the POST autosave, different method — the cheap reload behind a 409'd write and
@@ -356,8 +356,6 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/examples" => (req, body_bytes) -> (api_gating_examples(req)),
     "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
-    "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
-    "/api/crop/frame" => (req, body_bytes) -> (api_crop_frame(req)),
     "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
@@ -439,6 +437,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/register" => (req, body_bytes) -> (api_images_register(body_bytes)),
     "/api/import/scan-legacy" => (req, body_bytes) -> (api_import_scan_legacy(body_bytes)),
     "/api/import/register-legacy" => (req, body_bytes) -> (api_import_register_legacy(body_bytes)),
+    "/api/import/scan-immunemap" => (req, body_bytes) -> (api_import_scan_immunemap(body_bytes)),
+    "/api/import/register-immunemap" => (req, body_bytes) -> (api_import_register_immunemap(body_bytes)),
     "/api/import/series/probe" => (req, body_bytes) -> (api_import_series_probe(body_bytes)),
     "/api/import/peek-pyramid" => (req, body_bytes) -> (api_import_peek_pyramid(body_bytes)),
     "/api/images/delete" => (req, body_bytes) -> (api_images_delete(body_bytes)),

@@ -1,0 +1,98 @@
+[
+  {
+    "name": "flow",
+    "label": "Gated",
+    "suffix": "",
+    "mapType": "flow",
+    "gating": true,
+    "cluster": false,
+    "clusterPrefix": "",
+    "grain": "cell",
+    "category": "gated",
+    "trackFamily": false
+  },
+  {
+    "name": "live",
+    "label": "Tracked",
+    "suffix": null,
+    "mapType": "flow",
+    "gating": false,
+    "cluster": false,
+    "clusterPrefix": "",
+    "grain": "cell",
+    "category": "gated",
+    "trackFamily": true
+  },
+  {
+    "name": "track",
+    "label": "Tracked (gated)",
+    "suffix": "__tracks",
+    "mapType": "track",
+    "gating": true,
+    "cluster": false,
+    "clusterPrefix": "",
+    "grain": "track",
+    "category": "gated",
+    "trackFamily": true
+  },
+  {
+    "name": "clust",
+    "label": "Cell clusters",
+    "suffix": "__clust",
+    "mapType": "clust",
+    "gating": false,
+    "cluster": true,
+    "clusterPrefix": "clusters.",
+    "grain": "cell",
+    "category": "clustered",
+    "trackFamily": false
+  },
+  {
+    "name": "trackclust",
+    "label": "Track clusters",
+    "suffix": "__trackclust",
+    "mapType": "trackclust",
+    "gating": false,
+    "cluster": true,
+    "clusterPrefix": "clusters.",
+    "grain": "track",
+    "category": "clustered",
+    "trackFamily": true
+  },
+  {
+    "name": "region",
+    "label": "Regions",
+    "suffix": "__region",
+    "mapType": "region",
+    "gating": false,
+    "cluster": true,
+    "clusterPrefix": "regions.",
+    "grain": "cell",
+    "category": "region",
+    "trackFamily": false
+  },
+  {
+    "name": "branch",
+    "label": "Branches",
+    "suffix": "__branch",
+    "mapType": "branch",
+    "gating": false,
+    "cluster": false,
+    "clusterPrefix": "",
+    "grain": "branch",
+    "category": "gated",
+    "trackFamily": false
+  },
+  {
+    "name": "labels",
+    "label": "All cells",
+    "suffix": null,
+    "mapType": null,
+    "gating": false,
+    "cluster": false,
+    "clusterPrefix": "",
+    "grain": "cell",
+    "category": "gated",
+    "trackFamily": false
+  }
+]

@@ -2,6 +2,7 @@
 // and the /api/plot_data aggregation response. Mirrors the JSON shapes — see docs/API.md.
 import type { HmmFitSummary } from '../utils/hmmFitNote'
 import type { HmmFitCurve } from '../utils/hmmElbow'
+import type { QcFinding } from '../lib/qc'
 
 export interface PlotParam {
   key: string
@@ -61,6 +62,9 @@ export interface PlotSpec {
     // optional categorical columns the user may split a measure by (the generic groupBy sub-axis,
     // e.g. an HMM state); '' / absent → no split. Reusable for any categorical obs column.
     groupByOptions?: string[]
+    // the split a fresh panel starts with (one of groupByOptions) — `centroid_t` makes a plot a time
+    // series by default (populations over time); the user can still clear it.
+    defaultGroupBy?: string
     // heatmap (matrix) defaults — `mode` seeds the panel's matrix mode (profile = measures×category
     // signature; crosstab = a "from_to" categorical → transition matrix). `category` optionally pins
     // the default category column (used if present in the discovered obs columns); otherwise the panel
@@ -173,6 +177,9 @@ export interface ComparisonsResult {
   autoReason?: string
   comparisonPairs: StatsComparisonPair[]   // Bonferroni-adjusted; empty for 2-group tests (the omnibus IS the pair)
   letters?: string[]      // Compact Letter Display, per group (parallel to `groups`); groups sharing a letter don't differ
+  // QC on the comparison itself (stats.jl `stats_qc_findings`): cells counted as replicates, too few
+  // images for any test to reach p < 0.05. Catalog text, same shape as a per-image QC finding.
+  findings?: QcFinding[]
 }
 
 export interface PlotDataResponse {

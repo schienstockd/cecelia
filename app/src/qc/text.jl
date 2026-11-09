@@ -50,6 +50,31 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Voxel depth has no unit",
         long  = "A Z step is recorded without a unit — re-enter it with a unit."),
 
+    # raw source (source_fingerprint_findings)
+    "source.missing" => (
+        short = "Raw file not found",
+        long  = "Nothing at the import path — reconnect the drive, or note where the original now lives."),
+    "source.changed" => (
+        short = "Raw file changed since import",
+        long  = "The file at the import path is not the one imported — check it before re-importing from it."),
+
+    # a run that computed with an assumed scale (defaulted_scale_qc_findings, written by the scheduler)
+    "calibration.xy_assumed" => (
+        short = "Run used a placeholder pixel size ({value} {unit})",
+        long  = "No usable pixel size was recorded, so distances are not in microns — set it in the metadata editor, then re-run."),
+    "calibration.z_assumed" => (
+        short = "Run used a placeholder Z step ({value} {unit})",
+        long  = "No usable Z step was recorded, so depths and 3D distances may be wrong — set the voxel depth, then re-run."),
+    "calibration.t_assumed" => (
+        short = "Run used a placeholder frame interval ({value} {unit})",
+        long  = "No usable frame interval was recorded, so speeds may be wrong — set the interval, then re-run."),
+    "calibration.length_unit_assumed" => (
+        short = "Run read pixel size as µm",
+        long  = "The pixel size unit isn't recognised — re-enter the pixel size in µm, then re-run."),
+    "calibration.time_unit_assumed" => (
+        short = "Run read frame interval as seconds",
+        long  = "The frame interval unit isn't recognised — re-enter it in seconds or minutes, then re-run."),
+
     # pyramid depth (pyramid_qc_findings). The user picks `pyramidLevels` in the import form BEFORE
     # anything reads the source, so a big image imported at the default (2 levels) has no zoomed-out
     # view — every viewport pull at low zoom stays a per-tile fetch. This finding measures the store
@@ -80,6 +105,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "import.clipped_deep" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
         long  = "Lower the deep end of the depth power ramp (Bright Z / Auto Z brightness), or the HV. Channels: {channels}."),
+
+    # Import from Immunemap (immunemap_fetch_qc_findings): the file and Immunemap disagree on voxel size
+    "import.immunemap_spacing" => (
+        short = "Voxel size differs from Immunemap",
+        long  = "The file says {file} µm (x, y, z), Immunemap {published} µm. The import used the file's. If Immunemap's is right, correct it under Image metadata before measuring speeds."),
 
     # acquisition stopped mid-volume (partial_timepoint_qc_findings): dropped at import, or still there
     "import.partial_timepoint_dropped" => (
@@ -316,6 +346,29 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "cohort.mixed" => (
         short = "{metric} differs from the set",
         long  = "This image has {metric} {value}, unlike most of the set — measures aren't comparable across it. Re-run with one setting for every image."),
+
+    # gating across a set's images (qc_gating.jl `gating_qc_findings`)
+    "gating.missing_column" => (
+        short = "Gate reads {column}, which this image lacks",
+        long  = "{n} population(s) are empty here because of it — re-measure this image, or redraw the gate on a column it has."),
+    "gating.empty_pop" => (
+        short = "{pop} is empty here, not on other images",
+        long  = "Check its gate fits this image's data (a copied gate can miss a shifted population); ignore if the cells are truly absent."),
+    "gating.pct_outlier" => (
+        short = "{pop} is {value}% of its parent",
+        long  = "Far {dir} the set median ({median}%) — check its gate fits this image's data; ignore if the difference is real."),
+
+    # between-group stats on a summary plot (stats.jl `stats_qc_findings`) — ride the plot's
+    # `comparisons`, never a sidecar
+    "stats.cells_as_replicates" => (
+        short = "Test counts each cell or track as a replicate",
+        long  = "Set Datapoint to image — cells from one image aren't independent samples."),
+    "stats.few_replicates" => (
+        short = "n = {n} — a rank test can't go below p = {p}",
+        long  = "Add images, or report the comparison as descriptive."),
+    "stats.few_replicates_pairs" => (
+        short = "n = {n} — no bracket on this group can go below p = {p}",
+        long  = "Add images to the smallest groups — the overall test can still be significant, but these pairs can't after the Bonferroni correction."),
 
     # claim checks (claim_checks.jl). `short` is the fact, one line, naming the images ({imgs}: up to
     # three by name, else a count); `long` is what to do. The claim entry is a list of these.

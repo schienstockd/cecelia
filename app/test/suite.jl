@@ -203,10 +203,20 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 include(joinpath(@__DIR__, "suite", "chain.jl"))
 include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
+# Gating + statistics QC and the chain's end-of-run cohort QC (CECELIA_STRUCTURE_PLAN rank 8).
+include(joinpath(@__DIR__, "suite", "structure_qc.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_floor.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_ties.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_floor_pair.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_stats_smallest_pairs.jl"))
 include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 include(joinpath(@__DIR__, "suite", "chain_preflight.jl"))
+include(joinpath(@__DIR__, "suite", "chain_replay.jl"))
 # Run log: inputs read, output replaced, archive past the cap (app/src/run_log.jl → *What it read* / *Archive*).
 include(joinpath(@__DIR__, "suite", "run_log_provenance.jl"))
+# …and its follow-ups: re-measure `replaces`, format number, custom weights, raw source check.
+include(joinpath(@__DIR__, "suite", "run_log_followups.jl"))
+include(joinpath(@__DIR__, "suite", "gate_history.jl"))
 
 
 
@@ -238,6 +248,7 @@ include(joinpath(@__DIR__, "suite", "gating.jl"))
 # this file's aggregating testset scope, so any helpers defined earlier in suite.jl are
 # still in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "pop_types.jl"))
+include(joinpath(@__DIR__, "suite", "pop_type_registry.jl"))
 
 # ── Filter-pop + compound + FilterFun/FilterCondition testsets ──────────
 # Five sections covering region composition column naming, compound filter populations
@@ -350,6 +361,7 @@ include(joinpath(@__DIR__, "suite", "result_review_claim_same_source.jl"))
 include(joinpath(@__DIR__, "suite", "cohort_categorical.jl"))
 include(joinpath(@__DIR__, "suite", "qc_profile.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_ome_xml_unit.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_first_gap.jl"))
 
 include(joinpath(@__DIR__, "suite", "vn_pilot_writer.jl"))
 include(joinpath(@__DIR__, "suite", "viewer_cache.jl"))

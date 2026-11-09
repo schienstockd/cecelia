@@ -705,6 +705,116 @@ function write_metadata_qc!(img::CciaImage)
     end
 end
 
+# ── The raw source still the one imported? ──────────────────────────────────────
+# Import banks `meta.oriFingerprint` (`import_source_fingerprint`); this re-takes it — the same bounded
+# read (≤ 2 × sampleBytes, plus `stat` of OIR companions) — and says when the file at `ori_path` is gone
+# or no longer the one imported. Under `source.importImages.omezarr`, beside the import's own doc (which
+# `write_metadata_qc!` rewrites whole), refreshed by `resync_ome_meta!`. Advisory: nothing is blocked.
+const SOURCE_QC_FUN = "source.importImages.omezarr"
+
+"""
+    source_fingerprint_findings(recorded, current) -> Vector
+
+Compare the import's `recorded` fingerprint with one taken now (`current`, empty = no file there).
+`source.missing` (`info` — raw files often live on a drive that is not always attached) when there is
+no file; `source.changed` (`warn`) when `size`, `sample` or the companions' `count`/`bytes` differ.
+`mtime` is not compared: a plain copy moves it. Nothing when nothing was recorded. PURE — unit-tested.
+"""
+function source_fingerprint_findings(recorded::AbstractDict, current::AbstractDict)
+    rec = Dict{String,Any}(String(k) => v for (k, v) in recorded)
+    isempty(rec) && return Dict{String,Any}[]
+    path = string(get(rec, "path", ""))
+    isempty(current) &&
+        return [qc_finding("info", "source.missing"; detail = Dict{String,Any}("path" => path))]
+    cur = Dict{String,Any}(String(k) => v for (k, v) in current)
+    comp(d) = (c = get(d, "companions", nothing);
+               c isa AbstractDict ? (get(c, "count", get(c, :count, nothing)), get(c, "bytes", get(c, :bytes, nothing))) : nothing)
+    differs = String[]
+    for k in ("size", "sample")
+        string(get(rec, k, "")) == string(get(cur, k, "")) || push!(differs, k)
+    end
+    comp(rec) == comp(cur) || push!(differs, "companions")
+    isempty(differs) && return Dict{String,Any}[]
+    [qc_finding("warn", "source.changed"; detail = Dict{String,Any}("path" => path, "differs" => differs))]
+end
+
+"""
+    write_source_qc!(img) -> path | nothing
+
+Re-fingerprint `img`'s raw source at `meta.ori_path` with the method and sample size the import
+recorded, and bank `source_fingerprint_findings` under `SOURCE_QC_FUN`. Writes only when there is a
+finding or to CLEAR an earlier one; nothing for an image imported before fingerprints were recorded.
+Never throws.
+"""
+function write_source_qc!(img::CciaImage)
+    try
+        rec = get(img.meta, "oriFingerprint", nothing)
+        (rec isa AbstractDict && !isempty(rec)) || return nothing
+        path = string(get(img.meta, "ori_path", get(rec, "path", "")))
+        isempty(path) && return nothing
+        n = get(rec, "sampleBytes", SOURCE_FINGERPRINT_SAMPLE)
+        cur = isfile(path) ? import_source_fingerprint(path; sample_bytes = n isa Integer ? n : SOURCE_FINGERPRINT_SAMPLE) :
+                             Dict{String,Any}()
+        findings = source_fingerprint_findings(merge(Dict{String,Any}(String(k) => v for (k, v) in rec),
+                                                     Dict{String,Any}("path" => path)), cur)
+        (isempty(findings) && !isfile(qc_path(img, SOURCE_QC_FUN))) && return nothing
+        write_qc(img, SOURCE_QC_FUN, VERSIONED_DEFAULT_VAL, findings)
+    catch e
+        @warn "raw source check failed" uid = img.uid exception = e
+        nothing
+    end
+end
+
+# ── A run that computed with an assumed scale ────────────────────────────────────
+# Import QC says the image lacks a scale; these say a RUN used the fallback — banked on the run, so the
+# warning sits next to the numbers it affects. Under `calibration.{fun}`, beside the task's own
+# `{fun}` doc (the `cohort.{fun}` pattern), so neither overwrites the other.
+
+const _DEFAULTED_SCALE_KEYS = Dict(
+    "xy" => "calibration.xy_assumed", "z" => "calibration.z_assumed", "t" => "calibration.t_assumed")
+const _DEFAULTED_UNIT_KEYS = Dict(
+    "xy" => "calibration.length_unit_assumed", "z" => "calibration.length_unit_assumed",
+    "t" => "calibration.time_unit_assumed")
+
+"""
+    defaulted_scale_qc_findings(defaulted) -> Vector
+
+One `warn` per axis in `defaulted` (`run_scale_defaults`'s `{axis: {reason, used}}`), each with
+`detail.field` (`xy`/`z`/`t`), `detail.reason` and `detail.used` (the value the run computed with —
+µm/px or min/frame). PURE — unit-tested. Advisory: the run has already happened.
+"""
+function defaulted_scale_qc_findings(defaulted::AbstractDict)
+    fs = Dict{String,Any}[]
+    for ax in ("xy", "z", "t")
+        x = get(defaulted, ax, nothing)
+        x isa AbstractDict || continue
+        reason = string(get(x, "reason", ""))
+        key = get(reason == "unknownUnit" ? _DEFAULTED_UNIT_KEYS : _DEFAULTED_SCALE_KEYS, ax, nothing)
+        isnothing(key) && continue
+        used = get(x, "used", nothing)
+        detail = Dict{String,Any}("field" => ax, "reason" => reason, "used" => used)
+        push!(fs, reason == "unknownUnit" ? qc_finding("warn", key; detail = detail) :
+                  qc_finding("warn", key; detail = detail,
+                             value = used isa Real ? round(used; sigdigits = 3) : string(used),
+                             unit = ax == "t" ? "min/frame" : "µm"))
+    end
+    fs
+end
+
+"""
+    write_defaulted_scale_qc!(img, fun_name, value_name, defaulted)
+
+Bank `defaulted_scale_qc_findings` under `calibration.{fun_name}`. Writes only when there is a finding
+or to CLEAR an earlier one (a re-run after the scale was set un-flags), never an empty placeholder.
+"""
+function write_defaulted_scale_qc!(img::CciaImage, fun_name::AbstractString,
+                                   value_name::AbstractString, defaulted::AbstractDict)
+    fun = "calibration." * string(fun_name)
+    findings = defaulted_scale_qc_findings(defaulted)
+    (isempty(findings) && !isfile(qc_path(img, fun, value_name))) && return nothing
+    write_qc(img, fun, value_name, findings)
+end
+
 # ── Objective count metrics (QC banking) ─────────────────────────────────────────
 # Tasks bank objective counts (cells measured, tracks + mean length) into the qc/ sidecar so future
 # cohort stats can flag anomalies (a run that produced 10× fewer cells/tracks than usual). There is

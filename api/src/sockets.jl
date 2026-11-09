@@ -652,8 +652,23 @@ function handle_chain_run(ws, data)
     run_id      = _wstr(data, :runId)
     start_node  = _wstr(data, :startNode)
     resuming    = !isempty(run_id)
+    # Replay: `fromRun` starts a NEW run from a past run's frozen template + recorded overrides
+    # (`run_chain(...; from_run)`). No `chain` needed; no `imageUids` = the past run's images.
+    from_run    = resuming ? "" : _wstr(data, :fromRun)
+    replaying   = !isempty(from_run)
 
-    if isempty(project_uid) || (!resuming && isempty(chain_name))
+    if !isempty(project_uid) && replaying
+        src = _chain_run_header(project_uid, from_run)
+        if isnothing(src)
+            HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
+                                                   error="Run not found: $from_run")))
+            return
+        end
+        isempty(chain_name) && (chain_name = string(get(src, :chain_name, "")))
+        isempty(image_uids) && (image_uids = String[string(u) for u in get(src, :image_uids, [])])
+    end
+
+    if isempty(project_uid) || (!resuming && !replaying && isempty(chain_name))
         HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
                                                error="projectUid and chain are required")))
         return
@@ -697,7 +712,7 @@ function handle_chain_run(ws, data)
     # Hand it to the detached runner if there is one. A REFUSAL is not a fallback: it means that run id
     # is already executing there, and starting a second execution would have two processes writing the
     # same `run.json`. That is the corruption the runner's claim exists to prevent, so we stop instead.
-    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, excluded,
+    creq = ChainRequest(; project_uid, chain_name, image_uids, run_id, start_node, from_run, excluded,
                           by = active_profile_name(), caller = caller_stamp())
     outcome = _submit_chain_to_runner(creq)
     outcome === :accepted && return

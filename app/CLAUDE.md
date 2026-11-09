@@ -122,7 +122,8 @@ ok = proc.exitcode == 0 && proc.termsignal == 0
 `metrics` count + a `warn` finding for the unambiguous bad case via `write_qc` (`app/src/qc.jl`), and
 add cohort-comparable metrics to `COHORT_METRICS` (`app/src/qc_cohort.jl`). Advisory only (never
 `error`, never gates). Keep the finding logic in a pure, unit-tested helper. The only exemption is a
-task with genuinely no objective signal, stated as an explicit comment. See `docs/MODULES.md` → *QC —
+task with genuinely no objective signal, stated as an explicit `# QC-EXEMPT:` comment and listed in
+`QC_EXEMPT` — enforced by the `QC-required ratchet` testset. See `docs/MODULES.md` → *QC —
 REQUIRED for every new task*.
 
 ---

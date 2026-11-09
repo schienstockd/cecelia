@@ -491,6 +491,16 @@ frontend renders it as a bar, or a line over the ordered `group` (t).
 the image's cells**. Exposed as the panel's **Proportion** toggle (now shown for `count`, not just
 `frequency`). This is the **population summary** plot.
 
+**Populations over time** (`population_over_time.json`, Phenotype + Behaviour) is the same `count`
+split by `centroid_t` from the start (`dataSource.defaultGroupBy`), so it renders as one trend line per
+population. Its families are all **cell**-grained — a track has no single frame — and it adds `flow`
+on Behaviour so gated populations need not be tracked first. Split by time, Proportion's denominator is
+the **frame** — `(uID, value_name, t)` — not the image across all frames, and a frame where a plotted
+pop has no cells gets an explicit 0 rather than a line bridged over the gap (`_complete_time_groups`).
+A categorical split keeps the image-wide denominator. Like every proportion here it is a share of the
+*plotted* pops: pick mutually exclusive siblings (e.g. the children of one gate). The measure-over-time
+half of the same notebook question is **Cell properties** split by `centroid_t` (`trend`).
+
 ### Population summary plot (counts / proportion per population)
 
 One **generalised backbone**, one spec per popType. The plot summarises **population membership** (not
@@ -530,6 +540,21 @@ proportions per image are a follow-up). Per-plot, persisted in the panel's `ui.s
 the raw CSV export honours it (rows become the per-image means/medians). Surfaced as the **Datapoint**
 control (+ a **Per image** mean/median select when set to image) in the plot options popover.
 
+**The between-group test reports on its own replicates.** `comparisons.findings` (`stats.jl`
+`stats_qc_findings`, catalog text) rides every test result and shows under the test name in the plot
+options' Stats section (`InlineNote`, warn): `stats.cells_as_replicates` when some group has more values
+than images (Datapoint = individual, so cells are counted as independent), and `stats.few_replicates`
+when the two groups' image counts can't reach p < 0.05 with an exact rank test
+(`claim_min_p_unpaired` / `CLAIM_ALPHA` — the claim recital's S2 rule, no constants of its own) —
+`stats.few_replicates_pairs` with 3+ groups: no bracket on the smallest group can reach it — the best
+floor over its pairs, times the Bonferroni factor the brackets carry (the omnibus can still be significant). The floor binds only an
+exact rank test, so it is claimed only when every pair on the smallest group ran exact (`rank_tests_exact` —
+HypothesisTests switches to a tie-corrected approximation past 10 values with ties), never after a
+t-test/ANOVA, and only once each value is an image (with pooled cells, the replicate finding comes first). Images
+per group = distinct `uID`s in the series (1 for a single-image frame). Never a sidecar: stats are
+ephemeral and cross-series (`docs/todo/STATS_ANNOTATIONS_PLAN.md` D10), so the QC travels with the
+result, and `plotSummaryText` carries it to Claude.
+
 ### Segmentation QC plot
 
 The segmentation-integrity plot is a **normal registry plot**, not a bespoke preset (see *Hosting*
@@ -559,7 +584,7 @@ above). `app/src/plotDefinitions/segmentation_qc.json` (`module: "segment"`, `fa
   **X axis in real time.** The group levels are frame INDICES, so the axis would read `centroid_t`
   0…179 — not a quantity anyone measures in. `utils/timeAxis.ts` converts them to elapsed **seconds**
   using each image's OME `timeIncrement`, **per image** (two movies can run at different intervals, so
-  one factor for the plot would be wrong), and the axis is relabelled `Time (s)`. It falls back to
+  one factor for the plot would be wrong), and the axis is relabelled `Time (s)` — or `Time (min)` / `Time (h)` once the span passes 2 min / 3 h (`timeAxisUnit`). It falls back to
   frames — keeping the `centroid_t` label — whenever the interval is not known for *every* plotted
   image, or when a pooled/`summarised` curve spans movies whose intervals disagree: there is one x
   axis, and putting a 30 s/frame movie on the same seconds axis as a 60 s/frame one is off by 2× with

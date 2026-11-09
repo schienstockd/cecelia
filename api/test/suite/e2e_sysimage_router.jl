@@ -261,14 +261,13 @@ end
 #    removing a route without updating it fails here rather than in production.
 @testset "HTTP router — the full route table still dispatches" begin
     GET_ROUTES = [
-        "/api/analysis/behaviour", "/api/analysis/boards",
+        "/api/analysis/behaviour", "/api/analysis/board-provenance", "/api/analysis/boards",
         "/api/analysis/chains",
         "/api/analysis/clusters", "/api/analysis/lineage",
         "/api/analysis/measures", "/api/analysis/populations",
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs", "/api/chains/suggest", "/api/chains/history-params",
-        "/api/crop/frame", "/api/crop/info",
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
         "/api/viewer/overlays",
@@ -361,6 +360,7 @@ end
         "/api/images/version/remove",
         "/api/import/peek-pyramid",
         "/api/import/register-legacy", "/api/import/scan-legacy",
+        "/api/import/register-immunemap", "/api/import/scan-immunemap",
         "/api/import/series/probe",
         "/api/lablog/append", "/api/lablog/capture",
         "/api/lablog/dismiss",
@@ -460,6 +460,7 @@ end
     UNSAFE = [
         "/api/app/restart", "/api/app/shutdown",
         "/api/import/register-legacy", "/api/import/scan-legacy",
+        "/api/import/register-immunemap", "/api/import/scan-immunemap",
         "/api/import/series/probe",
         "/api/notebooks/build-sysimage", "/api/notebooks/launch",
         "/api/notebooks/restart", "/api/notebooks/shutdown",
@@ -501,7 +502,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 123 && length(POST_ROUTES) == 186
+    @test length(GET_ROUTES) == 122 && length(POST_ROUTES) == 188
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

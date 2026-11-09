@@ -29,10 +29,10 @@ export viewer_chunk_cache_setting, viewer_chunk_cache_bytes, viewer_chunk_cache_
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH
-export write_atomic, write_json_atomic
+export write_atomic, write_json_atomic, append_jsonl!, read_jsonl
 export AnalysisRun, RUN_KINDS, NOT_RUN_TASKS, list_analysis_runs, delete_analysis_run!, label_track_sources
 export write_http_body!
-export safe_name_part
+export safe_name_part, name_suffix, NAME_SUFFIX_MAX, numbered_name, derived_image_name
 
 # ── Log rail (console records, the server tee, child-process capture) ─────────
 # `log_record`/`TeeLogger`/`install_log_tee!` are what a SERVER installs to forward the package's own
@@ -68,7 +68,7 @@ export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, rename_set!, set_name_taken, move_image!
 export discard!, move_aside, discard_later, sweep_discarded!
-export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes,
+export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes, img_defaulted_scale, run_scale_defaults,
        image_included, IMAGE_EXCLUDED_REASON
 export img_axes, img_has_time
 export meta_int, meta_float, meta_str, crop_source
@@ -88,8 +88,10 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_findin
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
+export cohort_has_answer, cohort_reply, cohort_check!, chain_cohort_qc!
+export gating_qc!, gating_qc_findings, gating_value_names, gating_qc_summary_lines
 export ClaimScope, claim_record_table, claim_checks, CLAIM_REL_TOLERANCE, claim_min_p_paired, claim_min_p_unpaired, claim_unit_attrs
-export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces
+export read_run_log, run_log_row, run_pop_reads, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status, run_entry_ran, run_entry_format, read_run_log_archive, read_run_log_history, run_log_archive_path, run_provenance, run_inputs, run_replaces, run_gates
 export open_run_log!, close_run_log!, reap_run_log!, skip_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED, RUN_LOG_SKIPPED
 export run_author, run_env_of, read_run_env
 export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, lab_log_author_kind, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
@@ -128,7 +130,8 @@ export boolean_dependents, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,
        parse_filter_fun, FilterCondition
 export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, tracked_pop_parents
-export GATING_POP_TYPES, is_gating_pop_type
+export GATING_POP_TYPES, is_gating_pop_type, STORED_POP_TYPES, CLUSTER_POP_TYPES, TRACK_FAMILY_POP_TYPES
+export POP_TYPE_REGISTRY, POP_TYPE_PROBE_ORDER, PopTypeInfo, pop_type_info, pop_map_type
 export SPATIAL_UNIT_PX, SPATIAL_UNIT_UM, is_spatial_axis, has_spatial_gate
 export flatten_pop_tree, plot_pop_types, plot_population_groups
 export is_track_pop, pop_category, population_scope_groups, population_accept_groups
@@ -136,6 +139,7 @@ export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
 export copy_gating!, with_popmap_lock
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
@@ -217,7 +221,7 @@ export flow_model_filename
 export MeasureLabels, SegmentCorrect, parse_label_ops
 export SegmentCorrectCarryOverSnapshot, SegmentCorrectCarryOverRestore
 export SegmentStalenessReport, TrackingStalenessReport
-export stale_artefacts_for, staleness_sidecar_path
+export stale_artefacts_for, staleness_sidecar_path, stale_outputs_for
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
@@ -272,7 +276,7 @@ export validate_chain_template, ChainTemplateError, chain_template_from_raw, cha
 export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
-export chain_from_history, chain_preflight, history_params_table
+export chain_from_history, chain_preflight, history_params_table, board_export_provenance
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
@@ -330,6 +334,7 @@ include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")
 include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
+include("qc_gating.jl")   # after qc_cohort.jl — gating QC reuses its outlier test
 include("claim_checks.jl")   # after qc_cohort.jl — claim recital S0/S1 over a set
 include("lab_log.jl")
 include("lab_log_context.jl")
@@ -359,6 +364,7 @@ include("tasks/testTasks/incremental_plot_task.jl")
 include("tasks/importImages/omezarr.jl")
 include("tasks/importImages/remove.jl")
 include("tasks/importImages/migrateLegacy.jl")
+include("tasks/importImages/immunemapFetch.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
 include("tasks/cleanupImages/stack_align.jl")
@@ -366,6 +372,7 @@ include("tasks/cleanupImages/flow_register.jl")
 include("tasks/cleanupImages/smooth.jl")
 include("tasks/cleanupImages/denoise.jl")
 include("tasks/opticalFlow/train_support_denoise.jl")
+include("tasks/editImages/cropImage_box.jl")
 include("tasks/editImages/cropImage.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/editImages/zProject.jl")
@@ -470,6 +477,7 @@ include("hpc/dispatch.jl")
 include("hpc/job.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
+include("analysis_export_provenance.jl")   # after ai/lineage.jl (`_parse_tkey`) and tasks/chain.jl
 include("ai/populations.jl")
 include("ai/measures.jl")
 include("ai/behaviour_clusters.jl")

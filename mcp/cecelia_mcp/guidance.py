@@ -85,7 +85,9 @@ get_recent_logs (a Julia-side crash lands in get_recent_logs, NOT the task log �
 field carries the stacktrace, its `source` says which process spoke: backend, napari, preview, \
 runner or notebooks). How the data was \
 produced: get_analysis_lineage (the pipeline behind an image, and `rollup.divergences` for the odd \
-image out; a crop's source image + pixel offset is get_image_info's `cropSource`), get_chains. \
+image out; its per-image `stale` lists results made from an input a later run replaced, so say so \
+before reading numbers off one; a crop's source image + pixel offset is get_image_info's `cropSource`), \
+get_chains. \
 The analysis itself: get_populations (what a population MEANS — its gate \
 geometry or filter rule), gate_histogram / gate_plot (a population's distribution and gate plot), \
 gate_cells_view and gate_examples (its cells in the image — zoomed, and as example crops), gate_stats, \

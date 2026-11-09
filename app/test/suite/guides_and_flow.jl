@@ -39,8 +39,8 @@ _repo = dirname(dirname(dirname(pathof(Cecelia))))
         end
         @test !isempty(stages)
 
-        # every fun the frontend lists must actually bank cohort metrics
-        unknown = [f for fs in values(stages) for f in fs if !haskey(COHORT_METRICS, f)]
+        # every fun the frontend lists must be one the check can answer (banked metrics, or gating QC)
+        unknown = [f for fs in values(stages) for f in fs if !cohort_has_answer(f)]
         @test isempty(unknown)
 
         # …and every cohort-bearing fun in a category that HAS a button must be listed
@@ -133,7 +133,11 @@ end
         @test !isempty(taught)
 
         # fun_name => why teaching the bare task is right even though a composite wraps it
-        bare_by_design = Dict{String,String}()
+        bare_by_design = Dict{String,String}(
+            # the ordinary import of a file on disk; `importImages.immunemap` only puts a download
+            # in front of it, for images registered from Immunemap
+            "importImages.omezarr" => "file import; the Immunemap composite adds a download step",
+        )
 
         # every composite's constituent steps, from the registry
         wrapped_by = Dict{String,Vector{String}}()

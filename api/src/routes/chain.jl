@@ -51,6 +51,16 @@ function api_chains_delete(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# A persisted run's run.json, parsed (the header fields + whatever else it holds), or `nothing` when
+# there is no such run. Cheap — no template-cache resolution, no project load. The runs list reads each
+# header the same way; the WS replay launch (`handle_chain_run` with `fromRun`) reads its source here.
+function _chain_run_header(project_uid::AbstractString, run_id::AbstractString)
+    _valid_asset_id(run_id) || return nothing
+    rj = joinpath(_chains_dir_for_project(project_uid), "runs", run_id, "run.json")
+    isfile(rj) || return nothing
+    try JSON3.read(read(rj, String)) catch; nothing end
+end
+
 # GET /api/chains/runs?projectUid — list persisted run records (newest first) for the Live view.
 # Reads each run.json's header fields directly (cheap; no template-cache resolution). Runs live under
 # settings/chains/runs/<id>/run.json.
@@ -64,15 +74,15 @@ function api_chains_runs(req::HTTP.Request)
     out = Any[]
     for d in readdir(runs_dir; join=true)
         isdir(d) || continue
-        rj = joinpath(d, "run.json")
-        isfile(rj) || continue
-        raw = try JSON3.read(read(rj, String)) catch; continue end
+        raw = _chain_run_header(uid, basename(d))
+        isnothing(raw) && continue
         push!(out, (; runId     = string(get(raw, :id, basename(d))),
                       chainName  = string(get(raw, :chain_name, "")),
                       createdAt  = Float64(get(raw, :created_at, 0.0)),
                       imageCount = length(get(raw, :image_uids, [])),
                       by         = string(get(raw, :by, "")),           # launcher; "" on older runs
-                      resumedBy  = string(get(raw, :resumed_by, ""))))
+                      resumedBy  = string(get(raw, :resumed_by, "")),
+                      fromRun    = string(something(get(raw, :from_run, nothing), ""))))   # replay source
     end
     sort!(out; by = r -> r.createdAt, rev = true)
     200, JSON3.write((; runs = out))
@@ -80,6 +90,8 @@ end
 
 # GET /api/chains/run?projectUid&runId — a single persisted run's frozen template (nodes/edges for
 # the layered layout) + per-image per-node status, so the Live view can render a past run from disk.
+# Also what the run was asked to run with: `overrides` and per-node `nodeParams` (`null` = unknown, a
+# run from before they were recorded) and `fromRun` (the run it replays, "" if none).
 function api_chains_run(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)
@@ -95,7 +107,8 @@ function api_chains_run(req::HTTP.Request)
         states[u] = Dict{String,Any}(nid => string(st.status) for (nid, st) in nm)
     end
     200, JSON3.write((; runId=run.id, chainName=run.chain_name, createdAt=run.created_at,
-                        imageUids=run.image_uids, nodes=nodes, edges=edges, imageStates=states))
+                        imageUids=run.image_uids, nodes=nodes, edges=edges, imageStates=states,
+                        overrides=run.overrides, nodeParams=run.node_params, fromRun=run.from_run))
 end
 
 # GET /api/chains/suggest?projectUid&imageUids=a,b[&keep=id1,id2][&retrain=1][&name=]
@@ -120,6 +133,14 @@ end
 # `pops` (a JSON array of board population keys — pop names may hold commas) + `clusterRuns` (JSON array
 # of `"popType:suffix"`) cut it to what an analysis board shows; absent = the whole history.
 function api_chains_history_params(req::HTTP.Request)
+    s = _board_scope_query(req)
+    s isa Tuple{Int,String} && return s
+    200, JSON3.write((; rows = history_params_table(s.proj, s.uids; s.pops, cluster_runs = something(s.runs, String[]))))
+end
+
+# The query both board-scoped reads take: `projectUid`, `imageUids`, and the JSON-array `pops` +
+# `clusterRuns`. Returns `(; proj, uids, pops, runs)`, or an `(status, body)` error tuple.
+function _board_scope_query(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     uid  = get(q, "projectUid", "")
     uids = _query_list(q, "imageUids")
@@ -129,7 +150,20 @@ function api_chains_history_params(req::HTTP.Request)
         return 400, JSON3.write((; error="pops and clusterRuns must be JSON arrays of strings"))
     end
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
-    200, JSON3.write((; rows = history_params_table(proj, uids; pops, cluster_runs = something(runs, String[]))))
+    (; proj, uids, pops, runs)
+end
+
+# GET /api/analysis/board-provenance?projectUid&imageUids&pops&clusterRuns → the provenance record one
+# board's exported figure embeds (`board_export_provenance`: version, project, images, populations +
+# gate files, the runs behind it), plus `author` — the `author_stamp()` of whoever is exporting.
+# Read-only; the client adds the export time and assembles the boards (utils/boardProvenance.ts).
+function api_analysis_board_provenance(req::HTTP.Request)
+    s = _board_scope_query(req)
+    s isa Tuple{Int,String} && return s
+    rec = board_export_provenance(s.proj, s.uids; pops = something(s.pops, String[]),
+                                  cluster_runs = something(s.runs, String[]))
+    rec["author"] = author_stamp()
+    200, JSON3.write(rec)
 end
 
 # POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,

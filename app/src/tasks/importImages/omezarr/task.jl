@@ -49,6 +49,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         on_log("[ERROR] Source file not found: $(isempty(src_path) ? "(no src_path)" : src_path)")
         return nothing
     end
+    src_fingerprint = import_source_fingerprint(src_path)   # before the read: what was imported
 
     # Two write modes — decided ONCE per run via the shared writer helper (see
     # `docs/audit/vn-versioning-p4-design.md`): flat legacy overwrite (default), or the next `vN`
@@ -240,11 +241,9 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     end
 
     # Imaris sources: Bio-Formats hands over no timing whatsoever, so a timelapse arrives with no
-    # interval. Recover it from the source file (see `_recover_ims_time_increment!`). Only when the
-    # store genuinely has none — a real value from bioformats2raw always wins.
-    if get(zarr_meta, "SizeT", 1) > 1 && get(zarr_meta, "TimeIncrement", 0.0) == 0.0
-        _recover_ims_time_increment!(zarr_meta, src_path, task_run_dir(img._dir); on_log = on_log)
-    end
+    # interval. Recover it from the source file, else a declared one (Immunemap) — only when the store
+    # genuinely has none; a real value from bioformats2raw always wins (`source_timing.jl`).
+    _fill_source_time_increment!(zarr_meta, img.meta, src_path, task_run_dir(img._dir); on_log = on_log)
 
     # Acquisition settings Bio-Formats drops (laser power and its depth ramp, scan timing, detector
     # settings). Read from the source file; advisory, a failure never fails the import.
@@ -280,6 +279,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         sync_zarr_calibration!(resolved_zarr, zarr_meta)
     end
 
+    isempty(src_fingerprint) || (zarr_meta["oriFingerprint"] = src_fingerprint)
     _update_image_status!(img, IMAGE_DONE)
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
                                 zarr_filename  = store_rel,

@@ -547,15 +547,14 @@ end
 
 # gating/{from}[__…].json — load, rewrite the map's own value_name plus every population's, save under
 # the new path, remove the old file. `save_pop_map!(m, task_dir)` uses `m.pop_type` to pick the suffix,
-# so the load pop_type must match the file's suffix; we enumerate the known suffixes explicitly.
-const _GATING_POP_TYPES = ("flow", "track", "clust", "trackclust", "region", "branch")
+# so the load pop_type must match the file's suffix; we walk every stored type (`STORED_POP_TYPES`).
 
 function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_log)
     dir = joinpath(img._dir, "gating")
     isdir(dir) || return nothing
     # under the gating lock (gating/popmanager/copy.jl): an edit landing mid-rename would otherwise be
     # overwritten, or rewrite the old path after it was removed
-    with_popmap_lock() do; for pt in _GATING_POP_TYPES
+    with_popmap_lock() do; for pt in STORED_POP_TYPES
         old_path = gating_path(img._dir, from; pop_type = pt)
         isfile(old_path) || continue
         m = load_pop_map(img._dir, from; pop_type = pt)
@@ -567,7 +566,11 @@ function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_l
         # i.e. under the new name. The image form would stamp authored_labels_version off the loaded
         # image, but the sidecar's existing breadcrumb already reflects when the pops were authored;
         # a rename must not pretend the pops were re-authored just now. So use the task_dir form.
-        save_pop_map!(m, img._dir)
+        # The gate history moves with its sidecar; the rename itself is one more entry in it.
+        old_hist = gating_history_path(img._dir, from; pop_type = pt)
+        new_hist = gating_history_path(img._dir, to; pop_type = pt)
+        (isfile(old_hist) && old_hist != new_hist) && mv(old_hist, new_hist; force = true)
+        save_pop_map!(m, img._dir; history_kind = "rename")
         on_log("[INFO] Rewrote sidecar: $(old_path) → $(gating_path(img._dir, to; pop_type = pt))")
         old_path == gating_path(img._dir, to; pop_type = pt) || rm(old_path; force = true)
     end; end
@@ -697,6 +700,11 @@ function _rename_run_log!(img::CciaImage, from::String, to::String)
         ins = get(d, "inputs", nothing)
         ins isa AbstractVector && (d["inputs"] = Any[ren_ref(x) for x in ins])
         haskey(d, "replaces") && (d["replaces"] = ren_ref(d["replaces"]))
+        # the gate hashes a run read (`gates`) name their gating sidecar's value_name
+        gs = get(d, "gates", nothing)
+        gs isa AbstractVector && (d["gates"] = Any[g isa AbstractDict && _rl_str(g, "valueName") == from ?
+            merge(Dict{String,Any}(String(k) => v for (k, v) in pairs(g)), Dict{String,Any}("valueName" => to)) : g
+            for g in gs])
         d
     end
     _update_run_log!(img) do entries

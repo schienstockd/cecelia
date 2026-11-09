@@ -44,7 +44,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`user-docs/README.md`](user-docs/README.md) | **For users, not developers:** a map of every page, panel and feature, and the recipes. **Generated** — the tables from `navGroups.ts` + `lib/guides/mapData.ts` + `recipes.ts` (the same data as the in-app map), the prose from `user-docs/parts/*.md`; `utils/userDocs.test.ts` fails when it's stale (`npx vitest run -u src/utils/userDocs.test.ts`), and `utils/guideMap.test.ts` when a sidebar page has no map entry |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer boundaries, WS protocol, data-model contracts, log rail, repo layout, ports, OME-ZARR dual-format, hidden invariants. **55 KB — slice it** |
-| [`docs/SCHEDULER.md`](docs/SCHEDULER.md) | Chain executor: per-image threading, resource pools, barriers, resume, event bus. **75 KB — slice it** |
+| [`docs/SCHEDULER.md`](docs/SCHEDULER.md) | Chain executor: per-image threading, resource pools, barriers, resume, event bus. **89 KB — slice it** |
 | [`docs/HPC.md`](docs/HPC.md) | Running a task's Python on a SLURM/PBS cluster over SSH: settings scopes, cluster env install, dispatch at `run_py`, mirror, stages/cancel/reattach, schedulers, testing on a real site, troubleshooting |
 | [`docs/RUNNER.md`](docs/RUNNER.md) | The detached task runner (dev only): process, lifecycle, routes, staleness, chain claims |
 | [`docs/JOBS.md`](docs/JOBS.md) | Background jobs vs scheduler tasks: `jobs.jl` registry, process-kill primitives, data patches, export/import |
@@ -58,7 +58,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/POPULATION.md`](docs/POPULATION.md) | Population manager & gating: pop types, transforms, `gating/{value_name}.json`, `pop_df`, gate↔track. **75 KB — slice it** |
 | [`docs/API.md`](docs/API.md) | HTTP/WS surface: routing conventions, binary responses, route index, HTTP.jl v2 conventions. **137 KB — slice it** |
 | [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec. **52 KB — slice it** |
-| [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export |
+| [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export. **42 KB — slice it** |
 | [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
 | [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers**. **40 KB — slice it** |
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |

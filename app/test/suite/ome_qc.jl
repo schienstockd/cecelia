@@ -93,15 +93,25 @@
             r = Cecelia._delta_t_fallback(d)
             @test 30.2 <= r <= 30.3                              # diffs [34.69, 30.26, 30.27] → 30.27
         end
-        # A paused frame mid-run must not skew the recorded rate: [30, 170, 30] → 30 (median).
+        # A paused acquisition has no single interval: [30, 170, 30] → nothing, not the median 30,
+        # which would make every speed across the pause ~5× wrong with no warning (same rule as the
+        # Imaris reader, `ims_meta.summarise_gaps`).
         mktempdir() do d
             make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
                       planes = [(z = 0, t = 0, dt = 0.0,   unit = "s"),
                                 (z = 0, t = 1, dt = 30.0,  unit = "s"),
                                 (z = 0, t = 2, dt = 200.0, unit = "s"),
                                 (z = 0, t = 3, dt = 230.0, unit = "s")])
-            @test Cecelia._delta_t_fallback(d) == 30.0
+            @test Cecelia._delta_t_fallback(d) === nothing
         end
+        # The rule itself: jitter passes, a pause anywhere after the first gap refuses, a long first
+        # gap (warm-up) is allowed only when there are later gaps to judge the series by.
+        @test Cecelia._uniform_interval([30.0, 30.4, 29.8]) ≈ 30.1     # median of the gaps after the first
+        @test Cecelia._uniform_interval([34.69, 30.26, 30.27]) ≈ 30.265
+        @test Cecelia._uniform_interval([30.0, 30.0, 30.0, 600.0]) === nothing
+        @test Cecelia._uniform_interval([34.69, 30.26]) === nothing    # two gaps: nothing to excuse it by
+        @test Cecelia._uniform_interval([12.0]) == 12.0
+        @test Cecelia._uniform_interval(Float64[]) === nothing
         # bf2raw wrapper layout: OME/METADATA.ome.xml is at the STORE ROOT, and the caller may pass
         # the series subdir (`.../store/0`) instead — which is what `img_filepath` returns and what
         # the import task's `resolved_zarr` is. Must find the sidecar via `dirname(zarr_path)`.
@@ -858,7 +868,12 @@ end
                      # claim checks (claim_checks.jl) — `pop` population path, `kind` "segment" /
                      # "tracking", `attr` the unit attribute, `variable` a flattened record key,
                      # `measure` the claim's measure, `n_images` images in scope, `p` a p-value floor
-                     "pop", "kind", "attr", "variable", "measure", "n_images", "p", "imgs", "what"])
+                     "pop", "kind", "attr", "variable", "measure", "n_images", "p", "imgs", "what",
+                     # gating QC (qc_gating.jl) — `column` a gate column the image's table lacks
+                     "column",
+                     # Immunemap download (immunemap_fetch_qc_findings) — the file's and Immunemap's
+                     # voxel size — see import.immunemap_spacing
+                     "file", "published"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]
@@ -2891,4 +2906,83 @@ end
     @test Cecelia.img_physical_sizes(mk(merge(base, Dict("PhysicalSizeUnit" => "nm", "PhysicalSizeZUnit" => "µm"))))[1] ≈ [2.0, 0.0005, 0.0005]
     # an unknown unit is left as-is (QC flags it)
     @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 30.0, "TimeIncrementUnit" => "fortnight")))[2] ≈ 0.5
+end
+
+# ── Raw source fingerprint: bounded read, named for what it is ──────────────
+@testset "source_fingerprint + import_source_fingerprint" begin
+    dir = mktempdir()
+    small = joinpath(dir, "small.tif"); write(small, rand(UInt8, 1000))
+    fp = Cecelia.source_fingerprint(small)
+    @test fp["size"] == 1000 && fp["method"] == "sha256-head-tail" && fp["path"] == small
+    @test fp["sample"] == bytes2hex(Cecelia.SHA.sha256(read(small)))           # small file: the whole file
+    @test endswith(fp["mtime"], "Z")
+    @test isempty(Cecelia.source_fingerprint(joinpath(dir, "nope.tif")))
+
+    # A file larger than both samples: only head + tail are read. A mid-file edit is invisible (and
+    # documented as such); a head or tail edit, or a size change, moves the fingerprint.
+    k = 1024
+    big = joinpath(dir, "big.oir"); bytes = rand(UInt8, 5k); write(big, bytes)
+    a = Cecelia.source_fingerprint(big; sample_bytes = k)
+    @test a["sample"] == bytes2hex(Cecelia.SHA.sha256(vcat(bytes[1:k], bytes[end-k+1:end])))
+    mid = copy(bytes); mid[2k] ⊻= 0xff; write(big, mid)
+    @test Cecelia.source_fingerprint(big; sample_bytes = k)["sample"] == a["sample"]
+    tail = copy(bytes); tail[end] ⊻= 0xff; write(big, tail)
+    @test Cecelia.source_fingerprint(big; sample_bytes = k)["sample"] != a["sample"]
+    # head and tail overlap (size between 1× and 2× the sample): no byte hashed twice
+    ov = joinpath(dir, "ov.bin"); ob = rand(UInt8, k + 10); write(ov, ob)
+    @test Cecelia.source_fingerprint(ov; sample_bytes = k)["sample"] == bytes2hex(Cecelia.SHA.sha256(ob))
+
+    # an OIR's companions carry the pixels: counted and sized from stat alone
+    write(joinpath(dir, "big_00001"), rand(UInt8, 300)); write(joinpath(dir, "big_00002"), rand(UInt8, 200))
+    ifp = Cecelia.import_source_fingerprint(big)
+    @test ifp["companions"] == Dict{String,Any}("count" => 2, "bytes" => 500)
+    @test !haskey(Cecelia.import_source_fingerprint(small), "companions")
+    @test isempty(Cecelia.import_source_fingerprint(joinpath(dir, "nope.tif")))   # never throws
+
+    # a derived image carries the source record with its path
+    dst = Cecelia.copy_source_meta!(Dict{String,Any}(), Dict{String,Any}("ori_path" => big,
+                                    "oriFingerprint" => ifp, "PhysicalSizeX" => 1.0))
+    @test Set(keys(dst)) == Set(["ori_path", "oriFingerprint"])
+    @test "oriFingerprint" in Cecelia._COPY_META_KEYS
+end
+
+@testset "Import from Immunemap — declared interval + download QC" begin
+    # The tier below every interval read from the store or the file: only when there is none.
+    meta = Dict{String,Any}("SizeT" => 60)
+    dt   = Dict{String,Any}("declaredTimeIncrement" => Dict{String,Any}(
+        "value" => 30.0, "unit" => "second", "source" => "Immunemap acquisition 309 (timestamps)"))
+    @test Cecelia._apply_declared_time_increment!(meta, dt)
+    @test meta["TimeIncrement"] == 30.0 && meta["TimeIncrementUnit"] == "second"
+    @test meta["TimeIncrementDeclared"] == "Immunemap acquisition 309 (timestamps)"
+    @test isempty(filter(f -> f["detail"]["field"] == "t", Cecelia.metadata_qc_findings(meta)))
+    # nothing declared, or nonsense declared → nothing applied
+    @test !Cecelia._apply_declared_time_increment!(Dict{String,Any}(), Dict{String,Any}())
+    @test !Cecelia._apply_declared_time_increment!(Dict{String,Any}(),
+        Dict{String,Any}("declaredTimeIncrement" => Dict{String,Any}("value" => 0)))
+    # a re-import clears the provenance with the interval it describes
+    @test "TimeIncrementDeclared" in Cecelia._OME_DERIVED_META_KEYS
+
+    # The tier order, through the one entry point import and resync share. `recover` stands in for
+    # the file reader: measured → wins; irregular → nothing, declared NOT applied; absent → declared.
+    fill(rec; m = Dict{String,Any}("SizeT" => 60)) =
+        (Cecelia._fill_source_time_increment!(m, dt, "/src.ims", tempdir(); recover = rec), m)
+    measured(zm, src, dir; irregular, kw...) = (zm["TimeIncrement"] = 29.5; true)
+    paused(zm, src, dir; irregular, kw...)   = (irregular[] = true; false)
+    absent(zm, src, dir; irregular, kw...)   = false
+    ok, m = fill(measured); @test ok && m["TimeIncrement"] == 29.5 && !haskey(m, "TimeIncrementDeclared")
+    ok, m = fill(paused);   @test !ok && !haskey(m, "TimeIncrement")      # RESULT-REVIEW: result-ee2a25f0
+    ok, m = fill(absent);   @test ok && m["TimeIncrement"] == 30.0
+    ok, m = fill(absent; m = Dict{String,Any}("SizeT" => 1)); @test !ok && !haskey(m, "TimeIncrement")
+    ok, m = fill(absent; m = Dict{String,Any}("SizeT" => 60, "TimeIncrement" => 5.0)); @test !ok && m["TimeIncrement"] == 5.0
+    # no source file at all: straight to the declared tier at import…
+    m = Dict{String,Any}("SizeT" => 60)
+    @test Cecelia._fill_source_time_increment!(m, dt, "", tempdir(); recover = paused) && m["TimeIncrement"] == 30.0
+    # …but never on resync, where a deleted irregular file can no longer veto it (result-fb89585c)
+    m = Dict{String,Any}("SizeT" => 60)
+    @test !Cecelia._fill_source_time_increment!(m, dt, "", tempdir(); recover = absent, declared = false)
+    @test !haskey(m, "TimeIncrement")
+
+    @test isempty(Cecelia.immunemap_fetch_qc_findings(String[], [1.8, 1.8, 4.0], [1.8, 1.8, 4.0]))
+    f = Cecelia.immunemap_fetch_qc_findings(["x", "y"], [0.45, 0.45, 4.0], [1.8, 1.8, 4.0])
+    @test length(f) == 1 && f[1]["code"] == "import.immunemap_spacing" && f[1]["level"] == "warn"
 end

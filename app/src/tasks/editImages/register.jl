@@ -44,7 +44,7 @@ end
 function _register_inherited_meta(ref_meta::AbstractDict, total_c::Integer)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
-              "TimeIncrement", "TimeIncrementUnit", "SizeX", "SizeY", "SizeZ", "SizeT")
+              TIME_META_KEYS..., "SizeX", "SizeY", "SizeZ", "SizeT")
         haskey(ref_meta, k) && (out[k] = ref_meta[k])
     end
     out["SizeC"] = Int(total_c)
@@ -138,9 +138,9 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         "register_do_affine_2d"   => p.doAffine2d,
         "register_do_affine_3d"   => p.doAffine3d)
     merge!(reg_meta, _register_inherited_meta(ref_meta, total_c))
-    haskey(ref_meta, "ori_path") && (reg_meta["ori_path"] = ref_meta["ori_path"])
+    copy_source_meta!(reg_meta, ref_meta)
 
-    new_img = add_image!(s; name = "$(ref_img.name) (registered)", meta = reg_meta)
+    new_img = add_image!(s; name = derived_image_name(proj, ref_img.name, "registered"), meta = reg_meta)
     out_filename = "ccidRegistered.ome.zarr"
     im_out_path  = joinpath(proj_dir, "0", new_img.uid, out_filename)
     on_log("[INFO] Reference: $(ref_img.uid) ($(ref_img.name))")

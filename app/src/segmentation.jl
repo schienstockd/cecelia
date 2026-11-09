@@ -59,6 +59,23 @@ function segment_model_reads(models; manifests::Bool = false)::Vector{String}
 end
 
 """
+    segment_model_weights_env(models) -> Dict{String,Any}
+
+The run log `env` entry pinning a run's custom weights: `{"modelWeights" => [fingerprint…]}`, one
+`source_fingerprint` per model file `segment_model_reads` names (a custom cellpose checkpoint, every
+coastal model), or an empty Dict when there is none. A built-in cellpose model is a name, already pinned
+by name + the `cellpose` version in `env`, and gets nothing. A file that cannot be read is left out.
+"""
+function segment_model_weights_env(models)::Dict{String,Any}
+    fps = Any[]
+    for p in segment_model_reads(models)
+        fp = try source_fingerprint(p) catch; Dict{String,Any}() end
+        isempty(fp) || push!(fps, fp)
+    end
+    isempty(fps) ? Dict{String,Any}() : Dict{String,Any}("modelWeights" => fps)
+end
+
+"""
     segment_live_outputs(params) -> Vector{LiveOutput}
 
 The `live_outputs` declaration for any segmentation backend that streams through

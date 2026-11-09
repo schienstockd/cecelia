@@ -105,6 +105,10 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
         # an image uid of the project, or "" for none — resolved by the handler, so only the shape here
         value isa AbstractString ||
             throw(ParamValidationError("'$key' must be an image uid, got: $value"))
+    elseif type_str == "setSelection"
+        # a set uid of the project, or "" for the image's own set — resolved by the handler
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be a set uid, got: $value"))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end
@@ -398,11 +402,26 @@ end
 function task_params_name(task::CciaTask, params::Dict{String,Any})::String
     out = task_output_name(task, params)
     isempty(out) || return out
-    spec = _task_spec(task)
-    isnothing(spec) && return ""
-    key = string(something(get(spec, "writesInto", nothing), ""))
+    key = task_writes_into_key(task)
     isempty(key) && return ""
     strip(string(something(get(params, key, nothing), "")))
+end
+
+"""
+    task_writes_into_key(fun_name | task) -> String
+
+The param key a task writes INTO (its spec's `"writesInto"`), or `""`. A composite answers for the
+first step that declares one — the same step `task_params_name` folds to — so a reader resolving the
+key's namespace (the run log's output identity) sees the step's declaration, not the composite's
+own spec, which never carries it.
+"""
+task_writes_into_key(fun_name::AbstractString)::String =
+    (t = try _task_from_fun_name(String(fun_name)) catch; nothing end; isnothing(t) ? "" : task_writes_into_key(t))
+
+function task_writes_into_key(task::CciaTask)::String
+    spec = _task_spec(task)
+    isnothing(spec) && return ""
+    string(something(get(spec, "writesInto", nothing), ""))
 end
 
 """
