@@ -1,6 +1,7 @@
 # Test-acquisition check — plan
 
-**Status:** **PARKED** (2026-11-09). Nothing built. Written from one set used as a stand-in (below).
+**Status:** **IN PROGRESS** (2026-11-09). Measures 1–5 built (*Built so far*, below); the slice (6) waits
+on the maintainer's look at the numbers. Written from one set used as a stand-in (below).
 Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md) — that plan's Decision 1/2 ("test
 acquisition imported into the user's project") given a concrete shape. Reuses the mechanism of
 [`IMAGE_ANALYSIS_RECITAL_PLAN.md`](IMAGE_ANALYSIS_RECITAL_PLAN.md).
@@ -127,7 +128,53 @@ What this does and doesn't show (reasoning; review on PR #2066):
    rescaled 8-bit exports (the Immunemap lymphatic set); `brighter_with_depth` / `clipped_deep` name
    Bright Z when no settings were read.
 
+## Built so far (2026-11-09, branch `feat/acq-test-checks`)
+
+The import probe gained a sampled second pass, `data_path.measure_signal` (4 timepoints × up to 16
+planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.channels[i].photons`,
+`meta.saturation.sharedStructure` and `meta.saturation.drift`; `get_image_info` shows them in
+`cleanupFacts` (`photons`, `sharedStructure`, `importDrift`). Refresh metadata backfills older images
+(`photons` is in `SATURATION_CURRENT_KEYS`).
+
+- **Noise and range, one measure: photons** (`photon_utils`). Grey levels per photon come from the
+  image's own variance against its mean (after Foi 2008), so noise is read at signal level and range is
+  counted in photons. Golden-tested on synthetic Poisson–Gaussian images (gain 1–300, within 10 %).
+  Independent real check: on a photon-counted FV4000 movie, the histogram's own photon step reads
+  26–32 grey levels per photon and the fit reads 30–35.
+- **m5uLPh (all 15 movies):** ~600 / ~900 / ~1350 grey levels per photon (beads / GFP / collagen),
+  fit R² ≥ 0.99, the same in every movie. The 12-bit ceiling holds **3–7 photons**; objects carry a
+  median of **~1 photon** per voxel (p99 ~3). Noise, low range and clipping are one cause: detector
+  gain far too high for the light collected. The old `snr` (39–75) counted single-photon spikes above
+  the triangle level as signal.
+- **Bleed-through: not identifiable from one image; shared structure instead.** Every channel pair
+  shares structure (Pearson r 0.17–0.74 on smoothed voxels, within planes), and both leak directions fit equally well
+  (one 890 nm line excites all three). The envelope and TLS slopes swung 0.13–0.93 on RSQxFI with the
+  threshold and estimator. What does show it: the steady-state movies (no beads injected) have B-cell
+  shapes and granules in the bead channel. So the check reports shared structure per pair and, for an
+  uptake plan, asks for a no-bead control — this set already has one.
+- **Shared structure is correlated within planes** (each plane centred before pooling): pooled raw, two
+  independent channels that both dim with depth read r 0.99 (result review; `test_signal_pass_shared_structure.py`).
+- **Second case, RFtn9f set lfGUDg** (naive P14 / OT-I / gBT, two label designs, FVMPE-RS; the
+  maintainer's own data): the two designs were acquired with different lasers and with Bright Z on (Nov)
+  vs off (Dec, signal −3 to −28 % with depth); reporters differ up to 4× in photons, OT-I dimmest in 6 of
+  9; uGFP shows in 570–616 (r 0.54–0.87), which is the P14 channel in the ubTomato design. The GUI
+  moved to a set-level modal (mockup kept outside the repo); the image metadata modal links to it.
+- **Drift:** drift correction's estimator on the whole movie (10–14 s), a stopped acquisition's last
+  frame left out. RSQxFI is the only one whose
+  own measurements disagree (3.7 px RMS, over the 2 px limit); several others move 40–57 px in X while
+  registering cleanly.
+
 ## Resume when
+
+The measures exist; what is left is the slice, which needs the maintainer first:
+1. **His look at the photon numbers** — does "~1 photon per voxel on cells, ceiling at 3–7 photons"
+   match what he sees in these movies?
+2. **Finding text and levels** for few photons, shared structure and drift — the levels can't come from
+   one stand-in set alone.
+3. Then the form + these checks + one review turn, scored on several m5uLPh movies against the
+   diagnosis above.
+
+Superseded build order (kept for the record):
 
 In this order:
 1. **Object mask at import:** above-background voxels per channel. Everything below depends on it.
