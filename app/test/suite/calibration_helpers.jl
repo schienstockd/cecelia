@@ -69,6 +69,21 @@ end
     @test isempty(Cecelia.inherited_acquisition(Dict{String,Any}("SizeC" => 2), store))
 end
 
+@testset "Bin keeps the source's acquisition settings" begin
+    # As a ccid.json reads back: nested values immutable, Symbol-keyed.
+    src = Dict{String,Any}(String(k) => v for (k, v) in Cecelia.JSON3.read(Cecelia.JSON3.write(Dict(
+        "SizeC" => 2, "SizeZ" => 31, "SizeT" => 5, "SizeX" => 64, "SizeY" => 64, "ori_path" => "/data/raw.oir",
+        "acquisition" => Dict("system" => "FV4000", "zStack" => Dict("stepUm" => 2.0, "count" => 31),
+            "channels" => [Dict("detector" => "D1"), Dict("detector" => "D2")])))))
+    p = Cecelia.BinImageParams(factorX = 2, factorY = 2)
+    m = Cecelia._bin_meta(src, "srcuid", p, Dict{String,Any}("SizeC" => 2, "SizeZ" => 31, "SizeT" => 5))
+    @test m["acquisition"]["system"] == "FV4000" && m["acquisition"]["zStack"]["count"] == 31
+    @test m["ori_path"] == "/data/raw.oir" && m["SizeX"] == 32 && m["bin_source_uid"] == "srcuid"
+    # a binned drift-corrected (Z-padded) version: the settings describe another stack
+    m = Cecelia._bin_meta(src, "srcuid", p, Dict{String,Any}("SizeC" => 2, "SizeZ" => 41, "SizeT" => 5))
+    @test !haskey(m, "acquisition") && m["acquisitionMissing"]["reason"] == "other-stack"
+end
+
 
 @testset "ZProject inherits source calibration (pure helper)" begin
     # A Z-projection collapses SizeZ to 1 while every other calibration field carries over
