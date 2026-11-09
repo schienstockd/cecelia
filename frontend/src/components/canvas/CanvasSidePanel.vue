@@ -150,14 +150,14 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
     </div>
 
     <!-- Apply chip: renders in manual-apply mode when the staged selection differs from what the
-         plots are showing. Compact — small counter + Apply pill + Remove-X. The MODE toggle itself
+         plots are showing, or a gate write's refresh is held (`usePopSelectionMode.deferUntilApply`). Compact — small counter + Apply pill + Remove-X. The MODE toggle itself
          sits in the footer next to the settings icon (see below), so it stays visible even when this
          chip is not — the previous "text-button in the row" version pulled the toggle away from the
          other footer chips for no gain. -->
     <div v-if="manualApply && hasStaged" v-show="!collapsed" class="csp-apply">
       <span class="csp-apply-note cc-fs-2xs cc-muted">{{ stagedChangeCount }} pending</span>
       <button class="csp-apply-btn cc-btn cc-btn-primary cc-btn-dense"
-              v-tooltip.top="'Apply staged selection to the plots'"
+              v-tooltip.top="'Apply pending selection and gate updates'"
               @click="emit('apply:staged')">Apply</button>
       <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
               v-tooltip.top="'Remove staged changes'"
@@ -192,7 +192,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
       <button v-if="manualApply !== null" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
               :class="{ 'cc-btn-on cc-btn-on-tint': manualApply }"
               v-tooltip.top="manualApply
-                ? 'Manual apply on — pop toggles stage until you click Apply'
+                ? 'Manual apply on — pop toggles and gate updates wait for Apply'
                 : 'Live — plots update on every pop toggle'"
               @click="emit('update:manualApply', !manualApply)">
         <i class="pi pi-clock" />

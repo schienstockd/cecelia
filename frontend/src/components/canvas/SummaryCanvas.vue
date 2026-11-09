@@ -114,7 +114,7 @@ const showManager = computed<boolean>({ get: () => (shared.value.showManager as 
 const tileCols = computed<number>({ get: () => (shared.value.tileCols as number) ?? 0, set: v => (shared.value.tileCols = v) })
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, localSelRemap, reload,
+  specs, specById, segPops, seriesColor, panelReloadToken, localSelRemap, reload,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
@@ -508,7 +508,7 @@ watch(segPops, () => {
                         :group-attr="panelGroupAttr"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
-                        :reload-token="reloadToken" :persist-key="`${ckey}:${p.id}`"
+                        :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
                         @activate="activeId = p.id" @remove="removePanel(p.id)"
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)"
                         @readout="readouts[p.id] = $event" />

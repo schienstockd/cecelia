@@ -7,10 +7,11 @@ import { tkey, parseTkey } from '../plots/series'
 import { resolvePopType, granularityFor, popTypeOptions, type PopTypeSpecLike } from '../plots/popTypes'
 import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
-import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
+import type { PlotSpec, PlotSeries, SegmentationPops, SeriesTarget } from '../plots/types'
 import { fetchSegmentationPops } from '../plots/populations'
 import { makePopPathRemap, type PopIdent } from '../utils/popRenameRemap'
 import { usePopSelectionMode } from './usePopSelectionMode'
+import { gateSignatures, changedPopPaths, booleanDeps, popChangeKey, seriesReloadToken, type SigNode } from '../utils/popChanges'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
 // float freely (SummaryCanvas, per-module) or sit in a grid (LayoutCanvas, /analysis). Extracted so the
@@ -71,8 +72,8 @@ export function useSummaryData(opts: {
   // with the cluster + gate hosts via `usePopSelectionMode` — one toggle, one Apply chip.
   // Note: `remapStaged` not destructured — the segPops watcher below applies the same array-level
   // remap (`localSelRemap`) to both gSel and stagedSel inline, since it's already popType-filtered.
-  const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged } =
-    usePopSelectionMode({ shared: opts.shared, live: gSel })
+  const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
+          deferUntilApply } = usePopSelectionMode({ shared: opts.shared, live: gSel })
 
   const canCompare = computed(() => !!setUid.value && imageUids.value.length > 1)
   const crossImage = computed(() => compareMode.value !== 'image' && canCompare.value)
@@ -176,18 +177,43 @@ export function useSummaryData(opts: {
     return (s: PlotSeries): string => m.get(s.pop) ?? '#7c93b8'
   })
 
-  // live updates: the server broadcasts gating:popmap after any gate mutation — refetch pops + bump a
-  // token so panels re-pull data (membership may change with no prop change). Prune vanished selections.
+  // live updates: the server broadcasts gating:popmap after any gate mutation. The picker list
+  // refreshes at once; plot refetches are TARGETED — only panels plotting a changed pop (or one under
+  // it) refetch, by the rule the gating plots use (`utils/popChanges.ts`) — and held for Apply in
+  // manual-apply mode. `reloadToken` is the untargeted part: manual reload + task completion.
   const reloadToken = ref(0)
+  const popChanges = ref<Record<string, number>>({})   // popChangeKey → change counter
+  const anyPopChange = ref(0)                          // panels that plot no pop follow every change
+  const lastSigs = new Map<string, Map<string, string>>()   // per broadcast document
+  const heldChanged = new Set<string>()
+  function applyPopChanges() {
+    const next = { ...popChanges.value }
+    for (const k of heldChanged) next[k] = (next[k] ?? 0) + 1
+    heldChanged.clear()
+    popChanges.value = next
+    anyPopChange.value++
+  }
   // a WS handler is not a watcher, so the kept-alive pause doesn't reach it — defer by hand, so a
   // hidden page doesn't refetch on every gate edit made elsewhere (composables/useKeepAlive.ts)
   const whenVisible = useWhenVisible()
-  const reloadFromPopmap = () => { loadPops(); reloadToken.value++ }
+  const reloadFromPopmap = () => { loadPops(); deferUntilApply('plots', applyPopChanges) }
   function onPopmap(d: unknown) {
-    const m = d as { imageUid?: string }
+    const m = d as { imageUid?: string; valueName?: string; popType?: string
+                     tree?: { populations?: SigNode[] } }
     if (m.imageUid && imageUids.value.length && !imageUids.value.includes(m.imageUid)) return
-    whenVisible(reloadFromPopmap)
+    const vn = m.valueName ?? ''
+    if (m.tree) {
+      const doc = `${m.imageUid}\t${vn}\t${m.popType}`
+      const pops = m.tree.populations ?? []
+      const sigs = gateSignatures(pops)
+      for (const p of changedPopPaths(lastSigs.get(doc), sigs, booleanDeps(pops))) heldChanged.add(popChangeKey(vn, p))
+      lastSigs.set(doc, sigs)
+    }
+    whenVisible(reloadFromPopmap)   // stable identity: whenVisible dedupes a hidden page's queue by it
   }
+  /** The refetch token of a panel plotting `series` — bind it to the panel's `reloadToken`. */
+  const panelReloadToken = (series: readonly SeriesTarget[]) =>
+    seriesReloadToken(reloadToken.value, popChanges.value, series, anyPopChange.value)
   // a task finishing on one of THESE images → refetch (pop list may have new pops; data may have
   // changed in place). Same mechanism as the gate popmap above; targeted per-image via useDataRefresh.
   useDataRefresh(() => imageUids.value, () => { loadPops(); reloadToken.value++ })
@@ -246,6 +272,7 @@ export function useSummaryData(opts: {
   return {
     // data
     specs, specById, popType, granularity, segPops, popColors, setAttrs, seriesColor, reloadToken,
+    panelReloadToken, anyPopChange,
     localSelRemap, reload, loadSpecs, loadPops, loadAttrs,
     // shared view-state
     compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
