@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, reviewBlocked, rowsByDesign, verdictHeading } from './acqCheck'
-import { parseAcqResult, type AcqCheckResult, type AcqPlan, type AcqRow } from './acqCheckApi'
+import { parseAcqResult, type AcqCheckResult, type AcqFinding, type AcqPlan, type AcqRow } from './acqCheckApi'
 import type { TaskStatus } from '../stores/tasks'
 
 const designs = [{ id: 'd1', key: 'P14-CTDR · empty-570 · OTI-uGFP · gBT-CTV' }, { id: 'd2', key: 'empty-642 · P14-ubTomato · gBT-uGFP · OTI-CTV' }]
@@ -104,6 +104,11 @@ describe('findingSeverity / findingLines', () => {
     expect(findingLines(f('warn', 'Check it.')).map(l => l.label)).toEqual(['Next', 'Analysis'])
     // final data: the action is the analysis one
     expect(findingLines(f('warn'), 'final')).toEqual([{ label: 'Analysis', text: 'Do this.' }])
+    // movie lists by image uid unless names are asked for; a list of designs has no uid form
+    const m = { ...(f('warn', undefined, '10/10 %: M1-2-long-name') as AcqFinding), whereIds: '10/10 %: aB3dE9' }
+    expect(findingLines(m, 'test', false)[0].text).toBe('10/10 %: aB3dE9')
+    expect(findingLines(m)[0].text).toBe('10/10 %: M1-2-long-name')
+    expect(findingLines(f('info', undefined, 'A: x', 'Designs'), 'test', false)[0].text).toBe('A: x')
     expect(verdictHeading('final')).toBe('Before analysing')
     expect(verdictHeading('test')).toBe('Before acquiring the rest')
     const w = findingLines(f('warn', undefined, '10/10 %: a, b · 8/15 %: c'))

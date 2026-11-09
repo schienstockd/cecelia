@@ -124,11 +124,12 @@ export const ACQ_STAGES: { value: AcqStage; label: string }[] = [
 export const verdictHeading = (stage: AcqStage) => stage === 'final' ? 'Before analysing' : 'Before acquiring the rest'
 
 /** A finding's lines under its short text, each labelled by what it holds: which movies (or designs)
- *  have which value, what to do next, and what it means for the analysis. On final data the action IS
- *  the analysis one (the check sends no `thisData` then). */
-export function findingLines(f: AcqFinding, stage: AcqStage = 'test'): { label: string; text: string }[] {
+ *  have which value (by name, or by image uid when `names` is off), what to do next, and what it means
+ *  for the analysis. On final data the action IS the analysis one (the check sends no `thisData` then). */
+export function findingLines(f: AcqFinding, stage: AcqStage = 'test', names = true): { label: string; text: string }[] {
+  const where = names ? f.where : (f.whereIds ?? f.where)
   return [
-    ...(f.where ? [{ label: f.whereLabel ?? 'Movies', text: f.where }] : []),
+    ...(where ? [{ label: f.whereLabel ?? 'Movies', text: where }] : []),
     { label: stage === 'final' ? 'Analysis' : 'Next', text: f.long },
     ...(f.thisData ? [{ label: 'Analysis', text: f.thisData }] : []),
   ]

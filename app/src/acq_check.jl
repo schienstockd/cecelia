@@ -219,7 +219,8 @@ Bright Z, detector range, drift, unmeasured movies. Returns
 `{stage, findings, rows, ran, skipped}`: `findings` are `qc_finding`s with `scope` ("set" or an image uid),
 `thisData` (what it means for the analysis — the `.data` catalog entry's `long`, when there is one; on
 `final` data that IS the finding's `long`, and `thisData` is dropped),
-`where` (which movies or designs hold which value, for a setting that differs) and
+`where` (which movies or designs hold which value, for a setting that differs; for movies also
+`whereIds`, the same with image uids) and
 `detail`; `rows` one per image for the per-movie table.
 """
 function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
@@ -231,7 +232,11 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         f["scope"] = scope
         f["category"] = get(ACQ_CATEGORY_OF, code, "other")
         # which movies (or designs) hold which value; the line's label says which it lists
-        where === nothing || (f["where"] = where; f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
+        # `where` is the text, or for movies a function of the field naming them: the names as `where`,
+        # the uids as `whereIds` (the dialog shows either — a set of long names reads as a wall)
+        where === nothing || (f["where"] = where isa Function ? where("name") : where;
+                              where isa Function && (f["whereIds"] = where("uid"));
+                              f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
         # what it means for analysing these movies: the code's `.data` entry (a movie's finding reads its
         # set finding's), unless a call names one ("" = none)
         dk = something(data, replace(code, r"_image$" => "") * ".data")
@@ -262,7 +267,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     # design's comparison (its channels can't be read as the plan's objects)
     outside = has_plan ? filter(f -> design[f["uid"]] === nothing, facts) : Dict{String,Any}[]
     isempty(outside) || add!("warn", "acq.not_in_plan", "set"; n = length(outside), s = length(outside) == 1 ? "" : "s",
-                             where = join((f["name"] for f in outside), ", "), detail = Dict("imageUids" => [f["uid"] for f in outside]))
+                             where = k -> join((f[k] for f in outside), ", "), detail = Dict("imageUids" => [f["uid"] for f in outside]))
     # does the plan's comparison stay inside one design? Every compared object has a channel in every design
     cmp_names = has_plan ? (isempty(_ag(plan, "compare", Any[])) ? [string(_ag(o, "name", "")) for o in plan_objs] :
                             string.(_ag(plan, "compare", Any[]))) : String[]
@@ -279,7 +284,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         end
         gs
     end
-    where_of(gs, value_of) = join((value_of(g[1]) * ": " * join((f["name"] for f in g), ", ") for g in gs), " · ")
+    where_of(gs, value_of) = k -> join((value_of(g[1]) * ": " * join((f[k] for f in g), ", ") for g in gs), " · ")
     for (variable, get_v, same) in (
             ("laser setting", f -> f["lasers"], ==),
                 # on/off, and whether a ramp is saved — not the ramp's text, which an unread value changes;
@@ -407,12 +412,12 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
             g === nothing ? push!(rg, [f]) : push!(rg[g], f)
         end
         add!("warn", "acq.brightz_ramp_unused", "set"; n = length(unused), s = length(unused) == 1 ? "" : "s",
-             where = join((g[1]["brightZRamp"] * ": " * join((f["name"] for f in g), ", ") for g in rg), " · "),
+             where = k -> join((g[1]["brightZRamp"] * ": " * join((f[k] for f in g), ", ") for g in rg), " · "),
              detail = Dict("imageUids" => [f["uid"] for f in unused]))
     end
     noramp = filter(f -> f["brightZ"] === false && f["brightZRamp"] === nothing, facts)
     isempty(noramp) || add!("info", "acq.brightz_off", "set"; n = length(noramp), s = length(noramp) == 1 ? "" : "s",
-                            where = join((f["name"] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
+                            where = k -> join((f[k] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
     isempty(ceil_hits) || add!("warn", "acq.gain_high", "set"; n = round(Int, minimum(h["photons"] for h in ceil_hits)),
                                 detail = Dict("images" => ceil_hits))
     for (name, xs) in sort!(collect(few); by = first)

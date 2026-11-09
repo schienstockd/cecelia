@@ -46,6 +46,8 @@ export interface AcqFinding extends Omit<QcFinding, 'level'> {
   thisData?: string
   /** which movies (or designs) hold which value, for a setting that differs; `whereLabel` says which */
   where?: string
+  /** `where` with image uids in place of movie names (absent when it lists designs) */
+  whereIds?: string
   whereLabel?: string
 }
 export interface AcqObjectCell { channel: number; p50: number | null; p99: number | null }

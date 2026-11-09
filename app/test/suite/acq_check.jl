@@ -123,6 +123,11 @@ end
     # ...and within the ubTomato design two settings: a warning naming the movies per setting
     wi = only(filter(f -> f["code"] == "acq.settings_within_design", r["findings"]))
     @test wi["level"] == "warn" && occursin("8/15 %: b1", wi["where"]) && occursin("10/10 %: b2", wi["where"])
+    # ...and the same list by image uid, for the dialog's uid view; a list of designs has none
+    named = Cecelia.acq_check(nothing, [Cecelia.acq_image_facts(u, "movie-" * u, m; channel_names = _ACQ_TOM) for (u, m) in (("b1", b), ("b2", b2))])
+    nw = only(filter(f -> f["code"] == "acq.settings_differ", named["findings"]))
+    @test occursin("movie-b1", nw["where"]) && occursin(": b1", nw["whereIds"]) && !occursin("movie-", nw["whereIds"])
+    @test !haskey(by, "whereIds")
     # Bright Z off in one design, on in the other: still the one fix
     @test !("acq.settings_by_design_cross" in codes)
     # a movie whose channel names match no plan design: reported, and kept out of the designs' comparisons

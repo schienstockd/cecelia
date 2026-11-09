@@ -23,6 +23,7 @@ import { useWsStore } from '../stores/ws'
 import { MEASURE_FUN, submitMeasure } from '../utils/acqMeasureRun'
 import { useTaskStore } from '../stores/tasks'
 import InlineNote from './InlineNote.vue'
+import CcToggle from './CcToggle.vue'
 
 const props = defineProps<{ projectUid: string; setUid: string; setName?: string }>()
 const emit = defineEmits<{ close: []; changed: [AcqCheckResult] }>()
@@ -31,7 +32,7 @@ const toast = useToast()
 const taskStore = useTaskStore()
 const router = useRouter()
 const observer = useObserverStore()   // the AI switch: the review is a Kiwi turn
-const settings = useSettingsStore()   // …on the model picked for Kiwi
+const settings = useSettingsStore()   // …on the model picked for Kiwi; names or uids in movie lists
 const ws = useWsStore()
 const kiwi = useKiwiStore()
 
@@ -150,10 +151,14 @@ const metaImage = computed(() => {
                      @save="save" @cancel="editing = false" />
       </div>
 
-      <div class="cc-eyebrow cc-fs-2xs">Across the set</div>
+      <div class="cc-eyebrow cc-fs-2xs cc-row set-head">
+        <span>Across the set</span>
+        <CcToggle v-model="settings.acqCheckShowNames" label="Show names" aria-label="Show movie names"
+                  v-tooltip.top="'Movie names instead of image IDs'" />
+      </div>
       <ul class="findings">
         <li v-for="(f, i) in setFindings" :key="i">
-          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage)">
+          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.acqCheckShowNames)">
             <button v-if="f.code === 'acq.not_measured' && unmeasured.length" class="cc-btn cc-btn-dense cc-fs-xs"
                     :disabled="measuring" @click="measure"
                     v-tooltip.top="'Runs in the background, about a minute per movie — progress in the task manager'">
@@ -198,7 +203,7 @@ const metaImage = computed(() => {
         </SelectionTable>
         <ul v-if="openRow && g.rows.some(r => r.uid === openRow)" class="findings row-findings">
           <li v-for="(f, i) in rowFindings(openRow)" :key="i">
-            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage)" />
+            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.acqCheckShowNames)" />
           </li>
           <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this movie.</li>
         </ul>
@@ -221,6 +226,8 @@ const metaImage = computed(() => {
 .row-findings { padding: 0.4rem 0.6rem 0.5rem 1.4rem; background: var(--cc-surface-2); border-radius: var(--cc-radius-sm); }
 .name { text-align: left; color: var(--cc-accent); }
 .review-head { gap: 0.35rem; }
+.set-head { justify-content: space-between; }
+.set-head :deep(label) { text-transform: none; letter-spacing: normal; }
 .review-head .cc-muted { text-transform: none; letter-spacing: normal; }
 .review-btn { margin-left: auto; }
 .review-points { display: flex; flex-direction: column; gap: 0.35rem; }
