@@ -186,13 +186,16 @@ before merge. `pixi run gui-capture` produces the before/after shots for each.
 11. **Palette mock → colour tokens → hex sweep.** M. 👁
 12. **Stale outputs in the GUI** (finding 6, part 2): reuse `GET /api/analysis/lineage?projectUid&imageUid`, which already returns `stale` / `staleUnknown` per image. No new route; check that a per-image call is light enough for the Run panel. M.
 
-## 9. Decisions needed
+## 9. Decisions
 
-| # | Question | Recommended |
+All decided by the maintainer on 2026-11-10, as recommended (D2 differently: dots stay). Locked as
+Decisions 7–12 in [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md).
+
+| # | Question | Decided |
 |---|---|---|
-| D1 | Merge the 6 header help icons into one worded Help menu? This reverses the rationale in `AppHeader.vue`'s comments (a compass, deliberately not a `?`). | **Yes.** Six unlabelled icons on every page cost more than one menu click. |
-| D2 | ~~Worded "Experimental" badge in the header and task heading?~~ | **Decided (maintainer, 2026-11-10): dots stay.** The word took too much space in the layout, which is why FEATURE_MATURITY_PLAN Decision 10 settled on dots. The maturity tier stays in "fine where it is". |
-| D3 | Hide the Kiwi launcher while AI is off? This revisits AI_TOGGLE_PLAN call 5. | **Keep it.** It is the way in to turning AI on. Hide the other AI copy (finding 10). |
-| D4 | One home for a human write-up (lab log, Blackboard, Notebooks)? | **No merge.** Add a role line to each empty state: lab log = automatic record, Blackboard = authored notes, Notebooks = code. |
-| D5 | The 10 px spacing bucket (137 uses): round to 8 or 12 per site, or add a token? | **Round per site,** in the shells first. |
+| D1 | Merge the 6 header help icons into one worded Help menu? This reverses the rationale in `AppHeader.vue`'s comments (a compass, deliberately not a `?`). | **Yes.** One worded Help menu; the code comment's rationale is superseded. |
+| D2 | Worded "Experimental" badge in the header and task heading? | **No: dots stay.** The word took too much space in the layout, which is why FEATURE_MATURITY_PLAN Decision 10 settled on dots. The tier stays in "fine where it is". |
+| D3 | Hide the Kiwi launcher while AI is off? | **Keep it.** It is the way in to turning AI on. The other AI copy is hidden under the toggle (finding 10). |
+| D4 | One home for a human write-up (lab log, Blackboard, Notebooks)? | **No merge.** A role line in each empty state: lab log = automatic record, Blackboard = authored notes, Notebooks = code. |
+| D5 | The 10 px spacing bucket (137 uses): round to 8 or 12 per site, or add a token? | **Round per site** to 8 or 12, in the shells first. No 10 px token. |
 | D6 | The default function per module: who sets it? | **The recipes' first step:** drift correction on Cleanup, Cellpose on Segment. Import moves down. |

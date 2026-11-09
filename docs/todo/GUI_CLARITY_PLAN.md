@@ -43,7 +43,18 @@ rather than one screen at a time.
    toggle (`AI_TOGGLE_PLAN.md`). This plan does not re-inventory them.
 6. **Reuse canonical components** (`docs/inventory/FRONTEND.md` families, `docs/ui/PRIMITIVES.md`). A
    new primitive needs evidence that none of the existing ones fits.
-
+7. **One worded Help menu** replaces the 6 icon-only help buttons in the header (maintainer,
+   2026-11-10; audit D1). Supersedes the "compass, not a `?`" rationale in `AppHeader.vue`.
+8. **Maturity stays as dots** (maintainer, 2026-11-10; audit D2). A worded badge took too much space;
+   FEATURE_MATURITY_PLAN Decision 10 stands.
+9. **The Kiwi launcher stays visible with AI off** (maintainer, 2026-11-10; audit D3): it is how AI
+   gets turned on. All other AI copy hides under the toggle.
+10. **Three write-up homes stay** (maintainer, 2026-11-10; audit D4), each empty state saying its
+    role: lab log = automatic record, Blackboard = authored notes, Notebooks = code.
+11. **Spacing ladder without a 10 px step** (maintainer, 2026-11-10; audit D5): the 137 10 px values
+    round to 8 or 12 per site, shared shells first.
+12. **Each module opens on its recipe's first step** (maintainer, 2026-11-10; audit D6): drift
+    correction on Cleanup, Cellpose on Segment; import functions move down.
 ## What main already has (2026-11-10, `origin/main` 71509170)
 
 - **Theme:** PrimeVue and Aura are gone. The tokens are the 54 `--cc-*` custom properties in
@@ -96,18 +107,18 @@ rather than one screen at a time.
 
 The order of P1–P4 is provisional. P0's slicing replaces it.
 
-## Open questions (each with a recommended answer)
+## Open questions
 
-1. **Where do the screenshots come from?** Agents never start the app. *Recommended:* a small
-   capture harness against an isolated dev instance (`CECELIA_DEV_DIR`), built as its own PR before
-   P0. It gets reused for P1's before/after shots and for later visual passes. The alternative is
-   the maintainer capturing them by hand.
+1. ~~**Where do the screenshots come from?**~~ **Resolved:** `scripts/gui_capture.mjs`
+   (`pixi run gui-capture`, #2084) against an isolated instance (own `CECELIA_DEV_DIR` and
+   `CECELIA_PORT_SLOT`, project copies with symlinked image stores). It produced the P0 census and
+   will produce the before/after shots.
 2. **What counts as usage evidence?** *Recommended:* treat the observer's capture log as a weak
    signal where it exists, and say "unknown" everywhere else. Don't add telemetry for this.
 3. **Spine versus "no default path":** *Recommended:* a per-recipe spine. With no recipe picked,
    pages show their own next step instead of a global one. This keeps the map's decision.
-4. **Palette:** *Recommended:* confirm the desert-earth direction against a three-screen mock in P1
-   before any token is merged.
+4. ~~**Palette:**~~ **Agreed (maintainer, 2026-11-10):** the desert-earth direction is confirmed
+   against a three-screen mock in P1 before any colour token merges.
 
 ## Related
 
