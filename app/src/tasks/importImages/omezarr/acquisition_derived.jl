@@ -32,7 +32,7 @@ _plain_copy(x::AbstractDict)::Dict{String,Any} = JSON3.read(JSON3.write(x), Dict
 """
     inherited_acquisition(src_meta, store_counts) -> Dict
 
-The acquisition keys a new image made from one VERSION of a source (a copy, a crop) inherits from the
+The acquisition keys a new image made from one VERSION of a source (a copy, a crop, a bin) inherits from the
 source image's `meta`: its `acquisition` when the settings describe that version's store
 (`store_counts`, `read_ome_metadata` of it — `_acquisition_describes_store`), else `other-stack`; the
 source's `acquisitionMissing` reason when it has no settings; nothing when it has neither (not read yet).

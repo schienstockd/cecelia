@@ -42,6 +42,18 @@ function _bin_inherited_meta(src_meta::AbstractDict, factor_x::Int, factor_y::In
     out
 end
 
+# Pure: the whole meta of the new binned image — provenance, calibration, source file, and the
+# source's microscope settings. Binning leaves C/Z/T as acquired, so the settings still hold;
+# `store_counts` is the binned version's store, which a drift-corrected (Z-padded) one fails.
+function _bin_meta(src_meta::AbstractDict, src_uid::AbstractString, p::BinImageParams,
+                   store_counts::AbstractDict)::Dict{String,Any}
+    m = Dict{String,Any}("bin_source_uid" => src_uid, "bin_source_value_name" => p.valueName,
+        "bin_factor_x" => p.factorX, "bin_factor_y" => p.factorY, "bin_op" => p.op)
+    merge!(m, _bin_inherited_meta(src_meta, p.factorX, p.factorY))
+    copy_source_meta!(m, src_meta)
+    merge!(m, inherited_acquisition(src_meta, store_counts))
+end
+
 # XY-bin an image by an integer factor per axis (combining each factorX × factorY block with a chosen
 # op) and register the result as a NEW image in the same set. Extent changes, so this cannot be a
 # version of the source — same reasoning as crop's `add_image!` path. Read→transform→write like the
@@ -87,14 +99,7 @@ function _run_task(task::BinImage, img::CciaImage, params::Dict{String,Any};
     s = proj._sets[set_idx]
 
     src_meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
-    bin_meta = Dict{String,Any}(
-        "bin_source_uid"        => img.uid,
-        "bin_source_value_name" => p.valueName,
-        "bin_factor_x"          => p.factorX,
-        "bin_factor_y"          => p.factorY,
-        "bin_op"                => p.op)
-    merge!(bin_meta, _bin_inherited_meta(src_meta, p.factorX, p.factorY))
-    copy_source_meta!(bin_meta, src_meta)
+    bin_meta = _bin_meta(src_meta, img.uid, p, read_ome_metadata(String(im_path)))
 
     tag     = p.factorX == p.factorY ? "bin$(p.factorX)" : "bin$(p.factorX)x$(p.factorY)"
     new_img = add_image!(s; name = derived_image_name(proj, img.name, tag), meta = bin_meta, attr = img.attr)
