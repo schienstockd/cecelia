@@ -18,8 +18,7 @@
     try
         proj = create_project!(name = "api-acq-check")
         s    = add_set!(proj; name = "T cell types")
-        add_image!(s; name = "M1-1-x-CTV-z200_0001", meta = meta(false))
-        add_image!(s; name = "M2-1-x-CTV-z180_0001", meta = meta(true))
+        imgs = [add_image!(s; name = nm, meta = meta(bz)) for (nm, bz) in (("a", false), ("b", true))]
 
         @test api_acqcheck(HTTP.Request("GET", "/api/acqcheck?projectUid=$(proj.uid)"))[1] == 400
         # no plan: the plan-free checks run, nothing is written
@@ -27,12 +26,16 @@
         @test st == 200 && r.entryId == "" && r.plan === nothing
         @test any(f -> f.code == "acq.settings_differ" && f.subs.variable == "Bright Z setting", r.findings)
         @test "photons" in r.skipped && length(r.suggestedDesigns) == 1 && r.nOpen >= 1
+        @test any(f -> f.code == "acq.channels_unnamed", r.findings)      # no names yet: asks, doesn't guess
+        for img in imgs; Cecelia.set_channel_names!(img, ["OTI-uGFP"]; check_length = false); Cecelia.save!(img); end
+        st, r = get_(proj.uid, s.uid)
+        @test !any(f -> f.code == "acq.channels_unnamed", r.findings) && r.suggestedDesigns[1].key == "OTI-uGFP"
         @test isempty(_read_bb_registry(proj.uid))                 # a GET writes nothing
         @test _acq_entry_for(proj.uid, s.uid) == ""
 
         d = r.suggestedDesigns[1]
         plan = Dict("designs" => [Dict("id" => d.id, "key" => d.key)],
-                    "objects" => [Dict("name" => "OT-I", "kind" => "cells", "channels" => Dict(String(d.id) => 0))])
+                    "objects" => [Dict("name" => "OT-I", "kind" => "cells", "channels" => Dict(String(d.id) => "OTI-uGFP"))])
         @test post(api_acqcheck_plan, Dict("projectUid" => proj.uid, "setUid" => s.uid, "plan" => Dict("objects" => [])))[1] == 400
         st, r1 = post(api_acqcheck_plan, Dict("projectUid" => proj.uid, "setUid" => s.uid, "plan" => plan))
         @test st == 200 && r1.round == 1 && r1.entryId != ""

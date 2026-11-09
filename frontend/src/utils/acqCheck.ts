@@ -2,6 +2,7 @@
 // fresh plan from the suggested designs, what keeps a plan from saving, and the per-movie table grouped
 // by design. Types and calls: acqCheckApi.ts.
 import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow } from './acqCheckApi'
+import type { Severity } from '../lib/severity'
 
 /** What the plan says it will measure, in the order the form offers it. */
 export const ACQ_MEASURES = ['movement', 'contacts', 'uptake', 'counts', 'shape'] as const
@@ -97,4 +98,24 @@ export function badgeOf(result: AcqCheckResult | null): { n: number; tip: string
   if (!result) return { n: 0, tip: 'Check these movies against what you plan to do with them' }
   if (!result.plan) return { n: result.nOpen, tip: result.nOpen ? `${result.nOpen} to look at — set a plan for the full check` : 'Set a plan for the full check' }
   return { n: result.nOpen, tip: result.nOpen ? `${result.nOpen} to look at` : 'Nothing to look at' }
+}
+
+/** A finding's InlineNote severity: `info` is a note with none (the info icon, no verdict). */
+export const findingSeverity = (f: AcqFinding): Severity | undefined =>
+  f.level === 'warn' ? 'warn' : f.level === 'ok' ? 'ok' : undefined
+
+/** A finding's lines under its short text: what to do next, and what it means for these movies. */
+export function findingLines(f: AcqFinding, dataLabel: string): { label: string; text: string }[] {
+  return [{ label: 'Next', text: f.long }, ...(f.thisData ? [{ label: dataLabel, text: f.thisData }] : [])]
+}
+
+/** A plan with every channel as its name — an older plan stored the index, which the form's channel
+ *  picker (by name) would show as blank. An index the design doesn't have is left as is. */
+export function planByName(plan: AcqPlan, designs: AcqDesign[]): AcqPlan {
+  const conv = (o: AcqPlan['objects'][number]) => ({
+    ...o,
+    channels: Object.fromEntries(Object.entries(o.channels).map(([d, c]) =>
+      [d, typeof c === 'number' ? (designs.find(x => x.id === d)?.channels?.find(ch => ch.index === c)?.name ?? c) : c])),
+  })
+  return { ...plan, objects: plan.objects.map(conv), references: plan.references.map(conv) }
 }

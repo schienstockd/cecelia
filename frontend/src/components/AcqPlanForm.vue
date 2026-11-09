@@ -1,27 +1,28 @@
 <script setup lang="ts">
 // The set's plan for the acquisition check (docs/todo/ACQUISITION_TEST_CHECK_PLAN.md): which objects
-// will be segmented or tracked, in which channel per label design, what is measured and compared. A
+// will be segmented or tracked, in which channel (by name) per label design — a design being the movies
+// that share a channel-name list — and what is measured and compared. A
 // form, not parsed text — the sentence is only echoed. Logic: utils/acqCheck.ts.
 import { computed, ref } from 'vue'
 import ChipSelect from './ChipSelect.vue'
 import type { AcqDesign, AcqPlan, AcqPlanChannel } from '../utils/acqCheckApi'
-import { ACQ_MEASURES, cleanPlan, planProblems, planSentence } from '../utils/acqCheck'
+import { ACQ_MEASURES, cleanPlan, planByName, planProblems, planSentence } from '../utils/acqCheck'
 
 const props = defineProps<{ plan: AcqPlan; designs: AcqDesign[]; saving?: boolean }>()
 const emit = defineEmits<{ save: [AcqPlan]; cancel: [] }>()
 
 // a working copy: the form edits it, Save hands it back cleaned
-const draft = ref<AcqPlan>(JSON.parse(JSON.stringify(props.plan)))
 const designOf = (id: string) => props.designs.find(d => d.id === id)
+const draft = ref<AcqPlan>(planByName(JSON.parse(JSON.stringify(props.plan)), props.designs))
 const channelOptions = (id: string) =>
-  (designOf(id)?.channels ?? []).map(c => ({ value: c.index, label: `${c.name}${c.filter ? ` · ${c.filter}` : ''}` }))
+  (designOf(id)?.channels ?? []).map(c => ({ value: c.name, label: `${c.name}${c.filter ? ` · ${c.filter}` : ''}` }))
 
 function addRow(list: AcqPlanChannel[], kind?: 'cells') {
   list.push({ name: '', ...(kind ? { kind } : {}), channels: {} })
 }
 function setChannel(o: AcqPlanChannel, design: string, v: string) {
   if (v === '') delete o.channels[design]
-  else o.channels[design] = Number(v)
+  else o.channels[design] = v
 }
 const measureOptions = ACQ_MEASURES.map(m => ({ value: m, label: m[0].toUpperCase() + m.slice(1) }))
 const compareOptions = computed(() =>

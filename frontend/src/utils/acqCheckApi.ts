@@ -5,7 +5,8 @@
 import { postJson } from './blackboardApi'
 import type { QcFinding } from '../lib/qc'
 
-/** A label design: images whose names differ only in mouse/run/stack numbers (`acq_design_key`). */
+/** A label design: the movies that share a channel-name list (`acq_design_key`). `key` "" = channels
+ *  not named — every such movie falls in one design. */
 export interface AcqDesign {
   id: string
   key: string
@@ -14,8 +15,9 @@ export interface AcqDesign {
   channels?: { index: number; name: string; filter: string | null }[]
 }
 export type AcqObjectKind = 'cells' | 'points'
-/** A plan object (segmented or tracked) or reference channel: its channel index per design id. */
-export interface AcqPlanChannel { name: string; kind?: AcqObjectKind; channels: Record<string, number> }
+/** A plan object (segmented or tracked) or reference channel: its channel name per design id (an
+ *  index is still read, for a plan written before). */
+export interface AcqPlanChannel { name: string; kind?: AcqObjectKind; channels: Record<string, string | number> }
 export interface AcqPlan {
   designs: AcqDesign[]
   objects: AcqPlanChannel[]
@@ -27,7 +29,9 @@ export interface AcqPlan {
 }
 /** A finding: a `qc_finding` plus its scope ("set" or an image uid) and, where it has one, what it
  *  means for analysing these movies (`thisData`). */
-export interface AcqFinding extends QcFinding {
+export interface AcqFinding extends Omit<QcFinding, 'level'> {
+  /** `ok` states what a check confirmed ("All 16 register") */
+  level: QcFinding['level'] | 'ok'
   scope: string
   key?: string
   subs?: Record<string, unknown>

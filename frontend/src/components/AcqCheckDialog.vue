@@ -10,9 +10,9 @@ import AcqPlanForm from './AcqPlanForm.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import { useProjectStore } from '../stores/project'
 import { useToast } from '../composables/useToast'
-import { fetchAcqCheck, saveAcqPlan, type AcqCheckResult, type AcqFinding, type AcqPlan, type AcqRow } from '../utils/acqCheckApi'
-import { emptyPlan, findingsFor, fmt, formatDepth, planSentence, rowsByDesign } from '../utils/acqCheck'
-import { dotClass, type DotTone } from '../utils/statusDot'
+import { fetchAcqCheck, saveAcqPlan, type AcqCheckResult, type AcqPlan, type AcqRow } from '../utils/acqCheckApi'
+import { emptyPlan, findingLines, findingSeverity, findingsFor, fmt, formatDepth, planSentence, rowsByDesign } from '../utils/acqCheck'
+import InlineNote from './InlineNote.vue'
 
 const props = defineProps<{ projectUid: string; setUid: string; setName?: string }>()
 const emit = defineEmits<{ close: []; changed: [AcqCheckResult] }>()
@@ -48,8 +48,6 @@ async function save(p: AcqPlan) {
   emit('changed', r)
 }
 
-const TONE: Record<string, DotTone> = { warn: 'warn', info: 'info', ok: 'ok' }
-const toneOf = (f: AcqFinding) => dotClass(TONE[f.level] ?? 'info')
 const setFindings = computed(() => (result.value ? findingsFor(result.value, 'set') : []))
 const groups = computed(() => (result.value ? rowsByDesign(result.value) : []))
 
@@ -105,13 +103,8 @@ const metaImage = computed(() => {
 
       <div class="cc-eyebrow cc-fs-2xs">Across the set</div>
       <ul class="findings">
-        <li v-for="(f, i) in setFindings" :key="i" class="finding">
-          <span class="cc-dot" :class="toneOf(f)" />
-          <div>
-            <div>{{ f.short }}</div>
-            <div class="cc-fs-xs"><span class="cc-muted">Next</span> {{ f.long }}</div>
-            <div v-if="f.thisData" class="cc-fs-xs"><span class="cc-muted">These movies</span> {{ f.thisData }}</div>
-          </div>
+        <li v-for="(f, i) in setFindings" :key="i">
+          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, 'These movies')" />
         </li>
         <li v-if="!setFindings.length" class="cc-muted">Nothing across the set.</li>
       </ul>
@@ -128,13 +121,8 @@ const metaImage = computed(() => {
           </template>
         </SelectionTable>
         <ul v-if="openRow && g.rows.some(r => r.uid === openRow)" class="findings row-findings">
-          <li v-for="(f, i) in rowFindings(openRow)" :key="i" class="finding">
-            <span class="cc-dot" :class="toneOf(f)" />
-            <div>
-              <div>{{ f.short }}</div>
-              <div class="cc-fs-xs"><span class="cc-muted">Next</span> {{ f.long }}</div>
-              <div v-if="f.thisData" class="cc-fs-xs"><span class="cc-muted">This movie</span> {{ f.thisData }}</div>
-            </div>
+          <li v-for="(f, i) in rowFindings(openRow)" :key="i">
+            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, 'This movie')" />
           </li>
           <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this movie.</li>
         </ul>
@@ -152,8 +140,6 @@ const metaImage = computed(() => {
 .plan .edit { margin-left: auto; }
 .plan .form { flex: 1; }
 .findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
-.finding { display: grid; grid-template-columns: 0.8rem 1fr; gap: 0.4rem; align-items: start; }
-.finding .cc-dot { margin-top: 0.35rem; }
 .group { display: flex; flex-direction: column; gap: 0.2rem; }
 .group-label { margin-top: 0.3rem; }
 .row-findings { padding: 0.4rem 0.6rem 0.5rem 1.4rem; background: var(--cc-surface-2); border-radius: var(--cc-radius-sm); }

@@ -51,7 +51,7 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
     String(take!(io))
 end
 
-# The reply: the plan (or none), the designs suggested from the file names, and the live check.
+# The reply: the plan (or none), the set's label designs (shared channel-name lists), and the live check.
 function _acq_reply(uid, set, id)
     facts = Cecelia.acq_set_facts(set)
     meta = isempty(id) ? nothing : _read_bb_meta(uid, id)
@@ -80,12 +80,13 @@ function api_acqcheck(req::HTTP.Request)
     200, _acq_reply(uid, set, _acq_entry_for(uid, set_uid))
 end
 
-# A plan from a request body, normalised: objects/references keep name, kind and channel per design.
+# A plan from a request body, normalised: objects/references keep name, kind and channel (by name) per design.
 function _acq_plan_from(p)::Union{Dict{String,Any},Nothing}
     p isa AbstractDict || return nothing
     pd = JSON3.read(JSON3.write(p), Dict{String,Any})
     norm(o) = Dict{String,Any}("name" => strip(string(get(o, "name", ""))), "kind" => string(get(o, "kind", "cells")),
-                               "channels" => Dict{String,Any}(string(k) => Int(v) for (k, v) in get(o, "channels", Dict()) if v isa Real))
+                               "channels" => Dict{String,Any}(string(k) => (v isa Real ? Int(v) : string(v))
+                                                              for (k, v) in get(o, "channels", Dict()) if v isa Real || (v isa AbstractString && !isempty(v))))
     objs = [norm(o) for o in get(pd, "objects", Any[]) if o isa AbstractDict && !isempty(strip(string(get(o, "name", ""))))]
     isempty(objs) && return nothing
     Dict{String,Any}(
@@ -102,7 +103,7 @@ end
 """
     POST /api/acqcheck/plan
 
-Body: `{ projectUid, setUid, plan: {designs, objects: [{name, kind, channels: {designId: index}}],
+Body: `{ projectUid, setUid, plan: {designs, objects: [{name, kind, channels: {designId: channelName}}],
 references, measure, compare, expectation, text} }` — Reply: as `GET /api/acqcheck`.
 
 Saves the set's plan as its Blackboard entry (created on first save) and writes the check into it. A

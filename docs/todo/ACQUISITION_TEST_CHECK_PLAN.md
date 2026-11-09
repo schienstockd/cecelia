@@ -176,6 +176,9 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   (p99 ratio ≥ 2), an object's channel sharing structure with another object's (warn) or a reference
   (info) (r ≥ 0.5), drift that doesn't register (drift correction's 2 px), movies not measured. All
   thresholds are named `ACQ_*` placeholders. Without a plan only the plan-free checks run.
+- **Label designs** are the movies that share a channel-name list, in channel order — never read off file
+  names. Default names (`CH1`…) put every movie in one design and raise one finding asking for names.
+  The plan picks each object's channel by name, per design.
 - **Storage**: the set's plan is a Blackboard entry carrying `acqCheck` meta (a passthrough, like
   `claim`); saving a changed plan is a new round on it. `GET /api/acqcheck` runs the check live and
   writes nothing; `POST /api/acqcheck/plan` saves and records.
@@ -183,7 +186,8 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   modal — plan echo + form, across the set, per movie grouped by design; a row shows its findings, the
   name opens its metadata. The image metadata dialog has one line linking to it. Needs the
   maintainer's visual pass.
-- **On lfGUDg** (16 movies, read-only, probe numbers from #2072 overlaid): laser and Bright Z settings
+- **On lfGUDg** (16 movies, read-only, probe numbers from #2072 overlaid). As stored (CH1–CH4): one design,
+  "Channels not named", settings differ, depth falls in 4, all register. With the maintainer's names overlaid: laser and Bright Z settings
   split along the two designs; Bright Z off and signal −16 to −29 % with depth in 4 December movies;
   P14 / OT-I / gBT median 1.6 / 1.6 / 2.1 photons per voxel; objects up to 4.2× apart, OT-I dimmest in
   10 of 16; OT-I ~ gBT and P14 ~ gBT shared structure in one movie each; OT-I ~ the empty 570–616

@@ -31,23 +31,29 @@ end
 
 _acq_codes(r; scope = "set") = sort!([f["code"] for f in r["findings"] if f["scope"] == scope])
 
-@testset "acq_check — design keys from file names" begin
-    @test Cecelia.acq_design_key("M1-2-B6-naive-gBT-CTV-OTI-uGFP-P14-CTDR-z220_0005") == "B6-naive-gBT-CTV-OTI-uGFP-P14-CTDR"
-    @test Cecelia.acq_design_key("M3-1-B6-naive-gBT-uGFP-OTI-CTV-P14-ubTomato-z230_0002.oir") ==
-          "B6-naive-gBT-uGFP-OTI-CTV-P14-ubTomato"
-    # two runs of one design share a key; two designs don't
-    facts = [Cecelia.acq_image_facts("a", "M1-1-x-CTV-uGFP-z200_0001", _acq_meta()),
-             Cecelia.acq_image_facts("b", "M2-1-x-CTV-uGFP-z180_0003", _acq_meta()),
-             Cecelia.acq_image_facts("c", "M1-3-x-uGFP-CTV-z250_0001", _acq_meta())]
+const _ACQ_CTDR = ["P14-CTDR", "empty-570", "OTI-uGFP", "gBT-CTV"]
+const _ACQ_TOM  = ["empty-642", "P14-ubTomato", "gBT-uGFP", "OTI-CTV"]
+_acq_f(uid, meta, names = _ACQ_CTDR) = Cecelia.acq_image_facts(uid, uid, meta; channel_names = names)
+
+@testset "acq_check — designs are channel-name lists" begin
+    @test Cecelia.acq_design_key(_ACQ_CTDR) == "P14-CTDR · empty-570 · OTI-uGFP · gBT-CTV"
+    @test Cecelia.acq_design_key(["CH1", "CH2", "ch3", "Channel 4"]) == "" && Cecelia.acq_design_key(String[]) == ""
+    # same names share a design, whatever the file is called; other names (or order) don't
+    facts = [_acq_f("a", _acq_meta()), _acq_f("b", _acq_meta()), _acq_f("c", _acq_meta(), _ACQ_TOM)]
     ds = Cecelia.acq_suggest_designs(facts)
     @test length(ds) == 2 && ds[1]["imageUids"] == ["a", "b"] && ds[2]["imageUids"] == ["c"]
+    @test !any(f -> f["code"] == "acq.channels_unnamed", Cecelia.acq_check(nothing, facts)["findings"])
+    # default names: one design and one finding asking for names — no guessing
+    un = [_acq_f("a", _acq_meta(), ["CH1"]), _acq_f("b", _acq_meta(), ["CH1"])]
+    @test length(Cecelia.acq_suggest_designs(un)) == 1
+    @test count(f -> f["code"] == "acq.channels_unnamed", Cecelia.acq_check(nothing, un)["findings"]) == 1
 end
 
 @testset "acq_check — no plan: settings, depth, range, drift, unmeasured" begin
-    facts = [Cecelia.acq_image_facts("a", "M1-x-A", _acq_meta(brightz = false, depth = Dict(0 => -25.0))),
-             Cecelia.acq_image_facts("b", "M2-x-A", _acq_meta(brightz = true, depth = Dict(0 => -2.0))),
-             Cecelia.acq_image_facts("c", "M3-x-A", _acq_meta(drift = (3.7, 100.0))),
-             Cecelia.acq_image_facts("d", "M4-x-A", _acq_meta(probed = false))]
+    facts = [_acq_f("a", _acq_meta(brightz = false, depth = Dict(0 => -25.0))),
+             _acq_f("b", _acq_meta(brightz = true, depth = Dict(0 => -2.0))),
+             _acq_f("c", _acq_meta(drift = (3.7, 100.0))),
+             _acq_f("d", _acq_meta(probed = false))]
     r = Cecelia.acq_check(nothing, facts)
     codes = _acq_codes(r)
     @test "acq.settings_differ" in codes                  # Bright Z on in some, off in one — same design
@@ -55,6 +61,7 @@ end
     @test "acq.drift_unreliable" in _acq_codes(r; scope = "c")
     @test "acq.not_measured" in codes
     @test !("acq.balance" in codes) && !("acq.few_photons" in codes)   # need a plan
+    @test !any(f -> startswith(f["code"], "acq.shares"), r["findings"]) && all(x -> isempty(x["objects"]), r["rows"])
     @test "photons" in r["skipped"]
     # Bright Z on: the same fall does not flag (it's the depth ramp's job, and it was on)
     on = Cecelia.acq_check(nothing, [Cecelia.acq_image_facts("a", "x", _acq_meta(brightz = true, depth = Dict(0 => -25.0)))])
@@ -66,13 +73,15 @@ end
 end
 
 @testset "acq_check — with a plan: designs, photons, balance, shared structure" begin
-    # design A: P14 ch0, OT-I ch2, gBT ch3, ch1 a reference; design B: P14 ch1, gBT ch2, OT-I ch3
+    # the plan picks each object's channel by name, per design: CTDR has P14 ch0, OT-I ch2, gBT ch3 and
+    # an empty ch1 as reference; ubTomato has P14 ch1, gBT ch2, OT-I ch3
     plan = Dict{String,Any}(
-        "designs" => [Dict("id" => "A", "key" => "x-CTV"), Dict("id" => "B", "key" => "x-TOM")],
-        "objects" => [Dict("name" => "P14", "kind" => "cells", "channels" => Dict("A" => 0, "B" => 1)),
-                      Dict("name" => "OT-I", "kind" => "cells", "channels" => Dict("A" => 2, "B" => 3)),
-                      Dict("name" => "gBT", "kind" => "cells", "channels" => Dict("A" => 3, "B" => 2))],
-        "references" => [Dict("name" => "empty", "channels" => Dict("A" => 1))])
+        "designs" => [Dict("id" => "A", "key" => Cecelia.acq_design_key(_ACQ_CTDR)),
+                      Dict("id" => "B", "key" => Cecelia.acq_design_key(_ACQ_TOM))],
+        "objects" => [Dict("name" => "P14", "kind" => "cells", "channels" => Dict("A" => "P14-CTDR", "B" => "P14-ubTomato")),
+                      Dict("name" => "OT-I", "kind" => "cells", "channels" => Dict("A" => "OTI-uGFP", "B" => "OTI-CTV")),
+                      Dict("name" => "gBT", "kind" => "cells", "channels" => Dict("A" => "gBT-CTV", "B" => "gBT-uGFP"))],
+        "references" => [Dict("name" => "empty", "channels" => Dict("A" => "empty-570"))])
     a = _acq_meta(lasers = [(850, 15), (1200, 15)], brightz = false,
                   depth = Dict(0 => -20.0, 1 => -5.0, 2 => -10.0, 3 => -8.0),
                   objs = Dict(0 => (3.5, 39.0, nothing), 1 => (1.0, 5.0, nothing), 2 => (1.9, 12.0, nothing), 3 => (2.1, 24.0, nothing)),
@@ -81,8 +90,7 @@ end
                   depth = Dict(1 => 0.0, 2 => 2.0, 3 => 5.0),
                   objs = Dict(1 => (1.5, 15.0, nothing), 2 => (2.1, 16.0, nothing), 3 => (1.0, 6.0, nothing)),
                   shared = Dict("1-2" => 0.57))
-    facts = [Cecelia.acq_image_facts("a1", "M1-1-x-CTV-z200", a), Cecelia.acq_image_facts("a2", "M2-1-x-CTV-z180", a),
-             Cecelia.acq_image_facts("b1", "M1-3-x-TOM-z250", b)]
+    facts = [_acq_f("a1", a), _acq_f("a2", a), _acq_f("b1", b, _ACQ_TOM)]
     r = Cecelia.acq_check(plan, facts)
     codes = _acq_codes(r)
     # lasers and Bright Z split exactly along the designs
@@ -106,6 +114,16 @@ end
     row = only(filter(x -> x["uid"] == "b1", r["rows"]))
     @test row["design"] == "B" && row["dimmest"] == "OT-I" && isapprox(row["ratio"], 16 / 6) && row["sharedR"] == 0.57
     @test row["objects"]["P14"]["channel"] == 1
+    # an index still resolves (a plan saved before names, or from the REPL)
+    idx = deepcopy(plan); idx["objects"][1]["channels"] = Dict("A" => 0, "B" => 1)
+    @test only(filter(x -> x["uid"] == "b1", Cecelia.acq_check(idx, facts)["rows"]))["objects"]["P14"]["channel"] == 1
+    # a channel the movie doesn't have is reported on that movie, not dropped
+    bad = deepcopy(plan); bad["objects"][3]["channels"]["B"] = "gBT-GFP"
+    rb = Cecelia.acq_check(bad, facts)
+    @test only(_acq_codes(rb; scope = "b1") |> c -> filter(==("acq.channel_missing"), c)) == "acq.channel_missing"
+    @test !("acq.channel_missing" in _acq_codes(rb; scope = "a1"))
+    far = deepcopy(plan); far["objects"][1]["channels"] = Dict("A" => 9, "B" => 1)
+    @test "acq.channel_missing" in _acq_codes(Cecelia.acq_check(far, facts); scope = "a1")
 end
 
 @testset "acq_check — every finding renders from the catalog" begin
@@ -114,6 +132,6 @@ end
                                           Dict("name" => "Y", "channels" => Dict("A" => 1))])
     m = _acq_meta(objs = Dict(0 => (1.0, 30.0, 10.0), 1 => (1.0, 3.0, nothing)), shared = Dict("0-1" => 0.9),
                   brightz = false, depth = Dict(0 => -30.0, 1 => -30.0))
-    r = Cecelia.acq_check(plan, [Cecelia.acq_image_facts("a", "x", m), Cecelia.acq_image_facts("b", "y", m)])
+    r = Cecelia.acq_check(plan, [Cecelia.acq_image_facts("a", "x", m), Cecelia.acq_image_facts("b", "y", m)])   # unnamed
     @test all(f -> haskey(Cecelia.QC_TEXT, f["key"]) && !occursin("{", f["short"] * f["long"]), r["findings"])
 end

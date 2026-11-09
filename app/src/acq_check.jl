@@ -23,19 +23,19 @@ const ACQ_REL_TOLERANCE = 0.01
 _ag(d, k, default = nothing) = d isa AbstractDict ? something(get(d, k, nothing), get(d, Symbol(k), nothing), Some(default)) : default
 _anum(v) = v isa Real ? Float64(v) : nothing
 
-"""
-    acq_design_key(name) -> String
+# A default channel name — what an image has before anyone names its channels ("CH1", "C2", "Channel 3")
+const _ACQ_DEFAULT_CHANNEL = r"^(?i)(ch|c|channel)[ _-]?\d+$"
 
-The label design an image name spells out: its tokens minus the ones that number a mouse, a run or a
-stack (`M1`, `2`, `z220`, `0005`, `#Series009`). Images whose names differ only there share a design —
-`M1-2-B6-naive-gBT-CTV-OTI-uGFP-P14-CTDR-z220_0005` → `B6-naive-gBT-CTV-OTI-uGFP-P14-CTDR`. A suggestion
-for the plan form; the user confirms it.
 """
-function acq_design_key(name::AbstractString)::String
-    stem = replace(String(name), r"\.[A-Za-z0-9]{2,5}$" => "")
-    toks = split(stem, r"[-_ #]+"; keepempty = false)
-    keep = filter(t -> !occursin(r"^(?i)(m\d+[a-z]?|\d+[a-z]?|z\d+.*|series\d+|t\d+|s\d+)$", t), toks)
-    join(keep, "-")
+    acq_design_key(channel_names) -> String
+
+The label design of an image: its channel names in channel order (`"P14-CTDR · empty-570 · …"`). Movies
+with the same list share a design. Unnamed or default names (`CH1`…) give `""` — every such movie falls
+in one design, and the check asks for names rather than guessing.
+"""
+function acq_design_key(names::AbstractVector)::String
+    (isempty(names) || all(n -> occursin(_ACQ_DEFAULT_CHANNEL, strip(string(n))) || isempty(strip(string(n))), names)) && return ""
+    join((strip(string(n)) for n in names), " · ")
 end
 
 """
@@ -87,7 +87,9 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
         drift = Dict{String,Any}("residualRmsPx" => _anum(_ag(d, "residualRmsPx")), "maxDriftPx" => xypx,
                                  "maxDriftUm" => (xypx === nothing || px === nothing) ? nothing : xypx * px)
     end
-    Dict{String,Any}("uid" => String(uid), "name" => String(name), "designKey" => acq_design_key(name),
+    nch = max(length(channel_names), isempty(chans) ? 0 : maximum(keys(chans)) + 1)
+    Dict{String,Any}("uid" => String(uid), "name" => String(name), "designKey" => acq_design_key(channel_names),
+        "channelNames" => String[i <= length(channel_names) ? String(channel_names[i]) : "Channel $i" for i in 1:nch],
         "lasers" => lasers, "brightZ" => bz isa Bool ? bz : nothing, "objective" => obj, "pixelSize" => px,
         "channels" => chans, "shared" => shared, "drift" => drift, "probed" => probed)
 end
@@ -99,8 +101,8 @@ acq_set_facts(set) = [acq_image_facts(img.uid, img.name, img.meta;
 """
     acq_suggest_designs(facts) -> Vector{Dict}
 
-One design per distinct `acq_design_key`, in order of first appearance: `{id, label, key, imageUids,
-channels: [{index, name, filter}]}` (channels from its first image). What the plan form starts from.
+One design per distinct channel-name list (`acq_design_key`), in order of first appearance: `{id, label,
+key, imageUids, channels: [{index, name, filter}]}` (channels from its first image). The plan form's designs.
 """
 function acq_suggest_designs(facts)::Vector{Dict{String,Any}}
     out = Dict{String,Any}[]
@@ -109,7 +111,7 @@ function acq_suggest_designs(facts)::Vector{Dict{String,Any}}
         if d === nothing
             chans = [Dict{String,Any}("index" => i, "name" => c["name"], "filter" => c["filter"])
                      for (i, c) in sort!(collect(f["channels"]); by = first)]
-            push!(out, Dict{String,Any}("id" => "d$(length(out) + 1)", "label" => f["designKey"],
+            push!(out, Dict{String,Any}("id" => "d$(length(out) + 1)", "label" => isempty(f["designKey"]) ? "Channels not named" : f["designKey"],
                                         "key" => f["designKey"], "imageUids" => String[f["uid"]], "channels" => chans))
         else
             push!(out[d]["imageUids"], f["uid"])
@@ -126,13 +128,23 @@ function _acq_design_of(plan, f)
     length(ds) == 1 ? string(_ag(ds[1], "id")) : nothing
 end
 
-# The plan's objects (or references) with their channel in design `did`: [(name, channel)].
-function _acq_channels(plan, field, did)
+# The plan's objects (or references) with their channel in design `did`, resolved on image `f` through
+# `channel_index` (a name, or an index as is): [(name, index)]. A channel the image doesn't have goes to
+# `missing` as (object, channel) — reported, never dropped silently.
+function _acq_channels(plan, field, did, f, missing)
     out = Tuple{String,Int}[]
     did === nothing && return out
     for o in _ag(plan, field, Any[])
-        c = _anum(_ag(_ag(o, "channels"), did))
-        c === nothing || push!(out, (string(_ag(o, "name", "")), Int(c)))
+        c = _ag(_ag(o, "channels"), did)
+        c === nothing && continue
+        name = string(_ag(o, "name", ""))
+        try
+            i = channel_index(c isa Real ? Int(c) : string(c), f["channelNames"]; what = name)
+            0 <= i < length(f["channelNames"]) || error("channel $i out of range")   # an index passes through unchecked
+            push!(out, (name, i))
+        catch
+            push!(missing, (name, string(c)))
+        end
     end
     out
 end
@@ -165,6 +177,8 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
                          detail = Dict("imageUids" => [f["uid"] for f in facts if !f["probed"]]))
 
     design = Dict(f["uid"] => (has_plan ? _acq_design_of(plan, f) : f["designKey"]) for f in facts)
+    unnamed = [f["uid"] for f in facts if isempty(f["designKey"])]
+    isempty(unnamed) || add!("warn", "acq.channels_unnamed", "set"; detail = Dict("imageUids" => unnamed))
 
     # settings that differ between movies — and whether they split along the designs
     for (variable, get_v, same) in (
@@ -190,9 +204,11 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     end
 
     # which channels count: the plan's objects, else every channel
-    obj_ch(f) = has_plan ? _acq_channels(plan, "objects", design[f["uid"]]) :
-                [(c["name"], i) for (i, c) in sort!(collect(f["channels"]); by = first)]
-    ref_ch(f) = has_plan ? _acq_channels(plan, "references", design[f["uid"]]) : Tuple{String,Int}[]
+    # the plan's objects; without a plan none — photons, balance and shared structure need to know which
+    # channel is what. Depth and detector range read the objects' channels, else every channel.
+    obj_ch(f, m) = has_plan ? _acq_channels(plan, "objects", design[f["uid"]], f, m) : Tuple{String,Int}[]
+    all_ch(f) = sort!(collect(keys(f["channels"])))
+    ref_ch(f, m) = has_plan ? _acq_channels(plan, "references", design[f["uid"]], f, m) : Tuple{String,Int}[]
     plan_objs = has_plan ? _ag(plan, "objects", Any[]) : Any[]
     kind_of(name) = (i = findfirst(o -> string(_ag(o, "name", "")) == name, plan_objs);
                      i === nothing ? "cells" : string(_ag(plan_objs[i], "kind", "cells")))
@@ -202,11 +218,15 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     balance = Dict{String,Any}[]; shared_hits = Dict{String,Any}[]; ref_hits = Dict{String,Any}[]
     drift_ok = Float64[]
     for f in facts
-        objs = obj_ch(f); refs = ref_ch(f)
+        missing = Tuple{String,String}[]
+        objs = obj_ch(f, missing); refs = ref_ch(f, missing)
+        for (o, c) in missing
+            add!("warn", "acq.channel_missing", f["uid"]; what = o, variable = c)
+        end
         row = Dict{String,Any}("uid" => f["uid"], "name" => f["name"], "design" => design[f["uid"]],
                                "lasers" => _acq_lasers_text(f["lasers"]), "brightZ" => f["brightZ"],
                                "probed" => f["probed"], "objects" => Dict{String,Any}())
-        chs = [c for (_, c) in objs if haskey(f["channels"], c)]
+        chs = has_plan ? [c for (_, c) in objs if haskey(f["channels"], c)] : all_ch(f)
         dz = [f["channels"][c]["depthChangePct"] for c in chs if f["channels"][c]["depthChangePct"] !== nothing]
         row["depthPct"] = isempty(dz) ? nothing : [minimum(dz), maximum(dz)]
         if f["brightZ"] === false && !isempty(dz) && minimum(dz) <= ACQ_DEPTH_FALL_PCT
@@ -220,9 +240,10 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
             row["objects"][name] = Dict("channel" => c, "p50" => ch["p50Photons"], "p99" => ch["p99Photons"])
             ch["p99Photons"] === nothing || push!(p99, (name, ch["p99Photons"]))
             ch["p50Photons"] === nothing || push!(get!(few, name, Float64[]), ch["p50Photons"])
-            if ch["ceilingPhotons"] !== nothing && ch["ceilingPhotons"] < ACQ_CEILING_PHOTONS
-                push!(ceil_hits, Dict("uid" => f["uid"], "channel" => c, "photons" => ch["ceilingPhotons"]))
-            end
+        end
+        for c in chs
+            cp = f["channels"][c]["ceilingPhotons"]
+            cp !== nothing && cp < ACQ_CEILING_PHOTONS && push!(ceil_hits, Dict("uid" => f["uid"], "channel" => c, "photons" => cp))
         end
         if length(p99) >= 2 && minimum(last.(p99)) > 0
             lo = argmin(last.(p99)); ratio = maximum(last.(p99)) / p99[lo][2]
