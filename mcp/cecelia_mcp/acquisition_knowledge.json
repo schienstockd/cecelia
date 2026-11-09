@@ -163,6 +163,20 @@
      "qcCodes": [
       "af.bleedthrough"
      ]
+    },
+    {
+     "id": "label-shares-with-af",
+     "symptom": "A label channel shares structure with an autofluorescence (empty) channel.",
+     "explanation": "Two causes give the same correlation: the label's emission spills into the AF detector, so every labelled cell is also bright in AF; or autofluorescent cells show in the label channel. The correlation alone does not say which.",
+     "check": "Per object, compare the label-to-AF ratio: labelled cells sit well above the ratio of AF-only objects. Never advise excluding objects for being AF-bright without this check: with spill it removes the labelled cells.",
+     "alternatives": "Real autofluorescent cells (macrophages) that also take up the label.",
+     "sources": [
+      "north2006"
+     ],
+     "qcCodes": [
+      "acq.shares_reference",
+      "acq.shares_reference_image"
+     ]
     }
    ]
   },
