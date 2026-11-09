@@ -913,6 +913,29 @@ client-side; the server persistence was already correct.
   brief amber warning shows, with the numbers + the fix in its tooltip. The selection is pruned to the
   current segmentation's columns on a value_name switch (reseeding defaults if it empties).
 
+### Live updates and manual apply
+
+One rule for every canvas: **a gate write refetches only what shows a changed population** —
+the redrawn, added or deleted pop and everything under it (`utils/popChanges.ts`,
+`changedPopPaths`). The gating plots bump per-pop versions with it (`stores/gating.ts`
+`popVersion`); the summary and layout canvases key each panel's refetch off the pops it plots
+(`seriesReloadToken`, ancestors included so a derived `/_tracked` follows its parent). A new
+gate is never ticked, so it refetches no plot.
+
+**Manual apply** (the clock toggle on every population manager, `usePopSelectionMode`) holds two
+things until Apply: the eye toggles (`stagedSel`), and the refreshes gate writes trigger
+(`deferUntilApply`, `utils/applyHold.ts`) —
+
+- **gating + cluster pages**: the viewer reload. Build a hierarchy on a large image and the
+  viewer draws none of it until Apply, as the old R app's viewer flag did. The gating plots stay
+  live — they are where you draw. A per-pop viewer toggle reloads the viewer at once, and the
+  reload shows every held pop with it.
+- **summary + layout canvases**: the targeted panel refetch. The picker list itself stays live, so
+  a new pop can be ticked.
+
+Apply, or switching manual apply off, runs everything held; Discard leaves held refreshes alone
+(they are server-side changes). The chip counts both.
+
 ## Scale
 
 10⁶ cells is a real target (static large images; live ~1000 cells × 180 timepoints).

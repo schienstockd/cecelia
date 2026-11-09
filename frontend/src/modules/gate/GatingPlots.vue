@@ -244,7 +244,9 @@ const panelDotSize = (s: PlotState) => scope.value === 'global' ? gDotSize.value
 // and cluster hosts offer, from the shared composable. Only affects GLOBAL scope; local scope
 // commits per-click as before (docs/todo/POP_SYNC_PLAN.md).
 const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
-        remapStaged } = usePopSelectionMode({ shared, live: gHL })
+        remapStaged, deferUntilApply, dropHeld } = usePopSelectionMode({ shared, live: gHL })
+// Manual apply also holds the viewer reload each gate write triggers — the plots here stay live.
+g.holdViewerPings({ defer: run => deferUntilApply('viewer', run), drop: () => dropHeld('viewer') })
 
 // Manual reload — bumped by the manager's reload button; threaded into GatePlotPanel /
 // GatePairsPanel so their fetch watches re-fire. Ungated by autoRefreshOnTask.

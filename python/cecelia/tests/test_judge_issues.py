@@ -9,9 +9,11 @@ Run with `pixi run test-py`.
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import pathlib
 import unittest
+from unittest import mock
 
 from cecelia.tests.test_judge_record import _bug, _Fixture
 
@@ -481,6 +483,17 @@ class StatusTest(_IssuesFixture):
         text = self.i.status_text(failed, None, repo=REPO)
         self.assertIn("**Pass 2026-10-05 failed** at `bugs`", text)
         self.assertEqual(self.i.leaks(text), [])
+
+
+class OnlyNewestTest(_IssuesFixture):
+    def test_apply_refuses_an_older_record_before_touching_github(self):
+        self.rec.write(self.build(bugs=[_fix("B1")]))
+        self.rec.write(self.build(date="2026-10-12", bugs=[_fix("B1")]))
+        err = io.StringIO()
+        with mock.patch.object(self.i, "Gh") as gh, mock.patch("sys.stderr", err):
+            self.assertEqual(self.i.main(["--date", "2026-10-05", "--apply"]), 1)
+        gh.assert_not_called()
+        self.assertIn("2026-10-05 isn't the newest record (2026-10-12)", err.getvalue())
 
 
 class AllowlistTest(_IssuesFixture):

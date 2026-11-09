@@ -26,12 +26,15 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 Cecelia is a structured platform for image analysis: analysis you can hand off and check afterwards.
 Every step runs through one scheduler that checks its params and logs the run, so the **record** says
-what was done, by whom, with which version. **Checks** read that record: quality checks at each step,
-and claim checks that ask whether the images you compare were treated the same and the statistical
-unit is right. **Chains** replay the steps on new images. AI (Kiwi, Claude Code) is optional and reads
-the same record; everything works with it off. Where the structure still has gaps is tracked in
-[`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md). How a claim from a plot is checked:
-[*Checking a claim*](user-docs/README.md#checking-a-claim).
+what was done, by whom, with which version, what it read and what it replaced. Raw files are
+fingerprinted at import, gates keep their history, and exported figures carry their provenance.
+**Checks** read that record: quality checks at each step, gating and statistics included, and claim
+checks that ask whether the images you compare were treated the same and the statistical unit is
+right. Checks warn; they never block. **Chains** re-run the steps on new images, or replay a past run
+with its exact settings. AI (Kiwi, Claude Code) is optional and reads the same record; everything works
+with it off. How the structure was audited, and the decisions still open, are in
+[`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md).
+How a claim from a plot is checked: [*Checking a claim*](user-docs/README.md#checking-a-claim).
 
 ---
 

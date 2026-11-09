@@ -462,12 +462,12 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
-| `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
+| `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`); `--date D` an older record, flagged superseded on every screen |
 | `pixi run judge-review --auto` | Work the `fix` bugs, then the `parked` ones (add the guard), unattended, one PR per session (`--limit N`, `--dry-run`, `--detach` to run in the background, `--resume-stopped` for worktrees a run fixed but stopped before recital) |
 | `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |
-| `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it |
+| `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it, for the newest record only |
 
 On the usage limit, `judge-bugs` / `judge-verify` / `judge-rules` print one line with when it lifts
 (`judge-bugs: usage limit — lifts 2026-10-07T01:40+11:00: …`) and exit 75, not a traceback.

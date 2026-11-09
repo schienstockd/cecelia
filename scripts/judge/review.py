@@ -19,7 +19,7 @@ each ending in a PR; never a merge (`auto_fix.py`).
 
 Usage:
     pixi run judge-review                # the newest record
-    pixi run judge-review --date 2026-10-06
+    pixi run judge-review --date 2026-10-06   # an older record: the queue warns it's superseded
     pixi run judge-review --auto --dry-run      # the briefs it would send
     pixi run judge-review --auto [--limit 3]    # work every `fix` bug (or the first 3 sessions)
     pixi run judge-review --auto --until EPOCH  # no new session after EPOCH (the weekly pass's deadline)
@@ -683,9 +683,12 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
               press: _t.Callable[[str], str] | None = None, out: _t.TextIO = sys.stdout,
               path: pathlib.Path | None = None, use_colour: bool = True, width: int | None = None,
               fullscreen: bool = False, launch: _t.Callable[[str, pathlib.Path], str | None] = default_launch,
-              cwd: pathlib.Path | None = None, older: _t.Sequence[dict] = ()) -> int:
+              cwd: pathlib.Path | None = None, older: _t.Sequence[dict] = (),
+              newest: str | None = None) -> int:
     """Walk the queue; returns how many answers were recorded this session (net of undos). `older`:
     the records before this one, whose late answers count as answers here (`apply_reviews`).
+    `newest`: the newest pass record's date when it isn't this one; every screen then says this record
+    is superseded, since answers given on the newer one don't show here.
 
     The queue is re-read after every answer, so a decide bug kept open joins the work list at once,
     and a bundle (`bundles`) once its file or branch has another open bug. A bundle's `fix now` records
@@ -719,6 +722,9 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     title = (_col(_BOLD, "Weekly judge review", use_colour=use_colour) + "  "
              + _col(_DIM, f"{record['date']} · {counts['decide']} to decide · {work} to work{sessions}"
                     + (f" · {counts['rule']} rule proposal(s)" if counts["rule"] else ""), use_colour=use_colour))
+    if newest and newest != record["date"]:
+        title += "\n" + _col(YELLOW, f"  superseded by {newest}: answers given there don't show here",
+                             use_colour=use_colour)
     if not items:
         print(title, file=out)
         print(_col(SKY_BLUE, "  nothing to review: every open bug and rule proposal is answered", use_colour=use_colour), file=out)
@@ -733,7 +739,8 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
         w, rows = size()
         if fullscreen:
             # title, status, card, then a blank and the prompt row at the bottom
-            lines, offset, page = scroll_window(card(w), rows - 5, offset, use_colour=use_colour)
+            lines, offset, page = scroll_window(card(w), rows - 4 - len(title.splitlines()), offset,
+                                                use_colour=use_colour)
             out.write(overwrite_frame("\n".join([title, status, *lines, ""]) + "\n"))
             out.flush()
             return offset, page
@@ -881,8 +888,8 @@ def main(argv: list[str] | None = None) -> int:
     if record.get("kind") == "failure":
         print(f"judge-review: {record['date']} is a failure record; nothing to review", file=sys.stderr)
         return 1
+    newest = (_record.pass_records() or [{}])[-1].get("date")
     if args.auto:
-        newest = (_record.pass_records() or [{}])[-1].get("date")
         if record["date"] != newest:
             # a newer record carries these bugs with the answers given since: an older one would redo them
             print(f"judge-review --auto: {record['date']} isn't the newest record ({newest}); --auto works "
@@ -919,7 +926,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     tty = sys.stdout.isatty()
     run_queue(record, press=read_key if tty and sys.stdin.isatty() else None, use_colour=tty, fullscreen=tty,
-              older=older)
+              older=older, newest=newest)
     return 0
 
 

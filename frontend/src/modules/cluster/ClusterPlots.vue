@@ -107,7 +107,9 @@ const {
 // summary hosts offer, wired here via the shared composable. Only affects GLOBAL scope; local
 // scope commits per-click as before (docs/todo/POP_SYNC_PLAN.md).
 const { manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
-        remapStaged } = usePopSelectionMode({ shared, live: highlighted })
+        remapStaged, deferUntilApply, dropHeld } = usePopSelectionMode({ shared, live: highlighted })
+// Manual apply also holds the viewer reload each gate write triggers — the plots here stay live.
+g.holdViewerPings({ defer: run => deferUntilApply('viewer', run), drop: () => dropHeld('viewer') })
 
 // Manual reload token — bumped by the manager's reload button. Threaded into each cluster panel
 // via `clusterPanelProps` so its fetch watch re-fires on manual reload (same shape as

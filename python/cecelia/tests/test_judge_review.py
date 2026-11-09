@@ -183,6 +183,32 @@ class QueueTest(_ReviewFixture):
         self.assertIn("nothing to review: every open bug and rule proposal is answered", out)
 
 
+class SupersededTest(_ReviewFixture):
+    """An older record stays reviewable (`--date`), but every screen says a newer one supersedes it."""
+
+    def test_an_older_record_is_flagged_on_the_title(self):
+        _, out = self.queue("q", newest="2026-10-12")
+        self.assertIn("superseded by 2026-10-12: answers given there don't show here", out)
+        _, out = self.queue("q", newest="2026-10-05")    # the newest record itself: no warning
+        self.assertNotIn("superseded", out)
+
+    def test_the_warning_stays_on_every_full_screen_card(self):
+        _, text = self.queue("o", "q", fullscreen=True, newest="2026-10-12")
+        frames = text.split(self.rv._CLEAR)[1:]
+        self.assertEqual(len(frames), 2)
+        self.assertTrue(all("superseded by 2026-10-12" in f for f in frames))
+
+    def test_main_on_an_older_date_names_the_newest_record(self):
+        self.rec.write(self.record)
+        self.rec.write(self.build(date="2026-10-12", bugs=[_bug("B1")]))
+        seen = {}
+        with mock.patch.object(self.rv, "run_queue", lambda record, **kw: seen.update(date=record["date"], **kw)):
+            self.assertEqual(self.rv.main(["--date", "2026-10-05"]), 0)
+            self.assertEqual((seen["date"], seen["newest"]), ("2026-10-05", "2026-10-12"))
+            self.assertEqual(self.rv.main([]), 0)
+            self.assertEqual((seen["date"], seen["newest"]), ("2026-10-12", "2026-10-12"))
+
+
 class WorkTest(_ReviewFixture):
     def setUp(self):
         super().setUp()
