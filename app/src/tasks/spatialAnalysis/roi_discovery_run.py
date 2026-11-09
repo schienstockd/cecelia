@@ -50,6 +50,7 @@ def run(params):
     min_objects = int(script_utils.get_param(params, "minObjects", default=20))
     max_rois = int(script_utils.get_param(params, "maxRois", default=50))
     group_by = str(script_utils.get_param(params, "groupBy", default="") or "")
+    merge_gap = int(script_utils.get_param(params, "mergeGap", default=-1))
 
     if not members:
         log.log("[ERROR] roiDiscovery: no objects")
@@ -98,7 +99,7 @@ def run(params):
 
     rois, groups = roi_utils.find_rois(um, px, t, shape, min_objects, voxel_um=(sx, sy, sz), weight=weight,
                                        objects=[_obj(i) for i in range(len(df))], max_rois=max_rois,
-                                       group_ids=group_ids)
+                                       group_ids=group_ids, merge_gap=merge_gap if merge_gap >= 0 else None)
     print("[PROGRESS] 1/1", flush=True)
     write_json_atomic(rois_path, {
         "version": 2, "suffix": params.get("suffix", "default"), "valueName": params.get("valueName"),

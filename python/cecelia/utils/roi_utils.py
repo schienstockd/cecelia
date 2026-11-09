@@ -147,12 +147,7 @@ def build_rois(cluster_ids, px, t, weight, shape, objects=None, max_rois=50, pad
         score = float(weight[idx].mean()) if score_by == "mean" else float(weight[idx].sum()) - exp
         if score <= 0:
             continue
-        lo, hi = px[idx].min(axis=0), px[idx].max(axis=0)
-        box = {}
-        for k, (axis, lim, floor_px) in enumerate((("x", shape["x"], 2), ("y", shape["y"], 2), ("z", shape["z"], 1))):
-            pad = max(floor_px, pad_frac * (hi[k] - lo[k]))
-            box[f"{axis}0"] = int(max(0, np.floor(lo[k] - pad)))
-            box[f"{axis}1"] = int(min(lim - 1, np.ceil(hi[k] + pad)))
+        box = group_box(px[idx], shape, pad_frac)
         t0 = int(max(0, t[idx].min() - 1))
         t1 = int(min(shape["t"] - 1, t[idx].max() + 1))
         order = idx[np.argsort(-weight[idx])]
@@ -176,6 +171,62 @@ def build_rois(cluster_ids, px, t, weight, shape, objects=None, max_rois=50, pad
     return rois
 
 
+def group_box(px, shape, pad_frac=0.2):
+    """The inclusive pixel box of a group's (n, 3) x/y/z centroids, padded by `pad_frac` of its own
+    extent (at least 2 px in x/y, 1 in z) and kept inside `shape`."""
+    lo, hi = px.min(axis=0), px.max(axis=0)
+    box = {}
+    for k, (axis, lim, floor_px) in enumerate((("x", shape["x"], 2), ("y", shape["y"], 2), ("z", shape["z"], 1))):
+        pad = max(floor_px, pad_frac * (hi[k] - lo[k]))
+        box[f"{axis}0"] = int(max(0, np.floor(lo[k] - pad)))
+        box[f"{axis}1"] = int(min(lim - 1, np.ceil(hi[k] + pad)))
+    return box
+
+
+# Two groups are the same SPOT when their x/y boxes overlap by at least this share of the smaller one
+# (and their planes touch) — `merge_groups`. Of the smaller, so a clump inside a bigger one still merges.
+MERGE_OVERLAP = 0.5
+
+
+def same_spot(a, b, min_overlap=MERGE_OVERLAP):
+    """Do two pixel boxes cover the same spot: x/y overlap ≥ `min_overlap` of the smaller box, z touching."""
+    if min(a["z1"], b["z1"]) < max(a["z0"], b["z0"]):
+        return False
+    ix = min(a["x1"], b["x1"]) - max(a["x0"], b["x0"]) + 1
+    iy = min(a["y1"], b["y1"]) - max(a["y0"], b["y0"]) + 1
+    if ix <= 0 or iy <= 0:
+        return False
+    small = min((a["x1"] - a["x0"] + 1) * (a["y1"] - a["y0"] + 1), (b["x1"] - b["x0"] + 1) * (b["y1"] - b["y0"] + 1))
+    return ix * iy >= min_overlap * small
+
+
+def merge_groups(groups, px, t, shape, max_gap, min_overlap=MERGE_OVERLAP):
+    """Union groups at the same spot (`same_spot`) whose frames overlap or have at most `max_gap` frames
+    between them (0 = back to back) — transitively, so a chain of short events at one place becomes one ROI. Returns the new group
+    id per object (-1 stays -1) and `{old id: new id}`.
+
+    This runs BEFORE the ROIs are built, ranked and capped: one event split into several (a linking
+    break, consecutive windows) is then one ROI scored on all its objects, not several near-copies
+    filling the list."""
+    groups = np.asarray(groups)
+    px = np.asarray(px, dtype=float).reshape(-1, 3)
+    t = np.asarray(t).astype(int)
+    ids = sorted(set(int(g) for g in groups if g >= 0))
+    info = []
+    for g in ids:
+        idx = np.flatnonzero(groups == g)
+        info.append((group_box(px[idx], shape), int(t[idx].min()), int(t[idx].max())))
+    def joined(i, j):
+        (bi, ti0, ti1), (bj, tj0, tj1) = info[i], info[j]
+        between = max(ti0, tj0) - min(ti1, tj1) - 1        # frames strictly between; < 0 = overlapping
+        return between <= max_gap and same_spot(bi, bj, min_overlap)
+
+    root = union_components(len(ids), joined)
+    mapping = {g: ids[root[i]] for i, g in enumerate(ids)}
+    out = np.array([mapping.get(int(g), -1) if g >= 0 else -1 for g in groups], dtype=int)
+    return out, mapping
+
+
 def box_iou(a, b):
     """Volume IoU of two inclusive pixel boxes."""
     inter, va, vb = 1.0, 1.0, 1.0
@@ -188,14 +239,10 @@ def box_iou(a, b):
     return inter / u if u > 0 else 0.0
 
 
-def assign_sites(rois, min_iou=0.3):
-    """Group ROIs at the same PLACE into sites: `site` = rank of the site's best ROI, in place.
-
-    A sessile hotspot scores in every time window, so one site fills the top of the queue with
-    windows of the same event. Overlapping boxes (IoU ≥ `min_iou`, any time) are one site —
-    transitively — so a reviewer can take one per site.
-    """
-    parent = list(range(len(rois)))
+def union_components(n, joined):
+    """Component root per item 0..n-1, joining every pair (i, j), i < j, for which `joined(i, j)` is
+    true — transitively. The one union-find behind sites and same-spot merging."""
+    parent = list(range(n))
 
     def find(i):
         while parent[i] != i:
@@ -203,15 +250,26 @@ def assign_sites(rois, min_iou=0.3):
             i = parent[i]
         return i
 
-    for i in range(len(rois)):
-        for j in range(i + 1, len(rois)):
-            if box_iou(rois[i]["box"], rois[j]["box"]) >= min_iou:
+    for i in range(n):
+        for j in range(i + 1, n):
+            if joined(i, j):
                 parent[find(j)] = find(i)
+    return [find(i) for i in range(n)]
+
+
+def assign_sites(rois, min_iou=0.3):
+    """Group ROIs at the same PLACE into sites: `site` = rank of the site's best ROI, in place.
+
+    A sessile hotspot scores in every time window, so one site fills the top of the queue with
+    windows of the same event. Overlapping boxes (IoU ≥ `min_iou`, any time) are one site —
+    transitively — so a reviewer can take one per site.
+    """
+    root = union_components(len(rois), lambda i, j: box_iou(rois[i]["box"], rois[j]["box"]) >= min_iou)
     best = {}
     for i, r in enumerate(rois):       # rois are rank-ordered, so the first seen is the best
-        best.setdefault(find(i), r["rank"])
+        best.setdefault(root[i], r["rank"])
     for i, r in enumerate(rois):
-        r["site"] = best[find(i)]
+        r["site"] = best[root[i]]
     return rois
 
 
@@ -231,18 +289,23 @@ def given_groups(ids, min_objects):
 
 
 def find_rois(xyz_um, px, t, shape, min_objects, voxel_um=(1.0, 1.0, 1.0), weight=None, objects=None,
-              max_rois=50, window=None, group_ids=None):
+              max_rois=50, window=None, group_ids=None, merge_gap=None):
     """The whole pipeline: groups per pooled window → ROIs ranked by excess over the background →
     sites. `voxel_um` is (x, y, z) µm per pixel, the floor of a box's thickness. Returns
     `(rois, group_ids)`.
 
     With `group_ids` (one id per object — `Group by`) the groups are GIVEN, not found: each id is one
     ROI over the frames it spans, ranked by its summed weight. No window and no background, because a
-    given group is not a pile-up to be told from a passing crowd — it is already one event."""
+    given group is not a pile-up to be told from a passing crowd — it is already one event.
+
+    With `merge_gap` (frames; None = off) groups at the same spot at most that far apart in time are
+    merged first (`merge_groups`) — a windowed group's background is the sum of its parts'."""
     n = len(np.asarray(t))
     weight = np.ones(n) if weight is None else np.asarray(weight, dtype=float)
     if group_ids is not None:
         groups = given_groups(group_ids, min_objects)
+        if merge_gap is not None:
+            groups, _ = merge_groups(groups, px, t, shape, merge_gap)
         # Ranked by a measure, a given group scores its MEAN weight: summed, a bigger event outranks a
         # smaller one whatever its measure (percentile weights are never 0), so "rank by preceded" would
         # rank by size. With no measure every weight is 1 and the sum is the object count, as before.
@@ -251,5 +314,11 @@ def find_rois(xyz_um, px, t, shape, min_objects, voxel_um=(1.0, 1.0, 1.0), weigh
                           score_by=by), groups
     groups = window_groups(xyz_um, t, min_objects, window)
     expected = background_expected(groups, xyz_um, t, weight, voxel_um, window)
+    if merge_gap is not None:
+        groups, mapping = merge_groups(groups, px, t, shape, merge_gap)
+        merged = {}
+        for old, new in mapping.items():
+            merged[new] = merged.get(new, 0.0) + float(expected.get(old, 0.0))
+        expected = merged
     return build_rois(groups, px, t, weight, shape, objects=objects, max_rois=max_rois,
                       expected=expected), groups

@@ -19,20 +19,28 @@ const ROI_MOVIE_MIN_PX = 480
 const ROI_CONTEXT_MIN_PX = 64
 
 """
-    roi_record_window(roi, n_t, n_z, n_y, n_x; pad_frames = 2) -> (; crop, z, ts)
+    roi_record_window(roi, n_t, n_z, n_y, n_x; pad_frames = 2, n_frames = 0) -> (; crop, z, ts)
 
 What one ROI's movie shows: a square-ish crop about its box — twice the box, at least
 `ROI_CONTEXT_MIN_PX` a side, centred, kept inside the `n_y × n_x` image (inclusive L0 pixels) — its
 planes (one `Int`, or a range whose max is drawn) and its frames widened by `pad_frames` each side,
-clamped to the image's `n_t` frames and `n_z` planes.
+clamped to the image's `n_t` frames and `n_z` planes. `n_frames` > 0 widens the frames further to that
+many, centred on the ROI and shifted (not cut) at the movie's ends — a sheet's tiles all run as long as
+its longest, so none stops early.
 """
 function roi_record_window(roi::AbstractDict, n_t::Integer, n_z::Integer, n_y::Integer, n_x::Integer;
-                           pad_frames::Integer = 2)
+                           pad_frames::Integer = 2, n_frames::Integer = 0)
     b  = roi["box"]
     gi(k) = Int(round(Float64(b[k])))
     z0 = clamp(gi("z0"), 0, max(0, n_z - 1)); z1 = clamp(gi("z1"), z0, max(0, n_z - 1))
     t0 = clamp(Int(roi["t0"]) - pad_frames, 0, max(0, n_t - 1))
     t1 = clamp(Int(roi["t1"]) + pad_frames, t0, max(0, n_t - 1))
+    want = min(n_frames, n_t)
+    if want > t1 - t0 + 1
+        extra = want - (t1 - t0 + 1)
+        t0 = clamp(t0 - extra ÷ 2, 0, n_t - want)
+        t1 = t0 + want - 1
+    end
     (; crop = (x = _context_span(gi("x0"), gi("x1"), n_x), y = _context_span(gi("y0"), gi("y1"), n_y)),
        z = z0 == z1 ? z0 : z0:z1, ts = t0:t1)
 end
@@ -64,18 +72,22 @@ _roi_min_px(size_x, size_y) = (v = [x for x in (size_x, size_y) if x isa Integer
 # The config kind an ROI movie is banked under — the Movies page re-records it (`roiRerecordRequest`,
 # utils/movieRestore.ts) rather than opening the Batch page, which has no ROIs.
 const ROI_CONFIG_KIND = "rois"
+"""The most frames of context either side a record takes — twin of `ROI_PAD_MAX` (frontend/src/utils/roiMovie.ts)."""
+const ROI_PAD_MAX = 60
 
 """
-    _roi_config(cfg, suffix, ids, pad_frames, sheet) -> MovieRecordConfig
+    _roi_config(cfg, suffix, ids, pad_frames, sheet; sheet_only, n_frames) -> MovieRecordConfig
 
 The record's config with THIS movie's ROIs banked on it: one id for an ROI's movie, every recorded one
 for the sheet — so re-recording it remakes exactly this file, not the whole selection.
 """
 function _roi_config(cfg::Union{Nothing,MovieRecordConfig}, suffix::AbstractString,
-                     ids::AbstractVector{<:AbstractString}, pad_frames::Integer, sheet::Bool)
+                     ids::AbstractVector{<:AbstractString}, pad_frames::Integer, sheet::Bool;
+                     sheet_only::Bool = false, n_frames::Integer = 0)
     cfg === nothing && return nothing
     block = Dict{String,Any}("suffix" => String(suffix), "ids" => collect(String, ids),
-                             "padFrames" => Int(pad_frames), "sheet" => sheet)
+                             "padFrames" => Int(pad_frames), "sheet" => sheet,
+                             "sheetOnly" => sheet_only, "nFrames" => Int(n_frames))
     MovieRecordConfig(; (f => getfield(cfg, f) for f in fieldnames(MovieRecordConfig) if f != :rois)...,
                         rois = block)
 end
@@ -101,7 +113,7 @@ end
 
 function run_roi_offline(task_id::String, project_uid::String, image_uid::String;
                          roi_suffix::AbstractString, roi_ids::AbstractVector = String[],
-                         pad_frames::Int = 2, sheet::Bool = false,
+                         pad_frames::Int = 2, sheet::Bool = false, sheet_only::Bool = false, n_frames::Int = 0,
                          fps::Int = 15, min_px::Int = ROI_MOVIE_MIN_PX,
                          suffix::AbstractString = "", numbered::Bool = false,
                          value_name::AbstractString = "",
@@ -137,6 +149,13 @@ function run_roi_offline(task_id::String, project_uid::String, image_uid::String
     base = name_suffix(roi_suffix) * _movie_suffix(suffix)     # `_<set>[_<suffix>]`
     n = length(rois)
     total = n + (sheet ? 1 : 0)
+    # sheet only: the tiles are scratch — rendered to a temp dir, composed, dropped. One ROI has no
+    # sheet, so it is still kept as its movie.
+    keep_each = !(sheet && sheet_only && n > 1)
+    tile_dir = keep_each ? "" : mktempdir()
+    # a sheet's tiles all run as long as its longest padded window, so none stops while others play on;
+    # a kept movie banks that length, so a re-record (one ROI, no sheet) cuts it the same
+    (sheet && n > 1) && (n_frames = max(n_frames, maximum(length(roi_record_window(r, n_t, n_z, 1, 1; pad_frames).ts) for r in rois)))
 
     ws_status(nothing, task_id, "running", image_uid; fun = fun, pool = "job")
     ws_progress(nothing, task_id, 0, total)
@@ -145,8 +164,9 @@ function run_roi_offline(task_id::String, project_uid::String, image_uid::String
     try
         for (i, roi) in enumerate(rois)
             job_cancelled(task_id) && (status = "cancelled"; break)
-            w = roi_record_window(roi, n_t, n_z, native_h, native_w; pad_frames)
-            out = _numbered_if_taken(_movie_named_path(img, image_uid; suffix = "$(base)_r$(roi["rank"])"), numbered)
+            w = roi_record_window(roi, n_t, n_z, native_h, native_w; pad_frames, n_frames)
+            out = keep_each ? _numbered_if_taken(_movie_named_path(img, image_uid; suffix = "$(base)_r$(roi["rank"])"), numbered) :
+                              joinpath(tile_dir, "r$(roi["rank"]).mp4")
             ws_log(nothing, task_id, "[$i/$n] ROI #$(roi["rank"]) frames $(first(w.ts))–$(last(w.ts)) → $(basename(out))")
             r = record_view_movie(zp, out; ts = w.ts, fps = fps, z = w.z, channels = 0:(nc - 1),
                                   specs = specs, crop = w.crop, min_px = min_px,
@@ -159,9 +179,9 @@ function run_roi_offline(task_id::String, project_uid::String, image_uid::String
             r.cancelled && (status = "cancelled"; break)
             push!(written, out)
             push!(captions, roi_caption(roi, get(reviews, String(roi["id"]), nothing)))
-            register_movie!(project_uid, basename(out); produced_by = "viewer", image_uid = image_uid,
+            keep_each && register_movie!(project_uid, basename(out); produced_by = "viewer", image_uid = image_uid,
                             suffix = suffix, config_kind = ROI_CONFIG_KIND, auto_tags = roi_movie_tags(roi_suffix, false),
-                            config = _roi_config(movie_config, roi_suffix, [String(roi["id"])], pad_frames, false))
+                            config = _roi_config(movie_config, roi_suffix, [String(roi["id"])], pad_frames, false; n_frames))
             ws_progress(nothing, task_id, i, total)
         end
         if status == "done" && sheet && length(written) > 1
@@ -170,9 +190,11 @@ function run_roi_offline(task_id::String, project_uid::String, image_uid::String
             register_movie!(project_uid, basename(sheet_path); produced_by = "viewer", image_uid = image_uid,
                             suffix = suffix, config_kind = ROI_CONFIG_KIND, auto_tags = roi_movie_tags(roi_suffix, true),
                             config = _roi_config(movie_config, roi_suffix,
-                                                 [String(r["id"]) for r in rois[1:length(written)]], pad_frames, true))
+                                                 [String(r["id"]) for r in rois[1:length(written)]], pad_frames, true;
+                                                 sheet_only = !keep_each, n_frames))
             push!(written, sheet_path)
         end
+        keep_each || filter!(p -> !startswith(p, tile_dir), written)   # the tiles were scratch
         status == "cancelled" && ws_log(nothing, task_id, "[CANCELLED] stopped after $(length(written)) movie(s)")
         ws_result(nothing, task_id, image_uid, Dict{String,Any}(
             "paths" => written, "path" => isempty(written) ? "" : last(written),
@@ -182,6 +204,7 @@ function run_roi_offline(task_id::String, project_uid::String, image_uid::String
         @warn "ROI record failed" exception = e
         ws_log(nothing, task_id, "[ERROR] $(sprint(showerror, e))")
     finally
+        isempty(tile_dir) || rm(tile_dir; force = true, recursive = true)
         finish_job!(task_id)
     end
     ws_status(nothing, task_id, status, image_uid; fun = fun, pool = "job")

@@ -569,8 +569,10 @@ function handle_movie_record(ws, data)
             run_roi_offline(task_id, project_uid, image_uid;
                             roi_suffix = String(get(rois_req, :suffix, "")),
                             roi_ids = ids_raw isa AbstractVector ? collect(String, ids_raw) : String[],
-                            pad_frames = Int(get(rois_req, :padFrames, 2)),
+                            pad_frames = clamp(Int(get(rois_req, :padFrames, 2)), 0, ROI_PAD_MAX),
                             sheet = Bool(get(rois_req, :sheet, false)),
+                            sheet_only = Bool(get(rois_req, :sheetOnly, false)),
+                            n_frames = clamp(Int(get(rois_req, :nFrames, 0)), 0, 100_000),
                             fps = fps, suffix = suffix, numbered = numbered,
                             # a size typed into the movie options is the tile's long side; blank = the default
                             min_px = something(_roi_min_px(size_x, size_y), ROI_MOVIE_MIN_PX),

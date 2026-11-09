@@ -50,7 +50,8 @@ stack. Per-tag notes are also on the
 
 ### Added
 
-- **Record ROIs.** Movie section → *ROIs*: a movie or figure per ROI ticked in the ROI list; *sheet* adds a contact sheet.
+- **Record ROIs.** Movie section → *ROIs*: a movie or figure per ROI ticked in the ROI list, *pad* frames either side; *make* movies, + sheet, or the sheet only.
+- **Find ROIs merges one spot.** *Grouping → Merge same spot* joins groups at one place a few frames apart into one ROI before ranking.
 - **Import from Immunemap.** *Import from… → Immunemap*: paste an experiment link, split its groups
   into attributes (time is filled in), then run *Import from Immunemap*.
 - **Named aggregate runs** sit side by side and restore their settings. New: *Max cells*, *Exclude*,

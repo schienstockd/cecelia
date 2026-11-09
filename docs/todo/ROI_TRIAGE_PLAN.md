@@ -239,7 +239,7 @@ cross windows through `storage` events, since the list is in the viewer and Reco
 the ROI's box (twice it, ≥ 64 px — a box is often one object, the event is in its surroundings), its
 planes and frames ± 2, drawn with the viewer's look exactly as Match viewer (one shared
 preparation, `_prepare_single_record`); a small box is enlarged by a whole factor to ≥ 480 px
-(`min_px`). *sheet* also stitches a contact sheet captioned by rank (+ your label). The ROI ids
+(`min_px`). *make* picks movies, movies + a contact sheet, or the sheet only (its tiles rendered to a temp dir and dropped); *pad* sets the frames of context either side (default 2, up to 60, figures too). Sheet tiles are captioned by rank (+ your label) and all run as long as the longest padded window (each widened about its ROI, shifted at the movie's ends), so none stops early. The ROI ids
 travel; the geometry is read from the set server-side (`api/src/movie_rois.jl`). Each movie banks its own ROIs (config kind `rois`), so the Movies page re-records it as it was rather than handing a whole-view look to the Batch page, and *Open at source* goes to the ROI; from a 3D view an ROI is still recorded flat (the max over its planes), and its figure too.
 
 ## 8. Staged implementation
@@ -366,3 +366,9 @@ nucleus; the biology of every ROI; any of the scenarios on a second image.
     groups. Made for detectAggregates' linked events (`aggregate.event_id#<name>`, ranked by
     `aggregate.preceded#<name>`) — SPATIAL_REGIONS_PLAN Decision 17 — and works on `track_id` too.
     Without it, discovery is unchanged.
+12. **Merge one spot before ranking** (2026-11-09, opt-in *Merge same spot*, *Within* frames). Groups
+    whose x/y boxes overlap by ≥ half the smaller (planes touching) and whose frames are at most the gap
+    apart are unioned — transitively — BEFORE the ROIs are built, ranked and capped (`merge_groups`).
+    Why: one clump broken by linking into a chain of events filled the list with near-copies (30
+    `mem_clumps` ROIs on UMq4v3 held 12 such pairs; merged, 21 ROIs and 2). A windowed group's
+    background is the sum of its parts'. Sites stay as they were — a label for review, not a merge.
