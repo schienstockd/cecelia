@@ -27,6 +27,8 @@ using Statistics: median
 #                    and `ensure_saturation_meta!`, its on-demand backfill for older images.
 #   acquisition.jl — `_recover_acquisition_settings!`: the source file's acquisition settings
 #                    (`meta["acquisition"]`) that Bio-Formats drops, read at import and on resync.
+#   acquisition_derived.jl — `inherited_acquisition`: a copy's or crop's settings, taken from its
+#                    source image (`_resync_crop_acquisition!` for Refresh on a crop).
 #   partial_timepoint.jl — `_apply_partial_timepoint!`: drops a last timepoint the acquisition never
 #                    finished (the probe reports it), unless the import keeps it.
 #   staging.jl     — source copying — `_stage_source!` and the yielding chunked copy underneath, so
@@ -42,6 +44,7 @@ include(joinpath(@__DIR__, "omezarr", "calibration.jl"))
 include(joinpath(@__DIR__, "omezarr", "ccid_sync.jl"))
 include(joinpath(@__DIR__, "omezarr", "saturation.jl"))
 include(joinpath(@__DIR__, "omezarr", "acquisition.jl"))
+include(joinpath(@__DIR__, "omezarr", "acquisition_derived.jl"))
 include(joinpath(@__DIR__, "omezarr", "partial_timepoint.jl"))
 include(joinpath(@__DIR__, "omezarr", "staging.jl"))
 include(joinpath(@__DIR__, "omezarr", "task.jl"))

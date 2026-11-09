@@ -90,7 +90,9 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
         "crop_source_value_name" => p.valueName,
         "crop_box" => Dict{String,Any}("x0"=>b.x0, "x1"=>b.x1, "y0"=>b.y0, "y1"=>b.y1,
                                        "z0"=>b.z0, "z1"=>b.z1, "t0"=>b.t0, "t1"=>b.t1))
-    merge!(crop_meta, _crop_inherited_meta(src_meta, (; b.x0, b.x1, b.y0, b.y1, b.z0, b.z1, b.t0, b.t1)))
+    box_nt = (; b.x0, b.x1, b.y0, b.y1, b.z0, b.z1, b.t0, b.t1)
+    merge!(crop_meta, _crop_inherited_meta(src_meta, box_nt))
+    merge!(crop_meta, crop_acquisition(src_meta, box_nt, read_ome_metadata(String(im_path))))   # microscope settings
     # provenance: a crop derives from the source's original file, so carry `ori_path` forward. Best-effort
     # — images imported before source-path tracking have none, so the crop's dialog still reads "not
     # recorded" (it inherits the source's gap rather than inventing one).

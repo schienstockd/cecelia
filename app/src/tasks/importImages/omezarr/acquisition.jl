@@ -133,11 +133,12 @@ The resync side of `_recover_acquisition_settings!`: images imported before sett
 from the source file. Skipped when ccid already has them from this reader version (the read is a scan
 of the source); settings from an older reader are re-read and replace the stored ones. A
 registered stack's `ori_path` is only the REFERENCE cycle's file, and an image with no `ori_path` has no
-source: both get their reason instead. Other derived images (projection, Z-crop, resample) are caught by
-the count check.
+source: both get their reason instead. A crop takes its SOURCE IMAGE's settings (`crop_acquisition`)
+when that image has them. Other derived images (projection, resample) are caught by the count check.
 """
 function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     stored = get(img.meta, "acquisition", nothing)
+    (isnothing(stored) || _acquisition_outdated(stored)) && _resync_crop_acquisition!(zarr_meta, img) && return
     if !isnothing(stored)
         _acquisition_outdated(stored) || return
         # Re-read into a scratch dict: if the source is gone now, the older settings stay and no

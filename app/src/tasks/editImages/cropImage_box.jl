@@ -65,3 +65,35 @@ function _crop_inherited_meta(src_meta::AbstractDict, box::NamedTuple)::Dict{Str
     end
     out
 end
+
+# Pure: the acquisition keys a crop inherits — `inherited_acquisition` for the cropped VERSION's store
+# (`src_counts`), with the settings re-expressed for the cropped stack. A crop is a subset of the same
+# acquisition, so the settings hold unchanged except where they count planes or frames: a Z-crop gets
+# the cropped plane count and its depth ramp (`brightZ`) measured from the crop's first plane (points
+# before it go negative, so the ramp between them is kept); a T-crop records the frames it kept as
+# `timelapse.acquired`, the field a time-lapse stopped early already uses. Needed because re-reading
+# the source file rejects a Z-crop (`_acquisition_describes_store`: other z-planes).
+function crop_acquisition(src_meta::AbstractDict, box, src_counts::AbstractDict)::Dict{String,Any}
+    inherited = inherited_acquisition(src_meta, src_counts)
+    out = get(inherited, "acquisition", nothing)
+    isnothing(out) && return inherited
+    if box.z0 != -1 && box.z1 != -1
+        zs = get(out, "zStack", nothing)
+        step = zs isa AbstractDict ? get(zs, "stepUm", nothing) : nothing
+        zs isa AbstractDict && (zs["count"] = box.z1 - box.z0)
+        bz = get(out, "brightZ", nothing)
+        if bz isa AbstractDict && step isa Real && box.z0 > 0
+            for p in get(bz, "points", Any[])
+                z = get(p, "zFromStartUm", nothing)
+                z isa Real && (p["zFromStartUm"] = round(z - box.z0 * step; digits = 4))
+            end
+        end
+    end
+    tl = get(out, "timelapse", nothing)
+    if box.t0 != -1 && box.t1 != -1 && tl isa AbstractDict
+        planned = get(tl, "count", nothing)
+        n_t = box.t1 - box.t0
+        planned isa Real && n_t < round(Int, planned) && (tl["acquired"] = n_t)
+    end
+    inherited
+end
