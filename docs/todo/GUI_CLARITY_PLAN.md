@@ -1,7 +1,7 @@
 # GUI clarity — a light, consistent, structured GUI
 
-**Status:** **parked** (2026-11-10). Nothing has been built or run yet. P0, the audit, comes first, and
-its output is `docs/todo/GUI_CLARITY_AUDIT.md`.
+**Status:** **parked** (2026-11-10). P0 draft done, unreviewed: [`GUI_CLARITY_AUDIT.md`](GUI_CLARITY_AUDIT.md), with
+the measured screenshots and counts plus per-phase evidence in [`gui-audit/`](gui-audit/). Nothing else is built.
 **Brief:** [`docs/archive/GUI_CLARITY_AUDIT_PROMPT.md`](../archive/GUI_CLARITY_AUDIT_PROMPT.md). Read
 its banner first: six of the brief's premises had moved by the time it was archived. This plan is the
 corrected version of the brief.
