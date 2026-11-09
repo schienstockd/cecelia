@@ -55,3 +55,18 @@ function _apply_partial_timepoint!(zarr_meta::AbstractDict, pt, resolved_zarr::A
     end
     nothing
 end
+
+"""
+    kept_partial_timepoint(meta) -> Union{Int,Nothing}
+
+The 0-based `t` of a stopped-mid-volume last timepoint that is still in the store (`partialTimepoint`
+recorded with `trimmed = false`), else `nothing`. For tasks that must leave its zero-filled planes
+out of a whole-movie estimate — drift correction passes it to its runner as `partialTimepoint`.
+"""
+function kept_partial_timepoint(meta::AbstractDict)
+    pt = get(meta, "partialTimepoint", nothing)
+    pt isa AbstractDict || return nothing
+    get(pt, "trimmed", false) === true && return nothing
+    t = get(pt, "t", nothing)
+    t isa Integer ? Int(t) : nothing
+end

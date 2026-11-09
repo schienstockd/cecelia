@@ -20,6 +20,10 @@ Parameter contract (JSON written by Julia):
   driftSmoothSigma   - float, gaussian sigma (frames) on the cumulative trajectory. Kills
                        integer-rounding jitter from sub-pixel-noise trajectories without
                        significantly changing real motion. 0 = off. Default: DRIFT_TASK_SMOOTH_SIGMA.
+  partialTimepoint   - int | null, a last timepoint the acquisition stopped mid-volume and the import
+                       kept (ccid meta["partialTimepoint"], trimmed = false). Left out of the estimate
+                       and placed with the last complete frame (estimate_drift's measured_frames);
+                       still written to the output. Ignored unless it is this store's last frame.
 """
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -79,6 +83,8 @@ def run(params):
     total = 2 * n_t + 1
     log.progress(0, total)
 
+    held_t = _held_timepoint(params.get('partialTimepoint'), n_t, log)
+
     log.log('>> estimate drift')
     est = correction_utils.estimate_drift(
         im_dat[0], drift_channel, dim_utils,
@@ -87,6 +93,7 @@ def run(params):
         max_angle_deg=max_angle_deg,
         trajectory_smooth_sigma=smooth_sigma,
         per_plane=per_plane, z_smoothness=z_smoothness,
+        measured_frames=held_t,
         on_progress=lambda n, _t: log.progress(n, total),
     )
     shifts = est.shifts
@@ -241,6 +248,8 @@ def run(params):
             'nRejected':    int(est.n_rejected),
             'interpolated': interp_json,
         }
+        if held_t is not None:
+            doc['heldFrames'] = [held_t]
         # How much the estimate can be trusted — see correction_utils.drift_residuals. OMITTED
         # rather than zeroed when the estimator had no redundancy to measure it from, so the
         # Julia side reads "not measured" instead of "measured as perfect".
@@ -259,6 +268,21 @@ def run(params):
 
     log.progress(total, total)
     log.log('>> done')
+
+
+def _held_timepoint(partial_t, n_t, log):
+    """The frame to leave out of the estimate, or None. A record that is not this store's last
+    frame (a different version's T) describes some other store, so it is not acted on."""
+    if partial_t is None:
+        return None
+    partial_t = int(partial_t)
+    if partial_t != n_t - 1 or partial_t < 1:
+        log.log(f'[WARN] partial timepoint t{partial_t} is not this store\'s last frame '
+                f'(T={n_t}) — registering every frame')
+        return None
+    log.log(f'>> t{partial_t} is incomplete (acquisition stopped mid-volume): drift estimated on '
+            f'the {partial_t} complete frame(s); t{partial_t} placed with t{partial_t - 1}')
+    return partial_t
 
 
 def main():

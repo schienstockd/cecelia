@@ -238,6 +238,9 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
            (p.driftSmoothSigma > 0 ? ", trajectory σ=$(p.driftSmoothSigma)" : ", no trajectory smoothing"))
 
     qc_out_path = joinpath(task_run_dir(img._dir), "drift_shifts.json")
+    # A kept stopped-mid-volume last frame stays out of the estimate (its black planes read as
+    # movement); the runner places it with the last complete frame.
+    partial_t = kept_partial_timepoint(get(raw, "meta", Dict{String,Any}()))
 
     ok = run_py("tasks/cleanupImages/drift_correct_run.py",
         (; imPath             = im_path,
@@ -250,6 +253,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
            driftSmoothSigma   = p.driftSmoothSigma,
            driftPerPlane      = p.driftPerPlane,
            driftZSmoothness   = p.driftZSmoothness,
+           partialTimepoint   = partial_t,
            qcOutPath          = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
