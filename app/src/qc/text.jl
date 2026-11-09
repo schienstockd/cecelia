@@ -538,6 +538,16 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "acq.drift_ok" => (
         short = "All {n} register; drift up to {value} µm",
         long  = "Drift-correct before tracking."),
+    # what the acquisition check's findings (and its model review) are about: `short` the heading
+    "acq.cat.movies" => (short = "Movies and channels", long = "Which movies the check could read, and which channel holds each object."),
+    "acq.cat.settings" => (short = "Settings", long = "Whether movies compared with each other were acquired the same way."),
+    "acq.cat.depth" => (short = "Depth", long = "Whether signal was compensated for depth (Bright Z)."),
+    "acq.cat.photons" => (short = "Photons", long = "How much light the objects carry, against the detector's range — noise and range in one."),
+    "acq.cat.balance" => (short = "Balance", long = "Whether the plan's objects are similarly bright."),
+    "acq.cat.shared" => (short = "Shared structure", long = "Whether one channel shows another's structure — bleed-through or autofluorescence."),
+    "acq.cat.drift" => (short = "Drift", long = "Whether the sample moved, and whether frames still register."),
+    "acq.cat.fading" => (short = "Fading", long = "Signal lost over the movie, per channel."),
+    "acq.cat.other" => (short = "Other", long = "Anything else in these movies that bears on the plan."),
     # what the claim checks (and the model review) are about: `short` the heading, `long` what it covers
     "claim.cat.images" => (
         short = "Images",

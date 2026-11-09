@@ -52,17 +52,10 @@ function _claim_finding_key(f)::String
 end
 
 
-# The section id for `key`: the one it had, else the next number after every id the claim has used.
-function _claim_section_id!(ids::AbstractDict, key::AbstractString)::String
-    haskey(ids, key) && return String(ids[key])
-    n = maximum((parse(Int, String(v)[2:end]) for v in values(ids)); init = 0)
-    ids[key] = "s" * lpad(n + 1, 2, '0')
-end
-
 # Give every warning a section id, reusing the one its key had.
 function _claim_assign_ids!(ids::AbstractDict, findings)
     for f in findings
-        f["level"] == "warn" && (f["sectionId"] = _claim_section_id!(ids, _claim_finding_key(f)))
+        f["level"] == "warn" && (f["sectionId"] = _entry_section_id!(ids, _claim_finding_key(f)))
     end
     ids
 end
@@ -110,36 +103,9 @@ function _claim_entry_md(c::AbstractDict, result::AbstractDict)::String
         end
         println(io)
     end
-    rv = get(c, "review", nothing)
-    println(io, "## Model review\n")
-    if !(rv isa AbstractDict)
-        println(io, "Not run.\n")
-    else
-        err = get(rv, "lastError", "")
-        isempty(err) || println(io, "⚠ The last run failed: ", err, "\n")
-        done = get(rv, "status", "") == "done"
-        done && println(io, "One ", isempty(get(rv, "model", "")) ? "" : rv["model"] * " ",
-                        "turn that read the claim and the record but not your notes. Mark each point Good, Bad or Unsure.\n")
-        rs = filter(x -> x["kind"] != "interpretation", rv["claims"])
-        done && isempty(rs) && println(io, get(rv, "abstain", false) ? "Nothing raised. " * get(rv, "note", "") : "Nothing beyond the checks.", "\n")
-        # grouped like the checks: a `### <Category>` heading (not a section — it has no id) closes the
-        # previous point's section, then that category's points follow
-        cat_of(x) = (k = get(x, "category", "other"); k in Cecelia.CLAIM_CATEGORIES ? k : "other")
-        for cat in Cecelia.CLAIM_CATEGORIES
-            xs = filter(x -> cat_of(x) == cat, rs)
-            isempty(xs) && continue
-            println(io, "### ", _claim_category_label(cat), "\n")
-            for x in xs
-                act = get(x, "action", "")
-                println(io, "### ", x["sectionId"], " · ", x["text"], isempty(act) ? "" : " → " * act, "\n")
-                ls = _claim_ref_labels(x)
-                isempty(ls) || println(io, "_refs:_ ", join(("`" * l * "`" for l in ls), ", "), "\n")
-            end
-        end
-        for x in filter(x -> x["kind"] == "interpretation", rv["claims"])
-            println(io, "## What the record would support\n\n", x["text"], "\n")
-        end
-    end
+    _review_md!(io, get(c, "review", nothing); categories = Cecelia.CLAIM_CATEGORIES, label = _claim_category_label,
+                intro = "read the claim and the record but not your notes.",
+                nothing_more = "Nothing beyond the checks.", supports_heading = "What the record would support")
     if r > 1
         println(io, "## Earlier rounds\n")
         for x in c["rounds"][1:end-1]
@@ -169,39 +135,8 @@ function _claim_write!(uid::AbstractString, id::AbstractString, c::AbstractDict,
     st == 200 || return st, body
     c["lastCheck"] = _claim_last_check(result)
     _set_bb_meta_field!(uid, id, "claim", c)
-    # the create path's guards on the sidecar (a review has ≤ KIWI_MAX_CLAIMS points, so the cap is a
-    # backstop): over it, the entry keeps the `_refs:_` lines and loses only the chips
-    kr = _claim_kiwi_refs(c)
-    ok = !isempty(kr) && _valid_bb_kiwi_refs(kr) && length(codeunits(JSON3.write(kr))) <= _BB_KIWI_REFS_MAX_BYTES
-    _set_bb_meta_field!(uid, id, "kiwiRefs", ok ? kr : nothing)
+    _set_review_kiwi_refs!(uid, id, get(c, "review", nothing))
     200, body
-end
-
-# A review point's refs as text, labelled as Kiwi resolved them — the line a saved Kiwi turn has under
-# each claim (`kiwiTurnSave.ts` `claimBullet`); the clickable chips are the entry's `kiwiRefs`.
-_claim_ref_labels(x) = unique!(String[string(get(r["result"], "label", ""))
-                                      for r in get(x, "refs", Any[]) if get(r, "result", nothing) isa AbstractDict &&
-                                      !isempty(string(get(r["result"], "label", "")))])
-
-# The review's refs as the entry's `kiwiRefs` sidecar, which the Blackboard renders as clickable chips:
-# `{key → {ref, label, savedAt}}`, one per distinct ref, labelled as Kiwi resolved it. The key follows
-# `refKey` (`kiwiTurn.ts`). Unlike a saved Kiwi turn (`kiwiTurnSave.ts`) it keeps every ref kind and
-# no `snapshot` (optional in the sidecar): a gone target shows "was: <label>". No review, no refs.
-function _claim_kiwi_refs(c::AbstractDict)::Dict{String,Any}
-    out = Dict{String,Any}()
-    rv = get(c, "review", nothing)
-    rv isa AbstractDict || return out
-    at = string(get(rv, "at", ""))
-    for x in get(rv, "claims", Any[]), r in get(x, "refs", Any[])
-        ref = get(r, "ref", nothing)
-        ref isa AbstractDict || continue
-        key = JSON3.write([[String(k), ref[k]] for k in sort!(collect(keys(ref)); by = string)])
-        haskey(out, key) && continue
-        res = get(r, "result", nothing)
-        label = res isa AbstractDict ? string(get(res, "label", "")) : ""
-        out[key] = Dict{String,Any}("ref" => ref, "label" => label, "savedAt" => at)
-    end
-    out
 end
 
 # The reply to a state or a check: the findings, the checks as facts, and the model review if it ran.

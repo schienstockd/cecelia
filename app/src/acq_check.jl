@@ -17,6 +17,20 @@ const ACQ_CEILING_PHOTONS = 20.0
 #: relative difference in pixel size treated as a different setting
 const ACQ_REL_TOLERANCE = 0.01
 
+# What each finding is about, for the reader and the model review (labels in qc/text.jl, `acq.cat.<id>`).
+# The review uses the same ones, plus `fading` (signal lost over the movie — no rule reads it yet) and `other`.
+const ACQ_CATEGORIES = ("movies", "settings", "depth", "photons", "balance", "shared", "drift", "fading", "other")
+const ACQ_CATEGORY_OF = Dict(
+    "acq.not_measured" => "movies", "acq.channels_unnamed" => "movies", "acq.channel_missing" => "movies",
+    "acq.not_in_plan" => "movies",
+    "acq.settings_differ" => "settings", "acq.settings_within_design" => "settings",
+    "acq.settings_by_design" => "settings", "acq.settings_by_design_cross" => "settings",
+    "acq.brightz_ramp_unused" => "depth", "acq.brightz_ramp_unused_image" => "depth", "acq.brightz_off" => "depth",
+    "acq.gain_high" => "photons", "acq.few_photons" => "photons", "acq.balance" => "balance",
+    "acq.shares_object" => "shared", "acq.shares_object_image" => "shared",
+    "acq.shares_reference" => "shared", "acq.shares_reference_image" => "shared",
+    "acq.drift_unreliable" => "drift", "acq.drift_ok" => "drift")
+
 # a field of a String- or Symbol-keyed dict (meta read back through JSON3 can be either)
 _ag(d, k, default = nothing) = d isa AbstractDict ? something(get(d, k, nothing), get(d, Symbol(k), nothing), Some(default)) : default
 _anum(v) = v isa Real ? Float64(v) : nothing
@@ -206,6 +220,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     add!(level, code, scope; data = nothing, where = nothing, detail = nothing, subs...) = begin
         f = qc_finding(level, code; detail = detail, subs...)
         f["scope"] = scope
+        f["category"] = get(ACQ_CATEGORY_OF, code, "other")
         # which movies (or designs) hold which value; the line's label says which it lists
         where === nothing || (f["where"] = where; f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
         data === nothing || (f["thisData"] = qc_text(data; subs...).long)

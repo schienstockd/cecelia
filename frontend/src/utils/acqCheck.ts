@@ -4,6 +4,7 @@
 import type { AcqCheckResult, AcqDesign, AcqFinding, AcqPlan, AcqRow } from './acqCheckApi'
 import type { Severity } from '../lib/severity'
 import { isLiveStatus } from '../lib/taskStatus'
+import { AI_OFF_COPY, aiOffLine, type AiState } from './aiSwitch'
 import type { TaskStatus } from '../stores/tasks'
 
 /** What the plan says it will measure, in the order the form offers it. */
@@ -136,3 +137,13 @@ export function planByName(plan: AcqPlan, designs: AcqDesign[]): AcqPlan {
   })
   return { ...plan, objects: plan.objects.map(conv), references: plan.references.map(conv) }
 }
+
+/** Why the Review button can't run ('' = it can): AI off (and by whom), no saved plan, or a turn
+ *  already running. */
+export function reviewBlocked(o: { ai: AiState; hasPlan: boolean; running: boolean }): string {
+  if (!o.ai.enabled) return o.ai.setBy === 'workstation' ? `${AI_OFF_COPY.title} — ${aiOffLine(o.ai).toLowerCase()}` : AI_OFF_COPY.title
+  if (!o.hasPlan) return 'Save a plan first'
+  if (o.running) return 'Reviewing…'
+  return ''
+}
+

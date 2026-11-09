@@ -165,6 +165,11 @@ end
                   brightz = false, depth = Dict(0 => -30.0, 1 => -30.0))
     r = Cecelia.acq_check(plan, [Cecelia.acq_image_facts("a", "x", m), Cecelia.acq_image_facts("b", "y", m)])   # unnamed
     @test all(f -> haskey(Cecelia.QC_TEXT, f["key"]) && !occursin("{", f["short"] * f["long"]), r["findings"])
+    # every finding names what it is about — a category the model review files its points under too
+    @test all(f -> f["category"] in Cecelia.ACQ_CATEGORIES && f["category"] != "other", r["findings"])
+    codes = [k for k in keys(Cecelia.QC_TEXT) if startswith(k, "acq.") && !endswith(k, ".data") && !startswith(k, "acq.cat.")]
+    @test sort(codes) == sort(collect(keys(Cecelia.ACQ_CATEGORY_OF)))
+    @test all(c -> haskey(Cecelia.QC_TEXT, "acq.cat." * c), Cecelia.ACQ_CATEGORIES)
 end
 
 @testset "acq_check — the measure task is registered and runs per image" begin

@@ -1,7 +1,7 @@
 # Test-acquisition check — plan
 
 **Status:** **IN PROGRESS** (2026-11-09). Measures built (#2072); slice 1 — rules, storage, API, set modal — built
-(*Slice 1 built*, below), awaiting the maintainer's visual pass; the review turn is next. Written from one set used as a stand-in (below).
+(*Slice 1 built*, below), awaiting the maintainer's visual pass; slice 2 — one review turn — built, not yet run on a real model. Written from one set used as a stand-in (below).
 Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md) — that plan's Decision 1/2 ("test
 acquisition imported into the user's project") given a concrete shape. Reuses the mechanism of
 [`IMAGE_ANALYSIS_RECITAL_PLAN.md`](IMAGE_ANALYSIS_RECITAL_PLAN.md).
@@ -202,6 +202,17 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   objects up to 4.2× apart, OT-I dimmest in 10 of 16; OT-I ~ gBT and P14 ~ gBT shared structure in one movie
   each; OT-I ~ AF in 6, P14 ~ AF in 9; all register.
 - **Not in this slice**: the Kiwi review turn; the briefing's open acquisition checks.
+
+## Slice 2 built (2026-11-09, branch `feat/acq-check-review`, stacked on slice 1)
+
+- **One review turn**, the claim review's mechanism (`api/src/acq_review.jl`; the pieces both share moved
+  to `api/src/review_turn.jl`): "Review" in the set modal → `POST /api/acqcheck/review` → one Kiwi turn on
+  the saved plan, told the rule findings so it doesn't repeat them. Reads the record and
+  `get_acquisition_knowledge` only (`ACQ_REVIEW_TOOLS`); notes, Blackboard, captures, briefing, ELN, lab
+  log and the analysis record are withheld. Points file under the check's own categories (`ACQ_CATEGORIES`,
+  plus `fading` — no rule reads it yet) as `### sNN` sections on the set's entry, marked Good / Bad /
+  Unsure there; a new plan round drops the review. **Not run on a real model yet** — scored on m5uLPh
+  against the diagnosis above is still to do.
 
 ## Resume when
 

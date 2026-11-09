@@ -6,7 +6,12 @@
 # The check itself reads image meta only, so GET runs it live and writes nothing; saving a plan writes
 # the entry (a new round when the plan changed), and its text is the latest check as plain lines.
 #
-#   acqCheck = {setUid, plan, round, rounds: [{round, at, by, plan}], lastCheck: {at, open: [code|scope]}}
+#   acqCheck = {setUid, plan, round, rounds: [{round, at, by, plan}], lastCheck: {at, open: [code|scope]},
+#               review?, reviewIds?: {key: "s01"}}
+#
+# `review` is the model review (api/src/acq_review.jl, shape in review_turn.jl): its points are the
+# entry's only `### sNN` sections, marked Good / Bad / Unsure; the rule findings stay plain lines.
+# A new round drops it — it answered the earlier plan.
 
 # The set's plan entry id, or "" — the newest open-or-not entry whose `acqCheck.setUid` is the set.
 function _acq_entry_for(uid::AbstractString, set_uid::AbstractString)::String
@@ -48,8 +53,14 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
             println(io)
         end
     end
+    _review_md!(io, get(a, "review", nothing); categories = Cecelia.ACQ_CATEGORIES, label = _acq_category_label,
+                intro = "read the plan, the movies' record and the acquisition knowledge.",
+                nothing_more = "Nothing beyond the checks.", supports_heading = "What these movies would support")
     String(take!(io))
 end
+
+# A finding or review category's label ("Shared structure"); an unknown id reads as Other.
+_acq_category_label(id) = Cecelia.qc_text("acq.cat." * (id in Cecelia.ACQ_CATEGORIES ? id : "other")).short
 
 # The reply: the plan (or none), the set's label designs (shared channel-name lists), and the live check.
 function _acq_reply(uid, set, id)
@@ -61,7 +72,9 @@ function _acq_reply(uid, set, id)
     JSON3.write((; ok = true, entryId = id, round = a === nothing ? 0 : get(a, "round", 1), plan,
                  suggestedDesigns = Cecelia.acq_suggest_designs(facts), findings = result["findings"],
                  rows = result["rows"], ran = result["ran"], skipped = result["skipped"],
-                 nImages = result["nImages"], nMeasured = result["nMeasured"], nOpen = length(Cecelia.acq_open(result))))
+                 nImages = result["nImages"], nMeasured = result["nMeasured"], nOpen = length(Cecelia.acq_open(result)),
+                 review = a === nothing ? nothing : get(a, "review", nothing),
+                 categoryLabels = Dict(c => _acq_category_label(c) for c in Cecelia.ACQ_CATEGORIES)))
 end
 
 """
@@ -133,12 +146,23 @@ function api_acqcheck_plan(body_bytes::Vector{UInt8})
         if JSON3.write(a["plan"]) != JSON3.write(plan)
             a["plan"] = plan; a["round"] = Int(get(a, "round", 1)) + 1
             push!(a["rounds"], Dict{String,Any}("round" => a["round"], "at" => at, "by" => by, "plan" => plan))
+            delete!(a, "review")   # it answered the earlier plan
         end
-        st, rb = api_blackboard_revise(Vector{UInt8}(JSON3.write(Dict(
-            "projectUid" => uid, "entryId" => id, "content" => _acq_entry_md(set.name, a, result)))))
-        st == 200 || return st, rb
     end
-    a["lastCheck"] = Dict{String,Any}("at" => at, "open" => sort!([_acq_finding_key(f) for f in Cecelia.acq_open(result)]))
-    _set_bb_meta_field!(uid, id, "acqCheck", a)
+    st, rb = _acq_write!(uid, id, set.name, a, result)   # a no-op revise right after a create
+    st == 200 || return st, rb
     200, _acq_reply(uid, set, id)
+end
+
+# Rewrite the entry text for `a` and its check (a no-op revise when nothing changed), record the check,
+# and carry the review's refs as the entry's `kiwiRefs`.
+function _acq_write!(uid::AbstractString, id::AbstractString, set_name, a::AbstractDict, result::AbstractDict)
+    st, rb = api_blackboard_revise(Vector{UInt8}(JSON3.write(Dict(
+        "projectUid" => uid, "entryId" => id, "content" => _acq_entry_md(set_name, a, result)))))
+    st == 200 || return st, rb
+    a["lastCheck"] = Dict{String,Any}("at" => string(Dates.now()),
+                                      "open" => sort!([_acq_finding_key(f) for f in Cecelia.acq_open(result)]))
+    _set_bb_meta_field!(uid, id, "acqCheck", a)
+    _set_review_kiwi_refs!(uid, id, get(a, "review", nothing))
+    200, rb
 end

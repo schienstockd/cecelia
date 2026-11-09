@@ -1,17 +1,25 @@
 <script setup lang="ts">
 // The set-level acquisition check (docs/todo/ACQUISITION_TEST_CHECK_PLAN.md): the set's plan, what is
 // off across the set, and a per-movie table grouped by label design. Runs live on open (nothing
-// written); saving the plan writes the set's Blackboard entry. Data: utils/acqCheckApi.ts; logic:
-// utils/acqCheck.ts; rules: app/src/acq_check.jl.
-import { computed, onMounted, ref, watch } from 'vue'
+// written); saving the plan writes the set's Blackboard entry. "Review" runs one Kiwi turn on the saved
+// plan (api/src/acq_review.jl); its points land on that entry, marked there Good / Bad / Unsure.
+// Data: utils/acqCheckApi.ts; logic: utils/acqCheck.ts; rules: app/src/acq_check.jl.
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import BaseModal from './BaseModal.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import AcqPlanForm from './AcqPlanForm.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import { useProjectStore } from '../stores/project'
 import { useToast } from '../composables/useToast'
-import { fetchAcqCheck, saveAcqPlan, type AcqCheckResult, type AcqPlan, type AcqRow } from '../utils/acqCheckApi'
-import { brightZText, measuringCount, emptyPlan, findingImageUids, findingLines, findingSeverity, findingsFor, fmt, planSentence, rowsByDesign } from '../utils/acqCheck'
+import { fetchAcqCheck, reviewAcqCheck, saveAcqPlan, type AcqCheckResult, type AcqPlan, type AcqRow } from '../utils/acqCheckApi'
+import { brightZText, measuringCount, emptyPlan, findingImageUids, findingLines, findingSeverity, findingsFor, fmt, planSentence, reviewBlocked, rowsByDesign } from '../utils/acqCheck'
+import { stepLabel } from '../utils/kiwiTurn'
+import ModelReviewPoints from './ModelReviewPoints.vue'
+import { useKiwiStore } from '../stores/kiwi'
+import { useObserverStore } from '../stores/observer'
+import { useSettingsStore } from '../stores/settings'
+import { useWsStore } from '../stores/ws'
 import { MEASURE_FUN, submitMeasure } from '../utils/acqMeasureRun'
 import { useTaskStore } from '../stores/tasks'
 import InlineNote from './InlineNote.vue'
@@ -21,6 +29,11 @@ const emit = defineEmits<{ close: []; changed: [AcqCheckResult] }>()
 const project = useProjectStore()
 const toast = useToast()
 const taskStore = useTaskStore()
+const router = useRouter()
+const observer = useObserverStore()   // the AI switch: the review is a Kiwi turn
+const settings = useSettingsStore()   // …on the model picked for Kiwi
+const ws = useWsStore()
+const kiwi = useKiwiStore()
 
 const result = ref<AcqCheckResult | null>(null)
 const loading = ref(true)
@@ -83,6 +96,31 @@ const display = (r: AcqRow) => ({
   ...Object.fromEntries(objectNames.value.map(n => [`o:${n}`, fmt(r.objects[n]?.p99 ?? null)])),
 })
 const rowFindings = (uid: string) => (result.value ? findingsFor(result.value, uid) : [])
+// The model review: one background Kiwi turn on the saved plan. Its steps arrive as `kiwi:step`. The Kiwi
+// store follows it to the end (`kiwi:done`, and a reload after a reconnect), and the entry is written
+// before `kiwi:done` is sent — so once the turn is in the store's feed, a reload carries the review.
+const reviewTurn = ref('')     // the running review turn ('' = none)
+const reviewStep = ref('')
+const reviewTip = computed(() => reviewBlocked({ ai: observer.ai, hasPlan: !!plan.value && !editing.value, running: !!reviewTurn.value }))
+async function review() {
+  if (reviewTip.value) return
+  reviewStep.value = ''
+  const tid = await reviewAcqCheck(props.projectUid, props.setUid, settings.kiwiModel)
+  if (!tid) { toast.add({ severity: 'warn', life: 5000, summary: 'Kiwi is busy — try again when it’s done' }); return }
+  reviewTurn.value = tid
+}
+const onStep = (d: Record<string, unknown>) => { if (d.turnId === reviewTurn.value) reviewStep.value = stepLabel(String(d.step ?? '')) }
+watch(() => kiwi.turns, ts => {
+  if (!reviewTurn.value || !ts.some(t => t.turnId === reviewTurn.value)) return
+  reviewTurn.value = ''
+  void load()
+})
+onMounted(() => ws.on('kiwi:step', onStep))
+onUnmounted(() => ws.off('kiwi:step', onStep))
+function openEntry() {
+  if (result.value?.entryId) void router.push({ path: '/blackboard', query: { entry: result.value.entryId } })
+}
+
 const metaImage = computed(() => {
   for (const s of project.sets) { const i = s.images.find(x => x.uid === metaUid.value); if (i) return i }
   return null
@@ -126,6 +164,25 @@ const metaImage = computed(() => {
         <li v-if="!setFindings.length" class="cc-muted">Nothing across the set.</li>
       </ul>
 
+      <div class="cc-eyebrow cc-fs-2xs cc-row review-head">
+        <span>Review</span>
+        <span class="cc-muted" v-tooltip.top="'Kiwi’s model reads the plan, the movies and acquisition knowledge — not your notes'">
+          · {{ settings.kiwiModel }}, about a minute</span>
+        <button class="cc-btn cc-btn-dense cc-fs-xs review-btn" type="button" :disabled="!!reviewTip"
+                v-tooltip.top="reviewTip || 'What to change before acquiring the rest'" @click="review">
+          <i v-if="reviewTurn" class="pi pi-spin pi-spinner" />
+          {{ reviewTurn ? 'Reviewing…' : result.review ? 'Run again' : 'Review' }}
+        </button>
+      </div>
+      <div v-if="reviewTurn" class="cc-muted cc-fs-xs">{{ reviewStep || 'starting' }}</div>
+      <template v-if="result.review">
+        <div class="cc-fs-xs review-points">
+          <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels" />
+        </div>
+        <button v-if="result.review.items.length" class="cc-btn cc-btn-bare cc-fs-2xs mark-link" type="button"
+                v-tooltip.top="'Open on the Blackboard'" @click="openEntry">Mark each point Good / Bad / Unsure</button>
+      </template>
+
       <div class="cc-eyebrow cc-fs-2xs">Per movie</div>
       <div v-for="g in groups" :key="g.design ?? ''" class="group">
         <div class="cc-muted cc-fs-xs group-label">{{ g.label }}</div>
@@ -161,4 +218,9 @@ const metaImage = computed(() => {
 .group-label { margin-top: 0.3rem; }
 .row-findings { padding: 0.4rem 0.6rem 0.5rem 1.4rem; background: var(--cc-surface-2); border-radius: var(--cc-radius-sm); }
 .name { text-align: left; color: var(--cc-accent); }
+.review-head { gap: 0.35rem; }
+.review-head .cc-muted { text-transform: none; letter-spacing: normal; }
+.review-btn { margin-left: auto; }
+.review-points { display: flex; flex-direction: column; gap: 0.35rem; }
+.mark-link { align-self: flex-start; color: var(--cc-accent); }
 </style>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, rowsByDesign } from './acqCheck'
-import type { AcqCheckResult, AcqPlan, AcqRow } from './acqCheckApi'
+import { badgeOf, measuringCount, brightZText, cleanPlan, emptyPlan, findingImageUids, planByName, findingLines, findingSeverity, findingsFor, listWords, planProblems, planSentence, reviewBlocked, rowsByDesign } from './acqCheck'
+import { parseAcqResult, type AcqCheckResult, type AcqPlan, type AcqRow } from './acqCheckApi'
 import type { TaskStatus } from '../stores/tasks'
 
 const designs = [{ id: 'd1', key: 'P14-CTDR · empty-570 · OTI-uGFP · gBT-CTV' }, { id: 'd2', key: 'empty-642 · P14-ubTomato · gBT-uGFP · OTI-CTV' }]
@@ -17,7 +17,7 @@ const row = (uid: string, design: string): AcqRow => ({
 })
 const result = (over: Partial<AcqCheckResult> = {}): AcqCheckResult => ({
   entryId: '', round: 0, plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
-  nImages: 0, nMeasured: 0, nOpen: 0, ...over,
+  nImages: 0, nMeasured: 0, nOpen: 0, review: null, categoryLabels: {}, ...over,
 })
 
 describe('planSentence', () => {
@@ -115,5 +115,28 @@ describe('planByName', () => {
     const r = planByName(p, ds)
     expect(r.objects[0].channels.d1).toBe('P14-CTDR')
     expect(r.objects[1].channels.d1).toBe('OTI')
+  })
+  it('says why the review can’t run: AI off (and by whom), no plan, already running', () => {
+    const on = { enabled: true, setBy: null } as const
+    expect(reviewBlocked({ ai: on, hasPlan: true, running: false })).toBe('')
+    expect(reviewBlocked({ ai: on, hasPlan: false, running: false })).toBe('Save a plan first')
+    expect(reviewBlocked({ ai: on, hasPlan: true, running: true })).toBe('Reviewing…')
+    expect(reviewBlocked({ ai: { enabled: false, setBy: 'profile' }, hasPlan: true, running: false })).toBe('AI features are off')
+    expect(reviewBlocked({ ai: { enabled: false, setBy: 'workstation' }, hasPlan: true, running: false }))
+      .toBe('AI features are off — turned off for this workstation')
+  })
+  it('reads the review and its category labels off a check reply', () => {
+    expect(parseAcqResult(null)).toBeNull()
+    expect(parseAcqResult({ error: 'x' })).toBeNull()
+    const none = parseAcqResult({ entryId: '', findings: [], rows: [] })!
+    expect(none.review).toBeNull()
+    expect(none.categoryLabels).toEqual({})
+    const r = parseAcqResult({ entryId: 'bb-1', categoryLabels: { drift: 'Drift', other: 'Other' },
+      review: { status: 'done', model: 'sonnet', claims: [
+        { kind: 'observation', category: 'drift', text: 'M1 shifts', action: 'Stabilise', sectionId: 's01' },
+        { kind: 'interpretation', text: 'Tracking works on m2.' }] } })!
+    expect(r.review?.items.map(x => [x.category, x.action, x.sectionId])).toEqual([['drift', 'Stabilise', 's01']])
+    expect(r.review?.supports).toBe('Tracking works on m2.')
+    expect(r.categoryLabels.drift).toBe('Drift')
   })
 })

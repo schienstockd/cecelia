@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { claimPopRef, reviewClaim, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, reviewByCategory, parseClaimResult } from './claimApi'
+import { claimPopRef, reviewClaim, claimScopeOf, claimUnitsOf, defaultUnitAttr, findingsOf, openCount, parseClaimResult } from './claimApi'
+import { reviewGroups } from './modelReview'
 
 const s = (valueName: string, pop: string) => ({ valueName, pop, popType: 'flow' })
 
@@ -61,7 +62,7 @@ describe('claimApi', () => {
         { kind: 'observation', category: 'mystery', text: 'x', sectionId: 's10' }] } })!
     expect(r.categories.map(c => c.state)).toEqual(['warn', 'ok'])
     expect(r.checks[0].category).toBe('images')
-    const g = reviewByCategory(r)
+    const g = reviewGroups(r.review, r.categoryLabels)
     expect(g.map(x => x.label)).toEqual(['Images', 'The data', 'mystery'])   // order of the labels; unknown last
     expect(g[1].items[0].action).toBe('set a minimum duration')
     expect(r.review?.items[1].action).toBe('')
