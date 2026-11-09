@@ -41,7 +41,10 @@ end
     @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", p)
     @test occursin("Category one of: Movies and channels, Settings, Depth, Photons, Balance, Shared structure, Drift, Fading, Other", p)
     # the closing interpretation is a verdict on the plan as written, weighing the rule findings too
-    @test occursin("\"Ready to acquire as planned.\" or \"Change before acquiring:", p) && occursin("the rule findings AND your points", p)
+    @test occursin("\"Ready to acquire as planned.\" or the one to three changes", p) && occursin("the rule findings AND your points", p)
+    # no lead-in that repeats the heading; the rule warnings first; movies by full name (the app swaps in uids)
+    @test occursin("so don't start with a lead-in like \"Change before acquiring:\"", p)
+    @test occursin("Start from the rule checks' warnings", p) && occursin("by its full name exactly as listed", p)
     @test occursin("The rule checks found nothing.", acq_review_prompt(plan, String[]))
     @test occursin("before the rest of the experiment is acquired", acq_review_system_prompt("pX")) &&
           occursin("`pX`", acq_review_system_prompt("pX"))
@@ -53,7 +56,8 @@ end
     fin = merge(plan, Dict{String,Any}("stage" => "final"))
     pf = acq_review_prompt(fin, ["m1 — uidA"])
     @test occursin("what should the analysis do about it?", pf) && occursin("→ <what to do in the analysis", pf)
-    @test occursin("\"Analyse as planned.\" or \"Before comparing:", pf) && occursin("These movies can answer:", pf)
+    @test occursin("\"Analyse as planned.\" or the one to three analysis steps", pf) && occursin("These movies can answer:", pf)
+    @test occursin("like \"Before comparing:\"", pf)
     @test !occursin("Ready to acquire", pf)
     sf = acq_review_system_prompt("pX", "final")
     @test occursin("FINAL data", sf) && occursin("never suggest it", sf) && occursin("correct for in the analysis", sf)

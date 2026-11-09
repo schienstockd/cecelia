@@ -58,12 +58,16 @@ const _ACQ_STAGE_ASK = Dict(
     "final" => "What else in these movies would get in the way of the plan, and what should the analysis do about it?")
 const _ACQ_STAGE_ARROW = Dict("test" => "what to change at the scope or in the plan",
                               "final" => "what to do in the analysis, or how to narrow the plan")
+# The verdict sits under its heading (`acq_verdict_heading`), so it starts with no lead-in of its own.
 const _ACQ_STAGE_VERDICT = Dict(
-    "test" => """Either "Ready to acquire as planned." or "Change before acquiring: <the one to three changes that matter
-most for this plan, most important first>." Don't narrow the plan into a different one.""",
-    "final" => """Either "Analyse as planned." or "Before comparing: <the one to three analysis steps that matter most
-for this plan, most important first>." If these movies cannot answer the plan at all, say instead
-"These movies can answer: <the narrower question they can>." """)
+    "test" => """Either "Ready to acquire as planned." or the one to three changes that matter most for this plan, most
+important first, as one imperative sentence ("Raise the OTI laser, …"). It sits under the heading "Before
+acquiring the rest", so don't start with a lead-in like "Change before acquiring:". Don't narrow the plan
+into a different one.""",
+    "final" => """Either "Analyse as planned." or the one to three analysis steps that matter most for this plan, most
+important first, as one imperative sentence ("Denoise OTI, …"). It sits under the heading "Before
+analysing", so don't start with a lead-in like "Before comparing:". If these movies cannot answer the plan
+at all, say instead "These movies can answer: <the narrower question they can>." """)
 
 """The heading over the review's verdict on the plan's entry and in the dialog, by the plan's stage."""
 acq_verdict_heading(plan) = Cecelia.acq_stage(plan) == "final" ? "Before analysing" : "Before acquiring the rest"
@@ -136,8 +140,14 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
     two problems are two claims.
 
     End with the `interpretation`: the verdict on the plan above, weighing the rule findings AND your points.
-    $(_ACQ_STAGE_VERDICT[stage]) Name the plan's objects and channels. Don't make the plan depend on something
-    the record lacks. One sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
+    $(_ACQ_STAGE_VERDICT[stage])
+    Start from the rule checks' warnings on the compared objects (photons, balance, drift, shared structure),
+    then add your own most important point. Name the plan's objects and channels. A step that needs something
+    the record lacks (a Mouse attribute, a control) says to add it first. One sentence of at most
+    $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
+
+    Name a movie in your text by its full name exactly as listed above — never shortened, never by its uid:
+    the app shows names or uids as the reader chooses.
     """
 end
 

@@ -46,7 +46,7 @@ const PROFILE_KEYS = [
   'captureAttachToKiwi', 'captureSendToPaired',
   // Kiwi / lab log / tips / view profile
   'kiwiReasoning', 'kiwiModel', 'purgeClaudeConversations', 'labLogAutoContext', 'labLogShowNames',
-  'acqCheckShowNames', 'guidesShowClaude', 'kiwiHidden',
+  'showImageNames', 'guidesShowClaude', 'kiwiHidden',
   'tipsOnLaunch', 'tipsLastShown', 'viewProfile',
 ] as const
 type ProfileKey = typeof PROFILE_KEYS[number]
@@ -398,9 +398,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // change; UIDs don't), so this is a display-only swap resolved against live project data. Default
   // false (show the compact, stable UIDs). See components/LabLogPanel.vue.
   const labLogShowNames = ref(localStorage.getItem('cc.labLogShowNames') === 'true')
-  // The acquisition check's movie lists ("10/10 %: M1-2-B6-…, …"): names or image uids. Default false —
-  // a set's long names read as a wall. See components/AcqCheckDialog.vue.
-  const acqCheckShowNames = ref(localStorage.getItem('cc.acqCheckShowNames') === 'true')
+  // Image references in the acquisition check's movie lists and on Blackboard entries: names, or the
+  // short image uids. Default false — a set's long names read as a wall. The lab log keeps its own
+  // (labLogShowNames). See utils/labLog.ts → showImageRefs.
+  const showImageNames = ref(localStorage.getItem('cc.showImageNames') === 'true')
   // The Guides map's Claude toggle: shows the loop and what Claude adds at each recipe step. Off by
   // default — everything in Cecelia works without Claude, and the map should say so first.
   const guidesShowClaude = ref(localStorage.getItem('cc.guidesShowClaude') === 'true')
@@ -861,7 +862,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(hiddenMcpAccounts, v => profileStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
-  watch(acqCheckShowNames,        v => localStorage.setItem('cc.acqCheckShowNames',        String(v)))
+  watch(showImageNames,        v => localStorage.setItem('cc.showImageNames',        String(v)))
   watch(guidesShowClaude,         v => localStorage.setItem('cc.guidesShowClaude',         String(v)))
   watch(kiwiHidden,               v => localStorage.setItem('cc.kiwiHidden',               String(v)))
   watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
@@ -938,7 +939,7 @@ export const useSettingsStore = defineStore('settings', () => {
     correctionCockpitMode, correctionCockpitValueName,
     kiwiOpen, viewerSelectMode,
     captureAttachToKiwi, captureSendToPaired,
-    kiwiReasoning, kiwiModel, purgeClaudeConversations, labLogAutoContext, labLogShowNames, acqCheckShowNames, kiwiHidden,
+    kiwiReasoning, kiwiModel, purgeClaudeConversations, labLogAutoContext, labLogShowNames, showImageNames, kiwiHidden,
     guidesShowClaude,
     tipsOnLaunch, tipsLastShown, viewProfile,
   } as unknown as Record<ProfileKey, Ref<ProfileSettingsValue>>
@@ -1040,7 +1041,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, acqCheckShowNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

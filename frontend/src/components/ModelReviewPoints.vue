@@ -11,8 +11,10 @@ import { refKey } from '../utils/kiwiTurn'
 import { reviewGroups, type ModelReview } from '../utils/modelReview'
 
 // supportsLabel heads the closing interpretation: what a claim's record would support, or an acquisition verdict.
-const props = withDefaults(defineProps<{ review: ModelReview; categoryLabels: Record<string, string>; supportsLabel?: string }>(),
-  { supportsLabel: 'Would support' })
+// shown(text) is how a point's text reads — the acquisition check swaps image names for uids with it.
+const props = withDefaults(defineProps<{ review: ModelReview; categoryLabels: Record<string, string>; supportsLabel?: string;
+                                         shown?: (text: string) => string }>(),
+  { supportsLabel: 'Would support', shown: (t: string) => t })
 const groups = computed(() => reviewGroups(props.review, props.categoryLabels))
 </script>
 
@@ -21,9 +23,9 @@ const groups = computed(() => reviewGroups(props.review, props.categoryLabels))
     <span class="mr-cat-head">{{ g.label }}</span>
     <div class="mr-list">
       <template v-for="x in g.items" :key="x.sectionId ?? x.text">
-        <InlineNote :short="x.text" :severity="x.kind === 'question' ? undefined : 'warn'"
+        <InlineNote :short="shown(x.text)" :severity="x.kind === 'question' ? undefined : 'warn'"
                     :icon="x.kind === 'question' ? 'pi-question-circle' : undefined" />
-        <span v-if="x.action" class="mr-action cc-muted">→ {{ x.action }}</span>
+        <span v-if="x.action" class="mr-action cc-muted">→ {{ shown(x.action) }}</span>
         <div v-if="x.refs.length" class="cc-row cc-row-tight mr-refs">
           <KiwiRefChip v-for="r in x.refs" :key="refKey(r.ref)" :kiwi-ref="r.ref" :result="r.result" :seen="r.seen" />
         </div>
@@ -32,8 +34,8 @@ const groups = computed(() => reviewGroups(props.review, props.categoryLabels))
   </div>
   <InlineNote v-if="review.lastError" :short="`The last run failed: ${review.lastError}`" severity="fail" />
   <InlineNote v-if="review.status === 'done' && !review.items.length" icon="pi-minus-circle"
-              :short="review.abstain && review.note ? `Nothing raised — ${review.note}` : 'Nothing beyond the checks'" />
-  <span v-if="review.supports" class="cc-muted mr-supports">{{ supportsLabel }}: {{ review.supports }}</span>
+              :short="review.abstain && review.note ? `Nothing raised — ${shown(review.note)}` : 'Nothing beyond the checks'" />
+  <span v-if="review.supports" class="cc-muted mr-supports">{{ supportsLabel }}: {{ shown(review.supports) }}</span>
 </template>
 
 <style scoped>

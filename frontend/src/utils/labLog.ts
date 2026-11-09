@@ -112,6 +112,26 @@ export function resolveImageRefs(text: string, uidToName: Record<string, string>
   return text.replace(re, m => uidToName[m] ?? m)
 }
 
+/**
+ * The other direction: each known image NAME in `text` replaced by its UID — for text written with
+ * names (a Blackboard entry, the acquisition check) shown in the compact uid view. Longest name first,
+ * matched as a whole token (no letter, digit, `_` or `-` either side), so `…z200` never eats the start
+ * of `…z200_0001`. Names under 4 characters are left alone: too likely to be an ordinary word.
+ */
+export function imageNamesToRefs(text: string, uidToName: Record<string, string>): string {
+  const byName = new Map<string, string>()
+  for (const [uid, name] of Object.entries(uidToName ?? {})) if (name && name.length >= 4) byName.set(name, uid)
+  if (!byName.size || !text) return text
+  const names = [...byName.keys()].sort((a, b) => b.length - a.length)
+  const re = new RegExp(`(?<![\\w-])(${names.map(escapeRegExp).join('|')})(?![\\w-])`, 'g')
+  return text.replace(re, m => byName.get(m) ?? m)
+}
+
+/** Text with image references shown one way: names (`names` on) or uids — whichever way it was written. */
+export function showImageRefs(text: string, uidToName: Record<string, string>, names: boolean): string {
+  return names ? resolveImageRefs(text, uidToName) : imageNamesToRefs(text, uidToName)
+}
+
 /** Count entries authored by Claude that are newer than the last one the user has seen (by date +
  *  position). Used to badge unreviewed Claude entries. `seenRaw` is the `raw` of the newest entry
  *  the user has already seen; null/absent means everything is unseen. Entries are newest-first. */

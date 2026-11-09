@@ -24,6 +24,7 @@ import { MEASURE_FUN, submitMeasure } from '../utils/acqMeasureRun'
 import { useTaskStore } from '../stores/tasks'
 import InlineNote from './InlineNote.vue'
 import CcToggle from './CcToggle.vue'
+import { showImageRefs } from '../utils/labLog'
 
 const props = defineProps<{ projectUid: string; setUid: string; setName?: string }>()
 const emit = defineEmits<{ close: []; changed: [AcqCheckResult] }>()
@@ -76,6 +77,9 @@ const measuring = computed(() => measureLeft.value > 0)
 function measure() { if (!measuring.value) submitMeasure(props.projectUid, props.setUid, unmeasured.value) }
 watch(measuring, (now, was) => { if (was && !now) load() })
 const groups = computed(() => (result.value ? rowsByDesign(result.value) : []))
+// the review names movies in full; shown as names or uids like the finding lists
+const nameByUid = computed(() => Object.fromEntries((result.value?.rows ?? []).map(r => [r.uid, r.name])))
+const reviewText = (t: string) => showImageRefs(t, nameByUid.value, settings.showImageNames)
 
 const objectNames = computed(() => plan.value?.objects.map(o => o.name) ?? [])
 const columns = computed<SelectionColumn[]>(() => [
@@ -153,12 +157,12 @@ const metaImage = computed(() => {
 
       <div class="cc-eyebrow cc-fs-2xs cc-row set-head">
         <span>Across the set</span>
-        <CcToggle v-model="settings.acqCheckShowNames" label="Show names" aria-label="Show movie names"
+        <CcToggle v-model="settings.showImageNames" label="Show names" aria-label="Show movie names"
                   v-tooltip.top="'Movie names instead of image IDs'" />
       </div>
       <ul class="findings">
         <li v-for="(f, i) in setFindings" :key="i">
-          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.acqCheckShowNames)">
+          <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.showImageNames)">
             <button v-if="f.code === 'acq.not_measured' && unmeasured.length" class="cc-btn cc-btn-dense cc-fs-xs"
                     :disabled="measuring" @click="measure"
                     v-tooltip.top="'Runs in the background, about a minute per movie — progress in the task manager'">
@@ -184,7 +188,7 @@ const metaImage = computed(() => {
       <template v-if="result.review">
         <div class="cc-fs-xs review-points">
           <ModelReviewPoints :review="result.review" :category-labels="result.categoryLabels"
-                             :supports-label="verdictHeading(result.stage)" />
+                             :supports-label="verdictHeading(result.stage)" :shown="reviewText" />
         </div>
         <button v-if="result.review.items.length" class="cc-btn cc-btn-bare cc-fs-2xs mark-link" type="button"
                 v-tooltip.top="'Open on the Blackboard'" @click="openEntry">Mark each point Good / Bad / Unsure</button>
@@ -203,7 +207,7 @@ const metaImage = computed(() => {
         </SelectionTable>
         <ul v-if="openRow && g.rows.some(r => r.uid === openRow)" class="findings row-findings">
           <li v-for="(f, i) in rowFindings(openRow)" :key="i">
-            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.acqCheckShowNames)" />
+            <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.showImageNames)" />
           </li>
           <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this movie.</li>
         </ul>
