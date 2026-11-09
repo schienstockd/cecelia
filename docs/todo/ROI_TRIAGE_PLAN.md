@@ -1,7 +1,8 @@
 # ROI discovery + Claude triage
 
-Status: **in progress** (2026-10-27) · branch `feat/roi-triage` · P1 built (generic discovery task,
-ROI sidecar + review routes, viewer ROI section, containment on mesh contacts); P2–P4 open. Brief:
+Status: **in progress** (2026-11-08) · P1 merged (#1793: generic discovery task, ROI sidecar + review
+routes, viewer ROI section, containment on mesh contacts); P2–P4 open; §10 (fragmentation events,
+hAiGuB) has open scenarios. Brief:
 [`docs/archive/OPUS_ROI_TRIAGE_PROMPT.md`](../archive/OPUS_ROI_TRIAGE_PROMPT.md). Test case:
 zolIMa / `UMq4v3` (M2b MERTK, cropped; 181 t × 4 c × 35 z × 468 × 467, 0.33 µm xy, 2 µm z, 15 s/frame).
 
@@ -259,6 +260,75 @@ against the threshold-6 run; % of its 25 sites still found. Figure:
 - `Bcells/qc` (no fragments gate): the same TBM is ROI 1.
 - **Unverified:** the biology of any ROI (§6), and the containment path end to end — no CD169
   segmentation on UMq4v3 yet.
+
+## 10. Fragmentation events — hAiGuB (2026-11-08)
+
+Brief: [`docs/archive/DYING_CELL_BLEBBING_PROMPT.md`](../archive/DYING_CELL_BLEBBING_PROMPT.md)
+(its corrections are in its banner). The question: can a single B cell blebbing and fragmenting be
+picked out, and could ADeS-style detection propose ROIs instead of, or alongside, Find ROIs? All
+read-only on zolIMa / `hAiGuB` (crop of `R8m1Yo`, 181 t × 15 s, 33 z × 2 µm, 0.33 µm xy, segmentation
+`Bcell`, untracked). No task run, no gate changed. The pure `roi_utils.find_rois` was called in
+memory. Figures in `~/Downloads/TMP/dying_cell_hAiGuB_*.png`.
+
+**The event** [data, visual — biology unverified]. The cell starts at px (115, 32, z18). From
+t20 to t50 it compacts into a diamond (t50 = 12.5 min) at (77, 65). From ~t70 (17.5 min) it is a small
+irregular residual body at ~(93, 96, z15), ringed by many small mem-TOM puncta, through ~t130
+(32 min). A bright nuc-GFP punctum (label 19161 at t120: nuc 5.2, mem 8.4; a cell is ~2.5 / 25)
+sits ~9 µm from the residual body from t32 onward. It is present before the cell arrives, so it
+may not be this cell's (`_follow.png`).
+
+**Segmentation** [data]. From t0 to t50 the cell's brightest mem voxels belong to multi-cell labels
+(39, 4025, 7909: 3,100–6,700 µm³, solidity ≈ 0.35). Per-object shape cues (area falling, solidity,
+S/V) can't be read for it. After t70 the residual body is one object. Some blebs are their own small
+labels, and most faint puncta are not segmented at all (`_labels_t80_100_120.png`).
+
+**The gates are fine; locality is what's missing** [data]. `/kat-/small/mem+` is a fragment
+population (median 17 µm³, nuc 0, Kat 0, 36/frame), `/kat-/small/nuc+` is naked nuclei (nuc 6.1,
+mem 1.6) and `/kat-/big` is whole cells. Within 10 µm of the cell, `mem+` goes 1.0 → 2.9 per frame
+during t70–140, a threefold rise that whole-field counts (≈ 36 → 42) bury
+(`_gates_local_vs_field.png`). No gate was changed.
+
+**Readouts — does anything single the event out of the field?** (`_readouts.png`)
+
+| Readout | Result on this cell | Verdict |
+|---|---|---|
+| Segmented small objects (< 30 µm³) within 8 µm, per 12-frame window | best rank 15 / 1950 grid points (t132–143); ~145 during t72–131 | weak |
+| Unsegmented DoG puncta (σ ≈ 0.5 µm) | strong peaks are cell bodies; faint puncta fall below any usable threshold | not usable as built |
+| mem-TOM fine/coarse structure index (segmentation-free) | 0.24 → 0.32 at the site, rank 64–84 / 1950; its *rise* is dominated by z-ends and borders (rank 1051) | weak |
+| Find ROIs on fragments (`kat- & < 60 µm³`, or `/kat-/small/mem+`), Min objects 20 | compact ROIs rank 3 and 10 (t71–96, 2–3 % of the field) on a puncta cloud ~10 µm above the residual body, read as the trail the cell shed; the top site is a debris field present from t0. 3 compact top-12 hits vs 0.71 for random path offsets, p ≈ 0.10 | finds debris, not *new* debris |
+| Persistent naked nucleus (nuc/mem > 0.3, nuc > 3, Kat < 1.5, ≥ 20 frames, 3.5 µm linking) | 6 tracks: 2 are this site's punctum, 1 a body beside a Kat⁺ macrophage the whole movie, 3 FPs (2 at z-ends, 1 intact cell) | most specific, but late and not causal |
+
+**Conclusion** [inferred]. Whole-image cues can't separate one dying cell from the debris this field
+always carries. What marks the event is *change at a place*: fragments appearing where there were
+few, next to a shrinking body. That needs a site first and a timeline second.
+
+### Scenarios (open — for Dominik)
+
+1. **Hone in: an ROI timeline** (cheapest). Find ROIs proposes places, and for a picked ROI the
+   *Populations over time* plot (#2047) is restricted to the ROI's box. Fragments, naked nuclei and
+   cells over time for that place only make the threefold rise above visible. New: a box filter on
+   `pop_df` and an "ROI" scope on the plot. No new detector.
+2. **Find ROIs, as is, on a fragment population** (zero code). On `R8m1Yo` (whole field) with
+   `/kat-/small/mem+` and Min objects 20, then review. It surfaces debris clouds, both TBM-side and
+   shed ones, and can't tell new from old. Turnover (Decision 1, dropped) would be the missing *Rank
+   by*: fragments with no predecessor within ~2 µm at t−1.
+3. **ADeS as the proposer** (replaces HDBSCAN). Not viable now. The only public weights are 2D
+   in-vitro nuclear widefield, there is no licence (re-implementing from the CC-BY paper is the only
+   route), and there is no in-vivo or 3D training set. Its premise fits our 15 s frames: a fixed box
+   over 5 frames is ~1 min, and the cell moved ~2 µm/min. But the event lasts ~20 min, so the window
+   would have to be subsampled about every 10 frames.
+4. **ADeS-style classifier on Find ROIs candidates** (in conjunction; most promising long-term).
+   Find ROIs plus scenario 1 produce candidate sites. The person's accept/reject/label in ROI review
+   becomes the training set, and a small temporal classifier on box crops scores later candidates
+   (a *Rank by*). Track-based crops are preferable once tracking works through blebbing. Blocked on
+   labelled events: count how many accepted fragmentation ROIs exist across the MERTK set before
+   building anything.
+5. **Segmentation that keeps a blebbing cell whole.** The merge at t0–50 removes per-object shape
+   cues. Retry Coastal with a stricter merge (`mergeAffinityThreshold` above 0.6) on this crop and see
+   whether the cell separates. Untested.
+
+**Unverified:** that the event is death rather than shedding; that the punctum is this cell's
+nucleus; the biology of every ROI; any of the scenarios on a second image.
 
 ## Decisions
 
