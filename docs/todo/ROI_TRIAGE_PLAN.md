@@ -230,6 +230,18 @@ reason, object_ids, frames).
 (composite, each channel, composite with contours), label ids drawn at centroids, a ±2-plane z-slab,
 scale bar.
 
+**ROI movies — in the viewer control panel's Movie section** (2026-11-09), not in the ROI list:
+the list reviews, the control panel makes output. *View | ROIs* (shown only when the image has an
+ROI set) makes Record and Save as figure take the ROIs ticked in the ROI list (`SelectionTable`
+`pickBy: 'box'` — a row click still goes to the ROI), or with none ticked the first *most* of them,
+always under its set + status filter (`viewerRoiSuffix` / `viewerRoiStatus`; the ticks and both
+cross windows through `storage` events, since the list is in the viewer and Record in the panel). A movie is a crop about
+the ROI's box (twice it, ≥ 64 px — a box is often one object, the event is in its surroundings), its
+planes and frames ± 2, drawn with the viewer's look exactly as Match viewer (one shared
+preparation, `_prepare_single_record`); a small box is enlarged by a whole factor to ≥ 480 px
+(`min_px`). *sheet* also stitches a contact sheet captioned by rank (+ your label). The ROI ids
+travel; the geometry is read from the set server-side (`api/src/movie_rois.jl`). Each movie banks its own ROIs (config kind `rois`), so the Movies page re-records it as it was rather than handing a whole-view look to the Batch page, and *Open at source* goes to the ROI; from a 3D view an ROI is still recorded flat (the max over its planes), and its figure too.
+
 ## 8. Staged implementation
 
 | Phase | Scope | Tests |

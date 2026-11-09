@@ -624,12 +624,16 @@ end
 # already fixes both directions and there is nothing to rearrange. Two cells wrap to one row of two —
 # which is the row layout — so small counts need no guard either.
 # Mirrors `wrapShape` (frontend/src/utils/movieCompare.ts).
+"""Tiles per row when `n` tiles wrap into a near-square grid — the compare grid's wrap and the ROI
+contact sheet's (`roi_sheet_per_row`); `wrapShape` (utils/movieCompare.ts) is the frontend's twin."""
+grid_columns(n::Integer)::Int = n <= 0 ? 0 : ceil(Int, sqrt(n))
+
 function _wrap_grid(rows::Vector{MovieRow}, layout::AbstractString)::Vector{MovieRow}
     (layout != "grid" || length(rows) != 1) && return rows
     cols = rows[1].columns
     n    = length(cols)
     n <= 1 && return rows
-    ncol = ceil(Int, sqrt(n))
+    ncol = grid_columns(n)
     # No row label: the cells carry their own captions and a wrapped row means nothing on its own —
     # captioning it would put a blank band under every strip.
     MovieRow[(; label = "", columns = cols[i:min(i + ncol - 1, n)]) for i in 1:ncol:n]

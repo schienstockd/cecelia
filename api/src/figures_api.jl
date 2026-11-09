@@ -24,7 +24,7 @@ function _figure_filename(dir::AbstractString, img::CciaImage, name::AbstractStr
 end
 
 """
-    make_figure!(project_uid, img, spec; name = "", replace = false, dry_run = false, on_log)
+    make_figure!(project_uid, img, spec; name = "", replace = false, dry_run = false, tags, on_log)
         -> (; name, png, resolved)   # `png` = the preview (≤ 1600 px a side), not the print figure
 
 Render `spec` on `img`. `dry_run` renders into a temp dir and keeps nothing — `png` is the bytes, for a
@@ -34,6 +34,7 @@ config, `author_stamp()` as `createdBy`/`updatedBy`).
 """
 function make_figure!(project_uid::AbstractString, img::CciaImage, spec::AbstractDict;
                       name::AbstractString = "", replace::Bool = false, dry_run::Bool = false,
+                      tags = String[],
                       on_log::Function = line -> nothing)
     tmp = mktempdir()
     try
@@ -52,12 +53,26 @@ function make_figure!(project_uid::AbstractString, img::CciaImage, spec::Abstrac
                         config = FigureConfig(imageUid = img.uid, spec = spec, resolved = resolved,
                                               source = figure_source(img, _spec_value_name(spec);
                                                                      spec_style = get(spec, "style", nothing))),
-                        config_kind = "figure", author = author_stamp())
+                        config_kind = "figure", author = author_stamp(), auto_tags = figure_auto_tags(spec, tags))
         _movies_changed(project_uid)
         (; name = fname, png, resolved)
     finally
         isdir(tmp) && rm(tmp; force = true, recursive = true)
     end
+end
+
+"""
+    figure_auto_tags(spec, extra) -> Vector{String}
+
+The tags a saved figure gets from its spec — `grid` (frames wrapped into a matrix), `split` (the merge
+plus a row per channel) — plus what the caller knows that the spec can't say (`roi`).
+"""
+function figure_auto_tags(spec::AbstractDict, extra = String[])::Vector{String}
+    tags = String[string(t) for t in extra]
+    get(spec, "layout", nothing) == "grid" && push!(tags, "grid")
+    rows = get(spec, "rows", nothing)
+    rows isa AbstractVector && length(rows) > 1 && push!(tags, "split")
+    tags
 end
 
 _spec_value_name(spec::AbstractDict) = (v = get(spec, "valueName", nothing); (v === nothing || v == "") ? nothing : String(v))
@@ -96,7 +111,7 @@ function _figure_own_check(project_uid::AbstractString, filename::AbstractString
                                             "save a new one instead"))
 end
 
-# POST /api/figures/render {projectUid, imageUid, spec, name?, replace?, dryRun?}
+# POST /api/figures/render {projectUid, imageUid, spec, name?, replace?, dryRun?, roiSuffix?}
 #   → {ok, name, png (base64), resolved}. A spec error is a 400 whose `error` names the field.
 function api_figures_render(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -115,7 +130,9 @@ function api_figures_render(body_bytes::Vector{UInt8})
     end
     try
         r = make_figure!(pu, img, Dict{String,Any}(String(k) => v for (k, v) in spec);
-                         name = _wstr(body, :name), replace = repl, dry_run = dry)
+                         name = _wstr(body, :name), replace = repl, dry_run = dry,
+                         # an ROI figure (the viewer's Save as figure → ROIs) is tagged as its movies are
+                         tags = haskey(body, :roiSuffix) ? roi_movie_tags(_wstr(body, :roiSuffix), false) : String[])
         200, JSON3.write((; ok = true, name = r.name, png = base64encode(r.png), resolved = r.resolved))
     catch e
         msg = sprint(showerror, e)

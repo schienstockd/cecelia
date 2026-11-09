@@ -34,6 +34,9 @@ describe('figureSpecFromView', () => {
     expect(figureSpecFromView(null, NAMES)).toEqual({ error: 'Open the image in the viewer first' })
     expect(figureSpecFromView(vs({ dims: { ndisplay: 3, current_step: [0], point: [0] } }), NAMES))
       .toEqual({ error: 'Figures are 2D — switch the viewer to 2D' })
+    // …unless the caller frames it itself (an ROI's figure): a 3D view still gives channels + contrast
+    const own = figureSpecFromView(vs({ dims: { ndisplay: 3, current_step: [0], point: [0] } }), NAMES, { ownCrop: true })
+    expect('spec' in own && own.spec.display.ranges['CD169-Kat']).toEqual([0, 10])
     const dark = vs(); for (const l of Object.values(dark.layers)) l.visible = false
     expect(figureSpecFromView(dark, NAMES)).toEqual({ error: 'No channel is visible' })
   })

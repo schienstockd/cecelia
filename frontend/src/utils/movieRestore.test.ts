@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { restoreKind, lookRestore, keyframeRestore, missingRefs, restoreNote, restoreTargetSet,
+import { roiRerecordRequest, roiMovieFocus, restoreKind, lookRestore, keyframeRestore, missingRefs, restoreNote, restoreTargetSet,
          RESTORE_ROUTE } from './movieRestore'
 
 describe('restoreKind', () => {
@@ -272,5 +272,32 @@ describe('restoreNote', () => {
   it('states the missing and the undroppable in one line', () => {
     expect(restoreNote(["version 'gone'"], ['skeletons (skel) — no control'])).toBe(
       "Not restored: version 'gone', skeletons (skel) — no control")
+  })
+})
+
+describe('roiRerecordRequest', () => {
+  const cfg = { imageUid: 'img1', fps: 12, suffix: 'x', labelValueNames: ['mem'], labelContour: 1,
+                look: { colourBy: 'pop' }, viewState: { dims: {} }, showScaleBar: false,
+                rois: { suffix: 'debris', ids: ['r7'], padFrames: 3, sheet: false } }
+  it('records the movie again: its own ROI, the same look and output', () => {
+    const q = roiRerecordRequest(cfg)!
+    expect(q.type).toBe('movie:record')
+    expect(q.rois).toEqual({ suffix: 'debris', ids: ['r7'], sheet: false, padFrames: 3 })
+    expect([q.imageUid, q.fps, q.suffix, q.labelContour]).toEqual(['img1', 12, 'x', 1])
+    expect(q.look).toEqual({ colourBy: 'pop' })
+    expect([q.showTimestamp, q.showScaleBar]).toEqual([true, false])
+  })
+  it('a config with no ROIs (a plain viewer recording) is not one to re-record this way', () => {
+    expect(roiRerecordRequest({ imageUid: 'img1', look: {} })).toBeNull()
+    expect(roiRerecordRequest({ ...cfg, rois: { suffix: 'debris', ids: [] } })).toBeNull()
+    expect(roiRerecordRequest(null)).toBeNull()
+  })
+})
+
+describe('roiMovieFocus', () => {
+  it('an ROI movie opens at its ROI; a sheet at its first; anything else has none', () => {
+    expect(roiMovieFocus({ rois: { suffix: 'debris', ids: ['r7'] } })).toEqual({ suffix: 'debris', id: 'r7' })
+    expect(roiMovieFocus({ rois: { suffix: 'debris', ids: ['r2', 'r1'], sheet: true } })?.id).toBe('r2')
+    expect(roiMovieFocus({ look: {} })).toBeNull()
   })
 })

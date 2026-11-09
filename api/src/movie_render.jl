@@ -162,7 +162,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            ts::Union{Nothing,AbstractVector{<:Integer}} = nothing,
                            fps::Real = 15,
                            z = nothing, channels = nothing, specs = nothing,
-                           crop = nothing, max_px::Int = 0,
+                           crop = nothing, max_px::Int = 0, min_px::Int = 0,
                            title_card = nothing,
                            overlays3d_for = nothing, mask = nothing,
                            style = movie_overlay_style(),
@@ -174,7 +174,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function = _ -> nothing,
                            cancelled::Function = () -> false)
-    v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, overlays3d_for, mask,
+    v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, min_px, overlays3d_for, mask,
                             style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
                             caller = "record_view_movie")
     cancelled() && return (; path = out_path, frames = 0, width = v.width, height = v.height, cancelled = true)
@@ -204,7 +204,7 @@ same either way.
 function render_view_stills(zarr_path::AbstractString, out_paths::AbstractVector{<:AbstractString},
                             ts::AbstractVector{<:Integer};
                             z = nothing, channels = nothing, specs = nothing,
-                            crop = nothing, max_px::Int = 0,
+                            crop = nothing, max_px::Int = 0, min_px::Int = 0,
                             overlays3d_for = nothing, mask = nothing,
                             style = movie_overlay_style(),
                             show_timestamp::Bool = false, show_scale_bar::Bool = false,
@@ -215,7 +215,7 @@ function render_view_stills(zarr_path::AbstractString, out_paths::AbstractVector
                             via::Function = STILLS_VIA[])
     length(out_paths) == length(ts) ||
         throw(ArgumentError("render_view_stills: $(length(out_paths)) paths for $(length(ts)) timepoints"))
-    v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, overlays3d_for, mask,
+    v = _view_render_params(zarr_path, ts; z, channels, specs, crop, max_px, min_px, overlays3d_for, mask,
                             style, show_timestamp, show_scale_bar, pixel_size_um, time_step_min,
                             caller = "render_view_stills", keep_all = true)
     v.params["outPaths"] = String[String(p) for p in out_paths]
@@ -268,8 +268,18 @@ const STILLS_VIA = Ref{Function}(_stills_via_worker)
 # (`applyViewStateToBrowser`'s centre / zoom, against a canvas of the output's height). Even sides,
 # because h264 / yuv420p wants them and a still is the movie's frame. `keep_all` keeps `ts` as given
 # (stills may repeat a timepoint; out-of-range is an error); a movie drops out-of-range ones.
+"""
+    _enlarge_factor(cH, cW, stride, min_px) -> Int
+
+The whole factor a crop of `cH × cW` image pixels is enlarged by so its long side reaches `min_px`
+output pixels; 1 when it already does, when `min_px` is off (0), or when the frame is being strided
+down (`stride > 1`: a crop too big to fit is never also too small).
+"""
+_enlarge_factor(cH::Integer, cW::Integer, stride::Integer, min_px::Integer)::Int =
+    (min_px <= 0 || stride > 1 || max(cH, cW) <= 0) ? 1 : max(1, fld(min_px, max(cH, cW)))
+
 function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, crop, max_px,
-                             overlays3d_for, mask, style, show_timestamp, show_scale_bar,
+                             min_px::Int = 0, overlays3d_for, mask, style, show_timestamp, show_scale_bar,
                              pixel_size_um, time_step_min, caller::AbstractString,
                              keep_all::Bool = false)
     arr, caxes = open_level0(zarr_path)
@@ -289,8 +299,13 @@ function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, 
 
     (H0 > 0 && W0 > 0) || throw(ArgumentError("$caller: the image has no y/x extent"))
     tf = pixel_transform(H0, W0; crop = crop, max_px = max_px)
-    step = tf.step
-    H = tf.dH - tf.dH % 2; W = tf.dW - tf.dW % 2
+    # image pixels per output pixel: the stride, or below 1 when a crop smaller than `min_px` is
+    # enlarged by a whole factor (crisp blocks, as a figure's `pixels` enlargement) — an ROI's box is
+    # often a few dozen pixels, which as-is is a movie too small to watch
+    up = _enlarge_factor(tf.cH, tf.cW, tf.step, min_px)
+    step = tf.step / up
+    H = tf.dH * up; W = tf.dW * up
+    H -= H % 2; W -= W % 2
     (H > 0 && W > 0) || throw(ArgumentError("$caller: the frame is empty ($(tf.cH) × $(tf.cW), step $step)"))
 
     z_range, plane_filter = _plane_window(z, nZ, style)

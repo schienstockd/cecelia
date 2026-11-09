@@ -455,7 +455,8 @@ function handle_movie_record(ws, data)
         compareLayout = layout,
         compareContrast = String(get(data, :compareContrast, "")),
         showTimestamp = show_ts, showScaleBar = show_sb,
-        look = get(data, :look, nothing), keyframes = keyframes, viewState = view_state)
+        look = get(data, :look, nothing), keyframes = keyframes, viewState = view_state,
+        rois = get(data, :rois, nothing))
     # Route decision: everything runs through the offline renderer — plain timelapse, compare grids,
     # and keyframe animations.
     n_vns = max(1, length(value_names))
@@ -558,6 +559,32 @@ function handle_movie_record(ws, data)
     # Plain single-cell timelapse — the base case. Compare + keyframes are handled above.
     first_lvn = (label_vns !== nothing && !isempty(label_vns)) ? String(first(label_vns)) : nothing
     first_vn  = isempty(value_names) ? "" : String(first(value_names))
+    # "What: ROIs" (ROI_TRIAGE_PLAN Decision 12): the same look, one movie per ROI of a set — its box,
+    # planes and frames instead of the screen's — plus an optional contact sheet. 2D only: a 3D view
+    # arrives as keyframes and is handled above.
+    rois_req = get(data, :rois, nothing)
+    if rois_req isa AbstractDict
+        ids_raw = get(rois_req, :ids, nothing)
+        @async try
+            run_roi_offline(task_id, project_uid, image_uid;
+                            roi_suffix = String(get(rois_req, :suffix, "")),
+                            roi_ids = ids_raw isa AbstractVector ? collect(String, ids_raw) : String[],
+                            pad_frames = Int(get(rois_req, :padFrames, 2)),
+                            sheet = Bool(get(rois_req, :sheet, false)),
+                            fps = fps, suffix = suffix, numbered = numbered,
+                            # a size typed into the movie options is the tile's long side; blank = the default
+                            min_px = something(_roi_min_px(size_x, size_y), ROI_MOVIE_MIN_PX),
+                            value_name = first_vn, label_value_name = first_lvn, label_contour = contour,
+                            show_timestamp = show_ts, show_scale_bar = show_sb,
+                            view_state = view_state, match_viewer = match_viewer,
+                            movie_config = movie_config)
+        catch e
+            @warn "offline ROI record crashed" exception = e
+            ws_log(ws, task_id, "[ERROR] record crashed: $(sprint(showerror, e))")
+            ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="job")
+        end
+        return
+    end
     overlays_raw = get(data, :overlays, nothing)
     @async try
         run_single_offline(task_id, project_uid, image_uid; fps = fps,

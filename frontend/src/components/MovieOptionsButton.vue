@@ -36,4 +36,9 @@ const anchor = ref<HTMLElement | null>(null)
 /* The popover IS the movie block, so it takes the width the blocks inside are capped to. */
 .mob-body { display: flex; flex-direction: column; gap: 0.45rem;
   width: var(--cc-movie-block); max-width: 80vw; }
+/* A caller's section heading (`.mob-head`): a rule above it splits the blocks — output, frames, ROIs,
+   figure, title card — that otherwise run together in one stack. The first one needs no rule. */
+.mob-body :slotted(.mob-head) { color: var(--cc-text-dim); padding-top: 0.35rem;
+  border-top: 1px solid var(--cc-border); }
+.mob-body :slotted(.mob-head:first-child) { padding-top: 0; border-top: none; }
 </style>

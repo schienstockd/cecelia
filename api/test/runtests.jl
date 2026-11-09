@@ -170,6 +170,7 @@ include(joinpath(@__DIR__, "suite", "task_log_and_attrs.jl"))
 # Six testsets covering the movies API: batch + single-image naming, 3D detail level from
 # a movie config, filename-fragment sanitisation, movie version comparison, comparison grid.
 include(joinpath(@__DIR__, "suite", "movies.jl"))
+include(joinpath(@__DIR__, "suite", "movie_rois.jl"))
 # ── Observer WS broadcasts + task-frame instrumentation testsets 
 # Four testsets: observer event broadcasts (mcp/ Slice B), bad-param launch emits [ERROR]
 # + terminal failed frame, status frames carry the task timing, task log sliced between

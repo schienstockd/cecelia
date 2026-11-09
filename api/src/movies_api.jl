@@ -134,7 +134,7 @@ function _entry_channels(e::AbstractDict)::Vector{String}
 end
 
 """
-    register_movie!(project_uid, filename; produced_by, image_uid, channels, config, config_kind, config_version)
+    register_movie!(project_uid, filename; produced_by, image_uid, channels, config, config_kind, config_version, auto_tags)
 
 Record how a movie was made, right after its bytes land (Phase 4). MERGES into any existing entry, so
 the user's display name / star / tags survive a re-record of the same filename — which happens by
@@ -158,7 +158,11 @@ function register_movie!(project_uid::AbstractString, filename::AbstractString;
                          config_kind::AbstractString = "", config_version::Int = MOVIE_CONFIG_VERSION,
                          # `author_stamp()` of the write: `createdBy` on the first registration,
                          # `updatedBy` after — what lets Claude edit only figures it made.
-                         author::Union{Nothing,AbstractDict} = nothing)
+                         author::Union{Nothing,AbstractDict} = nothing,
+                         # what the recorder knows the file IS (`roi`, `sheet`, `grid`, …) — ADDED to the
+                         # tags, never replacing them, so a user's own tags survive. A re-record adds
+                         # back one the user removed: the file still is that.
+                         auto_tags = String[])
     try
         _valid_movie_name(filename) || return nothing
         reg = _read_movies_registry(project_uid)
@@ -174,6 +178,7 @@ function register_movie!(project_uid::AbstractString, filename::AbstractString;
         # the sanitised form would re-prefix it. Recoverable from the filename only by reverse-
         # engineering three recorders' naming, which is why it is stored rather than parsed.
         isempty(suffix)    || (e["suffix"] = String(suffix))
+        isempty(auto_tags) || (e["tags"] = _clean_movie_tags([_clean_movie_tags(get(e, "tags", nothing)); auto_tags]))
         e["recordedAt"] = time()          # unix seconds — the same clock `mtime` uses, see _config_stale
         if config !== nothing && !isempty(config_kind)
             e["configKind"]    = String(config_kind)
