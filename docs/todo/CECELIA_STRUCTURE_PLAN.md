@@ -66,9 +66,28 @@ a file. *Checkpoint:* render reviewed by the maintainer.
 **v1 (2026-11-07):** one compact overview (1100 px wide), in the style of the README's earlier
 framework diagram: a band per layer with a short headline, a one- or two-word chip per stage, and the
 tagline "Analysis you can hand off and check". `structure_figures/structure_overview.svg` is the plan
-copy, with gaps in magenta italics (2026-11-09: none left; both copies now show the P3 fixes). `make_structure_overview.py --readme` writes the README copy
+copy, with gaps in magenta italics (2026-11-09: none left; both copies now show the P3 fixes). `make_structure_overview.py` writes the README copy
 (`frontend/public/readme-structure.svg`), which shows only what exists, because it is the first
 diagram a new reader sees. Maturity tiers are not shown yet. A ten-box paper version is still to do.
+
+**v2 (2026-11-09):** redrawn in the style of the other README figures, one generator for both copies
+(no gaps left). One record chip per step, funnelling into one Checks band that lists the per-step
+checks and a claim from a plot as the worked example. The chips, checked against the code:
+
+| Step | Record chip | Evidence |
+|---|---|---|
+| Acquire | microscope settings | `importImages/omezarr/acquisition.jl` → `meta["acquisition"]` (laser, detector, scan timing; .oir/.czi/.ims) |
+| Import | source fingerprint | `omezarr/task.jl` → `meta.oriFingerprint`; `qc.jl` `source_fingerprint_findings` on resync |
+| Process | parameters, inputs | `run_log.jl` `run_inputs`, `run_replaces` |
+| Populations | gate history | `gating/popmanager/history.jl` `_record_gating_history!` (append-only, with author) |
+| Analyse | frozen parameters | `frontend/src/utils/boardProvenance.ts` `snapshotDue` |
+| Export | record in the file | `analysis_export_provenance.jl`; PDF info `CeceliaProvenance`, SVG `<metadata>` |
+
+Checks: saturation (`qc.jl` `saturation_qc_findings`), calibration (`metadata_qc_findings`), drift /
+counts / tracks (`drift_correct.jl`, `segmentation.jl`, `bayesian_tracking.jl`, `track_measures.jl`),
+gates (`qc_gating.jl`), statistics (`plotting/stats.jl` `stats_qc_findings`); claims
+(`claim_checks.jl`, from `ClaimStrip.vue` on a summary plot). v1's "CSV trace" named no feature and
+"calibration kept" was image (OME-TIFF) export QC, not figure export; both are gone.
 
 **P3. Gaps, flaws, worth expanding, worth cutting.** These mostly come from P1 and P2: anything that
 can't be drawn cleanly is a finding. Each item records what it is, the evidence (code ref or an
