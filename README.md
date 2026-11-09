@@ -22,7 +22,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## What Cecelia does
 
-<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia structure. Pipeline: acquire, import, process (segment, track), populations (gating), analyse (plots, statistics), export. Underneath, every task leaves a record: parameters, version, who and when, plus the raw file's fingerprint, what each run read and replaced, gate history, frozen board parameters and stamped PDF/SVG exports. Checks read the record: quality checks at each step, gating and statistics included, and claim checks; they warn, never block. Chains re-run the steps on new images or replay a past run exactly. On top: an optional AI assistant that reads the same record." width="100%"></p>
+<p align="center"><img src="frontend/public/readme-structure.svg" alt="Cecelia structure. Optional AI on top reads the same record; everything works with it off. Pipeline: acquire (microscope), import (calibration), process (segment, track), populations (gating), analyse (plots, statistics), export (figures, tables). Every step leaves a record, each run's settings, inputs, version, who and when: microscope settings, source fingerprint, parameters and inputs, gate history, frozen parameters, a record in the exported file. The record feeds the checks, which warn and say what to do but never block: at each step saturation, calibration, drift, counts and tracks, gates, statistics; and claims from a plot, e.g. whether T and B cells were processed the same way. Chains replay the same steps on new images, or a past run exactly." width="100%"></p>
 
 Cecelia is a structured platform for image analysis: analysis you can hand off and check afterwards.
 Every step runs through one scheduler that checks its params and logs the run, so the **record** says
@@ -34,6 +34,7 @@ right. Checks warn; they never block. **Chains** re-run the steps on new images,
 with its exact settings. AI (Kiwi, Claude Code) is optional and reads the same record; everything works
 with it off. How the structure was audited, and the decisions still open, are in
 [`docs/todo/CECELIA_STRUCTURE_PLAN.md`](docs/todo/CECELIA_STRUCTURE_PLAN.md).
+How a claim from a plot is checked: [*Checking a claim*](user-docs/README.md#checking-a-claim).
 
 ---
 

@@ -1,83 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 548" font-family="Georgia, 'Times New Roman', serif">
-<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/></marker></defs>
-<rect width="1100" height="548" fill="#fafaf7"/>
-<line x1="194" y1="144" x2="194" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="356" y1="144" x2="356" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="520" y1="144" x2="520" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="682" y1="144" x2="682" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="846" y1="144" x2="846" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/><line x1="1008" y1="144" x2="1008" y2="428" stroke="#6b6b66" stroke-width="1" stroke-dasharray="2,4" opacity="0.6"/>
-<text x="100" y="43" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>AI</tspan></text>
-<text x="100" y="61" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>optional</tspan></text>
-<rect x="118" y="16" width="966" height="56" rx="12" ry="12" fill="#f7d0e0" stroke="#2a2a2a" stroke-width="2.2" stroke-dasharray="7,5"/>
-<text x="601" y="40" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Optional AI assistant</tspan></text>
-<text x="601" y="59" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>reads the same record · everything below works with AI off</tspan></text>
-<text x="100" y="115" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Pipeline</tspan></text>
-<text x="100" y="133" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>what you do</tspan></text>
-<rect x="118" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="194" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Acquire</tspan></text>
-<text x="194" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>microscope</tspan></text>
-<line x1="269" y1="116" x2="280" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="281" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="356" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Import</tspan></text>
-<text x="356" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
-<line x1="432" y1="116" x2="443" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="444" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="520" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Process</tspan></text>
-<text x="520" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>segment · track</tspan></text>
-<line x1="595" y1="116" x2="606" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="607" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="682" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Populations</tspan></text>
-<text x="682" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>gating</tspan></text>
-<line x1="758" y1="116" x2="769" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="770" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="846" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analyse</tspan></text>
-<text x="846" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>plots, statistics</tspan></text>
-<line x1="921" y1="116" x2="932" y2="116" stroke="#d94a86" stroke-width="2.2" marker-end="url(#arr)"/>
-<rect x="933" y="88" width="151" height="56" rx="12" ry="12" fill="#fafaf7" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="1008" y="112" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Export</tspan></text>
-<text x="1008" y="131" font-size="12" fill="#6b6b66" text-anchor="middle" xml:space="preserve"><tspan>figures, tables</tspan></text>
-<text x="100" y="214" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Record</tspan></text>
-<text x="100" y="232" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>what was done</tspan></text>
-<rect x="118" y="160" width="966" height="110" rx="12" ry="12" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="601" y="184" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Every task leaves a record</tspan></text>
-<text x="601" y="203" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>parameters, version, who and when</tspan></text>
-<rect x="126" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="194" y="242" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>file settings</tspan></text>
-<rect x="289" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="356" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
-<text x="356" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>source fingerprint</tspan></text>
-<rect x="452" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="520" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
-<text x="520" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>read + replaced</tspan></text>
-<rect x="615" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="682" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gates + author</tspan></text>
-<text x="682" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gate history</tspan></text>
-<rect x="778" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="846" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>run log</tspan></text>
-<text x="846" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>frozen parameters</tspan></text>
-<rect x="941" y="216" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1008" y="234" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>CSV trace</tspan></text>
-<text x="1008" y="250" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>PDF/SVG stamped</tspan></text>
-<text x="100" y="340" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Checks</tspan></text>
-<text x="100" y="358" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>can it be trusted</tspan></text>
-<rect x="118" y="286" width="966" height="110" rx="12" ry="12" fill="#efeecf" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="601" y="310" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Checks read the record</tspan></text>
-<text x="601" y="329" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>quality checks at each step · claim checks · warn, never block</tspan></text>
-<rect x="126" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="194" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>saturation</tspan></text>
-<rect x="289" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="356" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration</tspan></text>
-<rect x="452" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="520" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>drift · counts · tracks</tspan></text>
-<rect x="615" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="682" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>claim checks</tspan></text>
-<text x="682" y="376" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>gating QC</tspan></text>
-<rect x="778" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="846" y="360" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>spatial QC</tspan></text>
-<text x="846" y="376" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>statistics QC</tspan></text>
-<rect x="941" y="342" width="135" height="42" rx="6" ry="6" fill="#fafaf7" stroke="#2a2a2a" stroke-width="1.4"/>
-<text x="1008" y="368" font-size="12.5" fill="#2a2a2a" text-anchor="middle" xml:space="preserve"><tspan>calibration kept</tspan></text>
-<text x="100" y="439" font-size="17" fill="#2a2a2a" text-anchor="end" xml:space="preserve" font-weight="700"><tspan>Replay</tspan></text>
-<text x="100" y="457" font-size="12" fill="#6b6b66" text-anchor="end" xml:space="preserve" font-style="italic"><tspan>run it again</tspan></text>
-<rect x="118" y="412" width="966" height="56" rx="12" ry="12" fill="#fbe7d4" stroke="#2a2a2a" stroke-width="2.2"/>
-<text x="601" y="436" font-size="16" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Chains replay it</tspan></text>
-<text x="601" y="455" font-size="13" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>re-run the same steps on new images · or replay a past run exactly</tspan></text>
-<text x="601" y="502" font-size="20" fill="#2a2a2a" text-anchor="middle" xml:space="preserve" font-weight="700"><tspan>Analysis you can hand off and check</tspan></text>
-<text x="601" y="526" font-size="14" fill="#6b6b66" text-anchor="middle" xml:space="preserve" font-style="italic"><tspan>Structure first. AI is an optional layer on top.</tspan></text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 482" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<defs><marker id="arrowDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6b6b66"/></marker></defs>
+<rect width="900" height="482" fill="#fafaf7"/>
+<rect x="16" y="16" rx="10" ry="10" width="868" height="50" fill="#f3e1ec" stroke="#2a2a2a" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="450" y="47" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Optional AI</tspan><tspan fill="#6b6b66">&#160;· reads the same record; everything below works with it off</tspan></text>
+<rect x="16" y="84" rx="10" ry="10" width="130" height="56" fill="#ffffff" stroke="#2a2a2a" stroke-width="3"/>
+<text x="81" y="109" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Acquire</tspan></text>
+<text x="81" y="129" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">microscope</tspan></text>
+<path d="M148,112 L160,112" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="164" y="84" rx="10" ry="10" width="130" height="56" fill="#ffffff" stroke="#2a2a2a" stroke-width="3"/>
+<text x="229" y="109" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Import</tspan></text>
+<text x="229" y="129" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">calibration</tspan></text>
+<path d="M296,112 L308,112" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="312" y="84" rx="10" ry="10" width="130" height="56" fill="#ffffff" stroke="#2a2a2a" stroke-width="3"/>
+<text x="377" y="109" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Process</tspan></text>
+<text x="377" y="129" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">segment · track</tspan></text>
+<path d="M444,112 L456,112" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="460" y="84" rx="10" ry="10" width="130" height="56" fill="#ffffff" stroke="#2a2a2a" stroke-width="3"/>
+<text x="525" y="109" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Populations</tspan></text>
+<text x="525" y="129" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">gating</tspan></text>
+<path d="M592,112 L604,112" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="608" y="84" rx="10" ry="10" width="130" height="56" fill="#ffffff" stroke="#2a2a2a" stroke-width="3"/>
+<text x="673" y="109" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Analyse</tspan></text>
+<text x="673" y="129" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">plots, statistics</tspan></text>
+<path d="M740,112 L752,112" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="755" y="84" rx="10" ry="10" width="128" height="56" fill="#ffffff" stroke="#2a2a2a" stroke-width="3"/>
+<text x="820" y="109" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Export</tspan></text>
+<text x="820" y="129" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">figures, tables</tspan></text>
+<rect x="16" y="158" rx="10" ry="10" width="868" height="74" fill="#dbeaf3" stroke="#2a2a2a" stroke-width="3"/>
+<text x="450" y="182" font-size="15" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Every step leaves a record</tspan><tspan fill="#6b6b66">&#160;· each run's settings, inputs, version, who and when</tspan></text>
+<path d="M81,142 L81,156" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="21" y="196" rx="7" ry="7" width="120" height="24" fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5"/>
+<text x="81" y="212" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan>microscope settings</tspan></text>
+<path d="M229,142 L229,156" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="169" y="196" rx="7" ry="7" width="120" height="24" fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5"/>
+<text x="229" y="212" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan>source fingerprint</tspan></text>
+<path d="M377,142 L377,156" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="317" y="196" rx="7" ry="7" width="120" height="24" fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5"/>
+<text x="377" y="212" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan>parameters, inputs</tspan></text>
+<path d="M525,142 L525,156" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="465" y="196" rx="7" ry="7" width="120" height="24" fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5"/>
+<text x="525" y="212" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan>gate history</tspan></text>
+<path d="M673,142 L673,156" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="613" y="196" rx="7" ry="7" width="120" height="24" fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5"/>
+<text x="673" y="212" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan>frozen parameters</tspan></text>
+<path d="M820,142 L820,156" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="760" y="196" rx="7" ry="7" width="120" height="24" fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5"/>
+<text x="820" y="212" font-size="12" fill="#2a2a2a" text-anchor="middle"><tspan>record in the file</tspan></text>
+<path d="M81,234 C81,264 339,260 339,288" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<path d="M229,234 C229,264 384,260 384,288" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<path d="M377,234 C377,264 428,260 428,288" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<path d="M525,234 C525,264 472,260 472,288" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<path d="M673,234 C673,264 517,260 517,288" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<path d="M820,234 C820,264 561,260 561,288" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+<rect x="16" y="294" rx="10" ry="10" width="868" height="104" fill="#efeecf" stroke="#2a2a2a" stroke-width="3"/>
+<text x="450" y="324" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Checks read the record</tspan><tspan fill="#6b6b66">&#160;· they warn and say what to do, never block</tspan></text>
+<text x="450" y="352" font-size="14" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">at each step:&#160;</tspan><tspan>saturation · calibration · drift, counts, tracks · gates · statistics</tspan></text>
+<text x="450" y="378" font-size="14" fill="#2a2a2a" text-anchor="middle"><tspan fill="#6b6b66">claims from a plot, e.g.&#160;</tspan><tspan font-style="italic">“T cells move faster than B cells”</tspan><tspan fill="#6b6b66">: were both processed the same way?</tspan></text>
+<rect x="16" y="416" rx="10" ry="10" width="868" height="50" fill="#d4ece3" stroke="#2a2a2a" stroke-width="3"/>
+<text x="450" y="447" font-size="16" fill="#2a2a2a" text-anchor="middle"><tspan font-weight="700">Chains replay it</tspan><tspan fill="#6b6b66">&#160;· the same steps on new images, or a past run exactly</tspan></text>
 </svg>

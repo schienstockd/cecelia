@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <!-- How a claim from a plot is checked. Kept in sync with docs/todo/recital_figures/findings_flow.svg
+       and docs/todo/IMAGE_ANALYSIS_RECITAL_PLAN.md. Fills: checks blue, model review pink, as in that figure. -->
+  <defs>
+    <marker id="arrowDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b6b66"/>
+    </marker>
+  </defs>
+  <rect width="900" height="420" fill="#fafaf7"/>
+
+  <text x="16" y="30" font-size="16" fill="#2a2a2a"><tspan font-weight="700">Claim recital</tspan><tspan fill="#6b6b66">&#160;· a claim from a plot, checked against the record</tspan></text>
+  <text x="16" y="50" font-size="12" fill="#6b6b66">a helper, not a gate: nothing is blocked, and no p-value is computed</text>
+  <path d="M16,62 L884,62" fill="none" stroke="#6b6b66" stroke-width="1.5"/>
+
+  <!-- boxes -->
+  <g stroke="#2a2a2a" stroke-width="3">
+    <rect x="16"  y="90"  rx="10" ry="10" width="200" height="116" fill="#ffffff"/>
+    <rect x="270" y="90"  rx="10" ry="10" width="300" height="116" fill="#dbeaf3"/>
+    <rect x="270" y="262" rx="10" ry="10" width="300" height="116" fill="#f3e1ec"/>
+    <rect x="624" y="90"  rx="10" ry="10" width="260" height="288" fill="#ffffff"/>
+  </g>
+  <rect x="16" y="262" rx="9" ry="9" width="200" height="116" fill="#f0f0ee" stroke="#6b6b66" stroke-width="1.5"/>
+
+  <g fill="#2a2a2a" text-anchor="middle">
+    <text x="116" y="122" font-size="18" font-weight="700">State a claim</text>
+    <text x="116" y="150" font-size="13" fill="#6b6b66">one sentence, from a</text>
+    <text x="116" y="168" font-size="13" fill="#6b6b66">summary plot; you name</text>
+    <text x="116" y="186" font-size="13" fill="#6b6b66">the replicate (e.g. Mouse)</text>
+
+    <text x="420" y="122" font-size="18" font-weight="700">Checks <tspan font-size="14" font-weight="400" fill="#6b6b66">· no model</tspan></text>
+    <text x="420" y="150" font-size="13" fill="#6b6b66">images · processing record · same</text>
+    <text x="420" y="168" font-size="13" fill="#6b6b66">processing · replicates · units</text>
+    <text x="420" y="190" font-size="13">✓ fact  ·  ⚠ fact → what to do  ·  – not checked</text>
+
+    <text x="420" y="294" font-size="18" font-weight="700">Model review <tspan font-size="14" font-weight="400" fill="#6b6b66">· optional</tspan></text>
+    <text x="420" y="322" font-size="13" fill="#6b6b66">with AI on, about a minute; reads what</text>
+    <text x="420" y="340" font-size="13" fill="#6b6b66">was imaged, run and measured, not your notes</text>
+    <text x="420" y="362" font-size="13">adds only what the checks miss</text>
+
+    <text x="754" y="122" font-size="18" font-weight="700">Blackboard entry</text>
+    <text x="754" y="150" font-size="13" fill="#6b6b66">every check and review point,</text>
+    <text x="754" y="168" font-size="13" fill="#6b6b66">by category, each with</text>
+    <text x="754" y="186" font-size="13" fill="#6b6b66">what to do</text>
+    <text x="754" y="222" font-size="13" fill="#6b6b66">you mark the review's points</text>
+    <text x="754" y="306" font-size="13" fill="#6b6b66">restating starts a new round</text>
+    <text x="754" y="324" font-size="13" fill="#6b6b66">and clears the old review</text>
+
+    <text x="116" y="294" font-size="16" font-weight="700">Re-check</text>
+    <text x="116" y="320" font-size="13" fill="#6b6b66">when the plot opens; a check</text>
+    <text x="116" y="338" font-size="13" fill="#6b6b66">finding closes once the</text>
+    <text x="116" y="356" font-size="13" fill="#6b6b66">analysis no longer shows it</text>
+  </g>
+
+  <!-- Good / Bad / Unsure, as on the entry -->
+  <g stroke="#2a2a2a" stroke-width="1.5" fill="#ffffff">
+    <rect x="652" y="234" rx="7" ry="7" width="64" height="28"/>
+    <rect x="722" y="234" rx="7" ry="7" width="64" height="28"/>
+    <rect x="792" y="234" rx="7" ry="7" width="64" height="28"/>
+  </g>
+  <g font-size="13" text-anchor="middle" fill="#2a2a2a">
+    <text x="684" y="253">Good</text><text x="754" y="253">Bad</text><text x="824" y="253">Unsure</text>
+  </g>
+
+  <!-- arrows -->
+  <g fill="none" stroke="#6b6b66" stroke-width="2">
+    <path d="M220,148 L262,148" marker-end="url(#arrowDim)"/>
+    <path d="M574,148 L616,148" marker-end="url(#arrowDim)"/>
+    <path d="M420,210 L420,254" marker-end="url(#arrowDim)"/>
+    <path d="M574,320 L616,320" marker-end="url(#arrowDim)"/>
+    <path d="M220,300 Q245,300 245,260 L245,200 Q245,180 262,180" marker-end="url(#arrowDim)"/>
+  </g>
+  <text x="428" y="237" font-size="12" fill="#6b6b66">knows what the checks found</text>
+</svg>

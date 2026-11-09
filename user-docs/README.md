@@ -181,6 +181,19 @@ Anthropic, so check your institute's rules for unpublished or patient data.
 **Setup:** install Claude Code and log in from Kiwi; that's all Kiwi needs. For a terminal session,
 also click Kiwi → Assistant → **Set up** once (it installs the Cecelia plugin).
 
+### Checking a claim
+
+Before you write a result down, state it from its summary plot: the claim button in the plot's
+footer takes one sentence ("T cells move faster than B cells") and the replicate (e.g. Mouse). The
+checks need no AI. They read what Cecelia recorded: are the images there, is each step's processing
+saved, were the compared images and groups processed the same way, how many replicates, are units
+calibrated. Each line is a fact, or a problem with what to do. With AI on, **Model review → Run** asks a model
+for what the checks can't see; it reads the record, not your notes, and you mark its points Good,
+Bad or Unsure. Everything lands on one Blackboard entry, and the checks run again whenever the plot
+opens. Nothing is blocked.
+
+<p align="center"><img src="../frontend/public/readme-claim.svg" alt="Claim recital: a claim from a plot, checked against the record. A helper, not a gate: nothing is blocked, and no p-value is computed. State a claim: one sentence from a summary plot, naming the replicate (e.g. Mouse). Checks, no model: images, processing record, same processing, replicates, units; each line is a fact, a problem with what to do, or not checked. Model review, optional: with AI on, about a minute; it reads what was imaged, run and measured, not your notes, knows what the checks found and adds only what they miss. Both go to one Blackboard entry, every point by category with what to do; you mark the review's points Good, Bad or Unsure; restating starts a new round and clears the old review. Re-check: when the plot opens; a check finding closes once the analysis no longer shows it." width="100%"></p>
+
 ## Where to write things down
 
 | You want to record… | Use |
