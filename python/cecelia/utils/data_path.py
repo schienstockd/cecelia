@@ -16,15 +16,25 @@ import numpy as np
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.intensity_utils as intensity_utils
+import cecelia.utils.photon_utils as photon_utils
 from cecelia.utils.dim_utils import DimUtils
+
+#: Timepoints the signal pass (`measure_signal`) samples, evenly spread; all of them when fewer.
+SIGNAL_SAMPLE_T = 4
+#: Z planes per sampled timepoint, evenly spread; all of them when fewer.
+SIGNAL_SAMPLE_Z = 16
+#: Voxels per plane kept for the object and shared-structure statistics (same positions in every channel).
+SIGNAL_SAMPLE_VOXELS = 20000
 
 
 def measure_store(im_path, log=None):
     """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
     with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
     `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
-    `partialTimepoint` when the last timepoint stopped mid-volume (left out of every stat). Raises on a store that is not
-    integer data (`channel_histograms`) — the caller decides whether that fails anything."""
+    `partialTimepoint` when the last timepoint stopped mid-volume (left out of every stat), plus the
+    signal pass (`measure_signal`): a `photons` entry per channel and top-level `sharedStructure` and
+    `drift`. Raises on a store that is not integer data (`channel_histograms`) — the caller decides
+    whether that fails anything."""
     say = log or (lambda _m: None)
     dim_utils = DimUtils(ome_xml_utils.load_ome_xml(im_path))
     levels, _ = zarr_utils.open_as_zarr(im_path)
@@ -75,6 +85,8 @@ def measure_store(im_path, log=None):
             f'(top occupied value {stats["topValue"]}, {stats["topCount"]} voxels '
             f'= {stats["clippedSignalFrac"] * 100:.4f}% of signal)')
     out = {'channels': channels, 'sampling': 'full pass'}
+    skip_t = partial['t'] if partial is not None else None
+    out.update(measure_signal(level0, axes, dim_utils, channels, skip_t=skip_t, log=say))
     if partial is not None:
         out['partialTimepoint'] = partial
         say(f'>> [WARN] last timepoint (t{partial["t"]}) is incomplete: '
@@ -99,3 +111,136 @@ def _partial_timepoint(occupied, lead, axes):
         occ = np.moveaxis(occ, z_pos, 1)
         occ = occ.reshape(occ.shape[0], occ.shape[1], -1).any(axis=2)
     return intensity_utils.partial_last_timepoint(occ)
+
+
+def _sample_positions(n, k, seed):
+    rng = np.random.default_rng(seed)
+    return rng.choice(n, size=min(k, n), replace=False)
+
+
+def measure_signal(level0, axes, dim_utils, channels, skip_t=None, log=None):
+    """The test-acquisition checks that need where a voxel sits, from a SAMPLE of planes
+    (`docs/todo/ACQUISITION_TEST_CHECK_PLAN.md`): `SIGNAL_SAMPLE_T` timepoints x `SIGNAL_SAMPLE_Z`
+    planes, every channel read at the same planes and positions.
+
+    Adds ``photons`` to each entry of ``channels`` (this pass's per-channel result, from
+    `measure_store`): ``{fit: photon_utils.fit_photon_transfer, objects: photon_utils.object_photons}``,
+    offset at the channel's background median and windows at its ceiling dropped when it clipped.
+    Returns ``{sharedStructure: photon_utils.shared_structure, drift: _drift_check | None}``.
+    A sample suffices: none of these is a voxel count (clipping is, and stays on the full pass).
+    ``skip_t`` is a timepoint that is not acquisition data (a stopped acquisition's last frame).
+    """
+    say = log or (lambda _m: None)
+    c_idx, t_idx, z_idx = axes['C'], axes['T'], axes['Z']
+    def spread(axis, k):
+        if axis is None:
+            return [None]
+        n = level0.shape[axis]
+        idx = sorted(set(np.linspace(0, n - 1, min(k, n)).round().astype(int).tolist()))
+        return [i for i in idx if not (axis == t_idx and i == skip_t)]
+    ts, zs = spread(t_idx, SIGNAL_SAMPLE_T), spread(z_idx, SIGNAL_SAMPLE_Z)
+    n_c = level0.shape[c_idx] if c_idx is not None else 1
+    say(f'>> signal pass: {len(ts)} timepoint(s) x {len(zs)} plane(s): photons, objects, shared structure')
+
+    ceil = {i: (ch['topValue'] if ch.get('saturated') else None) for i, ch in enumerate(channels)}
+    # a photon-counted channel's zeros are photon-free voxels: data for the fit, and its zero-photon
+    # level is 0 itself (its background median is untestable, most voxels being 0)
+    counted = {i: (ch.get('floor') or {}).get('kind') == 'photon-counted' for i, ch in enumerate(channels)}
+    win_mu = {c: [] for c in range(n_c)}
+    win_var = {c: [] for c in range(n_c)}
+    smooth = {c: [] for c in range(n_c)}
+    struct = {c: [] for c in range(n_c)}
+    raw = {c: [] for c in range(n_c)}
+    seed = 0
+    for t in ts:
+        for z in zs:
+            planes = []
+            for c in range(n_c):
+                sl = [0] * (level0.ndim - 2) + [slice(None), slice(None)]
+                for ax, v in ((c_idx, c), (t_idx, t), (z_idx, z)):
+                    if ax is not None:
+                        sl[ax] = v
+                planes.append(np.asarray(level0[tuple(sl)]))
+            pos = _sample_positions(planes[0].size, SIGNAL_SAMPLE_VOXELS, seed)
+            seed += 1
+            for c, p in enumerate(planes):
+                m, v = photon_utils.window_stats(p, ceil.get(c), drop_zeros=not counted.get(c, False))
+                win_mu[c].append(m)
+                win_var[c].append(v)
+                smooth[c].append(photon_utils.smooth_plane(p).ravel()[pos])
+                struct[c].append(photon_utils.structure_plane(p).ravel()[pos])
+                raw[c].append(p.ravel()[pos])
+
+    for c in range(n_c):
+        offset = (0.0 if counted.get(c) else
+                  (channels[c].get('noise') or {}).get('bgMedian') if c < len(channels) else None)
+        fit = photon_utils.fit_photon_transfer(np.concatenate(win_mu[c]), np.concatenate(win_var[c]),
+                                               offset=offset)
+        objects = photon_utils.object_photons(np.concatenate(smooth[c]), fit, ceiling=ceil.get(c),
+                                              raw=np.concatenate(raw[c]))
+        if c < len(channels):
+            channels[c]['photons'] = {'fit': fit, 'objects': objects}
+        g = fit['greyPerPhoton']
+        say(f'   ch{c}: ' + (f'{g:.1f} grey levels per photon'
+                             + (f', ceiling = {objects["ceilingPhotons"]:.1f} photons'
+                                if objects and objects.get('ceilingPhotons') is not None else '')
+                             + (f', objects p50 {objects["p50Photons"]:.1f} photons'
+                                if objects and objects.get('p50Photons') is not None else '')
+                             if g is not None else f'photons untestable ({fit["untestable"]})'))
+    out = {'sharedStructure': photon_utils.shared_structure(struct), 'drift': None}
+    if t_idx is not None and level0.shape[t_idx] - (skip_t is not None) > 2:
+        out['drift'] = _drift_check(level0, dim_utils, channels, t_idx, c_idx, say, skip_t=skip_t)
+    return out
+
+
+class _FirstFrames:
+    """A read-only view of a level's first `n` timepoints, so a stopped acquisition's last frame can be
+    left out of a whole-movie estimator without reading or copying the level. Indexing passes straight
+    through; only `shape` (what the estimator sizes itself by) changes."""
+
+    def __init__(self, level, t_axis, n):
+        self._level, self.dtype, self.ndim = level, level.dtype, level.ndim
+        self.shape = tuple(n if i == t_axis else s for i, s in enumerate(level.shape))
+
+    def __getitem__(self, key):
+        return self._level[key]
+
+
+def _drift_check(level0, dim_utils, channels, t_idx, c_idx, say, skip_t=None):
+    """Drift of the whole movie through drift correction's own estimator
+    (`correction_utils.estimate_drift`, its defaults), on the channel with the most photons on its
+    objects — the one registration would lock onto best. Numbers only: the verdict (residual over
+    drift correction's `DRIFT_RESIDUAL_WARN_PX`) is the Julia QC's, as for the drift task.
+    ``skip_t`` (a stopped acquisition's last frame, always the last) is left out, as from every other
+    stat: its black planes would register as movement."""
+    import copy
+    from cecelia.utils import correction_utils
+    if skip_t is not None:
+        level0 = _FirstFrames(level0, t_idx, skip_t)
+        if dim_utils is not None:
+            # the same dims with T one shorter (`calc_image_dimensions` matches the OME's own sizes,
+            # so it cannot be re-run on the shortened shape)
+            dim_utils = copy.deepcopy(dim_utils)
+            dim_utils.im_dim = list(dim_utils.im_dim)
+            dim_utils.im_dim[dim_utils.dim_idx('T')] = skip_t
+    def score(i):
+        obj = ((channels[i].get('photons') or {}).get('objects') or {})
+        return obj.get('p50Photons') or 0.0
+    ch = max(range(len(channels)), key=score) if channels else 0
+    try:
+        est = correction_utils.estimate_drift(level0, ch, dim_utils, time_idx=t_idx, channel_idx=c_idx)
+    except Exception as e:                                 # advisory: never fails the probe
+        say(f'   drift: not measured ({e})')
+        return {'channel': int(ch), 'untestable': str(e)}
+    pos = np.asarray(est.positions, dtype=np.float64)
+    steps = np.linalg.norm(np.diff(pos, axis=0), axis=1) if len(pos) > 1 else np.zeros(0)
+    out = {'channel': int(ch), 'axes': list(est.axes),
+           'excursionPx': [round(float(v), 2) for v in np.ptp(pos, axis=0)],
+           'maxStepPx': round(float(steps.max()), 2) if steps.size else 0.0,
+           'residualRmsPx': None if est.residual_rms is None else round(float(est.residual_rms), 3),
+           'residualP90Px': None if est.residual_p90 is None else round(float(est.residual_p90), 3),
+           'interpolatedFrames': len(est.interpolated)}
+    say(f'   drift (ch{ch}): excursion {dict(zip(out["axes"], out["excursionPx"]))} px, '
+        f'residual RMS {out["residualRmsPx"]} px')
+    return out
+

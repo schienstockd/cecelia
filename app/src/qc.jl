@@ -620,6 +620,8 @@ What was measured about an image that bears on Cleanup, with no verdict attached
   image was imported before that field existed.
 - `drift`: one entry per drift-correction output — `valueName`, `maxDriftPx` (the XY excursion the
   run measured) and `maxDriftUm` (`nothing` when the image has no physical pixel size).
+- `sharedStructure` / `importDrift`: the import probe's signal pass (`data_path.measure_signal`) —
+  channel pairs that show the same structure, and the raw movie's drift before any correction.
 
 No cutoff and no "do this": the task text (`useWhen` / `notWhen`) says what each method needs, the
 reader matches the two. The MCP's `get_image_info` reads this from the image payload — there is no
@@ -652,7 +654,10 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
             "saturated"     => get(ch, "saturated", nothing),
             "range"         => get(ch, "range", nothing),
             "floor"         => get(ch, "floor", nothing),
-            "noise"         => _noise_without_guessed_cause(get(ch, "noise", nothing), get(ch, "floor", nothing))))
+            "noise"         => _noise_without_guessed_cause(get(ch, "noise", nothing), get(ch, "floor", nothing)),
+            # Grey levels per photon from the image's own noise, and photons on the channel's objects
+            # and at its ceiling (`photon_utils`, docs/todo/ACQUISITION_TEST_CHECK_PLAN.md).
+            "photons"       => get(ch, "photons", nothing)))
     end
     um_per_px = img_is_calibrated(img) ? img_physical_sizes(img)[1][3] : nothing
     drift = Dict{String,Any}[]
@@ -668,7 +673,33 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
             "maxDriftPx" => px,
             "maxDriftUm" => isnothing(um_per_px) ? nothing : round(px * um_per_px, digits = 1)))
     end
-    Dict{String,Any}("channels" => channels, "drift" => drift)
+    sat = get(img.meta, "saturation", nothing)
+    sat = sat isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in sat) : Dict{String,Any}()
+    Dict{String,Any}("channels" => channels, "drift" => drift,
+                     # the import probe's own read of the raw movie: channel pairs showing the same
+                     # structure (Pearson r on smoothed voxels), and drift through drift correction's
+                     # estimator before any correction ran
+                     "sharedStructure" => get(sat, "sharedStructure", nothing),
+                     "importDrift"     => _import_drift_um(get(sat, "drift", nothing), um_per_px))
+end
+
+"""The import probe's drift numbers plus the XY excursion as drift correction reports it (`maxDriftPx`:
+the Euclidean norm of the Y and X ranges, `_drift_qc_metrics`) and in µm (`nothing` without a pixel
+size), so the two read the same."""
+function _import_drift_um(d, um_per_px)
+    d isa AbstractDict || return nothing
+    out = Dict{String,Any}(String(k) => v for (k, v) in d)
+    ex = get(out, "excursionPx", nothing)
+    axes = get(out, "axes", nothing)
+    if ex isa AbstractVector && axes isa AbstractVector
+        xy = [Float64(e) for (a, e) in zip(axes, ex) if a in ("Y", "X")]
+        if !isempty(xy)
+            px = round(sqrt(sum(abs2, xy)), digits = 2)
+            out["maxDriftPx"] = px
+            out["maxDriftUm"] = isnothing(um_per_px) ? nothing : round(px * um_per_px, digits = 1)
+        end
+    end
+    out
 end
 
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale

@@ -30,6 +30,12 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
         out = Dict{String,Any}("channels" => [Dict{String,Any}(ch) for ch in chans])
         pt = get(res, "partialTimepoint", nothing)
         isnothing(pt) || (out["partialTimepoint"] = Dict{String,Any}(pt))
+        # the signal pass's whole-image results (`data_path.measure_signal`); per-channel ones ride in
+        # `channels`
+        for k in ("sharedStructure", "drift")
+            v = get(res, k, nothing)
+            isnothing(v) || (out[k] = v)
+        end
         return out
     catch e
         @warn "Could not read saturation result" exception = e
@@ -41,7 +47,7 @@ end
 
 """Fields every probed channel carries from the current probe (`data_path.measure_store`) beyond the
 clipping numbers: a stored probe missing any of them is re-run by `ensure_saturation_meta!`."""
-const SATURATION_CURRENT_KEYS = ("profile", "range", "floor", "noise")
+const SATURATION_CURRENT_KEYS = ("profile", "range", "floor", "noise", "photons")
 
 """Whether a stored `meta` carries a probe with every `SATURATION_CURRENT_KEYS` field on every channel.
 Through `_saturation_channels`, which normalises JSON3's Symbol keys — a raw `haskey(ch, "profile")`
