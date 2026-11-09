@@ -77,15 +77,17 @@ than the source planned. An image derived from the source (z-projection, Z-crop,
 `ori_path` but not the source's stack, and the source's per-depth ramp or channel map would then be
 read as its own. FEWER frames is the same acquisition: a time-lapse stopped early (the file keeps the
 planned count) or a time crop — but not ONE frame of several, which is what a time projection is
-(a mean or max over all of them). A count the store doesn't report is not held against the settings.
+(a mean or max over all of them). A count either side doesn't report is not held against the settings:
+an `.ims` not exported from Zen has no `LSM Dataset Size`, so its z and t counts are unknown, not 1. An
+absent count never hides a derived image, which has fewer planes or frames than a source that has them.
 """
 function _acquisition_describes_store(settings::AbstractDict, zarr_meta::AbstractDict)::Bool
     _count(x) = x isa Real ? round(Int, x) : nothing
     c_ok = !haskey(zarr_meta, "SizeC") || Int(zarr_meta["SizeC"]) == length(get(settings, "channels", Any[]))
-    z_ok = !haskey(zarr_meta, "SizeZ") ||
-           Int(zarr_meta["SizeZ"]) == something(_count(get(get(settings, "zStack", Dict()), "count", nothing)), 1)
-    planned = something(_count(get(get(settings, "timelapse", Dict()), "count", nothing)), 1)
-    t_ok = !haskey(zarr_meta, "SizeT") || Int(zarr_meta["SizeT"]) == planned ||
+    n_z = _count(get(get(settings, "zStack", Dict()), "count", nothing))
+    z_ok = !haskey(zarr_meta, "SizeZ") || isnothing(n_z) || Int(zarr_meta["SizeZ"]) == n_z
+    planned = _count(get(get(settings, "timelapse", Dict()), "count", nothing))
+    t_ok = !haskey(zarr_meta, "SizeT") || isnothing(planned) || Int(zarr_meta["SizeT"]) == planned ||
            (1 < Int(zarr_meta["SizeT"]) < planned)
     c_ok && z_ok && t_ok
 end
