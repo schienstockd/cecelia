@@ -66,10 +66,12 @@ function profile_trends(meta::AbstractDict)
     out
 end
 
-function _profile_finding(code, trends, key, hit, pct; text_key = code)
+# `meta` given: a depth finding, whose catalog key `_depth_text_key` picks
+function _profile_finding(code, trends, key, hit, pct; meta = nothing)
     hits = [t for t in trends if haskey(t, key) && hit(t[key])]
     isempty(hits) && return nothing
     chans = [t["channel"] for t in hits]
+    text_key = isnothing(meta) ? code : _depth_text_key(code, meta, chans)
     worst = maximum(pct(t[key]) for t in hits)
     n = length(hits)
     qc_finding("info", code; key = text_key, n = n, s = (n == 1 ? "" : "s"), pct = worst,
@@ -77,6 +79,19 @@ function _profile_finding(code, trends, key, hit, pct; text_key = code)
                detail = Dict{String,Any}("channels" => chans, "worstPct" => worst,
                                          "perChannel" => [Dict{String,Any}("channel" => t["channel"],
                                                                            key => t[key]) for t in hits]))
+end
+
+"""
+    _depth_text_key(code, meta, chans) -> String
+
+The catalog key for a depth finding over the flagged channels `chans`: `import.clipped_deep_export`
+when every one of them clips at an 8-bit export's ceiling (`export_ceiling_channels` — not the
+detector's, so no HV or ramp advice), else `_depth_ramp_key`.
+"""
+function _depth_text_key(code::AbstractString, meta::AbstractDict, chans)::String
+    code == "import.clipped_deep" && all(in(export_ceiling_channels(meta)), chans) &&
+        return "import.clipped_deep_export"
+    _depth_ramp_key(code, meta)
 end
 
 """
@@ -109,16 +124,12 @@ when no channel has a profile (an image probed before it existed — Refresh met
 function profile_qc_findings(meta::AbstractDict)
     tr = profile_trends(meta)
     pct(x) = round(abs(x) * 100, digits = 0)
-    ramp(code) = _depth_ramp_key(code, meta)
     fs = [
         _profile_finding("import.signal_fades", tr, "fade", ≥(_FADE_OVER_TIME), pct),
         _profile_finding("import.background_rises", tr, "backgroundRise", ≥(_BACKGROUND_RISE), x -> pct(x - 1)),
-        _profile_finding("import.brighter_with_depth", tr, "depthChange", ≥(_DEPTH_CHANGE), pct;
-                         text_key = ramp("import.brighter_with_depth")),
-        _profile_finding("import.darker_with_depth", tr, "depthChange", ≤(-_DEPTH_CHANGE), pct;
-                         text_key = ramp("import.darker_with_depth")),
-        _profile_finding("import.clipped_deep", tr, "clippedDeepShare", ≥(_CLIPPED_DEEP_SHARE), pct;
-                         text_key = ramp("import.clipped_deep")),
+        _profile_finding("import.brighter_with_depth", tr, "depthChange", ≥(_DEPTH_CHANGE), pct; meta),
+        _profile_finding("import.darker_with_depth", tr, "depthChange", ≤(-_DEPTH_CHANGE), pct; meta),
+        _profile_finding("import.clipped_deep", tr, "clippedDeepShare", ≥(_CLIPPED_DEEP_SHARE), pct; meta),
     ]
     Dict{String,Any}[f for f in fs if !isnothing(f)]
 end

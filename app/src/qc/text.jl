@@ -120,6 +120,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "import.clipped_deep" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
         long  = "Lower the laser power at depth if it was raised there, or the HV. Channels: {channels}."),
+    "import.clipped_deep_export" => (
+        short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
+        long  = "Judge depth clipping on the original acquisition file — this 8-bit file looks like a rescaled export. Channels: {channels}."),
     "import.clipped_deep_bright_z" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
         long  = "Lower the deep end of the Bright Z ramp, or the HV. Channels: {channels}."),
@@ -269,6 +272,10 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "af.saturated_input" => (
         short = "Channel {channel} saturated",
         long  = "Input voxels are clipped at the top of the range, so their true value is already lost — lower the gain or laser power and reacquire."),
+    # the same at an 8-bit export's ceiling (`export_ceiling_channels`): not necessarily the detector's
+    "af.saturated_input_export" => (
+        short = "Channel {channel} saturated",
+        long  = "Input voxels sit at the ceiling of what looks like a rescaled 8-bit export, so their true value is lost — judge detector clipping on the original acquisition file."),
     "af.bleedthrough" => (
         short = "Channel {channel} carries {value} bleedthrough",
         long  = "The correction subtracted it, but a leak is a filter-set property — check the emission filters if it differs across a set acquired the same way."),
@@ -288,6 +295,10 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "denoise.channel_saturated" => (
         short = "{value} channel(s) skipped — saturated at import",
         long  = "SUPPORT is a shot-noise denoiser; on channels whose noise floor is tiny relative to signal there is nothing to remove. Uncheck them, or re-acquire at lower gain."),
+    # every skipped channel at an 8-bit export's ceiling (`export_ceiling_channels`): no gain advice
+    "denoise.channel_saturated_export" => (
+        short = "{value} channel(s) skipped — saturated at import",
+        long  = "Uncheck them — they top out at the ceiling of what looks like a rescaled 8-bit export; judge detector clipping on the original acquisition file."),
 
     # denoise training (_support_train_qc_findings). One check — same as opticalFlow.train's
     # "loss did not decrease" — because until inference runs the loss is the only signal.

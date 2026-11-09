@@ -24,7 +24,7 @@ function parse_af_channel_stats(d::AbstractDict)::AfChannelStats
         parsed_leaks)
 end
 """
-    af_qc_findings(per_channel) -> (findings, worst)
+    af_qc_findings(per_channel; export_channels) -> (findings, worst)
 
 QC for AF correction from the per-channel output stats. Advisory only, per `docs/MODULES.md` — never
 an `error`, never a gate.
@@ -32,7 +32,8 @@ an `error`, never a gate.
 Two findings, both about things the user can act on OUTSIDE this task:
 
 * **saturated input** (`af.saturated_input`) — the channel was clipped at the sensor, before we saw
-  it. No correction recovers a clipped voxel's true value; the action is at the microscope.
+  it. No correction recovers a clipped voxel's true value; the action is at the microscope — or, for a
+  channel in `export_channels` (an 8-bit export's ceiling, `export_ceiling_channels`), the original file.
 * **bleedthrough detected** (`af.bleedthrough`) — a derived, non-zero `alpha` for some source
   channel (`correction_utils.af_bleedthrough_alphas`), one finding per source. A leak is a property
   of the filter set; one image of a cohort differing from its peers is a real optics signal. No
@@ -43,7 +44,7 @@ Cohort metric `levelsUsedFrac` is banked but not gated (its threshold was retire
 rejected alternatives (a suppression finding; retention of `af-low-range` / `clippedFrac` / `ceiling`),
 and the datasets that shaped these decisions: [`docs/todo/AF_CORRECTION_AUDIT.md`](../../../../docs/todo/AF_CORRECTION_AUDIT.md).
 """
-function af_qc_findings(per_channel::AbstractDict)
+function af_qc_findings(per_channel::AbstractDict; export_channels::Vector{Int} = Int[])
     findings = Vector{Dict{String,Any}}()
     worst_saturated, worst_levels, worst_leak = 0.0, 1.0, 0.0
     for (ch, raw) in sort(collect(per_channel); by = first)
@@ -55,7 +56,10 @@ function af_qc_findings(per_channel::AbstractDict)
         if s.saturatedFrac > 0.001
             # short = problem; long = the action; figures go in `detail` as a Dict. Every finding
             # is built via `qc_finding` + QC_TEXT — no ad-hoc detail strings.
+            # at an 8-bit export's ceiling (the image's `export_ceiling_channels`): no gain advice
+            from_export = something(tryparse(Int, string(ch)), -1) in export_channels
             push!(findings, qc_finding("warn", "af.saturated_input"; channel = ch,
+                key = from_export ? "af.saturated_input_export" : "af.saturated_input",
                 detail = Dict{String,Any}(
                     "saturatedFrac" => round(s.saturatedFrac; digits = 5),
                     "saturatedPct"  => round(s.saturatedFrac * 100; digits = 3))))

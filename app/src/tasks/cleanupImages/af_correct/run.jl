@@ -96,7 +96,8 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
             stats = JSON3.read(read(qc_out_path, String))
             per_ch = Dict{String,Any}(String(k) => Dict{String,Any}(String(m) => v for (m, v) in s)
                                       for (k, s) in stats)
-            findings, worst = af_qc_findings(per_ch)
+            findings, worst = af_qc_findings(per_ch; export_channels =
+                export_ceiling_channels(get(raw, "meta", Dict{String,Any}())))
             write_qc(img, "cleanupImages.afCorrect", out_value_name, findings;
                      metrics = Dict{String,Any}("saturatedFrac" => worst.saturated,
                                                 "levelsUsedFrac" => worst.levels,

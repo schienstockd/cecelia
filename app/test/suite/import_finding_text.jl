@@ -68,3 +68,42 @@
         @test Set(String(s[:system]) for s in kn[:scopes]) ⊆ Set(["FV4000", "FVMPE-RS"])  # all Evident `.oir`
     end
 end
+
+# The tasks downstream of import that report clipping follow the same rule: denoise's saturation gate
+# and AF correction's saturated input give no gain advice on a channel at an 8-bit export's ceiling.
+@testset "denoise / AF clipping text on 8-bit exports" begin
+    probe(bits, top) = Dict{String,Any}("index" => 0, "saturated" => true, "topValue" => top,
+                                        "clippedSignalFrac" => 0.03, "containerBits" => bits)
+    img_meta(chs...) = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => collect(chs)))
+    exported = Cecelia.export_ceiling_channels(img_meta(probe(8, 255)))
+    @test exported == [0]
+    @test isempty(Cecelia.export_ceiling_channels(img_meta(probe(16, 4095))))
+    # JSON3-read meta (Symbol keys), as the task handlers pass it
+    @test Cecelia.export_ceiling_channels(JSON3.read(JSON3.write(img_meta(probe(8, 255))))) == [0]
+
+    skipped = Dict{String,Any}("channelsSkipped" => [0], "mode" => "perChannel")
+    dn(ex) = only(f for f in Cecelia._denoise_qc_findings(skipped; export_channels = ex)
+                  if f["code"] == "denoise.channel_saturated")
+    @test !occursin("gain", dn(exported)["long"]) && occursin("original", dn(exported)["long"])
+    @test occursin("gain", dn(Int[])["long"])                    # detector ceiling: advice stays
+
+    sat = Dict{String,Any}("0" => Dict{String,Any}("saturatedFrac" => 0.05, "levelsUsed" => 200,
+                                                   "levelsAvailable" => 256))
+    af(ex) = only(Cecelia.af_qc_findings(sat; export_channels = ex)[1])
+    @test af(exported)["code"] == "af.saturated_input"
+    @test !occursin("gain", af(exported)["long"]) && occursin("original", af(exported)["long"])
+    @test occursin("gain", af(Int[])["long"])
+end
+
+# Clipping concentrated deep, at an 8-bit export's ceiling: no HV / ramp advice either.
+@testset "clipped_deep on 8-bit exports" begin
+    deep = Dict{String,Any}("index" => 0, "saturated" => true, "topValue" => 255, "containerBits" => 8,
+                            "clippedSignalFrac" => 0.03, "profile" => Dict{String,Any}(
+        "byZ" => Dict{String,Any}("p99" => fill(200.0, 16), "p50" => fill(10.0, 16),
+                                  "clipped" => vcat(zeros(Int, 8), fill(50, 8)))))
+    long(ch) = only(f for f in Cecelia.profile_qc_findings(Dict{String,Any}(
+        "saturation" => Dict{String,Any}("channels" => [ch]))) if f["code"] == "import.clipped_deep")["long"]
+    @test occursin("original", long(deep)) && !occursin("HV", long(deep))
+    native = merge(deep, Dict{String,Any}("containerBits" => 16, "topValue" => 4095))
+    @test occursin("HV", long(native))
+end

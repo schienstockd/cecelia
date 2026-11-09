@@ -391,6 +391,24 @@ function _clipped_at_export_ceiling(meta::AbstractDict, ch::AbstractDict, i::Int
 end
 
 """
+    export_ceiling_channels(meta) -> Vector{Int}
+
+The 0-based channels whose import probe tops out at an 8-bit export's ceiling
+(`_clipped_at_export_ceiling`): for the tasks downstream of import that report clipping (denoise's
+saturation gate, AF correction's saturated input), so none of them gives gain advice there either.
+`meta` is the image's `meta` — String or Symbol keys.
+"""
+function export_ceiling_channels(meta::AbstractDict)::Vector{Int}
+    m = Dict{String,Any}(String(k) => v for (k, v) in meta)
+    out = Int[]
+    for ch in _saturation_channels(m)
+        i = _cal_int(get(ch, "index", nothing), -1)
+        i >= 0 && _clipped_at_export_ceiling(m, ch, i) && push!(out, i)
+    end
+    out
+end
+
+"""
     partial_timepoint_qc_findings(meta) -> Vector
 
 Zero or one finding from `meta["partialTimepoint"]` — a last timepoint the acquisition stopped before
