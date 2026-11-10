@@ -1300,7 +1300,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .params-section {
   overflow-y: auto;
   max-height: 45vh;
-  flex-shrink: 0;
+  /* The one section that gives way when the panel is short (a small window, or the Next footer
+     under the runner): it already scrolls, so shrinking it keeps Run in view instead of pushing it
+     past the panel's clipped bottom. The floor keeps a couple of params visible. */
+  flex: 0 1 auto;
+  min-height: 5rem;
 }
 .params-list { display: flex; flex-direction: column; }
 /* mirrors ParamRenderer's `.param-row` / `.param-label` so the sweep reads as more params */
