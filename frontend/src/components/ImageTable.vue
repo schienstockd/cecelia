@@ -12,7 +12,9 @@ import { useTaskStore, type TaskStatus, type TaskEntry } from '../stores/tasks'
 import { rollupTaskStatus } from '../lib/taskStatus'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
-import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
+import { qcSummary, qcState as qcStateOf, qcTooltipHtml } from '../lib/qc'
+import { staleFindings } from '../lib/staleOutputs'
+import { useStaleOutputsStore } from '../stores/staleOutputs'
 import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { shortUnit, shortTimeUnit, fmtNum } from '../utils/physicalSize'
@@ -74,8 +76,12 @@ function warnIconFor(img: CciaImage): { tip: string } | null {
 // finding is badged with the task that raised it — an image can carry findings from import, drift and
 // AF at once, and the flat list gave no way to tell them apart. The HTML is built (and escaped) by
 // `qcTooltipHtml`; the no-findings branch stays a plain escaped string.
+// Outputs an upstream re-run made stale ride the same dot as a QC finding (lib/staleOutputs.ts).
+const staleStore = useStaleOutputsStore()
+const staleOf = (img: CciaImage) => staleFindings(staleStore.byImage[img.uid], taskDefs.labelFor)
+const qcState = (img: CciaImage) => qcStateOf(img, staleOf(img))
 function qcTip(img: CciaImage): string | Record<string, unknown> {
-  const s = qcSummary(img)
+  const s = qcSummary(img, staleOf(img))
   if (s) return {
     value: qcTooltipHtml(s.groups, taskDefs.labelFor, fn => moduleTagStyle(moduleIdFromFun(fn))),
     escape: false, class: 'qc-tip',

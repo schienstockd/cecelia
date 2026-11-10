@@ -74,3 +74,15 @@ export function parseLabelChipValues(vals: readonly string[]): number[] {
   }
   return out
 }
+
+/** What the Segment / Track page's "Correct …" button does: open the cockpit in the page's mode and,
+ *  when the viewer shows nothing yet and exactly one image is selected, open that image in it — the
+ *  cockpit can't do anything without an image in the viewer. */
+export function correctionLaunch(
+  page: 'segment' | 'tracking', selectedUids: readonly string[], openImageUid: string | null,
+): { mode: CockpitMode; openInViewer: string | null } {
+  return {
+    mode: page === 'segment' ? 'labels' : 'tracks',
+    openInViewer: !openImageUid && selectedUids.length === 1 ? selectedUids[0] : null,
+  }
+}

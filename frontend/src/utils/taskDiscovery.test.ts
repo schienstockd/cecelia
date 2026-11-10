@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkId, checkLine, lineCheck, lineText, TASK_CHECKS, type DiscoveryLine } from './taskDiscovery'
+import { checkId, checkLine, lineCheck, lineText, TASK_CHECKS, type DiscoveryLine, linkTaskMentions, type MentionTarget } from './taskDiscovery'
 import type { CciaImage } from '../stores/project'
 
 const img = (extra: Partial<CciaImage> = {}): CciaImage => ({ uid: 'u', name: 'n', status: 'done', ...extra })
@@ -63,5 +63,31 @@ describe('task specs name only known checks', () => {
       if (!spec || Array.isArray(spec)) continue
       for (const l of [...(spec.useWhen ?? []), ...(spec.notWhen ?? [])]) expect(lineText(l)).toBeTruthy()
     }
+  })
+})
+
+describe('linkTaskMentions', () => {
+  const t = (label: string, path: string, page = path.slice(1)): MentionTarget =>
+    ({ label, path, page, module: page, task: label })
+  const targets = [t('HMM states', '/behaviour', 'Behaviour'), t('HMM (states + transitions)', '/behaviour', 'Behaviour'),
+                   t('Drift correction', '/cleanup', 'Cleanup'), t('Cluster tracks', '/clust-tracks', 'Cluster tracks')]
+
+  it('links a task that lives on another page', () => {
+    const segs = linkTaskMentions('After HMM states, to cluster', '/clust-tracks', targets)
+    expect(segs.map(s => [s.text, s.to?.page])).toEqual([['After ', undefined], ['HMM states', 'Behaviour'], [', to cluster', undefined]])
+  })
+
+  it('leaves a task on the same page as plain text', () => {
+    expect(linkTaskMentions('Before Cluster tracks', '/clust-tracks', targets)).toEqual([{ text: 'Before Cluster tracks' }])
+  })
+
+  it('matches whole words, the longest label first, and labels with brackets', () => {
+    const segs = linkTaskMentions('Run HMM (states + transitions) or Drift corrections', '/segment', targets)
+    expect(segs.filter(s => s.to).map(s => s.text)).toEqual(['HMM (states + transitions)'])
+  })
+
+  it('finds several mentions in one line', () => {
+    const segs = linkTaskMentions('Before HMM states or Cluster tracks', '/track', targets)
+    expect(segs.filter(s => s.to).map(s => s.to!.page)).toEqual(['Behaviour', 'Cluster tracks'])
   })
 })

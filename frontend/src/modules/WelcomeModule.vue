@@ -1,74 +1,120 @@
 <script setup lang="ts">
 /*
-  The app's home page at `/` — the brand lockup as a watermark, and nothing else.
+  The app's home page at `/` (docs/todo/GUI_CLARITY_PLAN.md: audit finding 1, Decisions 13 and 16).
 
-  It exists to make `/` a real destination. `/` used to `redirect` to `/manage-images`, which a view
-  profile can hide, so the landing page had to be resolved from the active profile — and a record's
-  `redirect` is resolved BEFORE any router guard, i.e. before the profile list has arrived, so a cold
-  boot landed on the fallback and then bounced. A neutral page removes the problem instead of timing
-  around it: nothing to resolve, nothing to race, and no page is privileged as "the start".
+  It answers "where do I start?": with no project open, the recent projects; with one open, the active
+  set's recipe (its own, or the one its axes suggest, picked here and stored per set) and one button
+  to the recipe's first page. Nothing here runs or selects anything; the Start button only navigates.
 
-  Deliberately empty of copy (docs/ui/COPY.md). The sidebar beside it already says what this
-  install can do, and whatever a paragraph here said would be read once and skipped forever. The
-  wordmark is not copy — it is the mark.
+  `/` stays its own page, not a redirect: a record's `redirect` resolves before any router guard, so a
+  profile-derived landing page bounced on a cold boot. No page is privileged as "the start" — the
+  recipe is the user's pick.
 */
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useProjectMetaStore } from '../stores/projectMeta'
+import { useSetRecipe } from '../composables/useSetRecipe'
+import { WRITTEN_RECIPES, firstStepOf } from '../utils/setRecipe'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
+import ProjectPanel from '../components/ProjectPanel.vue'
+
+const router = useRouter()
+const projectMeta = useProjectMetaStore()
+const { set, own, suggestion, busy, save } = useSetRecipe()
+const showPanel = ref(false)
+
+onMounted(() => { if (projectMeta.recent.length === 0) void projectMeta.fetchRecent() })
+
+// `/api/projects` already orders the list (the profile's own opens first, newest first).
+const recent = computed(() => projectMeta.recent.slice(0, 6).map(p => ({
+  uid: p.uid, name: p.name,
+  opened: p.lastOpenedAt ? new Date(p.lastOpenedAt).toLocaleDateString() : '—',
+})))
+const RECENT_COLUMNS: SelectionColumn[] = [
+  { key: 'name', label: 'Project' },
+  { key: 'opened', label: 'Last opened', width: 120 },
+]
+
+// The suggested recipe is pre-highlighted but not stored until the user picks it (Decision 16).
+const picked = computed(() => own.value?.id ?? suggestion.value?.recipe.id ?? '')
+const recipeRows = computed(() => WRITTEN_RECIPES.map(r => ({
+  id: r.id,
+  title: r.id === suggestion.value?.recipe.id ? `${r.title} · suggested (${suggestion.value.reason})` : r.title,
+  when: r.whenThisIsYou,
+})))
+const RECIPE_COLUMNS: SelectionColumn[] = [
+  { key: 'title', label: 'Recipe' },
+  { key: 'when', label: 'Is this you?', ellipsis: true },
+]
+const start = computed(() => {
+  const r = own.value ?? suggestion.value?.recipe
+  return r ? firstStepOf(r) : null
+})
 </script>
 
 <template>
-  <!-- aria-hidden: decorative. The lockup is the app's name, which the header already states, and the
-       sidebar is the real landmark — a screen reader announcing "Cecelia" twice adds nothing. -->
   <div class="welcome">
-    <div class="welcome-lockup" aria-hidden="true">
-      <span class="welcome-word">Cecelia</span>
-      <img class="welcome-mark" src="/feijoa.svg" alt="" width="240" height="240" />
+    <div class="welcome-col">
+      <div class="welcome-lockup" aria-hidden="true">
+        <img class="welcome-mark" src="/feijoa.svg" alt="" width="48" height="48" />
+        <span class="welcome-word">Cecelia</span>
+      </div>
+
+      <template v-if="!projectMeta.current">
+        <SelectionTable v-if="recent.length" :columns="RECENT_COLUMNS" :rows="recent" id-key="uid"
+          selection-mode="none" fit="fill" @row-click="r => projectMeta.openProject(String(r.uid))" />
+        <div class="welcome-actions cc-row">
+          <button class="cc-btn cc-btn-primary" @click="showPanel = true">
+            <i class="pi pi-folder-open" /> Open or create a project…
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <h1 class="welcome-title">{{ projectMeta.current.name }}</h1>
+        <template v-if="set">
+          <span class="cc-eyebrow">What is set “{{ set.name }}”?</span>
+          <SelectionTable :columns="RECIPE_COLUMNS" :rows="recipeRows" id-key="id" fit="fill"
+            :model-value="picked" :disabled="busy" @update:model-value="id => save(id)" />
+          <div class="welcome-actions cc-row">
+            <button v-if="start" class="cc-btn cc-btn-next" @click="router.push(start.route)"
+              v-tooltip.top="start.why">
+              Start: {{ start.label }} <i class="pi pi-arrow-right" />
+            </button>
+            <span v-if="!own && suggestion" class="cc-muted cc-fs-xs">Pick a recipe to keep it for this set.</span>
+          </div>
+        </template>
+        <div v-else class="welcome-actions cc-row">
+          <button class="cc-btn cc-btn-primary" @click="router.push('/manage-images')">
+            <i class="pi pi-images" /> Import images
+          </button>
+        </div>
+      </template>
     </div>
+    <ProjectPanel v-if="showPanel" @close="showPanel = false" />
   </div>
 </template>
 
 <style scoped>
 /* `min-height`, NOT `flex: 1` — `.cc-main` (App.vue) is a flex ITEM with `overflow-y: auto`, not a
-   flex container, so `flex` on a child does nothing and the page sat at the top of the area. Its
-   height is definite (stretched by `.cc-content`), so a percentage resolves against it. */
+   flex container, so `flex` on a child does nothing. */
 .welcome {
   min-height: 100%;
   display: flex;
-  align-items: center;
   justify-content: center;
-  user-select: none;
+  padding: var(--cc-space-2xl) var(--cc-space-xl);
 }
-
-/* Horizontal lockup — wordmark then mark (; the R logo and the header both lead with
-   the mark, this trails it). ONE opacity on the group, so the two halves recede by exactly the same
-   amount; setting it per element is how a lockup ends up with a word darker than its mark. */
-.welcome-lockup {
+.welcome-col {
+  width: min(44rem, 100%);
   display: flex;
-  align-items: center;
-  gap: clamp(0.5rem, 2vmin, 1.75rem);
-  opacity: 0.07;
-  pointer-events: none;
+  flex-direction: column;
+  gap: var(--cc-space-lg);
 }
-
-/* Grey: `grayscale` drops the brand's lime/ink palette to one value so the mark reads as surface
-   rather than as content. The blending is the group's opacity above — no hardcoded colour to keep in
-   step with the tokens, and it works on whatever background the shell has. */
-.welcome-mark {
-  display: block;
-  flex: none;
-  filter: grayscale(1);
-  width: clamp(4rem, 22vmin, 15rem);
-  height: auto;
-}
-
-/* Weight 800 + tight tracking is the logo's own lettering (the R logo's wordmark, and the feijoa
-   sketch port's `wordmarkWeight: 800`), in the body font the app already ships. Deliberately NOT a
-   `cursive` family: that resolves to a different face on every OS — Comic Sans on Windows, Apple
-   Chancery on macOS, frequently nothing on Linux — so the brand would render differently per machine. */
-.welcome-word {
-  font-size: clamp(2rem, 13vmin, 9rem);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: var(--cc-text);
-  white-space: nowrap;
-}
+.welcome-lockup { display: flex; align-items: center; gap: var(--cc-space-sm); user-select: none; }
+/* The brand mark in grey, so it reads as chrome rather than content. */
+.welcome-mark { filter: grayscale(1); opacity: 0.6; }
+/* Weight 800 + tight tracking is the logo's own lettering, in the body font the app already ships. */
+.welcome-word { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; color: var(--cc-text); }
+.welcome-title { margin: 0; font-size: 1.3rem; font-weight: 600; }
+.welcome-actions { gap: var(--cc-space-md); align-items: center; }
 </style>
