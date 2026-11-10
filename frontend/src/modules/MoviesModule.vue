@@ -635,11 +635,11 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 
       <!-- The list — folds away and drags wider, like the module pages' functions panel -->
       <CollapsiblePanel storage-key="cc.movies.width" label="list" :default-width="520" :max="900">
-        <div class="mov-side">
+        <div class="mov-side cc-side-panel">
           <!-- Playback options sit WITH the list rather than in a page header: they are what you reach for
                while picking a movie, and a header row holding four of them across an empty page read as
                stray chrome. -->
-          <div class="mov-ctls cc-card">
+          <div class="mov-ctls cc-panel-section">
             <div class="cc-row cc-row-tight">
               <label class="mov-ctl cc-muted" v-tooltip.bottom="'Playback speed'">
                 <i class="pi pi-forward" />
@@ -686,13 +686,13 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             </div>
           </div>
 
-          <div v-if="currentIsFigure && projectUid && editingFigure" class="cc-card">
+          <div v-if="currentIsFigure && projectUid && editingFigure" class="cc-panel-section">
             <FigureEditor :project-uid="projectUid" :name="selected" :frame-count="selectedFrames"
                           :stale-reason="selectedRow?.staleReason ?? ''"
                           @rendered="refresh" />
           </div>
 
-          <div class="mov-list cc-card">
+          <div class="mov-list cc-panel-section">
             <div class="mov-list-head cc-row cc-row-tight">
               <!-- the eyebrow is on the COUNT, not the row: it uppercases, and the toggle beside it is
                    a control with its own label -->
@@ -885,8 +885,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-refresh { margin-left: auto; }
 
 /* The panel's own column: options pinned at the top, the list taking the rest and scrolling itself */
-.mov-side { display: flex; flex-direction: column; gap: 0.4rem; flex: 1; min-width: 0; min-height: 0; }
-.mov-ctls { flex-shrink: 0; display: flex; flex-direction: column; gap: 0.35rem; padding: 0.4rem 0.5rem; }
+/* .mov-side is .cc-side-panel (the right panel's frame); sections split by dividers, never cards */
+.mov-ctls { display: flex; flex-direction: column; gap: var(--cc-space-xs); }   /* + .cc-panel-section */
 
 .mov-body { display: flex; gap: 1rem; flex: 1; min-height: 0; }
 
@@ -944,12 +944,13 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-bulk-input { width: 100%; margin-top: 0.6rem; }
 .mov-danger:hover:not(:disabled) { color: var(--cc-danger); border-color: var(--cc-danger); }
 
-/* The list — width/collapse are CollapsiblePanel's; this is just the card inside it */
-/* The card is the COLUMN — head, bulk actions and filters pinned, the table taking the rest and
+/* The list — width/collapse are CollapsiblePanel's; this is the last section inside it */
+/* The section is the COLUMN — head, bulk actions and filters pinned, the table taking the rest and
    scrolling itself in both axes. It used to scroll as a whole, which was invisible until a table grew
    wider than the panel. */
-.mov-list { flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 0.35rem;
-  display: flex; flex-direction: column; }   /* + .cc-card (surface/border/radius) */
+.mov-list { flex: 1; min-width: 0; min-height: 0; overflow: hidden; border-bottom: none;
+  padding-left: var(--cc-space-sm); padding-right: var(--cc-space-sm);
+  display: flex; flex-direction: column; }   /* + .cc-panel-section (the last one: no divider below) */
 .mov-table-scroll { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
 .mov-list-head { padding: 0.35rem 0.5rem 0.5rem; flex-shrink: 0; }   /* + .cc-row (flex/wrap/gap) */
 .mov-list-head > :first-child { margin-right: auto; }

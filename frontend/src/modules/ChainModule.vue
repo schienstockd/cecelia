@@ -1830,7 +1830,7 @@ onActivated(async () => {
 
     <!-- ── Right: the shared right panel — node config on top, Run at the bottom, as on module pages ── -->
     <CollapsiblePanel storage-key="cc-chain-side-width" label="chain panel" :default-width="280" :min="220" :max="560">
-    <aside class="wb-side">
+    <aside class="wb-side cc-side-panel">
     <div class="wb-config">
       <template v-if="selectedNode">
 
@@ -2280,15 +2280,7 @@ onActivated(async () => {
 
 /* ── Right panel: node config + Run ─────────────────────────────────────────── */
 /* fills the right CollapsiblePanel, which owns the width — the same frame as TaskRunner */
-.wb-side {
-  flex: 1;
-  min-width: 0;
-  background: var(--cc-surface-1);
-  border-left: 1px solid var(--cc-border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+.wb-side { overflow: hidden; }   /* + .cc-side-panel */
 .wb-config { flex: 1; min-height: 0; overflow-y: auto; }
 /* .config-header / .config-section are .cc-panel-section (style.css) */
 .config-header > .cc-panel-heading { margin: 0; }

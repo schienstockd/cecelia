@@ -622,12 +622,21 @@ body {
 .cc-row-excluded { opacity: 0.5; cursor: default; }
 .cc-row-excluded:hover { opacity: 0.8; }
 
-/* A PANEL SECTION — one block of a right-hand panel or pane (TaskRunner, Metadata, Animation, Batch
-   movies, the Chains step config, Settings). Inside a panel, sections are separated by a full-width
+/* THE FRAME of a right panel's content (`.cc-side-panel`): one surface and a divider on its inner edge,
+   the same on every right panel — TaskRunner, Metadata, Animation, Batch movies, Chains, the Movies list.
+   Overflow stays the panel's own (a pane split hides it, a plain form scrolls).
+
+   A PANEL SECTION — one block of a right-hand panel or pane (TaskRunner, Metadata, Animation, Batch
+   movies, the Chains step config, the Movies list; Notebooks' page sections). Inside a panel, sections are separated by a full-width
    divider and never boxed: a card inside a bordered panel is the "box in a box" that made two right
    panels read like a different app. The heading is `.cc-panel-heading` + `.cc-eyebrow .cc-fs-2xs`; it
    is a row, so a count or trailing icon buttons sit on it (`.cc-panel-heading-actions` pushes them right).
    A collapsible block in the same place is `CollapsibleSection` (same divider, same eyebrow). */
+.cc-side-panel {
+  flex: 1; min-width: 0; min-height: 0;   /* fills the CollapsiblePanel slot, which owns the width */
+  display: flex; flex-direction: column;
+  background: var(--cc-surface-1); border-left: 1px solid var(--cc-border);
+}
 .cc-panel-section { padding: var(--cc-space-md); border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
 .cc-panel-heading {
   display: flex; align-items: center; gap: var(--cc-space-xs);

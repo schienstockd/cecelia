@@ -322,7 +322,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
 
 <template>
   <aside class="metadata-panel-wrap">
-    <div class="metadata-panel">
+    <div class="metadata-panel cc-side-panel">
 
     <!-- ── Physical size & timing ───────────────────────────────── -->
     <section class="cc-panel-section md-section">
@@ -589,14 +589,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   display: flex;
   min-height: 0;
 }
-.metadata-panel {
-  width: 100%;
-  border-left: 1px solid var(--cc-border);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  background: var(--cc-bg);
-}
+.metadata-panel { overflow-y: auto; }   /* + .cc-side-panel */
 
 /* + .cc-panel-section (padding, divider); the stack inside is ours, so the heading's own margin goes */
 .md-section { display: flex; flex-direction: column; gap: var(--cc-space-sm); }

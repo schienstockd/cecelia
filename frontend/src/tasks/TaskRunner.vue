@@ -817,7 +817,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 </script>
 
 <template>
-  <aside class="task-runner" :class="'pane-' + pane">
+  <aside class="task-runner cc-side-panel" :class="'pane-' + pane">
 
     <!-- ── Expand one half ── always visible, so whichever half is hidden can be brought back -->
     <PaneExpandBar
@@ -1126,13 +1126,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 }
 .handoff-note span { flex: 1; }
 .task-runner {
-  /* fills the host panel, which owns the width — see the note by the `pane` setup */
-  flex: 1;
-  min-width: 0;
-  background: var(--cc-surface-1);
-  border-left: 1px solid var(--cc-border);
-  display: flex;
-  flex-direction: column;
+  /* + .cc-side-panel: fills the host panel, which owns the width — see the note by the `pane` setup */
   overflow: hidden;
   position: relative;
 }
