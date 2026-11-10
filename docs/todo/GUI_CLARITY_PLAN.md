@@ -1,7 +1,14 @@
 # GUI clarity — a light, consistent, structured GUI
 
-**Status:** **parked** (2026-11-10). P0 draft done, unreviewed: [`GUI_CLARITY_AUDIT.md`](GUI_CLARITY_AUDIT.md), with
-the measured screenshots and counts plus per-phase evidence in [`gui-audit/`](gui-audit/). Nothing else is built.
+**Status:** **built, awaiting the maintainer's look** (2026-11-11). P0 audit: [`GUI_CLARITY_AUDIT.md`](GUI_CLARITY_AUDIT.md)
+(evidence in [`gui-audit/`](gui-audit/)). All 12 audit slices merged, #2085–#2106:
+1 default functions (#2085) · 2 AI copy (#2086) · 3 cross-page links (#2089) · 4 spacing tokens (#2090) ·
+5 one Run / empty state (#2092), recipe + Next + Welcome (#2099) · 6 density cuts (#2091) ·
+7 stats notice (#2093), checks cluster + cohort state (#2097), pre-run checkpoint (#2100) ·
+8 Welcome (#2099) · 9 Chains on the shells (#2101) · 10 panel sections (#2096), Settings (#2102),
+Notebooks/Movies + panel frame (#2103), SplitPage (#2104) · 11 colour scheme (#2106) ·
+12 stale outputs (#2098). Open: the maintainer's layout review; the journey bar stays parked
+(Decision 17); a user test of "where do I click" against the built app.
 **Brief:** [`docs/archive/GUI_CLARITY_AUDIT_PROMPT.md`](../archive/GUI_CLARITY_AUDIT_PROMPT.md). Read
 its banner first: six of the brief's premises had moved by the time it was archived. This plan is the
 corrected version of the brief.
