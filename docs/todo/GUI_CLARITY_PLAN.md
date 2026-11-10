@@ -122,6 +122,10 @@ The order of P1–P4 is provisional. P0's slicing replaces it.
 
 ## Related
 
+- [`JOURNEY_WORKFLOW_REVIEW.md`](JOURNEY_WORKFLOW_REVIEW.md) (draft): the journey-bar idea and the
+  now+ / journey mocks judged against this plan. Verdict adopt in part: now+ is mostly slices 1, 3, 5,
+  7, 8 and 11 plus a per-set recipe, a viewer chip and a blocked-pop-up message; the journey bar is
+  held. Palette extracted from the source paintings, with roles and contrast. Decisions N1–N8 open.
 - [`AI_TOGGLE_PLAN.md`](AI_TOGGLE_PLAN.md), [`AI_SURFACES_AUDIT.md`](AI_SURFACES_AUDIT.md): the AI
   layers and their gate.
 - [`VIEW_PROFILES_PLAN.md`](VIEW_PROFILES_PLAN.md), [`WORKFLOW_RECIPES_PLAN.md`](WORKFLOW_RECIPES_PLAN.md),
