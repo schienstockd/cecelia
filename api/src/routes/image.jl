@@ -648,6 +648,25 @@ function api_qc_cohort_runs(req::HTTP.Request)
     200, JSON3.write((; funName = fun_name, runs = runs))
 end
 
+# GET /api/qc/cohort/state?projectUid&setUid&funNames=a,b — the LAST cohort check over these funs,
+# read from disk (`cohort_state`: when it ran, which included images it flagged). No cohort math and no
+# writes, so the Checks cluster can show it on every page load. Funs the check can't answer are skipped.
+function api_qc_cohort_state(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")
+    funs = _query_list(q, "funNames")
+    (isempty(project_uid) || isempty(set_uid)) &&
+        return 400, JSON3.write((; error = "projectUid and setUid required"))
+    set = _cohort_set(project_uid, set_uid)
+    set isa Tuple && return set
+    out = try
+        cohort_state(set, funs)
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write(out)
+end
+
 # Shared GET handler for the observer's project-scoped summary routes (analysis/*): parse projectUid +
 # optional image/set scope, load the project (404), run `build(proj, image_uid, set_uid)` (500), return
 # JSON. Each route is then a one-liner over its builder — the same consolidation as the Julia

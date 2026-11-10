@@ -91,6 +91,10 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-guide') },
       { token: '--cc-selected', means: 'This panel or keyframe is picked',
         swatch: varSwatch('--cc-selected') },
+      { token: '--cc-check', means: 'The Checks cluster — its frame (marks only, never text)',
+        swatch: varSwatch('--cc-check') },
+      { token: '--cc-check-text', means: 'The Checks cluster label (check accent as text)',
+        swatch: varSwatch('--cc-check-text') },
     ],
   },
   {

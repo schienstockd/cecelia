@@ -55,6 +55,12 @@
   /* The next step (GUI_CLARITY_PLAN Decision 15): plum-light, dark text 6.4:1 on it. Plum means
      "act on this" — the Next button and the checks cluster share it. */
   --cc-next-fill:     #D27A98;
+  /* The CHECK accent — plum, the one hue far from every status colour and channel colour
+     (docs/todo/GUI_CLARITY_PLAN.md, Decision 15). It marks the Checks cluster (frame + label), never
+     a check's verdict: that stays on --cc-sev-* with its icon. -text is the lightened plum that reads
+     as text on the dark surfaces (6.3:1); the base is for marks and borders only. */
+  --cc-check:      #BF577B;
+  --cc-check-text: #D27A98;
   --cc-danger-fill:   #b33a3a;   /* muted red — destructive buttons, armed delete / quit */
   --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
