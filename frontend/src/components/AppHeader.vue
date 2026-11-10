@@ -4,16 +4,12 @@ import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
-import { useRoute } from 'vue-router'
-import MaturityIndicator from './MaturityIndicator.vue'
+import ProjectCrumb from './ProjectCrumb.vue'
 import HelpMenu from './HelpMenu.vue'
 import ProfileMenu from './ProfileMenu.vue'
-import { pageMaturity } from '../utils/maturity'
 import { useObserverStore } from '../stores/observer'
 import { showKiwiLauncher } from '../utils/aiSwitch'
 import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
-
-const route = useRoute()
 
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
@@ -51,6 +47,8 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
       Cecelia
     </RouterLink>
 
+    <ProjectCrumb />
+
     <!-- The viewer chip: opens / closes the Viewer panel, which drives the viewer window. Green is
          the viewer's identity colour; the dot says the panel is open. -->
     <button type="button" class="viewer-chip" data-guide="launcher.viewer"
@@ -59,10 +57,6 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
             @click="settings.viewerPanelOpen = !settings.viewerPanelOpen">
       <span class="cc-dot vc-on" /> Viewer
     </button>
-
-    <!-- this page's maturity: its tier dot (opens the map row),
-         plus "Something wrong?" — after the help row, because it is the same question asked of one page -->
-    <MaturityIndicator class="page-maturity" :maturity="pageMaturity(route.path)" :page="route.path" />
 
     <span class="spacer" />
 
@@ -111,8 +105,6 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 </template>
 
 <style scoped>
-/* hugs the help row it continues (it asks the same question of one page) */
-.page-maturity { margin-left: -0.35rem; }
 .app-header {
   display: flex;
   align-items: center;

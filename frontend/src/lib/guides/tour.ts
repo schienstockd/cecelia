@@ -38,8 +38,8 @@ export const tourGuide: GuideDef = {
       ],
     },
     {
-      anchor: 'sidebar.projectBlock',
-      placement: 'right',
+      anchor: 'header.project',
+      placement: 'bottom-start',
       title: 'Your project',
       text: 'Open, create and switch projects here — everything else on screen belongs to this one.',
     },

@@ -55,7 +55,7 @@ export function coversOf(o: MaturityOwner): string[] {
 }
 
 /** key → every owner claiming it. More than one is a test failure (one tier per feature). Built once:
- *  the records are static, and the header and the task picker ask on every render. */
+ *  the records are static, and the sidebar (every row) and the task picker ask on every render. */
 let _coverIndex: Map<string, MaturityOwner[]> | null = null
 export function coverIndex(): Map<string, MaturityOwner[]> {
   if (_coverIndex) return _coverIndex
@@ -102,7 +102,7 @@ export function pageTier(route: string): Tier | null {
 /** A tier the user sees a badge for — every tier but exempt (Decision 9). */
 export const badged = (t: Tier | null | undefined): t is Exclude<Tier, 'exempt'> => !!t && t !== 'exempt'
 
-// ── On the pages: the header and the task picker ──────────────────────────────────────────────────
+// ── On the pages: the sidebar and the task picker ─────────────────────────────────────────────────
 
 /** What a page or a task shows of its maturity: its tier, its name, and the map row it opens. */
 export interface MaturityRef { tier: Exclude<Tier, 'exempt'>; title: string; rowId: string }
