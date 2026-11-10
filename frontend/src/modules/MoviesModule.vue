@@ -925,7 +925,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
    because clicking it starts an edit. */
 .mov-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   cursor: text; }
-.mov-cell-edit { flex: 1; min-width: 0; }
+/* `:deep` too: the tag field is SuggestInput's <input>, under its scope, so a bare class never reached it */
+.mov-cell-edit, :deep(.mov-cell-edit) { flex: 1; min-width: 0; }
 /* Eye — which movie is in the player. Dim until hovered when off, like the star beside it, so a
    column of them doesn't compete with the names. */
 .mov-eye { opacity: .25; }

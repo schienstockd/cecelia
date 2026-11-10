@@ -562,15 +562,17 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
            later is covered without remembering to guard it. -->
 
       <!-- Channels -->
-      <section class="bm-sec">
-        <h4>
-          Channels <span class="bm-sub cc-muted">shown channels + colormap (others hidden)</span>
-          <button class="bm-link" :disabled="seeding || !viewer.openImage?.imageUid"
-                  @click="fillFromView(true)"
-                  title="Copy the channel colours + overlays from the image currently open in the viewer">
-            <i class="pi pi-sync" /> fill from view
-          </button>
-        </h4>
+      <section class="bm-sec cc-panel-section">
+        <div class="cc-panel-heading">
+          <h3 class="cc-eyebrow cc-fs-2xs" v-tooltip.left="'Shown channels and their colourmap; the others are hidden'">Channels</h3>
+          <div class="cc-panel-heading-actions">
+            <button class="cc-btn cc-btn-bare cc-fs-xs" :disabled="seeding || !viewer.openImage?.imageUid"
+                    @click="fillFromView(true)"
+                    v-tooltip.left="'Copy the channel colours + overlays from the image currently open in the viewer'">
+              <i class="pi pi-sync" /> fill from view
+            </button>
+          </div>
+        </div>
         <p v-if="!channelList.length" class="bm-hint cc-muted">No channel names on the selected images.</p>
         <div v-for="ch in channelList" :key="ch" class="bm-row">
           <span class="bm-ch">{{ ch }}</span>
@@ -581,8 +583,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Overlays -->
-      <section class="bm-sec">
-        <h4>Overlays <span class="bm-sub cc-muted">click to toggle</span></h4>
+      <section class="bm-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs" v-tooltip.left="'Click to toggle'">Overlays</h3>
         <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
                     aria-label="Movie overlays" />
         <!-- Schematic frame that shows what the current config will draw, live-updating as toggles
@@ -647,8 +649,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Colour by -->
-      <section class="bm-sec">
-        <h4>Colour by <span class="bm-sub cc-muted">measure used to colour tracks / labels</span></h4>
+      <section class="bm-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs" v-tooltip.left="'Measure used to colour tracks / labels'">Colour by</h3>
         <select v-model="colourBy" v-tooltip.bottom="'Cell measure mapped to track and label colour'">
           <option value="">— none (population / default colour) —</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
@@ -656,8 +658,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Image versions — one chip = that version, two or more = a side-by-side comparison -->
-      <section v-if="versionNames.length > 1" class="bm-sec">
-        <h4>Image versions <span class="bm-sub cc-muted">click to include · drag to order</span></h4>
+      <section v-if="versionNames.length > 1" class="bm-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs" v-tooltip.left="'Click to include · drag to order'">Image versions</h3>
         <MovieCompareControls :available="versionNames"
                               :available-segmentations="segNames"
                               v-model:versions="compareVersions"
@@ -668,8 +670,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the animation page -->
-      <section class="bm-sec">
-        <h4>Movie</h4>
+      <section class="bm-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Movie</h3>
         <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
@@ -682,8 +684,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Output — what is batch-specific: how each file gets named -->
-      <section class="bm-sec">
-        <h4>Output</h4>
+      <section class="bm-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Output</h3>
         <div class="bm-attrs">
           <span class="bm-lbl cc-muted" v-tooltip.left="'Attributes joined to build each movie filename'">filename attrs <span class="bm-sub cc-muted">click to include · drag to reorder</span></span>
           <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
@@ -702,7 +704,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
       </section>
 
       <!-- Actions -->
-      <div class="bm-actions cc-row">
+      <div class="bm-actions cc-panel-section">
         <button class="cc-btn cc-btn-primary cc-btn-run" data-guide="batchMovies.generate" :disabled="!canRun" @click="generate"
                 v-tooltip.top="compareActionTip(compareShapeNow, 'Record one movie per selected image')">
           <i class="pi pi-video" /> Generate movies ({{ selectedUids.length }})
@@ -711,7 +713,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 
       <!-- ── The TASKS half ── wrapped so the same `pane-<mode>` CSS hides it: TaskList's root belongs to
            that component, and reaching into it from here would be a scoped-CSS trick waiting to break. -->
-      <div class="bm-tasks">
+      <div class="bm-tasks cc-panel-section">
         <TaskList module="batchMovies" />
       </div>
     </template>
@@ -719,9 +721,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 </template>
 
 <style scoped>
-.bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
+/* sections run edge to edge, split by dividers (.cc-panel-section) — no gap, no inset of our own */
+.bm { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .bm-hint { margin: 2px 0; }
-.bm-restored { margin-bottom: 0.5rem; }
+.bm > .bm-hint { margin: 0; padding: var(--cc-space-md); }
+.bm-restored { margin: var(--cc-space-sm) var(--cc-space-md) 0; }
 /* Which half is showing, declared once per half — the same mechanism TaskRunner uses. Every config
    member is a direct `.bm-sec` child plus the actions row, so one rule covers the group AND a section
    added later, which a per-element guard would miss. The busy banner is in neither half on purpose:
@@ -742,10 +746,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
      clipped sliver. It scrolls itself from here rather than shrinking away. */
   min-height: 14rem;
   overflow: auto;
+  border-bottom: none; padding-bottom: 0;   /* + .cc-panel-section: the last one, so no divider */
 }
 /* …unless the pane bar has given it the WHOLE panel, where a floor would be a ceiling on nothing */
 .bm.pane-bottom > .bm-tasks { min-height: 0; }
-.bm-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
+/* .bm-sec / .bm-actions are .cc-panel-section (style.css): divider, never a box */
 /* Centred wrapper for the schematic overlay preview — small margin below the chip row so the
    frame reads as a separate element rather than part of the toggle row. */
 .bm-preview-row { display: flex; justify-content: center; margin: 6px 0 2px; }
@@ -754,16 +759,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 .bm-track-row { gap: 8px; }
 .bm-track-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bm-lbl-row { margin-top: 4px; }
-.bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
 .bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; }
 .bm-sub { margin-left: 6px; }
-.bm-link { float: right; font-size: var(--cc-fs-xs); color: var(--cc-accent); background: none; border: none;
-  cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 3px; }
-.bm-link:hover:not(:disabled) { text-decoration: underline; }
-.bm-link:disabled { opacity: 0.4; cursor: not-allowed; }
 .bm-row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
 .bm-ch { flex: 1; font-size: var(--cc-fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bm-row select, .bm-sec > select { min-width: 150px; }
+.bm-row select, .bm-sec > select { min-width: 150px; max-width: 100%; }
 .bm-chk { display: flex; align-items: center; gap: 6px; font-size: var(--cc-fs-md); margin: 3px 0; cursor: pointer; }
 .bm-chk.inline { display: inline-flex; margin-right: 10px; }
 .bm-inset { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; }

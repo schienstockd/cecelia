@@ -644,3 +644,24 @@ export function findRawSpacing(sources: Array<{ path: string, text: string }>): 
   }
   return out
 }
+
+/**
+ * A panel section drawn as a BOX: a rule for a `*-sec` / `*-section` class that gives it a full border
+ * and a radius. Inside a panel, sections are separated by a divider (`.cc-panel-section`, style.css)
+ * and never boxed — a card inside a bordered panel is the box-in-a-box that made two right panels read
+ * like a different app (GUI_CLARITY_AUDIT §6).
+ */
+export function findBoxedPanelSections(sources: Array<{ path: string, text: string }>): Array<{ path: string, selector: string }> {
+  const out: Array<{ path: string, selector: string }> = []
+  for (const { path, text } of sources) {
+    for (const block of styleBlocks(text)) {
+      for (const rule of cssRules(block)) {
+        if (!/[\w-](sec|section)\b(?![\w-])/.test(rule.selector)) continue
+        const border = /(^|[;{\s])border\s*:\s*(?!none|0\b)[^;]+/.test(rule.body)
+        const radius = /border-radius\s*:\s*(?!0\b)[^;]+/.test(rule.body)
+        if (border && radius) out.push({ path, selector: rule.selector })
+      }
+    }
+  }
+  return out
+}

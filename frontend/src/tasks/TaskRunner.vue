@@ -864,7 +864,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
     <!-- ── Expand one half ── always visible, so whichever half is hidden can be brought back -->
     <PaneExpandBar
-      class="runner-pane-bar"
       :pane="pane"
       top-label="function runner" bottom-label="task list"
       top-icon="pi-cog" bottom-icon="pi-bars"
@@ -878,7 +877,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     </PaneExpandBar>
 
     <!-- ── Empty state (server not ready / JSON parse error) ── -->
-    <section v-if="!defs.length" class="runner-section defs-empty">
+    <section v-if="!defs.length" class="runner-section cc-panel-section defs-empty">
       <p class="defs-empty-msg cc-muted">No functions available — the server may still be starting.</p>
       <!-- Called with NO argument on purpose: `onReloadDefs(form?)` treats an argument as form state
            to resolve options against, and `@click="onReloadDefs"` would hand it the PointerEvent. -->
@@ -888,12 +887,12 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     </section>
 
     <!-- ── Function selector ── -->
-    <section v-if="defs.length" class="runner-section">
+    <section v-if="defs.length" class="runner-section cc-panel-section">
       <!-- the heading row carries what the function IS (Kiwi ref, maturity, report); WHERE it runs
            is its own labelled row below, only when there is a choice — a fixed "local" says nothing. -->
-      <div class="section-heading-row">
-        <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
-        <div v-if="taskDef" class="section-heading-actions">
+      <div class="cc-panel-heading">
+        <h3 class="cc-eyebrow cc-fs-2xs">Function</h3>
+        <div v-if="taskDef" class="cc-panel-heading-actions">
           <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
           <MaturityIndicator :maturity="taskMat" :page="$route.path" />
         </div>
@@ -1026,7 +1025,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     </section>
 
     <!-- ── Parameters ── -->
-    <section class="runner-section params-section" v-if="taskDef">
+    <section class="runner-section cc-panel-section params-section" v-if="taskDef">
       <!-- what the form was just filled from, and what could not be filled. Dismissible because it
            describes an action, not a state — and cleared by the first edit. -->
       <p v-if="handoffNote" class="handoff-note cc-fs-xs">
@@ -1038,9 +1037,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       <!-- Heading + a bare icon-button to zero the form back to spec defaults. The button follows
            the heading on the same row so a user reaching for it does not have to hunt — a common
            ask when a chain node was tuned once and the next run wants a clean slate. -->
-      <div class="section-heading-row">
-        <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
-        <div class="section-heading-actions">
+      <div class="cc-panel-heading">
+        <h3 class="cc-eyebrow cc-fs-2xs">Parameters</h3>
+        <div class="cc-panel-heading-actions">
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   v-tooltip.left="'Copy settings from a previous run on another image'"
                   @click="copyOpen = true"><i class="pi pi-copy" /></button>
@@ -1100,7 +1099,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
     </section>
 
     <!-- ── Run + Concurrency ── -->
-    <section class="runner-section run-section">
+    <section class="runner-section cc-panel-section run-section">
       <!-- Run and Preview share a row: Preview is the choice Run informs, and as a small ghost icon
            BELOW a full-width primary it was invisible. Same height, so it reads as a peer. -->
       <!-- Short = the problem, the action lives in the tooltip and the button beside it. -->
@@ -1159,7 +1158,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
     <!-- ── Task list ── (its heading + the two list-wide actions belong to TaskList itself, so the
          other host of this list — BatchMoviesPanel — gets them too) -->
-    <section class="runner-section tasks-section" data-guide="task.list">
+    <section class="runner-section cc-panel-section tasks-section" data-guide="task.list">
       <div class="tasks-scroll">
         <TaskList :module="module" />
       </div>
@@ -1194,8 +1193,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   position: relative;
 }
 
-/* the shared bar (PaneExpandBar) sits above the first section heading — only its inset is ours */
-.runner-pane-bar { padding: 0.2rem 0.5rem 0; }
 
 /* Which half is showing is one CSS concern, not a guard on every element: each half-member is a direct
    `.runner-section` child of the panel, so two rules cover both halves — including a section added later,
@@ -1211,11 +1208,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   max-height: none;
 }
 
-.runner-section {
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-}
+/* each `.runner-section` is a `.cc-panel-section` (style.css): padding + divider come from there */
 
 .tasks-section {
   flex: 1;
@@ -1240,17 +1233,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .pool-summary { gap: 0.25rem; color: var(--cc-text-dim); }   /* + .cc-pool-tag inside */
 .pool-pop { display: flex; flex-direction: column; gap: 0.5rem; }
 
-.section-heading { margin: 0 0 0.5rem; }
-/* Heading on the left, trailing icon-buttons grouped on the right so they stay together no matter
-   how many there are — `justify-content: space-between` with three children would strand a middle
-   button in the centre. */
-.section-heading-row {
-  display: flex; align-items: center; justify-content: space-between;
-  margin: 0 0 0.5rem;
-  min-height: 1.5rem;   /* the same height with or without the trailing buttons */
-}
-.section-heading-row .section-heading { margin: 0; }
-.section-heading-actions { display: flex; align-items: center; gap: 0.15rem; }
 
 /* function selector */
 .fn-select {

@@ -325,8 +325,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     <div class="metadata-panel">
 
     <!-- ── Physical size & timing ───────────────────────────────── -->
-    <section class="panel-section">
-      <div class="section-title cc-eyebrow">Physical size &amp; timing</div>
+    <section class="cc-panel-section md-section">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Physical size &amp; timing</h3>
       <!-- ONE tip on the button; the count folds into it. A second tip on the badge inside fired on
            top of the button's own (docs/UI.md → nested tooltips). -->
       <button class="cc-btn cc-btn-ghost" data-guide="metadata.physEditor" :disabled="!physFocusUid" @click="showPhysDialog = true"
@@ -342,8 +342,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
       @close="showPhysDialog = false" />
 
     <!-- ── Attribute management ─────────────────────────────────── -->
-    <section class="panel-section" data-guide="metadata.attributes">
-      <div class="section-title cc-eyebrow">Attributes</div>
+    <section class="cc-panel-section md-section" data-guide="metadata.attributes">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Attributes</h3>
 
       <!-- create -->
       <div class="field-row">
@@ -372,8 +372,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     </section>
 
     <!-- ── Assign single value ─────────────────────────────────── -->
-    <section class="panel-section" :class="{ disabled: attrDisabled }">
-      <div class="section-title cc-eyebrow">Assign value</div>
+    <section class="cc-panel-section md-section" :class="{ disabled: attrDisabled }">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Assign value</h3>
       <div class="field-row">
         <SuggestInput v-model="singleValue" :options="valuesInUse" mark-existing
           input-class="field-input flex1" placeholder="Value…"
@@ -389,8 +389,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     </section>
 
     <!-- ── Regex ──────────────────────────────────────────────── -->
-    <section class="panel-section" :class="{ disabled: attrDisabled }">
-      <div class="section-title cc-eyebrow">Extract via regex</div>
+    <section class="cc-panel-section md-section" :class="{ disabled: attrDisabled }">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Extract via regex</h3>
       <div class="field-row">
         <input class="field-input flex1" v-model="regexpValue" placeholder="Regular expression…"
           :disabled="attrDisabled"
@@ -529,8 +529,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     </section>
 
     <!-- ── Group sequences ────────────────────────────────────── -->
-    <section class="panel-section">
-      <div class="section-title cc-eyebrow">Group sequences</div>
+    <section class="cc-panel-section md-section">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Group sequences</h3>
       <p class="section-hint cc-muted">Numbers images within each attribute group (<strong>GroupSeq</strong>).</p>
       <button class="cc-btn cc-btn-ghost" @click="assignGroupSequences"
         :disabled="attrNames.length === 0"
@@ -540,8 +540,8 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
     </section>
 
     <!-- ── Channel names ──────────────────────────────────────── -->
-    <section class="panel-section" data-guide="metadata.channels">
-      <div class="section-title cc-eyebrow">Channel names</div>
+    <section class="cc-panel-section md-section" data-guide="metadata.channels">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Channel names</h3>
 
       <div class="field-col">
         <!-- Copy from a reference image: fills the field below, so the names are visible and editable
@@ -598,14 +598,10 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   background: var(--cc-bg);
 }
 
-.panel-section {
-  padding: 0.85rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.panel-section.disabled { opacity: 0.45; pointer-events: none; }
+/* + .cc-panel-section (padding, divider); the stack inside is ours, so the heading's own margin goes */
+.md-section { display: flex; flex-direction: column; gap: var(--cc-space-sm); }
+.md-section > .cc-panel-heading { margin: 0; }
+.md-section.disabled { opacity: 0.45; pointer-events: none; }
 
 .section-hint { margin: 0; line-height: 1.5; }
 
@@ -619,10 +615,11 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   flex-direction: column;
   gap: 0.4rem;
 }
-.flex1 { flex: 1; min-width: 0; }
+/* `:deep` too: the Assign value field is SuggestInput's <input>, under its scope, so a bare class never reached it */
+.flex1, :deep(.flex1) { flex: 1; min-width: 0; }
 
 /* visual styling from the global form base (style.css) */
-.field-input:disabled { opacity: 0.4; cursor: not-allowed; }
+.field-input:disabled, :deep(.field-input:disabled) { opacity: 0.4; cursor: not-allowed; }
 
 .field-textarea {
   border-radius: var(--cc-radius-sm);

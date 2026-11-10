@@ -3,6 +3,7 @@ import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues, findRawSpacing,
   findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
   findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities, findDeepFillOverrides,
+  findBoxedPanelSections,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -544,5 +545,29 @@ describe('CollapsibleSection fill', () => {
     // `.collapsible-section.cs-fill` sets min-height: 0 at equal specificity — naming .cs-fill outranks it
     const floor = styleBlocks(ml).flatMap(cssRules).find(r => r.selector === '.is-plots-maximised .plots-section.cs-fill')
     expect(floor?.body).toMatch(/min-height:\s*50vh/)
+  })
+})
+
+describe('panel sections', () => {
+  // Inside a panel, sections are separated by dividers, never boxed (docs/ui/PRIMITIVES.md → Panel section).
+  const src = (text: string) => [{ path: 'components/X.vue', text: `<style scoped>${text}</style>` }]
+
+  it('the detector flags a boxed section and passes a divider or a radius-less border', () => {
+    expect(findBoxedPanelSections(src('.ap-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }'))).toHaveLength(1)
+    expect(findBoxedPanelSections(src('.x-section { border-bottom: 1px solid var(--cc-border); }'))).toEqual([])
+    expect(findBoxedPanelSections(src('.x-section { border: 1px solid red; }'))).toEqual([])
+    expect(findBoxedPanelSections(src('.secret { border: 1px solid red; border-radius: 2px; }'))).toEqual([])
+  })
+
+  const PANELS = ['tasks/TaskRunner.vue', 'modules/metadata/MetadataPanel.vue',
+    'modules/animation/AnimationPanel.vue', 'modules/batchmovies/BatchMoviesPanel.vue']
+
+  it('no section anywhere is boxed', () => {
+    const sources = Object.entries(RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+    expect(findBoxedPanelSections(sources).map(h => `${h.path} | ${h.selector}`)).toEqual([])
+  })
+
+  it('every right panel builds its sections from .cc-panel-section', () => {
+    for (const p of PANELS) expect(RAW['/src/' + p], p).toMatch(/class="[^"]*\bcc-panel-section\b/)
   })
 })
