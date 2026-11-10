@@ -714,6 +714,27 @@ class LocateTest(_Repo):
         self.assertEqual(self.b.locate({"file": "nope.py", "line": 1}, sha, self.repo)["gone"],
                          f"`nope.py` isn't in {sha[:8]}")
 
+    def test_a_line_outside_any_function_is_carried_to_where_it_is_now(self):
+        # a.py has no function: the window is the line's, and 200 lines added above move it to 250
+        old = "".join(f"line {i}\n" for i in range(1, 61))
+        moved = self.commit("a.py", "".join(f"new {i}\n" for i in range(200)) + old)
+        code = self.b.locate({"file": "a.py", "line": 50, "commit": self.sha}, moved, self.repo)["code"]
+        self.assertIn("  250  line 50", code)
+        # rewritten in place (re-indented) while more lines arrive above: found by its own text
+        lines = old.splitlines()
+        lines[49] = "    line 50"
+        again = self.commit("a.py", "".join(f"more {i}\n" for i in range(300)) + "\n".join(lines) + "\n")
+        code = self.b.locate({"file": "a.py", "line": 50, "commit": self.sha}, again, self.repo)["code"]
+        self.assertIn("  350      line 50", code)
+
+    def test_a_duplicates_canonical_is_carried_too_unless_the_file_is_newer_than_the_finding(self):
+        dup = {"file": "a.py", "line": 2, "commit": self.sha, "desc": "reuse `b.py:20` instead"}
+        later = self.commit("b.py", "".join(f"helper {i}\n" for i in range(1, 41)))   # new since the finding
+        self.assertIn("   20  helper 20", self.b.canonical(dup, later, self.repo))
+        dup["commit"] = later
+        moved = self.commit("b.py", "top\n" * 100 + "".join(f"helper {i}\n" for i in range(1, 41)))
+        self.assertTrue(self.b.canonical(dup, moved, self.repo).startswith("b.py:120\n"))
+
 
 class PrefilterTest(_Repo):
     def test_findings_on_a_frozen_record_are_dropped_new_and_carried(self):
@@ -940,6 +961,17 @@ class AgentRunTest(_Repo):
         self.assertEqual(sorted((b["key"], b.get("sources")) for b in bugs),
                          [("fanout-00000001", None), ("run-cccc", None)])
 
+    def test_a_verified_error_without_a_file_goes_back_to_verify_when_its_fix_lands(self):
+        # no file means no excerpt judge: verify is the only thing that can call it fixed
+        prev, _ = self.sweep([_run_error("run-aaaa")])
+        prev = [{**b, "verify": {"verdict": "fix", "date": "2026-10-05"}} for b in prev]
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": prev}
+        self.git("commit", "-q", "--allow-empty", "-m", "fix: say why (run-aaaa)")
+        self.sha = self.git("rev-parse", "HEAD")
+        bugs, _ = self.sweep([], previous=previous)
+        self.assertEqual([(b["key"], b["status"], len(b.get("fix_landed") or []), b.get("reverify")) for b in bugs],
+                         [("run-aaaa", "open", 1, True)])
+
     def test_a_carried_error_hit_again_counts_the_runs_instead_of_a_new_bug(self):
         prev, _ = self.sweep([_run_error("run-aaaa")])
         previous = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": prev}
@@ -1081,6 +1113,23 @@ class EnclosingTest(unittest.TestCase):
                "  return a\n}\nconst arrow = (x) => {\n  return x\n}\n")
         self.assertEqual(self.e.enclosing(src, 3, "u.ts"), ("outer", 1, 6))
         self.assertEqual(self.e.enclosing(src, 8, "u.ts"), ("arrow", 7, 9))
+
+    def test_carry_line_through_a_diff(self):
+        from cecelia.effectiveness.git_context import parse_diff
+        diff = ("diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -2,0 +3,4 @@\n+a\n+b\n+c\n+d\n"
+                "@@ -10,2 +14,1 @@ ctx\n-    the old ten\n-eleven\n+the new\n@@ -30 +32,0 @@\n-gone\n")
+        hunks = parse_diff(diff)[0].hunks
+        self.assertEqual(self.e.carry_line(hunks, 1), 1)      # above every hunk
+        self.assertEqual(self.e.carry_line(hunks, 2), 2)      # the insertion is after it
+        self.assertEqual(self.e.carry_line(hunks, 5), 9)      # after the 4-line insertion
+        self.assertEqual(self.e.carry_line(hunks, 20), 23)    # +4, then 2 lines became 1
+        self.assertEqual(self.e.carry_line(hunks, 11), 14)    # rewritten, its text nowhere: what replaced it
+        self.assertEqual(self.e.carry_line(hunks, 30), 33)    # deleted, nothing replaced it: where it was
+        self.assertEqual(self.e.carry_line(hunks, 40), 42)
+        now = ["x"] * 30
+        now[29] = "  the old ten"                             # rewritten here, re-indented: found by text
+        self.assertEqual(self.e.carry_line(hunks, 10, now), 30)
+        self.assertEqual(self.e.carry_line([], 7), 7)
 
     def test_no_language_no_function(self):
         self.assertIsNone(self.e.enclosing("a\nb\n", 1, "README.md"))

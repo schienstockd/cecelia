@@ -290,18 +290,20 @@ def full_sha(sha: str | None, cwd: str | None = None) -> str | None:
         return sha
     return git_output("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", cwd=cwd) or sha
 
-#: `@@ -a,b +c,d @@` — only the new-side start matters; `,d` is absent for one-line hunks.
-_HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+#: `@@ -a,b +c,d @@`; `,b` / `,d` are absent for one-line hunks. `b == 0` (a pure insertion) puts it after old line `a`.
+_HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,\d+)? @@")
 _FILE_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")
 
 
 @dataclass(frozen=True)
 class DiffLine:
     """One body line of a hunk. `kind` is `+` / `-` / ` `; `lineno` is the new-side line number
-    (None for a removed line)."""
+    (None for a removed line); `old_lineno` the old-side one, and for an added line the old line
+    it is inserted before."""
     kind: str
     text: str
     lineno: int | None
+    old_lineno: int | None = None
 
 
 @dataclass
@@ -327,7 +329,7 @@ def parse_diff(diff: str) -> list[FileDiff]:
     recital's mechanical checks build on it rather than regexing the raw text."""
     files: list[FileDiff] = []
     cur: FileDiff | None = None
-    new_no = 0
+    new_no = old_no = 0
     in_hunk = False
     for raw in diff.splitlines():
         if m := _FILE_HEADER.match(raw):
@@ -339,7 +341,8 @@ def parse_diff(diff: str) -> list[FileDiff]:
             continue
         if m := _HUNK_HEADER.match(raw):
             cur.hunks.append([])
-            new_no = int(m.group(1))
+            old_no = int(m.group(1)) + (m.group(2) == "0")
+            new_no = int(m.group(3))
             in_hunk = True
             continue
         if not in_hunk:
@@ -350,9 +353,11 @@ def parse_diff(diff: str) -> list[FileDiff]:
             continue
         kind, text = raw[:1], raw[1:]
         if kind == "+" or kind == " ":
-            cur.hunks[-1].append(DiffLine(kind, text, new_no))
+            cur.hunks[-1].append(DiffLine(kind, text, new_no, old_no))
             new_no += 1
+            old_no += kind == " "
         elif kind == "-":
-            cur.hunks[-1].append(DiffLine(kind, text, None))
+            cur.hunks[-1].append(DiffLine(kind, text, None, old_no))
+            old_no += 1
         # `\ No newline at end of file` and anything else: not a body line.
     return files
