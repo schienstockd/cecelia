@@ -498,30 +498,30 @@ const visibleUids = computed<string[]>(() =>
 /* Right gutter when there's no #right panel to provide one — inset the content of the toolbar + plot
    area so the right-aligned controls (and their tooltips/floating pickers) aren't flush to the edge.
    Padding on the inner boxes (not image-panel) keeps the action-bar divider spanning full width. */
-.image-panel.no-right > .action-bar { padding-right: 1.1rem; }
+.image-panel.no-right > .action-bar { padding-right: var(--cc-space-lg); }
 .image-panel.no-right > .cc-filter-panel,
-.image-panel.no-right > .panel-scroll { padding-right: 0.9rem; }
+.image-panel.no-right > .panel-scroll { padding-right: var(--cc-space-lg); }
 
 /* The right panel's own chrome (handle / resizer / slot) lives in CollapsiblePanel.vue */
 
 .action-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.55rem 0.5rem 0.55rem 0.5rem;
+  gap: var(--cc-space-md);
+  padding: var(--cc-bar-pad);
   border-bottom: 1px solid var(--cc-border);
   background: var(--cc-bg);
   flex-shrink: 0;
 }
 
-.image-count { display: flex; align-items: center; gap: 0.4rem; }
+.image-count { display: flex; align-items: center; gap: var(--cc-space-xs); }
 
 .filter-badge {
   font-size: var(--cc-fs-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0.1rem 0.45rem;
+  padding: var(--cc-space-3xs) var(--cc-space-sm);
   border-radius: var(--cc-radius-pill);
   background: var(--cc-accent-tint);
   color: var(--cc-accent-soft);
@@ -537,15 +537,15 @@ const visibleUids = computed<string[]>(() =>
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--cc-space-xs);
   flex-shrink: 0;
 }
 
 .filter-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.5rem;
+  gap: var(--cc-space-2xs);
+  padding: var(--cc-space-2xs) var(--cc-space-sm);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
@@ -571,13 +571,13 @@ const visibleUids = computed<string[]>(() =>
 .proc-row .cc-filter-key { min-width: 104px; }
 
 .proc-select {
-  padding: 0.15rem 0.4rem;
+  padding: var(--cc-space-3xs) var(--cc-space-xs);
   border-radius: var(--cc-radius-sm);
   background: var(--cc-surface-1);
   max-width: 240px;
 }
-.proc-mode { display: flex; align-items: center; gap: 0.55rem; }
-.proc-mode label { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
+.proc-mode { display: flex; align-items: center; gap: var(--cc-space-sm); }
+.proc-mode label { display: inline-flex; align-items: center; gap: var(--cc-space-2xs); cursor: pointer; }
 .proc-mode.disabled { opacity: 0.4; }
 .proc-mode input { cursor: pointer; }
 

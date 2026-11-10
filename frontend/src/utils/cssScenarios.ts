@@ -622,3 +622,25 @@ export function findReimplementedScenarios(
 
 /** Stable `path::selector` key, for comparing against an allow-list. */
 export const hitKey = (h: ScenarioHit) => `${h.path}::${h.selector}`
+
+/**
+ * Raw padding / margin / gap values (px or rem) in the given sources' `<style>` blocks. The spacing
+ * ladder (`--cc-space-*` and the role tokens built on it, style.css) is the one scale; this is how a
+ * file is held to it. Zero and `auto` are fine, and so is a `calc()` over tokens.
+ */
+export function findRawSpacing(sources: Array<{ path: string, text: string }>): RawValue[] {
+  const out: RawValue[] = []
+  const DECL = /\b(padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|gap|row-gap|column-gap)\s*:\s*([^;]+)/g
+  for (const { path, text } of sources) {
+    for (const block of styleBlocks(text)) {
+      for (const rule of cssRules(block)) {
+        for (const m of rule.body.matchAll(DECL)) {
+          const value = m[2].replace(/var\([^)]*\)/g, '')
+          if (/(^|[^\w.-])-?(?:\d*\.)?\d+(px|rem)\b/.test(value) && !/^\s*0(px|rem)?\s*$/.test(value))
+            out.push({ path, selector: rule.selector, decl: `${m[1]}: ${m[2].trim()}` })
+        }
+      }
+    }
+  }
+  return out
+}

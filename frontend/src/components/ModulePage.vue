@@ -38,7 +38,7 @@ withDefaults(defineProps<{
 </template>
 
 <style scoped>
-.mp { padding: 1rem 1.25rem; }
+.mp { padding: var(--cc-page-pad); }
 .mp-scroll { height: 100%; overflow: auto; }
 /* `min-height: 0` is what lets a flex child actually shrink and scroll rather than growing past the
    viewport — without it the content area pushes the page taller instead of scrolling. */
@@ -46,6 +46,6 @@ withDefaults(defineProps<{
 
 .mp-head {
   display: flex; align-items: flex-start;
-  gap: 1rem; flex-wrap: wrap; margin-bottom: 0.8rem;
+  gap: var(--cc-space-lg); flex-wrap: wrap; margin-bottom: var(--cc-space-md);
 }
 </style>
