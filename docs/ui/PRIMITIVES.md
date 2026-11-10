@@ -66,6 +66,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover`, `GuideBubble` and the `v-tooltip` directive all call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
+| A CHECK the user can open (name + verdict + open count), e.g. in the action bar's Checks cluster | `components/CheckButton.vue` (`state` from `lib/checks.ts`: a severity, `none` or `busy`), inside `ChecksCluster.vue`'s plum frame (`--cc-check`) | a per-check button with its own icon, amber or `.x-check-btn` class (three existed, three looks) |
 | A small round status light (service running, CLI found, log level, connection) or category marker beside a label | `.cc-dot` + a `cc-dot-ok/-warn/-fail/-idle/-info` tone in `style.css` (the consoles' CVD-safe Okabe–Ito swatches — ok is sky blue, never green); map your state through `utils/statusDot.ts` (`dotClass`). A category composes its own background (`class="cc-dot scope-dot"`); a local rule may add a glow, never the size | a scoped `.x-dot { width: 7px; height: 7px; border-radius: … }` + per-tone colours (flagged by the `dot` scenario in `utils/cssScenarios.ts`) |
 | Task/chain status (6-state; live = `isLiveStatus`) | `lib/taskStatus.ts` (`TASK_STATUS`, `isLiveStatus`) | a per-file status→icon/colour map |
 | Reducing an image's SEVERAL runs to one status badge | `lib/taskStatus.ts` → `rollupTaskStatus` (live > terminal, then most recent) | `.find(t => t.imageUid === uid)` — that is store insertion order, which `adopt()` reshuffles |
@@ -178,7 +179,7 @@ is deliberately *not* checked: `surface + border + radius` is the shape of a car
 badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
 review-time rule.
 
-**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 16 of the 23 module
+**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** (Settings too: `layout="scroll"`, closed `CollapsibleSection`s.) 16 of the 23 module
 pages are built on `ModuleLayout` and were already consistent. The standalone ones were not: Notebooks,
 Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
 two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under
