@@ -15,6 +15,8 @@ import { useToast } from '../composables/useToast'
 import ProjectPanel from './ProjectPanel.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import PanelLaunchers from './PanelLaunchers.vue'
+import { useProjectStore } from '../stores/project'
+import { litRoutes } from '../utils/setRecipe'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -92,6 +94,9 @@ watch(() => route.path, p => {
 // A hidden page stays reachable by URL — this is decluttering, NOT access control. Filtering logic +
 // tests: utils/viewProfiles.ts. See docs/todo/VIEW_PROFILES_PLAN.md.
 const shownGroups = computed(() => applyProfile(allGroups.value, viewProfiles.activeItems))
+// The active set's recipe lights its pages; the rest dim but stay clickable (GUI_CLARITY_PLAN D16).
+const project = useProjectStore()
+const lit = computed(() => litRoutes(project.activeSet()))
 
 function navTip(item: NavItem): string {
   if (item.disabled && item.soon) return `${item.tip} (coming soon)`
@@ -157,7 +162,7 @@ function isNavDisabled(item: NavItem): boolean {
             :key="item.to"
             :to="isNavDisabled(item) ? '' : item.to"
             class="nav-item"
-            :class="{ disabled: isNavDisabled(item) }"
+            :class="{ disabled: isNavDisabled(item), 'off-recipe': lit && !lit.has(item.to) }"
             v-tooltip.right="navTip(item)"
             :aria-disabled="isNavDisabled(item)"
           >
@@ -291,6 +296,9 @@ function isNavDisabled(item: NavItem): boolean {
 
 /* .proj-menu-btn → cc-btn cc-btn-bare cc-btn-icon */
 .proj-menu-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+
+.nav-item.off-recipe:not(.router-link-active) .nav-label,
+.nav-item.off-recipe:not(.router-link-active) .nav-icon { opacity: 0.5; }
 
 .open-project-btn {
   width: 100%;

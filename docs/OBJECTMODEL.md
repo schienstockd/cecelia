@@ -121,6 +121,11 @@ at their set by uid, and the per-set UI settings are uid-keyed. It uses `commit_
 `save!(set)` deliberately — a full save writes the whole in-memory object back, which would clobber an
 `image_uids` change another thread committed in between.
 
+**A set's recipe** is `meta["recipe"]`: the id of the processing recipe it follows (the catalogue is the
+frontend's `lib/guides/recipes.ts`). `set_recipe!(proj, set, id | nothing)` is a one-field
+`commit_state!` behind `POST /api/sets/recipe`; the model checks only the id's shape. It lights pages and
+names the next step in the GUI (`GUI_CLARITY_PLAN.md` Decision 13) and changes no result.
+
 **The duplicate-name guard is in the model, not the UI.** `set_name_taken(proj, name; except)` is the
 one answer to "does another set already have this name", and **both** `add_set!` and `rename_set!`
 refuse unless `force = true`. It sits at this layer so it holds for a **REPL** caller — where a rename
