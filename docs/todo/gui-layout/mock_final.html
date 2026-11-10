@@ -1,0 +1,561 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+:root{
+  --bg:#121212; --s1:#1a1918; --s2:#23211f; --text:#ece8e3; --dim:#938d86; --faint:#5f5a55; --border:#312e2b; --hover:#4a4642;
+  --work:#13161b; --work-border:#262b33; --image:#050506;
+  --primary:#FCC172; --on-primary:#1a1410; --next:#D27A98; --check:#BF577B; --check-text:#D27A98;
+  --viewer:#22c55e; --viewer-text:#b9f5cf; --kiwi:#14b8a6; --kiwi-text:#5eead4; --link:#a78bfa;
+  --ok:#0ca30c; --warn:#fab219; --fail:#d03b3b; --selected:#ff8c1a;
+  --st-data:#CEA966; --st-pop:#E9A587; --st-explore:#B98A93; --st-analysis:#F5EFD0;
+  --alpha:#E69F00;
+  --sp1:4px; --sp2:8px; --sp3:12px; --sp4:16px; --sp5:24px;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:#07080b;font:13px/1.45 "Noto Sans",system-ui,sans-serif;color:var(--text)}
+.cap{font:600 15px system-ui;color:#c9d1d9;margin:22px 0 4px 2px}
+.sub{font:12.5px system-ui;color:#8b949e;margin:0 0 10px 2px;max-width:1440px}
+.frame{width:1440px;height:900px;background:var(--bg);display:grid;grid-template-rows:44px 1fr 26px;overflow:hidden;position:relative}
+/* ── header (shared by main window and viewer) ── */
+.hdr{display:flex;align-items:center;gap:10px;padding:0 var(--sp4);border-bottom:1px solid var(--border);background:var(--bg)}
+.logo{font:600 17px Georgia,serif;color:var(--st-analysis);letter-spacing:.2px;margin-right:4px}
+.crumb{color:var(--dim);padding:3px 8px;border-radius:6px} .crumb b{color:var(--text);font-weight:600} .crumb .caret{color:var(--faint);margin-left:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--border);color:var(--dim);font-size:12px;white-space:nowrap}
+.chip .dot{width:7px;height:7px;border-radius:50%;background:var(--faint)}
+.chip.viewer{border-color:#1f5f37;color:var(--viewer-text)} .chip.viewer .dot{background:var(--viewer)}
+.chip.viewer.closed{border-color:var(--border);color:var(--dim)} .chip.viewer.closed .dot{background:transparent;border:1px solid var(--dim)}
+.jump{margin-left:auto;width:250px;padding:4px 10px;border-radius:6px;background:var(--s1);color:var(--dim);font-size:12px;border:1px solid var(--border);display:flex;justify-content:space-between}
+.jump kbd{font:11px system-ui;color:var(--faint)}
+.hbtn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);color:var(--text);font-size:12px;white-space:nowrap}
+.bell{position:relative;color:var(--dim);font-size:14px;padding:2px 6px} .bell .u{position:absolute;top:1px;right:2px;width:6px;height:6px;border-radius:50%;background:var(--check-text)}
+.kiwi{border-color:#1d5e57;color:var(--kiwi-text)}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--s2);border:1px solid var(--border);display:grid;place-items:center;font-size:11px;color:var(--dim)}
+/* menus drawn open */
+.menu{position:absolute;background:var(--s2);border:1px solid var(--hover);border-radius:8px;padding:6px 0;min-width:230px;box-shadow:0 10px 30px #000a;z-index:5;font-size:12.5px}
+.menu .mh{font-size:10.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);padding:6px 14px 2px}
+.menu .mi{padding:5px 14px;color:var(--text);display:flex;justify-content:space-between;gap:12px} .menu .mi span{color:var(--faint)}
+.menu .sep{height:1px;background:var(--border);margin:5px 0}
+/* ── body ── */
+.body{display:grid;grid-template-columns:196px 1fr 330px;min-height:0}
+.side{padding:var(--sp4) var(--sp2);display:flex;flex-direction:column;gap:1px;border-right:1px solid var(--border)}
+.gh{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;margin:var(--sp3) var(--sp2) var(--sp1);color:var(--g,var(--dim))}
+.gh:first-child{margin-top:0}
+.it{padding:4px var(--sp2) 4px 14px;border-radius:5px;color:#c7c1ba;position:relative;display:flex;justify-content:space-between;align-items:center}
+.it.on{background:var(--s1);color:var(--text)} .it.on::before{content:"";position:absolute;left:3px;top:6px;bottom:6px;width:3px;border-radius:2px;background:var(--st)}
+.it.dim{color:var(--faint)}
+.mdot{width:6px;height:6px;border-radius:50%}
+.side .spacer{flex:1}
+.main{display:flex;flex-direction:column;min-width:0}
+.bar{display:flex;align-items:center;gap:var(--sp3);padding:var(--sp2) var(--sp4);min-height:46px}
+.sel{padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--s1);white-space:nowrap}
+.sel .k{color:var(--dim)}
+.recipe{white-space:nowrap;padding:3px 9px;border-radius:999px;border:1px solid var(--border);color:var(--dim);font-size:12px} .recipe b{color:var(--text);font-weight:500}
+.count{color:var(--dim);white-space:nowrap}
+.checks{margin-left:auto;display:flex;align-items:center;gap:2px;padding:2px 3px;border-radius:9px;border:1px solid var(--check);background:var(--s1)}
+.ck{display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:6px;font-size:12px;color:#ddd3d7;white-space:nowrap}
+.ck .lab{color:var(--check-text);font-weight:600;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;padding:0 2px}
+.i-ok{color:var(--ok)} .i-warn{color:var(--warn)} .i-fail{color:var(--fail)}
+.more{color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:3px 9px}
+.result{margin:0 var(--sp4) var(--sp3);padding:10px var(--sp4);border-radius:10px;background:var(--s1);border:1px solid var(--border);display:flex;gap:var(--sp3);align-items:center;font-size:12.5px}
+.result .ok{color:var(--ok)} .result .when{color:var(--dim)}
+.link{color:var(--text);border:1px solid var(--border);padding:4px 10px;border-radius:7px;white-space:nowrap}
+.vlink{color:#86efac;white-space:nowrap}
+table{border-collapse:collapse;width:calc(100% - 32px);margin:0 var(--sp4);font-size:12.5px}
+th{text-align:left;color:var(--dim);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--border)}
+td{padding:6px 8px;color:#d4cec7;border-bottom:1px solid #1d1b1a}
+tr.selr td{background:#221f1a} tr.selr td:first-child{box-shadow:inset 3px 0 0 var(--selected)}
+.cb{display:inline-block;width:12px;height:12px;border:1px solid var(--dim);border-radius:3px;vertical-align:-1px}
+tr.selr .cb{background:var(--selected);border-color:var(--selected)}
+.qd{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.chans{color:var(--dim);font-size:12px}
+.tag{font-size:10.5px;padding:1px 6px;border-radius:4px;background:#1c2b23;color:#8fd6a8}
+.section-h{display:flex;align-items:center;gap:var(--sp2);padding:var(--sp3) var(--sp4) var(--sp1);font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--dim)}
+.section-h .r{margin-left:auto;text-transform:none;letter-spacing:0;font-size:12px;color:var(--dim);display:flex;gap:10px}
+.plots{flex:1;margin:var(--sp2) var(--sp4) var(--sp4);display:grid;grid-template-columns:1fr 1fr;gap:var(--sp4);min-height:0}
+.plot{background:var(--work);border:1px solid var(--work-border);border-radius:10px;padding:var(--sp3);display:flex;flex-direction:column;gap:4px;min-height:0}
+.ptitle{font-size:12.5px;color:#c9d1d9;display:flex;justify-content:space-between} .ptitle span{color:#6e7681;font-size:11.5px}
+.pbody{flex:1;min-height:0}
+/* right panel */
+.panel{border-left:1px solid var(--border);background:var(--s1);display:flex;flex-direction:column;padding:var(--sp4);gap:var(--sp3);min-height:0}
+.eyebrow{font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--dim)}
+.pick{padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);display:flex;justify-content:space-between}
+.hint{color:var(--dim);font-size:12px}
+.disc{color:var(--dim);font-size:12px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--dim)}
+.inp{padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:12.5px}
+.divider{height:1px;background:var(--border)}
+.run{background:var(--primary);color:var(--on-primary);font-weight:600;border-radius:8px;padding:9px;text-align:center}
+.next{margin-top:auto;border-top:1px solid var(--border);padding-top:var(--sp3);display:flex;flex-direction:column;gap:6px}
+.next .src{color:var(--dim);font-size:12px}
+.nextbtn{background:var(--next);color:#1a100c;font-weight:600;border-radius:8px;padding:9px;text-align:center}
+.lastrun{font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
+.pop{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;font-size:12.5px}
+.pop .n{margin-left:auto;color:var(--dim);font-size:12px}
+.pop.on{background:var(--bg);box-shadow:inset 3px 0 0 var(--selected)}
+.sw{width:9px;height:9px;border-radius:2px}
+.btnrow{display:flex;gap:6px} .btnrow .link{flex:1;text-align:center;font-size:12px}
+/* console */
+.foot{border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;padding:0 var(--sp4);font-size:12px;color:var(--dim);background:var(--bg)}
+.foot .r{margin-left:auto;display:flex;gap:12px}
+.note{position:absolute;background:#2a2017;border:1px dashed #8a6a3a;color:#f3d9b1;font:11.5px/1.35 system-ui;padding:6px 9px;border-radius:6px;max-width:250px;z-index:9}
+.note b{color:#ffd28f}
+.num{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#ffd28f;color:#2a2017;font:700 10.5px system-ui;margin-right:5px;vertical-align:1px}
+/* welcome */
+.wbody{display:grid;grid-template-columns:196px 1fr;min-height:0}
+.wmain{display:grid;grid-template-columns:1fr 1fr;gap:56px;padding:56px 64px}
+.wtitle{font:600 30px Georgia,serif;margin:0 0 4px}
+.stripe{height:4px;width:230px;border-radius:2px;margin:18px 0 22px;background:linear-gradient(90deg,var(--st-data) 0 25%,var(--st-pop) 25% 50%,var(--st-explore) 50% 75%,var(--st-analysis) 75%)}
+.proj{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:8px;font-size:13px}
+.proj.on{background:var(--s1)} .proj .meta{color:var(--dim)} .proj .when{color:var(--dim);font-size:12px}
+.qcb{font-size:11.5px;border:1px solid var(--check);color:var(--check-text);border-radius:999px;padding:1px 8px;margin-left:10px}
+.rc{border:1px solid var(--border);border-radius:9px;padding:10px 14px;margin-bottom:10px;display:flex;gap:10px}
+.rc.on{border-color:var(--primary);background:#1e1a14}
+.rc .t{font-weight:600} .rc .d{color:var(--dim);font-size:12px} .rc .s{color:var(--selected);font-size:11px;font-weight:400;margin-left:6px}
+.legend{width:1440px;background:var(--bg);padding:16px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:14px 24px;font-size:12px;color:#c9d1d9}
+.legend h4{margin:0 0 6px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--dim);font-weight:600}
+.legend .row{display:flex;align-items:center;gap:8px;margin:4px 0} .legend .sq{width:16px;height:16px;border-radius:4px;border:1px solid #333}
+.homes{width:1440px;background:var(--bg);padding:16px 20px;font-size:12.5px;color:#d4cec7;columns:2;column-gap:40px}
+.homes h4{margin:0 0 8px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--dim);column-span:all}
+.homes div{break-inside:avoid;margin:0 0 5px} .homes b{color:var(--text)} .homes i{color:var(--dim);font-style:normal}
+
+.note{background:none;border:0;padding:0;max-width:none!important}
+.notes{width:1440px;background:#0d0e11;color:#f3d9b1;font:12.5px/1.45 system-ui;padding:10px 16px;columns:2;column-gap:32px;margin-bottom:6px}
+.notes div{break-inside:avoid;margin:2px 0}
+.play span{white-space:nowrap}
+.vpanel .seg span{padding:3px 8px}
+</style></head><body>
+
+<!-- ═══════════════════════ 1 · SEGMENT ═══════════════════════ -->
+<div class="cap">1 · Main window — Segment (a page with a task panel)</div>
+<div class="sub">Header carries everything global. Sidebar is text only, all groups open, off-recipe pages dimmed. One set row with the checks. The result line says what just happened. Plots appear with defaults; their toolbar sits on the plots section header. Right panel: function → params → Run → Next.</div>
+<div class="frame">
+  <div class="hdr">
+    <span class="logo">Cecelia</span>
+    <span class="crumb"><b>T cells</b> › MARDI1<span class="caret">▾</span></span>
+    <span class="chip viewer"><span class="dot"></span>Viewer · Mouse09_LN1</span>
+    <span class="jump">Jump to page, task or image… <kbd>Ctrl K</kbd></span>
+    <span class="bell">🔔<span class="u"></span></span>
+    <span class="hbtn">Help ▾</span>
+    <span class="hbtn kiwi">Ask Kiwi</span>
+    <span class="avatar">pe</span>
+  </div>
+  <div class="body">
+    <div class="side">
+      <div class="gh" style="--g:var(--st-data)">Data</div>
+      <div class="it">Manage images</div><div class="it dim">Preprocessing</div><div class="it dim">Metadata</div>
+      <div class="it">Cleanup</div><div class="it dim">Model training <span class="mdot" style="background:var(--alpha)"></span></div>
+      <div class="it on" style="--st:var(--st-data)">Segment</div>
+      <div class="gh" style="--g:var(--st-pop)">Populations</div>
+      <div class="it">Gate</div><div class="it">Track</div><div class="it dim">Cluster cells</div><div class="it">Cluster tracks</div><div class="it dim">Cluster regions <span class="mdot" style="background:var(--alpha)"></span></div>
+      <div class="gh" style="--g:var(--st-explore)">Explore</div>
+      <div class="it dim">Phenotype</div><div class="it">Behaviour</div><div class="it">Spatial</div>
+      <div class="gh" style="--g:var(--st-analysis)">Analysis</div>
+      <div class="it">Analysis board</div><div class="it dim">Blackboard</div><div class="it dim">Notebooks</div><div class="it dim">Movies &amp; figures</div>
+      <div class="gh">Pipeline</div>
+      <div class="it">Tasks</div><div class="it">Chains</div>
+      <div class="spacer"></div>
+      <div class="it" style="color:var(--dim)">Settings</div>
+    </div>
+    <div class="main">
+      <div class="bar">
+        <span class="sel"><span class="k">Set</span> MARDI1 ▾</span>
+        <span class="recipe">Recipe · <b>Intravital timelapse</b> ▾</span>
+        <span class="count">17 images · 3 selected</span>
+        <div class="checks">
+          <span class="ck"><span class="lab">Checks</span></span>
+          <span class="ck"><span class="i-ok">✓</span> Acquisition</span>
+          <span class="ck"><span class="i-warn">▲</span> Cohort · 1</span>
+          <span class="ck"><span class="i-warn">▲</span> QC · 2</span>
+        </div>
+        <span class="more">⋯</span>
+      </div>
+      <div class="result"><span class="ok">✓</span> Cellpose segment + measure finished on 3 images · 1,377 cells <span class="when">· 4 min ago</span>
+        <span class="vlink">● Shown in the viewer</span><span style="margin-left:auto" class="link">Correct labels</span><span class="link">Log</span></div>
+      <table>
+        <tr><th style="width:26px"></th><th>Image</th><th>Channels</th><th>QC</th><th>Last run</th><th>Duration</th></tr>
+        <tr class="selr"><td><span class="cb"></span></td><td>02122025_Mouse09_LN1</td><td class="chans">SHG · CART · AF</td><td><span class="qd" style="background:var(--ok)"></span>512 cells</td><td><span class="tag">Segment</span></td><td>29m 35s</td></tr>
+        <tr class="selr"><td><span class="cb"></span></td><td>02122025_Mouse09_LN2</td><td class="chans">SHG · CART · AF</td><td><span class="qd" style="background:var(--warn)"></span>431 · edge cells</td><td><span class="tag">Segment</span></td><td>31m 00s</td></tr>
+        <tr class="selr"><td><span class="cb"></span></td><td>02122025_Mouse10_LN1</td><td class="chans">SHG · CART · AF</td><td><span class="qd" style="background:var(--warn)"></span>434 · low count</td><td><span class="tag">Segment</span></td><td>30m 30s</td></tr>
+        <tr><td><span class="cb"></span></td><td>02122025_Mouse10_LN2</td><td class="chans">SHG · CART · AF</td><td style="color:var(--dim)"><span class="qd" style="background:var(--faint)"></span>not run</td><td style="color:var(--dim)">Cleanup</td><td>28m 05s</td></tr>
+        <tr><td><span class="cb"></span></td><td>02122025_Mouse11_LN1</td><td class="chans">SHG · CART · AF</td><td style="color:var(--dim)"><span class="qd" style="background:var(--faint)"></span>not run</td><td style="color:var(--dim)">Cleanup</td><td>29m 50s</td></tr>
+      </table>
+      <div class="section-h">Plots <span class="r"><span>+ Plot</span><span>Pool to groups</span><span>Layout ▾</span></span></div>
+      <div class="plots">
+        <div class="plot"><span class="ptitle">Cells per image <span>default</span></span><div class="pbody">
+          <svg width="100%" height="100%" viewBox="0 0 300 160" preserveAspectRatio="none"><g fill="#8b949e"><rect x="30" y="40" width="50" height="110"/><rect x="120" y="62" width="50" height="88"/><rect x="210" y="60" width="50" height="90"/></g><line x1="20" y1="150" x2="290" y2="150" stroke="#30363d"/></svg></div></div>
+        <div class="plot"><span class="ptitle">Area × CART intensity <span>default</span></span><div class="pbody">
+          <svg width="100%" height="100%" viewBox="0 0 300 160"><g fill="#8b949e" opacity=".6">
+          <circle cx="40" cy="120" r="2"/><circle cx="60" cy="100" r="2"/><circle cx="75" cy="110" r="2"/><circle cx="90" cy="80" r="2"/><circle cx="110" cy="95" r="2"/><circle cx="130" cy="70" r="2"/><circle cx="150" cy="85" r="2"/><circle cx="160" cy="60" r="2"/><circle cx="180" cy="72" r="2"/><circle cx="200" cy="55" r="2"/><circle cx="220" cy="66" r="2"/><circle cx="240" cy="44" r="2"/><circle cx="255" cy="52" r="2"/><circle cx="270" cy="38" r="2"/><circle cx="100" cy="115" r="2"/><circle cx="140" cy="100" r="2"/><circle cx="190" cy="90" r="2"/><circle cx="230" cy="80" r="2"/></g><line x1="20" y1="150" x2="290" y2="150" stroke="#30363d"/></svg></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <span class="eyebrow">Function</span>
+      <div class="pick">Cellpose segment + measure <span style="color:var(--dim)">▾</span></div>
+      <span class="hint">Most fluorescent cells. Measures come with it.</span>
+      <span class="disc">▸ When to use</span>
+      <div class="divider"></div>
+      <div class="field"><span>Channel</span><div class="inp">CART ▾</div></div>
+      <div class="field"><span>Model</span><div class="inp">cyto3 ▾</div></div>
+      <div class="field"><span>Cell diameter (µm)</span><div class="inp">Auto · 9.4</div></div>
+      <span class="disc">▸ More options</span>
+      <div class="run">Run on 3 images</div>
+      <div class="lastrun"><span>Last run 4 min ago · 3 done</span><span style="color:var(--link)">Tasks</span></div>
+      <div class="next">
+        <span class="eyebrow">Next</span>
+        <span class="src">From recipe · Intravital timelapse</span>
+        <div class="nextbtn">Gate populations →</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">⌃ Console · Opened "T cells" — 2 sets, 17 images <span class="r"><span>dev</span><span>v0.1.42</span></span></div>
+  <div class="note" style="top:52px;left:600px"><span class="num">1</span>Help ▾, 🔔 lab log, Ask Kiwi and the profile menu replace the 6 help icons, the 4 sidebar launchers and the footer buttons.</div>
+  <div class="note" style="top:52px;left:240px;max-width:190px"><span class="num">2</span>Project › set. Click: switch project or set. Set ID + copy live in this menu.</div>
+  <div class="note" style="top:96px;left:196px;max-width:170px;transform:translateY(310px)"><span class="num">3</span>Groups open by default. Dots only for alpha/experimental pages.</div>
+  <div class="note" style="top:140px;left:1140px;max-width:240px"><span class="num">4</span>⋯ More = CSV, Task menu, Maximise. Connection shows only when it drops (in the console row).</div>
+  <div class="note" style="top:560px;left:1000px;max-width:200px"><span class="num">5</span>The task list leaves the panel: one "last run" line, Tasks page for the rest.</div>
+</div>
+
+<!-- ═══════════════════════ 2 · GATE ═══════════════════════ -->
+<div class="cap">2 · Main window — Gate (a canvas page): the plot canvas does the gating; Next keeps the same bottom-right spot</div>
+<div class="sub">No task panel here: gates are drawn on the plots, the Population manager floats on the canvas as today, plot options stay on each card. Pages without a task get the Next slot as a footer in the same corner as the task panel's Next.</div>
+<div class="frame">
+<div class="hdr">
+    <span class="logo">Cecelia</span>
+    <span class="crumb"><b>T cells</b> › MARDI1<span class="caret">▾</span></span>
+    <span class="chip viewer"><span class="dot"></span>Viewer · Mouse09_LN1</span>
+    <span class="jump">Jump to page, task or image… <kbd>Ctrl K</kbd></span>
+    <span class="bell">🔔</span><span class="hbtn">Help ▾</span><span class="hbtn kiwi">Ask Kiwi</span><span class="avatar">pe</span>
+  </div>
+  <div class="body" style="grid-template-columns:196px 1fr">
+<div class="side">
+      <div class="gh" style="--g:var(--st-data)">Data</div>
+      <div class="it">Manage images</div><div class="it dim">Preprocessing</div><div class="it dim">Metadata</div>
+      <div class="it">Cleanup</div><div class="it dim">Model training <span class="mdot" style="background:var(--alpha)"></span></div><div class="it">Segment</div>
+      <div class="gh" style="--g:var(--st-pop)">Populations</div>
+      <div class="it on" style="--st:var(--st-pop)">Gate</div><div class="it">Track</div><div class="it dim">Cluster cells</div><div class="it">Cluster tracks</div><div class="it dim">Cluster regions <span class="mdot" style="background:var(--alpha)"></span></div>
+      <div class="gh" style="--g:var(--st-explore)">Explore</div>
+      <div class="it dim">Phenotype</div><div class="it">Behaviour</div><div class="it">Spatial</div>
+      <div class="gh" style="--g:var(--st-analysis)">Analysis</div>
+      <div class="it">Analysis board</div><div class="it dim">Blackboard</div><div class="it dim">Notebooks</div><div class="it dim">Movies &amp; figures</div>
+      <div class="gh">Pipeline</div><div class="it">Tasks</div><div class="it">Chains</div>
+      <div class="spacer"></div><div class="it" style="color:var(--dim)">Settings</div>
+    </div>
+    <div class="main" style="position:relative">
+      <div class="bar">
+        <span class="sel"><span class="k">Set</span> MARDI1 ▾</span>
+        <span class="recipe">Recipe · <b>Intravital timelapse</b> ▾</span>
+        <span class="count">17 images · gating on Mouse09_LN1</span>
+        <div class="checks"><span class="ck"><span class="lab">Checks</span></span><span class="ck"><span class="i-ok">✓</span> Acquisition</span><span class="ck"><span class="i-ok">✓</span> Cohort</span><span class="ck"><span class="i-warn">▲</span> Claims · 1</span></div>
+        <span class="more">⋯</span>
+      </div>
+      <div class="result"><span>1,204 cells in <b>T cells</b></span><span class="when">28% of all cells · gate applies to 17 images</span>
+        <span class="vlink">● Highlighted in the viewer</span><span style="margin-left:auto" class="link">Image ▾ Mouse09_LN1</span></div>
+      <div class="section-h">Plots <span class="r"><span>+ Plot</span><span>Pool to groups</span><span>Arrange ▾</span><span>100% ▾</span></span></div>
+      <div class="plots" style="grid-template-columns:1fr 1fr;margin-top:0;margin-bottom:118px">
+        <div class="plot"><span class="ptitle">All cells · CD3 × CD8 <span>x ▾ · y ▾ · ⬠ ▭ · ⋯</span></span><div class="pbody">
+          <svg width="100%" height="100%" viewBox="0 0 400 330">
+            <g fill="#8b949e" opacity=".55"><circle cx="40" cy="290" r="2.4"/><circle cx="60" cy="270" r="2.4"/><circle cx="80" cy="300" r="2.4"/><circle cx="100" cy="260" r="2.4"/><circle cx="120" cy="285" r="2.4"/><circle cx="140" cy="250" r="2.4"/><circle cx="160" cy="295" r="2.4"/><circle cx="180" cy="270" r="2.4"/><circle cx="70" cy="230" r="2.4"/><circle cx="130" cy="215" r="2.4"/><circle cx="190" cy="235" r="2.4"/><circle cx="210" cy="280" r="2.4"/></g>
+            <polygon points="230,40 380,45 385,200 240,210" fill="#ff8c1a14" stroke="var(--selected)" stroke-dasharray="5 4"/>
+            <text x="234" y="34" fill="#ffb066" font-size="12">T cells</text>
+            <g fill="#ffb066"><circle cx="260" cy="80" r="2.6"/><circle cx="290" cy="120" r="2.6"/><circle cx="320" cy="70" r="2.6"/><circle cx="350" cy="150" r="2.6"/><circle cx="270" cy="170" r="2.6"/><circle cx="310" cy="160" r="2.6"/><circle cx="340" cy="95" r="2.6"/><circle cx="365" cy="175" r="2.6"/><circle cx="250" cy="130" r="2.6"/></g>
+            <line x1="25" y1="315" x2="395" y2="315" stroke="#30363d"/><line x1="25" y1="20" x2="25" y2="315" stroke="#30363d"/>
+            <text x="365" y="328" fill="#6e7681" font-size="11">CD3</text><text x="30" y="30" fill="#6e7681" font-size="11">CD8</text></svg></div></div>
+        <div class="plot"><span class="ptitle">T cells · CD8 × CD69 <span>x ▾ · y ▾ · ⬠ ▭ · ⋯</span></span><div class="pbody">
+          <svg width="100%" height="100%" viewBox="0 0 400 330">
+            <g fill="#ffb066" opacity=".7"><circle cx="60" cy="280" r="2.6"/><circle cx="90" cy="250" r="2.6"/><circle cx="120" cy="290" r="2.6"/><circle cx="150" cy="260" r="2.6"/><circle cx="80" cy="220" r="2.6"/><circle cx="170" cy="230" r="2.6"/></g>
+            <rect x="210" y="40" width="170" height="160" fill="#c9a0dc14" stroke="#c9a0dc" stroke-dasharray="5 4"/>
+            <text x="214" y="34" fill="#c9a0dc" font-size="12">CD8 T cells</text>
+            <g fill="#c9a0dc"><circle cx="240" cy="80" r="2.6"/><circle cx="280" cy="130" r="2.6"/><circle cx="320" cy="70" r="2.6"/><circle cx="350" cy="160" r="2.6"/><circle cx="300" cy="180" r="2.6"/></g>
+            <line x1="25" y1="315" x2="395" y2="315" stroke="#30363d"/><line x1="25" y1="20" x2="25" y2="315" stroke="#30363d"/>
+            <text x="365" y="328" fill="#6e7681" font-size="11">CD8</text><text x="30" y="30" fill="#6e7681" font-size="11">CD69</text></svg></div></div>
+      </div>
+      <div style="position:absolute;left:650px;top:420px;width:250px;background:var(--s2);border:1px solid var(--hover);border-radius:10px;padding:10px 12px;box-shadow:0 10px 30px #0008;font-size:12.5px">
+        <div style="display:flex;justify-content:space-between;color:var(--dim);font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;margin-bottom:6px"><span>Populations</span><span>3 ▴</span></div>
+        <div class="pop"><span class="sw" style="background:#8b949e"></span>All cells<span class="n">4,310</span></div>
+        <div class="pop on" style="padding-left:20px"><span class="sw" style="background:#ffb066"></span>T cells<span class="n">1,204</span></div>
+        <div class="pop" style="padding-left:34px"><span class="sw" style="background:#c9a0dc"></span>CD8 T cells<span class="n">612</span></div>
+        <div style="display:flex;gap:10px;color:var(--dim);border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-size:12px"><span>☰ edit</span><span>⟲ history</span><span>↻ reload</span><span style="margin-left:auto">◎ viewer</span></div>
+      </div>
+      <div style="position:absolute;right:16px;bottom:12px;width:300px;border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:6px">
+        <span class="eyebrow">Next</span><span class="src" style="color:var(--dim);font-size:12px">From recipe · Intravital timelapse</span><div class="nextbtn">Track cells →</div></div>
+    </div>
+  </div>
+  <div class="foot">⌃ Console · Gate "T cells" saved, applies to 17 images <span class="r"><span>dev</span><span>v0.1.42</span></span></div>
+  <div class="note" style="top:640px;left:1100px"><span class="num">6</span>Next sits in the same bottom-right spot as on task pages. No gating controls outside the canvas: gate tools, axes and options stay on each plot card; the Population manager floats as today.</div>
+</div>
+
+<!-- ═══════════════════════ 3 · WELCOME ═══════════════════════ -->
+<div class="cap">3 · Main window — Welcome</div>
+<div class="sub">Recent projects with what's in them and a check badge; one saffron action; "What is this set?" only when the last set has no recipe yet. Vermilion and crimson are allowed here (the stripe), nowhere else.</div>
+<div class="frame">
+  <div class="hdr">
+    <span class="logo">Cecelia</span>
+    <span class="chip viewer closed"><span class="dot"></span>Viewer · closed</span>
+    <span class="jump">Jump to page, task or project… <kbd>Ctrl K</kbd></span>
+    <span class="bell">🔔</span><span class="hbtn">Help ▾</span><span class="hbtn kiwi">Ask Kiwi</span><span class="avatar">pe</span>
+  </div>
+  <div class="wbody">
+    <div class="side"><div class="gh" style="--g:var(--st-data)">Data</div><div class="it dim">Manage images</div><div class="it dim">…</div><div class="spacer"></div><div class="it" style="color:var(--dim)">Settings</div></div>
+    <div class="wmain">
+      <div>
+        <div class="wtitle">Welcome back</div>
+        <div style="color:var(--dim)">Pick up where you left off.</div>
+        <div class="stripe" style="background:linear-gradient(90deg,var(--st-data) 0 20%,var(--st-pop) 20% 40%,#E3584A 40% 55%,var(--st-explore) 55% 75%,var(--st-analysis) 75%)"></div>
+        <div class="proj on"><span><b>T cells</b> <span class="meta">· 2 sets, 17 images</span><span class="qcb">2 to review</span></span><span class="when">today</span></div>
+        <div class="proj"><span><b>unimelb 3P spleen</b> <span class="meta">· 3 sets, 11 images</span></span><span class="when">yesterday</span></div>
+        <div class="proj"><span><b>Immunemap</b> <span class="meta">· 1 set, 15 images</span></span><span class="when">9 Nov</span></div>
+        <div class="proj"><span><b>Cecelia test fixtures</b> <span class="meta">· 4 sets, 9 images</span></span><span class="when">2 Nov</span></div>
+        <div style="display:flex;gap:10px;margin-top:20px"><span class="run" style="padding:7px 16px">Open T cells</span><span class="link" style="padding:7px 14px">Open or create another…</span></div>
+      </div>
+      <div>
+        <div class="eyebrow" style="margin-bottom:4px">What is this set? · T cells › MARDI2</div>
+        <div style="color:var(--dim);margin-bottom:14px">It lights the pages you'll need. Nothing is hidden.</div>
+        <div class="rc on"><span class="sw" style="background:var(--primary);margin-top:5px"></span><div><div class="t">Intravital timelapse<span class="s">suggested · has a time axis</span></div><div class="d">Cells moving in tissue, e.g. T cells in a lymph node</div></div></div>
+        <div class="rc"><span class="sw" style="background:var(--st-pop);margin-top:5px"></span><div><div class="t">Few-marker tissue</div><div class="d">A handful of channels on a fixed section</div></div></div>
+        <div class="rc"><span class="sw" style="background:var(--st-data);margin-top:5px"></span><div><div class="t">Multiplex tissue</div><div class="d">Many markers, one timepoint</div></div></div>
+        <div class="rc"><span class="sw" style="background:var(--st-analysis);margin-top:5px"></span><div><div class="t">In vitro migration</div><div class="d">Cells on a dish, tracked over time</div></div></div>
+        <div style="display:flex;gap:10px;margin-top:6px"><span class="link">Use Intravital timelapse</span><span style="color:var(--dim);padding:4px">Skip</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">⌃ Console · Connected to the Julia backend <span class="r"><span>dev</span><span>v0.1.42</span></span></div>
+</div>
+
+<style>
+.vbody{display:grid;grid-template-columns:1fr 300px;min-height:0}
+.img{position:relative;background:var(--image);overflow:hidden}
+.vpanel{border-left:1px solid var(--border);background:var(--s1);display:flex;flex-direction:column;padding:var(--sp3) var(--sp4);gap:10px;min-height:0;font-size:12.5px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;font-size:12px}
+.seg span{padding:3px 10px;color:var(--dim)} .seg span.on{background:var(--s2);color:var(--text)}
+.seg span.alpha::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--alpha);margin-left:5px;vertical-align:1px}
+.ib{color:var(--dim);border:1px solid var(--border);border-radius:6px;padding:2px 7px;font-size:12px}
+.sech{display:flex;align-items:center;gap:8px;font-size:10.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--dim);padding-top:4px}
+.sech .c{margin-left:auto;text-transform:none;letter-spacing:0}
+.sech.closed{border-top:1px solid var(--border);padding-top:9px}
+.chan{display:grid;grid-template-columns:14px 10px 1fr auto;gap:8px;align-items:center}
+.eye{width:12px;height:12px;border-radius:50%;border:1.5px solid var(--text);display:inline-block} .eye.off{border-color:var(--faint)}
+.lut{width:10px;height:10px;border-radius:2px}
+.range{grid-column:2/5;height:30px;position:relative;margin:-2px 0 6px}
+.hist{position:absolute;left:0;right:0;top:0;width:100%;height:20px}
+.range::before{content:"";position:absolute;left:0;right:0;top:22px;height:2px;background:#3a3633;border-radius:1px}
+.range i{position:absolute;top:22px;height:2px;background:var(--c)} .range b{position:absolute;top:18px;width:9px;height:9px;border-radius:50%;background:var(--text)}
+.play{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;display:flex;align-items:center;gap:12px;background:#1a1918e6;border:1px solid var(--border);border-radius:12px;padding:7px 14px;font-size:12px;color:var(--dim)}
+.pbtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--hover);display:grid;place-items:center;color:var(--text);font-size:11px}
+.track{width:200px;height:3px;background:#3a3633;border-radius:2px;position:relative}
+.track .cache{position:absolute;left:0;top:-1px;height:5px;width:62%;background:#2d4a3a;border-radius:2px}
+.track .pos{position:absolute;left:30%;top:-4px;width:11px;height:11px;border-radius:50%;background:var(--text)}
+.ztrack{width:90px}
+.scalebar{position:absolute;left:18px;bottom:20px;color:#ddd;font-size:11px} .scalebar i{display:block;width:60px;height:3px;background:#eee;margin-bottom:4px}
+.ts{position:absolute;left:18px;top:14px;color:#ddd;font-size:11.5px}
+.mini{position:absolute;right:14px;top:14px;width:120px;height:80px;border:1px solid #333;border-radius:4px;background:#0c0d10}
+.mini i{position:absolute;left:38px;top:22px;width:40px;height:28px;border:1px solid #9a9a9a}
+.cell{position:absolute;border-radius:50%;border:1.5px solid #c9c9c9aa;background:radial-gradient(circle at 50% 50%,#4fc4b5aa,#1d4f4a44 60%,transparent 72%)}
+.cell.cd3{background:radial-gradient(circle at 60% 55%,#d36fe0aa 0 18%,transparent 30%),radial-gradient(circle,#4fc4b5aa,#1d4f4a44 60%,transparent 72%)}
+.cell.flag{border:1.8px dashed var(--warn)}
+.cell.pop{border-color:#ffb066}
+.insp{position:absolute;background:var(--s2);border:1px solid var(--hover);border-radius:10px;padding:12px 14px;width:270px;font-size:12.5px;box-shadow:0 10px 30px #000a}
+.insp .t{font-weight:600} .insp .m{color:var(--dim);font-size:12px;margin:2px 0 8px}
+.insp .q{color:var(--warn);font-size:12px;margin-bottom:10px}
+.vfoot{border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 var(--sp4);font-size:12px;color:var(--dim);background:var(--bg)}
+.vfoot .busy{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-right:5px}
+.editbar{position:absolute;left:0;right:0;top:0;height:3px;background:var(--alpha)}
+.ebanner{display:flex;align-items:center;gap:12px;padding:7px var(--sp4);background:#2a2214;border-bottom:1px solid #5a4520;font-size:12.5px;color:#f3d9b1}
+.wl{display:flex;justify-content:space-between;padding:5px 8px;border-radius:6px}
+.wl.on{background:var(--bg);box-shadow:inset 3px 0 0 var(--selected)}
+.kind{font-size:11px;padding:1px 6px;border-radius:4px;background:#3a2f1a;color:#f0c674}
+.trk{position:absolute;height:2px;background:#d36fe0;transform-origin:left center}
+</style>
+
+<!-- ═══════════════════════ 4 · VIEWER · VIEW ═══════════════════════ -->
+<div class="cap">4 · Viewer window — View (same header, same right-panel position, same console row as the main window)</div>
+<div class="sub">Today the window has no header, no playback bar, no provenance and no way back: every control sits in one sidebar (≈54 at first paint with 4 channels). Here the header says what is shown and who sent it; playback floats on the image; the panel keeps every section and control (channel cards with histograms and contrast, segmentation, populations, tracks, ROIs, annotations), one open at a time as today; load/GPU state moves into the console row. Nothing is cut — see the table at the end.</div>
+<div class="frame" style="grid-template-rows:44px 1fr 26px">
+  <div class="hdr">
+    <span class="logo" style="font-size:15px">Cecelia</span>
+    <span class="hbtn">← Segment</span>
+    <span class="crumb"><b>02122025_Mouse09_LN1</b> <span class="caret">‹ 1 of 3 ›</span> · T cells › MARDI1</span>
+    <span class="chip">Labels: default · Cellpose · 4 min ago</span>
+    <span style="margin-left:auto"></span>
+    <span class="hbtn">Share ▾</span><span class="hbtn">Help ▾</span><span class="hbtn kiwi">Ask Kiwi</span>
+  </div>
+  <div class="vbody">
+    <div class="img">
+      <span class="ts">t 12 · 06:18 elapsed</span>
+      <div class="mini"><i></i></div>
+      <div class="cell" style="left:230px;top:90px;width:62px;height:62px"></div>
+      <div class="cell cd3 pop" style="left:150px;top:260px;width:92px;height:92px"></div>
+      <div class="cell flag cd3" style="left:470px;top:160px;width:110px;height:110px"></div>
+      <div class="cell" style="left:330px;top:360px;width:76px;height:76px"></div>
+      <div class="cell cd3 pop" style="left:640px;top:330px;width:84px;height:84px"></div>
+      <div class="cell" style="left:90px;top:440px;width:64px;height:64px"></div>
+      <div class="cell flag" style="left:300px;top:540px;width:92px;height:92px"></div>
+      <div class="cell" style="left:450px;top:520px;width:96px;height:96px"></div>
+      <div class="cell cd3" style="left:780px;top:130px;width:70px;height:70px"></div>
+      <div class="cell" style="left:860px;top:420px;width:58px;height:58px"></div>
+      <div class="cell" style="left:960px;top:240px;width:66px;height:66px"></div>
+      <div class="insp" style="left:600px;top:120px"><div class="t">Cell 187 <span style="color:#ffb066;font-weight:400">· T cells</span></div><div class="m">area 142 µm² · CD3 0.62 · t 12, z 8</div><div class="q">▲ Low solidity: may be two merged cells</div><div class="btnrow"><span class="link">Select in plots</span><span class="link">Correct…</span></div></div>
+      <div class="scalebar"><i></i>20 µm</div>
+      <div class="play"><span class="pbtn">▶</span><span>⟲</span><span>t 12 / 60</span><span class="track"><span class="cache"></span><span class="pos"></span></span><span>8 fps</span><span style="color:var(--border)">|</span><span>z 8 / 20</span><span class="track ztrack"><span class="pos" style="left:38%"></span></span><span>± planes</span><span style="color:var(--border)">|</span><span>Level auto</span></div>
+    </div>
+    <div class="vpanel">
+      <div style="display:flex;gap:6px;align-items:center"><span class="seg"><span class="on">View</span><span>Select</span><span class="alpha">Edit</span></span><span style="margin-left:auto" class="seg"><span class="on">2D</span><span>3D</span></span><span class="ib">⟳</span><span class="ib">⚙</span></div>
+      <div class="sech">Channels <span class="c">👁 all · distinct · solo · auto ▾ · reset · ⇕</span></div>
+      <div class="chan"><span class="eye"></span><span class="lut" style="background:#4fc4b5"></span><span>1 · SHG</span><span style="color:var(--dim)">auto</span><div class="range" style="--c:#4fc4b5"><svg class="hist" viewBox="0 0 100 18" preserveAspectRatio="none"><path d="M0 18 L0 16 L6 14 L12 9 L18 4 L24 2 L30 5 L36 9 L44 12 L54 14 L66 15.5 L80 16.5 L100 17.5 L100 18 Z" fill="#ffffff22"/></svg><i style="left:8%;width:60%"></i><b style="left:6%"></b><b style="left:66%"></b></div></div>
+      <div class="chan"><span class="eye"></span><span class="lut" style="background:#d36fe0"></span><span>2 · CART</span><span style="color:var(--dim)">auto</span><div class="range" style="--c:#d36fe0"><svg class="hist" viewBox="0 0 100 18" preserveAspectRatio="none"><path d="M0 18 L0 16 L6 14 L12 9 L18 4 L24 2 L30 5 L36 9 L44 12 L54 14 L66 15.5 L80 16.5 L100 17.5 L100 18 Z" fill="#ffffff22"/></svg><i style="left:14%;width:50%"></i><b style="left:12%"></b><b style="left:62%"></b></div></div>
+      <div class="chan"><span class="eye off"></span><span class="lut" style="background:#6b6b6b"></span><span style="color:var(--faint)">3 · AF</span><span style="color:var(--faint)">hidden</span></div>
+      <div class="sech closed">Segmentation <span class="c">default · outline · QC flags</span></div>
+      <div class="sech closed">Populations <span class="c">2 of 3 shown</span></div>
+      <div class="sech closed">Tracks <span class="c">off</span></div>
+      <div class="sech closed">ROIs <span class="c">none yet</span></div>
+      <div class="sech closed">Annotations <span class="c">scale · time</span></div>
+      <div style="flex:1"></div>
+      <div class="lastrun" style="border-top:1px solid var(--border);padding-top:8px"><span>Shortcuts</span><span style="color:var(--link)">?</span></div>
+    </div>
+  </div>
+  <div class="vfoot"><span><span class="busy"></span>Loading timepoint 13…</span><span>showing L1</span><span>Renderer: bricks</span><span style="margin-left:auto">GPU 1.2 / 4 GB</span></div>
+  <div class="note" style="top:52px;left:150px;max-width:220px"><span class="num">7</span>Return path: focuses the main window on the page that sent this image.</div>
+  <div class="note" style="top:52px;left:470px;max-width:250px"><span class="num">8</span>Provenance: image, its position in the selection, set and the layer that was pushed, with when.</div>
+  <div class="note" style="top:300px;left:1150px"><span class="num">9</span>No checks cluster: it is a viewer. QC-flagged cells stay a data layer (dashed outline, toggle in Segmentation); the cell card says why.</div>
+  <div class="note" style="top:690px;left:520px;max-width:260px"><span class="num">10</span>Playback leaves the sidebar: it is the most-used control. ▶ is neutral, not saffron (saffron = Run).</div>
+  <div class="note" style="top:90px;left:1160px;max-width:250px"><span class="num">11</span>One mode switch: View / Select / Edit (alpha dot). Debug moves under ⚙ with Advanced.</div>
+</div>
+
+<!-- ═══════════════════════ 5 · VIEWER · EDIT ═══════════════════════ -->
+<div class="cap">5 · Viewer window — Edit: the frame is fixed, the correction approach gets its own design</div>
+<div class="sub">Today's correction cockpit is weak and will be redesigned from scratch (separate plan). What this layout fixes now: Edit is a mode of the viewer, picked in the same switch; an alpha line and banner make the mode unmistakable and say what is queued and that nothing is written until Apply; the right panel is the space the new correction design fills. Layers stay one click away.</div>
+<div class="frame" style="grid-template-rows:44px auto 1fr 26px">
+  <div class="hdr" style="position:relative">
+    <span class="editbar"></span>
+    <span class="logo" style="font-size:15px">Cecelia</span>
+    <span class="hbtn">← Track</span>
+    <span class="crumb"><b>02122025_Mouse09_LN1</b> <span class="caret">‹ 1 of 3 ›</span> · T cells › MARDI1</span>
+    <span class="chip">Tracks: default · btrack · today 10:42</span>
+    <span style="margin-left:auto"></span>
+    <span class="hbtn">Share ▾</span><span class="hbtn">Help ▾</span><span class="hbtn kiwi">Ask Kiwi</span>
+  </div>
+  <div class="ebanner"><b>Editing tracks</b><span style="color:#e69f00">● alpha</span><span>3 changes queued · nothing is written until Apply</span><span style="margin-left:auto" class="link">Undo</span><span class="link">Discard</span><span class="run" style="padding:4px 14px">Apply 3 changes</span></div>
+  <div class="vbody">
+    <div class="img">
+      <span class="ts">t 18 · 09:30 elapsed</span>
+      <div class="cell" style="left:200px;top:160px;width:70px;height:70px"></div>
+      <div class="cell cd3" style="left:420px;top:300px;width:84px;height:84px;border-color:var(--selected);border-width:2px"></div>
+      <div class="cell" style="left:700px;top:200px;width:66px;height:66px"></div>
+      <div class="cell" style="left:560px;top:480px;width:80px;height:80px"></div>
+      <div class="trk" style="left:240px;top:200px;width:230px;transform:rotate(28deg)"></div>
+      <div class="trk" style="left:590px;top:315px;width:150px;transform:rotate(-30deg)"></div>
+      <div class="scalebar"><i></i>20 µm</div>
+      <div class="play"><span class="pbtn">▶</span><span>t 18 / 60</span><span class="track"><span class="cache" style="width:80%"></span><span class="pos" style="left:30%"></span></span><span style="color:var(--border)">|</span><span>z 8 / 20</span></div>
+    </div>
+    <div class="vpanel">
+      <div style="display:flex;gap:6px;align-items:center"><span class="seg"><span>View</span><span>Select</span><span class="alpha on">Edit</span></span><span style="margin-left:auto" class="seg"><span class="on">2D</span><span>3D</span></span></div>
+      <div style="flex:1;border:1px dashed var(--hover);border-radius:10px;display:grid;place-items:center;text-align:center;color:var(--dim);padding:20px;font-size:12.5px"><div>Correction tools<br><span style="color:var(--faint)">new design — separate plan<br>(labels and tracks)</span></div></div>
+      <div class="sech closed" style="padding-top:9px">Layers <span class="c">channels · segmentation · tracks</span></div>
+    </div>
+  </div>
+  <div class="vfoot"><span>Edit mode · tracks default</span><span style="margin-left:auto">GPU 1.4 / 4 GB</span></div>
+</div>
+
+<!-- Share menu drawn on a strip -->
+<div class="cap">6 · Menus — viewer Share ▾ (capture and export in one place; today only hooks called from the main window), header Help ▾, profile menu</div>
+<div style="position:relative;width:1440px;height:330px;background:var(--bg)">
+  <div class="menu" style="top:14px;left:20px;position:absolute">
+    <div class="mh">This view</div>
+    <div class="mi">Draw and note… <span>to Blackboard</span></div>
+    <div class="mi">Add to the analysis board</div>
+    <div class="mi">Save image (PNG)</div>
+    <div class="mi">Send to Kiwi <span>AI</span></div>
+    <div class="sep"></div>
+    <div class="mh">Over time</div>
+    <div class="mi">Export a movie… <span>Movies page</span></div>
+  </div>
+    <div class="menu" style="top:14px;left:270px;position:absolute">
+    <div class="mh">Learn</div>
+    <div class="mi">Guides <span>walkthroughs</span></div>
+    <div class="mi">What the icons mean</div>
+    <div class="mi">What the colours mean</div>
+    <div class="mi">What's new + tips</div>
+    <div class="mi">Keyboard shortcuts <span>?</span></div>
+    <div class="sep"></div>
+    <div class="mh">Get help</div>
+    <div class="mi">Something wrong on this page… <span>● beta</span></div>
+    <div class="mi">Report a problem <span>GitHub ↗</span></div>
+    <div class="mi">Ask in the chat <span>Zulip ↗</span></div>
+    <div class="mi">Call for datasets</div>
+  </div>
+  <div class="menu" style="top:14px;left:520px;position:absolute">
+    <div class="mh">Profile · peanut</div>
+    <div class="mi">Switch profile…</div>
+    <div class="mi">Preferences</div>
+    <div class="sep"></div>
+    <div class="mi">Restart backend <span>dev</span></div>
+    <div class="mi">Log out</div>
+    <div class="mi" style="color:#f0a3a3">Quit Cecelia</div>
+  </div>
+<div class="sub" style="position:absolute;left:780px;top:20px;max-width:620px">Notes: "Send to Kiwi" and the paired-session toggle hide when AI is off. Export a movie opens Movies &amp; figures with this image, view and time range filled in, instead of a second movie form in the viewer.</div>
+</div>
+
+
+<div class="cap">Where every control from today's build goes</div>
+<div class="homes">
+  <h4>Main window · header and sidebar today → home in this mock</h4>
+  <div><b>Compass (guides), key (icons), palette (colours)</b> → Help ▾ · Learn</div>
+  <div><b>Megaphone, GitHub, Zulip</b> → Help ▾ · Get help</div>
+  <div><b>Logo → What's new</b> → Help ▾ · What's new (logo goes to Welcome)</div>
+  <div><b>Page maturity dot + "Something wrong?"</b> → dot beside the page in the sidebar; report in Help ▾</div>
+  <div><b>Profile chip "peanut"</b> → avatar menu</div>
+  <div><b>"dev" + version + Connected</b> → console row; connection shown only when it drops</div>
+  <div><b>Update badge</b> → stays in the header, only when there is one</div>
+  <div><b>Hamburger (hide menu)</b> → keeps its place left of the wordmark <i>(not drawn)</i></div>
+  <div><b>Sidebar launcher: Viewer</b> → viewer chip in the header (click = open / bring to front)</div>
+  <div><b>Sidebar launcher: Correction cockpit</b> → "Correct labels" on Segment/Track + viewer Edit mode</div>
+  <div><b>Sidebar launcher: Lab log</b> → 🔔 in the header (dot = unseen)</div>
+  <div><b>Sidebar launcher: Kiwi</b> → Ask Kiwi</div>
+  <div><b>Footer: Settings</b> → stays, bottom of the sidebar</div>
+  <div><b>Footer: Quit, Log out, Restart backend</b> → avatar menu</div>
+  <div><b>Project row + ⋯ (switch project, sidebar layout)</b> → header crumb ▾; layout in Settings</div>
+  <div><b>Set ID + copy</b> → set menu</div>
+  <div><b>CSV, Task ▾, Max</b> → ⋯ in the set row</div>
+  <div><b>Task list in the right panel</b> → "Last run" line + Tasks page</div>
+  <div><b>Floating Populations panel</b> → stays on the canvas; collapsed on pages with no populations yet</div>
+</div>
+
+<div class="homes" style="margin-top:10px">
+  <h4>Viewer window · today → home in this mock (nothing removed)</h4>
+  <div><b>Image name, version chip</b> → header crumb + provenance chip</div>
+  <div><b>Kiwi @ button</b> → Ask Kiwi (hidden with AI off, as today)</div>
+  <div><b>Shortcuts ?</b> → panel footer + Help ▾</div>
+  <div><b>2D/3D, Pan/Select</b> → top of the panel (mode switch View / Select / Edit)</div>
+  <div><b>Minimap, axes gizmo, reset view</b> → on the image (top right) + ⟳ in the panel</div>
+  <div><b>Advanced popover (renderer, cache, quality, projection, maps)</b> → ⚙ in the panel</div>
+  <div><b>Debug section</b> → ⚙ Advanced → Debug</div>
+  <div><b>Plane / depth / ± planes, Level, Play, Loop, scrub, cache strip, Fps</b> → playback bar on the image</div>
+  <div><b>Integrated-GPU warning, loading / bricks / error chips</b> → console row (errors that break the view stay on the image)</div>
+  <div><b>Channels: master row, channel cards (LUT, eye, auto, reset, histogram + contrast), AF preview A/B, "N of M"</b> → Channels section, unchanged</div>
+  <div><b>Segmentation, Populations, Tracks, ROIs, Annotations</b> → same sections, one open at a time, unchanged</div>
+  <div><b>Scale bar + timestamp, landscape, grid, solo stepper, ROI spotlight, crop bar, task preview box</b> → on the image, unchanged</div>
+  <div><b>Draw surface, capture view</b> → Share ▾ → Draw and note (today only startable from the main window)</div>
+  <div><b>Screenshot / capture hooks</b> → Share ▾ (Save image, Add to board, Send to Kiwi)</div>
+</div>
+
+<div class="cap">Colour roles (one job each; unchanged from Decision 15)</div>
+<div class="legend">
+  <div><h4>Go</h4><div class="row"><span class="sq" style="background:#FCC172"></span>saffron: Run, Open, Apply</div></div>
+  <div><h4>Act on this</h4><div class="row"><span class="sq" style="background:#D27A98"></span>plum-light: Next</div><div class="row"><span class="sq" style="background:#BF577B"></span>plum: checks frame + label</div></div>
+  <div><h4>Chrome</h4><div class="row"><span class="sq" style="background:#121212"></span>bg #121212</div><div class="row"><span class="sq" style="background:#1a1918"></span>panel #1a1918</div><div class="row"><span class="sq" style="background:#23211f"></span>raised #23211f</div></div>
+  <div><h4>Work + image</h4><div class="row"><span class="sq" style="background:#13161b"></span>plot card, cool</div><div class="row"><span class="sq" style="background:#050506"></span>image area, neutral</div><div class="row"><span class="sq" style="background:#8b949e"></span>plot marks grey</div></div>
+  <div><h4>Stage tint (heading + active bar)</h4><div class="row"><span class="sq" style="background:#CEA966"></span>Data <span class="sq" style="background:#E9A587"></span>Populations <span class="sq" style="background:#B98A93"></span>Explore <span class="sq" style="background:#F5EFD0"></span>Analysis</div></div>
+  <div><h4>Selection</h4><div class="row"><span class="sq" style="background:#ff8c1a"></span>orange: selected row, gate, picked cell, worklist item</div></div>
+  <div><h4>Identity</h4><div class="row"><span class="sq" style="background:#22c55e"></span>viewer green</div><div class="row"><span class="sq" style="background:#14b8a6"></span>Kiwi teal</div></div>
+  <div><h4>Status + maturity</h4><div class="row"><span class="sq" style="background:#0ca30c"></span>ok <span class="sq" style="background:#fab219"></span>flag <span class="sq" style="background:#d03b3b"></span>fail <span class="sq" style="background:#E69F00"></span>alpha dot</div></div>
+</div>
+<div class="sub" style="margin-top:8px">Viewer rule: channel LUTs, label and population colours belong to the data and are never reused by chrome. Chrome colour in the viewer is limited to the alpha line in Edit and the saffron Apply. Principle for both windows: simplify by moving and disclosing, never by cutting a function.</div>
+
+<script>
+for (const f of document.querySelectorAll('.frame')) {
+  const ns=[...f.querySelectorAll('.note')].filter(n=>n.textContent.trim())
+  if(!ns.length) continue
+  const box=document.createElement('div'); box.className='notes'
+  for (const n of ns){ const num=n.querySelector('.num'); const d=document.createElement('div'); d.innerHTML=n.innerHTML; box.appendChild(d); n.innerHTML=''; n.appendChild(num.cloneNode(true)) }
+  f.after(box)
+}
+</script></body></html>
