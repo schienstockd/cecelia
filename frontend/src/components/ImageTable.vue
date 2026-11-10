@@ -655,8 +655,9 @@ const unselectableUids = computed(() =>
         </span>
       </span>
       <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
-           exclusion reason (shown in the badge tooltip + CSV) -->
-      <span class="note-row" @click.stop>
+           exclusion reason (shown in the badge tooltip + CSV). Only rows WITH a note (or being edited)
+           show the line; "Add note" is in the ⋯ menu, so an empty table stays one line per image. -->
+      <span v-if="img.note || isEditing(img.uid, NOTE_KEY)" class="note-row" @click.stop>
         <input v-if="isEditing(img.uid, NOTE_KEY)" v-tooltip.bottom="'Enter to save, Esc to cancel'"
           class="attr-edit" v-model="editValue" :ref="focusEditInput"
           :placeholder="isExcluded(img) ? 'reason (optional)' : 'note (optional)'"
@@ -665,7 +666,7 @@ const unselectableUids = computed(() =>
           @blur="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))" />
         <span v-else class="note-text" @click="startEdit(img.uid, NOTE_KEY, img.note ?? '')"
           v-tooltip.right="'Click to edit the note'">
-          <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
+          <i class="pi pi-comment" /> {{ img.note }}
         </span>
       </span>
       </span>
@@ -769,6 +770,9 @@ const unselectableUids = computed(() =>
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => metaDialogUid = actionsImg!.uid)">
         <i class="pi pi-info-circle" /> Metadata
+      </button>
+      <button class="cc-actions-item" @click.stop="runAction(() => startEdit(actionsImg!.uid, NOTE_KEY, actionsImg!.note ?? ''))">
+        <i class="pi pi-comment" /> {{ actionsImg.note ? 'Edit note' : 'Add note' }}
       </button>
       <button class="cc-actions-item" @click.stop="runAction(() => copyUid(actionsImg!.uid))">
         <i class="pi pi-copy" /> Copy UID
