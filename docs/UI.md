@@ -1287,7 +1287,8 @@ nothing for anyone who already had the console open.
 One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six header icons, in two groups:
 **Learn** (Guides and the map, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
 the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
-`.cc-actions-menu`. The rest of the header: the viewer chip, the lab-log bell, **Ask Kiwi** and the avatar
+`.cc-actions-menu`. The rest of the header: the project crumb, the viewer chip, the **jump search** (`JumpSearch.vue`, Ctrl K:
+pages, task functions, images), the lab-log button, **Ask Kiwi** and the avatar
 menu (`components/ProfileMenu.vue`: switch profile, Preferences, Restart backend (dev), Log out, Quit).
 The version and the connection sit at the right end of the console bar; the connection shows only when
 it drops. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md`.

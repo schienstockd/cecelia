@@ -5,6 +5,7 @@ import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import ProjectCrumb from './ProjectCrumb.vue'
+import JumpSearch from './JumpSearch.vue'
 import HelpMenu from './HelpMenu.vue'
 import ProfileMenu from './ProfileMenu.vue'
 import { useObserverStore } from '../stores/observer'
@@ -85,6 +86,7 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
       {{ appCtl.busy ? 'Updating…' : 'Restart to update' }}
     </span>
 
+    <JumpSearch />
     <button type="button" class="bell cc-btn cc-btn-bare cc-btn-icon" data-guide="launcher.labLog"
             :class="{ 'cc-btn-on': settings.labLogPanelOpen }" aria-label="Lab log"
             v-tooltip.bottom="bellTip" @click="settings.labLogPanelOpen = !settings.labLogPanelOpen">
