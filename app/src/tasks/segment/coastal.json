@@ -92,7 +92,7 @@
           "type": "select",
           "field": "models",
           "default": "",
-          "tip": "Trained on the Optical Flow page",
+          "tip": "Trained on the Model training page",
           "options": [
             {
               "label": "None",

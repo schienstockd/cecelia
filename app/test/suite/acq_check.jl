@@ -83,9 +83,15 @@ end
     @test Cecelia.acq_bright_z_ramp(Dict("points" => [_acq_bz_pt(0, 12), _acq_bz_pt(35, 12)])) === nothing
     hv = Dict("points" => [Dict("zFromStartUm" => 0, "hv" => Dict("D1" => 550)), Dict("zFromStartUm" => 20, "hv" => Dict("D1" => 600))])
     @test Cecelia.acq_bright_z_ramp(hv) == "HV 550→600 over 20 µm"
-    # a detector range that holds few photons is the gain, not the light
-    g = Cecelia.acq_check(nothing, [Cecelia.acq_image_facts("a", "x", _acq_meta(objs = Dict(0 => (1.0, 3.0, 6.5))))])
-    @test "acq.gain_high" in _acq_codes(g)
+    # a detector range close above the brightest object voxels is the gain, not the light: within 2× a
+    # warning, within 4× a note, further off nothing
+    function head(p99)
+        r = Cecelia.acq_check(nothing, [Cecelia.acq_image_facts("a", "x", _acq_meta(objs = Dict(0 => (1.0, p99, 6.5))))])
+        hs = filter(f -> f["code"] == "acq.gain_high", r["findings"])
+        isempty(hs) ? nothing : only(hs)
+    end
+    @test head(4.0)["level"] == "warn" && head(2.5)["level"] == "info" && head(1.0) === nothing
+    @test head(4.0)["short"] == "Bright objects come within 1.6× of the detector range (~6 photons)"
     @test length(Cecelia.acq_open(r)) == count(f -> f["level"] == "warn", r["findings"])
 end
 
@@ -102,11 +108,11 @@ end
     a = _acq_meta(lasers = [(850, 15), (1200, 15)], brightz = false,
                   depth = Dict(0 => -20.0, 1 => -5.0, 2 => -10.0, 3 => -8.0),
                   objs = Dict(0 => (3.5, 39.0, nothing), 1 => (1.0, 5.0, nothing), 2 => (1.9, 12.0, nothing), 3 => (2.1, 24.0, nothing)),
-                  shared = Dict("1-2" => 0.69, "0-1" => 0.3, "2-3" => 0.48))
+                  shared = Dict("0-1" => 0.1, "0-2" => 0.12, "0-3" => 0.08, "1-2" => 0.69, "1-3" => 0.15, "2-3" => 0.3))
     b = _acq_meta(lasers = [(820, 8), (980, 15)], brightz = true,
                   depth = Dict(1 => 0.0, 2 => 2.0, 3 => 5.0),
                   objs = Dict(1 => (1.5, 15.0, nothing), 2 => (2.1, 16.0, nothing), 3 => (1.0, 6.0, nothing)),
-                  shared = Dict("1-2" => 0.57))
+                  shared = Dict("1-2" => 0.57, "1-3" => 0.1, "2-3" => 0.12))
     b2 = deepcopy(b); b2["acquisition"]["lasers"] = [Dict("wavelengthNm" => 820, "transmissionPct" => 10), Dict("wavelengthNm" => 980, "transmissionPct" => 10)]
     facts = [_acq_f("a1", a), _acq_f("a2", a), _acq_f("b1", b, _ACQ_TOM), _acq_f("b2", b2, _ACQ_TOM)]
     r = Cecelia.acq_check(plan, facts)
@@ -138,21 +144,31 @@ end
     # an object missing from a design: the comparison crosses designs, so a difference there is a warning
     cross = deepcopy(plan); delete!(cross["objects"][3]["channels"], "B")
     @test "acq.settings_by_design_cross" in _acq_codes(Cecelia.acq_check(cross, facts))
-    # OT-I is dimmest in all four (12 / 6 against 39 / 16)
+    # photons as shot-noise SNR (√ median p50): OT-I 1.45 → 1.2 and gBT 2.1 → 1.45 are a problem, P14
+    # 2.5 → 1.58 borderline — a note, not a verdict step
+    fp(w) = only(filter(f -> f["code"] == "acq.few_photons" && f["subs"]["what"] == w, r["findings"]))
+    @test fp("OT-I")["level"] == "warn" && fp("gBT")["level"] == "warn" && fp("P14")["level"] == "info"
+    @test fp("OT-I")["short"] == "OT-I carries ~1.4 photons per voxel (SNR 1.2)"
+    # balance: OT-I is short of photons where P14 is only borderline — detection differs by object
     bal = only(filter(f -> f["code"] == "acq.balance", r["findings"]))
-    @test bal["subs"]["what"] == "OT-I" && bal["subs"]["n"] == 4
-    # uGFP in the next channel: a reference in A (info), another object in B (warn)
-    @test any(f -> f["code"] == "acq.shares_reference" && f["subs"]["what"] == "OT-I ~ empty", r["findings"])
-    @test any(f -> f["code"] == "acq.shares_object" && f["subs"]["what"] == "P14 ~ gBT", r["findings"])
-    @test !any(f -> f["code"] == "acq.shares_object" && occursin("OT-I ~ gBT", f["subs"]["what"]), r["findings"])  # 0.48 < 0.5
-    # photon-starved: OT-I's median p50 is 1.9 / 1.9 / 1.0 / 1.0
-    @test any(f -> f["code"] == "acq.few_photons" && f["subs"]["what"] == "OT-I", r["findings"])
+    @test bal["level"] == "warn" && bal["subs"]["what"] == "OT-I" && bal["subs"]["variable"] == "P14"
+    # ...and with every compared object as starved as the next, the ratio is no finding
+    eq = deepcopy(plan); eq["compare"] = ["OT-I", "gBT"]
+    @test !any(f -> f["code"] == "acq.balance", Cecelia.acq_check(eq, facts)["findings"])
+    # shared structure against the movie's own baseline (median r over its plan pairs): in A the pairs
+    # sit at ~0.135, OT-I ~ empty (0.69) stands well out — a reference, so a note — and OT-I ~ gBT (0.3)
+    # stands a little out (a note); in B P14 ~ gBT (0.57 over 0.12) is a warning
+    sh(c, w) = only(filter(f -> f["code"] == c && f["subs"]["what"] == w, r["findings"]))
+    @test sh("acq.shares_reference", "OT-I ~ empty")["level"] == "info"
+    @test sh("acq.shares_object", "OT-I ~ gBT")["level"] == "info"
+    @test sh("acq.shares_object", "P14 ~ gBT")["level"] == "warn" && sh("acq.shares_object", "P14 ~ gBT")["subs"]["base"] == 0.12
+    @test !any(f -> f["code"] == "acq.shares_all" || f["code"] == "acq.shares_no_baseline", r["findings"])
     # a point object is counted, not read for its noise
     pts = deepcopy(plan); pts["objects"][2]["kind"] = "points"
     @test !any(f -> f["code"] == "acq.few_photons" && f["subs"]["what"] == "OT-I", Cecelia.acq_check(pts, facts)["findings"])
     # per-movie rows: design, ratio, the dimmest object, max r
     row = only(filter(x -> x["uid"] == "b1", r["rows"]))
-    @test row["design"] == "B" && row["dimmest"] == "OT-I" && isapprox(row["ratio"], 16 / 6) && row["sharedR"] == 0.57
+    @test row["design"] == "B" && row["dimmest"] == "OT-I" && isapprox(row["ratio"], 16 / 6) && row["sharedR"] == 0.57 && row["sharedBase"] == 0.12
     @test row["objects"]["P14"]["channel"] == 1
     # an index still resolves (a plan saved before names, or from the REPL)
     idx = deepcopy(plan); idx["objects"][1]["channels"] = Dict("A" => 0, "B" => 1)
@@ -166,9 +182,9 @@ end
     @test "acq.channel_missing" in _acq_codes(Cecelia.acq_check(far, facts); scope = "a1")
 
     # the verdict's rule part: one step per warning code, the objects listed, per stage
-    @test r["verdict"] == "Collect more light for OT-I, P14 and gBT; separate the P14 ~ gBT channels; brighten OT-I; use one laser setting per design."
+    @test r["verdict"] == "Collect more light for OT-I and gBT; separate the P14 ~ gBT channels; brighten OT-I; use one laser setting per design."
     fv = Cecelia.acq_verdict(Cecelia.acq_check(merge(plan, Dict{String,Any}("stage" => "final")), facts)["findings"], "final")[2]
-    @test startswith(fv, "Denoise OT-I, P14 and gBT; correct bleed-through between P14 ~ gBT; check detection per object") && !occursin("laser", fv)
+    @test startswith(fv, "Denoise OT-I and gBT; correct bleed-through between P14 ~ gBT; check detection per object") && !occursin("laser", fv)
     @test Cecelia.acq_verdict(Dict{String,Any}[], "final")[2] == "Analyse as planned." &&
           Cecelia.acq_verdict(Dict{String,Any}[], "test")[2] == "Ready to acquire as planned."
     @test Cecelia._acq_list(["A", "B", "C"]) == "A, B and C"
@@ -186,6 +202,28 @@ end
     # a movie's finding reads its set finding's analysis line
     @test first(filter(f -> f["code"] == "acq.shares_object_image", r["findings"]))["thisData"] ==
           Cecelia.qc_text("acq.shares_object.data").long
+end
+
+@testset "acq_check — against the set: baselines and movies out of line" begin
+    plan = Dict{String,Any}("designs" => [Dict("id" => "A", "key" => Cecelia.acq_design_key(_ACQ_CTDR))],
+                            "objects" => [Dict("name" => "X", "channels" => Dict("A" => 0)), Dict("name" => "Y", "channels" => Dict("A" => 2))],
+                            "references" => [Dict("name" => "e", "channels" => Dict("A" => 1))])
+    m(; p50 = 5.0, sh = 0.1, drift = 20.0) = _acq_meta(objs = Dict(0 => (p50, 30.0, nothing), 2 => (5.0, 30.0, nothing)),
+                                                       shared = Dict("0-1" => sh, "0-2" => sh, "1-2" => sh), drift = (0.3, drift))
+    # every pair high: the leak can't be told from shared tissue — one note, nothing stands out
+    hi = Cecelia.acq_check(plan, [_acq_f("a", m(sh = 0.6)), _acq_f("b", m(sh = 0.6))])
+    @test only(filter(f -> f["code"] == "acq.shares_all", hi["findings"]))["where"] == "a, b"
+    @test !any(f -> startswith(f["code"], "acq.shares_object"), hi["findings"])
+    # under three pairs there is no baseline — said so, not judged
+    two = deepcopy(plan); empty!(two["references"])
+    nb = Cecelia.acq_check(two, [_acq_f("a", m(sh = 0.9))])
+    @test "acq.shares_no_baseline" in _acq_codes(nb) && !("acq.shares_object" in _acq_codes(nb))
+    # a movie dimmer, or drifting further, than the set's others: a note on that movie
+    fs = [_acq_f("a", m()), _acq_f("b", m()), _acq_f("c", m()), _acq_f("d", m(p50 = 0.8, drift = 80.0))]
+    o = Cecelia.acq_check(plan, fs)
+    @test _acq_codes(o; scope = "d") == ["acq.dim_movie", "acq.drift_far"]
+    @test only(filter(f -> f["code"] == "acq.dim_movie", o["findings"]))["short"] == "X dimmer than in the set's other movies (~0.8 vs ~5.0 photons)"
+    @test isempty(_acq_codes(o; scope = "a"))
 end
 
 @testset "acq_check — every finding renders from the catalog" begin

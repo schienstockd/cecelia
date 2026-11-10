@@ -745,6 +745,34 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A set's recipe is one meta key, persisted, and clearable ──────────────────
+# GUI_CLARITY_PLAN Decision 13. Pinned: it lands on disk under meta, leaves the name and membership
+# alone, clears with nothing/"", and refuses something that is not an id shape.
+@testset "Set recipe" begin
+    proj = create_project!(name="srec-test-$(rand(1000:9999))")
+    s    = add_set!(proj; name="day 1")
+    a    = add_image!(s; name="a")
+
+    @test set_recipe!(proj, s.uid, "intravital-timelapse").meta["recipe"] == "intravital-timelapse"
+    reloaded = init_object(proj.uid, s.uid)
+    @test reloaded.meta["recipe"] == "intravital-timelapse"      # persisted
+    @test reloaded.name == "day 1"                               # one-field commit
+    @test reloaded.image_uids == [a.uid]
+
+    set_recipe!(proj, s, "few-marker-tissue")                    # set-object form
+    @test init_object(proj.uid, s.uid).meta["recipe"] == "few-marker-tissue"
+
+    set_recipe!(proj, s.uid, nothing)                            # clear
+    @test !haskey(init_object(proj.uid, s.uid).meta, "recipe")
+    @test !haskey(s.meta, "recipe")
+    set_recipe!(proj, s.uid, "few-marker-tissue"); set_recipe!(proj, s.uid, "  ")
+    @test !haskey(init_object(proj.uid, s.uid).meta, "recipe")   # blank clears too
+
+    @test_throws ErrorException set_recipe!(proj, s.uid, "Not An Id")
+    @test_throws ErrorException set_recipe!(proj, "nosuchset", "few-marker-tissue")
+    rm(proj.root; recursive=true)
+end
+
 # ── Sink-agnostic task execution (runner/execute.jl) ──────────────────────────
 # `execute_task` is the body `handle_task_run` used to inline. It is tested HERE, in the package, with
 # no server and no socket — which is the whole point: the API server and the detached runner drive the
