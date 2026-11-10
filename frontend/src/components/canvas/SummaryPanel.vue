@@ -29,6 +29,7 @@ import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
+import { statsNotice } from '../../plots/statsInfo'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
          filterSeriesToPopType, isPrecomputedSpec } from '../../plots/popTypes'
@@ -649,6 +650,9 @@ const overrideTip = computed(() =>
 // Stats options echo the name under the Test select, with the basis as its tooltip. One object, so a
 // host can't thread the name and forget the reason.
 const readout = computed<PlotReadout>(() => readoutOf(result.value?.comparisons, autoOverrides.value))
+// QC on the comparison drawn here (cells as replicates, too few images): it undermines the p-values on
+// the plot, so it shows on the plot, not only in the options popover (plots/statsInfo.ts).
+const statsNote = computed(() => statsNotice(readout.value.stats, !!vis.value?.statsEnabled))
 watch(readout, n => emit('readout', n), { immediate: true, deep: true })
 
 const byImage = computed(() => crossImage.value && (props.scope ?? 'per_image') === 'per_image')
@@ -1378,6 +1382,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       </div>
       <!-- Notices about THIS render, in the chrome so they can't be clipped by the plot area:
            a setting the renderer had to substitute, and series the chosen measure has no values for. -->
+      <PlotNotice v-if="statsNote" class="sp-foot-note" :text="statsNote.text" :tip="statsNote.tip" />
       <PlotNotice v-if="overrideText" class="sp-foot-note" :text="overrideText" :tip="overrideTip" />
       <PlotNotice v-else-if="facetNote" class="sp-foot-note" :text="facetNote.text" :tip="facetNote.tip" />
       <PlotNotice v-else-if="emptyNote" class="sp-foot-note" tone="muted" :text="emptyNote"

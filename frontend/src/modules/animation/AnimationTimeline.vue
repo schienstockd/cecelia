@@ -110,7 +110,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
 </script>
 
 <template>
-  <p v-if="!imageUid" class="cc-empty">Select an image to see its timeline.</p>
+  <p v-if="!imageUid" class="cc-empty-inline cc-empty-pane">Select an image above to see its timeline</p>
   <p v-else-if="!frames.length" class="cc-empty">No keyframes yet — set up the view in the viewer
     and <strong>Capture view</strong>.</p>
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
+  styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues, findRawSpacing,
   findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
   findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities, findDeepFillOverrides,
 } from './cssScenarios'
@@ -444,6 +444,29 @@ describe('raw sizes and radii', () => {
     const sources = Object.entries(RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
     const found = findRawValues(sources).map(r => `${r.path} | ${r.selector} | ${r.decl}`)
     expect(found.sort()).toEqual(ALLOWED.sort())
+  })
+})
+
+describe('raw spacing', () => {
+  it('flags px/rem padding, margin and gap, and lets tokens, zero and calc over tokens through', () => {
+    const src = (body: string) => [{ path: 'x.vue', text: `<style>.a { ${body} }</style>` }]
+    expect(findRawSpacing(src('padding: 0.5rem 1rem;'))).toHaveLength(1)
+    expect(findRawSpacing(src('gap: 8px;'))).toHaveLength(1)
+    expect(findRawSpacing(src('margin: -2px 0;'))).toHaveLength(1)
+    expect(findRawSpacing(src('padding: var(--cc-bar-pad); gap: var(--cc-space-sm);'))).toHaveLength(0)
+    expect(findRawSpacing(src('margin: 0; padding: 0 var(--cc-space-sm);'))).toHaveLength(0)
+    expect(findRawSpacing(src('margin: calc(-1 * var(--cc-space-3xs)) 0;'))).toHaveLength(0)
+  })
+
+  // The shared shells every page is built from. Their spacing is the default feel of the app, so it
+  // comes from the ladder only (GUI_CLARITY_PLAN Decision 11) — retuning a token retunes every page.
+  const SHELLS = ['components/SetBar.vue', 'components/ModuleLayout.vue', 'components/CollapsibleSection.vue',
+    'components/CollapsiblePanel.vue', 'components/FloatingPanel.vue', 'components/canvas/CanvasPanel.vue',
+    'components/ModulePage.vue']
+  it('the shared shells use the spacing ladder only', () => {
+    const sources = SHELLS.map(p => ({ path: p, text: RAW['/src/' + p] ?? '' }))
+    expect(sources.every(s => s.text.length > 0)).toBe(true)   // every shell resolved
+    expect(findRawSpacing(sources).map(r => `${r.path} | ${r.selector} | ${r.decl}`)).toEqual([])
   })
 })
 

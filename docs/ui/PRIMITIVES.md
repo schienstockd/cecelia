@@ -14,6 +14,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Need | Use | Never |
 |------|-----|-------|
 | Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
+| The Run of a panel (the one action that starts work) | `.cc-btn .cc-btn-primary .cc-btn-run` — TaskRunner Run, Chains Run, Animation Render, Batch movies Generate | a per-file `.run-btn` with its own colour, size or disabled look |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
 | Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) | a scoped `.on`/`.active` colour rule |
 | Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |
@@ -79,7 +80,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` (+ a `.cc-fs-*` step) | a scoped `color: var(--cc-text-dim); font-size: …` |
 | Small dim label beside a control | `.cc-muted` — same scenario, no separate utility | a per-file `.*-lbl`/`.*-label` |
 | Meta line carrying a WARNING or an ERROR | `.cc-muted-warn` / `.cc-muted-error` (+ a `.cc-fs-*` step) | `.cc-muted` plus a scoped `color:`, or an inline `style="color: var(--cc-sev-fail)"` |
-| Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty) | a new `.*-empty` class |
+| Empty / "nothing here yet" state | `.cc-empty` (+ `-inline` one-liner / `-overlay` over a plot / `-lg` rich page empty / `-inline -pane` a module page's plots area before an image is picked: "Select … above to …") | a new `.*-empty` class |
 | A row of items that must WRAP in a narrow container — toolbar, control bar, option row, chip list, legend | `.cc-row` (+ `-tight` dense chrome / `-loose` page bar); keep the row's own padding/border in its scoped rule | a scoped `display:flex; align-items:center; flex-wrap:wrap; gap:…` |
 | A label+input, slider+readout, or `X × Y` that must not split across lines | `.cc-row-group` inside a `.cc-row` | letting the row wrap between a label and its control |
 | An on/off toggle whose caption sits OUTSIDE it (a row label, an eyebrow) | `CcToggle` + `aria-label` — a tooltip is not a name, and the hidden `<input>` has no text of its own (enforced by `unnamedToggles`) | relying on the row's `v-tooltip`, which covers hover help but leaves the control unnamed |

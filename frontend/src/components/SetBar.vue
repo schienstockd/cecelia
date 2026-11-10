@@ -213,13 +213,13 @@ async function deleteSet() {
 .set-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1rem;
+  gap: var(--cc-space-sm);
+  padding: var(--cc-bar-pad);
   background: var(--cc-surface-1);
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
 }
-.set-selector { display: flex; align-items: center; gap: 0.5rem; }
+.set-selector { display: flex; align-items: center; gap: var(--cc-space-sm); }
 .set-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; }
 /* .set-uid-copy → cc-btn cc-btn-bare cc-btn-icon */
 .set-uid-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }

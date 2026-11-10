@@ -36,6 +36,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
+import { taskPageLabel } from '../utils/kiwiTurn'
 import { taskOutput, consumerField, consumerAccepts, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from '../utils/startDot'
@@ -978,15 +979,20 @@ function paletteTooltip(def: TaskDef): string {
 }
 
 const paletteCategories = computed(() => {
-  const byCategory: Record<string, TaskDef[]> = {}
+  // One heading per PAGE, named and ordered as the sidebar names and orders it (two categories can
+  // share a page: import + export both run on Manage images).
+  const byPage = new Map<string, { order: number; defs: TaskDef[] }>()
   for (const def of allTaskDefs.value) {
-    const cat = def.category || def.fun_name.split('.')[0]
-    ;(byCategory[cat] ??= []).push(def)
+    const { label, order } = taskPageLabel(def.category || def.fun_name.split('.')[0])
+    const entry = byPage.get(label) ?? { order, defs: [] }
+    entry.defs.push(def)
+    byPage.set(label, entry)
   }
   // same sub-headings as the module page's Function picker; one untitled section when headings
   // wouldn't help (fewer than two groups)
-  return Object.entries(byCategory).sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, defs]) => ({
+  return [...byPage.entries()]
+    .sort(([a, x], [b, y]) => x.order - y.order || a.localeCompare(b))
+    .map(([name, { defs }]) => ({
       name,
       sections: groupTaskDefs(defs)
         ?? [{ title: '', defs: [...defs].sort((x, y) => x.label.localeCompare(y.label)) }] as TaskGroup[],
@@ -1833,7 +1839,7 @@ onActivated(async () => {
           </div>
 
           <button
-            class="run-chain-btn"
+            class="run-chain-btn cc-btn cc-btn-primary cc-btn-run"
             data-guide="chain.run"
             :disabled="!activeChain || !runSelectedUids.length || chainRunning"
             @click="runChain"
@@ -2419,23 +2425,5 @@ onActivated(async () => {
 
 .run-img-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
 
-.run-chain-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  margin: 0 0.45rem 0.5rem;
-  width: calc(100% - 0.9rem);
-  padding: 0.35rem 0.5rem;
-  font-size: var(--cc-fs-sm);
-  font-weight: 600;
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid #10b981;
-  background: #0c1a0e;
-  color: #6ee7b7;
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-.run-chain-btn:hover:not(:disabled) { background: #10b981; color: #fff; }
-.run-chain-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.run-chain-btn { margin: 0 0.45rem 0.5rem; width: calc(100% - 0.9rem); }   /* + .cc-btn .cc-btn-primary .cc-btn-run */
 </style>

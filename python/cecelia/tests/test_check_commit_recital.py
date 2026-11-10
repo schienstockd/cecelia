@@ -770,6 +770,25 @@ class CommitMsgHookTest(unittest.TestCase):
         (row,) = [e["payload"] for e in read_events(self.log_path) if e["event"] == "result_review_test_edited"]
         self.assertEqual((row["slug"], row["file"]), ("result-0000aaaa", "python/cecelia/tests/test_r.py"))
 
+    def test_moving_a_repro_into_a_file_of_its_own_needs_no_tag(self):
+        # A repro committed inside a big test file holds the whole file; moving it into its own file,
+        # marker in the header, is the sanctioned way out. Left behind, or marker lower down: still held.
+        old, new = "app/test/suite/big.jl", "app/test/suite/rr_x.jl"
+        marker = "# RESULT-" "REVIEW: result-0000bbbb"
+        head = {old: f"a = 1\n@test f()   {marker}\n"}
+
+        def run(staged: dict[str, str]) -> int:
+            with mock.patch.object(self.hook, "_staged_changed_files", return_value=[old]), \
+                    mock.patch.object(self.hook, "_head_text", side_effect=lambda p: head.get(p, "")), \
+                    mock.patch.object(self.hook, "_staged_added_files", return_value=[p for p in staged if p != old]), \
+                    mock.patch.object(self.hook, "_staged_text", side_effect=lambda p: staged.get(p, "")):
+                return self.hook.main(["--commit-msg", self._msg_file("test: move the repro\n")])
+
+        self.assertEqual(run({old: "a = 1\n", new: f"{marker}\n@test f()\n"}), 0)
+        self.assertEqual(run({old: f"a = 2\n@test f()   {marker}\n", new: f"{marker}\n@test f()\n"}), 1)
+        self.assertEqual(run({old: "a = 1\n", new: "\n" * 8 + f"@test f()   {marker}\n"}), 1)
+        self.assertEqual(run({old: "a = 1\n"}), 1)
+
     def test_a_file_without_the_marker_is_not_held(self):
         with mock.patch.object(self.hook, "_staged_changed_files", return_value=["a.py"]), \
                 mock.patch.object(self.hook, "_head_text", return_value="def f(): ...\n"):
