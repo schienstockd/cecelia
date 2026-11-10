@@ -571,7 +571,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
     <template v-else>
       <div class="gp-bar">
         <label>segmentation
-          <select data-guide="gate.segmentation" v-model="pageVn" v-tooltip.bottom="'Which segmentation (labelProps) to gate on'"
+          <select data-guide="gate.segmentation" v-model="pageVn" v-tooltip.bottom="'Which segmentation to gate on'"
                   @change="load()">
             <option v-for="v in g.valueNames" :key="v" :value="v">{{ v }}</option>
           </select>
