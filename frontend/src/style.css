@@ -648,6 +648,11 @@ body {
 .cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 .cc-card-2 { background: var(--cc-surface-2); }
 
+/* An EXCLUDED image's row in a SelectionTable picker (`rowClass`): dimmed, not hidden — the image table and
+   the Chains run picker. The table already refuses the click via `disabledIds`. */
+.cc-row-excluded { opacity: 0.5; cursor: default; }
+.cc-row-excluded:hover { opacity: 0.8; }
+
 /* A PANEL SECTION — one block of a right-hand panel or pane (TaskRunner, Metadata, Animation, Batch
    movies, the Chains step config, Settings). Inside a panel, sections are separated by a full-width
    divider and never boxed: a card inside a bordered panel is the "box in a box" that made two right

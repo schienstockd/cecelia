@@ -24,6 +24,8 @@ import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import { clampParamsToSpec, savedValueFor } from '../tasks/paramValues'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
+import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import ChainFromHistoryModal from '../components/ChainFromHistoryModal.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -38,7 +40,8 @@ import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
 import { taskPageLabel } from '../utils/kiwiTurn'
 import { taskOutput, consumerField, consumerAccepts, type ConsumerField } from '../utils/taskOutput'
-import { isExcluded, includedUids } from '../utils/inclusion'
+import { isExcluded, includedUids, excludedReason } from '../utils/inclusion'
+import type { CciaImage } from '../stores/project'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
@@ -1275,15 +1278,6 @@ watch(
   { immediate: true },
 )
 
-const runAllSelected = computed(() =>
-  includedRunUids.value.length > 0 &&
-  includedRunUids.value.every(u => runSelectedUids.value.includes(u))
-)
-
-const runSomeSelected = computed(() =>
-  runSelectedUids.value.length > 0 && !runAllSelected.value
-)
-
 // Auto-select all INCLUDED images when set changes (excluded ones start unselected)
 watch(runSetUid, () => {
   runSelectedUids.value = includedRunUids.value
@@ -1294,17 +1288,11 @@ watch(() => project.sets, (sets) => {
   if (!runSetUid.value && sets.length) runSetUid.value = sets[0].uid
 }, { immediate: true })
 
-function toggleRunImage(uid: string) {
-  const img = runImages.value.find(i => i.uid === uid)
-  if (img && isExcluded(img)) return    // excluded images can't be run
-  runSelectedUids.value = runSelectedUids.value.includes(uid)
-    ? runSelectedUids.value.filter(u => u !== uid)
-    : [...runSelectedUids.value, uid]
-}
-
-function toggleRunAll() {
-  runSelectedUids.value = runAllSelected.value ? [] : includedRunUids.value
-}
+// The run picker is the shared SelectionTable (multi): excluded images are greyed and refuse the click,
+// and its select-all skips them — the same rules the hand-rolled list had, from the canonical table.
+const excludedRunUids = computed(() => runImages.value.filter(i => isExcluded(i)).map(i => i.uid))
+const RUN_COLUMNS: SelectionColumn[] = [{ key: 'name', label: 'Image', ellipsis: true }]
+const runRowTip = (img: CciaImage) => excludedReason(img) || 'Include in the run'
 
 const runChainTip = computed(() =>
   !activeChain.value        ? 'Select or create a chain first.' :
@@ -1608,6 +1596,9 @@ onActivated(async () => {
 
     <!-- ── Edit content: v-show so VueFlow instance survives tab switches ──── -->
     <div v-show="activeTab === 'edit'" class="edit-content">
+    <!-- ── Left: the chain and its steps (a CollapsiblePanel, mirrored) ─────────── -->
+    <CollapsiblePanel side="left" storage-key="cc-chain-palette-width" label="step palette"
+                      collapsed-key="chainPaletteCollapsed" :default-width="220" :min="180" :max="420">
     <aside class="wb-palette">
 
       <!-- Chain selector -->
@@ -1657,7 +1648,7 @@ onActivated(async () => {
             @confirm="removeChain" />
         </div>
         <!-- …and one for acting on THIS canvas. Two joined groups rather than seven free-floating
-             icons: the palette is 190px, so a flat row of gapped buttons ran out of width the moment a
+             icons: the palette is narrow, so a flat row of gapped buttons ran out of width the moment a
              seventh was added. Grouping also says which buttons belong together. -->
         <div class="chain-bar-actions cc-btn-group">
           <button
@@ -1743,7 +1734,7 @@ onActivated(async () => {
       <!-- Task palette -->
       <template v-else>
         <!-- Module functions (collapsible) — drag onto the canvas to add nodes -->
-        <CollapsibleSection label="Module functions" max-height="50vh" data-guide="chain.palette">
+        <CollapsibleSection label="Module functions" fill data-guide="chain.palette">
           <div class="palette-scroll">
             <div
               v-for="cat in paletteCategories"
@@ -1789,69 +1780,10 @@ onActivated(async () => {
           </div>
         </CollapsibleSection>
 
-        <!-- ── Run table ──────────────────────────────────────────────────── -->
-        <div class="run-table-section">
-          <div class="run-section-heading cc-eyebrow cc-fs-2xs">Run</div>
-
-          <select
-            v-if="project.sets.length"
-            class="chain-select run-set-select"
-            v-model="runSetUid"
-            v-tooltip.bottom="'Select which set to run the chain on'"
-          >
-            <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
-          </select>
-          <span v-else class="palette-hint cc-muted">No sets in project.</span>
-
-          <!-- Image list -->
-          <div v-if="runImages.length" class="run-image-list" data-guide="chain.runImages">
-            <!-- select-all row -->
-            <div
-              class="run-row run-row-all"
-              @click.stop="toggleRunAll"
-              v-tooltip.top="runAllSelected ? 'Deselect all' : 'Select all images'"
-            >
-              <span class="run-check-icon">
-                <i :class="[
-                  'pi',
-                  runAllSelected   ? 'pi-check-square' :
-                  runSomeSelected  ? 'pi-minus-circle' : 'pi-stop'
-                ]" />
-              </span>
-              <span class="run-all-label cc-muted">All ({{ includedRunUids.length }})</span>
-              <span class="run-sel-count" v-if="runSomeSelected">{{ runSelectedUids.length }}</span>
-            </div>
-
-            <!-- per-image rows (excluded images greyed + not selectable) -->
-            <div
-              v-for="img in runImages"
-              :key="img.uid"
-              class="run-row"
-              :class="{ active: runSelectedUids.includes(img.uid), excluded: isExcluded(img) }"
-              @click.stop="toggleRunImage(img.uid)"
-              v-tooltip.top="isExcluded(img) ? (img.note ? `Excluded: ${img.note}` : 'Excluded from processing') : img.uid"
-            >
-              <span class="run-check-icon">
-                <i :class="['pi', isExcluded(img) ? 'pi-ban' : runSelectedUids.includes(img.uid) ? 'pi-check-square' : 'pi-stop']" />
-              </span>
-              <span class="run-img-name cc-muted">{{ img.name }}</span>
-            </div>
-          </div>
-
-          <button
-            class="run-chain-btn cc-btn cc-btn-primary cc-btn-run"
-            data-guide="chain.run"
-            :disabled="!activeChain || !runSelectedUids.length || chainRunning"
-            @click="runChain"
-            v-tooltip.right="runChainTip"
-          >
-            <i :class="['pi', chainRunning ? 'pi-spin pi-spinner' : 'pi-play']" />
-            {{ chainRunning ? 'Starting…' : 'Run chain' }}
-          </button>
-        </div>
       </template>
 
     </aside>
+    </CollapsiblePanel>
 
     <!-- ── Center: canvas ───────────────────────────────────────────────────── -->
     <div
@@ -1873,40 +1805,55 @@ onActivated(async () => {
       >
         <Background pattern-color="#2a2742" :gap="20" />
 
-        <!-- Empty state -->
-        <template v-if="!activeChain && projectMeta.hasProject" #empty>
-          <div class="canvas-empty cc-empty">
-            <i class="pi pi-sitemap" />
-            <p>Select a chain or create one to start editing.</p>
-          </div>
-        </template>
       </VueFlow>
 
-      <div class="canvas-hints cc-muted cc-fs-2xs">
+      <!-- Empty state: the one next action (VueFlow has no #empty slot, so this sits over the canvas) -->
+      <div v-if="!activeChain && projectMeta.hasProject" class="canvas-empty cc-empty cc-empty-overlay">
+        <i class="pi pi-sitemap" />
+        <span>{{ chainNames.length ? 'Pick a chain on the left, or start a new one' : 'No chains yet' }}</span>
+        <div class="cc-row">
+          <button class="cc-btn cc-btn-primary" @click="openNameInput('create')"
+                  v-tooltip.bottom="'Name a new, empty chain'">
+            <i class="pi pi-plus" /> New chain
+          </button>
+          <button class="cc-btn cc-btn-ghost" :disabled="!projectMeta.current?.uid" @click="historyOpen = true"
+                  v-tooltip.bottom="'Build a chain from what already ran on some images'">
+            <i class="pi pi-history" /> From past runs
+          </button>
+        </div>
+      </div>
+
+      <div v-if="activeChain" class="canvas-hints cc-muted cc-fs-2xs">
         Drag to pan · Scroll to zoom · Double-click edge to remove
       </div>
     </div>
 
-    <!-- ── Right: node config ───────────────────────────────────────────────── -->
-    <aside class="wb-config" :class="{ open: !!selectedNode }">
+    <!-- ── Right: the shared right panel — node config on top, Run at the bottom, as on module pages ── -->
+    <CollapsiblePanel storage-key="cc-chain-side-width" label="chain panel" :default-width="280" :min="220" :max="560">
+    <aside class="wb-side">
+    <div class="wb-config">
       <template v-if="selectedNode">
 
-        <div class="config-header">
-          <div class="config-title cc-eyebrow">{{ selectedNode.type === 'start' ? 'Start node' : 'Node' }}</div>
+        <div class="cc-panel-section config-header">
+          <div class="cc-panel-heading">
+          <h3 class="cc-eyebrow cc-fs-2xs">{{ selectedNode.type === 'start' ? 'Start node' : 'Node' }}</h3>
+          <div class="cc-panel-heading-actions">
           <ConfirmDeleteButton
             title="Remove this node and its connections from the chain."
             armed-title="Click again to remove this node"
             @confirm="deleteSelectedNode" />
+          </div>
+          </div>
         </div>
 
-        <div v-if="selectedNode.type === 'start'" class="config-section">
+        <div v-if="selectedNode.type === 'start'" class="cc-panel-section config-section">
           <p class="no-params-hint cc-muted">Link this to the task(s) a run should begin from. Only tasks
           reachable from it will run — the rest stay in the editor as drafts.</p>
         </div>
 
         <template v-else>
         <!-- Identity -->
-        <div class="config-section">
+        <div class="cc-panel-section config-section">
           <label class="config-label cc-eyebrow">ID</label>
           <div class="config-value mono">{{ selectedNode.id }}</div>
           <label class="config-label cc-eyebrow" style="margin-top:0.5rem">Function</label>
@@ -1914,7 +1861,7 @@ onActivated(async () => {
         </div>
 
         <!-- Scope -->
-        <div class="config-section">
+        <div class="cc-panel-section config-section">
           <label class="config-label cc-eyebrow">Scope</label>
           <select
             class="config-select"
@@ -2001,8 +1948,8 @@ onActivated(async () => {
         </div>
 
         <!-- Params -->
-        <div class="config-section" v-if="selectedTaskDef && selectedTaskDef.params.length">
-          <div class="config-section-heading cc-eyebrow">Parameters</div>
+        <div class="cc-panel-section config-section" v-if="selectedTaskDef && selectedTaskDef.params.length">
+          <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
           <div class="config-params">
             <ParamRenderer
               v-for="p in selectedTaskDef.params"
@@ -2015,22 +1962,53 @@ onActivated(async () => {
           </div>
         </div>
 
-        <div class="config-section" v-else-if="selectedTaskDef && !selectedTaskDef.params.length">
+        <div class="cc-panel-section config-section" v-else-if="selectedTaskDef && !selectedTaskDef.params.length">
           <span class="no-params-hint cc-muted">No parameters for this function.</span>
         </div>
 
-        <div class="config-section" v-else>
+        <div class="cc-panel-section config-section" v-else>
           <span class="no-params-hint cc-muted">Function not found in task definitions.</span>
         </div>
         </template>
 
       </template>
 
-      <div v-else class="config-placeholder cc-empty">
-        <i class="pi pi-cog" style="font-size:1.4rem; opacity:0.3" />
-        <p>Click a node to configure it.</p>
+      <div v-else-if="activeChain" class="cc-empty-inline cc-empty-pane">Click a node to configure it.</div>
+    </div>
+
+    <!-- ── Run: set + images + the shared Run button ── -->
+    <section v-if="projectMeta.hasProject" class="cc-panel-section run-table-section">
+      <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Run</h3>
+          <select
+            v-if="project.sets.length"
+            class="chain-select run-set-select"
+            v-model="runSetUid"
+            v-tooltip.bottom="'Select which set to run the chain on'"
+          >
+            <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
+          </select>
+          <span v-else class="palette-hint cc-muted">No sets in project.</span>
+
+      <div v-if="runImages.length" class="run-image-list" data-guide="chain.runImages">
+        <SelectionTable selection-mode="multi" id-key="uid" density="compact" fit="fill"
+                        :columns="RUN_COLUMNS" :rows="runImages" v-model:selected="runSelectedUids"
+                        :disabled-ids="excludedRunUids" :row-tooltip="runRowTip"
+                        :row-class="img => ({ 'cc-row-excluded': isExcluded(img) })" />
       </div>
+
+          <button
+            class="cc-btn cc-btn-primary cc-btn-run"
+            data-guide="chain.run"
+            :disabled="!activeChain || !runSelectedUids.length || chainRunning"
+            @click="runChain"
+            v-tooltip.left="runChainTip"
+          >
+            <i :class="['pi', chainRunning ? 'pi-spin pi-spinner' : 'pi-play']" />
+            {{ chainRunning ? 'Starting…' : 'Run chain' }}
+          </button>
+    </section>
     </aside>
+    </CollapsiblePanel>
     </div><!-- end edit-content -->
 
   </div>
@@ -2134,11 +2112,11 @@ onActivated(async () => {
 }
 
 /* ── Palette ──────────────────────────────────────────────────────────────── */
+/* fills the left CollapsiblePanel, which owns the width (and the fold) */
 .wb-palette {
-  width: 190px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   background: var(--cc-surface-1);
-  border-right: 1px solid var(--cc-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2147,8 +2125,8 @@ onActivated(async () => {
 .chain-bar {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.45rem 0.55rem;
+  gap: var(--cc-space-xs);
+  padding: var(--cc-space-sm);
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
 }
@@ -2171,7 +2149,7 @@ onActivated(async () => {
 
 /* Two `.cc-btn-group` strips (chain-file actions | canvas actions), stacked by `.chain-bar`'s column.
    `.cc-btn-group` already supplies the joined border, zero gaps and `inline-flex`; all this adds is
-   hugging the content instead of stretching to the full 190px palette width. Seven gapped buttons on
+   hugging the content instead of stretching to the full palette width. Seven gapped buttons on
    one line had run out of room. */
 .chain-bar-actions {
   align-self: flex-start;
@@ -2203,10 +2181,6 @@ onActivated(async () => {
 .wb-btn { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .wb-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); border-color: var(--cc-accent); }
 .wb-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.wb-btn-save { color: var(--cc-accent); border-color: var(--cc-accent); }
-.wb-btn-save:hover:not(:disabled) { background: var(--cc-accent-fill); color: #fff; }
-.wb-btn-danger { color: #f87171; border-color: #f8717155; }
-.wb-btn-danger:hover:not(:disabled) { background: var(--cc-danger-fill); color: #fff; border-color: var(--cc-danger-fill); }
 
 .new-chain-form {
   display: flex;
@@ -2300,42 +2274,24 @@ onActivated(async () => {
   height: 100%;
 }
 
-.canvas-empty { font-style: italic; }
-.canvas-empty i { font-size: 2rem; opacity: 0.25; }
+.canvas-empty i { font-size: var(--cc-fs-lg); opacity: 0.4; }   /* + .cc-empty .cc-empty-overlay */
 
 .canvas-hints { position: absolute; bottom: 0.5rem; left: 50%; transform: translateX(-50%); opacity: 0.5; pointer-events: none; white-space: nowrap; }
 
-/* ── Config panel ─────────────────────────────────────────────────────────── */
-.wb-config {
-  width: 0;
-  overflow: hidden;
-  flex-shrink: 0;
+/* ── Right panel: node config + Run ─────────────────────────────────────────── */
+/* fills the right CollapsiblePanel, which owns the width — the same frame as TaskRunner */
+.wb-side {
+  flex: 1;
+  min-width: 0;
   background: var(--cc-surface-1);
   border-left: 1px solid var(--cc-border);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
-.wb-config.open {
-  width: 260px;
-  overflow-y: auto;
-}
-
-.config-placeholder { padding: 2rem 1rem; font-style: italic; }
-
-.config-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.6rem 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-}
-/* .config-title is purely the eyebrow scenario → .cc-eyebrow */
-
-.config-section {
-  padding: 0.65rem 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-}
+.wb-config { flex: 1; min-height: 0; overflow-y: auto; }
+/* .config-header / .config-section are .cc-panel-section (style.css) */
+.config-header > .cc-panel-heading { margin: 0; }
 .config-label { display: block; margin-bottom: 0.25rem; }   /* + .cc-eyebrow */
 .config-value {
   font-size: var(--cc-fs-sm);
@@ -2352,78 +2308,18 @@ onActivated(async () => {
 .config-select:focus, .config-input:focus { outline: 1px solid var(--cc-accent); border-color: var(--cc-accent); }
 .config-input::placeholder { color: var(--cc-text-dim); font-style: italic; }
 
-.config-section-heading { margin-bottom: 0.35rem; }   /* + .cc-eyebrow */
 .config-params { display: flex; flex-direction: column; }
 .no-params-hint { font-style: italic; }
 
-/* ── Run table ────────────────────────────────────────────────────────────── */
+/* ── Run ─────────────────────────────────────────────────────────────────────── */
+/* the last block of the panel, pinned under the scrolling config: divider above, not below */
 .run-table-section {
-  flex-shrink: 0;
   border-top: 1px solid var(--cc-border);
+  border-bottom: none;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  background: var(--cc-bg);
+  gap: var(--cc-space-sm);
 }
-
-.run-section-heading { padding: 0.45rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-fs-2xs */
-
-.run-set-select {
-  margin: 0 0.45rem 0.3rem;
-  width: calc(100% - 0.9rem);
-}
-
-.run-image-list {
-  max-height: 160px;
-  overflow-y: auto;
-  border-top: 1px solid var(--cc-border);
-  border-bottom: 1px solid var(--cc-border);
-  margin-bottom: 0.4rem;
-}
-
-.run-row {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.22rem 0.65rem;
-  cursor: pointer;
-  user-select: none;
-  transition: background 0.07s;
-}
-.run-row:hover { background: var(--cc-surface-2); }
-.run-row.active .run-img-name { color: var(--cc-text); }
-/* excluded from processing — greyed, not clickable */
-.run-row.excluded { opacity: 0.45; cursor: default; }
-.run-row.excluded:hover { opacity: 0.7; }
-.run-row.excluded .run-check-icon { color: #fca5a5; }
-
-.run-row-all {
-  background: var(--cc-surface-1);
-  border-bottom: 1px solid var(--cc-border);
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-.run-row-all:hover { background: var(--cc-surface-2); }
-
-.run-check-icon {
-  font-size: var(--cc-fs-xs);
-  color: var(--cc-accent);
-  flex-shrink: 0;
-  width: 14px;
-  text-align: center;
-}
-.run-row:not(.active) .run-check-icon { color: var(--cc-border); }
-.run-row-all .run-check-icon { color: var(--cc-accent); }
-
-.run-all-label { font-weight: 600; flex: 1; }
-.run-sel-count {
-  font-size: var(--cc-fs-2xs);
-  font-family: var(--cc-mono);
-  color: var(--cc-accent);
-}
-
-.run-img-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
-
-.run-chain-btn { margin: 0 0.45rem 0.5rem; width: calc(100% - 0.9rem); }   /* + .cc-btn .cc-btn-primary .cc-btn-run */
+.run-table-section > .cc-panel-heading { margin: 0; }
+.run-image-list { max-height: 30vh; overflow-y: auto; }
 </style>

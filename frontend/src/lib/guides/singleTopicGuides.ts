@@ -239,6 +239,12 @@ export const runChainGuide: GuideDef = {
       placement: 'right',
       title: 'Chains are named templates',
       text: 'Make one per pipeline you use — they are saved with the project.',
+      reveal: {
+        needed: c => c.anchorExists('chain.bar') && !c.anchorReachable('chain.bar'),
+        anchor: 'layout.leftPanelHandle',
+        text: 'The step palette is folded away — open it with this handle.',
+        placement: 'right',
+      },
     },
     {
       anchor: 'chain.palette',
@@ -246,6 +252,12 @@ export const runChainGuide: GuideDef = {
       placement: 'right',
       title: 'Drag in the steps',
       text: 'Every function from every module page is here — drag one onto the canvas.',
+      reveal: {
+        needed: c => c.anchorExists('chain.palette') && !c.anchorReachable('chain.palette'),
+        anchor: 'layout.leftPanelHandle',
+        text: 'The step palette is folded away — open it with this handle.',
+        placement: 'right',
+      },
       bullets: [
         'Connect nodes to set the order.',
         'A node only runs if it is reachable from the start node.',
@@ -254,7 +266,13 @@ export const runChainGuide: GuideDef = {
     {
       anchor: 'chain.runImages',
       route: '/chain',
-      placement: 'right',
+      placement: 'left',
+      reveal: {
+        needed: c => c.rightPanelCollapsed,
+        anchor: 'layout.rightPanelHandle',
+        text: 'The chain panel is folded away — open it with this handle.',
+        placement: 'left',
+      },
       title: 'Pick the images',
       text: 'Choose the set and tick the images to push through the chain.',
       bullets: ['Excluded images are greyed out and cannot be selected.'],
@@ -262,7 +280,13 @@ export const runChainGuide: GuideDef = {
     {
       anchor: 'chain.run',
       route: '/chain',
-      placement: 'right',
+      placement: 'left',
+      reveal: {
+        needed: c => c.rightPanelCollapsed,
+        anchor: 'layout.rightPanelHandle',
+        text: 'The chain panel is folded away — open it with this handle.',
+        placement: 'left',
+      },
       text: 'Run it — each image walks the whole graph, and the pools cap what runs at once.',
       clickAnchor: true,
     },

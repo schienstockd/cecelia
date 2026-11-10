@@ -355,6 +355,7 @@ describe('icon-only buttons', () => {
   // tautological, catching a new hand-rolled button only via the total count.
   const SEG_BUTTONS = [
     'components/CollapsiblePanel.vue | cc-panel-handle', // full-height side-panel collapse strip
+    'components/CollapsiblePanel.vue | cc-panel-handle', // …its side="left" twin (tooltip side is a modifier)
     'components/canvas/TabbedCanvas.vue | tab-add',     // full-height "+" cell in the tab strip
     'components/WhatNewCard.vue | wn-nav wn-nav-prev',  // full-height left-edge tip-nav overlay
     'components/WhatNewCard.vue | wn-nav wn-nav-next',  // full-height right-edge tip-nav overlay

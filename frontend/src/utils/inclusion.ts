@@ -61,6 +61,13 @@ export function isExcluded(img: Pick<Includable, 'included'>): boolean {
   return img.included === false
 }
 
+/** The tooltip on an excluded image: its note when it has one. One wording for the image table's badge
+ *  and the Chains run picker. */
+export function excludedReason(img: Pick<Includable, 'included'> & { note?: string | null }): string {
+  if (!isExcluded(img)) return ''
+  return img.note ? `Excluded: ${img.note}` : 'Excluded from processing'
+}
+
 /** Included (the default): not explicitly excluded. */
 export function isIncluded(img: Pick<Includable, 'included'>): boolean {
   return !isExcluded(img)
