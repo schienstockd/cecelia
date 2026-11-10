@@ -117,7 +117,7 @@ const open = computed({
 /* the row itself is .cc-section-toggle; what's left here is this component's own chrome — the
    panel-rail bar (a surface + generous padding) that the bare inline adopters deliberately omit */
 .cs-toggle {
-  padding: 0.35rem 1rem;
+  padding: var(--cc-section-pad);
   background: var(--cc-surface-1);
   font-size: var(--cc-fs-xs);
 }
@@ -138,6 +138,6 @@ const open = computed({
   background: var(--cc-bg);
   /* Breathing room so the first row's control (e.g. a CcToggle taller than its label) is not
      flush-clipped by the section's top edge. */
-  padding: 0.35rem 0;
+  padding: var(--cc-space-xs) 0;
 }
 </style>
