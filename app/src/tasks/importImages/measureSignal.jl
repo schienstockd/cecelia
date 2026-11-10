@@ -17,8 +17,8 @@ function _run_task(task::MeasureSignal, img::CciaImage, params::Dict{String,Any}
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     parse_measure_signal_params(params)
-    on_progress(0, 1)
-    wrote = ensure_saturation_meta!(img; drift = true, on_log = on_log)
+    wrote = ensure_saturation_meta!(img; drift = true, on_log = on_log, on_progress = on_progress,
+                                    on_process = on_process)
     # the result IS import QC (clipping, photon-limited, depth): bank it whether or not this run wrote,
     # so an image already current still shows its findings
     write_metadata_qc!(img)

@@ -66,11 +66,14 @@ last timepoint. Advisory: never throws.
 """
 function _probe_drift(zarr_path::AbstractString, run_dir::AbstractString,
                       channels::AbstractVector, skip_t::Union{Int,Nothing};
-                      on_log::Function = _ -> nothing)::Union{Some,Nothing}
+                      on_log::Function = _ -> nothing,
+                      on_progress::Function = (n, t) -> nothing,
+                      on_process::Function = _ -> nothing)::Union{Some,Nothing}
     result_file = joinpath(run_dir, "drift.$(string(rand(UInt32); base = 16)).result.json")
     ok = run_py("tasks/importImages/saturation_run.py",
                 (; imPath = zarr_path, resultPath = result_file,
-                   driftOnly = (; channels = channels, skipT = skip_t)), run_dir; on_log = on_log)
+                   driftOnly = (; channels = channels, skipT = skip_t)), run_dir;
+                on_log = on_log, on_progress = on_progress, on_process = on_process)
     (ok && isfile(result_file)) || return nothing
     try
         res = JSON3.read(read(result_file, String), Dict{String,Any})
@@ -123,7 +126,9 @@ nothing (non-integer store, unreadable) nothing is persisted, so the next call t
 failed write is logged, never thrown.
 """
 function ensure_saturation_meta!(img::CciaImage; drift::Bool = false,
-                                 on_log::Function = _ -> nothing)::Bool
+                                 on_log::Function = _ -> nothing,
+                                 on_progress::Function = (n, t) -> nothing,
+                                 on_process::Function = _ -> nothing)::Bool
     ccid = state_file(img)
     isfile(ccid) || return false
     meta = get(read_ccid_raw(ccid), "meta", Dict{String,Any}())
@@ -132,8 +137,11 @@ function ensure_saturation_meta!(img::CciaImage; drift::Bool = false,
     existing = get(meta, "saturation", nothing)
     zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
-    current && return _add_drift!(img, meta, zarr_path; on_log = on_log)
-    sat = _probe_saturation(zarr_path, task_run_dir(img._dir); drift = drift, on_log = on_log)
+    # progress + the process handle reach the runner: Measure on a movie runs ~20 min, and cancel needs it
+    current && return _add_drift!(img, meta, zarr_path; on_log = on_log, on_progress = on_progress,
+                                  on_process = on_process)
+    sat = _probe_saturation(zarr_path, task_run_dir(img._dir); drift = drift, on_log = on_log,
+                            on_progress = on_progress, on_process = on_process)
     isnothing(sat) && return false
     # An already-imported store is not trimmed (derived stores and labels depend on its T); the record
     # alone raises the QC warning.
@@ -167,12 +175,14 @@ end
 
 # The drift half of `ensure_saturation_meta!(img; drift = true)` on a probe that is otherwise current.
 function _add_drift!(img::CciaImage, meta::AbstractDict, zarr_path::AbstractString;
-                     on_log::Function = _ -> nothing)::Bool
+                     on_log::Function = _ -> nothing, on_progress::Function = (n, t) -> nothing,
+                     on_process::Function = _ -> nothing)::Bool
     pt = get(meta, "partialTimepoint", nothing)
     skip_t = pt isa AbstractDict ?
         kept_partial_timepoint(Dict{String,Any}("partialTimepoint" =>
                                                 Dict{String,Any}(String(k) => v for (k, v) in pt))) : nothing
-    d = _probe_drift(zarr_path, task_run_dir(img._dir), _saturation_channels(meta), skip_t; on_log = on_log)
+    d = _probe_drift(zarr_path, task_run_dir(img._dir), _saturation_channels(meta), skip_t;
+                     on_log = on_log, on_progress = on_progress, on_process = on_process)
     isnothing(d) && return false
     try
         commit_state!(img) do raw
