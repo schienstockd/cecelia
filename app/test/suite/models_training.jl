@@ -89,7 +89,7 @@ end
 
 # ── Coastal (optical-flow) model vault ───────────────────────────────────────
 # The same drop-in convention as cellpose, one directory over — but with no built-ins and no
-# bundled slot, because coastal ships no models: a user trains their own on the Optical Flow
+# bundled slot, because coastal ships no models: a user trains their own on the Model training
 # page. The manifest is the load-bearing part. Inference MUST use the metric set a model was
 # trained on, and coastal fails silently when it doesn't (a missing plane shifts every later
 # channel), so `CoastalUtils` configures itself from the sidecar rather than from task params.
@@ -554,7 +554,7 @@ end
     err = try
         Cecelia.coastal_models_for_python(no_model, raw); nothing
     catch e; e end
-    @test err isa ErrorException && occursin("Optical Flow page", err.msg)
+    @test err isa ErrorException && occursin("Model training page", err.msg)
 
     missing_model = Dict{String,Any}("models" => Dict{String,Any}(
         "0" => Dict{String,Any}("model" => "__absent__.pt", "cellChannels" => ["CH2"])))

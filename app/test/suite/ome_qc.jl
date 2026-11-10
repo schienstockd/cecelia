@@ -873,7 +873,10 @@ end
                      "column",
                      # Immunemap download (immunemap_fetch_qc_findings) — the file's and Immunemap's
                      # voxel size — see import.immunemap_spacing
-                     "file", "published"])
+                     "file", "published",
+                     # acquisition check (acq_check.jl) — `snr` shot-noise SNR, `base` the movie's
+                     # median shared-structure r, `typical` the set's median for a movie out of line
+                     "snr", "base", "typical"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]

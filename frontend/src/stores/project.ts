@@ -74,6 +74,7 @@ export interface CciaImage {
 export interface CciaSet {
   uid: string
   name: string
+  recipe?: string | null   // the processing recipe it follows (GUI_CLARITY_PLAN Decision 13); utils/setRecipe.ts
   images: CciaImage[]
 }
 
@@ -222,6 +223,12 @@ export const useProjectStore = defineStore('project', () => {
   function renameSet(uid: string, name: string) {
     const set = sets.value.find(s => s.uid === uid)
     if (set) set.name = name
+  }
+
+  // The recipe a set follows, after `POST /api/sets/recipe` succeeded (null clears it).
+  function setSetRecipe(uid: string, recipe: string | null) {
+    const set = sets.value.find(s => s.uid === uid)
+    if (set) set.recipe = recipe
   }
 
   function deleteSet(uid: string) {
@@ -424,7 +431,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, resyncImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, setSetRecipe, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, resyncImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

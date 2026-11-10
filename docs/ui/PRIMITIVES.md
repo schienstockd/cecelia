@@ -15,6 +15,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
 | The Run of a panel (the one action that starts work) | `.cc-btn .cc-btn-primary .cc-btn-run` — TaskRunner Run, Chains Run, Animation Render, Batch movies Generate | a per-file `.run-btn` with its own colour, size or disabled look |
+| The page's next step (navigates only) | `components/NextStep.vue` — the right panel's footer, or `inline` in the action bar of a page with no right panel (ModuleLayout mounts it); `.cc-btn-next` (plum, `--cc-next-fill`) is its button | a hand-written "go to X" link or button on a page |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
 | Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) | a scoped `.on`/`.active` colour rule |
 | Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |

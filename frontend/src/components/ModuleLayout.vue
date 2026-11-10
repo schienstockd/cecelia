@@ -64,6 +64,7 @@ import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
 import PanelLaunchers from './PanelLaunchers.vue'
+import NextStep from './NextStep.vue'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -318,6 +319,8 @@ const visibleUids = computed<string[]>(() =>
             </template>
           </span>
           <span class="no-set-hint cc-muted" v-else>{{ noSetHint }}</span>
+          <!-- a page with no right panel shows its next step here instead (GUI_CLARITY_PLAN D13) -->
+          <NextStep v-if="!$slots.right" inline />
 
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Cohort consistency: self-hides unless this module banks cohort metrics (cohortStages) -->
@@ -460,12 +463,16 @@ const visibleUids = computed<string[]>(() =>
       <CollapsiblePanel v-if="$slots.right" :storage-key="rightWidthKey" label="functions panel"
                         :min="rightMinWidth ?? 200" :max="rightMaxWidth ?? 680"
                         :default-width="rightDefaultWidth ?? 280">
-        <slot
-          name="right"
-          :set-uid="activeSet?.uid"
-          :selected-uids="selectedUids"
-          :selected-names="selectedNames"
-        />
+        <!-- the module's panel, then the set recipe's next step under it (GUI_CLARITY_PLAN D13/D16) -->
+        <div class="right-stack">
+          <slot
+            name="right"
+            :set-uid="activeSet?.uid"
+            :selected-uids="selectedUids"
+            :selected-names="selectedNames"
+          />
+          <NextStep />
+        </div>
       </CollapsiblePanel>
 
     </div>
@@ -479,6 +486,15 @@ const visibleUids = computed<string[]>(() =>
   height: 100%;
   overflow: hidden;
 }
+
+.right-stack {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.right-stack > :first-child { min-height: 0; }
 
 .module-body {
   flex: 1;

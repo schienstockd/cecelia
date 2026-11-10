@@ -1,0 +1,88 @@
+{
+ "_source": "GET /api/analysis/lineage on a copy of 4kS67f (fHqhyb: re-segmented then re-AF-corrected; Y7oL9h: as found). images[].{uid,stale,staleUnknown} only",
+ "images": [
+  {
+   "uid": "fHqhyb",
+   "name": "M1d-CD8-GFP-CD20-Tom",
+   "stale": [
+    {
+     "summary": "'B' (segment.cellposeMeasure at 2026-11-10T15:39:12) read 'afCorrected' v1, since replaced by cleanupImages.afCorrect at 2026-11-10T15:39:12",
+     "name": "B",
+     "run": {
+      "fun": "segment.cellposeMeasure",
+      "at": "2026-11-10T15:39:12",
+      "taskId": "stz1"
+     },
+     "ns": "labels",
+     "because": [
+      {
+       "replacedBy": {
+        "fun": "cleanupImages.afCorrect",
+        "at": "2026-11-10T15:39:12",
+        "taskId": "stz3"
+       },
+       "read": {
+        "name": "afCorrected",
+        "version": "v1"
+       }
+      }
+     ]
+    },
+    {
+     "summary": "'B' (tracking.bayesian_tracking at 2026-11-10T15:39:12) read 'B' v1 made by segment.cellposeMeasure at 2026-11-10T15:39:12, which read 'afCorrected' v1, since replaced by cleanupImages.afCorrect at 2026-11-10T15:39:12",
+     "name": "B",
+     "run": {
+      "fun": "tracking.bayesian_tracking",
+      "at": "2026-11-10T15:39:12",
+      "taskId": "stz2"
+     },
+     "ns": "labels",
+     "because": [
+      {
+       "madeBy": {
+        "fun": "segment.cellposeMeasure",
+        "at": "2026-11-10T15:39:12",
+        "taskId": "stz1"
+       },
+       "read": {
+        "name": "B",
+        "ns": "labels",
+        "version": "v1"
+       }
+      },
+      {
+       "replacedBy": {
+        "fun": "cleanupImages.afCorrect",
+        "at": "2026-11-10T15:39:12",
+        "taskId": "stz3"
+       },
+       "read": {
+        "name": "afCorrected",
+        "version": "v1"
+       }
+      }
+     ],
+     "into": true
+    }
+   ],
+   "staleUnknown": []
+  },
+  {
+   "uid": "Y7oL9h",
+   "name": "M4c-CD8-GFP-CD20-Tom_002 (cropped)",
+   "stale": [],
+   "staleUnknown": [
+    {
+     "name": "SHG",
+     "run": {
+      "fun": "segment.branching",
+      "at": "2026-07-28T15:49:24",
+      "taskId": ""
+     },
+     "ns": "labels",
+     "reason": "made by a run from before inputs were recorded"
+    }
+   ]
+  }
+ ]
+}
