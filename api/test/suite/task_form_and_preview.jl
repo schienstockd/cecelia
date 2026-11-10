@@ -67,7 +67,7 @@ end
     # FILES (it must serve a category's forms whether or not every fun_name resolves to a registered
     # Julia task), so it never had a task instance to dispatch on and resolved only the
     # `_inject_dynamic_options!` hook. When the three model pickers moved from that hook to a
-    # spec-declared `optionsFrom`, this route silently stopped filling them: the Optical Flow vault
+    # spec-declared `optionsFrom`, this route silently stopped filling them: the Model training vault
     # manager listed every trained model and the segmentation form offered nothing but "None", both
     # reading the same `list_coastal_models`. `validate_params` resolved it fine, which is why the suite
     # was green — hence a test at the ROUTE, on the one thing the user can actually click.

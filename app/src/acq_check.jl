@@ -5,17 +5,31 @@
 # `acq_image_facts` reads one image's meta, `acq_check(plan, facts)` gives the findings. The route and
 # the Blackboard entry live in api/src/routes/acq_check.jl.
 
-# ── Placeholder thresholds — read off two stand-in sets, to be set on more ─────────────────────────
-#: brightest ÷ dimmest plan object (p99 photons on its objects) that flags an imbalance
-const ACQ_BALANCE_RATIO = 2.0
-#: shared-structure r between an object's channel and another plan channel that flags it
-const ACQ_SHARED_R = 0.5
-#: median photons per voxel on an object's channel below which it is photon-starved
-const ACQ_FEW_PHOTONS = 3.0
-#: photons the detector range holds below which the gain is too high for the light collected
-const ACQ_CEILING_PHOTONS = 20.0
-#: relative difference in pixel size treated as a different setting
+# ── Bands, not cut-offs ─────────────────────────────────────────────────────────────────────────
+# Each value sorts into fine / borderline (an info note) / a problem (a warning — the verdict's steps).
+# Bands are set by shot noise or against the set itself, not read off one set by eye; the value is
+# always shown. docs/todo/ACQUISITION_TEST_CHECK_PLAN.md → "Thresholds: relative to the set, not fixed".
+#: shot-noise SNR per voxel — √(median photons on an object), the best a photon count allows (Poisson:
+#: the noise on N photons is √N) — below which an object is a problem / borderline
+const ACQ_SNR_BANDS = (problem = 1.5, borderline = 2.5)
+#: headroom — the detector range ÷ the objects' p99 photons — below which bright cells clip / may clip
+const ACQ_HEADROOM_BANDS = (problem = 2.0, borderline = 4.0)
+#: how far a channel pair's shared-structure r stands above its movie's baseline (the median r over
+#: the movie's plan channel pairs) to be a problem / borderline. Needs three pairs for a baseline.
+const ACQ_SHARED_EXCESS = (problem = 0.25, borderline = 0.1)
+#: a baseline this high: every channel shares structure, so a leak can't be told from shared tissue
+#: or excitation (one line exciting all channels) — a note asking for a control
+const ACQ_SHARED_BASELINE_HIGH = 0.4
+#: relative difference in pixel size treated as a different setting (float tolerance)
 const ACQ_REL_TOLERANCE = 0.01
+
+# a value against bands where low is bad (`b.problem < b.borderline`): :problem, :borderline or :fine
+_acq_band_low(v, b) = v < b.problem ? :problem : v < b.borderline ? :borderline : :fine
+# a value against bands where high is bad (`b.problem > b.borderline`)
+_acq_band_high(v, b) = v >= b.problem ? :problem : v >= b.borderline ? :borderline : :fine
+const _ACQ_BAND_LEVEL = Dict(:problem => "warn", :borderline => "info")
+_acq_snr(p50) = sqrt(max(p50, 0.0))
+_acq_r2(x) = round(x; digits = 2)
 
 # What each finding is about, for the reader and the model review (labels in qc/text.jl, `acq.cat.<id>`).
 # The review uses the same ones, plus `fading` (signal lost over the movie — no rule reads it yet) and `other`.
@@ -29,7 +43,8 @@ const ACQ_CATEGORY_OF = Dict(
     "acq.gain_high" => "photons", "acq.few_photons" => "photons", "acq.balance" => "balance",
     "acq.shares_object" => "shared", "acq.shares_object_image" => "shared",
     "acq.shares_reference" => "shared", "acq.shares_reference_image" => "shared",
-    "acq.drift_unreliable" => "drift", "acq.drift_ok" => "drift")
+    "acq.shares_all" => "shared", "acq.shares_no_baseline" => "shared", "acq.dim_movie" => "photons",
+    "acq.drift_unreliable" => "drift", "acq.drift_ok" => "drift", "acq.drift_far" => "drift")
 
 # a field of a String- or Symbol-keyed dict (meta read back through JSON3 can be either)
 _ag(d, k, default = nothing) = d isa AbstractDict ? something(get(d, k, nothing), get(d, Symbol(k), nothing), Some(default)) : default
@@ -379,9 +394,11 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
                      i === nothing ? "cells" : string(_ag(plan_objs[i], "kind", "cells")))
 
     rows = Dict{String,Any}[]
-    few = Dict{String,Vector{Float64}}(); ceil_hits = Dict{String,Any}[]
-    balance = Dict{String,Any}[]; shared_hits = Dict{String,Any}[]; ref_hits = Dict{String,Any}[]
-    drift_ok = Float64[]
+    few = Dict{String,Vector{Float64}}(); p50_by = Dict{Tuple{String,Any},Dict{String,Float64}}()
+    head_hits = Dict{String,Any}[]
+    shared_hits = Dict{String,Any}[]; ref_hits = Dict{String,Any}[]
+    high_base = Dict{String,Any}[]; no_base = String[]
+    drift_ok = Float64[]; drift_by = Dict{String,Float64}()
     for f in facts
         missing = Tuple{String,String}[]
         objs = obj_ch(f, missing); refs = ref_ch(f, missing)
@@ -401,34 +418,52 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
             ch === nothing && continue
             row["objects"][name] = Dict("channel" => c, "p50" => ch["p50Photons"], "p99" => ch["p99Photons"])
             ch["p99Photons"] === nothing || push!(p99, (name, ch["p99Photons"]))
-            ch["p50Photons"] === nothing || push!(get!(few, name, Float64[]), ch["p50Photons"])
+            if ch["p50Photons"] !== nothing
+                push!(get!(few, name, Float64[]), ch["p50Photons"])
+                get!(p50_by, (name, design[f["uid"]]), Dict{String,Float64}())[f["uid"]] = ch["p50Photons"]
+            end
         end
+        # headroom: the detector range against the brightest object voxels in the same channel
         for c in chs
-            cp = f["channels"][c]["ceilingPhotons"]
-            cp !== nothing && cp < ACQ_CEILING_PHOTONS && push!(ceil_hits, Dict("uid" => f["uid"], "channel" => c, "photons" => cp))
+            ch = f["channels"][c]; cp = ch["ceilingPhotons"]; hi = ch["p99Photons"]
+            (cp === nothing || hi === nothing || hi <= 0) && continue
+            band = _acq_band_low(cp / hi, ACQ_HEADROOM_BANDS)
+            band == :fine || push!(head_hits, Dict("uid" => f["uid"], "channel" => c, "photons" => cp,
+                                                   "headroom" => cp / hi, "band" => string(band)))
         end
+        # brightest ÷ dimmest object, for the row; whether it matters is read from their photons, below
         if length(p99) >= 2 && minimum(last.(p99)) > 0
-            lo = argmin(last.(p99)); ratio = maximum(last.(p99)) / p99[lo][2]
-            row["ratio"] = ratio; row["dimmest"] = p99[lo][1]
-            ratio >= ACQ_BALANCE_RATIO && push!(balance, Dict("uid" => f["uid"], "ratio" => ratio, "dimmest" => p99[lo][1]))
+            lo = argmin(last.(p99))
+            row["ratio"] = maximum(last.(p99)) / p99[lo][2]; row["dimmest"] = p99[lo][1]
         else
             row["ratio"] = nothing; row["dimmest"] = nothing
         end
-        # an object's channel showing in another plan channel: another object's (identity at risk) or a
-        # reference's (autofluorescence / leak to correct for)
-        rmax = nothing
+        # shared structure: an object's channel against another object's (identity at risk) or a
+        # reference's (autofluorescence / leak to correct for), read against the movie's own baseline —
+        # the median r over its plan channel pairs, what tissue and excitation make every pair share
+        pairs = Tuple{String,String,Float64,Bool}[]
         for (i, (a, ca)) in enumerate(objs), (b, cb) in vcat(objs[i+1:end], refs)
             r = get(f["shared"], "$(min(ca, cb))-$(max(ca, cb))", nothing)
-            r === nothing && continue
-            rmax = rmax === nothing ? r : max(rmax, r)
-            r >= ACQ_SHARED_R || continue
-            is_ref = any(x -> x[1] == b, refs)
-            hit = Dict("uid" => f["uid"], "a" => a, "b" => b, "r" => r)
-            push!(is_ref ? ref_hits : shared_hits, hit)
-            add!(is_ref ? "info" : "warn", is_ref ? "acq.shares_reference_image" : "acq.shares_object_image", f["uid"];
-                 what = "$a ~ $b", value = round(r; digits = 2), data = is_ref ? "acq.shares_reference.data" : "acq.shares_object.data")
+            r === nothing || push!(pairs, (a, b, r, any(x -> x[1] == b, refs)))
         end
-        row["sharedR"] = rmax
+        row["sharedR"] = isempty(pairs) ? nothing : maximum(p[3] for p in pairs)
+        base = length(pairs) >= 3 ? median([p[3] for p in pairs]) : nothing
+        row["sharedBase"] = base
+        if base === nothing
+            isempty(pairs) || push!(no_base, f["uid"])
+        else
+            base >= ACQ_SHARED_BASELINE_HIGH && push!(high_base, Dict("uid" => f["uid"], "base" => base))
+            for (a, b, r, is_ref) in pairs
+                band = _acq_band_high(r - base, ACQ_SHARED_EXCESS)
+                # a reference is there to show what leaks or glows: only a pair that stands well out
+                (band == :fine || (is_ref && band != :problem)) && continue
+                push!(is_ref ? ref_hits : shared_hits, Dict("uid" => f["uid"], "a" => a, "b" => b, "r" => r,
+                                                            "base" => base, "band" => string(band)))
+                add!(is_ref ? "info" : _ACQ_BAND_LEVEL[band], is_ref ? "acq.shares_reference_image" : "acq.shares_object_image", f["uid"];
+                     what = "$a ~ $b", value = _acq_r2(r), base = _acq_r2(base),
+                     data = is_ref ? "acq.shares_reference.data" : "acq.shares_object.data")
+            end
+        end
         dr = f["drift"]
         row["driftUm"] = dr === nothing ? nothing : dr["maxDriftUm"]
         if dr !== nothing && dr["residualRmsPx"] !== nothing
@@ -439,6 +474,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
                 row["registers"] = true
                 dr["maxDriftUm"] === nothing || push!(drift_ok, dr["maxDriftUm"])
             end
+            dr["maxDriftUm"] === nothing || (drift_by[f["uid"]] = dr["maxDriftUm"])
         else
             row["registers"] = nothing
         end
@@ -462,29 +498,61 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     noramp = filter(f -> f["brightZ"] === false && f["brightZRamp"] === nothing, facts)
     isempty(noramp) || add!("info", "acq.brightz_off", "set"; n = length(noramp), s = length(noramp) == 1 ? "" : "s",
                             where = k -> join((f[k] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
-    isempty(ceil_hits) || add!("warn", "acq.gain_high", "set"; n = round(Int, minimum(h["photons"] for h in ceil_hits)),
-                                detail = Dict("images" => ceil_hits))
+    if !isempty(head_hits)
+        worst = argmin(h -> h["headroom"], head_hits)
+        add!(any(h -> h["band"] == "problem", head_hits) ? "warn" : "info", "acq.gain_high", "set";
+             n = round(Int, worst["photons"]), value = round(worst["headroom"]; digits = 1), detail = Dict("images" => head_hits))
+    end
+    # photons: the shot-noise SNR of each object's median voxel, across the set
+    snr = Dict{String,Float64}()
     for (name, xs) in sort!(collect(few); by = first)
-        med = sort(xs)[cld(length(xs), 2)]
         kind_of(name) == "points" && continue          # a point object is counted, not read for its noise
-        med < ACQ_FEW_PHOTONS && add!("warn", "acq.few_photons", "set"; what = name, value = round(med; digits = 1),
-                                       data = "acq.few_photons.data", detail = Dict("medianP50Photons" => med, "n" => length(xs)))
+        med = median(xs); snr[name] = _acq_snr(med)
+        band = _acq_band_low(snr[name], ACQ_SNR_BANDS)
+        band == :fine || add!(_ACQ_BAND_LEVEL[band], "acq.few_photons", "set"; what = name, value = round(med; digits = 1),
+                              snr = round(snr[name]; digits = 2), data = "acq.few_photons.data",
+                              detail = Dict("medianP50Photons" => med, "snr" => snr[name], "n" => length(xs)))
     end
-    if !isempty(balance)
-        dims = [b["dimmest"] for b in balance]
-        top = argmax(n -> count(==(n), dims), unique(dims))
-        add!("warn", "acq.balance", "set"; what = top, n = count(==(top), dims), count = length(probed),
-             value = round(maximum(b["ratio"] for b in balance); digits = 1), data = "acq.balance.data",
-             detail = Dict("images" => balance))
+    # balance: compared objects that differ in whether they have photons enough — the dimmer one is then
+    # detected less well. A brightness ratio between objects that all have enough (or all too few) isn't one.
+    cmp_snr = [(n, snr[n]) for n in cmp_names if haskey(snr, n)]
+    if length(cmp_snr) >= 2
+        rank(s) = (b = _acq_band_low(s, ACQ_SNR_BANDS); b == :problem ? 2 : b == :borderline ? 1 : 0)
+        dim = argmin(last, cmp_snr); bright = argmax(last, cmp_snr)
+        rank(dim[2]) > rank(bright[2]) &&
+            add!(rank(dim[2]) == 2 ? "warn" : "info", "acq.balance", "set"; what = dim[1], variable = bright[1],
+                 value = round(dim[2]; digits = 2), snr = round(bright[2]; digits = 2), data = "acq.balance.data",
+                 detail = Dict("snr" => Dict(cmp_snr)))
     end
-    for (hits, code, data) in ((shared_hits, "acq.shares_object", "acq.shares_object.data"),
-                               (ref_hits, "acq.shares_reference", "acq.shares_reference.data"))
-        isempty(hits) && continue
+    by_uid = Dict(f["uid"] => f for f in facts)
+    for (hits, code) in ((shared_hits, "acq.shares_object"), (ref_hits, "acq.shares_reference"))
         for pair in unique((h["a"], h["b"]) for h in hits)
             hs = filter(h -> (h["a"], h["b"]) == pair, hits)
-            add!(code == "acq.shares_object" ? "warn" : "info", code, "set"; what = "$(pair[1]) ~ $(pair[2])",
-                 n = length(hs), s = length(hs) == 1 ? "" : "s", value = round(maximum(h["r"] for h in hs); digits = 2), data = data,
-                 detail = Dict("images" => hs))
+            lvl = code == "acq.shares_object" && any(h -> h["band"] == "problem", hs) ? "warn" : "info"
+            add!(lvl, code, "set"; what = "$(pair[1]) ~ $(pair[2])", n = length(hs), s = length(hs) == 1 ? "" : "s",
+                 value = _acq_r2(maximum(h["r"] for h in hs)), base = _acq_r2(median([h["base"] for h in hs])),
+                 data = code * ".data", detail = Dict("images" => hs))
+        end
+    end
+    isempty(high_base) || add!("info", "acq.shares_all", "set"; n = length(high_base), s = length(high_base) == 1 ? "" : "s",
+                               value = _acq_r2(median([h["base"] for h in high_base])),
+                               where = k -> join((by_uid[h["uid"]][k] for h in high_base), ", "),
+                               detail = Dict("images" => high_base))
+    isempty(no_base) || add!("info", "acq.shares_no_baseline", "set"; n = length(no_base), s = length(no_base) == 1 ? "" : "s",
+                             detail = Dict("imageUids" => no_base))
+    # a movie out of line with the set's others (`_cohort_outliers`, robust z): an object dimmer than in
+    # the other movies of its design (another design is another dye), more drift than the set's
+    for ((name, _), vals) in sort!(collect(p50_by); by = x -> string(x[1]))
+        kind_of(name) == "points" && continue
+        o = _cohort_outliers(vals)
+        for (uid, x) in sort!(collect(o.outliers); by = first)
+            x["value"] < o.median && add!("info", "acq.dim_movie", uid; what = name, value = round(x["value"]; digits = 1),
+                                          typical = round(o.median; digits = 1))
+        end
+    end
+    let o = _cohort_outliers(drift_by)
+        for (uid, x) in sort!(collect(o.outliers); by = first)
+            x["value"] > o.median && add!("info", "acq.drift_far", uid; value = round(Int, x["value"]), typical = round(Int, o.median))
         end
     end
     isempty(drift_ok) || add!("ok", "acq.drift_ok", "set"; n = length(drift_ok), value = round(Int, maximum(drift_ok)))

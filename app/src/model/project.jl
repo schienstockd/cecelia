@@ -225,6 +225,41 @@ rename_set!(proj::CciaProject, s::CciaSet, name::AbstractString; force::Bool = f
     rename_set!(proj, s.uid, String(name); force = force)
 
 """
+    set_recipe!(proj, set_uid, recipe) -> CciaSet
+
+Record which processing recipe a set follows (`docs/todo/GUI_CLARITY_PLAN.md`, Decision 13), or clear
+it with `nothing` / `""`. Stored as `meta["recipe"]` on the set.
+
+The id names a recipe in the frontend catalogue (`frontend/src/lib/guides/recipes.ts`); the backend
+does not know that list, so it only checks the SHAPE of an id (lowercase, digits and dashes) and the
+frontend ignores an id it doesn't recognise. The recipe lights pages and picks the next step; it never
+hides a page or runs anything (Decision 16), so a stale id costs a missing hint, not a wrong result.
+
+One-field `commit_state!`, for the same reason as `rename_set!`.
+"""
+function set_recipe!(proj::CciaProject, set_uid::String,
+                     recipe::Union{Nothing,AbstractString})::CciaSet
+    idx = findfirst(s -> s.uid == set_uid, proj._sets)
+    isnothing(idx) && error("Set not found: $set_uid")
+    id = isnothing(recipe) ? "" : strip(String(recipe))
+    (isempty(id) || occursin(r"^[a-z0-9][a-z0-9-]{0,63}$", id)) ||
+        error("Not a recipe id: \"$id\" (lowercase letters, digits and dashes)")
+    s = proj._sets[idx]
+    commit_state!(s) do raw
+        # Nested values come back from `read_ccid_raw` as a read-only JSON3.Object with Symbol keys,
+        # so rebuild `meta` as a String-keyed Dict before editing it.
+        m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+        isempty(id) ? delete!(m, "recipe") : (m["recipe"] = id)
+        raw["meta"] = m
+    end
+    isempty(id) ? delete!(s.meta, "recipe") : (s.meta["recipe"] = id)
+    s
+end
+
+set_recipe!(proj::CciaProject, s::CciaSet, recipe::Union{Nothing,AbstractString})::CciaSet =
+    set_recipe!(proj, s.uid, recipe)
+
+"""
 Delete a set from the project: removes every member image's data + metadata dirs,
 the set's own metadata dir, drops it from the project manifest, and persists the project.
 The dirs go through `discard!` — gone at once, rm in the background — so the manifest is

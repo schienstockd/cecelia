@@ -2568,9 +2568,16 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   "All pages"** — a badge for the default state is noise forever. It is its own row below `.proj-info`,
   never a second line inside it: that row centres the folder icon and the ⋯ button against the name, so
   growing it moves all three.
-- **`/` is a neutral welcome page** (`modules/WelcomeModule.vue`, a greyed brand watermark), NOT a
-  redirect. A `redirect` on the `/` record resolves before any guard — i.e. before the profile list has
-  arrived — so a profile-derived landing page bounced on a cold boot. No page is "the start".
+- **`/` is the welcome page** (`modules/WelcomeModule.vue`), NOT a redirect. A `redirect` on the `/`
+  record resolves before any guard — i.e. before the profile list has arrived — so a profile-derived
+  landing page bounced on a cold boot. No page is privileged as "the start": with no project open it
+  lists recent projects; with one open it shows the active set's recipe (picked there, stored per set)
+  and one Start button to that recipe's first page (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
+- **A set's recipe lights the sidebar and names each page's next step.** `utils/setRecipe.ts`
+  (`resolveSetRecipe`, `suggestRecipe`, `nextStepFor`, `litRoutes`), saved through
+  `composables/useSetRecipe.ts` (`POST /api/sets/recipe`). Pages on a confirmed recipe stay bright and
+  the rest dim (still clickable); a suggestion from the axes restyles nothing until it is picked.
+  The picker sits in the set bar (`SetRecipePicker.vue`); the Next button is `NextStep.vue`.
 - A guide whose steps visit hidden pages gets one **derived prereq** in the picker
   (`stores/guide.ts` → `profilePrereq`) — an amber "needs pages your view profile hides (…)" line,
   counted in "N missing", with **Start still working**. Derived from the guide's own `steps`, so a new

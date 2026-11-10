@@ -222,7 +222,7 @@ end
 #
 # Two differences from cellpose, both consequences of coastal having no built-in models:
 #   * there is nothing bundled and nothing built in, so an empty vault means an empty picker — the
-#     user must train a model on the Optical Flow page first;
+#     user must train a model on the Model training page first;
 #   * a model is a PAIR: `<name>.pt` plus a `<name>.json` manifest recording the metric set,
 #     temporal scales, cumulative window, source image and channel. Inference must use the metric
 #     set the model was trained on, and coastal fails SILENTLY when it does not (channels shift and
@@ -266,7 +266,7 @@ Every coastal model in `<config_dir>/models/coastalModels/`, as `(name, label, s
 Only `.pt` files count — the `.json` manifests sit beside them and are not separate entries.
 
 This is the enumeration `/api/tasks/definitions` uses to replace the (empty) static options list in
-`coastal.json`'s Model select, and the same list the Optical Flow page's vault manager renders.
+`coastal.json`'s Model select, and the same list the Model training page's vault manager renders.
 """
 function list_coastal_models(dev_dir::Union{String,Nothing} = nothing)::Vector{NamedTuple}
     out = NamedTuple[]
