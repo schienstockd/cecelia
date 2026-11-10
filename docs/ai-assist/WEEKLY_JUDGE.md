@@ -250,7 +250,10 @@ test whether an agent can actually use the framework.
    `gh` is allowlisted to the issue subcommands this needs. At most 20 creates a pass, one a
    second; the rest wait. GitHub's own 5xx (a `502 Bad Gateway`) is retried twice, 10 s apart: reads and
    repeatable writes as they are, a create only after the list shows it didn't land anyway. A mirror
-   that still fails says so on `run.issues` and leaves the pass standing.
+   that still fails says so on `run.issues` and leaves the pass standing. The publish step's own
+   `gh pr list` / `create` / `close` calls get the same retry. Only the newest pass record is
+   mirrored: `--date` older than a stored record writes it but leaves the issues alone, as
+   `judge-issues --apply` does.
    Design: [`docs/todo/JUDGE_WORKFLOW_PLAN.md`](../todo/JUDGE_WORKFLOW_PLAN.md) D7–D11, D14.
 9. **Chart** (`chart.py`, best-effort, last). The README's chart is rendered from the log and the
    store and pushed to the `judge-assets` branch; *The chart* below. Its own timer
