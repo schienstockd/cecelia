@@ -256,6 +256,21 @@ twice). The cut is soft: the value is always shown, and three bands decide its p
 (an info note), a problem (enters the verdict) — set relative to the set wherever the check allows.
 More sets with the maintainer's verdict then confirm the bands; they don't have to find the numbers.
 
+**Built (2026-11-10, branch `feat/acq-relative-bands`).** `ACQ_SNR_BANDS` (problem < 1.5, borderline
+< 2.5), `ACQ_HEADROOM_BANDS` (< 2×, < 4×), `ACQ_SHARED_EXCESS` (0.25, 0.1 above the movie's median
+pair; needs three pairs, else `acq.shares_no_baseline`), `ACQ_SHARED_BASELINE_HIGH` 0.4
+(`acq.shares_all`). Balance fires only when the dimmest compared object sits in a worse SNR band than
+the brightest. New per-movie notes: `acq.dim_movie` (an object dimmer than in its design's other
+movies) and `acq.drift_far`. The table's *Shared r* shows the highest pair · the movie's baseline.
+On real data:
+- **m5uLPh** (B cells, beads as points, collagen as reference): warnings for headroom (bright
+  objects within 1.3× of a ~5-photon range) and B cells at SNR 1.0, the maintainer's noise + low
+  range; every channel shares structure in 12 movies (r ~0.48), a note asking for a control rather
+  than a guessed leak.
+- **lfGUDg** (his final-data plan): every object at SNR 1.3–1.5 (warn), headroom 2.7× (note);
+  OTI ~ gBT (uGFP next to CTV) stands out of its movie's baseline in 11 of 16 movies (warn in 6),
+  the one bleed-through step in the verdict.
+
 ## Resume when
 
 The measures exist; what is left is the slice, which needs the maintainer first:

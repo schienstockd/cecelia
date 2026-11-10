@@ -100,6 +100,8 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-accent') },
       { token: '--cc-accent-strong', means: 'Engaged variant — border on a pressed control',
         swatch: varSwatch('--cc-accent-strong') },
+      { token: '--cc-next-fill',     means: 'Plum — the page\'s Next button (the set recipe\'s next step)',
+        swatch: varSwatch('--cc-next-fill') },
       { token: '--cc-accent-fill',   means: 'Filled control with white text — primary button, picked chip',
         swatch: varSwatch('--cc-accent-fill') },
       { token: '--cc-accent-soft',   means: 'Text on an accent-tinted surface',
