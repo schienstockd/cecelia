@@ -1,6 +1,6 @@
 # Journey workflow idea: review against GUI_CLARITY_PLAN, the audit and the code
 
-**Status:** **draft** (2026-11-10), unreviewed; N2 decided (recipe per set, plan Decision 13) and viewer popout-only confirmed (Decision 14); N1, N3–N8 (§6) open. Written by an agent from the
+**Status:** **draft** (2026-11-10), unreviewed; all decided (2026-11-10): N2 = plan Decision 13, viewer popout-only = 14, colour N3–N6 = 15 (a hybrid of the mock and §5, which overrides N3/N4 below), N1 = 16, N7/N8 = 17. Written by an agent from the
 archived brief [`../archive/JOURNEY_WORKFLOW_IDEA.md`](../archive/JOURNEY_WORKFLOW_IDEA.md), the two mocks
 (*now+* and *journey bar*, not committed) and three painting photos (palette source, not committed).
 Plan: [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md). Audit: [`GUI_CLARITY_AUDIT.md`](GUI_CLARITY_AUDIT.md).

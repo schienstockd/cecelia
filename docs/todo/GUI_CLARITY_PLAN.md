@@ -60,6 +60,27 @@ rather than one screen at a time.
     (slice 5), map lighting and Welcome (slice 8).
 14. **The viewer is a popout only** (maintainer, 2026-11-10): it has never had a docked version and
     won't get one. The journey review's viewer chip and blocked-popup message build on that.
+15. **Colour scheme = the "hybrid v3" mock** (maintainer, 2026-11-10; refines Decision 4 and settles
+    journey review N3–N6). Each colour has one job:
+    - **Surfaces:** near-neutral dark with a trace of warmth (`#121212` / `#1a1918` / `#23211f`), not
+      Sonnet's warm brown (too much) and not today's blue cast. Plot cards and the viewer stay cool
+      neutral; plot marks stay grey.
+    - **Primary action (Run, Open project):** saffron `#FCC172` fill with dark text (11:1). This is the
+      `--cc-accent-fill` role; lavender `--cc-accent` stays for links and focus.
+    - **Next step and checks:** plum. The Next button is a plum-light `#D27A98` fill with dark text
+      (6.4:1); the checks cluster keeps a plum frame and label. Both mean "act on this".
+    - **Selection:** today's orange `--cc-selected #ff8c1a` stays, so saffron only ever means go.
+    - **Stage families** (Data ochre, Populations coral, Explore mauve, Analysis cream) tint only the
+      sidebar group heading and the active-page bar, never a dot per row.
+    - **Unchanged:** viewer green, Kiwi teal, `--cc-sev-*` status colours, Okabe-Ito maturity dots.
+    - **Vermilion and crimson** only on Welcome and empty states (too close to fail/danger).
+    Mock: `hybrid v3` (not committed; rendered from the review's palette).
+16. **The data type lights pages, never hides them** (maintainer, 2026-11-10; journey review N1). A
+    set's recipe is suggested from its axes (time axis → a timelapse recipe), confirmed once per set,
+    never applied silently. With no recipe, the next-step slot falls back to "from what has run on
+    these images".
+17. **The journey bar stays parked** until now+ has been tried on users (N7). The mocks are not fixed
+    (N8): the built app on an isolated instance is what gets judged.
 ## What main already has (2026-11-10, `origin/main` 71509170)
 
 - **Theme:** PrimeVue and Aura are gone. The tokens are the 54 `--cc-*` custom properties in
