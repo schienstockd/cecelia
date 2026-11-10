@@ -473,7 +473,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     v-tooltip.bottom="'Show the floating lab log panel'" />
           <CcToggle v-model="settings.correctionCockpitOpen" label="Correction cockpit open"
                     v-tooltip.bottom="'Show the floating correction cockpit'" />
-          <CcToggle v-model="settings.kiwiOpen" label="Kiwi cockpit open"
+          <CcToggle v-if="observer.ai.enabled" v-model="settings.kiwiOpen" label="Kiwi cockpit open"
                     v-tooltip.bottom="'Show the floating Kiwi assist cockpit'" />
 
           <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Correction cockpit mode</div>

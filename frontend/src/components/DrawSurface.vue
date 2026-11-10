@@ -830,7 +830,7 @@ const firstVertexMarker = computed(() => {
                  @click="notesExpanded = true"
                  v-tooltip.bottom="'Multi-line note — click to open the editor'" />
           <input v-else class="cc-input ds-notes-input" type="text" v-model="notes" maxlength="800"
-                 placeholder="Notes for Claude (optional)"
+                 :placeholder="observer.ai.enabled ? 'Notes for Claude (optional)' : 'Notes (optional)'"
                  v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'" />
           <button ref="notesExpandBtn" class="cc-btn cc-btn-ghost cc-btn-icon"
                   :class="{ 'cc-btn-on cc-btn-on-tint': notesExpanded }"
@@ -843,7 +843,7 @@ const firstVertexMarker = computed(() => {
           <div class="ds-notes-popover">
             <textarea ref="notesTextarea" class="cc-input ds-notes-textarea" v-model="notes"
                       rows="8" maxlength="800"
-                      placeholder="Notes for Claude (optional)"
+                      :placeholder="observer.ai.enabled ? 'Notes for Claude (optional)' : 'Notes (optional)'"
                       v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'"></textarea>
             <div class="ds-notes-footer cc-fs-2xs">{{ notes.length }} / 800</div>
           </div>
@@ -866,7 +866,7 @@ const firstVertexMarker = computed(() => {
             <button class="cc-btn cc-btn-ghost" @click="cancel" v-tooltip.bottom="'Close without saving (Esc)'">Cancel</button>
             <button class="cc-btn cc-btn-primary ds-save" :disabled="busy" @click="save"
                     v-tooltip.bottom="marks.length
-                      ? 'Save the frame + overlay for Claude'
+                      ? (observer.ai.enabled ? 'Save the frame + overlay for Claude' : 'Save the frame + overlay')
                       : 'Share the whole frame — no region specified'">
               <i v-if="busy" class="pi pi-spin pi-spinner" />
               <span v-else>{{ marks.length ? 'Save' : 'Save frame' }}</span>
