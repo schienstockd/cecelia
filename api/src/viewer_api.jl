@@ -320,17 +320,8 @@ function api_viewer_meta(req::HTTP.Request)
             dims = Dict{String, Any}()
             for v in names
                 try
-                    lp = img_labels_path(img, v)
-                    lvls = store_pyramid_levels(lp)
-                    if lvls !== nothing && !isempty(lvls)
-                        s = first(lvls).shape
-                        n = length(s)
-                        n >= 2 || continue
-                        lnx = s[n]
-                        lny = s[n - 1]
-                        lnz = n >= 3 ? s[n - 2] : 1
-                        dims[v] = (; nX = lnx, nY = lny, nZ = lnz, nLevels = length(lvls))
-                    end
+                    ld = label_store_dims(img_labels_path(img, v))
+                    ld === nothing || (dims[v] = ld)
                 catch
                     # unreadable pyramid → leave this vn out of `label_dims`; the client
                     # treats absence as "cannot check" and does not flag.
@@ -700,6 +691,58 @@ function label_store_path(project_uid::AbstractString, image_uid::AbstractString
 end
 
 """
+    label_store_dims(label_zp) -> Union{NamedTuple,Nothing}
+
+A mask store's level-0 `(; nX, nY, nZ, nLevels)` from its multiscales metadata (no pixel read);
+`nothing` when the store has no readable pyramid. What `api_viewer_meta` reports as `labelDims`, and
+what the pick routes compare against the image the viewer is drawing.
+"""
+function label_store_dims(label_zp::AbstractString)
+    lvls = store_pyramid_levels(label_zp)
+    (lvls === nothing || isempty(lvls)) && return nothing
+    s = first(lvls).shape
+    n = length(s)
+    n >= 2 || return nothing
+    (; nX = s[n], nY = s[n - 1], nZ = n >= 3 ? s[n - 2] : 1, nLevels = length(lvls))
+end
+
+"""
+    _pick_mask(img, project_uid, image_uid, body) -> (vn, zp, nothing) | (nothing, nothing, (status, json))
+
+The segmentation and mask store a pick (`pick-cell` / `pick-rect`) reads, or the refusal. Two picks
+read a mask whose label ids mean nothing in the cell table the selection is written under:
+
+- the ticked mask has NO cell table (`labels` has it, `label_props` doesn't). `_resolve_vn` would fall
+  back to the active segmentation and read ITS mask at that pixel — an unrelated cell. Nothing to pick,
+  as for a preview mask.
+- the mask was segmented on another image version (drift correct, crop): its x/y extent differs from
+  the image the viewer draws (`imageNX`/`imageNY`, the meta dims the client renders). `read_slab`
+  clamps out-of-range x/y to the edge, so the click would land on a shifted or edge cell. The viewer
+  already hides that mask (`labelDimsMismatch`); a client that omits the dims is not checked.
+
+Both refusals are 422 with an `error` the viewer shows; 409 stays "no level at this zoom".
+"""
+function _pick_mask(img, pu::AbstractString, iu::AbstractString, body::AbstractDict)
+    req = _wstr(body, "valueName")
+    refuse(msg) = (nothing, nothing, (422, JSON3.write((; error = msg))))
+    (!isempty(req) && haskey(img.labels, req) && !haskey(img.label_props, req)) &&
+        return refuse("Mask '$req' has no cell table — nothing to pick")
+    vn = _resolve_vn(img, req)
+    zp, lerr = label_store_path(pu, iu, vn)
+    zp === nothing && return (nothing, nothing, (404, JSON3.write((; error = lerr))))
+    inx, iny = get(body, "imageNX", nothing), get(body, "imageNY", nothing)
+    if inx !== nothing && iny !== nothing
+        ld = try label_store_dims(String(zp)) catch; nothing end
+        if ld !== nothing && (ld.nX != _to_int(inx) || ld.nY != _to_int(iny))
+            return refuse("Mask '$vn' was segmented on another image version " *
+                          "($(ld.nX)×$(ld.nY) px, this image is $(_to_int(inx))×$(_to_int(iny))) — " *
+                          "re-segment to pick cells")
+        end
+    end
+    (vn, String(zp), nothing)
+end
+
+"""
     label_level(label_zp, lvl_req) -> (level, err)
 
 The level of a MASK store that answers a viewer drawing the image at `lvl_req`. Exact, never clamped
@@ -1007,11 +1050,11 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     pt   = _wstr(body, "popType", "flow")
     img, err = _gating_image(pu, iu)
     err === nothing || return err
-    vn   = _resolve_vn(img, _wstr(body, "valueName"))
     # Which mask on disk. `label_store_path` answers the base mask for that segmentation — the
-    # same one the WebGPU viewer and rendered by the WebGPU viewer's mask slot.
-    zp, lerr = label_store_path(pu, iu, vn)
-    zp === nothing && return 404, JSON3.write((; error = lerr))
+    # same one rendered by the WebGPU viewer's mask slot. `_pick_mask` refuses a mask with no cell
+    # table or from another image version.
+    vn, zp, perr = _pick_mask(img, pu, iu, body)
+    perr === nothing || return perr
     tint = _to_int(get(body, "t", 0))
     zint = _to_int(get(body, "z", 0))
     xint = _to_int(get(body, "x", 0))
@@ -1069,9 +1112,8 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     pt   = _wstr(body, "popType", "flow")
     img, err = _gating_image(pu, iu)
     err === nothing || return err
-    vn   = _resolve_vn(img, _wstr(body, "valueName"))
-    zp, lerr = label_store_path(pu, iu, vn)
-    zp === nothing && return 404, JSON3.write((; error = lerr))
+    vn, zp, perr = _pick_mask(img, pu, iu, body)   # see `api_viewer_pick_cell`
+    perr === nothing || return perr
     tint = _to_int(get(body, "t", 0))
     zint = _to_int(get(body, "z", 0))
     x1   = _to_int(get(body, "x1", 0));  x2 = _to_int(get(body, "x2", 0))
