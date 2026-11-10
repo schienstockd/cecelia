@@ -8,6 +8,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import NotebookTable from '../components/NotebookTable.vue'
 import ModulePage from '../components/ModulePage.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
+import InlineNote from '../components/InlineNote.vue'
 import { notebooksApi } from '../utils/serviceApi'
 
 const projectMeta = useProjectMetaStore()
@@ -160,7 +161,8 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 
     <template v-else>
       <!-- Server launch / status -->
-      <section class="nb-section">
+      <section class="cc-panel-section nb-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Server</h3>
         <div class="nb-server-row">
           <span class="nb-status" :class="`is-${server}`">
             <i class="pi" :class="server === 'running' ? 'pi-circle-fill'
@@ -192,7 +194,7 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
         <p v-if="server === 'starting'" class="nb-hint cc-muted">
           First launch precompiles — this can take up to a minute.
         </p>
-        <p v-if="errorMsg" class="nb-error">
+        <p v-if="errorMsg" class="nb-error cc-muted-error">
           <i class="pi pi-exclamation-triangle" /> {{ errorMsg }}
           <ConfirmButton v-if="foreign" @confirm="replaceForeign" v-slot="{ armed, press }">
             <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" @click="press"
@@ -205,14 +207,9 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 
         <!-- Fast-plot cache: an optional compiled sysimage that makes the first plot fast. Built on
              demand (this button); notebooks work without it, just slow-first-plot. -->
-        <div v-if="sysimage === 'building'" class="nb-note">
-          <i class="pi pi-spin pi-spinner" />
-          <span>
-            <strong>Building the fast-plot cache (~10 min, in the background).</strong>
-            Keep working — notebooks are usable now; only the <em>first</em> plot is slow until it
-            finishes. The cache is picked up automatically the next time the server launches.
-          </span>
-        </div>
+        <InlineNote v-if="sysimage === 'building'" class="nb-note" icon="pi-spin pi-spinner"
+                    short="Building the fast-plot cache (~10 min, in the background)"
+                    detail="Keep working: notebooks are usable now, only the first plot is slow until it finishes. The cache is picked up the next time the server launches." />
         <div v-else-if="sysimage === 'absent' || sysimage === 'stale' || sysimage === 'error'"
              class="nb-build-row cc-row cc-row-loose">
           <button class="cc-btn cc-btn-ghost" @click="buildSysimage"
@@ -239,8 +236,8 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
       </section>
 
       <!-- Notebook registry (Phase 3: manage + version) -->
-      <section class="nb-section">
-        <h2>Notebooks</h2>
+      <section class="cc-panel-section nb-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">In this project</h3>
         <NotebookTable :project-uid="projectUid" :server-url="url" :server-secret="secret" :server-running="serverRunning" />
       </section>
     </template>
@@ -251,20 +248,15 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
 /* + ModulePage — only the reading width is this page's own (it is a document, not a pane) */
 .notebooks-page { max-width: 980px; }
 .nb-empty { padding: 2rem 0; }   /* + .cc-empty-inline (row/gap/colour) */
-.nb-section { margin-bottom: 1.5rem; }
-.nb-section h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
-.nb-server-row { display: flex; align-items: center; gap: 1rem; }
+/* .nb-section is a .cc-panel-section (style.css): divider + eyebrow heading, no bespoke h2 */
+.nb-section { padding-left: 0; padding-right: 0; }   /* the page already insets; the divider runs full width */
+.nb-server-row { display: flex; align-items: center; gap: var(--cc-space-lg); }
 .nb-status { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--cc-fs-lg); }
-.nb-status.is-running .pi { color: #3fb950; }
+.nb-status.is-running .pi { color: var(--cc-sev-ok); }
 .nb-status.is-stopped .pi, .nb-status.is-unknown .pi { color: var(--cc-text-dim); }
 .nb-hint { margin: .5rem 0 0; }   /* + .cc-muted */
-.nb-error { color: #f0883e; font-size: var(--cc-fs-md); margin: .5rem 0 0; display: flex; align-items: center; gap: .4rem; }
-.nb-note {
-  display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 0 0; padding: .65rem .8rem;
-  font-size: var(--cc-fs-md); line-height: 1.4; border-radius: var(--cc-radius-md);
-  color: var(--cc-text); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
-}
-.nb-note .pi { margin-top: .1rem; color: #58a6ff; }
+.nb-error { margin: var(--cc-space-sm) 0 0; display: flex; align-items: center; gap: var(--cc-space-xs); }   /* + .cc-muted-error */
+.nb-note { margin: var(--cc-space-md) 0 0; }   /* + InlineNote */
 .nb-build-row { margin: .75rem 0 0; }
 .nb-build-row .nb-hint { margin: 0; }
 </style>

@@ -539,7 +539,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 </script>
 
 <template>
-  <div class="bm" :class="'pane-' + pane">
+  <div class="bm cc-side-panel" :class="'pane-' + pane">
     <!-- Above the hint as well as the config: arriving here with nothing selected still means the page
          was filled in, and the Undo has to be reachable either way. -->
     <RestoreNotice v-if="restoreNotice" class="bm-restored" :source="restoreNotice.movie"
@@ -722,7 +722,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 
 <style scoped>
 /* sections run edge to edge, split by dividers (.cc-panel-section) — no gap, no inset of our own */
-.bm { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.bm { overflow-y: auto; }   /* + .cc-side-panel; scrolls itself so its surface runs the full height */
 .bm-hint { margin: 2px 0; }
 .bm > .bm-hint { margin: 0; padding: var(--cc-space-md); }
 .bm-restored { margin: var(--cc-space-sm) var(--cc-space-md) 0; }

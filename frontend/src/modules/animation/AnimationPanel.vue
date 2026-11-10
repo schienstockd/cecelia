@@ -345,7 +345,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
 </script>
 
 <template>
-  <div class="ap" :class="'pane-' + pane">
+  <div class="ap cc-side-panel" :class="'pane-' + pane">
     <RestoreNotice v-if="restoreNotice" class="ap-restored" :source="restoreNotice.movie"
                    :note="restoreNotice.note" @undo="undoRestore" @dismiss="dismissRestore" />
 
@@ -416,7 +416,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
 
 <style scoped>
 /* sections run edge to edge, split by dividers (.cc-panel-section) — no gap, no inset of our own */
-.ap { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ap { overflow-y: auto; }   /* + .cc-side-panel; scrolls itself so its surface runs the full height */
 .ap-hint { margin: 0; padding: var(--cc-space-md); }
 .ap-restored { margin: var(--cc-space-sm) var(--cc-space-md) 0; }
 /* Which half is showing, declared once per half — one rule covers the group AND a section added later,
