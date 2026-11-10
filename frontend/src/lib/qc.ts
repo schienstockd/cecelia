@@ -84,18 +84,21 @@ export function groupByTask(fs: readonly SourcedFinding[]): QcGroup[] {
  * their own click-to-fix affordance and would otherwise show up twice.
  */
 export type QcState = 'none' | 'clean' | 'info' | 'warn'
-export function qcState(img: CciaImage): QcState {
+// `extra` = findings computed outside the QC sidecars but shown on the same dot — today the
+// stale-output findings from the run log (lib/staleOutputs.ts). They count as "QC has run".
+export function qcState(img: CciaImage, extra: readonly SourcedFinding[] = []): QcState {
   const docs = Object.values(img.qc ?? {})
-  if (!docs.length) return 'none'
-  const fs = qcFindings(img).filter(f => !isMetadataCode(f.code))
+  if (!docs.length && !extra.length) return 'none'
+  const fs = [...qcFindings(img), ...extra].filter(f => !isMetadataCode(f.code))
   if (!fs.length) return 'clean'
   return fs.some(f => f.level === 'warn') ? 'warn' : 'info'
 }
 
 // Worst-level summary for the badge (calibration `metadata.*` findings excluded — see isMetadataCode),
 // or null when the image has no non-metadata QC findings. `warn` outranks `info`.
-export function qcSummary(img: CciaImage): QcSummary | null {
-  const fs = qcFindings(img).filter(f => !isMetadataCode(f.code))
+// `extra` leads: a stale output invalidates results, so it is the first thing the tooltip says.
+export function qcSummary(img: CciaImage, extra: readonly SourcedFinding[] = []): QcSummary | null {
+  const fs = [...extra, ...qcFindings(img)].filter(f => !isMetadataCode(f.code))
   const sum = summarizeFindings(fs)
   return sum && { ...sum, groups: groupByTask(fs) }
 }

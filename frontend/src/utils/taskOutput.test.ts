@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
-  taskOutput, taskParamsName, namesParamsRecord, consumerField, normaliseField, isValueNameNamespace,
+  taskOutput, taskParamsName, taskReads, namesParamsRecord, consumerField, normaliseField, isValueNameNamespace,
 } from './taskOutput'
 import { previewValueName } from './taskPreview'
 import type { TaskDef } from '../tasks/types'
+import bayesianTracking from '../../../app/src/tasks/tracking/bayesian_tracking.json'
+import measureLabels from '../../../app/src/tasks/segment/measure_labels.json'
+import afCorrect from '../../../app/src/tasks/cleanupImages/af_correct.json'
 
 const def = (over: Partial<TaskDef>): TaskDef => ({
   fun_name: 'x.y', task: 'y', label: 'Y', category: 'x', env: [], params: [], ...over,
@@ -193,5 +196,32 @@ describe('previewValueName still answers its own question', () => {
   it('falls back to "default" rather than returning empty', () => {
     expect(previewValueName(afCorrect, {})).toBe('default')
     expect(previewValueName(cellpose, { outputValueName: '' })).toBe('default')
+  })
+})
+
+// The Julia twin is `run_inputs`; the expected reads are what it recorded in a real run log
+// (`inputs` of tracking.bayesian_tracking / segment.cellposeMeasure runs) for these same params.
+describe('taskReads — what a run reads, as run_inputs records it', () => {
+  it('tracking reads its label set', () => {
+    expect(taskReads(bayesianTracking as unknown as TaskDef, { valueName: 'B' }))
+      .toEqual([{ name: 'B', ns: 'labels' }])
+  })
+  it('an image-version picker reads ns "" and a labels field reads the label set', () => {
+    expect(taskReads(measureLabels as unknown as TaskDef, { outputValueName: 'B', intensityValueName: 'afCorrected' }))
+      .toEqual([{ name: 'B', ns: 'labels' }, { name: 'afCorrected', ns: '' }])
+  })
+  it('falls back to the spec default, and skips an empty picker', () => {
+    expect(taskReads(afCorrect as unknown as TaskDef, {})).toEqual([{ name: 'default', ns: '' }])
+    expect(taskReads(afCorrect as unknown as TaskDef, { valueName: '' })).toEqual([])
+  })
+  it('a writing param (namespace) is not a read; groups and multi-selects are walked', () => {
+    const d = def({ params: [
+      { key: 'out', type: 'valueNameInput', namespace: 'labels', label: '', tip: '' },
+      { key: 'g', type: 'group', label: '', tip: '', params: [
+        { key: 'vn', type: 'valueNameSelection', field: 'labels', label: '', tip: '' }] },
+      { key: 'many', type: 'valueNameSelection', multiple: true, label: '', tip: '' },
+    ] } as Partial<TaskDef>)
+    expect(taskReads(d, { out: 'X', g: [{ vn: 'A' }, { vn: 'A' }], many: ['v1', 'v2'] }))
+      .toEqual([{ name: 'A', ns: 'labels' }, { name: 'v1', ns: '' }, { name: 'v2', ns: '' }])
   })
 })

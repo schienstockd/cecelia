@@ -431,7 +431,7 @@ end
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/claim/state", "/api/claim/check", "/api/claim/review", "/api/acqcheck/plan", "/api/acqcheck/review", "/api/repl",
         "/api/repl/config", "/api/sets/create",
-        "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
+        "/api/sets/rename", "/api/sets/recipe", "/api/sets/delete", "/api/setup/init",
         "/api/config/tls/set", "/api/config/threads/set",
         "/api/storage/compressor/set", "/api/storage/layout/set",
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim", "/api/viewer/chunk-cache/set",
@@ -502,7 +502,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 191
+    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 192
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
