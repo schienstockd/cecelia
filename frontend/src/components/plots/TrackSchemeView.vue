@@ -679,8 +679,7 @@ function render() {
   // bar). Opacity carries the count so a lone stray reads as light and a burst reads as saturated.
   if (untrackedVisible.value) {
     parts.push(`<text x="${GUTTER - 6}" y="${stripY + UNTRACKED_BAR_H - 1}" text-anchor="end" ` +
-               `font-size="10" fill="${muted}"><title>Cells with no track_id, per frame — ` +
-               `drag onto a track bar to add (Phase 3)</title>Untracked</text>`)
+               `font-size="10" fill="${muted}"><title>Cells with no track ID, per frame</title>Untracked</text>`)
     // baseline, so an empty span reads as "no untracked cells" rather than as nothing
     parts.push(`<line x1="${g.x0}" y1="${stripY + UNTRACKED_BAR_H / 2}" x2="${g.x1}" ` +
                `y2="${stripY + UNTRACKED_BAR_H / 2}" stroke="${grid}" stroke-width="1" ` +

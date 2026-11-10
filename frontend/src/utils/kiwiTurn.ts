@@ -15,6 +15,7 @@
 import type { KiwiRef, KiwiRefResult } from './kiwiRef'
 import { svcPost } from './serviceApi'
 import { formatTaskDuration } from './taskElapsed'
+import { NAV_GROUPS, prettifyCategory } from '../lib/navGroups'
 
 export type KiwiClaimKind = 'observation' | 'interpretation' | 'question'
 
@@ -153,6 +154,17 @@ export function taskLanding(funName: string, def?: { task: string }):
   const [category, ...rest] = funName.split('.')
   const page = TASK_PAGES[category]
   return page ? { ...page, task: def?.task ?? rest.join('.') } : null
+}
+
+/** A task category's page as the sidebar names it, and that page's position in the sidebar — so a list
+ *  of categories (the Chains palette) reads in the user's words and in journey order. Categories with
+ *  no built-in page (custom modules) get the name their custom page has, and sort after the built-ins. */
+export function taskPageLabel(category: string): { label: string; order: number } {
+  const path = TASK_PAGES[category]?.path
+  const items = NAV_GROUPS.flatMap(g => g.items)
+  const i = path ? items.findIndex(it => it.to === path) : -1
+  return i >= 0 ? { label: items[i].label, order: i }
+                : { label: prettifyCategory(category), order: Number.MAX_SAFE_INTEGER }
 }
 
 export type PointTarget =

@@ -15,7 +15,7 @@
   it on the way back.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { fetchHpcSettings, fetchHpcEnv, installHpcEnv, onHpcEnvChanged, hpcTestBlocker,
   type HpcSettings, type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen } from '../lib/preferencesOpen'
@@ -594,8 +594,12 @@ const optionRefetch = debouncedLatest<null>(async () => {
 
 onUnmounted(() => optionRefetch.cancel())
 
+// Remember the last function the user PICKED per module. The fallback below is not a pick: saving it
+// would pin the page to whatever happened to be first, and a later reorder could never reach it.
+let fallbackPick = false
 watch(selectedTask, (task) => {
-  profileStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
+  if (fallbackPick) { fallbackPick = false; return }
+  profileStorage.setItem(`cc-fn:${props.module}`, task)
 })
 
 // Populate the form from remembered funParams: on function change, and on project/set switch
@@ -618,9 +622,15 @@ watch(() => props.defs, (defs) => {
   if (!defs.length) return
   if (selectedTask.value && defs.some(d => d.task === selectedTask.value)) return
   const saved = profileStorage.getItem(`cc-fn:${props.module}`)
-  // fall back to the TOP row as displayed — under headings that is the first group's first def
-  selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved
-    : (groupTaskDefs(defs)?.[0].defs[0] ?? defs[0]).task
+  if (saved && defs.some(d => d.task === saved)) { selectedTask.value = saved; return }
+  // fall back to the TOP row as displayed — under headings that is the first group's first def.
+  // The flag is cleared after this flush either way, so it can never swallow a later real pick.
+  const top = (groupTaskDefs(defs)?.[0].defs[0] ?? defs[0]).task
+  if (selectedTask.value !== top) {
+    fallbackPick = true
+    selectedTask.value = top
+    void nextTick(() => { fallbackPick = false })
+  }
 }, { immediate: true })
 
 // Axis gating — the frontend twin of the Julia gate. A task with `requires.axes` (e.g. tracking

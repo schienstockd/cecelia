@@ -80,7 +80,8 @@ export const NAV_GROUPS: NavGroup[] = [
 // User custom-module categories that have NO built-in page get their own generic page + nav entry
 // (docs/CUSTOM_MODULES.md). Tasks in an existing category surface on that category's real page, so
 // only `builtin === false` categories appear here. Group is hidden entirely when there are none.
-function prettifyCategory(name: string): string {
+/** A custom category's page name as the sidebar shows it ('myLabTools' → 'My Lab Tools'). */
+export function prettifyCategory(name: string): string {
   const spaced = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim()
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }

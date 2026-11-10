@@ -36,6 +36,7 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate, ParamDef } from '../tasks/types'
 import { taskRequiresAxes } from '../utils/taskGating'
+import { taskPageLabel } from '../utils/kiwiTurn'
 import { taskOutput, consumerField, consumerAccepts, type ConsumerField } from '../utils/taskOutput'
 import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from '../utils/startDot'
@@ -978,15 +979,20 @@ function paletteTooltip(def: TaskDef): string {
 }
 
 const paletteCategories = computed(() => {
-  const byCategory: Record<string, TaskDef[]> = {}
+  // One heading per PAGE, named and ordered as the sidebar names and orders it (two categories can
+  // share a page: import + export both run on Manage images).
+  const byPage = new Map<string, { order: number; defs: TaskDef[] }>()
   for (const def of allTaskDefs.value) {
-    const cat = def.category || def.fun_name.split('.')[0]
-    ;(byCategory[cat] ??= []).push(def)
+    const { label, order } = taskPageLabel(def.category || def.fun_name.split('.')[0])
+    const entry = byPage.get(label) ?? { order, defs: [] }
+    entry.defs.push(def)
+    byPage.set(label, entry)
   }
   // same sub-headings as the module page's Function picker; one untitled section when headings
   // wouldn't help (fewer than two groups)
-  return Object.entries(byCategory).sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, defs]) => ({
+  return [...byPage.entries()]
+    .sort(([a, x], [b, y]) => x.order - y.order || a.localeCompare(b))
+    .map(([name, { defs }]) => ({
       name,
       sections: groupTaskDefs(defs)
         ?? [{ title: '', defs: [...defs].sort((x, y) => x.label.localeCompare(y.label)) }] as TaskGroup[],
