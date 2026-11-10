@@ -47,15 +47,19 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 
 | Token | Value | Use |
 |-------|-------|-----|
-| `--cc-bg` | `#0f1117` | Page background |
-| `--cc-surface-1` | `#161b22` | Sidebar, panels |
-| `--cc-surface-2` | `#21262d` | Hover states, inset boxes |
-| `--cc-text` | `#e6edf3` | Primary text |
-| `--cc-text-dim` | `#7d8590` | Secondary text, labels |
-| `--cc-border` | `#30363d` | All borders |
+| `--cc-bg` | `#121212` | Page background — near-neutral dark with a trace of warmth (`GUI_CLARITY_PLAN.md` Decision 15) |
+| `--cc-surface-1` | `#1a1918` | Sidebar, panels |
+| `--cc-surface-2` | `#23211f` | Hover states, inset boxes |
+| `--cc-text` | `#ece8e3` | Primary text |
+| `--cc-text-dim` | `#938d86` | Secondary text, labels |
+| `--cc-border` | `#312e2b` | All borders |
+| `--cc-border-hover` | `#4a4642` | A hovered border or scrollbar thumb — one step up from `--cc-border` |
 | `--cc-accent` | `#a78bfa` | Active elements, buttons, links |
 | `--cc-accent-strong` | `#7c3aed` | Deeper violet — the border of an engaged/active control |
-| `--cc-accent-fill` | `#7659cf` | Deep lavender — a SOLID surface under white text: primary buttons, picked chips, Run, `-on-solid` (white 5.12:1) |
+| `--cc-accent-fill` | `#7659cf` | Deep lavender — a SOLID surface under white text: picked chips, `-on-solid` (white 5.12:1) |
+| `--cc-primary-fill` / `--cc-on-primary` | `#FCC172` / `#1a1410` | Saffron — the primary action (`.cc-btn-primary`: Run, Open, Create), dark text 11:1. Saffron only ever means go |
+| `--cc-next-fill` | `#D27A98` | Plum — the page's Next button (`.cc-btn-next`), dark text 6.4:1 |
+| `--cc-stage-data` / `-populations` / `-explore` / `-analysis` | `#CEA966` / `#E9A587` / `#B98A93` / `#F5EFD0` | Stage colour: the sidebar group heading and the active page's bar only (`navGroups.stageTint`) |
 | `--cc-accent-soft` | `#c4b5fd` | Pale violet — text on an accent-tinted surface |
 | `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
 | `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
@@ -248,7 +252,7 @@ axes** — compose them; never re-declare a button in a component's scoped `<sty
 | Shape | `-icon` (fixed square, so a toolbar row aligns regardless of glyph width) |
 | State | `-on` (+ `-on-tint` washed / `-on-solid` filled) for an engaged toggle button |
 
-**White text sits on a fill token.** `-primary`, `-on-solid`, picked chips and any hand-rolled filled control use `--cc-accent-fill` (deep lavender — the accent's own hue darkened, white 5.12:1); `-danger` and armed destructive buttons use `--cc-danger-fill` (muted red, 5.86:1). White on `--cc-accent` (2.72:1) or `--cc-danger` (3.76:1) fails WCAG AA. Guarded by `utils/accentContrast.test.ts`.
+**White text sits on a fill token.** `-primary` is the exception: saffron `--cc-primary-fill` under dark `--cc-on-primary`. `-on-solid`, picked chips and any hand-rolled filled control use `--cc-accent-fill` (deep lavender — the accent's own hue darkened, white 5.12:1); `-danger` and armed destructive buttons use `--cc-danger-fill` (muted red, 5.86:1). White on `--cc-accent` (2.72:1) or `--cc-danger` (3.76:1) fails WCAG AA. Guarded by `utils/accentContrast.test.ts`.
 
 `.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`. In a **mixed** group — an icon-only member beside a labelled one — `style.css` lets the `-icon` square stretch to the group's height: the square is a fixed 1.5rem while a labelled member sizes to padding + line-height, ~1px taller, and the pixel of background missing under the square reads as a smaller, offset glyph (six groups had it). Don't re-fix it per site.
 

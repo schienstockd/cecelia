@@ -3,6 +3,7 @@
 # Seven testsets covering the /api/cohort/* and /api/analysis/* surface:
 #  - `API: cohort QC`
 #  - `API: cohort runs (per clustering run selector)`
+#  - `API: cohort state (last check, read back)`
 #  - `API: analysis lineage`
 #  - `API: analysis populations`
 #  - `API: analysis measures`
@@ -147,6 +148,55 @@ end
         cdir = joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort", "clustTracks.cluster")
         @test isfile(joinpath(cdir, "T.test.json")) && isfile(joinpath(cdir, "B.test.json"))
         @test !isfile(joinpath(cdir, "T.movement.json"))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: cohort state (last check, read back)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _state(t) = api_qc_cohort_state(HTTP.Request("GET", "/api/qc/cohort/state" * t))
+    _check(b) = api_qc_cohort_check(Vector{UInt8}(JSON3.write(b)))
+    try
+        proj = create_project!(name = "api-cohort-state")
+        s    = add_set!(proj; name = "set-A")
+        counts = [("i1", 800), ("i2", 810), ("i3", 790), ("i4", 805), ("i5", 798), ("i6", 100)]
+        imgs = map(counts) do (nm, n)
+            img = add_image!(s; name = nm, meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+            write_qc(img, "segment.measureLabels", "default", Dict{String,Any}[];
+                     metrics = Dict{String,Any}("nCells" => n))
+            img
+        end
+        base = "?projectUid=$(proj.uid)&setUid=$(s.uid)"
+        @test _state("")[1] == 400
+        @test _state("?projectUid=$(proj.uid)&setUid=nope")[1] == 404
+        # never checked: nothing to report, and a read writes nothing
+        st, b = _state("$base&funNames=segment.measureLabels")
+        @test st == 200
+        d = JSON3.read(b)
+        @test d.checked == false && d.checkedAt === nothing && isempty(d.flaggedUids) && d.nIncluded == 6
+        @test !isdir(joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort"))
+        # after the check: when it ran, and the outlier — survives a reload because it is read from disk
+        t0 = time()
+        @test _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels"))[1] == 200
+        d = JSON3.read(_state("$base&funNames=segment.measureLabels")[2])
+        @test d.checked == true && d.checkedAt >= t0 - 1
+        @test collect(d.flaggedUids) == [imgs[6].uid]
+        @test only(d.funs).funName == "segment.measureLabels" && only(d.funs).flagged == 1
+        # a composite reads as its steps; a fun the check can't answer is skipped, not an error
+        d = JSON3.read(_state("$base&funNames=segment.cellposeMeasure,bad.fun")[2])
+        @test Set(f.funName for f in d.funs) == Set(["segment.cellpose", "segment.measureLabels"])
+        @test collect(d.flaggedUids) == [imgs[6].uid]
+        # an excluded image drops out of the count, as it drops out of the cohort
+        imgs[6].included = false; save!(imgs[6])
+        d = JSON3.read(_state("$base&funNames=segment.measureLabels")[2])
+        @test isempty(d.flaggedUids) && d.nIncluded == 5
+        # a pre-stamp check still reads as checked, from the sidecar
+        rm(joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort", "_checks.json"))
+        @test JSON3.read(_state("$base&funNames=segment.measureLabels")[2]).checked == true
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

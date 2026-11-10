@@ -50,8 +50,9 @@ describe('rowFilters', () => {
 
   it('hides a filter button when it has nothing to act on', () => {
     const clean = [img('a'), img('b')]
-    expect(ROW_FILTERS.filter(f => f.visible(clean)).map(f => f.id)).toEqual([])
-    expect(ROW_FILTERS.filter(f => f.visible(IMAGES)).map(f => f.id))
+    const buttons = ROW_FILTERS.filter(f => !f.host)
+    expect(buttons.filter(f => f.visible(clean)).map(f => f.id)).toEqual([])
+    expect(buttons.filter(f => f.visible(IMAGES)).map(f => f.id))
       .toEqual(['excluded', 'unimported', 'unstarred'])
   })
 
@@ -64,9 +65,34 @@ describe('rowFilters', () => {
   it('gives every filter a distinct id, both icons, and a two-state tooltip', () => {
     expect(new Set(ROW_FILTERS.map(f => f.id)).size).toBe(ROW_FILTERS.length)
     for (const f of ROW_FILTERS) {
-      expect(f.iconOn).not.toBe(f.iconOff)
+      if (!f.host) expect(f.iconOn).not.toBe(f.iconOff)   // a hosted filter's button draws its own state
       expect(f.tip(true, IMAGES)).not.toBe(f.tip(false, IMAGES))
       expect(f.tip(true, IMAGES).length).toBeGreaterThan(0)
     }
   })
 })
+
+describe('the QC-flagged filter (the Checks cluster QC button)', () => {
+  const warn = { 'x/default': { funName: 'x', findings: [{ level: 'warn' as const, code: 'x.y', short: 's', long: 'l' }] } }
+  const info = { 'x/default': { funName: 'x', findings: [{ level: 'info' as const, code: 'x.y', short: 's', long: 'l' }] } }
+  const cal  = { 'importImages.omezarr/default': { findings: [{ level: 'warn' as const, code: 'metadata.pixel_size_unknown', short: 's', long: 'l' }] } }
+  const rows = [
+    { uid: 'w', qc: warn }, { uid: 'i', qc: info }, { uid: 'c', qc: cal },
+    { uid: 'n' }, { uid: 'xw', included: false, qc: warn },
+  ]
+  const qc = ROW_FILTERS.find(f => f.id === 'qcFlagged')!
+
+  it('is drawn by the Checks cluster, not as a generic filter button', () => {
+    expect(qc.host).toBe('checks')
+  })
+
+  it('keeps rows with a warn finding, calibration included; info alone is not a flag', () => {
+    const kept = rows.filter(r => !hiddenByRowFilters(r, { qcFlagged: true })).map(r => r.uid)
+    expect(kept).toEqual(['w', 'c', 'xw'])
+  })
+
+  it('counts only included images', () => {
+    expect(qc.count(rows)).toBe(2)
+  })
+})
+

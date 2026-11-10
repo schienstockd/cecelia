@@ -320,6 +320,8 @@ describe('shadowed utilities', () => {
     // `color: inherit` on purpose — the label follows the section header's colour, which changes on
     // hover and when open, rather than sitting at the eyebrow's fixed dim.
     'components/CollapsibleSection.vue | cc-eyebrow shadowed by cs-label on color',
+    // The Checks cluster label is an eyebrow in the check accent (GUI_CLARITY_PLAN Decision 15), not dim.
+    'components/ChecksCluster.vue | cc-eyebrow shadowed by checks-label on color',
   ]
 
   it('are all deliberate — a utility that loses to its own element is a no-op', () => {

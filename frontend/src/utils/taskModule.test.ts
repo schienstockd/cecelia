@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moduleKeyFromFun, moduleIdFromFun, moduleColor, moduleTagStyle, MODULE_COLORS } from './taskModule'
+import { moduleKeyFromFun, moduleIdFromFun, moduleColor, moduleTagStyle, MODULE_COLORS, TAG_SURFACE } from './taskModule'
 import { composite, contrastRatio, WCAG_AA } from './colour'
 
 // The module key answers "which page owns this task", and it is compared against the string a page
@@ -77,7 +77,7 @@ describe('moduleTagStyle — the one tint for .cc-module-tag', () => {
   // all of it — adding a thirteenth colour must not be able to reintroduce an unreadable label.
   it('gives every module a label that clears WCAG AA on the pill', () => {
     for (const [mod, accent] of Object.entries(MODULE_COLORS)) {
-      const fill = composite(accent, '#21262d', 0x22 / 255)
+      const fill = composite(accent, TAG_SURFACE, 0x22 / 255)
       expect(contrastRatio(accent, fill), `${mod} raw accent`).toBeLessThan(WCAG_AA)
       expect(contrastRatio(moduleTagStyle(mod).color, fill), mod).toBeGreaterThanOrEqual(WCAG_AA)
     }
@@ -86,7 +86,7 @@ describe('moduleTagStyle — the one tint for .cc-module-tag', () => {
   // …and the unknown-module grey too, which is the one a new task hits before it gets a colour.
   it('covers the grey fallback', () => {
     const grey = moduleColor('nope')
-    expect(contrastRatio(moduleTagStyle('nope').color, composite(grey, '#21262d', 0x22 / 255)))
+    expect(contrastRatio(moduleTagStyle('nope').color, composite(grey, TAG_SURFACE, 0x22 / 255)))
       .toBeGreaterThanOrEqual(WCAG_AA)
   })
 })
