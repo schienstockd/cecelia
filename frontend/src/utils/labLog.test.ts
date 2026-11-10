@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  unseenBadgeColour, labLogLauncherTip,
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
   entryId, decisionPrefill, isRatable, resolveImageRefs, imageNamesToRefs, showImageRefs, visibleEntries,
   hasLabArchives, labArchivesLabel, labArchivesSyncedOn, labArchivesGapText,
@@ -188,5 +189,22 @@ describe('imageNamesToRefs / showImageRefs', () => {
   it('shows either way, whichever way the text was written', () => {
     expect(showImageRefs('in rEIQnG and M1-1-naive-z200', map, false)).toBe('in rEIQnG and Qpzc4V')
     expect(showImageRefs('in rEIQnG and M1-1-naive-z200', map, true)).toBe('in M1-1-naive-z200_0001 and M1-1-naive-z200')
+  })
+})
+
+describe('lab-log launcher badge and tip', () => {
+  it('colours the unseen badge by severity, and leaves Claude notes to the host accent', () => {
+    expect(unseenBadgeColour('fail')).toBe('var(--cc-sev-fail)')
+    expect(unseenBadgeColour('warn')).toBe('var(--cc-sev-warn)')
+    expect(unseenBadgeColour('')).toBeNull()
+  })
+  it('names the unseen note first, then the open state, then the role', () => {
+    expect(labLogLauncherTip({ unseen: 'QC flagged 2 images', kind: 'cecelia', open: true, aiOn: false }))
+      .toBe('Cecelia: QC flagged 2 images')
+    expect(labLogLauncherTip({ unseen: 'gate looks off', kind: 'claude', open: false, aiOn: true }))
+      .toBe('Claude noted: gate looks off')
+    expect(labLogLauncherTip({ unseen: '', kind: '', open: true, aiOn: true })).toBe('Close lab log')
+    expect(labLogLauncherTip({ unseen: '', kind: '', open: false, aiOn: false }))
+      .toBe('Lab log — analysis notes for this project')
   })
 })

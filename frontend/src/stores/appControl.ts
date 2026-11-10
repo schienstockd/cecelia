@@ -9,7 +9,7 @@ import { quitTaskPhrase } from '../utils/quitWarning'
 export interface MergedPr { number: number; title: string }
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
-// panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
+// panel and the header's avatar menu (ProfileMenu.vue) so the shutdown/restart logic lives in ONE place (no divergent
 // re-implementation). Per-service (viewer/notebooks) controls stay local to the Settings panel.
 export const useAppControlStore = defineStore('appControl', () => {
   const dev = ref(false)        // dev server → the backend Restart control is offered (prod hides it)

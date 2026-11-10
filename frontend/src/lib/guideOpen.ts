@@ -6,7 +6,7 @@
 // Putting the flag in the store would make every consumer of "is the picker open" instantiate the
 // runtime, and `GuideBubble` would import the dialog's state to close it.
 //
-// Entry points: the compass button in AppHeader, the "Show me" button on a What's New tip card
+// Entry points: Help ▾ → Guides (HelpMenu.vue), the "Show me" button on a What's New tip card
 // (`WhatNewCard`), the bubble's "More guides" when a guide finishes, and a page's or task's maturity
 // link (`openMaturityRow`, which also opens that feature's row on the map).
 

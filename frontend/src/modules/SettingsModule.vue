@@ -711,7 +711,7 @@ async function appRestart() {
   pollServices()
 }
 // Quit reports what it will kill — shutdown exits the backend without waiting for in-flight work.
-// Same builders as the sidebar footer so the two entry points can't drift.
+// Same builders as the header's avatar menu (ProfileMenu.vue) so the two entry points can't drift.
 const quitTasks   = ref(0)
 const quitConfirm = computed(() => quitConfirmTooltip(quitTasks.value))
 async function armQuit(arm: () => void) {
