@@ -31,7 +31,7 @@ export interface InteractiveView {
   label: string
   component: Component
   clusterPage?: boolean       // offered on the Cluster module page's +Plot picker (cluster map only)
-  opticalFlowPage?: boolean   // offered on the Optical Flow module page's +Plot picker
+  opticalFlowPage?: boolean   // offered on the Model training page's +Plot picker
   trackPage?: boolean         // offered in the Track canvas's "+ Track…" picker
   analysisBoard?: boolean     // offered on the Analysis board's +Plot picker
   // NAMEABLE BY A PLUGIN, in `plugin.json` → `contributions.views` (PLUGINS_PLAN Decision 11), to show

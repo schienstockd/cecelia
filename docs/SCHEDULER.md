@@ -1192,7 +1192,7 @@ whose version has several possible makers that disagree (several writers, or a p
 logged writer may not have made: a minted version records no `replaces`). A track run reads the labels,
 so a re-track neither stales nor clouds the one before it. A write-into stays current until a later run of the same label set that shares a step with it supersedes it (a re-segment + measure supersedes a lone re-measure, a re-track a track correction); a re-measure shares no step with tracking, so it does not hide stale tracks. A re-measure `replaces` the label set as a whole: the record does not tell a reader of its pixels (branching) from a reader of its measures, so the first is flagged too, and a population reader (clustering) is not followed at all (populations are not `inputs`). Archive included. Surfaced per image as
 `stale` / `staleUnknown` in the analysis lineage (`GET /api/analysis/lineage`, MCP
-`get_analysis_lineage`). Report only — nothing is deleted or re-run.
+`get_analysis_lineage`). In the GUI, `stale` (not `staleUnknown`) shows on the image table's QC dot, one finding per output under the task that made it, and as a Run-panel note when the picked task reads a stale plain output (`lib/staleOutputs.ts`). Report only — nothing is deleted or re-run.
 
 **The cap moves entries, it never drops them.** `runlog.json` is rewritten whole on every open and
 close, so it holds the newest `RUN_LOG_CAP` (200); the overflow is appended to `runlog.archive.jsonl`

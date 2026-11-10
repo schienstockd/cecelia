@@ -235,7 +235,7 @@ function api_task_definitions(req::HTTP.Request)
         # whose module failed to load) still gets its vault picker filled. This route used to resolve
         # only the dispatch hook, so when the three model pickers moved to `optionsFrom` it served the
         # spec's literal options alone: the coastal Model select offered nothing but "None" while the
-        # Optical Flow vault manager listed every model, both reading the same `list_coastal_models`.
+        # Model training vault manager listed every model, both reading the same `list_coastal_models`.
         spec isa Dict{String,Any} && Cecelia.resolve_spec_sources!(spec)
 
         task = try Cecelia._task_from_fun_name(fn) catch; nothing end

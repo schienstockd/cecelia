@@ -63,6 +63,8 @@ export interface AcqRow {
   ratio: number | null
   dimmest: string | null
   sharedR: number | null
+  /** the movie's baseline: median r over its plan channel pairs (null under three pairs) */
+  sharedBase?: number | null
   driftUm: number | null
   registers: boolean | null
 }

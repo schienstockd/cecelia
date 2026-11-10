@@ -6,6 +6,7 @@ import {
   labelChipOptions,
   trackChipOptions,
   parseLabelChipValues,
+  correctionLaunch,
 } from './correctionSelections'
 
 describe('selectionKind', () => {
@@ -86,5 +87,18 @@ describe('parseLabelChipValues', () => {
 
   it('floors decimals defensively', () => {
     expect(parseLabelChipValues(['3.7'])).toEqual([3])
+  })
+})
+
+describe('correctionLaunch', () => {
+  it('opens the cockpit in the page mode', () => {
+    expect(correctionLaunch('segment', [], 'img').mode).toBe('labels')
+    expect(correctionLaunch('tracking', [], 'img').mode).toBe('tracks')
+  })
+  it('opens the one selected image in the viewer only when the viewer shows nothing', () => {
+    expect(correctionLaunch('segment', ['a'], null).openInViewer).toBe('a')
+    expect(correctionLaunch('segment', ['a'], 'b').openInViewer).toBeNull()
+    expect(correctionLaunch('segment', ['a', 'c'], null).openInViewer).toBeNull()
+    expect(correctionLaunch('segment', [], null).openInViewer).toBeNull()
   })
 })
