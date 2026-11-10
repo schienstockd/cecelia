@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isExcluded, isIncluded, includedUids, dropExcluded, isImported } from './inclusion'
+import { isExcluded, isIncluded, includedUids, dropExcluded, isImported, excludedReason } from './inclusion'
 
 describe('isImported', () => {
   it('true once a converted version exists (stable — independent of task status)', () => {
@@ -41,5 +41,13 @@ describe('inclusion', () => {
     ]
     expect(dropExcluded(['a', 'b', 'c'], imgs)).toEqual(['a'])
     expect(dropExcluded([], imgs)).toEqual([])
+  })
+})
+
+describe('excludedReason', () => {
+  it('says why an excluded image is out, and nothing for an included one', () => {
+    expect(excludedReason({ included: false, note: 'drifted' })).toBe('Excluded: drifted')
+    expect(excludedReason({ included: false })).toBe('Excluded from processing')
+    expect(excludedReason({ included: true, note: 'x' })).toBe('')
   })
 })

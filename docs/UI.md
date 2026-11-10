@@ -1601,13 +1601,13 @@ consequences worth knowing before touching it:
 systematic successor to the old R app's `Include=Y/N` keyword (`CciaImage.included`, default `true`;
 optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/inclusion.ts`
 (`isExcluded`/`isIncluded`/`includedUids`), so graying, select-all, and run-selection all agree.
-- **Greyed, not hidden.** Excluded rows render dimmed (`.row-excluded`) with a persistent `pi-ban`
+- **Greyed, not hidden.** Excluded rows render dimmed (`.cc-row-excluded`) with a persistent `pi-ban`
   **Excluded** badge (its tooltip shows the note), an editable note line under the UID, and an
   always-visible include/exclude toggle (`.incl-toggle`). Every other row shows the toggle on hover.
 - **Unselectable.** Excluded images can't be checkbox-selected — dropped from select-all, "select
   flagged", and the remembered selection on reseed. Since every run (single task *and* chain) builds
-  from the selection, this makes exclusion honored everywhere. `ChainModule`'s run list mirrors it
-  (greyed, auto-select-all uses the included subset).
+  from the selection, this makes exclusion honored everywhere. `ChainModule`'s run picker (a `SelectionTable`)
+  mirrors it (dimmed via `disabledIds` + `.cc-row-excluded`, auto-select-all uses the included subset).
 - **Hard-skipped in the backend too.** Belt-and-suspenders for run paths that bypass the checkboxes
   (chain resume, REPL): `_drop_excluded` (`api/src/sockets.jl`) filters excluded uids before dispatch
   and logs each skip — and records it: a chain run in run.json `excluded_images`, a single task as a
@@ -1804,7 +1804,7 @@ follow from the panel being ~280px wide:
   stack, for the same reason).
 
 Its per-status row tint comes from `TASK_STATUS[...].tone` via `rowClass` + `:deep()` (the
-`ImageTable` `.row-excluded` precedent) — that `tone` field exists precisely so a component tints its
+`ImageTable` `.cc-row-excluded` precedent) — that `tone` field exists precisely so a component tints its
 own chrome from the same tokens as the status light, rather than the raw hexes the card stack carried.
 
 **The Task Manager in its own window.** The `/tasks` toolbar has a pop-out (↗) beside the throttle,
@@ -2666,7 +2666,7 @@ Route `/chain` → `frontend/src/modules/ChainModule.vue`.
 
 The whiteboard is the visual authoring tool for chain templates. It reads and writes the same `chains/<name>.json` format that `run_chain` and `save_chain_template!` use from the REPL — one format, **three** authoring paths: the whiteboard, the REPL, and Claude via the MCP `create_chain`. The whiteboard overwrites (`POST /api/chains/save`, the user saving their own canvas) while the MCP route is create-only, but **both are validated** — save used to write verbatim, and an unwired start dot went through it unnoticed (`docs/API.md` → `/api/chains/save`). **Nothing but the whiteboard can start a run.** See `docs/SCHEDULER.md` → *Who may author a template, and who may run one*.
 
-The action row is **two `.cc-btn-group` strips** — chain-file actions (New / Rename / Delete) and canvas actions (Start dot / Tidy / Reload / Save). Seven free-floating icon buttons did not fit the 190px palette, and the grouping says which belong together. Two things made the last button in each strip sit visibly apart: Save carried `cc-btn-dense-save`, a class that exists nowhere (so it missed `.cc-btn-icon.cc-btn-dense`'s 1.25rem square and rendered full size), and `ConfirmDeleteButton` is the one group member that is not a `.cc-btn` — it keeps `.cc-del` because it owns its armed/danger states, and on its own that brings a radius, a transparent border and no background. `style.css` now composes `.cc-btn-group > button.cc-del` into the strip (element+class, so it outspecifies the component's scoped rule whatever order the sheets land in), squaring it only when it is icon-only so a labelled delete still sizes to its text. **A new group member that is not a `.cc-btn` needs the same treatment** — the group's joining rules key off `.cc-btn`.
+The action row is **two `.cc-btn-group` strips** — chain-file actions (New / Rename / Delete) and canvas actions (Start dot / Tidy / Reload / Save). Seven free-floating icon buttons did not fit the narrow palette, and the grouping says which belong together. Two things made the last button in each strip sit visibly apart: Save carried `cc-btn-dense-save`, a class that exists nowhere (so it missed `.cc-btn-icon.cc-btn-dense`'s 1.25rem square and rendered full size), and `ConfirmDeleteButton` is the one group member that is not a `.cc-btn` — it keeps `.cc-del` because it owns its armed/danger states, and on its own that brings a radius, a transparent border and no background. `style.css` now composes `.cc-btn-group > button.cc-del` into the strip (element+class, so it outspecifies the component's scoped rule whatever order the sheets land in), squaring it only when it is icon-only so a labelled delete still sizes to its text. **A new group member that is not a `.cc-btn` needs the same treatment** — the group's joining rules key off `.cc-btn`.
 
 **Selection, framing.** The config panel follows Vue Flow's selection (the node highlight), never a `node-click` toggle — a click with any mouse travel is a drag to Vue Flow, so a click-driven panel diverged from the highlight. Every chain load fits the chain on screen, and the toolbar's **Fit** button (`pi-reset-view`) does the same after panning away. `applyTemplate` waits a tick between clearing and adding: node ids repeat across chains (`__start__` always), and a same-tick swap reuses the old element without re-measuring its handles, so edges drew from the node's corner.
 
@@ -2682,25 +2682,27 @@ The action row is **two `.cc-btn-group` strips** — chain-file actions (New / R
 
 ### Layout — Edit tab
 
+The Edit tab is built from the module-page shells (GUI clarity slice 9): both side panes are
+`CollapsiblePanel`s, the right one is the same shared right panel as every module page (and folds with
+it), node config uses `.cc-panel-section`, the image picker is `SelectionTable`, and Run is `.cc-btn-run`
+at the bottom of the right panel — where Run sits on every module page.
+
 ```
-Left (190px)               Center (flex)             Right (260px, opens on click)
-────────────────           ──────────────────────    ───────────────────────────
-Chain selector             @vue-flow/core canvas     Node config panel
-[New|Rename|Delete]        Node palette drop target  - Scope select
-[Start dot|Tidy|Reload|Save]
-Task palette               Background grid           - Barrier policy (set nodes)
-(by category,              Nodes + edges             - Resource pool dropdown
-draggable)                                             (from /api/pools)
-────────────                                         - ParamRenderer for params
-Run table (bottom)
-- Set selector
-- Image checkbox list
-- Run chain button
+Left (CollapsiblePanel side=left)  Center (flex)             Right (CollapsiblePanel, shared fold)
+─────────────────────────────────  ──────────────────────    ─────────────────────────────────────
+Chain selector                     @vue-flow/core canvas     Node config (on a node click)
+[New|From past runs|Rename|Delete] Node palette drop target  - Scope / barrier / pool / version
+[Start dot|Tidy|Fit|Reload|Save]   No chain open → .cc-empty - ParamRenderer for params
+Module functions (fills)             with "New chain" and    ─────────────────────────
+  by page, then group, draggable     "From past runs"        Run (pinned at the bottom)
+Plots (coming soon)                                          - Set selector
+                                                             - SelectionTable image picker
+                                                             - Run chain (.cc-btn-run)
 ```
 
 The ↻ Reload button explicitly discards unsaved edits and reloads the chain from disk. Save (💾) writes the current canvas state to disk.
 
-The **Run table** is pinned at the bottom of the palette sidebar. Select a set, check/uncheck individual images, then click "Run chain". Images default to all-selected when you switch sets. The run table auto-seeds from the first available set on project open.
+The **Run** section is pinned at the bottom of the right panel, under the node config. Select a set, check/uncheck individual images, then click "Run chain". Images default to all-selected when you switch sets. The run table auto-seeds from the first available set on project open.
 
 The canvas uses `v-show` (not `v-if`) so VueFlow's state is preserved when switching to the Live tab and back.
 

@@ -13,7 +13,7 @@ import { rollupTaskStatus } from '../lib/taskStatus'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary, qcState, qcTooltipHtml } from '../lib/qc'
-import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason } from '../utils/inclusion'
+import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason, excludedReason } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { shortUnit, shortTimeUnit, fmtNum } from '../utils/physicalSize'
 import { type SortState } from '../utils/sortRows'
@@ -573,7 +573,7 @@ const unselectableUids = computed(() =>
     v-model:sort="sortModel"
     :disabled-ids="unselectableUids"
     column-width-key="cc-imagetable-cols"
-    :row-class="img => ({ 'row-excluded': isExcluded(img) })"
+    :row-class="img => ({ 'cc-row-excluded': isExcluded(img) })"
     :row-tooltip="img => isExcluded(img) && !canSelectExcluded
       ? 'Excluded — include it to select for a run' : `Select ${img.name}`"
   >
@@ -628,7 +628,7 @@ const unselectableUids = computed(() =>
             <i class="pi pi-exclamation-triangle" />
           </button>
           <span v-if="isExcluded(img)" class="excl-badge"
-            v-tooltip.left="img.note ? `Excluded: ${img.note}` : 'Excluded from processing'">
+            v-tooltip.left="excludedReason(img)">
             <i class="pi pi-ban" />
           </span>
           <!-- ALWAYS rendered, which is what makes the tick mean something: a clean image says so,
@@ -834,8 +834,7 @@ const unselectableUids = computed(() =>
 .select-flagged-btn.active:hover { color: #fcd34d; }
 .select-flagged-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Excluded: greyed but still visible (not hidden) — dim the whole row, un-dim a touch on hover so its
-   note + include toggle stay usable. `:deep` because the row is SelectionTable's element. */
+/* Excluded: greyed but still visible — .cc-row-excluded (style.css), un-dimmed a touch on hover. */
 /* Blocked: stated in its own column rather than by dimming the row. An excluded row is dimmed
    because the user put it aside; a blocked one is still work they probably want to do, so hiding it
    would be the wrong signal. */
@@ -847,8 +846,6 @@ const unselectableUids = computed(() =>
 .scale-blocked:hover { text-decoration: underline; }
 .scale-cell { font-size: var(--cc-fs-sm); white-space: nowrap; }
 
-.image-table :deep(.row-excluded) { opacity: 0.5; cursor: default; }
-.image-table :deep(.row-excluded:hover) { opacity: 0.8; }
 
 /* A name cell is three stacked rows, so it must not be vertically centred like a one-line cell. */
 .image-table :deep(td) { vertical-align: top; overflow: hidden; }
@@ -912,7 +909,7 @@ const unselectableUids = computed(() =>
 
 /* include/exclude toggle: hidden until row hover like the other row actions, but ALWAYS visible on
    an excluded row so there's an obvious way back */
-.row-excluded .incl-toggle { opacity: 1; }
+.cc-row-excluded .incl-toggle { opacity: 1; }
 .incl-toggle:hover { color: #fca5a5; }
 
 /* exclusion note — editable reason under the uid, only on excluded rows */

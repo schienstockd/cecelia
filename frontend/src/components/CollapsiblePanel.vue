@@ -27,7 +27,7 @@ import { usePanelResize } from '../composables/usePanelResize'
  *  `rightPanelCollapsed` is the app-wide shared fold — see the header. Adding a new key here (and
  *  the ref itself in `stores/settings.ts`) is the extension point when a panel needs an
  *  independent flag, e.g. the viewer window's sidebar. */
-type CollapsedKey = 'rightPanelCollapsed' | 'viewerWindowSideCollapsed'
+type CollapsedKey = 'rightPanelCollapsed' | 'viewerWindowSideCollapsed' | 'chainPaletteCollapsed'
 
 const props = withDefaults(defineProps<{
   /** localStorage key for THIS panel's width. Widths are per panel; the collapse state is not. */
@@ -42,12 +42,20 @@ const props = withDefaults(defineProps<{
    *  viewer window passes `viewerWindowSideCollapsed` because its sidebar holds different content
    *  and used to fold together with the module pages' right panel. */
   collapsedKey?: CollapsedKey
-}>(), { min: 200, max: 680, defaultWidth: null, collapsedKey: 'rightPanelCollapsed' })
+  /** Which side of the page the panel sits on. `left` mirrors it: the handle and the drag strip move to
+   *  its RIGHT edge and it folds away to the left (the Chains step palette). Give a left panel its own
+   *  `collapsedKey` — the shared flag belongs to the right-hand panel. */
+  side?: 'left' | 'right'
+}>(), { min: 200, max: 680, defaultWidth: null, collapsedKey: 'rightPanelCollapsed', side: 'right' })
 
 const settings = useSettingsStore()
 const { widthStyle, onResizeStart } = usePanelResize({
   min: props.min, max: props.max, default: props.defaultWidth, storageKey: props.storageKey,
+  edge: props.side === 'left' ? 'right' : 'left',
 })
+const left = props.side === 'left'
+// the chevron points where the panel will go: away to its own side when open, back out when folded
+const chevron = computed(() => (collapsed.value !== left) ? 'pi-angle-double-left' : 'pi-angle-double-right')
 
 // One accessor so the template stays a single expression regardless of which flag it is bound to.
 const collapsed = computed<boolean>({
@@ -57,16 +65,23 @@ const collapsed = computed<boolean>({
 </script>
 
 <template>
-  <div class="cc-panel" :class="{ collapsed }"
+  <div class="cc-panel" :class="{ collapsed, 'cc-panel-left': left }"
        :style="collapsed ? undefined : widthStyle">
-    <!-- drag the left edge to resize (persisted per panel) -->
+    <!-- drag the inner edge to resize (persisted per panel) -->
     <div v-if="!collapsed" class="cc-panel-resizer" @mousedown="onResizeStart"
          v-tooltip.top="'Drag to resize'" />
-    <button class="cc-panel-handle" data-guide="layout.rightPanelHandle"
+    <!-- two branches only because a tooltip's side is a directive modifier, not a value -->
+    <button v-if="left" class="cc-panel-handle" data-guide="layout.leftPanelHandle"
+            @click="collapsed = !collapsed"
+            v-tooltip.right="`${collapsed ? 'Show' : 'Hide'} ${label}`"
+            :aria-label="`${collapsed ? 'Show' : 'Hide'} ${label}`">
+      <i :class="['pi', chevron]" />
+    </button>
+    <button v-else class="cc-panel-handle" data-guide="layout.rightPanelHandle"
             @click="collapsed = !collapsed"
             v-tooltip.left="`${collapsed ? 'Show' : 'Hide'} ${label}`"
             :aria-label="`${collapsed ? 'Show' : 'Hide'} ${label}`">
-      <i :class="['pi', collapsed ? 'pi-angle-double-left' : 'pi-angle-double-right']" />
+      <i :class="['pi', chevron]" />
     </button>
     <!-- v-show, not v-if: collapsing must not tear down the content (and refetch everything on reopen) -->
     <div v-show="!collapsed" class="cc-panel-slot"><slot /></div>
@@ -105,4 +120,8 @@ const collapsed = computed<boolean>({
 }
 .cc-panel-resizer:hover { background: var(--cc-accent); }
 .cc-panel-slot { flex: 1; display: flex; min-width: 0; min-height: 0; overflow-y: auto; }
+/* side="left": the same three parts, mirrored — slot first, then the handle and the drag strip on the
+   panel's right edge, so it folds away to the left */
+.cc-panel-left { flex-direction: row-reverse; }
+.cc-panel-left .cc-panel-handle { border-left: none; border-right: 1px solid var(--cc-border); }
 </style>

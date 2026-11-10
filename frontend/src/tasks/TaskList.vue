@@ -292,7 +292,7 @@ const TL_COLUMNS: SelectionColumn[] = [
 .clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
-/* Per-status row tint, via SelectionTable's `rowClass` (the ImageTable `.row-excluded` precedent).
+/* Per-status row tint, via SelectionTable's `rowClass` (the ImageTable `.cc-row-excluded` precedent).
    Keyed off `TASK_STATUS[...].tone`, which exists for exactly this — a component tinting its own
    chrome consistently with the icon — so the tints come from the same tokens as the status lights
    instead of the four raw hexes the card stack carried. `done` had only a border colour, which a
