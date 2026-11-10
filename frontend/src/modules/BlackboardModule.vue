@@ -24,7 +24,7 @@ import { useBlackboardStore } from '../stores/blackboard'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ChipSelect from '../components/ChipSelect.vue'
-import { usePanelResize } from '../composables/usePanelResize'
+import SplitPage from '../components/SplitPage.vue'
 import {
   listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
@@ -66,11 +66,8 @@ const project = useProjectStore()
 const settings = useSettingsStore()
 const route = useRoute()
 
-// List-pane width: draggable + persisted, same composable Tasks + Chain use so the "grab the
-// divider and pull" gesture reads the same across the app. Handle on the list's RIGHT edge.
-const { widthStyle: listWidthStyle, onResizeStart: onListResizeStart } = usePanelResize({
-  min: 220, max: 640, default: 352, storageKey: 'cc-blackboard-list-width', edge: 'right',
-})
+// The list | entry split, its persisted width and the divider are SplitPage's (the shared frame
+// Tasks uses too).
 
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
 const hasProject = computed(() => projectMeta.hasProject)
@@ -599,14 +596,14 @@ onUnmounted(() => { mermaidRenderSeq++ })
 </script>
 
 <template>
-  <div class="bb-module">
-    <div v-if="!hasProject" class="bb-empty cc-empty-inline">
-      <i class="pi pi-lock" /> Open or create a project first.
-    </div>
+  <div v-if="!hasProject" class="bb-empty cc-empty-inline">
+    <i class="pi pi-lock" /> Open or create a project first.
+  </div>
 
-    <template v-else>
-      <!-- Toolbar — mirrors ChainModule's top bar shape. -->
-      <div class="bb-bar cc-row cc-row-loose">
+  <!-- The shared page frame: toolbar, list | entry split, divider -->
+  <SplitPage v-else storage-key="cc-blackboard-list-width" :min="220" :max="640" :default-width="352">
+    <template #toolbar>
+      <div class="cc-row cc-row-loose">
         <button class="cc-btn cc-btn-primary cc-btn-dense" data-guide="blackboard.new"
                 @click="beginNew"
                 v-tooltip.bottom="'Start a new blackboard entry'">
@@ -636,10 +633,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
                     @update:modelValue="v => outcomeFilter = v as OutcomeChoice" />
       </div>
 
-      <!-- Split: list left, entry right. Border-only divider, no floating panels. -->
-      <div class="bb-split">
-        <aside class="bb-list" :style="listWidthStyle">
-          <div class="bb-list-scroll">
+    </template>
+
+        <template #list>
           <SelectionTable class="bb-list-table" data-guide="blackboard.list"
                           selection-mode="single"
                           id-key="entryId"
@@ -695,13 +691,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
               </span>
             </template>
           </SelectionTable>
-          </div>
-          <!-- drag the list/entry divider (persisted). Handle on the list's RIGHT edge; drag
-               right widens the list. OUTSIDE the scroll wrapper so it can't scroll away, and BESIDE
-               it rather than overlaid, or it covers the scrollbar and swallows grabs of the thumb. -->
-          <div class="bb-divider" @mousedown="onListResizeStart"
-               v-tooltip.top="'Drag to resize the list'" />
-        </aside>
+        </template>
 
         <section class="bb-pane">
           <!-- Editor -->
@@ -932,51 +922,15 @@ onUnmounted(() => { mermaidRenderSeq++ })
           <AttachmentGallery v-if="galleryStart !== null" :items="galleryItems" :start="galleryStart"
                              @close="galleryStart = null" />
         </section>
-      </div>
-    </template>
-  </div>
+  </SplitPage>
 </template>
 
 <style scoped>
-/* Root — matches ChainModule shape: a full-height flex column, so the split fills the page and
-   the SelectionTable + entry pane each scroll on their own. */
-.bb-module {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  background: var(--cc-bg);
-}
-.bb-empty { padding: 2rem 1.25rem; }
-
-.bb-bar {
-  padding: 0.55rem 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  flex-shrink: 0;
-}
+/* the page frame (toolbar, list | entry split, divider) is SplitPage's */
+.bb-empty { padding: var(--cc-space-2xl) var(--cc-space-lg); }
 .bb-bar-spacer { flex: 1 1 auto; }
 
-.bb-split {
-  flex: 1 1 auto;
-  display: flex;
-  min-height: 0;
-}
-
 /* ── entry list ─────────────────────────────────────────────────────────────── */
-/* Width is driven by `usePanelResize` — `flex-shrink: 0` so the flex parent doesn't fight it.
-   A ROW: the scroll wrapper, then the divider beside it. */
-.bb-list {
-  flex-shrink: 0;
-  border-right: 1px solid var(--cc-border);
-  display: flex;
-  min-height: 0;
-  overflow: hidden;
-}
-/* Scroll wrapper: takes the flex space so the TABLE itself sits at natural height at the top.
-   Without this, `flex: 1` on the <table> stretches its rows to fill (one row => full-height row
-   because table-layout distributes remaining space across cells). */
-.bb-list-scroll { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
 .bb-list-table { width: 100%; }
 .bb-list-title { color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bb-list-title-profile { font-weight: 600; }
@@ -1006,17 +960,10 @@ onUnmounted(() => { mermaidRenderSeq++ })
    Colour is not the sole cue — thumbs-up / thumbs-down icons carry the semantic redundantly. */
 .bb-chip-outcome-good { background: rgba(86, 180, 233, 0.18); color: rgb(147, 197, 233); border-color: rgba(86, 180, 233, 0.5); }
 .bb-chip-outcome-bad  { background: rgba(213, 94, 0, 0.18);   color: rgb(240, 148, 68);   border-color: rgba(213, 94, 0, 0.5); }
-/* The divider: a grab strip on the pane's right edge, right of the scrollbar. Same shape
-   TasksModule uses — 5px wide, `col-resize` cursor, transient accent on hover. */
-.bb-divider {
-  flex: 0 0 5px;
-  cursor: col-resize;
-}
-.bb-divider:hover { background: var(--cc-accent); opacity: 0.35; }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */
 .bb-pane {
-  flex: 1 1 auto;
+  flex: 1 1 auto;   /* fills SplitPage's detail */
   padding: 0.75rem 1rem;
   display: flex; flex-direction: column;
   min-height: 0;

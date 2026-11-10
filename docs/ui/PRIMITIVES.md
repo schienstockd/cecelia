@@ -41,7 +41,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | The ITEM LIST inside a row's ⋯ overflow menu | `.cc-actions-menu` + `.cc-actions-item` (+ `.cc-actions-head` for a section label, `.danger`, `.armed`) in `style.css`, inside a `TeleportPopover flush`; destructive items arm in place with `ConfirmButton`. Hosts: `ImageTable`, `canvas/PopulationManager`, `kiwi/KiwiAsk`, `HpcSettings` | a per-component `.menu-item` block, or a dialog for a one-click action |
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
 | Standalone module page (not the image-table layout) | `components/ModulePage.vue` — a `#controls` slot + content, `layout="flow\|scroll\|fill"` | a per-page `.x-page`/`.x-head` wrapper, a page `<h1>`, or a descriptive subtitle paragraph |
-| Pipeline / writing-surface module page (toolbar + list-and-viewer split) | Match `modules/ChainModule.vue`'s shape — full-height flex column, toolbar on top, two-pane split below via `SelectionTable` + `usePanelResize({edge:'right'})`. Family: `ChainModule`, `TasksModule`, `BlackboardModule`. See *A pipeline / writing-surface module page* below | a per-page `.x-page`/`.x-head`/`.x-split` scaffold, or bordered `surface-1` boxes around the halves |
+| Pipeline / writing-surface module page (toolbar + list-and-viewer split) | `components/SplitPage.vue` — `#toolbar` (bar rows), optional `#list` (resizable, persisted via `storageKey`), default slot = the detail. Family: `TasksModule`, `BlackboardModule`, the Chains Live tab. See *A pipeline / writing-surface module page* below | a per-page `.x-page`/`.x-head`/`.x-split`/`.x-divider` scaffold, or bordered `surface-1` boxes around the halves |
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome. **One-open accordion**: give each section the same `accordion` keyword (= its profileStorage key) and its own `section` id; mark the default `default-open`. A script needing the same state calls `useSingleOpenSection(<keyword>)` — the same object, not a copy. In a side panel add `fill`, so the open section takes the height the closed ones leave and scrolls inside (Kiwi cockpit, viewer panel, guides dialog). `fill` alone works for any one section that should take the rest of a height-bounded flex column (ModuleLayout's maximised plots) | a per-file chevron toggle; `:open="isOpen('x')" @update:open="…"` wiring per section; `:deep(.cs-body)` flex overrides to make a section fill |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` — drag a thumb for one end, the span between for both; `v-model:lo/hi`, or `@update:pair` when the parent rebuilds the pair from its props | a hand-rolled dual-thumb range |
@@ -190,10 +190,11 @@ real axis — whether the page flows, scrolls itself, or is a full-height pane w
 extras go on the call site as a class (Vue puts the parent's scope ID on a child's root, so a scoped rule
 still applies).
 
-**A pipeline / writing-surface module page matches `ChainModule`'s shape.** `ChainModule`, `TasksModule`
-and `BlackboardModule` read the same: full-height flex column, toolbar on top, two-pane split below
-(`SelectionTable` list on the left, viewer or editor on the right, divider via
-`usePanelResize({edge:'right'})`). No bordered `surface-1` boxes around the halves — the borders are
+**A pipeline / writing-surface module page is a `SplitPage`.** `TasksModule`, `BlackboardModule` and the
+Chains Live tab read the same: full-height flex column, toolbar on top (the shared `--cc-bar-pad` bar),
+two-pane split below (`SelectionTable` list on the left, viewer or editor on the right, divider from
+`usePanelResize({edge:'right'})` inside `SplitPage`). The three used to hand-roll it; a col-resize
+divider in a module page now fails `utils/cssScenarios.test.ts`. No bordered `surface-1` boxes around the halves — the borders are
 dividers, not floating panels. Distinct from both `ModulePage` (single content area) and `ModuleLayout`
 (per-image work surface): a writing surface is project-scoped, not image-scoped. Reach for this shape
 when the page's job is "pick from a list, view/edit one entry at a time" — do not invent a per-page

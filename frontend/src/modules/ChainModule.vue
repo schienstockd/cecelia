@@ -25,6 +25,7 @@ import ParamRenderer from '../tasks/ParamRenderer.vue'
 import { clampParamsToSpec, savedValueFor } from '../tasks/paramValues'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import SplitPage from '../components/SplitPage.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import ChainFromHistoryModal from '../components/ChainFromHistoryModal.vue'
@@ -1469,8 +1470,9 @@ onActivated(async () => {
                            @close="historyOpen = false" @open="openFromHistory" />
 
     <!-- ── Live view ──────────────────────────────────────────────────────── -->
-    <div v-if="activeTab === 'live'" class="chain-live">
-      <div class="live-toolbar">
+    <SplitPage v-if="activeTab === 'live'" class="chain-live">
+      <template #toolbar>
+      <div class="live-toolbar cc-row">
         <label class="live-label cc-eyebrow">Run</label>
         <select
           v-if="runOptions.length"
@@ -1555,6 +1557,7 @@ onActivated(async () => {
         </TeleportPopover>
         <span v-if="!runOptions.length" class="live-hint cc-muted">No runs yet — start a chain run to see progress.</span>
       </div>
+      </template>
 
       <div v-if="liveNodes.length" class="live-canvas-wrap">
         <VueFlow
@@ -1592,7 +1595,7 @@ onActivated(async () => {
         <i class="pi pi-hourglass" style="font-size:2rem; opacity:0.2" />
         <p>No nodes for this run yet.</p>
       </div>
-    </div>
+    </SplitPage>
 
     <!-- ── Edit content: v-show so VueFlow instance survives tab switches ──── -->
     <div v-show="activeTab === 'edit'" class="edit-content">
@@ -2034,22 +2037,8 @@ onActivated(async () => {
 }
 
 /* ── Live view ────────────────────────────────────────────────────────────── */
-.chain-live {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.live-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  flex-shrink: 0;
-}
+.chain-live { flex: 1; min-height: 0; height: auto; }   /* SplitPage: toolbar + the live canvas, no list */
+.live-toolbar { flex-wrap: nowrap; }   /* + .cc-row; the bar chrome is SplitPage's */
 
 .live-label { flex-shrink: 0; }   /* + .cc-eyebrow */
 
