@@ -329,6 +329,11 @@ models-fetch = "python scripts/models_fetch.py"
 # app/test/runtests.jl. Parsing lives in frontend/src/utils/uiCopy.ts. See docs/UI.md → UI copy.
 ui-copy = "node scripts/ui_copy_inventory.mjs"
 
+# Screenshot every page of a running Cecelia and count the visible controls on each (GUI clarity
+# audit, docs/todo/GUI_CLARITY_PLAN.md). Point it at an ISOLATED instance — own CECELIA_DEV_DIR and
+# CECELIA_PORT_SLOT — never a working one; it refuses 8080/5173. Usage in the script header.
+gui-capture = "node scripts/gui_capture.mjs"
+
 # Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
 # frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails
 # until you do. Fetches the pinned lucide-static tarball (network). See scripts/vendor_icons.mjs.

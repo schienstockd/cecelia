@@ -43,6 +43,9 @@ export interface GuideCtx {
   // May this window see machine-wide settings (appControl.canManageMachine)? Steps about them carry
   // `onlyIf: c => c.canManageMachine` so other profiles' guides skip them.
   canManageMachine: boolean
+  // Are AI features on for this profile (observer.ai.enabled)? Steps that present Kiwi or Claude
+  // carry `onlyIf: c => c.aiEnabled`, so a tour with AI off doesn't advertise what it can't use.
+  aiEnabled: boolean
 }
 
 export type GatePredicate = (c: GuideCtx) => boolean

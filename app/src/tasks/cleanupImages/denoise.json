@@ -35,7 +35,7 @@
       "type": "select",
       "optionsFrom": "denoiseModels",
       "default": "",
-      "tip": "Trained on the Model Training page (Phase B)",
+      "tip": "Trained on the Model training page",
       "options": [
         { "label": "None", "value": "" }
       ]

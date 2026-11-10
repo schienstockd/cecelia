@@ -15,7 +15,7 @@
   it on the way back.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { fetchHpcSettings, fetchHpcEnv, installHpcEnv, onHpcEnvChanged, hpcTestBlocker,
   type HpcSettings, type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen } from '../lib/preferencesOpen'
@@ -597,8 +597,12 @@ const optionRefetch = debouncedLatest<null>(async () => {
 
 onUnmounted(() => optionRefetch.cancel())
 
+// Remember the last function the user PICKED per module. The fallback below is not a pick: saving it
+// would pin the page to whatever happened to be first, and a later reorder could never reach it.
+let fallbackPick = false
 watch(selectedTask, (task) => {
-  profileStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
+  if (fallbackPick) { fallbackPick = false; return }
+  profileStorage.setItem(`cc-fn:${props.module}`, task)
 })
 
 // Populate the form from remembered funParams: on function change, and on project/set switch
@@ -621,9 +625,15 @@ watch(() => props.defs, (defs) => {
   if (!defs.length) return
   if (selectedTask.value && defs.some(d => d.task === selectedTask.value)) return
   const saved = profileStorage.getItem(`cc-fn:${props.module}`)
-  // fall back to the TOP row as displayed — under headings that is the first group's first def
-  selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved
-    : (groupTaskDefs(defs)?.[0].defs[0] ?? defs[0]).task
+  if (saved && defs.some(d => d.task === saved)) { selectedTask.value = saved; return }
+  // fall back to the TOP row as displayed — under headings that is the first group's first def.
+  // The flag is cleared after this flush either way, so it can never swallow a later real pick.
+  const top = (groupTaskDefs(defs)?.[0].defs[0] ?? defs[0]).task
+  if (selectedTask.value !== top) {
+    fallbackPick = true
+    selectedTask.value = top
+    void nextTick(() => { fallbackPick = false })
+  }
 }, { immediate: true })
 
 // Axis gating — the frontend twin of the Julia gate. A task with `requires.axes` (e.g. tracking
@@ -1062,7 +1072,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
       <div class="run-row">
         <button
-          class="run-btn"
+          class="run-btn cc-btn cc-btn-primary cc-btn-run"
           data-guide="task.run"
           :disabled="!canRun"
           @click="run"
@@ -1085,21 +1095,23 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         />
       </div>
 
+      <!-- The pool is picked from the task; changing it is rare, so it sits behind one quiet button
+           together with the throttle (progressive disclosure), not as chips on every page. -->
       <div class="pool-row" v-if="pools.length > 0">
-        <span class="pool-label cc-muted cc-fs-xs"
-          v-tooltip.right="'How many tasks share a concurrency slot; GPU tasks use the gpu pool'">
-          Pool
-        </span>
-        <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool"
-          v-tooltip.bottom="'Which resource pool this run queues in'" />
-        <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon"
-          :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
+        <button ref="throttleBtn" class="pool-summary cc-btn cc-btn-bare cc-fs-2xs"
+          :class="{ 'cc-btn-on': throttleOpen }"
           @click="throttleOpen = !throttleOpen"
-          v-tooltip.left="'Throttle — how many tasks run at once, and how wide each may go'">
-          <i class="pi pi-sliders-h" />
+          v-tooltip.left="'Resource pool and throttle — which queue this run joins, how many run at once'">
+          <span class="cc-pool-tag"><i class="pi pi-server" />{{ selectedPool }}</span>
+          <i :class="['pi', throttleOpen ? 'pi-chevron-up' : 'pi-chevron-down']" />
         </button>
         <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
-          <PoolThrottle />
+          <div class="pool-pop">
+            <span class="cc-eyebrow cc-fs-2xs">Pool for this run</span>
+            <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool"
+              v-tooltip.bottom="'Which resource pool this run queues in; GPU tasks use the gpu pool'" />
+            <PoolThrottle />
+          </div>
         </TeleportPopover>
       </div>
     </section>
@@ -1182,17 +1194,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   padding-bottom: 0.5rem;
 }
 
-/* pool row */
-.pool-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-.pool-label { white-space: nowrap; flex-shrink: 0; }
-.pool-chips { flex: 1; min-width: 0; }
-.pool-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
-.pool-throttle:hover  { color: var(--cc-text); }
+/* pool row: one quiet button; the chips and the throttle open in its popover */
+.pool-row { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
+.pool-summary { gap: 0.25rem; color: var(--cc-text-dim); }   /* + .cc-pool-tag inside */
+.pool-pop { display: flex; flex-direction: column; gap: 0.5rem; }
 
 .section-heading { margin: 0 0 0.5rem; }
 /* Heading on the left, trailing icon-buttons grouped on the right so they stay together no matter
@@ -1302,28 +1307,5 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 /* Run + Preview on one line. `stretch` is what makes the preview buttons match Run's height without
    either side hardcoding a number — so a change to Run's padding can't silently desync them. */
 .run-row { display: flex; align-items: stretch; gap: 0.4rem; flex-wrap: wrap; }
-.run-btn {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  font-size: var(--cc-fs-md);
-  font-weight: 600;
-  padding: 0.55rem;
-  border-radius: var(--cc-radius-md);
-  border: none;
-  background: var(--cc-accent-fill);
-  color: #fff;
-  cursor: pointer;
-  transition: filter 0.12s;
-}
-.run-btn:hover:not(:disabled) { filter: brightness(1.12); }
-.run-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-}
+.run-btn { flex: 1 1 auto; width: auto; min-width: 0; }   /* + .cc-btn .cc-btn-primary .cc-btn-run; shares the row with Preview */
 </style>

@@ -896,7 +896,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
           </template>
           <div v-else class="uv-empty cc-empty cc-empty-overlay">
             <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
-            <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the cluster map.') }}</p>
+            <p>{{ loading ? 'Loading…' : (err || 'Select clustered images above to view the cluster map') }}</p>
           </div>
         </div>
       </SquarePlot>

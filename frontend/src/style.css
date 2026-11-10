@@ -99,6 +99,22 @@
   --cc-console-bar-h:  30px;
   --cc-console-open-h: 210px;
 
+  /* Spacing ladder (docs/todo/GUI_CLARITY_PLAN.md, Decision 11): padding, margin and gap take a step,
+     never a raw value. No 10px step — a 10px literal rounds to 8 or 12 at its site. The role tokens
+     below are what the shared shells use, so one change moves every bar or panel head at once. */
+  --cc-space-3xs: 2px;
+  --cc-space-2xs: 4px;
+  --cc-space-xs:  6px;
+  --cc-space-sm:  8px;
+  --cc-space-md:  12px;
+  --cc-space-lg:  16px;
+  --cc-space-xl:  24px;
+  --cc-space-2xl: 32px;
+  --cc-bar-pad:     var(--cc-space-sm) var(--cc-space-md);   /* page bars: SetBar, the module action bar */
+  --cc-head-pad:    var(--cc-space-xs) var(--cc-space-sm);   /* small panel heads: floating + canvas panels */
+  --cc-section-pad: var(--cc-space-xs) var(--cc-space-lg);   /* a collapsible section's header row */
+  --cc-page-pad:    var(--cc-space-lg) var(--cc-space-xl);   /* a page's outer padding (ModulePage) */
+
   /* Corner radius scale — collapses the ~8 ad-hoc radii (0.2/0.25/0.3/0.35/0.4…) to two steps.
      -sm = small controls/chips/inputs; -md = cards/panels/dialogs. Use these, not a raw rem. */
   --cc-radius-xs:   0.2rem;   /* ≈  3px — chips, swatches, inline code, micro chrome */
@@ -253,6 +269,21 @@ body {
   border-color: var(--cc-accent-fill);
 }
 .cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+
+/* THE Run of a panel — the one action that starts work (TaskRunner Run, Chains Run, Animation Render,
+   Batch movies Generate). With `.cc-btn .cc-btn-primary`: full width, one size, and a disabled state
+   that reads as "not yet" rather than a faded purple. One look, so Run is found in the same place and
+   shape on every page. */
+.cc-btn-run {
+  width: 100%;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  font-size: var(--cc-fs-md);
+  font-weight: 600;
+  border-radius: var(--cc-radius-md);
+}
+.cc-btn-run:disabled { opacity: 0.35; background: var(--cc-surface-2); border-color: var(--cc-surface-2); color: var(--cc-text-dim); }
 
 .cc-btn-ghost {
   background: var(--cc-surface-2);
@@ -506,6 +537,9 @@ body {
 }
 .cc-empty-overlay { position: absolute; inset: 0; }
 .cc-empty-lg { padding: 4rem 2rem; gap: 0.5rem; }
+/* A pane's "nothing selected yet" line — the plots area of a module page before an image is picked.
+   With `.cc-empty-inline`; one look and one wording pattern ("Select … above to …") on every page. */
+.cc-empty-pane { padding: 1.25rem; }
 
 /* Numeric value readout shown beside a control/metric (slider values, counts, occupancy). Default is
    muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence), or a density

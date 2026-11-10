@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
+import { taskPageLabel, refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
          turnMeta, searchRefs, viewerRefFor, kindLabel, claimText, plainError, attachmentRows, claimRows,
          TASK_PAGES, taskLanding, mentionTargets, type KiwiTurn } from './kiwiTurn'
 
@@ -250,5 +250,29 @@ describe('mentionTargets over the real task specs', () => {
       .find(l => l.includes('HMM states'))!
     const links = linkTaskMentions(line, '/clust-tracks', targets).filter(s => s.to)
     expect(links.map(s => [s.text, s.to!.page])).toEqual([['HMM states', 'Behaviour']])
+  })
+})
+
+describe('taskPageLabel', () => {
+  it('names a category by its sidebar page, in sidebar order', () => {
+    expect(taskPageLabel('cleanupImages').label).toBe('Cleanup')
+    expect(taskPageLabel('opticalFlow').label).toBe('Model training')
+    expect(taskPageLabel('clustPops').label).toBe('Cluster cells')
+    expect(taskPageLabel('cleanupImages').order).toBeLessThan(taskPageLabel('segment').order)
+    expect(taskPageLabel('segment').order).toBeLessThan(taskPageLabel('behaviour').order)
+  })
+
+  it('gives import and export one page, so the palette shows one heading', () => {
+    expect(taskPageLabel('importImages')).toEqual(taskPageLabel('exportImages'))
+  })
+
+  it('every built-in category resolves to a sidebar page', () => {
+    for (const cat of Object.keys(TASK_PAGES))
+      expect(taskPageLabel(cat).order, cat).toBeLessThan(Number.MAX_SAFE_INTEGER)
+  })
+
+  it('names a custom module as its sidebar page does, and sorts it last', () => {
+    expect(taskPageLabel('myLabTools')).toEqual({ label: 'My Lab Tools', order: Number.MAX_SAFE_INTEGER })
+    expect(taskPageLabel('myImages').label).toBe('My Images')   // the sidebar keeps "Images"
   })
 })

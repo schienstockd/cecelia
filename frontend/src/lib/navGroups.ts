@@ -61,7 +61,7 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: 'Analysis',
     items: [
       { to: '/analysis',   label: 'Analysis board', icon: 'pi-clone',     tip: 'Free-form canvas combining plots across modules, images and segmentations.', requiresProject: true },
-      { to: '/blackboard', label: 'Blackboard',     icon: 'pi-align-left', tip: 'Shared Markdown notes and diagrams — the working record of an analysis, iterable with Claude.', requiresProject: true },
+      { to: '/blackboard', label: 'Blackboard',     icon: 'pi-align-left', tip: 'Shared Markdown notes and diagrams — the working record of an analysis.', requiresProject: true },
       { to: '/notebooks',  label: 'Notebooks',      icon: 'pi-book',      tip: 'Pure-Julia downstream analysis in Pluto notebooks (load objects, pop_df, plot, export).', requiresProject: true },
       { to: '/animation', label: 'Animation',      icon: 'pi-video', tip: 'Capture viewer snapshots and record them as movies (channels, populations, colour-by).', requiresProject: true },
       { to: '/batch-movies', label: 'Batch movies', icon: 'pi-images', tip: 'Author one config (channels, overlays, colour-by) and generate a timelapse mp4 for every selected image.', requiresProject: true },
@@ -80,7 +80,8 @@ export const NAV_GROUPS: NavGroup[] = [
 // User custom-module categories that have NO built-in page get their own generic page + nav entry
 // (docs/CUSTOM_MODULES.md). Tasks in an existing category surface on that category's real page, so
 // only `builtin === false` categories appear here. Group is hidden entirely when there are none.
-function prettifyCategory(name: string): string {
+/** A custom category's page name as the sidebar shows it ('myLabTools' → 'My Lab Tools'). */
+export function prettifyCategory(name: string): string {
   const spaced = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim()
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }

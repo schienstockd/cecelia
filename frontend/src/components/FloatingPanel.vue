@@ -224,8 +224,8 @@ function onResizeDown(e: PointerEvent, edges: Edges) {
 .fp-header {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.4rem 0.3rem 0.6rem;
+  gap: var(--cc-space-xs);
+  padding: var(--cc-head-pad);
   background: var(--cc-surface-2);
   border-bottom: 1px solid var(--cc-border);
   cursor: move;

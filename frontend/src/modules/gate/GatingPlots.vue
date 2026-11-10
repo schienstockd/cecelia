@@ -567,11 +567,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 
 <template>
   <div class="gating-plots">
-    <div v-if="!props.imageUid" class="gp-empty cc-muted">Select one image above to gate.</div>
+    <div v-if="!props.imageUid" class="cc-empty-inline cc-empty-pane">Select one image above to gate</div>
     <template v-else>
       <div class="gp-bar">
         <label>segmentation
-          <select data-guide="gate.segmentation" v-model="pageVn" v-tooltip.bottom="'Which segmentation (labelProps) to gate on'"
+          <select data-guide="gate.segmentation" v-model="pageVn" v-tooltip.bottom="'Which segmentation to gate on'"
                   @change="load()">
             <option v-for="v in g.valueNames" :key="v" :value="v">{{ v }}</option>
           </select>
@@ -746,7 +746,6 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 <style scoped>
 /* fill all available height so the plot workspace isn't capped */
 .gating-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.gp-empty { padding: 20px; }   /* + .cc-muted */
 .gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */

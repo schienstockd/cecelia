@@ -11,32 +11,37 @@ export interface SharedWorkstationItem {
   label: string
   tip: string      // tooltip on the toggle
   hint: string     // the line under it
+  needsAi?: boolean  // about Claude sessions: shown only while "Allow AI features" is on
 }
 
+// "Allow AI features" leads: the Claude-session rows below it only mean something while it is on.
 export const SHARED_WORKSTATION_ITEMS: readonly SharedWorkstationItem[] = [
   {
+    key: 'aiAllowed',
+    label: 'Allow AI features',
+    tip: 'Off turns AI off for every profile on this machine, whatever each one chose',
+    hint: 'Kiwi, claim review and Claude in the terminal · everything else works the same',
+  },
+  {
     key: 'oneClaudeLogin',
+    needsAi: true,
     label: 'One Claude login at a time',
     tip: 'Picking a profile logs every other profile out of Claude',
     hint: 'Never peanut — its login is terminal claude\'s',
   },
   {
     key: 'claudeLogoutOnQuit',
+    needsAi: true,
     label: 'Log out of Claude on quit',
     tip: 'Quitting or closing Cecelia logs every profile out of Claude',
     hint: 'Never peanut — its login is terminal claude\'s',
   },
   {
     key: 'purgeClaudeConversations',
+    needsAi: true,
     label: 'Delete Claude conversations on log out',
     tip: 'Log out, quit or the next pick deletes each profile\'s transcripts and prompt history',
     hint: 'Keeps login and memory · skips a profile with Claude still running',
-  },
-  {
-    key: 'aiAllowed',
-    label: 'Allow AI features',
-    tip: 'Off turns AI off for every profile on this machine, whatever each one chose',
-    hint: 'Kiwi, claim review and Claude in the terminal · everything else works the same',
   },
 ]
 
@@ -44,10 +49,12 @@ export interface SharedWorkstationRow extends SharedWorkstationItem { value: boo
 
 /** The catalogue joined with the server's values. A key the server doesn't know yet (older
  *  backend) is dropped rather than shown as a toggle that can't be saved; a server key with no
- *  catalogue entry is ignored (no label to show). */
+ *  catalogue entry is ignored (no label to show). The Claude-session rows drop out while AI is
+ *  not allowed (a server without `aiAllowed` counts as allowed, as it always was). */
 export function sharedWorkstationRows(items: Record<string, unknown>): SharedWorkstationRow[] {
+  const aiAllowed = items.aiAllowed !== false
   return SHARED_WORKSTATION_ITEMS
-    .filter(it => typeof items[it.key] === 'boolean')
+    .filter(it => typeof items[it.key] === 'boolean' && (aiAllowed || !it.needsAi))
     .map(it => ({ ...it, value: items[it.key] as boolean }))
 }
 

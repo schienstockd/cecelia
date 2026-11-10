@@ -1,5 +1,5 @@
 import type { ComparisonsResult } from './types'
-import type { QcFinding } from '../lib/qc'
+import { summarizeFindings, type QcFinding } from '../lib/qc'
 
 /**
  * The stats readout the population picker shows for the ACTIVE plot: which test ran, and why.
@@ -26,4 +26,15 @@ export const emptyStatsInfo = (): StatsInfo => ({ note: '', reason: '', findings
  */
 export function statsInfoOf(cmp: ComparisonsResult | undefined | null): StatsInfo {
   return { note: cmp?.methodNote ?? '', reason: cmp?.autoReason ?? '', findings: cmp?.findings ?? [] }
+}
+
+/**
+ * The footer notice for a comparison's QC findings (cells counted as replicates, too few images for
+ * any test to reach p < 0.05). These undermine the p-values drawn on the plot, so they show ON the
+ * plot, not only in the options popover — folded the same way as an image's QC badge
+ * (`summarizeFindings`). `null` while stats are off or the comparison is clean.
+ */
+export function statsNotice(info: StatsInfo, statsEnabled: boolean): { text: string; tip: string } | null {
+  const sum = statsEnabled ? summarizeFindings(info.findings.filter(f => f.level === 'warn')) : null
+  return sum && { text: sum.short, tip: sum.long }
 }

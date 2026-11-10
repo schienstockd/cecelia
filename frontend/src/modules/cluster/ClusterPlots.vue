@@ -306,7 +306,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 
 <template>
   <div class="cluster-plots">
-    <div v-if="!imageUids.length" class="cp-empty cc-empty-inline">Select clustered image(s) above to explore clusters.</div>
+    <div v-if="!imageUids.length" class="cc-empty-inline cc-empty-pane">Select clustered images above to explore clusters</div>
     <template v-else>
       <div class="cp-bar">
         <label>clustering
@@ -433,7 +433,6 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 
 <style scoped>
 .cluster-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.cp-empty { padding: 20px; }   /* + .cc-empty-inline (row/colour) */
 .cp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .cp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .cp-bar select { min-width: 7rem; }

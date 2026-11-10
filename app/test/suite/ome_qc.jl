@@ -2963,14 +2963,14 @@ end
     @test "TimeIncrementDeclared" in Cecelia._OME_DERIVED_META_KEYS
 
     # The tier order, through the one entry point import and resync share. `recover` stands in for
-    # the file reader: measured → wins; irregular → nothing, declared NOT applied; absent → declared.
+    # the file reader: measured → wins; absent → declared. Irregular → nothing, declared NOT applied:
+    # result_review_paused_interval.jl.
     fill(rec; m = Dict{String,Any}("SizeT" => 60)) =
         (Cecelia._fill_source_time_increment!(m, dt, "/src.ims", tempdir(); recover = rec), m)
     measured(zm, src, dir; irregular, kw...) = (zm["TimeIncrement"] = 29.5; true)
     paused(zm, src, dir; irregular, kw...)   = (irregular[] = true; false)
     absent(zm, src, dir; irregular, kw...)   = false
     ok, m = fill(measured); @test ok && m["TimeIncrement"] == 29.5 && !haskey(m, "TimeIncrementDeclared")
-    ok, m = fill(paused);   @test !ok && !haskey(m, "TimeIncrement")      # RESULT-REVIEW: result-ee2a25f0
     ok, m = fill(absent);   @test ok && m["TimeIncrement"] == 30.0
     ok, m = fill(absent; m = Dict{String,Any}("SizeT" => 1)); @test !ok && !haskey(m, "TimeIncrement")
     ok, m = fill(absent; m = Dict{String,Any}("SizeT" => 60, "TimeIncrement" => 5.0)); @test !ok && m["TimeIncrement"] == 5.0

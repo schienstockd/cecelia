@@ -453,6 +453,7 @@ def agent_recital_gate(message: str) -> str | None:
 
 #: The comment a committed result-review repro carries — one definition, shared with the lint.
 from cecelia.effectiveness.log import REPRO_MARKER  # noqa: E402
+from cecelia.effectiveness.maintainability_lint import MARKER_HEADER_LINES  # noqa: E402
 
 
 def _staged_changed_files() -> list[str]:
@@ -470,14 +471,47 @@ def _head_text(path: str) -> str:
     return _git("show", f"HEAD:{path}") or ""
 
 
+def _staged_added_files() -> list[str]:
+    """Paths the staged change adds, or renames to."""
+    out = _git("diff", "--cached", "--name-status", "-M") or ""
+    paths = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if parts and parts[0][:1] == "A" and len(parts) > 1:
+            paths.append(parts[1])
+        elif parts and parts[0][:1] == "R" and len(parts) > 2:
+            paths.append(parts[2])
+    return paths
+
+
+def _staged_text(path: str) -> str:
+    return _git("show", f":{path}") or ""
+
+
+def _relocated_slugs(changed: list[str]) -> set[str]:
+    """Repros this commit moves into a file of their own (`docs/ai-assist/RESULT_REVIEW.md`): a file it
+    adds carries the slug's marker in its header, and no changed file still holds the marker. The
+    one sanctioned edit to a held file — the new file is held from then on. A repro left behind, or
+    a marker below the new file's header, is still an edit to the repro."""
+    left = {slug for path in changed for slug in REPRO_MARKER.findall(_staged_text(path))}
+    moved = set()
+    for path in _staged_added_files():
+        header = "\n".join(_staged_text(path).splitlines()[:MARKER_HEADER_LINES])
+        moved |= set(REPRO_MARKER.findall(header))
+    return moved - left
+
+
 def reviewer_test_gate(message: str) -> str | None:
     """Gate 4: the author may fix the code, never the result review's test. A commit that edits,
     renames or deletes a file carrying `RESULT-REVIEW: <slug>` needs `[<slug>: false_positive:
-    <reason>]` in its message, which sends the finding to the owner (`record.shipped_reproduced`)."""
+    <reason>]` in its message, which sends the finding to the owner (`record.shipped_reproduced`) —
+    unless the commit moves the repro into a file of its own (`_relocated_slugs`)."""
     pairs = {(s, o) for s, o, _ in _parse_pairs(message)}
-    held = sorted({(slug, path) for path in _staged_changed_files()
+    changed = _staged_changed_files()
+    relocated = _relocated_slugs(changed)
+    held = sorted({(slug, path) for path in changed
                    for slug in REPRO_MARKER.findall(_head_text(path))
-                   if (slug, "false_positive") not in pairs})
+                   if (slug, "false_positive") not in pairs and slug not in relocated})
     if not held:
         return None
     listed = "\n".join(f"  - `{path}` holds the repro for `{slug}`" for slug, path in held)
