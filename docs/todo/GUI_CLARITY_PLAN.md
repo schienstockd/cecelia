@@ -75,6 +75,8 @@ rather than one screen at a time.
     - **Unchanged:** viewer green, Kiwi teal, `--cc-sev-*` status colours, Okabe-Ito maturity dots.
     - **Vermilion and crimson** only on Welcome and empty states (too close to fail/danger).
     Mock: `hybrid v3` (not committed; rendered from the review's palette).
+    **Built** (tokens in `style.css`: surfaces, `--cc-primary-fill`, `--cc-next-fill`, `--cc-stage-*`;
+    the checks cluster's plum frame lands with the checks slice).
 16. **The data type lights pages, never hides them** (maintainer, 2026-11-10; journey review N1). A
     set's recipe is suggested from its axes (time axis → a timelapse recipe), confirmed once per set,
     never applied silently. With no recipe, the next-step slot falls back to "from what has run on
