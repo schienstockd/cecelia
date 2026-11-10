@@ -77,6 +77,8 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-fs-3xs` `-2xs` `-xs` `-sm` `-md` `-lg` | `0.56` `0.62` `0.68` `0.75` `0.82` `0.9rem` | ≈9 · 10 · 11 · 12px · body · 14px |
 | `--cc-header-h` · `--cc-sidebar-w` · `--cc-runner-w` | `40px` · `190px` · `280px` | Header · sidebar · TaskRunner panel |
 | `--cc-console-bar-h` · `--cc-console-open-h` | `30px` · `210px` | Console collapsed · expanded |
+| `--cc-space-3xs` `-2xs` `-xs` `-sm` `-md` `-lg` `-xl` `-2xl` | `2` `4` `6` `8` `12` `16` `24` `32px` | padding · margin · gap. No 10px step: round to 8 or 12 at the site |
+| `--cc-bar-pad` · `--cc-head-pad` · `--cc-section-pad` · `--cc-page-pad` | `8/12` · `6/8` · `6/16` · `16/24px` | page bars (SetBar, action bar) · small panel heads (floating, canvas) · collapsible section header · page outer padding (ModulePage). The shared shells use only these (`cssScenarios.test.ts` → *raw spacing*) |
 
 ### Toast notifications (transient foreground feedback)
 
