@@ -570,3 +570,20 @@ describe('panel sections', () => {
     for (const p of PANELS) expect(RAW['/src/' + p], p).toMatch(/class="[^"]*\bcc-panel-section\b/)
   })
 })
+
+describe('split pages', () => {
+  // Tasks, Blackboard and the Chains Live tab are SplitPage (toolbar + resizable list | detail). A
+  // module page drawing its own col-resize divider is a fourth copy of that frame.
+  it('no module page hand-rolls a list divider', () => {
+    const hits = Object.entries(RAW)
+      .filter(([path]) => /\/src\/modules\/[^/]+\.vue$/.test(path))
+      .filter(([, text]) => styleBlocks(text).flatMap(cssRules).some(r => /cursor:\s*col-resize/.test(r.body)))
+      .map(([path]) => path)
+    expect(hits).toEqual([])
+  })
+
+  it('the three pages are built on it', () => {
+    for (const p of ['modules/TasksModule.vue', 'modules/BlackboardModule.vue', 'modules/ChainModule.vue'])
+      expect(RAW['/src/' + p], p).toMatch(/<SplitPage\b/)
+  })
+})

@@ -18,7 +18,7 @@ import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import { taskRows, taskMatchesQuery, taskPoolOptions } from '../utils/taskRows'
-import { usePanelResize } from '../composables/usePanelResize'
+import SplitPage from '../components/SplitPage.vue'
 import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
@@ -134,10 +134,8 @@ const rows = computed(() => taskRows(filtered.value, {
 // Starting widths, not minimums: the table is `fit="fill"` (the default), so it is exactly the pane's
 // width and the leftover is shared out. `fit="content"` was wrong here — it makes the declared sum a
 // MIN width, which overflowed this pane by 184px and pushed Time and the progress bar off-screen.
-// The list/log divider — the shared resize composable, with the handle on the list's RIGHT edge.
-// Wider by default than the hand-rolled list's 340px, because this one carries six columns.
-const { widthStyle: listWidthStyle, onResizeStart: onListResizeStart } =
-  usePanelResize({ min: 280, max: 760, default: 440, storageKey: 'cc-tasks-list-width', edge: 'right' })
+// The list/log divider is SplitPage's (the shared page frame); 440px by default because the list
+// carries six columns.
 
 // Any view preference off its default? Lights the View button.
 const viewChanged = computed(() =>
@@ -273,10 +271,11 @@ const FILTERS: ChipOption[] = [
 </script>
 
 <template>
-  <div class="tm-shell">
+  <SplitPage storage-key="cc-tasks-list-width" :min="280" :max="760" :default-width="440">
 
     <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
-    <div class="tm-toolbar">
+    <template #toolbar>
+    <div class="tm-toolbar cc-row">
       <!-- The pop-out window has no header and no sidebar, so nothing else in it names the project —
            and it FOLLOWS switches made in the main window, silently rebuilding the list. Naming the
            project here is what makes that legible (and is how you can see the follow working at all).
@@ -326,7 +325,7 @@ const FILTERS: ChipOption[] = [
     </div>
 
     <!-- ── Filters — status and pool, two groups so they combine (failed AND gpu) ── -->
-    <div class="tm-filters cc-row cc-row-loose">
+    <div class="cc-row cc-row-loose">
       <ChipSelect variant="segmented"
         :options="FILTERS" :model-value="statusFilter"
         aria-label="Filter tasks by status"
@@ -343,8 +342,9 @@ const FILTERS: ChipOption[] = [
       </span>
     </div>
 
+    </template>
+
     <!-- ── Body ───────────────────────────────────────────────────────── -->
-    <div class="tm-body">
 
       <!-- Task list — the canonical table (docs/UI.md). `single`: a row IS selected here, and what it
            selects is what the log pane shows. The selected-row highlight is the table's own amber
@@ -352,8 +352,7 @@ const FILTERS: ChipOption[] = [
            (purple = form-control chrome). See docs/todo/TASK_LIST_UNIFICATION_PLAN.md.
            `@row-click` rather than `@update:model-value` — clicking the row that is already selected
            emits no model change, and re-opening a row is what triggers its log backfill. -->
-      <div class="tm-list" :style="listWidthStyle">
-        <div class="tm-list-scroll">
+      <template #list>
         <SelectionTable
           class="tm-table" selection-mode="single" density="compact"
           :columns="TM_COLUMNS" :rows="rows"
@@ -431,14 +430,7 @@ const FILTERS: ChipOption[] = [
 
           <template #empty>No tasks.</template>
         </SelectionTable>
-        </div>
-        <!-- drag the list/log divider (persisted). Handle on the list's RIGHT edge, hence
-             `edge: 'right'` — dragging right widens the list. OUTSIDE the scrolling half, or it
-             scrolls away with the rows; and BESIDE it rather than overlaid, or it sits on top of the
-             list's scrollbar and swallows every grab of the thumb. -->
-        <div class="tm-divider" @mousedown="onListResizeStart"
-          v-tooltip.top="'Drag to resize the list'" />
-      </div>
+      </template>
 
       <!-- Log panel -->
       <div class="tm-log-panel">
@@ -494,28 +486,13 @@ const FILTERS: ChipOption[] = [
           <span>Select a task to view its log.</span>
         </div>
       </div>
-
-    </div>
-  </div>
+  </SplitPage>
 </template>
 
 <style scoped>
-.tm-shell {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-}
-
+/* the page frame (toolbar, list | log split, divider) is SplitPage's */
 /* ── Toolbar ──────────────────────────────────────────────────────────── */
-.tm-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  flex-shrink: 0;
-  background: var(--cc-surface-1);
-}
+.tm-toolbar { flex-wrap: nowrap; }   /* + .cc-row; the bar chrome is SplitPage's */
 .tm-title-proj { font-weight: 400; }
 .tm-title {
   font-size: var(--cc-fs-md);
@@ -526,13 +503,6 @@ const FILTERS: ChipOption[] = [
 }
 .tm-search { width: 12rem; flex-shrink: 1; min-width: 6rem; }
 
-/* the filter row — only things that narrow the list */
-.tm-filters {              /* + cc-row cc-row-loose — this site's own half: the bar chrome */
-  padding: 0 0.75rem 0.4rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-  background: var(--cc-surface-1);
-}
 
 .tm-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
 
@@ -540,32 +510,6 @@ const FILTERS: ChipOption[] = [
 .tm-icon { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .tm-icon:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .tm-icon-set { color: var(--cc-accent); }               /* a view preference is off its default */
-
-/* ── Body ─────────────────────────────────────────────────────────────── */
-.tm-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* ── Task list ────────────────────────────────────────────────────────── */
-/* The pane; the rows are SelectionTable's, at `compact` density. Width comes from `usePanelResize`
-   (draggable + persisted) rather than a constant — 340px could not hold six columns and any one
-   number is wrong for someone. `overflow: auto` is a backstop for a user who drags the COLUMNS wider
-   than the pane; the fill layout means it is otherwise dormant. */
-.tm-list {
-  flex-shrink: 0;
-  display: flex;                 /* scroll half | divider — side by side, never stacked */
-  border-right: 1px solid var(--cc-border);
-  overflow: hidden;              /* the scrolling is the inner half's, so the divider can't scroll away */
-}
-.tm-list-scroll { flex: 1; min-width: 0; height: 100%; overflow: auto; }
-/* the divider: a grab strip on the pane's right edge, right of the scrollbar (it used to overlay it) */
-.tm-divider {
-  flex: 0 0 5px;
-  cursor: col-resize;
-}
-.tm-divider:hover { background: var(--cc-accent); opacity: 0.35; }
 
 .row-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */

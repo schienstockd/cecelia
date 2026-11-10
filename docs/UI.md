@@ -2708,6 +2708,8 @@ The canvas uses `v-show` (not `v-if`) so VueFlow's state is preserved when switc
 
 ### Layout — Live tab
 
+A `SplitPage` with no list: the run toolbar (`#toolbar`) above the live canvas — the same frame and bar as Tasks and Blackboard.
+
 The Live tab shows real-time status of chain nodes received via WebSocket. Each `chain:node:*`
 event upserts a task in the task store (keyed `runId::nodeId::imageUid`). The Live canvas renders
 these as a grid: one row per `nodeId`, one column per `imageUid`.
