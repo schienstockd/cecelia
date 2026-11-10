@@ -310,5 +310,6 @@ function _image_payload(img::CciaImage)
     )
 end
 
-_set_payload(s::CciaSet) = (; uid=s.uid, name=s.name,
+# `recipe`: the processing recipe the set follows (GUI_CLARITY_PLAN Decision 13), or `nothing`.
+_set_payload(s::CciaSet) = (; uid=s.uid, name=s.name, recipe=get(s.meta, "recipe", nothing),
                               images=[_image_payload(i) for i in s._images])
