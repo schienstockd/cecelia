@@ -161,7 +161,10 @@
       "north2006"
      ],
      "qcCodes": [
-      "af.bleedthrough"
+      "af.bleedthrough",
+      "acq.shares_object",
+      "acq.shares_object_image",
+      "acq.shares_all"
      ]
     },
     {
@@ -197,7 +200,8 @@
       "import.channel_saturated",
       "import.clipped_deep",
       "af.saturated_input",
-      "denoise.channel_saturated"
+      "denoise.channel_saturated",
+      "acq.gain_high"
      ]
     },
     {
