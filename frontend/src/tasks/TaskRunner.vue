@@ -44,6 +44,8 @@ import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
 import { useStoredSectionOpen } from '../utils/sectionOpen'
 import InlineNote from '../components/InlineNote.vue'
+import PhysicalSizeDialog from '../components/PhysicalSizeDialog.vue'
+import { calibrationCheckpoint, checkpointCoversGate, type CheckpointLine } from '../utils/calibrationCheckpoint'
 import CcToggle from '../components/CcToggle.vue'
 import { useFieldDraft } from '../composables/useFieldDraft'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -672,6 +674,24 @@ const activeTaskGatingReason = computed(() =>
   taskDef.value ? gatingReasonFor(taskDef.value) : ''
 )
 
+// ── Pre-run checkpoint ────────────────────────────────────────────────────────
+// A task that measures in physical units (`requires.scale`) gets one line per calibration finding on
+// the selected images, each with a Fix that opens the size & timing editor for the images it covers.
+// Advisory: nothing here touches `canRun` (utils/calibrationCheckpoint.ts). When the only gate is a
+// missing scale and these lines name every image it blocks, the generic gate note steps aside.
+const checkpoint = computed(() => calibrationCheckpoint(taskDef.value, selectedImages.value))
+const showGatingNote = computed(() => !!activeTaskGatingReason.value &&
+  !checkpointCoversGate(taskDef.value, selectedImages.value, checkpoint.value))
+// Fix opens the editor on the line's FIRST image only. The images sharing a finding can have
+// different true calibrations, so writing one form to all of them would overwrite the right values;
+// the dialog's own "Fill flagged" / "Copy to selected" are the explicit wide-reaching actions.
+const fixing = ref<{ setUid: string; uid: string } | null>(null)
+function fixCalibration(line: CheckpointLine) {
+  const uid = line.uids[0]
+  const set = projectStore.sets.find(s => s.images.some(i => i.uid === uid))
+  if (set) fixing.value = { setUid: set.uid, uid }
+}
+
 // A `required` param left empty, checked HERE rather than after the run. The server refuses these
 // too, but only once the task has been queued and given a pool slot — so the user learned they had
 // picked nothing from a log line, minutes later. First message only: the button is one line, and
@@ -919,6 +939,17 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </template>
       </div>
 
+      <!-- pre-run checkpoint: calibration the picked task's maths reads, per finding, with its Fix -->
+      <div v-if="checkpoint.length" class="fn-checkpoint">
+        <InlineNote v-for="l in checkpoint" :key="l.code" class="cc-fs-xs" severity="warn"
+                    :short="l.short" :detail="l.detail">
+          <button class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-xs" @click="fixCalibration(l)"
+                  v-tooltip.bottom="l.uids.length > 1 ? 'Open size & timing, first of these images' : 'Open size & timing'">Fix</button>
+        </InlineNote>
+      </div>
+      <PhysicalSizeDialog v-if="fixing" :set-uid="fixing.setUid" :focus-uid="fixing.uid"
+                          :selected-uids="[]" @close="fixing = null" />
+
       <div v-if="taskDef && (canHpc || otherEnvs.length)" class="cc-row fn-run-on">
         <span class="cc-muted cc-fs-xs">Run on</span>
         <ChipSelect v-if="canHpc" class="env-switch" variant="segmented" :options="TARGET_OPTIONS"
@@ -928,7 +959,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
                 v-tooltip.right="`Runs in the ${env} environment`">{{ env }}</span>
         </template>
       </div>
-      <InlineNote v-if="activeTaskGatingReason" class="fn-gating cc-fs-xs" severity="warn"
+      <InlineNote v-if="showGatingNote" class="fn-gating cc-fs-xs" severity="warn"
                   :short="activeTaskGatingReason" detail="Selected images do not carry the axes this task needs" />
       <div v-if="onHpc && hpcForm" class="hpc-res cc-fs-xs">
         <label v-for="f in hpcFields" :key="f.key" class="hpc-res-cell">
@@ -1218,6 +1249,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 }
 .fn-effect .pi { font-size: var(--cc-fs-2xs); }
 .fn-about { margin-top: 0.3rem; min-width: 0; }
+.fn-checkpoint { display: flex; flex-direction: column; gap: var(--cc-space-3xs); margin-top: var(--cc-space-2xs); min-width: 0; }
 .fn-purpose { margin: 0; overflow-wrap: anywhere; }
 /* + cc-section-toggle (row) + cc-eyebrow (label tier); only the inset is ours */
 .fn-when-toggle { padding: 0.3rem 0 0.1rem; }
