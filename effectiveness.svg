@@ -1,0 +1,359 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 692" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" fill="#2a2a2a">
+<title id="t">Agent pre-commit reviews</title>
+<desc id="d">Week of Sep 28–Oct 4: 196 changes reviewed across 53 sessions, 149 PRs merged; 168 findings, 133 fixed before commit, 10 shipped knowingly, 5 called a false positive, 14 dropped, 6 no outcome logged (Fan-out audit: 100 findings, 75 fixed before commit, median wait 41.8 s; Convention check: 68 findings, 58 fixed before commit, median wait 39.1 s; Result review: 0 findings, 0 fixed before commit). Week of Oct 5–Oct 11: 236 changes reviewed across 59 sessions, 148 PRs merged; 159 findings, 146 fixed before commit, 2 shipped knowingly, 0 called a false positive, 1 dropped, 10 no outcome logged (Fan-out audit: 82 findings, 78 fixed before commit, median wait 36.5 s; Convention check: 77 findings, 68 fixed before commit, median wait 35.4 s; Result review: 0 findings, 0 fixed before commit). Week of Oct 12–Oct 18: 145 changes reviewed across 44 sessions, 88 PRs merged; 79 findings, 69 fixed before commit, 6 shipped knowingly, 1 called a false positive, 0 dropped, 3 no outcome logged (Fan-out audit: 38 findings, 29 fixed before commit, median wait 33.2 s; Convention check: 41 findings, 40 fixed before commit, median wait 34.6 s; Result review: 0 findings, 0 fixed before commit). Week of Oct 19–Oct 25 (under 10 sessions): 44 changes reviewed across 8 sessions, 20 PRs merged; 32 findings, 28 fixed before commit, 2 shipped knowingly, 0 called a false positive, 0 dropped, 2 no outcome logged (Fan-out audit: 12 findings, 8 fixed before commit, median wait 32.4 s; Convention check: 20 findings, 20 fixed before commit, median wait 36.6 s; Result review: 0 findings, 0 fixed before commit). Week of Oct 26–Nov 1: 172 changes reviewed across 44 sessions, 116 PRs merged; 106 findings, 105 fixed before commit, 1 shipped knowingly, 0 called a false positive, 0 dropped, 0 no outcome logged (Fan-out audit: 27 findings, 27 fixed before commit, median wait 29.9 s, 84.8M tokens; Convention check: 79 findings, 78 fixed before commit, median wait 33.9 s, 80.7M tokens; Result review: 0 findings, 0 fixed before commit, 0.0M tokens). Week of Nov 2–Nov 8: 241 changes reviewed across 48 sessions, 147 PRs merged; 163 findings, 150 fixed before commit, 3 shipped knowingly, 2 called a false positive, 0 dropped, 8 no outcome logged (Fan-out audit: 64 findings, 61 fixed before commit, median wait 28.3 s, 162.1M tokens; Convention check: 57 findings, 55 fixed before commit, median wait 29.9 s, 143.3M tokens; Result review: 42 findings, 34 fixed before commit, median wait 48.8 s, 73.2M tokens). Judge pass of Oct 2: 0 real bugs open (0 under 1 week, 0 1–2 weeks, 0 over 2 weeks), 0 fixed; no token data. Judge pass of Oct 4: 4 real bugs open (4 under 1 week, 0 1–2 weeks, 0 over 2 weeks), 0 fixed; 2.5M tokens (verify 2.3M, sweep 0.1M, rules 0.04M). Judge pass of Oct 5: 0 real bugs open (0 under 1 week, 0 1–2 weeks, 0 over 2 weeks), 0 fixed; no token data. Judge pass of Oct 6: 6 real bugs open (6 under 1 week, 0 1–2 weeks, 0 over 2 weeks), 2 fixed; 3.2M tokens (verify 3.0M, sweep 0.09M, rules 0.05M). Judge pass of Oct 9: 22 real bugs open (22 under 1 week, 0 1–2 weeks, 0 over 2 weeks), 1 fixed; 5.9M tokens (verify 5.6M, sweep 0.3M, rules 0.06M). Judge pass of Oct 13: 32 real bugs open (31 under 1 week, 1 1–2 weeks, 0 over 2 weeks), 12 fixed; 6.5M tokens (verify 6.1M, sweep 0.4M, rules 0.08M). Judge pass of Oct 20: 7 real bugs open (5 under 1 week, 1 1–2 weeks, 1 over 2 weeks), 30 fixed; 3.0M tokens (verify 2.8M, sweep 0.2M, rules 0.09M). Judge pass of Oct 27: 6 real bugs open (3 under 1 week, 1 1–2 weeks, 2 over 2 weeks), 4 fixed; 1.1M tokens (verify 0.9M, sweep 0.08M, rules 0.1M). Judge pass of Nov 3: 14 real bugs open (11 under 1 week, 0 1–2 weeks, 3 over 2 weeks), 17 fixed; 5.7M tokens (verify 5.3M, sweep 0.3M, rules 0.09M). Judge pass of Nov 10: 43 real bugs open (41 under 1 week, 0 1–2 weeks, 2 over 2 weeks), 49 fixed; 11.0M tokens (verify 10.4M, sweep 0.5M, rules 0.09M).</desc>
+<rect width="1280" height="692" fill="#fafaf7"/>
+<text x="20" y="30" font-size="17" font-weight="700">Agent pre-commit reviews</text>
+<text x="20" y="50" font-size="12">Since Sep 28, 2026 · the reviewer prompts still change most weeks</text>
+<text x="20.0" y="96.0" font-size="15" font-weight="700">a</text>
+<text x="38.0" y="96.0" font-size="13">Changes reviewed and PRs merged, per week</text>
+<line x1="38.0" x2="54.0" y1="115.0" y2="115.0" stroke="#2a2a2a" stroke-width="2"/>
+<circle cx="46.0" cy="115.0" r="3" fill="#2a2a2a"/>
+<text x="57.0" y="119.0" font-size="11">changes reviewed</text>
+<line x1="163.4" x2="179.4" y1="115.0" y2="115.0" stroke="#CC79A7" stroke-width="2"/>
+<circle cx="171.4" cy="115.0" r="3" fill="#CC79A7"/>
+<text x="182.4" y="119.0" font-size="11">PRs merged</text>
+<path d="M72.0,136.0 V282.0 H400.7" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="68.0" x2="72.0" y1="282.0" y2="282.0" stroke="#6b6b66"/>
+<text x="65.0" y="286.0" font-size="11" text-anchor="end">0</text>
+<line x1="68.0" x2="72.0" y1="233.3" y2="233.3" stroke="#6b6b66"/>
+<text x="65.0" y="237.3" font-size="11" text-anchor="end">100</text>
+<line x1="68.0" x2="72.0" y1="184.7" y2="184.7" stroke="#6b6b66"/>
+<text x="65.0" y="188.7" font-size="11" text-anchor="end">200</text>
+<line x1="68.0" x2="72.0" y1="136.0" y2="136.0" stroke="#6b6b66"/>
+<text x="65.0" y="140.0" font-size="11" text-anchor="end">300</text>
+<text x="32.0" y="209.0" font-size="11" text-anchor="middle" transform="rotate(-90 32.0 209.0)">Count per week</text>
+<line x1="104.9" x2="104.9" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="104.9" y="299.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="158.7" x2="158.7" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="158.7" y="299.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="212.4" x2="212.4" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="212.4" y="299.0" font-size="11" text-anchor="middle">Oct 12</text>
+<line x1="266.2" x2="266.2" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="266.2" y="299.0" font-size="11" text-anchor="middle">Oct 19</text>
+<line x1="320.0" x2="320.0" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="320.0" y="299.0" font-size="11" text-anchor="middle">Oct 26</text>
+<line x1="373.8" x2="373.8" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="373.8" y="299.0" font-size="11" text-anchor="middle">Nov 2</text>
+<line x1="104.9" y1="186.6" x2="158.7" y2="167.1" stroke="#2a2a2a" stroke-width="1.75"/>
+<line x1="158.7" y1="167.1" x2="212.4" y2="211.4" stroke="#2a2a2a" stroke-width="1.75"/>
+<line x1="212.4" y1="211.4" x2="266.2" y2="260.6" stroke="#2a2a2a" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="266.2" y1="260.6" x2="320.0" y2="198.3" stroke="#2a2a2a" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="320.0" y1="198.3" x2="373.8" y2="164.7" stroke="#2a2a2a" stroke-width="1.75"/>
+<circle cx="104.9" cy="186.6" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<circle cx="158.7" cy="167.1" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<circle cx="212.4" cy="211.4" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<circle cx="266.2" cy="260.6" r="3.5" stroke="#2a2a2a" fill="#fafaf7" stroke-width="1.5"/>
+<text x="271.2" y="261.6" font-size="15" font-weight="700" fill="#2a2a2a">*</text>
+<circle cx="320.0" cy="198.3" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<circle cx="373.8" cy="164.7" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<line x1="104.9" y1="209.5" x2="158.7" y2="210.0" stroke="#CC79A7" stroke-width="1.75"/>
+<line x1="158.7" y1="210.0" x2="212.4" y2="239.2" stroke="#CC79A7" stroke-width="1.75"/>
+<line x1="212.4" y1="239.2" x2="266.2" y2="272.3" stroke="#CC79A7" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="266.2" y1="272.3" x2="320.0" y2="225.5" stroke="#CC79A7" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="320.0" y1="225.5" x2="373.8" y2="210.5" stroke="#CC79A7" stroke-width="1.75"/>
+<circle cx="104.9" cy="209.5" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<circle cx="158.7" cy="210.0" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<circle cx="212.4" cy="239.2" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<circle cx="266.2" cy="272.3" r="3.5" stroke="#CC79A7" fill="#fafaf7" stroke-width="1.5"/>
+<text x="271.2" y="273.3" font-size="15" font-weight="700" fill="#CC79A7">*</text>
+<circle cx="320.0" cy="225.5" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<circle cx="373.8" cy="210.5" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<text x="446.7" y="96.0" font-size="15" font-weight="700">b</text>
+<text x="464.7" y="96.0" font-size="13">Fixed before commit, per week</text>
+<line x1="464.7" x2="480.7" y1="115.0" y2="115.0" stroke="#0072B2" stroke-width="2"/>
+<circle cx="472.7" cy="115.0" r="3" fill="#0072B2"/>
+<text x="483.7" y="119.0" font-size="11">Fan-out audit</text>
+<line x1="572.4" x2="588.4" y1="115.0" y2="115.0" stroke="#E69F00" stroke-width="2"/>
+<circle cx="580.4" cy="115.0" r="3" fill="#E69F00"/>
+<text x="591.4" y="119.0" font-size="11">Convention check</text>
+<line x1="697.8" x2="713.8" y1="115.0" y2="115.0" stroke="#009E73" stroke-width="2"/>
+<circle cx="705.8" cy="115.0" r="3" fill="#009E73"/>
+<text x="716.8" y="119.0" font-size="11">Result review</text>
+<path d="M498.7,136.0 V282.0 H827.3" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="494.7" x2="498.7" y1="282.0" y2="282.0" stroke="#6b6b66"/>
+<text x="491.7" y="286.0" font-size="11" text-anchor="end">0</text>
+<line x1="494.7" x2="498.7" y1="245.5" y2="245.5" stroke="#6b6b66"/>
+<text x="491.7" y="249.5" font-size="11" text-anchor="end">25</text>
+<line x1="494.7" x2="498.7" y1="209.0" y2="209.0" stroke="#6b6b66"/>
+<text x="491.7" y="213.0" font-size="11" text-anchor="end">50</text>
+<line x1="494.7" x2="498.7" y1="172.5" y2="172.5" stroke="#6b6b66"/>
+<text x="491.7" y="176.5" font-size="11" text-anchor="end">75</text>
+<line x1="494.7" x2="498.7" y1="136.0" y2="136.0" stroke="#6b6b66"/>
+<text x="491.7" y="140.0" font-size="11" text-anchor="end">100</text>
+<text x="458.7" y="209.0" font-size="11" text-anchor="middle" transform="rotate(-90 458.7 209.0)">Fixed before commit (%)</text>
+<line x1="531.6" x2="531.6" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="531.6" y="299.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="585.3" x2="585.3" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="585.3" y="299.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="639.1" x2="639.1" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="639.1" y="299.0" font-size="11" text-anchor="middle">Oct 12</text>
+<line x1="692.9" x2="692.9" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="692.9" y="299.0" font-size="11" text-anchor="middle">Oct 19</text>
+<line x1="746.7" x2="746.7" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="746.7" y="299.0" font-size="11" text-anchor="middle">Oct 26</text>
+<line x1="800.4" x2="800.4" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="800.4" y="299.0" font-size="11" text-anchor="middle">Nov 2</text>
+<line x1="531.6" y1="172.5" x2="585.3" y2="143.1" stroke="#0072B2" stroke-width="1.75"/>
+<line x1="585.3" y1="143.1" x2="639.1" y2="170.6" stroke="#0072B2" stroke-width="1.75"/>
+<line x1="639.1" y1="170.6" x2="692.9" y2="184.7" stroke="#0072B2" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="692.9" y1="184.7" x2="746.7" y2="136.0" stroke="#0072B2" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="746.7" y1="136.0" x2="800.4" y2="142.8" stroke="#0072B2" stroke-width="1.75"/>
+<circle cx="531.6" cy="172.5" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="585.3" cy="143.1" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="639.1" cy="170.6" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="692.9" cy="184.7" r="3.5" stroke="#0072B2" fill="#fafaf7" stroke-width="1.5"/>
+<text x="697.9" y="185.7" font-size="15" font-weight="700" fill="#0072B2">*</text>
+<circle cx="746.7" cy="136.0" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="800.4" cy="142.8" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<line x1="531.6" y1="157.5" x2="585.3" y2="153.1" stroke="#E69F00" stroke-width="1.75"/>
+<line x1="585.3" y1="153.1" x2="639.1" y2="139.6" stroke="#E69F00" stroke-width="1.75"/>
+<line x1="639.1" y1="139.6" x2="692.9" y2="136.0" stroke="#E69F00" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="692.9" y1="136.0" x2="746.7" y2="137.8" stroke="#E69F00" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="746.7" y1="137.8" x2="800.4" y2="141.1" stroke="#E69F00" stroke-width="1.75"/>
+<circle cx="531.6" cy="157.5" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="585.3" cy="153.1" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="639.1" cy="139.6" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="692.9" cy="136.0" r="3.5" stroke="#E69F00" fill="#fafaf7" stroke-width="1.5"/>
+<text x="697.9" y="137.0" font-size="15" font-weight="700" fill="#E69F00">*</text>
+<circle cx="746.7" cy="137.8" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="800.4" cy="141.1" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="800.4" cy="163.8" r="3.5" stroke="#009E73" fill="#009E73" stroke-width="0"/>
+<text x="873.3" y="96.0" font-size="15" font-weight="700">c</text>
+<text x="891.3" y="96.0" font-size="13">Real bugs still open at each judge pass, by age</text>
+<text x="891.3" y="119.0" font-size="11" fill="#6b6b66">open for</text>
+<rect x="949.5" y="110.0" width="10" height="10" fill="#7f2a0c"/>
+<text x="965.5" y="119.0" font-size="11">over 2 weeks</text>
+<rect x="1051.3" y="110.0" width="10" height="10" fill="#cf5420"/>
+<text x="1067.3" y="119.0" font-size="11">1–2 weeks</text>
+<rect x="1135.4" y="110.0" width="10" height="10" fill="#ee9563"/>
+<text x="1151.4" y="119.0" font-size="11">under 1 week</text>
+<path d="M925.3,136.0 V282.0 H1254.0" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="921.3" x2="925.3" y1="282.0" y2="282.0" stroke="#6b6b66"/>
+<text x="918.3" y="286.0" font-size="11" text-anchor="end">0</text>
+<line x1="921.3" x2="925.3" y1="233.3" y2="233.3" stroke="#6b6b66"/>
+<text x="918.3" y="237.3" font-size="11" text-anchor="end">20</text>
+<line x1="921.3" x2="925.3" y1="184.7" y2="184.7" stroke="#6b6b66"/>
+<text x="918.3" y="188.7" font-size="11" text-anchor="end">40</text>
+<line x1="921.3" x2="925.3" y1="136.0" y2="136.0" stroke="#6b6b66"/>
+<text x="918.3" y="140.0" font-size="11" text-anchor="end">60</text>
+<text x="885.3" y="209.0" font-size="11" text-anchor="middle" transform="rotate(-90 885.3 209.0)">Open real bugs</text>
+<line x1="947.5" x2="947.5" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<line x1="979.7" x2="979.7" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="979.7" y="299.0" font-size="11" text-anchor="middle">Oct 4</text>
+<line x1="1012.0" x2="1012.0" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<line x1="1044.3" x2="1044.3" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="1044.3" y="299.0" font-size="11" text-anchor="middle">Oct 6</text>
+<line x1="1076.5" x2="1076.5" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<line x1="1108.8" x2="1108.8" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="1108.8" y="299.0" font-size="11" text-anchor="middle">Oct 13</text>
+<line x1="1141.1" x2="1141.1" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<line x1="1173.3" x2="1173.3" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="1173.3" y="299.0" font-size="11" text-anchor="middle">Oct 27</text>
+<line x1="1205.6" x2="1205.6" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<line x1="1237.9" x2="1237.9" y1="282.0" y2="286.0" stroke="#6b6b66"/>
+<text x="1237.9" y="299.0" font-size="11" text-anchor="middle">Nov 10</text>
+<text x="1089.7" y="316.0" font-size="11" text-anchor="middle">Judge pass</text>
+<rect x="969.7" y="272.3" width="20.0" height="9.7" fill="#ee9563"/>
+<rect x="1034.3" y="267.4" width="20.0" height="14.6" fill="#ee9563"/>
+<text x="1044.3" y="252.4" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">2</text>
+<text x="1044.3" y="263.4" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<rect x="1066.5" y="228.5" width="20.0" height="53.5" fill="#ee9563"/>
+<text x="1076.5" y="213.5" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">1</text>
+<text x="1076.5" y="224.5" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<rect x="1098.8" y="206.6" width="20.0" height="75.4" fill="#ee9563"/>
+<rect x="1098.8" y="204.1" width="20.0" height="0.9" fill="#cf5420"/>
+<text x="1108.8" y="189.1" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">12</text>
+<text x="1108.8" y="200.1" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<rect x="1131.1" y="269.8" width="20.0" height="12.2" fill="#ee9563"/>
+<rect x="1131.1" y="267.4" width="20.0" height="0.9" fill="#cf5420"/>
+<rect x="1131.1" y="265.0" width="20.0" height="0.9" fill="#7f2a0c"/>
+<text x="1141.1" y="250.0" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">30</text>
+<text x="1141.1" y="261.0" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<rect x="1163.3" y="274.7" width="20.0" height="7.3" fill="#ee9563"/>
+<rect x="1163.3" y="272.3" width="20.0" height="0.9" fill="#cf5420"/>
+<rect x="1163.3" y="267.4" width="20.0" height="3.4" fill="#7f2a0c"/>
+<text x="1173.3" y="252.4" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">4</text>
+<text x="1173.3" y="263.4" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<rect x="1195.6" y="255.2" width="20.0" height="26.8" fill="#ee9563"/>
+<rect x="1195.6" y="247.9" width="20.0" height="5.8" fill="#7f2a0c"/>
+<text x="1205.6" y="232.9" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">17</text>
+<text x="1205.6" y="243.9" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<rect x="1227.9" y="182.2" width="20.0" height="99.8" fill="#ee9563"/>
+<rect x="1227.9" y="177.4" width="20.0" height="3.4" fill="#7f2a0c"/>
+<text x="1237.9" y="162.4" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">49</text>
+<text x="1237.9" y="173.4" font-size="10" font-weight="700" text-anchor="middle" fill="#0072B2">fixed</text>
+<text x="20.0" y="376.0" font-size="15" font-weight="700">d</text>
+<text x="38.0" y="376.0" font-size="13">Judge tokens per pass, by stage</text>
+<rect x="41.0" y="390.0" width="10" height="10" fill="#0072B2"/>
+<text x="57.0" y="399.0" font-size="11">verify</text>
+<rect x="107.4" y="390.0" width="10" height="10" fill="#E69F00"/>
+<text x="123.4" y="399.0" font-size="11">sweep</text>
+<rect x="167.9" y="390.0" width="10" height="10" fill="#CC79A7"/>
+<text x="183.9" y="399.0" font-size="11">rules</text>
+<path d="M72.0,416.0 V562.0 H400.7" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="68.0" x2="72.0" y1="562.0" y2="562.0" stroke="#6b6b66"/>
+<text x="65.0" y="566.0" font-size="11" text-anchor="end">0</text>
+<line x1="68.0" x2="72.0" y1="513.3" y2="513.3" stroke="#6b6b66"/>
+<text x="65.0" y="517.3" font-size="11" text-anchor="end">5</text>
+<line x1="68.0" x2="72.0" y1="464.7" y2="464.7" stroke="#6b6b66"/>
+<text x="65.0" y="468.7" font-size="11" text-anchor="end">10</text>
+<line x1="68.0" x2="72.0" y1="416.0" y2="416.0" stroke="#6b6b66"/>
+<text x="65.0" y="420.0" font-size="11" text-anchor="end">15</text>
+<text x="32.0" y="489.0" font-size="11" text-anchor="middle" transform="rotate(-90 32.0 489.0)">Million tokens</text>
+<line x1="94.1" x2="94.1" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<line x1="126.4" x2="126.4" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="126.4" y="579.0" font-size="11" text-anchor="middle">Oct 4</text>
+<line x1="158.7" x2="158.7" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<line x1="190.9" x2="190.9" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="190.9" y="579.0" font-size="11" text-anchor="middle">Oct 6</text>
+<line x1="223.2" x2="223.2" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<line x1="255.5" x2="255.5" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="255.5" y="579.0" font-size="11" text-anchor="middle">Oct 13</text>
+<line x1="287.7" x2="287.7" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<line x1="320.0" x2="320.0" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="320.0" y="579.0" font-size="11" text-anchor="middle">Oct 27</text>
+<line x1="352.3" x2="352.3" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<line x1="384.5" x2="384.5" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="384.5" y="579.0" font-size="11" text-anchor="middle">Nov 10</text>
+<text x="236.3" y="596.0" font-size="11" text-anchor="middle">Judge pass</text>
+<text x="90.1" y="559.0" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<rect x="116.4" y="539.5" width="20.0" height="22.5" fill="#0072B2"/>
+<rect x="116.4" y="538.4" width="20.0" height="0.5" fill="#E69F00"/>
+<rect x="116.4" y="538.0" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="126.4" y="534.0" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">2.5M</text>
+<text x="154.7" y="559.0" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<rect x="180.9" y="532.4" width="20.0" height="29.6" fill="#0072B2"/>
+<rect x="180.9" y="531.5" width="20.0" height="0.5" fill="#E69F00"/>
+<rect x="180.9" y="531.0" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="190.9" y="527.0" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">3.2M</text>
+<rect x="213.2" y="507.7" width="20.0" height="54.3" fill="#0072B2"/>
+<rect x="213.2" y="504.9" width="20.0" height="1.3" fill="#E69F00"/>
+<rect x="213.2" y="504.3" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="223.2" y="500.3" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">5.9M</text>
+<rect x="245.5" y="502.8" width="20.0" height="59.2" fill="#0072B2"/>
+<rect x="245.5" y="499.3" width="20.0" height="2.0" fill="#E69F00"/>
+<rect x="245.5" y="498.5" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="255.5" y="494.5" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">6.5M</text>
+<rect x="277.7" y="535.2" width="20.0" height="26.8" fill="#0072B2"/>
+<rect x="277.7" y="533.3" width="20.0" height="0.5" fill="#E69F00"/>
+<rect x="277.7" y="532.4" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="287.7" y="528.4" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">3.0M</text>
+<rect x="310.0" y="552.8" width="20.0" height="9.2" fill="#0072B2"/>
+<rect x="310.0" y="552.1" width="20.0" height="0.5" fill="#E69F00"/>
+<rect x="310.0" y="551.1" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="320.0" y="547.1" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">1.1M</text>
+<rect x="342.3" y="510.2" width="20.0" height="51.8" fill="#0072B2"/>
+<rect x="342.3" y="507.3" width="20.0" height="1.4" fill="#E69F00"/>
+<rect x="342.3" y="506.4" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="352.3" y="502.4" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">5.7M</text>
+<rect x="374.5" y="460.4" width="20.0" height="101.6" fill="#0072B2"/>
+<rect x="374.5" y="455.8" width="20.0" height="3.1" fill="#E69F00"/>
+<rect x="374.5" y="454.9" width="20.0" height="0.5" fill="#CC79A7"/>
+<text x="384.5" y="450.9" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">11.0M</text>
+<text x="446.7" y="376.0" font-size="15" font-weight="700">e</text>
+<text x="464.7" y="376.0" font-size="13">Pre-commit review wait, per week</text>
+<line x1="464.7" x2="480.7" y1="395.0" y2="395.0" stroke="#0072B2" stroke-width="2"/>
+<circle cx="472.7" cy="395.0" r="3" fill="#0072B2"/>
+<text x="483.7" y="399.0" font-size="11">Fan-out audit</text>
+<line x1="572.4" x2="588.4" y1="395.0" y2="395.0" stroke="#E69F00" stroke-width="2"/>
+<circle cx="580.4" cy="395.0" r="3" fill="#E69F00"/>
+<text x="591.4" y="399.0" font-size="11">Convention check</text>
+<line x1="697.8" x2="713.8" y1="395.0" y2="395.0" stroke="#009E73" stroke-width="2"/>
+<circle cx="705.8" cy="395.0" r="3" fill="#009E73"/>
+<text x="716.8" y="399.0" font-size="11">Result review</text>
+<path d="M498.7,416.0 V562.0 H827.3" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="494.7" x2="498.7" y1="562.0" y2="562.0" stroke="#6b6b66"/>
+<text x="491.7" y="566.0" font-size="11" text-anchor="end">0</text>
+<line x1="494.7" x2="498.7" y1="513.3" y2="513.3" stroke="#6b6b66"/>
+<text x="491.7" y="517.3" font-size="11" text-anchor="end">20</text>
+<line x1="494.7" x2="498.7" y1="464.7" y2="464.7" stroke="#6b6b66"/>
+<text x="491.7" y="468.7" font-size="11" text-anchor="end">40</text>
+<line x1="494.7" x2="498.7" y1="416.0" y2="416.0" stroke="#6b6b66"/>
+<text x="491.7" y="420.0" font-size="11" text-anchor="end">60</text>
+<text x="458.7" y="489.0" font-size="11" text-anchor="middle" transform="rotate(-90 458.7 489.0)">Median wait (s)</text>
+<line x1="531.6" x2="531.6" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="531.6" y="579.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="585.3" x2="585.3" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="585.3" y="579.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="639.1" x2="639.1" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="639.1" y="579.0" font-size="11" text-anchor="middle">Oct 12</text>
+<line x1="692.9" x2="692.9" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="692.9" y="579.0" font-size="11" text-anchor="middle">Oct 19</text>
+<line x1="746.7" x2="746.7" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="746.7" y="579.0" font-size="11" text-anchor="middle">Oct 26</text>
+<line x1="800.4" x2="800.4" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="800.4" y="579.0" font-size="11" text-anchor="middle">Nov 2</text>
+<text x="663.0" y="596.0" font-size="11" text-anchor="middle">Week starting</text>
+<line x1="531.6" y1="460.3" x2="585.3" y2="473.2" stroke="#0072B2" stroke-width="1.75"/>
+<line x1="585.3" y1="473.2" x2="639.1" y2="481.2" stroke="#0072B2" stroke-width="1.75"/>
+<line x1="639.1" y1="481.2" x2="692.9" y2="483.2" stroke="#0072B2" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="692.9" y1="483.2" x2="746.7" y2="489.2" stroke="#0072B2" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="746.7" y1="489.2" x2="800.4" y2="493.1" stroke="#0072B2" stroke-width="1.75"/>
+<circle cx="531.6" cy="460.3" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="585.3" cy="473.2" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="639.1" cy="481.2" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="692.9" cy="483.2" r="3.5" stroke="#0072B2" fill="#fafaf7" stroke-width="1.5"/>
+<text x="697.9" y="484.2" font-size="15" font-weight="700" fill="#0072B2">*</text>
+<circle cx="746.7" cy="489.2" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<circle cx="800.4" cy="493.1" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<line x1="531.6" y1="466.9" x2="585.3" y2="475.9" stroke="#E69F00" stroke-width="1.75"/>
+<line x1="585.3" y1="475.9" x2="639.1" y2="477.8" stroke="#E69F00" stroke-width="1.75"/>
+<line x1="639.1" y1="477.8" x2="692.9" y2="472.9" stroke="#E69F00" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="692.9" y1="472.9" x2="746.7" y2="479.5" stroke="#E69F00" stroke-width="1.75" stroke-dasharray="4 3"/>
+<line x1="746.7" y1="479.5" x2="800.4" y2="489.2" stroke="#E69F00" stroke-width="1.75"/>
+<circle cx="531.6" cy="466.9" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="585.3" cy="475.9" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="639.1" cy="477.8" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="692.9" cy="472.9" r="3.5" stroke="#E69F00" fill="#fafaf7" stroke-width="1.5"/>
+<text x="697.9" y="473.9" font-size="15" font-weight="700" fill="#E69F00">*</text>
+<circle cx="746.7" cy="479.5" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="800.4" cy="489.2" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<circle cx="800.4" cy="443.3" r="3.5" stroke="#009E73" fill="#009E73" stroke-width="0"/>
+<text x="873.3" y="376.0" font-size="15" font-weight="700">f</text>
+<text x="891.3" y="376.0" font-size="13">Reviewer tokens per week</text>
+<rect x="894.3" y="390.0" width="10" height="10" fill="#0072B2"/>
+<text x="910.3" y="399.0" font-size="11">Fan-out audit</text>
+<rect x="1002.0" y="390.0" width="10" height="10" fill="#E69F00"/>
+<text x="1018.0" y="399.0" font-size="11">Convention check</text>
+<rect x="1127.4" y="390.0" width="10" height="10" fill="#009E73"/>
+<text x="1143.4" y="399.0" font-size="11">Result review</text>
+<path d="M925.3,416.0 V562.0 H1254.0" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="921.3" x2="925.3" y1="562.0" y2="562.0" stroke="#6b6b66"/>
+<text x="918.3" y="566.0" font-size="11" text-anchor="end">0</text>
+<line x1="921.3" x2="925.3" y1="513.3" y2="513.3" stroke="#6b6b66"/>
+<text x="918.3" y="517.3" font-size="11" text-anchor="end">200</text>
+<line x1="921.3" x2="925.3" y1="464.7" y2="464.7" stroke="#6b6b66"/>
+<text x="918.3" y="468.7" font-size="11" text-anchor="end">400</text>
+<line x1="921.3" x2="925.3" y1="416.0" y2="416.0" stroke="#6b6b66"/>
+<text x="918.3" y="420.0" font-size="11" text-anchor="end">600</text>
+<text x="885.3" y="489.0" font-size="11" text-anchor="middle" transform="rotate(-90 885.3 489.0)">Million tokens</text>
+<line x1="958.2" x2="958.2" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="958.2" y="579.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="1012.0" x2="1012.0" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="1012.0" y="579.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="1065.8" x2="1065.8" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="1065.8" y="579.0" font-size="11" text-anchor="middle">Oct 12</text>
+<line x1="1119.6" x2="1119.6" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="1119.6" y="579.0" font-size="11" text-anchor="middle">Oct 19</text>
+<line x1="1173.3" x2="1173.3" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="1173.3" y="579.0" font-size="11" text-anchor="middle">Oct 26</text>
+<line x1="1227.1" x2="1227.1" y1="562.0" y2="566.0" stroke="#6b6b66"/>
+<text x="1227.1" y="579.0" font-size="11" text-anchor="middle">Nov 2</text>
+<text x="1089.7" y="596.0" font-size="11" text-anchor="middle">Week starting</text>
+<text x="954.2" y="559.0" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<text x="1008.0" y="559.0" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<text x="1061.8" y="559.0" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<text x="1115.6" y="559.0" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<rect x="1158.3" y="541.4" width="30.0" height="20.6" fill="none" stroke="#0072B2" stroke-width="1.5"/>
+<rect x="1158.3" y="521.7" width="30.0" height="18.1" fill="none" stroke="#E69F00" stroke-width="1.5"/>
+<text x="1189.3" y="531.7" font-size="15" font-weight="700" fill="#6b6b66">*</text>
+<text x="1173.3" y="517.7" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">165.5M</text>
+<rect x="1212.1" y="522.6" width="30.0" height="39.4" fill="#0072B2"/>
+<rect x="1212.1" y="487.7" width="30.0" height="33.4" fill="#E69F00"/>
+<rect x="1212.1" y="469.9" width="30.0" height="16.3" fill="#009E73"/>
+<text x="1227.1" y="465.9" font-size="10" font-weight="700" text-anchor="middle" fill="#6b6b66">378.6M</text>
+<text x="20" y="632" font-size="11">Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a helper or sit in the wrong place · Result review: does a change make a result wrong</text>
+<text x="20" y="648" font-size="11">* beside a hollow point or bar: a week only partly logged, or under 10 sessions · * on its own: no tokens logged · tokens include cache reads</text>
+<text x="20" y="664" font-size="11">c: a real bug is one the verify agent called fix or decide (or found already fixed), or a stranded commit · fixed = gone at that pass, the first time since it was flagged</text>
+<text x="20" y="680" font-size="11">Data through Nov 10 · 244 sessions · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>
+</svg>
