@@ -64,6 +64,12 @@ import CollapsiblePanel from './CollapsiblePanel.vue'
 import HintCallout from './HintCallout.vue'
 import PanelLaunchers from './PanelLaunchers.vue'
 import NextStep from './NextStep.vue'
+import TeleportPopover from './TeleportPopover.vue'
+import { useCopyFlash } from '../composables/useCopyFlash'
+import { moduleKeyFromFun } from '../utils/taskModule'
+import { resultLine, resultVerb } from '../utils/resultLine'
+import { formatAgo } from '../utils/formatAgo'
+import { TASK_STATUS } from '../lib/taskStatus'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -111,9 +117,9 @@ onBeforeUnmount(onRevealPlots(() => {
 }))
 
 // Plot-canvas fullscreen — one app-wide flag (per-profile), reachable from every module page's
-// action bar. When maximised, the whole image panel (action bar + filters + Images + plots) covers
-// the viewport — the image table stays so images can still be selected and filtered; only the app
-// shell, SetBar and right panel go. Force the plots open on maximise (and on mount) so switching
+// set row (⋯ menu). When maximised, the whole image panel (set row + result line + filters + Images +
+// plots) covers the viewport — the image table stays so images can still be selected and filtered;
+// only the app shell and the right panel go. Force the plots open on maximise (and on mount) so switching
 // pages while maximised does not land in a closed section.
 const { maximised: plotsMaximised, toggle: togglePlotsMaximised } = usePlotFullscreen()
 watch(plotsMaximised, (v) => { if (v) setSectionOpen(plotsOpenKey.value, true) }, { immediate: true })
@@ -270,6 +276,21 @@ function exportCsv() {
   downloadBlob(name, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
 }
 
+// ── Set row ⋯ menu + result line (docs/todo/GUI_LAYOUT_PLAN.md, M3; mock frame 1) ──────────────
+// The ⋯ menu holds the episodic set-wide actions: CSV, the processed-with filter, maximise, and the
+// set's ID. What a user toggles while reading the table —
+// the checks, the row filters, the attribute filter — stays in the row.
+const moreOpen = ref(false)
+const moreAnchor = ref<HTMLElement | null>(null)
+const { isCopied: copiedSetUid, copy: copySetUid } = useCopyFlash()
+function more(fn: () => void) { moreOpen.value = false; fn() }
+
+// "Did my last run on this page work?" — derived from the run logs (utils/resultLine.ts).
+const result = computed(() => props.module
+  ? resultLine(activeSet.value?.images ?? [], fun => moduleKeyFromFun(fun) === props.module)
+  : null)
+const resultStyle = computed(() => result.value ? TASK_STATUS[result.value.status] : null)
+
 // Visible images in table order (filtered list when a filter/hide-excluded is active, else all).
 // Exposed to #plots so a canvas can step selection through the list (gating prev/next navigation).
 const visibleUids = computed<string[]>(() =>
@@ -278,8 +299,6 @@ const visibleUids = computed<string[]>(() =>
 
 <template>
   <div class="module-root">
-
-    <SetBar :allow-manage="allowManage" />
 
     <div class="module-body">
 
@@ -294,11 +313,11 @@ const visibleUids = computed<string[]>(() =>
         <!-- first-use hint (dismissed permanently per hintKey) -->
         <HintCallout v-if="hint && hintKey" :hint-key="hintKey" :text="hint" />
 
-        <!-- action bar: image count + (merged) filter toggle on the right -->
-        <div class="action-bar">
-          <slot name="actions" :has-set="!!activeSet" :set-uid="activeSet?.uid"
-            :selected-uids="selectedUids" :select-uids="selectUids" />
-
+        <!-- Set row (mock frame 1): the set and its recipe, the counts, the checks, the row filters and
+             a ⋯ menu for the episodic actions. It lives in the image panel, so the right panel runs the
+             page's full height. -->
+        <div class="action-bar set-row">
+          <SetBar inline :allow-manage="allowManage" />
           <span class="image-count cc-muted" v-if="activeSet">
             <template v-if="showFilter && filteredUids">
               {{ filteredUids.length }} / {{ activeSet.images.length }}
@@ -318,22 +337,11 @@ const visibleUids = computed<string[]>(() =>
             </template>
           </span>
           <span class="no-set-hint cc-muted" v-else>{{ noSetHint }}</span>
-          <!-- a page with no right panel shows its next step here instead (GUI_CLARITY_PLAN D13) -->
-          <NextStep v-if="!$slots.right" inline />
-
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Checks: Acquisition, QC (its click is the qcFlagged row filter), Cohort -->
             <ChecksCluster :set-uid="activeSet.uid" :module="module" :cohort-funs="cohortFuns"
               :qc-filter-on="rowFilterActive.qcFlagged"
               @toggle-qc-filter="rowFilterActive.qcFlagged = !rowFilterActive.qcFlagged" />
-
-            <!-- CSV export: the whole table, including excluded images + their notes -->
-            <button class="filter-toggle" @click="exportCsv"
-              v-tooltip.left="'Export the image table to CSV (includes excluded images and their notes)'">
-              <i class="pi pi-download" />
-              <span class="filter-label">CSV</span>
-            </button>
-
             <!-- Row filters (Excluded / Imported / Starred) — declared in utils/rowFilters.ts -->
             <button v-for="f in rowFilters" :key="f.def.id"
               class="filter-toggle" :class="{ active: rowFilterActive[f.def.id] }"
@@ -342,17 +350,6 @@ const visibleUids = computed<string[]>(() =>
               <i :class="['pi', rowFilterActive[f.def.id] ? f.def.iconOn : f.def.iconOff]" />
               <span class="filter-label">{{ f.def.label }} {{ f.count }}</span>
             </button>
-
-            <!-- Task: filter to images a given function has been run on (own dropdown) -->
-            <button v-if="showFilter && runFuns.length > 0"
-              class="filter-toggle" :class="{ active: procActive || taskOpen }"
-              @click="taskOpen = !taskOpen"
-              v-tooltip.left="taskOpen ? 'Hide task filter' : 'Filter images by processing history'">
-              <i class="pi pi-list-check" />
-              <span class="filter-label">Task{{ procActive ? ' •' : '' }}</span>
-              <i :class="['pi', taskOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
-            </button>
-
             <!-- Filter: filter to images by attribute value (own dropdown) -->
             <button v-if="showFilter && attrKeys.length > 0"
               class="filter-toggle" :class="{ active: hasApplied || filtersOpen }"
@@ -362,27 +359,63 @@ const visibleUids = computed<string[]>(() =>
               <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
-
-            <!-- Maximised, the sidebar is covered — so its Viewer / Correction / Lab log / Kiwi
-                 launchers ride along here; the panels themselves lift above the maximised canvas
-                 (PANEL_Z_LIFTED, utils/panelStack.ts). -->
-            <PanelLaunchers v-if="isMaximised" compact />
-
-            <!-- Maximise the image panel (this bar, filters, Images, plots) to the whole browser
-                 window (covers AppHeader, AppSidebar, SetBar and right panel; floating panels stay
-                 on top). The button rides along inside the panel, so restore stays where it was; Esc
-                 also restores. Icon + label wording mirrors FloatingPanel's per-panel maximise. -->
-            <button v-if="$slots.plots && activeSet"
-              class="filter-toggle" :class="{ active: plotsMaximised }"
-              @click="togglePlotsMaximised"
-              v-tooltip.left="plotsMaximised ? 'Restore layout (Esc)' : 'Maximise images + plots'"
-              :aria-label="plotsMaximised ? 'Restore layout' : 'Maximise images and plots'">
-              <i class="pi" :class="plotsMaximised ? 'pi-window-minimize' : 'pi-window-maximize'" />
-              <span class="filter-label">{{ plotsMaximised ? 'Restore' : 'Max' }}</span>
+            <!-- an active processed-with filter stays visible after its toggle moved into ⋯ -->
+            <button v-if="showFilter && procActive && !taskOpen" class="filter-toggle active"
+              @click="taskOpen = true" v-tooltip.left="'Filtered by processing history — click to change'">
+              <i class="pi pi-list-check" /><span class="filter-label">Task •</span>
             </button>
+            <!-- Maximised, the sidebar and header are covered — so their Viewer / Correction / Lab log /
+                 Kiwi launchers ride along here; the panels lift above the maximised canvas
+                 (PANEL_Z_LIFTED, utils/panelStack.ts). Restore stays a button while maximised (Esc too). -->
+            <PanelLaunchers v-if="isMaximised" compact />
+            <button v-if="plotsMaximised && $slots.plots" class="filter-toggle active"
+              @click="togglePlotsMaximised" v-tooltip.left="'Restore layout (Esc)'" aria-label="Restore layout">
+              <i class="pi pi-window-minimize" /><span class="filter-label">Restore</span>
+            </button>
+            <button ref="moreAnchor" class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on': moreOpen }" data-guide="set.more"
+              @click="moreOpen = !moreOpen" v-tooltip.left="'Export, processing filter, maximise, set ID'"
+              aria-label="More set actions" aria-haspopup="menu">
+              <i class="pi pi-ellipsis-h" />
+            </button>
+            <TeleportPopover v-model="moreOpen" :anchor="moreAnchor" placement="bottom-end" flush>
+              <div class="cc-actions-menu" role="menu">
+                <!-- the whole table, including excluded images + their notes -->
+                <button class="cc-actions-item" role="menuitem" @click="more(exportCsv)">
+                  <i class="pi pi-download" /> Export table (CSV)
+                </button>
+                <button v-if="showFilter && runFuns.length > 0" class="cc-actions-item" role="menuitem"
+                  @click="more(() => { taskOpen = !taskOpen })">
+                  <i class="pi pi-list-check" /> {{ taskOpen ? 'Hide processing filter' : 'Filter by processing history' }}
+                </button>
+                <button v-if="$slots.plots && !plotsMaximised" class="cc-actions-item" role="menuitem"
+                  @click="more(togglePlotsMaximised)">
+                  <i class="pi pi-window-maximize" /> Maximise images + plots
+                </button>
+                <button class="cc-actions-item" role="menuitem" @click="copySetUid(activeSet.uid)">
+                  <i :class="copiedSetUid() ? 'pi pi-check' : 'pi pi-copy'" />
+                  {{ copiedSetUid() ? 'Copied' : 'Copy set ID' }}
+                  <span class="cc-muted cc-fs-xs set-uid">{{ activeSet.uid }}</span>
+                </button>
+              </div>
+            </TeleportPopover>
           </div>
         </div>
-
+        <!-- Result line: the last run on this page and its outcome, then the page's own actions
+             (#actions — Correct labels / tracks, Import's copy/move/remove …). -->
+        <div v-if="activeSet && (result || $slots.actions || !$slots.right)" class="result-row">
+          <span v-if="result && resultStyle" class="result-line" data-guide="layout.resultLine">
+            <i :class="['pi', resultStyle.icon]" :style="{ color: resultStyle.color }" />
+            {{ taskDefs.labelFor(result.fun) }} {{ resultVerb(result) }}
+            <span v-if="formatAgo(result.at)" class="cc-muted">· {{ formatAgo(result.at) }}</span>
+            <RouterLink to="/tasks" class="result-log cc-fs-xs"
+              v-tooltip.bottom="'Logs and history on the Tasks page'">Log</RouterLink>
+          </span>
+          <span class="spacer" />
+          <slot name="actions" :has-set="!!activeSet" :set-uid="activeSet?.uid"
+            :selected-uids="selectedUids" :select-uids="selectUids" />
+          <!-- a page with no right panel shows its next step here instead (GUI_CLARITY_PLAN D13) -->
+          <NextStep v-if="!$slots.right" inline />
+        </div>
         <!-- Task dropdown: filter to images a given function has been run on (ever / on last run) -->
         <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="cc-filter-panel">
           <div class="cc-filter-row proc-row">
@@ -529,7 +562,21 @@ const visibleUids = computed<string[]>(() =>
   flex-shrink: 0;
 }
 
-.image-count { display: flex; align-items: center; gap: var(--cc-space-xs); }
+.image-count { display: flex; align-items: center; gap: var(--cc-space-xs); white-space: nowrap; }
+
+/* the set row's ⋯ menu shows the set ID beside its copy item */
+.set-uid { font-family: var(--cc-mono); margin-left: auto; }
+
+/* Result line: the last run here and its outcome, then the page's own actions */
+.result-row {
+  display: flex; align-items: center; gap: var(--cc-space-md); flex-shrink: 0;
+  padding: var(--cc-bar-pad); border-bottom: 1px solid var(--cc-border); background: var(--cc-bg);
+}
+.image-panel.no-right > .result-row { padding-right: var(--cc-space-lg); }
+.result-line { display: inline-flex; align-items: center; gap: var(--cc-space-xs); font-size: var(--cc-fs-sm); min-width: 0; }
+.result-log { margin-left: var(--cc-space-xs); color: var(--cc-text-dim); }
+.result-log:hover { color: var(--cc-text); }
+.spacer { flex: 1; }
 
 .filter-badge {
   font-size: var(--cc-fs-2xs);

@@ -455,7 +455,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
         <!-- ── Layout ────────────────────────────────────────────────────── -->
         <template v-else-if="active === 'layout'">
           <!-- Only what no live control already sets. The sidebar (☰), the task panel (its chevron) and
-               the floating panels (the sidebar launchers) persist through those controls. -->
+               the floating panels (the header launchers) persist through those controls. -->
           <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Collapse viewer-window controls"
                     v-tooltip.bottom="'Hide the viewer pop-out sidebar (independent of the module page)'" />
 

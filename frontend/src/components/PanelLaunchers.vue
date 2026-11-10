@@ -2,8 +2,9 @@
 // The floating-panel launchers — Viewer / Correction / Lab log / Kiwi — as one row of icon toggles.
 // Viewer, Lab log and Kiwi live in the header (AppHeader); this row is the copy for the module action
 // bar while the plot canvas is maximised (ModuleLayout), which covers the header and sidebar, so the
-// panels stay openable there. The sidebar mounts it with `kinds=['correction']` until the cockpit
-// gets its own home (docs/todo/GUI_LAYOUT_PLAN.md, M3). `compact` = the action-bar size. Every copy
+// panels stay openable there. The correction cockpit's everyday home is "Correct labels" / "Correct
+// tracks" on the Segment and Track pages (docs/todo/GUI_LAYOUT_PLAN.md, M3). `compact` = the action-bar
+// size. `kinds` picks a subset for a host that needs one. Every copy
 // carries the same role-named `data-guide` anchors (`launcher.*`): `resolveAnchor`
 // (utils/guideAnchor.ts) picks the un-occluded one, so a guide lands on whichever is visible.
 //
