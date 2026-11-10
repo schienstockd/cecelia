@@ -352,11 +352,6 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     label="Suggest pyramid levels"
                     v-tooltip.bottom="'Peek source dims to advise a level count'" />
 
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Software updates</div>
-          <CcToggle v-model="settings.preferDevChannel"
-                    label="Track main (dev builds)"
-                    v-tooltip.bottom="'Applying the update still needs Node.js on the machine'" />
-
           <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Launch</div>
           <CcToggle v-model="settings.tipsOnLaunch"
                     label="Show tip of the day"
@@ -459,22 +454,10 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
         <!-- ── Layout ────────────────────────────────────────────────────── -->
         <template v-else-if="active === 'layout'">
-          <CcToggle v-model="settings.sidebarCollapsed" label="Collapse main sidebar"
-                    v-tooltip.bottom="'Hide the left nav sidebar to free working space'" />
-          <CcToggle v-model="settings.rightPanelCollapsed" label="Collapse module task panel"
-                    v-tooltip.bottom="'Hide the right task panel on module pages'" />
+          <!-- Only what no live control already sets. The sidebar (☰), the task panel (its chevron) and
+               the floating panels (the sidebar launchers) persist through those controls. -->
           <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Collapse viewer-window controls"
                     v-tooltip.bottom="'Hide the viewer pop-out sidebar (independent of the module page)'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Floating panels</div>
-          <CcToggle v-model="settings.viewerPanelOpen" label="Viewer panel open"
-                    v-tooltip.bottom="'Show the floating viewer controls panel'" />
-          <CcToggle v-model="settings.labLogPanelOpen" label="Lab log panel open"
-                    v-tooltip.bottom="'Show the floating lab log panel'" />
-          <CcToggle v-model="settings.correctionCockpitOpen" label="Correction cockpit open"
-                    v-tooltip.bottom="'Show the floating correction cockpit'" />
-          <CcToggle v-model="settings.kiwiOpen" label="Kiwi cockpit open"
-                    v-tooltip.bottom="'Show the floating Kiwi assist cockpit'" />
 
           <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Correction cockpit mode</div>
           <select class="pref-input" v-model="settings.correctionCockpitMode"

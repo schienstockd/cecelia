@@ -1080,21 +1080,23 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         />
       </div>
 
+      <!-- The pool is picked from the task; changing it is rare, so it sits behind one quiet button
+           together with the throttle (progressive disclosure), not as chips on every page. -->
       <div class="pool-row" v-if="pools.length > 0">
-        <span class="pool-label cc-muted cc-fs-xs"
-          v-tooltip.right="'How many tasks share a concurrency slot; GPU tasks use the gpu pool'">
-          Pool
-        </span>
-        <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool"
-          v-tooltip.bottom="'Which resource pool this run queues in'" />
-        <button ref="throttleBtn" class="pool-throttle cc-btn cc-btn-ghost cc-btn-icon"
-          :class="{ 'cc-btn-on cc-btn-on-solid': throttleOpen }"
+        <button ref="throttleBtn" class="pool-summary cc-btn cc-btn-bare cc-fs-2xs"
+          :class="{ 'cc-btn-on': throttleOpen }"
           @click="throttleOpen = !throttleOpen"
-          v-tooltip.left="'Throttle — how many tasks run at once, and how wide each may go'">
-          <i class="pi pi-sliders-h" />
+          v-tooltip.left="'Resource pool and throttle — which queue this run joins, how many run at once'">
+          <span class="cc-pool-tag"><i class="pi pi-server" />{{ selectedPool }}</span>
+          <i :class="['pi', throttleOpen ? 'pi-chevron-up' : 'pi-chevron-down']" />
         </button>
         <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
-          <PoolThrottle />
+          <div class="pool-pop">
+            <span class="cc-eyebrow cc-fs-2xs">Pool for this run</span>
+            <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool"
+              v-tooltip.bottom="'Which resource pool this run queues in; GPU tasks use the gpu pool'" />
+            <PoolThrottle />
+          </div>
         </TeleportPopover>
       </div>
     </section>
@@ -1177,17 +1179,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   padding-bottom: 0.5rem;
 }
 
-/* pool row */
-.pool-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-.pool-label { white-space: nowrap; flex-shrink: 0; }
-.pool-chips { flex: 1; min-width: 0; }
-.pool-throttle { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
-.pool-throttle:hover  { color: var(--cc-text); }
+/* pool row: one quiet button; the chips and the throttle open in its popover */
+.pool-row { display: flex; justify-content: flex-end; margin-top: 0.5rem; }
+.pool-summary { gap: 0.25rem; color: var(--cc-text-dim); }   /* + .cc-pool-tag inside */
+.pool-pop { display: flex; flex-direction: column; gap: 0.5rem; }
 
 .section-heading { margin: 0 0 0.5rem; }
 /* Heading on the left, trailing icon-buttons grouped on the right so they stay together no matter

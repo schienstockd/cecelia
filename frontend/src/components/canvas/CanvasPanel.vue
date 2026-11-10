@@ -277,16 +277,16 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 .panel.docked .panel-head { cursor: default; }
 /* collapsed: box shrinks to just the header (overrides any inline/resized height); handles hidden via v-if */
 .panel.collapsed { height: auto !important; min-height: 0 !important; }
-.panel-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: move;
+.panel-head { display: flex; align-items: center; gap: var(--cc-space-sm); padding: var(--cc-head-pad); cursor: move;
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); }
 /* min-width:0 lets the title shrink; the text span truncates so it never shoves the head buttons */
-.panel-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: var(--cc-fs-sm);
+.panel-title { display: inline-flex; align-items: center; gap: var(--cc-space-2xs); font-weight: 700; font-size: var(--cc-fs-sm);
   letter-spacing: 0.02em; user-select: none; min-width: 0; }
 .panel-title-txt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .drag-icon { font-size: var(--cc-fs-2xs); opacity: 0.55; flex: none; }
 /* docked panels: the drag icon IS the reorder handle (in-flow in the header → aligned with the other
    buttons, no absolute overlay to collide with the pin). Its native dragstart bubbles to the board slot. */
-.drag-icon.grip { cursor: grab; font-size: var(--cc-fs-sm); opacity: 0.7; padding: 2px; margin: -2px 0; }
+.drag-icon.grip { cursor: grab; font-size: var(--cc-fs-sm); opacity: 0.7; padding: var(--cc-space-3xs); margin: calc(-1 * var(--cc-space-3xs)) 0; }
 .drag-icon.grip:active { cursor: grabbing; }
 .panel-spacer { flex: 1; }
 /* main region below the head: the anchor for the auto-hide control overlays (position: relative) and
@@ -296,12 +296,12 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 .panel-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* controls / footer: shared layout only. The overlay look + hover-reveal live in the global
    .cc-panel-controls utility (style.css); the in-flow look (auto-hide off) is the .inflow variant. */
-.panel-controls { padding: 5px 8px; }
-.panel-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 8px; }
+.panel-controls { padding: var(--cc-head-pad); }
+.panel-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--cc-space-xs); padding: var(--cc-head-pad); }
 /* in-flow (auto-hide OFF): solid rows that reserve height, as before */
 .panel-controls.inflow { border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-1); }
 .panel-foot.inflow { border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); flex-shrink: 0; }
-.ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
+.ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: var(--cc-space-3xs); }
 /* .panel-btn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .panel-btn:hover { color: var(--cc-text); border-color: #484f58; }
 .panel-remove:hover { color: #f87171; border-color: #f87171; }
