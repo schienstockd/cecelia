@@ -1453,7 +1453,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 
 /* compact icon buttons (options / duplicate) */
 /* .sp-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
-.sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
+.sp-iconbtn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 
 /* BIDIR PR #4b Decision 19 residual — corner chip for Claude highlight on aggregate plots. Same
    magenta accent as the per-glyph consumers (TrackScheme, cards, UMAP, gate scatter). Anchored

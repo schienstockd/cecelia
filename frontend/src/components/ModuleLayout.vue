@@ -568,7 +568,7 @@ const visibleUids = computed<string[]>(() =>
   color: var(--cc-text-dim);
   flex-shrink: 0;
 }
-.filter-toggle:hover { color: var(--cc-text); border-color: #484f58; }
+.filter-toggle:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 .filter-toggle.active { color: var(--cc-accent-soft); border-color: var(--cc-accent-strong); }
 .filter-toggle .pi { font-size: var(--cc-fs-xs); }
 .filter-toggle .filter-caret { font-size: var(--cc-fs-3xs); opacity: 0.7; }
