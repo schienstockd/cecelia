@@ -8,6 +8,8 @@ import { useCopyFlash } from '../composables/useCopyFlash'
 import { useSavedFlash } from '../composables/useFlash'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import PackagesDialog from '../components/PackagesDialog.vue'
+import ModulePage from '../components/ModulePage.vue'
+import CollapsibleSection from '../components/CollapsibleSection.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import { notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
@@ -735,13 +737,11 @@ async function switchWt(path: string) {
 </script>
 
 <template>
-  <div class="settings-page">
-    <div class="settings-cols">
-    <div class="settings-col">
-
+  <ModulePage layout="scroll" class="settings-page">
     <!-- ── Project ─────────────────────────────────────────────────────── -->
-    <section class="settings-section">
-      <h2 class="section-title">Project</h2>
+    <CollapsibleSection class="settings-section" label="Project" storage-key="cc-settings-project"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <template v-if="projectMeta.current">
         <!-- Name (grows) + Project ID (6 chars, narrow) on one row -->
@@ -783,11 +783,13 @@ async function switchWt(path: string) {
       </template>
 
       <p v-else class="no-project cc-muted cc-fs-md">No project open. Open or create a project first.</p>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Interface ───────────────────────────────────────────────────── -->
-    <section class="settings-section">
-      <h2 class="section-title">Interface</h2>
+    <CollapsibleSection data-guide="settings.interface" class="settings-section" label="Interface" storage-key="cc-settings-interface"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
            pages stay reachable by URL — this declutters, it does not restrict. -->
@@ -812,11 +814,13 @@ async function switchWt(path: string) {
           {{ e.file }}: {{ e.error }}
         </span>
       </div>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->
-    <section v-if="appCtl.canManageMachine" class="settings-section" data-guide="settings.updates">
-      <h2 class="section-title">Software updates</h2>
+    <CollapsibleSection v-if="appCtl.canManageMachine" data-guide="settings.updates" class="settings-section" label="Software updates" storage-key="cc-settings-software-updates"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <div class="field">
         <label class="field-label">Version</label>
@@ -888,11 +892,13 @@ async function switchWt(path: string) {
       </div>
 
       <span v-if="appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">{{ appCtl.updateMsg }}</span>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
-    <section class="settings-section" data-guide="settings.storage">
-      <h2 class="section-title">Storage</h2>
+    <CollapsibleSection data-guide="settings.storage" class="settings-section" label="Storage" storage-key="cc-settings-storage"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <div class="field">
         <div class="field-row">
@@ -1003,11 +1009,13 @@ async function switchWt(path: string) {
           </template>
         </ul>
       </template>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Storage defaults — how every NEW store on this machine is written (peanut only) ── -->
-    <section v-if="appCtl.canManageMachine" class="settings-section">
-      <h2 class="section-title">Storage defaults</h2>
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Storage defaults" storage-key="cc-settings-storage-defaults"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <!-- Advanced: what compression the image stores we write use. A TABLE, not a dropdown — the
            trade-off is the only reason there is a choice, so the measured numbers belong on screen at
@@ -1069,10 +1077,12 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">In use: {{ formatBytes(chunkCache.stats.bytes) }}</span>
       </div>
       <span v-if="chunkCacheError" class="field-hint cc-muted-error cc-fs-xs">{{ chunkCacheError }}</span>
-    </section>
+      </div>
+    </CollapsibleSection>
 
-    <section v-if="appCtl.canManageMachine" class="settings-section">
-      <h2 class="section-title">Custom modules</h2>
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Custom modules" storage-key="cc-settings-custom-modules"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
       <div class="field">
         <label class="field-label">Modules directory</label>
         <div class="field-row">
@@ -1115,11 +1125,13 @@ async function switchWt(path: string) {
           </span>
         </div>
       </div>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Plugins (module sets installed from a URL) ─────────────────────── -->
-    <section v-if="appCtl.canManageMachine" class="settings-section">
-      <h2 class="section-title">Plugins</h2>
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Plugins" storage-key="cc-settings-plugins"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
       <p class="field-hint cc-muted cc-fs-xs">
         Module sets installed from a URL. Plugin code runs unsandboxed, with full access to this machine.
       </p>
@@ -1197,47 +1209,14 @@ async function switchWt(path: string) {
           </template>
         </SelectionTable>
       </div>
-    </section>
-
-    <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
-    <section class="settings-section">
-      <h2 class="section-title">Data patches</h2>
-      <p class="field-hint cc-muted cc-fs-xs">One-off fixes to the open project's data. Dry-run first to see what would change.</p>
-      <div v-if="!projectMeta.current" class="field-hint cc-muted cc-fs-xs">Open a project to run patches.</div>
-      <div v-for="p in patches" :key="p.id" class="patch-row">
-        <div class="patch-head">
-          <span class="patch-title">{{ p.title }}</span>
-          <span class="patch-actions">
-            <button class="cc-btn cc-btn-primary" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
-                    v-tooltip.top="'List what would change — writes nothing'">
-              <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-spinner' : 'pi-search']" /> Dry-run
-            </button>
-            <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, press }">
-              <button class="cc-btn cc-btn-danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="press"
-                      v-tooltip.top="armed ? 'Click again to write the changes' : 'Write changes to this project\'s data'">
-                <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-play'" /> Apply</button>
-            </ConfirmButton>
-            <button v-if="patchBusy(p.id)" class="cc-btn cc-btn-ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
-          </span>
-        </div>
-        <span class="field-hint cc-muted cc-fs-xs">{{ p.description }}</span>
-        <div v-if="patchRun(p.id)" class="patch-run">
-          <CcProgressBar v-if="patchRun(p.id)!.progress != null" class="patch-bar" size="bar"
-            :value="patchRun(p.id)!.progress" :aria-label="`${p.title} progress`" />
-          <pre class="repl-log patch-log">{{ patchRun(p.id)!.log.join('\n') }}</pre>
-          <span class="field-hint cc-muted cc-fs-xs">status: {{ patchRun(p.id)!.status }}</span>
-        </div>
       </div>
-    </section>
-
-    </div>
-    <div class="settings-col">
+    </CollapsibleSection>
 
     <!-- ── System (service control panel) ──────────────────────────────── -->
-    <section class="settings-section">
-      <h2 class="section-title">System
-        <span v-if="diag?.dev" class="svc-tag" v-tooltip.top="'Development server (pixi run dev, Revise hot-reload)'">dev</span>
-      </h2>
+    <CollapsibleSection class="settings-section" label="System" storage-key="cc-settings-system"
+                        :default-open="false" max-height="none">
+      <template #after-label><span v-if="diag?.dev" class="svc-tag" v-tooltip.top="'Development server (pixi run dev, Revise hot-reload)'">dev</span></template>
+      <div class="settings-body">
 
       <div class="svc-row">
         <span class="svc-name">Application</span>
@@ -1369,11 +1348,13 @@ async function switchWt(path: string) {
 
       <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
       <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Server — launch-time settings for everyone on this machine (peanut only) ── -->
-    <section v-if="appCtl.canManageMachine && (tls || thr)" class="settings-section">
-      <h2 class="section-title">Server</h2>
+    <CollapsibleSection v-if="appCtl.canManageMachine && (tls || thr)" class="settings-section" label="Server" storage-key="cc-settings-server"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <!-- HTTPS + HTTP/2 preference. Default off: HTTP/2 loads bricks slower (WEBGPU_UPLOAD_PATH_PLAN U4).
            Greyed out while off — it can only be switched OFF here (CECELIA_TLS=1 / [tls].enabled still
@@ -1415,11 +1396,13 @@ async function switchWt(path: string) {
           <template v-if="thrMsg"> · {{ thrMsg }}</template>
         </span>
       </div>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Shared workstation (app/src/config/shared_workstation.jl) ─────── -->
-    <section v-if="showShared" class="settings-section" data-guide="settings.sharedWorkstation">
-      <h2 class="section-title">Shared workstation</h2>
+    <CollapsibleSection v-if="showShared" data-guide="settings.sharedWorkstation" class="settings-section" label="Shared workstation" storage-key="cc-settings-shared-workstation"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
       <div v-for="r in sharedRows" :key="r.key" class="field">
         <CcToggle class="toggle-row"
           :model-value="r.value" :disabled="!!sharedBusy" :label="r.label"
@@ -1428,7 +1411,8 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">{{ r.hint }}</span>
       </div>
       <span v-if="sharedError" class="field-hint cc-muted-error cc-fs-xs">{{ sharedError }}</span>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── Other MCP connections ───────────────────────────────────────── -->
     <!-- What ELSE Claude can reach — the CLI itself, third-party machine servers, and account-
@@ -1436,8 +1420,9 @@ async function switchWt(path: string) {
          picture is. Machine rows come from the user's Claude config (real state); account rows are
          managed by their claude.ai account and are NOT detectable from here, so they carry no dot.
          Row model: utils/mcpConnections.ts -->
-    <section v-if="observer.ai.enabled" class="settings-section">
-      <h2 class="section-title">Other MCP connections</h2>
+    <CollapsibleSection v-if="observer.ai.enabled" class="settings-section" label="Other MCP connections" storage-key="cc-settings-other-mcp-connections"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
 
       <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a
            container that also holds tooltipped buttons fires both at once -->
@@ -1463,17 +1448,55 @@ async function switchWt(path: string) {
         Hidden: {{ hiddenAccountConnectors.join(', ') }}
         <button class="cc-btn cc-btn-bare cc-fs-xs" @click="settings.hiddenMcpAccounts = []">show again</button>
       </span>
-    </section>
+      </div>
+    </CollapsibleSection>
 
     <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
-    <section v-if="appCtl.canManageMachine" class="settings-section">
-      <h2 class="section-title">HPC</h2>
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="HPC" storage-key="cc-settings-hpc"
+                        :default-open="false" max-height="none">
+      <div class="settings-body">
       <HpcSettings scope="machine" :project-uid="projectUid" />
-    </section>
+      </div>
+    </CollapsibleSection>
 
-    <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
-    <section class="settings-section">
-      <h2 class="section-title">Diagnostics</h2>
+    <!-- ── Troubleshooting — what the maintainer or support needs, one click deeper (GUI clarity audit p4 #15) ── -->
+    <CollapsibleSection class="settings-section" label="Troubleshooting" storage-key="cc-settings-troubleshooting"
+                        :default-open="false" max-height="none" tip="Diagnostics, packages, data patches and the developer console">
+      <div class="settings-body">
+      <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
+      <div class="settings-sub">
+        <h3 class="cc-eyebrow subsection-title">Data patches</h3>
+      <p class="field-hint cc-muted cc-fs-xs">One-off fixes to the open project's data. Dry-run first to see what would change.</p>
+      <div v-if="!projectMeta.current" class="field-hint cc-muted cc-fs-xs">Open a project to run patches.</div>
+      <div v-for="p in patches" :key="p.id" class="patch-row">
+        <div class="patch-head">
+          <span class="patch-title">{{ p.title }}</span>
+          <span class="patch-actions">
+            <button class="cc-btn cc-btn-primary" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
+                    v-tooltip.top="'List what would change — writes nothing'">
+              <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-spinner' : 'pi-search']" /> Dry-run
+            </button>
+            <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, press }">
+              <button class="cc-btn cc-btn-danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="press"
+                      v-tooltip.top="armed ? 'Click again to write the changes' : 'Write changes to this project\'s data'">
+                <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-play'" /> Apply</button>
+            </ConfirmButton>
+            <button v-if="patchBusy(p.id)" class="cc-btn cc-btn-ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
+          </span>
+        </div>
+        <span class="field-hint cc-muted cc-fs-xs">{{ p.description }}</span>
+        <div v-if="patchRun(p.id)" class="patch-run">
+          <CcProgressBar v-if="patchRun(p.id)!.progress != null" class="patch-bar" size="bar"
+            :value="patchRun(p.id)!.progress" :aria-label="`${p.title} progress`" />
+          <pre class="repl-log patch-log">{{ patchRun(p.id)!.log.join('\n') }}</pre>
+          <span class="field-hint cc-muted cc-fs-xs">status: {{ patchRun(p.id)!.status }}</span>
+        </div>
+      </div>
+      </div>
+
+      <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
+      <div class="settings-sub">
+        <h3 class="cc-eyebrow subsection-title">Diagnostics</h3>
 
       <div v-if="diag" class="diag-grid">
         <span>Version</span><span class="mono">{{ diag.version }}</span>
@@ -1509,11 +1532,11 @@ async function switchWt(path: string) {
 
       <h3 class="cc-eyebrow subsection-title">WebGPU</h3>
       <GpuDiagnostic />
-    </section>
+      </div>
 
-    <!-- ── Developer ───────────────────────────────────────────────────── -->
-    <section v-if="diag && appCtl.canManageMachine" class="settings-section">
-      <h2 class="section-title">Developer</h2>
+      <!-- ── Developer ───────────────────────────────────────────────────── -->
+      <div v-if="diag && appCtl.canManageMachine" class="settings-sub">
+        <h3 class="cc-eyebrow subsection-title">Developer</h3>
 
       <div class="field">
         <CcToggle class="toggle-row" label="Enable debug console"
@@ -1526,11 +1549,11 @@ async function switchWt(path: string) {
         The server is bound to <code>{{ diag.host }}</code>, so the console is disabled for safety.
         Relaunch loopback-only to use it: <code>CECELIA_HOST=127.0.0.1 CECELIA_REPL=1 pixi run dev</code>.
       </span>
-    </section>
+      </div>
 
-    <!-- ── Debug console — only when BOTH gates pass: flag on AND loopback bind ─── -->
-    <section v-if="diag?.replAvailable && appCtl.canManageMachine" class="settings-section">
-      <h2 class="section-title">Debug console</h2>
+      <!-- ── Debug console — only when BOTH gates pass: flag on AND loopback bind ─── -->
+      <div v-if="diag?.replAvailable && appCtl.canManageMachine" class="settings-sub">
+        <h3 class="cc-eyebrow subsection-title">Debug console</h3>
       <span class="field-hint cc-muted cc-fs-xs">
         Evaluates Julia in the running server — full access, use with care.
         Concurrent task logs may briefly appear here during a run.
@@ -1559,54 +1582,32 @@ async function switchWt(path: string) {
           <i :class="['pi', replBusy ? 'pi-spin pi-spinner' : 'pi-play']" /> Run (⌘/Ctrl+Enter)
         </button>
       </div>
-    </section>
+      </div>
 
-    </div>
-    </div>
+      </div>
+    </CollapsibleSection>
 
     <PackagesDialog v-if="showPackages" @close="showPackages = false" />
     <ViewProfileEditor v-if="showProfileEditor" @close="showProfileEditor = false" />
-  </div>
+  </ModulePage>
 </template>
 
 <style scoped>
-.settings-page {
-  max-width: 1180px;
-  padding: 2rem 2.5rem;
-}
-
-/* two columns: existing settings left, diagnostics/developer right. Collapses to one on narrow
-   viewports. `align-items: start` so the columns don't stretch to equal height. */
-.settings-cols {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 3rem;
-  align-items: start;
-}
-.settings-col { min-width: 0; }
-@media (max-width: 860px) {
-  .settings-cols { grid-template-columns: 1fr; gap: 0; }
-}
+/* ModulePage (layout=scroll) owns the padding and the scroll; one column of collapsed sections, each
+   remembered per profile, so a first visit shows the section names and nothing else. */
+.settings-page { max-width: 980px; }
+.settings-section:last-of-type { border-bottom: 1px solid var(--cc-border); }
+/* the body under a section's header row: indented to the header's label, room above and below */
+.settings-body { padding: var(--cc-space-md) var(--cc-space-lg) var(--cc-space-lg); }
+/* a block inside Troubleshooting: an eyebrow heading, a gap before the next */
+.settings-sub + .settings-sub { margin-top: var(--cc-space-xl); }
+.settings-sub > .subsection-title:first-child { margin-top: 0; }
 
 .cmp-head {
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
   margin-bottom: 0.35rem;
-}
-.settings-section {
-  margin-bottom: 2rem;
-}
-
-.section-title {
-  font-size: var(--cc-fs-sm);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--cc-text-dim);
-  margin: 0 0 0.85rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--cc-border);
 }
 
 .subsection-title { margin: 1.1rem 0 0.5rem; }
