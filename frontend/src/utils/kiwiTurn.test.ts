@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
          turnMeta, searchRefs, viewerRefFor, kindLabel, claimText, plainError, attachmentRows, claimRows,
-         TASK_PAGES, taskLanding, type KiwiTurn } from './kiwiTurn'
+         TASK_PAGES, taskLanding, mentionTargets, type KiwiTurn } from './kiwiTurn'
 
 // The built-in task specs, read raw (Vite glob — this tsconfig has no node types for `fs`).
 const TASK_SPECS = import.meta.glob('../../../app/src/tasks/**/*.json',
                                     { import: 'default', eager: true }) as
   Record<string, { fun_name?: string; task?: string } | undefined>
 import { KIWI_REF_KINDS, type KiwiRef } from './kiwiRef'
+import { linkTaskMentions } from './taskDiscovery'
 
 const img: KiwiRef = { kind: 'image', imageUid: 'KDIeEm' }
 const ok = (check: 'exists' | 'live' | 'format' = 'exists') => ({ ok: true, check, label: 'L', error: '' }) as const
@@ -226,5 +227,28 @@ describe('claimRows', () => {
     const rows = claimRows({ ...reply, errors: errs, shapeErrors: [errs[1]] })
     expect(rows[1].tip).toBe('Claim 2: cites something Kiwi didn’t look at')
     expect(rows[0].tip).toBe('')
+  })
+})
+
+describe('mentionTargets', () => {
+  it('resolves a task to its sidebar page and pre-selection, skipping hidden and custom ones', () => {
+    const got = mentionTargets([
+      { fun_name: 'behaviour.hmmStates', label: 'HMM states', task: 'hmmStates' },
+      { fun_name: 'segment.hidden', label: 'Hidden', task: 'h', hidden: true },
+      { fun_name: 'myLab.thing', label: 'Thing', task: 'thing' },
+    ])
+    expect(got).toEqual([{ label: 'HMM states', path: '/behaviour', page: 'Behaviour', module: 'behaviour', task: 'hmmStates' }])
+  })
+})
+
+describe('mentionTargets over the real task specs', () => {
+  const specs = Object.values(TASK_SPECS).filter((s): s is { fun_name: string; task: string; label: string; useWhen?: (string | { text: string })[] } =>
+    !!s && typeof (s as { label?: unknown }).label === 'string' && typeof s.fun_name === 'string' && typeof s.task === 'string')
+  const targets = mentionTargets(specs)
+  it('Cluster tracks names the page HMM states lives on', () => {
+    const line = specs.find(s => s.fun_name === 'clustTracks.cluster')!.useWhen!.map(l => typeof l === 'string' ? l : l.text)
+      .find(l => l.includes('HMM states'))!
+    const links = linkTaskMentions(line, '/clust-tracks', targets).filter(s => s.to)
+    expect(links.map(s => [s.text, s.to!.page])).toEqual([['HMM states', 'Behaviour']])
   })
 })
