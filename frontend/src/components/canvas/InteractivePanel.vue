@@ -81,6 +81,6 @@ useVisualPanel(
 <style scoped>
 .ip-missing { padding: 1rem; }
 /* .ip-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
-.ip-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
+.ip-iconbtn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 .ip-export { max-width: 7rem; }
 </style>

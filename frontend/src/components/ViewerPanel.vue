@@ -1535,7 +1535,7 @@ onUnmounted(() => {
 
 
 .opt-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon */
-.opt-btn:hover        { color: var(--cc-text); border-color: #484f58; }
+.opt-btn:hover        { color: var(--cc-text); border-color: var(--cc-border-hover); }
 
 .opt-text {
   font-size: var(--cc-fs-2xs);

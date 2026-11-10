@@ -310,7 +310,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-compose-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.35rem; }
 
 .ll-save {
-  border: 1px solid var(--cc-accent-fill); background: var(--cc-accent-fill); color: #fff;
+  border: 1px solid var(--cc-primary-fill); background: var(--cc-primary-fill); color: var(--cc-on-primary);   /* the panel's go — saffron (GUI_CLARITY_PLAN D15) */
   border-radius: var(--cc-radius-sm); padding: 0.22rem 0.6rem; font-size: var(--cc-fs-sm); cursor: pointer;
 }
 .ll-save:disabled { opacity: 0.5; cursor: default; }
@@ -322,7 +322,7 @@ async function dismissEntry(entry: LabLogEntry) {
   border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text);
   border-radius: var(--cc-radius-sm); padding: 0.2rem 0.5rem; font-size: var(--cc-fs-xs); cursor: pointer;
 }
-.ll-capture:hover:not(:disabled) { border-color: #8b949e; }
+.ll-capture:hover:not(:disabled) { border-color: var(--cc-border-hover); }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: pointer; }
 /* capture status: floats to the far right of the whole bar (direct toolbar child) */

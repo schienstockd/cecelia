@@ -19,6 +19,19 @@ export interface NavItem {
 
 export interface NavGroup { heading: string; items: NavItem[] }
 
+// The four analysis stages' colour (GUI_CLARITY_PLAN Decision 15): it tints only the sidebar group
+// heading and the active page's bar — never a dot per row, and always next to its label (the warm hues
+// merge under red-green colour blindness). Groups with no stage (Pipeline, Custom) get none.
+const STAGE_TINT: Record<string, string> = {
+  Data: 'var(--cc-stage-data)',
+  Populations: 'var(--cc-stage-populations)',
+  Explore: 'var(--cc-stage-explore)',
+  Analysis: 'var(--cc-stage-analysis)',
+}
+export function stageTint(heading: string): string | null {
+  return STAGE_TINT[heading] ?? null
+}
+
 // Grouped by pipeline stage, not by "everything is analysis":
 //   Data        — get images in and ready (import → segment)
 //   Populations — the modules that DEFINE populations (gate / track / cluster cells / cluster tracks)
