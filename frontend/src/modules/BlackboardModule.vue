@@ -19,6 +19,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useObserverStore } from '../stores/observer'
 import { useBlackboardStore } from '../stores/blackboard'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
@@ -59,6 +60,7 @@ import { useSettingsStore } from '../stores/settings'
 import CcToggle from '../components/CcToggle.vue'
 
 const projectMeta = useProjectMetaStore()
+const observer = useObserverStore()
 const bbStore = useBlackboardStore()
 const project = useProjectStore()
 const settings = useSettingsStore()
@@ -688,7 +690,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                   {{ filteredOutCount }} entr{{ filteredOutCount === 1 ? 'y' : 'ies' }} hidden by filters.
                 </template>
                 <template v-else>
-                  No entries yet. Claude can create them via MCP, or click <strong>New entry</strong>.
+                  No entries yet. <template v-if="observer.ai.enabled">Claude can create them via MCP, or click</template><template v-else>Click</template> <strong>New entry</strong>.
                 </template>
               </span>
             </template>

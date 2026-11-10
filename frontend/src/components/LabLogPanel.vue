@@ -7,6 +7,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
+import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
@@ -20,6 +21,7 @@ import {
 
 const pm = useProjectMetaStore()
 const settings = useSettingsStore()
+const observer = useObserverStore()
 const projectUid = computed(() => pm.current?.uid ?? '')
 
 const entries = ref<LabLogEntry[]>([])
@@ -179,7 +181,7 @@ async function dismissEntry(entry: LabLogEntry) {
       <textarea
         ref="inputEl"
         v-model="draft"
-        v-tooltip.top="'What you observed; Claude reads this as lab context'"
+        v-tooltip.top="observer.ai.enabled ? 'What you observed; Claude reads this as lab context' : 'What you observed'"
         class="ll-input"
         rows="2"
         :disabled="!projectUid || busy"

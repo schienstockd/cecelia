@@ -115,6 +115,15 @@ export const tourGuide: GuideDef = {
       text: 'Ask about what’s on screen: every claim links to its data, and Kiwi can’t change anything.',
       bullets: ['On-demand only: nothing happens until you ask.',
                 'Want Claude to build something? Start a Claude Code session from here.'],
+      onlyIf: c => c.aiEnabled,
+    },
+    {
+      // AI is off by default; the launcher stays as the way to turn it on (GUI_CLARITY_PLAN Decision 9)
+      anchor: 'sidebar.kiwiCta',
+      placement: 'right',
+      title: 'Kiwi — optional AI',
+      text: 'Off by default. Turn it on here if your lab’s data policy allows it.',
+      onlyIf: c => !c.aiEnabled,
     },
     {
       anchor: 'sidebar.settings',

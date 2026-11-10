@@ -315,6 +315,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     anchorExists: () => false,
     anchorReachable: () => false,
     canManageMachine: true,
+    aiEnabled: true,
     ...over,
   })
   const img = (over: Record<string, unknown> = {}) =>
@@ -413,14 +414,21 @@ describe('the derived view-profile prereq', () => {
 })
 
 describe('steps a window can never show are dropped when the guide starts', () => {
-  const ctx = (canManageMachine: boolean) => ({ canManageMachine }) as GuideCtx
+  const ctx = (canManageMachine: boolean, aiEnabled = true) => ({ canManageMachine, aiEnabled }) as GuideCtx
   const tour = guideById('find-your-way-around')!
 
   it('the tour keeps its Updates step for peanut and drops it for anyone else', () => {
     const has = (c: GuideCtx) => guideStepsFor(tour.steps, c).some(s => s.anchor === 'settings.updates')
     expect(has(ctx(true))).toBe(true)
     expect(has(ctx(false))).toBe(false)
-    expect(guideStepsFor(tour.steps, ctx(false)).length).toBe(tour.steps.length - 1)
+    // minus Updates, minus the AI-off Kiwi step
+    expect(guideStepsFor(tour.steps, ctx(false)).length).toBe(tour.steps.length - 2)
+  })
+
+  it('the tour presents Kiwi only while AI is on, and says it is optional while off', () => {
+    const kiwi = (c: GuideCtx) => guideStepsFor(tour.steps, c).filter(s => s.anchor === 'sidebar.kiwiCta')
+    expect(kiwi(ctx(false, true)).map(s => s.title)).toEqual(['Kiwi — answers you can check'])
+    expect(kiwi(ctx(false, false)).map(s => s.title)).toEqual(['Kiwi — optional AI'])
   })
 
   it('a step without onlyIf is always kept', () => {

@@ -89,7 +89,7 @@ async function setStatus(r: RoiRow, s: 'accepted' | 'rejected' | 'flagged' | 'pe
   if (n) goto(n)
 }
 
-const columns: SelectionColumn[] = [
+const COLUMNS: SelectionColumn[] = [
   { key: 'rank', label: '#', sortable: true, width: 34 },
   { key: 'site', label: 'Site', sortable: true, width: 40 },
   { key: 'nObjects', label: 'Objects', sortable: true, width: 56 },
@@ -98,6 +98,9 @@ const columns: SelectionColumn[] = [
   { key: 'label', label: 'Label', sortable: true, width: 80, ellipsis: true },
   { key: 'claude', label: 'Claude', ellipsis: true },
 ]
+// The Claude column only when some ROI carries a Claude label: stored labels stay visible with AI
+// off, but an empty column is noise.
+const columns = computed(() => rows.value.some(r => r.review?.claudeLabel) ? COLUMNS : COLUMNS.filter(c => c.key !== 'claude'))
 const tableRows = computed(() => rows.value.map(r => ({
   id: r.id, rank: r.rank, site: r.site ?? r.rank, t0: r.t0, status: r.status,
   nObjects: r.nObjects, frames: `${r.t0}–${r.t1}`, label: r.review?.userLabel ?? '',
