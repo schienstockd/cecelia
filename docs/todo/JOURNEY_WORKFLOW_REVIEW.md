@@ -1,6 +1,6 @@
 # Journey workflow idea: review against GUI_CLARITY_PLAN, the audit and the code
 
-**Status:** **draft** (2026-11-10), unreviewed; decisions N1–N8 (§6) open. Written by an agent from the
+**Status:** **draft** (2026-11-10), unreviewed; all decided (2026-11-10): N2 = plan Decision 13, viewer popout-only = 14, colour N3–N6 = 15 (a hybrid of the mock and §5, which overrides N3/N4 below), N1 = 16, N7/N8 = 17. Written by an agent from the
 archived brief [`../archive/JOURNEY_WORKFLOW_IDEA.md`](../archive/JOURNEY_WORKFLOW_IDEA.md), the two mocks
 (*now+* and *journey bar*, not committed) and three painting photos (palette source, not committed).
 Plan: [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md). Audit: [`GUI_CLARITY_AUDIT.md`](GUI_CLARITY_AUDIT.md).
@@ -267,7 +267,7 @@ cards.
 **Decisions needed from the maintainer (each with a recommended answer):**
 - **N1. Does the data type hide pages or light them?** *Recommended: light.* Reasons: VIEW_PROFILES
   D2 and its scope, the map's "no default path", and the old R hiding that was dropped.
-- **N2. Where is the recipe stored?** *Recommended: per set, in project data, suggested from axes
+- **N2. Where is the recipe stored?** **Decided (maintainer, 2026-11-10): per set.** *Was recommended: per set, in project data, suggested from axes
   and confirmed by the user.* Consumers: `#next`, map lighting and Welcome.
 - **N3. Do surfaces turn warm brown, as in the mocks?** *Recommended: no for now.* It is a theme
   change outside the ≤10% budget, and it tints the plot surround. Revisit with the P1 three-screen
