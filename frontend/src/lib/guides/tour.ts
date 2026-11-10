@@ -147,6 +147,12 @@ export const tourGuide: GuideDef = {
       placement: 'top-start',
       title: 'Disk space',
       text: 'Scan shows where the project’s bytes went, and what can be freed without losing work.',
+      reveal: {
+        needed: c => c.anchorExists('settings.storageScan') && !c.anchorReachable('settings.storageScan'),
+        anchor: 'settings.storage',
+        text: 'Open Storage to see the Scan button.',
+        placement: 'bottom-start',
+      },
       bullets: [
         'Corrections and crops keep the old version around — those are the reclaimable ones.',
         'Freeing them keeps each image’s active version.',

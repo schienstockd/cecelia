@@ -6,7 +6,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
-import { allNavGroups, navGroupFor, type NavItem } from '../lib/navGroups'
+import { allNavGroups, navGroupFor, stageTint, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { runningTaskCount } from '../utils/runningTasks'
@@ -94,6 +94,11 @@ watch(() => route.path, p => {
 // A hidden page stays reachable by URL — this is decluttering, NOT access control. Filtering logic +
 // tests: utils/viewProfiles.ts. See docs/todo/VIEW_PROFILES_PLAN.md.
 const shownGroups = computed(() => applyProfile(allGroups.value, viewProfiles.activeItems))
+// `--stage` for a group's heading and rows (Decision 15); none for a group with no stage.
+const stageStyle = (heading: string): Record<string, string> | undefined => {
+  const t = stageTint(heading)
+  return t ? { '--stage': t } : undefined
+}
 // The active set's recipe lights its pages; the rest dim but stay clickable (GUI_CLARITY_PLAN D16).
 const project = useProjectStore()
 const lit = computed(() => litRoutes(project.activeSet()))
@@ -151,7 +156,9 @@ function isNavDisabled(item: NavItem): boolean {
          CTAs + footer below stay pinned, so a long menu never pushes them out of reach. -->
     <div class="nav-scroll">
       <template v-for="group in shownGroups" :key="group.heading">
-        <button class="group-heading" @click="toggleGroup(group.heading)">
+        <button class="group-heading" :class="{ staged: stageTint(group.heading) }"
+          :style="stageStyle(group.heading)"
+          @click="toggleGroup(group.heading)">
           <span>{{ group.heading }}</span>
           <i :class="['pi', isOpen(group.heading) ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />
         </button>
@@ -162,6 +169,7 @@ function isNavDisabled(item: NavItem): boolean {
             :key="item.to"
             :to="isNavDisabled(item) ? '' : item.to"
             class="nav-item"
+            :style="stageStyle(group.heading)"
             :class="{ disabled: isNavDisabled(item), 'off-recipe': lit && !lit.has(item.to) }"
             v-tooltip.right="navTip(item)"
             :aria-disabled="isNavDisabled(item)"
@@ -335,6 +343,8 @@ function isNavDisabled(item: NavItem): boolean {
   transition: color 0.1s;
 }
 .group-heading:hover { color: var(--cc-text); }
+/* a stage's heading carries its colour, softened so the labels stay quiet (Decision 15) */
+.group-heading.staged { color: color-mix(in srgb, var(--stage) 75%, var(--cc-text-dim)); }
 .group-chevron { font-size: var(--cc-fs-3xs); opacity: 0.6; }
 
 /* ── Nav items ────────────────────────────────────────────────────────────── */
@@ -359,7 +369,7 @@ function isNavDisabled(item: NavItem): boolean {
   content: '';
   position: absolute;
   left: -0.35rem; top: 20%; height: 60%; width: 3px;
-  background: var(--cc-accent);
+  background: var(--stage, var(--cc-accent));   /* the page's stage colour; lavender off-stage */
   border-radius: 0 2px 2px 0;
 }
 .nav-item.disabled { opacity: 0.4; cursor: not-allowed; }

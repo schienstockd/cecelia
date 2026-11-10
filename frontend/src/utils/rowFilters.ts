@@ -11,11 +11,14 @@
 // reactive/localStorage half stays in the component.
 
 import { isExcluded, isImported, isStarred, type Includable } from './inclusion'
+import { isQcFlagged, qcFlaggedCount } from '../lib/checks'
+import type { QcDoc } from '../lib/qc'
 
 /** The image shape a row filter needs — a structural subset of the store's CciaImage. */
 export interface FilterableImage extends Includable {
   starred?: boolean | null
   filepaths?: Record<string, string> | null
+  qc?: Record<string, QcDoc>
 }
 
 export interface RowFilterDef {
@@ -33,6 +36,9 @@ export interface RowFilterDef {
   visible: (images: FilterableImage[]) => boolean
   /** Tooltip for the current state. Kept to one short line (docs/ui/COPY.md). */
   tip: (active: boolean, images: FilterableImage[]) => string
+  /** Where its toggle is drawn. Unset = the generic filter buttons; `checks` = the Checks cluster's
+   *  QC button, which owns the label, count and tip (lib/checks.ts) — the state and the hiding stay here. */
+  host?: 'checks'
 }
 
 const countBy = (images: FilterableImage[], p: (i: FilterableImage) => boolean) =>
@@ -79,6 +85,18 @@ export const ROW_FILTERS: RowFilterDef[] = [
       const n = countBy(imgs, isStarred)
       return active ? 'Show all images' : `Show only the ${n} starred image(s)`
     },
+  },
+  {
+    // The Checks cluster's QC button (components/ChecksCluster.vue) — not a generic filter button.
+    id: 'qcFlagged',
+    label: 'QC',
+    iconOn: 'pi-flag',
+    iconOff: 'pi-flag',
+    hides: img => !isQcFlagged(img),
+    count: qcFlaggedCount,
+    visible: () => true,
+    tip: active => active ? 'Show all images' : 'Show only QC-flagged images',
+    host: 'checks',
   },
 ]
 

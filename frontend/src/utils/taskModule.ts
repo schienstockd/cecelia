@@ -30,7 +30,7 @@ const TAG_FILL_ALPHA = 0x22 / 255
 //: sits on (the tooltip). The fill is translucent, so its painted colour depends on what is
 //: behind it, and CSS cannot tell us; picking the lightest is the worst case for light label text, so a
 //: label readable here is readable on `--cc-bg` and `--cc-surface-1` too.
-const TAG_SURFACE = '#21262d'
+export const TAG_SURFACE = '#23211f'   // = --cc-surface-2 (style.css)
 
 /**
  * The inline colours for a `.cc-module-tag` — the ONE derivation of the pill's tint from the palette,
