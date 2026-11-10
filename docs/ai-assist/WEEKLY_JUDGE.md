@@ -55,7 +55,9 @@ test whether an agent can actually use the framework.
      When `gh` can't answer, those branches fall back to ancestry and the record's *Failed* row says
      so (`landed`);
    - the excerpt is the whole function around the line (`enclosing.py`), found at the finding's
-     own commit, so a moved line still shows the right code;
+     own commit, so a moved line still shows the right code. Outside any function, the line is
+     carried through `git diff` to the pass's SHA (a rewritten line is found by its own text), and
+     the window sits there, not at the old line number;
    - a function that no longer exists is `gone`;
    - findings on one file + function are merged into one bug;
    - a `parked` bug (verify said `guard`, step 4) skips the judge and stays parked, unless a commit

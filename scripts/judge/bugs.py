@@ -31,7 +31,9 @@ it did) takes that source's findings from the start of the log, so the backlog i
 
 Before the judge, free checks: findings on frozen paths (an earlier run record) are
 dropped; the judge sees the whole function a finding sits in, found at the finding's own commit
-(`enclosing.py`), so a moved line still shows the right code; a function that no longer exists is
+(`enclosing.py`), so a moved line still shows the right code; with no function, the line itself
+is carried through the diff to `sha`, so a busy file's window doesn't land on unrelated code (a
+judge that can't see the code keeps the bug open forever); a function that no longer exists is
 `gone` without a call; findings on one file + function are one bug listing every source; findings
 over the sweep budget, or with no verdict, are `unjudged` (carried, never on the owner queue). And
 one check no finding raises: commits pushed to a PR's branch after it merged, which the merge
@@ -81,7 +83,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.log import RESOLVED_EVENTS, latest_resolutions_by_slug  # noqa: E402
-from cecelia.effectiveness.git_context import git_output, merged_pr_heads, merged_prs_since  # noqa: E402
+from cecelia.effectiveness.git_context import git_output, merged_pr_heads, merged_prs_since, parse_diff  # noqa: E402
 from cecelia.effectiveness.recital import _slug  # noqa: E402
 
 
@@ -354,6 +356,19 @@ def _frozen(file: str | None) -> bool:
     return bool(file) and file.startswith(FROZEN_PATHS)
 
 
+def _carry(line: int, file: str, commit: str | None, sha: str, now: str, repo: pathlib.Path) -> int:
+    """`line` of `file` as the reviewer read it at `commit`, at `sha` (whose text is `now`). Without
+    the carry a busy file's window lands on unrelated code every pass, and the bug can never be
+    judged gone."""
+    if not line or not commit:
+        return line
+    diff = git_output("diff", "-U0", commit, sha, "--", file, cwd=str(repo))
+    files = parse_diff(diff or "")
+    if any(fd.is_new for fd in files):   # not there when the reviewer read it: the line is today's
+        return line
+    return _enc.carry_line([h for fd in files for h in fd.hunks], line, now.splitlines())
+
+
 def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
     """Where a finding's code is at `sha`: `{"code", "symbol", "gone"}`.
 
@@ -372,6 +387,8 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
         return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file and not there else None}
     then = git_output("show", f"{b['commit']}:{file}", cwd=str(repo)) if b.get("commit") else None
     found = _enc.enclosing(then, line, file) if then else None
+    if then is not None:
+        line = _carry(line, file, b["commit"], sha, now, repo)
     symbol, at = (found[0], None) if found else (None, None)
     if symbol:
         at = _enc.find(now, symbol, file)
@@ -398,8 +415,8 @@ def canonical(b: dict, sha: str, repo: pathlib.Path) -> str | None:
             continue
         text = git_output("show", f"{sha}:{path}", cwd=str(repo))
         if text is not None:
-            return f"{path}:{line}\n" + _enc.window(text.splitlines(), int(line) - CANONICAL_LINES,
-                                                     int(line) + CANONICAL_LINES)
+            at = _carry(int(line), path, b.get("commit"), sha, text, repo)
+            return f"{path}:{at}\n" + _enc.window(text.splitlines(), at - CANONICAL_LINES, at + CANONICAL_LINES)
     return None
 
 

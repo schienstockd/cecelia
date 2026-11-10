@@ -140,6 +140,31 @@ def mentions(text: str, name: str) -> bool:
     return re.search(rf"(?<![\w.]){re.escape(name)}(?![\w!])", text) is not None
 
 
+#: A rewritten line shorter than this (`}`, `end`, blank) is not looked for by its text.
+CARRY_MIN_TEXT = 8
+
+
+def carry_line(hunks: _t.Sequence[_t.Sequence[_t.Any]], line: int, now: _t.Sequence[str] = ()) -> int:
+    """Where old `line` is in the new file `now`, from that file's hunks (`git_context.parse_diff`
+    of a `git diff -U0`). A line the diff rewrote (re-indented, or moved by a refactor) is found by
+    its own text, the copy nearest where the shifts put it; failing that, or deleted, the start of
+    what replaced it."""
+    shift = 0
+    for h in hunks:
+        removed = [ln for ln in h if ln.kind == "-"]
+        added = [ln for ln in h if ln.kind == "+"]
+        if not h or h[0].old_lineno > line:
+            break
+        hit = next((ln for ln in removed if ln.old_lineno == line), None)
+        if hit is not None:
+            text = hit.text.strip()
+            found = [n for n, s in enumerate(now, 1) if s.strip() == text] if len(text) >= CARRY_MIN_TEXT else []
+            return (min(found, key=lambda n: abs(n - (line + shift))) if found
+                    else added[0].lineno if added else max(line + shift, 1))
+        shift += len(added) - len(removed)
+    return line + shift
+
+
 def window(lines: _t.Sequence[str], lo: int, hi: int) -> str:
     """Numbered lines `lo`..`hi` (1-based, clamped)."""
     lo, hi = max(1, lo), min(hi, len(lines))
