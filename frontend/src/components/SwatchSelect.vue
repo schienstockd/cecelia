@@ -45,7 +45,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
 .ss-btn { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
   font-size: var(--cc-fs-md); color: var(--cc-text); background: var(--cc-surface-2);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 0.32rem 0.5rem; cursor: pointer; }
-.ss-btn:hover { border-color: #484f58; }
+.ss-btn:hover { border-color: var(--cc-border-hover); }
 .ss.open .ss-btn { border-color: var(--cc-accent); }
 .ss-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ss-caret { font-size: var(--cc-fs-2xs); opacity: 0.6; }
