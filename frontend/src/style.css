@@ -99,6 +99,22 @@
   --cc-console-bar-h:  30px;
   --cc-console-open-h: 210px;
 
+  /* Spacing ladder (docs/todo/GUI_CLARITY_PLAN.md, Decision 11): padding, margin and gap take a step,
+     never a raw value. No 10px step — a 10px literal rounds to 8 or 12 at its site. The role tokens
+     below are what the shared shells use, so one change moves every bar or panel head at once. */
+  --cc-space-3xs: 2px;
+  --cc-space-2xs: 4px;
+  --cc-space-xs:  6px;
+  --cc-space-sm:  8px;
+  --cc-space-md:  12px;
+  --cc-space-lg:  16px;
+  --cc-space-xl:  24px;
+  --cc-space-2xl: 32px;
+  --cc-bar-pad:     var(--cc-space-sm) var(--cc-space-md);   /* page bars: SetBar, the module action bar */
+  --cc-head-pad:    var(--cc-space-xs) var(--cc-space-sm);   /* small panel heads: floating + canvas panels */
+  --cc-section-pad: var(--cc-space-xs) var(--cc-space-lg);   /* a collapsible section's header row */
+  --cc-page-pad:    var(--cc-space-lg) var(--cc-space-xl);   /* a page's outer padding (ModulePage) */
+
   /* Corner radius scale — collapses the ~8 ad-hoc radii (0.2/0.25/0.3/0.35/0.4…) to two steps.
      -sm = small controls/chips/inputs; -md = cards/panels/dialogs. Use these, not a raw rem. */
   --cc-radius-xs:   0.2rem;   /* ≈  3px — chips, swatches, inline code, micro chrome */
