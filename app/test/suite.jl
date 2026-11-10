@@ -373,6 +373,7 @@ include(joinpath(@__DIR__, "suite", "qc_profile.jl"))
 include(joinpath(@__DIR__, "suite", "import_finding_text.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_ome_xml_unit.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_first_gap.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_paused_interval.jl"))
 
 include(joinpath(@__DIR__, "suite", "vn_pilot_writer.jl"))
 include(joinpath(@__DIR__, "suite", "viewer_cache.jl"))
