@@ -55,6 +55,11 @@ rather than one screen at a time.
     round to 8 or 12 per site, shared shells first.
 12. **Each module opens on its recipe's first step** (maintainer, 2026-11-10; audit D6): drift
     correction on Cleanup, Cellpose on Segment; import functions move down.
+13. **The recipe is stored per set** (maintainer, 2026-11-10; journey review N2): a key in the set's
+    project data, suggested from the image axes and confirmed by the user. It feeds the next-step slot
+    (slice 5), map lighting and Welcome (slice 8).
+14. **The viewer is a popout only** (maintainer, 2026-11-10): it has never had a docked version and
+    won't get one. The journey review's viewer chip and blocked-popup message build on that.
 ## What main already has (2026-11-10, `origin/main` 71509170)
 
 - **Theme:** PrimeVue and Aura are gone. The tokens are the 54 `--cc-*` custom properties in
@@ -115,7 +120,7 @@ The order of P1–P4 is provisional. P0's slicing replaces it.
    will produce the before/after shots.
 2. **What counts as usage evidence?** *Recommended:* treat the observer's capture log as a weak
    signal where it exists, and say "unknown" everywhere else. Don't add telemetry for this.
-3. **Spine versus "no default path":** *Recommended:* a per-recipe spine. With no recipe picked,
+3. ~~**Spine versus "no default path":**~~ **Resolved by Decision 13** (recipe per set). A per-recipe spine. With no recipe picked,
    pages show their own next step instead of a global one. This keeps the map's decision.
 4. ~~**Palette:**~~ **Agreed (maintainer, 2026-11-10):** the desert-earth direction is confirmed
    against a three-screen mock in P1 before any colour token merges.
