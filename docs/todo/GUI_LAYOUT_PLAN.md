@@ -26,7 +26,9 @@ an isolated instance sits next to its mock frame and matches, not when the code 
    The cockpit keeps working from its launcher's new home until the redesign replaces it.
 6. **`ViewerWindow.vue` is split along the seams the layout moves** (maintainer, 2026-11-11). See
    § Splitting the viewer.
-7. Supersedes `GUI_CLARITY_PLAN` Decision 17's "the mocks are not fixed": the final mocks are the
+7. **A jump search goes in the header** (maintainer, 2026-11-11): Ctrl K, pages / functions / images.
+   The one new feature in this plan; everything else is a move.
+8. Supersedes `GUI_CLARITY_PLAN` Decision 17's "the mocks are not fixed": the final mocks are the
    layout spec. The journey bar stays parked.
 
 ## Today → new home
@@ -116,6 +118,7 @@ tables above as a checklist, and a before/after screenshot beside its mock frame
 | M5 | Next footer on pages with no task panel | 2 | S | — |
 | M6 | Default plots per page | 1, 2 | M–L | new mechanism plus a default for each of the 18 ModuleLayout pages |
 | M7 | Welcome: counts, relative dates, "to review", recipe cards | 3 | S–M | per-project counts may need a small backend field |
+| M8 | Jump search in the header (Ctrl K): pages, task functions, images of the open project | 1 | M | new feature, not a move (maintainer, 2026-11-11); reuses `navGroups.ts`, the task catalogue and the image list, no new backend route; Ctrl K must not clash with an existing shortcut |
 | V0 | Split the viewer (table above), behaviour-neutral | — | M | pixel-identical before/after |
 | V1 | Viewer header: ← back, image ‹ 1 of 3 ›, provenance chip, Help ▾, Ask Kiwi | 4 | M | bringing the main window to the front from the popout needs a fallback |
 | V2 | Playback bar on the image + console row | 4 | M | the riskiest viewer slice; needs the maintainer's eyes on a real GPU |
@@ -123,7 +126,7 @@ tables above as a checklist, and a before/after screenshot beside its mock frame
 | V4 | Share ▾ | 6 | S–M | hooks keep their names; Draw and note gets a button in the window |
 | V5 | Edit slot: alpha line + banner, empty panel | 5 | S | the cockpit still opens from "Correct labels" |
 
-Order: M1, M2 (largest visible win, low risk) → M3–M5 → V0 → V1, V3, V4, V5 → M7 → M6 and V2 last.
+Order: M1, M2 (largest visible win, low risk) → M3–M5 → M8 → V0 → V1, V3, V4, V5 → M7 → M6 and V2 last.
 
 ## Will it break anything
 
