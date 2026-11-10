@@ -256,5 +256,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
 .mo-num { width: 4.2rem; flex-shrink: 0; }
 /* …and the field then fills its own line, up to the block cap above (which is what stops it eating a
    1200px page — a filename suffix is a handful of characters). */
-.mo-txt { flex: 1 1 auto; min-width: 4rem; }
+/* `:deep` because the input is SuggestInput's, rendered under its scope, not ours — a bare `.mo-txt`
+   never matched, so the field kept its intrinsic width and ran past a narrow panel's edge. */
+.mo-own-row :deep(.mo-txt) { flex: 1 1 auto; min-width: 4rem; width: 0; }
 </style>

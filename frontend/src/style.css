@@ -617,6 +617,21 @@ body {
 .cc-card { background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 .cc-card-2 { background: var(--cc-surface-2); }
 
+/* A PANEL SECTION — one block of a right-hand panel or pane (TaskRunner, Metadata, Animation, Batch
+   movies, the Chains step config, Settings). Inside a panel, sections are separated by a full-width
+   divider and never boxed: a card inside a bordered panel is the "box in a box" that made two right
+   panels read like a different app. The heading is `.cc-panel-heading` + `.cc-eyebrow .cc-fs-2xs`; it
+   is a row, so a count or trailing icon buttons sit on it (`.cc-panel-heading-actions` pushes them right).
+   A collapsible block in the same place is `CollapsibleSection` (same divider, same eyebrow). */
+.cc-panel-section { padding: var(--cc-space-md); border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
+.cc-panel-heading {
+  display: flex; align-items: center; gap: var(--cc-space-xs);
+  min-height: 1.5rem;   /* the same height with or without trailing buttons */
+  margin: 0 0 var(--cc-space-sm);
+}
+.cc-panel-heading-actions { margin-left: auto; display: flex; align-items: center; gap: var(--cc-space-3xs); }
+.cc-panel-heading > :is(h2, h3, h4) { margin: 0; }
+
 /* A FILTER DROPDOWN — a panel that drops out of an action bar holding one labelled row of controls per
    thing you can filter by. Two surfaces are this scenario: the image table's attribute chips and its
    "Processed with" row (ModuleLayout), and the Movies list's attribute chips — and the first two

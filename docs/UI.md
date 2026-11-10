@@ -741,6 +741,7 @@ Use `splice()` to mutate arrays in place inside setup stores.
 
 A module page is the full screen that opens when the user clicks a sidebar item.
 The standard layout is: **SetBar** (top bar) + **image panel** (left, scrollable image list) + **right panel** (task runner, metadata editor, or a custom panel).
+A custom right panel builds its blocks from `.cc-panel-section` (divider between sections, eyebrow heading via `.cc-panel-heading`), the same as TaskRunner — never bordered boxes (`docs/ui/PRIMITIVES.md` → right-panel section). Sections run edge to edge: the panel root has no padding or gap of its own.
 
 **Convention — attributes + filtering.** Every module page **except Import** must show
 attribute columns and allow filtering by them: pass `:show-attrs="true" :show-filter="true"`

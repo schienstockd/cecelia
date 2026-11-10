@@ -68,6 +68,9 @@ const tip = (half: PaneHalf) => props.pane === half
   align-items: center;
   gap: 0.15rem;
   flex-shrink: 0;
+  /* every host puts it at the top of a panel whose sections run edge to edge (.cc-panel-section), so
+     the inset is the bar's own, not three copies of it */
+  padding: var(--cc-space-3xs) var(--cc-space-sm) 0;
 }
 /* the readout takes the slack, so the toggles stay pinned right whether or not there's a note */
 .pane-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

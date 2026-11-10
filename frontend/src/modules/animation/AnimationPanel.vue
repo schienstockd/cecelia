@@ -355,8 +355,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
       <PaneExpandBar :pane="pane" top-label="animation controls" bottom-label="task list"
                      top-icon="pi-cog" bottom-icon="pi-bars" @toggle="togglePane" />
       <!-- Keyframes — every capture reads the LIVE viewer, so this states what it is reading -->
-      <section class="ap-sec">
-        <h4>Keyframes <span class="ap-sub cc-muted">{{ frames.length }}</span></h4>
+      <section class="ap-sec cc-panel-section">
+        <div class="cc-panel-heading">
+          <h3 class="cc-eyebrow cc-fs-2xs">Keyframes</h3><span class="cc-readout cc-fs-2xs">{{ frames.length }}</span>
+        </div>
         <div class="ap-img cc-row cc-row-tight">
           <span class="ap-name" :title="activeImage?.name">{{ activeImage?.name ?? activeUid }}</span>
           <button v-if="!isOpen" class="cc-btn cc-btn-ghost cc-btn-micro" data-guide="animation.open"
@@ -388,14 +390,14 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the batch page -->
-      <section class="ap-sec">
-        <h4>Movie</h4>
+      <section class="ap-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs">Movie</h3>
         <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="anim.fps" v-model:sizeX="anim.sizeX" v-model:sizeY="anim.sizeY"
                              v-model:suffix="anim.suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY" />
         <TitleCardControls v-model="anim.titleCard" />
       </section>
 
-      <div class="ap-actions cc-row">
+      <div class="ap-actions cc-panel-section">
         <button class="cc-btn cc-btn-primary cc-btn-run" data-guide="animation.render" :disabled="!canRender" @click="render"
                 v-tooltip.top="canRender ? 'Render the timeline to an mp4' : 'Needs 2 or more keyframes'">
           <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
@@ -405,7 +407,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
       <!-- The TASKS half — wrapped so the `pane-<mode>` CSS below can hide it without reaching into
            TaskList's own root. Same containment as the batch panel: it owns its overflow, with a floor
            so a long config above cannot squeeze it to a sliver. -->
-      <div class="ap-tasks">
+      <div class="ap-tasks cc-panel-section">
         <TaskList module="animation" />
       </div>
     </template>
@@ -413,25 +415,24 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
 </template>
 
 <style scoped>
-.ap { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
-.ap-hint { margin: 2px 0; }
-.ap-restored { margin-bottom: 0.5rem; }
+/* sections run edge to edge, split by dividers (.cc-panel-section) — no gap, no inset of our own */
+.ap { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ap-hint { margin: 0; padding: var(--cc-space-md); }
+.ap-restored { margin: var(--cc-space-sm) var(--cc-space-md) 0; }
 /* Which half is showing, declared once per half — one rule covers the group AND a section added later,
    which a per-element guard would miss. */
 .ap.pane-bottom > .ap-sec,
 .ap.pane-bottom > .ap-actions { display: none; }
 .ap.pane-top    > .ap-tasks   { display: none; }
-.ap-tasks { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 14rem; overflow: auto; }
+.ap-tasks { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 14rem; overflow: auto;
+  border-bottom: none; padding-bottom: 0; }   /* + .cc-panel-section: the last one, so no divider */
 .ap.pane-bottom > .ap-tasks { min-height: 0; }
 
-.ap-sec { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); padding: 6px 8px; background: var(--cc-surface-1); }
-.ap-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: var(--cc-fs-md); font-weight: 700; }
-.ap-sub { margin-left: 6px; }
+/* .ap-sec / .ap-actions are .cc-panel-section (style.css): divider, never a box */
 .ap-img { margin-bottom: 5px; }
 .ap-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: var(--cc-fs-sm); font-weight: 600; }
 .ap-btns { display: flex; flex-direction: column; gap: 4px; }
 .ap-btns .cc-btn { justify-content: flex-start; }
 .ap-sync { margin-top: 6px; }
-.ap-actions { margin-top: 2px; }
 </style>
