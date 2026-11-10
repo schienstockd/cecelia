@@ -176,7 +176,7 @@ is deliberately *not* checked: `surface + border + radius` is the shape of a car
 badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
 review-time rule.
 
-**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 16 of the 23 module
+**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** (Settings too: `layout="scroll"`, closed `CollapsibleSection`s.) 16 of the 23 module
 pages are built on `ModuleLayout` and were already consistent. The standalone ones were not: Notebooks,
 Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
 two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under

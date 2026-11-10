@@ -186,6 +186,15 @@ item, never a second predicate. A guide step about a gated control carries
 `onlyIf: c => c.canManageMachine` (`GuideStep.onlyIf`, applied by `guideStepsFor` when the guide
 starts). Design + decisions: [`docs/todo/SETTINGS_SCOPE_PLAN.md`](todo/SETTINGS_SCOPE_PLAN.md).
 
+## Settings layout
+
+`SettingsModule.vue` is a `ModulePage layout="scroll"`: one column of `CollapsibleSection`s, all closed by
+default and remembered per profile (`cc-settings-<section>`), so a first visit shows the section names
+and nothing else. Diagnostics (with WebGPU and Packages), Data patches, Developer and the Debug console
+sit together under one closed **Troubleshooting** section. Guide steps that point inside a closed
+section (`settings.storageScan`, `settings.viewProfile`) first point at the section header
+(`settings.storage`, `settings.interface`).
+
 ## Settings → System (service control panel)
 
 `SettingsModule.vue` has a **System** section: one row per runtime component (Application / Viewer /
