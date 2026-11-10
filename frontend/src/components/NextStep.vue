@@ -9,9 +9,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore } from '../stores/project'
 import { resolveSetRecipe, nextStepFor, nextSourceLine } from '../utils/setRecipe'
 
-// `inline`: just the button, for a page with no right panel (the action bar hosts it); the source
-// line moves into the tooltip.
-defineProps<{ inline?: boolean }>()
+// `footer`: the same block as the right panel's, floating in the page's bottom-right corner — a page
+// with no right panel (Gate, Analysis) keeps Next where task pages have it
+// (docs/todo/GUI_LAYOUT_PLAN.md, M5; mock frame 2).
+defineProps<{ footer?: boolean }>()
 const route = useRoute()
 const router = useRouter()
 const project = useProjectStore()
@@ -21,11 +22,7 @@ const next = computed(() => recipe.value ? nextStepFor(recipe.value.recipe, rout
 </script>
 
 <template>
-  <button v-if="recipe && next && inline" class="cc-btn cc-btn-next next-inline" data-guide="layout.nextStep"
-    @click="router.push(next.route)" v-tooltip.bottom="`${nextSourceLine(recipe)} — ${next.why}`">
-    Next: {{ next.label }} <i class="pi pi-arrow-right" />
-  </button>
-  <div v-else-if="recipe && next" class="next-step" data-guide="layout.nextStep">
+  <div v-if="recipe && next" class="next-step" :class="{ footer }" data-guide="layout.nextStep">
     <span class="cc-eyebrow">Next</span>
     <span class="next-src cc-muted cc-fs-xs">{{ nextSourceLine(recipe) }}</span>
     <button class="cc-btn cc-btn-next" @click="router.push(next.route)" v-tooltip.top="next.why">
@@ -44,5 +41,9 @@ const next = computed(() => recipe.value ? nextStepFor(recipe.value.recipe, rout
   background: var(--cc-surface-1);
 }
 .next-step .cc-btn-next { justify-content: center; width: 100%; }
-.next-inline { flex: none; }
+.next-step.footer {
+  position: absolute; right: var(--cc-space-lg); bottom: var(--cc-space-lg); z-index: 5;
+  width: 280px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);   /* the popover shadow (TeleportPopover) */
+}
 </style>

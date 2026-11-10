@@ -2594,7 +2594,7 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   (`resolveSetRecipe`, `suggestRecipe`, `nextStepFor`, `litRoutes`), saved through
   `composables/useSetRecipe.ts` (`POST /api/sets/recipe`). Pages on a confirmed recipe stay bright and
   the rest dim (still clickable); a suggestion from the axes restyles nothing until it is picked.
-  The picker sits in the set bar (`SetRecipePicker.vue`); the Next button is `NextStep.vue`.
+  The picker sits in the set row (`SetRecipePicker.vue`); the Next button is `NextStep.vue`.
 - A guide whose steps visit hidden pages gets one **derived prereq** in the picker
   (`stores/guide.ts` → `profilePrereq`) — an amber "needs pages your view profile hides (…)" line,
   counted in "N missing", with **Start still working**. Derived from the guide's own `steps`, so a new

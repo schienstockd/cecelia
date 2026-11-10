@@ -402,7 +402,7 @@ const visibleUids = computed<string[]>(() =>
         </div>
         <!-- Result line: the last run on this page and its outcome, then the page's own actions
              (#actions — Correct labels / tracks, Import's copy/move/remove …). -->
-        <div v-if="activeSet && (result || $slots.actions || !$slots.right)" class="result-row">
+        <div v-if="activeSet && (result || $slots.actions)" class="result-row">
           <span v-if="result && resultStyle" class="result-line" data-guide="layout.resultLine">
             <i :class="['pi', resultStyle.icon]" :style="{ color: resultStyle.color }" />
             {{ taskDefs.labelFor(result.fun) }} {{ resultVerb(result) }}
@@ -413,8 +413,6 @@ const visibleUids = computed<string[]>(() =>
           <span class="spacer" />
           <slot name="actions" :has-set="!!activeSet" :set-uid="activeSet?.uid"
             :selected-uids="selectedUids" :select-uids="selectUids" />
-          <!-- a page with no right panel shows its next step here instead (GUI_CLARITY_PLAN D13) -->
-          <NextStep v-if="!$slots.right" inline />
         </div>
         <!-- Task dropdown: filter to images a given function has been run on (ever / on last run) -->
         <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="cc-filter-panel">
@@ -489,6 +487,8 @@ const visibleUids = computed<string[]>(() =>
             :select-uids="selectUids"
           />
         </div>
+        <!-- a page with no right panel keeps Next in the same corner as a task page's (GUI_LAYOUT_PLAN M5) -->
+        <NextStep v-if="!$slots.right && !isMaximised" footer />
       </div>
 
       <!-- ── Right: module-specific panel (collapsible + resizable) ── -->
@@ -537,6 +537,7 @@ const visibleUids = computed<string[]>(() =>
 /* ── Image panel ──────────────────────────────────────────────────────────── */
 
 .image-panel {
+  position: relative;   /* anchors the Next footer on pages with no right panel */
   flex: 1;
   display: flex;
   flex-direction: column;
