@@ -96,12 +96,19 @@ export function qcState(img: CciaImage): QcState {
 // or null when the image has no non-metadata QC findings. `warn` outranks `info`.
 export function qcSummary(img: CciaImage): QcSummary | null {
   const fs = qcFindings(img).filter(f => !isMetadataCode(f.code))
+  const sum = summarizeFindings(fs)
+  return sum && { ...sum, groups: groupByTask(fs) }
+}
+
+/** Any list of findings folded into one line + a hover tip: the one finding's own short text, or a
+ *  count; the tip lists each as problem then the action (→). Brief; text convention in
+ *  docs/todo/QC_PLAN.md. Shared by the image badge (`qcSummary`) and the plot's stats notice. */
+export function summarizeFindings(fs: readonly QcFinding[]): { level: 'info' | 'warn'; count: number; short: string; long: string } | null {
   if (!fs.length) return null
   const level = fs.some(f => f.level === 'warn') ? 'warn' : 'info'
   const short = fs.length === 1 ? fs[0].short : `${fs.length} QC issues — hover for detail`
-  // Tooltip: each finding as problem then the action (→). Brief; text convention in docs/todo/QC_PLAN.md.
   const long = fs.map(f => `${f.short}\n→ ${f.long}`).join('\n\n')
-  return { level, count: fs.length, short, long, groups: groupByTask(fs) }
+  return { level, count: fs.length, short, long }
 }
 
 const HTML_ESCAPES: Record<string, string> = {
