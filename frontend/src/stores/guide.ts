@@ -26,6 +26,7 @@ import { useSettingsStore } from './settings'
 import { useTaskStore } from './tasks'
 import { useCustomModulesStore } from './customModules'
 import { useViewProfilesStore } from './viewProfiles'
+import { useObserverStore } from './observer'
 import { allNavGroups, navLabelFor } from '../lib/navGroups'
 import { applyProfile, availablePaths, hiddenGuideRoutes } from '../utils/viewProfiles'
 import { GUIDES, guideById } from '../lib/guides'
@@ -110,6 +111,7 @@ export const useGuideStore = defineStore('guide', () => {
       anchorExists: (id: string) => resolveAnchor(id) !== null,
       anchorReachable: (id: string) => isReachable(resolveAnchor(id)),
       canManageMachine: appCtl.canManageMachine,
+      aiEnabled: useObserverStore().ai.enabled,
     }
   })
 

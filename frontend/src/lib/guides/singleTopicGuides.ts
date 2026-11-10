@@ -337,6 +337,7 @@ export const useTheBlackboardGuide: GuideDef = {
       title: 'Send to Kiwi',
       text: 'Feed this entry (or a specific version) into a Kiwi turn — appears as context alongside your prompt.',
       bullets: ['Ships the version you are viewing.'],
+      onlyIf: c => c.aiEnabled,     // the button renders only while AI is on (AddToKiwiButton)
     },
   ],
 }

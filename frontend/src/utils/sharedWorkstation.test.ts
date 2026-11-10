@@ -8,6 +8,13 @@ describe('sharedWorkstationRows', () => {
     expect(rows[0].label).toBeTruthy()
   })
 
+  it('leads with Allow AI features, and hides the Claude-session rows while AI is not allowed', () => {
+    const on = { aiAllowed: true, oneClaudeLogin: true, claudeLogoutOnQuit: false, purgeClaudeConversations: false }
+    expect(sharedWorkstationRows(on).map(r => r.key))
+      .toEqual(['aiAllowed', 'oneClaudeLogin', 'claudeLogoutOnQuit', 'purgeClaudeConversations'])
+    expect(sharedWorkstationRows({ ...on, aiAllowed: false }).map(r => r.key)).toEqual(['aiAllowed'])
+  })
+
   it('drops an item the server does not report, ignores one it has no label for', () => {
     expect(sharedWorkstationRows({})).toEqual([])
     expect(sharedWorkstationRows({ oneClaudeLogin: 'yes', somethingNew: true })).toEqual([])

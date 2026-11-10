@@ -56,7 +56,7 @@ const labLogBadgeStyle = computed(() =>
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
             v-tooltip.right="settings.labLogUnseen
               ? ((settings.labLogUnseenKind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + settings.labLogUnseen)
-              : (settings.labLogPanelOpen ? 'Close lab log' : 'Lab log — analysis notes for this project (you + Claude)')">
+              : (settings.labLogPanelOpen ? 'Close lab log' : (observer.ai.enabled ? 'Lab log — analysis notes for this project (you + Claude)' : 'Lab log — analysis notes for this project'))">
       <i class="pi pi-book" />
       <i v-if="settings.labLogUnseen"
          :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'panel-launcher-badge']"

@@ -231,13 +231,38 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   "Analyse as planned." / "Before comparing: …" — or, when the movies can't answer the plan, "These
   movies can answer: …" (the narrowed question fits finished data). Heading *Before analysing*.
 
+## Thresholds: relative to the set, not fixed (the maintainer, 2026-11-10)
+
+The `ACQ_*` constants in `app/src/acq_check.jl` were read off m5uLPh and lfGUDg by eye. Rather than
+calibrate them as fixed cuts (which would take many sets with a known verdict), the question is asked
+inside the set or comes from physics:
+
+| Check | Now | Replacement |
+|---|---|---|
+| Shared structure | r ≥ 0.5 (`ACQ_SHARED_R`) | the label's r with the reference/empty channel against the set's own baseline — the other labels' r with it: "this label tracks AF more than your other labels do" |
+| Balance | p99 ratio ≥ 2 (`ACQ_BALANCE_RATIO`) | only when the plan compares those objects by intensity, or when the dim one is short of photons to segment — the ratio alone is not a problem |
+| Few photons | median < 3 (`ACQ_FEW_PHOTONS`) | shot-noise SNR (√photons), stated with what it means for segmentation — graded, not pass/fail |
+| Gain ceiling | < 20 photons (`ACQ_CEILING_PHOTONS`) | the photon levels the range holds — graded the same way |
+| Drift, fading, settings | partly relative already | a movie out of line with the set's other movies, not past an absolute value |
+
+`ACQ_REL_TOLERANCE` (pixel size 1 %) is float tolerance and stays.
+
+Movie-against-set checks reuse `_cohort_outliers` (`app/src/qc_cohort.jl`, robust z, already reused by
+`qc_gating.jl`) rather than a new outlier test. It needs ≥ 3 values, so the label-against-label baseline
+within one movie (2–4 labels) is a plain comparison, not that test.
+
+The verdict still needs a cut — the rule part is written by the app (the model ignored the warnings
+twice). The cut is soft: the value is always shown, and three bands decide its place — fine, borderline
+(an info note), a problem (enters the verdict) — set relative to the set wherever the check allows.
+More sets with the maintainer's verdict then confirm the bands; they don't have to find the numbers.
+
 ## Resume when
 
 The measures exist; what is left is the slice, which needs the maintainer first:
 1. **His look at the photon numbers** — does "~1 photon per voxel on cells, ceiling at 3–7 photons"
    match what he sees in these movies?
-2. **Finding text and levels** for few photons, shared structure and drift — the levels can't come from
-   one stand-in set alone.
+2. **Finding text and levels** for few photons, shared structure and drift — now the relative bands
+   above, not fixed cuts.
 3. Then the form + these checks + one review turn, scored on several m5uLPh movies against the
    diagnosis above.
 

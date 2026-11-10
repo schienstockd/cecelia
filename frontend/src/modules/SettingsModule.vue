@@ -140,7 +140,7 @@ async function changeShared(key: string, value: boolean) {
   sharedBusy.value = key; sharedError.value = ''
   try {
     sharedRows.value = sharedWorkstationRows(await setSharedWorkstation(key, value))
-    if (key === 'aiAllowed') void useObserverStore().refresh()   // this window's AI state follows at once
+    if (key === 'aiAllowed') void observer.refresh()   // this window's AI state follows at once
   }
   catch (e: any) { sharedError.value = e?.message ?? 'Could not change the setting' }
   finally { sharedBusy.value = '' }
@@ -225,6 +225,7 @@ async function pruneConfirm(imageUid: string, valueName: string, version: string
 const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
 const appCtl      = useAppControlStore()
+const observer    = useObserverStore()
 const restartUpd  = useRestartToUpdate()
 const customModules = useCustomModulesStore()
 
@@ -1435,7 +1436,7 @@ async function switchWt(path: string) {
          picture is. Machine rows come from the user's Claude config (real state); account rows are
          managed by their claude.ai account and are NOT detectable from here, so they carry no dot.
          Row model: utils/mcpConnections.ts -->
-    <section class="settings-section">
+    <section v-if="observer.ai.enabled" class="settings-section">
       <h2 class="section-title">Other MCP connections</h2>
 
       <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a

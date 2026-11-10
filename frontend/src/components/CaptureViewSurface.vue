@@ -30,6 +30,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useViewerStore } from '../stores/viewer'
+import { useObserverStore } from '../stores/observer'
 import {
   paintableFor, pointsToSvgAttr, type Rect, type Circle, type Arrow,
 } from '../utils/freeformRender'
@@ -87,6 +88,7 @@ const emit = defineEmits<{
 }>()
 
 const viewer = useViewerStore()
+const observer = useObserverStore()
 
 const wrap = ref<HTMLElement | null>(null)
 // Natural pixel size of the composed PNG — the frame overlay marks live in. `<img @load>` fires
@@ -264,7 +266,7 @@ function dismissAllClaudeMarks() {
       <span v-if="addressLine" class="cvs-chip-addr cc-muted">{{ addressLine }}</span>
       <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
               @click="beginReannotate"
-              v-tooltip.bottom="'Draw more marks on this frame and share the refined capture with Claude'">
+              v-tooltip.bottom="observer.ai.enabled ? 'Draw more marks on this frame and share the refined capture with Claude' : 'Draw more marks on this frame'">
         <i class="pi pi-pencil" />
       </button>
       <!-- Plot captures: reopen the panels underneath so the user can keep exploring the source
