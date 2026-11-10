@@ -40,6 +40,9 @@
      OWN hue darkened (hsl 255°, like #a78bfa) so buttons and sliders/toggles read as one family:
      white 5.12:1; the muted red 5.86:1; the two stay far apart under every simulated colour blindness. */
   --cc-accent-fill:   #7659cf;   /* deep lavender — primary buttons, selected chips, Run */
+  /* The next step (GUI_CLARITY_PLAN Decision 15): plum-light, dark text 6.4:1 on it. Plum means
+     "act on this" — the Next button and the checks cluster share it. */
+  --cc-next-fill:     #D27A98;
   --cc-danger-fill:   #b33a3a;   /* muted red — destructive buttons, armed delete / quit */
   --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
@@ -269,6 +272,14 @@ body {
   border-color: var(--cc-accent-fill);
 }
 .cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+/* The right panel's Next button (NextStep.vue) — one per page, navigates only. */
+.cc-btn-next {
+  background: var(--cc-next-fill);
+  color: var(--cc-bg);
+  border-color: var(--cc-next-fill);
+  font-weight: 600;
+}
+.cc-btn-next:hover:not(:disabled) { filter: brightness(1.08); }
 
 /* THE Run of a panel — the one action that starts work (TaskRunner Run, Chains Run, Animation Render,
    Batch movies Generate). With `.cc-btn .cc-btn-primary`: full width, one size, and a disabled state

@@ -205,3 +205,48 @@ export function consumerAccepts(field: string | undefined | null, produced: Cons
   const f = normaliseField(field)
   return f === produced || (f === 'labelPropsNames' && produced === 'labels')
 }
+
+/**
+ * The names a run of this task READS — one `{name, ns}` per non-writing `valueNameSelection` value
+ * (sections, repeatable groups and multi-selects included). ns "" = an image version, "labels" = a
+ * label set, else the picker's `field`; a model picker reads "models". Julia twin: `run_inputs` over
+ * `_spec_leaf_params!` (app/src/run_log.jl, tasks/chain/from_history.jl). An empty picker ("the active
+ * one") is left out — resolving it needs the image.
+ */
+export function taskReads(
+  def: TaskDef | undefined | null,
+  params: ParamValues | undefined | null,
+): { name: string; ns: string }[] {
+  const out: { name: string; ns: string }[] = []
+  const seen = new Set<string>()
+  const nsOf = (p: ParamDef) => p.optionsFrom?.toLowerCase().endsWith('models') ? 'models'
+    : !p.field || p.field === 'filepath' || p.field === 'filepaths' ? ''
+    : p.field === 'labelPropsNames' ? 'labels' : p.field
+  const add = (p: ParamDef, v: unknown) => {
+    for (const s of Array.isArray(v) ? v : [v]) {
+      const name = typeof s === 'string' ? s.trim() : ''
+      const key = `${nsOf(p)}\u0000${name}`
+      if (name && !seen.has(key)) { seen.add(key); out.push({ name, ns: nsOf(p) }) }
+    }
+  }
+  const walk = (ps: ParamDef[] | undefined, vals: ParamValues) => {
+    for (const p of ps ?? []) {
+      if (p.type === 'section') {                 // children stored flat, or nested under the key
+        walk(p.params, vals)
+        const nested = vals[p.key]
+        if (nested && typeof nested === 'object' && !Array.isArray(nested)) walk(p.params, nested as ParamValues)
+        continue
+      }
+      if (p.type === 'group') {
+        const v = savedValueFor(p, vals)
+        for (const e of Array.isArray(v) ? v : v && typeof v === 'object' ? [v] : [])
+          if (e && typeof e === 'object') walk(p.params, e as ParamValues)
+        continue
+      }
+      if (p.type !== 'valueNameSelection' || p.namespace) continue
+      add(p, savedValueFor(p, vals) ?? p.default)
+    }
+  }
+  walk(def?.params, params ?? {})
+  return out
+}

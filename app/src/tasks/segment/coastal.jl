@@ -52,7 +52,7 @@ end
 
 # Coastal ships no built-in models — the picker IS the vault. An empty vault therefore means an
 # empty dropdown, deliberately: there is nothing sensible to segment with until the user trains a
-# model on the Optical Flow page. Same runtime-enumeration hook as cellpose, so a model appears
+# model on the Model training page. Same runtime-enumeration hook as cellpose, so a model appears
 # without a server restart. See `list_coastal_models` in `app/src/config.jl`.
 
 
@@ -100,7 +100,7 @@ function coastal_models_for_python(params::AbstractDict, raw::AbstractDict;
         model_name = String(get(m, "model", ""))
         if isempty(strip(model_name))
             require_model && error(
-                "No optical-flow model selected. Train one on the Optical Flow page first.")
+                "No optical-flow model selected. Train one on the Model training page first.")
             m["model"] = ""
             out[String(k)] = m
             continue

@@ -6,6 +6,7 @@ import { useLogStore } from '../stores/log'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { setNameTaken } from '../utils/setDestination'
 import ConfirmButton from './ConfirmButton.vue'
+import SetRecipePicker from './SetRecipePicker.vue'
 
 const props = defineProps<{ allowManage?: boolean }>()
 
@@ -160,6 +161,8 @@ async function deleteSet() {
         </button>
       </template>
     </div>
+
+    <SetRecipePicker />
 
     <template v-if="allowManage">
       <template v-if="showNewInput">

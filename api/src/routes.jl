@@ -235,7 +235,7 @@ function api_task_definitions(req::HTTP.Request)
         # whose module failed to load) still gets its vault picker filled. This route used to resolve
         # only the dispatch hook, so when the three model pickers moved to `optionsFrom` it served the
         # spec's literal options alone: the coastal Model select offered nothing but "None" while the
-        # Optical Flow vault manager listed every model, both reading the same `list_coastal_models`.
+        # Model training vault manager listed every model, both reading the same `list_coastal_models`.
         spec isa Dict{String,Any} && Cecelia.resolve_spec_sources!(spec)
 
         task = try Cecelia._task_from_fun_name(fn) catch; nothing end
@@ -1119,6 +1119,30 @@ function api_sets_rename(body_bytes::Vector{UInt8})
     s = rename_set!(proj, set_uid, String(name))
     @info "Renamed set" uid=set_uid name project=project_uid
     200, JSON3.write((; uid=s.uid, name=s.name))
+end
+
+# POST /api/sets/recipe  { projectUid, setUid, recipe }  → { uid, recipe }
+#
+# Which processing recipe a set follows (GUI_CLARITY_PLAN Decision 13); `recipe` "" or null clears it.
+# The model (`set_recipe!`) checks the id's shape; the frontend owns the recipe catalogue.
+function api_sets_recipe(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    set_uid     = _wstr(body, :setUid)
+    recipe      = _wstr(body, :recipe)
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
+    proj_dir = joinpath(projects_dir(), project_uid)
+    isdir(proj_dir)                         || return 404, JSON3.write((; error="Project not found"))
+    isfile(state_file(proj_dir, set_uid))   || return 404, JSON3.write((; error="Set not found: $set_uid"))
+    s = try
+        set_recipe!(load_project(project_uid), set_uid, recipe)
+    catch e
+        e isa ErrorException || rethrow()
+        return 400, JSON3.write((; error=e.msg))
+    end
+    200, JSON3.write((; uid=s.uid, recipe=get(s.meta, "recipe", nothing)))
 end
 
 function api_sets_delete(body_bytes::Vector{UInt8})
