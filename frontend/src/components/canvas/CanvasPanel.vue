@@ -303,7 +303,7 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 .panel-foot.inflow { border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); flex-shrink: 0; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: var(--cc-space-3xs); }
 /* .panel-btn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
-.panel-btn:hover { color: var(--cc-text); border-color: #484f58; }
+.panel-btn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 .panel-remove:hover { color: #f87171; border-color: #f87171; }
 /* the panel content fills the rest; body is a column so a plot area can flex:1 inside it */
 .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }

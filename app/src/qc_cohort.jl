@@ -602,6 +602,11 @@ function cohort_check!(proj::CciaProject, set::CciaSet, fun_name::AbstractString
                        value_name::AbstractString = "", threshold::Real = _COHORT_MODZ_THRESHOLD,
                        run::AbstractString = "")::Dict{String,Any}
     reply = cohort_reply(set, fun_name; value_name, threshold, run, persist = true)
+    try
+        stamp_cohort_check!(set, fun_name)   # the GUI's Checks cluster reads when it last ran
+    catch e
+        @warn "cohort check: stamp write failed" exception = e
+    end
     flagged = [d for d in cohort_reply_docs(reply) if d isa AbstractDict && cohort_has_outliers(d)]
     try
         for d in flagged
@@ -677,4 +682,100 @@ function read_all_cohort_qc(set::CciaSet)
         end
     end
     out
+end
+
+# ── Last-check state, read back for the GUI's Checks cluster ──────────────────────────────────────
+#
+# The outcome of a check is already persisted — per-image `cohort.{fun}` docs (or the gating docs) —
+# so the state is READ from there, never recomputed. The one fact disk did not hold is WHEN the check last
+# ran for a fun (a clean gating check writes nothing), so `cohort_check!` stamps that here.
+
+_cohort_stamp_path(set::CciaSet) = joinpath(cohort_qc_dir(set), "_checks.json")
+
+function _read_cohort_stamps(set::CciaSet)::Dict{String,Any}
+    p = _cohort_stamp_path(set)
+    isfile(p) || return Dict{String,Any}()
+    try
+        Dict{String,Any}(String(k) => v for (k, v) in pairs(JSON3.read(read(p, String))))
+    catch
+        Dict{String,Any}()
+    end
+end
+
+"""
+    stamp_cohort_check!(set, fun_name; at = time())
+
+Record that the cohort check ran for `fun_name` (and each step of a composite) at `at` (unix seconds).
+Called by `cohort_check!`; read back by `cohort_state`.
+"""
+function stamp_cohort_check!(set::CciaSet, fun_name::AbstractString; at::Real = time())
+    stamps = _read_cohort_stamps(set)
+    for f in unique!(vcat(String(fun_name), cohort_parts(fun_name)))
+        stamps[f] = Float64(at)
+    end
+    p = _cohort_stamp_path(set); mkpath(dirname(p))
+    write_json_atomic(p, stamps)
+    stamps
+end
+
+# The per-image doc namespace a fun's cohort findings live under: gating QC writes its own `gating.*`
+# docs, every other check writes `cohort.{fun}` (cohort_qc!).
+_cohort_image_fun(fun_name::AbstractString) =
+    is_gating_qc_fun(fun_name) ? String(fun_name) : "cohort." * String(fun_name)
+
+# The newest mtime of the `.json` files in `dir`, or `nothing`.
+function _newest_json_mtime(dir::AbstractString)
+    isdir(dir) || return nothing
+    ts = [mtime(joinpath(dir, f)) for f in readdir(dir) if endswith(f, ".json")]
+    isempty(ts) ? nothing : maximum(ts)
+end
+
+"""
+    cohort_state(set, fun_names) -> Dict
+
+The last cohort check over `fun_names` (composites expanded to their steps), read from disk:
+`{checked, checkedAt, flaggedUids, nIncluded, funs: [{funName, checkedAt, flagged}]}`. An image is
+flagged when one of its persisted cohort docs for these funs holds a `warn` finding; only included
+images count. `checkedAt` (unix seconds) comes from the check stamp, falling back to the set sidecars
+(cohort) or the per-image docs (gating) for checks run before the stamp existed. Writes nothing.
+"""
+function cohort_state(set::CciaSet, fun_names::AbstractVector)::Dict{String,Any}
+    stamps = _read_cohort_stamps(set)
+    imgs = filter(image_included, images(set))
+    steps = String[]
+    for f in String.(fun_names)
+        cohort_has_answer(f) || continue
+        parts = cohort_parts(f)
+        append!(steps, isempty(parts) ? [f] : parts)
+    end
+    unique!(steps)
+    all_flagged = Set{String}()
+    funs = Dict{String,Any}[]
+    for step in steps
+        doc_fun = _cohort_image_fun(step)
+        flagged = String[]
+        img_t = nothing
+        for img in imgs
+            dir = qc_fun_dir(img, doc_fun)
+            t = _newest_json_mtime(dir)
+            t === nothing && continue
+            img_t = img_t === nothing ? t : max(img_t, t)
+            hit = any(readdir(dir)) do f
+                endswith(f, ".json") || return false
+                d = _read_qc_file(joinpath(dir, f))
+                any(x -> string(get(x, :level, "")) == "warn", get(d, :findings, Any[]))
+            end
+            hit && push!(flagged, img.uid)
+        end
+        at = get(stamps, step, nothing)
+        at === nothing && !is_gating_qc_fun(step) &&
+            (at = _newest_json_mtime(joinpath(cohort_qc_dir(set), step)))
+        at === nothing && is_gating_qc_fun(step) && (at = img_t)
+        union!(all_flagged, flagged)
+        push!(funs, Dict{String,Any}("funName" => step, "checkedAt" => at, "flagged" => length(flagged)))
+    end
+    ats = [f["checkedAt"] for f in funs if f["checkedAt"] !== nothing]
+    Dict{String,Any}("checked" => !isempty(ats), "checkedAt" => isempty(ats) ? nothing : maximum(ats),
+                     "flaggedUids" => sort!(collect(all_flagged)), "nIncluded" => length(imgs),
+                     "funs" => funs)
 end
