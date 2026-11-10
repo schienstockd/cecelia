@@ -199,10 +199,8 @@ function onFigureLoad(e: Event) {
 }
 const currentUrl = computed(() => {
   if (!selected.value || !projectUid.value) return ''
-  const url = movieStreamUrl(projectUid.value, selected.value)
-  // A re-made figure keeps its name — its mtime busts the browser's copy of the old bytes.
-  const m = currentIsFigure.value ? movies.value.find(x => x.name === selected.value) : undefined
-  return m ? `${url}&v=${Math.round(m.mtime)}` : url
+  // A re-recorded movie or re-made figure keeps its name — its mtime busts the browser's old bytes.
+  return movieStreamUrl(projectUid.value, selected.value, movies.value.find(x => x.name === selected.value)?.mtime)
 })
 
 async function refresh() {
