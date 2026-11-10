@@ -52,7 +52,10 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
-import { taskParamsName, namesParamsRecord } from '../utils/taskOutput'
+import { taskParamsName, namesParamsRecord, taskReads } from '../utils/taskOutput'
+import { staleReadNote } from '../lib/staleOutputs'
+import { useStaleOutputsStore } from '../stores/staleOutputs'
+import { useTaskDefsStore } from '../stores/taskDefs'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -671,6 +674,12 @@ const gatingReasonFor = (def: TaskDef) => taskGatingReason(def, selectedImages.v
 const activeTaskGatingReason = computed(() =>
   taskDef.value ? gatingReasonFor(taskDef.value) : ''
 )
+// The picked task reads an output an upstream re-run made stale, on a selected image. Advisory only.
+const staleStore = useStaleOutputsStore()
+const taskDefsStore = useTaskDefsStore()
+onMounted(() => { taskDefsStore.ensureLoaded() })
+const staleNote = computed(() => staleReadNote(
+  taskReads(taskDef.value, paramValues.value), props.selectedUids, staleStore.byImage, taskDefsStore.labelFor))
 
 // A `required` param left empty, checked HERE rather than after the run. The server refuses these
 // too, but only once the task has been queued and given a pool slot — so the user learned they had
@@ -930,6 +939,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       </div>
       <InlineNote v-if="activeTaskGatingReason" class="fn-gating cc-fs-xs" severity="warn"
                   :short="activeTaskGatingReason" detail="Selected images do not carry the axes this task needs" />
+      <InlineNote v-if="staleNote" class="fn-gating cc-fs-xs" severity="warn"
+                  :short="staleNote.short" :detail="staleNote.detail" />
       <div v-if="onHpc && hpcForm" class="hpc-res cc-fs-xs">
         <label v-for="f in hpcFields" :key="f.key" class="hpc-res-cell">
           <span class="hpc-res-head">
