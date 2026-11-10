@@ -431,7 +431,7 @@ end
         "/api/projects/load", "/api/projects/rename",
         "/api/qc/cohort/check", "/api/claim/state", "/api/claim/check", "/api/claim/review", "/api/acqcheck/plan", "/api/acqcheck/review", "/api/repl",
         "/api/repl/config", "/api/sets/create",
-        "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
+        "/api/sets/rename", "/api/sets/recipe", "/api/sets/delete", "/api/setup/init",
         "/api/config/tls/set", "/api/config/threads/set",
         "/api/storage/compressor/set", "/api/storage/layout/set",
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim", "/api/viewer/chunk-cache/set",
