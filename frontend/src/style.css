@@ -42,14 +42,14 @@
      OWN hue darkened (hsl 255°, like #a78bfa) so buttons and sliders/toggles read as one family:
      white 5.12:1; the muted red 5.86:1; the two stay far apart under every simulated colour blindness. */
   --cc-accent-fill:   #7659cf;   /* deep lavender — selected chips, engaged toggles (white text 5.12:1) */
-  /* The primary action (Decision 15): saffron from the palette paintings, dark text on it 11:1.
-     ΔE 30 from the Experimental dot's orange, so the two don't read as one colour. */
   /* Stage families (Decision 15) — sidebar group heading + active bar only, see navGroups.stageTint.
      Explore is the paintings' mauve lifted for text contrast (#8C5862 fails as text). */
   --cc-stage-data:        #CEA966;
   --cc-stage-populations: #E9A587;
   --cc-stage-explore:     #B98A93;
   --cc-stage-analysis:    #F5EFD0;
+  /* The primary action (Decision 15): saffron from the palette paintings, dark text on it 11:1.
+     ΔE 30 from the Experimental dot's orange, so the two don't read as one colour. */
   --cc-primary-fill:  #FCC172;
   --cc-on-primary:    #1a1410;
   /* The next step (GUI_CLARITY_PLAN Decision 15): plum-light, dark text 6.4:1 on it. Plum means
