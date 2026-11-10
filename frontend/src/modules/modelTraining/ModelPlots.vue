@@ -124,9 +124,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 
 <template>
   <div class="flow-plots">
-    <div v-if="!imageUids.length" class="fp-empty cc-empty-inline">
-      Select an image above to inspect a flow model.
-    </div>
+    <div v-if="!imageUids.length" class="cc-empty-inline cc-empty-pane">Select an image above to inspect a flow model</div>
     <template v-else>
       <div class="fp-bar">
         <select class="fp-add" v-tooltip.bottom="'Add a plot'"
@@ -177,7 +175,6 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 
 <style scoped>
 .flow-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.fp-empty { padding: 20px; }   /* + .cc-empty-inline (row/colour) */
 .fp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px;
           font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .fp-add { padding: 4px 8px; }

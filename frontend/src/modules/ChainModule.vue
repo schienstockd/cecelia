@@ -1833,7 +1833,7 @@ onActivated(async () => {
           </div>
 
           <button
-            class="run-chain-btn"
+            class="run-chain-btn cc-btn cc-btn-primary cc-btn-run"
             data-guide="chain.run"
             :disabled="!activeChain || !runSelectedUids.length || chainRunning"
             @click="runChain"
@@ -2419,23 +2419,5 @@ onActivated(async () => {
 
 .run-img-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; }
 
-.run-chain-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  margin: 0 0.45rem 0.5rem;
-  width: calc(100% - 0.9rem);
-  padding: 0.35rem 0.5rem;
-  font-size: var(--cc-fs-sm);
-  font-weight: 600;
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid #10b981;
-  background: #0c1a0e;
-  color: #6ee7b7;
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-.run-chain-btn:hover:not(:disabled) { background: #10b981; color: #fff; }
-.run-chain-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.run-chain-btn { margin: 0 0.45rem 0.5rem; width: calc(100% - 0.9rem); }   /* + .cc-btn .cc-btn-primary .cc-btn-run */
 </style>
