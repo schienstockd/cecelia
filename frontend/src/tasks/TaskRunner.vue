@@ -1057,7 +1057,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
       <div class="run-row">
         <button
-          class="run-btn"
+          class="run-btn cc-btn cc-btn-primary cc-btn-run"
           data-guide="task.run"
           :disabled="!canRun"
           @click="run"
@@ -1290,28 +1290,5 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 /* Run + Preview on one line. `stretch` is what makes the preview buttons match Run's height without
    either side hardcoding a number — so a change to Run's padding can't silently desync them. */
 .run-row { display: flex; align-items: stretch; gap: 0.4rem; flex-wrap: wrap; }
-.run-btn {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  font-size: var(--cc-fs-md);
-  font-weight: 600;
-  padding: 0.55rem;
-  border-radius: var(--cc-radius-md);
-  border: none;
-  background: var(--cc-accent-fill);
-  color: #fff;
-  cursor: pointer;
-  transition: filter 0.12s;
-}
-.run-btn:hover:not(:disabled) { filter: brightness(1.12); }
-.run-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-}
+.run-btn { flex: 1 1 auto; width: auto; min-width: 0; }   /* + .cc-btn .cc-btn-primary .cc-btn-run; shares the row with Preview */
 </style>

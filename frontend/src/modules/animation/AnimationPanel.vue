@@ -396,7 +396,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
       </section>
 
       <div class="ap-actions cc-row">
-        <button class="cc-btn cc-btn-primary" data-guide="animation.render" :disabled="!canRender" @click="render"
+        <button class="cc-btn cc-btn-primary cc-btn-run" data-guide="animation.render" :disabled="!canRender" @click="render"
                 v-tooltip.top="canRender ? 'Render the timeline to an mp4' : 'Needs 2 or more keyframes'">
           <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
         </button>

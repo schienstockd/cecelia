@@ -270,6 +270,21 @@ body {
 }
 .cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
 
+/* THE Run of a panel — the one action that starts work (TaskRunner Run, Chains Run, Animation Render,
+   Batch movies Generate). With `.cc-btn .cc-btn-primary`: full width, one size, and a disabled state
+   that reads as "not yet" rather than a faded purple. One look, so Run is found in the same place and
+   shape on every page. */
+.cc-btn-run {
+  width: 100%;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  font-size: var(--cc-fs-md);
+  font-weight: 600;
+  border-radius: var(--cc-radius-md);
+}
+.cc-btn-run:disabled { opacity: 0.35; background: var(--cc-surface-2); border-color: var(--cc-surface-2); color: var(--cc-text-dim); }
+
 .cc-btn-ghost {
   background: var(--cc-surface-2);
   border-color: var(--cc-border);
@@ -522,6 +537,9 @@ body {
 }
 .cc-empty-overlay { position: absolute; inset: 0; }
 .cc-empty-lg { padding: 4rem 2rem; gap: 0.5rem; }
+/* A pane's "nothing selected yet" line — the plots area of a module page before an image is picked.
+   With `.cc-empty-inline`; one look and one wording pattern ("Select … above to …") on every page. */
+.cc-empty-pane { padding: 1.25rem; }
 
 /* Numeric value readout shown beside a control/metric (slider values, counts, occupancy). Default is
    muted; add .cc-readout-strong for a prominent count (same scenario, higher prominence), or a density
