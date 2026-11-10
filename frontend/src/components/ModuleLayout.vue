@@ -57,8 +57,7 @@ import { funsRunAcross, wasProcessedWith, funModuleLabel, type ProcMode } from '
 import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
-import CohortCheckButton from './CohortCheckButton.vue'
-import AcqCheckButton from './AcqCheckButton.vue'
+import ChecksCluster from './ChecksCluster.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import CollapsiblePanel from './CollapsiblePanel.vue'
@@ -180,7 +179,7 @@ watch(rowFilterActive, v => {
 // the filters worth showing, with their current count resolved once for the button + its tooltip
 const rowFilters = computed(() => {
   const imgs = activeSet.value?.images ?? []
-  return ROW_FILTERS.filter(f => f.visible(imgs))
+  return ROW_FILTERS.filter(f => !f.host && f.visible(imgs))   // a hosted one is drawn by its host
     .map(f => ({ def: f, count: f.count(imgs), images: imgs }))
 })
 // separate from the filter toggle above: the set header always states how many images are excluded,
@@ -320,10 +319,10 @@ const visibleUids = computed<string[]>(() =>
           <span class="no-set-hint cc-muted" v-else>{{ noSetHint }}</span>
 
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
-            <!-- Cohort consistency: self-hides unless this module banks cohort metrics (cohortStages) -->
-            <CohortCheckButton :module="module" :set-uid="activeSet.uid" :funs="cohortFuns" />
-            <!-- The set's acquisition check against its plan (docs/todo/ACQUISITION_TEST_CHECK_PLAN.md) -->
-            <AcqCheckButton :set-uid="activeSet.uid" />
+            <!-- Checks: Acquisition, QC (its click is the qcFlagged row filter), Cohort -->
+            <ChecksCluster :set-uid="activeSet.uid" :module="module" :cohort-funs="cohortFuns"
+              :qc-filter-on="rowFilterActive.qcFlagged"
+              @toggle-qc-filter="rowFilterActive.qcFlagged = !rowFilterActive.qcFlagged" />
 
             <!-- CSV export: the whole table, including excluded images + their notes -->
             <button class="filter-toggle" @click="exportCsv"

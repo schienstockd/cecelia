@@ -50,7 +50,7 @@ export interface QcGroup {
 }
 
 // Every finding across all of an image's QC docs, each tagged with its producing task.
-export function qcFindings(img: CciaImage): SourcedFinding[] {
+export function qcFindings(img: Pick<CciaImage, 'qc'>): SourcedFinding[] {
   const qc = img.qc
   if (!qc) return []
   // `funName` is written into the doc by qc.jl; the key is the fallback for a sidecar banked before

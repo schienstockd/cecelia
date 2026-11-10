@@ -56,6 +56,12 @@
   /* selection/active highlight for BOXES (panels, cards, timeline keyframes) — amber, matching the
      analysis-board plot panels. Distinct from --cc-accent (purple, form controls) and --cc-warn. */
   --cc-selected:   #ff8c1a;
+  /* The CHECK accent — plum, the one hue far from every status colour and channel colour
+     (docs/todo/GUI_CLARITY_PLAN.md, Decision 15). It marks the Checks cluster (frame + label), never
+     a check's verdict: that stays on --cc-sev-* with its icon. -text is the lightened plum that reads
+     as text on the dark surfaces (6.3:1); the base is for marks and borders only. */
+  --cc-check:      #BF577B;
+  --cc-check-text: #D27A98;
 
   /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
   --cc-warn:       #f59e0b;

@@ -304,7 +304,7 @@ end
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
-        "/api/qc/cohort", "/api/qc/cohort/runs", "/api/claim/checks", "/api/claim/open", "/api/acqcheck",
+        "/api/qc/cohort", "/api/qc/cohort/runs", "/api/qc/cohort/state", "/api/claim/checks", "/api/claim/open", "/api/acqcheck",
         "/api/repl/api", "/api/setup/defaults",
         "/api/setup/validate", "/api/config/tls", "/api/config/threads",
         "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
