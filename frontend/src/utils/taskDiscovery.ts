@@ -72,3 +72,43 @@ export function checkLine(line: DiscoveryLine, kind: 'use' | 'not', images: read
   }
   return n > 0 ? { text, severity: 'warn', summary: count(n, total, yes) } : { text }
 }
+
+// ── Cross-page mentions ────────────────────────────────────────────────────────────────────────────
+//
+// A "When to use" line often names a task that lives on another page ("After HMM states…" on Cluster
+// tracks; HMM states is on Behaviour). `linkTaskMentions` splits such a line into plain text and
+// mentions, so the picker can render each mention as a link to its page, named in the line itself —
+// no spec has to spell out where a task lives, and a new task gets the link for free.
+
+/** A task the line may mention, already resolved to its page (`taskLanding`). */
+export interface MentionTarget {
+  label: string               // the task's label, as written in other tasks' lines
+  path: string                // its page
+  page: string                // that page's sidebar name
+  module: string              // TaskRunner `cc-fn:<module>` key that pre-selects it there
+  task: string                // the value to pre-select
+}
+
+export type LineSegment = { text: string; to?: MentionTarget }
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** `text` split into plain runs and mentions of tasks on OTHER pages than `selfPath`. The longest
+ *  label wins where two overlap ("HMM states" inside a longer label), and a label only matches as a
+ *  whole word. */
+export function linkTaskMentions(text: string, selfPath: string, targets: readonly MentionTarget[]): LineSegment[] {
+  const others = targets.filter(t => t.path !== selfPath && t.label)
+    .sort((a, b) => b.label.length - a.label.length)
+  if (!others.length) return [{ text }]
+  const byLabel = new Map(others.map(t => [t.label, t]))
+  const re = new RegExp(`(?<![\\w-])(${others.map(t => escapeRe(t.label)).join('|')})(?![\\w-])`, 'g')
+  const out: LineSegment[] = []
+  let last = 0
+  for (const m of text.matchAll(re)) {
+    if (m.index! > last) out.push({ text: text.slice(last, m.index) })
+    out.push({ text: m[0], to: byLabel.get(m[0]) })
+    last = m.index! + m[0].length
+  }
+  if (last < text.length) out.push({ text: text.slice(last) })
+  return out
+}

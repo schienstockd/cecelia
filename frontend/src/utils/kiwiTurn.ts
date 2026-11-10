@@ -15,7 +15,8 @@
 import type { KiwiRef, KiwiRefResult } from './kiwiRef'
 import { svcPost } from './serviceApi'
 import { formatTaskDuration } from './taskElapsed'
-import { NAV_GROUPS, prettifyCategory } from '../lib/navGroups'
+import { NAV_GROUPS, navItemFor, prettifyCategory } from '../lib/navGroups'
+import type { MentionTarget } from './taskDiscovery'
 
 export type KiwiClaimKind = 'observation' | 'interpretation' | 'question'
 
@@ -154,6 +155,20 @@ export function taskLanding(funName: string, def?: { task: string }):
   const [category, ...rest] = funName.split('.')
   const page = TASK_PAGES[category]
   return page ? { ...page, task: def?.task ?? rest.join('.') } : null
+}
+
+/** Every task with a built-in page, as a mention target for "When to use" lines (`linkTaskMentions`):
+ *  its label, its page and the pre-selection that lands on it. Hidden and custom-page tasks are left
+ *  out — there is no sidebar page to name. */
+export function mentionTargets(defs: readonly { fun_name: string; label: string; task: string; hidden?: boolean }[]): MentionTarget[] {
+  const out: MentionTarget[] = []
+  for (const d of defs) {
+    if (d.hidden) continue
+    const land = taskLanding(d.fun_name, d)
+    const page = land && navItemFor(NAV_GROUPS, land.path)?.label
+    if (land && page) out.push({ label: d.label, path: land.path, page, module: land.module, task: land.task })
+  }
+  return out
 }
 
 /** A task category's page as the sidebar names it, and that page's position in the sidebar — so a list

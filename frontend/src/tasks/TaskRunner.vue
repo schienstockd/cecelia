@@ -41,7 +41,10 @@ import { taskMaturity, taskOptionSuffix } from '../utils/maturity'
 import MaturityIndicator from '../components/MaturityIndicator.vue'
 import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
-import { checkLine } from '../utils/taskDiscovery'
+import { checkLine, linkTaskMentions, type MentionTarget } from '../utils/taskDiscovery'
+import { mentionTargets } from '../utils/kiwiTurn'
+import { useTaskDefsStore } from '../stores/taskDefs'
+import { useRoute, useRouter } from 'vue-router'
 import { useStoredSectionOpen } from '../utils/sectionOpen'
 import InlineNote from '../components/InlineNote.vue'
 import CcToggle from '../components/CcToggle.vue'
@@ -643,6 +646,18 @@ const selectedImages = computed(() => paramContext.value.images)
 // open/closed state is remembered per user (open by default) and follows `setSectionOpen`.
 const useLines = computed(() => (taskDef.value?.useWhen ?? []).map(l => checkLine(l, 'use', selectedImages.value)))
 const notLines = computed(() => (taskDef.value?.notWhen ?? []).map(l => checkLine(l, 'not', selectedImages.value)))
+
+// A line that names a task on another page links to it, with that page's name (utils/taskDiscovery.ts).
+const route = useRoute()
+const router = useRouter()
+const taskCatalogue = useTaskDefsStore()
+void taskCatalogue.ensureLoaded()
+const mentionList = computed(() => mentionTargets(taskCatalogue.all()))
+const lineSegments = (text: string) => linkTaskMentions(text, route.path, mentionList.value)
+function goToTask(to: MentionTarget) {
+  profileStorage.setItem(`cc-fn:${to.module}`, to.task)
+  void router.push(to.path)
+}
 const whenOpen = useStoredSectionOpen('cc-task-about-open')
 // ── Task runner down ──────────────────────────────────────────────────────────
 // Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
@@ -907,7 +922,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
                 <span class="fn-lines-head cc-muted cc-fs-2xs">{{ block.head }}</span>
                 <ul class="fn-line-list cc-fs-xs">
                   <li v-for="l in block.lines" :key="l.text">
-                    <span class="fn-line-text">{{ l.text }}</span>
+                    <span class="fn-line-text"><template v-for="(seg, i) in lineSegments(l.text)" :key="i"><template v-if="!seg.to">{{ seg.text }}</template><a v-else class="fn-line-link" href="#" v-tooltip.top="`Open ${seg.to.page}`" @click.prevent="goToTask(seg.to)">{{ seg.text }}</a><span v-if="seg.to && seg.to.page !== seg.text" class="cc-muted"> ({{ seg.to.page }})</span></template></span>
                     <InlineNote v-if="l.severity && l.summary" class="fn-line-check cc-fs-2xs"
                                 :short="l.summary" :severity="l.severity" />
                     <span v-else-if="l.summary" class="fn-line-check cc-muted cc-fs-2xs">{{ l.summary }}</span>
@@ -1233,6 +1248,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .fn-line-list li { min-width: 0; overflow-wrap: anywhere; }
 .fn-line-list li + li { margin-top: 0.1rem; }
 .fn-line-text { display: block; }
+.fn-line-link { color: var(--cc-accent); text-decoration: none; }
+.fn-line-link:hover { text-decoration: underline; }
 .fn-line-check { display: flex; margin-top: 0.05rem; }
 .runner-down {
   display: flex;
