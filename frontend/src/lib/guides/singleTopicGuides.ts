@@ -96,6 +96,12 @@ export const viewProfileGuide: GuideDef = {
       placement: 'left',
       title: 'Pick or edit one',
       text: 'The chip row picks which layout is active; Edit opens the builder.',
+      reveal: {
+        needed: c => c.anchorExists('settings.viewProfile') && !c.anchorReachable('settings.viewProfile'),
+        anchor: 'settings.interface',
+        text: 'Open Interface to see the sidebar layouts.',
+        placement: 'bottom-start',
+      },
       bullets: ['"All pages" is the default — you never lose access to a page by picking a layout.'],
     },
     {
@@ -104,13 +110,21 @@ export const viewProfileGuide: GuideDef = {
       title: 'Tick pages into a layout',
       text: 'One row per sidebar group — tick the pages this layout should surface.',
       bullets: ['Great for handing a colleague a "just the segmentation bits" cecelia.'],
-      reveal: {
-        // The editor only exists once the user clicks Edit in the previous step.
-        needed: c => !c.anchorExists('viewProfile.editor'),
-        anchor: 'settings.viewProfile',
-        text: 'Click Edit above to open the layout builder.',
-        placement: 'left',
-      },
+      reveal: [
+        {
+          needed: c => !c.anchorExists('viewProfile.editor') && !c.anchorReachable('settings.viewProfile'),
+          anchor: 'settings.interface',
+          text: 'Open Interface, then click Edit to open the layout builder.',
+          placement: 'bottom-start',
+        },
+        {
+          // The editor only exists once the user clicks Edit in the previous step.
+          needed: c => !c.anchorExists('viewProfile.editor'),
+          anchor: 'settings.viewProfile',
+          text: 'Click Edit above to open the layout builder.',
+          placement: 'left',
+        },
+      ],
     },
   ],
 }

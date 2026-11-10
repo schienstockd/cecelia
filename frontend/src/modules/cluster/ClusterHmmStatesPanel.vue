@@ -271,7 +271,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
    see plots/overlays.ts. The host supplies `position: relative` (above) and the ink. */
 .cc-sel { font-size: var(--cc-fs-sm); }
 /* .hmm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
-.hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
+.hmm-iconbtn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 .hmm-export { max-width: 7rem; }
 /* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in ClusterMapView + ClusterHeatmapPanel) */
 .hmm-empty { padding: 1rem; }

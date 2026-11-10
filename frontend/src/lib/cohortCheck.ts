@@ -3,6 +3,7 @@
 // when anything flags). The toast/summary building is a PURE function so it's unit-tested; the
 // fetch orchestration is the thin live wrapper. See docs/todo/QC_OBSERVER_PLAN.md (A3).
 import type { Severity } from './severity'
+import type { CohortState } from './checks'
 
 export interface CohortDoc {
   funName?: string
@@ -81,4 +82,15 @@ export async function runCohortCheck(projectUid: string, setUid: string,
     } catch { /* skip this fun; others still report */ }
   }
   return summariseCohortResult(docs)
+}
+
+// LIVE: the last cohort check over these funs, read back from disk (GET /api/qc/cohort/state) — what
+// the Checks cluster's Cohort button shows on load, so the verdict survives a reload. null on failure.
+export async function fetchCohortState(projectUid: string, setUid: string,
+                                       funNames: string[]): Promise<CohortState | null> {
+  try {
+    const p = new URLSearchParams({ projectUid, setUid, funNames: funNames.join(',') })
+    const res = await fetch(`/api/qc/cohort/state?${p}`)
+    return res.ok ? await res.json() as CohortState : null
+  } catch { return null }
 }

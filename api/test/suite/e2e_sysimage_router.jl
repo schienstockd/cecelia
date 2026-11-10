@@ -304,7 +304,7 @@ end
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
-        "/api/qc/cohort", "/api/qc/cohort/runs", "/api/claim/checks", "/api/claim/open", "/api/acqcheck",
+        "/api/qc/cohort", "/api/qc/cohort/runs", "/api/qc/cohort/state", "/api/claim/checks", "/api/claim/open", "/api/acqcheck",
         "/api/repl/api", "/api/setup/defaults",
         "/api/setup/validate", "/api/config/tls", "/api/config/threads",
         "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
@@ -502,7 +502,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 123 && length(POST_ROUTES) == 192
+    @test length(GET_ROUTES) == 124 && length(POST_ROUTES) == 192
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

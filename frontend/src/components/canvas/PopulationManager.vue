@@ -895,7 +895,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
 .pm-seg { margin-left: auto; }
 .seg-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
-.seg-btn:hover { color: var(--cc-text); border-color: #484f58; }
+.seg-btn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 
 /* ── extra options ── */
 /* wraps CollapsibleSection, which brings its own toggle chrome; just the border-top matches the

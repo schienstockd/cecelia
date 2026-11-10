@@ -274,7 +274,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 .hm-sel { margin-left: 6px; }
 .hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: var(--cc-fs-sm); color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
 /* .hm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
-.hm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
+.hm-iconbtn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
 .hm-export { max-width: 7rem; }
 .hm-body { position: relative; display: flex; flex: 1; min-height: 0; padding: 6px; }
 /* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in ClusterMapView + the two HMM panels) */
