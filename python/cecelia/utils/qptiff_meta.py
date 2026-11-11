@@ -39,6 +39,7 @@ Fixtures: `test-data/acquisition/qptiff_*`, from real files.
 import glob
 import json
 import os
+import re
 import xml.etree.ElementTree as ET  # vendor QPI XML, not OME-XML: test_zarr_access_convention _BASELINE
 
 from cecelia.utils import ome_xml_utils
@@ -229,7 +230,8 @@ def parse_settings(pages, series=0, xpd=None):
     camera = _text(first, 'CameraName') or _text(first, 'CameraType')
     software = _text(first, 'AcquisitionSoftware')
     objective = _text(first, 'Objective')
-    mag = _num(objective.lower().rstrip('x')) if objective else None
+    m = re.match(r'\s*(\d+(?:\.\d+)?)\s*x', objective or '', re.I)   # "20x", "20xLWD"
+    mag = float(m.group(1)) if m else None
     brightfield = _brightfield(first, shape)
     times = sorted({t for _, t, _ in full if t})
     cyclic = len(times) > 1 and any(_text(d, 'Biomarker') for d, _, _ in full)

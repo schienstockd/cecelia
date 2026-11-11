@@ -142,6 +142,9 @@ class TestPhenoCyclerRun(_QptiffCase):
         for c in self.s['channels']:
             self.assertEqual(c['exposureMs'], c['plannedExposureMs'])   # ms in the .xpd, µs in the file
 
+    def test_magnification_from_an_objective_name_with_a_suffix(self):
+        self.assertEqual((self.s['objective']['name'], self.s['objective']['magnification']), ('20xLWD', 20.0))
+
     def test_autofluorescence_already_subtracted(self):
         self.assertEqual({c['afSubtracted'] for c in self.s['channels']}, {True})
 
