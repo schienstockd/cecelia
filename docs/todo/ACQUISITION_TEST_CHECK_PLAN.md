@@ -164,8 +164,11 @@ planes; ~16 s per 1.4 GB movie including drift). It writes `meta.saturation.chan
   holds no label; in the ubTomato design it is the P14 channel and r splits 0.32–0.51 (jcRERt, TKufLV,
   7b1jqm, VNvvA8) vs 0.09–0.16 (the other 5). The GUI
   moved to a set-level modal (mockup kept outside the repo); the image metadata modal links to it.
-- **Drift:** drift correction's estimator on the whole movie (10–14 s), a stopped acquisition's last
-  frame left out. RSQxFI is the only one whose
+- **Drift — REMOVED (2026-11-11, maintainer's call).** The check no longer estimates or reports drift,
+  and neither does import or Measure: on 47 GB MERTK movies the whole-movie estimate was ~19 min of a
+  ~22 min probe, and estimating drift is the drift correction task's job — the Measure button must not
+  be a way to run it. What follows is the record from when it was in: drift correction's estimator on
+  the whole movie (10–14 s on 1.4 GB), a stopped acquisition's last frame left out. RSQxFI is the only one whose
   own measurements disagree (3.7 px RMS, over the 2 px limit); several others move 40–57 px in X while
   registering cleanly.
 
@@ -290,6 +293,6 @@ In this order:
 3. **Range on the objects:** mask voxels, clipped ones excluded, against the ceiling.
 4. **Noise at signal level**, golden-tested on synthetic Poisson–Gaussian images, then checked against
    the maintainer's call.
-5. **Drift shift estimate** on a few frames.
+5. ~~**Drift shift estimate** on a few frames.~~ Dropped: drift is not part of the check (see *Drift — REMOVED*).
 6. Then the smallest slice: the form + these checks + one review turn, scored on several m5uLPh movies
    against the diagnosis above.
