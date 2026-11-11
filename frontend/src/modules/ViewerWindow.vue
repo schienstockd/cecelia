@@ -43,6 +43,7 @@ import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { usePlotResize } from '../composables/usePlotResize'
+import { useVwPlayback } from '../composables/useVwPlayback'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -76,7 +77,7 @@ import {
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, playbackAdvance, playbackIntervalMs,
+  prefetchWindow, prefetchDepth, walkPrefetch, stripCells,
 } from '../utils/volumeCache'
 import type { PlaybackHint } from '../utils/pageTable'
 import {
@@ -140,6 +141,7 @@ import type { RoiSpot } from '../utils/rois'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import VwHeader from '../components/viewerWindow/VwHeader.vue'
+import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
@@ -3129,89 +3131,19 @@ function drawTiles() {
 }
 
 // ── Playback ─────────────────────────────────────────────────────────────────────
-// A timer rather than rAF: the rate is a chosen frame rate, not the display's. It WAITS for an
-// uncached frame instead of skipping ahead — see `playbackAdvance` for why that is the honest choice.
-let playTimer: ReturnType<typeof setTimeout> | null = null
-
-function stopPlay() {
-  playing.value = false
-  waitingFor.value = -1
-  if (playTimer !== null) { clearTimeout(playTimer); playTimer = null }
-  // Retire the playback prefetch window. Playback sets `prefetchTs` to `[t, t±1, t±2]` so the
-  // scheduler buffers ahead; leaving that in place after stop keeps `tickScheduler` kicking
-  // fetches for those neighbour t's every tick with no benefit — ("doesn't
-  // stop loading"). Idle prefetch is just the current t; the next `gotoT` will replace this.
-  renderer.value?.setPrefetchTimepoints?.([t.value])
-}
-
-function tick() {
-  playTimer = setTimeout(() => {
-    if (!playing.value) return
-    if (useTiles.value) {
-      // Tile-mode playback: advance at the requested fps regardless of tile residency. The tile
-      // pump chases behind `gotoT` — the loading chip appears while a fresh-t frame's tiles arrive
-      // and clears the moment they do. Fetch-vs-frame-rate discipline (volume mode's residency
-      // probe + wait-for-cached-frame path) needs measurement on real timelapses before it lands
-      // here — see `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision "autoplay does NOT ship".
-      const n = nT.value
-      if (n <= 0) { stopPlay(); return }
-      const next = t.value + 1
-      if (next >= n) {
-        if (!settings.viewerLoop) { stopPlay(); return }
-        waitingFor.value = -1
-        gotoT(0)
-      } else {
-        waitingFor.value = -1
-        gotoT(next)
-      }
-      tick()
-      return
-    }
-    const r = renderer.value
-    // Brick renderer: advance every tick regardless of residency, so show(t) fires its
-    // snap-to-boundT and the shader draws each frame with prev-t hole-fill for whatever hasn't
-    // landed. Flat renderer: gate on cache residency (its frames are all-or-nothing).
-    // A flat frame is ready with its mask: after a mask is ticked on mid-movie, the walk fetches each
-    // frame's mask ahead of the playhead and playback never shows a frame without it (`frameComplete`).
-    const readyProbe = bricksEnabled.value
-      ? () => true
-      : frameComplete
-    const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
-    if (step.ended) { stopPlay(); return }
-    if (step.stalled) {
-      // Pump around the frame we WANT, not the one we are on. At the end of a loop those are the one
-      // pair that disagree, and a window centred on where we are fills backwards and never asks for
-      // frame 0 — playback then waits forever for something nothing is fetching.
-      waitingFor.value = step.next
-      schedulePump(step.next)
-      // Brick renderer only: schedulePump is a flat-renderer path — nothing on the brick side
-      // hears it. Push step.next into the prefetch window so the brick tickScheduler starts
-      // fetching for it now, or a stall never unstalls (nothing else is telling the scheduler
-      // this t matters). Under playback cap=4 so the window covers the direction of travel.
-      const m = meta.value
-      if (r?.setPrefetchTimepoints && m) {
-        const dir = 1   // playback runs forward; `step.next - t` is negative at the loop wrap
-        // Same atlas-size clamp as gotoT — a stalled playback step MUST NOT ask for more
-        // prefetch than the atlas can hold, or the prefetch bricks LRU-evict the boundT bricks
-        // the shader is trying to draw. Regression guard, .
-        const cap = r.maxSafePrefetchDepth?.(4) ?? 4
-        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap), playbackHint(m.nT))
-      }
-      frame.redraw()
-    } else {
-      waitingFor.value = -1
-      gotoT(step.t)
-    }
-    tick()
-  }, playbackIntervalMs(settings.viewerFps))
-}
-
-function togglePlay() {
-  if (playing.value) { stopPlay(); return }
-  if (nT.value <= 1) return
-  playing.value = true
-  tick()
-}
+// The loop lives in composables/useVwPlayback.ts; the window keeps the state it reads.
+const { stopPlay, togglePlay } = useVwPlayback({
+  playing, waitingFor, t,
+  nT: () => nT.value,
+  useTiles: () => useTiles.value,
+  bricksEnabled: () => bricksEnabled.value,
+  renderer: () => renderer.value,
+  loop: () => settings.viewerLoop,
+  fps: () => settings.viewerFps,
+  gotoT, schedulePump, frameComplete,
+  redraw: () => frame.redraw(),
+  playbackHint,
+})
 
 // ── Pointer ──────────────────────────────────────────────────────────────────────
 /**
@@ -6383,69 +6315,10 @@ onUnmounted(() => {
           </select>
         </div>
 
-        <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
-             `nT == 1` slider stuck at "0 / 0" looks broken. -->
-        <template v-if="nT > 1">
-          <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
-          <!-- Transport (play + loop) fills the label column, so this slider starts where Plane and
-               Fps start; readout and the ±-column spacer end it the same way. -->
-          <div class="cc-row cc-row-tight vw-slider-row">
-            <span class="cc-lbl-col vw-transport">
-              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
-                      v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'"
-                      :aria-label="playing ? 'Pause' : 'Play'">
-                <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-              </button>
-              <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerLoop }]"
-                      @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
-                      v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
-                <i class="pi pi-repeat" />
-              </button>
-            </span>
-            <input
-              type="range" class="vw-grow" :min="0" :max="nT - 1" :step="1"
-              :value="t" @pointerdown="stopPlay()"
-              @input="gotoT(Number(($event.target as HTMLInputElement).value))"
-              v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
-            >
-            <span class="cc-readout cc-fs-2xs vw-readout-col">{{ t }} / {{ nT - 1 }}</span>
-            <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
-          </div>
-
-          <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
-               so a long movie does not put one element per frame in the DOM.
-               The dot shares this row rather than earning its own: playback holds rather than skip an
-               uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
-               but a line that appears and disappears above the strip shoves it up and down every tick,
-               which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
-          <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
-            <span class="cc-dot vw-dot" :class="{ 'cc-dot-warn': busy }" />
-            <div class="vw-strip">
-              <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
-            </div>
-          </div>
-        </template>
-
-        <!-- Fps keeps its own row — it is a slider. -->
-        <div v-if="nT > 1" class="cc-row cc-row-tight vw-slider-row">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
-          <input
-            type="range" class="vw-grow" :min="1" :max="30" :step="1"
-            v-model.number="settings.viewerFps"
-            v-tooltip.bottom="'Playback rate — waits rather than skip an uncached frame'"
-            aria-label="Playback rate (fps)"
-          >
-          <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
-               slider have the plain description so a hover on either still explains the
-               control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
-          <span class="cc-readout cc-fs-2xs vw-readout-col"
-                :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
-                v-tooltip.left="playing && waitingFor >= 0
-                  ? 'Playback throttled — fetches are behind the requested Fps'
-                  : 'Requested playback rate'">{{ settings.viewerFps }}</span>
-          <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
-        </div>
+        <!-- No time = no time controls (components/viewerWindow/VwTimeControls.vue). -->
+        <VwTimeControls v-if="nT > 1" :t="t" :n-t="nT" :has-z="meta.nZ > 1" :playing="playing"
+                        :throttled="playing && waitingFor >= 0" :busy="busy" :cells="cells"
+                        @toggle-play="togglePlay" @stop="stopPlay()" @goto="gotoT" />
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar, timestamp, grid and landscape are overlays on the view (never baked
              into the frame or a Share capture), they are not a layer whose
@@ -7368,17 +7241,6 @@ onUnmounted(() => {
    next to them — so without a fixed box the track resized on every frame of playback. That is the other
    half of what read as the panel jiggling. */
 .vw-num { flex: none; min-width: 4.5rem; text-align: right; }
-.vw-striprow { display: flex; align-items: center; gap: 0.3rem; }
-.vw-strip { display: flex; gap: 1px; height: 0.35rem; flex: 1; min-width: 0; }
-/* Always laid out, only ever recoloured — the space is reserved so nothing reflows when it lights up. */
-/* the waiting light blinks — added to .cc-dot, the shape and tone stay canonical */
-.vw-dot.cc-dot-warn { animation: vw-blink 0.9s ease-in-out infinite; }
-@keyframes vw-blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.15 } }
-@media (prefers-reduced-motion: reduce) { .vw-dot.cc-dot-warn { animation: none } }
-.vw-cell { flex: 1; background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
-.vw-cell.is-resident { background: var(--cc-accent); }
-.vw-cell.is-loading { background: var(--cc-accent-tint); }
-.vw-cell.is-current { background: var(--cc-text); }
 /* Tile residency mini map — spatial analog of the timecourse strip. Same visual language: cells on
    `--cc-surface-2`, filled `--cc-accent` when resident. Loading is amber (`--cc-sev-warn`) rather
    than the strip's `--cc-accent-tint`, per "just blue dots and amber for loading"
@@ -7413,13 +7275,12 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); padding: 2px;
 }
-/* Slider rows (Depth/Plane, ± planes, Timepoint, Fps): label column, slider, readout column, then
+/* Slider rows (Depth/Plane, ± planes; Timepoint and Fps restate these in VwTimeControls): label column, slider, readout column, then
    the ± button's square (or a spacer the same size) — so every slider starts and ends on one x, and
    the fixed readout slot stops digits jittering the slider on every playback tick. */
 .vw-slider-row { flex-wrap: nowrap; }
 .vw-readout-col { min-width: 2.6rem; text-align: right; flex: none; white-space: nowrap; }
 .vw-icon-spacer { display: inline-block; flex: none; }
-.vw-transport { display: inline-flex; align-items: center; gap: 0.15rem; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:
    center` keeps the value baselines centered against the taller label text — grid's default
@@ -7444,7 +7305,4 @@ onUnmounted(() => {
   margin-left: 0.4rem;
 }
 .vw-rec { color: var(--cc-sev-warn); }
-/* Playback-throttled state: repaint the Fps readout number amber. No extra element, no width
-   change — the Fps slider stays the size it was. */
-.vw-num.vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
 </style>

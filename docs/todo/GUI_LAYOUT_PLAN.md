@@ -96,7 +96,7 @@ before and after on an isolated instance.
 |---|---|---|
 | Sidebar sections: Annotations, Channels, Segmentation, Populations, Tracks (6435–6920) | `components/viewerWindow/Vw*Section.vue`, props down, events up; ROIs is already `RoiSection.vue` and stays it | V3 panel |
 | Debug section (6929–7135) + Advanced popover (6133–6214) | `VwAdvanced.vue` | V3 panel ⚙ |
-| Z / level / time / fps controls (6280–6434) + playback script (3131–3215) | `VwPlaybackBar.vue` + `useVwPlayback.ts` | V2 playback bar |
+| Z / level / time / fps controls (6280–6434) + playback script (3131–3215) | `VwPlaybackBar.vue` + `useVwPlayback.ts` (V0: the loop is `useVwPlayback.ts`, the time rows `VwTimeControls.vue`) | V2 playback bar |
 | Status chips (5947–6010) | the console row: reuse `ErrorConsole.vue` (the main window's docked bar) if it can carry loading / bricks / GPU state; a viewer-only strip only if it cannot, with the reason in the PR | V2 console row |
 | Share-in draw + capture hooks (5312–5839) | `useVwShare.ts` | V4 Share |
 
