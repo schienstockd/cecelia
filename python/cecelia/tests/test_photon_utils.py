@@ -133,7 +133,7 @@ class MeasureSignalTest(unittest.TestCase):
             fit = channels[c]['photons']['fit']
             assert abs(fit['greyPerPhoton'] - g) / g < 0.15, (g, fit['greyPerPhoton'])
             assert channels[c]['photons']['objects']['p50Photons'] > 0
-        assert out['drift'] is None
+        assert 'drift' not in out                                   # import leaves drift out
         assert out['sharedStructure'][0]['r'] > 0.9               # same scene in both channels
 
 

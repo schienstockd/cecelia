@@ -68,6 +68,30 @@
         run!("segment.measureLabels", mp)
         @test tracks_stale()
 
+        # CURRENT tracks go stale when the label set is re-measured: tracking read the measured
+        # centroids, and a plain re-measure rebuilds the table without the track columns. Only a
+        # write-into that shares a step with the reader (a re-track) is skipped as "its own kind".
+        Cecelia.cecelia_conf()["dirs"]["projects"] = _rl_prov_fixture()
+        img = init_object("testpr", "KDIeEm")
+        run!("segment.cellposeMeasure", Dict{String,Any}("valueName" => "default", "outputValueName" => "B"))
+        run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        trk2 =run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        @test isempty(stale_outputs_for(img).stale)            # a re-track still does not stale the last
+        rm3 = run!("segment.measureLabels", mp)
+        s = only(filter(d -> d["name"] == "B" && get(d, "into", false) &&
+                             d["run"]["taskId"] == trk2, stale_outputs_for(img).stale))
+        @test only(s["because"])["replacedBy"]["taskId"] == rm3
+        # the re-measure itself is clean: it read the segmentation's labels, not the tracks before it
+        @test !any(d -> d["run"]["taskId"] == rm3, stale_outputs_for(img).stale)
+        # …and a re-track after it leaves both current: it adds track columns, the measures stand
+        trk3 = run!("tracking.bayesian_tracking", Dict{String,Any}("valueName" => "B"))
+        @test isempty(stale_outputs_for(img).stale)
+        @test !any(d -> d["run"]["taskId"] in (rm3, trk3), stale_outputs_for(img).unknown)
+        # a second re-measure (its `replaces` names the first, not the segmentation) still stales tracks
+        rm4 = run!("segment.measureLabels", mp)
+        s = only(filter(d -> d["run"]["taskId"] == trk3, stale_outputs_for(img).stale))
+        @test only(s["because"])["replacedBy"]["taskId"] == rm4
+
         # …but a write-into a later run SUPERSEDED (it shares a step) is no longer current: a lone
         # re-measure is replaced by the next segment + measure, a track correction by the next re-track
         Cecelia.cecelia_conf()["dirs"]["projects"] = _rl_prov_fixture()

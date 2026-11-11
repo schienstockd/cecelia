@@ -327,11 +327,12 @@ export function createGatingStore(initialPopType: string) {
   async function pinToAuthored() {
     if (!authoredLabelsVersion.value) return
     labelsVersionPin.value = authoredLabelsVersion.value
-    await fetchPopmap(); await fetchStats()
+    // the axis pickers too: /channels answers per pin, so a `_latest`-only column isn't left on offer
+    await fetchChannels(); await fetchPopmap(); await fetchStats()
   }
   async function clearLabelsVersionPin() {
     labelsVersionPin.value = null
-    await fetchPopmap(); await fetchStats()
+    await fetchChannels(); await fetchPopmap(); await fetchStats()
   }
 
   async function fetchStats() {

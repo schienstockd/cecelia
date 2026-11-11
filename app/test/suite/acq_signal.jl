@@ -25,6 +25,16 @@
         @test all(c -> haskey(c, "photons"), Cecelia.img_cleanup_facts(r)["channels"])
         # a stored probe without `photons` is out of date → Refresh metadata re-probes it
         @test "photons" in Cecelia.SATURATION_CURRENT_KEYS
+        # import leaves drift out; the acquisition check's Measure adds it alone to a current probe (the
+        # fixture is a 3-frame movie: a real estimate), and then doesn't ask again
+        @test !Cecelia._saturation_has_drift(r.meta)
+        @test !Cecelia.ensure_saturation_meta!(init_object(proj.uid, img.uid))     # current: no re-probe
+        @test Cecelia.ensure_saturation_meta!(init_object(proj.uid, img.uid); drift = true)
+        r2 = init_object(proj.uid, img.uid)
+        @test Cecelia._saturation_has_drift(r2.meta) && r2.meta["saturation"]["drift"] isa AbstractDict
+        @test haskey(r2.meta["saturation"]["drift"], "excursionPx")
+        @test r2.meta["saturation"]["channels"] == chans                            # the rest untouched
+        @test !Cecelia.ensure_saturation_meta!(init_object(proj.uid, img.uid); drift = true)
         rm(proj.root; recursive = true)
     end
 end

@@ -156,18 +156,38 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
 
     on_log("[INFO] Tracking complete.")
 
-    # QC (advisory): bank the track count + mean track length from the track_id column btrack just
-    # wrote back into the segmentation's obs. 0 tracks (btrack linked nothing) is the one unambiguous
-    # problem → an advisory finding; the counts are always recorded as metrics for cohort stats.
+    # The write-back renumbered track ids — this source's new tracks AND every surviving source's
+    # (compacted to 1..N) — so a per-track table from before joins its measures and track clusters
+    # onto the wrong tracks (`track_props` joins on track_id). Remove it with its sidecar, as a
+    # track-set delete with no survivors does (`_tracks_delete!`); track measures rebuild it.
+    tpath = img_track_props_path(img, p.valueName)
+    if isfile(tpath)
+        _rm_if(tpath; on_log); _rm_if(_clustfeatures_path(tpath); on_log)
+        on_log("[INFO] Track ids changed — run track measures to rebuild the per-track table")
+    end
+
+    _tracking_qc!(img, p.valueName, props_path, track_source; on_log)
+    Dict{String,Any}("valueName" => p.valueName)
+end
+
+# QC (advisory): bank the track count + mean track length of the tracks THIS run wrote (rows stamped
+# with its `track_source`, read through `label_track_sources`) — another pop's tracks on the
+# same segmentation are not this run's. 0 tracks (btrack linked nothing) is the one unambiguous
+# problem → an advisory finding; the counts are always recorded as metrics for cohort stats.
+function _tracking_qc!(img::CciaImage, vn::AbstractString, props_path::AbstractString,
+                       track_source::AbstractString; on_log::Function = _ -> nothing)
     try
+        # the write-back always stamps `track_source`, so this run's rows are exactly those carrying it
+        src   = label_track_sources(img, vn)
         cells = label_props(props_path) |> select_cols(["track_id"]) |> as_df
-        tids  = "track_id" in names(cells) ? cells.track_id : Float64[]
+        tids  = [cells.track_id[i] for i in eachindex(cells.track_id)
+                 if get(src, Int(cells.label[i]), nothing) == track_source]
         n_tracks, mean_len, n_tracked = track_count_metrics(tids)
         findings = n_tracks == 0 ?
             [qc_finding("warn", "tracking.no_tracks", "No tracks formed",
                 "btrack linked no cells into tracks — check segmentation continuity and the tracking parameters, then re-run.")] :
             Dict{String,Any}[]
-        write_qc(img, "tracking.bayesian_tracking", p.valueName, findings;
+        write_qc(img, "tracking.bayesian_tracking", vn, findings;
                  metrics = Dict{String,Any}("nTracks"         => n_tracks,
                                             "meanTrackLength" => round(mean_len, digits = 2),
                                             "nTrackedCells"   => n_tracked))
@@ -176,6 +196,4 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     catch e
         on_log("[QC] could not compute tracking QC: $e")
     end
-
-    Dict{String,Any}("valueName" => p.valueName)
 end
