@@ -89,6 +89,15 @@ export function landscapeLabelsVn(maskName: string, maskHidden: boolean,
   return maskStoreFor(vn, previewVn, liveVn) ? '' : vn
 }
 
+/** The derived files (`halo`, `nuc`) packed into the shown mask (`SlabQuery.labelFiles`): the ones the
+ *  segmentation has, less the ones turned off, in the server's order. None for a preview / live store —
+ *  those have no sibling files (docs/todo/MASK_FILE_LAYERS_PLAN.md D5). */
+export function shownLabelFiles(vn: string, available: readonly string[] | undefined,
+                                hidden: ReadonlySet<string>, store: MaskStore | undefined): string[] {
+  if (!vn || store || !available?.length) return []
+  return available.filter(f => !hidden.has(f))
+}
+
 /** The slab-query fields that point a labels read at `store`, `storeId` riding as the cache-buster
  *  (identical URLs across two preview runs would otherwise return the first run's bytes). */
 export function maskStoreQuery(store: MaskStore | undefined, storeId: number | undefined,

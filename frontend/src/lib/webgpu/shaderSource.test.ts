@@ -148,10 +148,13 @@ describe('the shaders the renderers compile', () => {
                   BRICK_WGSL: [BRICK_WGSL, 'labAtlasSample'], BRICK_N2: [brick[1], 'labAtlasSample'],
                   BRICK_N3: [brick[2], 'labAtlasSample'], BRICK_N4: [brick[3], 'labAtlasSample'] }
   for (const [k, [code, fetch]] of Object.entries(edged)) {
-    it(`${k} draws contours with the one shared labEdge`, () => {
-      expect(code).toContain(expandWgsl('label_edge.wgsl', { LAB_AT: fetch }))
+    it(`${k} draws contours with the one shared labEdge, through label_layers`, () => {
+      expect(code).toContain(expandWgsl('label_layers.wgsl', { LAB_AT: fetch }))
       expect(code.match(/fn labEdge\(/g)).toHaveLength(1)
-      expect(code.match(/for \(var k = 1; k <= w;/g)).toHaveLength(1)
+      // the one loop, instantiated for the base region and the derived-file region
+      expect(code.match(/for \(var k = 1; k <= w;/g)).toHaveLength(2)
+      expect(code.match(/fn labDrawn\(/g)).toHaveLength(1)
+      expect(code).not.toMatch(/labEdge\(labVi, labId/)   // composites go through labDrawn / labPickEdge
     })
   }
 

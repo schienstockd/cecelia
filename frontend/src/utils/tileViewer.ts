@@ -55,11 +55,14 @@ export function tileMaskSourceId(o: {
   /** A live store's run start: `storeId` restarts with the main window, so two runs could share one. */
   liveSince?: string
   rev?: string | number
+  /** The derived files packed into it (`SlabQuery.labelFiles`) — another file set is another mask. */
+  files?: readonly string[]
 }): string {
   if (!o.vn || o.hidden) return ''
   const run = o.store && o.liveSince ? `@${o.liveSince}` : ''
   const store = o.store ? `${o.store}:${o.storeId ?? 0}${run}` : 'labels'
-  return `${o.vn}|${store}|${o.rev || 0}`
+  const files = !o.store && o.files?.length ? `+${o.files.join('+')}` : ''
+  return `${o.vn}${files}|${store}|${o.rev || 0}`
 }
 
 /** Viewport in level-0 (native) pixel coordinates — the client thinks in L0, the slab route thinks in
