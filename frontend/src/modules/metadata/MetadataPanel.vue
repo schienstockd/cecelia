@@ -678,7 +678,7 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem;
   border-radius: var(--cc-radius-pill); font-size: var(--cc-fs-2xs); font-weight: 700;
-  background: #7c2d1244; color: #fcd34d;
+  background: var(--cc-tint-amber); color: var(--cc-ink-amber);
 }
 
 /* buttons use the global .cc-btn utilities (style.css) */

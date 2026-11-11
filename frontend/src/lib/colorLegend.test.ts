@@ -41,9 +41,9 @@ function declaredColorTokens(): string[] {
   for (const m of block.matchAll(decl)) {
     const [, name, rawValue] = m
     const value = rawValue.trim().split('/*')[0].trim()
-    // Colour heuristic: a hex, an `rgb(…)` / `rgba(…)`, `hsl(…)`, or a `color(…)` function.
+    // Colour heuristic: a hex, an `rgb(…)` / `rgba(…)`, `hsl(…)`, or a `color(…)` function, or a `color-mix(…)` (a tint derived from a token).
     // Font stack, sizes, radii, and layout dimensions all fail this check.
-    if (!/^#[0-9a-fA-F]{3,8}$|^rgba?\(|^hsla?\(|^color\(/.test(value)) continue
+    if (!/^#[0-9a-fA-F]{3,8}$|^rgba?\(|^hsla?\(|^color\(|^color-mix\(/.test(value)) continue
     if (seen.has(name)) continue
     seen.add(name)
     tokens.push(name)

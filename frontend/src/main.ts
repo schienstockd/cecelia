@@ -15,6 +15,7 @@ import { installRoLoopTrace } from './utils/roLoopTrace'
 import { popoutRouteOfWindow } from './lib/popout'
 import { tooltip } from './directives/tooltip'
 import { rangeFill } from './directives/rangeFill'
+import { applyColourScheme, parseColourScheme, COLOUR_SCHEME_KEY } from './utils/colourScheme'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -122,6 +123,10 @@ router.beforeEach(async (to) => {
   }
   return true
 })
+
+// The colour scheme goes on <html> before anything paints, so a light-scheme user never sees a dark
+// flash; the settings store keeps it in step from here on (utils/colourScheme.ts).
+applyColourScheme(parseColourScheme(localStorage.getItem(COLOUR_SCHEME_KEY)), document.documentElement)
 
 const app = createApp(App)
 app.use(pinia)

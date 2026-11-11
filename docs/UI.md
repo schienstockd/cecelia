@@ -43,7 +43,7 @@ model + the gating plot stack's internals), `docs/MODULES.md` (task JSON + param
 
 ## Design tokens
 
-All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at the `<body>` level).
+All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlays reach them). Colour tokens split into scheme-following and fixed — see *Colour schemes* below.
 
 | Token | Value | Use |
 |-------|-------|-----|
@@ -518,6 +518,41 @@ Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 u
   uses) and `pi-spin pi-spinner` (28) with nothing choosing between them; it is now **always
   `pi-spin pi-spinner`**, which frees `pi-cog` to mean only settings/options. `pi-spin` is a *modifier*,
   not a glyph. "Edit" was split between `pi-pencil` and `pi-file-edit`; it is `pi-pencil`.
+
+## Colour schemes — what a scheme overrides, and what it must not
+
+A colour scheme is one block of token values on `:root` (e.g. `:root[data-theme="light"] { … }`); no
+component changes. That holds because **component CSS contains no colour literals** —
+`findColourLiterals` in `utils/cssScenarios.test.ts` fails on any hex / `rgb()` / `white` / `black` in a
+`<style>` block or an inline `style=`. Every colour reads a token from one of two groups in `style.css`:
+
+- **Scheme-following** — a scheme gives each a new value: surfaces and text (`--cc-bg`, `--cc-surface-*`,
+  `--cc-text*`, `--cc-border*`), the accent/stage/primary families, `--cc-shadow` / `--cc-shadow-soft` /
+  `--cc-backdrop`, `--cc-wash` / `--cc-wash-strong` (hover washes — white on dark, so a light scheme
+  makes them dark), and `--cc-ink-*` (a hue that reads *as text* on the scheme's surfaces: red, amber,
+  green, blue, orange, cyan — a light scheme darkens each). `--cc-tint-*` are `color-mix()`es of
+  `--cc-danger` / `--cc-warn` / `--cc-sev-ok` / `--cc-dot-info`, so they follow for free.
+- **Fixed** — a scheme leaves them alone, because what is underneath is not the page: `--cc-hud-*`
+  (chips, halos and marks over microscopy pixels and plot canvases, which are dark in any scheme),
+  `--cc-media-bg`, `--cc-on-solid` / `--cc-on-bright` (ink on a filled control — the fill decides),
+  `--cc-paper*` (an exported or printed figure is white), `--cc-swatch-edge`, `--cc-claude-mark`.
+
+`.cc-light` re-inks a subtree onto paper for an export — put it on the capture host; it is not a scheme.
+Plot figures keep their own dark/paper pair (`plots/overlays.ts` → `plotTheme`) — a per-plot option,
+not the app's scheme. JS that must *compute* with a scheme colour (contrast for module tags) reads it
+live with `tokenColour()` (`utils/colour.ts`), so it follows too. A colour that is not the app's to
+theme (a data ramp, a figure ground, an external asset's paper) carries `/* COLOUR-OK: reason */`.
+
+Two schemes ship: **Dark** (the default — no attribute) and **Light** (`:root[data-theme="light"]`
+in `style.css`, its contrast figures in the block's comment). The user switches with one click from the
+avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
+is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
+`<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
+chosen for AA contrast; they have not had the CVD check the dark trio had.
+
+Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
+`--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its
+swatches live, so it shows the active scheme.
 
 ## Colours — one meaning per token, and the glossary is the reference
 

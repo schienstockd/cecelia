@@ -214,7 +214,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
 .tl-corner:hover .tl-reset-w { opacity: 0.7; }
 .tl-reset-w:hover { opacity: 1; color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-col { padding: 0 0.35rem 0.4rem; vertical-align: top; text-align: center; }
-.tl-thumb { position: relative; width: 96px; height: 96px; background: #000; border-radius: var(--cc-radius-lg);
+.tl-thumb { position: relative; width: 96px; height: 96px; background: var(--cc-media-bg); border-radius: var(--cc-radius-lg);
   overflow: hidden; border: 1px solid var(--cc-border); transition: box-shadow 0.12s, border-color 0.12s; }
 .tl-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .tl-thumb { cursor: grab; }
@@ -224,7 +224,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
    selected state. "edited" is a separate flag (the badge), not a ring. */
 .tl-thumb.selected { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 55%, transparent); }
 .tl-badge { position: absolute; top: 4px; right: 4px; font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: #1f1400; background: var(--cc-warn); padding: 1px 5px; border-radius: var(--cc-radius-pill); }
+  letter-spacing: 0.04em; color: var(--cc-on-bright); background: var(--cc-warn); padding: 1px 5px; border-radius: var(--cc-radius-pill); }
 .tl-time { margin-top: 0.15rem; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
 .tl-kf { min-width: 0.9rem; text-align: center; }
@@ -236,7 +236,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
 .tl-durval { min-width: 1.8rem; text-align: left; }
 /* + .cc-eyebrow .cc-fs-3xs on the cell — only the spacing is the timeline's business */
 .tl-group .tl-rowhead { padding-top: 0.7rem; padding-bottom: 0.2rem; }
-.tl-row:hover .tl-cell, .tl-row:hover .tl-rowhead { background: rgba(255, 255, 255, 0.03); }
+.tl-row:hover .tl-cell, .tl-row:hover .tl-rowhead { background: var(--cc-wash); }
 .tl-cell { text-align: center; padding: 0.22rem 0.35rem; }
 .tl-dot { width: 15px; height: 15px; border-radius: var(--cc-radius-pill); border: 1.5px solid var(--cc-border);
   background: transparent; cursor: pointer; padding: 0; transition: transform 0.1s; }

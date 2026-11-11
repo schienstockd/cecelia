@@ -305,7 +305,7 @@ async function render(pass = 0) {
 }
 
 // host background follows the dark-theme flag so there are no white gaps around a dark plot
-const hostBg = computed(() => (props.opts?.darkTheme ? '#1f2226' : 'white'))
+const hostBg = computed(() => plotTheme(!!props.opts?.darkTheme).ground)
 
 // expose image export to the host panel (shared helper — see plots/export.ts). SVG = native
 // serialisation (crisp); PNG = rasterise onto a 2× canvas over white.
@@ -374,7 +374,7 @@ onBeforeUnmount(() => { frame.cancel(); ro?.disconnect(); ro = null; node?.remov
 <style scoped>
 /* white plot ground (theme_classic) — fills the panel body. position:relative anchors the legend
    overlay. color:#111 so any HTML text (legend) is dark on the white ground (not the app's light grey). */
-.plot-host { position: relative; width: 100%; height: 100%; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; color: #111; }
+.plot-host { position: relative; width: 100%; height: 100%; background: var(--cc-paper); border-radius: var(--cc-radius-xs); overflow: hidden; color: var(--cc-paper-ink); }
 .plot-host :deep(svg) { display: block; }
 /* legend drawn as an absolute overlay (top-right) so it never eats height / clips the x-axis.
    colour is set inline by PlotChart (theme ink); descendants inherit it (force inherit so Plot's

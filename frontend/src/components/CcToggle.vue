@@ -50,7 +50,7 @@ defineProps<{ label?: string; ariaLabel?: string; disabled?: boolean }>()
   position: absolute;
   width: 11px; height: 11px;
   border-radius: var(--cc-radius-pill);
-  background: #fff;
+  background: var(--cc-on-solid);
   top: 2px; left: 2px;
   transition: left 0.15s;
 }

@@ -234,7 +234,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
   max-height: 90vh; min-width: 240px; min-height: 140px;
   overflow: hidden;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-md); box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+  border-radius: var(--cc-radius-md); box-shadow: 0 6px 24px var(--cc-shadow);
   font-size: var(--cc-fs-sm); color: var(--cc-text); user-select: none;
 }
 /* docked: in-flow rail (no float/drag/resize/shadow), fills its container column */

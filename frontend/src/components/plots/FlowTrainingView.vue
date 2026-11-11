@@ -396,7 +396,7 @@ function exportAs(kind: string) {
     const text = csv()
     if (text) downloadBlob(`${stem.value}.csv`, new Blob([text], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(fig.value, kind, '#1f2226')
+    elementToImageURL(fig.value, kind, plotTheme(true).ground)
       .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
@@ -404,7 +404,7 @@ function exportAs(kind: string) {
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(fig.value, 'png', '#ffffff')
+  const url = await elementToImageURL(fig.value, 'png', plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
@@ -512,7 +512,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-off { opacity: 0.45; }
 .ftv-fig  { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 /* the light export's ink, as the plot's (`plotTheme(false)`) — dark-theme text on white is unreadable */
-.ftv-fig.cc-light { --cc-text: #111; --cc-text-dim: #555; color: #111; background: #fff; }
+.ftv-fig.cc-light { color: var(--cc-paper-ink); background: var(--cc-paper); }
 .ftv-host { flex: 1; min-height: 0; }
 .ftv-captions { list-style: none; margin: 0.1rem 6px 0.2rem; padding: 0;
                 display: flex; flex-direction: column; gap: 0.1rem; }

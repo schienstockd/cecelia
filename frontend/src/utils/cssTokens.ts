@@ -73,6 +73,8 @@ export function findNonRootTokenDecls(styleCss: string): Array<{ selector: strin
   for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const selector = m[1].trim().replace(/\s+/g, ' ')
     if (!selector || selector.startsWith('@') || /(^|,)\s*:root\b/.test(selector)) continue
+    // `.cc-light` re-inks the subtree it is put on (an export host), so it reaches what it styles
+    if (selector === '.cc-light') continue
     for (const d of m[2].matchAll(/(--cc-[A-Za-z0-9_-]+)\s*:/g)) out.push({ selector, token: d[1] })
   }
   return out

@@ -64,7 +64,7 @@ let titleNode: HTMLElement | null = null
 // `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only)
 const forceLight = ref(false)
 const effDark = computed(() => forceLight.value ? false : v.value.darkTheme)
-const hostBg = computed(() => (effDark.value ? '#1f2226' : 'white'))
+const hostBg = computed(() => plotTheme(effDark.value).ground)
 // reactive so the empty-state / host v-show re-evaluate when data arrives (a bare array does not).
 const rows = ref<{ group: string; from: string; to: string; freq: number }[]>([])
 
@@ -194,7 +194,7 @@ onBeforeUnmount(() => { node?.remove(); node = null; legendNode?.remove(); legen
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
@@ -292,12 +292,13 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 
 <style scoped>
 .hmm-body { position: relative; display: flex; flex: 1; min-height: 0; padding: 6px; }
-.hmm-host { position: relative; flex: 1; min-height: 0; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; }
+.hmm-host { position: relative; flex: 1; min-height: 0; background: var(--cc-paper); border-radius: var(--cc-radius-xs); overflow: hidden; }
 .hmm-host :deep(svg) { display: block; }
 /* vertical colour ramp in the right margin (max at top, 0 at bottom) */
 .hmm-host :deep(.hmm-vlegend) { position: absolute; top: 50%; right: 5px; transform: translateY(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: var(--cc-fs-2xs); line-height: 1; }
-.hmm-host :deep(.hmm-vlegend .vl-ramp) { width: 11px; height: 90px; border-radius: var(--cc-radius-xs); border: 1px solid rgba(128,128,128,0.4);
+.hmm-host :deep(.hmm-vlegend .vl-ramp) { width: 11px; height: 90px; border-radius: var(--cc-radius-xs); border: 1px solid var(--cc-swatch-edge);
+  /* COLOUR-OK: the yellow-to-red data ramp the dots are coloured by — a data scale, not chrome */
   background: linear-gradient(to top, #ffffcc, #ffeda0, #fed976, #feb24c, #fd8d3c, #fc4e2a, #e31a1c, #b10026); }
 .hmm-host :deep(.hmm-vlegend .vl-cap) { font-weight: 600; }
 .hmm-host :deep(.plot-title-overlay) { position: absolute; top: 4px; left: 8px; max-width: 70%; font-weight: 600;

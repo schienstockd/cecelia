@@ -81,7 +81,7 @@ const pinnedVersion = computed(() => {
   margin-bottom: 0.25rem;
 }
 .scope-dot { background: var(--cc-accent); }     /* a category, not a state: its own colour on .cc-dot */
-.incremental .scope-dot { background: #60a5fa; }
+.incremental .scope-dot { background: var(--cc-ink-blue); }
 
 .node-label {
   font-size: var(--cc-fs-sm);
@@ -104,7 +104,7 @@ const pinnedVersion = computed(() => {
 .node-pool {           /* + .cc-pool-tag — this site's own half: the orange, the block, the spacing */
   display: flex;
   font-size: var(--cc-fs-3xs);
-  color: #f97316;
+  color: var(--cc-ink-orange);
   margin-top: 4px;
 }
 .node-version {

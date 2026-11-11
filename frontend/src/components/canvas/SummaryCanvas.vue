@@ -572,12 +572,11 @@ watch(segPops, () => {
              slot (inside `.floating-canvas`, outside the zoom transform) so the workspace CSS
              transform can't scale the chip along with the panels. -->
         <template #overlay>
-          <div v-if="shareToast" class="sc-share-chip"
-               :class="{ 'sc-share-chip-error': shareToast.kind === 'fail' }">
-            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                        'sc-share-chip-icon']" />
+          <div v-if="shareToast" class="cc-hud-chip cc-hud-chip-corner"
+               :class="{ 'cc-hud-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle']" />
             <span>{{ shareToast.message }}</span>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro sc-share-chip-dismiss"
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                     @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                     aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
           </div>
@@ -611,19 +610,4 @@ watch(segPops, () => {
 .sc-attr { min-width: 5.5rem; max-width: 8rem; }   /* short attribute names — no need for 9rem */
 .sc-x { opacity: 0.6; }
 .sc-hint { opacity: 0.7; margin-left: auto; }
-/* Post-Save share toast — same visual family as ViewerWindow's `.vw-status-chip` so the outcome
-   looks the same on both surfaces. Sits above CaptureViewSurface (z:40) at z:50 so a user reads
-   the "prompt on your clipboard" line whether or not the frozen frame is up. `pointer-events:auto`
-   on the whole chip because the dismiss button needs to be clickable. */
-.sc-share-chip {
-  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
-  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
-  background: rgba(0, 0, 0, 0.78); color: #fff;
-  font-size: var(--cc-fs-xs); pointer-events: auto;
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
-}
-.sc-share-chip-error { color: var(--cc-sev-fail); }
-.sc-share-chip-icon { font-size: 1em; }
-.sc-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
-.sc-share-chip-dismiss:hover { opacity: 1; }
 </style>

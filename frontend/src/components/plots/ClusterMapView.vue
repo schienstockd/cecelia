@@ -36,6 +36,7 @@ import SquarePlot from './SquarePlot.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { axisTitle, type BehaviourAxes } from '../../utils/behaviourAxes'
+import { plotTheme } from '../../plots/overlays'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -106,7 +107,7 @@ const ground = computed(() => (dark.value ? '#0d0b1a' : '#ffffff'))
 // was a dark box with white text, which didn't match the R figures). See geom_label_repel in
 // plotClustersUMAPServer.R.
 const labelStyle = computed(() => ({ color: '#111', background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.55)' }))
-const legendInk = computed(() => (dark.value ? '#e6e6e6' : '#111'))
+const legendInk = computed(() => plotTheme(dark.value).ink)
 // legend box background follows the theme too — in light mode the dark ink sat on the app's dark
 // panel surface (unreadable on the canvas); give it a light box so the pop names are legible.
 const legendBg = computed(() => (dark.value ? 'transparent' : '#ffffff'))
@@ -890,7 +891,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
             <!-- BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) hits, drawn on
                  top of the dot canvas at the same projection the dots use. Ring + "C" glyph shape
                  shared with the cards/track family (Slice A). -->
-            <span v-for="(h, hi) in claudeHits" :key="'ch'+hi" class="uv-claude-hit"
+            <span v-for="(h, hi) in claudeHits" :key="'ch'+hi" class="cc-claude-badge cc-claude-badge-ring uv-claude-hit"
                   v-tooltip.top="`Claude: ${isTrackGrained ? 'track' : 'cell'} ${h.label}`"
                   :style="{ left: h.px + 'px', top: h.py + 'px' }">C</span>
           </template>
@@ -940,18 +941,16 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
 .uv-pop-tag { font-size: var(--cc-fs-3xs); text-transform: uppercase; color: var(--cc-text-dim); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 0 3px; }
 .uv-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 0 6px 6px; }
 /* .uv-square (SquarePlot) provides the centred 1:1 box; .uv-plot fills it and carries the ground/frame */
-.uv-plot { position: absolute; inset: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
+.uv-plot { position: absolute; inset: 0; background: #0d0b1a;   /* COLOUR-OK: the map's figure ground, part of the plot not the app */
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); overflow: hidden; }
 .uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) point ring + "C" glyph. Same
    magenta accent as the cards/track family. Anchor centered on the projected point (`translate`);
    large enough to sit above the dot (`dotR` is typically ~2 px). */
 .uv-claude-hit { position: absolute; transform: translate(-50%, -50%); pointer-events: auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; z-index: 3;
-  border: 1.5px solid #ffffff; box-shadow: 0 0 0 1px #e836b4; }
+  z-index: 3; }
 .uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700;
-  color: #111; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.55); border-radius: var(--cc-radius-xs); padding: 0 4px; line-height: 1.4; z-index: 2; }
+  color: var(--cc-paper-ink); background: color-mix(in srgb, var(--cc-paper) 90%, transparent); border: 1px solid var(--cc-hud-bg-soft); border-radius: var(--cc-radius-xs); padding: 0 4px; line-height: 1.4; z-index: 2; }
 /* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */
 .uv-facet-title { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2;
   font-size: var(--cc-fs-2xs); font-weight: 700; white-space: nowrap; }

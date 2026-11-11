@@ -198,7 +198,7 @@ useWindowListener('keydown', onKey)
   cursor: crosshair;
 }
 .cso-veil {
-  fill: rgba(0, 0, 0, 0.55);
+  fill: var(--cc-backdrop);
   pointer-events: none;
 }
 .cso-ring {
@@ -209,7 +209,7 @@ useWindowListener('keydown', onKey)
   pointer-events: none;
 }
 .cso-drag {
-  fill: rgba(255, 255, 255, 0.08);
+  fill: var(--cc-wash);
   stroke: var(--cc-accent);
   stroke-width: 2;
   stroke-dasharray: 4 4;
@@ -231,7 +231,7 @@ useWindowListener('keydown', onKey)
 .cso-hint {
   position: absolute; top: 3.4rem; left: 0.75rem;
   padding: 0.2rem 0.5rem;
-  background: rgba(0, 0, 0, 0.55); color: var(--cc-text-dim);
+  background: var(--cc-hud-bg-soft); color: var(--cc-hud-text-dim);
   border-radius: var(--cc-radius-md);
   pointer-events: none;
 }

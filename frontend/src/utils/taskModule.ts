@@ -2,7 +2,7 @@
 // the image-table run tags, so a module reads the same colour everywhere. Keyed by the lowercase
 // module id (moduleIdFromFun). Unknown modules fall back to grey.
 import { funCategory } from './runLog'
-import { composite, readableOn } from './colour'
+import { composite, readableOn, tokenColour } from './colour'
 
 export const MODULE_COLORS: Record<string, string> = {
   manageimages:    '#7c3aed',
@@ -27,9 +27,10 @@ export function moduleColor(m: string): string {
 const TAG_FILL_ALPHA = 0x22 / 255
 
 //: The surface the LABEL's contrast is computed against — `--cc-surface-2`, the LIGHTEST surface a tag
-//: sits on (the tooltip). The fill is translucent, so its painted colour depends on what is
-//: behind it, and CSS cannot tell us; picking the lightest is the worst case for light label text, so a
-//: label readable here is readable on `--cc-bg` and `--cc-surface-1` too.
+//: sits on on the dark scheme (the tooltip). The fill is translucent, so its painted colour depends on
+//: what is behind it, and CSS cannot tell us; on dark, the lightest is the worst case for light label
+//: text, so a label readable here is readable on `--cc-bg` and `--cc-surface-1` too. Read live from the
+//: scheme (`tokenColour`); this constant is the dark value, for tests and as the fallback.
 export const TAG_SURFACE = '#23211f'   // = --cc-surface-2 (style.css)
 
 /**
@@ -45,7 +46,7 @@ export const TAG_SURFACE = '#23211f'   // = --cc-surface-2 (style.css)
  * **The LABEL is not the raw accent.** Using the accent as its own label text measured 1.84-2.70:1
  * against the pill's fill — every one of the twelve module colours below WCAG AA, worst for the dark
  * greens (`cleanup #065f46`). `readableOn` lifts it toward white by the least amount that reaches 4.5:1
- * (28-42% depending on the hue), which keeps the module recognisable — a lifted purple is still that
+ * (28-42% depending on the hue; toward `--cc-text`, so dark ink on a light scheme), which keeps the module recognisable — a lifted purple is still that
  * purple — where `--cc-text` would have thrown the identity away. The fill and border are untouched, so
  * the pill's shape and colour block look exactly as before.
  */
@@ -53,7 +54,9 @@ export function moduleTagStyle(module: string): Record<string, string> {
   const c = moduleColor(module)
   return {
     background: c + '22',
-    color: readableOn(c, composite(c, TAG_SURFACE, TAG_FILL_ALPHA)),
+    // lifted toward the scheme's text colour: white-ish on a dark scheme, dark on a light one
+    color: readableOn(c, composite(c, tokenColour('--cc-surface-2', TAG_SURFACE), TAG_FILL_ALPHA),
+                      undefined, tokenColour('--cc-text', '#ffffff')),
     borderColor: c + '55',
   }
 }

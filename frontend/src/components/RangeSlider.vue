@@ -260,7 +260,7 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
 }
 .rs-hist-line-border {
   fill: none;
-  stroke: color-mix(in srgb, var(--cc-active) 35%, black);
+  stroke: color-mix(in srgb, var(--cc-active) 35%, black);   /* COLOUR-OK: a darker shade of the fill, on any ground */
   stroke-width: 2.4;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -306,7 +306,7 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
   background: var(--cc-accent);
   border: 1px solid var(--cc-bg);
   transform: translateX(-50%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px var(--cc-shadow);
 }
 .rs-thumb:hover { filter: brightness(1.15); }
 </style>
