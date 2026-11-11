@@ -235,8 +235,9 @@ def _objective(text, na):
             'immersion': None}
 
 
-def acquisition_settings(path):
-    """Acquisition settings an Imaris file records, normalised like `oir_meta` / `czi_meta`.
+def acquisition_settings(path, series=0):
+    """Acquisition settings an Imaris file records, normalised like `oir_meta` / `czi_meta`. `series`
+    is the reader contract (`acquisition_readers.json`); an `.ims` holds one image, so it is unused.
 
     Imaris copies the source microscope's metadata into `DataSetInfo`: the objective and NA
     (`Image`), per channel the excitation wavelength, emission filter and pinhole (`Channel N`,

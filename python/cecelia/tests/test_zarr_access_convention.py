@@ -37,7 +37,7 @@ _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # Files allowed to talk to zarr / tifffile / OME-XML / lxml directly. Every entry has a reason.
 # _BASELINE_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
 # reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
-_BASELINE_MAX = 7   # 7: czi_meta, a second vendor-XML settings reader beside oir_meta
+_BASELINE_MAX = 8   # 8: lif_meta, a third vendor-XML settings reader (Leica)
 _BASELINE = {
     # Owns the idiom: zarr_utils IS the canonical zarr wrapper; ome_xml_utils IS the OME-XML parser.
     os.path.join('python', 'cecelia', 'utils', 'zarr_utils.py'),
@@ -60,6 +60,8 @@ _BASELINE = {
     os.path.join('python', 'cecelia', 'utils', 'oir_meta.py'),
     # The same for a Zeiss `.czi`: its `ImageDocument` metadata segment is vendor XML, not OME.
     os.path.join('python', 'cecelia', 'utils', 'czi_meta.py'),
+    # The same for a Leica `.lif`: its header block is vendor XML, not OME.
+    os.path.join('python', 'cecelia', 'utils', 'lif_meta.py'),
 }
 
 # Banned top-level modules (via `import X` or `from X import ...`). The last-segment name matches.

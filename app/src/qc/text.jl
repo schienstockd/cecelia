@@ -104,7 +104,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     # The depth ones name the vendor's depth power ramp only when the settings say it was ON
     # (`_depth_ramp_key`); otherwise — settings not read, no ramp record, or the ramp off — they
     # can't assume one. "Bright Z" is Evident's name on both its two-photon systems (FV4000,
-    # FVMPE-RS: the `scopes` map in mcp/cecelia_mcp/acquisition_knowledge.json).
+    # FVMPE-RS: their files in mcp/cecelia_mcp/acquisition_knowledge/scopes/).
     "import.brighter_with_depth" => (
         short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
         long  = "Check whether laser power or gain was raised with depth — it may rise faster than signal is lost. Channels: {channels}."),
