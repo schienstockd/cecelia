@@ -733,8 +733,11 @@ class CommitMsgHookTest(unittest.TestCase):
         # These tests run inside Claude Code (CLAUDECODE=1); the agent gate has its own tests.
         os.environ.pop("CLAUDECODE", None)
         self.head = "9" * 40
+        # Nothing staged unless a test says so: the repro gate reads the git index, and the real one
+        # (a branch that deletes a RESULT-REVIEW repro) would block these commits.
         for name, value in (("_current_head_sha", self.head), ("_current_branch", "feat/x"),
-                            ("_current_pr", None), ("_in_sequencer_commit", False)):
+                            ("_current_pr", None), ("_in_sequencer_commit", False),
+                            ("_staged_changed_files", []), ("_staged_added_files", [])):
             p = mock.patch.object(self.hook, name, return_value=value)
             p.start()
             self.addCleanup(p.stop)

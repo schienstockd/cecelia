@@ -181,8 +181,6 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-ink-green') },
       { token: '--cc-ink-blue', means: 'Information, a category label',
         swatch: varSwatch('--cc-ink-blue') },
-      { token: '--cc-ink-orange', means: 'Open in the viewer; a resource-pool tag',
-        swatch: varSwatch('--cc-ink-orange') },
       { token: '--cc-ink-cyan', means: 'A category label (tasks in the log console)',
         swatch: varSwatch('--cc-ink-cyan') },
       { token: '--cc-tint-red', means: 'The wash behind a failed or destructive item',
