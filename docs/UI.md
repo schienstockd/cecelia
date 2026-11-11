@@ -192,9 +192,9 @@ starts). Design + decisions: [`docs/todo/SETTINGS_SCOPE_PLAN.md`](todo/SETTINGS_
 
 ## Settings layout
 
-`SettingsModule.vue` is a `ModulePage layout="scroll"`: one column of `CollapsibleSection`s, all closed by
-default and remembered per profile (`cc-settings-<section>`), so a first visit shows the section names
-and nothing else. Diagnostics (with WebGPU and Packages), Data patches, Developer and the Debug console
+`SettingsModule.vue` is a `ModulePage layout="scroll"`: one column of `CollapsibleSection`s in ONE accordion
+(`cc.settings.section`, remembered per profile): Project is open on a first visit, every other section
+shows its name only, and opening one closes the last (maintainer, 2026-11-11). Diagnostics (with WebGPU and Packages), Data patches, Developer and the Debug console
 sit together under one closed **Troubleshooting** section. Guide steps that point inside a closed
 section (`settings.storageScan`, `settings.viewProfile`) first point at the section header
 (`settings.storage`, `settings.interface`).
