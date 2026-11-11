@@ -72,7 +72,7 @@ def _labels_2d(seed=0, shape=(96, 112)):
 
 
 def _run(lab_t, im_t, order, *, block, sigma=0.0, measure='mean', secondary=False,
-         passes=None, cap=None, extended=False, workers=1):
+         passes=None, cap=None, extended=False, workers=1, label_axes=None):
     """Run the real `measure_from_zarr` on in-memory arrays; return the written AnnData."""
     tmp = tempfile.mkdtemp()
     params = dict(taskDir=tmp, outputValueName='blk', intensityMeasure=measure,
@@ -87,7 +87,8 @@ def _run(lab_t, im_t, order, *, block, sigma=0.0, measure='mean', secondary=Fals
     if patch:
         patch.start()
     try:
-        path = mu.measure_from_zarr(labels, [im_t], _Log(), label_passes=passes, n_workers=workers)
+        path = mu.measure_from_zarr(labels, [im_t], _Log(), label_passes=passes, n_workers=workers,
+                                    label_axes=label_axes)
     finally:
         if patch:
             patch.stop()
@@ -212,6 +213,21 @@ class SingletonZTest(unittest.TestCase):
 
     def test_worker_processes_match_serial(self):
         _assert_same(self, self._z(block=16, workers=3), self._z(block=16))
+
+    def test_label_store_without_the_z_axis(self):
+        """Ridge segmentation writes its labels (T)YX for a single-plane image: no Z at all, where
+        other segmenters keep the length-1 Z. Measured against the image's T,C,Z=1,Y,X it is the
+        same table either way."""
+        kw = dict(block=16, sigma=1.0)
+        _assert_same(self, _run(self.lab_yx, self.im_z, ['T', 'C', 'Z', 'Y', 'X'],
+                                label_axes=['T', 'Y', 'X'], **kw),
+                     self._z(**kw))
+
+    def test_2d_labels_on_a_z_stack_say_so(self):
+        """A Z-projected label set on a real Z stack has no plane to measure against."""
+        im = np.repeat(self.im_z, 3, axis=2)                                # T, C, Z=3, Y, X
+        with self.assertRaisesRegex(ValueError, 'labels are 2D but the image has 3 Z slices'):
+            _run(self.lab_yx, im, ['T', 'C', 'Z', 'Y', 'X'], block=16, label_axes=['T', 'Y', 'X'])
 
 
 class BlockOwnership3DTest(unittest.TestCase):

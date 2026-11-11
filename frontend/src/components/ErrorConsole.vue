@@ -125,11 +125,12 @@ const filterCounts = computed(() => ({
   error: log.entries.filter(e => e.level === 'error').length,
 }))
 
-// per-level active colour (all → default accent); mirrors the old .filter-tab.active.<lvl> text colour
+// per-level active colour (all → default accent) — the same tokens as the level badges below, so a
+// chip and its badge are one colour in every scheme
 const LEVEL_ACCENT: Partial<Record<Filter, string>> = {
-  error: '#fca5a5',
-  warn:  '#fcd34d',
-  info:  '#93c5fd',
+  error: 'var(--cc-ink-red)',
+  warn:  'var(--cc-ink-amber)',
+  info:  'var(--cc-active)',
 }
 
 const filterOptions = computed<ChipOption[]>(() =>
@@ -435,7 +436,7 @@ const filterOptions = computed<ChipOption[]>(() =>
 .src.grp-viewer    { color: var(--cc-active); }
 .src.grp-preview   { color: var(--cc-accent-soft); }
 .src.grp-runner    { color: var(--cc-ink-green); }
-.src.grp-notebooks { color: var(--cc-ink-orange); }
+.src.grp-notebooks { color: var(--cc-accent-soft); }
 .src.grp-tasks     { color: var(--cc-ink-cyan); }
 
 .lvl {

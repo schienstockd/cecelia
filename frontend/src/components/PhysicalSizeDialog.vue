@@ -98,7 +98,7 @@ const includeModel = computed<string[]>({
 const dimOptions = computed<ChipOption[]>(() => ([
   { value: 'x', label: 'X' }, { value: 'y', label: 'Y' },
   { value: 'z', label: 'Z' }, { value: 't', label: 'Δt' },
-] as ChipOption[]).map(o => targetFlags.value.has(o.value as WarnField) ? { ...o, accent: '#f59e0b' } : o))
+] as ChipOption[]).map(o => targetFlags.value.has(o.value as WarnField) ? { ...o, accent: 'var(--cc-warn)' } : o))
 
 function reseed() {
   // Always show the FOCUSED image's own real value — never blank it out just because other
