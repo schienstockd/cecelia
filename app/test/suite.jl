@@ -359,6 +359,7 @@ include(joinpath(@__DIR__, "suite", "drift_partial_timepoint.jl"))
 include(joinpath(@__DIR__, "suite", "acquisition_settings.jl"))
 # the import probe's signal pass (photons, shared structure, drift) — ome_qc.jl is review-guarded
 include(joinpath(@__DIR__, "suite", "acq_signal.jl"))
+include(joinpath(@__DIR__, "suite", "probe_still_drift.jl"))
 # test-acquisition check over a set (acq_check.jl): seeded facts, each rule firing and not
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
@@ -546,6 +547,7 @@ include(joinpath(@__DIR__, "suite", "segmentation_selection.jl"))
 # inside this file's aggregating testset scope, so any helpers defined earlier in suite.jl
 # are still in scope for the tracking fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "tracking.jl"))
+include(joinpath(@__DIR__, "suite", "tracking_provenance.jl"))
 
 # ── bf2raw_series_subdir testset ───────────────────────────────────
 # One section pinning the bioformats2raw --series N output-subdir resolver used by the

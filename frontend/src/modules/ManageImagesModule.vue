@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { importLastDirKey } from '../utils/fsPath'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import FileBrowser from '../components/FileBrowser.vue'
@@ -235,7 +236,7 @@ async function submitRegister() {
   <!-- file browser modal — rendered outside ModuleLayout so it overlays everything -->
   <FileBrowser
     v-if="showBrowser"
-    remember-key="cc.import.lastDir"
+    :remember-key="projectMeta.current ? importLastDirKey(projectMeta.current.uid) : ''"
     @select="onFilesSelected"
     @close="showBrowser = false"
   />

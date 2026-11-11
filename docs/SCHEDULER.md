@@ -1190,7 +1190,18 @@ maker is stale; each entry carries `because`, the chain of links (`{read, replac
 logged before inputs were recorded: `unknown`, never stale — and so is what was made from it, and a read
 whose version has several possible makers that disagree (several writers, or a pinned version its one
 logged writer may not have made: a minted version records no `replaces`). A track run reads the labels,
-so a re-track neither stales nor clouds the one before it. A write-into stays current until a later run of the same label set that shares a step with it supersedes it (a re-segment + measure supersedes a lone re-measure, a re-track a track correction); a re-measure shares no step with tracking, so it does not hide stale tracks. A re-measure `replaces` the label set as a whole: the record does not tell a reader of its pixels (branching) from a reader of its measures, so the first is flagged too, and a population reader (clustering) is not followed at all (populations are not `inputs`). Archive included. Surfaced per image as
+so a re-track neither stales nor clouds the one before it, and a write-into's maker is the label set's
+plain writer, never an earlier write-into. A later write-into of another kind is a replaced input only
+when it rebuilds the table (its `replaces` chain leads back to a plain writer): a re-measure after
+tracking rebuilds the centroids tracking read and drops the track columns, so it stales the tracks; a
+re-track after a re-measure only adds track columns, so the measures stay current. A label correction
+with measures (`segment.correct_measures`) rebuilds the table the same way: its tracks are flagged (they
+were linked on the pre-correction labels; the carried-over track columns are not re-linked), as the
+correction report above flags the per-track table. Known gaps (not flagged, as before): a write-into
+whose chain does not reach a plain writer — the label set came from a bare segmenter
+(`segment.cellpose`, `importLabels`), so the first standalone measure records no `replaces` — and a bare
+`segment.correct`. The record cannot tell those apart from a re-track without a spec-level "rebuilds
+the table" declaration. A write-into stays current until a later run of the same label set that shares a step with it supersedes it (a re-segment + measure supersedes a lone re-measure, a re-track a track correction); a re-measure shares no step with tracking, so it does not hide stale tracks. A re-measure `replaces` the label set as a whole: the record does not tell a reader of its pixels (branching) from a reader of its measures, so the first is flagged too, and a population reader (clustering) is not followed at all (populations are not `inputs`). Archive included. Surfaced per image as
 `stale` / `staleUnknown` in the analysis lineage (`GET /api/analysis/lineage`, MCP
 `get_analysis_lineage`). In the GUI, `stale` (not `staleUnknown`) shows on the image table's QC dot, one finding per output under the task that made it, and as a Run-panel note when the picked task reads a stale plain output (`lib/staleOutputs.ts`). Report only — nothing is deleted or re-run.
 

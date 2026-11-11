@@ -30,14 +30,16 @@ _stage_order(stages) = vcat([s for s in _LINEAGE_STAGE_ORDER if s in stages],
                             sort([s for s in stages if !(s in _LINEAGE_STAGE_ORDER)]))
 
 # Ordered run-log steps for an image → the task order + outcome + which value_name each wrote. Legacy
-# entries lack `status` (`run_entry_status` reads them as "done").
+# entries lack `status` (`run_entry_status` reads them as "done"). A `skipped` entry was asked for and
+# never dispatched — it wrote nothing, so it is not a step of this image's story; listing it with its
+# `valueName` would read as "this image was segmented/tracked" to the observer.
 _run_log_steps(img::CciaImage) =
     [(; stage     = _stage_of(string(get(e, "fun", ""))),
         fun       = string(get(e, "fun", "")),
         valueName = string(get(e, "valueName", "")),
         status    = run_entry_status(e),
         at        = string(get(e, "at", "")))
-     for e in read_run_log(img)]
+     for e in read_run_log(img) if run_entry_ran(e)]
 
 # Clustering runs banked on an image → suffix ⇒ the value_names (label sets) it clustered, read from
 # the per-cell and per-track `.clustfeatures.json` sidecars (the same source the cluster pages use).

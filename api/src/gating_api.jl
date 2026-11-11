@@ -237,10 +237,10 @@ end
 # then " (unit)" when the axis has one.
 const _CENTROID_TITLES = Dict("centroid_x" => "X position", "centroid_y" => "Y position",
                               "centroid_z" => "Z position", "centroid_t" => "Time")
-function _axis_title(img, vn, pop_type, col::AbstractString)::String
+function _axis_title(img, vn, pop_type, col::AbstractString; labels_version = nothing)::String
     name = get(_CENTROID_TITLES, lowercase(col), String(col))
     try
-        chans = channel_columns(label_props(img; value_name = vn))
+        chans = channel_columns(label_props(img; value_name = vn, version = labels_version))
         if col in chans
             _, display = _channel_display_names(img, chans)
             label = display === nothing ? col : Cecelia._channel_label(String(col), String.(display))
@@ -605,6 +605,8 @@ function api_gating_channels(req::HTTP.Request)
                 end
             end
         end
+        # No labels pin here, deliberately: a track pop_type's gates evaluate over the per-track table,
+        # which has no labels-version axis (`pop_membership_fetch`), so `_latest` is the frame they read.
         motility = _track_motility_cols(img, scope_vn)
         lpc = label_props(img; value_name = scope_vn)
         cellmeas = col_names(lpc; data_type = :vars)         # aggregatable cell vars
@@ -655,7 +657,19 @@ function api_gating_channels(req::HTTP.Request)
             popType = pt,
         ))
     end
-    lp = label_props(img; value_name = scope_vn)
+    # The session's labels pin (P3b): the pickers must offer the PINNED table's columns, or a column only
+    # `_latest` has can be chosen and every pinned plotdata/gate read of it comes back empty. A pin names
+    # one segmentation's version, so it can't scope a multi-VN intersection — refuse that rather than
+    # apply it to the first VN only. A version the entry doesn't have is refused too (label_props throws).
+    pin = _labels_version_pin(q)
+    if pin !== nothing
+        do_intersect && return _gerr(400, "labelsVersion can't be combined with valueNames (a pin names one segmentation's version)")
+        entry = get(img.label_props, scope_vn, nothing)
+        # a bare (unversioned) entry IS v1 — `unversion_value` returns it for any pin, so check the name
+        known = is_versioned_entry(entry) ? unversion_value(entry, pin) !== nothing : pin == Cecelia.LATEST_DEFAULT_VAL
+        known || return _gerr(400, "No labels version $pin for $scope_vn")
+    end
+    lp = label_props(img; value_name = scope_vn, version = pin)
     cols = col_names(lp; data_type = :vars)        # all gateable feature columns
     chans = channel_columns(lp)                     # intensity columns specifically
     if do_intersect
@@ -681,7 +695,7 @@ function api_gating_channels(req::HTTP.Request)
     end
     csfx  = _cluster_suffixes(cobs, cpt)
     cfam  = Cecelia._cluster_measure_family(cpt)
-    cpath = img_label_props_path(img, scope_vn)
+    cpath = img_label_props_path(img, scope_vn; version = pin)
     cmem  = _clust_members(cpath, csfx, cfam)
     chansPerVnF = do_intersect ? Dict{String,Any}(
         v => something(channel_names(img; value_name = v), String[]) for v in multi_vns
@@ -1196,14 +1210,16 @@ function api_gating_summary(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     bins = clamp(something(tryparse(Int, get(q, "bins", "30")), 30), 5, 80)
-    xt, yt = _auto_axes(q, img, vn, pop_type, x, y, _axis_transform(q, "x"), _axis_transform(q, "y"))
-    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
+    pin = _labels_version_pin(q)           # the session pin, threaded like plotdata/density
+    xt, yt = _auto_axes(q, img, vn, pop_type, x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
+                        labels_version = pin)
+    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version = pin)
     if isempty(xv)
         # nothing read: a column the table lacks, a population that doesn't exist, or an empty one
         # (which is an answer, n = 0). The whole-segmentation read tells the first apart.
-        columns_ok = !is_root(pop) && !isempty(_plot_xy(img, vn, pop_type, x, y, ROOT, xt, yt)[1])
-        columns_ok || return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
-        (pm = _live_map(img, vn, pop_type); has_pop(pm, pop)) || return _pop_not_found(pm, pop)
+        columns_ok = !is_root(pop) && !isempty(_plot_xy(img, vn, pop_type, x, y, ROOT, xt, yt; labels_version = pin)[1])
+        columns_ok || return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y); labels_version = pin))
+        (pm = _live_map(img, vn, pop_type; labels_version = pin); has_pop(pm, pop)) || return _pop_not_found(pm, pop)
     end
     out = Dict{String,Any}(
         "valueName" => vn, "pop" => pop, "n" => count(isfinite, xv),
