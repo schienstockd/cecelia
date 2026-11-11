@@ -331,6 +331,15 @@ function api_viewer_meta(req::HTTP.Request)
         catch
             (String[], Dict{String, Any}())
         end
+        # A segmentation's derived files (`_halo`, `_nuc`) by suffix — what `files=` on the slab
+        # route accepts. Only segmentations that have any.
+        label_files = try
+            img = init_object(pu, iu)
+            Dict{String, Vector{String}}(v => first.(fs) for v in label_names
+                                         for fs in (img_label_files(img, v),) if !isempty(fs))
+        catch
+            Dict{String, Vector{String}}()
+        end
         label_revs = try
             img = init_object(pu, iu)
             Dict{String, String}(v => store_rev(img_labels_path(img, v)) for v in label_names)
@@ -372,6 +381,7 @@ function api_viewer_meta(req::HTTP.Request)
                             name = image_name, setUid = set_uid,
                             labelNames = label_names,
                             labelDims  = label_dims,
+                            labelFiles = label_files,
                             # Per-store fingerprints (`store_rev`) — the viewer reloads on a task
                             # done only when the store it shows changed, not on every task.
                             storeRevs  = (; image = store_rev(zp), labels = label_revs),
@@ -489,6 +499,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     live_labels    = get(q, "live", "") == "1"
     preview_af     = get(q, "preview_af", "") == "1"
     lbl = get(q, "labels", "")
+    file_zps = Pair{String,String}[]
     if !isempty(lbl)
         if live_labels
             zpl, lerr = live_labels_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl;
@@ -508,6 +519,10 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         else
             zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
             lerr === nothing || return false
+            # `files=halo,nuc` packs those derived files into the mask as flag bits
+            # (`compose_label_files!`). Durable stores only: a preview / live store has no siblings.
+            file_zps = label_file_paths(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl,
+                                        get(q, "files", ""))
         end
     else
         zp, meta_dir, err = resolve_image_version(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn;
@@ -607,6 +622,15 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         got = try
             t0 = time()
             vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
+            if !isempty(file_zps)
+                vol = UInt32.(vol)
+                for (suffix, fz) in file_zps
+                    # same box at the same level; a sibling with another geometry is skipped
+                    fv = try first(read_slab(fz, t, c; z = z, x = xr, y = yr, level = level)) catch; nothing end
+                    fv !== nothing && size(fv) == size(vol) &&
+                        compose_label_files!(vol, fv; inside = !Cecelia.is_halo_file(suffix))
+                end
+            end
             read_ms = round(1000 * (time() - t0); digits = 1)
             comp_ms = 0.0
             zbody = nothing
@@ -653,7 +677,7 @@ function _write_slab!(stream::HTTP.Stream, body::Vector{UInt8}, meta, c, level, 
     HTTP.setheader(stream, "Access-Control-Expose-Headers" =>
                    "X-Slab-Shape, X-Slab-Bpv, X-Slab-Level, X-Server-Read-Ms, X-Server-Compress-Ms")
     # Slab URLs are content-addressed: every parameter that changes the bytes (t, c, z, zTo, x, xTo,
-    # y, yTo, level, enc, labels, valueName) is in the query string, so the same URL always returns the
+    # y, yTo, level, enc, labels, files, valueName) is in the query string, so the same URL always returns the
     # same bytes UNTIL the source store is reprocessed. `max-age=3600` lets the browser serve a slab a
     # second time without a round trip — the whole point of a plane switch that returns to a plane you
     # already loaded. Deliberately short: a reprocess would otherwise leave stale bytes cached for the
@@ -668,6 +692,54 @@ function _write_slab!(stream::HTTP.Stream, body::Vector{UInt8}, meta, c, level, 
 end
 
 # ── Label (segmentation mask) stores ──────────────────────────────────────────────
+"""
+    compose_label_files!(mask, file) -> mask
+
+Pack one derived label file (a halo, a nucleus) into a base mask in place, as flag bits on the cell
+id — the file carries the base's ids, so one u32 can say both which cell and which region
+(`docs/todo/MASK_FILE_LAYERS_PLAN.md`, D2):
+
+- file set, base empty → `file_id | LABEL_FILE_OUT_BIT` (the file reaches past the cell: a halo ring)
+- file set, base set   → `base_id | LABEL_FILE_IN_BIT` (the file overlaps the cell: a nucleus)
+
+`shaders/label_layers.wgsl` strips both bits for colour, population and pick, and outlines the
+flagged region. Several files compose in turn; a voxel keeps the first flag it got.
+
+`inside = false` packs only the part past the cell — for a halo, which is grown FROM the cell, so its
+inside repeats the cell (a whole-cell halo would otherwise flag every cell voxel and swallow a
+nucleus outline into one region).
+"""
+function compose_label_files!(mask::AbstractArray{UInt32}, file::AbstractArray; inside::Bool = true)
+    flags = LABEL_FILE_IN_BIT | LABEL_FILE_OUT_BIT
+    @inbounds for i in eachindex(mask, file)
+        f = UInt32(file[i]) & LABEL_ID_MASK
+        f == 0 && continue
+        b = mask[i]
+        (b & flags) != 0 && continue
+        inside || b == 0 || continue
+        mask[i] = b == 0 ? (f | LABEL_FILE_OUT_BIT) : ((b & LABEL_ID_MASK) | LABEL_FILE_IN_BIT)
+    end
+    mask
+end
+
+"""
+    label_file_paths(project_uid, image_uid, value_name, files) -> Vector{Pair{String,String}}
+
+`suffix => store` for the derived files a slab request names — `files` is a comma list of suffixes
+(`img_label_files`: `halo`, `nuc`). Unknown suffixes, and files not on disk, are dropped: a stale
+toggle draws the base mask, never a 500. Empty for no `files`.
+"""
+function label_file_paths(project_uid::AbstractString, image_uid::AbstractString,
+                          value_name::AbstractString, files::AbstractString)::Vector{Pair{String,String}}
+    none = Pair{String,String}[]
+    isempty(files) && return none
+    want = Set(filter(!isempty, strip.(split(files, ","))))
+    isempty(want) && return none
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return none
+    filter(sp -> first(sp) in want, img_label_files(img, value_name))
+end
+
 """
     label_store_path(project_uid, image_uid, value_name) -> (path, err)
 

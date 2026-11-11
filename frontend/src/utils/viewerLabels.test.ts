@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { hslCssToRgb, labelPaletteBytes, widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, LABEL_PALETTE_N,
-         drawnMaskVn, landscapeLabelsVn,
+         drawnMaskVn, landscapeLabelsVn, shownLabelFiles,
          PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, PICK_BUFFER_WORDS, PICK_BUFFER_BYTES,
          packPickBuffer, pickBufferHas, pickBufferFocus, emptyPickBuffer,
          pickBufferWgsl } from './viewerLabels'
@@ -86,6 +86,19 @@ describe('the mask rides the image route', () => {
     expect(slabShapeError('2,3,4', bytes, META, 2, 4)).toBeNull()
     expect(slabShapeError('2,3,4', bytes, META, 2)).toMatch(/bytes, expected/)
     expect(slabShapeError('1,3,4', bytes, META, 2, 4)).toMatch(/but 2x3x4 was asked for/)
+  })
+})
+
+describe('shownLabelFiles', () => {
+  it('every file the segmentation has, less the ones turned off, in the server order', () => {
+    expect(shownLabelFiles('cells', ['halo', 'nuc'], new Set(), undefined)).toEqual(['halo', 'nuc'])
+    expect(shownLabelFiles('cells', ['halo', 'nuc'], new Set(['halo']), undefined)).toEqual(['nuc'])
+    expect(shownLabelFiles('cells', undefined, new Set(), undefined)).toEqual([])
+  })
+  it('none without a mask, or for a preview / live store', () => {
+    expect(shownLabelFiles('', ['halo'], new Set(), undefined)).toEqual([])
+    expect(shownLabelFiles('cells', ['halo'], new Set(), 'preview')).toEqual([])
+    expect(shownLabelFiles('cells', ['halo'], new Set(), 'live')).toEqual([])
   })
 })
 

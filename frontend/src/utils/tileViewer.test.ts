@@ -318,4 +318,11 @@ describe('tileMaskSourceId', () => {
     expect(tileMaskSourceId({ ...base, store: 'live', storeId: 4, liveSince: 's2' }))
       .not.toBe(tileMaskSourceId({ ...base, store: 'live', storeId: 4, liveSince: 's1' }))
   })
+  it('another set of packed halo / nuc files is another mask — on the durable store only', () => {
+    expect(tileMaskSourceId({ ...base, files: [] })).toBe('cells|labels|0')     // today's id
+    expect(tileMaskSourceId({ ...base, files: ['halo'] })).toBe('cells+halo|labels|0')
+    expect(tileMaskSourceId({ ...base, files: ['halo', 'nuc'] })).toBe('cells+halo+nuc|labels|0')
+    expect(tileMaskSourceId({ ...base, store: 'preview', storeId: 1, files: ['halo'] }))
+      .toBe(tileMaskSourceId({ ...base, store: 'preview', storeId: 1 }))
+  })
 })
