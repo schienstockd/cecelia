@@ -11,7 +11,7 @@
 import { computed, defineAsyncComponent, ref, nextTick, onMounted } from 'vue'
 import { acquisitionRows, acquisitionNotice, microscopeLine } from '../utils/acquisitionSettings'
 import { acquisitionSupportRequestUrl } from '../lib/links'
-import { isMultiphoton } from '../utils/acquisitionLightPath'
+import { acquisitionTechnology } from '../utils/acquisitionLightPath'
 import { hasDataPath } from '../utils/acquisitionDataPath'
 import AcquisitionDataPath from './AcquisitionDataPath.vue'
 import InlineNote from './InlineNote.vue'
@@ -153,15 +153,16 @@ const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
 const acquisition = computed(() => acquisitionRows(img.value.acquisition))
-// Two-photon acquisitions get the light-path diagram, which places the same values at their stage.
-const lightPath = computed(() => isMultiphoton(img.value.acquisition))
+// Every technology with stages (two-photon, confocal, Airyscan, widefield) gets the light-path diagram,
+// which places the same values at their stage.
+const lightPath = computed(() => acquisitionTechnology(img.value.acquisition) != null)
 // The diagram has no rows of its own for the system, so name it above (the plain rows already do).
 const scope = computed(() => (lightPath.value ? microscopeLine(img.value.acquisition) : null))
 const acqNotice = computed(() =>
   acquisitionNotice(img.value.acquisition, img.value.acquisitionMissing, lightPath.value, acquisitionSupportRequestUrl))
 // Per-channel pixel numbers from the import probe — any image probed with the current probe.
 const dataPath = computed(() => hasDataPath(img.value))
-// The printable settings card: same two-photon rule as the diagram; elsewhere the notice above offers
+// The printable settings card: same rule as the diagram; elsewhere the notice above offers
 // "Request your microscope" instead (docs/todo/ACQUISITION_CARD_PLAN.md D10).
 const cardAvailable = computed(() => hasAcquisitionCard(img.value))
 const showCard = ref(false)

@@ -82,18 +82,32 @@ const nameByUid = computed(() => Object.fromEntries((result.value?.rows ?? []).m
 const reviewText = (t: string) => showImageRefs(t, nameByUid.value, settings.showImageNames)
 
 const objectNames = computed(() => plan.value?.objects.map(o => o.name) ?? [])
+// The set's noun ("movie" only when every image is a time-lapse) and which columns the set has values
+// for: lasers, a camera, Bright Z, drift (time-lapse only).
+const item = computed(() => result.value?.item ?? 'image')
+const items = computed(() => result.value?.items ?? 'images')
+const Item = computed(() => item.value[0].toUpperCase() + item.value.slice(1))
+const rowsAll = computed(() => result.value?.rows ?? [])
+const has = computed(() => ({
+  lasers: rowsAll.value.some(r => r.lasers && r.lasers !== '—'),
+  camera: rowsAll.value.some(r => r.camera),
+  brightZ: rowsAll.value.some(r => r.brightZ !== null),
+  drift: items.value === 'movies',
+}))
 const columns = computed<SelectionColumn[]>(() => [
-  { key: 'name', label: 'Movie', ellipsis: true, width: 220 },
-  { key: 'lasers', label: 'Lasers', width: 150 },
-  { key: 'brightZ', label: 'Bright Z', width: 60, tip: 'Off · ramp saved: a ramp was set but not applied' },
+  { key: 'name', label: Item.value, ellipsis: true, width: 220 },
+  ...(has.value.lasers ? [{ key: 'lasers', label: 'Lasers', width: 150 }] : []),
+  ...(has.value.camera ? [{ key: 'camera', label: 'Camera', width: 220, tip: 'Cube, exposure, gain, lamp per channel' }] : []),
+  ...(has.value.brightZ ? [{ key: 'brightZ', label: 'Bright Z', width: 60, tip: 'Off · ramp saved: a ramp was set but not applied' }] : []),
   ...objectNames.value.map(n => ({ key: `o:${n}`, label: n, width: 55, tip: `${n}: p99 photons on its cells` })),
   ...(objectNames.value.length > 1 ? [{ key: 'ratio', label: 'Balance', width: 60, tip: 'Brightest ÷ dimmest object (p99 photons)' }] : []),
-  { key: 'sharedR', label: 'Shared r', width: 80, tip: 'Highest r between plan channels · the movie\'s median pair' },
-  { key: 'drift', label: 'Drift', width: 60, tip: 'Largest XY drift over the movie' },
+  { key: 'sharedR', label: 'Shared r', width: 80, tip: `Highest r between plan channels · the ${item.value}'s median pair` },
+  ...(has.value.drift ? [{ key: 'drift', label: 'Drift', width: 60, tip: 'Largest XY drift over the movie' }] : []),
 ])
 // the table renders strings: one display row per movie
 const display = (r: AcqRow) => ({
   ...r,
+  camera: r.camera ?? '—',
   brightZ: brightZText(r),
   ratio: r.ratio === null ? '—' : `${fmt(r.ratio, 1)}×`,
   sharedR: r.sharedBase == null ? fmt(r.sharedR, 2) : `${fmt(r.sharedR, 2)} · ${fmt(r.sharedBase, 2)}`,
@@ -157,17 +171,17 @@ const metaImage = computed(() => {
 
       <div class="cc-eyebrow cc-fs-2xs cc-row set-head">
         <span>Across the set</span>
-        <CcToggle v-model="settings.showImageNames" label="Show names" aria-label="Show movie names"
-                  v-tooltip.top="'Movie names instead of image IDs'" />
+        <CcToggle v-model="settings.showImageNames" label="Show names" :aria-label="`Show ${item} names`"
+                  v-tooltip.top="`${Item} names instead of image IDs`" />
       </div>
       <ul class="findings">
         <li v-for="(f, i) in setFindings" :key="i">
           <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.showImageNames)">
             <button v-if="f.code === 'acq.not_measured' && unmeasured.length" class="cc-btn cc-btn-dense cc-fs-xs"
                     :disabled="measuring" @click="measure"
-                    v-tooltip.top="'Runs in the background, about a minute per movie — progress in the task manager'">
+                    v-tooltip.top="`Runs in the background, about a minute per ${item} — progress in the task manager`">
               <i v-if="measuring" class="pi pi-spin pi-spinner" />
-              {{ measuring ? `Measuring… ${measureLeft} left` : `Measure ${unmeasured.length} movie${unmeasured.length === 1 ? '' : 's'}` }}
+              {{ measuring ? `Measuring… ${measureLeft} left` : `Measure ${unmeasured.length} ${unmeasured.length === 1 ? item : items}` }}
             </button>
           </InlineNote>
         </li>
@@ -176,7 +190,7 @@ const metaImage = computed(() => {
 
       <div class="cc-eyebrow cc-fs-2xs cc-row review-head">
         <span>Review</span>
-        <span class="cc-muted" v-tooltip.top="'Kiwi’s model reads the plan, the movies and acquisition knowledge — not your notes'">
+        <span class="cc-muted" v-tooltip.top="`Kiwi’s model reads the plan, the ${items} and acquisition knowledge — not your notes`">
           · {{ settings.kiwiModel }}, about a minute</span>
         <button class="cc-btn cc-btn-dense cc-fs-xs review-btn" type="button" :disabled="!!reviewTip"
                 v-tooltip.top="reviewTip || (result.stage === 'final' ? 'What to watch for in the analysis' : 'What to change before acquiring the rest')" @click="review">
@@ -200,11 +214,11 @@ const metaImage = computed(() => {
         <p v-if="result.modelStep" class="verdict cc-fs-xs"><span class="cc-muted">Model adds:</span> {{ reviewText(result.modelStep) }}</p>
       </template>
 
-      <div class="cc-eyebrow cc-fs-2xs">Per movie</div>
+      <div class="cc-eyebrow cc-fs-2xs">Per {{ item }}</div>
       <div v-for="g in groups" :key="g.design ?? ''" class="group">
         <div class="cc-muted cc-fs-xs group-label">{{ g.label }}</div>
         <SelectionTable :columns="columns" :rows="g.rows.map(display)" id-key="uid" selection-mode="none"
-                        density="compact" :row-tooltip="() => 'Show this movie’s findings'"
+                        density="compact" :row-tooltip="() => `Show this ${item}’s findings`"
                         @row-click="r => openRow = openRow === r.uid ? null : String(r.uid)">
           <template #cell-name="{ row }">
             <button class="cc-btn cc-btn-bare name" @click.stop="metaUid = String(row.uid)"
@@ -215,7 +229,7 @@ const metaImage = computed(() => {
           <li v-for="(f, i) in rowFindings(openRow)" :key="i">
             <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.showImageNames)" />
           </li>
-          <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this movie.</li>
+          <li v-if="!rowFindings(openRow).length" class="cc-muted">Nothing for this {{ item }}.</li>
         </ul>
       </div>
     </div>

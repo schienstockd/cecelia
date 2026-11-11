@@ -1,0 +1,16 @@
+{
+  "system": "LSM 980",
+  "technologies": [
+    "confocal",
+    "airyscan"
+  ],
+  "features": [
+    {
+      "stage": "processing",
+      "name": "Airyscan mode",
+      "line": "Airyscan mode and processing are chosen per track in ZEN; the file records the mode per channel.",
+      "verified": false,
+      "seenInFiles": "1 of 2 LSM 980 .czi files: Airyscan, mode FastAiryScanSheppardSum on all 4 channels; the other is plain confocal (tiled). ZEN records System 'LSM 800' for both."
+    }
+  ]
+}

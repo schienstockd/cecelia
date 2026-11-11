@@ -68,9 +68,9 @@ describe('acquisitionNotice — the section never vanishes silently', () => {
   it('says nothing more under a diagram', () => {
     expect(acquisitionNotice(acq, null, true, url)).toBeNull()
   })
-  it('asks for the microscope when its settings are read but it is not two-photon', () => {
+  it('asks for the microscope when its settings are read but its setup has no diagram yet', () => {
     expect(acquisitionNotice(acq, null, false, url)).toEqual({
-      text: 'Light-path diagram and settings card: two-photon only so far',
+      text: 'No light-path diagram for this setup yet',
       action: { label: 'Request your microscope',
                 url: `issue:${JSON.stringify({ what: 'diagram', system: 'FVMPE-RS', softwareVersion: '2.6.1.243' })}` } })
   })

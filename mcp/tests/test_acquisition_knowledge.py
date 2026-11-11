@@ -26,7 +26,7 @@ def _load(kind):
     return [json.loads(p.read_text(encoding="utf-8")) for p in sorted((_DIR / kind).glob("*.json"))]
 
 
-TECHS = {t["technology"]: t for t in _load("technologies")}
+TECHS = server.acquisition_technologies()   # resolved: `extends` applied
 SCOPES = _load("scopes")
 SOURCES = json.loads((_DIR / "sources.json").read_text(encoding="utf-8"))
 
@@ -35,8 +35,18 @@ class AcquisitionKnowledgeFilesTest(unittest.TestCase):
     def test_two_photon_stages_are_the_light_path_stages_in_order(self):
         self.assertEqual(TWO_PHOTON_STAGES, [s["key"] for s in TECHS["two-photon"]["stages"]])
 
-    def test_widefield_is_known(self):
-        self.assertIn("widefield", TECHS)
+    def test_known_technologies(self):
+        self.assertLessEqual({"two-photon", "confocal", "airyscan", "widefield"}, set(TECHS))
+
+    def test_a_variant_states_only_what_differs(self):
+        conf, ary = TECHS["confocal"], TECHS["airyscan"]
+        keys = [st["key"] for st in ary["stages"]]
+        self.assertIn("processing", keys)
+        self.assertNotIn("processing", [st["key"] for st in conf["stages"]])
+        shared = {st["key"]: st for st in conf["stages"]}
+        self.assertIs(next(st for st in ary["stages"] if st["key"] == "filters"), shared["filters"])
+        raw = json.loads((_DIR / "technologies" / "airyscan.json").read_text(encoding="utf-8"))
+        self.assertNotIn("filters", [st["key"] for st in raw["stages"]])   # inherited, not copied
 
     def test_every_symptom_is_checkable_has_alternatives_and_cites_known_sources(self):
         for name, t in TECHS.items():
@@ -73,8 +83,10 @@ class AcquisitionKnowledgeFilesTest(unittest.TestCase):
         systems = [s["system"].lower() for s in SCOPES]
         self.assertEqual(len(systems), len(set(systems)))
         for scope in SCOPES:
-            self.assertIn(scope["technology"], TECHS, scope["system"])
-            stages = {st["key"] for st in TECHS[scope["technology"]]["stages"]}
+            self.assertTrue(scope["technologies"], scope["system"])
+            for t in scope["technologies"]:
+                self.assertIn(t, TECHS, scope["system"])
+            stages = {st["key"] for t in scope["technologies"] for st in TECHS[t]["stages"]}
             for f in scope["features"]:
                 with self.subTest(system=scope["system"], feature=f["name"]):
                     self.assertIn(f["stage"], stages)
@@ -99,7 +111,7 @@ class GetAcquisitionKnowledgeTest(unittest.TestCase):
         out = server.get_acquisition_knowledge()
         self.assertNotIn("stages", out)
         self.assertEqual(set(TECHS), {t["technology"] for t in out["technologies"]})
-        self.assertIn({"system": "DM5500B", "technology": "widefield"}, out["microscopes"])
+        self.assertIn({"system": "DM5500B", "technologies": ["widefield"]}, out["microscopes"])
 
     def test_system_resolves_its_technology_and_keeps_only_that_scope(self):
         out = server.get_acquisition_knowledge("fv4000")
@@ -112,13 +124,20 @@ class GetAcquisitionKnowledgeTest(unittest.TestCase):
         self.assertEqual(set(wf["sources"]), cited)   # only this technology's sources
 
     def test_unknown_system_borrows_nothing(self):
-        out = server.get_acquisition_knowledge("LSM 980")
-        self.assertEqual(out["unknownSystem"], "LSM 980")
+        out = server.get_acquisition_knowledge("Nikon A1R")
+        self.assertEqual(out["unknownSystem"], "Nikon A1R")
         self.assertNotIn("stages", out)
-        by_tech = server.get_acquisition_knowledge("LSM 980", technology="two-photon")
+        by_tech = server.get_acquisition_knowledge("Nikon A1R", technology="two-photon")
         self.assertEqual(by_tech["technology"], "two-photon")
         self.assertEqual(by_tech["scopes"], [])
-        self.assertEqual(by_tech["unknownSystem"], "LSM 980")
+        self.assertEqual(by_tech["unknownSystem"], "Nikon A1R")
+
+    def test_the_images_technology_picks_among_a_microscopes(self):
+        ary = server.get_acquisition_knowledge("LSM 980", technology="airyscan")
+        conf = server.get_acquisition_knowledge("LSM 980", technology="confocal")
+        self.assertEqual((ary["technology"], conf["technology"]), ("airyscan", "confocal"))
+        self.assertIn("processing", [st["key"] for st in ary["stages"]])
+        self.assertEqual(["LSM 980"], [s["system"] for s in conf["scopes"]])
 
     def test_technology_alone_lists_its_scopes(self):
         out = server.get_acquisition_knowledge(technology="two-photon")

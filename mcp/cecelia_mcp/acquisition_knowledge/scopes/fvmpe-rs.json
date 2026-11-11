@@ -1,6 +1,8 @@
 {
   "system": "FVMPE-RS",
-  "technology": "two-photon",
+  "technologies": [
+    "two-photon"
+  ],
   "features": [
     {
       "stage": "power",

@@ -39,12 +39,18 @@ end
     # told what the rules found, so it doesn't spend the turn repeating them
     @test occursin("do NOT repeat", p) && occursin("- Frames don't register (m1)", p)
     @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", p)
-    @test occursin("Category one of: Movies and channels, Settings, Depth, Photons, Balance, Shared structure, Drift, Fading, Other", p)
+    @test occursin("Category one of: Images and channels, Settings, Depth, Photons, Balance, Shared structure, Drift, Fading, Other", p)
     # the verdict's rule part is the app's: the model is shown it and adds one step, or "Nothing to add."
     pv = acq_review_prompt(plan, ["m1 — uidA"]; verdict = "Collect more light for B cells.")
     @test occursin("these steps from the rule checks —\n“Collect more light for B cells.”", pv)
     @test occursin("ONE most important thing to change at the scope or in the plan", pv) && occursin("\"Nothing to add.\"", pv)
     @test !occursin("These movies can answer", pv)
+    # a static set: the template says images, a name with "movie" in it stays as it is
+    pimg = acq_review_prompt(plan, ["movie_3 — uidA"], String[]; item = "image", items = "images")
+    @test occursin("Images (name — image uid):", pimg) && occursin("- movie_3 — uidA", pimg) && occursin("Name an image", pimg)
+    @test !occursin("these movies", pimg)
+    @test occursin("images", acq_review_system_prompt("p1", "test"; item = "image", items = "images")) &&
+          !occursin("movie", acq_review_system_prompt("p1", "test"; item = "image", items = "images"))
     # movies by full name (the app swaps in uids)
     @test occursin("by its full name exactly as listed", p)
     @test occursin("The rule checks found nothing.", acq_review_prompt(plan, String[]))

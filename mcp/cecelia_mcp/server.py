@@ -1469,12 +1469,34 @@ def _knowledge_files(kind: str) -> list[dict]:
     return out
 
 
+def acquisition_technologies() -> dict[str, dict]:
+    """Every technology file, resolved: one with `extends` takes its base's stages, replaces the ones
+    it lists by key, and orders them by its `stageOrder` — so a variant (Airyscan on confocal) states
+    only what differs, and the shared advice is written once."""
+    raw = {t["technology"]: t for t in _knowledge_files("technologies")}
+
+    def resolve(name: str, seen: tuple = ()) -> dict:
+        t = raw[name]
+        base_name = t.get("extends")
+        if not base_name:
+            return t
+        if base_name in seen or base_name not in raw:
+            raise ValueError(f"technology {name!r} extends unknown or circular {base_name!r}")
+        base = resolve(base_name, seen + (name,))
+        by_key = {st["key"]: st for st in base["stages"]} | {st["key"]: st for st in t["stages"]}
+        order = t.get("stageOrder") or [st["key"] for st in base["stages"]]
+        return {**t, "stages": [by_key[k] for k in order]}
+
+    return {name: resolve(name) for name in raw}
+
+
 @_tool
 def get_acquisition_knowledge(system: str = "", technology: str = "") -> dict:
     """Acquisition knowledge for reading an image's acquisition, per imaging technology (two-photon,
-    widefield, ...). Pass `system` (get_image_info's `acquisition.system`, e.g. "FV4000", "DM5500B"):
-    its microscope profile names the technology. Or pass `technology` (get_image_info's
-    `acquisition.technology`) when the system has no profile yet. With neither, returns the index —
+    confocal, airyscan, widefield, ...). Pass BOTH from get_image_info's `acquisition`:
+    `system` (e.g. "FV4000", "LSM 980") and `technology` — one microscope can run several (an LSM 980
+    does confocal and Airyscan), and the image's own technology picks the advice. With only `system`,
+    its profile's first technology is used; with only `technology`, every profile running it. With neither, returns the index —
     which technologies and microscopes have knowledge — and nothing else.
 
     Resolved, it returns that technology's light-path `stages` (keys match get_image_info's settings and
@@ -1485,12 +1507,12 @@ def get_acquisition_knowledge(system: str = "", technology: str = "") -> dict:
     (e.g. FV4000 → Bright Z), `verified: false` until a facility confirms it — say so when you pass one
     on — and `seenInFiles`, what the lab's own files record for it. A system with no profile returns
     `unknownSystem`: do not borrow another technology's advice for it. Project-independent. Read-only."""
-    techs = {t["technology"]: t for t in _knowledge_files("technologies")}
+    techs = acquisition_technologies()
     scopes = _knowledge_files("scopes")
     index = {"technologies": [{"technology": k, "summary": t["summary"]} for k, t in techs.items()],
-             "microscopes": [{"system": s["system"], "technology": s["technology"]} for s in scopes]}
+             "microscopes": [{"system": s["system"], "technologies": s["technologies"]} for s in scopes]}
     matched = [s for s in scopes if system and s["system"].lower() == system.lower()]
-    tech = technology.lower() or (matched[0]["technology"] if matched else "")
+    tech = technology.lower() or (matched[0]["technologies"][0] if matched else "")
     if tech not in techs:
         out = dict(index)
         if system and not matched:
@@ -1505,7 +1527,7 @@ def get_acquisition_knowledge(system: str = "", technology: str = "") -> dict:
     out = {
         "technology": tech, "summary": t["summary"], "status": t["status"], "stages": t["stages"],
         "sources": {k: v for k, v in sources.items() if k in cited},
-        "scopes": [s for s in (matched if system else scopes) if s["technology"] == tech],
+        "scopes": [s for s in (matched if system else scopes) if tech in s["technologies"]],
         "available": index,
     }
     if system and not matched:

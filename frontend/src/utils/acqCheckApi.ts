@@ -56,6 +56,8 @@ export interface AcqRow {
   name: string
   design: string | null
   lasers: string
+  /** A camera's per-channel settings as one line (`acq_check._acq_camera_text`), null without a camera. */
+  camera?: string | null
   brightZ: boolean | null
   probed: boolean
   brightZRamp: string | null      // the ramp saved with the movie ("12→15 % over 35 µm"), null = none
@@ -77,6 +79,9 @@ export interface AcqCheckResult {
   suggestedDesigns: AcqDesign[]
   findings: AcqFinding[]
   rows: AcqRow[]
+  /** The set's noun: "movie(s)" when every image is a time-lapse, else "image(s)" (acq_check). */
+  item?: string
+  items?: string
   ran: string[]
   skipped: string[]
   nImages: number

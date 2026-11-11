@@ -1,0 +1,29 @@
+{
+  "system": "TCS SP8",
+  "technologies": [
+    "confocal"
+  ],
+  "features": [
+    {
+      "stage": "power",
+      "name": "AOTF % per sequence",
+      "line": "AOTF: each laser line's power is set per sequence; in sequential mode each channel has its own lines and %.",
+      "verified": false,
+      "seenInFiles": "6 of 6 TCS SP8 .lif images (LAS X 3.5.7): 4 sequences, one channel each; 638 nm at 13.5 % in 3 images and 5.5 % in the other 3; the 405 nm sequence also has 552 nm on at 1.5 %."
+    },
+    {
+      "stage": "detectors",
+      "name": "PMT gain (V)",
+      "line": "PMT gain is set in volts per sequence; LAS X records it as the detector's Gain.",
+      "verified": false,
+      "seenInFiles": "6 of 6 TCS SP8 .lif images: every channel on PMT 2, 647-966 V, differing between images of one session."
+    },
+    {
+      "stage": "scanner",
+      "name": "Scan speed and zoom",
+      "line": "Scan speed (Hz per line) sets the dwell time; zoom sets the pixel size.",
+      "verified": false,
+      "seenInFiles": "6 of 6 TCS SP8 .lif images: 400 Hz (0.6 us dwell) in 2, 200 Hz (1.2 us) in 4; zoom 1, 0.85 or 0.75."
+    }
+  ]
+}

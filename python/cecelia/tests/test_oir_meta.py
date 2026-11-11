@@ -187,3 +187,13 @@ class TestContainer(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestTechnology(unittest.TestCase):
+    """The lasers decide the technology, not the system: both lab files are two-photon."""
+
+    def test_both_fixtures_are_two_photon(self):
+        fix = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'test-data', 'acquisition'))
+        for name in ('oir_fv4000_3.2.1_imageProperties.xml', 'oir_fvmpe-rs_2.3.2_imageProperties.xml'):
+            with self.subTest(fixture=name), open(os.path.join(fix, name), 'rb') as f:
+                self.assertEqual(oir_meta.parse_settings(f.read())['technology'], 'two-photon')

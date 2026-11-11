@@ -1,6 +1,8 @@
 {
   "system": "FV4000",
-  "technology": "two-photon",
+  "technologies": [
+    "two-photon"
+  ],
   "features": [
     {
       "stage": "power",

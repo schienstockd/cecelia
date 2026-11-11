@@ -17,6 +17,12 @@ export interface AcquisitionChannel {
   filterCube?: string | null
   exposureMs?: number | null
   illuminationIntensity?: number | null
+  /** Confocal (`lif_meta`): every line on for this channel and its %. */
+  laserLines?: { wavelengthNm: number; pct: number }[]
+  /** Zeiss Airyscan mode this channel was acquired/processed with (`czi_meta`), null when not Airyscan. */
+  airyscan?: string | null
+  /** ZEN's acquisition mode (`WideField`, `LaserScanningConfocalMicroscopy`, `SpectralImaging`). */
+  acquisitionMode?: string | null
 }
 /** The camera of a widefield acquisition; `sensorPixelUm` is the chip's pixel, before magnification. */
 export interface AcquisitionCamera { name?: string | null; binning?: number | null; bitDepth?: number | null; sensorPixelUm?: number | null }
@@ -27,8 +33,14 @@ export interface AcquisitionSettings {
   readerVersion?: number | null
   /** Which reader produced it (`app/src/tasks/importImages/acquisition_readers.json`). */
   source?: 'oir' | 'czi' | 'ims' | 'lif' | null
-  /** Imaging technology, from evidence in the file (a camera block → widefield); absent on older reads. */
-  technology?: 'two-photon' | 'confocal' | 'widefield' | null
+  /** Imaging technology, from evidence in the file (a camera block → widefield); absent on older reads
+   *  — `acquisitionTechnology` (acquisitionLightPath.ts) is the one reader of it. */
+  technology?: 'two-photon' | 'confocal' | 'airyscan' | 'widefield' | null
+  /** What the acquisition repeats or how it splits the light: `tiled`, `spectral` (from the reader). */
+  modes?: string[]
+  /** Confocal channels scanned one sequence/track after another (crosstalk-free). */
+  sequential?: boolean | null
+  pinholeAiry?: number | null
   system?: string | null
   softwareVersion?: string | null
   /** As recorded: ISO 8601 with the acquisition PC's UTC offset. */
@@ -89,7 +101,7 @@ export function framesShortOf(acq: AcquisitionSettings | null | undefined): stri
 export interface AcquisitionNotice { text: string; action?: { label: string; url: string } }
 
 /** What a "request your microscope" issue asks for: a settings reader for a file type, or the diagram
- *  and settings card for a microscope whose settings are read but which is not two-photon. */
+ *  and settings card for a microscope whose settings are read but whose technology has no stages yet. */
 export type MicroscopeRequest =
   | { what: 'settings'; ext: string }
   | { what: 'diagram'; system: string | null; softwareVersion: string | null }
@@ -106,7 +118,7 @@ export function acquisitionNotice(
   if (acq) {
     if (hasDiagram) return null
     const req: MicroscopeRequest = { what: 'diagram', system: acq.system ?? null, softwareVersion: acq.softwareVersion ?? null }
-    return { text: 'Light-path diagram and settings card: two-photon only so far',
+    return { text: 'No light-path diagram for this setup yet',
              action: { label: 'Request your microscope', url: requestUrl(req) } }
   }
   switch (missing?.reason) {
