@@ -61,6 +61,30 @@ describe('lightPathStages per technology', () => {
     expect(st.find(s => s.key === 'illumination')!.items[0].text).toBe('ASC intensity 3')
   })
 
+  it('widefield slide scanner (qptiff): light source, excitation and emission bands', () => {
+    // values as qptiff_meta reads a Fusion 2.4.1 scan
+    const qp: AcquisitionSettings = { source: 'qptiff', technology: 'widefield', lightSource: 'XCiteMultiBandLed',
+      camera: { name: 'Sony IMX421-based camera', binning: 1, bitDepth: 14 }, lasers: [],
+      channels: [{ order: 1, name: 'DAPI', dyePreset: null, laser: null, detector: 'Sony IMX421-based camera', hv: null,
+                   gain: 1, offset: 0, filterCube: 'DAPI / ATTO550 / AF750', excitationFilter: '377-405 nm',
+                   emissionFilter: '440-466 nm', exposureMs: 1.5 }] }
+    const st = lightPathStages({ acquisition: qp } as LightPathImage)
+    expect(st.find(s => s.key === 'illumination')!.items.map(i => i.text)).toEqual(['XCiteMultiBandLed', 'DAPI ex 377-405 nm'])
+    expect(st.find(s => s.key === 'filters')!.items[0].text).toBe('DAPI cube DAPI / ATTO550 / AF750 · em 440-466 nm')
+  })
+
+  it('brightfield has no light path yet: no technology, so no diagram', () => {
+    expect(acquisitionTechnology({ technology: 'brightfield' })).toBeNull()
+  })
+
+  it('cyclic: the stack stage lists the cycles and each marker\'s cycle', () => {
+    const run: AcquisitionSettings = { technology: 'widefield', modes: ['tiled', 'cyclic'], cycles: { count: 3, blank: 2 },
+      channels: [{ order: 2, name: 'Podoplanin', dyePreset: null, laser: null, detector: null, hv: null, gain: 1, offset: 0, cycle: 2 }] }
+    const st = lightPathStages({ acquisition: run } as LightPathImage)
+    expect(st.find(s => s.key === 'stack')!.items.map(i => i.text))
+      .toEqual(['Stitched from tiles', '3 cycles · 2 blank planned', 'Podoplanin cycle 2'])
+  })
+
   it('airyscan: the processing stage names each channel\'s mode', () => {
     const ary: AcquisitionSettings = { technology: 'airyscan', channels: [{ order: 1, name: 'AF647-T1', dyePreset: null, laser: null,
       detector: null, hv: 700, gain: 1, offset: 0, airyscan: 'FastAiryScanSheppardSum' }] }

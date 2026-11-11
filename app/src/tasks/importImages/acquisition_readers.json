@@ -4,6 +4,7 @@
     {"ext": ".oir", "source": "oir", "module": "oir_meta", "version": 3},
     {"ext": ".czi", "source": "czi", "module": "czi_meta", "version": 2},
     {"ext": ".ims", "source": "ims", "module": "ims_meta", "version": 1},
-    {"ext": ".lif", "source": "lif", "module": "lif_meta", "version": 2}
+    {"ext": ".lif", "source": "lif", "module": "lif_meta", "version": 2},
+    {"ext": ".qptiff", "source": "qptiff", "module": "qptiff_meta", "version": 1}
   ]
 }

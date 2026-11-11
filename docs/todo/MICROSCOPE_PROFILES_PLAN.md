@@ -1,6 +1,6 @@
 # Microscope profiles — acquisition support beyond two-photon
 
-**Status:** **IN PROGRESS** 2026-11-11. P1–P2 in PR #2151 (`feat/microscope-profiles`). Branch `feat/acq-confocal` (stacked): readers record `technology` (+ `modes`) — SP8 `.lif` confocal (sequential), `.czi` Airyscan / spectral / slide-scanner widefield / LSM model name, `.oir`; confocal + Airyscan knowledge (`extends`), SP8 / LSM 980 / Axio Scan.Z1 profiles; diagram, card and dialog per technology (two-photon, confocal, Airyscan, widefield); set check and review prompt say "images" unless every image is a time-lapse; widefield wording for gain/photons/dim/clipped-deep advice. Open: the drawings need the maintainer's eyes in the app; import-time floor on cameras; PhenoCycler (no file yet); `modes` knowledge files.
+**Status:** **IN PROGRESS** 2026-11-11. P1–P2 in PR #2151 (`feat/microscope-profiles`). Branch `feat/acq-confocal` (stacked): readers record `technology` (+ `modes`) — SP8 `.lif` confocal (sequential), `.czi` Airyscan / spectral / slide-scanner widefield / LSM model name, `.oir`; confocal + Airyscan knowledge (`extends`), SP8 / LSM 980 / Axio Scan.Z1 profiles; diagram, card and dialog per technology (two-photon, confocal, Airyscan, widefield); set check and review prompt say "images" unless every image is a time-lapse; widefield wording for gain/photons/dim/clipped-deep advice. Open: the drawings need the maintainer's eyes in the app; import-time floor on cameras; `.qptiff` read (`qptiff_meta`: single scan, PhenoCycler cycles + `.xpd`, brightfield; PhenoImager Fusion profile) — open: AF correction on scanner-subtracted channels, cycle-per-scan registration; `modes` knowledge files.
 
 **Why.** The acquisition layer (settings readers, `acquisition_knowledge.json`, light-path diagram,
 settings card, QC advice text) was built for intravital two-photon, the maintainer's own work. Images
@@ -132,8 +132,20 @@ Today's acquisition texts say "movie" throughout: `app/src/qc/text.jl` (28 lines
 
 ### P8 — PhenoCycler (cyclic multiplex)
 
-- Reader: Akoya `.qptiff` — **format to confirm on a real file** (per-channel marker names, exposure,
-  cycle; whether it is already stitched and background-subtracted). No guessed parse.
+- Reader: Akoya `.qptiff` — **built for a single scan** (`qptiff_meta`, 2026-11-12) from a Fusion 2.4.1
+  whole-slide fluorescence scan: one QPI XML per channel page (exposure in µs — Bio-Formats
+  `VectraReader`; gain, bit depth, active excitation band of a multiband filter + its emission partner,
+  LED light source, `OffsetAndShading` processing, `EnhancedDynamicRange`), stitched (`tiled` when wider
+  than one camera field), `Biomarker` → channel name when present. System "PhenoImager Fusion" from the
+  `Fusion` software name (the file names no model). **Cyclic runs** (checked on a Fusion 2.4.0 run, five
+  more listed): one `.qptiff`, a page per marker with `Biomarker` and `AutofluorescenceSubtracted`; no
+  cycle field — each cycle's pages share one TIFF write time, DAPI with the first (blank) cycle; the
+  run's `.xpd` (JSON) beside it lists wells = cycles in run order with barcode/reporter/clone/dye/
+  planned exposure, blanks as markers "--". Some runs were done one cycle per scan (`ScanN/` each with
+  its own `.xpd` and DAPI) — separate images, unregistered. Brightfield RGB scans (`im_Brightfield`) →
+  `technology: brightfield`, no knowledge file or drawing yet.
+- **Open:** Cecelia's AF correction on a channel the scanner already AF-subtracted (`afSubtracted`);
+  combining cycle-per-scan images (DAPI registration); `modes/cyclic.json` knowledge.
 - `modes/cyclic.json` knowledge: blank/background cycles, autofluorescence carried across cycles,
   marker signal falling with cycle number, failed cycles, cross-cycle registration, stitching seams.
 - Channel names = markers: the designs in the set check are marker lists already (`acq_design_key`).
@@ -165,6 +177,7 @@ gate survives. Technology × modes as two axes (proposed above, not objected to)
 | `2025-03-20_Rat3….czi`, `vlut1….czi`, `Figure 3 Cingulin.czi` | LSM 980 / 900 / 800 | **Airyscan** (array detector, ~5 AU pinhole), z-stack | `System` says "LSM 800" for all three — the real model is `Device Id="MTBLSMImagingDevice" Name=…`; Airyscan from the detector type |
 | `Mouse_1_CD8.czi`, `WT2a-A-3….czi` | LSM 800 / 710 | confocal, tiled | multi-track (already read) |
 | `kdrl*.czi` (zebrafish) | LSM 880 | confocal, z-stack (one tiled) | already read; stamp technology |
+| `17AHOMI_Scan2.er.qptiff` | PhenoImager Fusion (Fusion 2.4.1), Sony IMX421 | widefield, tiled (whole slide, 106560 × 63360), 3 channels, **not cyclic** | built: `qptiff_meta` |
 
 Found on the way: in the SP8 file the WT and Mer images were acquired with **different laser %
 and PMT gain** (638 nm 13.5 % vs 5.5 %) — the set check must flag that once confocal is read.
@@ -186,7 +199,7 @@ any is built.
 2. P5 + P7 readers (SP8 `.lif` confocal, `.czi` model name / Airyscan / spectral / camera, technology stamped by every reader) + confocal and Airyscan knowledge, while the mocks are reviewed.
 3. P4 wording.
 4. P6 drawings + card per technology, from the approved mocks; QC advice text per technology.
-5. P8 PhenoCycler when a `.qptiff` is in hand.
+5. P8 PhenoCycler: `.qptiff` reader built (single scan, cyclic run + `.xpd`, brightfield); open items above.
 
 ## Open (the maintainer's calls)
 

@@ -13,6 +13,18 @@ export interface AcquisitionChannel {
   bitDepth?: number | null
   /** Barrier (emission) filter in front of this channel's detector, as the file names it. */
   emissionFilter?: string | null
+  /** Excitation band of a camera channel (`qptiff_meta`: the active band of a multiband filter). */
+  excitationFilter?: string | null
+  /** The channel's marker when the file names one (`qptiff_meta`, `Biomarker`); `name` then shows it. */
+  biomarker?: string | null
+  /** PhenoCycler (`qptiff_meta`): the cycle that imaged it, whether the scanner already subtracted
+   *  autofluorescence, and from the run's `.xpd` the reagents and the planned exposure. */
+  cycle?: number | null
+  afSubtracted?: boolean | null
+  barcode?: string | null
+  reporter?: string | null
+  clone?: string | null
+  plannedExposureMs?: number | null
   /** Camera channels (`lif_meta`): the filter cube, exposure, and the lamp's intensity step. */
   filterCube?: string | null
   exposureMs?: number | null
@@ -32,10 +44,10 @@ export interface AcquisitionSettings {
   /** `oir_meta.READER_VERSION`; absent on settings read before it existed. */
   readerVersion?: number | null
   /** Which reader produced it (`app/src/tasks/importImages/acquisition_readers.json`). */
-  source?: 'oir' | 'czi' | 'ims' | 'lif' | null
+  source?: 'oir' | 'czi' | 'ims' | 'lif' | 'qptiff' | null
   /** Imaging technology, from evidence in the file (a camera block → widefield); absent on older reads
    *  — `acquisitionTechnology` (acquisitionLightPath.ts) is the one reader of it. */
-  technology?: 'two-photon' | 'confocal' | 'airyscan' | 'widefield' | null
+  technology?: 'two-photon' | 'confocal' | 'airyscan' | 'widefield' | 'brightfield' | null
   /** What the acquisition repeats or how it splits the light: `tiled`, `spectral` (from the reader). */
   modes?: string[]
   /** Confocal channels scanned one sequence/track after another (crosstalk-free). */
@@ -60,6 +72,14 @@ export interface AcquisitionSettings {
   autoHV?: boolean | null
   pinholeUm?: number | null
   channels?: AcquisitionChannel[]
+  /** Widefield light source as the file names it (`qptiff_meta`: `LampType`, e.g. "XCiteMultiBandLed"). */
+  lightSource?: string | null
+  /** Correction the scanner applied before writing (`qptiff_meta`: "OffsetAndShading"). */
+  processing?: string | null
+  /** How the scanner kept bright pixels from clipping (`qptiff_meta`: "EnhancedDynamicRange"). */
+  saturationProtection?: string | null
+  /** A cyclic run (`qptiff_meta`): cycles imaged; from the `.xpd` the cycles planned, blanks among them. */
+  cycles?: { count: number; planned?: number | null; blank?: number | null; experiment?: string | null } | null
   phaseCount?: number | null
   zStack?: { stepUm?: number | null; count?: number | null } | null
   /** `acquired` is set when the store has fewer frames than the file planned (stopped early, or cropped). */
@@ -186,13 +206,22 @@ export function acquisitionRows(acq: AcquisitionSettings | null | undefined): Ac
     rows.push({ k: 'Camera', v: join([cam.name, cam.binning != null && `binning ${n(cam.binning)}×${n(cam.binning)}`,
       cam.bitDepth != null && `${n(cam.bitDepth)} bit`]) })
   }
+  if (acq.lightSource) rows.push({ k: 'Light source', v: acq.lightSource })
+  if (acq.processing) rows.push({ k: 'Processing', v: acq.processing })
+  if (acq.saturationProtection) rows.push({ k: 'Saturation protection', v: acq.saturationProtection })
+  const cyc = acq.cycles
+  if (cyc) rows.push({ k: 'Cycles', v: join([`${n(cyc.count)} imaged`, cyc.planned != null && `${n(cyc.planned)} planned`,
+    cyc.blank != null && `${n(cyc.blank)} blank`, cyc.experiment]) })
+  const chs = acq.channels ?? []
+  if (chs.length > 0 && chs.every(c => c.afSubtracted === true)) rows.push({ k: 'Autofluorescence', v: 'subtracted by the scanner' })
   if (acq.autoHV != null) rows.push({ k: 'Auto HV', v: acq.autoHV ? 'on' : 'off' })
   if (acq.pinholeUm != null) rows.push({ k: 'Pinhole', v: `${n(acq.pinholeUm)} µm` })
   for (const c of acq.channels ?? []) {
     // Under Auto HV the recorded HV is not the one used (the Auto HV row says so), so it is not listed.
     // A camera channel's gain is the camera's; a laser-scanning channel's is shown as its HV.
-    rows.push({ k: c.name ?? `Channel ${c.order}`, v: join([c.dyePreset, c.laser, c.filterCube && `cube ${c.filterCube}`,
-      cam ? null : c.detector, c.emissionFilter,
+    rows.push({ k: c.name ?? `Channel ${c.order}`, v: join([c.cycle != null && `cycle ${c.cycle}`, c.dyePreset,
+      c.reporter, c.clone && `clone ${c.clone}`, c.laser, c.filterCube && `cube ${c.filterCube}`,
+      cam ? null : c.detector, c.excitationFilter && `ex ${c.excitationFilter}`, c.emissionFilter && (c.excitationFilter ? `em ${c.emissionFilter}` : c.emissionFilter),
       c.exposureMs != null && `${n(c.exposureMs)} ms`, cam && c.gain != null && `gain ${n(c.gain)}`,
       c.illuminationIntensity != null && `lamp ${n(c.illuminationIntensity)}`,
       acq.autoHV !== true && c.hv != null && `HV ${n(c.hv)}`]) })

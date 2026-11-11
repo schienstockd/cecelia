@@ -1,0 +1,43 @@
+{
+  "system": "PhenoImager Fusion",
+  "technologies": [
+    "widefield"
+  ],
+  "features": [
+    {
+      "stage": "illumination",
+      "name": "Multiband LED and filters",
+      "line": "Light source: one multiband LED; each channel is one active band of a multiband excitation filter, imaged through the matching multiband emission filter.",
+      "verified": false,
+      "seenInFiles": "1 of 1 .qptiff (Fusion 2.4.1): LampType XCiteMultiBandLed; DAPI and ATTO 550 through the DAPI / ATTO550 / AF750 set, FITC through FITC / Cy5."
+    },
+    {
+      "stage": "camera",
+      "name": "Exposure per channel",
+      "line": "Exposure: set per channel in Fusion and recorded per channel page; channels of one scan can differ by orders of magnitude.",
+      "verified": false,
+      "seenInFiles": "1 of 1 .qptiff: Sony IMX421 camera, gain 1, 14 bit, no binning; exposure 1.5 ms (DAPI), 78.67 ms (FITC), 393.21 ms (ATTO 550)."
+    },
+    {
+      "stage": "digitisation",
+      "name": "Offset and shading correction",
+      "line": "Processing 'OffsetAndShading': Fusion corrects camera offset and uneven field before writing, so an uneven field left in the image is not the raw illumination profile.",
+      "verified": false,
+      "seenInFiles": "Fusion 2.4.0/2.4.1 .qptiff: ImageProcessingApplied OffsetAndShading; Fusion 2.3.0 files record no ImageProcessingApplied. ScanSaturationProtectionType EnhancedDynamicRange on the 2.4.1 scan (what it does is not recorded in the file)."
+    },
+    {
+      "stage": "sample",
+      "name": "Whole-slide stitching",
+      "line": "Tiles: the slide is imaged in camera fields and stitched into one image before it is written; seams can sit on field edges.",
+      "verified": false,
+      "seenInFiles": "1 of 1 .qptiff: 106560 x 63360 px at 0.25 um from 1920 x 1440 camera fields."
+    },
+    {
+      "stage": "stack",
+      "name": "Cycles",
+      "line": "PhenoCycler cycles: each cycle images DAPI plus up to three markers (ATTO 550, Cy5/AF647, AF750 reporters); blank cycles image background only and are not in the image; the scanner subtracts autofluorescence before writing.",
+      "verified": false,
+      "seenInFiles": "1 PhenoCycler run (Fusion 2.4.0, 2 marker cycles of 3, 2 blank cycles in its .xpd) and 4 more runs listed (Fusion 2.3.0, 2-3 marker cycles): every marker page AutofluorescenceSubtracted True; each cycle's pages share one write time."
+    }
+  ]
+}

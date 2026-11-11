@@ -146,6 +146,38 @@ describe('a Leica widefield .lif: camera, cube, exposure, gain', () => {
     expect(rows.some(r => r.k === 'Laser')).toBe(false)
   })
 
+  it('qptiff: light source, processing and both bands per channel; a zone-less time stays local', () => {
+    const qp: AcquisitionSettings = { source: 'qptiff', technology: 'widefield', system: 'PhenoImager Fusion',
+      softwareVersion: 'Fusion 2.4.1', acquiredAt: '2026-11-05T09:13:34', lightSource: 'XCiteMultiBandLed',
+      processing: 'OffsetAndShading', saturationProtection: 'EnhancedDynamicRange', lasers: [],
+      camera: { name: 'Sony IMX421-based camera', binning: 1, bitDepth: 14, sensorPixelUm: null },
+      channels: [{ order: 2, name: 'ATTO 550', dyePreset: null, laser: null, detector: 'Sony IMX421-based camera', hv: null,
+                   gain: 1, offset: 0, filterCube: 'DAPI / ATTO550 / AF750', excitationFilter: '533-559 nm',
+                   emissionFilter: '570-640 nm', exposureMs: 393.21 }] }
+    const rows = acquisitionRows(qp)
+    expect(rows.find(r => r.k === 'Light source')?.v).toBe('XCiteMultiBandLed')
+    expect(rows.find(r => r.k === 'Processing')?.v).toBe('OffsetAndShading')
+    expect(rows.find(r => r.k === 'ATTO 550')!.v)
+      .toBe('cube DAPI / ATTO550 / AF750 · ex 533-559 nm · em 570-640 nm · 393.21 ms · gain 1')
+    expect(acquiredAtText(qp)).toBe('2026-11-05 09:13')
+  })
+
+  it('PhenoCycler run: cycles, reagents per marker, and autofluorescence already subtracted', () => {
+    // values as qptiff_meta reads a Fusion 2.4.0 run with its .xpd
+    const run: AcquisitionSettings = { source: 'qptiff', technology: 'widefield', modes: ['tiled', 'cyclic'], lasers: [],
+      camera: { name: 'Sony IMX421-based camera', binning: 1, bitDepth: 14 },
+      cycles: { count: 3, planned: 4, blank: 2, experiment: 'EXPERIMENT' },
+      channels: [
+        { order: 1, name: 'DAPI', dyePreset: 'DAPI', laser: null, detector: 'cam', hv: null, gain: 1, offset: 0, cycle: 1, afSubtracted: true, exposureMs: 1 },
+        { order: 4, name: 'CD68', dyePreset: 'AF647', laser: null, detector: 'cam', hv: null, gain: 1, offset: 0, cycle: 2, afSubtracted: true,
+          reporter: 'RX015', clone: 'KP1', barcode: 'BX015', exposureMs: 100, plannedExposureMs: 100 },
+      ] }
+    const rows = acquisitionRows(run)
+    expect(rows.find(r => r.k === 'Cycles')?.v).toBe('3 imaged · 4 planned · 2 blank · EXPERIMENT')
+    expect(rows.find(r => r.k === 'Autofluorescence')?.v).toBe('subtracted by the scanner')
+    expect(rows.find(r => r.k === 'CD68')!.v).toBe('cycle 2 · AF647 · RX015 · clone KP1 · 100 ms · gain 1')
+  })
+
   it('marks a UTC-only time stamp as UTC', () => {
     expect(acquiredAtText(lif)).toBe('2026-07-09 04:31 UTC')
     expect(acquiredAtText({ acquiredAt: '2026-07-16T13:44:00+10:00' })).toBe('2026-07-16 13:44')

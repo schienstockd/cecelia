@@ -261,6 +261,13 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
       if (ends) stack.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))
     }
   }
+  const acqModes = img.acquisition?.modes ?? []
+  if (acqModes.includes('tiled')) stack.push(item('Stitched from tiles', 'file'))
+  const cyc = img.acquisition?.cycles
+  if (cyc) {
+    stack.push(item(join([`${cyc.count} cycles`, cyc.blank != null && `${cyc.blank} blank planned`]), 'file'))
+    for (const c of chans.filter(c => c.cycle != null)) stack.push({ ...item(`${chName(c)} cycle ${c.cycle}`, 'file'), channel: c.order })
+  }
 
   // pinhole — size in Airy units and µm (confocal, Airyscan)
   const pinhole: LightPathItem[] = []
@@ -276,9 +283,13 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
     .map(c => ({ ...item(`${chName(c)} ${c.airyscan}`, 'file'), channel: c.order }))
   if (processing.length === 0) processing.push(item('Processing not recorded', 'missing'))
 
-  // illumination — the lamp/LED step per channel (widefield)
-  const illumination: LightPathItem[] = chans.filter(c => c.illuminationIntensity != null)
-    .map(c => ({ ...item(`${chName(c)} intensity ${n(c.illuminationIntensity)}`, 'file'), channel: c.order }))
+  // illumination — the light source, then per channel its intensity step and excitation band (widefield)
+  const illumination: LightPathItem[] = acq.lightSource ? [item(acq.lightSource, 'file')] : []
+  for (const c of chans) {
+    if (c.illuminationIntensity == null && !c.excitationFilter) continue
+    illumination.push({ ...item(`${chName(c)} ${join([c.illuminationIntensity != null && `intensity ${n(c.illuminationIntensity)}`,
+      c.excitationFilter && `ex ${c.excitationFilter}`])}`, 'file'), channel: c.order })
+  }
   if (illumination.length === 0) illumination.push(item('Illumination not recorded', 'missing'))
 
   // camera — the camera, then exposure and gain per channel (widefield)
@@ -291,7 +302,7 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
   }
   // widefield filters: the cube per channel, where the reader names one
   const cubes = chans.filter(c => c.filterCube)
-    .map(c => ({ ...item(`${chName(c)} cube ${c.filterCube}`, 'file'), channel: c.order }))
+    .map(c => ({ ...item(join([`${chName(c)} cube ${c.filterCube}`, c.emissionFilter && `em ${c.emissionFilter}`]), 'file'), channel: c.order }))
 
   return {
     laser, power, scanner, objective, sample, filters: cubes.length > 0 ? cubes : filters, detectors,
