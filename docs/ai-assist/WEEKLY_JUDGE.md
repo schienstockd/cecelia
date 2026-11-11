@@ -288,6 +288,7 @@ the same limit. The unit's `TimeoutStartSec=12h` covers one wait, then `judge-re
 doesn't stop the pass; the record's `run.failed` names the step, and the record and PR say that
 step didn't run instead of reporting a quiet week. The recital console warns when the newest record
 is more than 9 days old or failed, and when the backlog grew two passes in a row (`judge_staleness.py`).
+A console left open re-checks when a record lands or the day changes, so a later good pass clears it.
 
 **Spend.** The record's *Tokens* row has what each step used: output, uncached input, and cache read
 and write, taken from each call's `usage`. Its *Spend* row is the CLI's dollar figure, which is list

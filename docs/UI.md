@@ -753,7 +753,7 @@ Use `splice()` to mutate arrays in place inside setup stores.
 ## Adding a new module page
 
 A module page is the full screen that opens when the user clicks a sidebar item.
-The standard layout is: **SetBar** (top bar) + **image panel** (left, scrollable image list) + **right panel** (task runner, metadata editor, or a custom panel).
+The standard layout is: **image panel** (left) + **right panel** (task runner, metadata editor, or a custom panel), the right panel running the page's full height. The image panel opens with the **set row** — `SetBar inline` (set, recipe, and on Manage images the New / Rename / Delete icons), the counts, the checks, the row filters and a **⋯ menu** (CSV export, the processed-with filter, maximise, copy set ID) — then the **result line** (`utils/resultLine.ts`: the last run on this page and its outcome, from the run logs, with a link to Tasks) carrying the page's `#actions` (Correct labels / tracks, Import's copy / move / remove). Then the image table and the plots. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md` (M3).
 A custom right panel builds its blocks from `.cc-panel-section` (divider between sections, eyebrow heading via `.cc-panel-heading`), the same as TaskRunner — never bordered boxes (`docs/ui/PRIMITIVES.md` → right-panel section). Sections run edge to edge: the panel root has no padding or gap of its own.
 
 **Convention — attributes + filtering.** Every module page **except Import** must show
@@ -1225,14 +1225,15 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
   covered composite; a flagged feature has no record; every evidence path and test name exists, and a
   Tested record's tests are not `@test_skip`/`@test_broken`/`skip`/`xfail`/`it.skip`; every
   `datasetAsk` exists; testedOn ≤70, failsIf/next ≤110, needs ≤90 chars.
-- **On the pages (P2):** the app header carries the current page's maturity (`components/MaturityIndicator.vue`,
-  one mount for every page — pages have no shared header of their own). Every tiered page shows its
+- **On the pages (P2):** the sidebar's row for the open page carries its maturity (`components/MaturityIndicator.vue`,
+  one mount for every page — pages have no shared header of their own); other rows show the dot only
+  for Experimental pages (`AppSidebar.vue`, GUI_LAYOUT_PLAN M2). Every tiered page shows its
   tier's dot alone (`ComingSoonBadge … dot`, the map's colours; the tooltip names it) — Beta included,
   so an unmarked page never reads as "fine". It opens the Guides dialog on that feature's Maturity row (`lib/guideOpen.ts` →
   `openMaturityRow`; `MaturityMap` opens the section and the row, then scrolls to it). Exempt pages and
   non-sidebar routes show nothing. In the task picker (`TaskRunner`) an Experimental task's option reads
   `… · Experimental` (a native `<option>` holds text only) and the picked one gets the SAME
-  `MaturityIndicator` as the header — its dot plus the bug — so a function and a page look alike.
+  `MaturityIndicator` as the page's sidebar row — its dot plus the bug — so a function and a page look alike.
   Logic: `pageMaturity` / `taskMaturity` / `taskOptionSuffix` in `utils/maturity.ts`.
 - **"Something wrong?"** (`components/ReportProblemButton.vue`, `pi-bug`) beside the page's badge or
   link, beside a picked task's badge, and in every expanded Maturity row: a popover that opens a

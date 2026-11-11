@@ -8,7 +8,7 @@ import pathlib
 import tempfile
 import unittest
 
-from cecelia.effectiveness.judge_staleness import judge_record_warning
+from cecelia.effectiveness.judge_staleness import JudgeWarning, judge_record_warning
 
 
 class JudgeStalenessTest(unittest.TestCase):
@@ -50,6 +50,18 @@ class JudgeStalenessTest(unittest.TestCase):
         (self.store / "2026-09-08.json").write_text(json.dumps(
             {"kind": "pass", "run": {"issues": {"filed": []}}}), encoding="utf-8")
         self.assertIsNone(judge_record_warning(self.store, today=dt.date(2026, 9, 9)))
+
+    def test_a_long_running_console_drops_a_superseded_failure(self):
+        (self.store / "2026-09-08.json").write_text(json.dumps(
+            {"kind": "pass", "run": {"issues": {"error": "GhError: 502"}}}), encoding="utf-8")
+        today = [dt.date(2026, 9, 9)]
+        judge = JudgeWarning(self.store, today=lambda: today[0])
+        self.assertIn("issue mirror failed", judge.get())
+        self._record("2026-09-15")   # the next pass mirrors fine
+        today[0] = dt.date(2026, 9, 16)
+        self.assertIsNone(judge.get())
+        today[0] = dt.date(2026, 9, 30)   # and a stopped timer still surfaces, from the date alone
+        self.assertIn("no run record for 15 days", judge.get())
 
     def _pass(self, date, waiting):
         (self.store / f"{date}.json").write_text(json.dumps(

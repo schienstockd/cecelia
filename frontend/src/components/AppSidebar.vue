@@ -8,9 +8,11 @@ import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { allNavGroups, navGroupFor, stageTint, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
-import { useSingleOpenSection } from '../composables/useSingleOpenSection'
-import ProjectPanel from './ProjectPanel.vue'
-import PanelLaunchers from './PanelLaunchers.vue'
+import { profileStorage } from '../utils/profileStorage'
+import { toggleValue } from '../utils/chipSelect'
+import { pageMaturity } from '../utils/maturity'
+import MaturityIndicator from './MaturityIndicator.vue'
+import ComingSoonBadge from './ComingSoonBadge.vue'
 import { useProjectStore } from '../stores/project'
 import { litRoutes } from '../utils/setRecipe'
 
@@ -19,7 +21,6 @@ const settings = useSettingsStore()
 const appCtl = useAppControlStore()
 const customModules = useCustomModulesStore()
 const viewProfiles = useViewProfilesStore()
-const showPanel = ref(false)
 
 // `refreshDev` feeds the header's avatar menu (Restart backend is dev only); Quit / Log out live there too.
 onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfiles.ensureLoaded() })
@@ -29,36 +30,38 @@ onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfile
 // `ensureLoaded` fetched once at boot and never retried). Also refreshes the per-category cohortFuns.
 watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() })
 
-// Accordion: ONE nav group open at a time (was: all can be open, but
-// the sidebar was getting too long). Same rule + composable as the viewer window's control
-// accordion. On first-ever load, pick the first shown group so the sidebar isn't empty; after
-// that profileStorage takes over (including an intentional "all closed" state). The headings are
-// plain buttons, not CollapsibleSections, so this script drives the group directly.
-const { open: openGroup, chosen: groupChosen, isOpen, toggle: toggleGroup } =
-  useSingleOpenSection('cc.sidebar.openGroup', '')
+// Every group starts OPEN and folds on its own (GUI_LAYOUT_PLAN, mock frame 1): with text-only rows
+// the whole menu fits, and seeing every page at once is what answers "where do I click". What is kept
+// is the set of groups the user CLOSED, per profile, so a new group (a custom-module category)
+// arrives open.
+const CLOSED_KEY = 'cc.sidebar.closedGroups'
+function readClosed(): string[] {
+  try { const v = JSON.parse(profileStorage.getItem(CLOSED_KEY) ?? '[]'); return Array.isArray(v) ? v : [] }
+  catch { return [] }
+}
+const closed = ref<string[]>(readClosed())
+watch(closed, v => profileStorage.setItem(CLOSED_KEY, JSON.stringify(v)))
+const isOpen = (heading: string) => !closed.value.includes(heading)
+const toggleGroup = (heading: string) => { closed.value = toggleValue(closed.value, heading) }
 
 // static pipeline groups + the dynamic custom-module group (when any new-category modules exist).
 // The catalogue itself lives in lib/navGroups.ts — the view-profile editor and the guide picker read
 // the SAME list, so nothing can offer a page this sidebar doesn't have.
 const allGroups = computed(() => allNavGroups(customModules.categories))
 
-// Open the first visible group on first-ever load — the accordion is empty otherwise, and a
-// blank sidebar reads as broken. A user who explicitly collapses everything has CHOSEN '' (it is
-// persisted), so this only fires once (never overwriting a user's choice).
-watch(() => allGroups.value, gs => {
-  if (!groupChosen.value && gs.length) {
-    openGroup.value = gs[0].heading
-  }
-}, { immediate: true })
-
-// Follow navigation: arriving on a page — by a link elsewhere, a guide, Kiwi pointing at a plot — opens
-// its group, else the accordion keeps showing the old one and the menu reads as if nothing changed.
-// Only on a route CHANGE, so a group the user closes on the page they're on stays closed.
+// Follow navigation: arriving on a page in a closed group — by a link elsewhere, a guide, Kiwi pointing
+// at a plot — reopens it, else the menu reads as if nothing changed. Only on a route CHANGE, so a group
+// the user closes on the page they're on stays closed.
 const route = useRoute()
 watch(() => route.path, p => {
   const g = navGroupFor(allGroups.value, p)
-  if (g && !isOpen(g)) openGroup.value = g
+  if (g && !isOpen(g)) toggleGroup(g)
 })
+
+// The page's maturity: the open page carries its full indicator (dot → map row, and "Something
+// wrong?"), moved here from the header; other rows show a dot only when results need checking by hand
+// (experimental) — a dot on every row would be noise (GUI_CLARITY_PLAN Decision 8 keeps dots, not words).
+const handCheck = (to: string) => pageMaturity(to)?.tier === 'experimental'
 
 // …then curated by the active VIEW PROFILE: an ordered subset of the above, so a user doing narrow
 // work isn't navigating 20 items they never touch. No profile ⇒ the implicit "All" ⇒ untouched.
@@ -89,43 +92,9 @@ function isNavDisabled(item: NavItem): boolean {
 <template>
   <nav class="sidebar" v-show="!settings.sidebarCollapsed">
 
-    <!-- ── Project block ───────────────────────────────────────────────── -->
-    <div class="project-block" data-guide="sidebar.projectBlock">
-      <template v-if="projectMeta.current">
-        <div class="proj-info">
-          <i class="pi pi-folder proj-icon" />
-          <div class="proj-text">
-            <span class="proj-name" v-tooltip.right="`Project: ${projectMeta.current.name}`">
-              {{ projectMeta.current.name }}
-            </span>
-          </div>
-          <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
-          <button class="proj-menu-btn cc-btn cc-btn-bare cc-btn-icon" @click="showPanel = true"
-            v-tooltip.right="'Switch project or create a new one'">
-            <i class="pi pi-ellipsis-h" />
-          </button>
-        </div>
-        <!-- Only when a profile is actually curating the menu: "All pages" is the default, and a badge
-             for the default state is noise on every screen forever. Its own row BELOW `.proj-info`,
-             never a second line inside it — that row centres the folder icon and the ⋯ button against
-             the name, so growing it pushed the name up and both controls down. -->
-        <span v-if="viewProfiles.active" class="profile-badge"
-              v-tooltip.right="'Sidebar layout — change in Settings → Interface'">
-          <i class="pi pi-eye" />{{ viewProfiles.active.label }}
-        </span>
-      </template>
-      <template v-else>
-        <button class="open-project-btn" @click="showPanel = true"
-          v-tooltip.right="'Open or create a project to get started'">
-          <i class="pi pi-folder-open" />
-          Manage projects…
-        </button>
-      </template>
-    </div>
-
     <!-- ── Navigation groups ───────────────────────────────────────────────
-         ONLY this region scrolls (flex:1 + overflow). The project block above and the viewer/lab-log
-         CTAs + footer below stay pinned, so a long menu never pushes them out of reach. -->
+         ONLY this region scrolls (flex:1 + overflow); the footer below stays pinned. The project moved
+         to the header crumb (ProjectCrumb.vue). Rows are text only (mock frame 1). -->
     <div class="nav-scroll">
       <template v-for="group in shownGroups" :key="group.heading">
         <button class="group-heading" :class="{ staged: stageTint(group.heading) }"
@@ -146,8 +115,10 @@ function isNavDisabled(item: NavItem): boolean {
             v-tooltip.right="navTip(item)"
             :aria-disabled="isNavDisabled(item)"
           >
-            <i :class="['pi', item.icon, 'nav-icon']" />
             <span class="nav-label">{{ item.label }}</span>
+            <MaturityIndicator v-if="route.path === item.to" class="nav-maturity" :maturity="pageMaturity(item.to)"
+                               :page="item.to" @click.stop.prevent />
+            <ComingSoonBadge v-else-if="handCheck(item.to)" tier="experimental" dot class="nav-maturity" />
             <span v-if="item.soon" class="soon-badge">soon</span>
             <!-- no tip of its own: the row's navTip already says "Open or create a project first."
                  in exactly this state, and a second one inside it fired on top of it -->
@@ -159,10 +130,6 @@ function isNavDisabled(item: NavItem): boolean {
       </template>
     </div>
 
-    <!-- ── The correction cockpit's launcher. Viewer, Lab log and Kiwi moved to the header; this one
-         moves to "Correct labels" on the result line (docs/todo/GUI_LAYOUT_PLAN.md, M3). ── -->
-    <PanelLaunchers :kinds="['correction']" />
-
     <!-- ── Footer: Settings. An app preference, not a pipeline step, so it sits apart from the module
          nav. Quit / Log out / Restart moved to the header's avatar menu. -->
     <div class="sidebar-footer">
@@ -170,17 +137,15 @@ function isNavDisabled(item: NavItem): boolean {
            groups above are data-driven and so carry no attributes of their own; this is hand-written
            markup and can just say what it is. Addressing it by href made the one guide that points here
            the only one resolving a `nav:` anchor outside `.nav-scroll`. -->
-      <RouterLink to="/settings" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
+      <RouterLink to="/settings" class="nav-item footer-link"
                   data-guide="sidebar.settings"
-                  v-tooltip.right="'Settings — project name, ID, and interface preferences'">
-        <i class="pi pi-cog" />
+                  v-tooltip.right="'Project name, ID, and interface preferences'">
+        <span class="nav-label">Settings</span>
       </RouterLink>
     </div>
 
   </nav>
 
-  <!-- Project panel modal -->
-  <ProjectPanel v-if="showPanel" @close="showPanel = false" />
 </template>
 
 <style scoped>
@@ -203,75 +168,7 @@ function isNavDisabled(item: NavItem): boolean {
   overflow-y: auto;
 }
 
-/* ── Project block ────────────────────────────────────────────────────────── */
-.project-block {
-  padding: 0.55rem 0.6rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-}
-
-.proj-info {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-}
-.proj-icon { font-size: var(--cc-fs-md); color: var(--cc-accent); flex-shrink: 0; }
-.proj-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-/* The third badge in this file (`.soon-badge`, `.lock-badge` below), same shape. Badges are
-   deliberately NOT unified app-wide — a badge, a chip and a card are all surface + border + radius, so
-   the class name is the only thing carrying intent (docs/todo/UX_PRIMITIVES_PLAN.md, principle 7).
-   Not uppercased, unlike `.soon-badge`: this shows a name the user typed. */
-.profile-badge {
-  /* Indented to start under the project NAME rather than under the folder icon — the icon's own width
-     plus `.proj-info`'s gap. Tied to `.proj-icon`'s font-size; change one, change both. */
-  margin: 0.25rem 0 0 calc(var(--cc-fs-md) + 0.4rem);
-  max-width: calc(100% - var(--cc-fs-md) - 0.4rem);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: var(--cc-fs-2xs);
-  padding: 0.05rem 0.3rem;
-  border-radius: var(--cc-radius-xs);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: default;
-}
-.proj-name {
-  font-size: var(--cc-fs-md);
-  font-weight: 600;
-  color: var(--cc-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: default;
-}
-
-/* .proj-menu-btn → cc-btn cc-btn-bare cc-btn-icon */
-.proj-menu-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-
-.nav-item.off-recipe:not(.router-link-active) .nav-label,
-.nav-item.off-recipe:not(.router-link-active) .nav-icon { opacity: 0.5; }
-
-.open-project-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--cc-fs-sm);
-  font-weight: 500;
-  color: var(--cc-accent);
-  background: #a78bfa14;
-  border: 1px dashed #a78bfa55;
-  border-radius: var(--cc-radius-sm);
-  padding: 0.35rem 0.6rem;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.open-project-btn:hover { background: #a78bfa22; }
+.nav-item.off-recipe:not(.router-link-active) .nav-label { opacity: 0.5; }
 
 /* ── Group headings ───────────────────────────────────────────────────────── */
 .group-heading {
@@ -287,7 +184,7 @@ function isNavDisabled(item: NavItem): boolean {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--cc-text-dim);
-  padding: 0.9rem 0.85rem 0.3rem;
+  padding: 0.75rem 0.85rem 0.25rem;
   transition: color 0.1s;
 }
 .group-heading:hover { color: var(--cc-text); }
@@ -300,7 +197,7 @@ function isNavDisabled(item: NavItem): boolean {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.45rem 0.85rem;
+  padding: 0.22rem 0.85rem;
   border-radius: var(--cc-radius-sm);
   margin: 0 0.35rem;
   font-size: var(--cc-fs-md);
@@ -322,8 +219,8 @@ function isNavDisabled(item: NavItem): boolean {
 }
 .nav-item.disabled { opacity: 0.4; cursor: not-allowed; }
 
-.nav-icon  { font-size: var(--cc-fs-md); flex-shrink: 0; }
 .nav-label { flex: 1; }
+.nav-maturity { flex-shrink: 0; }
 
 .soon-badge {
   font-size: var(--cc-fs-2xs);
@@ -344,14 +241,7 @@ function isNavDisabled(item: NavItem): boolean {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.5rem 0.6rem 0.2rem;
-  border-top: 1px solid var(--cc-border);
+  padding: 0.35rem 0.35rem 0;
 }
-/* Settings link active state (RouterLink) — mark it when on /settings, like the nav items */
-.footer-btn.router-link-active { color: var(--cc-text); border-color: var(--cc-accent); }
-.footer-btn { text-decoration: none; /* Settings is a RouterLink (<a>) — no underline */
-  transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
-.footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
-.footer-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
+.footer-link { flex: 1; margin: 0; }
 </style>

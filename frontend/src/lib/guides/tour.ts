@@ -38,8 +38,8 @@ export const tourGuide: GuideDef = {
       ],
     },
     {
-      anchor: 'sidebar.projectBlock',
-      placement: 'right',
+      anchor: 'header.project',
+      placement: 'bottom-start',
       title: 'Your project',
       text: 'Open, create and switch projects here — everything else on screen belongs to this one.',
     },
@@ -68,12 +68,7 @@ export const tourGuide: GuideDef = {
       placement: 'bottom',
       title: 'The viewer',
       text: 'Opens images in the viewer, with segmentations and tracks as layers you can toggle.',
-    },
-    {
-      anchor: 'launcher.correction',
-      placement: 'right',
-      title: 'The correction cockpit',
-      text: 'Join, split or remove tracks, and edit labels — the hand-tools for fixing what an automated run got wrong.',
+      bullets: ['Fixing a mask or a track: Correct, on the Segment and Track pages.'],
     },
     {
       anchor: 'launcher.labLog',

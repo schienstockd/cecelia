@@ -39,7 +39,7 @@ from .agents import AgentRow, PrCache, agent_rows, session_badge
 from .claude_sessions import live_sessions
 from .git_context import recent_prs
 from . import auto_run
-from .judge_staleness import judge_record_warning, judge_store
+from .judge_staleness import JudgeWarning, judge_record_warning, judge_store
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
 from .recital import ADVISORY_MARKERS, TAGGABLE_ADVISORY
 
@@ -1327,7 +1327,9 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     state = DashboardState(advisory_slugs=advisory_slugs)
     for event in seed_events:
         state.add(event)
-    judge_warning = judge_record_warning(judge_store(log_path))   # once: weekly, not mid-session
+    # re-read when a run record lands: a console left open for days must drop a superseded failure
+    judge = JudgeWarning(judge_store(log_path))
+    judge_warning = judge.get()
     # A one-shot frame waits for the PR list; a live one fetches it in the background (~3 s).
     pr_cache = PrCache() if follow else None
     refresh_agents(state, log_path, pr_cache.get() if pr_cache else recent_prs() or ())
@@ -1403,6 +1405,7 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                 state.add(event)
             if time.monotonic() - agents_at >= _AGENTS_REFRESH:
                 refresh_agents(state, log_path, pr_cache.get())
+                judge_warning = judge.get()
                 agents_at = time.monotonic()
             if resize_pending[0]:
                 last_frame[0] = ""   # the terminal may have reflowed the old frame: paint anyway

@@ -48,7 +48,7 @@ const groups = computed(() => guideGroupsFor(guidesByGroup(), observer.ai.enable
 
 // ── the map + the accordion: one view (WORKFLOW_RECIPES_PLAN → *The map*) ──────────────────────────
 // The map (GuideMap) holds the recipes; its group cards open the matching guide group here. One group
-// open at a time, like the sidebar's nav accordion; it opens on the group whose guides teach the page
+// open at a time; it opens on the group whose guides teach the page
 // you're on, else Start. Not persisted: where you are decides what's useful — so it is re-set on
 // every open. The sections share it through `accordion="cc.guides.openGroup"`.
 const openRecipe = ref('')

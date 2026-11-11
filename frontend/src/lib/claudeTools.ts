@@ -147,7 +147,7 @@ export const AI_SURFACES: AiSurface[] = [
     sends: 'The claim and the project record behind it, image crops included',
     gain: 'A second reading of a claim before it leaves Cecelia' },
   { id: 'acq-review', label: 'Review a test acquisition', enforcedBy: 'turn', source: 'api/src/acq_review.jl', routes: [],
-    sends: 'The set’s acquisition plan and the movies’ record: settings, photon and drift numbers, QC',
+    sends: 'The set’s acquisition plan and the movies’ record: settings, photon numbers, QC',
     gain: 'What to change at the microscope before acquiring the rest' },
   { id: 'terminal', label: 'Claude in your terminal', enforcedBy: 'request', source: 'api/src/server.jl', routes: [],
     sends: 'Whatever your Claude session asks Cecelia’s tools for — the project, results and images',
