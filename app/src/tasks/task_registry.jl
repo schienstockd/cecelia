@@ -233,6 +233,9 @@ _COMPOSITE_SPEC_PATHS["segment.coastalMeasure"] =
 _COMPOSITE_SPEC_PATHS["segment.importLabelsMeasure"] =
     joinpath(@__DIR__, "segment", "import_labels_measure.json")
 
+_COMPOSITE_SPEC_PATHS["segment.ridgesMeasure"] =
+    joinpath(@__DIR__, "segment", "ridges_measure.json")
+
 _COMPOSITE_SPEC_PATHS["tracking.bayesian_track_measures"] =
     joinpath(@__DIR__, "tracking", "bayesian_track_measures.json")
 
@@ -290,6 +293,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "segment.coastalMeasure"            => CompositeTask("segment.coastalMeasure"),
         "segment.importLabelsMeasure"       => CompositeTask("segment.importLabelsMeasure"),
+        "segment.ridgesMeasure"             => CompositeTask("segment.ridgesMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
         "cleanupImages.stackAlign"          => StackAlign(),
