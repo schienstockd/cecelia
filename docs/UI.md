@@ -62,7 +62,7 @@ All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlay
 | `--cc-stage-data` / `-populations` / `-explore` / `-analysis` | `#CEA966` / `#E9A587` / `#B98A93` / `#F5EFD0` | Stage colour: the sidebar group heading and the active page's bar only (`navGroups.stageTint`) |
 | `--cc-accent-soft` | `#c4b5fd` | Pale violet — text on an accent-tinted surface |
 | `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
-| `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
+| `--cc-selected` | `var(--cc-text)` | Selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — neutral, by contrast not hue; distinct from `--cc-accent` (form controls) and every state colour |
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
 | `--cc-danger` | `#ef4444` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
 | `--cc-danger-fill` | `#b33a3a` | Muted red — a SOLID destructive surface under white text: `.cc-btn-danger`, armed delete / quit (white 5.86:1) |
@@ -560,7 +560,8 @@ not in the check. The status dots alias the severity set, so there is one "ok" c
 
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
 Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
-launcher and the Checks cluster frame are neutral — their icon and label carry them. A new surface
+launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
+(`--cc-selected` = the text colour). A new surface
 reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
 text contrast, it cannot be told from amber.
 
@@ -1838,7 +1839,7 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 
 **The two task surfaces render through one list and one row mapper.** The `/tasks` manager
 (`TasksModule.vue`) is a `SelectionTable` in `single` mode — a row IS selected, and what it selects is
-what the log pane shows — so its selected-row highlight is the table's own amber `--cc-selected`
+what the log pane shows — so its selected-row highlight is the table's own `--cc-selected`
 rather than the purple left rule it hand-rolled for a long time (`--cc-accent` is form-control chrome;
 see `docs/todo/TASK_LIST_UNIFICATION_PLAN.md` for the dating). Both surfaces flatten `TaskEntry` to
 row fields through **`utils/taskRows.ts`**, because `SelectionTable` renders `row[key]` and sorts by

@@ -46,7 +46,7 @@ const MUST_SEPARATE: Record<string, string[]> = {
   statusInk:  ['--cc-ink-red', '--cc-ink-amber', '--cc-ink-green', '--cc-ink-blue'],
   attention:  ['--cc-warn', '--cc-danger'],
   // the identity hues left after the merge (one AI colour, neutral viewer + checks) against the states
-  identity:   ['--cc-accent', '--cc-kiwi', '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
+  identity:   ['--cc-accent', '--cc-kiwi', '--cc-selected', '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
 }
 // Pairs that fail and are kept on purpose — each always has a second cue where they meet.
 const ACCEPTED: Record<string, string> = {

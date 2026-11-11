@@ -347,7 +347,7 @@ const FILTERS: ChipOption[] = [
     <!-- ── Body ───────────────────────────────────────────────────────── -->
 
       <!-- Task list — the canonical table (docs/UI.md). `single`: a row IS selected here, and what it
-           selects is what the log pane shows. The selected-row highlight is the table's own amber
+           selects is what the log pane shows. The selected-row highlight is the table's own
            `--cc-selected`; this page used to hand-roll the same left-rule idiom in `--cc-accent`
            (purple = form-control chrome). See docs/todo/TASK_LIST_UNIFICATION_PLAN.md.
            `@row-click` rather than `@update:model-value` — clicking the row that is already selected

@@ -87,7 +87,8 @@ rather than one screen at a time.
     **Amended (maintainer, 2026-11-12) — fewer hues so the colour-blind check can hold:** the checks
     cluster frame and the viewer launcher are neutral (their label and icon carry them; the viewer
     green read as an "ok" light and as a second Kiwi), Claude Code shares Kiwi's teal (one AI colour),
-    and the status dots alias `--cc-sev-*`. Plum stays on the Next button. `docs/UI.md` → *Colour schemes*.
+    and the status dots alias `--cc-sev-*`. Selection is neutral too (`--cc-selected` = text colour; the
+    orange read as the warning amber under colour blindness). Plum stays on the Next button. `docs/UI.md` → *Colour schemes*.
 16. **The data type lights pages, never hides them** (maintainer, 2026-11-10; journey review N1). A
     set's recipe is suggested from its axes (time axis → a timelapse recipe), confirmed once per set,
     never applied silently. With no recipe, the next-step slot falls back to "from what has run on
