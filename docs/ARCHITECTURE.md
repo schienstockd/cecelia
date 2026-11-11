@@ -390,7 +390,9 @@ rewrite stamp); `ViewerWindow`'s `applyMaskSource` hands it to whichever rendere
   fresh zeroed ones for a new mask — and the tick loop backfills every resident brick's mask
   (`labelBackfill`, timepoint on screen first). A label-atlas OOM falls back to a joint `setImage`.
 
-Design + decisions: `docs/todo/MASK_DECOUPLE_PLAN.md`.
+Design + decisions: `docs/todo/MASK_DECOUPLE_PLAN.md`. A segmentation's halo / nuc files ride the same
+mask as flag bits (their file set is part of the mask id), so toggling one is a mask change like any
+other — `docs/todo/MASK_FILE_LAYERS_PLAN.md`.
 
 ### Multi-atlas contract (WebGPU brick renderer)
 

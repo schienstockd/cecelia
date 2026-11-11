@@ -199,6 +199,8 @@ export interface LabelsDimMismatch {
   byVn: Record<string, { nX: number; nY: number }>
   /** Masks with fewer zoom levels than the image — drawn only where they have one. */
   shortLevels?: Record<string, { nLevels: number; imageLevels: number }>
+  /** Each segmentation's derived files (`ViewerMeta.labelFiles`) — the panel's halo / nuc chips. */
+  labelFiles?: Record<string, string[]>
 }
 
 /**
