@@ -459,6 +459,12 @@ end
     @test _ov_look_seg(Dict{String,Any}(), "default"; mask = "cpSAM") == "cpSAM"
     @test _ov_look_seg(Dict{String,Any}("popValueName" => "flowTom"), "default"; mask = "cpSAM") == "flowTom"
     @test _ov_look_seg(Dict{String,Any}(), "default"; mask = nothing) == "default"
+    # a keyframe request's mask: absent / empty → none, one → it, 2+ → refused (an animation has no
+    # compare grid, and no mask would drop the overlays onto the image version)
+    @test _keyframe_mask(nothing) === nothing
+    @test _keyframe_mask(String[]) === nothing
+    @test _keyframe_mask(["cpSAM"]) == "cpSAM"
+    @test_throws ArgumentError _keyframe_mask(["cpSAM", "flowTom"])
 end
 
 @testset "API: movie rail — a recording renders the viewer's colours and framing" begin
