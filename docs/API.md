@@ -637,8 +637,8 @@ remains the sole gate evaluator.
 
 | Method | Path | Body | Effect |
 |---|---|---|---|
-| POST | `/api/viewer/pick-cell` | `projectUid,imageUid,valueName,popType,t,z,x,y,level?,mode?` | click a cell in the browser viewer → transient population highlighted on the gating plots. `x,y` are IMAGE PIXEL indices (0-based, client-computed by `screenToImagePx`) at `level`. `mode` = `replace` (default), `add` or `toggle`. `200 {nSelected}`; `400` on invalid image / value name; `409` when the mask has no `level` (as the slab route) |
-| POST | `/api/viewer/pick-rect` | `projectUid,imageUid,valueName,popType,t,z,x1,y1,x2,y2,level?,mode?` | drag a rectangle → all enclosed cells become the transient selection. Same registry + broadcast path as `pick-cell`; `mode` semantics identical. `200 {nSelected}` |
+| POST | `/api/viewer/pick-cell` | `projectUid,imageUid,valueName,popType,t,z,x,y,level?,mode?,imageNX?,imageNY?` | click a cell in the browser viewer → transient population highlighted on the gating plots. `x,y` are IMAGE PIXEL indices (0-based, client-computed by `screenToImagePx`) at `level`. `mode` = `replace` (default), `add` or `toggle`. `200 {nSelected}`; `400` on invalid image / value name; `409` when the mask has no `level` (as the slab route); `422 {error}` when the ticked mask has no cell table (no fallback to the active segmentation's mask) or its x/y extent differs from `imageNX`×`imageNY`, the dims the viewer draws (a mask from another image version — drift correct, crop) |
+| POST | `/api/viewer/pick-rect` | `projectUid,imageUid,valueName,popType,t,z,x1,y1,x2,y2,level?,mode?,imageNX?,imageNY?` | drag a rectangle → all enclosed cells become the transient selection. Same registry + broadcast path as `pick-cell`; `mode` semantics identical, and the same `409`/`422` refusals. `200 {nSelected}` |
 | POST | `/api/viewer/pick-clear` | `projectUid,imageUid,valueName?,popType?` | empty the transient selection pop for the (image, valueName, popType). Backs the manager's trash button. `200 {nSelected:0}` |
 
 The transient pop appears in `gating:popmap` with `"transient": true` and explicit-label
