@@ -145,6 +145,7 @@ import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
 import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
 import VwTracksSection from '../components/viewerWindow/VwTracksSection.vue'
+import VwPopulationsSection, { type VwPopLayer } from '../components/viewerWindow/VwPopulationsSection.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
@@ -751,7 +752,7 @@ const heldProbe = ref('')
  * there is no request path here that a scrub can spam, and nothing to keep coherent with the
  * timepoint cache.
  */
-interface PopLayer { vn: string; popType: string; payload: OverlayPayload }
+type PopLayer = VwPopLayer
 const popLayers = ref<PopLayer[]>([])
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
 const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}::${path}`
@@ -6460,124 +6461,14 @@ onUnmounted(() => {
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
                                :single-plane="singlePlane" :mode="mode" @redraw="frame.redraw()" />
 
-        <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
-                            accordion="cc.vw.section" section="pops"
-                            fill>
-          <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
-               and no populations, and an empty group would read as a broken feature rather than as an
-               image that has not been through segmentation yet.
-               Panel gate off = the whole section reads as inactive rather than as a cell-count summary
-               ("how you can show a pops stats when the pops toggle in the viewer
-               controls is off").
-               Empty-state phrasing lines up with Segmentation and Tracks. -->
-          <template v-if="!popsPanelOn">
-            <div class="cc-empty-inline cc-fs-2xs">
-              No populations shown — enable in the viewer panel
-            </div>
-          </template>
-          <template v-else-if="summary.cells > 0 || overlaysErr">
-            <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
-            <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
-                 on the canvas — so the panel names which one it is. -->
-            <div v-else-if="summary.pops === 0" class="cc-muted cc-fs-2xs">
-              {{ summary.cells }} cells, no populations gated
-            </div>
-            <template v-else>
-              <!-- Section-wide eyes, same icons as the Channels row. They act on EVERY listed pop —
-                   all segmentations × pop types the panel has on — so "one at a time" means one pop
-                   on screen, whichever segmentation it is from. -->
-              <div class="cc-row cc-row-tight">
-                <div class="cc-row-group">
-                <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allPopsVisible }]"
-                        @click="setAllPops(!allPopsVisible)" :aria-pressed="allPopsVisible"
-                        v-tooltip.right="allPopsVisible ? 'Hide every population' : 'Show every population'"
-                        aria-label="Toggle every population">
-                  <i :class="['pi', allPopsVisible ? 'pi-eye' : 'pi-eye-slash']" />
-                </button>
-                <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': soloPop }]"
-                        @click="soloPop = !soloPop" :aria-pressed="soloPop"
-                        v-tooltip.right="'One at a time — showing a population hides the others'"
-                        aria-label="Show one population at a time">
-                  <i class="pi pi-dot-circle" />
-                </button>
-                </div>
-              </div>
-              <template v-for="l in listedPopLayers" :key="l.vn + '::' + l.popType">
-                <!-- one group per (segmentation, pop type); named only when there is more than one -->
-                <div v-if="popLayerSegs > 1 || popLayerTypes > 1" class="cc-muted cc-fs-3xs">
-                  {{ popLayerSegs > 1 ? l.vn : '' }}{{ popLayerSegs > 1 && popLayerTypes > 1 ? ' · ' : '' }}{{ popLayerTypes > 1 ? l.popType : '' }}
-                </div>
-                <div v-for="pop in l.payload.pops" :key="pop.path" class="cc-row cc-row-tight">
-                  <span class="vw-swatch" :style="{ background: pop.colour }" />
-                  <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
-                  <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
-                  <CcToggle
-                    :model-value="!hiddenPops.has(popKey(l.vn, l.popType, pop.path))"
-                    v-tooltip.bottom="'Draw this population over the image'"
-                    :aria-label="'Show ' + pop.name" @update:modelValue="v => setPopEye(l, pop, v)"
-                  />
-                </div>
-              </template>
-              <!-- No colour-by picker: locked decision 3. The CHOICE lives in ViewerPanel's Colour by
-                   section, keyed per set. This row shows what it resolved to; the legend below shows
-                   its scale. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4. -->
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-                <span class="cc-fs-2xs vw-grow" :title="colourBy || 'population'">
-                  {{ colourBy || 'population' }}
-                </span>
-              </div>
-              <!-- The legend says which SCALE is in use, because that is the server's decision (the same
-                   rule the plots use) and the two kinds look nothing alike. -->
-              <div v-if="colourLegend?.kind === 'numeric'"
-                   class="cc-row cc-row-tight cc-fs-3xs">
-                <span class="cc-muted">{{ (colourLegend.range?.[0] ?? 0).toPrecision(3) }}</span>
-                <span class="vw-ramp" :style="rampStyle" />
-                <span class="cc-muted">{{ (colourLegend.range?.[1] ?? 1).toPrecision(3) }}</span>
-              </div>
-              <div v-else-if="colourLegend?.kind === 'categorical'"
-                   class="cc-muted cc-fs-3xs">
-                {{ colourLegend.levels.length }} levels
-              </div>
+        <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
+                              :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
+                              :all-visible="allPopsVisible" v-model:solo="soloPop" :colour-by="colourBy"
+                              :legend="colourLegend" :ramp-style="rampStyle" :single-plane="singlePlane"
+                              :has-z="meta!.nZ > 1" v-model:point-size="pointSize" v-model:point-border="pointBorder"
+                              :point-count="pointCount" :mode="mode" :z-loaded="zLoaded"
+                              @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
 
-              <div v-if="singlePlane && meta!.nZ > 1" class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
-                <input
-                  type="range" class="vw-grow" :min="0" :max="10" :step="1"
-                  v-model.number="settings.viewerPointZTol" @input="frame.redraw()"
-                  v-tooltip.bottom="'Planes either side that still show a cell — 0 is the exact plane'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerPointZTol }}</span>
-              </div>
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
-                <input
-                  type="range" class="vw-grow" :min="2" :max="24" :step="1"
-                  v-model.number="pointSize" @input="frame.redraw()"
-                  v-tooltip.bottom="'Marker size in image pixels — scales with zoom'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ pointSize }}</span>
-              </div>
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Border</span>
-                <input
-                  type="range" class="vw-grow" :min="0" :max="6" :step="1"
-                  v-model.number="pointBorder" @input="frame.redraw()"
-                  v-tooltip.bottom="'Black outline around every point (0 = none)'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ pointBorder }}</span>
-              </div>
-              <div class="cc-muted cc-fs-3xs">
-                <template v-if="popLayerSegs === 1">{{ listedPopLayers[0]?.vn }} · </template>
-                {{ pointCount }} drawn · {{ summary.cells }} cells
-                <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
-                <template v-if="singlePlane">· this plane only</template>
-                <template v-else-if="mode === 'plane'">· planes {{ zLoaded[0] }}–{{ zLoaded[1] }}</template>
-              </div>
-            </template>
-          </template>
-
-        </CollapsibleSection>
         <VwTracksSection :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"
