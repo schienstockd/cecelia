@@ -11,7 +11,6 @@ import { applyProfile } from '../utils/viewProfiles'
 import { profileStorage } from '../utils/profileStorage'
 import { toggleValue } from '../utils/chipSelect'
 import { pageMaturity } from '../utils/maturity'
-import PanelLaunchers from './PanelLaunchers.vue'
 import MaturityIndicator from './MaturityIndicator.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 import { useProjectStore } from '../stores/project'
@@ -130,10 +129,6 @@ function isNavDisabled(item: NavItem): boolean {
         </template>
       </template>
     </div>
-
-    <!-- ── The correction cockpit's launcher. Viewer, Lab log and Kiwi moved to the header; this one
-         moves to "Correct labels" on the result line (docs/todo/GUI_LAYOUT_PLAN.md, M3). ── -->
-    <PanelLaunchers :kinds="['correction']" />
 
     <!-- ── Footer: Settings. An app preference, not a pipeline step, so it sits apart from the module
          nav. Quit / Log out / Restart moved to the header's avatar menu. -->

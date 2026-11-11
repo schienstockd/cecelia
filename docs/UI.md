@@ -753,7 +753,7 @@ Use `splice()` to mutate arrays in place inside setup stores.
 ## Adding a new module page
 
 A module page is the full screen that opens when the user clicks a sidebar item.
-The standard layout is: **SetBar** (top bar) + **image panel** (left, scrollable image list) + **right panel** (task runner, metadata editor, or a custom panel).
+The standard layout is: **image panel** (left) + **right panel** (task runner, metadata editor, or a custom panel), the right panel running the page's full height. The image panel opens with the **set row** — `SetBar inline` (set, recipe, and on Manage images the New / Rename / Delete icons), the counts, the checks, the row filters and a **⋯ menu** (CSV export, the processed-with filter, maximise, copy set ID) — then the **result line** (`utils/resultLine.ts`: the last run on this page and its outcome, from the run logs, with a link to Tasks) carrying the page's `#actions` (Correct labels / tracks, Import's copy / move / remove). Then the image table and the plots. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md` (M3).
 A custom right panel builds its blocks from `.cc-panel-section` (divider between sections, eyebrow heading via `.cc-panel-heading`), the same as TaskRunner — never bordered boxes (`docs/ui/PRIMITIVES.md` → right-panel section). Sections run edge to edge: the panel root has no padding or gap of its own.
 
 **Convention — attributes + filtering.** Every module page **except Import** must show
