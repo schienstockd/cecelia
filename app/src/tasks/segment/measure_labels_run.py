@@ -68,6 +68,7 @@ def run(params: dict):
     # Open each label zarr and map to its label type
     label_zarrs: dict = {}
     label_passes: list = []
+    label_axes = None
     for fname in label_files:
         fpath = os.path.join(label_dir, fname)
         if not os.path.exists(fpath):
@@ -87,6 +88,9 @@ def run(params: dict):
             # store only: a matched `nuc` store's ids were rewritten to the base label they matched,
             # so its own ranges name ids that no longer exist (see `write_label_passes`).
             label_passes = zarr_utils.read_label_passes(fpath)
+            label_axes = zarr_utils.store_axes(
+                fpath, label_zarrs[ltype][0].ndim,
+                [ax for ax in dim_utils.im_dim_order if ax != 'C'])
 
     if 'base' not in label_zarrs:
         log.log('[ERROR] No base label file found — cannot measure')
@@ -98,7 +102,7 @@ def run(params: dict):
 
     mu = MeasureUtils(params, dim_utils)
     out_path = mu.measure_from_zarr(label_zarrs, im_dat, log, label_passes=label_passes,
-                                    n_workers=n_workers)
+                                    n_workers=n_workers, label_axes=label_axes)
 
     if out_path is None:
         log.log('[ERROR] Measurement returned no output')
