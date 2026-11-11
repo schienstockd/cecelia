@@ -1,8 +1,10 @@
 # VN P3b popmap + BIDIR landscape testsets — extracted from api/test/runtests.jl.
 #
-# Five testsets:
+# Six testsets:
 #  - `API: /api/gating/popmap breadcrumb + labelsVersion pin (VN P3b)` — VN_VERSIONING_PLAN
 #    P3b guardrail feeding the drift banner (authoredLabelsVersion, currentLabelsVersion, pin).
+#  - `API: labelsVersion pin reaches /channels, /summary, /plot-image (VN P3b)` — those routes read
+#    the pinned labels version, over a two-version B built in the temp copy.
 #  - `API: _bin_centroids_to_tiles (BIDIR landscape Phase 2a)` — tile assignment helper.
 #  - `API: _bin_centroids_to_tiles Z filter (BIDIR landscape Phase 6)` — Z-awareness filter
 #    that honours the viewer's plane/volume mode (plane sends z±1, volume sends the slab).
@@ -65,9 +67,65 @@
         st, _ = api_gating_membership(HTTP.Request("GET",
             "/api/gating/membership?" * common * "&pops=/qc&labelsVersion=v1"))
         @test st == 200
+        # /channels on this bare (unversioned) entry: it is v1, and only v1 — not any version asked for
+        chpin(v) = api_gating_channels(HTTP.Request("GET", "/api/gating/channels?" * common * "&labelsVersion=$v"))[1]
+        @test chpin("v1") == 200
+        @test chpin("v2") == 400
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
         empty!(_GATING_HISTORY)
+    end
+  end
+end
+
+# ── P3b — the picker and summary routes read the PINNED labels version, not `_latest` ──
+# The gating store sends `labelsVersion` to /channels (via `_params()`); the summary and plot-image
+# routes take it the way plotdata/density do. Two labels versions with different columns are built by
+# pointing B's v1 at another table in the fixture (the track table: `live.track.*` vars, none of the
+# cell table's `mean_intensity_*`), v2 = `_latest` at the real cell table. Each route must answer from
+# the pinned table: a `_latest`-only column is not offered / refused, a v1-only column is read.
+@testset "API: labelsVersion pin reaches /channels, /summary, /plot-image (VN P3b)" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir(); cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    ccid = joinpath(dir, "testpr", "1", "KDIeEm", "ccid.json")
+    st_json = JSON3.read(read(ccid, String), Dict{String,Any})
+    st_json["label_props"]["B"] = Dict{String,Any}("v1" => "B__tracks.h5ad", "v2" => "B.h5ad", "_latest" => "v2")
+    write(ccid, JSON3.write(st_json))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        common = "projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"
+        ch(extra) = api_gating_channels(HTTP.Request("GET", "/api/gating/channels?" * common * extra))
+        st, b = ch(""); latest = JSON3.read(b)
+        @test st == 200 && "mean_intensity_0" in latest.columns && !("live.track.speed" in latest.columns)
+        st, b = ch("&labelsVersion=v1"); pinned = JSON3.read(b)
+        @test st == 200
+        @test !("mean_intensity_0" in pinned.columns)     # a `_latest`-only column is not offered while pinned
+        @test "live.track.speed" in pinned.columns
+        @test isempty(pinned.channels)
+        @test ch("&labelsVersion=v9")[1] == 400           # a version B doesn't have → refused, not a 500
+        @test ch("&labelsVersion=v1&valueNames=B,B")[1] == 400   # a pin can't scope a multi-VN intersection
+
+        cell = "&x=mean_intensity_0&y=area"; trk = "&x=live.track.speed&y=live.track.duration"
+        sm(extra) = api_gating_summary(HTTP.Request("GET", "/x?" * common * extra))
+        pimg(extra) = api_gating_plot_image(HTTP.Request("GET", "/x?" * common * extra))
+        @test sm(cell)[1] == 200
+        @test sm(cell * "&labelsVersion=v1")[1] == 400    # pinned table lacks the column → said, not _latest's numbers
+        st, b = sm(trk * "&labelsVersion=v1")
+        @test st == 200 && JSON3.read(b).n > 0            # read from the pinned table
+        @test sm(trk)[1] == 400
+        @test pimg(cell)[1] == 200
+        @test pimg(cell * "&labelsVersion=v1")[1] == 400
+        st, b = pimg(trk * "&labelsVersion=v1")
+        @test st == 200 && JSON3.read(b).n > 0
+        img = Cecelia.init_object("testpr", "KDIeEm")    # titles come from the pinned table's channels
+        @test _axis_title(img, "B", "flow", "mean_intensity_0") != "mean_intensity_0"
+        @test _axis_title(img, "B", "flow", "mean_intensity_0"; labels_version = "v1") == "mean_intensity_0"
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        rm(dir; recursive = true, force = true)
     end
   end
 end

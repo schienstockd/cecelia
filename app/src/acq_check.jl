@@ -107,7 +107,8 @@ _acq_ramp_has_gaps(bz) = any(p -> p isa AbstractDict && any(k -> (d = _ag(p, k);
 
 What the check reads from one image: settings (`lasers`, `brightZ`, `objective`, `pixelSize`), per
 channel the photons (`channels[i]`), the Bright Z ramp saved with the movie (`brightZRamp`, text or `nothing`), the shared-structure r per channel pair (`shared`,
-"a-b" keys), drift (`drift`) and whether the signal pass ran (`probed`). Absent fields stay `nothing`.
+"a-b" keys), drift (`drift`), whether the signal pass ran (`probed`) and whether drift was measured
+(`driftMeasured` — import leaves it out; the check's Measure adds it). Absent fields stay `nothing`.
 """
 function acq_image_facts(uid::AbstractString, name::AbstractString, meta::AbstractDict;
                          channel_names::AbstractVector = String[])::Dict{String,Any}
@@ -156,7 +157,8 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
         # no ramp found while some ramp value went unread: whether one was saved is unknown
         "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ")) !== nothing ||
                               !_acq_ramp_has_gaps(_ag(acq, "brightZ")), "objective" => obj, "pixelSize" => px,
-        "channels" => chans, "shared" => shared, "drift" => drift, "probed" => probed)
+        "channels" => chans, "shared" => shared, "drift" => drift, "probed" => probed,
+        "driftMeasured" => _saturation_has_drift(meta))
 end
 
 """Facts for every image of a set, in set order."""
@@ -239,7 +241,8 @@ const ACQ_VERDICT_STEPS = [
     acq_verdict(findings, stage) -> (steps, text)
 
 The rule part of the verdict on a plan: one step per warning code with a step at this stage (see
-`ACQ_VERDICT_STEPS`; drift correction on final data from the ok finding too), and the sentence they make —
+`ACQ_VERDICT_STEPS`; drift correction on final data from the ok finding too, and "measure the remaining
+movies" from the not-measured note — unmeasured movies are unchecked, never an all-clear), and the sentence they make —
 "Denoise OTI, P14 and gBT; drift-correct before tracking." — or, with none, "Ready to acquire as planned." /
 "Analyse as planned.". The model review adds at most one step of its own after it.
 """
@@ -248,7 +251,7 @@ function acq_verdict(findings::AbstractVector, stage::AbstractString)
     for (code, st) in ACQ_VERDICT_STEPS
         t = getproperty(st, Symbol(stage))
         t === nothing && continue
-        fs = filter(f -> f["code"] == code && f["scope"] == "set" && (f["level"] == "warn" || code == "acq.drift_ok"), findings)
+        fs = filter(f -> f["code"] == code && f["scope"] == "set" && (f["level"] == "warn" || code in ("acq.drift_ok", "acq.not_measured")), findings)
         isempty(fs) && continue
         sub(k) = unique(string(get(get(f, "subs", Dict()), k, "")) for f in fs)
         for v in (occursin("{variable}", t) ? sub("variable") : [""])
@@ -302,10 +305,12 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         haskey(QC_TEXT, dk) && (f["thisData"] = qc_text(dk; subs...).long)
         push!(findings, f)
     end
-    probed = filter(f -> f["probed"], facts)
-    unprobed = length(facts) - length(probed)
-    unprobed > 0 && add!("info", "acq.not_measured", "set"; n = unprobed, s = unprobed == 1 ? "" : "s",
-                         detail = Dict("imageUids" => [f["uid"] for f in facts if !f["probed"]]))
+    # not measured: no signal pass, or no drift (import leaves drift out — Measure adds it). Photon rules
+    # read every probed movie either way.
+    measured(f) = f["probed"] && get(f, "driftMeasured", true)
+    unmeasured = [f["uid"] for f in facts if !measured(f)]
+    isempty(unmeasured) || add!("info", "acq.not_measured", "set"; n = length(unmeasured),
+                                s = length(unmeasured) == 1 ? "" : "s", detail = Dict("imageUids" => unmeasured))
 
     design = Dict(f["uid"] => (has_plan ? _acq_design_of(plan, f) : f["designKey"]) for f in facts)
     unnamed = [f["uid"] for f in facts if isempty(f["designKey"])]
@@ -565,13 +570,15 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         end
     end
 
-    ran = String["settings", "Bright Z", "detector range", "drift"]
+    # drift ran only if every movie has it (import leaves it out; Measure adds it)
+    ran = String["settings", "Bright Z", "detector range"]
     skipped = String[]
+    push!(all(f -> get(f, "driftMeasured", true), facts) ? ran : skipped, "drift")
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])
     steps, verdict = acq_verdict(findings, stage)
     Dict{String,Any}("stage" => stage, "steps" => steps, "verdict" => verdict, "findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
-                     "nImages" => length(facts), "nMeasured" => length(probed))
+                     "nImages" => length(facts), "nMeasured" => count(measured, facts))
 end
 
 """The warnings a check result still has open — the badge count and the Blackboard entry's sections."""

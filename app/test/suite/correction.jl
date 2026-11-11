@@ -55,6 +55,27 @@ _corr_df() = DataFrame(
         df, Dict("op" => "points.add", "labels" => [1], "trackId" => 20))   # t=0 taken by label 4
 end
 
+@testset "track correction — a cell joining a track adopts its track_source" begin
+    # Left unstamped, a cell added in the editor survives a re-track of the track's pop as a 1-cell
+    # track with no source (the re-track deletes only rows stamped with its source).
+    df = _corr_df()
+    df.track_source = Union{Missing,String}["A", "A", "A", "B", "B", "B", missing]
+    Cecelia.apply_track_ops!(df, [Dict("op" => "points.add", "labels" => [7], "trackId" => 20)])
+    @test df[7, :track_source] == "B"
+    @test all(==("A"), df[1:3, :track_source])               # other tracks untouched
+    # join: B's cells adopt A's identity, source included
+    df = _corr_df()
+    df.track_source = Union{Missing,String}["A", "A", "A", "B", "B", "B", missing]
+    df[4:6, :centroid_t] .= [3.0, 4.0, 5.0]
+    Cecelia.apply_track_ops!(df, [Dict("op" => "track.join", "trackIds" => [10, 20])])
+    @test all(==("A"), df[1:6, :track_source])
+    @test ismissing(df[7, :track_source])
+    # a table with no track_source column still corrects (pre-provenance)
+    df = _corr_df()
+    Cecelia.apply_track_ops!(df, [Dict("op" => "points.add", "labels" => [7], "trackId" => 20)])
+    @test !("track_source" in names(df)) && df[7, :track_id] == 20.0
+end
+
 @testset "track correction — join and split" begin
     # ── join consumes B entirely and keeps A's lineage ────────────────────────
     df = _corr_df()
