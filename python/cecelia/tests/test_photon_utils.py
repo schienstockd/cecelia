@@ -120,7 +120,7 @@ class SharedStructureTest(unittest.TestCase):
 
 class MeasureSignalTest(unittest.TestCase):
     def test_the_signal_pass_reports_photons_per_channel_and_shared_structure(self):
-        # (T, C, Z, Y, X); two frames so the drift check is skipped (it needs a movie)
+        # (T, C, Z, Y, X)
         rng = np.random.default_rng(2)
         lam = _scene(rng, n=2 * 3, size=128)
         gains = (100, 400)
@@ -133,7 +133,7 @@ class MeasureSignalTest(unittest.TestCase):
             fit = channels[c]['photons']['fit']
             assert abs(fit['greyPerPhoton'] - g) / g < 0.15, (g, fit['greyPerPhoton'])
             assert channels[c]['photons']['objects']['p50Photons'] > 0
-        assert 'drift' not in out                                   # import leaves drift out
+        assert 'drift' not in out                                   # the probe estimates no drift
         assert out['sharedStructure'][0]['r'] > 0.9               # same scene in both channels
 
 
