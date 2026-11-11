@@ -130,12 +130,12 @@ function copyAll() {
 .pk-name { font-size: var(--cc-fs-sm); color: var(--cc-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .pk-kind { min-width: 3.2rem; }
-.pk-kind.conda { color: #34d399; }
-.pk-kind.pypi  { color: #60a5fa; }
+.pk-kind.conda { color: var(--cc-ink-green); }
+.pk-kind.pypi  { color: var(--cc-ink-blue); }
 
 .mono { font-variant-numeric: tabular-nums; }
 .state-line { display: flex; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
-.state-line.err  { color: #f87171; }
-.state-line.warn { color: #fbbf24; }
+.state-line.err  { color: var(--cc-ink-red); }
+.state-line.warn { color: var(--cc-ink-amber); }
 .state-line.dim  { grid-column: 1 / -1; }
 </style>

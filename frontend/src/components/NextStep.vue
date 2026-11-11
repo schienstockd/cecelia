@@ -44,6 +44,6 @@ const next = computed(() => recipe.value ? nextStepFor(recipe.value.recipe, rout
 .next-step.footer {
   position: absolute; right: var(--cc-space-lg); bottom: var(--cc-space-lg); z-index: 5;
   width: 280px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);   /* the popover shadow (TeleportPopover) */
+  box-shadow: 0 6px 18px var(--cc-shadow);   /* the popover shadow (TeleportPopover) */
 }
 </style>

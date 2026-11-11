@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues, findRawSpacing,
-  findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
+  findHandRolledIconButtons, findColourLiterals, findRestatedInputBase, inputBase,
   findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities, findDeepFillOverrides,
   findBoxedPanelSections,
 } from './cssScenarios'
@@ -144,29 +144,45 @@ describe('utilityRules', () => {
   })
 })
 
-describe('findRawColours', () => {
-  const tokens = { '#a78bfa': '--cc-accent', '#ef4444': '--cc-danger' }
-  const find = (css: string) =>
-    findRawColours([{ path: 'x.vue', text: `<style scoped>${css}</style>` }], tokens)
-      .map(r => `${r.hex} → ${r.token}`)
+describe('findColourLiterals', () => {
+  const find = (text: string, path = 'x.vue') =>
+    findColourLiterals([{ path, text }]).map(r => `${r.line}:${r.literal}`)
 
-  it('flags a literal that a token already holds, and ignores one that no token holds', () => {
-    expect(find('.a { color: #a78bfa }')).toEqual(['#a78bfa → --cc-accent'])
-    expect(find('.a { color: #123456 }')).toEqual([])
+  it('flags hex, rgb/hsl and white/black in a style block, by line', () => {
+    expect(find('<style scoped>\n.a { color: #a78bfa }\n.b { background: rgba(0, 0, 0, 0.5) }\n.c { fill: white }\n</style>'))
+      .toEqual(['2:#a78bfa', '3:rgba(…)', '4:white'])
   })
 
-  it('is case-insensitive but never truncates an 8-digit hex to match a 6-digit token', () => {
-    expect(find('.a { color: #A78BFA }')).toEqual(['#a78bfa → --cc-accent'])
-    expect(find('.a { background: #a78bfa14 }')).toEqual([])   // an alpha tint is its own value
+  it('flags plain #fff too — white on a fill is --cc-on-solid, not a literal', () => {
+    expect(find('<style>.a { color: #fff }</style>')).toEqual(['1:#fff'])
   })
 
-  it('flags a hex fallback whatever its value, and counts it only once', () => {
-    expect(find('.a { color: var(--cc-accent, #a855f7) }')).toEqual(['#a855f7 → --cc-accent (fallback)'])
-    expect(find('.a { color: var(--cc-accent, #a78bfa) }')).toEqual(['#a78bfa → --cc-accent (fallback)'])
+  it('flags a hex fallback — the token is proven declared, so the fallback is dead', () => {
+    expect(find('<style>.a { color: var(--cc-accent, #a855f7) }</style>')).toEqual(['1:#a855f7'])
   })
 
-  it('exempts plain white/black — not a scale, and what .cc-btn-primary itself uses', () => {
-    expect(find('.a { color: #fff } .b { color: #000000 }')).toEqual([])
+  it('passes tokens, color-mix over tokens, selectors and property names', () => {
+    expect(find('<style>\n#app .white-space { white-space: nowrap; background: color-mix(in srgb, var(--cc-warn) 14%, transparent) }\n</style>'))
+      .toEqual([])
+  })
+
+  it('reads a value continued on the next line, and ignores comments', () => {
+    expect(find('<style>\n.a { text-shadow:\n  0 0 2px rgba(0,0,0,.9); }\n/* was #123456 */\n</style>')).toEqual(['3:rgba(…)'])
+  })
+
+  it('keeps a COLOUR-OK line, or the line under a marker-only comment', () => {
+    expect(find('<style>\n.a { background: #fafaf7; /* COLOUR-OK: external paper */ }\n</style>')).toEqual([])
+    expect(find('<style>\n/* COLOUR-OK: a data ramp */\n.r { background: linear-gradient(#ffffcc, #b10026) }\n.s { color: #111 }\n</style>'))
+      .toEqual(['4:#111'])
+  })
+
+  it('checks inline style attributes in the template, not script code', () => {
+    expect(find('<template><div :style="{ color: \'#111\' }" /></template>\n<script>const c = \'#222\'</script>'))
+      .toEqual(['1:#111'])
+  })
+
+  it('lets style.css define tokens, but not use a literal in a rule', () => {
+    expect(find(':root {\n  --cc-x: #123456;\n}\n.a { color: #654321 }', 'style.css')).toEqual(['4:#654321'])
   })
 })
 
@@ -368,26 +384,32 @@ describe('icon-only buttons', () => {
   })
 })
 
-describe('raw colours', () => {
-  // Colour was the last scale with no ratchet at all: `cssTokens.test.ts` catches referencing a token
-  // that doesn't exist, and `findRawValues` catches literal sizes/radii, but nothing caught a literal
-  // colour — so 67 hex values sat in scoped CSS duplicating a token exactly (16 × #a78bfa, which IS
-  // --cc-accent), plus 33 dead `var(--token, #hex)` fallbacks reporting the wrong value.
+describe('colour literals', () => {
+  // A colour scheme restyles what reads a token, and nothing else: each literal colour in component CSS
+  // is a spot where a light scheme would leave the dark value behind (white text on white, a dark
+  // shadow on paper). So component CSS is literal-free — chrome reads a --cc-* token, a colour that is
+  // NOT the app's to theme (a data ramp, a figure ground) says so with `COLOUR-OK: <reason>`.
+  // Tokens live in style.css — scheme-following ones (surfaces, ink, tints, wash, shadow) and fixed
+  // ones (--cc-hud-*, --cc-paper*, --cc-on-solid). docs/UI.md → *Colour schemes*.
   //
-  // Deliberately narrow, like the dropped `card` matcher: most raw hex in this app is a genuine
-  // one-off (chart series, chain node hues) and nothing in the stylesheet distinguishes those from a
-  // system colour. An EXACT match to a declared token is not a judgement call, so this check has no
-  // false positives and therefore needs no allow-list to rot. It is an exact list, not a count.
-  it('are always tokens — never a literal that a token already holds, never a hex fallback', () => {
-    const tokens = colourTokens(RAW['/src/style.css'] ?? '')
-    expect(Object.keys(tokens).length).toBeGreaterThan(10)   // style.css resolved with its tokens
+  // An exact list, not a ratchet. The two files below are whole-file exemptions, each with its reason.
+  const EXEMPT: Record<string, string> = {
+    // a print sheet: black ink on white paper, by definition, in every scheme
+    'components/AcquisitionCardSheet.vue': 'print',
+    // being split into components/viewerWindow/ — swept in that change, against these tokens
+    'modules/ViewerWindow.vue': 'pending split',
+  }
+  const PENDING_DIR = 'components/viewerWindow/'   // the split's destination, same reason
 
+  it('are never written in component CSS — read a token, or mark the line COLOUR-OK', () => {
     const sources = Object.entries(RAW)
-      .filter(([path]) => path !== '/src/style.css')          // style.css DECLARES the tokens
       .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+      .filter(({ path }) => (path.endsWith('.vue') || path.endsWith('.css'))
+        && !EXEMPT[path] && !path.startsWith(PENDING_DIR))
+    expect(sources.length).toBeGreaterThan(100)   // the glob resolved
 
-    const found = findRawColours(sources, tokens).map(r => `${r.path} | ${r.selector} | ${r.hex} → ${r.token}`)
-    expect(found.sort()).toEqual([])
+    const found = findColourLiterals(sources).map(r => `${r.path}:${r.line} ${r.literal}`)
+    expect(found).toEqual([])
   })
 })
 

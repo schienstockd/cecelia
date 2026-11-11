@@ -1418,9 +1418,9 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <!-- BIDIR PR #4b Decision 19 residual — aggregate-plot chip. Individual glyphs aren't
            rendered; the chip signals "Claude marked N tracks/cells scoped to an image this plot
            includes" so the visual grounding is preserved even without per-point rings. -->
-      <span v-if="claudeChip" class="sp-claude-chip"
+      <span v-if="claudeChip" class="cc-claude-chip sp-claude-chip"
             v-tooltip.top="`Claude highlighted ${claudeChip.count} ${claudeChip.kind}`">
-        <span class="sp-claude-badge">C</span>{{ claudeChip.count }}
+        <span class="cc-claude-badge">C</span>{{ claudeChip.count }}
       </span>
       <!-- Linked-brushing chip strip (LINKED_BRUSHING_PLAN.md P3). Categorical frequency-family
            charts render one chip per category — click writes the matching track_ids into the
@@ -1458,15 +1458,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 /* BIDIR PR #4b Decision 19 residual — corner chip for Claude highlight on aggregate plots. Same
    magenta accent as the per-glyph consumers (TrackScheme, cards, UMAP, gate scatter). Anchored
    top-right so it doesn't overlap the plot's own axis labels (which live at the left/bottom). */
-.sp-claude-chip { position: absolute; top: 6px; right: 6px; z-index: 5;
-  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 3px;
-  background: rgba(232, 54, 180, 0.15); border: 1px solid #e836b4;
-  border-radius: var(--cc-radius-xs);
-  color: var(--cc-text); font-size: var(--cc-fs-2xs); font-weight: 600; line-height: 1;
-  pointer-events: auto; }
-.sp-claude-chip .sp-claude-badge { display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px; border-radius: 50%; background: #e836b4;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
+.sp-claude-chip { position: absolute; top: 6px; right: 6px; z-index: 5; }
 
 /* LINKED_BRUSHING_PLAN.md P3 — chip strip for category-source brushing on categorical
    frequency-family charts. Surface + row chrome come from the composed .cc-card + .cc-row
@@ -1481,7 +1473,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
 .sp-explode-pop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 30;
   min-width: 13rem; max-height: 60vh; overflow-y: auto; padding: 8px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.35); font-size: var(--cc-fs-sm); }
+  box-shadow: 0 6px 18px var(--cc-shadow); font-size: var(--cc-fs-sm); }
 .sp-explode-hd { margin-bottom: 6px; }
 .sp-explode-warn { margin: 4px 0 2px; }
 .sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }

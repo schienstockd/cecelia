@@ -315,7 +315,7 @@ function dismissAllClaudeMarks() {
 <style scoped>
 .cvs-root {
   position: absolute; inset: 0;
-  background: #000;   /* letterbox around a non-matching aspect frame */
+  background: var(--cc-media-bg);   /* letterbox around a non-matching aspect frame */
   z-index: 40;        /* above viewer canvas + StillOverlay/GridOverlay AND above the plot
                          canvas's CanvasPanels (z:5/6) — same layer FrameAnnotator uses so the
                          handoff (annotator → this surface) doesn't dip behind the panels. Sits
@@ -334,7 +334,7 @@ function dismissAllClaudeMarks() {
    marks (fixed amber via `--cc-warn`); user's colourless poly tint retired 2026-09 with the
    palette so the outline colour reads unambiguously. */
 .cvs-claude-shape { stroke: var(--cc-warn); }
-.cvs-poly-claude { fill: rgba(245, 158, 11, 0.08); }
+.cvs-poly-claude { fill: color-mix(in srgb, var(--cc-warn) 8%, transparent); }
 
 /* Chip: same style family as `.vw-status-chip` (the existing viewer toast) so it reads as
  * "viewer chrome", not modal chrome. */
@@ -345,7 +345,7 @@ function dismissAllClaudeMarks() {
   background: var(--cc-surface-1); border: 1px solid var(--cc-warn);
   border-radius: var(--cc-radius-pill);
   color: var(--cc-text);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 2px var(--cc-hud-shade);
   pointer-events: auto;
   max-width: calc(100% - 16px);
 }
@@ -363,7 +363,7 @@ function dismissAllClaudeMarks() {
   background: var(--cc-surface-1); border: 1px solid var(--cc-accent);
   border-radius: var(--cc-radius-md);
   color: var(--cc-text);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 2px var(--cc-hud-shade);
   pointer-events: auto;
   max-height: 30%;
   overflow-y: auto;

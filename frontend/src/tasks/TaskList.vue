@@ -290,7 +290,7 @@ const TL_COLUMNS: SelectionColumn[] = [
 .tasks-heading-actions { display: flex; gap: 0.15rem; }
 /* .clear-btn → cc-btn cc-btn-bare cc-btn-icon */
 .clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
+.clear-btn.danger:hover { background: var(--cc-tint-red); color: var(--cc-ink-red); }
 
 /* Per-status row tint, via SelectionTable's `rowClass` (the ImageTable `.cc-row-excluded` precedent).
    Keyed off `TASK_STATUS[...].tone`, which exists for exactly this — a component tinting its own
@@ -347,11 +347,11 @@ const TL_COLUMNS: SelectionColumn[] = [
 
 /* .icon-btn → cc-btn cc-btn-bare cc-btn-icon */
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.icon-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
+.icon-btn.danger:hover { background: var(--cc-tint-red); color: var(--cc-ink-red); }
 
 /* + cc-btn cc-btn-bare cc-btn-icon. The `.task-item:hover` rule that sat here was dead — it set
    `display: inline-flex` with no `display: none` base to reverse. */
-.jump-btn { color: #4ade80; -webkit-text-stroke: 0.4px #4ade80; }
+.jump-btn { color: var(--cc-ink-green); -webkit-text-stroke: 0.4px var(--cc-ink-green); }
 
 .task-log {
   font-family: var(--cc-mono);

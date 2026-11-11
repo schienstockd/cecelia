@@ -281,7 +281,7 @@ const waitLabel = computed(() => guide.currentStep?.awaitTask?.label ?? 'Running
   background: var(--cc-surface-1);
   border: 1px solid var(--cc-guide);
   border-radius: var(--cc-radius-md);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 30px var(--cc-shadow);
   color: var(--cc-text);
   padding: 0.55rem 0.7rem 0.45rem;
   font-size: var(--cc-fs-md);

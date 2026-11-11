@@ -103,7 +103,7 @@ function timeLabel(t: number, t_s?: number): string {
     <div class="ccd">
       <div class="ccd-head">
         <span class="ccd-name" :style="{ color: card.colour }">{{ card.name }}</span>
-        <span v-if="claudePointing" class="ccd-claude-badge"
+        <span v-if="claudePointing" class="cc-claude-badge"
               v-tooltip.top="'Claude pointed at this card'">C</span>
         <span class="cc-muted cc-fs-xs ccd-meta">
           n={{ card.n }} · medoid track {{ card.medoid.track_id }}
@@ -152,10 +152,6 @@ function timeLabel(t: number, t_s?: number): string {
 .ccd-name { font-weight: 700; font-size: var(--cc-fs-md); }
 .ccd-meta { flex: 1; min-width: 0; }
 .ccd-viewer-btn { display: inline-flex; align-items: center; gap: 4px; flex: none; }
-/* BIDIR PR #4b — matches the corner "C" badge on the grid card (`CardsPanelInner`). */
-.ccd-claude-badge { display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; flex: none; }
 .ccd-strip { display: flex; gap: 4px; overflow-x: auto; min-height: 140px; }
 .ccd-frame { flex: 1 1 0; min-width: 140px; min-height: 140px; display: flex; flex-direction: column;
   overflow: hidden; border: 2px solid transparent; border-radius: var(--cc-radius-xs); position: relative; }
@@ -164,7 +160,7 @@ function timeLabel(t: number, t_s?: number): string {
 /* timestamp caption anchored bottom-left of the frame, white-on-dark chip so it reads on any image */
 .ccd-time { position: absolute; bottom: 4px; left: 4px; padding: 1px 5px;
   border-radius: var(--cc-radius-xs);
-  background: rgba(0,0,0,0.55); color: #fff; font-weight: 600; }
+  background: var(--cc-hud-bg-soft); color: var(--cc-hud-text); font-weight: 600; }
 .ccd-stats { width: 100%; border-collapse: collapse; }
 .ccd-stats td { padding: 2px 6px; vertical-align: middle; border-bottom: 1px solid var(--cc-border); }
 .ccd-stat-name { text-align: left; white-space: nowrap; }

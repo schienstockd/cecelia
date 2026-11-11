@@ -215,7 +215,7 @@ function onResizeDown(e: PointerEvent, edges: Edges) {
   background: var(--cc-surface-1);          /* solid — floats over content, must not be see-through */
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-lg);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 28px var(--cc-shadow);
   overflow: hidden;
   min-width: 220px;
 }

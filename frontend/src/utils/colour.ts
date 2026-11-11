@@ -81,3 +81,15 @@ export function readableOn(colour: string, bg: string, target = WCAG_AA, toward 
   }
   return toward
 }
+
+/**
+ * A colour token's value in the active colour scheme — for the few colours JS has to compute with
+ * (a contrast check) rather than hand to CSS. Reads `:root`, where every token and every scheme
+ * override lives. Returns `fallback` where there is no document (unit tests, workers) or when the
+ * value is not a hex: the maths here (`parseHex`) only reads hex, so a token JS reads must stay one.
+ */
+export function tokenColour(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return parseHex(v) ? v : fallback
+}

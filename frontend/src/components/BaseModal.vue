@@ -62,7 +62,7 @@ useWindowListener('keydown', onKey)
 <style scoped>
 .cc-modal-overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.65);
+  background: var(--cc-backdrop);
   display: flex; align-items: center; justify-content: center;
   z-index: 500;
 }
@@ -73,7 +73,7 @@ useWindowListener('keydown', onKey)
   max-width: 96vw; max-height: 90vh;
   display: flex; flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.5);
+  box-shadow: 0 24px 48px var(--cc-shadow);
 }
 .cc-modal-header {
   display: flex; align-items: center;

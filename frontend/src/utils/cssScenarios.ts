@@ -530,70 +530,63 @@ export function findRawValues(sources: Array<{ path: string, text: string }>): R
   return out
 }
 
-export interface RawColour {
-  path:     string
-  selector: string
-  hex:      string
-  token:    string   // the token that already holds exactly this value
+export interface ColourLiteral {
+  path:    string
+  line:    number   // 1-based, in the whole file
+  literal: string
 }
 
-/** `--foo: #aabbcc;` declarations in style.css, indexed value → token name. */
-export function colourTokens(styleCss: string): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const m of styleCss.matchAll(/(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;/g)) {
-    out[m[2].toLowerCase()] = m[1]
-  }
-  return out
-}
+/** The marker that keeps a deliberate fixed colour: on the literal's line, or alone on the line above. */
+export const COLOUR_OK = 'COLOUR-OK:'
 
 /**
- * Hex literals in scoped CSS that EXACTLY equal a declared token's value.
+ * Every literal colour in component CSS — a hex, an `rgb()`/`hsl()`, or `white`/`black` — in a `<style>`
+ * block or an inline `style=` / `:style=` attribute. A colour scheme can only restyle what reads a
+ * token, so each literal is a spot where a light (or any other) scheme would leave the dark colour
+ * behind. `var(--x, #hex)` fallbacks count too: the token is proven declared (`cssTokens.test.ts`), so
+ * the fallback is dead code that misreports the colour.
  *
- * Colour is the last scale that was never ratcheted: `cssTokens.ts` catches a reference to a token
- * that doesn't exist, but nothing catches never referencing one at all, and `findRawValues` only
- * covers sizes and radii. There are ~300 raw hex declarations in the app.
- *
- * Flagging all of them would be wrong, and this is deliberately the narrow check — the same
- * precision-over-recall call that made the `card` matcher not worth having. Most raw hex is a
- * genuine one-off: chart series colours, the chain node hues, a tint nothing else uses. There is no
- * way to tell those from a system colour by looking at them. But an EXACT match to a token's value
- * is not a judgement call — the token exists, it holds this precise value, and the literal will not
- * follow it when it changes. Zero false positives by construction, so no allow-list to rot.
- *
- * Exempt: `style.css` itself (it DECLARES the tokens), and #fff/#000 (not a scale — plain white and
- * black on a filled control, which is what `.cc-btn-primary` and friends already use).
+ * Not flagged:
+ *   * custom-property declarations in `style.css` — that is where the tokens are DEFINED;
+ *   * a line carrying `COLOUR-OK: <reason>`, or the line after a comment that is only that marker —
+ *     a colour that is not the app's to theme (a data ramp, a figure ground, an external asset's paper);
+ *   * `color-mix()` over tokens, which is how a tint is derived (its `transparent` is not a colour).
  */
-export function findRawColours(
-  sources: Array<{ path: string, text: string }>,
-  tokens: Record<string, string>,
-): RawColour[] {
-  const out: RawColour[] = []
-  const HEX = /#[0-9a-fA-F]{3,8}\b/g
-  // `var(--x, #hex)` — a hex FALLBACK on a token. Flagged whatever the value, which is the one place
-  // this check is not about exact matches: `cssTokens.test.ts` already proves every referenced token
-  // is declared, so the fallback is unreachable by construction. It is dead code that misreports the
-  // rendered colour to the next reader (`var(--cc-accent, #a855f7)` when accent is #a78bfa), and if a
-  // token is ever renamed it silently freezes that wrong colour instead of failing the token guard.
-  // Hence the standing rule: add the token, never a fallback.
-  const FALLBACK = /var\(\s*(--[\w-]+)\s*,\s*(#[0-9a-fA-F]{3,8})\s*\)/g
-  const PLAIN = new Set(['#fff', '#ffffff', '#000', '#000000'])
-
+export function findColourLiterals(sources: Array<{ path: string, text: string }>): ColourLiteral[] {
+  const LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?)\(|(?<![\w-])(?:white|black)(?![\w-])/g
+  const out: ColourLiteral[] = []
   for (const { path, text } of sources) {
-    for (const block of styleBlocks(text)) {
-      for (const rule of cssRules(block)) {
-        for (const m of rule.body.matchAll(FALLBACK)) {
-          out.push({ path, selector: rule.selector, hex: m[2].toLowerCase(), token: `${m[1]} (fallback)` })
-        }
-        // fallbacks are already reported above — drop them so their hex isn't counted a second time
-        const body = rule.body.replace(FALLBACK, 'var($1)')
-        for (const m of body.matchAll(HEX)) {
-          const hex = m[0].toLowerCase()
-          if (PLAIN.has(hex)) continue
-          const token = tokens[hex]
-          if (token) out.push({ path, selector: rule.selector, hex, token })
-        }
+    const lines = text.split('\n')
+    const isCss = !text.includes('<template') && !text.includes('<script') && !text.includes('<style')
+    const isStyleCss = path.endsWith('style.css')
+    let inStyle = isCss, inComment = false
+    lines.forEach((raw, i) => {
+      if (/<style[^>]*>/.test(raw)) inStyle = true
+      const wasStyle = inStyle
+      if (raw.includes('</style>')) inStyle = false
+      const markedAbove = i > 0 && new RegExp(`^\\s*(/\\*|<!--|//)\\s*${COLOUR_OK}`).test(lines[i - 1])
+      if (raw.includes(COLOUR_OK) || markedAbove) { inComment = inComment && !raw.includes('*/'); return }
+      // strip comments, carrying an open /* across lines
+      let s = raw
+      if (inComment) {
+        const end = s.indexOf('*/')
+        if (end < 0) return
+        s = s.slice(end + 2); inComment = false
       }
-    }
+      s = s.replace(/\/\*.*?\*\//g, ' ')
+      const open = s.indexOf('/*')
+      if (open >= 0) { s = s.slice(0, open); inComment = true }
+      let scan: string
+      if (wasStyle) {
+        if (isStyleCss && /^\s*(:root\s*\{\s*)?--[\w-]+\s*:/.test(s)) return   // a token definition
+        // drop a selector (`#id`, `.white`) and property names; what is left is values, including a
+        // value continued from the line above (a multi-line text-shadow or gradient)
+        scan = s.replace(/^[^{}]*\{/, ' ').replace(/[\w-]+\s*:(?!:)/g, ' ')
+      } else {
+        scan = [...s.matchAll(/(?::style|\bstyle)="([^"]*)"/g)].map(m => m[1]).join(' ; ')
+      }
+      for (const m of scan.matchAll(LITERAL)) out.push({ path, line: i + 1, literal: m[0].replace(/\($/, '(…)') })
+    })
   }
   return out
 }

@@ -252,14 +252,14 @@ async function confirmImport() {
 .lm-lead { margin: 0; }
 .lm-donebox { padding: 0.5rem 0.25rem; }
 .lm-doneline { margin: 0 0 0.4rem; font-size: 1rem; color: var(--cc-text); }
-.lm-doneline .pi-check-circle { color: #4ade80; margin-right: 0.35rem; }
+.lm-doneline .pi-check-circle { color: var(--cc-ink-green); margin-right: 0.35rem; }
 .lm-path { display: flex; gap: 0.5rem; }
 .lm-input {
   flex: 1; padding: 0.4rem 0.6rem; font-size: var(--cc-fs-lg);
   background: var(--cc-surface-1);
 }
 .lm-input::placeholder { color: var(--cc-text-dim); }
-.lm-error { color: #f87171; margin: 0; font-size: var(--cc-fs-md); }
+.lm-error { color: var(--cc-ink-red); margin: 0; font-size: var(--cc-fs-md); }
 .lm-summary { margin: 0; font-size: var(--cc-fs-lg); color: var(--cc-text); }
 .lm-tablewrap { max-height: 46vh; overflow: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }
 /* header, borders, padding and hover are SelectionTable's now. What is left is this dialog's own
@@ -268,8 +268,8 @@ async function confirmImport() {
 .lm-table :deep(td) { vertical-align: top; }
 .lm-table :deep(.off) { opacity: 0.45; }
 .lm-name { font-weight: 500; }
-.lm-warn { color: #fbbf24; font-size: var(--cc-fs-sm); margin-top: 0.15rem; }
+.lm-warn { color: var(--cc-ink-amber); font-size: var(--cc-fs-sm); margin-top: 0.15rem; }
 .lm-tag { display: inline-block; margin: 0.1rem 0.2rem 0.1rem 0; padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs); font-size: var(--cc-fs-sm); }
-.lm-tag.ok { background: #16653433; color: #4ade80; }
+.lm-tag.ok { background: var(--cc-tint-green); color: var(--cc-ink-green); }
 .lm-tag.off-tag { background: var(--cc-surface-2); color: var(--cc-text-dim); text-decoration: line-through; }
 </style>

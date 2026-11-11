@@ -380,9 +380,9 @@ defineExpose({ refresh })
    not `display:flex`, which would take the <td> out of the table layout). What stays is only the
    denser button padding this table wants — five controls per row is more than most. */
 .nbt-table :deep(.sel-actions) .cc-btn { padding: .25rem .45rem; }
-.nbt-danger { color: #f85149; }
-.nbt-active { color: #58a6ff; }
-.nbt-table :deep(.sel-detail-row) td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
+.nbt-danger { color: var(--cc-ink-red); }
+.nbt-active { color: var(--cc-ink-blue); }
+.nbt-table :deep(.sel-detail-row) td { background: var(--cc-surface-2); }
 .nbt-history { font-size: var(--cc-fs-md); }
 .nbt-hist-label { color: var(--cc-text-dim); }
 .nbt-hist-sep { flex: 1 1 auto; }   /* push Prune to the far end, away from the Restore control */
@@ -390,6 +390,6 @@ defineExpose({ refresh })
 .nbt-snap-ver { font-variant-numeric: tabular-nums; }
 .nbt-snap .cc-btn { padding: .15rem .4rem; }
 .nb-badge { font-size: var(--cc-fs-sm); padding: .1rem .45rem; border-radius: var(--cc-radius-pill); border: 1px solid var(--cc-border); }
-.nb-badge.scope-project { color: #58a6ff; border-color: #58a6ff55; }
-.nb-badge.scope-example { color: #888; }
+.nb-badge.scope-project { color: var(--cc-ink-blue); border-color: color-mix(in srgb, var(--cc-ink-blue) 33%, transparent); }
+.nb-badge.scope-example { color: var(--cc-text-dim); }
 </style>
