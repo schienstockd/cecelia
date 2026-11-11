@@ -67,10 +67,10 @@ const prov = computed(() => [
     <span v-if="prov" class="vwh-prov cc-muted cc-fs-xs"
           v-tooltip.bottom="'The image version and labels are picked in the main window’s Viewer panel'">{{ prov }}</span>
     <span class="vwh-grow" />
-    <button ref="shareBtn" type="button" class="cc-btn cc-btn-dense" :class="{ 'cc-btn-on': shareOpen }"
+    <button ref="shareBtn" type="button" class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'cc-btn-on': shareOpen }"
             aria-haspopup="menu" @click="shareOpen = !shareOpen"
             v-tooltip.bottom="'Save this view, or draw on it and send it to Kiwi'">
-      Share <i class="pi pi-chevron-down cc-fs-3xs" />
+      Share <i class="pi pi-chevron-down cc-fs-2xs" />
     </button>
     <TeleportPopover v-model="shareOpen" :anchor="shareBtn" placement="bottom-end" flush>
       <div class="cc-actions-menu" role="menu">
