@@ -107,7 +107,7 @@ import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
-         type MaskStore } from '../utils/viewerLabels'
+         shownLabelFiles, type MaskStore } from '../utils/viewerLabels'
 import { maskPopTable, trackclustMaskLayer, maskLayerShowsAny, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
@@ -954,6 +954,13 @@ function maskStoreOf(vn: string): {
     // promoted (see `live_labels_store_path`)
     liveSince: store === 'live' ? viewerStore.liveLabels?.startedAt : undefined }
 }
+/** The segmentation's derived files (`halo`, `nuc`) packed into its mask — the panel's file chips,
+ *  `settings.getLabelFilesHidden` (docs/todo/MASK_FILE_LAYERS_PLAN.md). Every mask fetch sends them and
+ *  the mask id carries them, so a toggle refetches the mask alone. */
+function maskFilesOf(vn: string): string[] {
+  return shownLabelFiles(vn, meta.value?.labelFiles?.[vn],
+    imageUid ? settings.getLabelFilesHidden(imageUid, vn) : new Set(), maskStoreOf(vn).store)
+}
 // The region the task preview last segmented, for THIS image, in the plane view — what seeds the
 // user's preview box (`previewBox`) the first time a preview lands.
 const previewedRegion = computed(() => {
@@ -973,6 +980,7 @@ const maskHidden = ref(false)
 // `hidden` is left out: hiding is a redraw at opacity 0, not a different mask.
 const maskSourceId = computed(() => tileMaskSourceId({
   vn: maskName.value, hidden: false, ...maskStoreOf(maskName.value), rev: cacheClearRev.value,
+  files: maskFilesOf(maskName.value),
 }))
 // The flat renderer budgets a timepoint WITH its mask whenever the image has a segmentation, so ticking
 // one on never changes how many timepoints fit — which would be a reallocate.
@@ -2309,7 +2317,7 @@ async function fetchMaskSlab(
   // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
   const url = slabUrl({
     projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
-    ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince),
+    ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince), labelFiles: maskFilesOf(vn),
     // Same cache-buster for the durable labels store's own rewrites.
     rev: cacheClearRev.value || undefined,
   })
@@ -2765,6 +2773,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
  *  mask stale and the pump refetches the mask bytes alone, never the image's channels. */
 const tileMaskSource = computed(() => tileMaskSourceId({
   vn: maskName.value, hidden: maskHidden.value, ...maskStoreOf(maskName.value), rev: cacheClearRev.value,
+  files: maskFilesOf(maskName.value),
 }))
 const tileLabelAborts = new Map<string, AbortController>()
 /** `<source>@<tile key>` of mask fetches that failed — not retried for that source, or every redraw
@@ -2800,7 +2809,7 @@ async function fetchTileLabel(key: TileKey): Promise<boolean> {
       projectUid, imageUid, valueName: valueName.value, t: key.t, c: 0, z: key.z, level: key.level,
       enc: settings.viewerCompress ? 'zstd' : 'identity', labels: vn,
       x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
-      ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince),
+      ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince), labelFiles: maskFilesOf(vn),
       rev: cacheClearRev.value || undefined,
     })
     const res = await fetch(url, { cache: 'default', signal: ac.signal })
@@ -4398,6 +4407,7 @@ function brickSource(): BrickSource {
     labelStore: vn ? ms.store : undefined,
     labelStoreId: vn ? ms.storeId : undefined,
     liveSince: vn ? ms.liveSince : undefined,
+    labelFiles: maskFilesOf(vn),
     // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr` in place),
     // which the projectUid/imageUid/valueName identity can't detect on its own. `setBrickSource` treats
     // a rev change as an image switch and drops the atlas — same discipline as the tile atlas's
@@ -4811,7 +4821,7 @@ function onModeChange(v: 'plane' | 'volume'): void {
 // resample-to-fit would render a spatially-shifted overlay (see commit message).
 // Also keyed on `labelDims` itself: a task-done that changed nothing drawn swaps it in place (no
 // new `meta.value`), and a new segmentation from another version must still be flagged.
-watch([meta, () => meta.value?.labelDims], ([m]) => {
+watch([meta, () => meta.value?.labelDims, () => meta.value?.labelFiles], ([m]) => {
   if (!m || !imageUid) return
   const dims = m.labelDims ?? {}
   const mismatched: string[] = []
@@ -4829,7 +4839,7 @@ watch([meta, () => meta.value?.labelDims], ([m]) => {
   }
   viewerStore.setLabelsDimMismatch({
     imageUid, valueName: valueName.value || (m.valueName ?? ''),
-    imageNX: m.nX, imageNY: m.nY, mismatched, byVn, shortLevels,
+    imageNX: m.nX, imageNY: m.nY, mismatched, byVn, shortLevels, labelFiles: m.labelFiles ?? {},
   })
 }, { immediate: true })
 

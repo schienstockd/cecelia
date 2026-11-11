@@ -92,6 +92,14 @@ describe('brickLabelSlabUrl', () => {
   // Regression: without cTo the server responds with the 3-tuple `nz,ny,nx` header and the
   // brick-atlas parser (`parseBrickSlabShape`, 4-tuple only) drops every label brick on the
   // floor — labels showed in the flat renderer but never in bricks (fXgbTl, 2026-09-15).
+  it('names the packed halo / nuc files, and only on the durable store', () => {
+    const b = { t: 0, level: 0, bx: 0, by: 0, bz: 0 }
+    expect(brickLabelSlabUrl({ ...base, labelFiles: ['halo', 'nuc'] }, 'cells', b, brickSize))
+      .toContain('files=halo%2Cnuc')
+    expect(brickLabelSlabUrl(base, 'cells', b, brickSize)).not.toContain('files=')
+    expect(brickLabelSlabUrl({ ...base, labelFiles: ['halo'], labelStore: 'live', labelStoreId: 1 },
+      'cells', b, brickSize)).not.toContain('files=')
+  })
   it('sends c=0 AND cTo=0 so the server emits the 4-tuple X-Slab-Shape header', () => {
     const url = brickLabelSlabUrl(base, 'flowTom',
       { t: 0, level: 0, bx: 0, by: 0, bz: 0 }, brickSize)

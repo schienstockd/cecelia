@@ -59,7 +59,8 @@ class RealShadersTest(unittest.TestCase):
                  "brick.wgsl": {}, "brick_points.wgsl": {}, "brick_segments.wgsl": {},
                  "brick_multi.wgsl": brick_multi,
                  # an include, not an entry: its includer names the fetch it calls
-                 "label_edge.wgsl": {"LAB_AT": "labAt"}}
+                 "label_edge.wgsl": {"LAB_AT": "labAt", "LAB_EDGE": "labEdge"},
+                 "label_layers.wgsl": {"LAB_AT": "labAt"}}
         for name, extra in cases.items():
             with self.subTest(name):
                 code = wgsl_utils.expand_wgsl(name, **extra)
@@ -227,6 +228,13 @@ class MipRenderTest(unittest.TestCase):
         u.update(extra)
         return u
 
+    def _plane(self, z):
+        """What the 2D view of plane ``z`` composites, before any mask."""
+        acc = np.zeros((self.NY, self.NX, 3))
+        for c, (lo, hi) in enumerate(self.windows):
+            acc += _ramp(self.lut[c], (self.vol[c, z].astype(np.float64) - lo) / max(hi - lo, 1), self.stops)
+        return acc
+
     def _expected(self):
         acc = np.zeros((self.NY, self.NX, 3))
         for c, (lo, hi) in enumerate(self.windows):
@@ -254,6 +262,64 @@ class MipRenderTest(unittest.TestCase):
         want = _srgb_encode(self._expected())
         want[0:4, 0:5] = _srgb_encode(self.palette[3, :3] / 255)
         self.assertLessEqual(int(np.abs(got - want).max()), 2)
+
+    def test_derived_file_outlines_in_its_cells_colour(self):
+        """A halo packed into the mask (``compose_label_files!``): the cell stays filled, the ring is
+        drawn as its OUTLINE only, and every flagged voxel colours as its cell — the id the palette
+        and population table see has the flag stripped (docs/todo/MASK_FILE_LAYERS_PLAN.md D2/D3)."""
+        consts = wgsl_utils.shader_constants()
+        out = int(consts["LABEL_FILE_OUT_BIT"])
+        labels = np.zeros((self.NZ, self.NY, self.NX), np.uint32)
+        labels[2, 1:11, 2:12] = 2 | out                # halo ring, 3 voxels wide …
+        labels[2, 4:8, 5:9] = 2                        # … around cell 2
+        self.host.set_labels(labels)
+        try:
+            # the 2D view: plane 2 alone, one sample per ray. 3 palette rows, so a flag left on the id
+            # (2 | 2**31) would land on row 1, not row 2
+            img = self.host.render(self.NX, self.NY, self._uniforms(
+                **{"ext.z": 1, "cam.steps": 1, "zwin.off": 2, "zwin.shown": 1,
+                   "lab.opacity": 1, "lab.contourPx": 0, "lab.paletteRows": 3}))
+        finally:
+            self.host.set_labels(None)
+        got = img[..., :3].astype(np.int32)
+        want = _srgb_encode(self._plane(2))
+        cell = _srgb_encode(self.palette[2, :3] / 255)
+        ring = np.zeros((self.NY, self.NX), bool)
+        ring[1:11, 2:12] = True
+        ring[2:10, 3:11] = False                       # outer edge of the ring …
+        ring[3:9, 4:10] |= True
+        ring[4:8, 5:9] = False                         # … and its inner edge, against the cell —
+        ring[[3, 3, 8, 8], [4, 9, 4, 9]] = False       # less its corners: the edge test is 4-connected
+        want[4:8, 5:9] = cell                          # the cell: filled, as without a halo
+        want[ring] = cell
+        self.assertLessEqual(int(np.abs(got - want).max()), 2)
+        # the ring's middle voxels are not on its outline: they show the signal, not the mask
+        bare = _srgb_encode(self._plane(2))
+        self.assertLessEqual(int(np.abs(got[2, 3:11] - bare[2, 3:11]).max()), 2)
+        self.assertGreater(int(np.abs(bare[2, 3:11] - cell).max()), 2)   # …which differs from the mask
+
+    def test_a_multi_plane_raycast_draws_the_cell_as_without_its_halo(self):
+        """Derived files are a per-plane annotation: a raycast through several planes meets a 3D halo's
+        cap first, and must neither stop on it (hiding the cell) nor outline it — it draws the cells
+        exactly as without the halo. The dome-shaped case is test_result_review_halo_3d_rings."""
+        out = int(wgsl_utils.shader_constants()["LABEL_FILE_OUT_BIT"])
+        base = np.zeros((self.NZ, self.NY, self.NX), np.uint32)
+        base[2, 4:8, 5:9] = 2
+        packed = base.copy()
+        for z in (1, 2, 3):
+            packed[z, 1:11, 2:12] = 2 | out           # the halo, above, around and below …
+        packed[2, 4:8, 5:9] = 2                        # … cell 2
+        u = self._uniforms(**{"lab.opacity": 1, "lab.contourPx": 0, "lab.paletteRows": 3})
+        try:
+            self.host.set_labels(base)
+            without = self.host.render(self.NX, self.NY, u)[..., :3].astype(np.int32)
+            self.host.set_labels(packed)
+            got = self.host.render(self.NX, self.NY, u)[..., :3].astype(np.int32)
+        finally:
+            self.host.set_labels(None)
+        cell = _srgb_encode(self.palette[2, :3] / 255)
+        self.assertLessEqual(int(np.abs(without[4:8, 5:9] - cell).max()), 2)
+        self.assertLessEqual(int(np.abs(got - without).max()), 2, "the halo changed the 3D view")
 
     def test_shown_sub_range_draws_only_those_planes(self):
         """``zwin``: the texture holds all NZ planes, the box shows planes 2-4. Face-on that is the MIP
