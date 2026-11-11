@@ -465,7 +465,11 @@ def run(params: dict):
     im_list, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)   # plain zarr — reads are per-frame slices
     dim_utils.calc_image_dimensions(im_list[0].shape)
 
-    is_3d = dim_utils.is_3D()
+    # The label store's axes as WRITTEN, not the image's minus C: ridges writes a single plane, or a
+    # Z-MIP of a stack, as (T)YX — labels with no Z are 2D whatever the image is.
+    label_axes = zarr_utils.store_axes(labels_path, labels_level.ndim,
+                                       [ax for ax in dim_utils.im_dim_order if ax != "C"])
+    is_3d = dim_utils.is_3D() and "Z" in label_axes
     has_time = dim_utils.is_timeseries()
     src_is_3d = is_3d          # frames are Z-MIPed on READ, so the reader needs the SOURCE rank
     flatten_z = flatten_branching and is_3d
@@ -494,7 +498,8 @@ def run(params: dict):
         if not has_time:
             yield from _iterate_timepoints(
                 collapsed if collapsed is not None else
-                _read_labels_frame(labels_level, dim_utils, None, flatten_z, src_is_3d),
+                # frame 0: a static image's store may still carry a length-1 T (ignored when absent)
+                _read_labels_frame(labels_level, dim_utils, 0, flatten_z, src_is_3d),
                 dim_utils, has_time=False)
         else:
             for t in range(n_t):
@@ -530,7 +535,6 @@ def run(params: dict):
     # gave Y the Z step (finding A8).
     #
     # `dtype=np.uint32`, `kind='labels'`: label store — `store_compressor` picks the label codec.
-    label_axes = [ax for ax in dim_utils.im_dim_order if ax != "C"]
     _drop_pos = set()
     if not has_time and "T" in label_axes:
         _drop_pos.add(label_axes.index("T"))

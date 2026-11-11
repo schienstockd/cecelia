@@ -530,7 +530,7 @@ component changes. That holds because **component CSS contains no colour literal
   `--cc-text*`, `--cc-border*`), the accent/stage/primary families, `--cc-shadow` / `--cc-shadow-soft` /
   `--cc-backdrop`, `--cc-wash` / `--cc-wash-strong` (hover washes — white on dark, so a light scheme
   makes them dark), and `--cc-ink-*` (a hue that reads *as text* on the scheme's surfaces: red, amber,
-  green, blue, orange, cyan — a light scheme darkens each). `--cc-tint-*` are `color-mix()`es of
+  green, blue, cyan — a light scheme darkens each). `--cc-tint-*` are `color-mix()`es of
   `--cc-danger` / `--cc-warn` / `--cc-sev-ok` / `--cc-dot-info`, so they follow for free.
 - **Fixed** — a scheme leaves them alone, because what is underneath is not the page: `--cc-hud-*`
   (chips, halos and marks over microscopy pixels and plot canvases, which are dark in any scheme),
@@ -549,6 +549,15 @@ avatar menu (the item names the scheme it goes to) or picks in Preferences → I
 is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
 `<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
 chosen for AA contrast; they have not had the CVD check the dark trio had.
+
+**State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
+scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
+`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger` and the status
+dots to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
+OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labelled category ink (cyan)
+is held to the 6 floor. Identity hues that always appear with their name — the four stage colours,
+accent / Kiwi / Claude / viewer — are not in the check. There is no orange ink: on a light ground, at
+text contrast, it cannot be told from amber.
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
 `--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its

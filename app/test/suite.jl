@@ -359,7 +359,6 @@ include(joinpath(@__DIR__, "suite", "drift_partial_timepoint.jl"))
 include(joinpath(@__DIR__, "suite", "acquisition_settings.jl"))
 # the import probe's signal pass (photons, shared structure, drift) — ome_qc.jl is review-guarded
 include(joinpath(@__DIR__, "suite", "acq_signal.jl"))
-include(joinpath(@__DIR__, "suite", "probe_still_drift.jl"))
 # test-acquisition check over a set (acq_check.jl): seeded facts, each rule firing and not
 include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))

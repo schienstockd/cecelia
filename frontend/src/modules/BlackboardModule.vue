@@ -959,7 +959,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
    already Cecelia's canonical CVD-safe qualitative palette (`plots/palettes.json:okabe-ito`).
    Colour is not the sole cue — thumbs-up / thumbs-down icons carry the semantic redundantly. */
 .bb-chip-outcome-good { background: color-mix(in srgb, var(--cc-dot-ok) 18%, transparent); color: var(--cc-active); border-color: color-mix(in srgb, var(--cc-dot-ok) 50%, transparent); }
-.bb-chip-outcome-bad  { background: color-mix(in srgb, var(--cc-dot-fail) 18%, transparent); color: var(--cc-ink-orange); border-color: color-mix(in srgb, var(--cc-dot-fail) 50%, transparent); }
+.bb-chip-outcome-bad  { background: color-mix(in srgb, var(--cc-dot-fail) 18%, transparent); color: var(--cc-ink-red); border-color: color-mix(in srgb, var(--cc-dot-fail) 50%, transparent); }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */
 .bb-pane {

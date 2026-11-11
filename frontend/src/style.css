@@ -83,17 +83,17 @@
   --cc-danger:     #ef4444;
 
   /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
-     (ok / warn / fail) drawn WITH its shape-distinct icon. Hues from the dataviz status palette,
-     validated for CVD separation on ADJACENT pairs (worst ΔE 11.3 under protanopia > the ΔE≥8 bar);
-     ok-vs-fail is only ΔE 5.4 under deuteranopia, which the icon covers. A bare status dot has no
+     (ok / warn / fail) drawn WITH its shape-distinct icon. Every pair of ok / warn / fail / --cc-active
+     is ≥ ΔE 8 under protan- and deuteranopia (worst 10.8) and ≥ 15 for normal vision, in each scheme —
+     enforced by utils/cvd.test.ts, which reads these values. Each also reads as text (≥ 4.5:1). A bare status dot has no
      icon, so it does NOT use these: `.cc-dot` tones are `--cc-dot-*` (sky-blue ok). Colour is NEVER the sole cue:
      always paired with a shape-distinct icon + label via frontend/src/lib/severity.ts (pi-check-circle
      / pi-exclamation-triangle / pi-times-circle). See docs/todo/QC_OBSERVER_PLAN.md.
      Supersedes --cc-warn/--cc-danger for severity semantics. Task-status lights (done/failed) route
      through here via lib/taskStatus.ts; ParamRenderer's QC flag uses lib/severity.ts. */
-  --cc-sev-ok:     #0ca30c;
-  --cc-sev-warn:   #fab219;
-  --cc-sev-fail:   #d03b3b;
+  --cc-sev-ok:     #61c28e;
+  --cc-sev-warn:   #ef9d14;
+  --cc-sev-fail:   #f34739;
   /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
      from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
      button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok` —
@@ -108,7 +108,7 @@
   --cc-guide:      rgba(255, 255, 255, 0.6);
   /* "active / in-progress" (blue) — the running-task light. NOT a severity (ok/warn/fail); it's the
      4th task-status tone alongside neutral (queued/cancelled). See lib/taskStatus.ts. */
-  --cc-active:     #93c5fd;
+  --cc-active:     #5b8dd4;
 
   /* ── Scheme-following neutrals. A colour scheme overrides these with the rest of the palette. A
      component never writes rgba(0,0,0,…) / rgba(255,255,255,…) itself: those mean "darker / lighter
@@ -121,12 +121,13 @@
 
   /* Ink — a hue that reads AS TEXT on the scheme's surfaces (status lines, category labels, error
      messages). Distinct from the severity trio, which is drawn with its icon; ink is the coloured word.
-     A light scheme gives each a darker value. */
-  --cc-ink-red:    #fca5a5;
-  --cc-ink-amber:  #fcd34d;
-  --cc-ink-green:  #4ade80;
-  --cc-ink-blue:   #60a5fa;
-  --cc-ink-orange: #f97316;
+     A light scheme gives each a darker value. red / amber / green / blue carry state, so every pair is
+     ≥ ΔE 8 under protan/deutan in each scheme (utils/cvd.test.ts); cyan is a labelled category, held to
+     the 6 floor. There is no orange: at text contrast on a light ground it cannot be told from amber. */
+  --cc-ink-red:    #fc5858;
+  --cc-ink-amber:  #fcb52c;
+  --cc-ink-green:  #77edae;
+  --cc-ink-blue:   #6ea1d9;
   --cc-ink-cyan:   #67e8f9;
   /* Tints — the washed background behind ink (a failed chip, a warning callout). Derived, so a scheme
      that changes --cc-danger / --cc-warn / --cc-sev-ok / --cc-dot-info gets matching tints for free. */
@@ -1069,9 +1070,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    The avatar menu (one-click switch) or Preferences → Interface sets `data-theme="light"` on <html> (utils/colourScheme.ts).
    Overrides the SCHEME-FOLLOWING tokens only; the fixed ones (--cc-hud-*, --cc-paper*, --cc-on-*,
    --cc-media-bg, --cc-claude-mark) stay, because what sits under them is not the page. Warm-neutral
-   like the dark scheme. Every text pair is ≥ 4.5:1 (WCAG AA) on --cc-surface-1, ink also on its own
-   tint: text 15.4, dim 6.2, accent 5.7, white on accent-fill 5.95, stages 5.7–6.9, kiwi 5.3,
-   sev-ok/-warn/-fail 5.4/5.2/5.4, ink 5.0–6.5 (5.1–5.4 on its tint). Okabe–Ito dots stay: they are
+   like the dark scheme. Every text pair is ≥ 4.5:1 (WCAG AA) on --cc-surface-1: text 15.4, dim 6.2,
+   accent 5.7, white on accent-fill 5.95, stages 5.7–6.9, kiwi 5.3, severity 4.6–7.7, ink 4.7–8.9.
+   State colours are also held apart under colour blindness (utils/cvd.test.ts). Okabe–Ito dots stay: they are
    marks, not text. Same token, same meaning — only the value changes. docs/UI.md → *Colour schemes*. */
 :root[data-theme="light"] {
   --cc-bg:          #f4f2ef;
@@ -1101,14 +1102,14 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-claude:      #b0502f;
   --cc-selected:    #e07000;
 
-  --cc-warn:     #b45309;
-  --cc-danger:   #c81e1e;
-  --cc-sev-ok:   #08780b;
-  --cc-sev-warn: #9c5a00;
-  --cc-sev-fail: #c42b2b;
+  --cc-warn:     #a16507;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
+  --cc-danger:   #972334;   /* = sev-fail */
+  --cc-sev-ok:   #248160;
+  --cc-sev-warn: #a16507;
+  --cc-sev-fail: #972334;
   --cc-viewer:   #15803d;
   --cc-guide:    rgba(0, 0, 0, 0.5);
-  --cc-active:   #1d5fd6;
+  --cc-active:   #0a44c7;
 
   --cc-shadow:      rgba(0, 0, 0, 0.14);
   --cc-shadow-soft: rgba(0, 0, 0, 0.08);
@@ -1116,11 +1117,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-wash:        rgba(0, 0, 0, 0.04);
   --cc-wash-strong: rgba(0, 0, 0, 0.08);
 
-  --cc-ink-red:    #b91c1c;
-  --cc-ink-amber:  #8a4b06;
-  --cc-ink-green:  #11692f;
-  --cc-ink-blue:   #1d4ed8;
-  --cc-ink-orange: #c2410c;
+  --cc-ink-red:    #900e23;
+  --cc-ink-amber:  #9d5e01;
+  --cc-ink-green:  #247f5d;
+  --cc-ink-blue:   #254d90;
   --cc-ink-cyan:   #0e7490;
   /* tints restated: the dark mixes are too strong on a light ground (ink on them would drop below AA) */
   --cc-tint-red:   color-mix(in srgb, var(--cc-danger) 12%, transparent);
