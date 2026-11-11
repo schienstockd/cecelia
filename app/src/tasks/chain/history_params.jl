@@ -57,11 +57,12 @@ function _hp_entry_defaults(g, pos::Int)::Dict{String,Any}
 end
 
 # A run's params as flat `key => (value, default)`; a repeatable group's entries become `key[i].child`.
-# A key the spec gives no default for carries `missing` (always reported when set).
-function _hp_flat(params::AbstractDict, defaults::Dict{String,Any})
+# A key the spec gives no default for carries `missing` (always reported when set). A renamed param
+# saved under a former key (`leaves`' `formerKeys`, see `_history_current_params`) is reported under
+# its current key, against that key's default — in a group entry too.
+function _hp_flat(params::AbstractDict, defaults::Dict{String,Any}, leaves = nothing)
     out = Dict{String,Tuple{Any,Any}}()
-    for (k, v) in params
-        k = string(k)
+    for (k, v) in _history_current_params(params, leaves)
         g = get(defaults, k, missing)
         if g isa NamedTuple && v isa AbstractDict
             ids = sort!(collect(keys(v)); by = x -> something(tryparse(Int, string(x)), typemax(Int)))
@@ -69,8 +70,8 @@ function _hp_flat(params::AbstractDict, defaults::Dict{String,Any})
                 e = v[i]
                 e isa AbstractDict || continue
                 ed = _hp_entry_defaults(g, pos - 1)
-                for (ck, cv) in e
-                    out["$k[$i].$ck"] = (cv, get(ed, string(ck), missing))
+                for (ck, cv) in _history_current_params(e, leaves)
+                    out["$k[$i].$ck"] = (cv, get(ed, ck, missing))
                 end
             end
         else
@@ -133,7 +134,7 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String};
         defaults = _history_param_defaults(fn)
         spec = try _task_spec(_task_from_fun_name(fn)) catch; nothing end
         out_name, _ = _history_output(fn, first(values(by_img)).params, leaves_of(fn))
-        flats = [_hp_flat(r.params, defaults) for r in values(by_img)]
+        flats = [_hp_flat(r.params, defaults, leaves_of(fn)) for r in values(by_img)]
         changed = String[]; conflicts = String[]
         for k in sort!(unique(vcat((collect(keys(f)) for f in flats)...)))
             k == "valueName" && continue                       # shown as the output

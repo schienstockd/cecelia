@@ -79,11 +79,16 @@ class GhRefused(RuntimeError):
     """A `gh` call outside the allowlist: the pass's token is the owner's, so this is what bounds it."""
 
 
+def transient(message: str) -> bool:
+    """GitHub's side failed (`HTTP 502`, `503`, …): the same call can work a moment later. Also what
+    `weekly.publish` retries its own `gh pr` calls on."""
+    return bool(re.search(r"HTTP 5\d\d", message))
+
+
 class GhError(RuntimeError):
     @property
     def transient(self) -> bool:
-        """GitHub's side failed (`HTTP 502`, `503`, …): the same call can work a moment later."""
-        return bool(re.search(r"HTTP 5\d\d", str(self)))
+        return transient(str(self))
 
 
 #: Calls safe to repeat after a transient failure: reads, and writes that land the same state twice.

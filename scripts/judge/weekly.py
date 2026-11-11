@@ -41,6 +41,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import time
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
@@ -143,6 +144,42 @@ def _run(cmd: list[str], *, cwd: pathlib.Path, stage: str, env: dict | None = No
         raise JudgeRunError(stage, f"{' '.join(cmd[:3])} exited {proc.returncode}: "
                                      f"{(proc.stderr or proc.stdout or '').strip()[-600:]}")
     return proc
+
+
+def _gh_retry(run: _t.Callable[..., subprocess.CompletedProcess], cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    """`run(cmd)` for a `gh pr` call safe to repeat (a read, or `pr close`), tried again after a
+    transient GitHub failure (`HTTP 502`, …) as `issues.Gh` does: one 502 must not fail the pass."""
+    for attempt in range(_issues.RETRIES + 1):
+        try:
+            return run(cmd, **kw)
+        except JudgeRunError as e:
+            if not (_issues.transient(str(e)) and attempt < _issues.RETRIES):
+                raise
+            time.sleep(_issues.RETRY_GAP_S)
+    raise AssertionError("unreachable")
+
+
+def _open_prs(run: _t.Callable[..., subprocess.CompletedProcess], gh: str) -> list[dict]:
+    return json.loads(_gh_retry(run, [gh, "pr", "list", "--state", "open", "--json",
+                                      "number,headRefName,title,url"]).stdout)
+
+
+def _create_pr(run: _t.Callable[..., subprocess.CompletedProcess], gh: str, branch: str, title: str,
+               body: str) -> str:
+    """`gh pr create`, its URL. Not repeatable as is (a 502 can come back after GitHub opened it), so
+    after a transient failure the open PRs are listed first and `branch`'s is taken if it's there."""
+    cmd = [gh, "pr", "create", "--base", "main", "--head", branch, "--title", title, "--body-file", "-"]
+    for attempt in range(_issues.RETRIES + 1):
+        try:
+            return run(cmd, input=body).stdout.strip()
+        except JudgeRunError as e:
+            if not (_issues.transient(str(e)) and attempt < _issues.RETRIES):
+                raise
+            time.sleep(_issues.RETRY_GAP_S)
+            made = next((p["url"] for p in _open_prs(run, gh) if p["headRefName"] == branch), None)
+            if made:
+                return made
+    raise AssertionError("unreachable")
 
 
 def pin(ref: str, repo: pathlib.Path = _REPO) -> str:
@@ -285,10 +322,9 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
     run(["git", "commit", "--quiet", *(["--allow-empty"] if rules_only else []), "-F", "-"],
         input=f"{title}\n\n{recital.strip()}\n\n" + "\n".join(run_lines(_models(record))) + "\n")
     run(["git", "push", "--quiet", "--force", "-u", "origin", branch])
-    existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,title,url"]).stdout)
+    existing = _open_prs(run, gh)
     mine = next((p["url"] for p in existing if p["headRefName"] == branch), None)
-    url = mine or run([gh, "pr", "create", "--base", "main", "--head", branch,
-                       "--title", title, "--body-file", "-"], input=body).stdout.strip()
+    url = mine or _create_pr(run, gh, branch, title, body)
     if record.get("kind") == "failure":   # it supersedes nothing: the last pass's bugs are still the work list
         return url
     close_run_prs(f"Superseded by {url}.", keep=branch, run=run, existing=existing)
@@ -303,11 +339,11 @@ def close_run_prs(comment: str, *, keep: str | None = None, run: _t.Callable[...
     run = run or (lambda cmd, **kw: _run(cmd, cwd=_REPO, stage="publish", **kw))
     gh = shutil.which("gh") or "gh"
     if existing is None:
-        existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,title,url"]).stdout)
+        existing = _open_prs(run, gh)
     closed = [p["number"] for p in existing if p["headRefName"].startswith("judge-run/") and p["headRefName"] != keep
               and not (records_only and (p.get("title") or "").startswith(_RULES_PREFIX))]
     for n in closed:
-        run([gh, "pr", "close", str(n), "--comment", comment])
+        _gh_retry(run, [gh, "pr", "close", str(n), "--comment", comment])
     return closed
 
 
@@ -393,6 +429,14 @@ def mirror_issues(record: dict, gh: "_issues.Gh | None" = None) -> dict:
     """The issue mirror for this pass's record, its report kept on `run.issues`. A failure is said
     there and on stderr, never fails the pass: the record is written, and the next pass catches up."""
     earlier = _review.applied_pass_records(before=record["date"])   # a dropped bug's close says the owner's answer
+    newest = max((r["date"] for r in _record.pass_records()), default=record["date"])
+    if newest > record["date"]:
+        # the issues mirror the newest record, as `judge-issues --apply` insists: an older one
+        # (`--date` in the past) would close or reopen them from superseded state
+        report = {"error": f"{record['date']} isn't the newest pass record ({newest}); issues not mirrored"}
+        record["run"]["issues"] = report
+        _record.write(record, force=True)
+        return report
     try:
         gh = gh or _issues.Gh(_issues.repo_slug())
         report = _issues.mirror(record, gh=gh, previous=earlier[-1] if earlier else None,

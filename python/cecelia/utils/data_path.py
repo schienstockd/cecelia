@@ -10,6 +10,11 @@ purpose: a path in, a dict out, no project, so it can be run on any store from a
 Every number is computed from integer histograms (`intensity_utils`), so a full pass costs one read of
 the store (~3 s/GB) and no subsampling: the clipping test counts voxels, and a strided pass would scale
 the pile-up down with it.
+
+Drift is NOT part of the import probe: through drift correction's own estimator it is ~19 min on a
+47 GB movie (5x the rest of the probe together), it feeds only the acquisition check, and drift
+correction re-estimates it anyway. `measure_store(drift=True)` or `measure_drift` on an already-probed
+store add it on request (the acquisition check's "Measure N movies", `importImages.measureSignal`).
 """
 import numpy as np
 
@@ -27,21 +32,28 @@ SIGNAL_SAMPLE_Z = 16
 SIGNAL_SAMPLE_VOXELS = 20000
 
 
-def measure_store(im_path, log=None):
-    """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
-    with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
-    `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
-    `partialTimepoint` when the last timepoint stopped mid-volume (left out of every stat), plus the
-    signal pass (`measure_signal`): a `photons` entry per channel and top-level `sharedStructure` and
-    `drift`. Raises on a store that is not integer data (`channel_histograms`) — the caller decides
-    whether that fails anything."""
-    say = log or (lambda _m: None)
+def _open_store(im_path):
+    """`(level0, axes, dim_utils)` for the store at `im_path`: its full-resolution level, the C/T/Z axis
+    indices (`intensity_utils.stack_axis_indices`) and its dims from the OME-XML."""
     dim_utils = DimUtils(ome_xml_utils.load_ome_xml(im_path))
     levels, _ = zarr_utils.open_as_zarr(im_path)
     level0 = levels[0]
     dim_utils.calc_image_dimensions(level0.shape)
     from_ome = {d: (dim_utils.dim_idx(d) if d in dim_utils.im_dim_order else None) for d in ('C', 'T', 'Z')}
     axes = intensity_utils.stack_axis_indices(zarr_utils.read_axes(im_path), level0.ndim, from_ome)
+    return level0, axes, dim_utils
+
+
+def measure_store(im_path, log=None, drift=False):
+    """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
+    with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
+    `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
+    `partialTimepoint` when the last timepoint stopped mid-volume (left out of every stat), plus the
+    signal pass (`measure_signal`): a `photons` entry per channel and top-level `sharedStructure` —
+    and `drift` only with ``drift=True`` (see the module docstring). Raises on a store that is not
+    integer data (`channel_histograms`) — the caller decides whether that fails anything."""
+    say = log or (lambda _m: None)
+    level0, axes, dim_utils = _open_store(im_path)
     c_idx = axes['C']
 
     say(f'>> measuring {level0.dtype} {level0.shape}: clipping, range, noise, per plane')
@@ -86,7 +98,7 @@ def measure_store(im_path, log=None):
             f'= {stats["clippedSignalFrac"] * 100:.4f}% of signal)')
     out = {'channels': channels, 'sampling': 'full pass'}
     skip_t = partial['t'] if partial is not None else None
-    out.update(measure_signal(level0, axes, dim_utils, channels, skip_t=skip_t, log=say))
+    out.update(measure_signal(level0, axes, dim_utils, channels, skip_t=skip_t, log=say, drift=drift))
     if partial is not None:
         out['partialTimepoint'] = partial
         say(f'>> [WARN] last timepoint (t{partial["t"]}) is incomplete: '
@@ -118,7 +130,7 @@ def _sample_positions(n, k, seed):
     return rng.choice(n, size=min(k, n), replace=False)
 
 
-def measure_signal(level0, axes, dim_utils, channels, skip_t=None, log=None):
+def measure_signal(level0, axes, dim_utils, channels, skip_t=None, log=None, drift=False):
     """The test-acquisition checks that need where a voxel sits, from a SAMPLE of planes
     (`docs/todo/ACQUISITION_TEST_CHECK_PLAN.md`): `SIGNAL_SAMPLE_T` timepoints x `SIGNAL_SAMPLE_Z`
     planes, every channel read at the same planes and positions.
@@ -126,7 +138,8 @@ def measure_signal(level0, axes, dim_utils, channels, skip_t=None, log=None):
     Adds ``photons`` to each entry of ``channels`` (this pass's per-channel result, from
     `measure_store`): ``{fit: photon_utils.fit_photon_transfer, objects: photon_utils.object_photons}``,
     offset at the channel's background median and windows at its ceiling dropped when it clipped.
-    Returns ``{sharedStructure: photon_utils.shared_structure, drift: _drift_check | None}``.
+    Returns ``{sharedStructure: photon_utils.shared_structure}``, plus ``drift`` with ``drift=True``
+    (`_movie_drift`: ``None`` for a still image).
     A sample suffices: none of these is a voxel count (clipping is, and stays on the full pass).
     ``skip_t`` is a timepoint that is not acquisition data (a stopped acquisition's last frame).
     """
@@ -187,10 +200,30 @@ def measure_signal(level0, axes, dim_utils, channels, skip_t=None, log=None):
                              + (f', objects p50 {objects["p50Photons"]:.1f} photons'
                                 if objects and objects.get('p50Photons') is not None else '')
                              if g is not None else f'photons untestable ({fit["untestable"]})'))
-    out = {'sharedStructure': photon_utils.shared_structure(struct), 'drift': None}
-    if t_idx is not None and level0.shape[t_idx] - (skip_t is not None) > 2:
-        out['drift'] = _drift_check(level0, dim_utils, channels, t_idx, c_idx, say, skip_t=skip_t)
+    out = {'sharedStructure': photon_utils.shared_structure(struct)}
+    if drift:
+        out['drift'] = _movie_drift(level0, axes, dim_utils, channels, say, skip_t=skip_t)
     return out
+
+
+def _movie_drift(level0, axes, dim_utils, channels, say, skip_t=None):
+    """`_drift_check` on a movie of more than two (acquired) timepoints; ``None`` otherwise — nothing
+    to register, which is an answer, not a missing measurement."""
+    t_idx = axes['T']
+    if t_idx is None or level0.shape[t_idx] - (skip_t is not None) <= 2:
+        return None
+    return _drift_check(level0, dim_utils, channels, t_idx, axes['C'], say, skip_t=skip_t)
+
+
+def measure_drift(im_path, channels, skip_t=None, log=None):
+    """`{"drift": ...}` for an already-probed store: the drift `measure_store(drift=True)` would add,
+    without the full pass and signal pass again. ``channels`` is the stored probe's per-channel list
+    (its ``photons`` pick the channel registration locks onto); ``skip_t`` the stored partial last
+    timepoint, if any."""
+    say = log or (lambda _m: None)
+    level0, axes, dim_utils = _open_store(im_path)
+    say(f'>> drift: {level0.dtype} {level0.shape}')
+    return {'drift': _movie_drift(level0, axes, dim_utils, channels, say, skip_t=skip_t)}
 
 
 class _FirstFrames:

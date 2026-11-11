@@ -13,6 +13,18 @@ describe('movieStreamUrl', () => {
   it('encodes names/uids that need escaping', () => {
     expect(movieStreamUrl('p 1', 'a b.mp4')).toBe('/api/movies/file?projectUid=p%201&name=a%20b.mp4')
   })
+  it('busts the cache with the mtime — for a movie, not just a figure', () => {
+    // a re-record keeps the name and the route sends no validators: only the URL can change
+    const before = movieStreamUrl('P', 'img_viewer.mp4', 1700000000.4)
+    const after = movieStreamUrl('P', 'img_viewer.mp4', 1700000123.6)
+    expect(before).toBe('/api/movies/file?projectUid=P&name=img_viewer.mp4&v=1700000000')
+    expect(after).not.toBe(before)
+    expect(movieStreamUrl('P', 'fig.png', 5)).toBe('/api/movies/file?projectUid=P&name=fig.png&v=5')
+  })
+  it('leaves the bust off when there is no usable mtime', () => {
+    expect(movieStreamUrl('P', 'a.mp4', undefined)).toBe('/api/movies/file?projectUid=P&name=a.mp4')
+    expect(movieStreamUrl('P', 'a.mp4', NaN)).toBe('/api/movies/file?projectUid=P&name=a.mp4')
+  })
 })
 
 describe('movieDisplayName', () => {
