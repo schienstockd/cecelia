@@ -189,7 +189,7 @@ useVisualPanel(
     <!-- controls FIXED (in-flow); CanvasPanel :square squares the plot region below them — see GatePlotPanel -->
     <template #actions>
       <span class="ro-tag" v-tooltip.bottom="'Read-only — compare channels; draw gates on a single plot'">read-only</span>
-      <span class="ctrl-sep" />
+      <span class="cc-toolbar-sep" />
       <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
       <div class="panel-ctrl">
       <label class="ax-row"><span class="ax-lbl">pop</span>
@@ -274,7 +274,6 @@ useVisualPanel(
 .ro-tag { font-size: var(--cc-fs-2xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 1px 5px; }
 /* heavy-matrix warning strip (brief; numbers + the fix live in the tooltip) */
-.ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 /* axis controls now live in the auto-hide overlay (#actions) — full line below the icon tools */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
 .ax-row { display: flex; align-items: center; gap: 6px; }
