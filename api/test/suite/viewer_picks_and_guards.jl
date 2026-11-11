@@ -258,3 +258,55 @@ end
         end
     end
 end
+
+@testset "API: viewer pick refuses a mask with no cell table or from another image version" begin
+    # A pick writes label ids into `/Pick selection` under a segmentation's cell table, so the mask it
+    # reads must BE that table's mask, at the geometry the viewer draws:
+    #  - a ticked mask with no cell table used to fall back (`_resolve_vn`) to the active segmentation
+    #    and read ITS mask at that pixel — an unrelated cell in the selection, no warning;
+    #  - a mask from another image version (drift correct / crop) used to be read with this version's
+    #    coords — `read_slab` clamps x/y to its edge — so a shifted or edge cell was picked.
+    src = api_fixture("CONTMESH", "1", "CtMsh1", "labels", "seg.zarr")
+    if !api_have_fixture(src)
+        @test_skip "CONTMESH label fixture missing"
+    else
+        dirs = Cecelia.cecelia_conf()["dirs"]
+        old  = get(dirs, "projects", nothing)
+        td   = mktempdir()
+        cp(api_fixture("CONTMESH"), joinpath(td, "CONTMESH"))
+        dirs["projects"] = td
+        try
+            img = Cecelia._load_image(joinpath(td, "CONTMESH", "1", "CtMsh1"))
+            # "nolp": a mask on disk (a copy of seg's) with NO cell table
+            cp(joinpath(img._dir, "labels", "seg.zarr"), joinpath(img._dir, "labels", "nolp.zarr"))
+            img.labels["nolp"] = ["nolp.zarr"]
+            save!(img)
+            plane, _, _, _ = read_slab(joinpath(img._dir, "labels", "seg.zarr"), 0, 0; z = 1)
+            ix = findfirst(!=(0), plane)
+            x, y = ix[1] - 1, ix[2] - 1                       # (x, y) column-major, 0-based
+            ask(f, vn; kw...) = f(Vector{UInt8}(JSON3.write(Dict{String,Any}(
+                "projectUid" => "CONTMESH", "imageUid" => "CtMsh1", "valueName" => vn,
+                "popType" => "flow", "t" => 0, "z" => 1, "x" => x, "y" => y,
+                "x1" => 0, "y1" => 0, "x2" => 31, "y2" => 15, (string(k) => v for (k, v) in kw)...))))
+            for f in (api_viewer_pick_cell, api_viewer_pick_rect)
+                st, out = ask(f, "nolp")
+                @test st == 422
+                @test occursin("no cell table", JSON3.read(out).error)
+                @test _get_pick_selection(img._dir, "seg") === nothing   # seg's selection untouched
+
+                # mask dims differ from the image the viewer draws (32×16) → refused
+                st, out = ask(f, "seg"; imageNX = 40, imageNY = 16)
+                @test st == 422
+                @test occursin("another image version", JSON3.read(out).error)
+                @test _get_pick_selection(img._dir, "seg") === nothing
+            end
+            # same dims → the pick reads the cell
+            st, out = ask(api_viewer_pick_cell, "seg"; imageNX = 32, imageNY = 16)
+            @test st == 200
+            @test JSON3.read(out).label == Int(plane[ix])
+            @test _get_pick_selection(img._dir, "seg") == [Int(plane[ix])]
+        finally
+            old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+        end
+    end
+end

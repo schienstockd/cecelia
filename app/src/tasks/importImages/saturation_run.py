@@ -14,13 +14,20 @@ Cost: one streamed pass over the store, ~3 s/GB measured (5.3 s for a 1.74 GB st
 FULL pass rather than a strided one — the threshold is a voxel count, so subsampling scales the
 pile-up down with it and flips marginal channels.
 
+Drift is left out unless asked for (`drift`): ~19 min on a 47 GB movie, for the acquisition check only
+(see `data_path`). `driftOnly` adds it to a store already probed, without repeating the passes above.
+
 Parameter contract (JSON written by Julia):
   imPath     - absolute path to the .ome.zarr the import just wrote
   resultPath - absolute path to write the result JSON to
+  drift      - (optional, default false) also estimate the movie's drift
+  driftOnly  - (optional) `{"channels": [...], "skipT": t | null}` from the stored probe: estimate
+               drift alone; result `{"drift": ...}`
 
 Result JSON: `cecelia.utils.data_path.measure_store` — {"channels": [{"index", "saturated",
 "topValue", …, "containerBits", "range", "floor", "noise", "profile", "photons"}, …], "sampling",
-"sharedStructure", "drift"} (the last two and `photons` from the sampled signal pass), plus
+"sharedStructure", "drift"} (the last two and `photons` from the sampled signal pass; "drift" only
+when asked for), plus
 "partialTimepoint": {"t", "emptyZ", "sizeZ"} when the acquisition stopped mid-volume (that timepoint
 is left out of every stat) — the Julia handler turns this into ccid meta + QC findings and, unless the
 import keeps it, trims that timepoint. `{}` when the store cannot be read as integer data
@@ -42,7 +49,12 @@ def run(params):
     log.progress(0, 2)
     try:
         log.progress(1, 2)
-        result = data_path.measure_store(im_path, log=log.log)
+        drift_only = params.get('driftOnly')
+        if drift_only is not None:
+            result = data_path.measure_drift(im_path, drift_only.get('channels') or [],
+                                             skip_t=drift_only.get('skipT'), log=log.log)
+        else:
+            result = data_path.measure_store(im_path, log=log.log, drift=bool(params.get('drift', False)))
     except Exception as e:
         # Advisory QC on a store that already converted successfully: report and move on. A
         # non-integer dtype (channel_histograms raises) or an unreadable OME is not an import failure.
