@@ -18,8 +18,8 @@ import re
 import xml.etree.ElementTree as ET  # vendor .oir XML, not OME-XML: test_zarr_access_convention _BASELINE
 
 #: Bumped when the reader starts returning a field it did not before, so Refresh metadata re-reads
-#: settings stored by an older reader (`ACQUISITION_READER_VERSIONS["oir"]` in
-#: app/src/tasks/importImages/omezarr/acquisition.jl must match — asserted in app/test/suite/segmentation.jl
+#: settings stored by an older reader (the `.oir` row of
+#: app/src/tasks/importImages/acquisition_readers.json must match — asserted in app/test/suite/segmentation.jl
 #: → "language boundaries agree on their protocol"). 2: date, body, filters, dichroics.
 READER_VERSION = 2
 
@@ -300,8 +300,9 @@ def parse_settings(xml_bytes):
     }
 
 
-def acquisition_settings(path):
-    """Settings for an `.oir`, or `{'reason': …}` when none can be read. Never raises."""
+def acquisition_settings(path, series=0):
+    """Settings for an `.oir`, or `{'reason': …}` when none can be read. Never raises. `series` is
+    the reader contract (`acquisition_readers.json`); an `.oir` holds one image, so it is unused."""
     try:
         xml = read_settings_xml(path)
     except OSError as e:

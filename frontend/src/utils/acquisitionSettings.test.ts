@@ -123,3 +123,36 @@ describe('a Zeiss .czi names the depth ramp its own way', () => {
     expect(acquisitionRows(czi)).toContainEqual({ k: 'Auto Z brightness', v: 'off' })
   })
 })
+
+describe('a Leica widefield .lif: camera, cube, exposure, gain', () => {
+  // What `lif_meta.parse_settings` returns for Image002 of test-data/acquisition/lif_dm5500b_* (trimmed
+  // to the fields the rows read).
+  const lif: AcquisitionSettings = {
+    source: 'lif', technology: 'widefield', system: 'DM5500B', softwareVersion: 'LAS X 3.4.2.18368',
+    acquiredAt: '2026-07-09T04:31:57+00:00',
+    objective: { name: 'HC PL FLUOTAR 20x/0.50 DRY', magnification: 20, na: 0.5, immersion: 'dry' },
+    lasers: [], camera: { name: 'DFC365FX', binning: 2, bitDepth: 12, sensorPixelUm: 6.45 },
+    channels: [
+      { order: 1, name: 'New 1', dyePreset: null, laser: null, detector: 'DFC365FX', hv: null, gain: 1.998573, offset: null,
+        bitDepth: 12, filterCube: 'A4', exposureMs: 122.536, illuminationIntensity: 3 },
+    ],
+  }
+
+  it('shows the camera once and each channel by cube, exposure, gain and lamp step', () => {
+    const rows = acquisitionRows(lif)
+    expect(rows.find(r => r.k === 'Camera')?.v).toBe('DFC365FX · binning 2×2 · 12 bit')
+    // the camera row names the detector, so the channel doesn't repeat it
+    expect(rows.find(r => r.k === 'New 1')!.v).toBe('cube A4 · 122.536 ms · gain 1.999 · lamp 3')
+    expect(rows.some(r => r.k === 'Laser')).toBe(false)
+  })
+
+  it('marks a UTC-only time stamp as UTC', () => {
+    expect(acquiredAtText(lif)).toBe('2026-07-09 04:31 UTC')
+    expect(acquiredAtText({ acquiredAt: '2026-07-16T13:44:00+10:00' })).toBe('2026-07-16 13:44')
+  })
+
+  it('a laser-scanning channel still shows no camera gain', () => {
+    const rows = acquisitionRows({ channels: [{ order: 1, name: 'Ch1', dyePreset: null, laser: 'MaiTai', detector: 'PMT1', hv: 550, gain: 1, offset: 0 }] })
+    expect(rows[0].v).toBe('MaiTai · PMT1 · HV 550')
+  })
+})

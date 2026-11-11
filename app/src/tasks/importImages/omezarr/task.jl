@@ -247,7 +247,8 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
 
     # Acquisition settings Bio-Formats drops (laser power and its depth ramp, scan timing, detector
     # settings). Read from the source file; advisory, a failure never fails the import.
-    _recover_acquisition_settings!(zarr_meta, src_path, task_run_dir(img._dir); on_log = on_log)
+    _recover_acquisition_settings!(zarr_meta, src_path, task_run_dir(img._dir);
+                                  series = _source_series(img), on_log = on_log)
 
     # Clipping at ACQUISITION, checked on every import. A channel the detector clipped has lost
     # information nothing downstream recovers, and import is the only point where the useful answer is

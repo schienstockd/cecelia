@@ -29,14 +29,16 @@ export interface DataPathChannel {
 const n = (x: number | null | undefined): string => (x == null ? '—' : fmtNum(x))
 const pct = (x: number) => (x >= 1 ? fmtNum(Math.round(x * 10) / 10) : fmtNum(+x.toPrecision(2)))
 
-/** Why the zeros are there, with what the call rests on; nothing when it can't be told. */
-function zeroCause(fl: ChannelFloor | null | undefined): string {
-  if (fl?.kind === 'photon-counted') return `: likely no photon detected (photon-counted: ${fl.evidence})`
+/** Why the zeros are there, with what the call rests on; nothing when it can't be told. A camera
+ *  (`acquisition.camera`) never counts photons: a "photon-counted" floor measured on one is a misread
+ *  of its histogram, so it is read as no call at all. */
+function zeroCause(fl: ChannelFloor | null | undefined, camera: boolean): string {
+  if (fl?.kind === 'photon-counted') return camera ? '' : `: likely no photon detected (photon-counted: ${fl.evidence})`
   if (fl?.kind === 'clipped') return `: likely background clipped at 0 (${fl.evidence})`
   return ''
 }
 
-function channelItems(f: CleanupFactsChannel, recordedBits: number | null | undefined): LightPathItem[] {
+function channelItems(f: CleanupFactsChannel, recordedBits: number | null | undefined, camera: boolean): LightPathItem[] {
   const items: LightPathItem[] = []
   const store = f.containerBits != null ? `${f.containerBits}-bit store` : null
   if (store) items.push({ text: recordedBits != null ? `${store} · ${n(recordedBits)}-bit recorded` : store, source: 'measured' })
@@ -47,9 +49,9 @@ function channelItems(f: CleanupFactsChannel, recordedBits: number | null | unde
   } else if (f.saturated === false) {
     items.push({ text: 'no ceiling pile-up detected', source: 'measured' })
   }
-  if (f.zeroPct != null) items.push({ text: `${pct(f.zeroPct)} % of voxels at 0${zeroCause(f.floor)}`, source: 'measured' })
+  if (f.zeroPct != null) items.push({ text: `${pct(f.zeroPct)} % of voxels at 0${zeroCause(f.floor, camera)}`, source: 'measured' })
   const fl = f.floor
-  if (fl?.kind === 'photon-counted' && fl.photons) {
+  if (fl?.kind === 'photon-counted' && fl.photons && !camera) {
     // Counts are the measure here: there is no background distribution to take an SNR against.
     items.push({ text: `photons per non-zero voxel: median ${n(fl.photons.p50)} · p99.9 ${n(fl.photons.p999)} (~${n(fl.photonStep)} per photon)`, source: 'measured' })
     return items
@@ -138,7 +140,7 @@ export function dataPathChannels(img: LightPathImage): DataPathChannel[] {
       index: f.index,
       name: img.channelNames?.[f.index] || f.name,
       attention: channelAttention(f, clipped.has(f.index), profile.get(f.index)),
-      items: channelItems(f, recorded),
+      items: channelItems(f, recorded, acq?.camera != null),
       hist: f.range?.hist.counts ?? null,
       byZ: z.length > 1 ? z : null,
       byT: t.length > 1 ? t : null,

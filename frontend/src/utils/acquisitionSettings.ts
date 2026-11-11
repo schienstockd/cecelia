@@ -13,14 +13,22 @@ export interface AcquisitionChannel {
   bitDepth?: number | null
   /** Barrier (emission) filter in front of this channel's detector, as the file names it. */
   emissionFilter?: string | null
+  /** Camera channels (`lif_meta`): the filter cube, exposure, and the lamp's intensity step. */
+  filterCube?: string | null
+  exposureMs?: number | null
+  illuminationIntensity?: number | null
 }
+/** The camera of a widefield acquisition; `sensorPixelUm` is the chip's pixel, before magnification. */
+export interface AcquisitionCamera { name?: string | null; binning?: number | null; bitDepth?: number | null; sensorPixelUm?: number | null }
 /** A dichroic or mirror cube in the path. `slot` is the vendor's element name (`oir_meta._dichroics`). */
 export interface AcquisitionDichroic { slot: string; name: string }
 export interface AcquisitionSettings {
   /** `oir_meta.READER_VERSION`; absent on settings read before it existed. */
   readerVersion?: number | null
-  /** Which reader produced it: `oir_meta`, `czi_meta` or `ims_meta`. */
-  source?: 'oir' | 'czi' | 'ims' | null
+  /** Which reader produced it (`app/src/tasks/importImages/acquisition_readers.json`). */
+  source?: 'oir' | 'czi' | 'ims' | 'lif' | null
+  /** Imaging technology, from evidence in the file (a camera block → widefield); absent on older reads. */
+  technology?: 'two-photon' | 'confocal' | 'widefield' | null
   system?: string | null
   softwareVersion?: string | null
   /** As recorded: ISO 8601 with the acquisition PC's UTC offset. */
@@ -30,6 +38,7 @@ export interface AcquisitionSettings {
   dichroics?: AcquisitionDichroic[]
   objective?: { name?: string | null; magnification?: number | null; na?: number | null; immersion?: string | null } | null
   lasers?: AcquisitionLaser[]
+  camera?: AcquisitionCamera | null
   brightZ?: { enabled: boolean | null; points: { zFromStartUm: number | null; transmissionPct: Record<string, number | null> }[] } | null
   scanner?: {
     type?: string | null; zoom?: number | null; pixelDwellUs?: number | null
@@ -64,10 +73,11 @@ export function microscopeLine(acq: AcquisitionSettings | null | undefined): str
   return name ? join([name, acq?.microscopeBody, acquiredAtText(acq)]) : null
 }
 
-/** "2026-07-16 13:44" — the acquisition PC's local time as recorded, not converted to this one's. */
+/** "2026-07-16 13:44" — the acquisition PC's local time as recorded, not converted to this one's.
+ *  A file that records UTC only (a `.lif` time stamp) says so: "2026-07-09 04:31 UTC". */
 export function acquiredAtText(acq: AcquisitionSettings | null | undefined): string | null {
-  const m = acq?.acquiredAt?.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/)
-  return m ? `${m[1]} ${m[2]}` : null
+  const m = acq?.acquiredAt?.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::[\d.]+)?(Z|\+00:00)?/)
+  return m ? `${m[1]} ${m[2]}${m[3] && acq?.source === 'lif' ? ' UTC' : ''}` : null
 }
 
 /** "21 of 45 planned frames" when a time-lapse stopped early (or was cropped), else null. */
@@ -159,11 +169,20 @@ export function acquisitionRows(acq: AcquisitionSettings | null | undefined): Ac
       rows.push({ k: 'Integration', v: integ.type === 'None' ? 'none' : join([`${integ.type.toLowerCase()} ×${n(integ.count)}`, how]) })
     }
   }
+  const cam = acq.camera
+  if (cam) {
+    rows.push({ k: 'Camera', v: join([cam.name, cam.binning != null && `binning ${n(cam.binning)}×${n(cam.binning)}`,
+      cam.bitDepth != null && `${n(cam.bitDepth)} bit`]) })
+  }
   if (acq.autoHV != null) rows.push({ k: 'Auto HV', v: acq.autoHV ? 'on' : 'off' })
   if (acq.pinholeUm != null) rows.push({ k: 'Pinhole', v: `${n(acq.pinholeUm)} µm` })
   for (const c of acq.channels ?? []) {
     // Under Auto HV the recorded HV is not the one used (the Auto HV row says so), so it is not listed.
-    rows.push({ k: c.name ?? `Channel ${c.order}`, v: join([c.dyePreset, c.laser, c.detector, c.emissionFilter,
+    // A camera channel's gain is the camera's; a laser-scanning channel's is shown as its HV.
+    rows.push({ k: c.name ?? `Channel ${c.order}`, v: join([c.dyePreset, c.laser, c.filterCube && `cube ${c.filterCube}`,
+      cam ? null : c.detector, c.emissionFilter,
+      c.exposureMs != null && `${n(c.exposureMs)} ms`, cam && c.gain != null && `gain ${n(c.gain)}`,
+      c.illuminationIntensity != null && `lamp ${n(c.illuminationIntensity)}`,
       acq.autoHV !== true && c.hv != null && `HV ${n(c.hv)}`]) })
   }
   return rows

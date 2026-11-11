@@ -1,0 +1,220 @@
+{
+  "technology": "two-photon",
+  "summary": "Laser-scanning with a pulsed near-infrared laser; excitation only at the focus, detected by PMTs or GaAsP/HyD detectors. Intravital and deep tissue.",
+  "status": "Experimental. Our own wording of the cited sources; a cause stays 'consistent with' until the alternatives are ruled out. Scope feature lines are unverified until a facility checks them; `seenInFiles` is what the lab's own files record.",
+  "stages": [
+    {
+      "key": "laser",
+      "does": "Pulsed near-infrared light; two photons are absorbed together only where the light is densest, at the focus.",
+      "symptoms": []
+    },
+    {
+      "key": "power",
+      "does": "Sets how much excitation reaches the sample (transmission %), and whether it rises with depth (Bright Z on Olympus/Evident).",
+      "symptoms": [
+        {
+          "id": "darker-with-depth",
+          "symptom": "Signal falls with depth.",
+          "explanation": "Tissue scatters the excitation, so fewer photons arrive at the focus the deeper it is; two-photon signal grows with the square of the excitation, so the loss compounds; the emitted light is scattered on its way back too. Power that rises with depth compensates.",
+          "check": "Acquired data: brightest 1 % by depth falling; Light path: Bright Z off or a flat ramp.",
+          "alternatives": "Fewer labelled cells deeper (biology), or a tilted or uneven sample.",
+          "sources": [
+            "helmchen2005",
+            "pinkard2021"
+          ],
+          "qcCodes": [
+            "import.darker_with_depth"
+          ]
+        },
+        {
+          "id": "surface-clips-deep-dim",
+          "symptom": "Top planes clip while deep planes stay dim.",
+          "explanation": "The ramp starts too high or the detector gain is set for the deep planes: one setting cannot suit both ends of the stack.",
+          "check": "Acquired data: clipped voxels in the first planes only; brightest 1 % low at depth.",
+          "alternatives": "A bright structure that only sits near the surface (capsule, SHG collagen).",
+          "sources": [
+            "pinkard2021",
+            "waters2009"
+          ],
+          "qcCodes": []
+        },
+        {
+          "id": "background-rises-with-depth",
+          "symptom": "Background rises with depth at high power.",
+          "explanation": "At high power, fluorescence excited away from the focus (near the surface) adds a haze that sets the depth limit.",
+          "check": "Acquired data: median by depth rising while the brightest 1 % does not.",
+          "alternatives": "Autofluorescent tissue at that depth.",
+          "sources": [
+            "theer2003",
+            "helmchen2005"
+          ],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "scanner",
+      "does": "Moves the focus across the field. Zoom sets the pixel size; dwell time sets photons per pixel; resonant scanners trade dwell for speed.",
+      "symptoms": [
+        {
+          "id": "sampling-vs-question",
+          "symptom": "Pixel size or z-step coarser than the optical resolution.",
+          "explanation": "Detail finer than two pixels is not recorded. Whether that matters depends on the question: coarse sampling is normal for tracking cells, a problem for morphology.",
+          "check": "Light path: pixel size, z-step, objective NA. Ask the user's question before calling it a mistake.",
+          "alternatives": "A deliberate trade for speed, field size or less light dose.",
+          "sources": [
+            "pawley2006"
+          ],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "objective",
+      "does": "Focuses the excitation and collects the emission; NA sets resolution and light collection; the correction collar matters for depth in water.",
+      "symptoms": []
+    },
+    {
+      "key": "sample",
+      "does": "Scatters and absorbs light, bleaches, and can be damaged by the light.",
+      "symptoms": [
+        {
+          "id": "fades-over-time",
+          "symptom": "Signal falls over the time-lapse.",
+          "explanation": "Photobleaching at the focus rises faster than the signal as power goes up, so a power that gives a bright first frame can bleach quickly. Photodamage also rises steeply with power.",
+          "check": "Acquired data: brightest 1 % by frame falling; Light path: power and frame interval.",
+          "alternatives": "Cells leaving the field, drift in z, a change in the animal (biology). Bleaching is only one candidate.",
+          "sources": [
+            "patterson2000",
+            "hopt2001"
+          ],
+          "qcCodes": [
+            "import.signal_fades"
+          ]
+        },
+        {
+          "id": "moves-between-frames",
+          "symptom": "The tissue moves between frames or within a stack.",
+          "explanation": "Breathing, heartbeat and slow drift move live tissue; at cell resolution this blurs or shifts structures between frames. Stabilising the tissue at acquisition helps more than correcting afterwards, and the method depends on the organ.",
+          "check": "Task QC from drift correction (frames that did not register, sharp jumps) and tracking (the whole field moving one way).",
+          "alternatives": "A drift-correction reference channel too sparse or dim to register (an analysis choice); cells migrating together (biology).",
+          "sources": [
+            "vinegoni2014"
+          ],
+          "qcCodes": [
+            "drift.unreliable",
+            "drift.jump",
+            "drift.unregistered_frames",
+            "tracking.field_drift"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "filters",
+      "does": "Dichroics and emission filters split the emission between detectors.",
+      "symptoms": [
+        {
+          "id": "signal-in-two-channels",
+          "symptom": "One structure shows up in two channels.",
+          "explanation": "Bleed-through (emission spilling into a neighbouring channel) or cross-excitation (one laser exciting two dyes). The filters say where the bands should be, not how much spills, so it has to be measured.",
+          "check": "Light path: channels sharing a laser; each channel's emission filter (read from .oir files; often not recorded in other formats).",
+          "alternatives": "Real co-labelling of the same cells.",
+          "sources": [
+            "north2006"
+          ],
+          "qcCodes": [
+            "af.bleedthrough",
+            "acq.shares_object",
+            "acq.shares_object_image",
+            "acq.shares_all"
+          ]
+        },
+        {
+          "id": "label-shares-with-af",
+          "symptom": "A label channel shares structure with an autofluorescence (empty) channel.",
+          "explanation": "Two causes give the same correlation: the label's emission spills into the AF detector, so every labelled cell is also bright in AF; or autofluorescent cells show in the label channel. The correlation alone does not say which.",
+          "check": "Per object, compare the label-to-AF ratio: labelled cells sit well above the ratio of AF-only objects. Never advise excluding objects for being AF-bright without this check: with spill it removes the labelled cells.",
+          "alternatives": "Real autofluorescent cells (macrophages) that also take up the label.",
+          "sources": [
+            "north2006"
+          ],
+          "qcCodes": [
+            "acq.shares_reference",
+            "acq.shares_reference_image"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "detectors",
+      "does": "Turn photons into a signal; HV/gain amplify it, offset shifts it.",
+      "symptoms": [
+        {
+          "id": "clipped-bright",
+          "symptom": "Bright structures clip at the top of the range.",
+          "explanation": "Gain (HV) or power too high: values above the ceiling are lost and cannot be recovered in analysis.",
+          "check": "Acquired data: clipped at a detected ceiling, share of signal clipped.",
+          "alternatives": "None for the clipped voxels; how much it matters depends on whether they are the cells being measured.",
+          "sources": [
+            "waters2009"
+          ],
+          "qcCodes": [
+            "import.channel_saturated",
+            "import.clipped_deep",
+            "af.saturated_input",
+            "denoise.channel_saturated",
+            "acq.gain_high"
+          ]
+        },
+        {
+          "id": "background-at-zero",
+          "symptom": "Most of the background is exactly 0, and the non-zero counts are highest at 1 and fall.",
+          "explanation": "A continuous background cut off at 0 by the offset: dim signal near the background is lost and the noise floor cannot be measured. Raising the offset brings the background back.",
+          "check": "Acquired data: zeros read 'likely background clipped at 0'. Only then is the offset the lever.",
+          "alternatives": "Background subtracted after acquisition (upstream processing) looks the same.",
+          "sources": [
+            "waters2009"
+          ],
+          "qcCodes": []
+        },
+        {
+          "id": "zeros-are-no-photon",
+          "symptom": "Most voxels are exactly 0, nothing just above 0, then peaks at a fixed step.",
+          "explanation": "A photon-counting detector writes 0 where no photon arrived and about one fixed step per photon. The zeros are real: few photons per voxel, not a clipped background. Raising an offset only adds a pedestal; the levers are photons per voxel: power or its depth ramp, dwell time, frame summing or averaging.",
+          "check": "Acquired data: zeros read 'likely no photon detected (photon-counted ...)' and photons per non-zero voxel. Never suggest the offset from the zero fraction alone.",
+          "alternatives": "Sparse labelling: most of the volume holds no labelled structure, so few photons is expected there.",
+          "sources": [
+            "waters2009",
+            "pawley2006"
+          ],
+          "qcCodes": [
+            "import.photon_limited"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "digitisation",
+      "does": "Turns the signal into numbers; frames can be averaged or summed.",
+      "symptoms": [
+        {
+          "id": "summed-frames",
+          "symptom": "Values above what one detector read can give.",
+          "explanation": "Summing frames adds them, so the range doubles per extra frame; averaging keeps the range and lowers noise.",
+          "check": "Light path: integration sum/average and count.",
+          "alternatives": "Background added in processing, or a different store format.",
+          "sources": [
+            "pawley2006"
+          ],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "stack",
+      "does": "Repeats the frame over z and time: z-step, plane count, frame interval.",
+      "symptoms": []
+    }
+  ]
+}
