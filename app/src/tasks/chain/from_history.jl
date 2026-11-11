@@ -74,6 +74,23 @@ function _history_leaves(fn::String)::Union{Dict{String,_HistoryLeaf},Nothing}
     _spec_leaf_params!(out, _task_spec(task))
 end
 
+# A run's saved `params` keyed by current key: a renamed param (`formerKeys`, from `_history_leaves`)
+# saved under a former spelling moves to its current key — which spelling wins is `_stored_key`'s
+# precedence — and the former spellings are dropped. Comparing runs saved either side of a rename by
+# this view keeps one param one param. Top level only; `_hp_flat` applies it to group entries too.
+function _history_current_params(params::AbstractDict, leaves)::Dict{String,Any}
+    out = Dict{String,Any}(string(k) => v for (k, v) in params)
+    leaves === nothing && return out
+    for (k, l) in leaves
+        isempty(l.former) && continue
+        sk = _stored_key(k, l.former, out)
+        v = sk === nothing ? nothing : out[sk]
+        foreach(f -> delete!(out, f), l.former)
+        sk === nothing || (out[k] = v)
+    end
+    out
+end
+
 # (name, namespace) a run writes: a named output param, else the spec's fixed `outputValueName`
 # (an image version).
 function _history_output(fn::String, params::Dict{String,Any}, leaves)::Tuple{String,String}
@@ -89,7 +106,9 @@ function _history_output(fn::String, params::Dict{String,Any}, leaves)::Tuple{St
 end
 
 # What a run READS, for keying a task that names no output: its input names and populations.
+# By current key, so runs saved either side of a picker's rename (`formerKeys`) are one step.
 function _history_inputs(params::Dict{String,Any}, leaves)::String
+    params = _history_current_params(params, leaves)
     parts = String[]
     for k in sort!(collect(keys(params)))
         l = get(leaves, k, nothing)
@@ -226,10 +245,15 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         last = argmax(r -> r.at, collect(values(by_img)))
         out, ns = _history_output(fn, last.params, leaves_of(fn))
         id = "$(fn).$(length(steps) + 1)"
-        push!(steps, HistoryStep(id, fn, deepcopy(last.params), last.at, sort!(collect(keys(by_img))), out, ns))
+        # by current key: a run saved before a param's rename (`formerKeys`) is the same param — the
+        # template node too, so a conflict's `param` names a key the node holds
+        lv = leaves_of(fn)
+        push!(steps, HistoryStep(id, fn, deepcopy(_history_current_params(last.params, lv)), last.at,
+                                 sort!(collect(keys(by_img))), out, ns))
         length(by_img) > 1 || continue
-        for k in sort!(unique(vcat((collect(keys(r.params)) for r in values(by_img))...)))
-            vals = Dict(u => get(r.params, k, nothing) for (u, r) in by_img)
+        cur = Dict(u => _history_current_params(r.params, lv) for (u, r) in by_img)
+        for k in sort!(unique(vcat((collect(keys(p)) for p in values(cur))...)))
+            vals = Dict(u => get(p, k, nothing) for (u, p) in cur)
             length(unique(JSON3.write.(values(vals)))) > 1 &&
                 push!(conflicts, Dict{String,Any}("nodeId" => id, "param" => k, "values" => vals))
         end
