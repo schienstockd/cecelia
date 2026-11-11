@@ -37,7 +37,7 @@ class SharedStructureWithinPlanesTest(unittest.TestCase):
                     arr[t, c, z] = np.round(1000 + 3000 * tex * depth[z])
         chans = [{'saturated': False, 'topValue': int(arr[:, c].max()), 'noise': {'bgMedian': 1000.0}}
                  for c in range(2)]
-        out = data_path.measure_signal(arr, {'C': 1, 'T': 0, 'Z': 2}, None, chans)
+        out = data_path.measure_signal(arr, {'C': 1, 'T': 0, 'Z': 2}, chans)
         assert abs(out['sharedStructure'][0]['r']) < 0.2, out['sharedStructure']
 
 

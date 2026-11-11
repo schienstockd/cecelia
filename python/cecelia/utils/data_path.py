@@ -88,7 +88,7 @@ def measure_store(im_path, log=None):
             f'= {stats["clippedSignalFrac"] * 100:.4f}% of signal)')
     out = {'channels': channels, 'sampling': 'full pass'}
     skip_t = partial['t'] if partial is not None else None
-    out.update(measure_signal(level0, axes, dim_utils, channels, skip_t=skip_t, log=say))
+    out.update(measure_signal(level0, axes, channels, skip_t=skip_t, log=say))
     if partial is not None:
         out['partialTimepoint'] = partial
         say(f'>> [WARN] last timepoint (t{partial["t"]}) is incomplete: '
@@ -120,7 +120,7 @@ def _sample_positions(n, k, seed):
     return rng.choice(n, size=min(k, n), replace=False)
 
 
-def measure_signal(level0, axes, dim_utils, channels, skip_t=None, log=None):
+def measure_signal(level0, axes, channels, skip_t=None, log=None):
     """The test-acquisition checks that need where a voxel sits, from a SAMPLE of planes
     (`docs/todo/ACQUISITION_TEST_CHECK_PLAN.md`): `SIGNAL_SAMPLE_T` timepoints x `SIGNAL_SAMPLE_Z`
     planes, every channel read at the same planes and positions.

@@ -128,7 +128,7 @@ class MeasureSignalTest(unittest.TestCase):
         arr = np.stack(chans, axis=1)                                   # T, C, Z, Y, X
         channels = [{'saturated': False, 'topValue': int(arr[:, c].max()), 'noise': {'bgMedian': 50.0}}
                     for c in range(2)]
-        out = data_path.measure_signal(arr, {'C': 1, 'T': 0, 'Z': 2}, None, channels)
+        out = data_path.measure_signal(arr, {'C': 1, 'T': 0, 'Z': 2}, channels)
         for c, g in enumerate(gains):
             fit = channels[c]['photons']['fit']
             assert abs(fit['greyPerPhoton'] - g) / g < 0.15, (g, fit['greyPerPhoton'])
