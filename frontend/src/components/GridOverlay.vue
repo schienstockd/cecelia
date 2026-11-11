@@ -75,18 +75,18 @@ const cellH = computed(() => vbH / nRows.value)
   width: 100%; height: 100%;
 }
 .cc-grid-line {
-  stroke: rgba(255, 255, 255, 0.35);
+  stroke: color-mix(in srgb, var(--cc-hud-text) 35%, transparent);
   stroke-width: 1;                             /* non-scaling-stroke keeps this at 1 CSS pixel */
 }
 .cc-grid-label {
   position: absolute;
   transform: translate(-50%, -50%);
-  color: #fff;
+  color: var(--cc-hud-text);
   font: 600 11px system-ui, sans-serif;
   /* dark halo for legibility over any frame, matching StillOverlay's white/dark chrome pattern */
   text-shadow:
-    0 0 2px rgba(0, 0, 0, 0.9),
-    0 0 3px rgba(0, 0, 0, 0.75);
+    0 0 2px var(--cc-hud-halo),
+    0 0 3px var(--cc-hud-halo);
   white-space: nowrap;
 }
 </style>

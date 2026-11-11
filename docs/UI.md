@@ -43,7 +43,7 @@ model + the gating plot stack's internals), `docs/MODULES.md` (task JSON + param
 
 ## Design tokens
 
-All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at the `<body>` level).
+All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlays reach them). Colour tokens split into scheme-following and fixed — see *Colour schemes* below.
 
 | Token | Value | Use |
 |-------|-------|-----|
@@ -518,6 +518,50 @@ Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 u
   uses) and `pi-spin pi-spinner` (28) with nothing choosing between them; it is now **always
   `pi-spin pi-spinner`**, which frees `pi-cog` to mean only settings/options. `pi-spin` is a *modifier*,
   not a glyph. "Edit" was split between `pi-pencil` and `pi-file-edit`; it is `pi-pencil`.
+
+## Colour schemes — what a scheme overrides, and what it must not
+
+A colour scheme is one block of token values on `:root` (e.g. `:root[data-theme="light"] { … }`); no
+component changes. That holds because **component CSS contains no colour literals** —
+`findColourLiterals` in `utils/cssScenarios.test.ts` fails on any hex / `rgb()` / `white` / `black` in a
+`<style>` block or an inline `style=`. Every colour reads a token from one of two groups in `style.css`:
+
+- **Scheme-following** — a scheme gives each a new value: surfaces and text (`--cc-bg`, `--cc-surface-*`,
+  `--cc-text*`, `--cc-border*`), the accent/stage/primary families, `--cc-shadow` / `--cc-shadow-soft` /
+  `--cc-backdrop`, `--cc-wash` / `--cc-wash-strong` (hover washes — white on dark, so a light scheme
+  makes them dark), and `--cc-ink-*` (a hue that reads *as text* on the scheme's surfaces: red, amber,
+  green, blue, cyan — a light scheme darkens each). `--cc-tint-*` are `color-mix()`es of
+  `--cc-danger` / `--cc-warn` / `--cc-sev-ok` / `--cc-dot-info`, so they follow for free.
+- **Fixed** — a scheme leaves them alone, because what is underneath is not the page: `--cc-hud-*`
+  (chips, halos and marks over microscopy pixels and plot canvases, which are dark in any scheme),
+  `--cc-media-bg`, `--cc-on-solid` / `--cc-on-bright` (ink on a filled control — the fill decides),
+  `--cc-paper*` (an exported or printed figure is white), `--cc-swatch-edge`, `--cc-claude-mark`.
+
+`.cc-light` re-inks a subtree onto paper for an export — put it on the capture host; it is not a scheme.
+Plot figures keep their own dark/paper pair (`plots/overlays.ts` → `plotTheme`) — a per-plot option,
+not the app's scheme. JS that must *compute* with a scheme colour (contrast for module tags) reads it
+live with `tokenColour()` (`utils/colour.ts`), so it follows too. A colour that is not the app's to
+theme (a data ramp, a figure ground, an external asset's paper) carries `/* COLOUR-OK: reason */`.
+
+Two schemes ship: **Dark** (the default — no attribute) and **Light** (`:root[data-theme="light"]`
+in `style.css`, its contrast figures in the block's comment). The user switches with one click from the
+avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
+is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
+`<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
+chosen for AA contrast; they have not had the CVD check the dark trio had.
+
+**State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
+scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
+`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger` and the status
+dots to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
+OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labelled category ink (cyan)
+is held to the 6 floor. Identity hues that always appear with their name — the four stage colours,
+accent / Kiwi / Claude / viewer — are not in the check. There is no orange ink: on a light ground, at
+text contrast, it cannot be told from amber.
+
+Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
+`--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its
+swatches live, so it shows the active scheme.
 
 ## Colours — one meaning per token, and the glossary is the reference
 
@@ -2588,14 +2632,19 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   growing it moves all three.
 - **`/` is the welcome page** (`modules/WelcomeModule.vue`), NOT a redirect. A `redirect` on the `/`
   record resolves before any guard — i.e. before the profile list has arrived — so a profile-derived
-  landing page bounced on a cold boot. No page is privileged as "the start": with no project open it
-  lists recent projects; with one open it shows the active set's recipe (picked there, stored per set)
-  and one Start button to that recipe's first page (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
+  landing page bounced on a cold boot. No page is privileged as "the start". It is one step at a
+  time: with no project open (or after its "← Projects" button) it lists recent projects, with a
+  spinner naming the project while it loads; with one open, only the active set's recipe (picked
+  there, stored per set) and one Start / Continue button to the first recipe step not yet run on the
+  set (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
 - **A set's recipe lights the sidebar and names each page's next step.** `utils/setRecipe.ts`
   (`resolveSetRecipe`, `suggestRecipe`, `nextStepFor`, `litRoutes`), saved through
   `composables/useSetRecipe.ts` (`POST /api/sets/recipe`). Pages on a confirmed recipe stay bright and
   the rest dim (still clickable); a suggestion from the axes restyles nothing until it is picked.
-  The picker sits in the set row (`SetRecipePicker.vue`); the Next button is `NextStep.vue`.
+  The picker sits in the set row (`SetRecipePicker.vue`) as the recipe's own icon (from
+  `lib/guides/recipes.ts`) with a menu, never its spelled-out title: the row is on every page and
+  the title was too wide. An unconfirmed suggestion shows dimmed with a dot. The Next button is
+  `NextStep.vue`.
 - A guide whose steps visit hidden pages gets one **derived prereq** in the picker
   (`stores/guide.ts` → `profilePrereq`) — an amber "needs pages your view profile hides (…)" line,
   counted in "N missing", with **Start still working**. Derived from the guide's own `steps`, so a new

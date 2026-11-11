@@ -113,7 +113,7 @@ function dismiss(id: string) { viewer.dismissUiMark(id) }
   background: var(--cc-surface-1); border: 1px solid var(--cc-warn);
   border-radius: var(--cc-radius-pill);
   pointer-events: auto;
-  box-shadow: 0 0 0 2px rgba(0,0,0,0.35);
+  box-shadow: 0 0 0 2px var(--cc-hud-shade);
 }
 .pb-pulse {
   width: 0.5rem; height: 0.5rem; border-radius: 50%;
@@ -125,9 +125,9 @@ function dismiss(id: string) { viewer.dismissUiMark(id) }
  * `rgba(var(...), a)` can't wrap it. Amber, not the app's accent purple, so a Claude pointer
  * stands out against surfaces already coloured with the brand accent. */
 @keyframes pb-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
-  70%  { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
-  100% { box-shadow: 0 0 0 0   rgba(245, 158, 11, 0); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cc-warn) 70%, transparent); }
+  70%  { box-shadow: 0 0 0 10px color-mix(in srgb, var(--cc-warn) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--cc-warn) 0%, transparent); }
 }
 .pb-label { color: var(--cc-text); white-space: nowrap; max-width: 20rem;
             overflow: hidden; text-overflow: ellipsis; }

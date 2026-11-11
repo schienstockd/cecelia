@@ -139,7 +139,7 @@ import RoiSection from '../components/RoiSection.vue'
 import type { RoiSpot } from '../utils/rois'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
-import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
+import VwHeader from '../components/viewerWindow/VwHeader.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
@@ -5869,6 +5869,11 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <div class="vw-page">
+  <!-- The window's header: way back, what is on screen, Help, Ask Kiwi (GUI_LAYOUT_PLAN V1) -->
+  <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
+            :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
+            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true" />
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
@@ -6130,14 +6135,6 @@ onUnmounted(() => {
                       :default-width="290" :min="240" :max="480"
                       collapsed-key="viewerWindowSideCollapsed">
       <div class="vw-side">
-      <!-- Image name + Add-to-Kiwi. Add sits with the name (not with the mode/gear/shortcuts row):
-           attaching THIS image to Kiwi is a per-image action, so it reads with the identifier
-           rather than with the viewer settings. -->
-      <div class="vw-title-row cc-row cc-row-tight">
-        <div class="vw-title cc-fs-sm">{{ imageName || imageUid }}</div>
-        <AddToKiwiButton :kiwi-ref="() => kiwiViewRef.ref" :tip="kiwiViewRef.tip" :project-uid="projectUid"
-                         size="dense" />
-      </div>
       <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
         <!-- Table with a column per mode: same gesture does different things in pan vs select
@@ -6242,12 +6239,9 @@ onUnmounted(() => {
           </div>
         </div>
       </TeleportPopover>
-      <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
-           ViewerPanel now (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches this
-           window via the storage bridge and calls `changeVersion` internally. -->
-      <div v-if="valueName" class="cc-muted cc-fs-2xs vw-version-name"
-           v-tooltip.bottom="'Set the version in the Viewer panel of the main window'"
-           :title="valueName">{{ valueName }}</div>
+      <!-- Which VERSION is on screen: the header's provenance chip (VwHeader). The picker lives in the
+           main-window ViewerPanel (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches
+           this window via the storage bridge and calls `changeVersion` internally. -->
 
       <div v-if="activeAdapter && !activeAdapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
            v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
@@ -7163,10 +7157,12 @@ onUnmounted(() => {
       </div>
     </CollapsiblePanel>
   </div>
+  </div>
 </template>
 
 <style scoped>
-.vw { display: flex; height: 100vh; background: var(--cc-surface-1); overflow: auto; }
+.vw-page { display: flex; flex-direction: column; height: 100vh; }
+.vw { display: flex; flex: 1; min-height: 0; background: var(--cc-surface-1); overflow: auto; }
 /* The size slider shares its row with a toggle and a readout, so it needs a floor it cannot be
    squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
 .vw-px { min-width: 3.5rem; }
@@ -7179,7 +7175,6 @@ onUnmounted(() => {
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
   border: 1px solid var(--cc-border); }
 .vw-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vw-version-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-key { white-space: nowrap; }
 /* Shortcuts table — gesture rows × mode columns. Highlight the active mode's column so a user
    reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
@@ -7352,8 +7347,6 @@ onUnmounted(() => {
    height the others leave and scrolls inside. `.vw-side` scrolls itself, so on a short panel the open
    section keeps a usable floor instead of shrinking to its header. */
 .vw-side > .collapsible-section.cs-fill { min-height: 12rem; }
-.vw-title-row { align-items: flex-start; }
-.vw-title { font-weight: 600; word-break: break-word; flex: 1; min-width: 0; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
      card (a stray-wide readout, a wrapping row) is clipped rather than poking past the card border

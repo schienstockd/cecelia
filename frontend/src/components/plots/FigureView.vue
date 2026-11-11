@@ -75,7 +75,7 @@ defineExpose({ exportImage })
 </template>
 
 <style scoped>
-.fv { position: relative; display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; background: #fff; }
+.fv { position: relative; display: flex; align-items: center; justify-content: center; height: 100%; min-height: 0; background: var(--cc-paper); }
 .fv-img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .fv-ctrl { position: absolute; top: 0; left: 0; padding: 4px 6px; }
 .fv-empty { padding: 1rem; text-align: center; }

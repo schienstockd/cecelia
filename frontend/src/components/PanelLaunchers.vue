@@ -105,16 +105,16 @@ const labLogTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnse
 .panel-launcher > i { font-size: 1rem; }
 /* Viewer — green (--cc-viewer). */
 .panel-launcher-viewer { color: var(--cc-viewer); }
-.panel-launcher-viewer:hover { border-color: #16a34a; background: #14261a; }
-.panel-launcher-viewer.on { background: #0f3d24; border-color: var(--cc-viewer); }
+.panel-launcher-viewer:hover { border-color: color-mix(in srgb, var(--cc-viewer) 70%, transparent); background: color-mix(in srgb, var(--cc-viewer) 8%, transparent); }
+.panel-launcher-viewer.on { background: color-mix(in srgb, var(--cc-viewer) 18%, transparent); border-color: var(--cc-viewer); }
 /* Correction — purple (--cc-accent), matching the CorrectionCockpit's floating-panel border. */
 .panel-launcher-correction { color: var(--cc-accent); }
 .panel-launcher-correction:hover { border-color: var(--cc-accent-strong); background: var(--cc-accent-tint); }
 .panel-launcher-correction.on { background: var(--cc-accent-tint); border-color: var(--cc-accent); }
 /* Lab log — neutral white, matches its floating panel's --cc-guide border. */
 .panel-launcher-lablog { color: var(--cc-text); }
-.panel-launcher-lablog:hover { border-color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
-.panel-launcher-lablog.on { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.6); }
+.panel-launcher-lablog:hover { border-color: var(--cc-guide); background: var(--cc-wash); }
+.panel-launcher-lablog.on { background: var(--cc-wash-strong); border-color: var(--cc-guide); }
 /* Kiwi (assist cockpit) — teal (--cc-kiwi), matching the KiwiCockpit's floating-panel border. */
 .panel-launcher-kiwi { color: var(--cc-kiwi); }
 .panel-launcher-kiwi:hover { border-color: var(--cc-kiwi-strong); background: var(--cc-kiwi-tint); }
@@ -132,7 +132,7 @@ const labLogTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnse
 }
 /* WIP variant: amber tint over the cockpit's wrench — "still being built". Not a warning
    (which is red / --cc-danger), not a QC flag (which is a `pi-flag` on an image row). */
-.panel-launcher-badge-wip { color: #d97706; }
+.panel-launcher-badge-wip { color: var(--cc-warn); }
 /* Action-bar size: sits among the module's filter toggles, so it takes their height and drops the
    sidebar row's padding + stretch. */
 .panel-launcher-row.compact { padding: 0; gap: 0.25rem; }

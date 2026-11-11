@@ -564,6 +564,8 @@ const visibleUids = computed<string[]>(() =>
 }
 
 .image-count { display: flex; align-items: center; gap: var(--cc-space-xs); white-space: nowrap; }
+/* the set row wraps rather than letting its parts overlap on a narrow page */
+.set-row { flex-wrap: wrap; row-gap: var(--cc-space-xs); }
 
 /* the set row's ⋯ menu shows the set ID beside its copy item */
 .set-uid { font-family: var(--cc-mono); margin-left: auto; }

@@ -95,7 +95,7 @@ function save() {
 .sp-picked { border-color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 8%, var(--cc-surface-2)); }
 .sp-cb { position: absolute; top: 0.4rem; left: 0.4rem; }
 .sp-thumb {
-  aspect-ratio: 1 / 1; width: 100%; background: #000;
+  aspect-ratio: 1 / 1; width: 100%; background: var(--cc-media-bg);
   border-radius: var(--cc-radius-sm); overflow: hidden;
   display: flex; align-items: center; justify-content: center;
 }

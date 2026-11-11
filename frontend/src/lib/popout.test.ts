@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { POPOUT_ROUTES, POPOUT_WINDOW_NAMES, popoutUrl, popoutRouteOfWindow, isPopoutWindow } from './popout'
+import { POPOUT_ROUTES, POPOUT_WINDOW_NAMES, popoutUrl, popoutRouteOfWindow, isPopoutWindow, nameMainWindow, mainWindowUrl, MAIN_WINDOW_NAME } from './popout'
 
 const BASE = { origin: 'http://localhost:8080', pathname: '/' }
 // The suite runs in node, with no `window` — so every call passes the window name it is asking about.
@@ -53,5 +53,17 @@ describe('isPopoutWindow', () => {
     // `main.ts` sends it back to /tasks-window, and until it lands there App.vue keeps it bare.
     expect(isPopoutWindow('#/tasks', 'cecelia-tasks')).toBe(true)
     expect(isPopoutWindow('#/', 'cecelia-console')).toBe(true)
+  })
+})
+
+describe('the way back to the main window', () => {
+  it('names the main window once and never renames a popout', () => {
+    const main = { name: '' }; nameMainWindow(main); expect(main.name).toBe(MAIN_WINDOW_NAME)
+    const pop = { name: 'cecelia-viewer' }; nameMainWindow(pop); expect(pop.name).toBe('cecelia-viewer')
+  })
+  it('reopens the opener at its own URL, else the app root', () => {
+    expect(mainWindowUrl({ closed: false, location: { href: 'http://h/#/segment' } }, 'http://h', '/')).toBe('http://h/#/segment')
+    expect(mainWindowUrl({ closed: true, location: { href: 'http://h/#/segment' } }, 'http://h', '/')).toBe('http://h/#/')
+    expect(mainWindowUrl(null, 'http://h', '/app/')).toBe('http://h/app/#/')
   })
 })

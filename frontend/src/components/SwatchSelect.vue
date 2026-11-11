@@ -54,7 +54,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDoc))
 .ss-sw.none { background: repeating-linear-gradient(45deg, transparent, transparent 2px, var(--cc-text-dim) 2px, var(--cc-text-dim) 3px); }
 .ss-menu { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 2px); margin: 0; padding: 3px;
   list-style: none; max-height: 220px; overflow: auto; background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); box-shadow: 0 6px 18px var(--cc-shadow); }
 .ss-opt { display: flex; align-items: center; gap: 6px; padding: 0.28rem 0.4rem; border-radius: var(--cc-radius-sm);
   font-size: var(--cc-fs-md); cursor: pointer; }
 .ss-opt:hover { background: var(--cc-surface-2); }

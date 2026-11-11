@@ -2064,11 +2064,11 @@ onActivated(async () => {
   color: var(--cc-accent);
   border-color: var(--cc-accent);
 }
-.live-resume-btn:hover:not(:disabled) { background: var(--cc-accent-fill); color: #fff; }
+.live-resume-btn:hover:not(:disabled) { background: var(--cc-accent-fill); color: var(--cc-on-solid); }
 
 .qc-expand-overlay {
   position: absolute; inset: 0; z-index: 20;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--cc-backdrop);
   display: flex; align-items: center; justify-content: center;
 }
 .qc-expand-card {

@@ -32,7 +32,7 @@ read these; do not re-derive one by grep.
 | `findShadowedUtilities` | `cssScenarios.ts` | a text utility that another class on the SAME element beats on the utility's own role properties, so it does nothing | exact list (9 deliberate overrides, each with its reason) |
 | `findHandRolledIconButtons` | `cssScenarios.ts` | an icon-only `<button>` not built from `.cc-btn` | exact list (2 full-height strip exemptions) |
 | `findRawValues` | `cssScenarios.ts` | literal `font-size` / `border-radius`, incl. inline `style=` | exact list (1 documented exception) |
-| `findRawColours` + `colourTokens` | `cssScenarios.ts` | a hex a token already holds exactly; any `var(--x, #hex)` fallback | must be empty |
+| `findColourLiterals` | `cssScenarios.ts` | any literal colour (hex, `rgb()`/`hsl()`, `white`/`black`, a `var(--x, #hex)` fallback) in component CSS or an inline `style=`; `COLOUR-OK:` keeps a deliberate one | must be empty (two whole-file exemptions, each with a reason). Replaced `findRawColours`, which flagged only a literal EQUAL to a token's value and let every other through, since nothing told a chart hue from a system colour. Colour schemes changed that: every literal now breaks a scheme, and the marker says which ones are not chrome |
 | `findRestatedInputBase` + `inputBase` | `cssScenarios.ts` | form-control rules re-stating the global input base | exact list (2 survivors, each a class shared with a non-input element) |
 | `findDeepFillOverrides` | `cssScenarios.ts` | a `:deep(.cs-body)` rule setting flex / min-height / max-height — CollapsibleSection's `fill` prop, hand-rolled | must be empty |
 | `findDeadTokenRefs` | `cssTokens.ts` | a reference to a `--*` property `style.css` never declares | must be empty |

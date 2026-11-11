@@ -62,6 +62,12 @@ describe('findNonRootTokenDecls', () => {
       .toEqual([{ selector: '.cc-dark', token: '--cc-fs-sm' }])
   })
 
+  it('accepts .cc-light — a re-ink scope applied to the very element it re-inks', () => {
+    expect(findNonRootTokenDecls('.cc-light { --cc-text: #111; }')).toEqual([])
+    expect(findNonRootTokenDecls('.cc-light .x { --cc-text: #111; }'))
+      .toEqual([{ selector: '.cc-light .x', token: '--cc-text' }])
+  })
+
   // A component-local token set on its own class is fine — this check is only about style.css.
   it('ignores non-token declarations', () => {
     expect(findNonRootTokenDecls('.foo { color: red; }')).toEqual([])

@@ -100,7 +100,7 @@ const card = computed(() => acquisitionCard(props.image, { projectUid: props.pro
 </template>
 
 <style scoped>
-.acd-preview { background: #fff; padding: 12px; border-radius: var(--cc-radius-sm); overflow-x: hidden; }
+.acd-preview { background: var(--cc-paper); padding: 12px; border-radius: var(--cc-radius-sm); overflow-x: hidden; }
 </style>
 
 <style>

@@ -609,5 +609,5 @@ const FILTERS: ChipOption[] = [
 /* ── Shared button style ──────────────────────────────────────────────── */
 /* .ra-btn → cc-btn cc-btn-bare cc-btn-icon */
 .ra-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.ra-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
+.ra-btn.danger:hover { background: var(--cc-tint-red); color: var(--cc-ink-red); }
 </style>

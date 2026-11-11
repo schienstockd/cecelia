@@ -125,11 +125,12 @@ const filterCounts = computed(() => ({
   error: log.entries.filter(e => e.level === 'error').length,
 }))
 
-// per-level active colour (all → default accent); mirrors the old .filter-tab.active.<lvl> text colour
+// per-level active colour (all → default accent) — the same tokens as the level badges below, so a
+// chip and its badge are one colour in every scheme
 const LEVEL_ACCENT: Partial<Record<Filter, string>> = {
-  error: '#fca5a5',
-  warn:  '#fcd34d',
-  info:  '#93c5fd',
+  error: 'var(--cc-ink-red)',
+  warn:  'var(--cc-ink-amber)',
+  info:  'var(--cc-active)',
 }
 
 const filterOptions = computed<ChipOption[]>(() =>
@@ -321,8 +322,8 @@ const filterOptions = computed<ChipOption[]>(() =>
 .console-bar:hover { background: var(--cc-surface-2); }
 
 .bar-last { display: flex; align-items: center; gap: 0.4rem; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.bar-last.error { color: #fca5a5; }
-.bar-last.warn  { color: #fcd34d; }
+.bar-last.error { color: var(--cc-ink-red); }
+.bar-last.warn  { color: var(--cc-ink-amber); }
 .bar-last.info  { color: var(--cc-text-dim); }
 
 
@@ -336,8 +337,8 @@ const filterOptions = computed<ChipOption[]>(() =>
 .ws-badge.disconnected { color: var(--cc-text-dim); }
 
 .unread-badge {
-  background: #7f1d1d;
-  color: #fca5a5;
+  background: var(--cc-tint-red);
+  color: var(--cc-ink-red);
   font-size: var(--cc-fs-xs);
   font-weight: 700;
   padding: 0.1rem 0.45rem;
@@ -396,7 +397,7 @@ const filterOptions = computed<ChipOption[]>(() =>
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
   color: var(--cc-text-dim);
-  box-shadow: 0 2px 6px #0006;
+  box-shadow: 0 2px 6px var(--cc-shadow);
 }
 .follow-btn:hover { color: var(--cc-text); background: var(--cc-surface-1); }
 
@@ -423,20 +424,20 @@ const filterOptions = computed<ChipOption[]>(() =>
   border-bottom: 1px solid transparent;
 }
 .log-entry:hover { background: var(--cc-surface-2); }
-.log-entry.error { background: #7f1d1d18; }
-.log-entry.error:hover { background: #7f1d1d30; }
-.log-entry.warn  { background: #78350f10; }
+.log-entry.error { background: color-mix(in srgb, var(--cc-danger) 6%, transparent); }
+.log-entry.error:hover { background: color-mix(in srgb, var(--cc-danger) 11%, transparent); }
+.log-entry.warn  { background: color-mix(in srgb, var(--cc-warn) 4%, transparent); }
 
-.ts  { color: #4b5563; flex-shrink: 0; }
+.ts  { color: var(--cc-border-hover); flex-shrink: 0; }
 /* the source tag stays the fine-grained one (19 of them); the tint groups it to its chip, so scanning
    for "which component said this" is colour, not reading */
-.src { color: #6b7280; flex-shrink: 0; font-style: italic; }
-.src.grp-backend   { color: #9ca3af; }
-.src.grp-viewer    { color: #7dd3fc; }
+.src { color: var(--cc-text-dim); flex-shrink: 0; font-style: italic; }
+.src.grp-backend   { color: var(--cc-text-dim); }
+.src.grp-viewer    { color: var(--cc-active); }
 .src.grp-preview   { color: var(--cc-accent-soft); }
-.src.grp-runner    { color: #86efac; }
-.src.grp-notebooks { color: #fdba74; }
-.src.grp-tasks     { color: #67e8f9; }
+.src.grp-runner    { color: var(--cc-ink-green); }
+.src.grp-notebooks { color: var(--cc-accent-soft); }
+.src.grp-tasks     { color: var(--cc-ink-cyan); }
 
 .lvl {
   font-weight: 700;
@@ -446,13 +447,13 @@ const filterOptions = computed<ChipOption[]>(() =>
   padding: 0.05rem 0.35rem;
   border-radius: var(--cc-radius-xs);
 }
-.error .lvl { background: #7f1d1d; color: #fca5a5; }
-.warn  .lvl { background: #78350f; color: #fcd34d; }
-.info  .lvl { background: #1e3a5f; color: var(--cc-active); }
+.error .lvl { background: var(--cc-tint-red); color: var(--cc-ink-red); }
+.warn  .lvl { background: var(--cc-tint-amber); color: var(--cc-ink-amber); }
+.info  .lvl { background: var(--cc-tint-blue); color: var(--cc-active); }
 
 .msg { color: var(--cc-text); flex: 1; }
-.error .msg { color: #fca5a5; }
-.warn  .msg { color: #fcd34d; }
+.error .msg { color: var(--cc-ink-red); }
+.warn  .msg { color: var(--cc-ink-amber); }
 
 .expand-icon { color: var(--cc-text-dim); font-size: var(--cc-fs-2xs); flex-shrink: 0; }
 

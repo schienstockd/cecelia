@@ -92,9 +92,9 @@ function setCause(c: string | string[]) {
 .sv { flex-wrap: wrap; margin: 2px 0 6px; }
 .sv-btn { opacity: 0.6; }
 .sv-btn.sv-active, .sv-btn:hover { opacity: 1; }
-.sv-good.sv-active   { background: rgba(86, 180, 233, 0.18); border-color: rgba(86, 180, 233, 0.5); }
-.sv-bad.sv-active    { background: rgba(213, 94, 0, 0.18);   border-color: rgba(213, 94, 0, 0.5); }
-.sv-unsure.sv-active { background: rgba(148, 163, 184, 0.18); border-color: rgba(148, 163, 184, 0.5); }
+.sv-good.sv-active   { background: color-mix(in srgb, var(--cc-dot-ok) 18%, transparent); border-color: color-mix(in srgb, var(--cc-dot-ok) 50%, transparent); }
+.sv-bad.sv-active    { background: color-mix(in srgb, var(--cc-dot-fail) 18%, transparent); border-color: color-mix(in srgb, var(--cc-dot-fail) 50%, transparent); }
+.sv-unsure.sv-active { background: color-mix(in srgb, var(--cc-dot-idle) 18%, transparent); border-color: color-mix(in srgb, var(--cc-dot-idle) 50%, transparent); }
 .sv-note-input { flex: 1; min-width: 200px; font-size: var(--cc-fs-xs); }
 .sv-note { color: var(--cc-text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 .sv-proposal { color: var(--cc-text-dim); font-style: italic; }

@@ -951,15 +951,15 @@ onUnmounted(() => { mermaidRenderSeq++ })
 }
 .bb-chip-status { width: 18px; height: 18px; padding: 0; font-weight: 600; }
 .bb-chip-status-open     { background: var(--cc-surface-2); color: var(--cc-text); }
-.bb-chip-status-resolved { background: rgba(16, 185, 129, 0.15); color: rgb(52, 211, 153); border-color: rgba(16, 185, 129, 0.4); }
-.bb-chip-status-parked   { background: rgba(148, 163, 184, 0.15); color: var(--cc-text-dim); border-color: rgba(148, 163, 184, 0.4); }
+.bb-chip-status-resolved { background: var(--cc-tint-green); color: var(--cc-ink-green); border-color: color-mix(in srgb, var(--cc-sev-ok) 40%, transparent); }
+.bb-chip-status-parked   { background: color-mix(in srgb, var(--cc-dot-idle) 15%, transparent); color: var(--cc-text-dim); border-color: color-mix(in srgb, var(--cc-dot-idle) 40%, transparent); }
 /* Outcome verdict colours — Okabe-Ito blue (good) / vermilion (bad). Red↔green is textbook
    deuteran/protan hostile (see `frontend/src/utils/overlayCompose.ts` for the same reasoning
    on the annotation palette); this pair reads distinct under every common CVD type AND is
    already Cecelia's canonical CVD-safe qualitative palette (`plots/palettes.json:okabe-ito`).
    Colour is not the sole cue — thumbs-up / thumbs-down icons carry the semantic redundantly. */
-.bb-chip-outcome-good { background: rgba(86, 180, 233, 0.18); color: rgb(147, 197, 233); border-color: rgba(86, 180, 233, 0.5); }
-.bb-chip-outcome-bad  { background: rgba(213, 94, 0, 0.18);   color: rgb(240, 148, 68);   border-color: rgba(213, 94, 0, 0.5); }
+.bb-chip-outcome-good { background: color-mix(in srgb, var(--cc-dot-ok) 18%, transparent); color: var(--cc-active); border-color: color-mix(in srgb, var(--cc-dot-ok) 50%, transparent); }
+.bb-chip-outcome-bad  { background: color-mix(in srgb, var(--cc-dot-fail) 18%, transparent); color: var(--cc-ink-red); border-color: color-mix(in srgb, var(--cc-dot-fail) 50%, transparent); }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */
 .bb-pane {
@@ -1000,8 +1000,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
   min-width: 0;
   font-family: var(--cc-mono);
 }
-.bb-outcome-good.bb-outcome-active { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.6); }
-.bb-outcome-bad.bb-outcome-active  { background: rgba(239, 68, 68, 0.2);  border-color: rgba(239, 68, 68, 0.6); }
+.bb-outcome-good.bb-outcome-active { background: color-mix(in srgb, var(--cc-sev-ok) 20%, transparent); border-color: color-mix(in srgb, var(--cc-sev-ok) 60%, transparent); }
+.bb-outcome-bad.bb-outcome-active  { background: color-mix(in srgb, var(--cc-danger) 20%, transparent); border-color: color-mix(in srgb, var(--cc-danger) 60%, transparent); }
 
 .bb-versions { min-width: 5.5rem; }
 
@@ -1036,9 +1036,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-body :deep(a) { color: var(--cc-accent); }
 /* an agent run's decision: a left rule coloured by its verdict */
 .bb-section { border-left: 3px solid var(--cc-border); padding-left: 10px; margin: 10px 0; }
-.bb-section-good   { border-left-color: rgba(86, 180, 233, 0.7); }
-.bb-section-bad    { border-left-color: rgba(213, 94, 0, 0.8); }
-.bb-section-unsure { border-left-color: rgba(148, 163, 184, 0.7); }
+.bb-section-good   { border-left-color: color-mix(in srgb, var(--cc-dot-ok) 70%, transparent); }
+.bb-section-bad    { border-left-color: color-mix(in srgb, var(--cc-dot-fail) 80%, transparent); }
+.bb-section-unsure { border-left-color: color-mix(in srgb, var(--cc-dot-idle) 70%, transparent); }
 .bb-section-pics { margin: 4px 0; }
 .bb-removed-verdict { border-left: 3px solid transparent; padding-left: 6px; }
 .bb-attach-thumb.bb-section-pic { width: 14rem; height: 12rem; }
@@ -1085,7 +1085,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
 /* Bare bordered picture button — canonical square thumbnail (same shape Kiwi's row uses). */
 .bb-attach-thumb {
   width: 4rem; height: 4rem; padding: 0;
-  background: #000;
+  background: var(--cc-media-bg);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
   overflow: hidden;
@@ -1104,7 +1104,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-attach-index {
   position: absolute; top: 2px; left: 2px;
   padding: 0 4px; border-radius: var(--cc-radius-sm);
-  background: rgba(0, 0, 0, 0.6); color: var(--cc-text);
+  background: var(--cc-hud-bg-soft); color: var(--cc-hud-text);
   pointer-events: none;
 }
 </style>
