@@ -36,15 +36,15 @@ export const recordMovieGuide: GuideDef = {
       when: c => c.viewerImageUid !== null,
     },
     {
-      anchor: 'sidebar.viewerCta',
-      placement: 'right',
+      anchor: 'launcher.viewer',
+      placement: 'bottom',
       title: 'Open the Viewer panel',
       text: 'The overlay switches and the recorder both live here.',
       reveal: {
         needed: c => !c.viewerPanelOpen,
-        anchor: 'sidebar.viewerCta',
+        anchor: 'launcher.viewer',
         text: 'The Viewer panel is closed — open it here.',
-        placement: 'right',
+        placement: 'bottom',
       },
       when: c => c.viewerPanelOpen,
     },
@@ -59,9 +59,9 @@ export const recordMovieGuide: GuideDef = {
       ],
       reveal: {
         needed: c => !c.viewerPanelOpen,
-        anchor: 'sidebar.viewerCta',
+        anchor: 'launcher.viewer',
         text: 'The Viewer panel is closed — open it to reach the Movie block.',
-        placement: 'right',
+        placement: 'bottom',
       },
     },
     {

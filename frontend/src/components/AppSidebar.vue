@@ -9,11 +9,7 @@ import { useViewProfilesStore } from '../stores/viewProfiles'
 import { allNavGroups, navGroupFor, stageTint, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
-import { runningTaskCount } from '../utils/runningTasks'
-import { quitConfirmTooltip } from '../utils/quitWarning'
-import { useToast } from '../composables/useToast'
 import ProjectPanel from './ProjectPanel.vue'
-import ConfirmButton from './ConfirmButton.vue'
 import PanelLaunchers from './PanelLaunchers.vue'
 import { useProjectStore } from '../stores/project'
 import { litRoutes } from '../utils/setRecipe'
@@ -21,35 +17,11 @@ import { litRoutes } from '../utils/setRecipe'
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
-// Quit says what it will kill: shutdown exits the backend without waiting for in-flight work, so a
-// long segmentation run would otherwise vanish on a click the user thought was harmless. The count is
-// read from the backend when the button is ARMED (not on hover) — one request per intent to quit.
-const quitTasks   = ref(0)
-const quitConfirm = computed(() => quitConfirmTooltip(quitTasks.value))
-async function armQuit(arm: () => void) {
-  arm()                                        // arm first: the confirm must appear immediately
-  quitTasks.value = await runningTaskCount()   // then fill in what it will cost
-}
-// Log out: end this person's session without quitting — Claude logout, then the profile picker. The
-// store refuses (and says why) if the Claude logout failed, so the toast is the only failure path.
-async function logOutUser() {
-  const err = await appCtl.logOutUser()
-  if (err) useToast().add({ severity: 'warn', summary: err, life: 6000 })
-}
-const logOutTip = computed(() => appCtl.activeProfileName === 'default'
-  ? `Log ${appCtl.activeProfileDisplayName} out — its terminal Claude login stays`
-  : `Log ${appCtl.activeProfileDisplayName} out of Cecelia and Claude`)
-// The footer has no status line, so a refused restart (tasks would die, or not supervised) is a toast.
-async function restartBackend() {
-  const err = await appCtl.restartBackend()
-  if (err) useToast().add({ severity: 'warn', summary: err, life: 6000 })
-}
 const customModules = useCustomModulesStore()
 const viewProfiles = useViewProfilesStore()
 const showPanel = ref(false)
 
-// quick app controls in the footer: Quit (everyone) + Restart backend (dev only). Same shared store
-// the Settings → System panel uses. Quit is destructive → two-click ConfirmButton (no native dialog).
+// `refreshDev` feeds the header's avatar menu (Restart backend is dev only); Quit / Log out live there too.
 onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfiles.ensureLoaded() })
 
 // Re-scan custom modules when a project opens — the custom-module nav group needs a project anyway, and
@@ -187,13 +159,12 @@ function isNavDisabled(item: NavItem): boolean {
       </template>
     </div>
 
-    <!-- ── Floating-panel launchers (Viewer / Correction / Lab log / Kiwi) — shared with the
-         maximised plot canvas's action bar, see PanelLaunchers.vue ── -->
-    <PanelLaunchers />
+    <!-- ── The correction cockpit's launcher. Viewer, Lab log and Kiwi moved to the header; this one
+         moves to "Correct labels" on the result line (docs/todo/GUI_LAYOUT_PLAN.md, M3). ── -->
+    <PanelLaunchers :kinds="['correction']" />
 
-    <!-- ── Footer: Settings on the left; app controls (quit / restart) on the right ──────────
-         Settings is an app preference, not a pipeline step, so it sits apart from the module nav
-         and opposite the destructive/lifecycle controls. -->
+    <!-- ── Footer: Settings. An app preference, not a pipeline step, so it sits apart from the module
+         nav. Quit / Log out / Restart moved to the header's avatar menu. -->
     <div class="sidebar-footer">
       <!-- An explicit `data-guide`, NOT the `nav:/settings` scheme. That scheme exists because the nav
            groups above are data-driven and so carry no attributes of their own; this is hand-written
@@ -204,29 +175,6 @@ function isNavDisabled(item: NavItem): boolean {
                   v-tooltip.right="'Settings — project name, ID, and interface preferences'">
         <i class="pi pi-cog" />
       </RouterLink>
-      <div class="footer-ctl">
-        <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm }">
-          <!-- Anchored for the orientation tour, which points here to say "close the tab and the
-               backend keeps running" — the fact the `cc.hint.shutdown` callout used to carry. The step
-               has no `clickAnchor`, so it never invites this particular click. -->
-          <button class="footer-btn cc-btn cc-btn-icon cc-btn-lg" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost danger'"
-                  data-guide="sidebar.quit"
-                  :disabled="appCtl.busy" @click="armed ? confirm() : armQuit(arm)"
-                  v-tooltip.right="armed ? quitConfirm : 'Quit Cecelia — stop notebooks and the backend'">
-            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" />
-          </button>
-        </ConfirmButton>
-        <ConfirmButton @confirm="logOutUser" v-slot="{ armed, press }">
-          <button class="footer-btn cc-btn cc-btn-icon cc-btn-lg" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
-                  :disabled="appCtl.busy" @click="press" v-tooltip.right="armed ? 'Click again to log out' : logOutTip">
-            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-sign-out'" />
-          </button>
-        </ConfirmButton>
-        <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="restartBackend"
-                v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
-          <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
-        </button>
-      </div>
     </div>
 
   </nav>
@@ -395,18 +343,15 @@ function isNavDisabled(item: NavItem): boolean {
   flex-shrink: 0;                   /* pinned below the scroll region — never squeezed */
   display: flex;
   align-items: center;
-  justify-content: space-between;   /* Settings on the left, quit/restart cluster on the right */
   gap: 0.4rem;
   padding: 0.5rem 0.6rem 0.2rem;
   border-top: 1px solid var(--cc-border);
 }
-.footer-ctl { display: flex; gap: 0.4rem; }   /* the right-hand quit + restart group */
 /* Settings link active state (RouterLink) — mark it when on /settings, like the nav items */
 .footer-btn.router-link-active { color: var(--cc-text); border-color: var(--cc-accent); }
 .footer-btn { text-decoration: none; /* Settings is a RouterLink (<a>) — no underline */
   transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
 .footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
-.footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger-fill); border-color: var(--cc-danger-fill); }
 .footer-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 </style>

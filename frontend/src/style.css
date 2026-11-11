@@ -101,10 +101,10 @@
      One green — don't add a second token holding the same colour for a new surface. */
   --cc-viewer:     #22c55e;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
-     highlight ring, and the Guides compass mark (header button + dialog title). Deliberately NOT
+     highlight ring, and the Guides compass mark (dialog title). Deliberately NOT
      --cc-accent: purple is form/control chrome, so a guide ringing a purple button in purple reads as
      part of the control rather than as a pointer at it. Against a bare button's default --cc-text-dim
-     this reads as a soft white, so the compass still stands out beside the plain header icons. */
+     this reads as a soft white. */
   --cc-guide:      rgba(255, 255, 255, 0.6);
   /* "active / in-progress" (blue) — the running-task light. NOT a severity (ok/warn/fail); it's the
      4th task-status tone alongside neutral (queued/cancelled). See lib/taskStatus.ts. */
@@ -993,6 +993,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   display: flex; align-items: center; gap: 0.55rem;
   width: 100%; padding: 0.4rem 0.6rem; border: none; border-radius: var(--cc-radius-xs);
   background: none; color: var(--cc-text); font-size: var(--cc-fs-md); text-align: left; cursor: pointer;
+  text-decoration: none;   /* an outward link (<a>) in a menu reads as an item, not underlined prose */
 }
 .cc-actions-item:hover:not(:disabled) { background: var(--cc-surface-2); }
 .cc-actions-item:disabled { opacity: 0.4; cursor: not-allowed; }

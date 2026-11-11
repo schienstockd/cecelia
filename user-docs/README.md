@@ -1,7 +1,7 @@
 # Start here: what's in Cecelia
 
 This page names every part of Cecelia once: what it is for and what it needs. The same map is the
-front page of **Guides** in the app (compass icon, top right), where each page is one click away and
+front page of **Guides** in the app (Help ▾ → Guides, top right), where each page is one click away and
 each guide shows you the buttons.
 
 ```mermaid
@@ -225,7 +225,7 @@ Both run with full access to your machine. Install only code you trust.
 | | What it's for |
 |---|---|
 | **Settings** (sidebar footer) | The machine: storage, updates, HPC, connected tools. Shared by everyone on this computer |
-| **Preferences** (your profile chip) | You: your own settings, your HPC login, your Claude login |
+| **Preferences** (your avatar menu, top right) | You: your own settings, your HPC login, your Claude login |
 | **User profile** | Who is using the app, when several people share a computer |
 | **Sidebar layout** | Hide sidebar pages you don't use. Tidies the menu; doesn't restrict anything |
 | **Export / import** | Move a whole project as one folder (`.ccbundle`), from the project panel |

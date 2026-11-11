@@ -494,7 +494,7 @@ seven call sites that set one were silently getting the `alignRight` default.
 `frontend/src/lib/iconLegend.ts` is THE list of what every glyph in this app means, grouped by family.
 **Consult it before choosing an icon**: find the meaning you need and use its glyph, or — if the meaning
 is genuinely new — add an entry saying what it means. Users read the same list from the **key** in the
-header (`pi-key`, beside the Guides compass, rendered by `IconLegendDialog.vue`).
+header (Help ▾ → What the icons mean, rendered by `IconLegendDialog.vue`).
 
 It cannot rot, because `iconLegend.test.ts` scans every glyph actually rendered under `frontend/src`
 (comments stripped) and fails when one is **missing from the list**, or **listed and rendered nowhere**.
@@ -1046,9 +1046,9 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   picker (forced even with one profile). Ends a
   person's session without stopping Cecelia; it refuses, with a toast, if the Claude logout failed.
 
-## Guides — bubble walkthroughs (the compass in the header)
+## Guides — bubble walkthroughs (Help ▾ → Guides)
 
-The in-app answer to "can you send me a screencast": a **compass button beside the brand mark** opens
+The in-app answer to "can you send me a screencast": **Help ▾ → Guides and the map** in the header opens
 `GuidesDialog.vue`, and starting a guide puts a bubble beside the real control, on the user's own data.
 Design + locked decisions: `docs/todo/GUIDE_SYSTEM_PLAN.md`.
 
@@ -1064,7 +1064,7 @@ which is how navigating gets taught rather than done for you.
 | Prerequisite registry | `lib/guides/prereqs.ts` |
 | **The builder for "run a function" pages** | `lib/guides/moduleTask.ts` — `moduleTaskGuide()` for a whole page guide, `taskRunSteps()` for just the run-a-task block when a guide needs it mid-sequence (the import guide's convert phase) |
 | Runtime (which guide, which step, what it waits for) | `stores/guide.ts` |
-| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel. Both the ring and the placement use `visibleRect()`, the anchor intersected with every clipping ancestor: `getBoundingClientRect()` ignores clipping, so a control taller than the panel scrolling it would otherwise be framed mostly off-panel. The compass MARK (header button + dialog title) uses the same token, so the mark and the surface it opens read as one thing. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
+| Bubble + ring | `components/GuideBubble.vue` — chrome is `--cc-guide` (whitish), the same accent as the lab-log panel. Both the ring and the placement use `visibleRect()`, the anchor intersected with every clipping ancestor: `getBoundingClientRect()` ignores clipping, so a control taller than the panel scrolling it would otherwise be framed mostly off-panel. The compass MARK (dialog title) uses the same token, so the mark and the surface it opens read as one thing. Deliberately not `--cc-accent`: purple is form/control chrome, so a purple ring round a purple button reads as part of the control rather than as a pointer at it |
 | Picker | `components/GuidesDialog.vue`, open flag in `lib/guideOpen.ts` |
 | Anchor resolution / reachability | `utils/guideAnchor.ts` |
 | Positioning (shared with `TeleportPopover`) | `utils/anchorPosition.ts` |
@@ -1258,7 +1258,7 @@ It has three ways in, and they are deliberately not three implementations:
 
 | Entry | Where | Behaviour |
 |---|---|---|
-| The compass, like any guide | `AppHeader.vue` | listed first in the picker |
+| Help ▾ → Guides, like any guide | `HelpMenu.vue` | listed first in the picker |
 | "Show me" on the **about Cecelia** card | `lib/tips.ts` → `guideId` | the existing tip↔guide link (D7); no new plumbing |
 | **Automatic, once ever** | `App.vue` | starts when the What's New dialog is closed for the first time |
 
@@ -1281,12 +1281,15 @@ that may never render needs a different anchor.
 so resolution cannot pick wrong — and anchoring only the collapsed bar would leave the tour pointing at
 nothing for anyone who already had the console open.
 
-### The header's outward links
+### The header's Help menu and outward links
 
-The compass sits in a row of three: **guides → GitHub issues → Zulip chat**, reading left to right as
-"walk me through it" → "this is broken" → "does anyone know?". The two links are `<a target="_blank">`
-and take `cc-btn-bare`'s muted colour rather than `--cc-guide`, so they sit a step quieter than the
-compass instead of competing with it for the same glance.
+One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six header icons, in two groups:
+**Learn** (Guides and the map, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
+the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
+`.cc-actions-menu`. The rest of the header: the viewer chip, the lab-log bell, **Ask Kiwi** and the avatar
+menu (`components/ProfileMenu.vue`: switch profile, Preferences, Restart backend (dev), Log out, Quit).
+The version and the connection sit at the right end of the console bar; the connection shows only when
+it drops. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md`.
 
 Every outward URL lives in **`lib/links.ts`** — `CECELIA_REPO_URL`, `CECELIA_ISSUES_URL` (the list, for
 a browse-first entry point), `CECELIA_NEW_ISSUE_URL` (the form, for a "report this" action),

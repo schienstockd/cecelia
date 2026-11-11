@@ -6,12 +6,36 @@ import { isVisible, formatEntry, logGroup, LOG_GROUPS, type LogGroup } from '../
 import { openPopoutWindow } from '../lib/popout'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { useWsStore } from '../stores/ws'
+import { useAppControlStore } from '../stores/appControl'
+import { WS_STATUS_TONE } from '../utils/statusDot'
+import { shortVersionLabel } from '../utils/versionLabel'
 
 // `fill`: render just the open panel filling its container (no docked collapse bar / toggle). Used by
 // the standalone console window (ConsoleView) so the docked bar and the window are the SAME component.
 const props = defineProps<{ fill?: boolean }>()
 
 const log = useLogStore()
+const ws = useWsStore()
+const appCtl = useAppControlStore()
+
+// The running version and the backend connection, moved here from the header (GUI_LAYOUT_PLAN): the
+// version is always shown, the connection only when it is NOT connected — a green "Connected" pill
+// was chrome nobody read while it held.
+const versionShort = computed(() => shortVersionLabel(appCtl.updateCurrent))
+const wsLabel: Record<string, string> = {
+  connecting:   'Connecting…',
+  disconnected: 'Disconnected',
+  error:        'Connection error',
+  signedOut:    'Not signed in',
+}
+const wsTip: Record<string, string> = {
+  connected:    'Julia backend is running and reachable.',
+  connecting:   'Attempting to connect to the Julia backend.',
+  disconnected: 'Not connected. Check that the Julia server is running (pixi run dev).',
+  error:        'WebSocket error. See the console for details.',
+  signedOut:    'Open the sign-in link printed in the terminal that started Cecelia.',
+}
 
 type Filter = LogLevel | 'all'
 const filter = ref<Filter>('all')
@@ -141,6 +165,15 @@ const filterOptions = computed<ChipOption[]>(() =>
     <span v-if="log.unreadErrors > 0" class="unread-badge"
       v-tooltip.top="`${log.unreadErrors} unread error(s)`">
       {{ log.unreadErrors }}
+    </span>
+
+    <span class="bar-status" data-guide="console.status" @click.stop>
+      <span v-if="ws.status !== 'connected'" class="ws-badge" :class="ws.status"
+            v-tooltip.top="wsTip[ws.status] ?? ws.status">
+        <span class="cc-dot" :class="dotClass(WS_STATUS_TONE[ws.status])" />
+        {{ wsLabel[ws.status] ?? ws.status }}
+      </span>
+      <span v-if="versionShort" class="cc-muted" v-tooltip.top="'Cecelia ' + appCtl.updateCurrent">{{ versionShort }}</span>
     </span>
 
     <button
@@ -294,7 +327,13 @@ const filterOptions = computed<ChipOption[]>(() =>
 
 
 /* pop-out button on the collapsed bar — pin to the right edge, don't shrink */
-.bar-window-btn { margin-left: auto; flex-shrink: 0; }
+.bar-window-btn { flex-shrink: 0; }
+
+/* version + connection, right of the last message (moved from the header) */
+.bar-status { margin-left: auto; display: inline-flex; align-items: center; gap: 0.6rem; flex-shrink: 0;
+  font-size: var(--cc-fs-xs); cursor: default; white-space: nowrap; }
+.ws-badge { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--cc-text); }
+.ws-badge.disconnected { color: var(--cc-text-dim); }
 
 .unread-badge {
   background: #7f1d1d;

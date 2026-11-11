@@ -44,10 +44,10 @@ export const userProfileGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'header.profileChip',
-      placement: 'bottom',
+      anchor: 'header.profile',
+      placement: 'bottom-end',
       title: 'Who is driving',
-      text: 'The chip in the header names the active profile — click it to open Preferences → Profiles.',
+      text: 'The avatar in the header is the active profile — its menu switches profiles.',
       bullets: ['One profile per person, not per experiment.'],
       clickAnchor: true,
     },
@@ -397,7 +397,7 @@ export const correctAMaskGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'sidebar.correctionCta',
+      anchor: 'launcher.correction',
       placement: 'right',
       title: 'The correction cockpit',
       text: 'When segmentation gets a cell wrong, fix it here — a floating panel that sits over the viewer so you keep looking at the image.',
@@ -411,7 +411,7 @@ export const correctAMaskGuide: GuideDef = {
       bullets: ['Review pages over the picked labels one at a time.'],
       reveal: {
         needed: c => !c.anchorExists('correction.modePicker'),
-        anchor: 'sidebar.correctionCta',
+        anchor: 'launcher.correction',
         text: 'Open the correction cockpit first — the mode chips are inside the panel.',
         placement: 'right',
       },
@@ -454,7 +454,7 @@ export const correctAMaskGuide: GuideDef = {
 //
 // Pairing / chat / share rows are `v-if`'d on `projectUid` (KiwiCockpit.vue:276-279 — no project =
 // no pairing target), so the prereq is `projectOpen`. Kiwi itself is `v-if`'d in App.vue on
-// `settings.kiwiOpen`, so anchor-not-found reveals point at `sidebar.kiwiCta`.
+// `settings.kiwiOpen`, so anchor-not-found reveals point at `launcher.kiwi`.
 // Kiwi's three steps (lib/claudeOverview.ts → KIWI_LOOP), one per control, then Claude Code as the
 // OTHER way in — not a fourth step (two ways in, either first: WORKFLOW_RECIPES_PLAN.md → *Two ways
 // in*). The titles and text ARE claudeOverview's — Kiwi's `?` dialog and user-docs/README.md say the
@@ -462,9 +462,9 @@ export const correctAMaskGuide: GuideDef = {
 const [loopPoint, loopAsk, loopKeep] = KIWI_LOOP
 const openKiwiFirst = (anchor: string): Reveal => ({
   needed: c => !c.anchorExists(anchor),
-  anchor: 'sidebar.kiwiCta',
+  anchor: 'launcher.kiwi',
   text: 'Open Kiwi first.',
-  placement: 'right',
+  placement: 'bottom-end',
 })
 export const kiwiGuide: GuideDef = {
   id: 'assist-with-kiwi',
@@ -477,8 +477,8 @@ export const kiwiGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'sidebar.kiwiCta',
-      placement: 'right',
+      anchor: 'launcher.kiwi',
+      placement: 'bottom-end',
       title: 'Kiwi',
       text: 'Answers you can check: every claim links to its data, and it can’t change anything.',
       bullets: ['Log in once from the account row at the top of the panel.'],

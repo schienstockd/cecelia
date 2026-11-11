@@ -57,7 +57,7 @@ let firstEverTips = false
 
 // The orientation tour starts by itself the first time a user closes the welcome dialog, and only
 // that time: reading the cards tells you what Cecelia does, and this says where the buttons are.
-// Afterwards it is opt-in — the "Show me" button on the about card, or the compass.
+// Afterwards it is opt-in — the "Show me" button on the about card, or Help ▾ → Guides.
 //
 // Watches the shared flag rather than the dialog's `@close` emit, because the emit is not the only
 // way it shuts: `WhatNewCard`'s "Show me" calls `closeWhatsNew()` itself. Hanging this off @close
@@ -165,7 +165,7 @@ function maybeOpenLaunchTip() {
     // kept OUT of PROFILE_KEYS on purpose). `tipsLastShown` is per-profile — it drives the daily
     // tip cadence — so a new profile inheriting an empty stamp would otherwise re-fire the
     // orientation tour for every second person on a shared workstation. The tour is chrome-only;
-    // one run per install is the right shape (compass still opens it on demand).
+    // one run per install is the right shape (Help ▾ → Guides still opens it on demand).
     firstEverTips = !settings.tipsEverShown
     settings.tipsLastShown = today
     openWhatsNew({ withTip: true })

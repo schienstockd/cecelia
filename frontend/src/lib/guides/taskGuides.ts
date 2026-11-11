@@ -35,15 +35,15 @@ const viewerCheck = (what: string, toggleAnchor: string, lookFor: string[]): Gui
     when: c => c.viewerImageUid !== null,
   },
   {
-    anchor: 'sidebar.viewerCta',
-    placement: 'right',
+    anchor: 'launcher.viewer',
+    placement: 'bottom',
     title: 'Open the Viewer panel',
     text: 'This panel drives the viewer — overlays, contrast, 3D, recording.',
     reveal: {
       needed: c => !c.viewerPanelOpen,
-      anchor: 'sidebar.viewerCta',
+      anchor: 'launcher.viewer',
       text: 'The Viewer panel is closed — open it here.',
-      placement: 'right',
+      placement: 'bottom',
     },
     when: c => c.viewerPanelOpen,
   },
@@ -61,9 +61,9 @@ const viewerCheck = (what: string, toggleAnchor: string, lookFor: string[]): Gui
     ],
     reveal: {
       needed: c => !c.viewerPanelOpen,
-      anchor: 'sidebar.viewerCta',
+      anchor: 'launcher.viewer',
       text: 'The Viewer panel is closed — open it to reach the overlay switches.',
-      placement: 'right',
+      placement: 'bottom',
     },
   },
   {
@@ -630,8 +630,8 @@ export const behaviourStatesGuide = moduleTaskGuide({
       ],
     },
     {
-      anchor: 'sidebar.viewerCta',
-      placement: 'right',
+      anchor: 'launcher.viewer',
+      placement: 'bottom',
       title: 'Colour tracks by state',
       text: 'The Viewer panel can colour tracks by the new state column.',
       bullets: ['That is the quickest sanity check that the states mean something.'],
