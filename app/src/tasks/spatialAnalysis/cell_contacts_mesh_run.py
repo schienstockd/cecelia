@@ -57,19 +57,26 @@ def run(params):
         log.log("[ERROR] contactsMeshes: empty A or B population")
         return
 
-    # dims from the image OME metadata; label axis order = image order minus channel
+    # dims from the image OME metadata; label axis order = the A store's own (a Z-projected label set
+    # on a Z stack has no Z, and must fail `require_volume` before any read)
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
     dim_utils.calc_image_dimensions(zarr_utils.open_as_zarr(im_path)[0][0].shape)
-    label_order = [ax for ax in dim_utils.im_dim_order if ax != "C"]
+    a_dat, _ = zarr_utils.open_as_zarr(params["aLabelPath"])
+    b_dat, _ = zarr_utils.open_as_zarr(params["bLabelPath"])
+    a_arr, b_arr = a_dat[0], b_dat[0]
+    image_order = [ax for ax in dim_utils.im_dim_order if ax != "C"]
+    label_order = zarr_utils.store_axes(params["aLabelPath"], a_arr.ndim, image_order)
+    b_order = zarr_utils.store_axes(params["bLabelPath"], b_arr.ndim, image_order)
+    if b_order != label_order:
+        # B is read frame by frame with A's axes — e.g. 3D cells against a Z-projected fibre set
+        raise ValueError(f"contactsMeshes: A and B label sets differ in axes "
+                         f"({''.join(label_order)} vs {''.join(b_order)}) — segment both the same way")
     t_axis = label_order.index("T") if "T" in label_order else None
     n_t = int(dict(zip(dim_utils.im_dim_order, dim_utils.im_dim)).get("T", 1))
     n_spatial = len(label_order) - (1 if t_axis is not None else 0)
     mesh_utils.require_volume(n_spatial, "contactsMeshes")
     scale = phys[-n_spatial:]                              # spatial dims only (drops T)
 
-    a_dat, _ = zarr_utils.open_as_zarr(params["aLabelPath"])
-    b_dat, _ = zarr_utils.open_as_zarr(params["bLabelPath"])
-    a_arr, b_arr = a_dat[0], b_dat[0]
     # per target, per-A-cell nearest B surface distance + id, accumulated across timepoints
     min_dist = {name: {l: float("inf") for l in a_labels} for name, _ in targets}
     contact_id = {name: {l: 0 for l in a_labels} for name, _ in targets}

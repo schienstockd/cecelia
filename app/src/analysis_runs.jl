@@ -448,7 +448,8 @@ const NOT_RUN_TASKS = Dict{String,String}(
     # new label sets → the dialog's Label sets scope
     "segment.cellpose" => "label set", "segment.cellposeMeasure" => "label set",
     "segment.coastal" => "label set", "segment.coastalMeasure" => "label set",
-    "segment.ridges" => "label set", "segment.measureLabels" => "the label set's base table",
+    "segment.ridges" => "label set", "segment.ridgesMeasure" => "label set",
+    "segment.measureLabels" => "the label set's base table",
     "segment.importLabels" => "label set", "segment.importLabelsMeasure" => "label set",
     # in-place corrections — edits, not outputs; undone in the correction cockpit
     "segment.correct" => "in-place label correction", "segment.correct_measures" => "in-place label correction",

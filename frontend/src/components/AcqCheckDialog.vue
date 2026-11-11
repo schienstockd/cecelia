@@ -89,7 +89,6 @@ const columns = computed<SelectionColumn[]>(() => [
   ...objectNames.value.map(n => ({ key: `o:${n}`, label: n, width: 55, tip: `${n}: p99 photons on its cells` })),
   ...(objectNames.value.length > 1 ? [{ key: 'ratio', label: 'Balance', width: 60, tip: 'Brightest ÷ dimmest object (p99 photons)' }] : []),
   { key: 'sharedR', label: 'Shared r', width: 80, tip: 'Highest r between plan channels · the movie\'s median pair' },
-  { key: 'drift', label: 'Drift', width: 60, tip: 'Largest XY drift over the movie' },
 ])
 // the table renders strings: one display row per movie
 const display = (r: AcqRow) => ({
@@ -97,7 +96,6 @@ const display = (r: AcqRow) => ({
   brightZ: brightZText(r),
   ratio: r.ratio === null ? '—' : `${fmt(r.ratio, 1)}×`,
   sharedR: r.sharedBase == null ? fmt(r.sharedR, 2) : `${fmt(r.sharedR, 2)} · ${fmt(r.sharedBase, 2)}`,
-  drift: r.driftUm === null ? '—' : `${fmt(r.driftUm)} µm${r.registers === false ? ' ⚠' : ''}`,
   ...Object.fromEntries(objectNames.value.map(n => [`o:${n}`, fmt(r.objects[n]?.p99 ?? null)])),
 })
 const rowFindings = (uid: string) => (result.value ? findingsFor(result.value, uid) : [])
