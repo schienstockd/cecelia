@@ -13,7 +13,7 @@ const plan = (): AcqPlan => ({
 })
 const row = (uid: string, design: string): AcqRow => ({
   uid, name: uid, design, lasers: '', brightZ: null, brightZRamp: null, probed: true, objects: {},
-  ratio: null, dimmest: null, sharedR: null, driftUm: null, registers: null,
+  ratio: null, dimmest: null, sharedR: null,
 })
 const result = (over: Partial<AcqCheckResult> = {}): AcqCheckResult => ({
   entryId: '', round: 0, stage: 'test', steps: [], verdict: '', modelStep: '', plan: null, suggestedDesigns: designs, findings: [], rows: [], ran: [], skipped: [],
@@ -140,12 +140,12 @@ describe('planByName', () => {
     const none = parseAcqResult({ entryId: '', findings: [], rows: [] })!
     expect(none.review).toBeNull()
     expect(none.categoryLabels).toEqual({})
-    const r = parseAcqResult({ entryId: 'bb-1', categoryLabels: { drift: 'Drift', other: 'Other' },
+    const r = parseAcqResult({ entryId: 'bb-1', categoryLabels: { fading: 'Fading', other: 'Other' },
       review: { status: 'done', model: 'sonnet', claims: [
-        { kind: 'observation', category: 'drift', text: 'M1 shifts', action: 'Stabilise', sectionId: 's01' },
+        { kind: 'observation', category: 'fading', text: 'M1 dims', action: 'Lower the laser', sectionId: 's01' },
         { kind: 'interpretation', text: 'Tracking works on m2.' }] } })!
-    expect(r.review?.items.map(x => [x.category, x.action, x.sectionId])).toEqual([['drift', 'Stabilise', 's01']])
+    expect(r.review?.items.map(x => [x.category, x.action, x.sectionId])).toEqual([['fading', 'Lower the laser', 's01']])
     expect(r.review?.supports).toBe('Tracking works on m2.')
-    expect(r.categoryLabels.drift).toBe('Drift')
+    expect(r.categoryLabels.fading).toBe('Fading')
   })
 })

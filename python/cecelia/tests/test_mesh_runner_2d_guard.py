@@ -42,10 +42,21 @@ class _Dims2D:
         pass
 
 
-def _patched(mod):
-    return [mock.patch.object(mod, "DimUtils", _Dims2D),
-            mock.patch.object(mod.ome_xml_utils, "parse_meta", lambda _p: None),
-            mock.patch.object(mod.zarr_utils, "open_as_zarr", lambda _p, **k: ([_NoRead()], None))]
+class _DimsZStack(_Dims2D):
+    def __init__(self, *a, **k):
+        self.im_dim_order = ["C", "Z", "Y", "X"]
+        self.im_dim = [2, 12, 40000, 40000]
+
+
+def _patched(mod, dims=_Dims2D, label_axes=None):
+    patches = [mock.patch.object(mod, "DimUtils", dims),
+               mock.patch.object(mod.ome_xml_utils, "parse_meta", lambda _p: None),
+               mock.patch.object(mod.zarr_utils, "open_as_zarr",
+                                 lambda _p, **k: ([_NoRead()], None))]
+    if label_axes is not None:
+        # the axes the label store declares — a ridges Z-MIP of a Z stack is written (T)YX
+        patches.append(mock.patch.object(mod.zarr_utils, "read_axes", lambda _p: label_axes))
+    return patches
 
 
 class TestRequireVolume(unittest.TestCase):
@@ -58,9 +69,9 @@ class TestRequireVolume(unittest.TestCase):
 
 
 class TestRunnersReject2D(unittest.TestCase):
-    def _run(self, name, params):
+    def _run(self, name, params, **kw):
         mod = _load(name)
-        patches = _patched(mod)
+        patches = _patched(mod, **kw)
         for p in patches:
             p.start()
         try:
@@ -80,6 +91,39 @@ class TestRunnersReject2D(unittest.TestCase):
                   {"imPath": "im", "aLabelPath": "a", "bLabelPath": "b", "aLabels": [1],
                    "targets": [{"target": "x", "bLabels": [2]}],
                    "physicalSizes": [1.0, 1.0], "propsPath": "props"})
+
+    def test_2d_labels_on_a_z_stack(self):
+        """A Z-projected label set (ridges `perZ` off) on a Z stack: the IMAGE is a volume, the labels
+        are not. The guard must read the store's axes, not the image's."""
+        z = dict(dims=_DimsZStack, label_axes=["y", "x"])
+        self._run("cell_aggregates_mesh_run",
+                  {"imPath": "im", "labelPath": "lab", "labels": [1, 2],
+                   "physicalSizes": [2.0, 1.0, 1.0], "propsPath": "props"}, **z)
+        self._run("cell_contacts_mesh_run",
+                  {"imPath": "im", "aLabelPath": "a", "bLabelPath": "b", "aLabels": [1],
+                   "targets": [{"target": "x", "bLabels": [2]}],
+                   "physicalSizes": [2.0, 1.0, 1.0], "propsPath": "props"}, **z)
+
+    def test_contacts_refuses_a_and_b_with_different_axes(self):
+        """3D cells (A) against a Z-projected fibre set (B): B would be read with A's axes."""
+        mod = _load("cell_contacts_mesh_run")
+        patches = _patched(mod, dims=_DimsZStack)
+        patches.append(mock.patch.object(
+            mod.zarr_utils, "read_axes", lambda p: ["z", "y", "x"] if p == "a" else ["y", "x"]))
+        _NoRead3 = type("_NoRead3", (_NoRead,), {"ndim": 3})
+        stores = {"im": _NoRead(), "a": _NoRead3(), "b": _NoRead()}
+        patches[2] = mock.patch.object(mod.zarr_utils, "open_as_zarr",
+                                       lambda p, **k: ([stores[p]], None))
+        for p in patches:
+            p.start()
+        try:
+            with self.assertRaisesRegex(ValueError, "differ in axes"):
+                mod.run({"imPath": "im", "aLabelPath": "a", "bLabelPath": "b", "aLabels": [1],
+                         "targets": [{"target": "x", "bLabels": [2]}],
+                         "physicalSizes": [2.0, 1.0, 1.0], "propsPath": "props"})
+        finally:
+            for p in patches:
+                p.stop()
 
 
 if __name__ == "__main__":

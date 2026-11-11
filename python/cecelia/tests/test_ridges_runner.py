@@ -22,12 +22,12 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.zarr_utils as zarr_utils
 from cecelia.utils.dim_utils import DimUtils
 
-_RUNNER = (Path(__file__).resolve().parents[3]
-           / 'app' / 'src' / 'tasks' / 'segment' / 'ridges_run.py')
+_SEGMENT = Path(__file__).resolve().parents[3] / 'app' / 'src' / 'tasks' / 'segment'
+_RUNNER = _SEGMENT / 'ridges_run.py'
 
 
-def _load_runner():
-    spec = importlib.util.spec_from_file_location('ridges_run', _RUNNER)
+def _load_runner(name='ridges_run'):
+    spec = importlib.util.spec_from_file_location(name, _SEGMENT / f'{name}.py')
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -151,6 +151,58 @@ class RidgesRunnerTest(unittest.TestCase):
         # SHAPE has Z=1 so both perZ modes end up with the same rank here. For rank behaviour to be
         # meaningful we need Z>1 — that path is exercised by the runner but not by this fixture.
         self.assertEqual(labels.ndim, 3)
+
+    def test_measure_labels_reads_the_ridges_store(self):
+        """`segment.ridgesMeasure`'s second step on its first step's output. The store is (T)YX —
+        no length-1 Z, unlike every other segmenter's — and Measure labels once took its axes to be
+        the image's minus C, read X as Y and failed with KeyError: 'X'."""
+        import anndata as ad
+        labels = self._run()
+        # the runner reads the base store as `{labelDir}/{outputValueName}.zarr`
+        os.rename(self.out_path, os.path.join(self.dir, 'ridges.zarr'))
+        _load_runner('measure_labels_run').run(dict(
+            imPath=self.in_path, taskDir=self.dir, outputValueName='ridges',
+            labelDir=self.dir, labelFiles=['ridges.zarr']))
+        a = ad.read_h5ad(os.path.join(self.dir, 'labelProps', 'ridges.h5ad'))
+        self.assertEqual(a.n_obs, len(np.unique(labels)) - 1)
+        self.assertEqual(list(a.uns['spatial_cols']), ['centroid_y', 'centroid_x'])
+
+    def test_branching_reads_the_ridges_store(self):
+        """Branching on fibre labels — the step after ridges. It took the store's axes from the image
+        too, dropped Y instead of Z when sizing its output, and read a static frame at t=None."""
+        self.SHAPE = dict(self.SHAPE, size_t=1)
+        self.setUp()
+        labels = self._run()
+        out = os.path.join(self.dir, 'branch.zarr')
+        _load_runner('branching_run').run(dict(
+            imPath=self.in_path, labelsPath=self.out_path, taskDir=self.dir,
+            branchLabelsOutPath=out, branchPropsOutPath=os.path.join(self.dir, 'branch.h5ad'),
+            qcOutPath=os.path.join(self.dir, 'branch_qc.json')))
+        branch = zarr_utils.open_as_zarr(out, as_dask=False)[0][0]
+        self.assertEqual(tuple(branch.shape), labels.shape[1:])
+        self.assertEqual(zarr_utils.read_axes(out), ['y', 'x'])
+
+
+class StoreAxesTest(unittest.TestCase):
+    """`zarr_utils.store_axes`: the store's declared axes when they cover its rank, else the fallback."""
+
+    def test_declared_axes_win_over_the_image_s(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        path = os.path.join(d, 'l.zarr')
+        omexml = ome_types.from_xml(_ome_xml(2, 1, 2, 20, 24))
+        du = DimUtils(omexml, use_channel_axis=True)
+        du.calc_image_dimensions([2, 2, 1, 20, 24])
+        zarr_utils.open_multiscales_for_writing(path, (2, 20, 24), np.uint32, du,
+                                                axes=['T', 'Y', 'X'], nscales=1, kind='labels')
+        self.assertEqual(zarr_utils.store_axes(path, 3, ['T', 'Z', 'Y', 'X']), ['T', 'Y', 'X'])
+        # a rank the declared axes do not describe falls back
+        self.assertEqual(zarr_utils.store_axes(path, 4, ['T', 'Z', 'Y', 'X']), ['T', 'Z', 'Y', 'X'])
+
+    def test_no_store_metadata_falls_back(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        self.assertEqual(zarr_utils.store_axes(d, 3, ['T', 'Y', 'X']), ['T', 'Y', 'X'])
 
 
 if __name__ == '__main__':
