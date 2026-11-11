@@ -1,5 +1,5 @@
 // The viewer window's playback loop (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer; the V2
-// playback bar renders it). Moved out of `modules/ViewerWindow.vue` unchanged in behaviour.
+// playback bar renders it).
 //
 // A timer rather than rAF: the rate is a chosen frame rate, not the display's. It WAITS for an
 // uncached frame instead of skipping ahead — see `playbackAdvance` for why that is the honest choice.

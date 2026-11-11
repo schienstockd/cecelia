@@ -1,7 +1,7 @@
 <!--
   The viewer window's time controls (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer; V2 moves them
   onto the image as the playback bar): play / loop, the timepoint scrubber, the cached-timepoints
-  strip and Fps. Moved out of `modules/ViewerWindow.vue` unchanged; the loop is
+  strip and Fps. The loop is
   composables/useVwPlayback.ts. Mount only when the image has time (`nT > 1`): a still image has
   nothing to scrub, buffer or loop, and an `nT == 1` slider stuck at "0 / 0" looks broken.
 
