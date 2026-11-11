@@ -14,6 +14,7 @@
   module filter off.
 -->
 <script setup lang="ts">
+import { defaultSpecIds, shouldSeedDefaults } from '../../utils/defaultPlots'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { computed, ref, watch } from 'vue'
 import CanvasArrangeButtons from './CanvasArrangeButtons.vue'
@@ -135,6 +136,20 @@ const {
     const k = activePanel.value?.state.kind
     return k ? popTypeSpecFor(String(k)) : null
   }) })
+
+// A page's default plots (utils/defaultPlots.ts): placed once, when this canvas is first seen empty
+// after the specs arrive; `shared.defaultsSeeded` records it so removed defaults stay removed. Only a
+// module page has defaults — the board passes no module.
+const stopSeed = watch(specs, list => {
+  if (!list.length) return
+  const ids = defaultSpecIds(list, props.module ?? undefined)
+  if (shouldSeedDefaults({ panelCount: panels.value.length, seeded: !!shared.value.defaultsSeeded, defaults: ids.length })) {
+    for (const id of ids) addPanel(id)
+    arrangeGrid(tileCols.value)
+  }
+  shared.value.defaultsSeeded = true
+  stopSeed()
+})
 
 // Migrate canvases persisted before the four per-popType population summaries collapsed into one spec
 // with a family picker. Without this a saved panel's specId no longer resolves and the panel silently

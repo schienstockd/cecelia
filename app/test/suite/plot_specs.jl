@@ -397,3 +397,25 @@ end
     @test codes(stats) == ["spatial.no_edges"]
     @test isempty(Cecelia._neighbour_stats_graph_findings(empty_graph, stats, "r30"))
 end
+
+@testset "a plot spec's defaultOn pages are pages that offer it" begin
+    # `defaultOn` places a plot on a page's canvas the first time it is seen empty
+    # (docs/todo/GUI_LAYOUT_PLAN.md, M6). Naming a page the spec is not offered on would seed a panel
+    # whose spec that page's /api/plots/definitions never serves — an empty box on first visit.
+    root = joinpath(dirname(dirname(pathof(Cecelia))), "src", "plotDefinitions")
+    n = 0
+    for f in readdir(root)
+        endswith(f, ".json") || continue
+        spec = JSON3.read(read(joinpath(root, f), String), Dict{String,Any})
+        on = get(spec, "defaultOn", nothing)
+        on === nothing && continue
+        offered = Set{String}()
+        haskey(spec, "module") && push!(offered, String(spec["module"]))
+        haskey(spec, "modules") && union!(offered, String(k) for k in keys(spec["modules"]))
+        for page in on
+            n += 1
+            @test String(page) in offered
+        end
+    end
+    @test n >= 1          # the field is in use (a floor, not a census)
+end

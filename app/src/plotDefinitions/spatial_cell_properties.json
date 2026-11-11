@@ -3,6 +3,7 @@
   "label": "Spatial cell measures",
   "module": "spatialAnalysis",
   "family": "summary",
+  "defaultOn": ["spatialAnalysis"],
   "chartTypes": ["boxplot", "violin", "strip", "bar", "percent", "histogram", "count"],
   "whiteboardCompatible": true,
   "dataSource": {
