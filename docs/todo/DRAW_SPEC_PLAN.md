@@ -57,9 +57,9 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
    | Grid overlay (`viewerGrid`, density) | not drawn | **not recorded** (maintainer, 2026-11-12) |
    | Landscape overlay (`viewerLandscape`, labels) | not drawn | **not recorded** (maintainer, 2026-11-12) |
    | ROI spotlight, tile marks, crop box | not drawn | **not recorded** (maintainer, 2026-11-12) — on-screen aids |
-   | Skeletons (`getBranchVisibility`) | viewer panel Record only (`branchValueNames`); not in the look, so batch Fill from view drops them | open |
-   | Scale bar / timestamp sizes (`viewerScaleBarPx`, `viewerTimestampPx`) | on/off from the record options; the movie's own sizes | open |
-   | 3D ray steps (`viewerSteps`) | separate `renderQuality` knob | open |
+   | Skeletons (`getBranchVisibility`) | viewer panel Record only (`branchValueNames`); not in the look, so batch Fill from view drops them | **recorded**, Fill from view too (maintainer, 2026-11-12) |
+   | Scale bar / timestamp sizes (`viewerScaleBarPx`, `viewerTimestampPx`) | on/off from the record options; the movie's own sizes | **recorded**: the viewer's sizes (maintainer, 2026-11-12) |
+   | 3D ray steps (`viewerSteps`) | separate `renderQuality` knob (draft / standard / high = 128 / 256 / 512 steps — the same quantity as the viewer's Steps slider, 64–512, default 256) | **recorded**: the viewer's Steps by default; Render quality stays as an optional override (maintainer, 2026-11-12) |
    Shader lanes: the movie host sets every `mip` lane except `zwin` (it loads the exact planes, so
    the default is right); `tile` / `brick` are viewer-only renderers for the same picture.
 1. **`drawSpec` + `RECORDED` map**, behaviour-neutral: `viewerLook` computed from the spec, the D4
