@@ -79,7 +79,9 @@ function _history_scope(groups, leaves_of, shown::Dict{String,Vector{String}}, r
     nodes = map(groups) do ((fn, _), by_img, _, _)
         lr = argmax(r -> r.at, collect(values(by_img)))
         out, ns = _history_output(fn, lr.params, leaves_of(fn))
-        (; fn, params = lr.params, at = lr.at, out, ns, lv = something(leaves_of(fn), Dict{String,_HistoryLeaf}()))
+        lv = something(leaves_of(fn), Dict{String,_HistoryLeaf}())
+        # by current key (`formerKeys`), as `chain_from_history`'s steps are: the leaf lookups below use it
+        (; fn, params = _history_current_params(lr.params, lv), at = lr.at, out, ns, lv)
     end
     # the chain's edge rule, except that the raw `default` version counts: the table keeps the import
     reads(b, a) = a != b && !isempty(a.out) && a.at <= b.at && _reads_output(b.params, b.lv, a.out, a.ns)

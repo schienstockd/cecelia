@@ -466,7 +466,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     # action on final data). A finding with no `.data` entry has a `long` that holds at either stage.
     "acq.not_measured" => (
         short = "{n} movie{s} not measured yet",
-        long  = "Refresh metadata on them so the check can read their photons, channels and drift."),
+        long  = "Measure them so the check can read their photons, channels and drift."),
     "acq.channels_unnamed" => (
         short = "Channels not named",
         long  = "Name them so designs can be told apart."),

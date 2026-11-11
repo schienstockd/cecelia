@@ -200,6 +200,20 @@ state a re-run of that source leaves; then track measures are rebuilt for the su
 segmentation go too, and the dialog names them before the confirm. Registry:
 `app/src/analysis_runs.jl` (`tracks` kind).
 
+**A re-track renumbers every source's tracks.** COMPACT gives the surviving sources' tracks new ids
+too, so the `{vn}__tracks.h5ad` from before would join its motility measures and track clusters onto
+the wrong tracks (`track_props` joins on `track_id`). The standalone `tracking.bayesian_tracking`
+therefore removes that table and its `.clustfeatures.json` sidecar after the write-back (as a delete
+with no survivors does); track measures rebuild it — the `bayesian_track_measures` composite does so
+in the same chain. Its QC (`nTracks`, `meanTrackLength`, *No tracks formed*) counts only the rows the
+run stamped with its own `track_source`.
+
+**Corrections keep the marker.** A cell that joins a track in the correction editor (`points.add` to
+an existing track, `track.join`) adopts that track's `track_source` along with its lineage
+(`_copy_lineage_from!`, written back through `write_categorical_obs`), so a later re-track of that
+pop deletes it with the rest of the track rather than leaving an unowned 1-cell track. A cell put on
+a NEW track keeps whatever marker it had.
+
 **Legacy data.** A row written before the P1 ship has no `track_source` marker. The P0 guard treats
 it as everyone's (has_tracks fires on every pop that touches its label), preserving pre-P1
 visibility for projects that haven't been re-tracked. Re-tracking the pop rewrites the marker and
