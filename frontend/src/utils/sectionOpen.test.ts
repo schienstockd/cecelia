@@ -39,19 +39,19 @@ describe('useStoredSectionOpen', () => {
     scope.stop()
   })
 
-  // TaskRunner's "When to use" fold (cc-task-about-open) is not a CollapsibleSection, so a
+  // TaskRunner's "When to use" fold (cc-task-about-open-v2) is not a CollapsibleSection, so a
   // setSectionOpen from outside must still move it — not only rewrite storage until remount.
   it('follows setSectionOpen on its key while mounted, and stops when its scope ends', () => {
     const scope = effectScope()
-    const open = scope.run(() => useStoredSectionOpen('cc-task-about-open'))!
-    setSectionOpen('cc-task-about-open', false)
+    const open = scope.run(() => useStoredSectionOpen('cc-task-about-open-v2'))!
+    setSectionOpen('cc-task-about-open-v2', false)
     expect(open.value).toBe(false)
     setSectionOpen('other-key', true)
     expect(open.value).toBe(false)
-    setSectionOpen('cc-task-about-open', true)
+    setSectionOpen('cc-task-about-open-v2', true)
     expect(open.value).toBe(true)
     scope.stop()
-    setSectionOpen('cc-task-about-open', false)
+    setSectionOpen('cc-task-about-open-v2', false)
     expect(open.value).toBe(true)
   })
 })

@@ -833,10 +833,10 @@ screen, neither gets enough vertical room. Both panels that have this shape use 
 
 | Panel | Top half | Bottom half | Storage key |
 |---|---|---|---|
-| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane` |
+| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` (default `top`: a "Last run · Tasks" line under Run summarises the folded list and opens it — GUI_LAYOUT_PLAN M4) |
 | `modules/batchmovies/BatchMoviesPanel.vue` | the movie config | the batch's task list | `cc-batchmovies-pane` |
 
-Three modes — `split` (default), `top`, `bottom` — persisted per panel. Each half's button also
+Three modes — `split` (default unless the panel names one), `top`, `bottom` — persisted per panel. Each half's button also
 *un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
 can't click out of. The recipe is the mode on the root plus one CSS rule per half:
 
