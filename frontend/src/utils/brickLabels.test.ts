@@ -34,6 +34,9 @@ describe('brickLabelSourceId', () => {
     expect(brickLabelSourceId({ ...img, labelName: 'cp', labelStore: 'live', labelStoreId: 1 }))
       .not.toBe(brickLabelSourceId({ ...img, labelName: 'cp', labelStore: 'live', labelStoreId: 2 }))
     expect(brickLabelSourceId({ ...img, imageUid: 'j', labelName: 'cp' })).toBe(a)
+    // toggling a halo is a mask change: only the label atlas is swapped
+    expect(brickLabelSourceId({ ...img, labelName: 'cp', labelFiles: ['halo'] })).not.toBe(a)
+    expect(sameBrickImage(img, { ...img, labelName: 'cp', labelFiles: ['halo'] })).toBe(true)
   })
 })
 

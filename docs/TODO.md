@@ -43,6 +43,16 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### Label correction leaves a segmentation's halo / nuc stores on the old ids
+
+`segment.correctLabels` rewrites only the base `<vn>.zarr` (`correct.jl` → "Only the PRIMARY … gets
+rewritten"; a `matchStores` param was deferred until a use case appeared). Two now exist: measure reads
+`<vn>_halo.zarr` for its `halo_*` columns, and the viewer draws the halo / nuc files on the mask by
+default (`docs/todo/MASK_FILE_LAYERS_PLAN.md`). After a merge / delete / split, the siblings still
+carry the pre-correction ids — a deleted cell keeps its halo ring on screen and in the table. Fix:
+propagate each op to the sibling stores (same id space by construction), or re-derive the halo from
+the corrected base.
+
 ### `segment.measureLabels` picks the wrong intensity image on any drift-corrected project
 
 Reproduces on any image whose labels were computed against a *derived* value (denoised, drift-

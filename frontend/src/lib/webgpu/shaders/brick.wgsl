@@ -152,7 +152,7 @@ fn labAtlasSample(vi: vec3<i32>) -> u32 {
     vec3<i32>(sx * bxSize + lx, sy * bySize + ly, sz * bzSize + lz), 0).r;
 }
 
-#include "label_edge.wgsl" LAB_AT=labAtlasSample
+#include "label_layers.wgsl" LAB_AT=labAtlasSample
 
 #include "label_colour.wgsl"
 
@@ -199,13 +199,16 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   // in 2D (steps == 1) the single sample IS the plane's mask.
   var labId: u32 = 0u;
   var labVi = vec3<i32>(0, 0, 0);
+  var labOutId: u32 = 0u;                 // the first voxel of a derived file past its cell (labIsOut)
+  var labOutVi = vec3<i32>(0, 0, 0);
   for (var s = 0; s < n; s = s + 1) {
     let wp = org + rd * (t0 + (f32(s) + 0.5) * dt);
     let uvw = (wp + h) / p.ext.xyz;
     let vi = voxelAt(uvw);
     if (p.lab.x > 0.0 && labId == 0u) {
-      let id = labAtlasSample(vi);
-      if (id != 0u && labShown(id)) { labId = id; labVi = vi; }
+      let id = labPlaneRaw(labAtlasSample(vi), n == 1);
+      if (labIsOut(id)) { if (labOutId == 0u && labShown(id)) { labOutId = id; labOutVi = vi; } }
+      else if (id != 0u && labShown(id)) { labId = id; labVi = vi; }
     }
     for (var ci = 0; ci < nch; ci = ci + 1) {
       let v = f32(atlasSample(vi, ci));
@@ -221,9 +224,13 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     acc = acc + ramp(ci, win);
   }
   // Label composite: mix the id's palette colour on top of the raycast result at p.lab.x. The
-  // ray already found the front-most id; labEdge decides whether THIS voxel is on the contour.
+  // ray already found the front-most id; labDrawn decides whether THIS voxel is on the contour.
   // No cascade to the outer channels -- viewer draws the mask on top of the signal.
-  if (labId != 0u && p.lab.x > 0.0 && labEdge(labVi, labId, i32(p.lab.y))) {
+  // A derived file's outline where the ray met it first (a halo around / above the cell), else the
+  // nearest cell as always (label_layers.wgsl).
+  if (labOutId != 0u && p.lab.x > 0.0 && labOutline(labOutVi, labOutId, i32(p.lab.y))) {
+    acc = mix(min(acc, vec3(1.0)), labColour(labOutId).rgb, p.lab.x);
+  } else if (labId != 0u && p.lab.x > 0.0 && labDrawn(labVi, labId, i32(p.lab.y))) {
     acc = mix(min(acc, vec3(1.0)), labColour(labId).rgb, p.lab.x);
   }
   // Pick highlight sits ON TOP of everything above — the whole point of "what am I editing right now"
@@ -231,7 +238,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   // See mip.wgsl for the twin.
   if (labId != 0u) {
     let pw = labPickContourPx();
-    if (pw > 0 && labEdge(labVi, labId, pw)) {
+    if (pw > 0 && labPickEdge(labVi, labId, pw)) {
       if (labIsFocus(labId)) { acc = vec3(0.2, 1.0, 1.0); }
       else if (labInPick(labId)) { acc = vec3(1.0, 1.0, 1.0); }
     }

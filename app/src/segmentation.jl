@@ -15,6 +15,12 @@
 #
 # See docs/SEGMENTATION.md.
 
+"""The suffix of a segmentation's halo store (`{vn}_halo.zarr`) — named once, here, for the writer's
+mirror (`segment_label_files`) and the readers that treat a halo differently (the viewer packs only its
+part past the cell, `compose_label_files!`)."""
+const HALO_LABEL_SUFFIX = "halo"
+is_halo_file(suffix::AbstractString) = suffix == HALO_LABEL_SUFFIX
+
 """
     segment_label_files(out_value_name, models; halo = false) -> Vector{String}
 
@@ -34,7 +40,7 @@ function segment_label_files(out_value_name::AbstractString, models; halo::Bool 
     isempty(match_as) && (match_as = String["base"])
     vcat(["$(out_value_name).zarr"],
          ["$(out_value_name)_$(ma).zarr" for ma in match_as if ma != "base"],
-         halo ? ["$(out_value_name)_halo.zarr"] : String[])
+         halo ? ["$(out_value_name)_$(HALO_LABEL_SUFFIX).zarr"] : String[])
 end
 
 """
