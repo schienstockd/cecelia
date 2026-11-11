@@ -2,6 +2,13 @@
 // (docs/DEV.md → Tests: pure logic in utils/*). The browser now navigates absolute paths (to reach
 // mounted network drives), so breadcrumbs are built from an absolute path, not relative-to-home.
 
+/** Profile-storage key for the folder an image import into project `uid` was last confirmed in
+ *  (`FileBrowser` `rememberKey`). Per project, so a new project doesn't open in another's folder;
+ *  deleting the project removes it. */
+export function importLastDirKey(uid: string): string {
+  return `cc.import.lastDir.${uid}`
+}
+
 export interface Crumb { label: string; path: string }
 
 /**

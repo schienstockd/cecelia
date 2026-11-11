@@ -32,13 +32,14 @@ function api_gating_plot_image(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT)
     pt = read_pop_type(img, vn, pop, "flow")     # cell gates — or `live` for a derived `_tracked` set
-    m = _live_map(img, vn, pt)
+    pin = _labels_version_pin(q)                 # the session labels pin, as the browser plot honours it
+    m = _live_map(img, vn, pt; labels_version = pin)
     (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
-    xt, yt = _auto_axes(q, img, vn, "flow", x, y, xt, yt)   # unparameterised → the channel's own, as on the GUI plot
-    rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt)
-    isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
-    xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt)
+    xt, yt = _auto_axes(q, img, vn, "flow", x, y, xt, yt; labels_version = pin)   # unparameterised → the channel's own, as on the GUI plot
+    rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt; labels_version = pin)
+    isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y); labels_version = pin))
+    xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt; labels_version = pin)
     # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
     # down the tree keeps the scale; grown to the child gates' near edges, as the browser does
     rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
@@ -51,22 +52,24 @@ function api_gating_plot_image(req::HTTP.Request)
     xpad, xgrew = _display_extent(xext, gx); ypad, ygrew = _display_extent(yext, gy)
     xtr = tick_range(xt, xpad, rx, xgrew); ytr = tick_range(yt, ypad, ry, ygrew)
     xext, yext = xpad, ypad
+    # titles name the pinned table's channels — its channel count picks the name version
+    xtitle = _axis_title(img, vn, "flow", x; labels_version = pin); ytitle = _axis_title(img, vn, "flow", y; labels_version = pin)
     png = render_gate_plot_png(xv, yv, xext, yext,
                                _axis_ticks(xt, xtr[1], xtr[2]), _axis_ticks(yt, ytr[1], ytr[2]),
-                               gates; xtitle = _axis_title(img, vn, "flow", x), ytitle = _axis_title(img, vn, "flow", y))
+                               gates; xtitle = xtitle, ytitle = ytitle)
     200, JSON3.write((;
         png = base64encode(png), valueName = vn, pop = pop, n = count(isfinite, xv),
-        x = (; channel = x, title = _axis_title(img, vn, "flow", x), transform = transform_spec(xt), extent = [xext[1], xext[2]]),
-        y = (; channel = y, title = _axis_title(img, vn, "flow", y), transform = transform_spec(yt), extent = [yext[1], yext[2]]),
+        x = (; channel = x, title = xtitle, transform = transform_spec(xt), extent = [xext[1], xext[2]]),
+        y = (; channel = y, title = ytitle, transform = transform_spec(yt), extent = [yext[1], yext[2]]),
         gates = gates))
 end
 
 # What to say when a requested axis is not a cell-table column: which one, where it lives instead (a
 # per-track column is on the track table, which this plot does not read), near names, and the columns
 # there are — so a caller can pick a real one without another round trip.
-function _missing_column_hint(img, vn, wanted)::String
-    cell = _has_label_props(img) ? vcat(col_names(label_props(img; value_name = vn); data_type = :vars),
-                                        col_names(label_props(img; value_name = vn); data_type = :obs)) : String[]
+function _missing_column_hint(img, vn, wanted; labels_version = nothing)::String
+    lp() = label_props(img; value_name = vn, version = labels_version)
+    cell = _has_label_props(img) ? vcat(col_names(lp(); data_type = :vars), col_names(lp(); data_type = :obs)) : String[]
     track = track_table_cols(img, vn)
     missing = [c for c in wanted if !(c in cell)]
     isempty(missing) && return "the columns have no finite values"

@@ -71,6 +71,17 @@ end
     @test any(f -> f["code"] == "acq.settings_differ" && f["subs"]["variable"] == "Bright Z setting" && f["level"] == "warn", czi["findings"])
     @test "acq.drift_unreliable" in _acq_codes(r; scope = "c")
     @test "acq.not_measured" in codes
+    # import leaves drift out: a movie with photons but no drift is not measured yet — Measure adds it —
+    # while its photons still count; a still image's `nothing` drift is an answer, not a gap
+    nodrift = _acq_meta(); delete!(nodrift["saturation"], "drift")
+    still = _acq_meta(); still["saturation"]["drift"] = nothing
+    nd = Cecelia.acq_check(nothing, [_acq_f("a", nodrift), _acq_f("b", still)])
+    nm = only(filter(f -> f["code"] == "acq.not_measured", nd["findings"]))
+    @test nm["detail"]["imageUids"] == ["a"] && nd["nMeasured"] == 1
+    # unmeasured drift is unchecked, never an all-clear (result-a9694d16)
+    @test "drift" in nd["skipped"] && !("drift" in nd["ran"])
+    @test Cecelia.acq_verdict(nd["findings"], "test")[2] == "Measure the remaining movies."
+    @test "drift" in Cecelia.acq_check(nothing, [_acq_f("b", still)])["ran"]
     @test !("acq.balance" in codes) && !("acq.few_photons" in codes)   # need a plan
     @test !any(f -> startswith(f["code"], "acq.shares"), r["findings"]) && all(x -> isempty(x["objects"]), r["rows"])
     @test "photons" in r["skipped"]

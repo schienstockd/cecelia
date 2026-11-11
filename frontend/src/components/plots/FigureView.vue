@@ -39,7 +39,7 @@ watch(() => push.tick, () => {
 const current = computed(() => figures.value.find(f => f.name === props.state.name))
 // a re-made figure keeps its name — its mtime busts the browser's copy of the old bytes
 const src = computed(() => current.value
-  ? `${movieStreamUrl(props.projectUid, current.value.name)}&v=${Math.round(current.value.mtime)}` : '')
+  ? movieStreamUrl(props.projectUid, current.value.name, current.value.mtime) : '')
 
 // PDF export: the figure file as a data URL — the full-resolution render, not the panel's preview
 async function exportImage(): Promise<string | null> {
