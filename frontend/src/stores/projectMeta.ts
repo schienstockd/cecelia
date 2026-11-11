@@ -19,6 +19,10 @@ export interface ProjectRecord {
   // visible to every profile (Decision 8, safe default for pre-identity projects). Presence in
   // the list is the grant; there is no owner-vs-collaborator distinction (Decision 5).
   owners?: string[]
+  // Counts for the Welcome page's recent list, read from the manifests by `/api/projects`
+  // (`_project_counts`). Absent on a record built client-side (create / open by uid).
+  nSets?: number
+  nImages?: number
 }
 
 export const useProjectMetaStore = defineStore('projectMeta', () => {

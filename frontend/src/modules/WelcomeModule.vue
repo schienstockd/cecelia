@@ -15,6 +15,7 @@ import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSetRecipe } from '../composables/useSetRecipe'
 import { WRITTEN_RECIPES, firstStepOf } from '../utils/setRecipe'
+import { formatWhen } from '../utils/formatWhen'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ProjectPanel from '../components/ProjectPanel.vue'
 
@@ -26,14 +27,19 @@ const showPanel = ref(false)
 onMounted(() => { if (projectMeta.recent.length === 0) void projectMeta.fetchRecent() })
 
 // `/api/projects` already orders the list (the profile's own opens first, newest first).
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 const recent = computed(() => projectMeta.recent.slice(0, 6).map(p => ({
   uid: p.uid, name: p.name,
-  opened: p.lastOpenedAt ? new Date(p.lastOpenedAt).toLocaleDateString() : '—',
+  size: p.nSets == null ? '' : `${plural(p.nSets, 'set')}, ${plural(p.nImages ?? 0, 'image')}`,
+  opened: p.lastOpenedAt ? formatWhen(new Date(p.lastOpenedAt)) : '—',
 })))
 const RECENT_COLUMNS: SelectionColumn[] = [
   { key: 'name', label: 'Project' },
-  { key: 'opened', label: 'Last opened', width: 120 },
+  { key: 'size', label: 'Holds', width: 150 },
+  { key: 'opened', label: 'Last opened', width: 110 },
 ]
+// "Open T cells": the most recent project, one click (mock frame 3)
+const topRecent = computed(() => projectMeta.current ? null : projectMeta.recent[0] ?? null)
 
 // The suggested recipe is pre-highlighted but not stored until the user picks it (Decision 16).
 const picked = computed(() => own.value?.id ?? suggestion.value?.recipe.id ?? '')
@@ -54,42 +60,40 @@ const start = computed(() => {
 
 <template>
   <div class="welcome">
+    <!-- Two columns (mock frame 3): where you were on the left, what this set is on the right -->
     <div class="welcome-col">
       <div class="welcome-lockup" aria-hidden="true">
         <img class="welcome-mark" src="/feijoa.svg" alt="" width="48" height="48" />
         <span class="welcome-word">Cecelia</span>
       </div>
+      <h1 v-if="projectMeta.current" class="welcome-title">{{ projectMeta.current.name }}</h1>
+      <SelectionTable v-if="recent.length" :columns="RECENT_COLUMNS" :rows="recent" id-key="uid"
+        selection-mode="none" fit="fill" @row-click="r => projectMeta.openProject(String(r.uid))" />
+      <div class="welcome-actions cc-row">
+        <button v-if="topRecent" class="cc-btn cc-btn-primary" @click="projectMeta.openProject(topRecent.uid)">
+          Open {{ topRecent.name }}
+        </button>
+        <button class="cc-btn" :class="topRecent ? 'cc-btn-ghost' : 'cc-btn-primary'" @click="showPanel = true">
+          <i class="pi pi-folder-open" /> Open or create {{ topRecent || projectMeta.current ? 'another' : 'a project' }}…
+        </button>
+        <button v-if="projectMeta.current && !set" class="cc-btn cc-btn-primary" @click="router.push('/manage-images')">
+          <i class="pi pi-images" /> Import images
+        </button>
+      </div>
+    </div>
 
-      <template v-if="!projectMeta.current">
-        <SelectionTable v-if="recent.length" :columns="RECENT_COLUMNS" :rows="recent" id-key="uid"
-          selection-mode="none" fit="fill" @row-click="r => projectMeta.openProject(String(r.uid))" />
-        <div class="welcome-actions cc-row">
-          <button class="cc-btn cc-btn-primary" @click="showPanel = true">
-            <i class="pi pi-folder-open" /> Open or create a project…
-          </button>
-        </div>
-      </template>
-
-      <template v-else>
-        <h1 class="welcome-title">{{ projectMeta.current.name }}</h1>
-        <template v-if="set">
-          <span class="cc-eyebrow">What is set “{{ set.name }}”?</span>
-          <SelectionTable :columns="RECIPE_COLUMNS" :rows="recipeRows" id-key="id" fit="fill"
-            :model-value="picked" :disabled="busy" @update:model-value="id => save(id)" />
-          <div class="welcome-actions cc-row">
-            <button v-if="start" class="cc-btn cc-btn-next" @click="router.push(start.route)"
-              v-tooltip.top="start.why">
-              Start: {{ start.label }} <i class="pi pi-arrow-right" />
-            </button>
-            <span v-if="!own && suggestion" class="cc-muted cc-fs-xs">Pick a recipe to keep it for this set.</span>
-          </div>
-        </template>
-        <div v-else class="welcome-actions cc-row">
-          <button class="cc-btn cc-btn-primary" @click="router.push('/manage-images')">
-            <i class="pi pi-images" /> Import images
-          </button>
-        </div>
-      </template>
+    <div v-if="projectMeta.current && set" class="welcome-col">
+      <span class="cc-eyebrow">What is set “{{ set.name }}”?</span>
+      <span class="cc-muted">It lights the pages you’ll need. Nothing is hidden.</span>
+      <SelectionTable :columns="RECIPE_COLUMNS" :rows="recipeRows" id-key="id" fit="fill"
+        :model-value="picked" :disabled="busy" @update:model-value="id => save(id)" />
+      <div class="welcome-actions cc-row">
+        <button v-if="start" class="cc-btn cc-btn-next" @click="router.push(start.route)"
+          v-tooltip.top="start.why">
+          Start: {{ start.label }} <i class="pi pi-arrow-right" />
+        </button>
+        <span v-if="!own && suggestion" class="cc-muted cc-fs-xs">Pick a recipe to keep it for this set.</span>
+      </div>
     </div>
     <ProjectPanel v-if="showPanel" @close="showPanel = false" />
   </div>
@@ -101,11 +105,14 @@ const start = computed(() => {
 .welcome {
   min-height: 100%;
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  align-items: flex-start;
+  gap: var(--cc-space-2xl);
   padding: var(--cc-space-2xl) var(--cc-space-xl);
 }
 .welcome-col {
-  width: min(44rem, 100%);
+  width: min(36rem, 100%);
   display: flex;
   flex-direction: column;
   gap: var(--cc-space-lg);
