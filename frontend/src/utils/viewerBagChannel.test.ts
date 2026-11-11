@@ -62,6 +62,13 @@ describe('decodeViewerBagEvent', () => {
   })
 })
 
+describe('decodeViewerBagEvent — a segmentation\'s halo / nuc files', () => {
+  it('the panel\'s file toggles reach the pop-out', () => {
+    expect(decodeViewerBagEvent('cc.viewerLabelFilesHidden', JSON.stringify({ img: { cells: ['halo'] } })))
+      .toEqual({ kind: 'labelFilesHidden', value: { img: { cells: ['halo'] } } })
+  })
+})
+
 describe('decodeViewerBagEvent — track-pop ribbon hides', () => {
   it('the viewer\'s per-pop ribbon eye reaches the recording window', () => {
     expect(decodeViewerBagEvent('cc.viewerTrackPopHidden', '{"img":{"OTI":["/a"]}}'))
