@@ -5846,7 +5846,7 @@ onUnmounted(() => {
                   @click="previewBoxToView"><i class="pi pi-refresh" /></button>
         </div>
       </div>
-      <div v-if="boxDrawing && !boxDraft" class="vw-status-chip vw-pbox-hint">Drag to draw the {{ boxNoun }}</div>
+      <div v-if="boxDrawing && !boxDraft" class="cc-hud-chip vw-status-chip vw-pbox-hint">Drag to draw the {{ boxNoun }}</div>
       <ViewerCropBar v-if="cropPickHere && meta" :pick="cropPickHere" :n-z="meta.nZ" :n-t="meta.nT"
                      :blocked="cropBlocked" @update="patchCropPick" @use="useCropPick"
                      @cancel="viewerStore.setCropPick(null)" />
@@ -5911,24 +5911,24 @@ onUnmounted(() => {
            canonical severity icon and colour (`lib/severity.ts`) — grey-on-image was unreadable
            against a bright whole-slide render, and a centred error left the app looking dead when it
            was still holding the previous frame. -->
-      <div v-else-if="error" class="vw-status-chip vw-status-chip-error">
-        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+      <div v-else-if="error" class="cc-hud-chip cc-hud-chip-error vw-status-chip vw-status-chip-error">
+        <i class="pi pi-exclamation-triangle" />
         <span>{{ error }}</span>
         <button v-if="lostDevice" class="cc-btn cc-btn-ghost cc-btn-micro vw-status-chip-btn"
                 @click="reload" v-tooltip.top="'Reopen the viewer'">Reload</button>
         <!-- Dismiss X — the chip lingers after the underlying condition clears (e.g. a brick-atlas
              OOM message stays after the user toggles bricks mode and the canvas renders anyway).
              `error` is cleared unconditionally; nothing else depends on it. -->
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-status-chip-dismiss"
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                 @click="error = ''" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss error"><i class="pi pi-times" /></button>
       </div>
       <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
            hardcoded 0 there said the wrong thing. -->
-      <div v-else-if="starting" class="vw-status-chip">{{ starting }}…</div>
+      <div v-else-if="starting" class="cc-hud-chip vw-status-chip">{{ starting }}…</div>
       <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
-      <div v-else-if="shownT < 0" class="vw-status-chip">
+      <div v-else-if="shownT < 0" class="cc-hud-chip vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
       </div>
       <!-- Bricks path only: the canvas is out of sync with the target timepoint. Two shapes:
@@ -5937,21 +5937,20 @@ onUnmounted(() => {
            (unblank rule advanced displayT before every core brick landed — target frame with
            EMPTY_SLOT holes). Same amber chip in the "Loading timepoint…" slot; gated on
            `shownT >= 0` so it never fights the initial-load message. -->
-      <div v-else-if="canvasPartial" class="vw-status-chip vw-status-chip-warn"
+      <div v-else-if="canvasPartial" class="cc-hud-chip vw-status-chip vw-status-chip-warn"
            v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
-        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+        <i class="pi pi-exclamation-triangle" />
         <span>Loading bricks…</span>
       </div>
       <!-- Share-in: post-Save toast. Same `.vw-status-chip` visual family as errors/loading so it
            reads as "the viewer is telling you something", but INDEPENDENT of that v-if/v-else-if
            cascade — a settled viewer is the only state in which Save fires, and a load happening
            concurrently must not swallow it. Auto-dismisses after ~7s (see showShareToast). -->
-      <div v-if="shareToast" class="vw-status-chip vw-share-chip"
-           :class="{ 'vw-status-chip-error': shareToast.kind === 'fail' }">
-        <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                    'vw-status-chip-icon']" />
+      <div v-if="shareToast" class="cc-hud-chip vw-status-chip vw-share-chip"
+           :class="{ 'cc-hud-chip-error vw-status-chip-error': shareToast.kind === 'fail' }">
+        <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle']" />
         <span>{{ shareToast.message }}</span>
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-status-chip-dismiss"
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                 @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
       </div>
@@ -5959,7 +5958,7 @@ onUnmounted(() => {
            markers, and the chip names the channel on screen (the sidebar may be folded away).
            ↑/↓ match the keys (see `onKey`); ←/→ are already time. Top-centre: the other three
            corners and bottom-left are taken (timestamp, overview, scale bar, status chip). -->
-      <div v-if="soloChannel && soloIndex >= 0" class="vw-status-chip vw-solo-chip">
+      <div v-if="soloChannel && soloIndex >= 0" class="cc-hud-chip vw-status-chip vw-solo-chip">
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense vw-solo-step"
                 @click="stepSolo(-1)" v-tooltip.bottom="'Previous channel (↑)'" aria-label="Show previous channel">
           <i class="pi pi-chevron-up" />
@@ -6604,25 +6603,20 @@ onUnmounted(() => {
    `pointer-events` so the Reload button (device-lost case) is clickable. */
 .vw-status-chip {
   position: absolute; left: 0.75rem; bottom: 0.75rem;
-  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
-  background: rgba(0, 0, 0, 0.78); color: #fff;
-  font-size: var(--cc-fs-xs); pointer-events: none;
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+  pointer-events: none; max-width: calc(100% - 1.5rem);
 }
-.vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
+/* the error and warning chips carry a button, so they take clicks */
+.vw-status-chip-error { pointer-events: auto; }
 .vw-status-chip-warn { color: var(--cc-sev-warn); pointer-events: auto; }
-.vw-status-chip-icon { font-size: 1em; }
-.vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
-.vw-status-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
-.vw-status-chip-dismiss:hover { opacity: 1; }
+.vw-status-chip-btn { margin-left: 0.35rem; color: var(--cc-hud-text); }
 /* The one-at-a-time stepper borrows the chip's look, top-centre. The light border keeps it visible on a
    black frame, where the chip's dark fill alone disappears. */
 .vw-solo-chip {
   top: 0.75rem; bottom: auto; left: 50%; transform: translateX(-50%);
   pointer-events: auto; gap: 0.15rem; padding: 0.15rem 0.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.35); font-size: var(--cc-fs-sm);
+  border: 1px solid color-mix(in srgb, var(--cc-hud-text) 35%, transparent); font-size: var(--cc-fs-sm);
 }
-.vw-solo-step { color: #fff; }
+.vw-solo-step { color: var(--cc-hud-text); }
 .vw-solo-names { display: grid; min-width: 0; text-align: center; }
 .vw-solo-name {
   grid-area: 1 / 1; visibility: hidden; padding: 0 0.15rem;
@@ -6640,7 +6634,7 @@ onUnmounted(() => {
 .vw-corner-tr > * { pointer-events: auto; }
 .vw-overview-wrap {
   position: relative;
-  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); overflow: hidden;
   cursor: crosshair; touch-action: none;
 }
@@ -6653,8 +6647,8 @@ onUnmounted(() => {
 .vw-overview-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Faint tint over the (possibly empty) canvas so the frame stays visible before the thumbnail
    arrives. Once tissue is drawn behind, it shows through. */
-.vw-overview-bg { fill: rgba(255, 255, 255, 0.04); }
-.vw-overview-vp { fill: rgba(255, 255, 255, 0.10); stroke: var(--cc-accent); stroke-width: 1.5; }
+.vw-overview-bg { fill: color-mix(in srgb, var(--cc-hud-text) 4%, transparent); }
+.vw-overview-vp { fill: color-mix(in srgb, var(--cc-hud-text) 10%, transparent); stroke: var(--cc-accent); stroke-width: 1.5; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
@@ -6707,7 +6701,7 @@ onUnmounted(() => {
 .vw-pbox-bar {
   position: absolute;
   display: flex; gap: 2px; pointer-events: auto;
-  background: rgba(0, 0, 0, 0.78); border-radius: var(--cc-radius-xs); color: #fff;
+  background: var(--cc-hud-bg); border-radius: var(--cc-radius-xs); color: var(--cc-hud-text);
 }
 .vw-pbox-grip { cursor: move; }
 .vw-pbox-hint { pointer-events: none; }
@@ -6809,7 +6803,7 @@ onUnmounted(() => {
    down the column. */
 .vw-cachemap {
   flex: none;
-  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); padding: 2px;
 }
 /* Slider rows (Depth/Plane, ± planes; Timepoint and Fps restate these in VwTimeControls): label column, slider, readout column, then

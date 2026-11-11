@@ -94,5 +94,5 @@ const settings = useSettingsStore()
 .vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
 .vw-landscape-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .vw-landscape-sub-lbl { margin-left: 0.4rem; }
-.vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid rgba(0,0,0,0.15); }
+.vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid var(--cc-border); }
 </style>
