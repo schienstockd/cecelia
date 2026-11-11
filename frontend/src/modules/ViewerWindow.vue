@@ -144,6 +144,7 @@ import VwHeader from '../components/viewerWindow/VwHeader.vue'
 import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
 import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
+import VwTracksSection from '../components/viewerWindow/VwTracksSection.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
@@ -6577,97 +6578,11 @@ onUnmounted(() => {
           </template>
 
         </CollapsibleSection>
-        <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
-                            accordion="cc.vw.section" section="tracks"
-                            fill>
-          <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
-               section colours + shapes the ribbons. Gated on a ribbon-drawable pop as well as on
-               drawn segments: hiding every pop's ribbon drops segCount to 0, and the per-pop eyes
-               that turn them back on must stay. -->
-          <template v-if="segCount > 0 || trackDrawablePops.length > 0">
-            <!-- Per-pop ribbon rows: one line per gated pop with tracks (isTrack || hasTracks),
-                 mirroring the Populations section above (swatch/name/count/toggle). The eye hides
-                 the ribbon layer WITHOUT touching the point layer's eye — `ribbonEyes` is a
-                 separate bag from `popEyes` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
-            <div v-for="pop in trackDrawablePops" :key="pop.key" class="cc-row cc-row-tight">
-              <span class="vw-swatch" :style="{ background: pop.colour }" />
-              <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ pop.name }}</span>
-              <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
-              <CcToggle
-                :model-value="pop.drawn" :disabled="pop.clusterHeld"
-                v-tooltip.bottom="pop.clusterHeld ? 'Track clusters are drawing this segmentation' : 'Draw this population as a track ribbon layer'"
-                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop)"
-              />
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-              <select v-model="trackColorMode" class="cc-fs-2xs vw-grow"
-                      v-tooltip.bottom="'How ribbons are coloured'">
-                <option value="track">track</option>
-                <option value="speed">speed</option>
-                <option value="solid">source</option>
-                <option value="pop">population</option>
-              </select>
-            </div>
-            <!-- Numeric ramp for speed mode — same shape as the point colour-by legend, so the reading
-                 stays consistent across overlay kinds. µm per frame (Δt = 1 hop). -->
-            <div v-if="trackColorMode === 'speed' && trackSpeedRange"
-                 class="cc-row cc-row-tight cc-fs-3xs">
-              <span class="cc-muted">{{ trackSpeedRange[0].toPrecision(3) }}</span>
-              <span class="vw-ramp" :style="rampStyle" />
-              <span class="cc-muted">{{ trackSpeedRange[1].toPrecision(3) }} µm/frame</span>
-            </div>
-            <!-- Per-source legend for solid mode — one row per ticked vn, showing a clickable
-                 swatch (the shared ColourPicker) + count. Same picker + palette as the population
-                 manager, so a source's colour authored here matches the visual language elsewhere.
-                 Doubles as a diagnostic: a vn with count 0 would be ticked but have no tracked
-                 cells; buildMultiTrackBuffer filters those out already, so the legend only lists
-                 sources that actually drew. -->
-            <template v-if="trackColorMode === 'solid' && trackSources.length">
-              <div v-for="src in trackSources" :key="src.vn" class="cc-row cc-row-tight cc-fs-3xs">
-                <ColourPicker :model-value="src.hex"
-                              @update:model-value="hex => setTrackSourceColour(src.vn, hex)"
-                              :tip="'Colour for ' + src.vn" />
-                <span class="cc-fs-2xs vw-pop-name" :title="src.vn">{{ src.vn }}</span>
-                <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
-              </div>
-            </template>
-            <div v-if="singlePlane && meta!.nZ > 1" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="10" :step="1"
-                v-model.number="settings.viewerTrackZTol" @input="frame.redraw()"
-                v-tooltip.bottom="'Planes either side that still show a tail'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerTrackZTol }}</span>
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="60" :step="1"
-                v-model.number="settings.viewerTailLength" @input="frame.redraw()"
-                v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
-            </div>
-            <div v-if="settings.viewerTailLength > 0" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
-              <input
-                type="range" class="vw-grow" :min="1" :max="12" :step="1"
-                v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
-                v-tooltip.bottom="'Tail thickness in image pixels — scales with zoom'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
-            </div>
-            <div class="cc-muted cc-fs-3xs">
-              {{ segCount }} segments · {{ trackSources.length }} source{{ trackSources.length === 1 ? '' : 's' }}
-            </div>
-          </template>
-          <div v-else class="cc-empty-inline cc-fs-2xs">
-            No tracks shown — tick a segmentation in the viewer panel
-          </div>
+        <VwTracksSection :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
+                         :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
+                         :single-plane="singlePlane" :has-z="meta!.nZ > 1"
+                         @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />
 
-        </CollapsibleSection>
         <CollapsibleSection label="ROIs" tip="Regions found by Find ROIs, for review"
                             accordion="cc.vw.section" section="rois"
                             fill>
