@@ -139,17 +139,16 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 
 .spacer { flex: 1; }
 
-/* Viewer chip — the viewer's identity green, a dot that lights while the Viewer panel is open. The
-   pressed state is the identity colour, not `.cc-btn-on` (which paints the accent): same rule as the
-   launcher row in PanelLaunchers.vue, GUI_CLARITY_PLAN Decision 15. Ask Kiwi likewise (`.cc-btn-kiwi`, style.css). */
+/* Viewer chip — neutral like the Lab log launcher (the word carries it); the dot lights while the Viewer
+   panel is open. No identity hue: docs/UI.md → *Colour schemes*. */
 .viewer-chip {
   display: inline-flex; align-items: center; gap: 0.4rem; height: 24px; padding: 0 0.6rem;
-  border: 1px solid color-mix(in srgb, var(--cc-viewer) 45%, transparent); border-radius: var(--cc-radius-pill);
-  background: none; color: var(--cc-viewer); font-size: var(--cc-fs-sm); cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
+  background: none; color: var(--cc-text); font-size: var(--cc-fs-sm); cursor: pointer; white-space: nowrap;
 }
-.viewer-chip:hover { background: color-mix(in srgb, var(--cc-viewer) 10%, transparent); }
-.viewer-chip.on { background: color-mix(in srgb, var(--cc-viewer) 16%, transparent); border-color: var(--cc-viewer); }
-.viewer-chip.on .vc-on { background: var(--cc-viewer); }   /* identity colour, not a status tone */
+.viewer-chip:hover { background: var(--cc-wash); border-color: var(--cc-guide); }
+.viewer-chip.on { background: var(--cc-wash-strong); border-color: var(--cc-guide); }
+.viewer-chip.on .vc-on { background: var(--cc-text); }
 
 /* Lab-log bell — the unseen dot sits on the bell's shoulder. */
 .bell { position: relative; }

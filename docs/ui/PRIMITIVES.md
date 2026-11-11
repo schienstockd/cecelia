@@ -67,8 +67,8 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Placing any floating box beside an anchor element | `utils/anchorPosition.ts` — `placeBox({anchor, box, viewport, placement})` + `arrowOffset`; `TeleportPopover`, `GuideBubble` and the `v-tooltip` directive all call it | a second `getBoundingClientRect` → clamp → flip block (this is the "my popover gets clipped" bug, extracted) |
 | "This page was just filled in from X — Undo" | `components/RestoreNotice.vue` (+ `composables/useMovieRestore.ts` for the movie case) | `HintCallout` (a permanent per-id hint, not a per-action one) or a toast (no Undo, gone in 3s) |
 | QC severity (ok/warn/fail) | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
-| A CHECK the user can open (name + verdict + open count), e.g. in the action bar's Checks cluster | `components/CheckButton.vue` (`state` from `lib/checks.ts`: a severity, `none` or `busy`), inside `ChecksCluster.vue`'s plum frame (`--cc-check`) | a per-check button with its own icon, amber or `.x-check-btn` class (three existed, three looks) |
-| A small round status light (service running, CLI found, log level, connection) or category marker beside a label | `.cc-dot` + a `cc-dot-ok/-warn/-fail/-idle/-info` tone in `style.css` (the consoles' CVD-safe Okabe–Ito swatches — ok is sky blue, never green); map your state through `utils/statusDot.ts` (`dotClass`). A category composes its own background (`class="cc-dot scope-dot"`); a local rule may add a glow, never the size | a scoped `.x-dot { width: 7px; height: 7px; border-radius: … }` + per-tone colours (flagged by the `dot` scenario in `utils/cssScenarios.ts`) |
+| A CHECK the user can open (name + verdict + open count), e.g. in the action bar's Checks cluster | `components/CheckButton.vue` (`state` from `lib/checks.ts`: a severity, `none` or `busy`), inside `ChecksCluster.vue`'s neutral frame | a per-check button with its own icon, amber or `.x-check-btn` class (three existed, three looks) |
+| A small round status light (service running, CLI found, log level, connection) or category marker beside a label | `.cc-dot` + a `cc-dot-ok/-warn/-fail/-idle/-info` tone in `style.css` (aliases of the severity hues, so one "ok" colour app-wide); map your state through `utils/statusDot.ts` (`dotClass`). A category composes its own background (`class="cc-dot scope-dot"`); a local rule may add a glow, never the size | a scoped `.x-dot { width: 7px; height: 7px; border-radius: … }` + per-tone colours (flagged by the `dot` scenario in `utils/cssScenarios.ts`) |
 | Task/chain status (6-state; live = `isLiveStatus`) | `lib/taskStatus.ts` (`TASK_STATUS`, `isLiveStatus`) | a per-file status→icon/colour map |
 | Reducing an image's SEVERAL runs to one status badge | `lib/taskStatus.ts` → `rollupTaskStatus` (live > terminal, then most recent) | `.find(t => t.imageUid === uid)` — that is store insertion order, which `adopt()` reshuffles |
 | Choosing an ICON for anything | `frontend/src/lib/iconLegend.ts` — find the meaning, use its glyph | a glyph that "looks right", or a second glyph for a meaning that already has one |
@@ -126,7 +126,7 @@ deliberately container-relative, e.g. `ViewLegend` scaling with the export).
 **Icon buttons are a fixed square**, so a toolbar row lines up regardless of glyph width — that's why
 `-icon` is a modifier rather than per-site padding (48 sites had each discovered they needed a fixed box,
 at nine different sizes). `-bare` is transparent/dim-until-hover, `-ghost` is its boxed counterpart; tone
-comes from `-danger-ghost` or a scoped `color` for the one-offs (the napari viewer green). A `<button>`
+comes from `-danger-ghost` or a scoped `color` for a one-off tone. A `<button>`
 whose whole content is an icon and which doesn't use `.cc-btn` fails `utils/cssScenarios.test.ts`.
 
 > **Where the checks live:** `frontend/src/utils/cssScenarios.ts` and `cssTokens.ts`, each with a

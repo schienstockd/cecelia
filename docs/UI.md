@@ -66,7 +66,6 @@ All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlay
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
 | `--cc-danger` | `#ef4444` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
 | `--cc-danger-fill` | `#b33a3a` | Muted red — a SOLID destructive surface under white text: `.cc-btn-danger`, armed delete / quit (white 5.86:1) |
-| `--cc-viewer` | `#22c55e` | Green accent for the browser viewer controls button + its floating-panel border (stands apart from purple chrome) |
 | `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
 | `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
 | `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
@@ -548,15 +547,21 @@ in `style.css`, its contrast figures in the block's comment). The user switches 
 avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
 is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
 `<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
-chosen for AA contrast; they have not had the CVD check the dark trio had.
+chosen for AA contrast and pass the CVD check below.
 
 **State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
 scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
-`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger` and the status
-dots to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
+`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger`, and the
+identity hues against the states (accent, Kiwi), to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
 OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labelled category ink (cyan)
-is held to the 6 floor. Identity hues that always appear with their name — the four stage colours,
-accent / Kiwi / Claude / viewer — are not in the check. There is no orange ink: on a light ground, at
+is held to the 6 floor. Failing pairs kept on purpose are listed with their reason in `ACCEPTED`
+(Kiwi ↔ ok-green; accent ↔ active in light). The four stage colours always sit beside their name and are
+not in the check. The status dots alias the severity set, so there is one "ok" colour.
+
+**Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
+Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
+launcher and the Checks cluster frame are neutral — their icon and label carry them. A new surface
+reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
 text contrast, it cannot be told from amber.
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
