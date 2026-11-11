@@ -140,6 +140,7 @@ import type { RoiSpot } from '../utils/rois'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import VwHeader from '../components/viewerWindow/VwHeader.vue'
+import ComingSoonBadge from '../components/ComingSoonBadge.vue'
 import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
 import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
@@ -1433,11 +1434,19 @@ function setChannelColour(c: number, hex: string) {
 }
 
 /** What a click on the image does: View moves the view, Select picks cells (the same knob the pop
- *  manager's pencil writes). Edit joins with the correction slot (GUI_LAYOUT_PLAN V5). */
+ *  manager's pencil writes), Edit is the slot the redesigned correction tools fill (GUI_LAYOUT_PLAN
+ *  Decision 5, V5): it reserves the place and edits nothing yet, so a click there behaves as View. */
 const INTERACT_MODES = [
   { value: 'view', label: 'View', tip: 'Drag moves the view; a click picks nothing' },
   { value: 'select', label: 'Select', tip: 'A click picks a cell' },
+  { value: 'edit', label: 'Edit', tip: 'Correction tools — coming soon' },
 ]
+/** The Edit slot is open. Not persisted: it edits nothing yet, so a reload lands back on the view. */
+const editMode = ref(false)
+function setInteractMode(v: string) {
+  editMode.value = v === 'edit'
+  if ((v === 'select') !== selectModeActive.value) toggleSelectMode()
+}
 const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
@@ -5808,6 +5817,13 @@ onUnmounted(() => {
             :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
             :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
             @save-image="saveViewImage" @draw="beginDraw" />
+  <!-- Edit slot (GUI_LAYOUT_PLAN V5, mock frame 5): says the mode is on and that it writes nothing. -->
+  <div v-if="editMode" class="vw-edit-banner cc-row cc-row-tight" role="status">
+    <b>Edit</b> <ComingSoonBadge />
+    <span class="cc-muted">Nothing here edits yet. Correct labels and tracks from the Segment and Track pages.</span>
+    <span class="vw-grow" />
+    <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="setInteractMode('view')">Back to View</button>
+  </div>
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
@@ -6204,17 +6220,18 @@ onUnmounted(() => {
       <template v-if="meta">
         <!-- The panel's top row (GUI_LAYOUT_PLAN V3, mock frame 4): what a click does, 2D / 3D, reset
              view and the advanced settings. -->
+        <!-- two non-wrapping groups: a narrow panel breaks the row between them, never inside one -->
         <div class="cc-row cc-row-tight vw-top">
           <ChipSelect
-            :options="INTERACT_MODES" :model-value="selectModeActive ? 'select' : 'view'"
+            :options="INTERACT_MODES" :model-value="editMode ? 'edit' : selectModeActive ? 'select' : 'view'"
             variant="segmented" aria-label="What a click does"
-            @update:model-value="v => { if ((v === 'select') !== selectModeActive) toggleSelectMode() }"
+            @update:model-value="v => setInteractMode(String(v))"
           />
+          <div class="cc-row-group vw-top-end">
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
             @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
           />
-          <div class="vw-grow" />
           <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
                   v-tooltip.top="'Reset view — fit the image and face it square'" aria-label="Reset view">
             <i class="pi pi-reset-view" />
@@ -6226,7 +6243,13 @@ onUnmounted(() => {
                   @click="advancedOpen = !advancedOpen">
             <i class="pi pi-cog" />
           </button>
+          </div>
         </div>
+        <div v-if="editMode" class="cc-empty vw-edit-slot">
+          Correction tools go here
+          <span class="cc-muted cc-fs-xs">They are being redesigned; the cockpit still opens from Correct labels.</span>
+        </div>
+        <template v-else>
         <!-- Z controls, one block for both views. 3D: the Depth range (whole stack by default), or —
              with the ±n window on — a Plane slider that moves a 2n+1 box through the stack. 2D: the
              Plane slider, and with the window on a top-down MIP of the planes around it. One row
@@ -6572,6 +6595,7 @@ onUnmounted(() => {
                     v-tooltip.top="benchEnabled ? 'Download the full session as JSON' : 'Download the rolling snapshot as JSON'">Save</button>
           </div>
         </CollapsibleSection>
+        </template>
       </template>
       <!-- the panel's foot: the shortcuts reference (also in Help ▾ in the header) -->
       <div class="vw-side-foot">
@@ -6733,6 +6757,16 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 
+.vw-top { flex-wrap: wrap; row-gap: 0.35rem; }
+.vw-top-end { margin-left: auto; }
+.vw-edit-banner {
+  flex-shrink: 0; gap: 0.5rem; padding: 0.35rem 0.75rem;
+  background: var(--cc-tint-amber); border-bottom: 1px solid var(--cc-border);
+}
+.vw-edit-slot {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+  border: 1px dashed var(--cc-border); border-radius: var(--cc-radius-sm); text-align: center;
+}
 .vw-side-foot {
   margin-top: auto; padding-top: 0.35rem; border-top: 1px solid var(--cc-border);
   display: flex; justify-content: flex-end;
