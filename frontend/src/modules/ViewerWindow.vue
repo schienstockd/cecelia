@@ -39,7 +39,7 @@ import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
          eyeKey, flipPopEye, offPaths, reconcileTrackclustEyes,
          eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
-import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
+import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { usePlotResize } from '../composables/usePlotResize'
@@ -83,8 +83,7 @@ import type { PlaybackHint } from '../utils/pageTable'
 import {
   playHealthSummary, trimSamples, type PlayHealthSample,
 } from '../utils/playHealth'
-import { toHex } from '../utils/colour'
-import { CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes } from '../utils/viewerColormap'
+import { distinctChannelHexes } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import {
   screenToImagePx, cameraViewL0, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES, screenToL0, type L0Rect,
@@ -133,7 +132,6 @@ import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
 import ChipSelect from '../components/ChipSelect.vue'
-import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import RoiSection from '../components/RoiSection.vue'
@@ -145,6 +143,7 @@ import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
 import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
 import VwTracksSection from '../components/viewerWindow/VwTracksSection.vue'
+import VwChannelsSection from '../components/viewerWindow/VwChannelsSection.vue'
 import VwPopulationsSection, { type VwPopLayer } from '../components/viewerWindow/VwPopulationsSection.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
@@ -1405,6 +1404,13 @@ const useTiles = computed(() =>
 /** Whichever renderer is currently alive — for template reads that don't care which one. */
 const activeAdapter = computed(() =>
   renderer.value?.adapter ?? tileRenderer.value?.adapter ?? null)
+/** A contrast window edit from the Channels section. */
+function setChannelRange(c: number, lo: number, hi: number) {
+  const ch = meta.value?.channels[c]
+  if (!ch) return
+  ch.lo = lo; ch.hi = hi
+  pushChannels()
+}
 /**
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
@@ -1418,11 +1424,6 @@ const activeAdapter = computed(() =>
  * server still ships the real stops on load (`resolved_display_specs`, which handles the perceptual maps
  * a two-stop ramp cannot).
  */
-const CHANNEL_PALETTE = [...new Set(CHANNEL_COLORMAP_OPTIONS.map(o => o.hex))]
-const channelHex = (ch: { lut: number[][] }): string => {
-  const top = ch.lut?.[ch.lut.length - 1]
-  return top ? toHex(top.map(v => v * 255)) : '#ffffff'
-}
 function setChannelColour(c: number, hex: string) {
   const m = meta.value
   if (!m) return
@@ -1479,14 +1480,6 @@ const BRICK_TIERS = [
   { value: 'quick', label: 'Quick', tip: 'Fewer bricks per view — faster on wide zooms, coarser' },
   { value: 'balanced', label: 'Balanced', tip: 'Shipped default' },
   { value: 'detailed', label: 'Detailed', tip: 'More bricks per view — finer at cost' },
-]
-/** Top-percentile choices for the Auto contrast button. Names describe what happens on the DATA,
- *  not what the number IS: Tight = trim more, Balanced = middle, Wide = keep more bright pixels
- *  visible (the shipped default — sparse microscopy signal reads best there, ). */
-const AUTO_CONTRAST_OPTIONS = [
-  { value: '99', label: 'Tight', tip: 'p99 — trims the bright tail, saturates rare cells' },
-  { value: '99.8', label: 'Balanced', tip: 'p99.8 — smooth on dense signal' },
-  { value: '99.99', label: 'Wide', tip: 'p99.99 — the default; keeps sparse bright signal' },
 ]
 /** Core-brick ceiling actually shipped to the scheduler. URL `?brickThr=N` wins so a dev
  *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
@@ -3615,8 +3608,6 @@ const advancedTrigger = ref<HTMLElement | null>(null)
 /** Auto-contrast tuning popover — anchor + open state. Same pattern as `advancedOpen`; not
  *  persisted because a popover that reopens on reload is a distinct bug from a slider whose value
  *  should survive. */
-const autoTuneOpen = ref(false)
-const autoTuneTrigger = ref<HTMLElement | null>(null)
 /** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
  *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
  *  who never scrubs won't want it. */
@@ -6326,135 +6317,16 @@ onUnmounted(() => {
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
         <VwAnnotationsSection :landscape="landscape" />
 
-        <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
-             image has 24+ channels and the sidebar's own scroll never engages, so the section body was
-             flooding off the bottom of the panel with no way to reach the controls below. All-on/all-off buttons at the top so a 24-channel image can be soloed to one
-             marker in two clicks instead of 23. -->
-        <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
-                            accordion="cc.vw.section" section="channels"
-                            fill>
-          <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
-               colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
-               state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
-               labelled `CcToggle` rows, so the section header is one line. Each side is a non-wrapping
-               `.cc-row-group`, so a narrow sidebar breaks the row BETWEEN the two clusters (the right
-               one keeps its right edge) instead of stranding an icon or two on a second line. -->
-          <div class="cc-row cc-row-tight vw-ch-master">
-            <div class="cc-row-group">
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allChannelsVisible }]"
-                    @click="setAllChannels(!allChannelsVisible)" :aria-pressed="allChannelsVisible"
-                    v-tooltip.right="allChannelsVisible ? 'Hide every channel' : 'Show every channel'"
-                    aria-label="Toggle every channel">
-              <i :class="['pi', allChannelsVisible ? 'pi-eye' : 'pi-eye-slash']" />
-            </button>
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': distinctChannelColours }]"
-                    @click="distinctChannelColours = !distinctChannelColours" :aria-pressed="distinctChannelColours"
-                    v-tooltip.right="'Distinct colours — a separate hue per channel'"
-                    aria-label="Assign a distinct colour to each channel">
-              <i class="pi pi-palette" />
-            </button>
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': soloChannel }]"
-                    @click="soloChannel = !soloChannel" :aria-pressed="soloChannel"
-                    v-tooltip.right="'One at a time — showing a channel hides the others'"
-                    aria-label="Show one channel at a time">
-              <i class="pi pi-dot-circle" />
-            </button>
-            </div>
-            <div class="cc-row-group vw-ch-master-end">
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="autoAllContrast"
-                    v-tooltip.left="'Auto contrast on every channel'"
-                    aria-label="Auto contrast every channel">
-              <i class="pi pi-bolt" />
-            </button>
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetAllContrast"
-                    v-tooltip.left="'Reset every channel to the full bit range'"
-                    aria-label="Reset every channel contrast">
-              <i class="pi pi-arrow-right-arrow-left" />
-            </button>
-            <!-- Auto-contrast tuning popover, anchored beside the Auto button so the two read together. -->
-            <button ref="autoTuneTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
-                    @click="autoTuneOpen = !autoTuneOpen"
-                    v-tooltip.left="'Auto tuning'" aria-label="Auto-contrast tuning">
-              <i class="pi pi-sliders-h" />
-            </button>
-            <TeleportPopover v-model="autoTuneOpen" :anchor="autoTuneTrigger" placement="bottom-end">
-              <div class="cc-eyebrow cc-fs-2xs">Auto range</div>
-              <div class="cc-row cc-row-tight">
-                <ChipSelect
-                  :options="AUTO_CONTRAST_OPTIONS"
-                  :model-value="String(settings.viewerAutoContrastPercent)"
-                  variant="segmented" aria-label="Auto contrast percentile"
-                  @update:model-value="v => (settings.viewerAutoContrastPercent = Number(v))"
-                />
-              </div>
-              <div class="cc-muted cc-fs-3xs vw-adv-note">
-                How far Auto pushes the top of the window.
-              </div>
-            </TeleportPopover>
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="toggleAllCards"
-                    v-tooltip.left="allCardsCompact ? 'Expand every channel' : 'Compact every channel'"
-                    :aria-label="allCardsCompact ? 'Expand every channel' : 'Compact every channel'">
-              <i :class="['pi', allCardsCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
-            </button>
-            </div>
-          </div>
-          <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c"
-               :class="['vw-ch cc-card cc-card-2', { 'vw-ch-compact': isCompact(channelsCompact, channelFlips, c) }]">
-            <div class="cc-row cc-row-tight">
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-ch-fold"
-                      @click="channelFlips = toggleFlip(channelFlips, c)"
-                      v-tooltip.right="isCompact(channelsCompact, channelFlips, c) ? 'Show contrast' : 'Hide contrast'"
-                      :aria-label="(isCompact(channelsCompact, channelFlips, c) ? 'Expand ' : 'Compact ') + ch.name">
-                <i :class="['pi', isCompact(channelsCompact, channelFlips, c) ? 'pi-chevron-right' : 'pi-chevron-down']" />
-              </button>
-              <span class="vw-ch-name cc-fs-xs"
-                    v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
-              <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
-                   the source image, so a corrected/uncorrected mixup is not silent. Click to A/B:
-                   suspend the swap on THIS channel (badge dims, channel reads source) while the
-                   other corrected channels stay swapped; click again to re-arm. Rendered whenever an
-                   AF correction exists for this channel, so a dimmed badge tells the user WHY the
-                   channel looks uncorrected. Resets on every new AF run. -->
-              <button v-if="hasAfPreview(c)"
-                      :class="['vw-ch-af-badge cc-fs-3xs', { 'vw-ch-af-badge-off': afSuspended.has(c) }]"
-                      @click="toggleAfSuspended(c)"
-                      v-tooltip.top="afSuspended.has(c)
-                        ? 'Reading SOURCE pixels — click to switch back to the preview'
-                        : 'Reading previewed pixels — click to compare against the source'">{{ previewBadge(c) }}</button>
-              <ColourPicker
-                :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
-                @update:model-value="v => setChannelColour(c, v)"
-              />
-              <CcToggle :model-value="ch.visible" :aria-label="'Show ' + ch.name"
-                        @update:model-value="v => setChannelVisible(c, v)" />
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
-                      v-tooltip.left="'Auto contrast — window on the loaded pixels (ImageJ-style)'">
-                <i class="pi pi-bolt" />
-              </button>
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetContrast(c)"
-                      v-tooltip.left="'Reset to the full bit range of the image'">
-                <i class="pi pi-arrow-right-arrow-left" />
-              </button>
-            </div>
-            <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
-                 column it collapses to no height and its absolutely-positioned thumbs escape the card.
-                 Every other consumer wraps it in a row with a readout beside it; so does this one. -->
-            <div v-if="!isCompact(channelsCompact, channelFlips, c)" class="cc-row cc-row-tight">
-              <RangeSlider
-                v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, hiCeiling[c] ?? 0, 1)" :step="1"
-                scale="log" :samples="channelSamples?.[c] ?? null"
-                @update:lo="v => { ch.lo = v; pushChannels() }"
-                @update:hi="v => { ch.hi = v; pushChannels() }"
-              />
-              <span class="cc-readout cc-fs-3xs vw-ch-val">{{ ch.lo }}–{{ ch.hi }}</span>
-            </div>
-          </div>
-          <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
-            Showing {{ MAX_CHANNELS }} of {{ meta!.nC }} channels
-          </div>
+        <VwChannelsSection :channels="meta!.channels.slice(0, MAX_CHANNELS)" :n-c="meta!.nC" :clipped="clipped"
+                           :all-visible="allChannelsVisible" v-model:distinct="distinctChannelColours" v-model:solo="soloChannel"
+                           :compact="channelsCompact" :flips="channelFlips" :all-compact="allCardsCompact"
+                           :af-badge="c => hasAfPreview(c) ? previewBadge(c) : ''" :af-suspended="afSuspended"
+                           :ch-max="chMax" :hi-ceiling="hiCeiling" :samples="channelSamples"
+                           @set-all="setAllChannels" @auto-all="autoAllContrast" @reset-all="resetAllContrast"
+                           @toggle-all-cards="toggleAllCards" @flip="c => (channelFlips = toggleFlip(channelFlips, c))"
+                           @af-toggle="toggleAfSuspended" @colour="setChannelColour" @visible="setChannelVisible"
+                           @auto="autoContrast" @reset="resetContrast" @range="setChannelRange" />
 
-        </CollapsibleSection>
         <VwSegmentationSection :mask-name="maskName" :mask-state="previewVn ? 'preview' : liveVn ? 'live' : ''"
                                v-model:hidden="maskHidden" :shown-label-count="shownLabelCount"
                                :label-name="labelName" :colour-note="maskColourNote"
