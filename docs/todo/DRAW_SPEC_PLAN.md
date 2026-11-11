@@ -40,7 +40,7 @@ setting the spec doesn't carry can't change the picture.
 `RECORDED: Record<keyof ViewerDrawSpec, 'recorded' | { notRecorded: string }>` — adding a spec field is a
 compile error until it says which. A Julia test asserts every `recorded` key is read by
 `_overlays_raw_from_config` (or the record request reader). `notRecorded` entries need the maintainer's
-sign-off (a UI-only aid, e.g. ROI spotlight).
+sign-off (the Phase 0 table records them).
 
 **D5 — One resolver server-side (later phase).** `resolve_draw_spec(img, spec)` → the mask store and
 its files, the colour table, the overlay closures; used by the movie paths and, where they share the
@@ -52,14 +52,14 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
 0. **Gap inventory** (no code). Every drawing input the viewer has that the look lacks, each decided
    with the maintainer: record it, or not-recorded with a reason. Candidates from a first pass
    (2026-11-12):
-   | Viewer input | Recording today |
-   |---|---|
-   | Grid overlay (`viewerGrid`, density) | not drawn |
-   | Landscape overlay (`viewerLandscape`, labels) | not drawn |
-   | Skeletons (`getBranchVisibility`) | viewer panel Record only (`branchValueNames`); not in the look, so batch Fill from view drops them |
-   | Scale bar / timestamp sizes (`viewerScaleBarPx`, `viewerTimestampPx`) | on/off from the record options; the movie's own sizes |
-   | 3D ray steps (`viewerSteps`) | separate `renderQuality` knob |
-   | ROI spotlight, tile marks, crop box | not drawn (likely UI-only aids) |
+   | Viewer input | Recording today | Decision |
+   |---|---|---|
+   | Grid overlay (`viewerGrid`, density) | not drawn | **not recorded** (maintainer, 2026-11-12) |
+   | Landscape overlay (`viewerLandscape`, labels) | not drawn | **not recorded** (maintainer, 2026-11-12) |
+   | ROI spotlight, tile marks, crop box | not drawn | **not recorded** (maintainer, 2026-11-12) — on-screen aids |
+   | Skeletons (`getBranchVisibility`) | viewer panel Record only (`branchValueNames`); not in the look, so batch Fill from view drops them | open |
+   | Scale bar / timestamp sizes (`viewerScaleBarPx`, `viewerTimestampPx`) | on/off from the record options; the movie's own sizes | open |
+   | 3D ray steps (`viewerSteps`) | separate `renderQuality` knob | open |
    Shader lanes: the movie host sets every `mip` lane except `zwin` (it loads the exact planes, so
    the default is right); `tile` / `brick` are viewer-only renderers for the same picture.
 1. **`drawSpec` + `RECORDED` map**, behaviour-neutral: `viewerLook` computed from the spec, the D4
