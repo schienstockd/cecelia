@@ -670,7 +670,9 @@ What was measured about an image that bears on Cleanup, with no verdict attached
 - `drift`: one entry per drift-correction output — `valueName`, `maxDriftPx` (the XY excursion the
   run measured) and `maxDriftUm` (`nothing` when the image has no physical pixel size).
 - `sharedStructure` / `importDrift`: the import probe's signal pass (`data_path.measure_signal`) —
-  channel pairs that show the same structure, and the raw movie's drift before any correction.
+  channel pairs that show the same structure, and the raw movie's drift before any correction
+  (`nothing` unless the acquisition check's Measure ran: import leaves drift out — `importDriftMeasured`
+  says which `nothing` it is).
 
 No cutoff and no "do this": the task text (`useWhen` / `notWhen`) says what each method needs, the
 reader matches the two. The MCP's `get_image_info` reads this from the image payload — there is no
@@ -729,7 +731,10 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
                      # structure (Pearson r on smoothed voxels), and drift through drift correction's
                      # estimator before any correction ran
                      "sharedStructure" => get(sat, "sharedStructure", nothing),
-                     "importDrift"     => _import_drift_um(get(sat, "drift", nothing), um_per_px))
+                     "importDrift"     => _import_drift_um(get(sat, "drift", nothing), um_per_px),
+                     # import leaves drift out: `importDrift = nothing` is "no movie to register" only
+                     # when this is true — else not measured yet (the acquisition check's Measure)
+                     "importDriftMeasured" => _saturation_has_drift(img.meta))
 end
 
 """The import probe's drift numbers plus the XY excursion as drift correction reports it (`maxDriftPx`:

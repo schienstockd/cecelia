@@ -3295,6 +3295,23 @@ function onUp(e: PointerEvent) {
 
 /** A pick on a mask with no level at this zoom (409) — the cell can't be read where it's drawn. */
 const MASK_ZOOM_IN = 'This mask has no level at this zoom — zoom in to pick cells'
+/** A pick on a mask segmented on another image version (drift correct / crop): the viewer hides it,
+ *  and a click would read this version's coords on the old mask — a shifted or edge-clamped cell. */
+const MASK_OTHER_VERSION = 'This mask was segmented on another image version — re-segment to pick cells'
+
+/** The ticked mask is a durable store from another image version (same test the renderers skip on). */
+function pickMaskMismatched(m: ViewerMeta, vn: string): boolean {
+  return !!vn && !maskStoreOf(vn).store && !!m.labelDims && labelDimsMismatch(m, vn)
+}
+
+/** Log a refused pick: 409 = no mask level at this zoom; 422 = the server's reason (no cell table,
+ *  another image version); anything else by status. */
+async function warnPickRefused(res: Response, what: string) {
+  if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
+  const msg = res.status === 422
+    ? ((await res.json().catch(() => ({}))) as { error?: string }).error : undefined
+  vlog('warn', msg ?? `${what} failed: ${res.status}`)
+}
 
 /**
  * Send a pick request to the server for the pixel under the pointer. The gating store's `popmap`
@@ -3307,6 +3324,7 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
   // A preview or live mask on screen has no cell table to pick from, and picking under the ticked
   // store would outline whichever preview cell happens to share the id. Nothing to pick until it's gone.
   if (previewVn.value || liveVn.value) return
+  if (pickMaskMismatched(m, labelName.value)) { vlog('warn', MASK_OTHER_VERSION); return }
   const rect = c.getBoundingClientRect()
   const cx = e.clientX - rect.left
   const cy = e.clientY - rect.top
@@ -3333,14 +3351,15 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
     x: p.x, y: p.y,
     level: lvl,
     mode: pickMode,
+    // the dims this version is drawn at — the server refuses a mask from another version
+    imageNX: m.nX, imageNY: m.nY,
   }
   try {
     const res = await fetch('/api/viewer/pick-cell', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
-    if (!res.ok) { vlog('warn', `Pick failed: ${res.status}`); return }
+    if (!res.ok) { await warnPickRefused(res, 'Pick'); return }
     // `/Pick selection` membership changed on the server — wake same-window (Pinia ref) and
     // cross-window (localStorage) subscribers. The correction cockpit watches this to re-fetch
     // membership; without it the cockpit only refreshed on mode/vn change, so a pick never
@@ -3364,6 +3383,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
   const c = canvas.value, m = meta.value
   if (!c || !m) return
   if (previewVn.value || liveVn.value) return   // same as `pickCellAt`
+  if (pickMaskMismatched(m, labelName.value)) { vlog('warn', MASK_OTHER_VERSION); return }
   const lvl = slabLevel.value
   const nx = renderNX.value, ny = renderNY.value
   const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
@@ -3409,6 +3429,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
     x1, y1, x2, y2,
     level: lvl,
     mode: pickMode,
+    imageNX: m.nX, imageNY: m.nY,   // see `pickCellAt`
     ...(zLo !== undefined && zHi !== undefined ? { zLo, zHi } : {}),
   }
   try {
@@ -3416,8 +3437,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
-    if (!res.ok) { vlog('warn', `Rect pick failed: ${res.status}`); return }
+    if (!res.ok) { await warnPickRefused(res, 'Rect pick'); return }
     viewerStore.bumpPickSelectionTick()  // see the note on the pick-cell twin
     const j = await res.json() as { nLabels?: number; nSelected?: number }
     vlog('info', `Rect picked ${j.nLabels ?? 0} cells (${j.nSelected ?? 0} in selection)`)

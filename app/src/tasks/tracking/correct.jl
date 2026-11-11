@@ -160,8 +160,13 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
         return nothing
     end
     lineage_present = [c for c in TRACK_LINEAGE_OBS if c in have]
-    select_cols(lp, vcat(["track_id"], lineage_present, temporal))
+    has_source = TRACK_SOURCE_OBS in have
+    select_cols(lp, vcat(["track_id"], lineage_present, has_source ? [TRACK_SOURCE_OBS] : String[], temporal))
     df = as_df(lp; include_x = false, include_obs = true)
+    # widen so the engine can copy a `missing` (unmarked) source as well as a string
+    has_source && (df[!, TRACK_SOURCE_OBS] = Vector{Union{Missing,String}}(
+        [s isa AbstractString && !isempty(s) ? String(s) : missing for s in df[!, TRACK_SOURCE_OBS]]))
+    source_before = has_source ? copy(df[!, TRACK_SOURCE_OBS]) : nothing
 
     # the engine works on `centroid_t`; alias whatever the temporal column is called
     t_col = first(temporal)
@@ -198,6 +203,18 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
 
     label_props(props_path) |> v -> drop_obs(v, stale) |> v -> add_obs(v, out) |> save!
     on_log("[INFO] Wrote track_id + $(length(lineage_present)) lineage column(s) → $props_path")
+    # A cell that joined a track took that track's `track_source` (`_copy_lineage_from!`). Left
+    # unstamped, a re-track of that source would delete the rest of the track and keep this cell as
+    # an unowned 1-cell track. Categorical → the Python writer, full label set.
+    if has_source && !isequal(source_before, df[!, TRACK_SOURCE_OBS])
+        n_src = count(i -> !isequal(source_before[i], df[i, TRACK_SOURCE_OBS]), 1:nrow(df))
+        ok = write_categorical_obs(props_path,
+            [CategoricalObsColumn(; name = TRACK_SOURCE_OBS, labels = Int.(df.label),
+                                  values = collect(df[!, TRACK_SOURCE_OBS]))];
+            on_log = on_log, on_process = on_process)
+        ok || (on_log("[ERROR] could not write track_source for $n_src moved cell(s) → $props_path"); return nothing)
+        on_log("[INFO] $n_src cell(s) adopted their new track's track_source")
+    end
     on_progress(4, 5)
 
     # ── Journal (Decision 3/7): durable, per-image, append-only ───────────────────

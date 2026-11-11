@@ -622,8 +622,10 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
       - `images`: per image `{uid, name, included, steps, segmentations, tracked, clusterRuns, gatedPops,
         stale, staleUnknown}`.
         - `steps`: the ordered pipeline from the run log — each `{stage, fun, valueName, status, at}`.
-          `stage` ∈ import/cleanup/edit/segment/track/behaviour/cluster/other; `status` "done"/"failed".
-          This IS the "denoised → segmented → tracked → clustered" story, in order, with what each wrote.
+          `stage` ∈ import/cleanup/edit/segment/track/gate/behaviour/cluster/other; `status` is "done",
+          "failed", "cancelled", "interrupted" or "running" — only a "done" step wrote its `valueName`.
+          Runs that were skipped (never dispatched) are not listed. This IS the "denoised → segmented →
+          tracked → clustered" story, in order.
         - `segmentations`: the label-set value_names; `tracked`: those with a per-track table.
         - `clusterRuns`: `[{suffix, valueNames}]` — each clustering run and the label sets it clustered.
         - `gatedPops`: `[{valueName, popType, n, pops}]` — gate-defined populations (names/counts only).
