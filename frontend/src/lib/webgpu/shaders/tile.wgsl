@@ -92,7 +92,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   return mix(a, b, f);
 }
 
-// The tile `labAt` reads from, set by `fs` before it calls `labEdge`: the shared contour loop hands its
+// The tile `labAt` reads from, set by `fs` before it calls `labDrawn`: the shared contour loop hands its
 // fetch a voxel only, and the tile's extent and the id under test are per-tile, not per-voxel.
 var<private> labTileSampled: vec2<f32>;
 var<private> labTileId: u32;
@@ -106,7 +106,7 @@ fn labAt(vi: vec3<i32>) -> u32 {
 }
 
 // The contour width is in this level's pixels.
-#include "label_edge.wgsl" LAB_AT=labAt
+#include "label_layers.wgsl" LAB_AT=labAt
 
 #include "label_colour.wgsl"
 
@@ -136,7 +136,7 @@ fn labAt(vi: vec3<i32>) -> u32 {
     let id = textureLoad(labAtlas, vec3<i32>(sx, sy, in.slot), 0).r;
     labTileSampled = in.sampledPx;
     labTileId = id;
-    if (id != 0u && labShown(id) && labEdge(vec3<i32>(sx, sy, in.slot), id, i32(p.lab.y))) {
+    if (id != 0u && labShown(id) && labDrawn(vec3<i32>(sx, sy, in.slot), id, i32(p.lab.y))) {
       acc = mix(min(acc, vec3(1.0)), labColour(id).rgb, p.lab.x);
     }
   }

@@ -1530,16 +1530,22 @@ guide run can be measured without them (TASK_DISCOVERY_PLAN Decision 9).
 
 ## Viewer integration
 
-Labels are shown via `show_labels!` (Julia) → `show_labels` (napari_bridge.py):
-- `value_name` — the output value name (used as filename stem)
-- `label_files` — list of zarr filenames to load (e.g. `["default.zarr", "default_nuc.zarr"]`)
-- Each file is loaded from `{task_dir}/labels/{filename}` and becomes a napari Labels layer named `({filename}) Labels`
-- Missing files are silently skipped (e.g. single-model run has no `_nuc.zarr`)
+The WebGPU viewer draws ONE segmentation's mask at a time — the one ticked (eye) in the viewer panel's
+segmentation list (`settings.getLabelVisibility`; several at once is parked in
+`docs/todo/MULTI_MASK_PLAN.md`). The mask is the base file, `img_labels_path`, read through
+`/api/viewer/slab?labels=<vn>` at the image's geometry (`docs/ARCHITECTURE.md` → *Mask vs channels*).
 
-The toggle in ViewerPanel:
-- `showingLabels` defaults to `true` and is a sticky preference (not reset on image switch)
-- On `POST /api/napari/open`, if `showLabels=true` is included, labels are shown as part of the same request so WS messages are ordered: `set_task_dir` → `open_image` → `show_labels`
-- The standalone toggle uses `POST /api/napari/show-labels`
+**A segmentation's derived files** — `{vn}_halo.zarr`, `{vn}_nuc.zarr`, any `{vn}_{matchAs}.zarr` — are
+drawn WITH its mask, as outlines (`docs/todo/MASK_FILE_LAYERS_PLAN.md`). They carry the base's cell ids,
+so the slab route packs each into the base mask as a flag bit (`files=halo,nuc`, `compose_label_files!`):
+`LABEL_FILE_OUT_BIT` where the file reaches past the cell (a halo ring), `LABEL_FILE_IN_BIT` where it
+overlaps it (a nucleus). The shaders (`shaders/label_layers.wgsl`) strip the flags for colour,
+population table and pick, keep drawing the base region as before (filled or contoured), and outline
+the file region — on the 2D plane view only; a 3D or z-window projection draws the cells as without
+them (a 3D halo's cap would stack a rim per plane). All files show by default — the old R viewer's choice; the chips under the ticked
+segmentation's row turn one off (`settings.getLabelFilesHidden`). A file is named by its suffix after
+the base stem (`img_label_files`); `/api/viewer/meta` lists them in `labelFiles`. A task preview or a
+live run draws its base store only.
 
 ### Previewing a running run
 
