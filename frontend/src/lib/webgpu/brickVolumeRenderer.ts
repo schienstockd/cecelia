@@ -82,6 +82,9 @@ export interface BrickSource {
   labelStoreId?: number
   /** The live run's `started_at` — `SlabQuery.liveSince`. */
   liveSince?: string
+  /** The segmentation's derived files packed into the mask (`SlabQuery.labelFiles`). Part of the mask
+   *  identity (`brickLabelSourceId`), so a toggle swaps the label atlas only. */
+  labelFiles?: readonly string[]
   /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
    *  overwriting `ccidSmoothed.ome.zarr`). Handled the same way as a projectUid/imageUid/valueName
    *  change: any diff drops the atlas. Undefined defaults to no rev, so callers that don't opt in

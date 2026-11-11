@@ -126,7 +126,8 @@ export function brickSlabUrl(
  */
 export function brickLabelSlabUrl(
   base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string
-          labelStore?: MaskStore; labelStoreId?: number; liveSince?: string },
+          labelStore?: MaskStore; labelStoreId?: number; liveSince?: string
+          labelFiles?: readonly string[] },
   labelName: string,
   brick: VirtualBrick,
   brickSizeVox: readonly [number, number, number],
@@ -150,6 +151,7 @@ export function brickLabelSlabUrl(
     level: brick.level,
     rev: base.rev,
     ...maskStoreQuery(base.labelStore, base.labelStoreId, base.liveSince),
+    labelFiles: base.labelFiles,
   })
 }
 

@@ -17,3 +17,8 @@ const MASK_FILL_OPACITY = Float32(SHADER_CONSTANTS.LABEL_OPACITY)
 #: How far a population mask's parent pop (one with a shown descendant) moves its own cells towards
 #: white — the viewer's *Colour* mask (`MASK_PARENT_PALE`, `frontend/src/utils/maskPopTable.ts`).
 const MASK_PARENT_PALE = Float64(SHADER_CONSTANTS.MASK_PARENT_PALE)
+#: A mask voxel's cell id, and the two flags a segmentation's derived files (halo, nuc) are packed into
+#: it with (`compose_label_files!`, `shaders/label_layers.wgsl`).
+const LABEL_ID_MASK      = UInt32(SHADER_CONSTANTS.LABEL_ID_MASK)
+const LABEL_FILE_IN_BIT  = UInt32(SHADER_CONSTANTS.LABEL_FILE_IN_BIT)
+const LABEL_FILE_OUT_BIT = UInt32(SHADER_CONSTANTS.LABEL_FILE_OUT_BIT)
