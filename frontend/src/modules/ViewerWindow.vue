@@ -39,10 +39,11 @@ import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
          eyeKey, flipPopEye, offPaths, reconcileTrackclustEyes,
          eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
-import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
+import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { usePlotResize } from '../composables/usePlotResize'
+import { useVwPlayback } from '../composables/useVwPlayback'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import {
@@ -76,14 +77,13 @@ import {
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, playbackAdvance, playbackIntervalMs,
+  prefetchWindow, prefetchDepth, walkPrefetch, stripCells,
 } from '../utils/volumeCache'
 import type { PlaybackHint } from '../utils/pageTable'
 import {
   playHealthSummary, trimSamples, type PlayHealthSample,
 } from '../utils/playHealth'
-import { toHex } from '../utils/colour'
-import { CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes } from '../utils/viewerColormap'
+import { distinctChannelHexes } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import {
   screenToImagePx, cameraViewL0, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES, screenToL0, type L0Rect,
@@ -108,7 +108,7 @@ import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          shownLabelFiles, type MaskStore } from '../utils/viewerLabels'
-import { maskPopTable, trackclustMaskLayer, maskLayerShowsAny, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
+import { maskPopTable, trackclustMaskLayer, maskLayerShowsAny, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -132,7 +132,6 @@ import AxesGizmo from '../components/AxesGizmo.vue'
 import { elapsedLabel } from '../utils/stillOverlay'
 import CcToggle from '../components/CcToggle.vue'
 import ChipSelect from '../components/ChipSelect.vue'
-import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import RoiSection from '../components/RoiSection.vue'
@@ -140,6 +139,12 @@ import type { RoiSpot } from '../utils/rois'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import VwHeader from '../components/viewerWindow/VwHeader.vue'
+import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
+import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
+import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
+import VwTracksSection from '../components/viewerWindow/VwTracksSection.vue'
+import VwChannelsSection from '../components/viewerWindow/VwChannelsSection.vue'
+import VwPopulationsSection, { type VwPopLayer } from '../components/viewerWindow/VwPopulationsSection.vue'
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
@@ -746,7 +751,7 @@ const heldProbe = ref('')
  * there is no request path here that a scrub can spam, and nothing to keep coherent with the
  * timepoint cache.
  */
-interface PopLayer { vn: string; popType: string; payload: OverlayPayload }
+type PopLayer = VwPopLayer
 const popLayers = ref<PopLayer[]>([])
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
 const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}::${path}`
@@ -1407,6 +1412,13 @@ const useTiles = computed(() =>
 /** Whichever renderer is currently alive — for template reads that don't care which one. */
 const activeAdapter = computed(() =>
   renderer.value?.adapter ?? tileRenderer.value?.adapter ?? null)
+/** A contrast window edit from the Channels section. */
+function setChannelRange(c: number, lo: number, hi: number) {
+  const ch = meta.value?.channels[c]
+  if (!ch) return
+  ch.lo = lo; ch.hi = hi
+  pushChannels()
+}
 /**
  * Channel colour, through the shared `ColourPicker` — the pop manager's design (a swatch you click,
  * not a labelled dropdown; `SwatchSelect` spells the option out in text and had squeezed the channel
@@ -1420,11 +1432,6 @@ const activeAdapter = computed(() =>
  * server still ships the real stops on load (`resolved_display_specs`, which handles the perceptual maps
  * a two-stop ramp cannot).
  */
-const CHANNEL_PALETTE = [...new Set(CHANNEL_COLORMAP_OPTIONS.map(o => o.hex))]
-const channelHex = (ch: { lut: number[][] }): string => {
-  const top = ch.lut?.[ch.lut.length - 1]
-  return top ? toHex(top.map(v => v * 255)) : '#ffffff'
-}
 function setChannelColour(c: number, hex: string) {
   const m = meta.value
   if (!m) return
@@ -1444,16 +1451,6 @@ const PROJECTIONS = [
   { value: 'ortho', label: '', icon: 'pi pi-stop', tip: 'Orthographic — head-on, no foreshortening (matches movie output)' },
   { value: 'persp', label: '', icon: 'pi pi-box', tip: 'Perspective — closer geometry looks larger' },
 ]
-/** 3D renderer selection. Auto uses `shouldUseBricks(meta)`; the two overrides are the safety
- *  valves for images the predicate gets wrong. Copy stays short — "Auto/Brick/Flat" reads faster
- *  than "Auto-select/Force brick/Force flat" in a segmented control. All three chips stay
- *  enabled even after an OOM fallback — the flag is mode-scoped, so a 3D flat OOM does not
- *  block a 2D flat pick, and an explicit user pick beats the fallback in `bricksEnabled`. */
-const MASK_COLOUR_OPTIONS: { value: MaskColour; label: string; tip: string }[] = [
-  { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
-  { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
-  { value: 'trackclust', label: 'Track clusters', tip: 'Each tracked cell by its track cluster' },
-]
 /** Why the mask's *Colour* draws the palette or all grey — '' when it draws what was asked. */
 const maskColourNote = computed(() => {
   const mode = settings.viewerMaskColour
@@ -1466,6 +1463,11 @@ const maskColourNote = computed(() => {
     (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))) ? ''
     : 'No track clusters on this mask'
 })
+/** 3D renderer selection. Auto uses `shouldUseBricks(meta)`; the two overrides are the safety
+ *  valves for images the predicate gets wrong. Copy stays short — "Auto/Brick/Flat" reads faster
+ *  than "Auto-select/Force brick/Force flat" in a segmented control. All three chips stay
+ *  enabled even after an OOM fallback — the flag is mode-scoped, so a 3D flat OOM does not
+ *  block a 2D flat pick, and an explicit user pick beats the fallback in `bricksEnabled`. */
 const BRICKS_MODES = [
   { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
   { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
@@ -1486,14 +1488,6 @@ const BRICK_TIERS = [
   { value: 'quick', label: 'Quick', tip: 'Fewer bricks per view — faster on wide zooms, coarser' },
   { value: 'balanced', label: 'Balanced', tip: 'Shipped default' },
   { value: 'detailed', label: 'Detailed', tip: 'More bricks per view — finer at cost' },
-]
-/** Top-percentile choices for the Auto contrast button. Names describe what happens on the DATA,
- *  not what the number IS: Tight = trim more, Balanced = middle, Wide = keep more bright pixels
- *  visible (the shipped default — sparse microscopy signal reads best there, ). */
-const AUTO_CONTRAST_OPTIONS = [
-  { value: '99', label: 'Tight', tip: 'p99 — trims the bright tail, saturates rare cells' },
-  { value: '99.8', label: 'Balanced', tip: 'p99.8 — smooth on dense signal' },
-  { value: '99.99', label: 'Wide', tip: 'p99.99 — the default; keeps sparse bright signal' },
 ]
 /** Core-brick ceiling actually shipped to the scheduler. URL `?brickThr=N` wins so a dev
  *  measurement pass isn't overwritten by the tier control; otherwise the tier decides. */
@@ -3138,89 +3132,19 @@ function drawTiles() {
 }
 
 // ── Playback ─────────────────────────────────────────────────────────────────────
-// A timer rather than rAF: the rate is a chosen frame rate, not the display's. It WAITS for an
-// uncached frame instead of skipping ahead — see `playbackAdvance` for why that is the honest choice.
-let playTimer: ReturnType<typeof setTimeout> | null = null
-
-function stopPlay() {
-  playing.value = false
-  waitingFor.value = -1
-  if (playTimer !== null) { clearTimeout(playTimer); playTimer = null }
-  // Retire the playback prefetch window. Playback sets `prefetchTs` to `[t, t±1, t±2]` so the
-  // scheduler buffers ahead; leaving that in place after stop keeps `tickScheduler` kicking
-  // fetches for those neighbour t's every tick with no benefit — ("doesn't
-  // stop loading"). Idle prefetch is just the current t; the next `gotoT` will replace this.
-  renderer.value?.setPrefetchTimepoints?.([t.value])
-}
-
-function tick() {
-  playTimer = setTimeout(() => {
-    if (!playing.value) return
-    if (useTiles.value) {
-      // Tile-mode playback: advance at the requested fps regardless of tile residency. The tile
-      // pump chases behind `gotoT` — the loading chip appears while a fresh-t frame's tiles arrive
-      // and clears the moment they do. Fetch-vs-frame-rate discipline (volume mode's residency
-      // probe + wait-for-cached-frame path) needs measurement on real timelapses before it lands
-      // here — see `docs/todo/VIEWER_TILES_PLAN.md` Phase F, decision "autoplay does NOT ship".
-      const n = nT.value
-      if (n <= 0) { stopPlay(); return }
-      const next = t.value + 1
-      if (next >= n) {
-        if (!settings.viewerLoop) { stopPlay(); return }
-        waitingFor.value = -1
-        gotoT(0)
-      } else {
-        waitingFor.value = -1
-        gotoT(next)
-      }
-      tick()
-      return
-    }
-    const r = renderer.value
-    // Brick renderer: advance every tick regardless of residency, so show(t) fires its
-    // snap-to-boundT and the shader draws each frame with prev-t hole-fill for whatever hasn't
-    // landed. Flat renderer: gate on cache residency (its frames are all-or-nothing).
-    // A flat frame is ready with its mask: after a mask is ticked on mid-movie, the walk fetches each
-    // frame's mask ahead of the playhead and playback never shows a frame without it (`frameComplete`).
-    const readyProbe = bricksEnabled.value
-      ? () => true
-      : frameComplete
-    const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
-    if (step.ended) { stopPlay(); return }
-    if (step.stalled) {
-      // Pump around the frame we WANT, not the one we are on. At the end of a loop those are the one
-      // pair that disagree, and a window centred on where we are fills backwards and never asks for
-      // frame 0 — playback then waits forever for something nothing is fetching.
-      waitingFor.value = step.next
-      schedulePump(step.next)
-      // Brick renderer only: schedulePump is a flat-renderer path — nothing on the brick side
-      // hears it. Push step.next into the prefetch window so the brick tickScheduler starts
-      // fetching for it now, or a stall never unstalls (nothing else is telling the scheduler
-      // this t matters). Under playback cap=4 so the window covers the direction of travel.
-      const m = meta.value
-      if (r?.setPrefetchTimepoints && m) {
-        const dir = 1   // playback runs forward; `step.next - t` is negative at the loop wrap
-        // Same atlas-size clamp as gotoT — a stalled playback step MUST NOT ask for more
-        // prefetch than the atlas can hold, or the prefetch bricks LRU-evict the boundT bricks
-        // the shader is trying to draw. Regression guard, .
-        const cap = r.maxSafePrefetchDepth?.(4) ?? 4
-        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap), playbackHint(m.nT))
-      }
-      frame.redraw()
-    } else {
-      waitingFor.value = -1
-      gotoT(step.t)
-    }
-    tick()
-  }, playbackIntervalMs(settings.viewerFps))
-}
-
-function togglePlay() {
-  if (playing.value) { stopPlay(); return }
-  if (nT.value <= 1) return
-  playing.value = true
-  tick()
-}
+// The loop lives in composables/useVwPlayback.ts; the window keeps the state it reads.
+const { stopPlay, togglePlay } = useVwPlayback({
+  playing, waitingFor, t,
+  nT: () => nT.value,
+  useTiles: () => useTiles.value,
+  bricksEnabled: () => bricksEnabled.value,
+  renderer: () => renderer.value,
+  loop: () => settings.viewerLoop,
+  fps: () => settings.viewerFps,
+  gotoT, schedulePump, frameComplete,
+  redraw: () => frame.redraw(),
+  playbackHint,
+})
 
 // ── Pointer ──────────────────────────────────────────────────────────────────────
 /**
@@ -3693,8 +3617,6 @@ const advancedTrigger = ref<HTMLElement | null>(null)
 /** Auto-contrast tuning popover — anchor + open state. Same pattern as `advancedOpen`; not
  *  persisted because a popover that reopens on reload is a distinct bug from a slider whose value
  *  should survive. */
-const autoTuneOpen = ref(false)
-const autoTuneTrigger = ref<HTMLElement | null>(null)
 /** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
  *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
  *  who never scrubs won't want it. */
@@ -5934,7 +5856,7 @@ onUnmounted(() => {
                   @click="previewBoxToView"><i class="pi pi-refresh" /></button>
         </div>
       </div>
-      <div v-if="boxDrawing && !boxDraft" class="vw-status-chip vw-pbox-hint">Drag to draw the {{ boxNoun }}</div>
+      <div v-if="boxDrawing && !boxDraft" class="cc-hud-chip vw-status-chip vw-pbox-hint">Drag to draw the {{ boxNoun }}</div>
       <ViewerCropBar v-if="cropPickHere && meta" :pick="cropPickHere" :n-z="meta.nZ" :n-t="meta.nT"
                      :blocked="cropBlocked" @update="patchCropPick" @use="useCropPick"
                      @cancel="viewerStore.setCropPick(null)" />
@@ -5999,24 +5921,24 @@ onUnmounted(() => {
            canonical severity icon and colour (`lib/severity.ts`) — grey-on-image was unreadable
            against a bright whole-slide render, and a centred error left the app looking dead when it
            was still holding the previous frame. -->
-      <div v-else-if="error" class="vw-status-chip vw-status-chip-error">
-        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+      <div v-else-if="error" class="cc-hud-chip cc-hud-chip-error vw-status-chip vw-status-chip-error">
+        <i class="pi pi-exclamation-triangle" />
         <span>{{ error }}</span>
         <button v-if="lostDevice" class="cc-btn cc-btn-ghost cc-btn-micro vw-status-chip-btn"
                 @click="reload" v-tooltip.top="'Reopen the viewer'">Reload</button>
         <!-- Dismiss X — the chip lingers after the underlying condition clears (e.g. a brick-atlas
              OOM message stays after the user toggles bricks mode and the canvas renders anyway).
              `error` is cleared unconditionally; nothing else depends on it. -->
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-status-chip-dismiss"
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                 @click="error = ''" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss error"><i class="pi pi-times" /></button>
       </div>
       <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
            switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
            hardcoded 0 there said the wrong thing. -->
-      <div v-else-if="starting" class="vw-status-chip">{{ starting }}…</div>
+      <div v-else-if="starting" class="cc-hud-chip vw-status-chip">{{ starting }}…</div>
       <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
-      <div v-else-if="shownT < 0" class="vw-status-chip">
+      <div v-else-if="shownT < 0" class="cc-hud-chip vw-status-chip">
         {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
       </div>
       <!-- Bricks path only: the canvas is out of sync with the target timepoint. Two shapes:
@@ -6025,21 +5947,20 @@ onUnmounted(() => {
            (unblank rule advanced displayT before every core brick landed — target frame with
            EMPTY_SLOT holes). Same amber chip in the "Loading timepoint…" slot; gated on
            `shownT >= 0` so it never fights the initial-load message. -->
-      <div v-else-if="canvasPartial" class="vw-status-chip vw-status-chip-warn"
+      <div v-else-if="canvasPartial" class="cc-hud-chip vw-status-chip vw-status-chip-warn"
            v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
-        <i class="pi pi-exclamation-triangle vw-status-chip-icon" />
+        <i class="pi pi-exclamation-triangle" />
         <span>Loading bricks…</span>
       </div>
       <!-- Share-in: post-Save toast. Same `.vw-status-chip` visual family as errors/loading so it
            reads as "the viewer is telling you something", but INDEPENDENT of that v-if/v-else-if
            cascade — a settled viewer is the only state in which Save fires, and a load happening
            concurrently must not swallow it. Auto-dismisses after ~7s (see showShareToast). -->
-      <div v-if="shareToast" class="vw-status-chip vw-share-chip"
-           :class="{ 'vw-status-chip-error': shareToast.kind === 'fail' }">
-        <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                    'vw-status-chip-icon']" />
+      <div v-if="shareToast" class="cc-hud-chip vw-status-chip vw-share-chip"
+           :class="{ 'cc-hud-chip-error vw-status-chip-error': shareToast.kind === 'fail' }">
+        <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle']" />
         <span>{{ shareToast.message }}</span>
-        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-status-chip-dismiss"
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                 @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
       </div>
@@ -6047,7 +5968,7 @@ onUnmounted(() => {
            markers, and the chip names the channel on screen (the sidebar may be folded away).
            ↑/↓ match the keys (see `onKey`); ←/→ are already time. Top-centre: the other three
            corners and bottom-left are taken (timestamp, overview, scale bar, status chip). -->
-      <div v-if="soloChannel && soloIndex >= 0" class="vw-status-chip vw-solo-chip">
+      <div v-if="soloChannel && soloIndex >= 0" class="cc-hud-chip vw-status-chip vw-solo-chip">
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense vw-solo-step"
                 @click="stepSolo(-1)" v-tooltip.bottom="'Previous channel (↑)'" aria-label="Show previous channel">
           <i class="pi pi-chevron-up" />
@@ -6393,554 +6314,47 @@ onUnmounted(() => {
           </select>
         </div>
 
-        <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
-             `nT == 1` slider stuck at "0 / 0" looks broken. -->
-        <template v-if="nT > 1">
-          <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
-          <!-- Transport (play + loop) fills the label column, so this slider starts where Plane and
-               Fps start; readout and the ±-column spacer end it the same way. -->
-          <div class="cc-row cc-row-tight vw-slider-row">
-            <span class="cc-lbl-col vw-transport">
-              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
-                      v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'"
-                      :aria-label="playing ? 'Pause' : 'Play'">
-                <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-              </button>
-              <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerLoop }]"
-                      @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
-                      v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
-                <i class="pi pi-repeat" />
-              </button>
-            </span>
-            <input
-              type="range" class="vw-grow" :min="0" :max="nT - 1" :step="1"
-              :value="t" @pointerdown="stopPlay()"
-              @input="gotoT(Number(($event.target as HTMLInputElement).value))"
-              v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
-            >
-            <span class="cc-readout cc-fs-2xs vw-readout-col">{{ t }} / {{ nT - 1 }}</span>
-            <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
-          </div>
-
-          <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
-               so a long movie does not put one element per frame in the DOM.
-               The dot shares this row rather than earning its own: playback holds rather than skip an
-               uncached frame (~400 ms each in 3D), so without a cue a working playback looks like a hang —
-               but a line that appears and disappears above the strip shoves it up and down every tick,
-               which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
-          <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
-            <span class="cc-dot vw-dot" :class="{ 'cc-dot-warn': busy }" />
-            <div class="vw-strip">
-              <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
-            </div>
-          </div>
-        </template>
-
-        <!-- Fps keeps its own row — it is a slider. -->
-        <div v-if="nT > 1" class="cc-row cc-row-tight vw-slider-row">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
-          <input
-            type="range" class="vw-grow" :min="1" :max="30" :step="1"
-            v-model.number="settings.viewerFps"
-            v-tooltip.bottom="'Playback rate — waits rather than skip an uncached frame'"
-            aria-label="Playback rate (fps)"
-          >
-          <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
-               slider have the plain description so a hover on either still explains the
-               control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
-          <span class="cc-readout cc-fs-2xs vw-readout-col"
-                :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
-                v-tooltip.left="playing && waitingFor >= 0
-                  ? 'Playback throttled — fetches are behind the requested Fps'
-                  : 'Requested playback rate'">{{ settings.viewerFps }}</span>
-          <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
-        </div>
+        <!-- No time = no time controls (components/viewerWindow/VwTimeControls.vue). -->
+        <VwTimeControls v-if="nT > 1" :t="t" :n-t="nT" :has-z="meta.nZ > 1" :playing="playing"
+                        :throttled="playing && waitingFor >= 0" :busy="busy" :cells="cells"
+                        @toggle-play="togglePlay" @stop="stopPlay()" @goto="gotoT" />
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar, timestamp, grid and landscape are overlays on the view (never baked
              into the frame or a Share capture), they are not a layer whose
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
              is what changes while you look; Annotations is set once. See
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
-        <CollapsibleSection label="Annotations" tip="Overlays on the view — not in captures"
-                            accordion="cc.vw.section" section="ann"
-                            fill>
-          <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
-               in front of you, and a separate row for each would double the group's height. -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
-            <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
-            <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
-                 a panel this dense — it says "there is something here" and then
-                 refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
-            <template v-if="settings.viewerScaleBar">
-              <input
-                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-                v-model.number="settings.viewerScaleBarPx"
-                v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
-              >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
-            </template>
-          </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
-            <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
-            <template v-if="settings.viewerTimestamp">
-              <input
-                type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-                v-model.number="settings.viewerTimestampPx"
-                v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
-              >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
-            </template>
-          </div>
-          <!-- Set-of-Mark grid: named cells (A1..H8 at 8×8) over the current viewport, so a share-in
-               / point-out session can cite a region by name. The density slider shows with the
-               toggle OFF too: every capture carries a landscape at this density, so it is a capture
-               setting, not only a display one. -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Named cells (A1..H8) over the viewport'">Grid</span>
-            <CcToggle v-model="settings.viewerGrid" aria-label="Show the region grid" />
-            <input
-              type="range" class="vw-grow vw-px" :min="4" :max="32" :step="1"
-              v-model.number="settings.viewerGridDensity"
-              v-tooltip.bottom="'Cells per side — also the capture landscape grid'" aria-label="Grid density"
-            >
-            <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerGridDensity }}</span>
-          </div>
-          <!-- Landscape heatmap: cheap categorical fill per grid tile so a share-in / MCP reader
-               has a rough semantic prior BEFORE looking at raw pixels. NOT a segmentation; sits at
-               the same tile resolution as the grid above. BIDIR PR #6 (Decision 14 reframe). -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Show the tile heatmap — captures always carry it'">Landscape</span>
-            <CcToggle v-model="settings.viewerLandscape" aria-label="Show the landscape heatmap" />
-            <template v-if="settings.viewerLandscape">
-              <span class="cc-muted cc-fs-3xs vw-landscape-sub-lbl"
-                    v-tooltip.bottom="'Print each tile category on the fill — eyeball whether the labelling reads right'">Labels</span>
-              <CcToggle v-model="settings.viewerLandscapeLabels" aria-label="Show landscape tile labels" />
-            </template>
-          </div>
-          <ul v-if="settings.viewerLandscape && landscape" class="vw-landscape-legend"
-              v-tooltip.bottom="'Tile category legend — cell count in parentheses'">
-            <li v-for="l in landscape.legend" :key="l.category" class="cc-row cc-row-tight">
-              <span class="vw-lg-swatch" :style="{ background: l.swatch }" />
-              <span class="cc-fs-3xs">{{ l.category }}<span class="cc-muted">&nbsp;({{ l.nTiles }})</span></span>
-            </li>
-          </ul>
-        </CollapsibleSection>
+        <VwAnnotationsSection :landscape="landscape" />
 
-        <!-- Channels list scrolls INSIDE the section (default max-height, not `none`) — a whole-slide
-             image has 24+ channels and the sidebar's own scroll never engages, so the section body was
-             flooding off the bottom of the panel with no way to reach the controls below. All-on/all-off buttons at the top so a 24-channel image can be soloed to one
-             marker in two clicks instead of 23. -->
-        <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
-                            accordion="cc.vw.section" section="channels"
-                            fill>
-          <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
-               colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
-               state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
-               labelled `CcToggle` rows, so the section header is one line. Each side is a non-wrapping
-               `.cc-row-group`, so a narrow sidebar breaks the row BETWEEN the two clusters (the right
-               one keeps its right edge) instead of stranding an icon or two on a second line. -->
-          <div class="cc-row cc-row-tight vw-ch-master">
-            <div class="cc-row-group">
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allChannelsVisible }]"
-                    @click="setAllChannels(!allChannelsVisible)" :aria-pressed="allChannelsVisible"
-                    v-tooltip.right="allChannelsVisible ? 'Hide every channel' : 'Show every channel'"
-                    aria-label="Toggle every channel">
-              <i :class="['pi', allChannelsVisible ? 'pi-eye' : 'pi-eye-slash']" />
-            </button>
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': distinctChannelColours }]"
-                    @click="distinctChannelColours = !distinctChannelColours" :aria-pressed="distinctChannelColours"
-                    v-tooltip.right="'Distinct colours — a separate hue per channel'"
-                    aria-label="Assign a distinct colour to each channel">
-              <i class="pi pi-palette" />
-            </button>
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': soloChannel }]"
-                    @click="soloChannel = !soloChannel" :aria-pressed="soloChannel"
-                    v-tooltip.right="'One at a time — showing a channel hides the others'"
-                    aria-label="Show one channel at a time">
-              <i class="pi pi-dot-circle" />
-            </button>
-            </div>
-            <div class="cc-row-group vw-ch-master-end">
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="autoAllContrast"
-                    v-tooltip.left="'Auto contrast on every channel'"
-                    aria-label="Auto contrast every channel">
-              <i class="pi pi-bolt" />
-            </button>
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetAllContrast"
-                    v-tooltip.left="'Reset every channel to the full bit range'"
-                    aria-label="Reset every channel contrast">
-              <i class="pi pi-arrow-right-arrow-left" />
-            </button>
-            <!-- Auto-contrast tuning popover, anchored beside the Auto button so the two read together. -->
-            <button ref="autoTuneTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
-                    @click="autoTuneOpen = !autoTuneOpen"
-                    v-tooltip.left="'Auto tuning'" aria-label="Auto-contrast tuning">
-              <i class="pi pi-sliders-h" />
-            </button>
-            <TeleportPopover v-model="autoTuneOpen" :anchor="autoTuneTrigger" placement="bottom-end">
-              <div class="cc-eyebrow cc-fs-2xs">Auto range</div>
-              <div class="cc-row cc-row-tight">
-                <ChipSelect
-                  :options="AUTO_CONTRAST_OPTIONS"
-                  :model-value="String(settings.viewerAutoContrastPercent)"
-                  variant="segmented" aria-label="Auto contrast percentile"
-                  @update:model-value="v => (settings.viewerAutoContrastPercent = Number(v))"
-                />
-              </div>
-              <div class="cc-muted cc-fs-3xs vw-adv-note">
-                How far Auto pushes the top of the window.
-              </div>
-            </TeleportPopover>
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="toggleAllCards"
-                    v-tooltip.left="allCardsCompact ? 'Expand every channel' : 'Compact every channel'"
-                    :aria-label="allCardsCompact ? 'Expand every channel' : 'Compact every channel'">
-              <i :class="['pi', allCardsCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
-            </button>
-            </div>
-          </div>
-          <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c"
-               :class="['vw-ch cc-card cc-card-2', { 'vw-ch-compact': isCompact(channelsCompact, channelFlips, c) }]">
-            <div class="cc-row cc-row-tight">
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-ch-fold"
-                      @click="channelFlips = toggleFlip(channelFlips, c)"
-                      v-tooltip.right="isCompact(channelsCompact, channelFlips, c) ? 'Show contrast' : 'Hide contrast'"
-                      :aria-label="(isCompact(channelsCompact, channelFlips, c) ? 'Expand ' : 'Compact ') + ch.name">
-                <i :class="['pi', isCompact(channelsCompact, channelFlips, c) ? 'pi-chevron-right' : 'pi-chevron-down']" />
-              </button>
-              <span class="vw-ch-name cc-fs-xs"
-                    v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
-              <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
-                   the source image, so a corrected/uncorrected mixup is not silent. Click to A/B:
-                   suspend the swap on THIS channel (badge dims, channel reads source) while the
-                   other corrected channels stay swapped; click again to re-arm. Rendered whenever an
-                   AF correction exists for this channel, so a dimmed badge tells the user WHY the
-                   channel looks uncorrected. Resets on every new AF run. -->
-              <button v-if="hasAfPreview(c)"
-                      :class="['vw-ch-af-badge cc-fs-3xs', { 'vw-ch-af-badge-off': afSuspended.has(c) }]"
-                      @click="toggleAfSuspended(c)"
-                      v-tooltip.top="afSuspended.has(c)
-                        ? 'Reading SOURCE pixels — click to switch back to the preview'
-                        : 'Reading previewed pixels — click to compare against the source'">{{ previewBadge(c) }}</button>
-              <ColourPicker
-                :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
-                @update:model-value="v => setChannelColour(c, v)"
-              />
-              <CcToggle :model-value="ch.visible" :aria-label="'Show ' + ch.name"
-                        @update:model-value="v => setChannelVisible(c, v)" />
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoContrast(c)"
-                      v-tooltip.left="'Auto contrast — window on the loaded pixels (ImageJ-style)'">
-                <i class="pi pi-bolt" />
-              </button>
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetContrast(c)"
-                      v-tooltip.left="'Reset to the full bit range of the image'">
-                <i class="pi pi-arrow-right-arrow-left" />
-              </button>
-            </div>
-            <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
-                 column it collapses to no height and its absolutely-positioned thumbs escape the card.
-                 Every other consumer wraps it in a row with a readout beside it; so does this one. -->
-            <div v-if="!isCompact(channelsCompact, channelFlips, c)" class="cc-row cc-row-tight">
-              <RangeSlider
-                v-tooltip.top="'Contrast window — values outside it clip'"
-                :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, hiCeiling[c] ?? 0, 1)" :step="1"
-                scale="log" :samples="channelSamples?.[c] ?? null"
-                @update:lo="v => { ch.lo = v; pushChannels() }"
-                @update:hi="v => { ch.hi = v; pushChannels() }"
-              />
-              <span class="cc-readout cc-fs-3xs vw-ch-val">{{ ch.lo }}–{{ ch.hi }}</span>
-            </div>
-          </div>
-          <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
-            Showing {{ MAX_CHANNELS }} of {{ meta!.nC }} channels
-          </div>
+        <VwChannelsSection :channels="meta!.channels.slice(0, MAX_CHANNELS)" :n-c="meta!.nC" :clipped="clipped"
+                           :all-visible="allChannelsVisible" v-model:distinct="distinctChannelColours" v-model:solo="soloChannel"
+                           :compact="channelsCompact" :flips="channelFlips" :all-compact="allCardsCompact"
+                           :af-badge="c => hasAfPreview(c) ? previewBadge(c) : ''" :af-suspended="afSuspended"
+                           :ch-max="chMax" :hi-ceiling="hiCeiling" :samples="channelSamples"
+                           @set-all="setAllChannels" @auto-all="autoAllContrast" @reset-all="resetAllContrast"
+                           @toggle-all-cards="toggleAllCards" @flip="c => (channelFlips = toggleFlip(channelFlips, c))"
+                           @af-toggle="toggleAfSuspended" @colour="setChannelColour" @visible="setChannelVisible"
+                           @auto="autoContrast" @reset="resetContrast" @range="setChannelRange" />
 
-        </CollapsibleSection>
-        <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
-                            accordion="cc.vw.section" section="seg"
-                            fill>
-          <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
-               is decided in the ViewerPanel per image and reaches this window via the P2
-               storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
-               for it. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P3.
-               `labelNames` is the server's directory check, not the label registry, so an imported
-               track set with a table and no mask does not offer a phantom row.
-               Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
-               the viewer panel" using .cc-empty-inline, so the three sections read coherently
-. -->
-          <template v-if="maskName">
-            <!-- The task preview's mask counts as shown too: it gets the same opacity + outline, and
-                 the toggle flips whichever mask is on screen so it can be checked against the signal. -->
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-              <span class="cc-fs-2xs vw-grow" :title="maskName">
-                {{ maskName }}<span v-if="previewVn || liveVn" class="cc-muted">
-                  · {{ previewVn ? 'preview' : 'live' }}</span>
-              </span>
-              <CcToggle :model-value="!maskHidden" @update:model-value="v => { maskHidden = !v; frame.redraw() }"
-                        aria-label="Show mask"
-                        v-tooltip.bottom="maskHidden ? 'Show the mask' : 'Hide the mask'" />
-            </div>
-            <!-- More than one ticked: only the first renders because the compositor's bind group has
-                 one label slot. Multi-mask rendering is a later phase; naming the limit here is the
-                 alternative to silently dropping the others. -->
-            <div v-if="!previewVn && !liveVn && shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
-              {{ shownLabelCount }} segmentations ticked — showing {{ labelName }} only
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Opacity</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="1" :step="0.05"
-                v-model.number="settings.viewerLabelOpacity" @input="frame.redraw()"
-                v-tooltip.bottom="'How strongly the mask covers the signal'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelOpacity.toFixed(2) }}</span>
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Outline</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="5" :step="1"
-                v-model.number="settings.viewerLabelContour" @input="frame.redraw()"
-                v-tooltip.bottom="'Outline width in voxels — 0 fills each cell'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
-              <ChipSelect
-                :options="MASK_COLOUR_OPTIONS" :model-value="settings.viewerMaskColour"
-                variant="segmented" aria-label="Colour mask by"
-                @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
-              />
-            </div>
-            <div v-if="maskColourNote" class="cc-muted cc-fs-3xs">{{ maskColourNote }}</div>
-            <div v-else-if="maskTable?.truncated" class="cc-muted-warn cc-fs-3xs">
-              Cells past id {{ maskTable.width * maskTable.rows - 1 }} not drawn
-            </div>
-            <div v-if="!singlePlane" class="cc-muted cc-fs-3xs">
-              {{ mode === 'volume' ? '3D' : 'The ± window' }} shows the nearest mask surface
-            </div>
-          </template>
-          <div v-else class="cc-empty-inline cc-fs-2xs">
-            No mask shown — tick one in the viewer panel
-          </div>
+        <VwSegmentationSection :mask-name="maskName" :mask-state="previewVn ? 'preview' : liveVn ? 'live' : ''"
+                               v-model:hidden="maskHidden" :shown-label-count="shownLabelCount"
+                               :label-name="labelName" :colour-note="maskColourNote"
+                               :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
+                               :single-plane="singlePlane" :mode="mode" @redraw="frame.redraw()" />
 
-        </CollapsibleSection>
-        <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
-                            accordion="cc.vw.section" section="pops"
-                            fill>
-          <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
-               and no populations, and an empty group would read as a broken feature rather than as an
-               image that has not been through segmentation yet.
-               Panel gate off = the whole section reads as inactive rather than as a cell-count summary
-               ("how you can show a pops stats when the pops toggle in the viewer
-               controls is off").
-               Empty-state phrasing lines up with Segmentation and Tracks. -->
-          <template v-if="!popsPanelOn">
-            <div class="cc-empty-inline cc-fs-2xs">
-              No populations shown — enable in the viewer panel
-            </div>
-          </template>
-          <template v-else-if="summary.cells > 0 || overlaysErr">
-            <div v-if="overlaysErr" class="cc-muted-warn cc-fs-2xs">{{ overlaysErr }}</div>
-            <!-- "cells but no populations" is a DIFFERENT state from "no cells", and they look identical
-                 on the canvas — so the panel names which one it is. -->
-            <div v-else-if="summary.pops === 0" class="cc-muted cc-fs-2xs">
-              {{ summary.cells }} cells, no populations gated
-            </div>
-            <template v-else>
-              <!-- Section-wide eyes, same icons as the Channels row. They act on EVERY listed pop —
-                   all segmentations × pop types the panel has on — so "one at a time" means one pop
-                   on screen, whichever segmentation it is from. -->
-              <div class="cc-row cc-row-tight">
-                <div class="cc-row-group">
-                <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allPopsVisible }]"
-                        @click="setAllPops(!allPopsVisible)" :aria-pressed="allPopsVisible"
-                        v-tooltip.right="allPopsVisible ? 'Hide every population' : 'Show every population'"
-                        aria-label="Toggle every population">
-                  <i :class="['pi', allPopsVisible ? 'pi-eye' : 'pi-eye-slash']" />
-                </button>
-                <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': soloPop }]"
-                        @click="soloPop = !soloPop" :aria-pressed="soloPop"
-                        v-tooltip.right="'One at a time — showing a population hides the others'"
-                        aria-label="Show one population at a time">
-                  <i class="pi pi-dot-circle" />
-                </button>
-                </div>
-              </div>
-              <template v-for="l in listedPopLayers" :key="l.vn + '::' + l.popType">
-                <!-- one group per (segmentation, pop type); named only when there is more than one -->
-                <div v-if="popLayerSegs > 1 || popLayerTypes > 1" class="cc-muted cc-fs-3xs">
-                  {{ popLayerSegs > 1 ? l.vn : '' }}{{ popLayerSegs > 1 && popLayerTypes > 1 ? ' · ' : '' }}{{ popLayerTypes > 1 ? l.popType : '' }}
-                </div>
-                <div v-for="pop in l.payload.pops" :key="pop.path" class="cc-row cc-row-tight">
-                  <span class="vw-swatch" :style="{ background: pop.colour }" />
-                  <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
-                  <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
-                  <CcToggle
-                    :model-value="!hiddenPops.has(popKey(l.vn, l.popType, pop.path))"
-                    v-tooltip.bottom="'Draw this population over the image'"
-                    :aria-label="'Show ' + pop.name" @update:modelValue="v => setPopEye(l, pop, v)"
-                  />
-                </div>
-              </template>
-              <!-- No colour-by picker: locked decision 3. The CHOICE lives in ViewerPanel's Colour by
-                   section, keyed per set. This row shows what it resolved to; the legend below shows
-                   its scale. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4. -->
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-                <span class="cc-fs-2xs vw-grow" :title="colourBy || 'population'">
-                  {{ colourBy || 'population' }}
-                </span>
-              </div>
-              <!-- The legend says which SCALE is in use, because that is the server's decision (the same
-                   rule the plots use) and the two kinds look nothing alike. -->
-              <div v-if="colourLegend?.kind === 'numeric'"
-                   class="cc-row cc-row-tight cc-fs-3xs">
-                <span class="cc-muted">{{ (colourLegend.range?.[0] ?? 0).toPrecision(3) }}</span>
-                <span class="vw-ramp" :style="rampStyle" />
-                <span class="cc-muted">{{ (colourLegend.range?.[1] ?? 1).toPrecision(3) }}</span>
-              </div>
-              <div v-else-if="colourLegend?.kind === 'categorical'"
-                   class="cc-muted cc-fs-3xs">
-                {{ colourLegend.levels.length }} levels
-              </div>
+        <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
+                              :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
+                              :all-visible="allPopsVisible" v-model:solo="soloPop" :colour-by="colourBy"
+                              :legend="colourLegend" :ramp-style="rampStyle" :single-plane="singlePlane"
+                              :has-z="meta!.nZ > 1" v-model:point-size="pointSize" v-model:point-border="pointBorder"
+                              :point-count="pointCount" :mode="mode" :z-loaded="zLoaded"
+                              @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
 
-              <div v-if="singlePlane && meta!.nZ > 1" class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
-                <input
-                  type="range" class="vw-grow" :min="0" :max="10" :step="1"
-                  v-model.number="settings.viewerPointZTol" @input="frame.redraw()"
-                  v-tooltip.bottom="'Planes either side that still show a cell — 0 is the exact plane'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerPointZTol }}</span>
-              </div>
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Point size</span>
-                <input
-                  type="range" class="vw-grow" :min="2" :max="24" :step="1"
-                  v-model.number="pointSize" @input="frame.redraw()"
-                  v-tooltip.bottom="'Marker size in image pixels — scales with zoom'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ pointSize }}</span>
-              </div>
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col">Border</span>
-                <input
-                  type="range" class="vw-grow" :min="0" :max="6" :step="1"
-                  v-model.number="pointBorder" @input="frame.redraw()"
-                  v-tooltip.bottom="'Black outline around every point (0 = none)'"
-                >
-                <span class="cc-readout cc-fs-2xs vw-num">{{ pointBorder }}</span>
-              </div>
-              <div class="cc-muted cc-fs-3xs">
-                <template v-if="popLayerSegs === 1">{{ listedPopLayers[0]?.vn }} · </template>
-                {{ pointCount }} drawn · {{ summary.cells }} cells
-                <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
-                <template v-if="singlePlane">· this plane only</template>
-                <template v-else-if="mode === 'plane'">· planes {{ zLoaded[0] }}–{{ zLoaded[1] }}</template>
-              </div>
-            </template>
-          </template>
+        <VwTracksSection :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
+                         :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
+                         :single-plane="singlePlane" :has-z="meta!.nZ > 1"
+                         @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />
 
-        </CollapsibleSection>
-        <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
-                            accordion="cc.vw.section" section="tracks"
-                            fill>
-          <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
-               section colours + shapes the ribbons. Gated on a ribbon-drawable pop as well as on
-               drawn segments: hiding every pop's ribbon drops segCount to 0, and the per-pop eyes
-               that turn them back on must stay. -->
-          <template v-if="segCount > 0 || trackDrawablePops.length > 0">
-            <!-- Per-pop ribbon rows: one line per gated pop with tracks (isTrack || hasTracks),
-                 mirroring the Populations section above (swatch/name/count/toggle). The eye hides
-                 the ribbon layer WITHOUT touching the point layer's eye — `ribbonEyes` is a
-                 separate bag from `popEyes` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
-            <div v-for="pop in trackDrawablePops" :key="pop.key" class="cc-row cc-row-tight">
-              <span class="vw-swatch" :style="{ background: pop.colour }" />
-              <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ pop.name }}</span>
-              <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
-              <CcToggle
-                :model-value="pop.drawn" :disabled="pop.clusterHeld"
-                v-tooltip.bottom="pop.clusterHeld ? 'Track clusters are drawing this segmentation' : 'Draw this population as a track ribbon layer'"
-                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop)"
-              />
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
-              <select v-model="trackColorMode" class="cc-fs-2xs vw-grow"
-                      v-tooltip.bottom="'How ribbons are coloured'">
-                <option value="track">track</option>
-                <option value="speed">speed</option>
-                <option value="solid">source</option>
-                <option value="pop">population</option>
-              </select>
-            </div>
-            <!-- Numeric ramp for speed mode — same shape as the point colour-by legend, so the reading
-                 stays consistent across overlay kinds. µm per frame (Δt = 1 hop). -->
-            <div v-if="trackColorMode === 'speed' && trackSpeedRange"
-                 class="cc-row cc-row-tight cc-fs-3xs">
-              <span class="cc-muted">{{ trackSpeedRange[0].toPrecision(3) }}</span>
-              <span class="vw-ramp" :style="rampStyle" />
-              <span class="cc-muted">{{ trackSpeedRange[1].toPrecision(3) }} µm/frame</span>
-            </div>
-            <!-- Per-source legend for solid mode — one row per ticked vn, showing a clickable
-                 swatch (the shared ColourPicker) + count. Same picker + palette as the population
-                 manager, so a source's colour authored here matches the visual language elsewhere.
-                 Doubles as a diagnostic: a vn with count 0 would be ticked but have no tracked
-                 cells; buildMultiTrackBuffer filters those out already, so the legend only lists
-                 sources that actually drew. -->
-            <template v-if="trackColorMode === 'solid' && trackSources.length">
-              <div v-for="src in trackSources" :key="src.vn" class="cc-row cc-row-tight cc-fs-3xs">
-                <ColourPicker :model-value="src.hex"
-                              @update:model-value="hex => setTrackSourceColour(src.vn, hex)"
-                              :tip="'Colour for ' + src.vn" />
-                <span class="cc-fs-2xs vw-pop-name" :title="src.vn">{{ src.vn }}</span>
-                <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
-              </div>
-            </template>
-            <div v-if="singlePlane && meta!.nZ > 1" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="10" :step="1"
-                v-model.number="settings.viewerTrackZTol" @input="frame.redraw()"
-                v-tooltip.bottom="'Planes either side that still show a tail'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">±{{ settings.viewerTrackZTol }}</span>
-            </div>
-            <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="60" :step="1"
-                v-model.number="settings.viewerTailLength" @input="frame.redraw()"
-                v-tooltip.bottom="'Track history in frames — 0 hides the tails'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailLength }}</span>
-            </div>
-            <div v-if="settings.viewerTailLength > 0" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Tail width</span>
-              <input
-                type="range" class="vw-grow" :min="1" :max="12" :step="1"
-                v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
-                v-tooltip.bottom="'Tail thickness in image pixels — scales with zoom'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
-            </div>
-            <div class="cc-muted cc-fs-3xs">
-              {{ segCount }} segments · {{ trackSources.length }} source{{ trackSources.length === 1 ? '' : 's' }}
-            </div>
-          </template>
-          <div v-else class="cc-empty-inline cc-fs-2xs">
-            No tracks shown — tick a segmentation in the viewer panel
-          </div>
-
-        </CollapsibleSection>
         <CollapsibleSection label="ROIs" tip="Regions found by Find ROIs, for review"
                             accordion="cc.vw.section" section="rois"
                             fill>
@@ -7165,11 +6579,6 @@ onUnmounted(() => {
 .vw { display: flex; flex: 1; min-height: 0; background: var(--cc-surface-1); overflow: auto; }
 /* The size slider shares its row with a toggle and a readout, so it needs a floor it cannot be
    squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
-.vw-px { min-width: 3.5rem; }
-.vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
-.vw-landscape-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
-.vw-landscape-sub-lbl { margin-left: 0.4rem; }
-.vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid rgba(0,0,0,0.15); }
 /* A population row: swatch, name that can shrink, count, toggle. The name is the only flexible part —
    letting the count or the toggle shrink is what made the channel rows overlap. */
 .vw-swatch { flex: none; width: 0.7rem; height: 0.7rem; border-radius: var(--cc-radius-xs);
@@ -7204,25 +6613,20 @@ onUnmounted(() => {
    `pointer-events` so the Reload button (device-lost case) is clickable. */
 .vw-status-chip {
   position: absolute; left: 0.75rem; bottom: 0.75rem;
-  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
-  background: rgba(0, 0, 0, 0.78); color: #fff;
-  font-size: var(--cc-fs-xs); pointer-events: none;
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
+  pointer-events: none; max-width: calc(100% - 1.5rem);
 }
-.vw-status-chip-error { color: var(--cc-sev-fail); pointer-events: auto; }
+/* the error and warning chips carry a button, so they take clicks */
+.vw-status-chip-error { pointer-events: auto; }
 .vw-status-chip-warn { color: var(--cc-sev-warn); pointer-events: auto; }
-.vw-status-chip-icon { font-size: 1em; }
-.vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
-.vw-status-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
-.vw-status-chip-dismiss:hover { opacity: 1; }
+.vw-status-chip-btn { margin-left: 0.35rem; color: var(--cc-hud-text); }
 /* The one-at-a-time stepper borrows the chip's look, top-centre. The light border keeps it visible on a
    black frame, where the chip's dark fill alone disappears. */
 .vw-solo-chip {
   top: 0.75rem; bottom: auto; left: 50%; transform: translateX(-50%);
   pointer-events: auto; gap: 0.15rem; padding: 0.15rem 0.25rem;
-  border: 1px solid rgba(255, 255, 255, 0.35); font-size: var(--cc-fs-sm);
+  border: 1px solid color-mix(in srgb, var(--cc-hud-text) 35%, transparent); font-size: var(--cc-fs-sm);
 }
-.vw-solo-step { color: #fff; }
+.vw-solo-step { color: var(--cc-hud-text); }
 .vw-solo-names { display: grid; min-width: 0; text-align: center; }
 .vw-solo-name {
   grid-area: 1 / 1; visibility: hidden; padding: 0 0.15rem;
@@ -7240,7 +6644,7 @@ onUnmounted(() => {
 .vw-corner-tr > * { pointer-events: auto; }
 .vw-overview-wrap {
   position: relative;
-  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); overflow: hidden;
   cursor: crosshair; touch-action: none;
 }
@@ -7253,8 +6657,8 @@ onUnmounted(() => {
 .vw-overview-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Faint tint over the (possibly empty) canvas so the frame stays visible before the thumbnail
    arrives. Once tissue is drawn behind, it shows through. */
-.vw-overview-bg { fill: rgba(255, 255, 255, 0.04); }
-.vw-overview-vp { fill: rgba(255, 255, 255, 0.10); stroke: var(--cc-accent); stroke-width: 1.5; }
+.vw-overview-bg { fill: color-mix(in srgb, var(--cc-hud-text) 4%, transparent); }
+.vw-overview-vp { fill: color-mix(in srgb, var(--cc-hud-text) 10%, transparent); stroke: var(--cc-accent); stroke-width: 1.5; }
 /* No background: the renderer clears to black, and the overlay covers the pre-first-frame gap. */
 .vw-canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .vw-canvas:active { cursor: grabbing; }
@@ -7307,7 +6711,7 @@ onUnmounted(() => {
 .vw-pbox-bar {
   position: absolute;
   display: flex; gap: 2px; pointer-events: auto;
-  background: rgba(0, 0, 0, 0.78); border-radius: var(--cc-radius-xs); color: #fff;
+  background: var(--cc-hud-bg); border-radius: var(--cc-radius-xs); color: var(--cc-hud-text);
 }
 .vw-pbox-grip { cursor: move; }
 .vw-pbox-hint { pointer-events: none; }
@@ -7378,17 +6782,6 @@ onUnmounted(() => {
    next to them — so without a fixed box the track resized on every frame of playback. That is the other
    half of what read as the panel jiggling. */
 .vw-num { flex: none; min-width: 4.5rem; text-align: right; }
-.vw-striprow { display: flex; align-items: center; gap: 0.3rem; }
-.vw-strip { display: flex; gap: 1px; height: 0.35rem; flex: 1; min-width: 0; }
-/* Always laid out, only ever recoloured — the space is reserved so nothing reflows when it lights up. */
-/* the waiting light blinks — added to .cc-dot, the shape and tone stay canonical */
-.vw-dot.cc-dot-warn { animation: vw-blink 0.9s ease-in-out infinite; }
-@keyframes vw-blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.15 } }
-@media (prefers-reduced-motion: reduce) { .vw-dot.cc-dot-warn { animation: none } }
-.vw-cell { flex: 1; background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
-.vw-cell.is-resident { background: var(--cc-accent); }
-.vw-cell.is-loading { background: var(--cc-accent-tint); }
-.vw-cell.is-current { background: var(--cc-text); }
 /* Tile residency mini map — spatial analog of the timecourse strip. Same visual language: cells on
    `--cc-surface-2`, filled `--cc-accent` when resident. Loading is amber (`--cc-sev-warn`) rather
    than the strip's `--cc-accent-tint`, per "just blue dots and amber for loading"
@@ -7420,16 +6813,15 @@ onUnmounted(() => {
    down the column. */
 .vw-cachemap {
   flex: none;
-  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); padding: 2px;
 }
-/* Slider rows (Depth/Plane, ± planes, Timepoint, Fps): label column, slider, readout column, then
+/* Slider rows (Depth/Plane, ± planes; Timepoint and Fps restate these in VwTimeControls): label column, slider, readout column, then
    the ± button's square (or a spacer the same size) — so every slider starts and ends on one x, and
    the fixed readout slot stops digits jittering the slider on every playback tick. */
 .vw-slider-row { flex-wrap: nowrap; }
 .vw-readout-col { min-width: 2.6rem; text-align: right; flex: none; white-space: nowrap; }
 .vw-icon-spacer { display: inline-block; flex: none; }
-.vw-transport { display: inline-flex; align-items: center; gap: 0.15rem; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:
    center` keeps the value baselines centered against the taller label text — grid's default
@@ -7454,7 +6846,4 @@ onUnmounted(() => {
   margin-left: 0.4rem;
 }
 .vw-rec { color: var(--cc-sev-warn); }
-/* Playback-throttled state: repaint the Fps readout number amber. No extra element, no width
-   change — the Fps slider stays the size it was. */
-.vw-num.vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
 </style>

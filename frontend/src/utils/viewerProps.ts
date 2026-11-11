@@ -23,7 +23,8 @@ import type { ViewerChannel, ViewerMeta, OrbitCamera } from './volumeViewer'
 /** Palette hex of a channel (single-hue), from the last LUT stop. Empty string if unavailable.
  *
  *  Stops are 0-1 (see `lutFromHex` in volumeViewer.ts), so scale to 0-255 before `toHex`. Matches
- *  the SFC's own `channelHex` — a second table is how the viewer's SHG once came out WHITE. */
+ *  what the viewer window's Channels swatch shows (`VwChannelsSection`, which uses this) — a second
+ *  table is how the viewer's SHG once came out WHITE. */
 export function channelHexFrom(lut: number[][]): string {
   if (!lut.length) return ''
   const last = lut[lut.length - 1]

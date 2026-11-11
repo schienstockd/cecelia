@@ -187,8 +187,8 @@ const DECLARED_TIMERS: Record<string, string> = {
   'stores/taskPreview.ts':            'a POLL loop while the preview worker warms up — each tick arms the next',
   'stores/guide.ts':
     'two, both deliberate: a POLL that re-reads DOM-derived gate state while a guide is open (Vue cannot track a <select>\'s value), and a one-shot delay before advancing a satisfied step so the user sees it acknowledged',
-  'modules/ViewerWindow.vue':
-    'the playback clock — a chosen frame rate, so a timer and not rAF; each tick arms the next, and a tick that finds the frame uncached holds instead of advancing',
+  'composables/useVwPlayback.ts':
+    'the viewer window\'s playback clock — a chosen frame rate, so a timer and not rAF; each tick arms the next, and a tick that finds the frame uncached holds instead of advancing',
   'components/canvas/SummaryPanel.vue':
     'trailing sticky window that holds the plot spinner up between fetches during a click burst — the fetch scheduler stays at the standard 80 ms wait; this only defers the spinner-off transition so intermediate re-renders stay covered instead of the plot trickling in one pop at a time',
 }

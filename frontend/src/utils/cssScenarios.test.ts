@@ -396,16 +396,13 @@ describe('colour literals', () => {
   const EXEMPT: Record<string, string> = {
     // a print sheet: black ink on white paper, by definition, in every scheme
     'components/AcquisitionCardSheet.vue': 'print',
-    // being split into components/viewerWindow/ — swept in that change, against these tokens
-    'modules/ViewerWindow.vue': 'pending split',
   }
-  const PENDING_DIR = 'components/viewerWindow/'   // the split's destination, same reason
 
   it('are never written in component CSS — read a token, or mark the line COLOUR-OK', () => {
     const sources = Object.entries(RAW)
       .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
       .filter(({ path }) => (path.endsWith('.vue') || path.endsWith('.css'))
-        && !EXEMPT[path] && !path.startsWith(PENDING_DIR))
+        && !EXEMPT[path])
     expect(sources.length).toBeGreaterThan(100)   // the glob resolved
 
     const found = findColourLiterals(sources).map(r => `${r.path}:${r.line} ${r.literal}`)
