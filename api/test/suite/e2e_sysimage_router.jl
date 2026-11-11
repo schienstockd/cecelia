@@ -119,8 +119,7 @@ end
     # comments stripped so a mention in prose can't trip the scan (crude, but `#` inside a string
     # would only ever cause a FALSE ALARM here, never a miss)
     # walkdir, not readdir: route files live in api/src/routes/, and a top-level scan let one through
-    sources = join([replace(read(joinpath(root, f), String), r"#[^\n]*" => "")
-                    for (root, _, files) in walkdir(src_dir) for f in files if endswith(f, ".jl")], "\n")
+    sources = join([replace(read(f, String), r"#[^\n]*" => "") for f in api_src_jl_files(src_dir)], "\n")
 
     missing_exports = Symbol[]
     for sym in names(Cecelia; all = true)

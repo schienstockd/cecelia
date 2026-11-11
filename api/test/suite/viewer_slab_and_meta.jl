@@ -312,8 +312,7 @@ Base.getindex(p::_WriterProbe, i::Int) = p.data[i]
     @test _fetch_unwrapped(Threads.@spawn 1 + 1) == 2
     # Every pool hop that writes the response from the spawned task fetches it unwrapped — a bare
     # `fetch(Threads.@spawn …)` in api/src would turn each client disconnect into an Error log.
-    for f in readdir(joinpath(@__DIR__, "..", "..", "src"); join = true)
-        endswith(f, ".jl") || continue
+    for f in api_src_jl_files()                      # recursive: api/src/routes/ included
         @test (basename(f), occursin(r"\bfetch\(Threads\.@spawn", read(f, String))) == (basename(f), false)
     end
 end
