@@ -215,7 +215,7 @@ class MeasureUtils:
     # ── public entry point ────────────────────────────────────────────────────
 
     def measure_from_zarr(self, label_zarrs: dict, im_dat, log, label_passes=None,
-                          n_workers: int = 1):
+                          n_workers: int = 1, label_axes: list | None = None):
         """
         label_zarrs : {'base': [level0, level1, …], 'nuc': […], …}  – multiscale level lists
                       (as returned by zarr_utils.open_as_zarr; level 0 is full-res)
@@ -227,6 +227,8 @@ class MeasureUtils:
                       one-based, as the form and the preview number the same passes; see
                       `zarr_utils.pass_display_name`.
         n_workers   : worker processes for the measurement (threads for the cheap bbox scan).
+        label_axes  : the BASE store's axis letters as written (`zarr_utils.store_axes`); default
+                      the image's axes minus C. Every label type is read with these axes.
 
         All label types are measured together and written to a single .h5ad file.
         Non-base types (nuc, cyto, halo) contribute extra intensity columns to the
@@ -257,8 +259,8 @@ class MeasureUtils:
         la_t   = dim_order.index('T') if 'T'  in dim_order else None
         la_c   = dim_order.index('C') if 'C'  in dim_order else None
 
-        # label axis order has no C
-        label_dim_order = [ax for ax in dim_order if ax != 'C']
+        # label axis order has no C — and may have no Z either (ridges writes a single plane (T)YX)
+        label_dim_order = list(label_axes) if label_axes else [ax for ax in dim_order if ax != 'C']
         l_la_t = label_dim_order.index('T') if 'T' in label_dim_order else None
 
         base_arr = label_zarrs['base'][0]   # full-res array (level 0)
@@ -286,6 +288,10 @@ class MeasureUtils:
                     f'{len(names)} passes ({", ".join(names)})')
 
         store_axes = [ax for ax in label_dim_order if ax != 'T']        # the label store's own axes
+        if is_3d and 'Z' not in store_axes:
+            raise ValueError(
+                f'labels are 2D but the image has {dim_sizes["Z"]} Z slices — '
+                're-segment per Z slice to measure them against this image')
         spatial = [ax for ax in store_axes if not (drop_z and ax == 'Z')]   # the axes measured
         block = max(64, int(self.params.get('blockSize') or block_size_for(base_arr)))
         n_workers = max(1, int(n_workers))
