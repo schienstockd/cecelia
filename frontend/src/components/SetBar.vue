@@ -228,9 +228,8 @@ async function deleteSet() {
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
 }
-.set-bar.inline { padding: 0; background: none; border-bottom: none; flex-shrink: 1; min-width: 0; }
-.set-bar.inline .set-select { min-width: 140px; }
-.set-bar.inline :deep(.set-recipe) { flex-wrap: nowrap; white-space: nowrap; }
+.set-bar.inline { padding: 0; background: none; border-bottom: none; gap: var(--cc-space-2xs); }
+.set-bar.inline .set-select { min-width: 140px; max-width: 14rem; }
 .set-selector { display: flex; align-items: center; gap: var(--cc-space-sm); }
 .set-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; }
 /* .set-uid-copy → cc-btn cc-btn-bare cc-btn-icon */
