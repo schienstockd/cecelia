@@ -591,6 +591,13 @@ end
         @test label_file_paths(proj.uid, img.uid, "cells", "halo,nuc,../x") ==
               ["halo" => joinpath(labels_dir, "cells_halo.zarr")]
         @test isempty(label_file_paths(proj.uid, img.uid, "cells", ""))
+        # a movie draws the same files as the viewer: all but the hidden ones, a halo outside-only
+        @test movie_mask_files(img, "cells", String[]) == [(joinpath(labels_dir, "cells_halo.zarr"), false)]
+        @test isempty(movie_mask_files(img, "cells", ["halo"]))
+        @test movie_mask(img; value_name = "cells", contour_px = 1, opacity = 1.0, all_cells = true).files ==
+              [(joinpath(labels_dir, "cells_halo.zarr"), false)]
+        @test isempty(movie_mask(img; value_name = "cells", contour_px = 1, opacity = 1.0, all_cells = true,
+                                 files_hidden = ["halo"]).files)
 
         srv = HTTP.listen!(s -> try_serve_slab(s, s.message.target) ||
                                 (HTTP.setstatus(s, 404); HTTP.startwrite(s)), "127.0.0.1", 0)
