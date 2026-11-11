@@ -14,7 +14,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSetRecipe } from '../composables/useSetRecipe'
-import { WRITTEN_RECIPES, firstStepOf } from '../utils/setRecipe'
+import { WRITTEN_RECIPES, resumeStepOf, ranPagesOf } from '../utils/setRecipe'
 import { formatWhen } from '../utils/formatWhen'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ProjectPanel from '../components/ProjectPanel.vue'
@@ -41,8 +41,13 @@ const RECENT_COLUMNS: SelectionColumn[] = [
 // "Open T cells": the most recent project, one click (mock frame 3)
 const topRecent = computed(() => projectMeta.current ? null : projectMeta.recent[0] ?? null)
 
-// The suggested recipe is pre-highlighted but not stored until the user picks it (Decision 16).
-const picked = computed(() => own.value?.id ?? suggestion.value?.recipe.id ?? '')
+// Only a STORED recipe is ticked. The suggestion is named on its row and taken with "Use …" — a
+// pre-ticked suggestion could not be clicked into a stored one (clicking the ticked row changes
+// nothing), so the question came back on every visit (Decision 16: suggested, never applied silently).
+const picked = computed(() => own.value?.id ?? '')
+// A set that has its recipe shows one line; the table comes back on "Change".
+const changing = ref(false)
+async function pick(id: string) { await save(id); changing.value = false }
 const recipeRows = computed(() => WRITTEN_RECIPES.map(r => ({
   id: r.id,
   title: r.id === suggestion.value?.recipe.id ? `${r.title} · suggested (${suggestion.value.reason})` : r.title,
@@ -52,9 +57,10 @@ const RECIPE_COLUMNS: SelectionColumn[] = [
   { key: 'title', label: 'Recipe' },
   { key: 'when', label: 'Is this you?', ellipsis: true },
 ]
+// Pick the set up where it is: the first recipe step whose page has not run on it yet.
 const start = computed(() => {
   const r = own.value ?? suggestion.value?.recipe
-  return r ? firstStepOf(r) : null
+  return r && set.value ? resumeStepOf(r, ranPagesOf(set.value.images)) : null
 })
 </script>
 
@@ -83,16 +89,29 @@ const start = computed(() => {
     </div>
 
     <div v-if="projectMeta.current && set" class="welcome-col">
-      <span class="cc-eyebrow">What is set “{{ set.name }}”?</span>
-      <span class="cc-muted">It lights the pages you’ll need. Nothing is hidden.</span>
-      <SelectionTable :columns="RECIPE_COLUMNS" :rows="recipeRows" id-key="id" fit="fill"
-        :model-value="picked" :disabled="busy" @update:model-value="id => save(id)" />
+      <template v-if="own && !changing">
+        <span class="cc-eyebrow">Set “{{ set.name }}”</span>
+        <div class="cc-row welcome-actions">
+          <span>Follows <b>{{ own.title }}</b></span>
+          <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="changing = true"
+            v-tooltip.top="'Select another recipe for this set'">Change</button>
+        </div>
+      </template>
+      <template v-else>
+        <span class="cc-eyebrow">What is set “{{ set.name }}”?</span>
+        <span class="cc-muted">It lights the pages you’ll need. Nothing is hidden.</span>
+        <SelectionTable :columns="RECIPE_COLUMNS" :rows="recipeRows" id-key="id" fit="fill"
+          :model-value="picked" :disabled="busy" @update:model-value="id => pick(String(id))" />
+      </template>
       <div class="welcome-actions cc-row">
+        <button v-if="!own && suggestion" class="cc-btn cc-btn-ghost" :disabled="busy"
+          @click="pick(suggestion.recipe.id)" v-tooltip.top="'Keep it for this set'">
+          Use {{ suggestion.recipe.title }}
+        </button>
         <button v-if="start" class="cc-btn cc-btn-next" @click="router.push(start.route)"
           v-tooltip.top="start.why">
-          Start: {{ start.label }} <i class="pi pi-arrow-right" />
+          {{ own ? 'Continue' : 'Start' }}: {{ start.label }} <i class="pi pi-arrow-right" />
         </button>
-        <span v-if="!own && suggestion" class="cc-muted cc-fs-xs">Pick a recipe to keep it for this set.</span>
       </div>
     </div>
     <ProjectPanel v-if="showPanel" @close="showPanel = false" />

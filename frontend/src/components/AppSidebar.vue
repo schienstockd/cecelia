@@ -128,7 +128,7 @@ function isNavDisabled(item: NavItem): boolean {
             :aria-disabled="isNavDisabled(item)"
           >
             <span class="nav-label">{{ item.label }}</span>
-            <MaturityIndicator v-if="route.path === item.to" class="nav-maturity" :maturity="pageMaturity(item.to)"
+            <MaturityIndicator v-if="route.path === item.to" class="nav-maturity" micro :maturity="pageMaturity(item.to)"
                                :page="item.to" @click.stop.prevent />
             <ComingSoonBadge v-else-if="handCheck(item.to)" tier="experimental" dot class="nav-maturity" />
             <span v-if="item.soon" class="soon-badge">soon</span>

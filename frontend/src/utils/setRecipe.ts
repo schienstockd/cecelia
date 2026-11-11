@@ -7,6 +7,8 @@
 import { RECIPES, isWanted, recipeById, type WrittenRecipe } from '../lib/guides/recipes'
 import { NAV_GROUPS, navLabelFor } from '../lib/navGroups'
 import { stepRoute, recipeRoutes } from './guideMap'
+import { taskLanding } from './kiwiTurn'
+import { funsRunAcross, type RunLogEntry } from './runLog'
 
 /** The shape of a set this needs — a structural subset of `CciaSet`, so tests need no store. */
 export interface RecipeSetLike {
@@ -98,11 +100,25 @@ export function litRoutes(set: RecipeSetLike | null | undefined): Set<string> | 
 }
 
 /** Where a recipe starts: its first required step that lands on a page. */
-export function firstStepOf(recipe: WrittenRecipe): NextStep | null {
-  for (const s of recipe.steps) {
-    const route = stepRoute(s)
-    if (route && !s.optional) return { route, label: navLabelFor(NAV_GROUPS, route), why: s.why }
+/** The pages a set's images have had a successful run on (`taskLanding`, the one fun → page rule). */
+export function ranPagesOf(images: readonly { runLog?: RunLogEntry[] | null }[]): Set<string> {
+  const out = new Set<string>()
+  for (const fun of funsRunAcross(images.map(i => i.runLog))) {
+    const p = taskLanding(fun)?.path
+    if (p) out.add(p)
   }
-  return null
+  return out
 }
+
+/** Where to pick a set up: the first required step whose page has not run on it yet, so a set whose
+ *  images are already imported starts past Import. When every step has run, the last one (where the
+ *  work was); with nothing run, the first. */
+export function resumeStepOf(recipe: WrittenRecipe, ranPages: ReadonlySet<string>): NextStep | null {
+  const steps = recipe.steps.filter(s => !s.optional && stepRoute(s))
+  if (!steps.length) return null
+  const s = steps.find(x => !ranPages.has(stepRoute(x)!)) ?? steps[steps.length - 1]
+  const route = stepRoute(s)!
+  return { route, label: navLabelFor(NAV_GROUPS, route), why: s.why }
+}
+
 

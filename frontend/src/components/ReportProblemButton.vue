@@ -28,6 +28,7 @@ const props = defineProps<{
   tier: Tier
   page?: string
   text?: boolean          // "Something wrong?" in words, not the bare glyph
+  micro?: boolean         // the smallest icon button — inside a text row (the sidebar's page row)
 }>()
 
 const appCtl = useAppControlStore()
@@ -61,7 +62,7 @@ const url = computed(() => problemReportUrl({
 </script>
 
 <template>
-  <button ref="anchor" :class="['cc-btn cc-btn-bare', text ? 'cc-btn-micro cc-fs-2xs' : 'cc-btn-icon']"
+  <button ref="anchor" :class="['cc-btn cc-btn-bare', text ? 'cc-btn-micro cc-fs-2xs' : micro ? 'cc-btn-icon cc-btn-micro' : 'cc-btn-icon']"
           @click="open = !open" v-tooltip.bottom="'Something wrong? Report it on GitHub'"
           aria-label="Report a problem">
     <i class="pi pi-bug" /><template v-if="text"> Something wrong?</template>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { firstStepOf, litRoutes, suggestRecipe, resolveSetRecipe, nextStepFor, nextSourceLine, writtenRecipe, WRITTEN_RECIPES } from './setRecipe'
+import { resumeStepOf, ranPagesOf, litRoutes, suggestRecipe, resolveSetRecipe, nextStepFor, nextSourceLine, writtenRecipe, WRITTEN_RECIPES } from './setRecipe'
 import { RECIPES } from '../lib/guides/recipes'
 
 const imgs = (n: number, sizeT: number, sizeC: number) => Array.from({ length: n }, () => ({ sizeT, sizeC }))
@@ -76,14 +76,33 @@ describe('litRoutes', () => {
   })
 })
 
-describe('firstStepOf', () => {
+describe('resumeStepOf with nothing run — the recipe\'s first step', () => {
   it('starts every written recipe on a sidebar page', () => {
-    for (const r of WRITTEN_RECIPES) expect(firstStepOf(r)?.route, r.id).toMatch(/^\//)
+    for (const r of WRITTEN_RECIPES) expect(resumeStepOf(r, new Set())?.route, r.id).toMatch(/^\//)
   })
   it('skips optional steps', () => {
     const r = writtenRecipe('few-marker-tissue')!
     expect(r.steps[0].optional).toBeFalsy()
-    expect(firstStepOf(r)?.label.length).toBeGreaterThan(0)
+    expect(resumeStepOf(r, new Set())?.label.length).toBeGreaterThan(0)
   })
 })
 
+
+describe('resumeStepOf — where Welcome starts a set', () => {
+  const r = WRITTEN_RECIPES[0]
+  const first = resumeStepOf(r, new Set())!
+  it('starts at the first step when nothing has run', () => {
+    expect(resumeStepOf(r, new Set())?.route).toBe(first.route)
+  })
+  it('skips a step whose page already ran on the set (imported images start past Import)', () => {
+    const next = resumeStepOf(r, new Set([first.route]))
+    expect(next?.route).not.toBe(first.route)
+  })
+  it('reads the pages from successful runs only', () => {
+    const pages = ranPagesOf([{ runLog: [
+      { fun: 'importImages.omezarr', at: '2026-11-11T09:00:00' },
+      { fun: 'segment.cellpose', status: 'failed', at: '2026-11-11T10:00:00' },
+    ] }])
+    expect([...pages]).toEqual(['/manage-images'])
+  })
+})
