@@ -88,8 +88,9 @@ rather than one screen at a time.
     set's recipe is suggested from its axes (time axis → a timelapse recipe), confirmed once per set,
     never applied silently. With no recipe, the next-step slot falls back to "from what has run on
     these images".
-17. **The journey bar stays parked** until now+ has been tried on users (N7). The mocks are not fixed
-    (N8): the built app on an isolated instance is what gets judged.
+17. **The journey bar stays parked** until now+ has been tried on users (N7). ~~The mocks are not fixed
+    (N8)~~: superseded 2026-11-11 — the final mocks are the layout spec, built by
+    [`GUI_LAYOUT_PLAN.md`](GUI_LAYOUT_PLAN.md).
 ## What main already has (2026-11-10, `origin/main` 71509170)
 
 - **Theme:** PrimeVue and Aura are gone. The tokens are the 54 `--cc-*` custom properties in

@@ -428,7 +428,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // deliberately (see App.vue's firstEverTips watcher). Under per-profile settings, `tipsLastShown`
   // hydrates to '' whenever a new profile is picked, which would re-fire the tour for every second
   // person on a shared workstation. The tour is chrome-only; one run per install is the right shape.
-  // Always reachable from the compass afterward.
+  // Always reachable from Help ▾ → Guides afterward.
   const tipsEverShown = ref(localStorage.getItem('cc.tipsEverShown') === 'true')
 
   // transient (not persisted): a one-line preview of an unseen lab-log addition — set when Claude

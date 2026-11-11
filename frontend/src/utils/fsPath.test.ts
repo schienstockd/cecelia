@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fsBreadcrumbs, isPickable } from './fsPath'
+import { fsBreadcrumbs, isPickable, importLastDirKey } from './fsPath'
 
 describe('fsBreadcrumbs', () => {
   it('empty → no crumbs', () => {
@@ -51,5 +51,12 @@ describe('isPickable', () => {
     expect(isPickable(f('p.ccbundle'), 'bundle')).toBe(false)
     expect(isPickable(f('x.tif', false, true), 'image')).toBe(true)
     expect(isPickable(f('x', true), 'dir')).toBe(false)
+  })
+})
+
+describe('importLastDirKey', () => {
+  it('gives each project its own remembered import folder', () => {
+    expect(importLastDirKey('abc123')).not.toBe(importLastDirKey('def456'))
+    expect(importLastDirKey('abc123')).toBe('cc.import.lastDir.abc123')
   })
 })

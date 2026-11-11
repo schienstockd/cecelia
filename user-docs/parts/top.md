@@ -1,7 +1,7 @@
 # Start here: what's in Cecelia
 
 This page names every part of Cecelia once: what it is for and what it needs. The same map is the
-front page of **Guides** in the app (compass icon, top right), where each page is one click away and
+front page of **Guides** in the app (Help ▾ → Guides, top right), where each page is one click away and
 each guide shows you the buttons.
 
 ```mermaid

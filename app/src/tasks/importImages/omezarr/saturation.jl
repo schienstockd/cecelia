@@ -10,7 +10,7 @@ The acquisition clipping + sparsity probe (`saturation_run.py`): one streamed hi
 meta field — or `nothing` when
 the probe failed or the store is not integer data. The ONE implementation — import runs it on every
 new store, `ensure_saturation_meta!` on images imported before the field existed. Advisory: never
-throws.
+throws. No drift estimate: that is the drift correction task's (`data_path` docstring).
 """
 function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
                            on_log::Function = _ -> nothing,
@@ -24,25 +24,31 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
     try
         # Typed read: each channel's nested `profile` (per-depth / per-frame lists) lands as plain
         # Dicts and Vectors, not JSON3 views.
-        res   = JSON3.read(read(result_file, String), Dict{String,Any})
-        chans = get(res, "channels", nothing)
-        (isnothing(chans) || isempty(chans)) && return nothing
-        out = Dict{String,Any}("channels" => [Dict{String,Any}(ch) for ch in chans])
-        pt = get(res, "partialTimepoint", nothing)
-        isnothing(pt) || (out["partialTimepoint"] = Dict{String,Any}(pt))
-        # the signal pass's whole-image results (`data_path.measure_signal`); per-channel ones ride in
-        # `channels`
-        for k in ("sharedStructure", "drift")
-            v = get(res, k, nothing)
-            isnothing(v) || (out[k] = v)
-        end
-        return out
+        return _saturation_from_result(JSON3.read(read(result_file, String), Dict{String,Any}))
     catch e
         @warn "Could not read saturation result" exception = e
         return nothing
     finally
         rm(result_file; force = true)
     end
+end
+
+"""
+    _saturation_from_result(res) -> Union{Dict,Nothing}
+
+The `meta["saturation"]` value from `saturation_run.py`'s result: `nothing` without channels.
+"""
+function _saturation_from_result(res::AbstractDict)::Union{Dict{String,Any},Nothing}
+    chans = get(res, "channels", nothing)
+    (isnothing(chans) || isempty(chans)) && return nothing
+    out = Dict{String,Any}("channels" => [Dict{String,Any}(ch) for ch in chans])
+    pt = get(res, "partialTimepoint", nothing)
+    isnothing(pt) || (out["partialTimepoint"] = Dict{String,Any}(pt))
+    # the signal pass's whole-image results (`data_path.measure_signal`); per-channel ones ride in
+    # `channels`
+    v = get(res, "sharedStructure", nothing)
+    isnothing(v) || (out["sharedStructure"] = v)
+    out
 end
 
 """Fields every probed channel carries from the current probe (`data_path.measure_store`) beyond the
@@ -74,7 +80,10 @@ store, longer on full movies). Returns `true` when it wrote the field. When the 
 nothing (non-integer store, unreadable) nothing is persisted, so the next call tries again. A
 failed write is logged, never thrown.
 """
-function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing)::Bool
+function ensure_saturation_meta!(img::CciaImage;
+                                 on_log::Function = _ -> nothing,
+                                 on_progress::Function = (n, t) -> nothing,
+                                 on_process::Function = _ -> nothing)::Bool
     ccid = state_file(img)
     isfile(ccid) || return false
     meta = get(read_ccid_raw(ccid), "meta", Dict{String,Any}())
@@ -82,7 +91,10 @@ function ensure_saturation_meta!(img::CciaImage; on_log::Function = _ -> nothing
     existing = get(meta, "saturation", nothing)
     zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
-    sat = _probe_saturation(zarr_path, task_run_dir(img._dir); on_log = on_log)
+    # progress + the process handle reach the runner: a full pass over a big movie is minutes, and
+    # cancel needs the handle
+    sat = _probe_saturation(zarr_path, task_run_dir(img._dir); on_log = on_log,
+                            on_progress = on_progress, on_process = on_process)
     isnothing(sat) && return false
     # An already-imported store is not trimmed (derived stores and labels depend on its T); the record
     # alone raises the QC warning.

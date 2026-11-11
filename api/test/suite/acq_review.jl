@@ -31,15 +31,15 @@ end
                       Dict("name" => "Beads", "kind" => "points", "channels" => Dict("d1" => "Beads"))],
         "references" => [Dict("name" => "Collagen", "channels" => Dict("d1" => "SHG"))],
         "measure" => ["uptake"], "compare" => String[], "expectation" => "", "text" => "Measure uptake of B cells")
-    p = acq_review_prompt(plan, ["m1 — uidA"], ["Different objective between movies", "Frames don't register (m1)"])
+    p = acq_review_prompt(plan, ["m1 — uidA"], ["Different objective between movies", "Settings differ (m1)"])
     @test occursin("Plan: “Measure uptake of B cells”", p)
     @test occursin("- B cells — Beads · GFP: GFP", p) && occursin("- Beads (points, counted) — Beads · GFP: Beads", p)
     @test occursin("Reference channels", p) && occursin("Collagen", p) && occursin("Measures: uptake", p)
     @test occursin("- m1 — uidA", p)
     # told what the rules found, so it doesn't spend the turn repeating them
-    @test occursin("do NOT repeat", p) && occursin("- Frames don't register (m1)", p)
+    @test occursin("do NOT repeat", p) && occursin("- Settings differ (m1)", p)
     @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon", p)
-    @test occursin("Category one of: Images and channels, Settings, Depth, Photons, Balance, Shared structure, Drift, Fading, Other", p)
+    @test occursin("Category one of: Images and channels, Settings, Depth, Photons, Balance, Shared structure, Fading, Other", p)
     # the verdict's rule part is the app's: the model is shown it and adds one step, or "Nothing to add."
     pv = acq_review_prompt(plan, ["m1 — uidA"]; verdict = "Collect more light for B cells.")
     @test occursin("these steps from the rule checks —\n“Collect more light for B cells.”", pv)
@@ -118,7 +118,7 @@ end
         uid1 = imgs[1].uid
         ref = Dict("kind" => "image", "imageUid" => uid1)
         reply = Dict("abstain" => false, "claims" => [
-            Dict("kind" => "observation", "text" => "Drift: m1 shifts 40 µm\nin X over the movie. → Stabilise the preparation.", "refs" => [ref]),
+            Dict("kind" => "observation", "text" => "Fading: m1 dims 40 %\nover the movie. → Lower the laser power.", "refs" => [ref]),
             Dict("kind" => "interpretation", "text" => "Add a bead-only control movie.", "refs" => [ref])])
         fake = _AcqReviewFake([Cecelia.AgentResult(true, "", 10, 20, "s1", "", JSON3.read(JSON3.write(reply)),
                                                    ["""{"uid":"$uid1"}"""])], String[])
@@ -159,11 +159,11 @@ end
         rv = a["review"]
         @test rv["status"] == "done" && length(rv["claims"]) == 2
         x = rv["claims"][1]
-        @test x["category"] == "drift" && x["text"] == "M1 shifts 40 µm in X over the movie." && x["action"] == "Stabilise the preparation."
+        @test x["category"] == "fading" && x["text"] == "M1 dims 40 % over the movie." && x["action"] == "Lower the laser power."
         sid = x["sectionId"]
         @test sid == "s01" && a["reviewIds"]["review|" * x["text"]] == sid
         md = entry_md(proj.uid, id)
-        @test occursin("### Drift\n\n### s01 · M1 shifts 40 µm in X over the movie. → Stabilise the preparation.", md)
+        @test occursin("### Fading\n\n### s01 · M1 dims 40 % over the movie. → Lower the laser power.", md)
         # the verdict: the rule checks' steps, then the model's one added step
         @test occursin(r"## Before acquiring the rest\n\n[^\n]+\.\n\nModel adds: Add a bead-only control movie\.", md)
         @test !occursin("## Model review\n\n## ", md)

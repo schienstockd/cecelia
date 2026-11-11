@@ -3,6 +3,7 @@
 // (app/src/lab_log.jl); the panel just renders what /api/lablog returns and formats a new entry.
 // Keeping author classification + the correction template here (one source of truth) means the
 // colour coding, the badge, and the correction prefill all agree. See docs/ai-assist/LAB-LOG.md.
+import { SEVERITY } from '../lib/severity'
 
 export interface LabLogEntry {
   date: string        // YYYY-MM-DD (injected by the backend)
@@ -188,4 +189,16 @@ export const labArchivesSyncedOn = (syncedAt?: string): string => (syncedAt ?? '
 export function labArchivesGapText(g: LabArchivesGap): string {
   const n = g.declared > 0 ? `${g.declared} ` : ''
   return `${g.attr} = ${g.value}: ${n}in the notebook, none here`
+}
+
+// The lab-log launcher's unseen badge and tip — ONE rule for both launchers (the header bell and the
+// maximised action bar's row, PanelLaunchers.vue). Cecelia digests colour by severity (⚠️/❌); Claude
+// notes keep the host's accent, so `null` means "no override".
+export function unseenBadgeColour(level: '' | 'warn' | 'fail'): string | null {
+  return level ? SEVERITY[level].color : null
+}
+export function labLogLauncherTip(o: { unseen: string; kind: '' | 'claude' | 'cecelia'; open: boolean; aiOn: boolean }): string {
+  if (o.unseen) return (o.kind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + o.unseen
+  if (o.open) return 'Close lab log'
+  return o.aiOn ? 'Lab log — analysis notes for this project (you + Claude)' : 'Lab log — analysis notes for this project'
 }

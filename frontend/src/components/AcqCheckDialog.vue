@@ -83,7 +83,7 @@ const reviewText = (t: string) => showImageRefs(t, nameByUid.value, settings.sho
 
 const objectNames = computed(() => plan.value?.objects.map(o => o.name) ?? [])
 // The set's noun ("movie" only when every image is a time-lapse) and which columns the set has values
-// for: lasers, a camera, Bright Z, drift (time-lapse only).
+// for: lasers, a camera, Bright Z.
 const item = computed(() => result.value?.item ?? 'image')
 const items = computed(() => result.value?.items ?? 'images')
 const Item = computed(() => item.value[0].toUpperCase() + item.value.slice(1))
@@ -92,7 +92,6 @@ const has = computed(() => ({
   lasers: rowsAll.value.some(r => r.lasers && r.lasers !== '—'),
   camera: rowsAll.value.some(r => r.camera),
   brightZ: rowsAll.value.some(r => r.brightZ !== null),
-  drift: items.value === 'movies',
 }))
 const columns = computed<SelectionColumn[]>(() => [
   { key: 'name', label: Item.value, ellipsis: true, width: 220 },
@@ -102,7 +101,6 @@ const columns = computed<SelectionColumn[]>(() => [
   ...objectNames.value.map(n => ({ key: `o:${n}`, label: n, width: 55, tip: `${n}: p99 photons on its cells` })),
   ...(objectNames.value.length > 1 ? [{ key: 'ratio', label: 'Balance', width: 60, tip: 'Brightest ÷ dimmest object (p99 photons)' }] : []),
   { key: 'sharedR', label: 'Shared r', width: 80, tip: `Highest r between plan channels · the ${item.value}'s median pair` },
-  ...(has.value.drift ? [{ key: 'drift', label: 'Drift', width: 60, tip: 'Largest XY drift over the movie' }] : []),
 ])
 // the table renders strings: one display row per movie
 const display = (r: AcqRow) => ({
@@ -111,7 +109,6 @@ const display = (r: AcqRow) => ({
   brightZ: brightZText(r),
   ratio: r.ratio === null ? '—' : `${fmt(r.ratio, 1)}×`,
   sharedR: r.sharedBase == null ? fmt(r.sharedR, 2) : `${fmt(r.sharedR, 2)} · ${fmt(r.sharedBase, 2)}`,
-  drift: r.driftUm === null ? '—' : `${fmt(r.driftUm)} µm${r.registers === false ? ' ⚠' : ''}`,
   ...Object.fromEntries(objectNames.value.map(n => [`o:${n}`, fmt(r.objects[n]?.p99 ?? null)])),
 })
 const rowFindings = (uid: string) => (result.value ? findingsFor(result.value, uid) : [])

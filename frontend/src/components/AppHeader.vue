@@ -1,27 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
-import { dotClass, WS_STATUS_TONE } from '../utils/statusDot'
 import { openWhatsNew } from '../lib/whatsNew'
-import { openGuides } from '../lib/guideOpen'
-import { openIconLegend } from '../lib/iconLegendOpen'
-import { openPreferences } from '../lib/preferencesOpen'
-import { openColorLegend } from '../lib/colorLegendOpen'
-import { openCallForDatasets } from '../lib/callForDatasetsOpen'
-import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
-import { shortVersionLabel } from '../utils/versionLabel'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
-import { useRoute } from 'vue-router'
-import MaturityIndicator from './MaturityIndicator.vue'
-import { pageMaturity } from '../utils/maturity'
+import ProjectCrumb from './ProjectCrumb.vue'
+import HelpMenu from './HelpMenu.vue'
+import ProfileMenu from './ProfileMenu.vue'
+import { useObserverStore } from '../stores/observer'
+import { showKiwiLauncher } from '../utils/aiSwitch'
+import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
 
-const route = useRoute()
-
-const ws = useWsStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
+const observer = useObserverStore()
 
 // Update-available badge → opens the What's New modal (release notes + inline Install button).
 // The modal itself is mounted ONCE in App.vue; we just flip the shared open flag. Settings still
@@ -29,30 +21,15 @@ const appCtl = useAppControlStore()
 // badge for this session only ("remind me later"). See docs/todo/WHATS_NEW_PLAN.md.
 function openUpdate() { openWhatsNew() }
 
-// Feijoa brand mark → opens the What's New modal WITH the tip catalogue. Gives users who opted out
-// of the daily launch tip a way to browse them again, and makes the header brand mark do useful
-// double-duty as the "what can this thing do?" entry point.
-function openTips() { openWhatsNew({ withTip: true }) }
-
-// Compact form of appCtl.updateCurrent for the header chip; long dev-provenance line collapses to
-// `dev@<sha7>` (or `<branch>@<sha7>` off-main). Full string stays in the tooltip.
-const versionShort = computed(() => shortVersionLabel(appCtl.updateCurrent))
 const restartUpd = useRestartToUpdate()
 
-const statusLabel: Record<string, string> = {
-  connected:    'Connected',
-  connecting:   'Connecting…',
-  disconnected: 'Disconnected',
-  error:        'Connection error',
-  signedOut:    'Not signed in',
-}
-const statusTip: Record<string, string> = {
-  connected:    'Julia backend is running and reachable.',
-  connecting:   'Attempting to connect to the Julia backend.',
-  disconnected: 'Not connected. Check that the Julia server is running (pixi run dev).',
-  error:        'WebSocket error. See the console below for details.',
-  signedOut:    'Open the sign-in link printed in the terminal that started Cecelia.',
-}
+// Lab-log launcher: the unseen dot and tip follow the shared rule in utils/labLog.ts.
+const bellDotStyle = computed(() => {
+  const c = unseenBadgeColour(settings.labLogUnseenLevel)
+  return c ? { background: c } : {}
+})
+const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen,
+  kind: settings.labLogUnseenKind, open: settings.labLogPanelOpen, aiOn: observer.ai.enabled }))
 </script>
 
 <template>
@@ -63,76 +40,23 @@ const statusTip: Record<string, string> = {
       :aria-label="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'">
       <i class="pi pi-bars" />
     </button>
-    <button type="button" class="logo cc-btn cc-btn-bare cc-btn-dense" data-guide="header.brand"
-            v-tooltip.bottom="'What\'s new + browse tips'"
-            aria-label="Open What's New with tips"
-            @click="openTips">
+    <!-- The wordmark goes to Welcome; What's new + tips moved into Help ▾ (GUI_LAYOUT_PLAN). -->
+    <RouterLink to="/" class="logo cc-btn cc-btn-bare cc-btn-dense" data-guide="header.brand"
+                v-tooltip.bottom="'Welcome — recent projects'" aria-label="Welcome">
       <img class="logo-mark" src="/feijoa.svg" alt="" aria-hidden="true" width="18" height="18" />
       Cecelia
+    </RouterLink>
+
+    <ProjectCrumb />
+
+    <!-- The viewer chip: opens / closes the Viewer panel, which drives the viewer window. Green is
+         the viewer's identity colour; the dot says the panel is open. -->
+    <button type="button" class="viewer-chip" data-guide="launcher.viewer"
+            :class="{ on: settings.viewerPanelOpen }"
+            v-tooltip.bottom="settings.viewerPanelOpen ? 'Close viewer controls' : 'Viewer controls — populations, tracks, colour-by'"
+            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen">
+      <span class="cc-dot vc-on" /> Viewer
     </button>
-
-    <!-- Guides — click-through walkthroughs of the basics (docs/todo/GUIDE_SYSTEM_PLAN.md). A COMPASS,
-         deliberately not a `?`: the brand mark beside it already opens What's New + tips, and `?`
-         already means "what is this Claude panel" in Kiwi. Three different `?`s in one
-         app is worse than one new icon. -->
-    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.guides"
-            v-tooltip.bottom="'Guides — walk through the basics'"
-            aria-label="Open guides"
-            @click="openGuides">
-      <i class="pi pi-compass" />
-    </button>
-
-    <!-- The icon glossary. A KEY — the word for a legend of symbols — and the only glyph in the app
-         that means "what do these symbols mean". Beside the compass because both answer "how does this
-         work?", and NOT in Settings: the question is asked while looking at the symbol. -->
-    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.iconLegend"
-            v-tooltip.bottom="'What the icons mean'"
-            aria-label="Open the icon glossary"
-            @click="openIconLegend">
-      <i class="pi pi-key" />
-    </button>
-
-    <!-- The colour glossary — sibling to the icon key. Same reason it sits here rather than in
-         Settings: "what does this colour mean?" is asked while looking at the swatch. -->
-    <button type="button" class="guides-btn cc-btn cc-btn-bare cc-btn-icon" data-guide="header.colorLegend"
-            v-tooltip.bottom="'What the colours mean'"
-            aria-label="Open the colour glossary"
-            @click="openColorLegend">
-      <i class="pi pi-palette" />
-    </button>
-
-    <!-- Where to go when the app is not the answer: report a problem, or ask someone. Next to the
-         compass on purpose — the three of them are the whole "I am stuck" row, so the escalation from
-         "walk me through it" to "this is broken" to "does anyone know?" reads left to right. Plain
-         `<a target="_blank">`, not a router link: both leave the app. -->
-    <span class="help-links" data-guide="header.help">
-      <!-- Call for Datasets — the entry into the modal that lists what we can build, or test, once
-           a real dataset lands. Before the GitHub icon on purpose: the row now reads "help us
-           build this → report a broken thing → chat", which is the direction the user's ask
-           usually escalates. See docs/todo/CALL_FOR_DATASETS_PLAN.md. -->
-      <button type="button" class="help-link cc-btn cc-btn-bare cc-btn-icon"
-              v-tooltip.bottom="'Call for Datasets — what your data could help us build or test'"
-              aria-label="Call for Datasets"
-              @click="openCallForDatasets()">
-        <i class="pi pi-megaphone" />
-      </button>
-      <a class="help-link cc-btn cc-btn-bare cc-btn-icon" :href="CECELIA_ISSUES_URL"
-         target="_blank" rel="noopener"
-         v-tooltip.bottom="'Report a problem or browse known issues'"
-         aria-label="Cecelia issues on GitHub">
-        <i class="pi pi-github" />
-      </a>
-      <a class="help-link cc-btn cc-btn-bare cc-btn-icon" :href="CECELIA_CHAT_URL"
-         target="_blank" rel="noopener"
-         v-tooltip.bottom="'Ask a question in the Cecelia chat'"
-         aria-label="Cecelia chat on Zulip">
-        <i class="pi pi-comments" />
-      </a>
-    </span>
-
-    <!-- this page's maturity: its tier dot (opens the map row),
-         plus "Something wrong?" — after the help row, because it is the same question asked of one page -->
-    <MaturityIndicator class="page-maturity" :maturity="pageMaturity(route.path)" :page="route.path" />
 
     <span class="spacer" />
 
@@ -161,46 +85,26 @@ const statusTip: Record<string, string> = {
       {{ appCtl.busy ? 'Updating…' : 'Restart to update' }}
     </span>
 
-    <!-- Active profile chip (USER_PROFILE_PLAN Phase 4). Shows who is driving so every window
-         answers "who am I logged in as?" at a glance — a bare icon (which used to sit inside the
-         guide/legend row) blended into the icon toggles and the profile name was invisible. Sits
-         beside the version + ws chips because those already answer "what am I looking at" —
-         version, connection, profile. Click opens Preferences → Profiles for switching. -->
-    <button type="button" class="profile-chip"
-            data-guide="header.profileChip"
-            v-tooltip.bottom="`Active profile: ${appCtl.activeProfileDisplayName} — click to switch`"
-            aria-label="Active profile — open Preferences"
-            @click="openPreferences()">
-      <i class="pi pi-user" />
-      {{ appCtl.activeProfileDisplayName }}
+    <button type="button" class="bell cc-btn cc-btn-bare cc-btn-icon" data-guide="launcher.labLog"
+            :class="{ 'cc-btn-on': settings.labLogPanelOpen }" aria-label="Lab log"
+            v-tooltip.bottom="bellTip" @click="settings.labLogPanelOpen = !settings.labLogPanelOpen">
+      <i class="pi pi-book" />
+      <span v-if="settings.labLogUnseen" class="cc-dot bell-unseen" :style="bellDotStyle" />
     </button>
-
-    <!-- Version chip — the running version as `/api/update/check` reports it (verbatim: a tag like
-         `v0.2.4` for stable, `dev @ main 1a2b3c4` for dev). Matches what Settings → Software's
-         Version field shows, but visible at a glance so a user answering "what version are you on?"
-         doesn't have to hunt. NOT clickable — the Cecelia brand mark to the left already opens
-         What's New. Hidden until the first update-check completes so we never render an empty pill. -->
-    <span v-if="versionShort" class="version-chip"
-          data-guide="header.version"
-          v-tooltip.bottom="'Cecelia ' + appCtl.updateCurrent">
-      {{ versionShort }}
-    </span>
-
-    <span
-      class="ws-badge"
-      data-guide="header.wsBadge"
-      :class="ws.status"
-      v-tooltip.bottom="statusTip[ws.status] ?? ws.status"
-    >
-      <span class="cc-dot" :class="dotClass(WS_STATUS_TONE[ws.status])" />
-      {{ statusLabel[ws.status] ?? ws.status }}
-    </span>
+    <HelpMenu />
+    <!-- Visible with AI off: it is how AI gets turned on (GUI_CLARITY_PLAN Decision 9) -->
+    <button v-if="showKiwiLauncher(observer.ai, settings.kiwiHidden)" type="button"
+            class="kiwi-btn cc-btn cc-btn-dense" data-guide="launcher.kiwi"
+            :class="{ on: settings.kiwiOpen }"
+            v-tooltip.bottom="settings.kiwiOpen ? 'Close Kiwi' : 'Ask about your project, get answers you can check'"
+            @click="settings.kiwiOpen = !settings.kiwiOpen">
+      Ask Kiwi
+    </button>
+    <ProfileMenu />
   </header>
 </template>
 
 <style scoped>
-/* hugs the help row it continues (it asks the same question of one page) */
-.page-maturity { margin-left: -0.35rem; }
 .app-header {
   display: flex;
   align-items: center;
@@ -216,7 +120,7 @@ const statusTip: Record<string, string> = {
 .nav-toggle { margin-left: -0.3rem; }   /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .nav-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
-/* + cc-btn cc-btn-bare cc-btn-dense — the brand mark doubles as the "browse tips" entry point. */
+/* + cc-btn cc-btn-bare cc-btn-dense — the wordmark goes to Welcome. */
 .logo {
   font-weight: 700;
   font-size: 0.95rem;
@@ -230,79 +134,29 @@ const statusTip: Record<string, string> = {
 .logo-mark { display: block; flex: none; }
 .logo:hover { color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
 
-/* .guides-btn → cc-btn cc-btn-bare cc-btn-icon — sits immediately right of the brand mark, so the
-   two "how does this work?" entry points read as a pair. */
-.guides-btn { margin-left: -0.35rem; color: var(--cc-guide); }
-.guides-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-
-/* .help-link → cc-btn cc-btn-bare cc-btn-icon, which already carries the muted/hover colours. These
-   deliberately do NOT take `--cc-guide` like the compass: they leave the app, so they sit a step
-   quieter rather than competing with it for the same glance. Layout only here. */
-.help-links { display: inline-flex; align-items: center; gap: 0.1rem; margin-left: -0.35rem; }
-.help-link:hover { background: var(--cc-surface-2); }
 
 .spacer { flex: 1; }
 
-/* Profile chip — same pill shape as version + ws-badge; distinct from the guide/legend icon
-   toggles (which are `.guides-btn .cc-btn-bare .cc-btn-icon`). Clickable (opens Preferences)
-   so the accent-tinted hover is deliberate. */
-.profile-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: var(--cc-fs-sm);
-  font-weight: 500;
-  padding: 0.2rem 0.65rem;
-  border-radius: var(--cc-radius-pill);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-  border: 1px solid transparent;
+/* Viewer chip — the viewer's identity green, a dot that lights while the Viewer panel is open. The
+   pressed state is the identity colour, not `.cc-btn-on` (which paints the accent): same rule as the
+   launcher row in PanelLaunchers.vue, GUI_CLARITY_PLAN Decision 15. Ask Kiwi below likewise. */
+.viewer-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem; height: 24px; padding: 0 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--cc-viewer) 45%, transparent); border-radius: var(--cc-radius-pill);
+  background: none; color: var(--cc-viewer); font-size: var(--cc-fs-sm); cursor: pointer; white-space: nowrap;
 }
-.profile-chip:hover { color: var(--cc-text); border-color: var(--cc-kiwi); }
+.viewer-chip:hover { background: color-mix(in srgb, var(--cc-viewer) 10%, transparent); }
+.viewer-chip.on { background: color-mix(in srgb, var(--cc-viewer) 16%, transparent); border-color: var(--cc-viewer); }
+.viewer-chip.on .vc-on { background: var(--cc-viewer); }   /* identity colour, not a status tone */
 
-/* Version chip — muted, monospace-numeric, same pill shape as ws-badge for visual rhyme.
-   Deliberately status-only, not a control: the Cecelia brand mark is the release-notes entry. */
-.version-chip {
-  font-size: var(--cc-fs-sm);
-  font-weight: 500;
-  padding: 0.2rem 0.65rem;
-  border-radius: var(--cc-radius-pill);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  line-height: 1;
-  cursor: default;
-}
+/* Lab-log bell — the unseen dot sits on the bell's shoulder. */
+.bell { position: relative; }
+.bell-unseen { position: absolute; top: 3px; right: 3px; background: var(--cc-accent); }
 
-.ws-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--cc-fs-sm);
-  font-weight: 500;
-  padding: 0.2rem 0.65rem;
-  border-radius: var(--cc-radius-pill);
-  cursor: default;
-  white-space: nowrap;
-}
-
-/* The badge takes its tint and text from its dot's tone (--cc-dot-*), so the pill and the light can
-   never disagree — the label says what the dot means. */
-.ws-badge              { --ws-tone: var(--cc-dot-idle);
-                         background: color-mix(in srgb, var(--ws-tone) 14%, transparent);
-                         color: color-mix(in srgb, var(--ws-tone) 55%, white); }
-.ws-badge.connected    { --ws-tone: var(--cc-dot-ok); }
-.ws-badge.connecting   { --ws-tone: var(--cc-dot-warn); }
-.ws-badge.error,
-.ws-badge.signedOut    { --ws-tone: var(--cc-dot-fail); }
-.ws-badge.disconnected { color: var(--cc-text-dim); }
-.ws-badge.connected .cc-dot,
-.ws-badge.error .cc-dot,
-.ws-badge.signedOut .cc-dot { box-shadow: 0 0 5px var(--ws-tone); }
+/* Ask Kiwi — Kiwi's identity teal, worded so it reads as an action, not one more icon. */
+.kiwi-btn { color: var(--cc-kiwi); border: 1px solid color-mix(in srgb, var(--cc-kiwi) 45%, transparent); background: none; }
+.kiwi-btn:hover { background: var(--cc-kiwi-tint); }
+.kiwi-btn.on { background: var(--cc-kiwi-tint); border-color: var(--cc-kiwi); }
 
 .update-badge {
   display: flex;

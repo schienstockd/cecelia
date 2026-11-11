@@ -2,7 +2,7 @@
   The guide picker: the map first (GuideMap — recipes, every page by sidebar group, the Claude loop),
   then every guide in an accordion grouped like the sidebar, each with its prerequisites checked live.
   The map's group cards open the matching accordion section, so the map and the list are one view.
-  Opened from the compass button in AppHeader (and from a What's New tip card's "Show me").
+  Opened from Help ▾ → Guides (HelpMenu.vue) (and from a What's New tip card's "Show me").
   Design: docs/todo/GUIDE_SYSTEM_PLAN.md; the map: docs/todo/WORKFLOW_RECIPES_PLAN.md → *The map*.
 
   Built on `BaseModal` like every other dialog (docs/UI.md → Modals & dialogs). Patterned on
@@ -48,7 +48,7 @@ const groups = computed(() => guideGroupsFor(guidesByGroup(), observer.ai.enable
 
 // ── the map + the accordion: one view (WORKFLOW_RECIPES_PLAN → *The map*) ──────────────────────────
 // The map (GuideMap) holds the recipes; its group cards open the matching guide group here. One group
-// open at a time, like the sidebar's nav accordion; it opens on the group whose guides teach the page
+// open at a time; it opens on the group whose guides teach the page
 // you're on, else Start. Not persisted: where you are decides what's useful — so it is re-set on
 // every open. The sections share it through `accordion="cc.guides.openGroup"`.
 const openRecipe = ref('')
@@ -89,8 +89,8 @@ function firstFixable(g: GuideDef) {
 
 <template>
   <BaseModal width="820px" @close="closeGuides()">
-    <!-- own #title so the compass carries the green mark, matching the header button it was opened
-         from. BaseModal's plain `icon` prop would inherit the title's text colour. -->
+    <!-- own #title so the compass carries the guide mark.
+         BaseModal's plain `icon` prop would inherit the title's text colour. -->
     <template #title><i class="pi pi-compass gd-mark" /> Guides</template>
     <p class="gd-intro cc-muted cc-fs-md">
       Bubbles appear beside the control to use, on your own data, and step forward as you go.

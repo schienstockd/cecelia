@@ -8,7 +8,7 @@
     beside it                    "Something wrong?" (`ReportProblemButton`)
     `maturity` null              nothing — exempt (no scientific result), no row to open
 
-  Hosts: the app header (the route's `pageMaturity`), TaskRunner's Function heading (`taskMaturity`).
+  Hosts: the open page's sidebar row (`AppSidebar`, the route's `pageMaturity`), TaskRunner's Function heading (`taskMaturity`).
   Which tier and which row: `utils/maturity.ts` (tested).
 
     <MaturityIndicator :maturity="pageMaturity(route.path)" :page="route.path" />

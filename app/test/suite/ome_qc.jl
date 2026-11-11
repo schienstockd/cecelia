@@ -2383,6 +2383,8 @@ end
         i2.label_props = Dict("A" => "A.h5ad")
         append_run_log!(i2, "importImages.omezarr", "default", "done")
         append_run_log!(i2, "segment.cellpose", "A", "failed")
+        # a tracking run asked for and dropped before dispatch: it wrote nothing, so it is no step
+        skip_run_log!(i2, "tracking.bayesian_tracking", "no labels"; value_name = "A")
         push!(s._images, i2); push!(s.image_uids, i2.uid)
 
         # a wired chain + board tabs (project-level)
@@ -2414,6 +2416,9 @@ end
         # i2 partial + excluded + a failed step is surfaced
         @test e2.included == false && isempty(e2.tracked) && isempty(e2.clusterRuns)
         @test any(st -> st.fun == "segment.cellpose" && st.status == "failed", e2.steps)
+        # the skipped tracking run is not part of the image's story
+        @test [st.fun for st in e2.steps] == ["importImages.omezarr", "segment.cellpose"]
+        @test !any(st -> st.status == "skipped", e2.steps)
         # project-level chains + boards
         @test length(lin.chains) == 1 && lin.chains[1].name == "pipeline"
         @test Set(lin.chains[1].tasks) == Set(["segment.cellpose", "tracking.bayesian_tracking"])

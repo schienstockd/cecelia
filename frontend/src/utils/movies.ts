@@ -51,8 +51,12 @@ export const MOVIE_PRODUCERS: Record<string, string> = {
 // URL the <video> (or a figure's <img>) points at. The name is a server-sanitised basename
 // ([A-Za-z0-9._-]+.(mp4|png)),
 // but encode it anyway so it survives as a query param regardless.
-export function movieStreamUrl(projectUid: string, name: string): string {
-  return `/api/movies/file?projectUid=${encodeURIComponent(projectUid)}&name=${encodeURIComponent(name)}`
+// Pass the entry's `mtime` whenever you have it: a re-record or re-made figure keeps its name, and
+// the route sends no validators (no ETag/Last-Modified/Cache-Control), so `&v=<mtime>` is the only
+// thing that makes the browser drop its copy of the old bytes — for an .mp4 just as for a .png.
+export function movieStreamUrl(projectUid: string, name: string, mtime?: number): string {
+  const url = `/api/movies/file?projectUid=${encodeURIComponent(projectUid)}&name=${encodeURIComponent(name)}`
+  return mtime === undefined || !Number.isFinite(mtime) ? url : `${url}&v=${Math.round(mtime)}`
 }
 
 // Display label for a movie: the user's display name when they set one, else the file name without

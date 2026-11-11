@@ -8,7 +8,7 @@
 _acq_bz_pt(z, t) = Dict("zFromStartUm" => z, "transmissionPct" => Dict("MaiTai" => t, "InSight" => t), "hv" => Dict("D1" => 550))
 function _acq_meta(; lasers = [(850, 15), (1200, 15)], brightz = true, ramp = false, objective = "XLPLN25XWMP2", px = 0.5,
                    depth = Dict(0 => -5.0), objs = Dict(0 => (5.0, 20.0, nothing)), shared = Dict{String,Float64}(),
-                   drift = (0.3, 20.0), probed = true, frames = 30)
+                   probed = true, frames = 30)
     chans = Any[]
     for c in sort!(unique(vcat(collect(keys(depth)), collect(keys(objs)))))
         d = get(depth, c, 0.0)
@@ -24,7 +24,6 @@ function _acq_meta(; lasers = [(850, 15), (1200, 15)], brightz = true, ramp = fa
     if probed
         sat["sharedStructure"] = [Dict("a" => parse(Int, split(k, "-")[1]), "b" => parse(Int, split(k, "-")[2]), "r" => r)
                                   for (k, r) in shared]
-        sat["drift"] = Dict("axes" => ["Z", "Y", "X"], "excursionPx" => [1.0, 0.0, drift[2]], "residualRmsPx" => drift[1])
     end
     # `frames`: these stand for intravital movies (time-lapses), so the set's findings say "movies"
     Dict{String,Any}("PhysicalSizeX" => px, "SizeT" => frames, "saturation" => sat,
@@ -52,10 +51,10 @@ _acq_f(uid, meta, names = _ACQ_CTDR) = Cecelia.acq_image_facts(uid, uid, meta; c
     @test count(f -> f["code"] == "acq.channels_unnamed", Cecelia.acq_check(nothing, un)["findings"]) == 1
 end
 
-@testset "acq_check — no plan: settings, Bright Z, range, drift, unmeasured" begin
+@testset "acq_check — no plan: settings, Bright Z, range, unmeasured" begin
     facts = [_acq_f("a", _acq_meta(brightz = false, ramp = true)),
              _acq_f("b", _acq_meta(brightz = true, ramp = true)),
-             _acq_f("c", _acq_meta(drift = (3.7, 100.0))),
+             _acq_f("c", _acq_meta()),
              _acq_f("d", _acq_meta(probed = false))]
     r = Cecelia.acq_check(nothing, facts)
     codes = _acq_codes(r)
@@ -70,8 +69,15 @@ end
     # ...also when no ramp is saved at all (a CZI never saves points): on vs off is still a warning
     czi = Cecelia.acq_check(nothing, [_acq_f("a", _acq_meta(brightz = true)), _acq_f("b", _acq_meta(brightz = false))])
     @test any(f -> f["code"] == "acq.settings_differ" && f["subs"]["variable"] == "Bright Z setting" && f["level"] == "warn", czi["findings"])
-    @test "acq.drift_unreliable" in _acq_codes(r; scope = "c")
     @test "acq.not_measured" in codes
+    # no drift anywhere in the check: a probe that still stores one (an older Measure) raises nothing
+    old = _acq_meta(); old["saturation"]["drift"] = Dict("axes" => ["Y", "X"], "excursionPx" => [0.0, 500.0], "residualRmsPx" => 9.0)
+    od = Cecelia.acq_check(nothing, [_acq_f("a", old)])
+    @test !any(f -> occursin("drift", f["code"]), od["findings"]) && !("drift" in od["ran"]) && !("drift" in od["skipped"])
+    @test !haskey(only(od["rows"]), "driftUm")
+    # an unmeasured movie is unchecked, never an all-clear
+    um = Cecelia.acq_check(nothing, [_acq_f("a", _acq_meta(probed = false))])
+    @test um["nMeasured"] == 0 && Cecelia.acq_verdict(um["findings"], "test")[2] == "Measure the remaining movies."
     @test !("acq.balance" in codes) && !("acq.few_photons" in codes)   # need a plan
     @test !any(f -> startswith(f["code"], "acq.shares"), r["findings"]) && all(x -> isempty(x["objects"]), r["rows"])
     @test "photons" in r["skipped"]
@@ -209,8 +215,8 @@ end
     plan = Dict{String,Any}("designs" => [Dict("id" => "A", "key" => Cecelia.acq_design_key(_ACQ_CTDR))],
                             "objects" => [Dict("name" => "X", "channels" => Dict("A" => 0)), Dict("name" => "Y", "channels" => Dict("A" => 2))],
                             "references" => [Dict("name" => "e", "channels" => Dict("A" => 1))])
-    m(; p50 = 5.0, sh = 0.1, drift = 20.0) = _acq_meta(objs = Dict(0 => (p50, 30.0, nothing), 2 => (5.0, 30.0, nothing)),
-                                                       shared = Dict("0-1" => sh, "0-2" => sh, "1-2" => sh), drift = (0.3, drift))
+    m(; p50 = 5.0, sh = 0.1) = _acq_meta(objs = Dict(0 => (p50, 30.0, nothing), 2 => (5.0, 30.0, nothing)),
+                                         shared = Dict("0-1" => sh, "0-2" => sh, "1-2" => sh))
     # every pair high: the leak can't be told from shared tissue — one note, nothing stands out
     hi = Cecelia.acq_check(plan, [_acq_f("a", m(sh = 0.6)), _acq_f("b", m(sh = 0.6))])
     @test only(filter(f -> f["code"] == "acq.shares_all", hi["findings"]))["where"] == "a, b"
@@ -219,10 +225,10 @@ end
     two = deepcopy(plan); empty!(two["references"])
     nb = Cecelia.acq_check(two, [_acq_f("a", m(sh = 0.9))])
     @test "acq.shares_no_baseline" in _acq_codes(nb) && !("acq.shares_object" in _acq_codes(nb))
-    # a movie dimmer, or drifting further, than the set's others: a note on that movie
-    fs = [_acq_f("a", m()), _acq_f("b", m()), _acq_f("c", m()), _acq_f("d", m(p50 = 0.8, drift = 80.0))]
+    # a movie dimmer than the set's others: a note on that movie
+    fs = [_acq_f("a", m()), _acq_f("b", m()), _acq_f("c", m()), _acq_f("d", m(p50 = 0.8))]
     o = Cecelia.acq_check(plan, fs)
-    @test _acq_codes(o; scope = "d") == ["acq.dim_movie", "acq.drift_far"]
+    @test _acq_codes(o; scope = "d") == ["acq.dim_movie"]
     @test only(filter(f -> f["code"] == "acq.dim_movie", o["findings"]))["short"] == "X dimmer than in the set's other movies (~0.8 vs ~5.0 photons)"
     @test isempty(_acq_codes(o; scope = "a"))
 end

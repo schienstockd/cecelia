@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // The floating-panel launchers — Viewer / Correction / Lab log / Kiwi — as one row of icon toggles.
-// Two homes: the sidebar (always), and the module action bar while the plot canvas is maximised
-// (ModuleLayout) — that layout covers the sidebar, so without its own copy the panels could not be
-// opened or closed there. `compact` = the action-bar size. Both rows carry the same `data-guide`
-// anchors on purpose: `resolveAnchor` (utils/guideAnchor.ts) picks the un-occluded one, so a guide
-// lands on whichever row is actually visible.
+// Viewer, Lab log and Kiwi live in the header (AppHeader); this row is the copy for the module action
+// bar while the plot canvas is maximised (ModuleLayout), which covers the header and sidebar, so the
+// panels stay openable there. The sidebar mounts it with `kinds=['correction']` until the cockpit
+// gets its own home (docs/todo/GUI_LAYOUT_PLAN.md, M3). `compact` = the action-bar size. Every copy
+// carries the same role-named `data-guide` anchors (`launcher.*`): `resolveAnchor`
+// (utils/guideAnchor.ts) picks the un-occluded one, so a guide lands on whichever is visible.
 //
 // Each keeps its panel's identity colour: green = viewer, purple = correction, white = lab log,
 // teal = kiwi. The lab-log unseen badge overlays the icon so Claude/Cecelia notes still get noticed.
@@ -12,22 +13,28 @@ import { computed } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
 import { showKiwiLauncher } from '../utils/aiSwitch'
+import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
 
-withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
+type Launcher = 'viewer' | 'correction' | 'labLog' | 'kiwi'
+const props = withDefaults(defineProps<{ compact?: boolean; kinds?: Launcher[] }>(),
+  { compact: false, kinds: () => ['viewer', 'correction', 'labLog', 'kiwi'] })
+const has = (k: Launcher) => props.kinds.includes(k)
 
 const settings = useSettingsStore()
 const observer = useObserverStore()
-// lab-log badge: Cecelia digests colour by severity (⚠️/❌); Claude notes keep the accent tint.
-const labLogBadgeStyle = computed(() =>
-  settings.labLogUnseenLevel === 'fail' ? { color: 'var(--cc-sev-fail)' }
-  : settings.labLogUnseenLevel === 'warn' ? { color: 'var(--cc-sev-warn)' }
-  : {})
+// lab-log badge + tip: the shared rule in utils/labLog.ts (the header bell uses it too)
+const labLogBadgeStyle = computed(() => {
+  const c = unseenBadgeColour(settings.labLogUnseenLevel)
+  return c ? { color: c } : {}
+})
+const labLogTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen,
+  kind: settings.labLogUnseenKind, open: settings.labLogPanelOpen, aiOn: observer.ai.enabled }))
 </script>
 
 <template>
   <div class="panel-launcher-row" :class="{ compact }">
-    <button class="panel-launcher panel-launcher-viewer cc-btn cc-btn-bare"
-            data-guide="sidebar.viewerCta"
+    <button v-if="has('viewer')" class="panel-launcher panel-launcher-viewer cc-btn cc-btn-bare"
+            data-guide="launcher.viewer"
             :class="{ on: settings.viewerPanelOpen }"
             @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
             v-tooltip.right="settings.viewerPanelOpen
@@ -35,8 +42,8 @@ const labLogBadgeStyle = computed(() =>
               : 'Viewer controls — populations, tracks, colour-by'">
       <i class="pi pi-eye" />
     </button>
-    <button class="panel-launcher panel-launcher-correction cc-btn cc-btn-bare"
-            data-guide="sidebar.correctionCta"
+    <button v-if="has('correction')" class="panel-launcher panel-launcher-correction cc-btn cc-btn-bare"
+            data-guide="launcher.correction"
             :class="{ on: settings.correctionCockpitOpen }"
             @click="settings.correctionCockpitOpen = !settings.correctionCockpitOpen"
             v-tooltip.right="settings.correctionCockpitOpen
@@ -50,21 +57,19 @@ const labLogBadgeStyle = computed(() =>
            lands its remaining phases. -->
       <i class="pi pi-hammer panel-launcher-badge panel-launcher-badge-wip" />
     </button>
-    <button class="panel-launcher panel-launcher-lablog cc-btn cc-btn-bare"
-            data-guide="sidebar.labLogCta"
+    <button v-if="has('labLog')" class="panel-launcher panel-launcher-lablog cc-btn cc-btn-bare"
+            data-guide="launcher.labLog"
             :class="{ on: settings.labLogPanelOpen, 'has-unseen': !!settings.labLogUnseen }"
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
-            v-tooltip.right="settings.labLogUnseen
-              ? ((settings.labLogUnseenKind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + settings.labLogUnseen)
-              : (settings.labLogPanelOpen ? 'Close lab log' : (observer.ai.enabled ? 'Lab log — analysis notes for this project (you + Claude)' : 'Lab log — analysis notes for this project'))">
+            v-tooltip.right="labLogTip">
       <i class="pi pi-book" />
       <i v-if="settings.labLogUnseen"
          :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'panel-launcher-badge']"
          :style="labLogBadgeStyle" />
     </button>
-    <button v-if="showKiwiLauncher(observer.ai, settings.kiwiHidden)"
+    <button v-if="has('kiwi') && showKiwiLauncher(observer.ai, settings.kiwiHidden)"
             class="panel-launcher panel-launcher-kiwi cc-btn cc-btn-bare"
-            data-guide="sidebar.kiwiCta"
+            data-guide="launcher.kiwi"
             :class="{ on: settings.kiwiOpen }"
             @click="settings.kiwiOpen = !settings.kiwiOpen"
             v-tooltip.right="settings.kiwiOpen

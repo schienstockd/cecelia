@@ -67,8 +67,6 @@ export interface AcqRow {
   sharedR: number | null
   /** the movie's baseline: median r over its plan channel pairs (null under three pairs) */
   sharedBase?: number | null
-  driftUm: number | null
-  registers: boolean | null
 }
 export interface AcqCheckResult {
   entryId: string

@@ -35,6 +35,13 @@ using Statistics: mean, median, quantile
 const TRACK_LINEAGE_OBS = ["track_parent", "track_root", "track_state", "track_generation", "cell_id"]
 const TRACK_CORRECTION_OBS = vcat(["track_id"], TRACK_LINEAGE_OBS)
 
+# Which tracking run authored a cell's track — a pop UID or `whole_seg` (MULTI_POP_TRACKING_PLAN.md
+# Decision 1). Not lineage (a categorical string column, written through `write_categorical_obs`, not
+# `add_obs`), but it follows the track like lineage does: a cell that JOINS a track (points.add to an
+# existing track, track.join) adopts that track's source, so a later re-track of that source deletes
+# it with the rest of the track instead of leaving it behind as an unowned 1-cell track.
+const TRACK_SOURCE_OBS = "track_source"
+
 # `track_state` is btrack's per-object classification and is NOT derived from the track's identity —
 # in real data it is constant within a track and carries no lineage meaning. A correction therefore
 # leaves it alone. Writing NaN over it (an earlier draft of the plan) would invent a value rather
@@ -228,13 +235,14 @@ function _reset_lineage_to_root!(df::DataFrame, tid::Integer)
     end
 end
 
-# Copy the lineage of track `src` onto the given rows (used by join: B's cells adopt A's identity).
+# Copy the lineage of track `src` onto the given rows (used by join: B's cells adopt A's identity,
+# and by points.add to an existing track) — and its `track_source` when the table carries one.
 function _copy_lineage_from!(df::DataFrame, src::Integer, rows)
     src_rows = _rows_of_track(df, Int(src))
     isempty(src_rows) && return
     ref = first(setdiff(src_rows, rows), 1)
     ref = isempty(ref) ? first(src_rows) : only(ref)
-    for c in TRACK_LINEAGE_OBS
+    for c in (TRACK_LINEAGE_OBS..., TRACK_SOURCE_OBS)
         c == _TRACK_STATE_COL && continue
         c in names(df) || continue
         v = df[ref, Symbol(c)]

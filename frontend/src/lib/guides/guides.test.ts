@@ -426,7 +426,7 @@ describe('steps a window can never show are dropped when the guide starts', () =
   })
 
   it('the tour presents Kiwi only while AI is on, and says it is optional while off', () => {
-    const kiwi = (c: GuideCtx) => guideStepsFor(tour.steps, c).filter(s => s.anchor === 'sidebar.kiwiCta')
+    const kiwi = (c: GuideCtx) => guideStepsFor(tour.steps, c).filter(s => s.anchor === 'launcher.kiwi')
     expect(kiwi(ctx(false, true)).map(s => s.title)).toEqual(['Kiwi — answers you can check'])
     expect(kiwi(ctx(false, false)).map(s => s.title)).toEqual(['Kiwi — optional AI'])
   })

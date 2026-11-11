@@ -78,12 +78,12 @@ acq_review_system_prompt(project_uid::AbstractString, stage::AbstractString = "t
 $(_ACQ_STAGE_INTRO[stage])
 
 The project is `$(project_uid)` — pass exactly that as `project_uid` in every tool call. Read the movies'
-record (image info: acquisition settings, the import probe's photons, shared structure, drift, fading;
+record (image info: acquisition settings, the import probe's photons, shared structure, fading;
 QC metrics; task logs) and the acquisition knowledge before you answer. You can only read.
 
 Look for what would stop the plan: an object too dim or too noisy to segment; a channel that carries
 another's signal where the plan needs them apart; settings that differ between movies the plan compares;
-signal fading or drift that would break tracking; $(_ACQ_STAGE_LOOK[stage])
+signal fading that would break tracking; $(_ACQ_STAGE_LOOK[stage])
 Say "consistent with" until the cause is separated — a channel dimming over time can be bleaching or
 cells leaving.
 

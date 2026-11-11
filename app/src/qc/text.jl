@@ -478,7 +478,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     # action on final data). A finding with no `.data` entry has a `long` that holds at either stage.
     "acq.not_measured" => (
         short = "{n} {item}{s} not measured yet",
-        long  = "Refresh metadata on them so the check can read their photons, channels and drift."),
+        long  = "Measure them so the check can read their photons and channels."),
     "acq.channels_unnamed" => (
         short = "Channels not named",
         long  = "Name them so designs can be told apart."),
@@ -572,18 +572,6 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "acq.dim_movie.data" => (
         short = "Detection may be lower here",
         long  = "Check detection in this {item} before pooling it with the others."),
-    "acq.drift_far" => (
-        short = "Moves more than the set's other {items} ({value} vs ~{typical} µm)",
-        long  = "Check its drift correction before tracking."),
-    "acq.drift_unreliable" => (
-        short = "Frames don't register (residual {value} px)",
-        long  = "Stabilise the preparation; check the {item} for jumps before tracking."),
-    "acq.drift_unreliable.data" => (
-        short = "Tracks may break",
-        long  = "Check the {item} for jumps before tracking — tracks break where frames don't register."),
-    "acq.drift_ok" => (
-        short = "All {n} register; drift up to {value} µm",
-        long  = "Drift-correct before tracking."),
     # widefield (camera) variants of the advice that names a laser or a detector HV — chosen by
     # `qc_technology_key` when the set's settings say widefield (docs/todo/MICROSCOPE_PROFILES_PLAN.md)
     "acq.gain_high@widefield" => (
@@ -602,7 +590,6 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "acq.cat.photons" => (short = "Photons", long = "How much light the objects carry, against the detector's range — noise and range in one."),
     "acq.cat.balance" => (short = "Balance", long = "Whether the plan's objects are similarly bright."),
     "acq.cat.shared" => (short = "Shared structure", long = "Whether one channel shows another's structure — bleed-through or autofluorescence."),
-    "acq.cat.drift" => (short = "Drift", long = "Whether the sample moved, and whether frames still register."),
     "acq.cat.fading" => (short = "Fading", long = "Signal lost over time or over the session, per channel."),
     "acq.cat.other" => (short = "Other", long = "Anything else in these images that bears on the plan."),
     # what the claim checks (and the model review) are about: `short` the heading, `long` what it covers

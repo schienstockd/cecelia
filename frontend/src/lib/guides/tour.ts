@@ -22,7 +22,7 @@ export const tourGuide: GuideDef = {
   title: 'Find your way around',
   group: 'Start',
   icon: 'pi-map',
-  summary: 'The buttons that are not on any page: menu, guides, connection, console, Settings.',
+  summary: 'The buttons that are not on any page: menu, Help, viewer, console, Settings.',
   // Intentionally empty — see the header. This is the guide you run BEFORE you have anything.
   prereqs: [],
 
@@ -38,46 +38,19 @@ export const tourGuide: GuideDef = {
       ],
     },
     {
-      anchor: 'sidebar.projectBlock',
-      placement: 'right',
+      anchor: 'header.project',
+      placement: 'bottom-start',
       title: 'Your project',
       text: 'Open, create and switch projects here — everything else on screen belongs to this one.',
     },
     {
-      anchor: 'header.brand',
-      placement: 'bottom-start',
-      title: "What's new",
-      text: 'The feijoa opens release notes and the tip cards you just came from.',
-      bullets: ['Cycle the sketches to see what Cecelia does.'],
-    },
-    {
-      anchor: 'header.guides',
-      placement: 'bottom',
-      title: 'The guides',
-      text: 'This compass opens the map: pick a recipe for your data, or jump to any page or guide.',
-      bullets: [
-        'It is how you get back here; each guide walks a real step on your own data.',
-        'A guide only points and watches; it never clicks for you.',
-      ],
-    },
-    {
-      anchor: 'header.help',
-      placement: 'bottom',
-      title: 'Bugs and questions',
-      text: 'GitHub for anything broken, the Zulip chat for anything you are unsure about.',
-      bullets: [
-        'Both open outside Cecelia, in a new tab.',
-        'Questions in chat are welcome — no issue needed.',
-      ],
-    },
-    {
-      anchor: 'header.wsBadge',
+      anchor: 'header.helpMenu',
       placement: 'bottom-end',
-      title: 'The backend',
-      text: 'Cecelia is a browser front end onto a Julia server — this says whether it is reachable.',
+      title: 'Help',
+      text: 'Guides and the map, the icon and colour glossaries, what’s new, and where to ask.',
       bullets: [
-        'Green: connected, and tasks will run.',
-        'Anything else: the server is down, and nothing will start.',
+        'Guides is how you get back here; each walks a real step on your own data.',
+        'GitHub for anything broken, the Zulip chat for anything you are unsure about.',
       ],
     },
     {
@@ -87,30 +60,30 @@ export const tourGuide: GuideDef = {
       text: 'Warnings and errors land here, newest last, whichever page you were on.',
       bullets: [
         'Click a line to expand the detail.',
-        'Worth opening first when something did not happen.',
+        'Right end: the version, and a warning if the backend drops.',
       ],
     },
     {
-      anchor: 'sidebar.viewerCta',
-      placement: 'right',
+      anchor: 'launcher.viewer',
+      placement: 'bottom',
       title: 'The viewer',
       text: 'Opens images in the viewer, with segmentations and tracks as layers you can toggle.',
     },
     {
-      anchor: 'sidebar.correctionCta',
+      anchor: 'launcher.correction',
       placement: 'right',
       title: 'The correction cockpit',
       text: 'Join, split or remove tracks, and edit labels — the hand-tools for fixing what an automated run got wrong.',
     },
     {
-      anchor: 'sidebar.labLogCta',
-      placement: 'right',
+      anchor: 'launcher.labLog',
+      placement: 'bottom',
       title: 'The lab log',
       text: 'A per-project record of what was run and what you concluded, kept as you go.',
     },
     {
-      anchor: 'sidebar.kiwiCta',
-      placement: 'right',
+      anchor: 'launcher.kiwi',
+      placement: 'bottom-end',
       title: 'Kiwi — answers you can check',
       text: 'Ask about what’s on screen: every claim links to its data, and Kiwi can’t change anything.',
       bullets: ['On-demand only: nothing happens until you ask.',
@@ -119,8 +92,8 @@ export const tourGuide: GuideDef = {
     },
     {
       // AI is off by default; the launcher stays as the way to turn it on (GUI_CLARITY_PLAN Decision 9)
-      anchor: 'sidebar.kiwiCta',
-      placement: 'right',
+      anchor: 'launcher.kiwi',
+      placement: 'bottom-end',
       title: 'Kiwi — optional AI',
       text: 'Off by default. Turn it on here if your lab’s data policy allows it.',
       onlyIf: c => !c.aiEnabled,
@@ -167,10 +140,10 @@ export const tourGuide: GuideDef = {
     // This carries what the `cc.hint.shutdown` first-use callout used to say. It moved here because
     // the fact is about a button, and a bubble beside the button beats a sentence on an unrelated page.
     {
-      anchor: 'sidebar.quit',
-      placement: 'right',
+      anchor: 'header.profile',
+      placement: 'bottom-end',
       title: 'Leaving',
-      text: 'Closing the browser tab does not stop Cecelia — the backend keeps running until you quit here.',
+      text: 'Closing the browser tab does not stop Cecelia — the backend keeps running until you quit from this menu.',
       bullets: [
         'Not now — this is for when you are done for the day.',
         'It stops the viewer and the notebook server too.',

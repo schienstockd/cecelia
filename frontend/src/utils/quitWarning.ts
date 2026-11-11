@@ -6,7 +6,7 @@
 // "abandon 2 running tasks", because nothing told them tasks were running.
 //
 // Pure string builders so they're testable without mounting the SFC (frontend test scope = src/utils
-// only — see docs/DEV.md). Both quit entry points (sidebar footer, Settings) read these, so the
+// only — see docs/DEV.md). Both quit entry points (the header's avatar menu, Settings) read these, so the
 // wording stays identical in the two places; see docs/inventory/FLOWS.md → app shutdown/quit. The COUNT comes
 // from `runningTasks.ts` (the backend), not the local task store, which reads 0 after a page reload.
 //

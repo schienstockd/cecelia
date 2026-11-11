@@ -103,7 +103,7 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
-// the picked task's maturity, drawn exactly as the header draws a page's (`MaturityIndicator`);
+// the picked task's maturity, drawn exactly as the sidebar draws the open page's (`MaturityIndicator`);
 // docs/todo/FEATURE_MATURITY_PLAN.md → P2, `utils/maturity.ts` → taskMaturity
 const taskMat = computed(() => taskDef.value ? taskMaturity(taskDef.value, props.defs) : null)
 // picker sub-headings (Segment / Measure / Correct …); null = render the flat list
