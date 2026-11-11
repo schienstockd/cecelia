@@ -53,14 +53,16 @@ def run(params):
 
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
     dim_utils.calc_image_dimensions(zarr_utils.open_as_zarr(im_path)[0][0].shape)
-    label_order = [ax for ax in dim_utils.im_dim_order if ax != "C"]
+    # the store's own axes: a Z-projected label set on a Z stack has no Z and must fail `require_volume`
+    arr = zarr_utils.open_as_zarr(params["labelPath"])[0][0]
+    label_order = zarr_utils.store_axes(params["labelPath"], arr.ndim,
+                                        [ax for ax in dim_utils.im_dim_order if ax != "C"])
     t_axis = label_order.index("T") if "T" in label_order else None
     n_t = int(dict(zip(dim_utils.im_dim_order, dim_utils.im_dim)).get("T", 1))
     n_spatial = len(label_order) - (1 if t_axis is not None else 0)
     mesh_utils.require_volume(n_spatial, "aggregatesMeshes")
     scale = phys[-n_spatial:]
 
-    arr = zarr_utils.open_as_zarr(params["labelPath"])[0][0]
     agg_of = {l: 0 for l in labels}
     offset = 0
     for t in range(n_t):

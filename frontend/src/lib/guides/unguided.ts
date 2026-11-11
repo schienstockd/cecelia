@@ -103,7 +103,7 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Record a hand-check on second-harmonic (SHG) data in the docs')],
   }) },
-  { id: 'ridges', title: 'Ridge segmentation', group: 'Data', maturity: covering(['segment.ridges'], {
+  { id: 'ridges', title: 'Ridge segmentation', group: 'Data', maturity: covering(['segment.ridges', 'segment.ridgesMeasure'], {
     tier: 'experimental', testedOn: 'Synthetic',
     evidence: [
       { path: 'python/cecelia/tests/test_ridges_runner.py', test: 'test_meijering_finds_two_ridges_per_frame',

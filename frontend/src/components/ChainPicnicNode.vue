@@ -114,7 +114,7 @@ defineProps<{
 .node-pool {           /* + .cc-pool-tag — this site's own half: the orange, the block, the spacing */
   display: flex;
   font-size: var(--cc-fs-3xs);
-  color: var(--cc-ink-orange);
+  color: var(--cc-ink-amber);
   margin-top: 3px;
 }
 .node-handle {

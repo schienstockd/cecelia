@@ -1,0 +1,14 @@
+{
+  "task": "ridgesMeasure",
+  "fun_name": "segment.ridgesMeasure",
+  "label": "Ridge segmentation + measure",
+  "purpose": "Run Ridge segmentation, then Measure labels",
+  "useWhen": ["The usual choice for fibres: labels alone leave nothing to gate or cluster"],
+  "notWhen": ["Round cells rather than fibres: use Cellpose segment + measure"],
+  "category": "Segment",
+  "group": "Segment",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "composite": ["segment.ridges", "segment.measureLabels"],
+  "qcPlot": "segmentation_qc"
+}
