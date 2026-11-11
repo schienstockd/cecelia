@@ -1967,9 +1967,12 @@ under perspective a flat plane foreshortens towards the edges, which is wrong fo
 on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
 range (↶ resets it to the whole stack); the **±** button at the end of the Z row swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
-**Sidebar layout:** one icon row under *View* (2D/3D, select/pan, overview or axes, reset view; the
-gear holds renderer, cache, quality, 3D projection and the cache-map toggles — the maps draw in the
-canvas's top-right column, under the overview/axes and the same size, never on the overview), then one row per slider —
+**Sidebar layout:** one top row (GUI_LAYOUT_PLAN V3): **View / Select** (what a click does — the
+same knob as the pop manager's pencil), **2D / 3D**, reset view ⟳ and **⚙**. ⚙ holds renderer, cache,
+quality, 3D projection, the cache-map toggles, the **corner** overlay (overview in 2D, XYZ axes in 3D)
+and the **Debug** switch, which shows the Debug section (off by default, `cc.vw.debug`). The maps draw
+in the canvas's top-right column, under the overview/axes and the same size, never on the overview.
+**Shortcuts** sits at the panel's foot (and in the header's Help ▾). Then one row per slider —
 label column, slider, readout column, ± square — so Depth/Plane, ± planes, Timepoint (play + loop sit in
 the label column) and Fps start and end on the same x.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes are SHOWN; the window is

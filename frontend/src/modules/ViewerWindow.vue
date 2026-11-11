@@ -1431,6 +1431,12 @@ function setChannelColour(c: number, hex: string) {
   pushChannels()
 }
 
+/** What a click on the image does: View moves the view, Select picks cells (the same knob the pop
+ *  manager's pencil writes). Edit joins with the correction slot (GUI_LAYOUT_PLAN V5). */
+const INTERACT_MODES = [
+  { value: 'view', label: 'View', tip: 'Drag moves the view; a click picks nothing' },
+  { value: 'select', label: 'Select', tip: 'A click picks a cell' },
+]
 const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
@@ -3596,6 +3602,9 @@ watch(overviewShown, v => profileStorage.setItem('cc.vw.overview', String(v)))
  *  the moment the volume rotates away from face-on. */
 const gizmoShown = ref(profileStorage.getItem('cc.vw.gizmo') !== 'false')
 watch(gizmoShown, v => profileStorage.setItem('cc.vw.gizmo', String(v)))
+/** The Debug section, switched on from ⚙ (GUI_LAYOUT_PLAN V3) — a developer's panel, off by default. */
+const debugShown = ref(profileStorage.getItem('cc.vw.debug') === 'true')
+watch(debugShown, v => profileStorage.setItem('cc.vw.debug', String(v)))
 /** Fit-relative zoom for the gizmo readout — 1.0 at Reset view, >1 zoomed in. `fitDist` is set on
  *  every allocate + refit, and Reset writes `cam.dist = fitDist`, so this reads a clean 1× at rest
  *  (no leftover breathing-room factor). */
@@ -6148,6 +6157,26 @@ onUnmounted(() => {
               <i class="pi pi-bricks" />
             </button>
           </div>
+          <!-- The corner overlay (overview in 2D, XYZ axes in 3D) and the Debug section are set-once
+               switches, so they live here and the panel's top row stays one line (GUI_LAYOUT_PLAN V3). -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Corner</span>
+            <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
+                    @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
+                    v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
+              <i class="pi pi-overview" />
+            </button>
+            <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
+                    @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
+                    v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
+              <i class="pi pi-axes" />
+            </button>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Render knobs, live perf and diagnostics, as a section in the panel'">Debug</span>
+            <CcToggle v-model="debugShown" aria-label="Show the Debug section" />
+          </div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen: the header's provenance chip (VwHeader). The picker lives in the
@@ -6160,56 +6189,29 @@ onUnmounted(() => {
       </div>
 
       <template v-if="meta">
-        <!-- Shortcuts rides on the heading line — a reference popover, not a live control, and the row
-             below stays one line in a narrow sidebar. -->
-        <div class="cc-row cc-row-tight">
-          <span class="cc-eyebrow cc-fs-2xs">View</span>
-          <div class="vw-grow" />
-          <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="keysOpen = !keysOpen"
-                  v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
-            <i class="pi pi-question-circle" />
-          </button>
-        </div>
-        <div class="cc-row cc-row-tight">
+        <!-- The panel's top row (GUI_LAYOUT_PLAN V3, mock frame 4): what a click does, 2D / 3D, reset
+             view and the advanced settings. -->
+        <div class="cc-row cc-row-tight vw-top">
+          <ChipSelect
+            :options="INTERACT_MODES" :model-value="selectModeActive ? 'select' : 'view'"
+            variant="segmented" aria-label="What a click does"
+            @update:model-value="v => { if ((v === 'select') !== selectModeActive) toggleSelectMode() }"
+          />
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
             @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
           />
-          <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
-               (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the
-               user can stay in the viewer without reaching back to the module page. Icon shows the CURRENT mode, not the ACTION. -->
-          <button class="cc-btn cc-btn-ghost cc-btn-icon"
-                  :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
-                  @click="toggleSelectMode"
-                  v-tooltip.top="selectModeActive
-                    ? 'Selection mode — click for pan mode'
-                    : 'Pan mode — click for selection mode'"
-                  aria-label="Toggle selection mode">
-            <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
-          </button>
-          <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
-          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
-                  @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
-                  v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
-            <i class="pi pi-overview" />
-          </button>
-          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
-                  @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
-                  v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
-            <i class="pi pi-axes" />
-          </button>
+          <div class="vw-grow" />
           <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
                   v-tooltip.top="'Reset view — fit the image and face it square'" aria-label="Reset view">
             <i class="pi pi-reset-view" />
           </button>
-          <!-- Advanced viewer popover — renderer, cache, quality, 3D projection and the cache maps:
-               the set-once knobs, so the row above stays one line in both views. -->
-          <div class="vw-grow" />
           <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': advancedOpen }"
                   aria-label="Advanced viewer settings"
-                  v-tooltip.top="'Renderer, projection and cache maps'"
+                  v-tooltip.top="'Renderer, cache, projection, corner overlay, Debug'"
                   @click="advancedOpen = !advancedOpen">
-            <i class="pi pi-sliders-h" />
+            <i class="pi pi-cog" />
           </button>
         </div>
         <!-- Z controls, one block for both views. 3D: the Depth range (whole stack by default), or —
@@ -6351,7 +6353,7 @@ onUnmounted(() => {
           <RoiSection v-if="openSection === 'rois'" ref="roiSection" :project-uid="projectUid" :image-uid="imageUid"
                       @focus="roiSpot = $event" />
         </CollapsibleSection>
-        <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
+        <CollapsibleSection v-if="debugShown" label="Debug" tip="Render knobs, live perf and diagnostics"
                             accordion="cc.vw.section" section="debug"
                             fill>
           <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
@@ -6558,6 +6560,13 @@ onUnmounted(() => {
           </div>
         </CollapsibleSection>
       </template>
+      <!-- the panel's foot: the shortcuts reference (also in Help ▾ in the header) -->
+      <div class="vw-side-foot">
+        <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-dense" @click="keysOpen = !keysOpen"
+                v-tooltip.top="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
+          Shortcuts <i class="pi pi-question-circle" />
+        </button>
+      </div>
       </div>
     </CollapsiblePanel>
   </div>
@@ -6711,6 +6720,10 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 
+.vw-side-foot {
+  margin-top: auto; padding-top: 0.35rem; border-top: 1px solid var(--cc-border);
+  display: flex; justify-content: flex-end;
+}
 .vw-side {
   /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
      stay here — the panel deliberately owns no padding so its consumers pad their own root. */
