@@ -14,7 +14,7 @@
 import { POP_EYES_KEYS } from './viewer/popEyes'
 
 export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs' | 'imageVersion' | 'trackPopHidden'
-  | 'popEyes' | 'ribbonEyes' | 'roiChecked'
+  | 'popEyes' | 'ribbonEyes' | 'roiChecked' | 'labelFilesHidden'
 
 export interface ViewerBagEvent {
   kind: ViewerBagKind
@@ -51,6 +51,8 @@ export function decodeViewerBagEvent(
     case POP_EYES_KEYS.ribbons:       return { kind: 'ribbonEyes',   value }
     // the ROIs ticked in the viewer's list — Record → ROIs in the main window takes them
     case 'cc.viewerRoiChecked':       return { kind: 'roiChecked',   value }
+    // a segmentation's halo / nuc files the panel turned off — the pop-out packs the rest into the mask
+    case 'cc.viewerLabelFilesHidden': return { kind: 'labelFilesHidden', value }
     default:                          return null
   }
 }

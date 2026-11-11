@@ -19,6 +19,8 @@ export interface BrickSourceFields {
   labelStoreId?: number
   liveSince?: string
   rev?: string
+  /** Derived files packed into the mask (`SlabQuery.labelFiles`). */
+  labelFiles?: readonly string[]
 }
 
 /** Same image bytes — every resident intensity brick is still valid. The mask fields are left out on
@@ -37,7 +39,7 @@ export function sameBrickImage(a: BrickSourceFields | null, b: BrickSourceFields
 export function brickLabelSourceId(s: BrickSourceFields | null): string {
   return tileMaskSourceId({
     vn: s?.labelName ?? '', hidden: false, store: s?.labelStore, storeId: s?.labelStoreId,
-    liveSince: s?.liveSince, rev: s?.rev,
+    liveSince: s?.liveSince, rev: s?.rev, files: s?.labelFiles,
   })
 }
 

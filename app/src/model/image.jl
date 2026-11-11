@@ -159,6 +159,30 @@ function img_labels_path(img::CciaImage, value_name::AbstractString="default";
 end
 
 """
+    img_label_files(img, value_name) -> Vector{Pair{String,String}}
+
+A segmentation's DERIVED label files — every registered file after the base — as `suffix => path`,
+on disk only. The suffix is the file's stem after the base file's stem and `_` (`cells_halo.zarr` →
+`halo`, `labels_cyto.zarr` → `cyto`), else the whole stem; it is how the viewer names a file
+(`/api/viewer/slab?files=`), so a client never sends a path. They carry the base's cell ids
+(`docs/SEGMENTATION.md` → *Label type convention*, *Halo*). Empty for an unregistered value_name.
+"""
+function img_label_files(img::CciaImage, value_name::AbstractString)::Vector{Pair{String,String}}
+    filenames = unversion_value(get(img.labels, String(value_name), nothing))
+    (filenames isa AbstractVector && length(filenames) > 1) || return Pair{String,String}[]
+    stem(f) = replace(String(f), r"\.zarr$" => "")
+    base = stem(first(filenames)) * "_"
+    out = Pair{String,String}[]
+    for f in filenames[2:end]
+        s = stem(f)
+        suffix = startswith(s, base) && length(s) > length(base) ? s[length(base)+1:end] : s
+        path = joinpath(img_labels_dir(img), String(f))
+        isdir(path) && push!(out, suffix => path)
+    end
+    out
+end
+
+"""
     img_spatial_graph_path(img, suffix) -> String
     img_spatial_graph_suffixes(img)     -> Vector{String}
 

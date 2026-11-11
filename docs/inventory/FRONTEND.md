@@ -305,8 +305,10 @@
   contiguous draw (`buildTrackBuffer`/`tailRange`).
 - **The viewer's WGSL (shared with the movie renderer)**: `frontend/src/lib/webgpu/shaders/*.wgsl` — every
   shader the viewer compiles (`mip*`, `tile`, `brick*`, the `pick` snippet), the label includes every
-  label pass shares verbatim (`label_colour.wgsl` — `labColour`/`labShown`; `label_edge.wgsl` — the
-  contour test `labEdge`, over the includer's own fetch passed as `LAB_AT=`), plus `constants.json`
+  label pass shares verbatim (`label_colour.wgsl` — `labColour`/`labShown`; `label_layers.wgsl` —
+  `labDrawn`/`labPickEdge`, a mask with its halo / nuc files packed in as flag bits, over the includer's
+  own fetch passed as `LAB_AT=`; it instantiates `label_edge.wgsl`, the contour loop, as `labEdge` and
+  `labFileEdge` via `LAB_EDGE=`), plus `constants.json`
   (`MAX_CHANNELS`, `LUT_STOPS`, `VIEW_HALF_ANGLE`, pick bindings) and `uniforms.json` (each uniform
   block's fields and lane names). `lib/webgpu/shaderSource.ts` (`expandWgsl`, `uniformLayout`,
   `packUniforms`, `SHADER_CONSTANTS`) loads them via Vite `?raw`; the rules themselves are in
