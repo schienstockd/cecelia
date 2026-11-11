@@ -96,7 +96,7 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
     <HelpMenu />
     <!-- Visible with AI off: it is how AI gets turned on (GUI_CLARITY_PLAN Decision 9) -->
     <button v-if="showKiwiLauncher(observer.ai, settings.kiwiHidden)" type="button"
-            class="kiwi-btn cc-btn cc-btn-dense" data-guide="launcher.kiwi"
+            class="cc-btn cc-btn-dense cc-btn-kiwi" data-guide="launcher.kiwi"
             :class="{ on: settings.kiwiOpen }"
             v-tooltip.bottom="settings.kiwiOpen ? 'Close Kiwi' : 'Ask about your project, get answers you can check'"
             @click="settings.kiwiOpen = !settings.kiwiOpen">
@@ -141,7 +141,7 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 
 /* Viewer chip — the viewer's identity green, a dot that lights while the Viewer panel is open. The
    pressed state is the identity colour, not `.cc-btn-on` (which paints the accent): same rule as the
-   launcher row in PanelLaunchers.vue, GUI_CLARITY_PLAN Decision 15. Ask Kiwi below likewise. */
+   launcher row in PanelLaunchers.vue, GUI_CLARITY_PLAN Decision 15. Ask Kiwi likewise (`.cc-btn-kiwi`, style.css). */
 .viewer-chip {
   display: inline-flex; align-items: center; gap: 0.4rem; height: 24px; padding: 0 0.6rem;
   border: 1px solid color-mix(in srgb, var(--cc-viewer) 45%, transparent); border-radius: var(--cc-radius-pill);
@@ -155,10 +155,6 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 .bell { position: relative; }
 .bell-unseen { position: absolute; top: 3px; right: 3px; background: var(--cc-accent); }
 
-/* Ask Kiwi — Kiwi's identity teal, worded so it reads as an action, not one more icon. */
-.kiwi-btn { color: var(--cc-kiwi); border: 1px solid color-mix(in srgb, var(--cc-kiwi) 45%, transparent); background: none; }
-.kiwi-btn:hover { background: var(--cc-kiwi-tint); }
-.kiwi-btn.on { background: var(--cc-kiwi-tint); border-color: var(--cc-kiwi); }
 
 .update-badge {
   display: flex;

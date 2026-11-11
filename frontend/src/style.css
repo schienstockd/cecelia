@@ -988,6 +988,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    than fit beside it": the image table's per-image menu and the population manager's per-population
    menu render the same list, so it lives here rather than twice in scoped blocks. The ⋯ TRIGGER stays
    with its host — how visible a button is at rest is a per-table decision. */
+/* The worded "Ask Kiwi" button — Kiwi's identity teal, outlined. Two hosts: the main header and the
+   viewer window's header (AddToKiwiButton `label`). Pressed = tinted. */
+.cc-btn-kiwi { color: var(--cc-kiwi); border: 1px solid color-mix(in srgb, var(--cc-kiwi) 45%, transparent); background: none; }
+.cc-btn-kiwi:hover, .cc-btn-kiwi.on { background: var(--cc-kiwi-tint); }
+.cc-btn-kiwi.on { border-color: var(--cc-kiwi); }
+
 .cc-actions-menu { display: flex; flex-direction: column; min-width: 200px; }
 .cc-actions-item {
   display: flex; align-items: center; gap: 0.55rem;
