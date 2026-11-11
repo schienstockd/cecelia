@@ -65,7 +65,7 @@ let titleNode: HTMLElement | null = null
 const forceLight = ref(false)
 const effDark = computed(() => forceLight.value ? false : v.value.darkTheme)
 // host background follows the effective dark-theme flag (no white border around a dark plot)
-const hostBg = computed(() => (effDark.value ? '#1f2226' : 'white'))
+const hostBg = computed(() => plotTheme(effDark.value).ground)
 // reactive so the empty-state / host v-show re-evaluate when data arrives (a bare array does not).
 const rows = ref<{ group: string; state: string; freq: number }[]>([])
 const cats = ref<string[]>([])           // HMM state levels, in order (for the colour domain)
@@ -175,7 +175,7 @@ onBeforeUnmount(() => { node?.remove(); node = null; legendNode?.remove(); legen
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
@@ -265,7 +265,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 
 <style scoped>
 .hmm-body { position: relative; display: flex; flex: 1; min-height: 0; padding: 6px; }
-.hmm-host { position: relative; flex: 1; min-height: 0; background: white; border-radius: var(--cc-radius-xs); overflow: hidden; }
+.hmm-host { position: relative; flex: 1; min-height: 0; background: var(--cc-paper); border-radius: var(--cc-radius-xs); overflow: hidden; }
 .hmm-host :deep(svg) { display: block; }
 /* legend/title overlays: positioning is global (style.css) so this panel and PlotChart cannot drift —
    see plots/overlays.ts. The host supplies `position: relative` (above) and the ink. */

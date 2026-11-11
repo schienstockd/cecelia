@@ -268,7 +268,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 .feat summary { cursor: pointer; color: var(--cc-text-dim); list-style: none; padding: 2px 6px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); }
 .feat[open] summary { color: var(--cc-text); }
 .feat-list { position: absolute; z-index: 10; top: 1.7rem; left: 0; min-width: 12rem; max-height: 16rem; overflow-y: auto;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; box-shadow: 0 4px 14px var(--cc-shadow); }
 .feat-row { display: flex; align-items: center; gap: 5px; padding: 2px 3px; color: var(--cc-text); white-space: nowrap; }
 .feat-empty { margin: 4px; }   /* + .cc-muted .cc-fs-xs */
 .hm-sel { margin-left: 6px; }

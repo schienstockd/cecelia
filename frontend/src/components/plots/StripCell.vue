@@ -128,8 +128,8 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 /* legend chip anchored bottom-left, on-image styling. Copied verbatim from ImageStripView so the
    two views draw the legend identically. */
 .sc-legend { position: absolute; bottom: 6px; left: 6px; padding: 3px 5px; border-radius: var(--cc-radius-xs);
-  background: rgba(0,0,0,0.45); pointer-events: none; z-index: 7;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); }
+  background: var(--cc-hud-bg-soft); pointer-events: none; z-index: 7;
+  color: var(--cc-hud-text); font-size: var(--cc-fs-2xs); font-weight: 600; text-shadow: 0 1px 2px var(--cc-hud-halo); }
 /* Action slot: bottom-left, auto-hide on hover — same policy ImageStripView's `.is-actions` had. */
 .sc-actions { position: absolute; bottom: 4px; left: 4px; display: flex; gap: 4px; z-index: 8;
   opacity: 0; transition: opacity 0.12s ease; }

@@ -875,12 +875,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                positioning anchors on the grid, above the CaptureViewSurface. Mirrors the shape in
                SummaryCanvas / ClusterPlots / GatingPlots so all four canvases signal the same
                outcome on the same push branch. -->
-          <div v-if="shareToast" class="lc-share-chip"
-               :class="{ 'lc-share-chip-error': shareToast.kind === 'fail' }">
-            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                        'lc-share-chip-icon']" />
+          <div v-if="shareToast" class="cc-hud-chip cc-hud-chip-corner"
+               :class="{ 'cc-hud-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle']" />
             <span>{{ shareToast.message }}</span>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro lc-share-chip-dismiss"
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                     @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                     aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
           </div>
@@ -955,19 +954,6 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 .lc-canvas-wrap { flex: 1; min-width: 0; overflow: auto; }
 .lc-zoom { display: block; }
 .lc-grid { flex: 1; display: grid; gap: 8px; padding: 4px; overflow: hidden; position: relative; }
-/* Share-outcome chip — mirrors `.sc-share-chip` in SummaryCanvas so all four canvases (summary,
-   cluster, gate, analysis-board) present the same chip on the same push branch. */
-.lc-share-chip {
-  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
-  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
-  background: rgba(0, 0, 0, 0.78); color: #fff;
-  font-size: var(--cc-fs-xs); pointer-events: auto;
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
-}
-.lc-share-chip-error { color: var(--cc-sev-fail); }
-.lc-share-chip-icon { font-size: 1em; }
-.lc-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
-.lc-share-chip-dismiss:hover { opacity: 1; }
 .lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: var(--cc-radius-md); overflow: hidden;
   display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--cc-bg); }
 /* per-slot title (figure caption): a plain-looking, centred, editable line above the plot */

@@ -372,7 +372,7 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
                         :style="{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }" />
       <!-- BIDIR PR #4b Slice B — pickHighlight/trackHighlight (origin=claude) hits, positioned by
            the SAME viewExtents fraction as the tick math so the ring lands on the actual dot pixel. -->
-      <span v-for="(h, hi) in claudeGateHits" :key="'gh'+hi" class="gsc-claude-hit"
+      <span v-for="(h, hi) in claudeGateHits" :key="'gh'+hi" class="cc-claude-badge cc-claude-badge-ring gsc-claude-hit"
             v-tooltip.top="`Claude: ${isTrackScope ? 'track' : 'cell'} ${h.label}`"
             :style="{ left: `${h.xf * 100}%`, top: `${h.yf * 100}%` }">C</span>
       <slot />
@@ -386,8 +386,6 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
    instead of clipping them at the edge. */
 .plot-capture { position: relative; flex: 1; min-height: 218px; min-width: 0; display: flex; box-sizing: border-box;
   padding: 18px 22px 50px 84px; }
-/* light theme for PDF export (dark theme is on-screen only): dark ink/border on the white ground */
-.plot-capture.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; }
 /* compact: tight chrome for small montage squares (gating-strategy) — smaller padding, no min-height,
    axis names pulled in, tick labels hidden to avoid crowding */
 .plot-capture.compact { min-height: 0; padding: 10px 8px 20px 30px; }
@@ -398,10 +396,7 @@ const claudeGateHits = computed<{ xf: number; yf: number; label: number }[]>(() 
    magenta accent as UMAP + Slice A. `transform: translate(-50%, -50%)` centres the badge on the
    projected point (`(xf, yf) * 100%` positions the top-left corner otherwise). */
 .gsc-claude-hit { position: absolute; transform: translate(-50%, -50%); pointer-events: auto;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; z-index: 6;
-  border: 1.5px solid #ffffff; box-shadow: 0 0 0 1px #e836b4; }
+  z-index: 6; }
 /* compact tiles can be smaller than the full-size 150px plot floor — lift it so the plot shrinks to the
    (square) tile instead of overflowing and being clipped by the cell (the pairs matrix packs small tiles). */
 .plot-capture.compact .panel-plot { min-height: 0; }

@@ -895,7 +895,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .mov-viewport {
   flex: 1; min-height: 0; display: flex; overflow: auto;
-  background: #000; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
+  background: var(--cc-media-bg); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
 }
 .mov-video { margin: auto; display: block; flex-shrink: 0; }
 .mov-figure { cursor: grab; user-select: none; touch-action: none; }

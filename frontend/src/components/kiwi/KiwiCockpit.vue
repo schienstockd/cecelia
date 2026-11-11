@@ -617,7 +617,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 .kiwi-cap-thumb {
   width: 2.4rem; height: 2.4rem;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--cc-radius-xs); background: #000; overflow: hidden;
+  border-radius: var(--cc-radius-xs); background: var(--cc-media-bg); overflow: hidden;
   color: var(--cc-text-dim);
 }
 .kiwi-cap-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }

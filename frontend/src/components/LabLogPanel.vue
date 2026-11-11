@@ -295,11 +295,11 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll { display: flex; flex-direction: column; height: 100%; font-size: var(--cc-fs-md); }
 
 .ll-compose { padding: 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; }
-.ll-compose.correcting { background: rgba(210, 153, 34, 0.08); }
+.ll-compose.correcting { background: color-mix(in srgb, var(--cc-warn) 8%, transparent); }
 .ll-correcting {
   display: flex; align-items: center; gap: 0.35rem;
   font-size: var(--cc-fs-xs); text-transform: uppercase; letter-spacing: 0.04em;
-  color: #d29922; margin-bottom: 0.3rem;
+  color: var(--cc-ink-amber); margin-bottom: 0.3rem;
 }
 .ll-input {
   width: 100%; resize: vertical; box-sizing: border-box; border-radius: var(--cc-radius-sm);
@@ -341,7 +341,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-la-foot { display: flex; gap: 0.5rem; align-items: center; }
 .ll-la-foot a { color: var(--cc-accent); }
 
-.ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: var(--cc-fs-sm); }
+.ll-error { padding: 0.4rem 0.6rem; color: var(--cc-ink-red); font-size: var(--cc-fs-sm); }
 
 .ll-list { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem 0.6rem; }
 .ll-empty { padding: 1.2rem 0.5rem; }
@@ -354,17 +354,17 @@ async function dismissEntry(entry: LabLogEntry) {
 }
 /* distinct colour per author (border + author label), not just a text tag */
 .ll-entry.k-claude { border-left-color: var(--cc-accent); }
-.ll-entry.k-user { border-left-color: #3fb950; }
-.ll-entry.k-correction { border-left-color: #d29922; }
-.ll-entry.k-cecelia { border-left-color: #8b949e; }   /* app-generated → muted/ambient */
+.ll-entry.k-user { border-left-color: var(--cc-ink-green); }
+.ll-entry.k-correction { border-left-color: var(--cc-ink-amber); }
+.ll-entry.k-cecelia { border-left-color: var(--cc-text-dim); }   /* app-generated → muted/ambient */
 /* sourced from the ELN, not reasoned from the data — its own colour so it doesn't read as a [Claude] note */
-.ll-entry.k-labarchives { border-left-color: #d29922; }
+.ll-entry.k-labarchives { border-left-color: var(--cc-ink-amber); }
 .ll-entry.k-other { border-left-color: var(--cc-text-dim); }
 .k-claude .ll-author { color: var(--cc-accent); }
-.k-user .ll-author { color: #3fb950; }
-.k-correction .ll-author { color: #d29922; }
-.k-cecelia .ll-author { color: #8b949e; }
-.k-labarchives .ll-author { color: #d29922; }
+.k-user .ll-author { color: var(--cc-ink-green); }
+.k-correction .ll-author { color: var(--cc-ink-amber); }
+.k-cecelia .ll-author { color: var(--cc-text-dim); }
+.k-labarchives .ll-author { color: var(--cc-ink-amber); }
 
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: var(--cc-fs-sm); }

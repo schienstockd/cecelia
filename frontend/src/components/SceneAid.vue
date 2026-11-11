@@ -100,17 +100,17 @@ function polyPoints(pts: Array<{ x: number; y: number }>): string {
   color: var(--cc-text); padding: 1px 6px; border-radius: var(--cc-radius-sm);
   letter-spacing: 0.06em;
 }
-.sa-frame { position: relative; background: #000; border-radius: var(--cc-radius-sm); overflow: hidden; }
+.sa-frame { position: relative; background: var(--cc-media-bg); border-radius: var(--cc-radius-sm); overflow: hidden; }
 .sa-frame.is-bordered { border: 1px solid var(--cc-border); }
 .sa-frame > svg { display: block; }
 /* Corner overlays sit on top of the SVG in tabular numerals so a tiny reference stays legible on
    top of a black frame, without a second glyph to read (which is what the movie shows too). */
 .sa-ts, .sa-sb {
-  position: absolute; color: #fff; text-shadow: 0 0 2px #000; font-variant-numeric: tabular-nums;
+  position: absolute; color: var(--cc-hud-text); text-shadow: 0 0 2px var(--cc-hud-halo); font-variant-numeric: tabular-nums;
   padding: 1px 3px;
 }
 .sa-ts { top: 2px; left: 3px; }
 .sa-sb { bottom: 2px; right: 3px; display: inline-flex; align-items: center; gap: 3px; }
-.sa-sb-bar { display: inline-block; width: 18px; height: 2px; background: #fff; }
+.sa-sb-bar { display: inline-block; width: 18px; height: 2px; background: var(--cc-hud-text); }
 .sa-cap { align-self: center; }
 </style>

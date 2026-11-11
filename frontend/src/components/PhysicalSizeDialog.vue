@@ -265,7 +265,7 @@ async function fillFlagged() {
              warning had hardcoded `pi-exclamation-triangle` rather than reading the severity model,
              so a palette or icon change would have missed it. The re-run note keeps an explicit icon
              because its meaning is history, not severity. -->
-        <InlineNote v-if="focusedWarning" class="warn-line" severity="warn"
+        <InlineNote v-if="focusedWarning" class="warn-line cc-callout-warn" severity="warn"
                     :short="focusedWarning.short" :detail="focusedWarning.long" />
 
         <InlineNote v-if="downstreamNote" class="rerun-line" icon="pi-history"
@@ -337,9 +337,7 @@ async function fillFlagged() {
 
 .warn-line {
   display: flex; align-items: center; gap: 0.4rem; margin: 0;
-  font-size: var(--cc-fs-sm); color: #fcd34d;
-  background: #7c2d1244; border: 1px solid #92400e55;
-  border-radius: var(--cc-radius-sm); padding: 0.35rem 0.55rem; cursor: help;
+  font-size: var(--cc-fs-sm); padding: 0.35rem 0.55rem; cursor: help;
 }
 
 /* Informational (not an error): downstream artifacts need a re-run after a calibration change. */
@@ -356,8 +354,8 @@ async function fillFlagged() {
 .dims-row.excluded { opacity: 0.4; }
 .dim-label { flex-shrink: 0; width: 1.2rem; text-align: right; font-weight: 600; }
 .field-input { flex: 1; min-width: 0; }
-.field-input.warn { border-color: var(--cc-sev-warn) !important; background: #7c2d1222; }
-.field-input.mixed { border: 1px dashed #60a5fa !important; background: #1e3a5f55; cursor: help; }
+.field-input.warn { border-color: var(--cc-sev-warn) !important; background: var(--cc-tint-amber); }
+.field-input.mixed { border: 1px dashed var(--cc-ink-blue) !important; background: var(--cc-tint-blue); cursor: help; }
 .unit-input { flex: 0 0 4.2rem; }
 
 .footer-spacer { flex: 1; }

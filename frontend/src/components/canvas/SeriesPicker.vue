@@ -116,7 +116,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 .pick-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pick-row:hover { background: var(--cc-surface-2); }
 .pick-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
-.pick-swatch { width: 14px; height: 14px; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid rgba(255,255,255,0.2); }
+.pick-swatch { width: 14px; height: 14px; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid var(--cc-swatch-edge); }
 .pick-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pick-tag { font-size: var(--cc-fs-3xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-xs); padding: 0 3px; flex-shrink: 0; }

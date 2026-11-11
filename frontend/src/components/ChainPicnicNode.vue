@@ -33,7 +33,7 @@ defineProps<{
     </div>
     <div class="node-fn">{{ data.fn }}</div>
     <div class="policy-row">
-      <span class="policy-label">barrier:</span>
+      <span class="cc-muted cc-fs-3xs policy-label">barrier:</span>
       <span class="policy-val">{{ data.barrier_policy }}</span>
     </div>
     <div v-if="data.resource_pool" class="node-pool cc-pool-tag">
@@ -47,7 +47,7 @@ defineProps<{
 <style scoped>
 .node-manual { color: var(--cc-sev-warn); margin-right: 0.2rem; }
 .chain-picnic-node {
-  background: #1c1505;
+  background: color-mix(in srgb, var(--cc-warn) 6%, var(--cc-bg));
   border: 2px solid var(--cc-warn);
   border-radius: var(--cc-radius-md);
   padding: 7px 11px;
@@ -83,7 +83,7 @@ defineProps<{
 .node-label {
   font-size: var(--cc-fs-sm);
   font-weight: 600;
-  color: #fef3c7;
+  color: var(--cc-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -91,7 +91,7 @@ defineProps<{
 }
 .node-fn {
   font-size: var(--cc-fs-2xs);
-  color: #d97706;
+  color: var(--cc-warn);
   font-family: var(--cc-mono);
   margin-top: 2px;
   white-space: nowrap;
@@ -105,11 +105,7 @@ defineProps<{
   gap: 3px;
   margin-top: 4px;
 }
-.policy-label {
-  font-size: var(--cc-fs-3xs);
-  color: #92400e;
-  font-weight: 600;
-}
+.policy-label { font-weight: 600; }   /* + cc-muted cc-fs-3xs */
 .policy-val {
   font-size: var(--cc-fs-3xs);
   color: var(--cc-warn);
@@ -118,7 +114,7 @@ defineProps<{
 .node-pool {           /* + .cc-pool-tag — this site's own half: the orange, the block, the spacing */
   display: flex;
   font-size: var(--cc-fs-3xs);
-  color: #f97316;
+  color: var(--cc-ink-orange);
   margin-top: 3px;
 }
 .node-handle {

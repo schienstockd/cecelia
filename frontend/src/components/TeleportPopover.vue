@@ -139,7 +139,7 @@ onBeforeUnmount(() => {
   background: var(--cc-surface-1);
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 6px 18px var(--cc-shadow);
   color: var(--cc-text);
   padding: 0.5rem 0.65rem;
   /* Last-resort safety net: the positioner clamps the box into the viewport, but a box TALLER than

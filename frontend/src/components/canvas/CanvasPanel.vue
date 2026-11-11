@@ -267,10 +267,10 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 <style scoped>
 /* free-floating, draggable + resizable box */
 .panel { position: absolute; display: flex; flex-direction: column; border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-md); background: var(--cc-surface-1); overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+  border-radius: var(--cc-radius-md); background: var(--cc-surface-1); overflow: hidden; box-shadow: 0 4px 18px var(--cc-shadow);
   width: 460px; height: 440px; min-width: 340px; min-height: 320px; z-index: 5;
   transition: border-color 0.12s, box-shadow 0.12s; }
-.panel.active { border-color: var(--cc-selected); box-shadow: 0 0 0 1px var(--cc-selected), 0 6px 22px rgba(0,0,0,0.45); z-index: 6; }
+.panel.active { border-color: var(--cc-selected); box-shadow: 0 0 0 1px var(--cc-selected), 0 6px 22px var(--cc-shadow); z-index: 6; }
 /* docked: fill the grid slot, no float/drag/resize/shadow */
 .panel.docked { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0;
   box-shadow: none; z-index: auto; }
@@ -304,7 +304,7 @@ onBeforeUnmount(() => { squareFrame.cancel(); ro?.disconnect(); ro = null })
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: var(--cc-space-3xs); }
 /* .panel-btn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .panel-btn:hover { color: var(--cc-text); border-color: var(--cc-border-hover); }
-.panel-remove:hover { color: #f87171; border-color: #f87171; }
+.panel-remove:hover { color: var(--cc-ink-red); border-color: var(--cc-ink-red); }
 /* the panel content fills the rest; body is a column so a plot area can flex:1 inside it */
 .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 /* ── resize frame ─────────────────────────────────────────────────────────────

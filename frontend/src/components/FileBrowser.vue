@@ -329,7 +329,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 /* body — BaseModal's cc-modal-body owns the scroll; .fb-body needs no shell styling. */
 
 .fb-state { display: flex; align-items: center; gap: 0.5rem; padding: 2rem; }
-.fb-state.error { color: #fca5a5; flex-direction: column; align-items: flex-start; }
+.fb-state.error { color: var(--cc-ink-red); flex-direction: column; align-items: flex-start; }
 
 /* table
    `table-layout: fixed` is load-bearing: with the default `auto`, `width: 100%` is only a MINIMUM and
@@ -365,10 +365,10 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 .dir-row  { color: var(--cc-text); }
 .image-row { color: var(--cc-text); }
 .non-image { opacity: 0.4; cursor: default; }
-.row-selected { background: #a78bfa14; }
+.row-selected { background: color-mix(in srgb, var(--cc-accent) 8%, transparent); }
 
 .row-icon { font-size: var(--cc-fs-md); margin-right: 0.4rem; }
-.dir-row  .row-icon { color: #fcd34d; }
+.dir-row  .row-icon { color: var(--cc-ink-amber); }
 .image-row .row-icon { color: var(--cc-accent); }
 
 .col-name { display: table-cell; }
