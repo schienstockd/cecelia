@@ -9,6 +9,8 @@
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import TeleportPopover from '../TeleportPopover.vue'
+import { useObserverStore } from '../../stores/observer'
 import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
 import type { KiwiRef } from '../../utils/kiwiRef'
@@ -26,7 +28,15 @@ const props = defineProps<{
   kiwiRef: () => KiwiRef | null
   kiwiTip: string
 }>()
-const emit = defineEmits<{ shortcuts: [] }>()
+const emit = defineEmits<{ shortcuts: []; saveImage: []; draw: [] }>()
+const observer = useObserverStore()
+
+const shareOpen = ref(false)
+const shareBtn = ref<HTMLElement | null>(null)
+function share(ev: 'saveImage' | 'draw') {
+  shareOpen.value = false
+  if (ev === 'saveImage') emit('saveImage'); else emit('draw')
+}
 
 // The opener's page, read when the pointer reaches the button — same origin, so its hash is readable;
 // a closed or cross-origin opener just reads as the main window.
@@ -57,6 +67,21 @@ const prov = computed(() => [
     <span v-if="prov" class="vwh-prov cc-muted cc-fs-xs"
           v-tooltip.bottom="'The image version and labels are picked in the main window’s Viewer panel'">{{ prov }}</span>
     <span class="vwh-grow" />
+    <button ref="shareBtn" type="button" class="cc-btn cc-btn-dense" :class="{ 'cc-btn-on': shareOpen }"
+            aria-haspopup="menu" @click="shareOpen = !shareOpen"
+            v-tooltip.bottom="'Save this view, or draw on it and send it to Kiwi'">
+      Share <i class="pi pi-chevron-down cc-fs-3xs" />
+    </button>
+    <TeleportPopover v-model="shareOpen" :anchor="shareBtn" placement="bottom-end" flush>
+      <div class="cc-actions-menu" role="menu">
+        <button class="cc-actions-item" role="menuitem" @click="share('saveImage')">
+          Save image (PNG) <span class="cc-muted cc-fs-xs">with the scale bar and overlays</span>
+        </button>
+        <button v-if="observer.ai.enabled" class="cc-actions-item" role="menuitem" @click="share('draw')">
+          Draw and note <span class="cc-muted cc-fs-xs">mark the view for Kiwi</span>
+        </button>
+      </div>
+    </TeleportPopover>
     <HelpMenu windowed>
       <template #learn="{ close }">
         <button class="cc-actions-item" role="menuitem" @click="close(); emit('shortcuts')">
