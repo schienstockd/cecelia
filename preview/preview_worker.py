@@ -265,7 +265,9 @@ def _cellpose_imports():
 #:     removes it.
 #: 21: the AF-reference mask takes the measured leak INTO the reference out before thresholding
 #:     (`correction_utils.af_reference_field`). A protocol-20 worker hollows bright target cells.
-PROTOCOL = 21
+#: 22: new backend `segment.ridgesMeasure` (the ridges composite); a protocol-21 worker answers
+#:     "no preview backend" for it.
+PROTOCOL = 22
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -1497,6 +1499,7 @@ _BACKENDS = {
     'segment.coastal': _preview_coastal,
     'segment.coastalMeasure': _preview_coastal,
     'segment.ridges': _preview_ridges,
+    'segment.ridgesMeasure': _preview_ridges,
     'opticalFlow.inspect': _preview_flow_inspect,
     'opticalFlow.probability': _preview_flow_probability,
     'cleanupImages.afCorrect': _preview_af,

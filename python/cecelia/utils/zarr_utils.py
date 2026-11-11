@@ -655,6 +655,20 @@ def read_axes(path):
     return [ax["name"] for ax in axes] if axes else None
 
 
+def store_axes(path, ndim, fallback):
+    """Upper-case axis letters of a store's level array (e.g. ``['T', 'Y', 'X']``).
+
+    The store's own NGFF axes when they name every dimension — they describe the array as written,
+    and a label store need not have its image's axes minus C: ridges writes a single plane as (T)YX
+    with no length-1 Z. ``fallback`` (e.g. the image's axes minus C) only when the store declares
+    no usable axes.
+    """
+    axes = read_axes(path)
+    if axes and len(axes) == ndim:
+        return [str(a).upper() for a in axes]
+    return list(fallback)
+
+
 def trim_timepoints(path, size_t):
     """Shrink a store's time axis to its first ``size_t`` timepoints, on every pyramid level, IN PLACE.
 
