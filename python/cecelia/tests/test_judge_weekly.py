@@ -273,6 +273,18 @@ class WeeklyTest(_WeeklyFixture):
         self.assertEqual(broken, {"error": "RuntimeError: pass died"})
         self.assertEqual(self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")["run"]["issues"], broken)
 
+    def test_an_older_record_than_the_newest_is_never_mirrored(self):
+        # `judge-weekly --date <past>`: the issues follow the newest record, as `judge-issues --apply` insists
+        from cecelia.tests.test_judge_issues import REPO, FakeGitHub
+        self.rec.write(self.build("2026-10-12"))
+        record = self.run_pass()
+        self.rec.write(record)
+        github = FakeGitHub()
+        report = self.w.mirror_issues(record, gh=self.w._issues.Gh(REPO, github))
+        self.assertEqual(github.calls, [])
+        self.assertIn("isn't the newest pass record (2026-10-12)", report["error"])
+        self.assertEqual(self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")["run"]["issues"], report)
+
     def test_a_failure_never_replaces_a_pass_record(self):
         self.rec.write(self.build("2026-10-05"))
         with mock.patch.object(self.w, "weekly", side_effect=RuntimeError("boom")), \
@@ -454,6 +466,57 @@ class PublishTest(_WeeklyFixture):
         self.assertEqual(self.w.close_run_prs("superseded", run=run, records_only=True), [5])
         self.assertEqual(self.w.close_run_prs("superseded", run=run), [5, 6])   # with proposals: a new one replaces it
         self.assertIn("title", next(c for c, _ in self.cmds if c[1:3] == ["pr", "list"])[-1])
+
+    def _gateway(self, prs, fails: dict, landed=None):
+        """`_fake_run(prs)` behind a gateway answering the first `fails[(sub, verb)]` calls of that `gh`
+        command with a 502, as `_run` reports it. `landed`: the PR a failed `pr create` opened anyway."""
+        run = self._fake_run(prs)
+
+        def flaky(cmd, input=None, **kw):
+            key = tuple(cmd[1:3])
+            if fails.get(key):
+                fails[key] -= 1
+                self.cmds.append((cmd, input))
+                if key == ("pr", "create") and landed:
+                    prs.append(landed)
+                raise self.w.JudgeRunError("publish", f"{' '.join(cmd[:3])} exited 1: HTTP 502: 502 Bad Gateway "
+                                                      "(https://api.github.com/graphql)")
+            return run(cmd, input=input, **kw)
+        sleeps = mock.patch.object(self.w.time, "sleep")
+        self.sleep = sleeps.start()
+        self.addCleanup(sleeps.stop)
+        return flaky
+
+    def test_a_502_on_the_pr_calls_is_retried_and_the_pass_publishes(self):
+        run = self._gateway([{"number": 5, "headRefName": "judge-run/2026-09-28", "url": "u5"}],
+                            {("pr", "list"): 1, ("pr", "create"): 1, ("pr", "close"): 1})
+        url = self.w.publish(self.run_pass(), worktree=self.tmp / "wt", run=run)
+        self.assertEqual(url, "https://github.com/o/r/pull/9")
+        self.assertEqual([c[3] for c, _ in self.cmds if c[1:3] == ["pr", "close"]], ["5", "5"])
+        self.assertEqual(self.sleep.call_count, 3)
+
+    def test_a_502_on_a_create_that_landed_adopts_it_never_opens_two(self):
+        run = self._gateway([], {("pr", "create"): 1},
+                            landed={"number": 8, "headRefName": "judge-run/2026-10-05", "url": "u8"})
+        self.assertEqual(self.w.publish(self.run_pass(), worktree=self.tmp / "wt", run=run), "u8")
+        self.assertEqual(len([c for c, _ in self.cmds if c[1:3] == ["pr", "create"]]), 1)
+
+    def test_a_502_listing_or_closing_old_run_prs_is_retried(self):
+        prs = [{"number": 5, "headRefName": "judge-run/2026-09-28", "title": "judge: run record 2026-09-28 (3 open bugs)"}]
+        run = self._gateway(prs, {("pr", "list"): 2, ("pr", "close"): 2})
+        self.assertEqual(self.w.close_run_prs("superseded", run=run), [5])
+        self.assertEqual(self.sleep.call_count, 4)
+
+    def test_a_502_that_persists_or_a_real_failure_still_fails_publish(self):
+        run = self._gateway([], {("pr", "list"): 3})
+        with self.assertRaisesRegex(self.w.JudgeRunError, "502"):
+            self.w.close_run_prs("superseded", run=run)
+
+        def broken(cmd, input=None, **kw):
+            raise self.w.JudgeRunError("publish", "gh pr list exited 1: HTTP 401: Bad credentials")
+        with self.assertRaisesRegex(self.w.JudgeRunError, "401"):
+            self.w.close_run_prs("superseded", run=broken)
+        self.assertEqual(self.sleep.call_count, 2)   # the 401 is never retried
 
     def test_the_pr_says_bugs_waiting_for_verify(self):
         record = self.run_pass()

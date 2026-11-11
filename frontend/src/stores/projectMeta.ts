@@ -8,6 +8,8 @@ import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnimationStore } from './animation'
 import { tabGroupOf, type BoardsDoc } from '../utils/boardDoc'
 import { publishOpenProject } from '../lib/openProjectChannel'
+import { profileStorage } from '../utils/profileStorage'
+import { importLastDirKey } from '../utils/fsPath'
 
 export interface ProjectRecord {
   uid: string
@@ -225,6 +227,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       })
       const body = await res.json().catch(() => ({})) as { error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      profileStorage.removeItem(importLastDirKey(uid))
       await fetchRecent()
       log.info('Project deleted.', { source: 'project' })
       return true

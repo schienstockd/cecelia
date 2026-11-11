@@ -160,6 +160,59 @@ end
     rm(proj.root; recursive = true)
 end
 
+@testset "History params table — a renamed param reads under its current key (formerKeys)" begin
+    # the real 4kS67f region runs were saved as `mergeUmap` (now `createUmap`, formerKeys) = true, the default
+    proj, uids = _history_project("a" => "4kS67f_LUkCpP", "b" => "4kS67f_k3Tx90")
+    rows = _hprow(history_params_table(proj, [uids["a"], uids["b"]]), "clustRegions.cluster")
+    @test !isempty(rows)
+    @test all(r -> !occursin("mergeUmap", r["changedFromDefault"]) && !occursin("createUmap", r["changedFromDefault"]), rows)
+    # the chain template holds them under the current key, the one its conflicts name
+    nodes = _hnode(chain_from_history(proj, [uids["a"], uids["b"]]), "clustRegions.cluster")
+    @test !isempty(nodes) && all(n -> haskey(n["params"], "createUmap") && !haskey(n["params"], "mergeUmap"), nodes)
+    # one image re-saved under the new key with the same value: still one param, no conflict;
+    # the other set to a non-default value: reported under the current name
+    a, b = init_object(proj.uid, uids["a"]), init_object(proj.uid, uids["b"])
+    la, lb = read_run_log(a), read_run_log(b)
+    for e in la
+        e["fun"] == "clustRegions.cluster" && haskey(e["params"], "mergeUmap") &&
+            (e["params"]["createUmap"] = pop!(e["params"], "mergeUmap"))
+    end
+    write(Cecelia.run_log_path(a._dir), JSON3.write(la))
+    rows = _hprow(history_params_table(proj, [uids["a"], uids["b"]]), "clustRegions.cluster")
+    @test all(r -> !occursin("Umap", r["conflicts"]) && !occursin("Umap", r["changedFromDefault"]), rows)
+    # the chain built from the same history: no exemplar conflict between the two spellings either
+    @test !any(c -> occursin("Umap", c["param"]), chain_from_history(proj, [uids["a"], uids["b"]])["conflicts"])
+    for e in lb
+        e["fun"] == "clustRegions.cluster" && haskey(e["params"], "mergeUmap") && (e["params"]["mergeUmap"] = false)
+    end
+    write(Cecelia.run_log_path(b._dir), JSON3.write(lb))
+    # the spellings now disagree in value: one conflict, named by a key the template node holds
+    r = chain_from_history(proj, [uids["a"], uids["b"]])
+    cs = [c for c in r["conflicts"] if occursin("Umap", c["param"])]
+    @test !isempty(cs) && all(c -> c["param"] == "createUmap", cs)
+    @test all(c -> haskey(only(n for n in r["template"]["nodes"] if n["id"] == c["nodeId"])["params"], "createUmap"), cs)
+    rows =_hprow(history_params_table(proj, [uids["b"]]), "clustRegions.cluster")
+    @test all(r -> occursin("createUmap=false", r["changedFromDefault"]) && !occursin("mergeUmap", r["changedFromDefault"]), rows)
+    rm(proj.root; recursive = true)
+end
+
+@testset "Chain from history — a renamed input picker keys one step, not two" begin
+    lv = Dict{String,Cecelia._HistoryLeaf}(
+        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["oldInput"]))
+    old = Cecelia._history_inputs(Dict{String,Any}("oldInput" => "denoised"), lv)
+    new = Cecelia._history_inputs(Dict{String,Any}("inputName" => "denoised"), lv)
+    @test old == new == "inputName=\"denoised\""
+    # both spellings saved: the current one wins (`_stored_key`'s precedence)
+    @test Cecelia._history_current_params(Dict{String,Any}("oldInput" => "a", "inputName" => "b"), lv) ==
+          Dict{String,Any}("inputName" => "b")
+    # two former spellings saved: the first listed wins, as `_stored_key` says — not Dict order
+    lv2 = Dict{String,Cecelia._HistoryLeaf}(
+        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["older", "old"]))
+    for p in (Dict{String,Any}("old" => "b", "older" => "a"), Dict{String,Any}("older" => "a", "old" => "b"))
+        @test Cecelia._history_current_params(p, lv2) == Dict{String,Any}("inputName" => "a")
+    end
+end
+
 @testset "History params table — cut to what a board shows" begin
     # a /qc/cells plot drew the /qc/cells tracking, the segmentation it sits on and the model that
     # segmented — not the /qc/frags tracking

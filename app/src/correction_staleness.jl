@@ -315,18 +315,42 @@ function stale_outputs_for(img::CciaImage)
         id = try _run_output_identity(r.fn, r.params, l) catch; ("", "", false) end
         isempty(id[1]) || (ident[i] = id)
     end
-    # A run that writes INTO what it reads (tracking into its label set) reads the labels, not an earlier
-    # write-into of them: for it, a later re-track is not a replaced input, and an earlier track run is
-    # not the maker of what it read. Without this every re-track would stale the one before it.
+    # A run that writes INTO what it reads (tracking or a re-measure, into its label set) reads what the
+    # label set's plain writer made, not an earlier write-into: an earlier track run is never the maker of
+    # what it read (`upstream`), and a later write-into of ITS OWN KIND (sharing a step — the `_run_maker`
+    # rule, as in `current` below) is not a replaced input, or every re-track would stale the one before.
+    # A later write-into of another kind replaced the input only when it REBUILDS the label set's table:
+    # a re-measure or a label correction with measures (its `replaces` leads back to the plain segment +
+    # measure run) rebuilds the centroids tracking linked on — a plain re-measure also drops the track
+    # columns, a correction carries them over un-relinked — so it stales earlier tracks; a re-track (its `replaces`
+    # only ever names track runs) adds track columns and leaves a re-measure's output as it was.
+    steps = Dict{String,Set{String}}()
+    st(i) = (fn = _rl_str(entries[i], "fun"); get!(() -> _run_step_funs(fn), steps, fn))
     into_self(i, ref) = haskey(ident, i) && ident[i][3] && (ident[i][1], ident[i][2]) == ref
     writes_into(j)    = haskey(ident, j) && ident[j][3]
+    same_into(i, j)   = writes_into(j) && !isdisjoint(st(i), st(j))
+    by_task = Dict{String,Int}(_rl_str(entries[j], "taskId") => j for j in done if !isempty(_rl_str(entries[j], "taskId")))
+    # does write-into `j` rebuild what a plain writer made? Follow its `replaces` chain back by taskId; a
+    # chain that ends at nothing, or at a run not in the log, is not known to rebuild and is skipped.
+    function rebuilds(j)
+        seen = Set{Int}()
+        while !(j in seen)
+            push!(seen, j)
+            haskey(ident, j) && !ident[j][3] && return true
+            rep = _rl_get(entries[j], "replaces", nothing)
+            rep isa AbstractDict || return false
+            j = get(by_task, _rl_str(rep, "taskId"), 0)
+            j == 0 && return false
+        end
+        false
+    end
     # a later done run that replaced (name, ns) at the version `i` read
     function replaced_after(i, inp)
         ref, ver = _stale_ref(inp), _stale_ver(inp)
         skip_into = into_self(i, ref)
         for j in done
             j > i || continue
-            (skip_into && writes_into(j)) && continue
+            (skip_into && writes_into(j) && (same_into(i, j) || !rebuilds(j))) && continue
             rep = _rl_get(entries[j], "replaces", nothing)
             rep isa AbstractDict && _stale_ref(rep) == ref || continue
             rv = _stale_ver(rep)
@@ -385,8 +409,6 @@ function stale_outputs_for(img::CciaImage)
     # by a later run of the same (name, ns), plain or into, that SHARES A STEP with it (the `_run_maker`
     # rule): a re-segment + measure supersedes a lone re-measure, a re-track a track correction — but a
     # re-measure never supersedes the tracks written into the same label set, so stale tracks stay visible.
-    steps = Dict{String,Set{String}}()
-    st(i) = (fn = _rl_str(entries[i], "fun"); get!(() -> _run_step_funs(fn), steps, fn))
     cur = Int[]
     for i in done
         haskey(ident, i) || continue
