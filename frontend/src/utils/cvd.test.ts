@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { deltaE, cvdSeparation, CVD_TARGET, CVD_FLOOR, NORMAL_FLOOR } from './cvd'
 import { COLOUR_SCHEMES } from './colourScheme'
 import { schemeTokens as readScheme, tokenHex } from './cssTokens'
+import { contrastRatio } from './colour'
+import { POPULATION_PALETTE } from '../plots/plot'
+import { PLOT_GROUND_DARK } from '../plots/overlays'
 
 describe('deltaE — golden values from the dataviz validator (Machado 2009 + OKLab)', () => {
   // `validate_palette.js --pairs all` printed these for the pre-audit severity trios
@@ -75,4 +78,29 @@ it('every accepted exception still fails somewhere (else drop it)', () => {
     })
     expect(failsIn.length, pair).toBeGreaterThan(0)
   }
+})
+
+// ── The population palette: data, not chrome, so one list for every scheme and every ground ────────
+const JULIA = Object.values(import.meta.glob('/../app/src/gating/popmanager/clustering_colour.jl',
+  { query: '?raw', import: 'default', eager: true }))[0] as string | undefined
+
+describe('the population palette', () => {
+  const p = POPULATION_PALETTE
+  it('keeps every pair apart under colour blindness and normal vision', () => {
+    const bad = pairs([...p]).flatMap(([a, b]) => {
+      const cvd = cvdSeparation(a, b), normal = deltaE(a, b)
+      return cvd < CVD_TARGET || normal < NORMAL_FLOOR ? [`${a} ↔ ${b}: cvd ${cvd.toFixed(1)}, normal ${normal.toFixed(1)}`] : []
+    })
+    expect(bad).toEqual([])
+  })
+  it('shows on the dark plot ground, a white export and a black image (≥ 3:1)', () => {
+    const bad = p.flatMap(c => [PLOT_GROUND_DARK, '#ffffff', '#000000']
+      .filter(g => contrastRatio(c, g) < 3).map(g => `${c} on ${g}`))
+    expect(bad).toEqual([])
+  })
+  it('is the list Julia colours categories with', () => {
+    expect(JULIA, 'clustering_colour.jl not found').toBeTruthy()
+    const m = /const POPULATION_PALETTE = \[([^\]]*)\]/.exec(JULIA!)
+    expect(m?.[1].match(/#[0-9A-Fa-f]{6}/g)?.map(h => h.toUpperCase())).toEqual(p.map(h => h.toUpperCase()))
+  })
 })

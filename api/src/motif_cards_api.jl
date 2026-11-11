@@ -274,7 +274,7 @@ function api_motif_cards(body_bytes::Vector{UInt8})
 
     # Colours: the canonical categorical-colour helper. `load_pop_map` (live pop map for this vn) may
     # define user-filtered pops on motif.class one day; today it doesn't, so every class falls
-    # through to `default_palette = OKABE_ITO`. Parity with any future pop-manager overrides is
+    # through to `default_palette = POPULATION_PALETTE`. Parity with any future pop-manager overrides is
     # automatic — one rule, one source of truth (`clustering_colour.jl`). Resolved BEFORE the cache
     # check: the colour is baked into the trace, so it's part of the stamp.
     pop_map = load_pop_map(img._dir, String(vn); pop_type = "live")

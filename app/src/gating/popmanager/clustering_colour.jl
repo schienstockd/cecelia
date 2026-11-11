@@ -185,10 +185,12 @@ function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
 end
 
 # ── Categorical colour-by palette (the ONE colour-choice rule) ─────────────────────
-# Okabe–Ito colourblind-safe palette — the default categorical colours. Matches the frontend
-# (`plots/plot.ts` 'okabe-ito') and the napari bridge (`_CATEGORICAL_RGBA`) so a category reads the
-# same colour everywhere.
-const OKABE_ITO = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#000000"]
+# The population palette — the default categorical colours. Equal to `population` in
+# frontend/src/plots/palettes.json (pinned by frontend/src/utils/cvd.test.ts), so a category reads the
+# same colour everywhere. Every pair is >= dE 8 under protan-/deuteranopia and >= 15 for normal vision,
+# and each colour is >= 3:1 on the dark plot ground, a white export and a black image; ordered so each
+# prefix is as spread as it can be. Past 8 it repeats — the legend carries identity there.
+const POPULATION_PALETTE = ["#235EFA", "#FB5888", "#637510", "#B729C4", "#C98510", "#9285E6", "#2CA1AB", "#A0576F"]
 
 _as_value_vec(x) = x === nothing ? Any[] : (x isa AbstractVector ? collect(x) : Any[x])
 # tolerant value equality: exact, string-wise, or numeric (a filter value stored as 2.0 == column 2)
@@ -243,7 +245,7 @@ function pop_label_overrides(m::PopulationMap, column::AbstractString)::Dict{Str
 end
 
 """
-    colour_by_palette(m, column, values; default_palette=OKABE_ITO) -> Dict{Any,String}
+    colour_by_palette(m, column, values; default_palette=POPULATION_PALETTE) -> Dict{Any,String}
 
 Canonical colour choice for colouring by a categorical `column`: a `value` that a **user-defined
 population filters for** on that column (`filter_measure == column` and the value ∈ its `filter_values`)
@@ -253,7 +255,7 @@ general across clusters (a cluster pop is just a filter on `clusters.{suffix}`),
 categorical measure — so tracks/points, legends and movies all colour a category identically. Pure.
 """
 function colour_by_palette(m::PopulationMap, column::AbstractString, values;
-                           default_palette::Vector{String}=OKABE_ITO)::Dict{Any,String}
+                           default_palette::Vector{String}=POPULATION_PALETTE)::Dict{Any,String}
     col = String(column)
     out = Dict{Any,String}()
     vals = collect(values)
