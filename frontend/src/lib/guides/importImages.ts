@@ -26,11 +26,11 @@ export const importImagesGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'sidebar.projectBlock',
-      placement: 'right',
+      anchor: 'header.project',
+      placement: 'bottom-start',
       title: 'Everything lives in a project',
       text: 'A project holds your images and every result derived from them.',
-      bullets: ['Use the ⋯ menu here to switch projects or make a new one.'],
+      bullets: ['Click the name to switch projects or make a new one.'],
       when: c => c.hasProject,
     },
     {
