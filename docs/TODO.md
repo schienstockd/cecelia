@@ -107,6 +107,19 @@ Blocks nothing today (the no-op skip covers the case that hit), but the first re
 a large image will feel it.
 
 
+### A left-over carry-over snapshot turns off a plain re-measure's sidecar pruning
+
+`segment.measureLabels` skips `prune_stale_clustfeatures!` and `prune_stale_hmmfit!` whenever
+`_carryover_snapshot_path(task_dir)` exists, on the assumption that it runs inside the correction
+composite, whose restore brings the columns back. The snapshot is per image (not per `valueName`), and
+only the composite's restore phase deletes it (`carry_over.jl`). So a correction run that fails or is
+cancelled after taking its snapshot leaves the file behind. Every later standalone re-measure of that
+image, of any segmentation, then keeps cluster and HMM-fit records for columns the fresh table no
+longer has, and `_hmm_profile_fit` / `_hmm_fit_summary` read those records without checking the column.
+Needs a decision on how the task knows it really is inside the composite: an explicit composite param,
+or a snapshot keyed to the running chain or `valueName` and cleaned up on failure or cancel.
+
+
 ### WebGPU per-image layer props — animation snapshot source (P9 blocker)
 
 **Blocks** [`docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md`](todo/VIEWER_CONTROLS_SPLIT_PLAN.md) → P9

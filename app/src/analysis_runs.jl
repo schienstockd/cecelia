@@ -221,6 +221,7 @@ function _tracks_delete!(img, run; on_log = _ -> nothing)
     ok = run_py("tasks/tracking/delete_track_source_run.py",
                 (; propsPath = props, trackSource = run.key), task_run_dir(img._dir); on_log = on_log)
     ok || error("deleting track set '$(run.label)' failed — see the log")
+    prune_stale_hmmfit!(props; on_log)   # the HMM state columns went with the track-derived `live.*`
     if isempty(label_track_sources(img, vn))
         _rm_if(img_track_props_path(img, vn); on_log)
         _rm_if(_clustfeatures_path(img_track_props_path(img, vn)); on_log)
@@ -245,6 +246,28 @@ function _hmm_list(img)
         end
     end
     _cross_seg_runs("hmm", hits)
+end
+
+"""
+    prune_stale_hmmfit!(props_path; on_log) -> Vector{String}
+
+Drop the fit records (`{props}.hmmfit.json`) whose `live.cell.hmm.state.<colName>` column is no
+longer on `props_path`, returning the dropped keys. Every path that drops HMM state columns calls it:
+re-measure, re-track, track correction, track-set delete (all but the first drop every `live.cell.*`
+via `is_stale_track_measure`). A record left behind would be read as the fit of any later column of that name some other
+route brings back — `_hmm_profile_fit` and `_hmm_fit_summary` don't check the column.
+"""
+function prune_stale_hmmfit!(props_path::AbstractString; on_log = _ -> nothing)::Vector{String}
+    sidecar = hmm_fit_path(props_path)
+    raw = read_props_sidecar(sidecar)
+    (isempty(raw) || !isfile(props_path)) && return String[]
+    cols  = Set(col_names(label_props(props_path); data_type = :obs))
+    stale = sort!([k for k in keys(raw) if !((_HMM_STATE_PREFIX * k) in cols)])
+    isempty(stale) && return stale
+    on_log("[INFO] $(basename(props_path)) no longer carries HMM run(s) $(join(stale, ", ")) — " *
+           "dropping their fit records")
+    drop_props_sidecar_keys!(sidecar, raw, stale)
+    stale
 end
 
 function _hmm_delete!(img, run; on_log = _ -> nothing)

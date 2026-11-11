@@ -179,6 +179,31 @@ end
                           Dict{String,Any}("pops" => ["B/Directed"], "colName" => "tc3"); on_log = _ -> nothing)
         tdoc = read_qc(img, "behaviour.hmm_transitions", "B.tc3")
         @test tdoc !== nothing && tdoc[:runSuffix] == "tc3"
+
+        # A fit record must never outlive or mismatch its state column — `_hmm_profile_fit` and
+        # `_hmm_fit_summary` read it without checking the column.
+        props = Cecelia.img_label_props_path(img, "B")
+        # (1) a re-run under the same colName that fits nothing (no valid row) still writes the
+        #     column; the previous run's record must go, not describe the new column
+        allnan = DataFrame("label" => Int.(out.label), "live.cell.allnan" => fill(NaN, nrow(out)))
+        label_props(props) |> add_obs(allnan) |> save!
+        Cecelia._run_task(Cecelia.HmmStates(), imgs,
+                          Dict{String,Any}("pops" => ["B/Directed"], "numStates" => 2, "colName" => "tc",
+                                           "modelMeasurements" => ["live.cell.allnan"]);
+                          on_log = _ -> nothing)
+        @test col in col_names(label_props(props); data_type = :obs)
+        @test Cecelia.hmm_fit_entry(props, "tc") === nothing
+        @test Cecelia.hmm_fit_entry(props, "tc3") !== nothing
+        # (2) a rebuilt table (what measureLabels calls on its fresh table): records whose state
+        #     column is gone are dropped, a live one stays; the last key takes the file
+        label_props(props) |> drop_obs(["live.cell.hmm.state.tc3"]) |> save!
+        Cecelia.put_props_sidecar_entry!(Cecelia.hmm_fit_path(props), "tc", Dict("numStates" => 2))
+        @test Cecelia.prune_stale_hmmfit!(props) == ["tc3"]
+        @test Cecelia.hmm_fit_entry(props, "tc3") === nothing && Cecelia.hmm_fit_entry(props, "tc") !== nothing
+        @test isempty(Cecelia.prune_stale_hmmfit!(props))
+        label_props(props) |> drop_obs([col]) |> save!
+        @test Cecelia.prune_stale_hmmfit!(props) == ["tc"]
+        @test !isfile(Cecelia.hmm_fit_path(props))
         rm(td; recursive=true)
     end
 end
