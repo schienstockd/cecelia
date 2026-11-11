@@ -96,7 +96,8 @@ _is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
 # worker ignores the key and would preview the AF the run removes — the "fixed inside the worker" case.
 # 21: the AF-reference mask removes the leak into the reference first; a protocol-20 worker hollows
 # bright cells.
-const PREVIEW_PROTOCOL = 21
+# 22: new backend `segment.ridgesMeasure`; a protocol-21 worker answers "no preview backend" for it.
+const PREVIEW_PROTOCOL = 22
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 # `env` is the pixi env the worker runs in — `nothing` for the default (cellpose 4), `:cellpose_v3` for
