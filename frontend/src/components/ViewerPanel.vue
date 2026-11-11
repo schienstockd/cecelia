@@ -1450,7 +1450,7 @@ onUnmounted(() => {
   gap: 0.35rem;
   min-width: 0;
 }
-.viewer-eye { font-size: var(--cc-fs-sm); color: var(--cc-ink-orange); flex-shrink: 0; }
+.viewer-eye { font-size: var(--cc-fs-sm); color: var(--cc-viewer); flex-shrink: 0; }
 .viewer-name {
   font-size: var(--cc-fs-sm);
   color: var(--cc-text);
