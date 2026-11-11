@@ -530,6 +530,31 @@ export function shownStoresChanged(
 }
 
 /**
+ * The in-place half of a task-done meta refresh (`shownStoresChanged` false): take the server's new
+ * store lists onto `prev` without touching the frame. Returns whether the CELL TABLES changed, so
+ * the caller re-fetches pops and tracks. A segmentation measured while the viewer is open (its mask
+ * already on disk, so nothing drawn changed) gains a table here, and its pops only reach the viewer
+ * if the overlays are reloaded against the new list.
+ */
+export function refreshMetaInPlace(
+  prev: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'storeRevs'
+    | 'valueNames' | 'activeValueName'>,
+  next: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'storeRevs'
+    | 'valueNames' | 'activeValueName'>,
+): boolean {
+  const was = prev.cellTableNames ?? []
+  const now = next.cellTableNames ?? []
+  prev.labelNames = next.labelNames
+  prev.labelDims = next.labelDims
+  prev.labelFiles = next.labelFiles
+  prev.cellTableNames = next.cellTableNames
+  prev.storeRevs = next.storeRevs
+  prev.valueNames = next.valueNames
+  prev.activeValueName = next.activeValueName
+  return was.length !== now.length || was.some((vn, i) => vn !== now[i])
+}
+
+/**
  * Which planes to ask the slab route for, from the depth the TEXTURE actually has.
  *
  * Three answers, and the DEPTH picks between them — derived from the renderer rather than from the view

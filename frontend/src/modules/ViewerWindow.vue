@@ -71,7 +71,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged,
+  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged, refreshMetaInPlace,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -5810,11 +5810,12 @@ onMounted(() => {
       // list in place — a new segmentation becomes tickable — and keep the cache and the frame.
       // A changed shown mask (`labelName` flipping) reloads through `maskSourceId`'s watcher.
       if (!named && prev && !shownStoresChanged(prev, m, pickLabelName(m.labelNames ?? []))) {
-        prev.labelNames = m.labelNames
-        prev.labelDims = m.labelDims
-        prev.storeRevs = m.storeRevs
-        prev.valueNames = m.valueNames
-        prev.activeValueName = m.activeValueName
+        // A segmentation that just gained a cell table: the overlay ping that came with this task
+        // already ran against the old list, so re-fetch pops + tracks against the new one.
+        if (refreshMetaInPlace(prev, m)) {
+          void loadOverlays()
+          void loadTracks()
+        }
         return
       }
       cacheClearRev.value = ev.rev
