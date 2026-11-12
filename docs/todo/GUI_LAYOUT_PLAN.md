@@ -1,6 +1,6 @@
 # GUI layout — build the final mocks for both windows
 
-**Status:** building (2026-11-11). M1–M8 + accordions in PR (#2139–#2146, stacked); V0–V5 next. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
+**Status:** building (2026-11-12). Every slice is built: M1, M2 merged; M3–M8, accordions, V1, V0 (sections split), V3, V4, V5, V2 in PR, stacked in that order (#2142–#2164). Open: M7's "to review" count (what it counts is undecided); V0 left the Debug section and the render core in the window. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
 slices landed the colour tokens, Next, recipes, the checks cluster and Run wording, but most of the
 mocked *layout* did not land (the helper icons were never consolidated, the launchers still sit in the
 sidebar, the viewer kept its single sidebar). This plan builds the layout.

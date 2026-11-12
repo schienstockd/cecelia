@@ -771,6 +771,9 @@ body {
    Without it the row breaks anywhere and orphans a label or a lone number on a line of its own — which
    is exactly how the movie controls read once a size and a filename field joined the fps slider. */
 .cc-row-group { display: inline-flex; align-items: center; gap: 0.3rem; min-width: 0; }
+/* A divider between control groups in a toolbar row (a canvas panel's actions, the gate plot's tools,
+   the viewer's playback bar). */
+.cc-toolbar-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px; flex: none; }
 /* …and its label, when several such groups STACK and their labels should read as a column. Reserving
    one width is the whole point: `fps` / `px` / `name` / `show` / `title` / `version` / `masks` are
    different lengths, so without it every control starts at a different x and the block reads ragged

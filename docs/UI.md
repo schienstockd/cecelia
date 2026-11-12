@@ -1977,14 +1977,18 @@ under perspective a flat plane foreshortens towards the edges, which is wrong fo
 on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
 range (↶ resets it to the whole stack); the **±** button at the end of the Z row swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
-**Sidebar layout:** one top row (GUI_LAYOUT_PLAN V3): **View / Select** (what a click does — the
-same knob as the pop manager's pencil), **2D / 3D**, reset view ⟳ and **⚙**. ⚙ holds renderer, cache,
+**Sidebar layout:** one top row (GUI_LAYOUT_PLAN V3): **View / Select / Edit** (what a click does —
+Select is the same knob as the pop manager's pencil; **Edit** is the reserved slot for the redesigned
+correction tools: a Coming soon banner under the header, an empty panel, nothing edits, not persisted), **2D / 3D**, reset view ⟳ and **⚙**. ⚙ holds renderer, cache,
 quality, 3D projection, the cache-map toggles, the **corner** overlay (overview in 2D, XYZ axes in 3D)
 and the **Debug** switch, which shows the Debug section (off by default, `cc.vw.debug`). The maps draw
 in the canvas's top-right column, under the overview/axes and the same size, never on the overview.
-**Shortcuts** sits at the panel's foot (and in the header's Help ▾). Then one row per slider —
-label column, slider, readout column, ± square — so Depth/Plane, ± planes, Timepoint (play + loop sit in
-the label column) and Fps start and end on the same x.
+**Shortcuts** sits at the panel's foot (and in the header's Help ▾).
+**Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls bar`): time, z and level float on the image,
+bottom centre, just above the strip where the scale bar and the status chips sit: play, loop, t, the
+scrubber over its cache strip, Fps; then z (Plane, or Depth in 3D), ±, the ± width; then Level.
+**Console row** (`VwConsoleRow`): loading, the level on screen, the renderer, the integrated-GPU warning
+and the cache budget, in a strip at the window's foot; errors that break the view stay on the image.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes are SHOWN; the window is
 off on the 2D tile path. The view state publishes them (`dims.zRange`), so a recording draws the same planes
 (Match viewer, keyframes, Fill from view → a batch's **max** / 3D range) and restoring a keyframe puts
