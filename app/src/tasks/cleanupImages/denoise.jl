@@ -82,21 +82,8 @@ end
 # The saturation gate (DENOISE_INTEGRATION_PLAN.md D6). Reads `meta.saturation.channels` — the
 # same block `saturation_qc_findings` reads. Returns the list of user-selected channels that are
 # marked `saturated`, so the handler can log and the runner can refuse in one direction.
-function _denoise_saturated_channels(meta::AbstractDict, wanted::Vector{Int})::Vector{Int}
-    sat = get(meta, "saturation", nothing)
-    sat isa AbstractDict || return Int[]
-    chans = get(Dict{String,Any}(String(k) => v for (k, v) in sat), "channels", nothing)
-    chans isa AbstractVector || return Int[]
-    out = Int[]
-    for ch in chans
-        ch isa AbstractDict || continue
-        get(ch, :saturated, false) === true || get(ch, "saturated", false) === true || continue
-        idx = get(ch, :index, get(ch, "index", nothing))
-        idx isa Integer || continue
-        Int(idx) in wanted && push!(out, Int(idx))
-    end
-    sort!(out)
-end
+_denoise_saturated_channels(meta::AbstractDict, wanted::Vector{Int})::Vector{Int} =
+    channel_signal_flags(meta, wanted).saturated
 
 function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
@@ -144,7 +131,6 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
                "the runner cannot rebuild the network. Retrain via the Model Training page.")
         return nothing
     end
-
     ch_names = ccid_channel_names(raw)
     channel_idx = channel_indices(p.channels, ch_names; what = "channels")
     if isempty(channel_idx)
@@ -210,6 +196,16 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
         end
     end
 
+    # The temporal window, read once here for the picked channels and handed to the runner, so the
+    # model advisory, this refusal and the runner use one number (denoise_advisory.jl).
+    window = denoise_input_frames(resolved, [String(ch_names[c + 1]) for c in channel_idx])
+    size_t = something(meta_int(img.meta, "SizeT"), 0)
+    if denoise_short_movie(window, size_t)
+        on_log("[ERROR] Movie has $size_t timepoints but the model needs at least $window. " *
+               "Pick a longer movie or a model trained with a smaller window.")
+        return nothing
+    end
+
     ok = run_py("tasks/cleanupImages/denoise_run.py",
         (; imPath        = im_path,
            imOutputPath  = im_output_path,
@@ -219,6 +215,7 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
            perChannelModels = per_channel_models,
            channels      = channel_idx,
            channelsSkipped = saturated,
+           inputFrames   = window,
            batchSize     = p.batchSize,
            qcOutPath     = qc_out_path),
         task_run_dir(img._dir);

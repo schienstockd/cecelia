@@ -350,6 +350,7 @@ include("tasks/task.jl")
 # registration sites in tasks/**/ are all beneath the task registry) and before any task file that
 # registers a validator.
 include("tasks/param_validators.jl")
+include("tasks/channel_advisory.jl")
 # algorithm-agnostic segmentation label-store conventions shared by every segmentation task —
 # after task.jl (uses the `LiveOutput` trait type), before the segment/ tasks that call it
 include("segmentation.jl")
@@ -373,6 +374,7 @@ include("tasks/cleanupImages/stack_align.jl")
 include("tasks/cleanupImages/flow_register.jl")
 include("tasks/cleanupImages/smooth.jl")
 include("tasks/cleanupImages/denoise.jl")
+include("tasks/cleanupImages/denoise_advisory.jl")
 include("tasks/opticalFlow/train_support_denoise.jl")
 include("tasks/editImages/cropImage_box.jl")
 include("tasks/editImages/cropImage.jl")

@@ -19,9 +19,13 @@
 >    other Params structs" does not apply. Maturity tiers belong to pages (`lib/guides/tiers.ts`), not
 >    functions. "Experimental" in the example is the page's tier.
 >
-> Still open from the brief: classifying the unchecked lines, and checks with no `TASK_CHECKS` entry.
-> In the brief's own example, "photon-limited" has a QC signal (`photon_limited` in
-> `app/src/qc/text.jl`) but no check, and "movie shorter than the model window" has neither.
+> **Follow-ups (2026-11-12).** The unchecked lines were classified by reading them. Most of the 186
+> are "use X instead" pointers or reasoning and stay text. #2188 attached existing checks to four
+> lines. The next PR answers the lines about what is *picked*, under that param rather than with a
+> `check`: a channel-pick advisory (saturated / not photon-limited, from the import's per-channel
+> facts) on Denoising, Train denoise, Smoothing and AF correction, and Denoising's model advisory (no
+> model yet; movie shorter than the model's window, now also refused at Run). Still text, with no
+> signal: the motif window, R for legacy migration, and the correction snapshot.
 
 # WHEN_TO_USE_TIGHTEN_PROMPT
 

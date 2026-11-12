@@ -52,6 +52,7 @@ export interface ParamContext {
   params?: ParamDef[]        // the WHOLE task's params, so a widget can find a sibling by TYPE rather
                              // than by a hardcoded key. See `scopeValueName` in paramValues.ts —
                              // resolving by name silently scoped two specs to the wrong segmentation.
+  funName?: string           // the task (`TaskDef.fun_name`) — backend param advisories are keyed on it
   extraValueNames?: string[] // valueNameSelection: value_names not (yet) on disk — e.g. the output
                              // of an upstream whiteboard node ("driftCorrected") that only exists once
                              // the chain runs. Merged into the option list so it can be selected.
@@ -500,6 +501,7 @@ const advisoryCtx = computed<AdvisorContext>(() => ({
   projectUid: props.context?.projectUid,
   images: props.context?.images,
   values: props.context?.values,
+  funName: props.context?.funName,
 }))
 
 // Coalesced, latest-wins (docs/UI.md → "Continuous controls"): an advisor may hit the backend

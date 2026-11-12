@@ -56,6 +56,9 @@ export interface ParamDef {
   // `showIf` because the condition is often not expressible in the form alone: "the file you picked
   // is an XML export, which has no columns" needs the file read.
   hidden?: boolean
+  // Set by the SERVER (`stamp_backend_advisories!`), never authored: a Julia form-time validator is
+  // registered for this task + key, so the form shows its advisory (`taskBackendAdvisor`).
+  backendAdvisory?: boolean
   /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown.
    *  text: `'chips'` types a comma-separated list as chips (ChipInput); `max` caps how many. */
   variant?: 'chips'

@@ -34,6 +34,8 @@ function api_task_validate(req::HTTP.Request, body_bytes::Vector{UInt8})
         end
     end
     value = get(body, :value, nothing)
+    # Nothing registered: answer before loading any image.
+    haskey(PARAM_VALIDATORS, (fun_name, param_key)) || return 200, "null"
 
     # Resolve images. `_gating_image` returns (img, err); on err we just drop the image — the
     # validator judges the subset that DID resolve. An empty set is a legitimate "nothing to say".

@@ -164,6 +164,10 @@ when it is — and is not — the right step. `purpose` is one line; `useWhen` t
   store already holds — no request; an unknown id fails `taskDiscovery.test.ts`. A check never blocks
   Run (a hard prerequisite is a `required` param), and attach one only where it truly answers the
   line. A line without one stays neutral.
+- **A line about what is PICKED in the form is answered under that param, not by a `check`** — a
+  check sees only the images. "Saturated or bright channels" is the channel-pick advisory, "Needs a
+  model" and "Movies shorter than the model's temporal window" are Denoising's model advisory
+  (*Param advisories* below). The line stays as text: it is what the MCP reads.
 - **Each line is a property of the method, in the user's words** — "needs photon-sparse signal",
   "blurs cell edges". Never a channel, a percentile or a threshold for some dataset: the reader still
   has to reason about their own data.
@@ -1391,6 +1395,20 @@ sequences the results so a slider drag can't land an out-of-order answer.
   convention (`docs/DEV.md` → *Tests*) and the reason the mechanism exists at all: the first advisory
   was hand-rolled inside `ParamRenderer` as five bespoke computeds plus its own template block, and
   the second would have been a second copy.
+
+- **A rule the Run enforces lives in Julia, and the form asks for it.** Register the validator next to
+  the rule (`register_param_validator!(fun_name, key, f)`, `app/src/tasks/param_validators.jl`); the
+  form fetches it from `POST /api/tasks/validate`. A param one task owns registers
+  `backendAdvisor(fun_name, key)` under its key (Train denoise's `inputFrames`). Otherwise nothing
+  is needed on the frontend: the definitions route stamps `backendAdvisory: true` on every param
+  with a registered validator (`stamp_backend_advisories!`), and `paramAdvisor` hands a stamped
+  param to **`taskBackendAdvisor`**, which asks about the form's own task (`ctx.funName`). So a
+  shared key (`channels`, `model`) asks the backend on the tasks that registered it and on no other.
+  The **channel-pick advisory** is the main user: picked channels saturated or not photon-limited,
+  from the import's per-channel facts (`channel_signal_flags`, which the denoise gate and
+  `import.photon_limited` also read); a cleanup task opts in with one row in the table at the end of
+  `app/src/tasks/channel_advisory.jl`. Denoising's `model` has one too: no model in the vault, or a
+  temporal window longer than the movies, refused at Run by the same `denoise_short_movie`.
 
 > **If an advisory duplicates a backend number, pin both sides.** The anisotropy grid advisory
 > mirrors `_aniso_grid_bytes` in `branching.jl` (40 bytes per box per frame) so the estimate shown

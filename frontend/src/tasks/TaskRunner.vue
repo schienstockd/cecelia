@@ -100,6 +100,7 @@ const paramContext = computed<ParamContext>(() => ({
   projectUid: projectMeta.current?.uid ?? '',
   values: paramValues.value,     // showIf conditions + sibling lookups read these
   params: taskDef.value?.params, // so a widget finds its sibling by TYPE, not by a hardcoded key
+  funName: taskDef.value?.fun_name, // which task a backend param advisory is asked about
 }))
 
 // selected function — starts empty; resolved reactively when defs load from the API
