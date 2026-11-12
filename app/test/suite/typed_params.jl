@@ -241,7 +241,7 @@ end
         @test p.doAffine3d === true
         @test p.sigma === 0.5
         @test p.samplesPerParameter === 8000
-        @test p.keepRegChannels === true      # default: every cycle's alignment channel kept
+        @test p.keepRegChannels === false     # default: one alignment channel, the reference's
     end
     # the picker's one-element list is one name, not the string of a list
     @test Cecelia.parse_register_params(Dict{String,Any}("regChannel" => ["DAPI"])).regChannel == "DAPI"

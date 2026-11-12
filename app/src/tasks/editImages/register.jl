@@ -18,7 +18,7 @@ Base.@kwdef struct RegisterParams
     autoMask::Bool               = false
     samplesPerParameter::Int     = 5000
     expand::Int                  = 0
-    keepRegChannels::Bool        = true
+    keepRegChannels::Bool        = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -33,7 +33,7 @@ function parse_register_params(d::AbstractDict)::RegisterParams
         autoMask            = Bool(get(d, "autoMask", false)),
         samplesPerParameter = Int(get(d, "samplesPerParameter", 5000)),
         expand              = Int(get(d, "expand", 0)),
-        keepRegChannels     = Bool(get(d, "keepRegChannels", true)),
+        keepRegChannels     = Bool(get(d, "keepRegChannels", false)),
         version = parse_version_pin(d))
 end
 
