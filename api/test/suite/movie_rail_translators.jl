@@ -18,6 +18,11 @@
     # shape. If it drifts, the record button silently regresses to channels-only movies.
     @test _overlays_raw_from_config(Dict{String,Any}(), false) === nothing
     @test _overlays_raw_from_config(nothing, false) === nothing
+    # the viewer's hidden mask files (`labelFilesHidden`) reach `movie_mask`; absent = none hidden
+    @test _overlays_raw_from_config(Dict{String,Any}("labelFilesHidden" => Dict("cells" => ["halo"])),
+                                    true)["maskFilesHidden"] == Dict("cells" => ["halo"])
+    @test isempty(_overlays_raw_from_config(Dict{String,Any}(), true)["maskFilesHidden"])
+    @test isempty(mask_files_hidden([1, 2]))
     ov = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "popType" => "flow",
                                                      "pointsSize" => 8), false)
     @test ov isa AbstractDict
