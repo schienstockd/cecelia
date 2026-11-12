@@ -45,6 +45,7 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # correlated its frames back to the reference far worse than peers is one
     # where the estimator is not converging.
     "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx", "meanFrameCorrelation"],
+    "editImages.register"        => ["worstResidualUm", "minTissueCovered", "minTissueRetained"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
     "segment.importLabels"       => ["nCells"],

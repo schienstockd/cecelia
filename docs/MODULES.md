@@ -540,12 +540,12 @@ route would silently take the chain capability away too, which is the opposite o
 ### `comingSoon` — flag a task as not-yet-ready without hiding it
 
 ```json
-{ "fun_name": "editImages.register", "comingSoon": true, "comingSoonNote": "Coming in 0.2.1 — under test" }
+{ "fun_name": "segment.someTask", "comingSoon": true, "comingSoonNote": "Coming in 0.2.1 — under test" }
 ```
 
 Marks a task whose **runtime plumbing is registered and runnable from the REPL / API / chain**, but
 is not ready for GUI users yet. The frontend picker greys the row and appends the note:
-`Register images (staining cycles) — Coming in 0.2.1 — under test`. `Run` is disabled for the same
+`Some task — Coming in 0.2.1 — under test`. `Run` is disabled for the same
 reason. This is a static task-level flag (in the JSON), unlike `requires`, which is an image-shaped
 gate — the task doesn't run for anyone through the picker, whatever they select.
 

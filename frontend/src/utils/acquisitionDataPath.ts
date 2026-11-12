@@ -121,11 +121,23 @@ export function firstDataPathChannel(chans: DataPathChannel[]): number | null {
   return (chans.find(c => c.attention.length) ?? chans[0])?.index ?? null
 }
 
-/** Notes that hold for every channel: summed frames lift the ceiling past one detector read. */
+/** Notes that hold for every channel: summed frames lift the ceiling past one detector read; on a slide
+ *  scan, how much of it is tissue — the photon and structure numbers come from patches on it. */
 export function dataPathNotes(img: LightPathImage): LightPathItem[] {
   const integ = img.acquisition?.scanner?.integration
   const summed = integ?.type && integ.type !== 'None' && integ.average === false && (integ.count ?? 1) > 1
-  return summed ? [{ text: `Frames summed ×${n(integ!.count)}: values can exceed one detector read`, source: 'file' }] : []
+  const out: LightPathItem[] = summed
+    ? [{ text: `Frames summed ×${n(integ!.count)}: values can exceed one detector read`, source: 'file' }]
+    : []
+  const t = img.cleanupFacts?.tissue
+  if (t && typeof t.fraction === 'number') {
+    const pct = t.fraction * 100
+    const share = `${pct < 1 ? pct.toFixed(1) : Math.round(pct)}% of the scan`
+    out.push(t.patches
+      ? { text: `Tissue: ${share}; signal measured on it`, source: 'measured' }
+      : { text: `Tissue: none found; signal measured on a grid over the scan`, source: 'measured' })
+  }
+  return out
 }
 
 /** One entry per probed channel, in channel order. Empty when the image was never probed. */

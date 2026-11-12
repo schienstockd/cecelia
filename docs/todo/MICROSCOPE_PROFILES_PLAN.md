@@ -144,8 +144,8 @@ Today's acquisition texts say "movie" throughout: `app/src/qc/text.jl` (28 lines
   planned exposure, blanks as markers "--". Some runs were done one cycle per scan (`ScanN/` each with
   its own `.xpd` and DAPI) — separate images, unregistered. Brightfield RGB scans (`im_Brightfield`) →
   `technology: brightfield`, no knowledge file or drawing yet.
-- **Open:** Cecelia's AF correction on a channel the scanner already AF-subtracted (`afSubtracted`);
-  combining cycle-per-scan images (DAPI registration); `modes/cyclic.json` knowledge.
+- AF correction on scanner-subtracted channels, cycle-per-scan registration and `modes/cyclic.json`:
+  built — see *Multiplex QC* below.
 - `modes/cyclic.json` knowledge: blank/background cycles, autofluorescence carried across cycles,
   marker signal falling with cycle number, failed cycles, cross-cycle registration, stitching seams.
 - Channel names = markers: the designs in the set check are marker lists already (`acq_design_key`).
@@ -158,9 +158,22 @@ Today's acquisition texts say "movie" throughout: `app/src/qc/text.jl` (28 lines
   Measured on that scan's cycle 3 (48960 × 24960, 3 channels): 27 s, 0.84 GB peak. Channels the
   scanner processed before writing (`processing`, `afSubtracted`) get no photon fit — reason in
   `photons.fit.untestable` (`photons_untestable` in `saturation.jl`), one note in the data-path panel.
-- **Open — multiplex QC** (next): statistics on a slide mostly describe glass — a tissue mask first,
-  then patches and stats inside it; per-cycle checks (DAPI intensity and sharpness across cycles =
-  tissue loss / focus; offset between cycles, with registration); shared structure inside tissue.
+- **Multiplex QC — built** (branch `feat/multiplex-qc`). Tissue mask on a coarse pyramid level
+  (`tissue_utils`: Otsu over the scanned pixels — the scanner writes zeros on skipped tiles. Zack's
+  triangle, the background threshold elsewhere, was tried first: inside the scanned tiles glass and
+  tissue are two peaks of similar height, and triangle anchored on the taller one, cutting above the
+  tissue on cycle 2 — 0.13% tissue instead of 5%); the import's signal-pass patches sit on it (`tissue` in
+  `meta.saturation`, a data-path note). Cycle-per-scan registration (`editImages.register`, no longer
+  `comingSoon`): a whole-slide reference registers on the pyramid (`register_utils`: phase-correlation
+  shift → rigid → affine, tiled warp, banded pyramid write) and checks each cycle on the reference's
+  tissue — residual offset, tissue covered / retained / only in the cycle, shared-marker signal and
+  sharpness ratios — as the task's QC. On 0064520 (three scans, 51120 × 30720): shifts ≈ 3460 px,
+  rotation ≤ 0.05°, residual 0.13 µm median, 4.5 min and 1.3 GB peak for 11 channels; one section the
+  reference scan skipped shows as `tissueOnlyInCycle` 9–14%. AF correction skips `afSubtracted`
+  channels. `modes/cyclic.json` knowledge (served with `get_acquisition_knowledge(modes=)`).
+  Many-channel metadata grid: PR #2195. **Open:** a slide probed before the tissue mask is not
+  re-probed (`_saturation_is_current` does not know the plane size); the 3-D / small-image register
+  path (sitkibex) has no per-cycle checks.
 
 ### Series index — one count (found at review, 2026-11-11)
 

@@ -18,12 +18,13 @@ Base.@kwdef struct RegisterParams
     autoMask::Bool               = false
     samplesPerParameter::Int     = 5000
     expand::Int                  = 0
+    keepRegChannels::Bool        = true
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
 function parse_register_params(d::AbstractDict)::RegisterParams
     RegisterParams(;
-        regChannel          = string(get(d, "regChannel", "")),
+        regChannel          = _register_channel_name(get(d, "regChannel", "")),
         doFftInitialization = Bool(get(d, "doFftInitialization", false)),
         doAffine2d          = Bool(get(d, "doAffine2d", true)),
         doAffine3d          = Bool(get(d, "doAffine3d", false)),
@@ -32,6 +33,7 @@ function parse_register_params(d::AbstractDict)::RegisterParams
         autoMask            = Bool(get(d, "autoMask", false)),
         samplesPerParameter = Int(get(d, "samplesPerParameter", 5000)),
         expand              = Int(get(d, "expand", 0)),
+        keepRegChannels     = Bool(get(d, "keepRegChannels", true)),
         version = parse_version_pin(d))
 end
 
@@ -56,10 +58,11 @@ end
 # the whole Vector{CciaImage}; the reference is named by `referenceUid`. Modality: sitkibex's
 # SimpleITK ITKv4 registration on a single shared channel (`regChannel`, resolved per image by
 # NAME, not index, so `mem-TOM` vs `mem-Tom` errors clearly instead of registering the wrong
-# reporter). Output: `add_image!` on the reference's set — a new image whose channel dimension is
-# `ref_C + Σ(cycle_C − 1)` (the reg channel of each moving cycle is dropped as duplicate). QC-EXEMPT:
-# deterministic geometric alignment with no measurement output; the intent of the task is to
-# reshape a set of cycles into one image, so it belongs in editImages.
+# reporter). Output: `add_image!` on the reference's set — a new image holding every reference
+# channel then each moving cycle's (its alignment channel too with `keepRegChannels`, to check the
+# alignment and the tissue cycle by cycle) — `_register_channel_plan`. A whole-slide cycle is
+# registered on its pyramid (`register_utils`), which also checks each cycle against the reference;
+# those checks are this task's QC (`_register_qc_findings`).
 #
 # Direct port of the old-R `registerImages.R` + vendored sitkibex (see python/sitkibex/). The one
 # improvement over old R is that the per-cycle affine transforms are persisted to the new image's
@@ -91,6 +94,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
     src_paths   = String[]
     src_C       = Int[]
     src_names_per_img = Vector{String}[]
+    src_acqs    = Any[]
     for im in ordered
         raw   = read_ccid_raw(state_file(im))
         names = something(channel_names(im), String[])
@@ -114,16 +118,15 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
             return nothing
         end
         push!(src_paths, im_path)
-        # SizeC is a scalar meta field; every image carries one.
         this_meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
         push!(src_C, Int(get(this_meta, "SizeC", length(names))))
+        push!(src_acqs, get(this_meta, "acquisition", nothing))
     end
 
-    # Output channel geometry: reference channels + Σ(cycle_C − 1). Old R drops the reg channel of
-    # every MOVING cycle as a duplicate of the reference's; the reference's own reg channel stays.
-    total_c = src_C[1] + sum(c - 1 for c in src_C[2:end]; init = 0)
+    # Reference channels + each cycle's; a cycle's alignment channel only with `keepRegChannels`.
+    plan    = _register_channel_plan(src_C, reg_channels, p.keepRegChannels)
+    total_c = length(plan)
 
-    # Reference is the "home" — new image lands in the SAME set. add_image! on the reference's set.
     proj_dir = dirname(dirname(ref_img._dir))
     proj_uid = basename(proj_dir)
     proj    = load_project(proj_uid)
@@ -139,6 +142,8 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         "register_do_affine_3d"   => p.doAffine3d)
     merge!(reg_meta, _register_inherited_meta(ref_meta, total_c))
     copy_source_meta!(reg_meta, ref_meta)
+    acq = _register_acquisition(src_acqs, plan)
+    isnothing(acq) || (reg_meta["acquisition"] = acq)
 
     new_img = add_image!(s; name = derived_image_name(proj, ref_img.name, "registered"), meta = reg_meta)
     out_filename = "ccidRegistered.ome.zarr"
@@ -146,10 +151,12 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
     on_log("[INFO] Reference: $(ref_img.uid) ($(ref_img.name))")
     on_log("[INFO] Registering $(length(ordered) - 1) cycle(s) on channel '$reg_channel_name' → $(new_img.uid)")
 
-    # Where the runner persists the per-cycle affine transforms (one improvement over old R). Kept
-    # under the NEW image's `data/` — same convention as the napari-colours sidecar for crop — so a
-    # future step can reapply the alignment to labels/tracks without redoing the compute.
+    # The per-cycle transforms (old R threw them away), under the NEW image's `data/` like crop's
+    # napari-colours sidecar, so labels/tracks can be re-aligned without recomputing.
     transforms_path = joinpath(new_img._dir, "data", "registration_transforms.json"); mkpath(dirname(transforms_path))
+    qc_out_path = joinpath(task_run_dir(ref_img._dir), "register_qc_$(new_img.uid).json")
+    rm(qc_out_path; force = true)
+    pixel_um = img_is_calibrated(ref_img) ? img_physical_sizes(ref_img)[1][3] : nothing   # µm, unit applied
 
     ok = run_py("tasks/editImages/register_run.py",
         (; imPaths        = src_paths,
@@ -163,28 +170,16 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
            sigma               = p.sigma,
            autoMask            = p.autoMask,
            samplesPerParameter = p.samplesPerParameter,
-           expand              = p.expand),
+           expand              = p.expand,
+           keepRegChannels     = p.keepRegChannels,
+           pixelSizeUm         = pixel_um,
+           qcOutPath           = qc_out_path),
         task_run_dir(ref_img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
-    # Assemble the output channel-name list: reference names, then each moving cycle's non-reg names
-    # in the same order. Prefixed with the source uid so duplicate marker names across cycles are
-    # distinguishable in the UI. If a cycle has no registered names, fall back to positional labels.
-    combined_names = String[]
-    for (name, uid) in zip(src_names_per_img[1], fill(ordered[1].uid, length(src_names_per_img[1])))
-        push!(combined_names, name)
-    end
-    for i in 2:length(ordered)
-        cyc_names = src_names_per_img[i]
-        n_c       = src_C[i]
-        reg_idx   = reg_channels[i]
-        for c in 0:(n_c - 1)
-            c == reg_idx && continue
-            base = c + 1 <= length(cyc_names) ? cyc_names[c + 1] : "cyc$(i - 1)_ch$c"
-            push!(combined_names, "$(ordered[i].uid[1:min(6,end)]):$base")
-        end
-    end
+    # Output channel names in the runner's order; a marker every cycle carries reads "DAPI (cycle 2)".
+    combined_names = _register_channel_names(src_names_per_img, plan)
 
     commit_state!(new_img) do raw2
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
@@ -206,7 +201,12 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         end
     end
 
+    cycles, findings, metrics = _register_qc(ordered, qc_out_path; on_log = on_log)
+    write_qc(new_img, "editImages.register", VERSIONED_DEFAULT_VAL, findings; metrics = metrics, cycles = cycles)
+    isempty(findings) || on_log("[QC] $(length(findings)) finding(s) — see the image's QC badge.")
+
     on_log("[INFO] Registration complete → new image $(new_img.uid) ($total_c channels)")
     Dict{String,Any}("newImageUid" => new_img.uid, "newImageName" => new_img.name, "setUid" => s.uid,
                      "totalChannels" => total_c, "transformsPath" => transforms_path)
 end
+

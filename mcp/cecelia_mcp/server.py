@@ -1456,7 +1456,8 @@ def get_guide(guide_id: str = "") -> dict:
 # Acquisition knowledge, one file per layer so a microscope or an imaging technology is added without
 # touching code (docs/todo/MICROSCOPE_PROFILES_PLAN.md): `technologies/<id>.json` (stages, symptoms,
 # checks, cited sources — what the light path is), `scopes/<id>.json` (one microscope model: its
-# technology and its names for the features that fix a stage), `sources.json` (shared citations).
+# technology and its names for the features that fix a stage), `modes/<id>.json` (an acquisition mode
+# on top of any technology — cyclic multiplex: its own symptoms), `sources.json` (shared citations).
 # Hand-written, committed beside this file (docs/todo/ACQUISITION_ADVISOR_PLAN.md → P3).
 _ACQUISITION_KNOWLEDGE_DIR = os.path.join(os.path.dirname(__file__), "acquisition_knowledge")
 
@@ -1493,7 +1494,7 @@ def acquisition_technologies() -> dict[str, dict]:
 
 
 @_tool
-def get_acquisition_knowledge(system: str = "", technology: str = "") -> dict:
+def get_acquisition_knowledge(system: str = "", technology: str = "", modes: list[str] | None = None) -> dict:
     """Acquisition knowledge for reading an image's acquisition, per imaging technology (two-photon,
     confocal, airyscan, widefield, ...). Pass BOTH from get_image_info's `acquisition`:
     `system` (e.g. "FV4000", "LSM 980") and `technology` — one microscope can run several (an LSM 980
@@ -1508,30 +1509,45 @@ def get_acquisition_knowledge(system: str = "", technology: str = "") -> dict:
     get_qc_metrics). `scopes` gives the matching microscope's name for the feature that fixes a stage
     (e.g. FV4000 → Bright Z), `verified: false` until a facility confirms it — say so when you pass one
     on — and `seenInFiles`, what the lab's own files record for it. A system with no profile returns
-    `unknownSystem`: do not borrow another technology's advice for it. Project-independent. Read-only."""
+    `unknownSystem`: do not borrow another technology's advice for it. `modes` — get_image_info's
+    `acquisition.modes` (e.g. ["tiled", "cyclic"]) — adds `modes`: the symptoms of each acquisition mode
+    that has knowledge (cyclic multiplex: blank cycles and AF the scanner subtracted, cycle
+    registration, tissue lost over cycles), same shape as a stage's symptoms; they apply on top of the
+    technology's. Project-independent. Read-only."""
     techs = acquisition_technologies()
     scopes = _knowledge_files("scopes")
+    mode_files = {m["mode"]: m for m in _knowledge_files("modes")}
     index = {"technologies": [{"technology": k, "summary": t["summary"]} for k, t in techs.items()],
-             "microscopes": [{"system": s["system"], "technologies": s["technologies"]} for s in scopes]}
+             "microscopes": [{"system": s["system"], "technologies": s["technologies"]} for s in scopes],
+             "modes": [{"mode": k, "summary": m["summary"]} for k, m in mode_files.items()]}
+    wanted = [m for m in (str(x).lower() for x in (modes or [])) if m in mode_files]
     matched = [s for s in scopes if system and s["system"].lower() == system.lower()]
     tech = technology.lower() or (matched[0]["technologies"][0] if matched else "")
+    with open(os.path.join(_ACQUISITION_KNOWLEDGE_DIR, "sources.json"), encoding="utf-8") as f:
+        sources = json.load(f)
+    mode_out = [mode_files[m] for m in wanted]
+    mode_cited = {sid for m in mode_out for sym in m["symptoms"] for sid in sym["sources"]}
     if tech not in techs:
         out = dict(index)
+        if mode_out:
+            out["modes"] = mode_out
+            out["sources"] = {k: v for k, v in sources.items() if k in mode_cited}
+            out["available"] = index
         if system and not matched:
             out["unknownSystem"] = system
         if technology:
             out["unknownTechnology"] = technology
         return out
-    with open(os.path.join(_ACQUISITION_KNOWLEDGE_DIR, "sources.json"), encoding="utf-8") as f:
-        sources = json.load(f)
     t = techs[tech]
-    cited = {sid for st in t["stages"] for sym in st["symptoms"] for sid in sym["sources"]}
+    cited = {sid for st in t["stages"] for sym in st["symptoms"] for sid in sym["sources"]} | mode_cited
     out = {
         "technology": tech, "summary": t["summary"], "status": t["status"], "stages": t["stages"],
         "sources": {k: v for k, v in sources.items() if k in cited},
         "scopes": [s for s in (matched if system else scopes) if tech in s["technologies"]],
         "available": index,
     }
+    if mode_out:
+        out["modes"] = mode_out
     if system and not matched:
         out["unknownSystem"] = system
     return out

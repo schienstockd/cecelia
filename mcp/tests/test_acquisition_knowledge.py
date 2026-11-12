@@ -28,6 +28,7 @@ def _load(kind):
 
 TECHS = server.acquisition_technologies()   # resolved: `extends` applied
 SCOPES = _load("scopes")
+MODES = _load("modes")
 SOURCES = json.loads((_DIR / "sources.json").read_text(encoding="utf-8"))
 
 
@@ -72,8 +73,26 @@ class AcquisitionKnowledgeFilesTest(unittest.TestCase):
         self.assertIn("photon-counted", no_photon["check"])
         self.assertIn("Never suggest the offset", no_photon["check"])
 
+    def test_every_mode_symptom_is_checkable_cites_known_sources_and_real_qc_codes(self):
+        known = set(re.findall(r'^\s*"([\w.]+)"\s*=>', _QC_TEXT.read_text(encoding="utf-8"), re.M))
+        self.assertIn("cyclic", {m["mode"] for m in MODES})
+        for m in MODES:
+            self.assertTrue(m["summary"].strip() and m["status"].strip(), m["mode"])
+            ids = [sym["id"] for sym in m["symptoms"]]
+            self.assertEqual(len(ids), len(set(ids)), m["mode"])
+            for sym in m["symptoms"]:
+                with self.subTest(mode=m["mode"], symptom=sym["id"]):
+                    for field in ("symptom", "explanation", "check", "alternatives"):
+                        self.assertTrue(sym[field].strip(), field)
+                    self.assertTrue(sym["sources"])
+                    self.assertLessEqual(set(sym["sources"]), set(SOURCES))
+                    self.assertLessEqual(set(sym["qcCodes"]), known)
+        cyclic = next(m for m in MODES if m["mode"] == "cyclic")
+        self.assertIn("register.misaligned", [c for s in cyclic["symptoms"] for c in s["qcCodes"]])
+
     def test_every_source_has_a_doi_and_is_cited(self):
         cited = {s for t in TECHS.values() for st in t["stages"] for sym in st["symptoms"] for s in sym["sources"]}
+        cited |= {s for m in MODES for sym in m["symptoms"] for s in sym["sources"]}
         for sid, src in SOURCES.items():
             with self.subTest(source=sid):
                 self.assertTrue(src["doi"].startswith("10."))
@@ -107,6 +126,18 @@ class AcquisitionKnowledgeFilesTest(unittest.TestCase):
 
 
 class GetAcquisitionKnowledgeTest(unittest.TestCase):
+    def test_modes_add_their_symptoms_and_sources(self):
+        out = server.get_acquisition_knowledge("", "widefield", modes=["tiled", "cyclic"])
+        self.assertEqual(["cyclic"], [m["mode"] for m in out["modes"]])      # tiled has no file
+        self.assertEqual(out["technology"], "widefield")
+        for sid in {s for sym in out["modes"][0]["symptoms"] for s in sym["sources"]}:
+            self.assertIn(sid, out["sources"])
+        self.assertNotIn("modes", server.get_acquisition_knowledge("", "widefield"))
+        self.assertIn({"mode": "cyclic", "summary": MODES[0]["summary"]},
+                      server.get_acquisition_knowledge()["modes"])
+        alone = server.get_acquisition_knowledge(modes=["cyclic"])          # no technology recorded
+        self.assertEqual(["cyclic"], [m["mode"] for m in alone["modes"]])
+
     def test_no_argument_is_the_index_only(self):
         out = server.get_acquisition_knowledge()
         self.assertNotIn("stages", out)

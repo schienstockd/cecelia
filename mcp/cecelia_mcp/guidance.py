@@ -112,7 +112,9 @@ scanner, detectors, per channel) and what LANDED in the file (`cleanupFacts`: cl
 where measured, per-depth and per-frame numbers); get_acquisition_knowledge(system, technology) maps a symptom to \
 its stage, the number that shows it, the other causes, and sources, for that microscope's technology \
 (`acquisition.technology`: two-photon, widefield, ...) — never apply one technology's advice to \
-another, and say so when a microscope has no profile yet. When images differ within a set, compare \
+another, and say so when a microscope has no profile yet. Pass `acquisition.modes` too: a cyclic \
+multiplex run (PhenoCycler, IBEX) adds its own symptoms — blank cycles, AF the scanner subtracted, \
+cycle registration and tissue lost over cycles (editImages.register QC). When images differ within a set, compare \
 their `acquisition` first (laser %, HV, Bright Z; on a camera exposure, gain, illumination, binning): \
 a setting changed between images is the most direct cause, and two-photon signal goes with power \
 squared. Say "consistent with" until the \
