@@ -21,6 +21,7 @@ import { framesFor, layersOf, channelRows, popRows, cellState, cellToggle, camer
          keyframeTime, type Layers } from '../../utils/animationTimeline'
 import { useColumnResize } from '../../composables/useColumnResize'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
+import { NEUTRAL } from '../../plots/fixedColours'
 
 const props = defineProps<{ imageUid: string }>()
 
@@ -62,7 +63,7 @@ function onDrop(targetId: string) {
 // the "on" colour of a cell = the layer's real colour (channel colormap tint), else the accent — so a
 // green channel reads green, not a generic dot
 const layerColour = (s: AnimSnapshot, name: string) =>
-  viewerColormapHex(layersOf(s)[name]?.colormap) ?? '#a78bfa'
+  viewerColormapHex(layersOf(s)[name]?.colormap) ?? NEUTRAL
 const cellStyle = (s: AnimSnapshot, name: string) =>
   cellState(s, name) ? { background: layerColour(s, name), borderColor: layerColour(s, name) } : undefined
 // Three states, and the third is worth naming: the keyframe has no entry for this layer, so at render

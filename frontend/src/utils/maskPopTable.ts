@@ -24,6 +24,7 @@ import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 import { OVERLAY_GREY } from './viewerOverlays'
 import { mix, parseHex } from './colour'
 import { isInSubtree } from './popName'
+import { WHITE } from '../plots/fixedColours'
 
 /** Where the shown mask's colours come from: the per-id palette, the cell pops on (flow / clust /
  *  region), or the segmentation's track clusters. `settings.viewerMaskColour`. */
@@ -100,7 +101,7 @@ export function maskPopTable(
       for (const l of p.labels) if (l > maxId) maxId = l
       const pale = shown.some(q => q.path !== p.path && isInSubtree(q.path, p.path))
       entries.push({ depth: depthOf(p.path), order: entries.length,
-                     rgb: bytesOf(pale ? mix(p.colour, '#ffffff', MASK_PARENT_PALE) : p.colour), labels: p.labels })
+                     rgb: bytesOf(pale ? mix(p.colour, WHITE, MASK_PARENT_PALE) : p.colour), labels: p.labels })
     }
   }
   if (maxId < 1) return null

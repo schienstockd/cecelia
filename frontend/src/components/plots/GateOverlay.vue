@@ -31,6 +31,7 @@ import { gateLabelPos } from '../../utils/gateLabel'
 import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateShape, gateAt } from '../../plots/gateGeometry'
 import { handleRadius } from '../../utils/drawGeometry'
 import { parseHex, luminance } from '../../utils/colour'
+import { PAPER_INK, HALO_LIGHT, HALO_DARK, STORED_WHITES, WHITE, NEUTRAL } from '../../plots/fixedColours'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -62,13 +63,14 @@ function themed(token: string, fallback: string): string {
   const v = el && getComputedStyle(el).getPropertyValue(token).trim()
   return v || fallback
 }
-const ink = () => themed('--cc-text', '#fafafa')
+const ink = () => themed('--cc-text', PAPER_INK)
 // a label halo is the ground's tone, the opposite of the ink: dark on a dark plot, light on a light one
-const halo = () => parseHex(ink()) && luminance(ink()) < 0.4 ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)'
+const halo = () => parseHex(ink()) && luminance(ink()) < 0.4 ? HALO_LIGHT : HALO_DARK
+// COLOUR-OK: a tint computed from a token's hex
 const tint = (hex: string, a: number) => { const c = parseHex(hex); return c ? `rgba(${c[0]},${c[1]},${c[2]},${a})` : hex }
 function gateColour(colour?: string): string {
   const c = (colour ?? '').trim().toLowerCase()
-  return (!c || c === 'white' || c === '#fff' || c === '#ffffff' || c === '#fafafa') ? ink() : colour!
+  return (!c || STORED_WHITES.has(c)) ? ink() : colour!
 }
 // ONE mapping, forward AND inverse, from plots/axisMap.ts — and this is the file that makes it
 // matter. `pxToData` is how a dragged rectangle becomes the numbers written to
@@ -211,7 +213,7 @@ function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string
   c.fillStyle = colour; c.fillText(name, pos.x, pos.y); c.restore()
 }
 function drawHandles(g: GateSpec, colour: string) {
-  const c = ctx!; c.fillStyle = '#fff'; c.strokeStyle = colour; c.lineWidth = 1.5
+  const c = ctx!; c.fillStyle = WHITE; c.strokeStyle = colour; c.lineWidth = 1.5
   const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1])) as [number, number][]
   // drawn at the size of the grab zone (a square of side r, a dot of radius 0.6 r), so a small gate's
   // shrunken reach shows as smaller handles
@@ -286,11 +288,11 @@ function draw() {
                : selected.value ? gateOf(selected.value) : undefined
   if (active && (props.mode === 'off' || shiftEdit.value || editHandle)) {
     const spec = active.path === editPath && draft.value ? draft.value : active.gate
-    drawHandles(spec, active.colour || '#a78bfa')
+    drawHandles(spec, active.colour || themed('--cc-accent', NEUTRAL))
   }
 
   // in-progress NEW shape (accent)
-  const accent = themed('--cc-accent', '#a78bfa')
+  const accent = themed('--cc-accent', NEUTRAL)
   ctx.strokeStyle = accent; ctx.fillStyle = tint(accent, 0.12); ctx.lineWidth = 1.5
   if (props.mode === 'rectangle' && start && cur) {
     const x = Math.min(start[0], cur[0]), y = Math.min(start[1], cur[1])

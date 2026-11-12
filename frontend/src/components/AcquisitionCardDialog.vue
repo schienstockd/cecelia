@@ -13,6 +13,7 @@ import BaseModal from './BaseModal.vue'
 import AcquisitionCardSheet from './AcquisitionCardSheet.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 import { acquisitionCard, type CardImage } from '../utils/acquisitionCard'
+import { PAPER } from '../plots/fixedColours'
 
 const props = defineProps<{ image: CardImage; projectUid: string }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -63,7 +64,7 @@ async function sheetPng(el: HTMLElement, scale = 3): Promise<string | null> {
   c.width = w * scale; c.height = h * scale
   const ctx = c.getContext('2d')
   if (!ctx) return null
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height)
+  ctx.fillStyle = PAPER; ctx.fillRect(0, 0, c.width, c.height)
   ctx.scale(scale, scale); ctx.drawImage(img, 0, 0)
   return c.toDataURL('image/png')
 }

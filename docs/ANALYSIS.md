@@ -459,8 +459,8 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
 - **Per-slot title (figure caption)**: each filled slot has an editable title line (`.lc-slot-cap`,
   persisted in the slot's `state.title`), shown above the plot on-screen and drawn above the slot image
   in the PDF (`pdf.ts` reserves `SLOT_TITLE_H` only when a title is set). Empty by default.
-- **Light theme**: dark theme is on-screen only. Each plot exposes `exportImage()` → a plot-only
-  **light-theme** PNG (summary via `PlotChart.toImageURL(_, light)`; interactive/cluster via a
+- **Light theme**: every export is light; on screen a plot follows the app scheme. Each plot exposes
+  `exportImage()` → a plot-only **light-theme** PNG (summary via `PlotChart.toImageURL`; interactive/cluster via a
   `forceLight`/`.cc-light` re-render). Chrome is excluded (the plot host is captured, not the slot).
   `ClusterMapView` also drops its plot bounding-box border under `forceLight` so the exported figure is
   frameless. The summary charts' HTML legend + title overlays are drawn INTO the export from their on-screen

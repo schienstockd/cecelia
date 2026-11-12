@@ -23,6 +23,7 @@ import type { Card, CardsResponse, CardFamily, ShownPop } from './cardsPanel'
 import type { Frame, FrameCell } from '../../plots/frame'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { PAPER } from '../../plots/fixedColours'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]
@@ -266,7 +267,7 @@ async function exportImage(): Promise<string | null> {
   exportSrcs.value = map
   capturing.value = true
   await nextTick()
-  try { return await elementToImageURL(el, 'png', '#ffffff') }
+  try { return await elementToImageURL(el, 'png', PAPER) }
   finally { capturing.value = false; exportSrcs.value = {} }
 }
 

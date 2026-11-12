@@ -74,9 +74,11 @@ import { useProjectStore } from '../../stores/project'
 import { useVaultModel } from '../../composables/useVaultModel'
 import { lossSeries, lossTable } from '../../plots/lossCurves'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import { usePlotDark } from '../../composables/usePlotDark'
 import type { FlowManifest } from '../../utils/flowManifest'
 import { denoiseTrainingSeries, type DenoiseManifest, type DenoiseSeries } from '../../utils/denoiseManifest'
 import { convergenceStats } from '../../utils/convergence'
+import { PAPER } from '../../plots/fixedColours'
 
 interface TrainState { logY?: boolean; raw?: boolean; minusFloor?: boolean; terms?: string[]
                        model?: string
@@ -125,6 +127,8 @@ const fig = useTemplateRef<HTMLElement>('fig')
 let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
 let node: SVGElement | HTMLElement | null = null
 const forceLight = ref(false)
+const plotDark = usePlotDark()
+watch(plotDark, () => render())
 
 const floors = computed(() => flowManifest.value?.lossFloors ?? null)
 const hasFloors = computed(() => Object.keys(floors.value ?? {}).length > 0)
@@ -297,7 +301,7 @@ async function render() {
   // val line's meaning is its distance from it, not its number.
   const w = Math.max(200, host.value.clientWidth || 360)
   const h = Math.max(160, host.value.clientHeight || 240)
-  const dark = !forceLight.value
+  const dark = !forceLight.value && plotDark.value
   const { ink: fg, ground: bg } = plotTheme(dark)
   const domain = shown.value.map(s => s.term)
 
@@ -396,22 +400,23 @@ function exportAs(kind: string) {
     const text = csv()
     if (text) downloadBlob(`${stem.value}.csv`, new Blob([text], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(fig.value, kind, plotTheme(true).ground)
-      .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
+    lightImage(kind).then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
 // board PDF/CSV/SVG: a plot-only LIGHT re-render, per the contract in docs/UI.md
-async function exportImage(): Promise<string | null> {
+// every export is light (a figure goes on paper); the on-screen plot follows the app scheme
+async function lightImage(kind: 'png' | 'svg'): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(fig.value, 'png', plotTheme(false).ground)
+  const url = await elementToImageURL(fig.value, kind, plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
+const exportImage = () => lightImage('png')
 async function exportSvg(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const svg = fig.value && node ? figureToSvg(fig.value, plotTheme(false).ink, 'white', node) : null
+  const svg = fig.value && node ? figureToSvg(fig.value, plotTheme(false).ink, PAPER, node) : null
   forceLight.value = false; await render()
   return svg
 }

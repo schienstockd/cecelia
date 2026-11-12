@@ -12,6 +12,7 @@
 // Pure layout + pure SVG string building live here and are unit-tested; only `imageGridPng` touches a
 // canvas, and it is a thin loop over the layout this file already computed.
 import { loadImg, svgDoc, svgImage, svgText } from './export'
+import { PAPER, PAPER_INK } from './fixedColours'
 
 export interface GridImage {
   name: string
@@ -29,7 +30,7 @@ export interface GridStyle {
 
 const DEFAULTS = {
   gap: 12, captionH: 22, fontSize: 14, padding: 12,
-  background: '#ffffff', colour: '#111111',
+  background: PAPER, colour: PAPER_INK,
 } satisfies Required<GridStyle>
 
 export interface GridCell {

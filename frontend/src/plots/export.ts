@@ -1,3 +1,4 @@
+import { PAPER, PAPER_INK } from './fixedColours'
 // Shared plot export helpers — one place for "serialise an SVG to an image URL" and the download
 // plumbing, used by every canvas plot (PlotChart's summary charts + the bespoke cluster HMM panels).
 // Keeping this in one module avoids the divergent re-implementation the codebase warns against: a
@@ -33,7 +34,7 @@ async function rasterize(svgUrl: string, w: number, h: number): Promise<string |
       c.width = w * scale; c.height = h * scale
       const ctx = c.getContext('2d')
       if (!ctx) { resolve(null); return }
-      ctx.fillStyle = 'white'; ctx.fillRect(0, 0, c.width, c.height)
+      ctx.fillStyle = PAPER; ctx.fillRect(0, 0, c.width, c.height)
       ctx.scale(scale, scale); ctx.drawImage(img, 0, 0)
       resolve(c.toDataURL('image/png'))
     }
@@ -264,7 +265,7 @@ export function svgRect(x: number, y: number, w: number, h: number,
   return `<rect x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" ${attrs.filter(Boolean).join(' ')}/>`
 }
 export function svgText(x: number, y: number, s: string,
-                        o: { fill: string; size?: number; anchor?: 'start' | 'middle' | 'end'; weight?: number | string; rotate?: number } = { fill: '#111' }): string {
+                        o: { fill: string; size?: number; anchor?: 'start' | 'middle' | 'end'; weight?: number | string; rotate?: number } = { fill: PAPER_INK }): string {
   const anchor = o.anchor ? ` text-anchor="${o.anchor}"` : ''
   const weight = o.weight ? ` font-weight="${o.weight}"` : ''
   const rot = o.rotate ? ` transform="rotate(${r1(o.rotate)} ${r1(x)} ${r1(y)})"` : ''
@@ -441,7 +442,7 @@ export function figureParts(fig: Element, chart?: Element | null): { chart: Elem
  * returned only its first <svg>, which dropped the legend — or WAS the legend ramp. An HTML swatch must be
  * an <svg> to survive: `collectOverlayItems` snapshots text and <svg>, not CSS backgrounds.
  */
-export function figureToSvg(fig: Element, ink: string | null, background = 'white',
+export function figureToSvg(fig: Element, ink: string | null, background = PAPER,
                             chartEl?: Element | null): string | null {
   const parts = figureParts(fig, chartEl)
   if (!parts) return null

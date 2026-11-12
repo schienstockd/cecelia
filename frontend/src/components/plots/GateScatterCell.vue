@@ -25,6 +25,7 @@ import { svgDoc, svgLine, svgText } from '../../plots/export'
 import { rectFrame, type Frame } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from './PlotPointOutMark.vue'
+import { PAPER, PAPER_INK, PAPER_INK_DIM, PAPER_BORDER } from '../../plots/fixedColours'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -140,7 +141,7 @@ function drawAxes(c: CanvasRenderingContext2D, pr: { x: number; y: number; w: nu
     const v = hostEl.value && getComputedStyle(hostEl.value).getPropertyValue(n).trim()
     return v || fb
   }
-  const ink = cssVar('--cc-text', '#111'), dim = cssVar('--cc-text-dim', '#555'), border = cssVar('--cc-border', '#c9ccd1')
+  const ink = cssVar('--cc-text', PAPER_INK), dim = cssVar('--cc-text-dim', PAPER_INK_DIM), border = cssVar('--cc-border', PAPER_BORDER)
   const tickFont = Math.max(7, props.fontSize - 1), nameFont = props.fontSize + 2, MARK = 5, GAP = 3
   const bottom = pr.y + pr.h, left = pr.x
   c.save()
@@ -184,7 +185,7 @@ function drawAxes(c: CanvasRenderingContext2D, pr: { x: number; y: number; w: nu
 // used by the PDF export (dark theme is only for on-screen display). UNIFIED export: one canvas holding
 // the dots + gate + axis (all from the same viewExtents), instead of compositing a canvas + a cloned
 // HTML axis overlay (which desynced in the PDF). Aim for a ~2200px long side so a small slot isn't soft.
-async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null> {
+async function exportImage(bg = PAPER, light = true): Promise<string | null> {
   const host = hostEl.value, pp = panelPlotEl.value
   if (!host || !pp) return null
   if (light) host.classList.add('cc-light')
@@ -224,7 +225,7 @@ function drawAxesSvg(pr: { x: number; y: number; w: number; h: number }): string
     const v = hostEl.value && getComputedStyle(hostEl.value).getPropertyValue(n).trim()
     return v || fb
   }
-  const ink = cssVar('--cc-text', '#111'), dim = cssVar('--cc-text-dim', '#555'), border = cssVar('--cc-border', '#c9ccd1')
+  const ink = cssVar('--cc-text', PAPER_INK), dim = cssVar('--cc-text-dim', PAPER_INK_DIM), border = cssVar('--cc-border', PAPER_BORDER)
   const tickFont = Math.max(7, props.fontSize - 1), nameFont = props.fontSize + 2, MARK = 5, GAP = 3
   const bottom = pr.y + pr.h, left = pr.x
   let s = ''
@@ -270,7 +271,7 @@ function withLight<T>(light: boolean, fn: () => T, fallback: T): T {
   if (light) host.classList.add('cc-light')
   try { return fn() } finally { if (light) host.classList.remove('cc-light') }
 }
-function exportSvg(bg = '#ffffff', light = true): string {
+function exportSvg(bg = PAPER, light = true): string {
   const host = hostEl.value; if (!host) return ''
   return withLight(light, () => {
     const capW = host.clientWidth, capH = host.clientHeight

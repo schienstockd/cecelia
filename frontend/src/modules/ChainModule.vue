@@ -58,6 +58,7 @@ import { NAV_GROUPS, navItemFor } from '../lib/navGroups'
 import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
+import { NEUTRAL } from '../plots/fixedColours'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -1438,7 +1439,7 @@ onActivated(async () => {
 
 // The canvas dot grid is an SVG attribute, so it takes a resolved colour, re-read when the scheme flips.
 const schemeSettings = useSettingsStore()
-const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--cc-border', '#2e2b28')))
+const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--cc-border', NEUTRAL)))
 </script>
 
 <template>
