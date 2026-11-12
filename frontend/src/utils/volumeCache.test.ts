@@ -274,7 +274,7 @@ describe('cacheRuns / cacheGradient', () => {
   })
   it('draws hard stops from token colours only', () => {
     const g = cacheGradient(cacheRuns(cells('resident', 'absent', 'absent', 'loading')))
-    expect(g).toBe('linear-gradient(to right, var(--cc-accent) 0% 25%, var(--cc-surface-2) 25% 75%, var(--cc-accent-tint) 75% 100%)')
+    expect(g).toBe('linear-gradient(to right, color-mix(in srgb, var(--cc-accent) 45%, transparent) 0% 25%, var(--cc-surface-2) 25% 75%, color-mix(in srgb, var(--cc-accent) 20%, transparent) 75% 100%)')
   })
 })
 

@@ -227,9 +227,13 @@ export function readoutWidth(longest: string): string {
   return `${longest.length + 1.5}ch`
 }
 
-/** CSS colour per run state — tokens only, so the track follows the colour scheme. */
+/** CSS colour per run state — tokens only, so the track follows the colour scheme. Cached is the
+ *  accent at a disabled slider's strength (`input[type=range]:disabled` is 0.45), so the full-accent
+ *  thumb stays easy to see on top of it; loading is fainter again. */
 const RUN_COLOUR: Record<CacheRun['state'], string> = {
-  resident: 'var(--cc-accent)', loading: 'var(--cc-accent-tint)', absent: 'var(--cc-surface-2)',
+  resident: 'color-mix(in srgb, var(--cc-accent) 45%, transparent)',
+  loading: 'color-mix(in srgb, var(--cc-accent) 20%, transparent)',
+  absent: 'var(--cc-surface-2)',
 }
 
 /** A hard-stop `linear-gradient` drawing `runs` left to right; the absent colour when there are none. */
