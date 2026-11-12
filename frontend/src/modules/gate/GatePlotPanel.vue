@@ -473,7 +473,7 @@ watch(() => props.reloadToken, fetchPlot)
          x-axis and no blank space. All controls sit in #actions (one in-flow block). -->
     <template #actions>
       <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
-      <span class="ctrl-sep" />
+      <span class="cc-toolbar-sep" />
       <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES" data-guide="gate.drawTool"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
@@ -576,8 +576,7 @@ watch(() => props.reloadToken, fetchPlot)
 <style scoped>
 /* the floating chrome (.panel / .panel-head / title / remove) lives in CanvasPanel; the styles
    below are gating-specific: the axis controls, the plot body, ticks/axes, and the header tools
-   passed into CanvasPanel's #actions slot (.ctrl-sep — slot content keeps
-   this component's scoped styles). */
+   passed into CanvasPanel's #actions slot (`.cc-toolbar-sep`, global). */
 /* axis controls now live in the auto-hide overlay (#actions); take a full line below the icon tools
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
@@ -599,7 +598,6 @@ watch(() => props.reloadToken, fetchPlot)
 /* the amber marker for an auto-overridden control is the shared .cc-auto-override utility (style.css) */
 .ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { border-color: var(--cc-accent); }
-.ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .gp-export { max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; flex-direction: column; gap: 4px;
