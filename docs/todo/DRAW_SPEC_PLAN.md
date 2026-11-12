@@ -1,8 +1,8 @@
 # Draw spec — one description of what the viewer draws, for the viewer and every recording
 
-**Status:** planned (2026-11-12). Waits for the viewer split in
-[`GUI_LAYOUT_PLAN.md`](GUI_LAYOUT_PLAN.md) (V0–V2: #2150, #2153, the playback bar) to merge, so the two
-refactors don't rebase over each other in `ViewerWindow.vue`.
+**Status:** building. Phase 0 decided, Phase 1 built (`feat/draw-spec-p1`, 2026-11-12). Phase 2 waits
+for the playback bar (GUI layout V2, #2164) — V0 / V1 merged — so the two refactors don't rebase over
+each other in `ViewerWindow.vue`.
 
 ## Why
 
@@ -62,8 +62,9 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
    | 3D ray steps (`viewerSteps`) | separate `renderQuality` knob (draft / standard / high = 128 / 256 / 512 steps — the same quantity as the viewer's Steps slider, 64–512, default 256) | **recorded**: the viewer's Steps by default; Render quality stays as an optional override (maintainer, 2026-11-12) |
    Shader lanes: the movie host sets every `mip` lane except `zwin` (it loads the exact planes, so
    the default is right); `tile` / `brick` are viewer-only renderers for the same picture.
-1. **`drawSpec` + `RECORDED` map**, behaviour-neutral: `viewerLook` computed from the spec, the D4
-   tests in place. Vitest + Julia translator tests.
+1. **BUILT** — **`drawSpec` + `RECORDED` map**, behaviour-neutral: `utils/viewer/drawSpec.ts`, and
+   `readViewerLook` = `viewerLook(readDrawSpec(…))`. D4 checks: `drawSpec.test.ts` and the Julia read of
+   `lookKeys.parity.json`. The fields Phase 0 decided to record are `pending` until Phase 3 wires them.
 2. **The viewer consumes the spec** (D2), after GUI layout V0–V2. Behaviour-neutral; proof as the
    split's: typecheck, full vitest, pixel-identical before/after.
 3. **Close the Phase 0 gaps** marked "record it", each with a runner test that draws it.

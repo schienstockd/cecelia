@@ -12,12 +12,14 @@
 
 import { seedConfigFromViewState, clampContour, type BatchMovieCfg, type ViewStateLike } from '../batchMovie'
 import { viewPlaneZ, type ViewerViewState } from './viewState'
-import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
-import { trackableValueNames, CELL_POP_TYPES } from '../overlayAutoShow'
+import { CELL_POP_TYPES } from '../overlayAutoShow'
+import { readDrawSpec, type LookImage } from './drawSpec'
 import { colourForRender, channelsForRender } from '../viewerColormap'
 import type { PopEyes } from './popEyes'
 import type { MaskColour } from '../maskPopTable'
+
+export { readGatingCurrent, type LookImage } from './drawSpec'
 
 export interface ViewerLookInput {
   viewState: (ViewStateLike & Partial<Pick<ViewerViewState, 'dims' | 'camera' | 'canvas'>>) | null
@@ -153,74 +155,17 @@ function lookZRange(zr: [number, number] | undefined, is3D: boolean, nZ: number)
   return nZ > 0 && lo === 0 && hi >= nZ - 1 ? null : [lo, hi]
 }
 
-/** The pop manager's current (segmentation, popType) for one image, as published to
- *  `cc.gatingCurrent` by the gating store. Empty strings = nothing selected yet. */
-export function readGatingCurrent(imageUid: string): { valueName: string; popType: string } {
-  if (typeof localStorage === 'undefined' || !imageUid) return { valueName: '', popType: '' }
-  try {
-    const bag = JSON.parse(localStorage.getItem('cc.gatingCurrent') ?? '{}') as
-                Record<string, { valueName?: string; popType?: string }>
-    const e = bag[imageUid] ?? {}
-    return { valueName: String(e.valueName ?? ''), popType: String(e.popType ?? '') }
-  } catch { return { valueName: '', popType: '' } }
-}
-
-export interface LookImage {
-  uid: string
-  channelNames?: string[]
-  sizeZ?: number | null
-  labels?: Record<string, unknown>
-  labelPropsNames?: string[]
-  activeValueName?: string
-}
-
-/** `viewerLook` fed from the stores: the published view state of the browser viewer, and the per-set /
- *  per-image overlay settings the viewer draws from.
+/** `viewerLook` of the draw spec (`readDrawSpec`) — the one reader of what the viewer draws.
  *
  *  `requireOpen` (default): `null` unless the browser viewer is showing `img` — there is no "on
  *  screen" to read. Off: always a look — the overlay half is settings and exists whether or not the
  *  viewer is open; channels / z / 3D come from whatever the viewer publishes, if anything. */
 export function readViewerLook(img: LookImage, setUid: string,
                                { requireOpen = true }: { requireOpen?: boolean } = {}): BatchMovieCfg | null {
-  const settings = useSettingsStore()
   const viewer = useViewerStore()
   const onImg = !!viewer.viewState && viewer.openImage?.imageUid === img.uid
   if (requireOpen && !onImg) return null
-  const labelNames = Object.keys(img.labels ?? {})
-  // The viewer draws ONE mask: the first ticked segmentation (ViewerWindow `labelName`).
-  const labelVis = settings.getLabelVisibility(img.uid, labelNames)
-  const maskValueName = labelNames.find(n => labelVis[n]) ?? ''
-  const colourBy = setUid ? settings.getColourBy(setUid) : ''
-  const gating = readGatingCurrent(img.uid)
-  return viewerLook({
-    viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
-    channelNames: img.channelNames ?? [],
-    nZ: img.sizeZ ?? 0,
-    version: (onImg ? viewer.openImage?.valueName : '') || img.activeValueName || '',
-    maskValueName,
-    labelFilesHidden: maskValueName ? [...settings.getLabelFilesHidden(img.uid, maskValueName)] : [],
-    gating,
-    popVisible: pt => setUid ? settings.getPopVisible(setUid, pt) : false,
-    trackVisible: settings.getTrackVisibility(img.uid, trackableValueNames(img)),
-    trackSourceColours: setUid ? settings.getTrackSourceColours(setUid) : {},
-    showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
-    hiddenTrackPops: Object.fromEntries(trackableValueNames(img).map(vn =>
-      [vn, [...settings.getTrackPopHidden(img.uid, vn)]])),
-    popEyes: settings.getImagePopEyes(img.uid, 'points'),
-    ribbonEyes: settings.getImagePopEyes(img.uid, 'ribbons'),
-    pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
-    pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
-    labelOpacity: settings.viewerLabelOpacity,
-    pointZTol: settings.viewerPointZTol,
-    trackZTol: settings.viewerTrackZTol,
-    tailWidth: settings.viewerTailWidth,
-    tailLength: settings.viewerTailLength,
-    labelContour: settings.viewerLabelContour,
-    maskColour: settings.viewerMaskColour,
-    trackColourMode: setUid ? settings.getTrackColorMode(setUid) : 'track',
-    colourBy,
-    colourOverrides: setUid && colourBy ? settings.getColourOverrides(setUid, colourBy) : {},
-  })
+  return viewerLook(readDrawSpec(img, setUid, onImg))
 }
 
 /** A look whose channel colours are the hex the viewer shows (`colourForRender`). */

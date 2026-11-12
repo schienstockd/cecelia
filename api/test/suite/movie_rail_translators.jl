@@ -606,3 +606,17 @@ end
     end
   end
 end
+
+@testset "API: movie rail — the server reads every key the viewer's look sends (DRAW_SPEC_PLAN D4)" begin
+    # `frontend/src/utils/viewer/lookKeys.parity.json` is every key `viewerLook` sends (pinned by
+    # `drawSpec.test.ts`). A key no server file names would be dropped on the way to the renderer —
+    # a viewer feature that never reaches a recording.
+    fx = JSON3.read(read(normpath(joinpath(@__DIR__, "..", "..", "..", "frontend", "src", "utils", "viewer",
+                                           "lookKeys.parity.json")), String))
+    @test length(fx.keys) >= 30
+    src_dir = normpath(joinpath(@__DIR__, "..", "..", "src"))
+    src = join((read(joinpath(src_dir, f), String) for f in readdir(src_dir) if endswith(f, ".jl")), "\n")
+    for k in String.(fx.keys)
+        @test (k, occursin("\"$k\"", src) || occursin(":$k", src)) == (k, true)   # the key names itself on failure
+    end
+end
