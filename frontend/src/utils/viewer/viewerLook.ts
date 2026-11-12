@@ -34,7 +34,8 @@ export interface ViewerLookInput {
   labelFilesHidden?: string[]
   /** the pop manager's current (segmentation, popType) — what the viewer draws pops from */
   gating: { valueName: string; popType: string }
-  popVisible: (popType: string) => boolean
+  /** per pop type (`SPEC_POP_TYPES`), whether the viewer draws it — a missing type is off */
+  popVisible: Record<string, boolean>
   /** per-segmentation "directions" eye */
   trackVisible: Record<string, boolean>
   trackSourceColours: Record<string, string>
@@ -64,7 +65,7 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   const popType = i.gating.popType || 'flow'
   const tracked = Object.keys(i.trackVisible).filter(vn => i.trackVisible[vn])
   // Every cell pop type that is on, on every segmentation — the viewer's population layers.
-  const popTypes = CELL_POP_TYPES.filter(pt => i.popVisible(pt))
+  const popTypes = CELL_POP_TYPES.filter(pt => !!i.popVisible[pt])
   const popsOn = popTypes.length > 0
   const popSeg = (popsOn ? i.gating.valueName : '') || tracked[0] || i.gating.valueName || i.maskValueName
   const hidden = Object.fromEntries(Object.entries(i.hiddenTrackPops).filter(([, v]) => v.length))
@@ -118,7 +119,7 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...(Object.keys(hidden).length ? { hiddenTrackPops: hidden } : {}),
     // every segmentation's track clusters — not tied to the pops' segmentation (ViewerWindow
     // `loadTracks` fetches them for every trackable one)
-    showTrackclust: i.popVisible('trackclust'),
+    showTrackclust: !!i.popVisible.trackclust,
     showTracks: tracked.length > 0,
     // every tracked segmentation the viewer knows, hidden ones too — a source the map does not name is
     // drawn (`resolveTrackSources`)

@@ -42,6 +42,7 @@ import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, solo
 import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
+import { drawSpecOf, type DrawSpecSource, type ViewerDrawSpec } from '../utils/viewer/drawSpec'
 import { usePlotResize } from '../composables/usePlotResize'
 import { useVwPlayback } from '../composables/useVwPlayback'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
@@ -103,7 +104,7 @@ import {
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
-         isTrackDrawable } from '../utils/viewerOverlays'
+         isTrackDrawable, type TrackColorMode } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
@@ -772,15 +773,13 @@ const layerHidden = (l: PopLayer) => new Set(l.payload.pops.filter(p => !popDraw
  *  point eye, so the eye is the one authority). The ribbons ask here; the capture snapshot reads the
  *  sources they built (`trackSources`). */
 function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
-  const su = setUid.value
-  if (!su || !settings.getShowGatedTracks(su)) return false
+  if (!spec.showGatedTracks) return false
   if (trackclustHolds(l.vn)) return false
   return isTrackDrawable(p) && popEyeOn(ribbonEyes.value, l.vn, l.popType, p.path, p.show)
 }
 /** Trackclust is drawing this segmentation, which stands its cell-track ribbons down. */
 function trackclustHolds(vn: string): boolean {
-  const su = setUid.value
-  return !!su && settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(vn)
+  return !!spec.popVisible.trackclust && trackclustPayloads.value.has(vn)
 }
 const overlaysErr = ref('')
 /**
@@ -806,13 +805,15 @@ const trackSources = ref<MultiTrackResult['sources']>([])
 const trackSpeedRange = ref<[number, number] | null>(null)
 /** The cell pop types the panel has on — the ones `loadOverlays` fetches, for every segmentation.
  *  Reactive through `_setPrefs`, which the storage bridge updates whenever the panel toggles an icon. */
-const shownPopTypes = computed(() =>
-  setUid.value ? CELL_POP_TYPES.filter(pt => settings.getPopVisible(setUid.value!, pt)) : [])
+const shownPopTypes = computed(() => {
+  const on = spec.popVisible
+  return CELL_POP_TYPES.filter(pt => on[pt])
+})
 const popsPanelOn = computed(() => shownPopTypes.value.length > 0)
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
-const trackColorMode = computed<'track' | 'speed' | 'solid' | 'pop'>({
-  get: () => setUid.value ? settings.getTrackColorMode(setUid.value) : 'track',
+const trackColorMode = computed<TrackColorMode>({
+  get: () => spec.trackColourMode as TrackColorMode,
   set: (v) => { if (setUid.value) settings.setTrackColorMode(setUid.value, v); rebuildOverlays() },
 })
 /** Set the per-source override colour (Solid mode legend picker). No-op without a setUid, since the
@@ -836,6 +837,22 @@ const readGatingCurrent = () => readGatingCurrentFor(imageUid ?? '')
 /** The segmentations overlays draw from — every one with a cell table, mask or not. */
 const cellTableNames = () => meta.value?.cellTableNames ?? meta.value?.labelNames ?? []
 const gatingCurrent = ref(readGatingCurrent())
+/** What this viewer draws (`utils/viewer/drawSpec.ts`) — the one reader of the settings that decide
+ *  the picture, the same one every recording reads. Each field is a getter: reading one tracks only
+ *  its own settings. Eye reconciles and write-backs still go to the settings store. */
+const specSource: DrawSpecSource = {
+  get imageUid() { return imageUid ?? '' },
+  get setUid() { return setUid.value },
+  get labelNames() { return meta.value?.labelNames ?? [] },
+  get trackNames() { return cellTableNames() },
+  branchNames: [],
+  get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
+  get nZ() { return meta.value?.nZ ?? 0 },
+  get version() { return meta.value?.valueName ?? valueName.value ?? '' },
+  get viewState() { return (viewerStore.viewState ?? null) as unknown as ViewerDrawSpec['viewState'] },
+  get gating() { return gatingCurrent.value },
+}
+const spec = drawSpecOf(specSource)
 
 /**
  * `settings.viewerSelectMode` reactivity ACROSS windows. The popup viewer is its own Pinia
@@ -895,13 +912,13 @@ function storeRibbonEyes(next: Map<string, PopEyes>) {
  * depending on which eye opened it. Falls back to the window's own setting when there is no set uid.
  */
 const pointSize = computed({
-  get: () => (setUid.value ? settings.getPointSize(setUid.value) : settings.viewerPointSize),
+  get: () => spec.pointSize,
   set: (v: number) => setUid.value ? settings.setPointSize(setUid.value, v) : (settings.viewerPointSize = v),
 })
 // Screen-px width of the black outline drawn around every point. 0 disables it, so the default keeps
 // the existing rendering pixel-identical. Shares `pointSize`'s per-set/global fallback.
 const pointBorder = computed({
-  get: () => (setUid.value ? settings.getPointBorder(setUid.value) : settings.viewerPointBorder),
+  get: () => spec.pointBorder,
   set: (v: number) => setUid.value ? settings.setPointBorder(setUid.value, v) : (settings.viewerPointBorder = v),
 })
 /**
@@ -911,7 +928,7 @@ const pointBorder = computed({
  * is a request for the server (the values come from disk), so a watch refetches the overlays.
  * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
  */
-const colourBy = computed(() => setUid.value ? settings.getColourBy(setUid.value) : '')
+const colourBy = computed(() => spec.colourBy)
 watch(colourBy, () => { void loadOverlays() })
 /**
  * Which segmentation's MASK is drawn, '' for none.
@@ -932,12 +949,11 @@ let allocatedBricks: boolean | null = null
  *  plane moved. `null` before the first allocation. */
 let allocatedZDepth: number | null = null
 let allocatedZLo: number | null = null
+const labelName = computed(() => spec.maskValueName)
+/** The mask a meta about to land would draw — `spec.maskValueName` over `names`, before `meta` is set. */
 function pickLabelName(names: string[]): string {
-  if (!imageUid || !names.length) return ''
-  const vis = settings.getLabelVisibility(imageUid, names)
-  return names.find(n => vis[n]) ?? ''
+  return drawSpecOf({ ...specSource, labelNames: names }).maskValueName
 }
-const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
 // The task preview's mask for THIS image, '' when none. It wins over the ticked mask while it exists:
 // a preview is "show me what these params do, here", and losing it under a ticked segmentation made it
 // look like it never ran. Clearing the preview falls back to the ticked one (`previewLabelsKey`).
@@ -1016,10 +1032,10 @@ const maskTrackclust = ref<{ vn: string; payload: OverlayPayload } | null>(null)
 const maskPopLayers = computed<MaskPopLayer[]>(() => {
   const vn = drawnMaskVn(maskName.value, maskHidden.value)
   if (!vn || maskStoreOf(vn).store) return []
-  if (settings.viewerMaskColour === 'pops')
+  if (spec.maskColour === 'pops')
     return popLayers.value.filter(l => l.vn === vn).map(l => ({ payload: l.payload, hidden: layerHidden(l) }))
   const tc = maskTrackclust.value
-  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn
+  return spec.maskColour === 'trackclust' && tc?.vn === vn
     ? [trackclustMaskLayer(tc.payload, (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))] : []
 })
 /** The trackclust pops last fetched per segmentation — the `prev` a reconcile tells a delete by. */
@@ -1053,17 +1069,17 @@ async function fetchTrackclustPayload(vn: string): Promise<OverlayPayload | null
   } catch { return null }
 }
 async function loadMaskTrackclust() {
-  const vn = settings.viewerMaskColour === 'trackclust' ? maskName.value : ''
+  const vn = spec.maskColour === 'trackclust' ? maskName.value : ''
   if (!vn || !projectUid || !imageUid) { maskTrackclust.value = null; return }
   // null = no cell table: the palette, as for pops
   const cached = trackclustPayloads.value.get(vn)
   const payload = cached ?? await fetchTrackclustPayload(vn)
   if (payload && !cached) reconcileTrackclustEyesFor(vn, payload)
   // a later mask / mode change has overtaken this fetch
-  if (settings.viewerMaskColour !== 'trackclust' || maskName.value !== vn) return
+  if (spec.maskColour !== 'trackclust' || maskName.value !== vn) return
   maskTrackclust.value = payload ? { vn, payload } : null
 }
-watch([() => settings.viewerMaskColour, maskName], () => { void loadMaskTrackclust() })
+watch([() => spec.maskColour, maskName], () => { void loadMaskTrackclust() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -1199,8 +1215,8 @@ const segCount = ref(0)
  *  handful of points against a mask full of cells, which reads as random rather than as a strict slice. */
 const overlayStyle = computed<OverlayStyle>(() => ({
   pointPx: pointSize.value, borderPx: pointBorder.value, umPerSize: meta.value?.voxelUm[0] ?? 0,
-  pointZTol: settings.viewerPointZTol,
-  tailFrames: settings.viewerTailLength, tailPx: settings.viewerTailWidth, trackZTol: settings.viewerTrackZTol,
+  pointZTol: spec.pointZTol,
+  tailFrames: spec.tailLength, tailPx: spec.tailWidth, trackZTol: spec.trackZTol,
 }))
 const summary = computed(() => overlayLayersSummary(popLayers.value))
 /**
@@ -1472,7 +1488,7 @@ const PROJECTIONS = [
 ]
 /** Why the mask's *Colour* draws the palette or all grey — '' when it draws what was asked. */
 const maskColourNote = computed(() => {
-  const mode = settings.viewerMaskColour
+  const mode = spec.maskColour
   if (mode === 'id') return ''
   if (previewVn.value || liveVn.value) return 'Not for a preview mask'
   if (mode === 'pops') return maskTable.value ? '' : 'No populations shown on this mask'
@@ -1722,7 +1738,7 @@ const frame = usePlotResize(canvas, () => {
   // a watcher that could disagree with what is on screen.
   seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
   r.setCamera(cam.value)
-  r.setSteps(singlePlane.value ? 1 : settings.viewerSteps)
+  r.setSteps(singlePlane.value ? 1 : spec.steps)
   // The overlay slice for the frame ACTUALLY on screen, not the one asked for — same rule as the
   // timestamp. The planes are the ones actually LOADED: one in the 2D view, the crop range or ±n window
   // otherwise. Not "-1 for 3D" — a view cropped to eight planes would then draw the whole stack's cells
@@ -1735,7 +1751,7 @@ const frame = usePlotResize(canvas, () => {
   // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
   // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
   const showLabels = !!drawnMaskVn(maskName.value, maskHidden.value)
-  r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  r.setLabelStyle(showLabels ? spec.labelOpacity : 0, spec.labelContour)
   r.setLabelTable(maskTable.value)
   // Pick highlight — the correction cockpit's "what am I editing right now" answer. Scoped to the
   // matching imageUid only; vn is not enforced because the outline is drawn AGAINST the visible
@@ -1852,8 +1868,8 @@ function rebuildOverlays() {
   //   3. Trackclust ribbons — from `trackclustPayloads` (every segmentation's), gated by
   //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
-  const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
-  const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
+  const trackclustOn = !!spec.popVisible.trackclust
+  const overrides = spec.trackSourceColours
   const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
   // If a track highlight is set for THIS image + this vn, narrow the per-vn source to just those
   // ids. Restores the pre-napari-retire behaviour (`showTracksInNapari` went out with napari
@@ -2122,7 +2138,7 @@ function toggleTrackPop(pop: { vn: string; popType: string; path: string; show: 
 async function loadTracks() {
   if (!projectUid || !imageUid) return
   const names = cellTableNames()
-  const vis = settings.getTrackVisibility(imageUid, names)
+  const vis = spec.trackVisible
   const wantVns = names.filter(vn => vis[vn])
   // Drop cached vns no longer ticked
   const next = new Map<string, OverlayPayload>()
@@ -2151,7 +2167,7 @@ async function loadTracks() {
   // pings on any gating edit; a cached-only path would draw stale ribbons after the user changes
   // a trackclust pop. Payloads are small; the round trip is cheaper than deciding which
   // mutations are safe to skip.
-  const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
+  const trackclustOn = !!spec.popVisible.trackclust
   if (trackclustOn) {
     const tcVns = names   // every trackable vn, not just the ticked-eyes set
     const tcNext = new Map<string, OverlayPayload>()
@@ -3124,7 +3140,7 @@ function drawTiles() {
   tr.setCamera(cam.value.panX, cam.value.panY, cam.value.dist)
   // The mask on screen and its style — the same settings the volume path's frame closure applies.
   tr.setLabelSource(tileMaskSource.value)
-  tr.setLabelStyle(tileMaskSource.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  tr.setLabelStyle(tileMaskSource.value ? spec.labelOpacity : 0, spec.labelContour)
   tr.setLabelTable(maskTable.value)
   // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
   // pointer input. Same trigger for both dimensions of size change.
@@ -3863,14 +3879,14 @@ const roiSection = ref<{ step: (dir: 1 | -1) => void, onKey: (e: KeyboardEvent) 
 const roiSpot = ref<RoiSpot | null>(null)
 const roiSpotScreen = computed(() => {
   const r = roiSpot.value, m = meta.value, { w, h } = canvasSize.value
-  if (!r || !settings.viewerRoiSpotlight || !m || mode.value !== 'plane' || h <= 0) return null
+  if (!r || !spec.roiSpotlight || !m || mode.value !== 'plane' || h <= 0) return null
   return l0BoxToScreen(r.box, cam.value, m, zLoaded.value, true, w, h)
 })
 /** 3D: the ROI's box itself — its twelve edges through the shaders' projection, so it turns with the
  *  volume (docs/todo/ROI_TRIAGE_PLAN.md → Spotlight). */
 const roiBoxLines = computed(() => {
   const r = roiSpot.value, m = meta.value, { w, h } = canvasSize.value
-  if (!r || !settings.viewerRoiSpotlight || !m || mode.value !== 'volume' || h <= 0) return null
+  if (!r || !spec.roiSpotlight || !m || mode.value !== 'volume' || h <= 0) return null
   const c = l0BoxCorners(r.box, cam.value, m, zLoaded.value, settings.viewerVolumeProjection !== 'persp', w, h)
   if (!c) return null
   const top = c.reduce((a, b) => (b.y < a.y ? b : a))
@@ -4493,7 +4509,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     loadedLevel.value = slabLevel.value
     r.setCapacity(settings.viewerCacheFrames || m.nT)
     r.setOrthographic(mode.value === 'plane' || settings.viewerVolumeProjection === 'ortho')
-    r.setSteps(singlePlane.value ? 1 : settings.viewerSteps)
+    r.setSteps(singlePlane.value ? 1 : spec.steps)
     syncCacheState()
     gotoT(t.value)
   }
@@ -5039,6 +5055,8 @@ watch(meta, m => {
     zarrPath: m.zarrPath ?? '',
     taskDir: m.taskDir ?? '',
     nLevels: m.levels?.length ?? 1,
+    labelNames: m.labelNames ?? [],
+    trackNames: cellTableNames(),
   })
 })
 
@@ -5459,7 +5477,7 @@ async function readViewLandscape(): Promise<LandscapeResult | null> {
   const data = await readCanvasImageData(frame)
   if (!data) return null
   return computeLandscape(data, {
-    cols: settings.viewerGridDensity, rows: settings.viewerGridDensity,
+    cols: spec.gridDensity, rows: spec.gridDensity,
   })
 }
 // Landscape recompute goes through the canonical `debouncedLatest` scheduler — the density
@@ -5473,7 +5491,7 @@ async function readViewLandscape(): Promise<LandscapeResult | null> {
 // coalesced*).
 const recomputeLandscapeSched = debouncedLatest<void>(
   async (_arg, isCurrent) => {
-    if (!settings.viewerLandscape || !meta.value || shownT.value < 0) { landscape.value = null; return }
+    if (!spec.landscape || !meta.value || shownT.value < 0) { landscape.value = null; return }
     if (!canvas.value) return
     const result = await readViewLandscape()
     if (!isCurrent()) return
@@ -5494,19 +5512,19 @@ const recomputeLandscapeSched = debouncedLatest<void>(
   { wait: 200, maxWait: 400 },
 )
 const recomputeLandscape = () => recomputeLandscapeSched.schedule()
-watch(() => settings.viewerLandscape, on => {
+watch(() => spec.landscape, on => {
   if (on) recomputeLandscape()
   else { recomputeLandscapeSched.cancel(); landscape.value = null }
 })
-watch(() => settings.viewerGridDensity, () => { if (settings.viewerLandscape) recomputeLandscape() })
-watch([shownT, zPlane], () => { if (settings.viewerLandscape) recomputeLandscape() })
+watch(() => spec.gridDensity, () => { if (spec.landscape) recomputeLandscape() })
+watch([shownT, zPlane], () => { if (spec.landscape) recomputeLandscape() })
 // Recompute on pan / zoom too — the landscape is in VIEWPORT coords (same rule as GridOverlay:
 // "B3 is a quarter of what's currently visible"), so a camera move changes what the tiles cover.
 // Without this the tile fills sit over the OLD viewport region while the underlying image scrolls
 // past — the "funky" symptom the maintainer flagged 2026-09-20. Debounced by the shared sink so a scroll
 // gesture emits one recompute at the release cadence rather than per-wheel-tick.
 watch(() => [cam.value.panX, cam.value.panY, cam.value.dist, cam.value.yaw, cam.value.pitch],
-      () => { if (settings.viewerLandscape) recomputeLandscape() })
+      () => { if (spec.landscape) recomputeLandscape() })
 function onReannotate(payload: {
   captureId: string; frameDataUrl: string; overlay: OverlayMark[]; notes: string
 }) {
@@ -5569,7 +5587,7 @@ async function snapshotLandscape(): Promise<LandscapeResult | null> {
     const trackVn = (() => {
       const names = cellTableNames()
       if (!imageUid || !names.length) return ''
-      const vis = settings.getTrackVisibility(imageUid, names)
+      const vis = spec.trackVisible
       return names.find(n => vis[n]) ?? ''
     })()
     // At least one augmentable dimension has to be on before we ask; if the frontend has
@@ -5933,8 +5951,8 @@ onUnmounted(() => {
            35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
       <StillOverlay
         v-if="meta && shownT >= 0" :extent-um="overlayExtent" :time-label="timeLabel" chrome="fixed"
-        :show-scale-bar="settings.viewerScaleBar" :show-timestamp="settings.viewerTimestamp"
-        :bar-font-px="settings.viewerScaleBarPx" :time-font-px="settings.viewerTimestampPx"
+        :show-scale-bar="spec.scaleBar" :show-timestamp="spec.timestamp"
+        :bar-font-px="spec.scaleBarPx" :time-font-px="spec.timestampPx"
       />
       <!-- Set-of-Mark grid — user-facing region names ("look at C4"). PR #2 of BIDIR_CONTEXT_PLAN.md.
            Viewport coords: at zoom-in "C4" is a quarter of the current view, not a quarter of the
@@ -5942,12 +5960,12 @@ onUnmounted(() => {
       <!-- Landscape overlay — cheap categorical heatmap under the grid so the grid's letters stay
            legible over the fills. BIDIR PR #6 (Decision 14 reframe). Density is shared with the
            grid so the "cell B3" both overlays name is the same tile. -->
-      <LandscapeOverlay v-if="settings.viewerLandscape && landscape && meta && shownT >= 0"
-                        :landscape="landscape" :show-labels="settings.viewerLandscapeLabels" />
-      <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity"
-                   :hide-labels="settings.viewerLandscape && settings.viewerLandscapeLabels" />
+      <LandscapeOverlay v-if="spec.landscape && landscape && meta && shownT >= 0"
+                        :landscape="landscape" :show-labels="spec.landscapeLabels" />
+      <GridOverlay v-if="spec.grid && meta && shownT >= 0" :cols="spec.gridDensity"
+                   :hide-labels="spec.landscape && spec.landscapeLabels" />
       <!-- Claude's `mark_tile` pointers — same tiles as the grid, shown with the grid on or off -->
-      <TileMarkOverlay v-if="meta && shownT >= 0" :cols="settings.viewerGridDensity"
+      <TileMarkOverlay v-if="meta && shownT >= 0" :cols="spec.gridDensity"
                        :marks="viewerStore.tileMarks.filter(m => m.imageUid === imageUid)" />
       <!-- Share-in draw overlay (BIDIR PR #3): mounts DIRECTLY on the viewer so users draw on
            what they're looking at. Triggered from the main-window ViewerPanel's Share button
