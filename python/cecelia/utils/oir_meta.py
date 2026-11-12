@@ -20,8 +20,11 @@ import xml.etree.ElementTree as ET  # vendor .oir XML, not OME-XML: test_zarr_ac
 #: Bumped when the reader starts returning a field it did not before, so Refresh metadata re-reads
 #: settings stored by an older reader (the `.oir` row of
 #: app/src/tasks/importImages/acquisition_readers.json must match — asserted in app/test/suite/segmentation.jl
-#: → "language boundaries agree on their protocol"). 2: date, body, filters, dichroics.
-READER_VERSION = 2
+#: → "language boundaries agree on their protocol"). 2: date, body, filters, dichroics. 3: technology.
+READER_VERSION = 3
+
+#: Shortest excitation that still means multiphoton (`MULTIPHOTON_MIN_NM`, frontend acquisitionLightPath.ts).
+_MULTIPHOTON_MIN_NM = 680
 
 #: The settings document's root element, as it appears in the raw bytes.
 _ROOT_TAG = b'lsmimage:imageProperties'
@@ -277,9 +280,13 @@ def parse_settings(xml_bytes):
         return {'reason': 'no acquisition phase in the settings document'}
     phase = phases[0]
     lasers = _lasers(acq, phase, root)
+    wavelengths = [v.get('wavelengthNm') or 0 for v in lasers.values()]
     return {
         'source': 'oir',
         'readerVersion': READER_VERSION,
+        # A line at or above 680 nm is multiphoton (the frontend's `isMultiphoton` rule); an FV4000
+        # can run either way, so the lasers decide, not the system.
+        'technology': ('two-photon' if any(w >= _MULTIPHOTON_MIN_NM for w in wavelengths) else 'confocal') if wavelengths else None,
         'system': _text(root, 'system/systemName'),
         'softwareVersion': _text(root, 'system/systemVersion'),
         # As recorded, ISO 8601 with the scope PC's UTC offset.

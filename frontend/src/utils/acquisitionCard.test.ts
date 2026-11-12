@@ -109,3 +109,25 @@ describe('acquisitionCard — a two-photon .czi (Zeiss LSM 780)', () => {
     expect(c.settings.find(r => r.label === 'Power')!.items.map(i => i.text).join(' | ')).toMatch(/Auto Z brightness off/)
   })
 })
+
+describe('a widefield card: camera table instead of detectors', () => {
+  // `lif_meta` output for a DM5500B image (trimmed to the fields the card reads).
+  const wf = { uid: 'w', name: 'speck', channelNames: ['ASC', 'Nuclei'], acquisition: {
+    source: 'lif', technology: 'widefield', system: 'DM5500B', lasers: [],
+    camera: { name: 'DFC365FX', binning: 2, bitDepth: 12 },
+    objective: { name: 'HC PL FLUOTAR 20x/0.50 DRY', magnification: 20, na: 0.5, immersion: 'dry' },
+    channels: [
+      { order: 1, name: 'New 1', dyePreset: null, laser: null, detector: 'DFC365FX', hv: null, gain: 2, offset: null, filterCube: 'A4', exposureMs: 122.5, illuminationIntensity: 3 },
+      { order: 2, name: 'New 2', dyePreset: null, laser: null, detector: 'DFC365FX', hv: null, gain: 2.6, offset: null, filterCube: 'Y5', exposureMs: 122.5, illuminationIntensity: 4 },
+    ] } } as const
+  const c = acquisitionCard(wf as unknown as Parameters<typeof acquisitionCard>[0], { projectUid: 'p', printedOn: 'today' })
+
+  it('has a card, rows in widefield order, and the camera per channel', () => {
+    expect(hasAcquisitionCard(wf as unknown as Parameters<typeof hasAcquisitionCard>[0])).toBe(true)
+    expect(c.detectors).toEqual([])
+    expect(c.camera!.map(r => [r.channel, r.cube.text, r.exposure.text, r.gain.text, r.lamp.text])).toEqual([
+      ['ASC', 'A4', '122.5 ms', '2', '3'], ['Nuclei', 'Y5', '122.5 ms', '2.6', '4']])
+    expect(c.settings.map(r => r.label)).not.toContain('Laser')
+    expect(c.settings.map(r => r.label)).toContain('Objective')
+  })
+})

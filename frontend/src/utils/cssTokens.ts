@@ -105,3 +105,28 @@ export function findDeadTokenRefs(
   }
   return out
 }
+
+/** Every `--cc-*` value a colour scheme resolves to: the plain `:root` blocks of `styleCss`, then that
+ *  scheme's `:root[data-theme="…"]` override block (`dark` has none). Values are raw (`var(--cc-x)` kept). */
+export function schemeTokens(styleCss: string, scheme: string): Record<string, string> {
+  const css = stripComments(styleCss)
+  const out: Record<string, string> = {}
+  const take = (body: string) => { for (const m of body.matchAll(/(--cc-[\w-]+)\s*:\s*([^;]+);/g)) out[m[1]] = m[2].trim() }
+  for (const m of css.matchAll(/:root\s*\{([^}]*)\}/g)) take(m[1])
+  if (scheme !== 'dark') {
+    const block = new RegExp(`:root\\[data-theme="${scheme}"\\]\\s*\\{([^}]*)\\}`).exec(css)
+    if (!block) throw new Error(`no token block for scheme ${scheme}`)
+    take(block[1])
+  }
+  return out
+}
+
+/** A token's hex in a resolved scheme, following plain `var(--cc-x)` aliases. Throws on anything else. */
+export function tokenHex(tokens: Record<string, string>, name: string): string {
+  const v = tokens[name]
+  const ref = /^var\((--cc-[\w-]+)\)$/.exec(v ?? '')
+  if (ref) return tokenHex(tokens, ref[1])
+  if (/^#[0-9a-fA-F]{3}$/.test(v ?? '')) return '#' + [...v.slice(1)].map(c => c + c).join('')
+  if (!/^#[0-9a-fA-F]{6}$/.test(v ?? '')) throw new Error(`${name} is not a plain hex: ${v}`)
+  return v
+}

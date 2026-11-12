@@ -35,6 +35,7 @@ import RenderModeToggle, { type RenderMode } from './RenderModeToggle.vue'
 import CcToggle from '../CcToggle.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { PAPER } from '../../plots/fixedColours'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -233,9 +234,9 @@ const montageRef = useTemplateRef<{
   exportSvg(bg?: string, light?: boolean): string
   getFrame(): Frame
 }>('montageRef')
-async function exportImage(): Promise<string | null> { return (await montageRef.value?.exportImage('#ffffff', true)) ?? null }
+async function exportImage(): Promise<string | null> { return (await montageRef.value?.exportImage(PAPER, true)) ?? null }
 // full vector <svg> for the board→SVG export — the montage stitches its read-only tiles
-function exportSvg(): string | null { return montageRef.value?.exportSvg('#ffffff', true) || null }
+function exportSvg(): string | null { return montageRef.value?.exportSvg(PAPER, true) || null }
 // Point-out Frame — proxied through to the montage's per-tile subFrames. `interactiveViews.ts`
 // registers this view as what the InteractivePanel host template-refs, so a consumer walking the
 // view registry sees the frame here rather than having to reach past to the inner GateMontage.

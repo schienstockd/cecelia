@@ -22,6 +22,7 @@ import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import { DEFAULT_VIS, fitFacetHeaders, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { applyPlotTheme, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
+import { usePlotDark } from '../../composables/usePlotDark'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import { rectFrame, type Frame } from '../../plots/frame'
@@ -61,9 +62,10 @@ let Plot: any = null
 let node: (HTMLElement | SVGElement) | null = null
 let legendNode: HTMLElement | null = null
 let titleNode: HTMLElement | null = null
-// `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only)
+// `forceLight` flips to a light render for every export; on screen the plot follows the app scheme
 const forceLight = ref(false)
-const effDark = computed(() => forceLight.value ? false : v.value.darkTheme)
+const plotDark = usePlotDark()
+const effDark = computed(() => !forceLight.value && plotDark.value)
 const hostBg = computed(() => plotTheme(effDark.value).ground)
 // reactive so the empty-state / host v-show re-evaluate when data arrives (a bare array does not).
 const rows = ref<{ group: string; from: string; to: string; freq: number }[]>([])
@@ -143,7 +145,7 @@ async function render() {
     color: colorScale,
     fx: { label: null },
     marks: [
-      Plot.dot(rows.value, { fx: 'group', x: 'to', y: 'from', r: 'freq', fill: 'freq', stroke: 'black', strokeWidth: 0.4, tip: true }),
+      Plot.dot(rows.value, { fx: 'group', x: 'to', y: 'from', r: 'freq', fill: 'freq', stroke: fg, strokeWidth: 0.4, tip: true }),
     ],
   }
   // long population names as facet headers: shortened to their panel, full name on hover (#1770)
@@ -173,7 +175,7 @@ function vRampLegend(hi: number, ink: string): HTMLElement {
 function exportAs(kind: string) {
   const stem = `hmm_transitions_${measure.value}`.replace(/[^\w.-]+/g, '_')
   if (kind === 'csv') { if (rows.value.length) downloadBlob(`${stem}.csv`, new Blob([rowsToCsv(rows.value)], { type: 'text/csv' })) }
-  else if (kind === 'png' || kind === 'svg') elementToImageURL(host.value, kind, hostBg.value).then(url => url && downloadDataUrl(`${stem}.${kind}`, url))
+  else if (kind === 'png' || kind === 'svg') lightImage(kind).then(url => url && downloadDataUrl(`${stem}.${kind}`, url))
 }
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setUid, () => props.suffix,
@@ -182,6 +184,7 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setU
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // styling is render-only (no refetch) — re-render when the vis bag changes
 watch(v, () => plotBox.redraw(), { deep: true })
+watch(plotDark, () => plotBox.redraw())
 onMounted(() => {
   load()
 })
@@ -191,13 +194,15 @@ const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
 
 // board export: a plot-only LIGHT re-render → PNG, and the shown rows as CSV (generic panel contract)
-async function exportImage(): Promise<string | null> {
+// every export is light (a figure goes on paper); on screen the plot follows the app scheme
+async function lightImage(kind: 'png' | 'svg'): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
+  const url = await elementToImageURL(host.value, kind, plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
+const exportImage = () => lightImage('png')
 function getCsv(): string | null { return rows.value.length ? rowsToCsv(rows.value) : null }
 // Point-out Frame — same axis-rect extraction as ClusterHmmStatesPanel / ClusterHeatmapPanel.
 // This panel is a faceted dot grid, but the outer scale('x')/'y') still expose the OUTER plot

@@ -77,7 +77,7 @@ import {
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, prefetchDepth, walkPrefetch, stripCells,
+  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, cacheRuns, readoutWidth,
 } from '../utils/volumeCache'
 import type { PlaybackHint } from '../utils/pageTable'
 import {
@@ -115,14 +115,15 @@ import {
   type GpuFrameSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
-import { PALETTES } from '../plots/plot'
+import { PALETTES, POPULATION_PALETTE } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
 import TileMarkOverlay from '../components/TileMarkOverlay.vue'
 import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
-import { plotHostToImageURL, loadImg } from '../plots/export'
+import { plotHostToImageURL, loadImg, downloadDataUrl } from '../plots/export'
+import { screenshotFilename } from '../utils/viewerScreenshot'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
@@ -139,6 +140,9 @@ import type { RoiSpot } from '../utils/rois'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import VwHeader from '../components/viewerWindow/VwHeader.vue'
+import ComingSoonBadge from '../components/ComingSoonBadge.vue'
+import VwPlaybackBar from '../components/viewerWindow/VwPlaybackBar.vue'
+import VwConsoleRow from '../components/viewerWindow/VwConsoleRow.vue'
 import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
 import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
@@ -148,6 +152,7 @@ import VwPopulationsSection, { type VwPopLayer } from '../components/viewerWindo
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
+import { MEDIA_BG } from '../plots/fixedColours'
 
 const route = useRoute()
 const settings = useSettingsStore()
@@ -1439,6 +1444,20 @@ function setChannelColour(c: number, hex: string) {
   pushChannels()
 }
 
+/** What a click on the image does: View moves the view, Select picks cells (the same knob the pop
+ *  manager's pencil writes), Edit is the slot the redesigned correction tools fill (GUI_LAYOUT_PLAN
+ *  Decision 5, V5): it reserves the place and edits nothing yet, so a click there behaves as View. */
+const INTERACT_MODES = [
+  { value: 'view', label: 'View', tip: 'Drag moves the view; a click picks nothing' },
+  { value: 'select', label: 'Select', tip: 'A click picks a cell' },
+  { value: 'edit', label: 'Edit', tip: 'Correction tools — coming soon' },
+]
+/** The Edit slot is open. Not persisted: it edits nothing yet, so a reload lands back on the view. */
+const editMode = ref(false)
+function setInteractMode(v: string) {
+  editMode.value = v === 'edit'
+  if ((v === 'select') !== selectModeActive.value) toggleSelectMode()
+}
 const MODES = [
   { value: 'plane', label: '2D', tip: 'One z plane — the only view that plays a whole timecourse' },
   { value: 'volume', label: '3D', tip: 'Max projection through the whole stack' },
@@ -1813,8 +1832,10 @@ const frame = usePlotResize(canvas, () => {
  * inside it (see `buildPointBuffer`).
  */
 function rebuildOverlays() {
+  // categories (a cluster column) default to the population palette, the one the UMAP and Julia's
+  // `colour_by_palette` default to
   points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })),
-                                 meta.value, PALETTES.cecelia)
+                                 meta.value, POPULATION_PALETTE)
   pointCount.value = points.count
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
   // population layers — one Tracks layer per segmentation, several at once. P7 of
@@ -3460,6 +3481,25 @@ function commitZWindow(apply: () => void) {
   if (bricksEnabled.value === before) void reallocate()
 }
 const setZWindow = (on: boolean) => commitZWindow(() => { zWindowOn.value = on })
+/** 3D with no ± window: z is a depth range to project, not a plane. */
+const zDepthMode = computed(() => mode.value === 'volume' && !zWindowActive.value)
+/** The pill's z readout sized for its longest form (a range at the top of the stack), so it keeps one width. */
+const zPillWidth = computed(() => {
+  const n = Math.max((meta.value?.nZ ?? 1) - 1, 0)
+  return readoutWidth(`z ${n}–${n} / ${n}`)
+})
+const zWindowPopOpen = ref(false)
+const zWindowAnchor = ref<HTMLElement | null>(null)
+/** The folded bar's hairline (`VwPlaybackBar` `line`): the cache and t on a timecourse, else where the
+ *  shown planes sit in the stack. */
+const pillLine = computed(() => {
+  const m = meta.value
+  if (!m) return null
+  if (nT.value > 1) return { runs: cacheRuns(cells.value), at: [t.value / nT.value, (t.value + 1) / nT.value] as [number, number] }
+  if (m.nZ <= 1) return null
+  const [lo, hi] = zDepthMode.value ? zRange.value : zLoaded.value
+  return { runs: [], at: [lo / m.nZ, (hi + 1) / m.nZ] as [number, number] }
+})
 function resetZRange() {
   zRange.value = [0, Math.max((meta.value?.nZ ?? 1) - 1, 0)]
   void reallocate()
@@ -3605,6 +3645,9 @@ watch(overviewShown, v => profileStorage.setItem('cc.vw.overview', String(v)))
  *  the moment the volume rotates away from face-on. */
 const gizmoShown = ref(profileStorage.getItem('cc.vw.gizmo') !== 'false')
 watch(gizmoShown, v => profileStorage.setItem('cc.vw.gizmo', String(v)))
+/** The Debug section, switched on from ⚙ (GUI_LAYOUT_PLAN V3) — a developer's panel, off by default. */
+const debugShown = ref(profileStorage.getItem('cc.vw.debug') === 'true')
+watch(debugShown, v => profileStorage.setItem('cc.vw.debug', String(v)))
 /** Fit-relative zoom for the gizmo readout — 1.0 at Reset view, >1 zoomed in. `fitDist` is set on
  *  every allocate + refit, and Reset writes `cam.dist = fitDist`, so this reads a clean 1× at rest
  *  (no leftover breathing-room factor). */
@@ -5312,18 +5355,29 @@ interface ViewerCapture {
 // the overlays through an SVG foreignObject wrapper, and drawImages canvas pixels + overlay onto
 // one target. The WebGPU canvas is fed in via the `hiRes` hook as `readViewerFrame`'s GPU read —
 // never the canvas itself, whose snapshot can read back blank.
-;(window as unknown as { __cceceliaViewerScreenshot?: () => Promise<{ png: string; imageName: string }> }).__cceceliaViewerScreenshot = async () => {
+async function viewerScreenshot(): Promise<{ png: string; imageName: string }> {
   const el = canvas.value
   if (!el) throw new Error('viewer canvas not ready')
   const host = el.parentElement as HTMLElement | null
   if (!host) throw new Error('viewer host not found')
   const frame = await readViewerFrame()
   if (!frame) throw new Error('viewer frame unavailable')
-  const png = await plotHostToImageURL(host, 'black', {
+  const png = await plotHostToImageURL(host, MEDIA_BG, {
     hiRes: async (cv) => cv === el ? frame : null,   // other canvases (overview minimap) fall through
   })
   if (!png) throw new Error('screenshot composite failed')
   return { png, imageName: imageName.value ?? '' }
+}
+;(window as unknown as { __cceceliaViewerScreenshot?: typeof viewerScreenshot }).__cceceliaViewerScreenshot = viewerScreenshot
+/** Share ▾ → Save image: the same composite, downloaded here (the main window's Viewer panel saves
+ *  through the hook above). */
+async function saveViewImage() {
+  try {
+    const { png, imageName: name } = await viewerScreenshot()
+    downloadDataUrl(screenshotFilename(name), png)
+  } catch (e) {
+    showShareToast('fail', `Save image failed: ${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 // ── Share-in draw mode (BIDIR PR #3 of docs/todo/BIDIR_CONTEXT_PLAN.md) ────────────────────────
@@ -5359,8 +5413,8 @@ const drawAddressLine = computed(() => {
 })
 // Sharing over an already-open capture starts fresh: close the capture view so DrawSurface
 // mounts on the LIVE viewer (what the user is currently looking at), not on the frozen PNG.
-;(window as unknown as { __cceceliaViewerBeginDraw?: () => void }).__cceceliaViewerBeginDraw =
-  () => { captureView.value = null; drawMode.value = true }
+function beginDraw() { captureView.value = null; drawMode.value = true }
+;(window as unknown as { __cceceliaViewerBeginDraw?: () => void }).__cceceliaViewerBeginDraw = beginDraw
 
 // The frozen frame that survives Save (`CaptureViewSurface` renders it). Set here on a
 // successful POST; cleared by the surface's close button or by a new draw.
@@ -5796,7 +5850,15 @@ onUnmounted(() => {
   <!-- The window's header: way back, what is on screen, Help, Ask Kiwi (GUI_LAYOUT_PLAN V1) -->
   <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
             :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
-            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true" />
+            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
+            @save-image="saveViewImage" @draw="beginDraw" />
+  <!-- Edit slot (GUI_LAYOUT_PLAN V5, mock frame 5): says the mode is on and that it writes nothing. -->
+  <div v-if="editMode" class="vw-edit-banner cc-row cc-row-tight" role="status">
+    <b>Edit</b> <ComingSoonBadge />
+    <span class="cc-muted">Nothing here edits yet. Correct labels and tracks from the Segment and Track pages.</span>
+    <span class="vw-grow" />
+    <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="setInteractMode('view')">Back to View</button>
+  </div>
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
@@ -5917,6 +5979,112 @@ onUnmounted(() => {
         <span class="cc-muted cc-fs-2xs">A browser or graphics-driver fault, not this image.</span>
         <span class="cc-muted cc-fs-2xs">Try another browser, or route this one to the discrete GPU.</span>
       </div>
+      <!-- The playback bar (GUI_LAYOUT_PLAN V2): a time row and a z row on fixed grid columns —
+           buttons · buttons · slider · readout · chip · fold (`VwPlaybackBar`). Depth, ± and Level
+           commit on release / change (each reallocates the textures). -->
+      <VwPlaybackBar v-if="meta && (nT > 1 || meta.nZ > 1 || (meta.levels?.length ?? 0) > 1)"
+                     :rows="(nT > 1 ? 1 : 0) + (meta.nZ > 1 || (meta.levels?.length ?? 0) > 1 ? 1 : 0)"
+                     :foldable="nT > 1 || meta.nZ > 1" :line="pillLine">
+        <!-- Folded: play and t, then z — steps on a plane or a window, a readout for a 3D depth range. -->
+        <template #collapsed>
+          <VwTimeControls v-if="nT > 1" pill :t="t" :n-t="nT" :playing="playing"
+                          :throttled="false" :busy="busy" :cells="[]" @toggle-play="togglePlay" />
+          <template v-if="meta.nZ > 1">
+            <span v-if="nT > 1" class="cc-toolbar-sep" aria-hidden="true" />
+            <template v-if="zDepthMode">
+              <span class="cc-readout cc-fs-2xs vw-bar-ro" :style="{ minWidth: zPillWidth }">z {{ zRange[0] }}–{{ zRange[1] }} / {{ meta.nZ - 1 }}</span>
+            </template>
+            <template v-else>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane <= 0"
+                      v-tooltip.top="'Previous z plane'" aria-label="Previous z plane"
+                      @click="stepZ(zPlane - 1)"><i class="pi pi-chevron-left" /></button>
+              <span class="cc-readout cc-fs-2xs vw-bar-ro" :style="{ minWidth: zPillWidth }">z {{ zWindowActive ? `${zLoaded[0]}–${zLoaded[1]}` : zPlane }} / {{ meta.nZ - 1 }}</span>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane >= meta.nZ - 1"
+                      v-tooltip.top="'Next z plane'" aria-label="Next z plane"
+                      @click="stepZ(zPlane + 1)"><i class="pi pi-chevron-right" /></button>
+            </template>
+          </template>
+        </template>
+        <VwTimeControls v-if="nT > 1" :t="t" :n-t="nT" :playing="playing"
+                        :throttled="playing && waitingFor >= 0" :busy="busy" :cells="cells"
+                        @toggle-play="togglePlay" @stop="stopPlay()" @goto="gotoT" />
+        <template v-if="meta.nZ > 1">
+          <span class="cc-muted cc-fs-2xs vw-bar-lead" style="grid-column: 1">z</span>
+          <!-- ± : the planes either side of the current one; its width is in the popover, so turning it
+               on never widens the bar -->
+          <button ref="zWindowAnchor" style="grid-column: 2"
+                  :class="['cc-btn cc-btn-ghost cc-btn-dense vw-bar-pm', { 'cc-btn-on cc-btn-on-tint': zWindowOn }]"
+                  :disabled="zWindowBlocked" aria-haspopup="dialog"
+                  v-tooltip.top="zWindowBlocked
+                    ? 'Not available on a whole-slide plane'
+                    : 'Planes either side of the current one'"
+                  aria-label="Planes either side"
+                  @click="zWindowPopOpen = !zWindowPopOpen">{{ zWindowOn ? `±${zWindowHalf}` : '±' }}</button>
+          <TeleportPopover v-model="zWindowPopOpen" :anchor="zWindowAnchor" placement="bottom-start">
+            <div class="cc-row cc-row-tight">
+              <CcToggle :model-value="zWindowOn" @update:model-value="v => setZWindow(!!v)"
+                        aria-label="Show the planes either side" />
+              <span class="cc-muted cc-fs-2xs">Either side</span>
+              <input
+                type="range" class="vw-bar-zw" :min="1" :max="zWindowMax" :step="1" :disabled="!zWindowOn"
+                :value="zWindowDraft" @input="zWindowDraft = Number(($event.target as HTMLInputElement).value)"
+                @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
+                v-tooltip.top="'Planes either side — more is slower, in proportion'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-bar-pmro">±{{ zWindowDraft }}</span>
+            </div>
+          </TeleportPopover>
+          <RangeSlider v-if="zDepthMode" class="vw-bar-slider" style="grid-column: 3"
+            v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
+            :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
+            @update:lo="v => (zRange = [v, zRange[1]])"
+            @update:hi="v => (zRange = [zRange[0], v])"
+            @change="reallocate()"
+          />
+          <input v-else
+            type="range" class="vw-bar-slider" style="grid-column: 3" :min="0" :max="meta.nZ - 1" :step="1"
+            :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
+            v-tooltip.top="zWindowActive
+              ? 'Centre plane of the window — changing it reloads the timecourse'
+              : 'Which z plane to show — changing it reloads the timecourse'"
+            aria-label="z plane"
+          >
+          <span class="cc-readout cc-fs-2xs vw-bar-ro" style="grid-column: 4">
+            <template v-if="zDepthMode">
+              <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                      v-tooltip.top="'Back to the whole stack'" aria-label="Reset depth"
+                      @click="resetZRange"><i class="pi pi-undo" /></button>
+              {{ zRange[0] }}–{{ zRange[1] }} / {{ meta.nZ - 1 }}
+            </template>
+            <template v-else-if="zWindowActive">{{ zLoaded[0] }}–{{ zLoaded[1] }} / {{ meta.nZ - 1 }}</template>
+            <template v-else>{{ zPlane }} / {{ meta.nZ - 1 }}</template>
+          </span>
+        </template>
+        <!-- Pyramid level. 3D Auto = the finest that fits (flat) or an SSE floor (brick); 2D Auto is
+             zoom-driven. The dropdown pins a level. -->
+        <template v-if="(meta.levels?.length ?? 0) > 1">
+          <select v-if="mode === 'volume'" v-model.number="settings.viewerVolumeLevel"
+                  class="vw-bar-level cc-input-2xs" style="grid-column: 5"
+                  v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
+                  @change="reallocate()">
+            <option :value="-1">L auto{{ bricksEnabled
+              ? (brickCurrentLevel !== undefined ? ` (L${brickCurrentLevel})` : '')
+              : ` (L${slabLevel})` }}</option>
+            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
+              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
+            </option>
+          </select>
+          <select v-else v-model.number="settings.viewerPlaneLevel"
+                  class="vw-bar-level cc-input-2xs" style="grid-column: 5"
+                  v-tooltip.top="'Pyramid resolution — auto picks by camera zoom'"
+                  @change="reallocate()">
+            <option :value="-1">L auto (L{{ slabLevel }})</option>
+            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
+              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
+            </option>
+          </select>
+        </template>
+      </VwPlaybackBar>
       <!-- Startup, mid-load, and errors ALL go in a bottom-left chip: white-on-black stays legible
            against any tile content, and out of the way of the pointer. The error variant carries the
            canonical severity icon and colour (`lib/severity.ts`) — grey-on-image was unreadable
@@ -5933,25 +6101,6 @@ onUnmounted(() => {
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                 @click="error = ''" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss error"><i class="pi pi-times" /></button>
-      </div>
-      <!-- The timepoint ASKED FOR, not a literal 0: this overlay is not only the first load. A 2D/3D
-           switch clears every texture, so it comes back at whatever timepoint the slider is on, and a
-           hardcoded 0 there said the wrong thing. -->
-      <div v-else-if="starting" class="cc-hud-chip vw-status-chip">{{ starting }}…</div>
-      <!-- "Loading timepoint N" is a lie for a still image — say what's actually being waited on. -->
-      <div v-else-if="shownT < 0" class="cc-hud-chip vw-status-chip">
-        {{ nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…' }}
-      </div>
-      <!-- Bricks path only: the canvas is out of sync with the target timepoint. Two shapes:
-           STALE (hold-on-cold keeps displayT on the last-good t while the scheduler chases
-           the new one — canvas shows an OLDER frame than the user scrubbed to) and PARTIAL
-           (unblank rule advanced displayT before every core brick landed — target frame with
-           EMPTY_SLOT holes). Same amber chip in the "Loading timepoint…" slot; gated on
-           `shownT >= 0` so it never fights the initial-load message. -->
-      <div v-else-if="canvasPartial" class="cc-hud-chip vw-status-chip vw-status-chip-warn"
-           v-tooltip.top="'The canvas is not yet showing every brick for the current timepoint'">
-        <i class="pi pi-exclamation-triangle" />
-        <span>Loading bricks…</span>
       </div>
       <!-- Share-in: post-Save toast. Same `.vw-status-chip` visual family as errors/loading so it
            reads as "the viewer is telling you something", but INDEPENDENT of that v-if/v-else-if
@@ -6159,166 +6308,66 @@ onUnmounted(() => {
               <i class="pi pi-bricks" />
             </button>
           </div>
+          <!-- The corner overlay (overview in 2D, XYZ axes in 3D) and the Debug section are set-once
+               switches, so they live here and the panel's top row stays one line (GUI_LAYOUT_PLAN V3). -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Corner</span>
+            <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
+                    @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
+                    v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
+              <i class="pi pi-overview" />
+            </button>
+            <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
+                    @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
+                    v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
+              <i class="pi pi-axes" />
+            </button>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Render knobs, live perf and diagnostics, as a section in the panel'">Debug</span>
+            <CcToggle v-model="debugShown" aria-label="Show the Debug section" />
+          </div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen: the header's provenance chip (VwHeader). The picker lives in the
            main-window ViewerPanel (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches
            this window via the storage bridge and calls `changeVersion` internally. -->
 
-      <div v-if="activeAdapter && !activeAdapter.looksDiscrete" class="cc-muted-warn cc-fs-2xs"
-           v-tooltip.bottom="'The browser picked the integrated GPU — expect much slower frames'">
-        Integrated GPU
-      </div>
 
       <template v-if="meta">
-        <!-- Shortcuts rides on the heading line — a reference popover, not a live control, and the row
-             below stays one line in a narrow sidebar. -->
-        <div class="cc-row cc-row-tight">
-          <span class="cc-eyebrow cc-fs-2xs">View</span>
-          <div class="vw-grow" />
-          <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="keysOpen = !keysOpen"
-                  v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
-            <i class="pi pi-question-circle" />
-          </button>
-        </div>
-        <div class="cc-row cc-row-tight">
+        <!-- The panel's top row (GUI_LAYOUT_PLAN V3, mock frame 4): what a click does, 2D / 3D, reset
+             view and the advanced settings. -->
+        <!-- two non-wrapping groups: a narrow panel breaks the row between them, never inside one -->
+        <div class="cc-row cc-row-tight vw-top">
+          <ChipSelect
+            :options="INTERACT_MODES" :model-value="editMode ? 'edit' : selectModeActive ? 'select' : 'view'"
+            variant="segmented" aria-label="What a click does"
+            @update:model-value="v => setInteractMode(String(v))"
+          />
+          <div class="cc-row-group vw-top-end">
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
             @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
           />
-          <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
-               (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the
-               user can stay in the viewer without reaching back to the module page. Icon shows the CURRENT mode, not the ACTION. -->
-          <button class="cc-btn cc-btn-ghost cc-btn-icon"
-                  :class="{ 'cc-btn-on cc-btn-on-tint': selectModeActive }"
-                  @click="toggleSelectMode"
-                  v-tooltip.top="selectModeActive
-                    ? 'Selection mode — click for pan mode'
-                    : 'Pan mode — click for selection mode'"
-                  aria-label="Toggle selection mode">
-            <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
-          </button>
-          <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
-          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
-                  @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
-                  v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
-            <i class="pi pi-overview" />
-          </button>
-          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
-                  @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
-                  v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
-            <i class="pi pi-axes" />
-          </button>
           <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
                   v-tooltip.top="'Reset view — fit the image and face it square'" aria-label="Reset view">
             <i class="pi pi-reset-view" />
           </button>
-          <!-- Advanced viewer popover — renderer, cache, quality, 3D projection and the cache maps:
-               the set-once knobs, so the row above stays one line in both views. -->
-          <div class="vw-grow" />
           <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': advancedOpen }"
                   aria-label="Advanced viewer settings"
-                  v-tooltip.top="'Renderer, projection and cache maps'"
+                  v-tooltip.top="'Renderer, cache, projection, corner overlay, Debug'"
                   @click="advancedOpen = !advancedOpen">
-            <i class="pi pi-sliders-h" />
+            <i class="pi pi-cog" />
           </button>
-        </div>
-        <!-- Z controls, one block for both views. 3D: the Depth range (whole stack by default), or —
-             with the ±n window on — a Plane slider that moves a 2n+1 box through the stack. 2D: the
-             Plane slider, and with the window on a top-down MIP of the planes around it. One row
-             each — label column, slider, readout — like Fps below; the ± icon at the end of the Z
-             row turns the window on, and its width row appears under it.
-             Depth and ± commit on `@change`, not per pointer move: each reallocates every cached
-             texture. -->
-        <template v-if="meta.nZ > 1">
-          <div class="cc-row cc-row-tight vw-slider-row">
-            <template v-if="mode === 'volume' && !zWindowActive">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Depth</span>
-              <RangeSlider
-                v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
-                :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
-                @update:lo="v => (zRange = [v, zRange[1]])"
-                @update:hi="v => (zRange = [zRange[0], v])"
-                @change="reallocate()"
-              />
-              <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                      v-tooltip.left="'Back to the whole stack'" aria-label="Reset depth"
-                      @click="resetZRange"><i class="pi pi-undo" /></button>
-              <span class="cc-readout cc-fs-2xs vw-readout-col">{{ zRange[0] }}–{{ zRange[1] }}</span>
-            </template>
-            <template v-else>
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
-              <input
-                type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
-                :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
-                v-tooltip.bottom="zWindowActive
-                  ? 'Centre plane of the window — changing it reloads the timecourse'
-                  : 'Which z plane to show — changing it reloads the timecourse'"
-              >
-              <span class="cc-readout cc-fs-2xs vw-readout-col">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
-            </template>
-            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': zWindowOn }]"
-                    :disabled="zWindowBlocked" :aria-pressed="zWindowOn"
-                    @click="setZWindow(!zWindowOn)"
-                    v-tooltip.left="zWindowBlocked
-                      ? 'Not available on a whole-slide plane'
-                      : 'Show the planes either side of the current one'"
-                    aria-label="Show the planes either side">
-              <span aria-hidden="true">±</span>
-            </button>
           </div>
-          <div v-if="zWindowActive" class="cc-row cc-row-tight vw-slider-row">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">± planes</span>
-            <input
-              type="range" class="vw-grow" :min="1" :max="zWindowMax" :step="1"
-              :value="zWindowDraft" @input="zWindowDraft = Number(($event.target as HTMLInputElement).value)"
-              @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
-              v-tooltip.bottom="'Planes either side — more is slower, in proportion'"
-            >
-            <span class="cc-readout cc-fs-2xs vw-readout-col">±{{ zWindowDraft }} · {{ zLoaded[0] }}–{{ zLoaded[1] }}</span>
-            <span class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
-          </div>
-        </template>
-        <!-- 3D pyramid level. Auto = the finest level that fits on flat, an SSE floor on brick
-             (`pickVolumeLevel`); the dropdown pins a level. `@change` (not `@update:*`) so it commits
-             on release, same discipline as Depth. -->
-        <div v-if="mode === 'volume' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
-          <select v-model.number="settings.viewerVolumeLevel" class="vw-grow"
-                  v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
-                  @change="reallocate()">
-            <!-- Auto carries what it picked, like the 2D control: brick shows the atlas's live
-                 SSE level, flat the level it allocated. -->
-            <option :value="-1">Auto{{ bricksEnabled
-              ? (brickCurrentLevel !== undefined ? ` (L${brickCurrentLevel} — zoom-driven)` : '')
-              : ` (L${slabLevel})` }}</option>
-            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
-              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
-            </option>
-          </select>
         </div>
-        <!-- 2D pyramid level. Different policy from 3D: auto is ZOOM-DRIVEN — the level whose native
-             pixel is closest to (without going finer than) one device pixel, so we never ship pixels
-             the screen cannot show. At fit-to-window on a 20k×17k image that is L4 or L5; as the user
-             zooms in past a `floor(log2)` threshold the level drops and the textures reallocate. The
-             dropdown lets a user pin a specific level, same as the 3D control. Phase B of
-             VIEWER_TILES_PLAN.md. Only shown when there IS a pyramid to pick from. -->
-        <div v-if="mode === 'plane' && (meta.levels?.length ?? 0) > 1" class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Level</span>
-          <select v-model.number="settings.viewerPlaneLevel" class="vw-grow"
-                  v-tooltip.top="'Pyramid resolution — auto picks by camera zoom'"
-                  @change="reallocate()">
-            <option :value="-1">Auto (L{{ slabLevel }} — zoom-driven)</option>
-            <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
-              L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
-            </option>
-          </select>
+        <div v-if="editMode" class="cc-empty vw-edit-slot">
+          Correction tools go here
+          <span class="cc-muted cc-fs-xs">They are being redesigned; the cockpit still opens from Correct labels.</span>
         </div>
-
-        <!-- No time = no time controls (components/viewerWindow/VwTimeControls.vue). -->
-        <VwTimeControls v-if="nT > 1" :t="t" :n-t="nT" :has-z="meta.nZ > 1" :playing="playing"
-                        :throttled="playing && waitingFor >= 0" :busy="busy" :cells="cells"
-                        @toggle-play="togglePlay" @stop="stopPlay()" @goto="gotoT" />
+        <template v-else>
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar, timestamp, grid and landscape are overlays on the view (never baked
              into the frame or a Share capture), they are not a layer whose
@@ -6362,7 +6411,7 @@ onUnmounted(() => {
           <RoiSection v-if="openSection === 'rois'" ref="roiSection" :project-uid="projectUid" :image-uid="imageUid"
                       @focus="roiSpot = $event" />
         </CollapsibleSection>
-        <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
+        <CollapsibleSection v-if="debugShown" label="Debug" tip="Render knobs, live perf and diagnostics"
                             accordion="cc.vw.section" section="debug"
                             fill>
           <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
@@ -6568,10 +6617,27 @@ onUnmounted(() => {
                     v-tooltip.top="benchEnabled ? 'Download the full session as JSON' : 'Download the rolling snapshot as JSON'">Save</button>
           </div>
         </CollapsibleSection>
+        </template>
       </template>
+      <!-- the panel's foot: the shortcuts reference (also in Help ▾ in the header) -->
+      <div class="vw-side-foot">
+        <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-dense" @click="keysOpen = !keysOpen"
+                v-tooltip.top="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
+          Shortcuts <i class="pi pi-question-circle" />
+        </button>
+      </div>
       </div>
     </CollapsiblePanel>
   </div>
+  <!-- The console row (GUI_LAYOUT_PLAN V2): what the viewer is doing — loading, level, renderer, GPU —
+       off the image. Errors that break the view stay on the image. -->
+  <VwConsoleRow :loading="error ? '' : starting ? `${starting}…`
+                  : shownT < 0 ? (nT > 1 ? `Loading timepoint ${t}…` : 'Loading image…')
+                  : canvasPartial ? 'Loading bricks…' : ''"
+                :level="meta && (meta.levels?.length ?? 0) > 1 ? `L${bricksEnabled && mode === 'volume' && brickCurrentLevel !== undefined ? brickCurrentLevel : slabLevel}` : ''"
+                :renderer="meta ? effectiveRendererLabel : ''"
+                :integrated-gpu="!!activeAdapter && !activeAdapter.looksDiscrete"
+                :cache="meta ? effectiveCacheMBLabel : ''" />
   </div>
 </template>
 
@@ -6722,6 +6788,28 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 
+.vw-bar-lead { justify-self: center; }
+.vw-bar-pm { width: 100%; justify-content: center; padding-inline: 0; font-variant-numeric: tabular-nums; }
+.vw-bar-slider { width: 100%; min-width: 0; }
+.vw-bar-ro { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.2rem;
+  white-space: nowrap; }
+.vw-bar-zw { width: 6rem; }
+.vw-bar-pmro { display: inline-block; min-width: 3ch; text-align: right; }
+.vw-bar-level { width: 100%; min-width: 0; }
+.vw-top { flex-wrap: wrap; row-gap: 0.35rem; }
+.vw-top-end { margin-left: auto; }
+.vw-edit-banner {
+  flex-shrink: 0; gap: 0.5rem; padding: 0.35rem 0.75rem;
+  background: var(--cc-tint-amber); border-bottom: 1px solid var(--cc-border);
+}
+.vw-edit-slot {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+  border: 1px dashed var(--cc-border); border-radius: var(--cc-radius-sm); text-align: center;
+}
+.vw-side-foot {
+  margin-top: auto; padding-top: 0.35rem; border-top: 1px solid var(--cc-border);
+  display: flex; justify-content: flex-end;
+}
 .vw-side {
   /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
      stay here — the panel deliberately owns no padding so its consumers pad their own root. */
@@ -6817,11 +6905,6 @@ onUnmounted(() => {
   background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); padding: 2px;
 }
-/* Slider rows (Depth/Plane, ± planes; Timepoint and Fps restate these in VwTimeControls): label column, slider, readout column, then
-   the ± button's square (or a spacer the same size) — so every slider starts and ends on one x, and
-   the fixed readout slot stops digits jittering the slider on every playback tick. */
-.vw-slider-row { flex-wrap: nowrap; }
-.vw-readout-col { min-width: 2.6rem; text-align: right; flex: none; white-space: nowrap; }
 .vw-icon-spacer { display: inline-block; flex: none; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:

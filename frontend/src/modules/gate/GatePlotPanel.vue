@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { axisQ } from '../../plots/montage'
+import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import { useGatingStore, type GateSpec, type TransformSpec } from '../../stores/gating'
@@ -36,6 +37,7 @@ import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { splitXYL, splitXYZL } from '../../plots/valueColour'
+import { UNASSIGNED_POP, PAPER } from '../../plots/fixedColours'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -322,7 +324,7 @@ async function loadPopLayers() {
   if (!hl.length || notTracked.value) { popLayers.value = []; return }   // untracked → nothing to overlay
   try {
     popLayers.value = await Promise.all(hl.map(async path =>
-      ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee',
+      ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? UNASSIGNED_POP,
          points: await fetchBuf(plotQ(path, effXs.value, effYs.value)) })))
   } catch (e) {
     log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -347,7 +349,7 @@ const submitting = ref(false)
 const nameError = computed(() => submitting.value ? null : popNameError(newName.value, g.flat.map(p => p.name)))
 async function confirmGate() {
   if (!pending.value || nameError.value || submitting.value) return
-  const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
+  const palette = POPULATION_PALETTE
   submitting.value = true
   let ok
   try {
@@ -374,14 +376,14 @@ async function onEdit(e: { path: string; gate: GateSpec }) {
 // true-vector dots/gates/axes, docs/PLOTS.md); CSV = the shown per-event channel values + population
 // (Prism-ready). We name the file + assemble the CSV rows here.
 const cell = useTemplateRef<{
-  exportImage(bg?: string): Promise<string | null>
+  exportImage(bg?: string, light?: boolean): Promise<string | null>
   exportSvg(bg?: string, light?: boolean): string
 }>('cell')
 function exportAs(kind: string) {
   const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
-  if (kind === 'png') cell.value?.exportImage('#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  if (kind === 'png') cell.value?.exportImage(PAPER, true).then(url => url && downloadDataUrl(`${stem}.png`, url))
   else if (kind === 'svg') {
-    const svg = cell.value?.exportSvg('#ffffff', true)
+    const svg = cell.value?.exportSvg(PAPER, true)
     if (svg) { const w = svgSizeWarning(svg, 'This gating plot'); if (w) log.warn(w, { source: 'gating' }); downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
   }
   else if (kind === 'csv') { const csv = buildCsv(); if (csv) downloadText(`${stem}.csv`, csv, 'text/csv') }
@@ -473,7 +475,7 @@ watch(() => props.reloadToken, fetchPlot)
          x-axis and no blank space. All controls sit in #actions (one in-flow block). -->
     <template #actions>
       <RenderModeToggle v-model="renderMode" :colour-by="!!zChan" />
-      <span class="ctrl-sep" />
+      <span class="cc-toolbar-sep" />
       <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES" data-guide="gate.drawTool"
                   :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
                   @update:model-value="v => mode = (v || 'off') as typeof mode" />
@@ -576,8 +578,7 @@ watch(() => props.reloadToken, fetchPlot)
 <style scoped>
 /* the floating chrome (.panel / .panel-head / title / remove) lives in CanvasPanel; the styles
    below are gating-specific: the axis controls, the plot body, ticks/axes, and the header tools
-   passed into CanvasPanel's #actions slot (.ctrl-sep — slot content keeps
-   this component's scoped styles). */
+   passed into CanvasPanel's #actions slot (`.cc-toolbar-sep`, global). */
 /* axis controls now live in the auto-hide overlay (#actions); take a full line below the icon tools
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
 .panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: var(--cc-fs-sm); }
@@ -599,7 +600,6 @@ watch(() => props.reloadToken, fetchPlot)
 /* the amber marker for an auto-overridden control is the shared .cc-auto-override utility (style.css) */
 .ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { border-color: var(--cc-accent); }
-.ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .gp-export { max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; flex-direction: column; gap: 4px;

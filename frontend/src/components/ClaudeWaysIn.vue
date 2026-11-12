@@ -1,7 +1,7 @@
 <!--
   The two modes — Kiwi and Claude Code — side by side, not as a sequence (lib/claudeOverview.ts →
-  KIWI_MODE / TERMINAL_MODE / CLAUDE_BRIDGE). Each card is in its mode's own colour (--cc-kiwi teal,
-  --cc-claude clay — not the form-control purple) and leads with a small schematic, so a glance says
+  KIWI_MODE / TERMINAL_MODE / CLAUDE_BRIDGE). Both cards wear the one AI colour (--cc-kiwi teal — not the
+  form-control purple); the schematic and title tell them apart. Each leads with a small schematic, so a glance says
   which one you need: Kiwi = a reply pointing at a cell in the app; Claude Code = a terminal that
   builds a chain, a board and a notebook. Then what ONLY that mode does (the reason to pick it),
   example asks, and how to start. Static, theme tokens only — the feijoa sketches are animated
@@ -11,17 +11,16 @@
 <script setup lang="ts">
 import { KIWI_MODE, TERMINAL_MODE, CLAUDE_BRIDGE, type Mode } from '../lib/claudeOverview'
 
-const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; colour: string }[] = [
-  { mode: KIWI_MODE, fig: 'kiwi', colour: 'var(--cc-kiwi)' },
-  { mode: TERMINAL_MODE, fig: 'terminal', colour: 'var(--cc-claude)' },
+const MODES: { mode: Mode; fig: 'kiwi' | 'terminal' }[] = [
+  { mode: KIWI_MODE, fig: 'kiwi' },
+  { mode: TERMINAL_MODE, fig: 'terminal' },
 ]
 </script>
 
 <template>
   <div class="cw">
     <div class="cw-modes">
-      <section v-for="{ mode: m, fig, colour } in MODES" :key="m.title" class="cw-mode cc-card cc-card-2"
-               :style="{ '--cw-mode': colour }">
+      <section v-for="{ mode: m, fig } in MODES" :key="m.title" class="cw-mode cc-card cc-card-2">
         <div class="cw-head">
           <svg v-if="fig === 'kiwi'" class="cw-fig" viewBox="0 0 96 60" fill="none" aria-hidden="true">
             <!-- the app, a few cells, one marked -->
@@ -81,9 +80,9 @@ const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; colour: string }[] = [
 
 <style scoped>
 .cw-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-/* a raised card ON a dialog's surface-1 body — the surface-2 variant of .cc-card; the mode's colour
+/* a raised card ON a dialog's surface-1 body — the surface-2 variant of .cc-card; the AI colour
    on its top edge, its ticks and its schematic */
-.cw-mode { padding: 12px; display: flex; flex-direction: column; gap: 6px; border-top: 2px solid var(--cw-mode); }
+.cw-mode { padding: 12px; display: flex; flex-direction: column; gap: 6px; border-top: 2px solid var(--cc-kiwi); }
 .cw-head { display: flex; gap: 10px; align-items: center; }
 .cw-head > div { min-width: 0; }
 /* one line each — the copy is capped to fit (claudeOverview.test.ts); this only guards a wider font */
@@ -92,7 +91,7 @@ const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; colour: string }[] = [
 .cw-title { font-weight: 600; color: var(--cc-text); }
 .cw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
 .cw-only { color: var(--cc-text); }
-.cw-tick { color: var(--cw-mode); font-size: var(--cc-fs-xs); margin-right: 8px; }
+.cw-tick { color: var(--cc-kiwi); font-size: var(--cc-fs-xs); margin-right: 8px; }
 .cw-ask { color: var(--cc-text-dim); flex: 1; }
 .cw-ask li::before { content: '“'; }
 .cw-ask li::after { content: '”'; }
@@ -100,13 +99,13 @@ const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; colour: string }[] = [
 .cw-note { color: var(--cc-text-dim); }
 .cw-bridge { margin: 8px 0 0; }
 
-/* schematic strokes — theme tokens only, so it follows light/dark; the accent is the mode's colour */
+/* schematic strokes — theme tokens only, so it follows light/dark; the accent is the AI colour */
 .cw-frame { stroke: var(--cc-border); stroke-width: 1.5; fill: var(--cc-surface-1); }
 .cw-term { fill: var(--cc-bg); }
 .cw-line { stroke: var(--cc-border); stroke-width: 1.5; }
 .cw-ink { stroke: var(--cc-text); }
 .cw-dim { stroke: var(--cc-text-dim); }
-.cw-acc { stroke: var(--cw-mode); }
+.cw-acc { stroke: var(--cc-kiwi); }
 .cw-dash { stroke-dasharray: 2.5 2.5; }
 .cw-bubble { fill: var(--cc-surface-2); }
 </style>

@@ -8,7 +8,7 @@
 _acq_bz_pt(z, t) = Dict("zFromStartUm" => z, "transmissionPct" => Dict("MaiTai" => t, "InSight" => t), "hv" => Dict("D1" => 550))
 function _acq_meta(; lasers = [(850, 15), (1200, 15)], brightz = true, ramp = false, objective = "XLPLN25XWMP2", px = 0.5,
                    depth = Dict(0 => -5.0), objs = Dict(0 => (5.0, 20.0, nothing)), shared = Dict{String,Float64}(),
-                   probed = true)
+                   probed = true, frames = 30)
     chans = Any[]
     for c in sort!(unique(vcat(collect(keys(depth)), collect(keys(objs)))))
         d = get(depth, c, 0.0)
@@ -25,7 +25,8 @@ function _acq_meta(; lasers = [(850, 15), (1200, 15)], brightz = true, ramp = fa
         sat["sharedStructure"] = [Dict("a" => parse(Int, split(k, "-")[1]), "b" => parse(Int, split(k, "-")[2]), "r" => r)
                                   for (k, r) in shared]
     end
-    Dict{String,Any}("PhysicalSizeX" => px, "saturation" => sat,
+    # `frames`: these stand for intravital movies (time-lapses), so the set's findings say "movies"
+    Dict{String,Any}("PhysicalSizeX" => px, "SizeT" => frames, "saturation" => sat,
         "acquisition" => Dict("lasers" => [Dict("wavelengthNm" => w, "transmissionPct" => p) for (w, p) in lasers],
                               "brightZ" => Dict("enabled" => brightz, "points" => ramp ? [_acq_bz_pt(0, 12), _acq_bz_pt(35, 15)] : [_acq_bz_pt(0, 12)]), "objective" => Dict("name" => objective)))
 end
@@ -242,10 +243,17 @@ end
     @test all(f -> haskey(Cecelia.QC_TEXT, f["key"]) && !occursin("{", f["short"] * f["long"] * get(f, "thisData", "")), r["findings"])
     # every `.data` line belongs to a finding
     @test all(k -> haskey(Cecelia.QC_TEXT, k[1:end-5]), [k for k in keys(Cecelia.QC_TEXT) if startswith(k, "acq.") && endswith(k, ".data")])
+    # a technology variant (`key@technology`) words an existing finding, with the same placeholders
+    for k in filter(k -> occursin('@', k), collect(keys(Cecelia.QC_TEXT)))
+        base = split(k, '@')[1]
+        @test haskey(Cecelia.QC_TEXT, base)
+        ph(e) = Set(m.captures[1] for m in eachmatch(r"\{(\w+)\}", e.short * e.long))
+        @test ph(Cecelia.QC_TEXT[k]) ⊆ ph(Cecelia.QC_TEXT[base]) ∪ Set(["item", "items"])
+    end
 
     # every finding names what it is about — a category the model review files its points under too
     @test all(f -> f["category"] in Cecelia.ACQ_CATEGORIES && f["category"] != "other", r["findings"])
-    codes = [k for k in keys(Cecelia.QC_TEXT) if startswith(k, "acq.") && !endswith(k, ".data") && !startswith(k, "acq.cat.")]
+    codes = [k for k in keys(Cecelia.QC_TEXT) if startswith(k, "acq.") && !endswith(k, ".data") && !startswith(k, "acq.cat.") && !occursin('@', k)]
     @test sort(codes) == sort(collect(keys(Cecelia.ACQ_CATEGORY_OF)))
     @test all(c -> haskey(Cecelia.QC_TEXT, "acq.cat." * c), Cecelia.ACQ_CATEGORIES)
 end
@@ -281,4 +289,66 @@ end
     @test !any(f -> get(f["subs"], "variable", "") == "camera setting", Cecelia.acq_check(nothing, same)["findings"])
     # a laser-scanning image has no camera: it never joins the camera comparison
     @test _acq_f("c", _acq_meta())["camera"] === nothing
+end
+
+# A static set (no time-lapse) is "images", a set of time-lapses "movies" — one noun for the whole set,
+# in every finding and the per-image list's label. A camera set takes the camera wording.
+@testset "acq_check — static vs live wording, camera advice" begin
+    still(lasers) = (m = _acq_meta(lasers = lasers); m["SizeT"] = 1; m)
+    live(lasers) = (m = _acq_meta(lasers = lasers); m["SizeT"] = 30; m)
+    r = Cecelia.acq_check(nothing, [_acq_f("a", still([(850, 15)])), _acq_f("b", still([(850, 20)]))])
+    f = only(filter(f -> f["code"] == "acq.settings_differ", r["findings"]))
+    @test f["short"] == "Different laser setting between images" && occursin("every image you compare", f["long"])
+    @test (r["item"], r["items"]) == ("image", "images")
+    r = Cecelia.acq_check(nothing, [_acq_f("a", live([(850, 15)])), _acq_f("b", live([(850, 20)]))])
+    @test only(filter(f -> f["code"] == "acq.settings_differ", r["findings"]))["short"] == "Different laser setting between movies"
+    mixed = Cecelia.acq_check(nothing, [_acq_f("a", live([(850, 15)])), _acq_f("b", still([(850, 20)]))])
+    @test mixed["items"] == "images"
+    @test !any(f -> occursin(r"\bmovie", f["short"] * f["long"]), mixed["findings"])
+    # the technology picks a variant only where the catalog has one
+    @test Cecelia.qc_technology_key("acq.gain_high", "widefield") == "acq.gain_high@widefield"
+    @test Cecelia.qc_technology_key("acq.gain_high", "confocal") == "acq.gain_high"
+    @test Cecelia.qc_technology_key("acq.gain_high", nothing) == "acq.gain_high"
+    @test Cecelia.acquisition_technology(Dict{String,Any}("acquisition" => Dict("technology" => "widefield"))) == "widefield"
+    @test Cecelia.acquisition_technology(Dict{String,Any}("acquisition" => Dict("lasers" => [Dict("wavelengthNm" => 920)]))) == "two-photon"
+    @test Cecelia.acquisition_technology(Dict{String,Any}()) === nothing
+end
+
+# The verdict under the findings takes the same noun and the same technology wording as the findings.
+@testset "acq_verdict — noun and camera wording" begin
+    f(code; subs...) = Dict{String,Any}("code" => code, "scope" => "set", "level" => "warn",
+                                        "subs" => Dict{String,Any}(String(k) => v for (k, v) in subs))
+    _, t = Cecelia.acq_verdict([f("acq.not_measured"), f("acq.settings_differ"; variable = "camera setting")], "test";
+                               item = "image", items = "images")
+    @test t == "Measure the remaining images; use one camera setting for every compared image."
+    _, t = Cecelia.acq_verdict([f("acq.not_measured")], "test")      # default: movies (intravital)
+    @test t == "Measure the remaining movies."
+    _, t = Cecelia.acq_verdict([f("acq.gain_high")], "test"; technology = "widefield")
+    @test t == "Shorten the exposure or lower the camera gain."
+    _, t = Cecelia.acq_verdict([f("acq.gain_high")], "test"; technology = "confocal")
+    @test t == "Lower the detector gain."
+    # AF correction's saturated-input advice on a camera image
+    stats = Dict{String,Any}("0" => Dict{String,Any}("saturatedFrac" => 0.01, "levelsUsed" => 100, "levelsAvailable" => 4096,
+                                                     "bleedthrough" => Dict{String,Any}()))
+    wf, _ = Cecelia.af_qc_findings(stats; technology = "widefield")
+    @test occursin("exposure", only(filter(x -> x["code"] == "af.saturated_input", wf))["long"])
+    lsm, _ = Cecelia.af_qc_findings(stats)
+    @test occursin("laser power", only(filter(x -> x["code"] == "af.saturated_input", lsm))["long"])
+end
+
+# Same lasers and %, different detector HV per image (an SP8 sets PMT gain per sequence): a settings finding.
+# Under Auto HV the recorded HV is not the one used, so it is not compared.
+@testset "acq_check — detector and scan settings differ" begin
+    conf(hv; dwell = 1.2, autohv = nothing) = (m = _acq_meta(lasers = [(552, 10)]); m["SizeT"] = 1;
+        m["acquisition"]["channels"] = [Dict("detector" => "PMT 2", "hv" => hv, "gain" => nothing)];
+        m["acquisition"]["autoHV"] = autohv;
+        m["acquisition"]["scanner"] = Dict("pixelDwellUs" => dwell, "integration" => Dict("count" => 1)); m)
+    vars(r) = Set(get(f["subs"], "variable", "") for f in r["findings"] if f["code"] == "acq.settings_differ")
+    r = Cecelia.acq_check(nothing, [_acq_f("a", conf(966)), _acq_f("b", conf(880))])
+    @test "detector setting" in vars(r) && !("laser setting" in vars(r))
+    @test occursin("PMT 2 966 V", join((g["value"] for f in r["findings"] if get(f["subs"], "variable", "") == "detector setting"
+                                        for g in f["detail"]["groups"]), " | "))
+    @test "scan setting" in vars(Cecelia.acq_check(nothing, [_acq_f("a", conf(900; dwell = 0.6)), _acq_f("b", conf(900))]))
+    @test !("detector setting" in vars(Cecelia.acq_check(nothing, [_acq_f("a", conf(0; autohv = true)), _acq_f("b", conf(550; autohv = true))])))
+    @test isempty(vars(Cecelia.acq_check(nothing, [_acq_f("a", conf(900)), _acq_f("b", conf(900))])))
 end

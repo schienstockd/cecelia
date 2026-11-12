@@ -30,6 +30,7 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { NEUTRAL } from '../../plots/fixedColours'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -48,7 +49,7 @@ const props = defineProps<{
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
 const plotRef = useTemplateRef<{
-  toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null>
+  toImageURL(t: 'png' | 'svg'): Promise<string | null>
   axisRect(): FrameRect | null
 }>('plotRef')
 
@@ -75,7 +76,7 @@ const heatmapScale = computed<'minmax' | 'zscore'>({
 const heatmapValues = computed<boolean>({
   get: () => props.state.heatmapValues ?? false, set: v => (props.state.heatmapValues = v) })
 const opts = computed<BuildOpts>(() => ({
-  ...defaultVis(), ...(props.vis ?? {}), chartType: 'heatmap', byImage: false, normalize: false, errorMetric: 'sd', colorOf: () => '#8888aa',
+  ...defaultVis(), ...(props.vis ?? {}), chartType: 'heatmap', byImage: false, normalize: false, errorMetric: 'sd', colorOf: () => NEUTRAL,
   heatmapScale: heatmapScale.value, heatmapValues: heatmapValues.value,
 }))
 const label = (raw: string) => props.nameMap[raw] ?? raw
@@ -152,10 +153,10 @@ watch(() => props.featureOptions, opts => {
 }, { immediate: true })
 
 // docked (Analysis board) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
-async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
+async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png')) ?? null }
 // full vector <svg> for the board→SVG export — decode PlotChart's SVG data URL (like SummaryPanel)
 async function exportSvg(): Promise<string | null> {
-  const url = await plotRef.value?.toImageURL('svg', true)
+  const url = await plotRef.value?.toImageURL('svg')
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }

@@ -106,8 +106,6 @@ const has = (s: SectionKey) => props.sections.includes(s)
             <option value="image">Image</option>
             <option value="series">Series</option>
           </select></label>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Dark plot background; export always uses light'"><span>Dark theme</span>
-          <CcToggle aria-label="Dark theme" :model-value="vis.darkTheme" @update:model-value="set({ darkTheme: $event })" /></div>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y min</span>
           <input class="po-txt" type="text" v-model="yMinDraft" @change="set({ yMin: yMinDraft })" /></label>
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y max</span>

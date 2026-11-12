@@ -18,6 +18,13 @@ on:
       - .github/workflows/verify-cellpose-v3.yml
   workflow_dispatch:
 
+# A newer push to the same PR cancels this run for the older commit: its result no longer gates
+# anything. Pushes to main never cancel each other, so every merge still gets a full run. A cancelled
+# run saves no cache; the next run restores from the last finished one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   verify:
     name: macOS arm64 — cyto3 smoke test

@@ -34,6 +34,8 @@ import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
+import { useSettingsStore } from '../stores/settings'
+import { tokenColour } from '../utils/colour'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
@@ -56,6 +58,7 @@ import { NAV_GROUPS, navItemFor } from '../lib/navGroups'
 import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
+import { NEUTRAL } from '../plots/fixedColours'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -1433,6 +1436,10 @@ onActivated(async () => {
   // socket): coming back to the page should never show a stale set of chains.
   void loadChainList()
 })
+
+// The canvas dot grid is an SVG attribute, so it takes a resolved colour, re-read when the scheme flips.
+const schemeSettings = useSettingsStore()
+const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--cc-border', NEUTRAL)))
 </script>
 
 <template>
@@ -1575,7 +1582,7 @@ onActivated(async () => {
           class="vue-flow-canvas"
           @node-click="onLiveNodeClick(($event as NodeMouseEvent).node)"
         >
-          <Background pattern-color="#2a2742" :gap="20" />
+          <Background :pattern-color="gridColour" :gap="20" />
         </VueFlow>
 
         <!-- QC expand overlay -->
@@ -1806,7 +1813,7 @@ onActivated(async () => {
         :max-zoom="2"
         class="vue-flow-canvas"
       >
-        <Background pattern-color="#2a2742" :gap="20" />
+        <Background :pattern-color="gridColour" :gap="20" />
 
       </VueFlow>
 

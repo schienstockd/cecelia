@@ -15,6 +15,8 @@
 :root {
   /* a slider's fill, 0–100% — written per element by `v-range-fill` (Sliders, below) */
   --cc-range-pct: 0%;
+  /* a `.cc-range-paint` slider's track, set per element by its caller (Sliders, below) */
+  --cc-range-track: var(--cc-surface-2);
   /* a padded scroll box's top padding, set on that box (BaseModal's body) so a sticky table header
      inside it can lift over the padding strip — read by SelectionTable `stickyHeader` */
   --cc-scroll-pad-top: 0px;
@@ -53,53 +55,40 @@
   --cc-primary-fill:  #FCC172;
   --cc-on-primary:    #1a1410;
   /* The next step (GUI_CLARITY_PLAN Decision 15): plum-light, dark text 6.4:1 on it. Plum means
-     "act on this" — the Next button and the checks cluster share it. */
+     "act on this" — the Next button. */
   --cc-next-fill:     #D27A98;
-  /* The CHECK accent — plum, the one hue far from every status colour and channel colour
-     (docs/todo/GUI_CLARITY_PLAN.md, Decision 15). It marks the Checks cluster (frame + label), never
-     a check's verdict: that stays on --cc-sev-* with its icon. -text is the lightened plum that reads
-     as text on the dark surfaces (6.3:1); the base is for marks and borders only. */
-  --cc-check:      #BF577B;
-  --cc-check-text: #D27A98;
   --cc-danger-fill:   #b33a3a;   /* muted red — destructive buttons, armed delete / quit */
   --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
   --cc-accent-tint-2: #3b2382;   /* its hover step */
-  /* Kiwi (assist cockpit) accent — teal. Distinct from --cc-accent (violet, form-control chrome)
-     and --cc-viewer (bright green, viewer surface); two on-screen greens would collapse into one
-     UI class. See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
+  /* THE AI colour — teal: Kiwi and Claude Code alike (one hue for "AI is involved"; the icon tells
+     which). Claude's mark ON data stays the annotation magenta (--cc-claude-mark). Distinct from --cc-accent (violet, form-control chrome). See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
      accent so a Kiwi-tinted control has the same tools an accent-tinted one does. */
   --cc-kiwi:         #14b8a6;
   --cc-kiwi-strong:  #0d9488;   /* deeper teal — borders on an engaged/active kiwi control */
   --cc-kiwi-soft:    #5eead4;   /* pale teal — text on a kiwi-tinted surface */
   --cc-kiwi-tint:    #134e4a;   /* dark teal wash — the tinted "option is on" surface */
-  --cc-claude:       #d97757;   /* warm clay — Claude Code (a terminal session), beside Kiwi's teal */
-  /* selection/active highlight for BOXES (panels, cards, timeline keyframes) — amber, matching the
-     analysis-board plot panels. Distinct from --cc-accent (purple, form controls) and --cc-warn. */
-  --cc-selected:   #ff8c1a;
+  /* selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — the text
+     colour, a ring by contrast not hue. Amber read as a warning under colour blindness, violet as the
+     running light and as "option on"; neutral clears every state (utils/cvd.test.ts). */
+  --cc-selected:   var(--cc-text);
 
   /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
   --cc-warn:       #f59e0b;
-  --cc-danger:     #ef4444;
+  --cc-danger:     #f54a49;
 
   /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
      (ok / warn / fail) drawn WITH its shape-distinct icon. Every pair of ok / warn / fail / --cc-active
      is ≥ ΔE 8 under protan- and deuteranopia (worst 10.8) and ≥ 15 for normal vision, in each scheme —
      enforced by utils/cvd.test.ts, which reads these values. Each also reads as text (≥ 4.5:1). A bare status dot has no
-     icon, so it does NOT use these: `.cc-dot` tones are `--cc-dot-*` (sky-blue ok). Colour is NEVER the sole cue:
+     icon — a `.cc-dot` light uses these too (`--cc-dot-*` alias them), its label the second cue. Colour is NEVER the sole cue:
      always paired with a shape-distinct icon + label via frontend/src/lib/severity.ts (pi-check-circle
      / pi-exclamation-triangle / pi-times-circle). See docs/todo/QC_OBSERVER_PLAN.md.
      Supersedes --cc-warn/--cc-danger for severity semantics. Task-status lights (done/failed) route
      through here via lib/taskStatus.ts; ParamRenderer's QC flag uses lib/severity.ts. */
   --cc-sev-ok:     #61c28e;
   --cc-sev-warn:   #ef9d14;
-  --cc-sev-fail:   #f34739;
-  /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
-     from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
-     button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok` —
-     sky blue, not green; see .cc-dot.)
-     One green — don't add a second token holding the same colour for a new surface. */
-  --cc-viewer:     #22c55e;
+  --cc-sev-fail:   #f64a3c;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
      highlight ring, and the Guides compass mark (dialog title). Deliberately NOT
      --cc-accent: purple is form/control chrome, so a guide ringing a purple button in purple reads as
@@ -157,7 +146,8 @@
   --cc-paper-ink:     #111;
   --cc-paper-ink-dim: #555;
   --cc-paper-border:  #c9ccd1;
-  /* Claude's mark on a plot/card — the magenta "C" ring. A data-surface mark, so fixed. */
+  /* Claude's mark on a plot/card — the magenta "C" ring. A data-surface mark, so fixed. It is the
+     annotation palette's magenta (utils/overlayCompose.ts), not a UI colour, so it stays apart from the AI teal. */
   --cc-claude-mark:   #e836b4;
 
   /* monospace */
@@ -345,7 +335,7 @@ body {
 /* The right panel's Next button (NextStep.vue) — one per page, navigates only. */
 .cc-btn-next {
   background: var(--cc-next-fill);
-  color: var(--cc-bg);
+  color: var(--cc-on-primary);   /* fixed dark ink: the fill does not follow the scheme, so neither does its text */
   border-color: var(--cc-next-fill);
   font-weight: 600;
 }
@@ -408,7 +398,7 @@ body {
      <button class="cc-btn cc-btn-ghost cc-btn-icon">   boxed
    The size steps are the same density axis as the text scale (measured: the sizes really do cluster
    at four tiers). Tone comes from the existing variants — add `.cc-btn-danger-ghost`, or set `color`
-   in scoped CSS for the one-off tones (the viewer green). */
+   in scoped CSS for a one-off tone. */
 .cc-btn-icon {
   justify-content: center;
   width: 1.5rem; height: 1.5rem;
@@ -657,16 +647,14 @@ body {
    or `:class="dotClass(tone)"` (utils/statusDot.ts). A categorical marker composes its own background
    (`class="cc-dot scope-dot"`); a local rule may ADD to the dot (a glow) but never redraws its size.
    Colour is never the only cue — the label beside it says the state. docs/ui/PRIMITIVES.md.
-   Tones are the Okabe & Ito swatches the dev consoles use (`share/console_palette.json`, kept equal by
-   utils/statusDot.test.ts). Good is SKY BLUE, not green: a light flips straight between ok and fail,
-   and green against red is the pair red-green colour blindness loses (the severity green scores
-   ΔE 5.4 against the severity red under deuteranopia; this set's closest pair is 12.5). */
+   Tones are the severity palette — one "ok" colour in the app, not a dot green and a check green —
+   so they follow the scheme and inherit its colour-blind guarantee (utils/cvd.test.ts). Idle is grey. */
 :root {
-  --cc-dot-ok:   #56B4E9;   /* sky_blue */
-  --cc-dot-warn: #E69F00;   /* orange */
-  --cc-dot-fail: #D55E00;   /* vermillion */
-  --cc-dot-idle: #8C8C8C;   /* grey */
-  --cc-dot-info: #0072B2;   /* blue */
+  --cc-dot-ok:   var(--cc-sev-ok);
+  --cc-dot-warn: var(--cc-sev-warn);
+  --cc-dot-fail: var(--cc-sev-fail);
+  --cc-dot-idle: #8C8C8C;
+  --cc-dot-info: var(--cc-active);
 }
 .cc-dot      { display: inline-block; flex-shrink: 0; width: 7px; height: 7px;
                border-radius: var(--cc-radius-pill); background: var(--cc-dot-idle); }
@@ -676,8 +664,7 @@ body {
 .cc-dot-idle { background: var(--cc-dot-idle); }
 .cc-dot-info { background: var(--cc-dot-info); }
 /* Feature-maturity tiers — a CATEGORY marker, not a status light, so it composes its own background
-   (docs/todo/FEATURE_MATURITY_PLAN.md). Tested is Okabe–Ito bluish green: Beta's blue and the ok sky
-   blue were too close to tell apart side by side. */
+   (docs/todo/FEATURE_MATURITY_PLAN.md). Tested is Okabe–Ito bluish green, fixed in both schemes. */
 :root { --cc-tier-tested: #009E73; }
 .cc-tier-experimental { background: var(--cc-dot-warn); }
 .cc-tier-beta         { background: var(--cc-dot-info); }
@@ -771,6 +758,9 @@ body {
    Without it the row breaks anywhere and orphans a label or a lone number on a line of its own — which
    is exactly how the movie controls read once a size and a filename field joined the fps slider. */
 .cc-row-group { display: inline-flex; align-items: center; gap: 0.3rem; min-width: 0; }
+/* A divider between control groups in a toolbar row (a canvas panel's actions, the gate plot's tools,
+   the viewer's playback bar). */
+.cc-toolbar-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px; flex: none; }
 /* …and its label, when several such groups STACK and their labels should read as a column. Reserving
    one width is the whole point: `fps` / `px` / `name` / `show` / `title` / `version` / `masks` are
    different lengths, so without it every control starts at a different x and the block reads ragged
@@ -934,6 +924,12 @@ input[type="range"]::-webkit-slider-runnable-track {
     var(--cc-surface-2) var(--cc-range-pct, 0%), var(--cc-surface-2) 100%);
   box-shadow: 0 0 0 1px var(--cc-border);
 }
+/* Painted track: `.cc-range-paint` + `--cc-range-track` (any CSS background, tokens only) replaces the
+   accent fill with what the caller paints — the playback scrubber's cached timepoints. The thumb still
+   marks the value. */
+input[type="range"].cc-range-paint::-webkit-slider-runnable-track { background: var(--cc-range-track); }
+input[type="range"].cc-range-paint::-moz-range-track { background: var(--cc-range-track); }
+input[type="range"].cc-range-paint::-moz-range-progress { background: transparent; }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -1067,10 +1063,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    The avatar menu (one-click switch) or Preferences → Interface sets `data-theme="light"` on <html> (utils/colourScheme.ts).
    Overrides the SCHEME-FOLLOWING tokens only; the fixed ones (--cc-hud-*, --cc-paper*, --cc-on-*,
    --cc-media-bg, --cc-claude-mark) stay, because what sits under them is not the page. Warm-neutral
-   like the dark scheme. Every text pair is ≥ 4.5:1 (WCAG AA) on --cc-surface-1: text 15.4, dim 6.2,
-   accent 5.7, white on accent-fill 5.95, stages 5.7–6.9, kiwi 5.3, severity 4.6–7.7, ink 4.7–8.9.
-   State colours are also held apart under colour blindness (utils/cvd.test.ts). Okabe–Ito dots stay: they are
-   marks, not text. Same token, same meaning — only the value changes. docs/UI.md → *Colour schemes*. */
+   like the dark scheme. Every text colour is ≥ 4.5:1 (WCAG AA) on all three grounds (bg, surface-1,
+   surface-2), and every fill against its ink — utils/schemeContrast.test.ts, per scheme.
+   State colours are also held apart under colour blindness (utils/cvd.test.ts); the status dots alias
+   them. Same token, same meaning — only the value changes. docs/UI.md → *Colour schemes*. */
 :root[data-theme="light"] {
   --cc-bg:          #f4f2ef;
   --cc-surface-1:   #fbfaf8;
@@ -1091,20 +1087,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-stage-populations: #a04a26;
   --cc-stage-explore:     #8a5560;
   --cc-stage-analysis:    #5e5838;
-  --cc-check-text:  #9c3a5f;
-  --cc-kiwi:        #0f766e;
+  --cc-kiwi:        #1d7281;
   --cc-kiwi-strong: #115e59;
-  --cc-kiwi-soft:   #0f766e;
+  --cc-kiwi-soft:   #1d7281;
   --cc-kiwi-tint:   #d5f5ee;
-  --cc-claude:      #b0502f;
-  --cc-selected:    #e07000;
 
-  --cc-warn:     #a16507;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
-  --cc-danger:   #972334;   /* = sev-fail */
-  --cc-sev-ok:   #248160;
-  --cc-sev-warn: #a16507;
-  --cc-sev-fail: #972334;
-  --cc-viewer:   #15803d;
+  --cc-warn:     #8f5d02;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
+  --cc-danger:   #941328;   /* = sev-fail */
+  --cc-sev-ok:   #17745d;
+  --cc-sev-warn: #8f5d02;
+  --cc-sev-fail: #941328;
   --cc-guide:    rgba(0, 0, 0, 0.5);
   --cc-active:   #0a44c7;
 
@@ -1114,11 +1106,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-wash:        rgba(0, 0, 0, 0.04);
   --cc-wash-strong: rgba(0, 0, 0, 0.08);
 
-  --cc-ink-red:    #900e23;
-  --cc-ink-amber:  #9d5e01;
-  --cc-ink-green:  #247f5d;
+  --cc-ink-red:    #900e26;
+  --cc-ink-amber:  #935a0f;
+  --cc-ink-green:  #057558;
   --cc-ink-blue:   #254d90;
-  --cc-ink-cyan:   #0e7490;
+  --cc-ink-cyan:   #06718d;
   /* tints restated: the dark mixes are too strong on a light ground (ink on them would drop below AA) */
   --cc-tint-red:   color-mix(in srgb, var(--cc-danger) 12%, transparent);
   --cc-tint-amber: color-mix(in srgb, var(--cc-warn) 14%, transparent);

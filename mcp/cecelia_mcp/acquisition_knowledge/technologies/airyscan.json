@@ -1,0 +1,53 @@
+{
+  "technology": "airyscan",
+  "extends": "confocal",
+  "summary": "Zeiss confocal whose pinhole opens wide onto a 32-element detector array; each element is a small pinhole, and processing reassigns their light into a sharper, brighter image.",
+  "status": "Experimental. Stages not listed here are confocal's (`extends`). Our own wording of the cited sources; scope feature lines are unverified until a facility checks them.",
+  "stageOrder": ["laser", "power", "scanner", "objective", "sample", "pinhole", "filters", "detectors", "processing", "stack"],
+  "stages": [
+    {
+      "key": "pinhole",
+      "does": "Opened wide (several Airy units) onto the detector array: the array elements, not one pinhole, do the sectioning.",
+      "symptoms": []
+    },
+    {
+      "key": "detectors",
+      "does": "A hexagonal array of GaAsP elements, one gain for the array; each element sees the focus slightly off-centre.",
+      "symptoms": [
+        {
+          "id": "clipped-bright",
+          "symptom": "The brightest objects are flat-topped at the top value.",
+          "explanation": "Array gain or laser power set so the brightest pixels exceed the range; processing cannot restore clipped values.",
+          "check": "Acquired data: clipped % against the bit depth; Light path: detector gain.",
+          "alternatives": "A bright artefact can be the clipped object.",
+          "sources": ["waters2009", "huff2015"],
+          "qcCodes": ["import.channel_saturated", "af.saturated_input", "denoise.channel_saturated", "acq.gain_high"]
+        },
+        {
+          "id": "settings-differ-between-images",
+          "symptom": "Images of one set that should be comparable differ in brightness or sharpness.",
+          "explanation": "Laser %, array gain, zoom, Airyscan mode or processing differed between images; raw intensities and resolution are only comparable at the same settings.",
+          "check": "Acquisition: per channel laser %, gain, `airyscan` mode; scanner zoom — compared across the set's images.",
+          "alternatives": "Real differences between samples or conditions, depth, or bleaching.",
+          "sources": ["lee2018", "jonkman2020"],
+          "qcCodes": ["acq.settings_differ", "acq.settings_differ.data"]
+        }
+      ]
+    },
+    {
+      "key": "processing",
+      "does": "Reassigns and deconvolves the array's signals into the final image; its mode (super-resolution, fast/multiplex, sum) and strength set sharpness and noise.",
+      "symptoms": [
+        {
+          "id": "processing-differs-or-overdone",
+          "symptom": "Ringing, a honeycomb texture, or images of one set processed differently.",
+          "explanation": "Processing is a deconvolution: too strong a setting amplifies noise into artefacts, and images processed with different modes or strengths are not directly comparable in intensity or sharpness.",
+          "check": "Acquisition: `airyscan` mode per channel, compared across the set; the image itself at high zoom.",
+          "alternatives": "Real fine structure; noise from a dim sample rather than from processing.",
+          "sources": ["huff2015"],
+          "qcCodes": []
+        }
+      ]
+    }
+  ]
+}

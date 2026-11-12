@@ -197,6 +197,53 @@ export function stripCells(
   return out
 }
 
+/** One stretch of the timecourse in one cache state, as a fraction of the track (0–1). */
+export interface CacheRun { state: Exclude<CellState, 'current'>; from: number; to: number }
+
+/**
+ * The cache strip as runs along a track: neighbouring cells in the same state merged, and the
+ * `current` cell counted as resident (the scrubber's thumb or the pill's marker shows where t is).
+ * The playback bar paints these on the scrubber's own track and on the folded pill's hairline, so the
+ * cache needs no row of its own.
+ */
+export function cacheRuns(cells: readonly { state: CellState }[]): CacheRun[] {
+  const n = cells.length
+  const out: CacheRun[] = []
+  cells.forEach((c, i) => {
+    const state = c.state === 'current' ? 'resident' : c.state
+    const last = out[out.length - 1]
+    if (last && last.state === state) last.to = (i + 1) / n
+    else out.push({ state, from: i / n, to: (i + 1) / n })
+  })
+  return out
+}
+
+/**
+ * A CSS width that fits `longest` — the widest text a readout can show (its maximum values) — so the
+ * readout keeps one width as its numbers change. In `ch` (the width of a digit; readouts use tabular
+ * figures), plus room for the loading dot.
+ */
+export function readoutWidth(longest: string): string {
+  return `${longest.length + 1.5}ch`
+}
+
+/** CSS colour per run state — tokens only, so the track follows the colour scheme. Cached is the
+ *  accent at a disabled slider's strength (`input[type=range]:disabled` is 0.45), so the full-accent
+ *  thumb stays easy to see on top of it; loading is fainter again. */
+const RUN_COLOUR: Record<CacheRun['state'], string> = {
+  resident: 'color-mix(in srgb, var(--cc-accent) 45%, transparent)',
+  loading: 'color-mix(in srgb, var(--cc-accent) 20%, transparent)',
+  absent: 'var(--cc-surface-2)',
+}
+
+/** A hard-stop `linear-gradient` drawing `runs` left to right; the absent colour when there are none. */
+export function cacheGradient(runs: readonly CacheRun[]): string {
+  if (!runs.length) return RUN_COLOUR.absent
+  const pct = (f: number) => `${+(f * 100).toFixed(2)}%`
+  const stops = runs.map(r => `${RUN_COLOUR[r.state]} ${pct(r.from)} ${pct(r.to)}`)
+  return `linear-gradient(to right, ${stops.join(', ')})`
+}
+
 // ── Playback ─────────────────────────────────────────────────────────────────────
 
 export interface PlaybackStep {

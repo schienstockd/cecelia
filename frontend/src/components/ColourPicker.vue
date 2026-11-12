@@ -15,23 +15,24 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { PALETTES } from '../plots/plot'
+import { POPULATION_PALETTE } from '../plots/plot'
 import TeleportPopover from './TeleportPopover.vue'
+import { WHITE } from '../plots/fixedColours'
 
 const model = defineModel<string>({ required: true })
 const props = withDefaults(defineProps<{
-  /** Offered as chips. Defaults to the house palette, which is what a caller almost always wants. */
+  /** Offered as chips. Defaults to the population palette (colour-blind safe), what a caller almost always wants. */
   palette?: string[]
   disabled?: boolean
   /** Hover help for the swatch. A colour has no text, so without one the control is unnamed. */
   tip?: string
-}>(), { palette: () => PALETTES.cecelia, disabled: false, tip: 'Colour' })
+}>(), { palette: () => [...POPULATION_PALETTE], disabled: false, tip: 'Colour' })
 
 const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 // Case-insensitive: a palette entry and a value that came back from a native picker differ in case.
 const isCurrent = (c: string) => c.toLowerCase() === (model.value ?? '').toLowerCase()
-const current = computed(() => model.value ?? '#ffffff')
+const current = computed(() => model.value ?? WHITE)
 
 function toggle(e: MouseEvent) {
   if (props.disabled) return

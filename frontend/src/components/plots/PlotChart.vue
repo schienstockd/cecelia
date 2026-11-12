@@ -16,12 +16,14 @@ import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../.
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
+import { usePlotDark } from '../../composables/usePlotDark'
 import { pointInPoly } from '../../utils/drawGeometry'
 import type { PlotDataResponse } from '../../plots/types'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import type { FrameRect } from '../../plots/frame'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
+const plotDark = usePlotDark()
 // settings the RENDERER had to substitute (today: rotating x tick labels that wouldn't fit). Reported
 // up so the host can say so — a plot silently disagreeing with its own controls is the thing we avoid.
 // See plots/autoOverride.ts.
@@ -66,7 +68,7 @@ async function render(pass = 0) {
   // build because the builder needs the width to decide whether the x tick labels fit their bands.
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
-  const buildOpts = { ...props.opts, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const buildOpts = { ...props.opts, darkTheme: plotDark.value, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, buildOpts) as any : null
   node?.remove(); node = null
   legendNode?.remove(); legendNode = null
@@ -78,7 +80,7 @@ async function render(pass = 0) {
   node = Plot.plot({ ...base, width: w, height: h }) as SVGElement
   // Point Plot's `--plot-background` at the theme ground so a `tip: true` rect matches the plot ink
   // rather than staying white — see `applyPlotTheme`, which every Plot.plot() site now shares.
-  applyPlotTheme(node as SVGElement, !!props.opts?.darkTheme)
+  applyPlotTheme(node as SVGElement, plotDark.value)
   titleShortenedTicks(node, base._tickTitles)
   host.value.append(node)
   // Delegated click on brushable dots (LINKED_BRUSHING_PLAN.md Option B write side). Every
@@ -276,7 +278,7 @@ async function render(pass = 0) {
     lastOverrides = overrides; emit('auto-override', overrides)
   }
 
-  const ink = plotTheme(!!props.opts.darkTheme).ink
+  const ink = plotTheme(plotDark.value).ink
   if (props.opts.legend && base._colorLegend) {
     // continuous colour legend for matrix/heatmap (plot.ts stashes the colour scale in `_colorLegend`).
     legendNode = legendOverlay(Plot, base._colorLegend.color, ink)
@@ -305,25 +307,21 @@ async function render(pass = 0) {
 }
 
 // host background follows the dark-theme flag so there are no white gaps around a dark plot
-const hostBg = computed(() => plotTheme(!!props.opts?.darkTheme).ground)
+const hostBg = computed(() => plotTheme(plotDark.value).ground)
 
 // expose image export to the host panel (shared helper — see plots/export.ts). SVG = native
 // serialisation (crisp); PNG = rasterise onto a 2× canvas over white.
-// `light` = build a one-off LIGHT-theme node (dark ink on white) for PDF export, without disturbing the
-// on-screen (dark-theme) chart — dark theme is only for webpage display. The legend + title are HTML
+// Every export is LIGHT: a one-off light-theme node (dark ink on white), without disturbing the on-screen
+// chart, which follows the app scheme. The legend + title are HTML
 // overlays (not in the SVG), so both paths draw them in from the on-screen layout
 // (`collectOverlayItems` → `svgWithOverlays`) — without that a legend-dependent chart exported with no way
 // to tell its series apart, and a heatmap with no colour bar.
-async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | null> {
+async function toImageURL(type: 'png' | 'svg'): Promise<string | null> {
   // renders are coalesced to a frame, so `node` can be one frame behind the current props — an export
   // must never serialise the PREVIOUS chart (nor the previous chart's legend).
   await frame.flush()
   if (!host.value) return null
-  const overlays = () => collectOverlayItems(host.value!, [legendNode, titleNode], light ? plotTheme(false).ink : null)
-  if (!light) {
-    const live = svgOf(node as Element | null)
-    return svgToImageURL(live && svgWithOverlays(live, overlays()), type)
-  }
+  const overlays = () => collectOverlayItems(host.value!, [legendNode, titleNode], plotTheme(false).ink)
   if (!Plot) Plot = await import('@observablehq/plot')
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
@@ -359,7 +357,7 @@ defineExpose({ toImageURL, axisRect })
 const frame = rafCoalesce(() => render(0))
 const scheduleRender = () => frame.schedule()
 
-watch(() => [props.data, props.opts], scheduleRender, { deep: true })
+watch(() => [props.data, props.opts, plotDark.value], scheduleRender, { deep: true })
 onMounted(() => {
   render()
   if (host.value && typeof ResizeObserver !== 'undefined') {

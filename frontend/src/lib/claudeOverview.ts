@@ -25,7 +25,7 @@ export const KIWI_LOOP: LoopStep[] = [
 
 // ── What each mode is for, and what you can do with it ──────────────────────────────────────────
 // The two cards (ClaudeWaysIn.vue), each led by a small schematic so a glance says "I need Kiwi" or
-// "I need Claude Code", in that mode's own colour (--cc-kiwi / --cc-claude). Each card leads with
+// "I need Claude Code", both in the one AI colour (--cc-kiwi). Each card leads with
 // what ONLY that mode does (`only`) — the reason to pick it — then example asks. Every line must fit
 // on ONE line in the narrowest place the cards render (Kiwi's `?` dialog); claudeOverview.test.ts
 // caps them. Each claim must be backed by the mode's real tool list: Kiwi's is `KIWI_READ_TOOLS`

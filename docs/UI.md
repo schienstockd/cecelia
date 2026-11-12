@@ -62,14 +62,13 @@ All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlay
 | `--cc-stage-data` / `-populations` / `-explore` / `-analysis` | `#CEA966` / `#E9A587` / `#B98A93` / `#F5EFD0` | Stage colour: the sidebar group heading and the active page's bar only (`navGroups.stageTint`) |
 | `--cc-accent-soft` | `#c4b5fd` | Pale violet — text on an accent-tinted surface |
 | `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
-| `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
+| `--cc-selected` | `var(--cc-text)` | Selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — neutral, by contrast not hue; distinct from `--cc-accent` (form controls) and every state colour |
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
-| `--cc-danger` | `#ef4444` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
+| `--cc-danger` | `#f54a49` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
 | `--cc-danger-fill` | `#b33a3a` | Muted red — a SOLID destructive surface under white text: `.cc-btn-danger`, armed delete / quit (white 5.86:1) |
-| `--cc-viewer` | `#22c55e` | Green accent for the browser viewer controls button + its floating-panel border (stands apart from purple chrome) |
-| `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
-| `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
-| `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
+| `--cc-sev-ok` | `#61c28e` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
+| `--cc-sev-warn` | `#ef9d14` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
+| `--cc-sev-fail` | `#f64a3c` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
 
 | `--cc-mono` | system monospace stack | Log output, code |
 
@@ -548,15 +547,39 @@ in `style.css`, its contrast figures in the block's comment). The user switches 
 avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
 is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
 `<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
-chosen for AA contrast; they have not had the CVD check the dark trio had.
+chosen for AA contrast and pass the CVD check below.
+
+**Text colours read on every ground, and a test holds them there.** `utils/schemeContrast.test.ts`
+requires every coloured-text token ≥ 4.5:1 (WCAG AA) on `--cc-bg`, `--cc-surface-1` and `--cc-surface-2`,
+and every fill against its ink, in each scheme. In the light scheme this and the colour-blind check pull
+against each other (both want room on a dark-enough ground); the light state colours are the nearest set
+that satisfies both. The Next button's text is the fixed dark `--cc-on-primary`, not `--cc-bg`.
 
 **State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
 scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
-`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger` and the status
-dots to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
+`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger`, and the
+identity hues against the states (accent, Kiwi), to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
 OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labelled category ink (cyan)
-is held to the 6 floor. Identity hues that always appear with their name — the four stage colours,
-accent / Kiwi / Claude / viewer — are not in the check. There is no orange ink: on a light ground, at
+is held to the 6 floor. Failing pairs kept on purpose are listed with their reason in `ACCEPTED`
+(Kiwi ↔ ok-green; accent ↔ active in light). The four stage colours always sit beside their name and are
+not in the check. The status dots alias the severity set, so there is one "ok" colour.
+
+**Colours drawn from script.** Canvas and SVG built in TypeScript can't read CSS, so the CSS guard can't
+see them. Chrome there reads the scheme through `tokenColour(name, fallback)` (`utils/colour.ts`), an inline
+`var(--cc-*)` style, or `plotTheme(dark)` for plot ink/ground; a colour that is rightly fixed (a data
+palette, an export ground, a mark over the image) is a named constant in one home — `plots/fixedColours.ts`
+(paper, over-image, track tones, neutral fallbacks) or a palette file — never a literal at the call site.
+`findScriptColourLiterals` allows literals only in those homes (`cssScenarios.test.ts`); `COLOUR-OK:`
+marks a computed one (a ramp stop). **Plots follow the app scheme** on screen (`usePlotDark()` →
+`plotTheme`); every export — PNG, SVG, board PDF — is light. There is no per-plot dark/light option.
+New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `palettes.json` = the Julia
+list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
+
+**Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
+Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
+launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
+(`--cc-selected` = the text colour). A new surface
+reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
 text contrast, it cannot be told from amber.
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
@@ -1331,9 +1354,10 @@ nothing for anyone who already had the console open.
 One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six header icons, in two groups:
 **Learn** (Guides and the map, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
 the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
-`.cc-actions-menu`. The rest of the header: the project crumb, the viewer chip, the **jump search** (`JumpSearch.vue`, Ctrl K:
-pages, task functions, images), the lab-log button, **Ask Kiwi** and the avatar
+`.cc-actions-menu`. The rest of the header: the project crumb on the left, then, right-aligned, the **jump search** (`JumpSearch.vue`, Ctrl K:
+pages, task functions, images), the viewer chip, the lab-log button, **Ask Kiwi** and the avatar
 menu (`components/ProfileMenu.vue`: switch profile, Preferences, Restart backend (dev), Log out, Quit).
+Launchers sit right of the spacer, never after the crumb: a long project name must not move them.
 The version and the connection sit at the right end of the console bar; the connection shows only when
 it drops. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md`.
 
@@ -1833,7 +1857,7 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 
 **The two task surfaces render through one list and one row mapper.** The `/tasks` manager
 (`TasksModule.vue`) is a `SelectionTable` in `single` mode — a row IS selected, and what it selects is
-what the log pane shows — so its selected-row highlight is the table's own amber `--cc-selected`
+what the log pane shows — so its selected-row highlight is the table's own `--cc-selected`
 rather than the purple left rule it hand-rolled for a long time (`--cc-accent` is form-control chrome;
 see `docs/todo/TASK_LIST_UNIFICATION_PLAN.md` for the dating). Both surfaces flatten `TaskEntry` to
 row fields through **`utils/taskRows.ts`**, because `SelectionTable` renders `row[key]` and sorts by
@@ -1976,11 +2000,24 @@ under perspective a flat plane foreshortens towards the edges, which is wrong fo
 on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
 range (↶ resets it to the whole stack); the **±** button at the end of the Z row swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
-**Sidebar layout:** one icon row under *View* (2D/3D, select/pan, overview or axes, reset view; the
-gear holds renderer, cache, quality, 3D projection and the cache-map toggles — the maps draw in the
-canvas's top-right column, under the overview/axes and the same size, never on the overview), then one row per slider —
-label column, slider, readout column, ± square — so Depth/Plane, ± planes, Timepoint (play + loop sit in
-the label column) and Fps start and end on the same x.
+**Sidebar layout:** one top row (GUI_LAYOUT_PLAN V3): **View / Select / Edit** (what a click does —
+Select is the same knob as the pop manager's pencil; **Edit** is the reserved slot for the redesigned
+correction tools: a Coming soon banner under the header, an empty panel, nothing edits, not persisted), **2D / 3D**, reset view ⟳ and **⚙**. ⚙ holds renderer, cache,
+quality, 3D projection, the cache-map toggles, the **corner** overlay (overview in 2D, XYZ axes in 3D)
+and the **Debug** switch, which shows the Debug section (off by default, `cc.vw.debug`). The maps draw
+in the canvas's top-right column, under the overview/axes and the same size, never on the overview.
+**Shortcuts** sits at the panel's foot (and in the header's Help ▾).
+**Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls`): time, z and level float on the image,
+bottom centre, just above the strip where the scale bar and the status chips sit. Two rows on one grid
+of fixed columns — buttons, buttons, slider, readout, chip, fold — so they line up and the bar never
+changes size: play, loop, the scrubber (the cache is painted on its own track: filled = cached, faint =
+loading), t, an Fps chip; then z, the ± chip, the plane slider (Depth range in 3D), its readout, Level.
+Fps and the ± width open in popovers rather than widening the bar. An image without time or z drops
+that row. The chevron folds it to a pill — play, t, and z with its step buttons (a readout for a 3D
+depth range) — over a read-only hairline of the cache and where t is (or where the planes sit in the
+stack); remembered per profile (`cc.vw.playbackBar`); playback carries on while folded.
+**Console row** (`VwConsoleRow`): loading, the level on screen, the renderer, the integrated-GPU warning
+and the cache budget, in a strip at the window's foot; errors that break the view stay on the image.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes are SHOWN; the window is
 off on the 2D tile path. The view state publishes them (`dims.zRange`), so a recording draws the same planes
 (Match viewer, keyframes, Fill from view → a batch's **max** / 3D range) and restoring a keyframe puts
@@ -2231,8 +2268,8 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   every user-settable option in `state` (see "Persisting view state").
 - **Standard bag**: `projectUid, setUid, imageUids, vis, state` (+ for cluster plots `popType, suffix,
   shownPops`; + panel chrome `index, active, docked, persistKey`).
-- **Export hooks** for the board's PDF/CSV: `exportImage()` → a plot-only **light-theme** PNG (dark theme
-  is on-screen only), and `getCsv()` → the shown data. (Interactive views may instead expose
+- **Export hooks** for the board's PDF/CSV: `exportImage()` → a plot-only **light-theme** PNG (every export is
+  light; on screen a plot follows the app scheme), and `getCsv()` → the shown data. (Interactive views may instead expose
   `exportFormats`/`exportAs`.)
 
 **Two registries carry the surface "checkboxes":**

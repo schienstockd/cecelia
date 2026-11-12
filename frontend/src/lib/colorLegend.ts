@@ -85,16 +85,10 @@ export const COLOR_LEGEND: ColorFamily[] = [
   {
     title: 'App instrumentation',
     entries: [
-      { token: '--cc-viewer', means: 'The viewer\'s own controls and floating panels',
-        swatch: varSwatch('--cc-viewer') },
       { token: '--cc-guide',  means: 'Cecelia talking to you — guides, lab log, the compass mark',
         swatch: varSwatch('--cc-guide') },
       { token: '--cc-selected', means: 'This panel or keyframe is picked',
         swatch: varSwatch('--cc-selected') },
-      { token: '--cc-check', means: 'The Checks cluster — its frame (marks only, never text)',
-        swatch: varSwatch('--cc-check') },
-      { token: '--cc-check-text', means: 'The Checks cluster label (check accent as text)',
-        swatch: varSwatch('--cc-check-text') },
     ],
   },
   {
@@ -128,7 +122,7 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-accent-tint') },
       { token: '--cc-accent-tint-2', means: 'Its hover step',
         swatch: varSwatch('--cc-accent-tint-2') },
-      { token: '--cc-kiwi',          means: 'Kiwi (assist cockpit) accent — the paired-assistant panel',
+      { token: '--cc-kiwi',          means: 'The AI colour — Kiwi and Claude Code',
         swatch: varSwatch('--cc-kiwi') },
       { token: '--cc-kiwi-strong',   means: 'Engaged variant — border on a pressed kiwi control',
         swatch: varSwatch('--cc-kiwi-strong') },
@@ -136,8 +130,6 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-kiwi-soft') },
       { token: '--cc-kiwi-tint',     means: 'Soft wash behind an "option is on" kiwi surface',
         swatch: varSwatch('--cc-kiwi-tint') },
-      { token: '--cc-claude',        means: 'Claude Code — a terminal session, set apart from Kiwi',
-        swatch: varSwatch('--cc-claude') },
     ],
   },
   {
@@ -237,7 +229,9 @@ export const COLOR_LEGEND: ColorFamily[] = [
     title: 'Series palettes',
     note: 'Both renderers read palettes.json — one edit, both sides.',
     entries: [
-      { token: 'palette:cecelia',    means: 'The house palette — yellow, steel-blue, berry, grey and their kin',
+      { token: 'palette:population', means: 'New populations\' colours — colour-blind safe up to 8',
+        swatch: paletteSwatch('population') },
+      { token: 'palette:cecelia',    means: 'The published-figure palette — yellow, steel-blue, berry, grey and kin',
         swatch: paletteSwatch('cecelia') },
       { token: 'palette:okabe-ito',  means: 'Colourblind-safe qualitative (Okabe & Ito, CUD)',
         swatch: paletteSwatch('okabe-ito') },

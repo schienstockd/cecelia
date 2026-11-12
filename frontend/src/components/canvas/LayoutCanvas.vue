@@ -59,6 +59,7 @@ import { resolveStoredAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import type { PanelHit } from '../../utils/panelSelectionHit'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
+import { PAPER } from '../../plots/fixedColours'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -514,7 +515,7 @@ async function capturePage(vector = false) {
       let svg: string | null = null
       if (vector) svg = (await ref?.exportSvg?.()) ?? null    // vector when the panel provides it
       png = (await ref?.exportImage?.()) ?? null              // always capture the raster fallback
-      if (!png) png = await plotHostToImageURL(el, '#ffffff')
+      if (!png) png = await plotHostToImageURL(el, PAPER)
       const csv = summaryLike ? (await summaryRefs.get(i)?.getCsv?.() ?? null) : null
       const sr = el.getBoundingClientRect()
       const rect = { x: (sr.left - gr.left) / gr.width, y: (sr.top - gr.top) / gr.height,
@@ -962,9 +963,9 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 /* the plot area fills the rest of the slot (was the slot itself before the caption was added) */
 .lc-slot-plot { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }
 .lc-slot.filled { border-style: solid; }
-/* selection = amber, matching CanvasPanel .panel.active and every module page (was a clashing violet).
-   A FILLED slot's panel already draws the amber border + glow, so don't double it there — only an empty
-   slot needs its own amber selection border. */
+/* selection = --cc-selected, matching CanvasPanel .panel.active and every module page.
+   A FILLED slot's panel already draws the selection border + glow, so don't double it there — only an
+   empty slot needs its own selection border. */
 .lc-slot.active { border-color: var(--cc-selected); }
 .lc-slot.filled.active { border-color: var(--cc-border); }
 /* reorder drag handle now lives IN the panel header (CanvasPanel docked drag icon); its native

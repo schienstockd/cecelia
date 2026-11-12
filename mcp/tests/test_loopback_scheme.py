@@ -219,6 +219,10 @@ class OffLoopbackTest(unittest.TestCase):
         self.assertIsNone(loopback.ssl_context("http://127.0.0.1:8080"))  # plain HTTP needs none
         self.assertIsNotNone(loopback.ssl_context("wss://127.0.0.1:8080/ws"))
 
+    def test_loopback_tls_is_capped_at_1_2(self):
+        # TLS 1.3 session tickets race the websockets sync client's first read (a flaky upgrade hang)
+        self.assertEqual(loopback.ssl_context("wss://127.0.0.1:8080/ws").maximum_version, ssl.TLSVersion.TLSv1_2)
+
 
 if __name__ == "__main__":
     unittest.main()

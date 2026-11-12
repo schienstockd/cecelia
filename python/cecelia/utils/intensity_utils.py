@@ -19,6 +19,17 @@ def _n_channels(arr, channel_axis):
     return 1 if channel_axis is None else int(arr.shape[channel_axis])
 
 
+#: Pixels `channel_histograms` reads at once: a larger plane is read in row blocks (a slide scan's
+#: plane is 13 GB of uint16; a microscope frame is far below this and is read whole).
+HIST_BLOCK_PX = 64 * 1024 * 1024
+
+
+def _row_blocks(h, w):
+    """Row slices covering `h` rows of width `w`, each at most `HIST_BLOCK_PX` pixels (one row at least)."""
+    step = max(1, HIST_BLOCK_PX // max(1, w))
+    return [slice(y, min(h, y + step)) for y in range(0, h, step)]
+
+
 def channel_histograms(arr, channel_axis, channels=None, steps=None, on_plane=None):
     """
     One integer histogram per channel over the whole stack (all axes except `channel_axis`).
@@ -27,7 +38,8 @@ def channel_histograms(arr, channel_axis, channels=None, steps=None, on_plane=No
     list of 1-D numpy arrays (length = max value + 1).
 
     `arr` is a zarr level or a numpy array, with Y/X as its last two axes. It is read ONE PLANE AT A
-    TIME and the planes' `np.bincount`s are summed, so memory stays at one plane plus the histogram.
+    TIME and the planes' `np.bincount`s are summed, so memory stays at one plane plus the histogram —
+    and a plane past `HIST_BLOCK_PX` (a slide scan, gigapixels) is read in row blocks of that size.
     Not dask: see docs/todo/DASK_NARROW_PLAN.md Decision 7 for the measurement.
 
     `channels`: optional list of channel indices to histogram (default: all). The returned list is
@@ -56,7 +68,10 @@ def channel_histograms(arr, channel_axis, channels=None, steps=None, on_plane=No
                 sl[channel_axis] = c
             for i, v in zip(lead, ix):
                 sl[i] = v
-            plane = np.bincount(np.asarray(arr[tuple(sl)]).ravel(), minlength=nbins)[:nbins]
+            plane = np.zeros(nbins, np.int64)
+            for rows in _row_blocks(arr.shape[-2], arr.shape[-1]):
+                sl[-2] = rows
+                plane += np.bincount(np.asarray(arr[tuple(sl)]).ravel(), minlength=nbins)[:nbins]
             hist += plane
             if on_plane is not None:
                 on_plane(c, ix, plane)

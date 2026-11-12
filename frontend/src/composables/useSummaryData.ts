@@ -12,6 +12,7 @@ import { fetchSegmentationPops } from '../plots/populations'
 import { makePopPathRemap, type PopIdent } from '../utils/popRenameRemap'
 import { usePopSelectionMode } from './usePopSelectionMode'
 import { gateSignatures, changedPopPaths, booleanDeps, popChangeKey, seriesReloadToken, type SigNode } from '../utils/popChanges'
+import { UNASSIGNED_POP } from '../plots/fixedColours'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
 // float freely (SummaryCanvas, per-module) or sit in a grid (LayoutCanvas, /analysis). Extracted so the
@@ -174,7 +175,7 @@ export function useSummaryData(opts: {
   // toggle a population" bug (colours arrive from loadPops AFTER the first render).
   const seriesColor = computed(() => {
     const m = popColors.value
-    return (s: PlotSeries): string => m.get(s.pop) ?? '#7c93b8'
+    return (s: PlotSeries): string => m.get(s.pop) ?? UNASSIGNED_POP
   })
 
   // live updates: the server broadcasts gating:popmap after any gate mutation. The picker list

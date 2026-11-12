@@ -6,6 +6,7 @@
 import { colourForRender } from './viewerColormap'
 import { niceScaleBar } from './stillOverlay'
 import type { ViewerViewState } from './viewer/viewState'
+import { WHITE } from '../plots/fixedColours'
 
 export type FigureLayout = 'strip' | 'grid'
 export interface FigureChannel { c: string; colour: string; name?: string }
@@ -126,7 +127,7 @@ type Row = { channels: FigureChannel[] }
 export function splitRows(merge: FigureChannel[], split: boolean): Row[] {
   const rows: Row[] = [{ channels: merge.map(c => ({ ...c })) }]
   if (split && merge.length > 1) {
-    for (const c of merge) rows.push({ channels: [{ ...c, colour: '#ffffff' }] })
+    for (const c of merge) rows.push({ channels: [{ ...c, colour: WHITE }] })
   }
   return rows
 }

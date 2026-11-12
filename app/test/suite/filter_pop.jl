@@ -163,7 +163,7 @@ end
 end
 
 @testset "colour_by_palette — pop colour else default" begin
-    # a value a user pop FILTERS for on the column → that pop's colour; the rest → OKABE_ITO by
+    # a value a user pop FILTERS for on the column → that pop's colour; the rest → POPULATION_PALETTE by
     # sorted position. Generalises "use the population's colour where one exists" (a cluster pop is
     # just a filter on clusters.{suffix}).
     m = PopulationMap(pop_type="clust", value_name="B")
@@ -174,7 +174,7 @@ end
     pal = colour_by_palette(m, "clusters.mov", [0, 1, 2, 3, 4])
     @test pal[2] == "#ff1493"                 # user pop colour
     @test pal[0] == "#ffd700" && pal[3] == "#ffd700" && pal[4] == "#ffd700"
-    @test pal[1] == OKABE_ITO[1]              # uncovered value 1 → first default
+    @test pal[1] == POPULATION_PALETTE[1]              # uncovered value 1 → first default
     # a pop filtering a DIFFERENT column never leaks its colour in
     @test pal[1] != "#000001"
 
@@ -186,7 +186,7 @@ end
     # no matching pop → all default, by sorted position (stable)
     empty = PopulationMap(pop_type="clust", value_name="B")
     p2 = colour_by_palette(empty, "clusters.mov", [5, 3, 3, 1])
-    @test p2[1] == OKABE_ITO[1] && p2[3] == OKABE_ITO[2] && p2[5] == OKABE_ITO[3]
+    @test p2[1] == POPULATION_PALETTE[1] && p2[3] == POPULATION_PALETTE[2] && p2[5] == POPULATION_PALETTE[3]
 
     # pop_colour_overrides: string-keyed {value => hex} for the wire (2.0/2 → "2"); only pops on
     # the column contribute; no default fill (the bridge does that).

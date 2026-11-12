@@ -73,7 +73,7 @@ export const WCAG_AA = 4.5
  * mixing a light colour toward white *lowers* contrast against a light background — and 100 luminance
  * evaluations is nothing next to being subtly wrong for one hue.
  */
-export function readableOn(colour: string, bg: string, target = WCAG_AA, toward = '#ffffff'): string {
+export function readableOn(colour: string, bg: string, target = WCAG_AA, toward = '#ffffff'): string {   // COLOUR-OK: the white end of a mix, a math default
   if (contrastRatio(colour, bg) >= target) return colour
   for (let i = 1; i <= 100; i++) {
     const c = mix(colour, toward, i / 100)

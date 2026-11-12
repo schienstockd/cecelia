@@ -49,3 +49,41 @@ end
     @test !haskey(f, "importDrift") && isempty(f["drift"])
     rm(proj.root; recursive = true)
 end
+
+@testset "signal pass — no photon fit on channels the scanner processed" begin
+    # What the PhenoImager reader (`qptiff_meta`) records: shading corrected, autofluorescence
+    # subtracted on the marker channels, not on DAPI
+    acq = Dict{String,Any}("processing" => "OffsetAndShading",
+        "channels" => [Dict{String,Any}("afSubtracted" => false), Dict{String,Any}("afSubtracted" => true)])
+    why = Cecelia.photons_untestable(acq)
+    @test sort(collect(keys(why))) == ["0", "1"]
+    @test occursin("OffsetAndShading", why["0"]) && !occursin("autofluorescence", why["0"])
+    @test occursin("autofluorescence", why["1"])
+    # as a stored ccid hands it back: nested JSON3 objects with Symbol keys
+    @test Cecelia.photons_untestable(JSON3.read(JSON3.write(acq))) == why
+    # nothing recorded, "None", or a microscope without these fields: every channel is fitted
+    @test isempty(Cecelia.photons_untestable(nothing))
+    @test isempty(Cecelia.photons_untestable(Dict{String,Any}("processing" => "None",
+        "channels" => [Dict{String,Any}("afSubtracted" => false)])))
+    @test isempty(Cecelia.photons_untestable(Dict{String,Any}("channels" => [Dict{String,Any}("name" => "SHG")])))
+end
+
+@testset "signal pass — a probe that fitted a scanner-processed channel is not current" begin
+    # Refresh metadata re-probes only what `_saturation_is_current` rejects: an image probed before the
+    # skip existed carries a photon fit on its AF-subtracted channel, and must be re-probed
+    ch(i, photons) = Dict{String,Any}("index" => i, "profile" => Dict(), "range" => Dict(), "floor" => Dict(),
+                                      "noise" => Dict(), "photons" => photons)
+    acq = Dict{String,Any}("channels" => [Dict{String,Any}("afSubtracted" => false), Dict{String,Any}("afSubtracted" => true)])
+    fitted = Dict{String,Any}("fit" => Dict("greyPerPhoton" => 4.4), "objects" => Dict("p50Photons" => 70.0))
+    skipped = Dict{String,Any}("fit" => Dict("greyPerPhoton" => nothing), "objects" => nothing,
+                               "notMeasured" => "autofluorescence subtracted by the scanner")
+    meta(p1) = Dict{String,Any}("acquisition" => acq, "saturation" => Dict{String,Any}("channels" => [ch(0, fitted), ch(1, p1)]))
+    @test !Cecelia._saturation_is_current(meta(fitted))
+    @test Cecelia._saturation_is_current(meta(skipped))
+    # as stored: JSON3 objects with Symbol keys
+    @test !Cecelia._saturation_is_current(JSON3.read(JSON3.write(meta(fitted))))
+    @test Cecelia._saturation_is_current(JSON3.read(JSON3.write(meta(skipped))))
+    # no settings: the old rule (every key present) stands
+    m = meta(fitted); delete!(m, "acquisition")
+    @test Cecelia._saturation_is_current(m)
+end
