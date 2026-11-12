@@ -67,6 +67,20 @@ export interface SelectProfileResult {
   error?: string
 }
 
+/** Which row actions Preferences → Profiles offers. Peanut (`canManageMachine`) manages every
+ *  profile; anyone else may only rename their own. `default` and retired profiles are never
+ *  renamed, and the active profile is never deleted (the server refuses both). */
+export interface ProfileRowActions { switch: boolean; rename: boolean; delete: boolean }
+export function profileRowActions(p: Pick<Profile, 'name' | 'isDefault' | 'retired'>,
+                                  active: string, canManageMachine: boolean): ProfileRowActions {
+  const isActive = p.name === active
+  return {
+    switch: !isActive && !p.retired,
+    rename: !p.isDefault && !p.retired && (canManageMachine || isActive),
+    delete: !p.isDefault && !isActive && canManageMachine,
+  }
+}
+
 /** Result of POST /api/kiwi/profiles/retire. `snappedToDefault` is true iff the retired profile
  *  was the currently-active one (server auto-switches so the next spawn doesn't silently keep
  *  using retired credentials). `alreadyRetired` is idempotent-hit sugar. */
