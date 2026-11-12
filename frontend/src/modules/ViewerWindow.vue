@@ -77,7 +77,7 @@ import {
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, prefetchDepth, walkPrefetch, stripCells,
+  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, cacheRuns,
 } from '../utils/volumeCache'
 import type { PlaybackHint } from '../utils/pageTable'
 import {
@@ -3478,6 +3478,20 @@ function commitZWindow(apply: () => void) {
   if (bricksEnabled.value === before) void reallocate()
 }
 const setZWindow = (on: boolean) => commitZWindow(() => { zWindowOn.value = on })
+/** 3D with no ± window: z is a depth range to project, not a plane. */
+const zDepthMode = computed(() => mode.value === 'volume' && !zWindowActive.value)
+const zWindowPopOpen = ref(false)
+const zWindowAnchor = ref<HTMLElement | null>(null)
+/** The folded bar's hairline (`VwPlaybackBar` `line`): the cache and t on a timecourse, else where the
+ *  shown planes sit in the stack. */
+const pillLine = computed(() => {
+  const m = meta.value
+  if (!m) return null
+  if (nT.value > 1) return { runs: cacheRuns(cells.value), at: [t.value / nT.value, (t.value + 1) / nT.value] as [number, number] }
+  if (m.nZ <= 1) return null
+  const [lo, hi] = zDepthMode.value ? zRange.value : zLoaded.value
+  return { runs: [], at: [lo / m.nZ, (hi + 1) / m.nZ] as [number, number] }
+})
 function resetZRange() {
   zRange.value = [0, Math.max((meta.value?.nZ ?? 1) - 1, 0)]
   void reallocate()
@@ -5957,91 +5971,106 @@ onUnmounted(() => {
         <span class="cc-muted cc-fs-2xs">A browser or graphics-driver fault, not this image.</span>
         <span class="cc-muted cc-fs-2xs">Try another browser, or route this one to the discrete GPU.</span>
       </div>
-      <!-- The playback bar (GUI_LAYOUT_PLAN V2, mock frame 4): time, z and level on the image, bottom
-           centre. Depth, ± planes and Level commit on `@change` (each reallocates the textures). -->
-      <VwPlaybackBar v-if="meta && (nT > 1 || meta.nZ > 1 || (meta.levels?.length ?? 0) > 1)">
-        <!-- Collapsed: play and the position readouts; a single z plane keeps its step buttons. -->
+      <!-- The playback bar (GUI_LAYOUT_PLAN V2): a time row and a z row on fixed grid columns —
+           buttons · buttons · slider · readout · chip · fold (`VwPlaybackBar`). Depth, ± and Level
+           commit on release / change (each reallocates the textures). -->
+      <VwPlaybackBar v-if="meta && (nT > 1 || meta.nZ > 1 || (meta.levels?.length ?? 0) > 1)"
+                     :rows="(nT > 1 ? 1 : 0) + (meta.nZ > 1 || (meta.levels?.length ?? 0) > 1 ? 1 : 0)"
+                     :foldable="nT > 1 || meta.nZ > 1" :line="pillLine">
+        <!-- Folded: play and t, then z — steps on a plane or a window, a readout for a 3D depth range. -->
         <template #collapsed>
-          <VwTimeControls v-if="nT > 1" pill :t="t" :n-t="nT" :has-z="false" :playing="playing"
+          <VwTimeControls v-if="nT > 1" pill :t="t" :n-t="nT" :playing="playing"
                           :throttled="false" :busy="busy" :cells="[]" @toggle-play="togglePlay" />
-          <template v-if="meta.nZ > 1 && !(mode === 'volume' && !zWindowActive)">
+          <template v-if="meta.nZ > 1">
             <span v-if="nT > 1" class="cc-toolbar-sep" aria-hidden="true" />
-            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane <= 0"
-                    v-tooltip.top="'Previous z plane'" aria-label="Previous z plane"
-                    @click="stepZ(zPlane - 1)"><i class="pi pi-chevron-left" /></button>
-            <span class="cc-readout cc-fs-2xs">z {{ zPlane }} / {{ meta.nZ - 1 }}</span>
-            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane >= meta.nZ - 1"
-                    v-tooltip.top="'Next z plane'" aria-label="Next z plane"
-                    @click="stepZ(zPlane + 1)"><i class="pi pi-chevron-right" /></button>
+            <template v-if="zDepthMode">
+              <span class="cc-readout cc-fs-2xs vw-bar-ro">z {{ zRange[0] }}–{{ zRange[1] }} / {{ meta.nZ - 1 }}</span>
+            </template>
+            <template v-else>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane <= 0"
+                      v-tooltip.top="'Previous z plane'" aria-label="Previous z plane"
+                      @click="stepZ(zPlane - 1)"><i class="pi pi-chevron-left" /></button>
+              <span class="cc-readout cc-fs-2xs vw-bar-ro">z {{ zWindowActive ? `${zLoaded[0]}–${zLoaded[1]}` : zPlane }} / {{ meta.nZ - 1 }}</span>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane >= meta.nZ - 1"
+                      v-tooltip.top="'Next z plane'" aria-label="Next z plane"
+                      @click="stepZ(zPlane + 1)"><i class="pi pi-chevron-right" /></button>
+            </template>
           </template>
         </template>
-        <VwTimeControls v-if="nT > 1" bar :t="t" :n-t="nT" :has-z="false" :playing="playing"
+        <VwTimeControls v-if="nT > 1" :t="t" :n-t="nT" :playing="playing"
                         :throttled="playing && waitingFor >= 0" :busy="busy" :cells="cells"
                         @toggle-play="togglePlay" @stop="stopPlay()" @goto="gotoT" />
         <template v-if="meta.nZ > 1">
-          <span v-if="nT > 1" class="cc-toolbar-sep" aria-hidden="true" />
-          <template v-if="mode === 'volume' && !zWindowActive">
-            <span class="cc-muted cc-fs-2xs">z</span>
-            <RangeSlider class="vw-bar-z"
-              v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
-              :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
-              @update:lo="v => (zRange = [v, zRange[1]])"
-              @update:hi="v => (zRange = [zRange[0], v])"
-              @change="reallocate()"
-            />
-            <span class="cc-readout cc-fs-2xs">{{ zRange[0] }}–{{ zRange[1] }}</span>
-            <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                    v-tooltip.top="'Back to the whole stack'" aria-label="Reset depth"
-                    @click="resetZRange"><i class="pi pi-undo" /></button>
-          </template>
-          <template v-else>
-            <span class="cc-muted cc-fs-2xs">z</span>
-            <input
-              type="range" class="vw-bar-z" :min="0" :max="meta.nZ - 1" :step="1"
-              :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
-              v-tooltip.top="zWindowActive
-                ? 'Centre plane of the window — changing it reloads the timecourse'
-                : 'Which z plane to show — changing it reloads the timecourse'"
-            >
-            <span class="cc-readout cc-fs-2xs">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
-          </template>
-          <button :class="['cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense', { 'cc-btn-on cc-btn-on-tint': zWindowOn }]"
-                  :disabled="zWindowBlocked" :aria-pressed="zWindowOn"
-                  @click="setZWindow(!zWindowOn)"
+          <span class="cc-muted cc-fs-2xs vw-bar-lead" style="grid-column: 1">z</span>
+          <!-- ± : the planes either side of the current one; its width is in the popover, so turning it
+               on never widens the bar -->
+          <button ref="zWindowAnchor" style="grid-column: 2"
+                  :class="['cc-btn cc-btn-ghost cc-btn-dense vw-bar-pm', { 'cc-btn-on cc-btn-on-tint': zWindowOn }]"
+                  :disabled="zWindowBlocked" aria-haspopup="dialog"
                   v-tooltip.top="zWindowBlocked
                     ? 'Not available on a whole-slide plane'
-                    : 'Show the planes either side of the current one'"
-                  aria-label="Show the planes either side">
-            <span aria-hidden="true">±</span>
-          </button>
-          <template v-if="zWindowActive">
-            <input
-              type="range" class="vw-bar-zw" :min="1" :max="zWindowMax" :step="1"
-              :value="zWindowDraft" @input="zWindowDraft = Number(($event.target as HTMLInputElement).value)"
-              @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
-              v-tooltip.top="'Planes either side — more is slower, in proportion'"
-            >
-            <span class="cc-readout cc-fs-2xs">±{{ zWindowDraft }} · {{ zLoaded[0] }}–{{ zLoaded[1] }}</span>
-          </template>
+                    : 'Planes either side of the current one'"
+                  aria-label="Planes either side"
+                  @click="zWindowPopOpen = !zWindowPopOpen">{{ zWindowOn ? `±${zWindowHalf}` : '±' }}</button>
+          <TeleportPopover v-model="zWindowPopOpen" :anchor="zWindowAnchor" placement="bottom-start">
+            <div class="cc-row cc-row-tight">
+              <CcToggle :model-value="zWindowOn" @update:model-value="v => setZWindow(!!v)"
+                        aria-label="Show the planes either side" />
+              <span class="cc-muted cc-fs-2xs">Either side</span>
+              <input
+                type="range" class="vw-bar-zw" :min="1" :max="zWindowMax" :step="1" :disabled="!zWindowOn"
+                :value="zWindowDraft" @input="zWindowDraft = Number(($event.target as HTMLInputElement).value)"
+                @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
+                v-tooltip.top="'Planes either side — more is slower, in proportion'"
+              >
+              <span class="cc-readout cc-fs-2xs">±{{ zWindowDraft }}</span>
+            </div>
+          </TeleportPopover>
+          <RangeSlider v-if="zDepthMode" class="vw-bar-slider" style="grid-column: 3"
+            v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
+            :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
+            @update:lo="v => (zRange = [v, zRange[1]])"
+            @update:hi="v => (zRange = [zRange[0], v])"
+            @change="reallocate()"
+          />
+          <input v-else
+            type="range" class="vw-bar-slider" style="grid-column: 3" :min="0" :max="meta.nZ - 1" :step="1"
+            :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
+            v-tooltip.top="zWindowActive
+              ? 'Centre plane of the window — changing it reloads the timecourse'
+              : 'Which z plane to show — changing it reloads the timecourse'"
+            aria-label="z plane"
+          >
+          <span class="cc-readout cc-fs-2xs vw-bar-ro" style="grid-column: 4">
+            <template v-if="zDepthMode">
+              <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                      v-tooltip.top="'Back to the whole stack'" aria-label="Reset depth"
+                      @click="resetZRange"><i class="pi pi-undo" /></button>
+              {{ zRange[0] }}–{{ zRange[1] }} / {{ meta.nZ - 1 }}
+            </template>
+            <template v-else-if="zWindowActive">{{ zLoaded[0] }}–{{ zLoaded[1] }} / {{ meta.nZ - 1 }}</template>
+            <template v-else>{{ zPlane }} / {{ meta.nZ - 1 }}</template>
+          </span>
         </template>
         <!-- Pyramid level. 3D Auto = the finest that fits (flat) or an SSE floor (brick); 2D Auto is
              zoom-driven. The dropdown pins a level. -->
         <template v-if="(meta.levels?.length ?? 0) > 1">
-          <span class="cc-toolbar-sep" aria-hidden="true" />
-          <select v-if="mode === 'volume'" v-model.number="settings.viewerVolumeLevel" class="vw-bar-level cc-input-2xs"
+          <select v-if="mode === 'volume'" v-model.number="settings.viewerVolumeLevel"
+                  class="vw-bar-level cc-input-2xs" style="grid-column: 5"
                   v-tooltip.top="'Pyramid resolution — lower = finer, but bigger'"
                   @change="reallocate()">
-            <option :value="-1">Level auto{{ bricksEnabled
+            <option :value="-1">L auto{{ bricksEnabled
               ? (brickCurrentLevel !== undefined ? ` (L${brickCurrentLevel})` : '')
               : ` (L${slabLevel})` }}</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
           </select>
-          <select v-else v-model.number="settings.viewerPlaneLevel" class="vw-bar-level cc-input-2xs"
+          <select v-else v-model.number="settings.viewerPlaneLevel"
+                  class="vw-bar-level cc-input-2xs" style="grid-column: 5"
                   v-tooltip.top="'Pyramid resolution — auto picks by camera zoom'"
                   @change="reallocate()">
-            <option :value="-1">Level auto (L{{ slabLevel }})</option>
+            <option :value="-1">L auto (L{{ slabLevel }})</option>
             <option v-for="lv in meta.levels" :key="lv.level" :value="lv.level">
               L{{ lv.level }} — {{ lv.nX }}×{{ lv.nY }}
             </option>
@@ -6751,9 +6780,13 @@ onUnmounted(() => {
   background: color-mix(in srgb, var(--cc-accent-strong) 15%, transparent);
 }
 
-.vw-bar-z { width: 5rem; flex: none; }
-.vw-bar-zw { width: 4rem; flex: none; }
-.vw-bar-level { max-width: 9rem; }
+.vw-bar-lead { justify-self: center; }
+.vw-bar-pm { width: 100%; justify-content: center; padding-inline: 0; font-variant-numeric: tabular-nums; }
+.vw-bar-slider { width: 100%; min-width: 0; }
+.vw-bar-ro { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.2rem;
+  white-space: nowrap; }
+.vw-bar-zw { width: 6rem; }
+.vw-bar-level { width: 100%; min-width: 0; }
 .vw-top { flex-wrap: wrap; row-gap: 0.35rem; }
 .vw-top-end { margin-left: auto; }
 .vw-edit-banner {
@@ -6863,11 +6896,6 @@ onUnmounted(() => {
   background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); padding: 2px;
 }
-/* Slider rows (Depth/Plane, ± planes; Timepoint and Fps restate these in VwTimeControls): label column, slider, readout column, then
-   the ± button's square (or a spacer the same size) — so every slider starts and ends on one x, and
-   the fixed readout slot stops digits jittering the slider on every playback tick. */
-.vw-slider-row { flex-wrap: nowrap; }
-.vw-readout-col { min-width: 2.6rem; text-align: right; flex: none; white-space: nowrap; }
 .vw-icon-spacer { display: inline-block; flex: none; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:

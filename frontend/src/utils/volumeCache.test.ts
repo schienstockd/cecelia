@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cacheCapacity, prefetchWindow, prefetchDepth, lruEvictions, stripCells, playbackAdvance,
+  cacheRuns, cacheGradient,
   playbackIntervalMs, walkPrefetch, type PrefetchWalkIO,
 } from './volumeCache'
 import { debouncedLatest } from './debouncedLatest'
@@ -255,5 +256,24 @@ describe('walkPrefetch', () => {
     await land(0)
     await done
     expect(painted).toEqual([])
+  })
+})
+
+describe('cacheRuns / cacheGradient', () => {
+  const cells = (...st: string[]) => st.map(state => ({ state: state as 'absent' }))
+  it('merges neighbours in one state and counts the current cell as resident', () => {
+    expect(cacheRuns(cells('resident', 'current', 'resident', 'loading', 'absent'))).toEqual([
+      { state: 'resident', from: 0, to: 0.6 },
+      { state: 'loading', from: 0.6, to: 0.8 },
+      { state: 'absent', from: 0.8, to: 1 },
+    ])
+  })
+  it('is empty for no cells, and the gradient falls back to the absent colour', () => {
+    expect(cacheRuns([])).toEqual([])
+    expect(cacheGradient([])).toBe('var(--cc-surface-2)')
+  })
+  it('draws hard stops from token colours only', () => {
+    const g = cacheGradient(cacheRuns(cells('resident', 'absent', 'absent', 'loading')))
+    expect(g).toBe('linear-gradient(to right, var(--cc-accent) 0% 25%, var(--cc-surface-2) 25% 75%, var(--cc-accent-tint) 75% 100%)')
   })
 })

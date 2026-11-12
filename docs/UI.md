@@ -1984,11 +1984,15 @@ quality, 3D projection, the cache-map toggles, the **corner** overlay (overview 
 and the **Debug** switch, which shows the Debug section (off by default, `cc.vw.debug`). The maps draw
 in the canvas's top-right column, under the overview/axes and the same size, never on the overview.
 **Shortcuts** sits at the panel's foot (and in the header's Help ▾).
-**Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls bar`): time, z and level float on the image,
-bottom centre, just above the strip where the scale bar and the status chips sit: play, loop, t, the
-scrubber over its cache strip, Fps; then z (Plane, or Depth in 3D), ±, the ± width; then Level. Its chevron folds it
-to a pill — play, t, and a single plane's z with its step buttons — remembered per profile
-(`cc.vw.playbackBar`); playback carries on while folded.
+**Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls`): time, z and level float on the image,
+bottom centre, just above the strip where the scale bar and the status chips sit. Two rows on one grid
+of fixed columns — buttons, buttons, slider, readout, chip, fold — so they line up and the bar never
+changes size: play, loop, the scrubber (the cache is painted on its own track: filled = cached, faint =
+loading), t, an Fps chip; then z, the ± chip, the plane slider (Depth range in 3D), its readout, Level.
+Fps and the ± width open in popovers rather than widening the bar. An image without time or z drops
+that row. The chevron folds it to a pill — play, t, and z with its step buttons (a readout for a 3D
+depth range) — over a read-only hairline of the cache and where t is (or where the planes sit in the
+stack); remembered per profile (`cc.vw.playbackBar`); playback carries on while folded.
 **Console row** (`VwConsoleRow`): loading, the level on screen, the renderer, the integrated-GPU warning
 and the cache budget, in a strip at the window's foot; errors that break the view stay on the image.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes are SHOWN; the window is

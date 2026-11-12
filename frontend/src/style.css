@@ -15,6 +15,8 @@
 :root {
   /* a slider's fill, 0–100% — written per element by `v-range-fill` (Sliders, below) */
   --cc-range-pct: 0%;
+  /* a `.cc-range-paint` slider's track, set per element by its caller (Sliders, below) */
+  --cc-range-track: var(--cc-surface-2);
   /* a padded scroll box's top padding, set on that box (BaseModal's body) so a sticky table header
      inside it can lift over the padding strip — read by SelectionTable `stickyHeader` */
   --cc-scroll-pad-top: 0px;
@@ -937,6 +939,12 @@ input[type="range"]::-webkit-slider-runnable-track {
     var(--cc-surface-2) var(--cc-range-pct, 0%), var(--cc-surface-2) 100%);
   box-shadow: 0 0 0 1px var(--cc-border);
 }
+/* Painted track: `.cc-range-paint` + `--cc-range-track` (any CSS background, tokens only) replaces the
+   accent fill with what the caller paints — the playback scrubber's cached timepoints. The thumb still
+   marks the value. */
+input[type="range"].cc-range-paint::-webkit-slider-runnable-track { background: var(--cc-range-track); }
+input[type="range"].cc-range-paint::-moz-range-track { background: var(--cc-range-track); }
+input[type="range"].cc-range-paint::-moz-range-progress { background: transparent; }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
