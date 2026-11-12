@@ -147,6 +147,8 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-tiles', lucide: 'grid-2x2', means: 'Tile cache map' },
       { icon: 'pi-bricks', lucide: 'boxes', means: 'Brick cache map' },
       { icon: 'pi-reset-view', lucide: 'scan', means: 'Reset the view — fit and face square' },
+      { icon: 'pi-hand', lucide: 'hand', means: 'View mode — a drag moves the view, a click picks nothing' },
+      { icon: 'pi-mouse-pointer', lucide: 'mouse-pointer-2', means: 'Select mode — a click picks a cell' },
       { icon: 'pi-key', lucide: 'key-round', means: 'This glossary' },
       { icon: 'pi-compass', lucide: 'compass', means: 'Guides — walk through the basics' },
       { icon: 'pi-cog', lucide: 'settings', means: 'Settings and options' },

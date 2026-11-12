@@ -212,6 +212,7 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
           :disabled="disabled || it.opt.disabled"
           :draggable="it.drag && !disabled"
           v-tooltip.bottom="it.tip"
+          :aria-label="it.opt.label === '' ? (it.tip || it.opt.value) : undefined"
           @click="pick(it.opt)"
           @dragstart="onDragStart(it.opt)"
           @dragover.prevent
