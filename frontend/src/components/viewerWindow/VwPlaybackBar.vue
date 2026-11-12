@@ -5,10 +5,10 @@
   above the bottom strip of the image, where the scale bar (bottom right, part of what Save image
   composites) and the status chips (bottom left) sit, so it never covers either.
 
-  Open, it is a grid of fixed columns: two buttons, the slider, the readout, a chip, the fold. The
-  window puts each control in its column (time row, then z row), so the rows line up and nothing moves
-  while it plays or when ± turns on. `rows` says how many rows there are; the fold sits at the end of
-  the last one.
+  Open, it is a grid: two buttons, the slider, the readout, a chip, the fold. The window puts each
+  control in its column (time row, then z row), so the rows line up; readouts are sized from the image's
+  maxima, so nothing moves while it plays or when ± turns on. `rows` says how many rows there are; the
+  fold sits at the end of the last one. A bar with nothing to step through (Level only) is just its chip.
 
   Folded (per profile, `cc.vw.playbackBar`) it is a pill holding the `collapsed` slot — play and the
   positions — with `line` as a read-only hairline along its bottom edge (where t is and what is
@@ -40,7 +40,7 @@ const atStyle = computed(() => {
 </script>
 
 <template>
-  <div class="vw-pbar" :class="collapsed ? 'vw-pbar-collapsed' : 'vw-pbar-grid'" role="toolbar" aria-label="Playback">
+  <div class="vw-pbar" :class="collapsed ? 'vw-pbar-collapsed' : foldable ? 'vw-pbar-grid' : 'vw-pbar-flex'" role="toolbar" aria-label="Playback">
     <slot v-if="!collapsed" />
     <slot v-else name="collapsed" />
     <button v-if="foldable" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense vw-pbar-fold"
@@ -64,13 +64,16 @@ const atStyle = computed(() => {
   border-radius: var(--cc-radius-sm); box-shadow: 0 2px 10px var(--cc-shadow);
   white-space: nowrap; z-index: 2;
 }
-/* buttons · buttons · slider · readout · chip · fold — every column fixed and the box `max-content`,
-   so its size depends on nothing: not the values shown, and not the canvas (an absolutely placed box at
-   `left: 50%` otherwise shrinks to the space beside it, and resizes whenever the canvas does) */
+/* buttons · buttons · slider · readout · chip · fold. The buttons and the slider are fixed; the readout
+   and chip columns take their content, which is sized from the image's maxima (`readoutWidth`) and fixed
+   chip widths — so a bar fits what it shows, yet keeps one size while values change. `max-content`, not
+   the shrink-to-fit an absolute box at `left: 50%` would get, so the canvas width never sizes it. */
 .vw-pbar-grid {
   display: grid; align-items: center; column-gap: 0.4rem; row-gap: 0.2rem; padding: 0.3rem 0.5rem;
-  grid-template-columns: 1.6rem 1.6rem 12rem 5.6rem 5.4rem 1.6rem; width: max-content;
+  grid-template-columns: 1.6rem 1.6rem 12rem auto auto auto; width: max-content;
 }
+/* nothing to step through (only a Level chip): just the content */
+.vw-pbar-flex { display: flex; align-items: center; padding: 0.3rem 0.5rem; width: max-content; }
 .vw-pbar-collapsed {
   display: flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.4rem 0.35rem;
   border-radius: var(--cc-radius-pill); width: max-content;

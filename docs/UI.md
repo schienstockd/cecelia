@@ -2009,8 +2009,9 @@ in the canvas's top-right column, under the overview/axes and the same size, nev
 **Shortcuts** sits at the panel's foot (and in the header's Help ▾).
 **Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls`): time, z and level float on the image,
 bottom centre, just above the strip where the scale bar and the status chips sit. Two rows on one grid
-of fixed columns — buttons, buttons, slider, readout, chip, fold — so they line up and the bar never
-changes size: play, loop, the scrubber (the cache is painted on its own track: filled = cached, faint =
+— buttons, buttons, slider, readout, chip, fold — so they line up. The bar fits its content (readouts
+sized from the image's maxima, fixed chip widths) and keeps that size while values change; a bar with
+only Level is just the chip: play, loop, the scrubber (the cache is painted on its own track: filled = cached, faint =
 loading), t, an Fps chip; then z, the ± chip, the plane slider (Depth range in 3D), its readout, Level.
 Fps and the ± width open in popovers rather than widening the bar. An image without time or z drops
 that row. The chevron folds it to a pill — play, t, and z with its step buttons (a readout for a 3D

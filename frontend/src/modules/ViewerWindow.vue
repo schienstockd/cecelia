@@ -3488,6 +3488,12 @@ const zPillWidth = computed(() => {
   const n = Math.max((meta.value?.nZ ?? 1) - 1, 0)
   return readoutWidth(`z ${n}–${n} / ${n}`)
 })
+/** The bar's z readout sized for its longest form plus the 3D depth reset button, always — so it keeps
+ *  one width when ± or 2D / 3D changes what it shows. */
+const zRowWidth = computed(() => {
+  const n = Math.max((meta.value?.nZ ?? 1) - 1, 0)
+  return `calc(${readoutWidth(`${n}–${n} / ${n}`)} + 1.2rem)`
+})
 const zWindowPopOpen = ref(false)
 const zWindowAnchor = ref<HTMLElement | null>(null)
 /** The folded bar's hairline (`VwPlaybackBar` `line`): the cache and t on a timecourse, else where the
@@ -5979,7 +5985,7 @@ onUnmounted(() => {
         <span class="cc-muted cc-fs-2xs">A browser or graphics-driver fault, not this image.</span>
         <span class="cc-muted cc-fs-2xs">Try another browser, or route this one to the discrete GPU.</span>
       </div>
-      <!-- The playback bar (GUI_LAYOUT_PLAN V2): a time row and a z row on fixed grid columns —
+      <!-- The playback bar (GUI_LAYOUT_PLAN V2): a time row and a z row on one grid —
            buttons · buttons · slider · readout · chip · fold (`VwPlaybackBar`). Depth, ± and Level
            commit on release / change (each reallocates the textures). -->
       <VwPlaybackBar v-if="meta && (nT > 1 || meta.nZ > 1 || (meta.levels?.length ?? 0) > 1)"
@@ -6049,7 +6055,7 @@ onUnmounted(() => {
               : 'Which z plane to show — changing it reloads the timecourse'"
             aria-label="z plane"
           >
-          <span class="cc-readout cc-fs-2xs vw-bar-ro" style="grid-column: 4">
+          <span class="cc-readout cc-fs-2xs vw-bar-ro" style="grid-column: 4" :style="{ minWidth: zRowWidth }">
             <template v-if="zDepthMode">
               <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                       v-tooltip.top="'Back to the whole stack'" aria-label="Reset depth"
@@ -6795,7 +6801,7 @@ onUnmounted(() => {
   white-space: nowrap; }
 .vw-bar-zw { width: 6rem; }
 .vw-bar-pmro { display: inline-block; min-width: 3ch; text-align: right; }
-.vw-bar-level { width: 100%; min-width: 0; }
+.vw-bar-level { width: 5.4rem; }
 .vw-top { flex-wrap: wrap; row-gap: 0.35rem; }
 .vw-top-end { margin-left: auto; }
 .vw-edit-banner {
