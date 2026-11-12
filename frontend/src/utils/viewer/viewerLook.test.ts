@@ -12,7 +12,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   version: 'corrected',
   maskValueName: 'cpSAM',
   gating: { valueName: 'flowTom', popType: 'clust' },
-  popVisible: () => false,
+  popVisible: {},
   trackVisible: {},
   trackSourceColours: {},
   showGatedTracks: false,
@@ -79,7 +79,7 @@ describe('viewerLook', () => {
   })
 
   it('pops on → the pop manager’s segmentation and popType', () => {
-    const l = viewerLook(base({ popVisible: pt => pt === 'clust' }))
+    const l = viewerLook(base({ popVisible: { clust: true } }))
     expect(l.showPopulations).toBe(true)
     expect(l.popType).toBe('clust')
     expect(l.popValueName).toBe('flowTom')
@@ -87,7 +87,7 @@ describe('viewerLook', () => {
 
   it('pops are every segmentation’s, of every cell pop type that is on', () => {
     const l = viewerLook(base({ gating: { valueName: 'flowTom', popType: 'flow' },
-                                popVisible: pt => pt === 'clust' || pt === 'region' }))
+                                popVisible: { clust: true, region: true } }))
     expect(l.showPopulations).toBe(true)
     expect(l.popTypes).toEqual(['clust', 'region'])
     expect(l.popAllSegmentations).toBe(true)
@@ -118,7 +118,7 @@ describe('viewerLook', () => {
   })
 
   it('track clusters, hidden ribbons and the all-cells mask ride along', () => {
-    const l = viewerLook(base({ popVisible: pt => pt === 'trackclust',
+    const l = viewerLook(base({ popVisible: { trackclust: true },
                                 hiddenTrackPops: { OTI: ['/a'], P14: [] } }))
     expect(l.showTrackclust).toBe(true)
     expect(l.hiddenTrackPops).toEqual({ OTI: ['/a'] })
@@ -149,7 +149,7 @@ describe('viewerLook', () => {
   })
 
   it('Colour on pops with pops shown → the mask is the pops’, not every cell (the viewer’s maskPopTable)', () => {
-    const on = viewerLook(base({ maskColour: 'pops', popVisible: pt => pt === 'flow' }))
+    const on = viewerLook(base({ maskColour: 'pops', popVisible: { flow: true } }))
     expect(on.maskAllCells).toBe(false)
     // the movie colours the mask by these pop types on the mask's own segmentation (`mask_pop_scope`)
     expect(on.popAllSegmentations).toBe(true)
@@ -159,11 +159,11 @@ describe('viewerLook', () => {
     expect(viewerLook(base({ maskColour: 'pops' })).maskAllCells).toBe(true)
     expect(on.maskPopTypes).toBeUndefined()
     // Cell id → every cell in the palette, pops or not
-    expect(viewerLook(base({ popVisible: pt => pt === 'flow' })).maskAllCells).toBe(true)
+    expect(viewerLook(base({ popVisible: { flow: true } })).maskAllCells).toBe(true)
   })
 
   it('Colour on track clusters → the mask is the track clusters’, whatever pop types are on', () => {
-    for (const popVisible of [() => false, (pt: string) => pt === 'flow']) {
+    for (const popVisible of [{}, { flow: true }] as Record<string, boolean>[]) {
       const l = viewerLook(base({ maskColour: 'trackclust', popVisible }))
       expect(l.maskAllCells).toBe(false)
       // the movie colours the mask by these instead of `popTypes` (`mask_pop_scope`)

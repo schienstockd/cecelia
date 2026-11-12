@@ -348,7 +348,7 @@ The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays an
   closure → `render_animation_run.py`. A feature that changes what is drawn adds its input there too, with
   a runner test that draws it. "Movies don't draw it yet" is not a *Not covered* line in a plan — it is
   unfinished work, and only the maintainer can decide to ship without it. The inputs are one record,
-  `ViewerDrawSpec` (`utils/viewer/drawSpec.ts`): `RECORDED` marks each field recorded or not, and
+  `ViewerDrawSpec` (`utils/viewer/drawSpec.ts`), which `ViewerWindow` draws from too (`drawSpecOf`): `RECORDED` marks each field recorded or not, and
   `drawSpec.test.ts` + the Julia check of `lookKeys.parity.json` hold both ends to it
   (`docs/todo/DRAW_SPEC_PLAN.md`).
 
