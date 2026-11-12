@@ -55,6 +55,9 @@ export interface BatchMovieCfg {
   // The segmentation masks each movie draws, in order. 2+ makes them the grid's ROWS (with the
   // versions as its columns); one draws it in every cell. Read via `segmentationsFromConfig`.
   labelValueNames?: string[]
+  // Per segmentation, its derived files (halo / nuc suffixes) NOT drawn with its mask. Absent = all
+  // drawn — the viewer's default (`cc.viewerLabelFilesHidden`); a viewer look carries its hidden ones.
+  labelFilesHidden?: Record<string, string[]>
   // Mask outline width in px — 0 draws them filled, N draws an N-px contour so the channel signal
   // underneath stays readable. Clamped to 0..LABEL_CONTOUR_MAX.
   labelContour?: number
@@ -160,6 +163,7 @@ export interface BatchMovieRequestConfig {
   valueName: string
   valueNames: string[]
   labelValueNames: string[]
+  labelFilesHidden: Record<string, string[]>
   labelContour: number
   show3D: boolean
   zSlice: number | null
@@ -263,6 +267,7 @@ export function buildBatchMovieConfig(
     // Always sent, even empty: the backend treats an ABSENT list as "leave the masks alone" and an
     // empty one as "no masks", and an authored batch config always means the latter.
     labelValueNames: cfg.labelValueNames ?? [],
+    labelFilesHidden: cfg.labelFilesHidden ?? {},
     labelContour: clampContour(cfg.labelContour),
     show3D: !!cfg.show3D,
     // a z index alongside show3D is a leftover from the last time 2D was picked — Julia ignores it

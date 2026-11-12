@@ -243,9 +243,11 @@ def get_image_info(project_uid: str, image_uid: str) -> dict:
     """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log,
     and for a crop `cropSource` {uid, valueName, box} — add box x0/y0/z0/t0 to map its coordinates
     into the source (-1 = axis kept whole). `acquisition` (when the source format has a reader) holds
-    the microscope settings as recorded: lasers + transmission %, Bright Z (`enabled` says whether the
-    stored ramp was applied), scanner timing, detector HV/gain/offset and emission filter per
-    channel, the dichroic slots as recorded (`Empty` = nothing in that slot), and when it was acquired. `cleanupFacts` is
+    the microscope settings as recorded, and its `technology` (two-photon, widefield, ...) and `system`
+    (the microscope): lasers + transmission %, Bright Z (`enabled` says whether the stored ramp was
+    applied), scanner timing, detector HV/gain/offset and emission filter per channel, the dichroic
+    slots as recorded (`Empty` = nothing in that slot); on a camera, `camera` (binning, bit depth) and
+    per channel exposureMs, gain, filterCube, illuminationIntensity; and when it was acquired. `cleanupFacts` is
     what was measured in the file at import, per channel: zero / clipped %, and where measured a
     `profile` of per-depth (`byZ`) and per-frame (`byT`) p50, p99, zero fraction and clipped count.
     Read both against get_acquisition_knowledge. The user's note is not here: get_image_notes reads it
@@ -1451,29 +1453,88 @@ def get_guide(guide_id: str = "") -> dict:
     raise ToolError(f"no guide {guide_id!r}; known: {', '.join(e['id'] for e in entries)}")
 
 
-# What each stage of a two-photon acquisition does, which symptom points at which stage, and which
-# measured number shows it — with citations; plus one unverified feature line per scope. Hand-written,
-# committed beside this file (docs/todo/ACQUISITION_ADVISOR_PLAN.md → P3).
-_ACQUISITION_KNOWLEDGE_PATH = os.path.join(os.path.dirname(__file__), "acquisition_knowledge.json")
+# Acquisition knowledge, one file per layer so a microscope or an imaging technology is added without
+# touching code (docs/todo/MICROSCOPE_PROFILES_PLAN.md): `technologies/<id>.json` (stages, symptoms,
+# checks, cited sources — what the light path is), `scopes/<id>.json` (one microscope model: its
+# technology and its names for the features that fix a stage), `sources.json` (shared citations).
+# Hand-written, committed beside this file (docs/todo/ACQUISITION_ADVISOR_PLAN.md → P3).
+_ACQUISITION_KNOWLEDGE_DIR = os.path.join(os.path.dirname(__file__), "acquisition_knowledge")
+
+
+def _knowledge_files(kind: str) -> list[dict]:
+    d = os.path.join(_ACQUISITION_KNOWLEDGE_DIR, kind)
+    out = []
+    for name in sorted(os.listdir(d)):
+        if name.endswith(".json"):
+            with open(os.path.join(d, name), encoding="utf-8") as f:
+                out.append(json.load(f))
+    return out
+
+
+def acquisition_technologies() -> dict[str, dict]:
+    """Every technology file, resolved: one with `extends` takes its base's stages, replaces the ones
+    it lists by key, and orders them by its `stageOrder` — so a variant (Airyscan on confocal) states
+    only what differs, and the shared advice is written once."""
+    raw = {t["technology"]: t for t in _knowledge_files("technologies")}
+
+    def resolve(name: str, seen: tuple = ()) -> dict:
+        t = raw[name]
+        base_name = t.get("extends")
+        if not base_name:
+            return t
+        if base_name in seen or base_name not in raw:
+            raise ValueError(f"technology {name!r} extends unknown or circular {base_name!r}")
+        base = resolve(base_name, seen + (name,))
+        by_key = {st["key"]: st for st in base["stages"]} | {st["key"]: st for st in t["stages"]}
+        order = t.get("stageOrder") or [st["key"] for st in base["stages"]]
+        return {**t, "stages": [by_key[k] for k in order]}
+
+    return {name: resolve(name) for name in raw}
 
 
 @_tool
-def get_acquisition_knowledge(system: str = "") -> dict:
-    """Two-photon acquisition knowledge for reading an image's acquisition: per stage of the light path
-    (keys match get_image_info's settings and the metadata dialog's Light path: laser, power, scanner,
-    objective, sample, filters, detectors, digitisation, stack) what it does and its `symptoms` — each
-    with `explanation`, `check` (which recorded setting or measured number shows it), `alternatives`
-    (other causes, often biology), `sources` (ids into `sources`, with DOIs) and `qcCodes` (the task
-    QC finding codes that measure it — get_qc_metrics). `scopes` gives each
-    microscope's name for the feature that fixes a stage (e.g. FV4000 → Bright Z), `verified: false`
-    until a facility confirms it — say so when you pass one on — and `seenInFiles`, what the lab's own
-    files record for it. `system` (get_image_info's
-    `acquisition.system`, e.g. "FV4000") keeps only that scope. Project-independent. Read-only."""
-    with open(_ACQUISITION_KNOWLEDGE_PATH, encoding="utf-8") as f:
-        knowledge = json.load(f)
-    if system:
-        knowledge["scopes"] = [s for s in knowledge["scopes"] if s["system"].lower() == system.lower()]
-    return knowledge
+def get_acquisition_knowledge(system: str = "", technology: str = "") -> dict:
+    """Acquisition knowledge for reading an image's acquisition, per imaging technology (two-photon,
+    confocal, airyscan, widefield, ...). Pass BOTH from get_image_info's `acquisition`:
+    `system` (e.g. "FV4000", "LSM 980") and `technology` — one microscope can run several (an LSM 980
+    does confocal and Airyscan), and the image's own technology picks the advice. With only `system`,
+    its profile's first technology is used; with only `technology`, every profile running it. With neither, returns the index —
+    which technologies and microscopes have knowledge — and nothing else.
+
+    Resolved, it returns that technology's light-path `stages` (keys match get_image_info's settings and
+    the metadata dialog) with what each does and its `symptoms` — each with `explanation`, `check` (which
+    recorded setting or measured number shows it), `alternatives` (other causes, often biology),
+    `sources` (ids into `sources`, with DOIs) and `qcCodes` (the task QC finding codes that measure it —
+    get_qc_metrics). `scopes` gives the matching microscope's name for the feature that fixes a stage
+    (e.g. FV4000 → Bright Z), `verified: false` until a facility confirms it — say so when you pass one
+    on — and `seenInFiles`, what the lab's own files record for it. A system with no profile returns
+    `unknownSystem`: do not borrow another technology's advice for it. Project-independent. Read-only."""
+    techs = acquisition_technologies()
+    scopes = _knowledge_files("scopes")
+    index = {"technologies": [{"technology": k, "summary": t["summary"]} for k, t in techs.items()],
+             "microscopes": [{"system": s["system"], "technologies": s["technologies"]} for s in scopes]}
+    matched = [s for s in scopes if system and s["system"].lower() == system.lower()]
+    tech = technology.lower() or (matched[0]["technologies"][0] if matched else "")
+    if tech not in techs:
+        out = dict(index)
+        if system and not matched:
+            out["unknownSystem"] = system
+        if technology:
+            out["unknownTechnology"] = technology
+        return out
+    with open(os.path.join(_ACQUISITION_KNOWLEDGE_DIR, "sources.json"), encoding="utf-8") as f:
+        sources = json.load(f)
+    t = techs[tech]
+    cited = {sid for st in t["stages"] for sym in st["symptoms"] for sid in sym["sources"]}
+    out = {
+        "technology": tech, "summary": t["summary"], "status": t["status"], "stages": t["stages"],
+        "sources": {k: v for k, v in sources.items() if k in cited},
+        "scopes": [s for s in (matched if system else scopes) if tech in s["technologies"]],
+        "available": index,
+    }
+    if system and not matched:
+        out["unknownSystem"] = system
+    return out
 
 
 @_tool

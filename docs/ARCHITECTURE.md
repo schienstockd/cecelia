@@ -341,6 +341,16 @@ The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays an
   thumbnails) are the same frames as PNGs, served by the resident preview worker so a still does not
   pay a renderer's start-up (`docs/todo/STILLS_WORKER_PLAN.md`). Julia's CPU compositor
   (`image_render.jl`) is left for the crop panel's preview. See `docs/todo/SHARED_RENDERER_PLAN.md`.
+- **Recording parity — a viewer drawing feature ships with the recording path, in the same change.**
+  A shared shader is not enough: what the viewer draws is also decided by its INPUTS (which store, which
+  files, which pops, which settings), and those reach a movie / still by a separate route —
+  `viewerLook.ts` (the look) → movie config → `_overlays_raw_from_config` → `movie_mask` / the overlay
+  closure → `render_animation_run.py`. A feature that changes what is drawn adds its input there too, with
+  a runner test that draws it. "Movies don't draw it yet" is not a *Not covered* line in a plan — it is
+  unfinished work, and only the maintainer can decide to ship without it. The inputs are one record,
+  `ViewerDrawSpec` (`utils/viewer/drawSpec.ts`): `RECORDED` marks each field recorded or not, and
+  `drawSpec.test.ts` + the Julia check of `lookKeys.parity.json` hold both ends to it
+  (`docs/todo/DRAW_SPEC_PLAN.md`).
 
 ### Slab reads — server side
 

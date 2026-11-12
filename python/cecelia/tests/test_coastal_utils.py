@@ -267,14 +267,27 @@ class ProjectionTest(unittest.TestCase):
         b = cu._project_window(b_tile, {'cellChannels': [0]}, norm)
         np.testing.assert_allclose(a[:, :, 8:24], b[:, :, 0:16], rtol=0, atol=0)
 
-    def test_without_global_norm_params_the_projection_is_tile_local(self):
-        """Sanity for the test above: the drift it prevents has to be real."""
+    def test_without_global_norm_params_a_channel_with_signal_raises(self):
+        """The per-tile fallback would give each tile its own scale with no error, so a caller that
+        leaves a channel with signal out of `norm_params` (None, or a partial dict) must stop."""
         cu = _utils()
-        a_tile, b_tile = self._overlapping_tiles()
+        a_tile, _ = self._overlapping_tiles()
+        for norm in (None, {}, {1: (0.0, 4000.0)}):
+            with self.assertRaisesRegex(ValueError, 'no frame/image intensity window'):
+                cu._project_window(a_tile, {'cellChannels': [0]}, norm)
 
-        a = cu._project_window(a_tile, {'cellChannels': [0]}, None)
-        b = cu._project_window(b_tile, {'cellChannels': [0]}, None)
-        self.assertFalse(np.allclose(a[:, :, 8:24], b[:, :, 0:16]))
+    def test_the_limit_is_per_frame_not_per_window(self):
+        """A window spans several frames, and the base drops a channel's entry only when a FRAME is
+        too empty for a window; a sparse channel's window must still project."""
+        cu = _utils()
+        limit = cu.MAX_UNWINDOWED_VOXELS
+        window = np.zeros((5, 1, 16, 32), np.float32)
+        window[:, 0, 0, :limit // 2] = 50.0     # 5 * limit/2 > limit over the window, not per frame
+        out = cu._project_window(window, {'cellChannels': [0]}, None)
+        self.assertEqual(out.shape, (5, 16, 32))
+        window[2, 0, 1:5, :] = 50.0             # one frame now holds more than the limit
+        with self.assertRaises(ValueError):
+            cu._project_window(window, {'cellChannels': [0]}, None)
 
     def test_channels_merge_by_maximum_and_land_in_0_255(self):
         cu = _utils()
@@ -484,9 +497,11 @@ class CarriedProjectionTest(unittest.TestCase):
             self.assertEqual(cu.frames_projected, len(w.frames), f'{kw} reused another region')
 
     def test_without_a_global_clip_range_every_window_is_projected_whole(self):
-        """Per-window percentiles project the same frame differently in the next window."""
+        """Per-window percentiles project the same frame differently in the next window. Only a
+        near-empty channel reaches that path (a channel with signal raises), so the movie is sparse."""
         cu, mp = self._cu()
-        movie = self._movie()
+        movie = np.zeros_like(self._movie())
+        movie[:, 1:, 0, 0, :] = self._movie()[:, 1:, 0, 0, :]   # 8 voxels per frame per channel
         for t in (4, 5):
             cu.frames_projected = 0
             w = self._window_at(movie, t, wid=t)
@@ -615,9 +630,12 @@ class SharedFlowBetweenTimepointsTest(unittest.TestCase):
 
     _NORM = {0: (0.0, 1000.0), 1: (0.0, 1000.0)}
 
-    def _step(self, cu, t, tile=(0, 16, 0, 16), n_z=2, channels=(0,), norm=_NORM, z_span=None):
+    def _step(self, cu, t, tile=(0, 16, 0, 16), n_z=2, channels=(0,), norm=_NORM, z_span=None,
+              sparse=False):
         from cecelia.utils.segmentation_utils import TemporalWindow
         ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
+        if sparse:                      # near-empty: the only channel allowed to have no window
+            ctx[..., 1:, :] = 0
         cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': list(channels)},
                          norm_params=norm,
                          window=TemporalWindow(frames=ctx, index=3, start=t - 3, tile=tile,
@@ -676,10 +694,11 @@ class SharedFlowBetweenTimepointsTest(unittest.TestCase):
         self.assertEqual(len(cu._flow_caches), 1)
 
     def test_without_a_global_clip_range_nothing_is_carried(self):
-        """Per-window normalisation projects the same frame differently in the next window."""
+        """Per-window normalisation projects the same frame differently in the next window. Only a
+        near-empty channel reaches that path (a channel with signal raises)."""
         cu = self._utils()
-        self._step(cu, 10, norm=None); first = len(self._computed(cu))
-        self._step(cu, 11, norm=None); second = len(self._computed(cu)) - first
+        self._step(cu, 10, norm=None, sparse=True); first = len(self._computed(cu))
+        self._step(cu, 11, norm=None, sparse=True); second = len(self._computed(cu)) - first
         self.assertEqual(second, first)
 
     def _caches(self, cu):
@@ -738,7 +757,7 @@ class SharedFlowBetweenPassesTest(unittest.TestCase):
 
     def _run(self, cu, mp, wid):
         ctx = np.ones((9, 2, 3, 16, 16), np.float32) * 500
-        return cu.predict_slice(ctx[3], mp, norm_params={0: (0.0, 1000.0)},
+        return cu.predict_slice(ctx[3], mp, norm_params={0: (0.0, 1000.0), 1: (0.0, 1000.0)},
                                 window=_window(ctx, 3, wid=wid))
 
     def test_a_second_group_reuses_the_first_groups_flow(self):

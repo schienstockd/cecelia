@@ -31,6 +31,16 @@ describe('dataPathChannels — real FV4000 store (no clipping, photon-counted ze
     expect(dataPathNotes({})).toEqual([])
   })
 
+  it('says on the channel itself when the scanner processed it and its photons were not measured', () => {
+    const img = { cleanupFacts: { channels: [
+      { index: 0, name: 'DAPI', zeroPct: 0, clippedPct: 0, photons: { notMeasured: null } },
+      { index: 1, name: 'CD8', zeroPct: 0, clippedPct: 0, photons: { notMeasured: 'autofluorescence subtracted by the scanner' } },
+    ] } } as unknown as LightPathImage
+    const [dapi, cd8] = dataPathChannels(img)
+    expect(dapi.items.some(i => i.text.startsWith('Photons not measurable'))).toBe(false)
+    expect(cd8.items).toContainEqual({ text: 'Photons not measurable: autofluorescence subtracted by the scanner', source: 'missing' })
+  })
+
   it('says the zeros are voxels with no photon, with the evidence, and gives photons instead of an SNR', () => {
     expect(texts(2)).toContain('86 % of voxels at 0: likely no photon detected (photon-counted: nothing from 1 to 18, then a peak at 32)')
     expect(texts(2).at(-1)).toBe('photons per non-zero voxel: median 1.06 · p99.9 5.97 (~32 per photon)')
@@ -136,5 +146,33 @@ describe('sparkPath', () => {
   })
   it('stays flat when every value is 0', () => {
     expect(sparkPath([0, 0], 10, 4)).toBe('M0 4 L10 4')
+  })
+})
+
+describe('dataPathChannels — a camera has no photon-counted floor', () => {
+  // A widefield (DFC365 FX) channel whose histogram the floor heuristic read as photon-counted
+  // (cleanupFacts as imported from a DM5500B .lif, trimmed to the fields read here).
+  const ch = {
+    index: 0, name: 'Channel 1', containerBits: 16, zeroPct: 0.1, clippedPct: 0, saturated: false,
+    range: { max: 1781, p50: 75, p1: 22, p999: 639, hist: { binWidth: 55.7, counts: [1, 2] } },
+    floor: { kind: 'photon-counted', photonStep: 9, evidence: 'nothing from 1 to 4, then a peak at 9', firstValue: 5,
+             photons: { p50: 8.33, p999: 71 } },
+    noise: { bgSpread: 10, bgMedian: 57, snr: 3.5, bgLevel: 72, untestable: null },
+  }
+  const img = (camera: boolean) => ({ cleanupFacts: { channels: [ch] },
+    acquisition: camera ? { camera: { name: 'DFC365FX', binning: 2, bitDepth: 12 }, channels: [] } : { channels: [] },
+  }) as unknown as LightPathImage
+
+  it('reads the zeros without a cause and gives the SNR, not photons per voxel', () => {
+    const t = dataPathChannels(img(true))[0].items.map(i => i.text)
+    expect(t).toContain('0.1 % of voxels at 0')
+    expect(t.some(x => x.startsWith('SNR 4'))).toBe(true)
+    expect(t.join(' ')).not.toContain('photon')
+  })
+
+  it('a laser-scanning image keeps the photon-counted reading', () => {
+    const t = dataPathChannels(img(false))[0].items.map(i => i.text).join(' ')
+    expect(t).toContain('photon-counted')
+    expect(t).toContain('photons per non-zero voxel')
   })
 })

@@ -1,0 +1,86 @@
+{
+  "helmchen2005": {
+    "cite": "Helmchen F, Denk W (2005). Deep tissue two-photon microscopy. Nat Methods 2:932-940",
+    "doi": "10.1038/nmeth818"
+  },
+  "theer2003": {
+    "cite": "Theer P, Hasan MT, Denk W (2003). Two-photon imaging to a depth of 1000 um in living brains by use of a Ti:Al2O3 regenerative amplifier. Opt Lett 28:1022-1024",
+    "doi": "10.1364/OL.28.001022"
+  },
+  "pinkard2021": {
+    "cite": "Pinkard H, Baghdassarian H, Mujal A, Roberts E, et al. (2021). Learned adaptive multiphoton illumination microscopy for large-scale immune response imaging. Nat Commun 12",
+    "doi": "10.1038/s41467-021-22246-5"
+  },
+  "patterson2000": {
+    "cite": "Patterson GH, Piston DW (2000). Photobleaching in two-photon excitation microscopy. Biophys J 78:2159-2162",
+    "doi": "10.1016/S0006-3495(00)76762-2"
+  },
+  "hopt2001": {
+    "cite": "Hopt A, Neher E (2001). Highly nonlinear photodamage in two-photon fluorescence microscopy. Biophys J 80:2029-2036",
+    "doi": "10.1016/S0006-3495(01)76173-5"
+  },
+  "waters2009": {
+    "cite": "Waters JC (2009). Accuracy and precision in quantitative fluorescence microscopy. J Cell Biol 185:1135-1148",
+    "doi": "10.1083/jcb.200903097"
+  },
+  "north2006": {
+    "cite": "North AJ (2006). Seeing is believing? A beginners' guide to practical pitfalls in image acquisition. J Cell Biol 172:9-18",
+    "doi": "10.1083/jcb.200507103"
+  },
+  "pawley2006": {
+    "cite": "Pawley J (2006). Points, pixels, and gray levels: digitizing image data. In Handbook of Biological Confocal Microscopy, 3rd ed., 59-79",
+    "doi": "10.1007/978-0-387-45524-2_4"
+  },
+  "vinegoni2014": {
+    "cite": "Vinegoni C, Lee S, Feruglio PF, Weissleder R (2014). Advanced motion compensation methods for intravital optical microscopy. IEEE J Sel Top Quantum Electron 20:83-91",
+    "doi": "10.1109/JSTQE.2013.2279314"
+  },
+  "model2001": {
+    "cite": "Model MA, Burkhardt JK (2001). A standard for calibration and shading correction of a fluorescence microscope. Cytometry 44:309-316",
+    "doi": "10.1002/1097-0320(20010801)44:4<309::AID-CYTO1122>3.0.CO;2-3"
+  },
+  "peng2017": {
+    "cite": "Peng T, Thorn K, Schroeder T, Wang L, et al. (2017). A BaSiC tool for background and shading correction of optical microscopy images. Nat Commun 8:14836",
+    "doi": "10.1038/ncomms14836"
+  },
+  "lambert2014": {
+    "cite": "Lambert TJ, Waters JC (2014). Assessing camera performance for quantitative microscopy. Methods Cell Biol 123:35-53",
+    "doi": "10.1016/B978-0-12-420138-5.00003-3"
+  },
+  "lee2018": {
+    "cite": "Lee JY, Kitaoka M (2018). A beginner’s guide to rigor and reproducibility in fluorescence imaging experiments. Mol Biol Cell 29:1519-1525",
+    "doi": "10.1091/mbc.E17-05-0276"
+  },
+  "conchello2005": {
+    "cite": "Conchello JA, Lichtman JW (2005). Optical sectioning microscopy. Nat Methods 2:920-931",
+    "doi": "10.1038/nmeth815"
+  },
+  "bolte2006": {
+    "cite": "Bolte S, Cordelières FP (2006). A guided tour into subcellular colocalization analysis in light microscopy. J Microsc 224:213-232",
+    "doi": "10.1111/j.1365-2818.2006.01706.x"
+  },
+  "foi2008": {
+    "cite": "Foi A, Trimeche M, Katkovnik V, Egiazarian K (2008). Practical Poissonian-Gaussian noise modeling and fitting for single-image raw-data. IEEE Trans Image Process 17:1737-1754",
+    "doi": "10.1109/TIP.2008.2001399"
+  },
+  "jonkman2020": {
+    "cite": "Jonkman J, Brown CM, Wright GD, Anderson KI, North AJ (2020). Tutorial: guidance for quantitative confocal microscopy. Nat Protoc 15:1585-1611",
+    "doi": "10.1038/s41596-020-0313-9"
+  },
+  "huff2015": {
+    "cite": "Huff J (2015). The Airyscan detector from ZEISS: confocal imaging with improved signal-to-noise ratio and super-resolution. Nat Methods 12:i-ii (application note)",
+    "doi": "10.1038/nmeth.f.388"
+  },
+  "wilson2011": {
+    "cite": "Wilson T (2011). Resolution and optical sectioning in the confocal microscope. J Microsc 244:113-121",
+    "doi": "10.1111/j.1365-2818.2011.03549.x"
+  },
+  "zimmermann2003": {
+    "cite": "Zimmermann T, Rietdorf J, Pepperkok R (2003). Spectral imaging and its applications in live cell microscopy. FEBS Lett 546:87-92",
+    "doi": "10.1016/S0014-5793(03)00521-0"
+  },
+  "icha2017": {
+    "cite": "Icha J, Weber M, Waters JC, Norden C (2017). Phototoxicity in live fluorescence microscopy, and how to avoid it. BioEssays 39:1700003",
+    "doi": "10.1002/bies.201700003"
+  }
+}

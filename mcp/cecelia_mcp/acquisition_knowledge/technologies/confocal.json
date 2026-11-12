@@ -1,0 +1,173 @@
+{
+  "technology": "confocal",
+  "summary": "Point-scanning with visible lasers; a pinhole in front of PMT, HyD or GaAsP detectors rejects out-of-focus light. Fixed tissue, slides, cell culture, live imaging at shallow depth.",
+  "status": "Experimental. Our own wording of the cited sources; a cause stays 'consistent with' until the alternatives are ruled out. Scope feature lines are unverified until a facility checks them; `seenInFiles` is what the lab's own files record.",
+  "stages": [
+    {
+      "key": "laser",
+      "does": "Visible laser lines (e.g. 405, 488, 552/561, 638 nm), one or more per channel; one-photon excitation along the whole cone of light, not only at the focus.",
+      "symptoms": []
+    },
+    {
+      "key": "power",
+      "does": "Sets each line's power (AOTF or attenuator %), per sequence or track; some systems raise it with depth.",
+      "symptoms": [
+        {
+          "id": "darker-with-depth",
+          "symptom": "Signal falls with depth.",
+          "explanation": "Scattering and absorption reduce both the excitation reaching the focus and the emission getting back through the pinhole; with one-photon excitation the light above the focus also bleaches as you go down. Power raised with depth compensates part of it.",
+          "check": "Acquired data: brightest 1 % by depth falling; Light path: no depth compensation recorded.",
+          "alternatives": "Fewer labelled cells deeper (biology), antibody penetration falling with depth in fixed tissue, or a refractive-index mismatch with the objective's immersion.",
+          "sources": ["jonkman2020", "wilson2011"],
+          "qcCodes": ["import.darker_with_depth"]
+        }
+      ]
+    },
+    {
+      "key": "scanner",
+      "does": "Moves the focus across the field: zoom sets the pixel size, dwell time (scan speed) the light per pixel, line or frame averaging the noise.",
+      "symptoms": [
+        {
+          "id": "sampling-vs-question",
+          "symptom": "Small structures span only a pixel or two, or the field is much larger than needed.",
+          "explanation": "Zoom sets the pixel size: resolving a feature needs a pixel about half its size or smaller (Nyquist); larger pixels lose detail, much smaller ones cost time and bleaching for nothing.",
+          "check": "Light path: zoom and objective; Image: pixel size against the size of the objects in question.",
+          "alternatives": "Coarse is normal when the question is a count or presence, not a size or shape; ask what the images are for.",
+          "sources": ["pawley2006", "jonkman2020"],
+          "qcCodes": []
+        },
+        {
+          "id": "noisy-single-scan",
+          "symptom": "Grainy objects and background at short dwell with no averaging.",
+          "explanation": "Few photons per pixel: shot noise dominates. A longer dwell or line/frame averaging collects more, at the cost of time and bleaching.",
+          "check": "Light path: dwell time and averaging; Acquired data: noise.snr, photons.objects.",
+          "alternatives": "Weak labelling, a detector gain set low, or a pinhole closed further than needed.",
+          "sources": ["jonkman2020", "waters2009"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "objective",
+      "does": "Focuses the excitation and collects the emission; NA sets resolution and light collected, immersion must match the sample.",
+      "symptoms": []
+    },
+    {
+      "key": "sample",
+      "does": "Fluoresces, scatters, and bleaches under the light — including above and below the plane being imaged.",
+      "symptoms": [
+        {
+          "id": "fades-over-time",
+          "symptom": "Signal falls over the frames, or planes imaged later in a stack are dimmer.",
+          "explanation": "Each scan bleaches the dye, and one-photon excitation bleaches the whole cone of light, so a stack or a time series loses signal as it goes; live samples can also be damaged by the light.",
+          "check": "Acquired data: brightest 1 % by frame (and by plane in acquisition order); Light path: laser %, dwell, averaging.",
+          "alternatives": "Cells leaving the field or the focus drifting (look at the images), or real biological change.",
+          "sources": ["icha2017", "waters2009"],
+          "qcCodes": ["import.signal_fades"]
+        }
+      ]
+    },
+    {
+      "key": "pinhole",
+      "does": "Rejects light from outside the focal plane; its size, in Airy units (AU), trades sectioning against signal. 1 AU is the usual setting.",
+      "symptoms": [
+        {
+          "id": "pinhole-vs-sectioning",
+          "symptom": "Out-of-focus haze (pinhole open), or a dim, noisy image (pinhole closed).",
+          "explanation": "A larger pinhole passes more light but thickens the optical section; a smaller one sections more thinly but throws away in-focus light too. Channels with different pinholes have different section thicknesses.",
+          "check": "Light path: pinhole (AU, µm) per channel or track.",
+          "alternatives": "Haze from a thick, scattering sample or diffuse staining; dimness from weak labelling.",
+          "sources": ["wilson2011", "jonkman2020"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "filters",
+      "does": "Dichroics, emission filters or a spectral detector pick each channel's band; channels are scanned together (simultaneous) or one after the other (sequential).",
+      "symptoms": [
+        {
+          "id": "signal-in-two-channels",
+          "symptom": "The same objects appear in two channels.",
+          "explanation": "A dye's emission reaches another channel's band (bleed-through), or one laser excites two dyes (crosstalk). Simultaneous scanning lets both happen; sequential scanning, one laser per sequence, removes crosstalk.",
+          "check": "Acquired data: the channels' shared structure; Light path: sequential or simultaneous, the lines on in each sequence, the emission bands.",
+          "alternatives": "The labels really are on the same objects (co-localisation), or autofluorescence in both bands.",
+          "sources": ["bolte2006", "north2006"],
+          "qcCodes": ["af.bleedthrough", "acq.shares_object", "acq.shares_object_image", "acq.shares_all"]
+        },
+        {
+          "id": "spectral-channels",
+          "symptom": "Many narrow channels named by wavelength instead of by dye.",
+          "explanation": "A lambda (spectral) acquisition records the emission in narrow bins; the dyes are separated afterwards by linear unmixing against reference spectra, which needs single-label references acquired the same way.",
+          "check": "Light path: modes include spectral; channel names are wavelengths.",
+          "alternatives": "None: it is a mode, not a fault — but analysis that expects one channel per dye needs the unmixed image.",
+          "sources": ["zimmermann2003"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "detectors",
+      "does": "Turn photons into a signal: a PMT's gain is its voltage (HV), a HyD's or GaAsP's a %; offset shifts the dark level.",
+      "symptoms": [
+        {
+          "id": "clipped-bright",
+          "symptom": "The brightest objects are flat-topped at the top value.",
+          "explanation": "Detector gain (or laser power) set so the brightest pixels exceed the digitiser's range; their intensity is lost.",
+          "check": "Acquired data: clipped % against the bit depth; Light path: HV / gain per channel.",
+          "alternatives": "None for the clipped pixels themselves; a bright artefact (debris, a dead cell) can be the clipped object.",
+          "sources": ["waters2009", "jonkman2020"],
+          "qcCodes": ["import.channel_saturated", "import.clipped_deep", "af.saturated_input", "denoise.channel_saturated", "acq.gain_high"]
+        },
+        {
+          "id": "background-at-zero",
+          "symptom": "A large share of pixels sits at exactly 0.",
+          "explanation": "An offset set low cuts the dark noise at zero, so the background is clipped and dim signal near it is lost; background subtraction then reads it wrong.",
+          "check": "Acquired data: zero % with the floor called 'background clipped at 0'.",
+          "alternatives": "A photon-counting detector mode, where zeros are pixels with no photon — then the offset is not the cause.",
+          "sources": ["waters2009", "jonkman2020"],
+          "qcCodes": []
+        },
+        {
+          "id": "settings-differ-between-images",
+          "symptom": "Images of one set that should be comparable differ in brightness.",
+          "explanation": "Laser %, detector HV/gain, dwell, averaging or zoom changed between images; raw intensities are only comparable at the same settings.",
+          "check": "Acquisition: per channel laser %, HV/gain; scanner dwell, averaging, zoom — compared across the set's images.",
+          "alternatives": "Real differences between samples or conditions, depth, or bleaching.",
+          "sources": ["lee2018", "jonkman2020", "north2006"],
+          "qcCodes": ["acq.settings_differ", "acq.settings_differ.data"]
+        }
+      ]
+    },
+    {
+      "key": "digitisation",
+      "does": "Turns the signal into numbers: bit depth sets the range; accumulation sums scans.",
+      "symptoms": [
+        {
+          "id": "eight-bit-range",
+          "symptom": "Few distinct grey levels, or dim and bright objects that cannot both be measured.",
+          "explanation": "An 8-bit acquisition has 256 levels: a gain set for the bright objects leaves the dim ones a few levels above background. 12 or 16 bit keeps more of the range.",
+          "check": "Acquisition: bitDepth per channel; Acquired data: the histogram's spread.",
+          "alternatives": "A sample with a narrow real range, where 8 bit is enough.",
+          "sources": ["waters2009", "pawley2006"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "stack",
+      "does": "Repeats the scan over z, time and tiles: z-step, plane count, frame interval, tile overlap.",
+      "symptoms": [
+        {
+          "id": "z-step-vs-section",
+          "symptom": "Objects jump between planes, or the stack is far denser than needed.",
+          "explanation": "A z-step larger than about half the optical section undersamples in z; much smaller costs time and bleaching.",
+          "check": "Image: z-step against the objective's NA and the pinhole; the size of the objects in z.",
+          "alternatives": "Coarse z is normal for counting or 2D projections.",
+          "sources": ["pawley2006", "jonkman2020"],
+          "qcCodes": []
+        }
+      ]
+    }
+  ]
+}

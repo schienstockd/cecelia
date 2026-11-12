@@ -625,10 +625,14 @@ end
     img  = add_image!(s; name="img")
     save!(img)
     fun = "tracking.track_measures"
-    # no log entry at all: the by-name record is the pre-log record and stands
-    write_module_fun_params!(img._dir, fun, Dict{String,Any}("valueName" => "nuc", "dims" => "2D");
+    # a by-name record with no log entry: the log lost it (corrupt runlog.json reads as empty, or a
+    # ccid.json copied without its runlog) — it may be a failed run's, so it is unknowable, not the record
+    write_module_fun_params!(img._dir, fun, Dict{String,Any}("valueName" => "nuc", "dims" => "3D");
                              value_name = "nuc")
-    @test Cecelia._last_track_measures_params(img._dir, "nuc")["dims"] == "2D"
+    @test Cecelia._last_track_measures_params(img._dir, "nuc") === nothing
+    write(Cecelia.run_log_path(img._dir), "{not json")                 # corrupt log, same answer
+    @test Cecelia._last_track_measures_params(img._dir, "nuc") === nothing
+    rm(Cecelia.run_log_path(img._dir))
     # a failed run overwrites the by-name record at dispatch and logs `failed`
     write_module_fun_params!(img._dir, fun, Dict{String,Any}("valueName" => "nuc", "dims" => "3D");
                              value_name = "nuc")

@@ -1,0 +1,10 @@
+{
+  "_doc": "Acquisition settings readers, one row per source format: the ONE list. Read by the Python dispatcher (read_acquisition_settings_run.py, beside this file) and the Julia gate + version table (omezarr/acquisition.jl). Here, not in the cecelia package, because that package ships no data files (python/pyproject.toml). `version` = the module's READER_VERSION (1 when it has none); app/test/suite/segmentation.jl asserts they agree. Adding a format = a python/cecelia/utils/<module>.py with `acquisition_settings(path, series=0)` + one row here. docs/todo/MICROSCOPE_PROFILES_PLAN.md",
+  "readers": [
+    {"ext": ".oir", "source": "oir", "module": "oir_meta", "version": 3},
+    {"ext": ".czi", "source": "czi", "module": "czi_meta", "version": 2},
+    {"ext": ".ims", "source": "ims", "module": "ims_meta", "version": 1},
+    {"ext": ".lif", "source": "lif", "module": "lif_meta", "version": 2},
+    {"ext": ".qptiff", "source": "qptiff", "module": "qptiff_meta", "version": 1}
+  ]
+}

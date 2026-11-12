@@ -59,6 +59,36 @@ function qc_text(key::AbstractString; subs...)
     (short = fill(entry.short), long = fill(entry.long))
 end
 
+"""Shortest excitation that still means multiphoton — the readers' and the frontend's rule
+(`MULTIPHOTON_MIN_NM`, frontend/src/utils/acquisitionLightPath.ts)."""
+const MULTIPHOTON_MIN_NM = 680
+
+"""
+    acquisition_technology(meta) -> Union{String,Nothing}
+
+The image's imaging technology: what its settings reader recorded (`meta["acquisition"]["technology"]`:
+two-photon, confocal, airyscan, widefield), else — settings read before readers recorded it — a laser
+line in the near infrared means two-photon, else `nothing`. The Julia twin of the frontend's
+`acquisitionTechnology`.
+"""
+function acquisition_technology(meta::AbstractDict)::Union{String,Nothing}
+    acq = get(meta, "acquisition", nothing)
+    acq isa AbstractDict || return nothing
+    t = get(acq, "technology", nothing)
+    t isa AbstractString && !isempty(t) && return String(t)
+    wl = [get(l, "wavelengthNm", nothing) for l in something(get(acq, "lasers", nothing), Any[]) if l isa AbstractDict]
+    any(w -> w isa Real && w >= MULTIPHOTON_MIN_NM, wl) ? "two-photon" : nothing
+end
+
+"""
+    qc_technology_key(key, technology) -> String
+
+`"\$key@\$technology"` when the catalog words that finding for the technology (a camera's advice names
+exposure and gain, not laser power and HV), else `key`. docs/todo/MICROSCOPE_PROFILES_PLAN.md → P3.
+"""
+qc_technology_key(key::AbstractString, technology) =
+    technology isa AbstractString && haskey(QC_TEXT, "$key@$technology") ? "$key@$technology" : String(key)
+
 """
     qc_finding(level, code; key = code, detail = nothing, subs...) -> Dict
 

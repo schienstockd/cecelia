@@ -1,0 +1,22 @@
+{
+  "system": "FV4000",
+  "technologies": [
+    "two-photon"
+  ],
+  "features": [
+    {
+      "stage": "power",
+      "name": "Bright Z",
+      "line": "Bright Z: set laser power at the top and at the bottom of the stack; it is interpolated in between.",
+      "verified": false,
+      "seenInFiles": "7 of 7 FV4000 .oir files: on, laser % stored at 2 depths (0 and 60 µm from the stack start). Interpolation in between is not in the file."
+    },
+    {
+      "stage": "detectors",
+      "name": "Auto HV",
+      "line": "Auto HV: the software sets detector HV; the file may then record HV 0, so judge gain from the measured clipping.",
+      "verified": false,
+      "seenInFiles": "7 of 7 FV4000 .oir files: Auto HV on, every detector recorded at HV 0."
+    }
+  ]
+}

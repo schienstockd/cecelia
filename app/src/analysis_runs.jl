@@ -160,6 +160,12 @@ end
 # cancelled or still-running one. `funParamsByName` is written at dispatch whatever the outcome, so
 # it then holds that run's params, not those of the run that produced the output. An empty Dict means
 # no record at all (output older than the log and the by-name record): the task's defaults apply.
+#
+# A by-name record with no non-legacy log entry for `vn` is ALSO `nothing`, never trusted: the run log
+# recorded params before `funParamsByName` existed, so every by-name record was logged with them, and
+# one the log cannot vouch for means the log lost it (a corrupt `runlog.json` reads as empty; a
+# ccid.json copied without its runlog). The record may then be a failed run's, so the caller falls
+# back to the measures QC, which is written only once that run's output is.
 const _TRACK_MEASURE_FUNS = ("tracking.bayesian_track_measures", "tracking.track_measures")
 function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractString)::Union{Dict{String,Any},Nothing}
     unfinished = false
@@ -170,11 +176,9 @@ function _last_track_measures_params(ccid_dir::AbstractString, vn::AbstractStrin
         r.legacy || return r.params
     end
     unfinished && return nothing
-    # older than the run log: the exact by-name record, still never the flat blob
-    for fun in _TRACK_MEASURE_FUNS
-        hit = read_module_fun_params_by_name(String(ccid_dir), fun, vn)
-        isnothing(hit) || return hit
-    end
+    # a by-name record the log has no entry for: unverifiable (see above), never the flat blob either
+    any(f -> !isnothing(read_module_fun_params_by_name(String(ccid_dir), f, vn)), _TRACK_MEASURE_FUNS) &&
+        return nothing
     Dict{String,Any}()
 end
 

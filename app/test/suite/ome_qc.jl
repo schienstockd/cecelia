@@ -425,6 +425,28 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         r2 = init_object(proj.uid, img.uid)
         @test r2.meta["PhysicalSizeZ"] == 0.6
         @test !haskey(r2.meta, "PhysicalSizeZ_raw")              # zombie marker cleared
+
+        # A re-import whose saturation probe failed (or found a complete last timepoint) passes no
+        # `saturation` / `partialTimepoint`: the previous store's records must not survive.
+        commit_state!(r2) do raw
+            m = Dict{String,Any}(String(k) => v for (k, v) in raw["meta"])
+            m["saturation"] = Dict{String,Any}("channels" => [
+                Dict{String,Any}("index" => 0, "saturated" => true, "zeroFrac" => 0.9)])
+            m["partialTimepoint"] = Dict{String,Any}(
+                "t" => 2, "emptyZ" => [1], "sizeZ" => 3, "trimmed" => false)
+            raw["meta"] = m
+        end
+        @test haskey(init_object(proj.uid, img.uid).meta, "saturation")
+        # …but a fill-only resync leaves them alone
+        Cecelia._merge_zarr_meta_into_ccid!(init_object(proj.uid, img.uid),
+            Dict{String,Any}("PhysicalSizeZ" => 0.6); overwrite = false)
+        @test haskey(init_object(proj.uid, img.uid).meta, "saturation")
+        Cecelia._merge_zarr_meta_into_ccid!(init_object(proj.uid, img.uid),
+            Dict{String,Any}("PhysicalSizeZ" => 0.6); overwrite = true)
+        r3 = init_object(proj.uid, img.uid)
+        @test !haskey(r3.meta, "saturation")
+        @test !haskey(r3.meta, "partialTimepoint")
+        @test isempty(Cecelia.saturation_qc_findings(r3.meta))
         rm(proj.root; recursive = true)
     end
 
@@ -532,8 +554,10 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 @test acq["scanner"]["type"] == "Resonant"
 
                 @test acq["readerVersion"] == Cecelia.ACQUISITION_READER_VERSIONS["oir"]
-                # A reader with no version yet (czi) is current, not re-read on every refresh.
-                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
+                # A reader still at version 1 (ims) is current, not re-read on every refresh; the .czi
+                # reader is at 2 (technology, modes, camera), so a .czi read before it is re-read.
+                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "ims", "system" => "LSM 780"))
+                @test Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
                 # Settings with no `source` predate the .czi reader: an .oir read, so outdated at v1.
                 @test Cecelia._acquisition_outdated(Dict{String,Any}("system" => "FV4000"))
                 @test acq["channels"][1]["emissionFilter"] == "BA410-455"
@@ -601,8 +625,8 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
 
                 # Why not, when not: a format with no reader, and a source that is gone
                 zm = Dict{String,Any}("SizeC" => 1)
-                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.lif", proj.root)
-                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".lif")
+                @test !Cecelia._recover_acquisition_settings!(zm, "/data/raw.nd2", proj.root)
+                @test zm["acquisitionMissing"] == Dict{String,Any}("reason" => "format", "ext" => ".nd2")
                 zm = Dict{String,Any}("SizeC" => 1)     # .czi has a reader: past the gate, then gone
                 @test !Cecelia._recover_acquisition_settings!(zm, joinpath(proj.root, "gone.czi"), proj.root)
                 @test zm["acquisitionMissing"]["reason"] == "source"
@@ -765,10 +789,11 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                     @test za[:shape][1] == (keep ? 3 : 2)
                 end
             end
-            # a complete last timepoint clears a previous import's record
+            # a complete last timepoint records nothing (the import merge clears an old record —
+            # "merge fill-only vs overwrite")
             meta = Dict{String,Any}("SizeT" => 3)
             Cecelia._apply_partial_timepoint!(meta, nothing, "", "", "", false)
-            @test haskey(meta, "partialTimepoint") && isnothing(meta["partialTimepoint"])
+            @test meta == Dict{String,Any}("SizeT" => 3)
         end
     end
 
@@ -876,7 +901,10 @@ end
                      "file", "published",
                      # acquisition check (acq_check.jl) — `snr` shot-noise SNR, `base` the movie's
                      # median shared-structure r, `typical` the set's median for a movie out of line
-                     "snr", "base", "typical"])
+                     "snr", "base", "typical",
+                     # the set's noun, "movie(s)" only when every member is a time-lapse, else
+                     # "image(s)" — acq_check.jl, every acq.* finding
+                     "item", "items"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]

@@ -1,0 +1,22 @@
+{
+  "system": "Axio Scan.Z1",
+  "technologies": [
+    "widefield"
+  ],
+  "features": [
+    {
+      "stage": "illumination",
+      "name": "LED intensity",
+      "line": "LED module intensity in % per channel.",
+      "verified": false,
+      "seenInFiles": "1 of 1 Axio Scan.Z1 .czi: LED modules 385/475/630 nm, 50 % on the first channel; 255 tiles, Axiocam 506, 14 bit."
+    },
+    {
+      "stage": "filters",
+      "name": "Reflector",
+      "line": "Reflector: ZEN's name for the filter cube in the light path for a channel.",
+      "verified": false,
+      "seenInFiles": "1 of 1 Axio Scan.Z1 .czi: a reflector per channel (e.g. '96 HE BFP' for Hoechst), but 'none' recorded for Cy3 — check the file before trusting the name."
+    }
+  ]
+}
