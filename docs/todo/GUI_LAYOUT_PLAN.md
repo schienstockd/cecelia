@@ -1,6 +1,6 @@
 # GUI layout — build the final mocks for both windows
 
-**Status:** built, awaiting the maintainer's look on a real GPU (2026-11-12). Every slice merged (#2142–#2163, V2 landing inside #2163); the playback bar was then tightened to two fixed rows with a fold (#2183). Open: M7's "to review" count (what it counts is undecided); V0 left the Debug section and the render core in the window. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
+**Status:** built, awaiting the maintainer's look on a real GPU (2026-11-12). Every slice merged (#2142–#2163, V2 landing inside #2163); the playback bar was then tightened to two rows with a fold (#2183) and made to fit its content (#2192). M7's "to review" count was dropped by the maintainer (2026-11-13). Open: V0 left the Debug section and the render core in the window. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
 slices landed the colour tokens, Next, recipes, the checks cluster and Run wording, but most of the
 mocked *layout* did not land (the helper icons were never consolidated, the launchers still sit in the
 sidebar, the viewer kept its single sidebar). This plan builds the layout.
@@ -121,7 +121,7 @@ tables above as a checklist, and a before/after screenshot beside its mock frame
 | M4 | Right panel: When to use closed, task list → Last run line | 1 | S | watching and cancelling a run stay one click away |
 | M5 | Next footer on pages with no task panel | 2 | S | — |
 | M6 | Default plots per page | 1, 2 | M–L | new mechanism plus a default for each of the 18 ModuleLayout pages |
-| M7 | Welcome: counts, relative dates, "to review", recipe cards | 3 | S–M | per-project counts may need a small backend field |
+| M7 | Welcome: counts, relative dates, recipe cards (the mock's "to review" line dropped) | 3 | S–M | per-project counts may need a small backend field |
 | M8 | Jump search in the header (Ctrl K): pages, task functions, images of the open project | 1 | M | new feature, not a move (maintainer, 2026-11-11); reuses `navGroups.ts`, the task catalogue and the image list, no new backend route; Ctrl K must not clash with an existing shortcut |
 | V0 | Split the viewer (table above), behaviour-neutral | — | M | pixel-identical before/after |
 | V1 | Viewer header: ← back, image ‹ 1 of 3 ›, provenance chip, Help ▾, Ask Kiwi | 4 | M | bringing the main window to the front from the popout needs a fallback |
