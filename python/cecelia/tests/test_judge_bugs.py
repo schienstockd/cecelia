@@ -367,6 +367,25 @@ class SweepTest(_Repo):
         later, _ = self.sweep([], previous={"run": {"ts": "2026-10-12T00:00:00Z"}, "bugs": nxt})
         self.assertNotIn("fix_session", later[0])
 
+    def test_a_fix_session_on_a_merged_non_lead_is_kept(self):
+        # two carried bugs on one function, the session on the second (not the lead): still in progress
+        bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        bugs[1] = {**bugs[1], "line": 2, "fix_session": "2026-10-06T01:00:00Z"}
+        (lead,) = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs})[0]
+        self.assertEqual((lead["key"], lead.get("fix_session")), ("fanout-00000001", "2026-10-06T01:00:00Z"))
+
+    def test_a_landed_fix_on_a_merged_non_lead_still_sends_the_bug_back_to_verify(self):
+        # the verified-live bug leads; a commit names the other one, which the merge must not drop
+        bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        bugs[0]["verify"] = {"verdict": "fix", "date": "2026-10-05", "effect": "it breaks"}
+        bugs[1] = {**bugs[1], "line": 2}
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": bugs}
+        fix = self.commit("b.py", "x\n", "fix: the other (fanout-00000002)")
+        self.sha = fix
+        (lead,) = self.sweep([], previous=previous)[0]
+        self.assertEqual(lead["key"], "fanout-00000001")
+        self.assertEqual(([c["commit"] for c in lead.get("fix_landed") or []], lead.get("reverify")), ([fix], True))
+
     def test_a_usage_limit_is_not_swallowed(self):
         def limited(prompt):
             raise self.b._judge.RateLimited("You've hit your session limit")
