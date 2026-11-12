@@ -5960,6 +5960,21 @@ onUnmounted(() => {
       <!-- The playback bar (GUI_LAYOUT_PLAN V2, mock frame 4): time, z and level on the image, bottom
            centre. Depth, ± planes and Level commit on `@change` (each reallocates the textures). -->
       <VwPlaybackBar v-if="meta && (nT > 1 || meta.nZ > 1 || (meta.levels?.length ?? 0) > 1)">
+        <!-- Collapsed: play and the position readouts; a single z plane keeps its step buttons. -->
+        <template #collapsed>
+          <VwTimeControls v-if="nT > 1" pill :t="t" :n-t="nT" :has-z="false" :playing="playing"
+                          :throttled="false" :busy="busy" :cells="[]" @toggle-play="togglePlay" />
+          <template v-if="meta.nZ > 1 && !(mode === 'volume' && !zWindowActive)">
+            <span v-if="nT > 1" class="cc-toolbar-sep" aria-hidden="true" />
+            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane <= 0"
+                    v-tooltip.top="'Previous z plane'" aria-label="Previous z plane"
+                    @click="stepZ(zPlane - 1)"><i class="pi pi-chevron-left" /></button>
+            <span class="cc-readout cc-fs-2xs">z {{ zPlane }} / {{ meta.nZ - 1 }}</span>
+            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane >= meta.nZ - 1"
+                    v-tooltip.top="'Next z plane'" aria-label="Next z plane"
+                    @click="stepZ(zPlane + 1)"><i class="pi pi-chevron-right" /></button>
+          </template>
+        </template>
         <VwTimeControls v-if="nT > 1" bar :t="t" :n-t="nT" :has-z="false" :playing="playing"
                         :throttled="playing && waitingFor >= 0" :busy="busy" :cells="cells"
                         @toggle-play="togglePlay" @stop="stopPlay()" @goto="gotoT" />

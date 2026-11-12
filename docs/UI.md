@@ -1986,7 +1986,9 @@ in the canvas's top-right column, under the overview/axes and the same size, nev
 **Shortcuts** sits at the panel's foot (and in the header's Help ▾).
 **Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls bar`): time, z and level float on the image,
 bottom centre, just above the strip where the scale bar and the status chips sit: play, loop, t, the
-scrubber over its cache strip, Fps; then z (Plane, or Depth in 3D), ±, the ± width; then Level.
+scrubber over its cache strip, Fps; then z (Plane, or Depth in 3D), ±, the ± width; then Level. Its chevron folds it
+to a pill — play, t, and a single plane's z with its step buttons — remembered per profile
+(`cc.vw.playbackBar`); playback carries on while folded.
 **Console row** (`VwConsoleRow`): loading, the level on screen, the renderer, the integrated-GPU warning
 and the cache budget, in a strip at the window's foot; errors that break the view stay on the image.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes are SHOWN; the window is

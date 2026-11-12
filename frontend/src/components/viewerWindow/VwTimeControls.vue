@@ -7,7 +7,7 @@
 
   The root is `display: contents`, so the rows stay direct flex items of the side panel and lay out as
   they did inline. `bar` lays the same controls out in one line, for the playback bar on the image
-  (V2): play, loop, t, the scrubber over its cache strip, Fps.
+  (V2): play, loop, t, the scrubber over its cache strip, Fps. `pill` is the folded bar: play and t.
 -->
 <script setup lang="ts">
 import { useSettingsStore } from '../../stores/settings'
@@ -15,6 +15,8 @@ import { useSettingsStore } from '../../stores/settings'
 defineProps<{
   /** one line, for the playback bar */
   bar?: boolean
+  /** play and t only, for the folded playback bar */
+  pill?: boolean
   t: number
   nT: number
   /** the stack has z — the rows keep a spacer the width of the Z row's ± button */
@@ -31,7 +33,15 @@ const settings = useSettingsStore()
 </script>
 
 <template>
-  <div v-if="bar" class="vw-tbar">
+  <div v-if="pill" class="vw-tbar">
+    <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="emit('togglePlay')"
+            v-tooltip.top="playing ? 'Pause' : 'Play through the timecourse'"
+            :aria-label="playing ? 'Pause' : 'Play'">
+      <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
+    </button>
+    <span class="cc-readout cc-fs-2xs">t {{ t }} / {{ nT - 1 }}</span>
+  </div>
+  <div v-else-if="bar" class="vw-tbar">
     <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="emit('togglePlay')"
             v-tooltip.top="playing ? 'Pause' : 'Play through the timecourse'"
             :aria-label="playing ? 'Pause' : 'Play'">
