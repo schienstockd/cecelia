@@ -28,6 +28,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv,
          svgDoc, svgCircles, svgText, svgRect, downloadText, svgSizeWarning } from '../../plots/export'
 import { paletteRange, POPULATION_PALETTE, type VisProps } from '../../plots/plot'
+import { categoryColours } from '../../plots/categoryColours'
 import { fitLabel } from '../../plots/valueColour'
 import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
@@ -46,6 +47,8 @@ const props = defineProps<{
   // populations whose eye is on in the manager: colour their clusters in the pop colour, grey the
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
+  /** Every cluster a population of this run claims → its colour (useClusterContext.clusterClaims). */
+  clusterClaims?: Record<string, string>
   vis?: VisProps                 // canvas plot styling — we honour the dark-theme knob + the palette choice
   // colourBy: how to colour the embedding — 'cluster' (default), 'population' (membership of the picked
   // populations — colourPops tkeys), or 'attribute' (each point's image attribute — colourAttr).
@@ -411,9 +414,11 @@ function recolour() {
   } else {
     // colour-by-cluster: honour the pop manager's palette choice (vis.palette / userColors — e.g.
     // "distinct"); fall back to the built-in PALETTE for the default 'standard' (paletteRange → null).
+    // THE category rule (plots/categoryColours.ts): a cluster a population claims is drawn in that
+    // population's colour; every other cluster keeps its palette slot by sorted id — what the movie does
     const pal = (props.vis ? paletteRange(props.vis, distinct.filter(c => c >= 0).length) : null) ?? PALETTE
-    let pi = 0
-    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : pal[pi++ % pal.length]) })
+    const byCluster = categoryColours(distinct.filter(c => c >= 0), props.clusterClaims ?? {}, pal)
+    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : byCluster.get(String(c))!) })
     legend.value = distinct.map(c => ({ label: c < 0 ? 'unclustered' : `cluster ${c}`, colour: colourFor.get(c)!, n: counts.get(c)! }))
   }
   const cats = new Float32Array(codes.length)
@@ -509,7 +514,7 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popT
   () => { load(); loadPopGroups() })
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // highlight a pop / tick clusters → recolour from cached codes (no refetch)
-watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.clusterIds])), recolour)
+watch(() => JSON.stringify([(props.shownPops ?? []).map(p => [p.colour, p.clusterIds]), props.clusterClaims ?? {}]), recolour)
 // re-colour when the pop manager's palette choice changes (e.g. standard → distinct)
 watch(() => [props.vis?.palette, props.vis?.userColors], recolour)
 // colour-by: switching to population needs the per-point popIdx (refetch); cluster/attribute just

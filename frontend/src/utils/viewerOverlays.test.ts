@@ -509,9 +509,18 @@ describe('pooledColourScale — one colour-by scale over every segmentation', ()
     expect(rgbs.size).toBe(1)
   })
 
-  it('is null with no colour-by, and one payload keeps the server’s level order', () => {
+  it('is null with no colour-by, and levels sort like the server’s (numbers by value)', () => {
     expect(pooledColourScale([payload(), null])).toBeNull()
-    expect(pooledColourScale([cat(['b', 'a'], ['a'])])!.levels).toEqual(['b', 'a'])
+    expect(pooledColourScale([cat(['b', 'a'], ['a'])])!.levels).toEqual(['a', 'b'])
+    expect(pooledColourScale([cat([10, 2, 9], [2])])!.levels).toEqual([2, 9, 10])
+  })
+
+  it('colours a level a population claims in the pop colour, the rest by their slot', () => {
+    const p = { ...cat([0, 1, 2], [0, 1, 2]), levelClaims: { '1': '#ff0000' } }
+    const f = colourByValue(p, ['#0000ff', '#00ff00', '#ffffff'])!
+    expect(f(0)).toEqual([0, 0, 1])          // slot 0
+    expect(f(1)).toEqual([1, 0, 0])          // claimed
+    expect(f(2)).toEqual([1, 1, 1])          // slot 2 — kept, not shifted into the claimed slot
   })
 })
 

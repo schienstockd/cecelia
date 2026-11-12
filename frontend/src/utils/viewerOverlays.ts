@@ -17,6 +17,7 @@ import palettesJson from '../plots/palettes.json'
 import { parseOverlays } from './overlayLayers'
 import { channelLegend, type LegendItem } from './viewLegend'
 import { WHITE, OVERLAY_GREY } from '../plots/fixedColours'
+import { categoryColours, categoryKey, compareCategories } from '../plots/categoryColours'
 
 // ── Capture-view legend (shared: analysis-board strip + movie title card) ───────
 // The ONE path that turns a captured viewState snapshot into legend pieces: channels from the
@@ -108,6 +109,8 @@ export interface OverlayPayload {
   valueLevels?: (number | string)[] | null
   /** `[lo, hi]`, for `numeric`. */
   valueRange?: [number, number] | null
+  /** Levels a user population claims, `{value → pop hex}` — drawn in the pop's colour (`categoryColours`). */
+  levelClaims?: Record<string, string> | null
   values: (number | string | null)[] | null
   valueName?: string
   popType?: string
@@ -865,16 +868,14 @@ export function colourByValue(
   const s = scale ?? pooledColourScale([payload])
 
   if (s?.kind === 'categorical') {
-    const levels = s.levels
-    const index = new Map<string, number>()
-    levels.forEach((v, i) => index.set(String(v), i))
-    const pal = palette.length ? palette : [WHITE]
-    const rgbs = pal.map(hexToUnit)
+    // THE category rule (plots/categoryColours.ts): a claimed level takes its population's colour, the
+    // rest their palette slot by sorted position — what the movie draws (`category_colours`)
+    const colours = categoryColours(s.levels, s.claims ?? {}, palette.length ? palette : [WHITE])
+    const rgb = new Map([...colours].map(([k, hex]) => [k, hexToUnit(hex)]))
     return (r: number) => {
       const v = vals[r]
       if (v === null || v === undefined) return NO_VALUE_RGB
-      const k = index.get(String(v))
-      return k === undefined ? NO_VALUE_RGB : rgbs[k % rgbs.length]
+      return rgb.get(categoryKey(v)) ?? NO_VALUE_RGB
     }
   }
 
@@ -892,13 +893,16 @@ export interface ColourScale {
   kind: 'categorical' | 'numeric'
   levels: (number | string)[]
   range: [number, number] | null
+  /** Categorical: levels a population claims, `{value → hex}` (first payload wins a shared level). */
+  claims?: Record<string, string>
 }
 
 /**
  * One colour-by scale over several payloads — the populations of several segmentations draw at once,
  * and each payload's levels / range are its own table's. Coloured per payload, cluster 2 or a speed
  * of 5 µm/min would be one colour on one segmentation and another beside it. Levels are the union,
- * sorted the server's way (`sort(…; by = string)`); the range spans every payload's. The kind is the
+ * in the shared category order (`compareCategories` = Julia `category_sort_key`), with every payload's
+ * population claims; the range spans every payload's. The kind is the
  * first coloured payload's — the server decides it per table, and one column name is one kind.
  */
 export function pooledColourScale(payloads: readonly (OverlayPayload | null | undefined)[]): ColourScale | null {
@@ -908,11 +912,11 @@ export function pooledColourScale(payloads: readonly (OverlayPayload | null | un
   const kind = kindOf(coloured[0])
   const same = coloured.filter(p => kindOf(p) === kind)
   if (kind === 'categorical') {
-    if (same.length === 1) return { kind, levels: same[0].valueLevels ?? [], range: null }
     const seen = new Map<string, number | string>()
-    for (const p of same) for (const v of p.valueLevels ?? []) if (!seen.has(String(v))) seen.set(String(v), v)
-    const keys = [...seen.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-    return { kind, levels: keys.map(k => seen.get(k)!), range: null }
+    for (const p of same) for (const v of p.valueLevels ?? []) if (!seen.has(categoryKey(v))) seen.set(categoryKey(v), v)
+    const claims: Record<string, string> = {}
+    for (const p of same) for (const [k, hex] of Object.entries(p.levelClaims ?? {})) claims[k] ??= hex
+    return { kind, levels: [...seen.values()].sort(compareCategories), range: null, claims }
   }
   const rs = same.map(p => p.valueRange).filter((r): r is [number, number] => !!r)
   return { kind, levels: [], range: rs.length ? [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))] : null }

@@ -748,7 +748,7 @@ docs/TODO.md.)
    crimson / grey) + accents; it is also offered as clickable swatches in the pop colour picker
    (`PopulationManager`; the native picker is kept for custom colours). The **cluster UMAP**
    (`ClusterMapView`, a 2D canvas of **circular** points) honours the picker for the colour-by-cluster
-   **palette** (via `paletteRange`; the built-in fallback is the population palette by sorted cluster id — the palette Julia's `colour_by_palette` defaults to), **point
+   **palette** (via `paletteRange`; the built-in fallback is the category rule — a cluster a population claims in that pop's colour, the rest the population palette by sorted id, as in a movie; `plots/categoryColours.ts`), **point
    size/opacity**, **legend** (`vis.legend` — no UMAP-only toggle) and label **font
    size**. Jitter/log/grid/axis-label knobs are N/A (a fixed embedding, no measured axes); colour &
    facet have richer UMAP-native controls.

@@ -245,36 +245,45 @@ function pop_label_overrides(m::PopulationMap, column::AbstractString)::Dict{Str
 end
 
 """
-    colour_by_palette(m, column, values; default_palette=POPULATION_PALETTE) -> Dict{Any,String}
+    category_sort_key(v)
 
-Canonical colour choice for colouring by a categorical `column`: a `value` that a **user-defined
-population filters for** on that column (`filter_measure == column` and the value ∈ its `filter_values`)
-takes **that population's colour**; every remaining value gets a default-palette colour by sorted
-position. This is the ONE "use the population's colour where one exists, else a sensible default" rule —
-general across clusters (a cluster pop is just a filter on `clusters.{suffix}`), HMM states, and any
-categorical measure — so tracks/points, legends and movies all colour a category identically. Pure.
+The order categories take everywhere — legends, palette slots, the viewer, the UMAP: numbers by value
+(so cluster 10 comes after 9, not after 1), then anything else by its text. Mirrored by
+`categorySortKey` in frontend/src/plots/categoryColours.ts.
 """
-function colour_by_palette(m::PopulationMap, column::AbstractString, values;
-                           default_palette::Vector{String}=POPULATION_PALETTE)::Dict{Any,String}
-    col = String(column)
+category_sort_key(v) = v isa Real && isfinite(Float64(v)) ? (0, Float64(v), "") : (1, 0.0, string(v))
+
+"""
+    category_colours(values, claims; palette=POPULATION_PALETTE) -> Dict{Any,String}
+
+THE category colour rule, pure: a value a population CLAIMS (`claims`, keyed by `_val_key` — 2.0 and
+2 are "2") takes that population's colour; every other value takes the palette slot of its position
+among ALL the distinct values in `category_sort_key` order. Claimed values keep their slot, so turning
+a population on or off never repaints the other categories. Mirrored by `categoryColours` in
+frontend/src/plots/categoryColours.ts; both are checked against share/category_colour_cases.json.
+"""
+function category_colours(values, claims::AbstractDict{<:AbstractString,<:AbstractString};
+                          palette::AbstractVector{<:AbstractString}=POPULATION_PALETTE)::Dict{Any,String}
     out = Dict{Any,String}()
-    vals = collect(values)
-    # 1) values a user pop FILTERS for on this column → that pop's colour (first pop in insertion order
-    #    wins if two cover the same value)
-    for path in m.order
-        p = m.pops[path]
-        (p.filter_measure === nothing || String(p.filter_measure) != col) && continue
-        for fv in _as_value_vec(p.filter_values), v in vals
-            (!haskey(out, v) && _val_eq(v, fv)) && (out[v] = p.colour)
-        end
-    end
-    # 2) remaining values → default palette by sorted position (stable + colourblind-safe)
-    uncovered = sort!(unique(v for v in vals if !haskey(out, v)))
-    for (i, v) in enumerate(uncovered)
-        out[v] = default_palette[(i - 1) % length(default_palette) + 1]
+    for (i, v) in enumerate(sort!(unique(collect(values)); by = category_sort_key))
+        # the wire key first (true → "1"), then the text — a filter value stored as "true" still claims
+        out[v] = get(claims, _val_key(v), get(claims, string(v), palette[(i - 1) % length(palette) + 1]))
     end
     out
 end
+
+"""
+    colour_by_palette(m, column, values; default_palette=POPULATION_PALETTE) -> Dict{Any,String}
+
+Canonical colour choice for colouring by a categorical `column`: [`category_colours`](@ref) with the
+claims of `m`'s user populations that filter on `column` ([`pop_colour_overrides`](@ref) — first pop in
+insertion order wins a shared value). General across clusters (a cluster pop is just a filter on
+`clusters.{suffix}`), HMM states and any categorical measure, so tracks/points, legends and movies all
+colour a category identically. Pure.
+"""
+colour_by_palette(m::PopulationMap, column::AbstractString, values;
+                  default_palette::Vector{String}=POPULATION_PALETTE)::Dict{Any,String} =
+    category_colours(values, pop_colour_overrides(m, column); palette = default_palette)
 
 function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow",
                       backfill_save::Bool=true)

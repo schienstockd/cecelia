@@ -372,14 +372,16 @@ end
 #  • colourBy:    {column, items:[{value, colour(pop hex), label(pop name)}]} for each value on `column`
 #  • populations: [{name, colour}] for each requested point/track pop (deduped by name); `colour` is
 #    `nothing` (no swatch) for tracks coloured by track id / speed.
+# POP-TYPES-OK: priority order (first pop wins a shared value); every type that can filter a
+# cell or track colour column — branch pops filter the branch table, never a colour-by column
+const COLOUR_BY_POP_TYPES = ("trackclust", "track", "clust", "region", "flow")
+
 function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides)
-    # POP-TYPES-OK: priority order (first pop wins a shared value); every type that can filter a
-    # cell or track colour column — branch pops filter the branch table, never a colour-by column
-    pt_all  = ("trackclust", "track", "clust", "region", "flow")
+    pt_all  = COLOUR_BY_POP_TYPES
     colours = _apply_user_overrides!(_colour_overrides_for(img, column, pt_all), user_overrides)
     labels  = _pop_labels_for(img, column, pt_all)
     cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
-           for k in sort(collect(keys(colours)))]
+           for k in sort(collect(keys(colours)); by = k -> category_sort_key(something(tryparse(Float64, k), k)))]
 
     pops = Vector{Dict{String,Any}}()
     if overlay_pops !== nothing
