@@ -64,11 +64,11 @@ All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlay
 | `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
 | `--cc-selected` | `var(--cc-text)` | Selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — neutral, by contrast not hue; distinct from `--cc-accent` (form controls) and every state colour |
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
-| `--cc-danger` | `#ef4444` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
+| `--cc-danger` | `#f54a49` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
 | `--cc-danger-fill` | `#b33a3a` | Muted red — a SOLID destructive surface under white text: `.cc-btn-danger`, armed delete / quit (white 5.86:1) |
-| `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
-| `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
-| `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
+| `--cc-sev-ok` | `#61c28e` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
+| `--cc-sev-warn` | `#ef9d14` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
+| `--cc-sev-fail` | `#f64a3c` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
 
 | `--cc-mono` | system monospace stack | Log output, code |
 
@@ -549,6 +549,12 @@ is a per-user choice, so it lives with the profile's preferences, not on the mac
 `<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
 chosen for AA contrast and pass the CVD check below.
 
+**Text colours read on every ground, and a test holds them there.** `utils/schemeContrast.test.ts`
+requires every coloured-text token ≥ 4.5:1 (WCAG AA) on `--cc-bg`, `--cc-surface-1` and `--cc-surface-2`,
+and every fill against its ink, in each scheme. In the light scheme this and the colour-blind check pull
+against each other (both want room on a dark-enough ground); the light state colours are the nearest set
+that satisfies both. The Next button's text is the fixed dark `--cc-on-primary`, not `--cc-bg`.
+
 **State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
 scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
 `--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger`, and the
@@ -557,6 +563,14 @@ OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labe
 is held to the 6 floor. Failing pairs kept on purpose are listed with their reason in `ACCEPTED`
 (Kiwi ↔ ok-green; accent ↔ active in light). The four stage colours always sit beside their name and are
 not in the check. The status dots alias the severity set, so there is one "ok" colour.
+
+**Colours drawn from script.** Canvas and SVG built in TypeScript can't read CSS, so the CSS guard can't
+see them. Chrome there reads the scheme through `tokenColour(name, fallback)` (`utils/colour.ts`), an inline
+`var(--cc-*)` style, or `plotTheme(dark)` for plot ink/ground; a colour that is rightly fixed (a data
+palette, an export ground, a mark over the image) stays a literal. `findScriptColourLiterals` holds each
+file to its baseline count (`cssScenarios.test.ts`), so a new literal is a decision, not an accident.
+New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `palettes.json` = the Julia
+list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
 
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
 Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer

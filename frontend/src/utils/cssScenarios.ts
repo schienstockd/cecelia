@@ -591,6 +591,42 @@ export function findColourLiterals(sources: Array<{ path: string, text: string }
   return out
 }
 
+/**
+ * Every literal colour in SCRIPT code — a quoted hex (`'#e8a33d'`), an `rgb()`/`hsl()` string, or a
+ * quoted `'white'`/`'black'` — in a `.ts` file or a `.vue` `<script>` block, comments stripped. The CSS
+ * guard above cannot see these, so a canvas- or SVG-drawn colour bypasses the scheme unnoticed; most are
+ * legitimately fixed (data palettes, exports, over-image marks), so the test holds them to a per-file
+ * baseline rather than to zero. `COLOUR-OK: <reason>` on the line (or the one above) exempts one.
+ */
+export function findScriptColourLiterals(sources: Array<{ path: string, text: string }>): ColourLiteral[] {
+  const LITERAL = /(['"`])(#[0-9a-fA-F]{3,8}\b|(?:rgba?|hsla?)\(|(?:white|black)(?=\1))/g
+  const out: ColourLiteral[] = []
+  for (const { path, text } of sources) {
+    const lines = text.split('\n')
+    const isVue = path.endsWith('.vue')
+    let inScript = !isVue, inComment = false
+    lines.forEach((raw, i) => {
+      if (isVue && /<script[^>]*>/.test(raw)) { inScript = true; return }
+      if (isVue && raw.includes('</script>')) { inScript = false; return }
+      if (!inScript) return
+      const markedAbove = i > 0 && new RegExp(`^\\s*(/\\*|//)\\s*${COLOUR_OK}`).test(lines[i - 1])
+      let s = raw
+      if (inComment) {
+        const end = s.indexOf('*/')
+        if (end < 0) return
+        s = s.slice(end + 2); inComment = false
+      }
+      s = s.replace(/\/\*.*?\*\//g, ' ')
+      const open = s.indexOf('/*')
+      if (open >= 0) { s = s.slice(0, open); inComment = true }
+      s = s.replace(/(^|[^:'"`])\/\/.*$/, '$1')
+      if (raw.includes(COLOUR_OK) || markedAbove) return
+      for (const m of s.matchAll(LITERAL)) out.push({ path, line: i + 1, literal: m[2].replace(/\($/, '(…)') })
+    })
+  }
+  return out
+}
+
 export interface ScenarioHit {
   path:     string
   selector: string

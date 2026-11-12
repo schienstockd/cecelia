@@ -8,6 +8,7 @@
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
 import ColourPicker from '../ColourPicker.vue'
+import { PALETTES } from '../../plots/plot'
 import { useSettingsStore } from '../../stores/settings'
 import type { TrackColorMode } from '../../utils/viewerOverlays'
 
@@ -86,14 +87,14 @@ const settings = useSettingsStore()
         <span class="cc-muted">{{ speedRange[1].toPrecision(3) }} µm/frame</span>
       </div>
       <!-- Per-source legend for solid mode — one row per ticked vn, showing a clickable
-           swatch (the shared ColourPicker) + count. Same picker + palette as the population
-           manager, so a source's colour authored here matches the visual language elsewhere.
+           swatch (the shared ColourPicker) + count. The chips are the track palette (`cecelia`),
+           the one the sources' default colours and the offline movie renderer come from.
            Doubles as a diagnostic: a vn with count 0 would be ticked but have no tracked
            cells; buildMultiTrackBuffer filters those out already, so the legend only lists
            sources that actually drew. -->
       <template v-if="colorMode === 'solid' && sources.length">
         <div v-for="src in sources" :key="src.vn" class="cc-row cc-row-tight cc-fs-3xs">
-          <ColourPicker :model-value="src.hex"
+          <ColourPicker :model-value="src.hex" :palette="PALETTES.cecelia"
                         @update:model-value="hex => emit('sourceColour', src.vn, hex)"
                         :tip="'Colour for ' + src.vn" />
           <span class="cc-fs-2xs vw-pop-name" :title="src.vn">{{ src.vn }}</span>

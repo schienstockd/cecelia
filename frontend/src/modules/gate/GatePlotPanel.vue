@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { axisQ } from '../../plots/montage'
+import { POPULATION_PALETTE } from '../../plots/plot'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import { useGatingStore, type GateSpec, type TransformSpec } from '../../stores/gating'
@@ -347,7 +348,7 @@ const submitting = ref(false)
 const nameError = computed(() => submitting.value ? null : popNameError(newName.value, g.flat.map(p => p.name)))
 async function confirmGate() {
   if (!pending.value || nameError.value || submitting.value) return
-  const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
+  const palette = POPULATION_PALETTE
   submitting.value = true
   let ok
   try {

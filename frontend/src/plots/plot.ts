@@ -82,7 +82,15 @@ export function backendChart(c: ChartType): { chartType: string; rawPoints?: boo
 // the rest are muted, distinct hues chosen AROUND that theme so a larger domain stays on-brand.
 import palettesJson from './palettes.json'
 export const PALETTES: Record<string, string[]> = palettesJson.palettes
-export type PaletteName = 'standard' | 'distinct' | 'cecelia' | 'okabe-ito' | 'tol-bright' | 'tol-muted' | 'tol-light' | 'user'
+/** THE default colours for new populations (gates, cluster / filter / boolean pops) and for unnamed
+ *  categories — colour-blind safe to 8 (utils/cvd.test.ts), the Julia `POPULATION_PALETTE`. */
+export const POPULATION_PALETTE: readonly string[] = PALETTES.population
+
+/** `n` categorical colours: the population palette while it lasts, generated hues past it. */
+export function categoricalColours(n: number): string[] {
+  return n <= POPULATION_PALETTE.length ? POPULATION_PALETTE.slice(0, n) : distinctColors(n)
+}
+export type PaletteName = 'standard' | 'distinct' | 'population' | 'cecelia' | 'okabe-ito' | 'tol-bright' | 'tol-muted' | 'tol-light' | 'user'
 
 // N visually-distinct colours by even HCL-ish hue spacing (port of R randomcoloR::distinctColorPalette
 // intent — deterministic here so it's stable across renders). Golden-angle hue rotation, fixed S/L.
@@ -582,8 +590,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
     const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
     color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }
   } else if (groupColouring || identityColouring || (o.palette && o.palette !== 'standard')) {
-    const pal = (o.palette === 'distinct' || groupColouring || identityColouring)
-      ? distinctColors(color.domain.length) : (PALETTES[o.palette] ?? [])
+    const pal = o.palette === 'distinct' ? distinctColors(color.domain.length)
+      : (groupColouring || identityColouring) ? categoricalColours(color.domain.length)
+      : (PALETTES[o.palette] ?? [])
     if (pal.length) color = { ...color, range: color.domain.map((_, i) => pal[i % pal.length]) }
   }
   const logY = o.logScale ? { type: 'log' as const } : {}
@@ -903,7 +912,8 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }
   } else if (collide || (o.palette && o.palette !== 'standard')) {
     const pal = (o.palette && o.palette !== 'standard' && o.palette !== 'distinct') ? (PALETTES[o.palette] ?? []) : []
-    const hues = pal.length ? color.domain.map((_, i) => pal[i % pal.length]) : distinctColors(color.domain.length)
+    const hues = pal.length ? color.domain.map((_, i) => pal[i % pal.length])
+      : o.palette === 'distinct' ? distinctColors(color.domain.length) : categoricalColours(color.domain.length)
     color = { ...color, range: hues }
   }
   // keyed by SERIES; each entry remembers its facet panel too, since the map key alone can't say

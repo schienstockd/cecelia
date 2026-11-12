@@ -66,6 +66,7 @@ interface PathsGroup {
   paths?: TrackPathMap
 }
 import { plotTheme } from '../../plots/overlays'
+import { tokenColour } from '../../utils/colour'
 import {
   buildLanes, frameDomain, orderLanes, filterLanes, laneWindow, windowNote,
   issueMarkers, laneSeverity, candidateTracks, selectionOverlaps,
@@ -639,6 +640,7 @@ function render() {
   const { ink: fg, ground: bg } = plotTheme(dark)
   const muted = dark ? '#8b949e' : '#666'
   const grid = dark ? '#30363d' : '#ddd'
+  const claudeMark = tokenColour('--cc-claude-mark', '#e836b4')   // fixed token: same on every ground
 
   const w = Math.max(240, el.clientWidth || 360)
   const h = Math.max(80, el.clientHeight || 200)
@@ -735,7 +737,7 @@ function render() {
       if (!claude.has(lanes[i].track)) continue
       const y = laneY(g, i)
       parts.push(`<rect x="${g.x0}" y="${y - 2}" width="${g.x1 - g.x0}" height="${g.barH + 4}" ` +
-                 `fill="#e836b4" fill-opacity="0.12"/>`)
+                 `fill="${claudeMark}" fill-opacity="0.12"/>`)
     }
   }
 
@@ -751,7 +753,7 @@ function render() {
     // x=6 (well clear of the right-anchored lane label at GUTTER-6=46, which extends leftward for
     // multi-digit ids). Small radius so a narrow lane row (`barH ≈ 8`) still contains it.
     if (byClaude) {
-      parts.push(`<circle cx="6" cy="${y + g.barH / 2}" r="4" fill="#e836b4"/>` +
+      parts.push(`<circle cx="6" cy="${y + g.barH / 2}" r="4" fill="${claudeMark}"/>` +
                  `<text x="6" y="${y + g.barH / 2 + 3}" text-anchor="middle" ` +
                  `font-size="7" font-weight="700" fill="#ffffff">C<title>Claude pointed at this track` +
                  `</title></text>`)
@@ -767,9 +769,10 @@ function render() {
   for (const r of runRects(lanes, g)) {
     const on = selected.value.has(r.track)
     // a QUEUED lane is green and outlined: the edit is decided but not yet run, and that state has to
-    // be visible or clicking Join reads as nothing having happened
+    // be visible or clicking Join reads as nothing having happened. SELECTED is the ink, like every
+    // selection in the app — amber here meant "needs attention" (the untracked strip, candidate ticks).
     const q = pendingTracks.value.get(r.track)
-    const fill = q ? '#4a9d5f' : on ? '#e8a33d' : '#5aa9e6'
+    const fill = q ? '#4a9d5f' : on ? fg : '#5aa9e6'
     parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="2" ` +
                `fill="${fill}" fill-opacity="${q ? 0.9 : on ? 0.95 : 0.75}"` +
                (q ? ` stroke="#8fe0a3" stroke-width="1" stroke-dasharray="3,2"`
@@ -810,7 +813,7 @@ function render() {
       const x = frameToX(g, splitAt.value)
       const y = laneY(g, i)
       parts.push(`<line x1="${x}" y1="${y - 2}" x2="${x}" y2="${y + g.barH + 2}" ` +
-                 `stroke="#e6e6e6" stroke-width="1.5"><title>Split track ${esc(track)} at frame ` +
+                 `stroke="${bg}" stroke-width="1.5"><title>Split track ${esc(track)} at frame ` +
                  `${splitAt.value}</title></line>`)
     }
   }

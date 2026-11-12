@@ -371,7 +371,7 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
     else
         uniq = scale.levels
         hexes = pop_map === nothing ?
-            Dict{Any,String}(v => OKABE_ITO[mod1(k, length(OKABE_ITO))]
+            Dict{Any,String}(v => POPULATION_PALETTE[mod1(k, length(POPULATION_PALETTE))]
                               for (k, v) in enumerate(sort(uniq; by = string))) :
             colour_by_palette(pop_map, cb_col, uniq)
         palette = Dict{Any,RGB{N0f8}}(k => hex_to_rgb(String(v)) for (k, v) in hexes)

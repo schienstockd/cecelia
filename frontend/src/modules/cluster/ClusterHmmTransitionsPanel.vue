@@ -143,7 +143,7 @@ async function render() {
     color: colorScale,
     fx: { label: null },
     marks: [
-      Plot.dot(rows.value, { fx: 'group', x: 'to', y: 'from', r: 'freq', fill: 'freq', stroke: 'black', strokeWidth: 0.4, tip: true }),
+      Plot.dot(rows.value, { fx: 'group', x: 'to', y: 'from', r: 'freq', fill: 'freq', stroke: fg, strokeWidth: 0.4, tip: true }),
     ],
   }
   // long population names as facet headers: shortened to their panel, full name on hover (#1770)
