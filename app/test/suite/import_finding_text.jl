@@ -59,13 +59,14 @@
         @test occursin("Bright Z", longs(dmeta(acquisition = on))["import.darker_with_depth"])
     end
 
-    # "Bright Z" is the power-stage name on every system the acquisition knowledge maps
+    # "Bright Z" is the power-stage name on every two-photon microscope the acquisition knowledge maps
     @testset "Bright Z naming matches the scopes map" begin
-        kn = JSON3.read(read(normpath(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp",
-                                               "acquisition_knowledge.json")), String))
-        power = [f[:name] for s in kn[:scopes] for f in s[:features] if f[:stage] == "power"]
+        dir = normpath(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "acquisition_knowledge", "scopes"))
+        scopes = [JSON3.read(read(joinpath(dir, f), String)) for f in readdir(dir) if endswith(f, ".json")]
+        tp = [s for s in scopes if "two-photon" in s[:technologies]]
+        power = [f[:name] for s in tp for f in s[:features] if f[:stage] == "power"]
         @test !isempty(power) && all(==("Bright Z"), power)
-        @test Set(String(s[:system]) for s in kn[:scopes]) ⊆ Set(["FV4000", "FVMPE-RS"])  # all Evident `.oir`
+        @test Set(String(s[:system]) for s in tp) ⊆ Set(["FV4000", "FVMPE-RS"])  # all Evident `.oir`
     end
 end
 

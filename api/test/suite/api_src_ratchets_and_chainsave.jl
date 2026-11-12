@@ -34,18 +34,33 @@ end
 #
 # The frame's own columns are always available (`length(df.label)`), so the fix is never to import
 # DataFrames here — this layer shapes JSON, it does not do data work.
-@testset "API: no bare nrow in api/src (DataFrames is not imported there)" begin
-    src = joinpath(API_TEST_DIR, "..", "src")
+function _bare_nrow_offenders(src::AbstractString)
     offenders = String[]
-    for f in readdir(src; join = true)
-        endswith(f, ".jl") || continue
+    for f in api_src_jl_files(src)                          # recursive: api/src/routes/ included
         for (i, line) in enumerate(eachline(f))
             startswith(strip(line), "#") && continue        # the explanation itself may name it
-            occursin(r"(^|[^.\w])nrow\s*\(", line) && push!(offenders, "$(basename(f)):$i")
+            occursin(r"(^|[^.\w])nrow\s*\(", line) && push!(offenders, "$(relpath(f, src)):$i")
         end
     end
+    offenders
+end
+
+@testset "API: no bare nrow in api/src (DataFrames is not imported there)" begin
+    offenders = _bare_nrow_offenders(joinpath(API_TEST_DIR, "..", "src"))
     @test isempty(offenders)
     isempty(offenders) || @info "use length(df.<col>) instead" offenders
+end
+
+@testset "API: the bare-nrow ratchet reaches api/src/routes/" begin
+    tmp = mktempdir()
+    try
+        mkpath(joinpath(tmp, "routes"))
+        write(joinpath(tmp, "ok.jl"), "n = length(df.label)\n")
+        write(joinpath(tmp, "routes", "r.jl"), "f(df) = nrow(df)\n")
+        @test _bare_nrow_offenders(tmp) == [joinpath("routes", "r.jl") * ":1"]
+    finally
+        rm(tmp; recursive = true, force = true)
+    end
 end
 
 # The save route is the door the USER goes through, and until now it was the unguarded one: it wrote

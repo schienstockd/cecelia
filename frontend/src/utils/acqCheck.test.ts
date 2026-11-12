@@ -112,7 +112,7 @@ describe('findingSeverity / findingLines', () => {
     expect(verdictHeading('final')).toBe('Before analysing')
     expect(verdictHeading('test')).toBe('Before acquiring the rest')
     const w = findingLines(f('warn', undefined, '10/10 %: a, b · 8/15 %: c'))
-    expect(w[0]).toEqual({ label: 'Movies', text: '10/10 %: a, b · 8/15 %: c' })
+    expect(w[0]).toEqual({ label: 'Images', text: '10/10 %: a, b · 8/15 %: c' })   // no label sent: the neutral noun
     expect(findingLines(f('info', undefined, 'x', 'Designs'))[0].label).toBe('Designs')
   })
 })

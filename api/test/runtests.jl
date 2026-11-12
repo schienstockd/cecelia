@@ -67,6 +67,12 @@ _repl(code) = _post(api_repl, Dict("code" => code))
 # to api/test, since runtests.jl itself did not move.
 const API_TEST_DIR = @__DIR__
 
+# Every `.jl` file under api/src, RECURSIVELY — the one file list for source-scanning ratchets.
+# Route files live in api/src/routes/, so a top-level `readdir` silently skips them; scanning through
+# this helper is what keeps a ratchet's coverage equal to the code it guards.
+api_src_jl_files(src::AbstractString = joinpath(API_TEST_DIR, "..", "src")) =
+    sort!([joinpath(root, f) for (root, _, files) in walkdir(src) for f in files if endswith(f, ".jl")])
+
 # A second segmentation that DIFFERS from the first — the package suite's helper, shared so the API
 # multi-segmentation tests don't fall back to an identical copy (app/test/distinct_segmentations.jl).
 include(joinpath(@__DIR__, "..", "..", "app", "test", "distinct_segmentations.jl"))

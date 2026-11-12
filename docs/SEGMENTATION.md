@@ -1545,7 +1545,9 @@ the file region — on the 2D plane view only; a 3D or z-window projection draws
 them (a 3D halo's cap would stack a rim per plane). All files show by default — the old R viewer's choice; the chips under the ticked
 segmentation's row turn one off (`settings.getLabelFilesHidden`). A file is named by its suffix after
 the base stem (`img_label_files`); `/api/viewer/meta` lists them in `labelFiles`. A task preview or a
-live run draws its base store only.
+live run draws its base store only. Movies and stills draw the same files: the viewer's look carries the
+hidden ones (`labelFilesHidden`), `movie_mask` resolves the rest and the runner packs them per frame
+(`wgpu_host.compose_label_files`, the slab route's rule).
 
 ### Previewing a running run
 

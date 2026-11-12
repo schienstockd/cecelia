@@ -86,12 +86,13 @@ end
 
 The catalog key for a depth finding over the flagged channels `chans`: `import.clipped_deep_export`
 when every one of them clips at an 8-bit export's ceiling (`export_ceiling_channels` — not the
-detector's, so no HV or ramp advice), else `_depth_ramp_key`.
+detector's, so no HV or ramp advice), else `_depth_ramp_key` in the image's technology's wording
+(`qc_technology_key`).
 """
 function _depth_text_key(code::AbstractString, meta::AbstractDict, chans)::String
     code == "import.clipped_deep" && all(in(export_ceiling_channels(meta)), chans) &&
         return "import.clipped_deep_export"
-    _depth_ramp_key(code, meta)
+    qc_technology_key(_depth_ramp_key(code, meta), acquisition_technology(meta))
 end
 
 """

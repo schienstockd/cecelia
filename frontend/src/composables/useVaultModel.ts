@@ -48,6 +48,9 @@ const inflight: Partial<Record<VaultKind, Promise<void>>> = {}
 // Bump this to invalidate every reactive consumer. `refresh()` increments it; `watchEffect` reruns.
 const cacheEpoch = ref(0)
 
+// Names a miss already re-fetched for — see the self-heal in `useVaultModel`.
+const refetchedFor = new Set<string>()
+
 // Each vault's rows by name AND stem — the one lookup every caller uses (a coastal picker carries the
 // filename, a denoise picker and the plots the stem). Module-scoped beside the cache it indexes, rebuilt
 // on `cacheEpoch`. First row wins on a clash, as a linear `find` would.
@@ -131,6 +134,22 @@ export function useVaultModel(nameRef: Ref<string> | (() => string)): UseVaultMo
     }
   })
 
+  // A name neither cached vault holds is most likely a model trained/imported since the last fetch —
+  // the vault panel lists it (its own fetch) while this module cache is stale, and the task-done
+  // refresh can't be relied on (training is set-scoped; the toggle can be off). Re-fetch once per
+  // missing name page-wide (so a genuinely deleted model doesn't loop), and plots missing names at
+  // the same moment share the one in-flight refetch.
+  watchEffect(() => {
+    void cacheEpoch.value   // `cache` itself isn't reactive — track the epoch so a fetch landing reruns this
+    const n = currentName.value
+    if (!n || cache.flowModels.rows === null || cache.denoiseModels.rows === null) return
+    if (index.flowModels.value.has(n) || index.denoiseModels.value.has(n)) return
+    if (refetchedFor.has(n)) return
+    refetchedFor.add(n)
+    if (inflight.flowModels || inflight.denoiseModels) return
+    refresh()
+  })
+
   // flow first: a name in both vaults resolves to flow
   const kind = computed<'flow' | 'denoise' | null>(() => {
     const n = currentName.value
@@ -193,5 +212,6 @@ export function useVaultRows(kind: Ref<VaultKind | undefined> | (() => VaultKind
 export function _resetVaultModelCache() {
   cache.flowModels = { rows: null, err: '' }
   cache.denoiseModels = { rows: null, err: '' }
+  refetchedFor.clear()
   cacheEpoch.value += 1
 }
