@@ -758,7 +758,10 @@ function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
     Dict{String,Any}("channels" => channels, "drift" => drift,
                      # the import probe's own read of the raw movie: channel pairs showing the same
                      # structure (Pearson r on smoothed voxels)
-                     "sharedStructure" => get(sat, "sharedStructure", nothing))
+                     "sharedStructure" => get(sat, "sharedStructure", nothing),
+                     # a slide scan's tissue (`tissue_utils`): share of the plane, and how many of the
+                     # signal pass's patches sat on it
+                     "tissue" => get(sat, "tissue", nothing))
 end
 
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale

@@ -1,0 +1,94 @@
+{
+  "mode": "cyclic",
+  "summary": "Cyclic multiplex imaging (PhenoCycler/CODEX, IBEX, CyCIF): the same tissue is stained and imaged over several cycles, a few markers per cycle, with a shared marker (usually DAPI) in every cycle to align them. Blank cycles image the tissue with no marker to measure its autofluorescence. Applies on top of the image's technology (widefield for a PhenoCycler).",
+  "status": "Drafted from the PhenoCycler runs the lab has (one run with blank cycles, one cycle per scan); the per-cycle checks come from editImages.register on a whole-slide scan.",
+  "symptoms": [
+    {
+      "id": "autofluorescence-subtracted-twice",
+      "symptom": "Marker channels look hollowed out or too dim after AF correction, with negative-looking holes where tissue was bright.",
+      "explanation": "The scanner already subtracted the autofluorescence it measured in the blank cycles before writing the file. Correcting the same channel again removes marker signal, not autofluorescence.",
+      "check": "get_image_info: acquisition.channels[].afSubtracted is true, and acquisition.cycles.blank counts the blank cycles. Cecelia's AF correction skips those channels as targets and logs it; a channel corrected anyway was not marked by the scanner.",
+      "alternatives": "A marker that is genuinely absent from most of the tissue, or a too-high display window.",
+      "sources": [
+        "black2021",
+        "goltsev2018"
+      ],
+      "qcCodes": []
+    },
+    {
+      "id": "cycles-misaligned",
+      "symptom": "Markers from one cycle sit beside the cells they belong to: nuclei show double outlines when two cycles' DAPI are overlaid, and co-expression reads low.",
+      "explanation": "Each cycle is a new scan; the slide is taken out and put back, so cycles are offset and slightly rotated against each other. Unregistered or badly registered cycles assign one cell's markers to its neighbour.",
+      "check": "Task QC of editImages.register (get_qc_metrics): residualUm per cycle (the offset left after registration, from full-resolution patches on tissue) — over half a nucleus is flagged. Overlay a cycle's alignment channel on the reference's: with keepRegChannels the registered image carries every cycle's DAPI as 'DAPI (cycle N)'.",
+      "alternatives": "Tissue that deformed between cycles (a local stretch an affine cannot follow) — the residual is then small in some patches and large in others.",
+      "sources": [
+        "radtke2020",
+        "guizarsicairos2008"
+      ],
+      "qcCodes": [
+        "register.misaligned"
+      ]
+    },
+    {
+      "id": "tissue-lost-over-cycles",
+      "symptom": "Part of a section is missing in later cycles: those cells have DAPI in the first cycle but nothing in later ones.",
+      "explanation": "Repeated staining, washing and stripping lift, fold or tear the section, more so at its edges and in fragile tissue. Every marker of a cycle after the loss reads 0 on those cells.",
+      "check": "Task QC of editImages.register: tissueRetained per cycle — the fraction of the reference's tissue the cycle still shows as tissue. Look at the 'DAPI (cycle N)' channels of the registered image for the region that goes dark.",
+      "alternatives": "A cycle whose shared marker stained weakly (signalRatio low everywhere, not only in one region), or a focus failure over that region (sharpnessRatio low).",
+      "sources": [
+        "lin2018",
+        "black2021"
+      ],
+      "qcCodes": [
+        "register.tissue_lost"
+      ]
+    },
+    {
+      "id": "scan-area-differs",
+      "symptom": "A strip, corner or whole section has no signal in some cycles' markers but is fine in the others.",
+      "explanation": "When each cycle is a separate scan, the scanner chooses the area to image per scan; one scan can stop short of tissue another covered. After registration that cycle reads 0 there.",
+      "check": "Task QC of editImages.register: tissueCovered per cycle — the fraction of the reference's tissue inside that cycle's scan — and tissueOnlyInCycle, tissue a cycle imaged that the reference's scan skipped (its cells carry none of the reference's markers; the cycle that covers the most tissue makes the better reference).",
+      "alternatives": "Tissue lost in that cycle (tissueRetained low as well).",
+      "sources": [
+        "radtke2020"
+      ],
+      "qcCodes": [
+        "register.tissue_not_covered"
+      ]
+    },
+    {
+      "id": "signal-falls-with-cycle",
+      "symptom": "The shared marker, or markers in general, get dimmer or blurrier cycle by cycle.",
+      "explanation": "Each cycle exposes the tissue to more light and more chemistry: epitopes and dyes bleach or degrade, and the section's focus can drift between scans. Markers imaged late read lower than the same marker would early.",
+      "check": "Task QC of editImages.register, per cycle: signalRatio (the shared marker's median on the tissue against the reference) and sharpnessRatio (its focus against the reference). These are read across the cycles, not against a threshold: a different exposure or a thicker section changes them too.",
+      "alternatives": "A different exposure for that cycle (acquisition.channels[].exposureMs), or a real difference in where the marker is expressed.",
+      "sources": [
+        "lin2018",
+        "radtke2020"
+      ],
+      "qcCodes": []
+    },
+    {
+      "id": "failed-cycle",
+      "symptom": "Every marker of one cycle is blank or near-blank, while the cycles around it are fine.",
+      "explanation": "A cycle can fail as a whole: the reporters did not hybridise or the fluidics did not deliver them, or the scan of that cycle failed.",
+      "check": "The cycle's channels in the viewer; in the registered image's QC the cycle's signalRatio is normal (DAPI is fine) while its markers are empty. The run's .xpd (acquisition.cycles.planned) says which reporters were planned for it.",
+      "alternatives": "Markers that are genuinely absent from this tissue.",
+      "sources": [
+        "black2021"
+      ],
+      "qcCodes": []
+    },
+    {
+      "id": "stitching-seams",
+      "symptom": "Straight lines or a checkerboard at regular spacing across a whole-slide scan.",
+      "explanation": "A slide scan is stitched from camera fields; uneven illumination across each field (shading) or overlap blending leaves the field grid visible, and intensities differ with position in a field.",
+      "check": "Look at the image at low zoom; the spacing matches the camera field (Cecelia does not measure seams yet).",
+      "alternatives": "Tissue structure that happens to be linear (a capsule, a vessel), or a fold.",
+      "sources": [
+        "peng2017"
+      ],
+      "qcCodes": []
+    }
+  ]
+}

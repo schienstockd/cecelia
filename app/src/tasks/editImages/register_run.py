@@ -20,6 +20,15 @@ Parameter contract (JSON written by Julia's Register handler):
                   sibling holding the raw ITK .tfm files
   doFftInitialization, doAffine2d, doAffine3d, ignoreSpacing, sigma, autoMask,
   samplesPerParameter, expand — direct pass-through to sitkibex.registration
+  keepRegChannels - keep each moving cycle's alignment channel in the output (after its markers'
+                  place in channel order), to check the alignment and the tissue per cycle
+  pixelSizeUm   - the reference's pixel size, for the residual in µm
+  qcOutPath     - where the per-cycle checks are written (slide path), read back by the Julia handler
+
+Two paths. A reference plane past `register_utils.REGISTER_WHOLE_PLANE_PX` with one z-plane — a
+whole-slide scan, one cycle per scan — is registered on the pyramid and written tile by tile
+(`register_utils`: estimate, warp, per-cycle checks); everything else takes the whole-plane sitkibex
+path below, as ported.
 
 Vendored engine: python/sitkibex (Apache-2.0, from https://github.com/niaid/sitk-ibex, v0.2.1). See
 THIRD_PARTY.md.
@@ -33,6 +42,7 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
+import cecelia.utils.register_utils as register_utils
 
 # SimpleITK + sitkibex are imported LAZILY inside `run()` — module-load must succeed on every
 # platform so the runner-discovery scan (`test_task_result_writes.py`) can import this file. The
@@ -57,6 +67,92 @@ def _slice_registration_plane(arr, dim_utils, ch_idx):
         slc[c_idx] = int(ch_idx)
     plane = np.asarray(zarr_utils.fortify(arr[tuple(slc)]))
     return np.squeeze(plane)
+
+
+def output_plan(n_channels, reg_channels, keep_reg):
+    """``[(image index, channel index)]`` in output order: every reference channel, then each moving
+    cycle's channels, its alignment channel only with ``keep_reg``. The Julia handler builds the
+    channel names in the same order (`_register_channel_plan`)."""
+    plan = [(0, c) for c in range(n_channels[0])]
+    for i in range(1, len(n_channels)):
+        plan += [(i, c) for c in range(n_channels[i]) if keep_reg or c != reg_channels[i]]
+    return plan
+
+
+def _is_slide(dim_utils_list, input_arrays):
+    ref = input_arrays[0][0]
+    flat = all(du.dim_val('Z') <= 1 for du in dim_utils_list)
+    return (flat and len(input_arrays[0]) > 1
+            and ref.shape[-2] * ref.shape[-1] > register_utils.REGISTER_WHOLE_PLANE_PX)
+
+
+def run_slide(params, log, im_paths, input_arrays, dim_utils_list, reg_channels, plan, out_shape):
+    """The slide path: estimate each cycle on the pyramid, check it, write the output tile by tile.
+    Returns the per-cycle records (transform + checks)."""
+    import SimpleITK as sitk
+    ref_levels = input_arrays[0]
+    ref_du = dim_utils_list[0]
+    ndim = ref_levels[0].ndim
+    c_pos = ref_du.dim_idx('C')
+    lead = tuple(None if i == c_pos else 0 for i in range(ndim - 2))
+    pixel_um = params.get('pixelSizeUm')
+    pixel_um = float(pixel_um) if pixel_um else None
+    tx_dir = os.path.splitext(params['transformsOut'])[0] + '_tfms'
+    os.makedirs(tx_dir, exist_ok=True)
+    n_cycles = len(im_paths)
+    n_steps = 1 + (n_cycles - 1) + len(plan) + 1
+    step = 1
+    transforms, records = [None], []
+    for i in range(1, n_cycles):
+        log.log(f'>> register cycle {i} ({im_paths[i]}) on channel {reg_channels[i]}, on the pyramid')
+        tx, info = register_utils.estimate_affine(ref_levels, input_arrays[i], reg_channels[0],
+                                                  reg_channels[i], lead, c_pos, log=log.log)
+        a = register_utils.affine_matrix(tx)
+        checks = register_utils.cycle_checks(ref_levels, input_arrays[i], reg_channels[0],
+                                             reg_channels[i], lead, c_pos, tx, pixel_um=pixel_um)
+        tfm_path = os.path.join(tx_dir, f'cycle_{i:03d}.tfm')
+        sitk.WriteTransform(tx, tfm_path)
+        rec = {'cycle_index': i, 'source_zarr': im_paths[i], 'reg_channel_index': reg_channels[i],
+               'transform_path': tfm_path, 'transform_parameters': list(tx.GetParameters()),
+               'matrix': a.tolist()}
+        rec.update(info)
+        rec.update(register_utils.describe(a, ref_levels[0].shape[-2:]))
+        rec.update(checks)
+        records.append(rec)
+        transforms.append(tx)
+        res = checks.get('residualUm') or {}
+        log.log(f'   shift {rec["shiftPx"]} px, rotation {rec["rotationDeg"]}°, residual '
+                f'{checks["residualPx"]["median"]} px median'
+                + (f' ({res.get("median")} µm)' if res else '')
+                + f', tissue covered {checks["tissueCovered"]}, retained {checks["tissueRetained"]}')
+        log.progress(step, n_steps); step += 1
+
+    out_hw = tuple(ref_levels[0].shape[-2:])
+    log.log(f'>> write registered image tile by tile: {params["imOutPath"]}')
+    with zarr_utils.staged_store(params['imOutPath']) as staging:
+        group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+            staging, tuple(out_shape), ref_levels[0].dtype, ref_du,
+            nscales=len(ref_levels), reference_zarr=im_paths[0])
+        for k, (i, c) in enumerate(plan):
+            src = input_arrays[i][0]
+            read = lambda ys, xs, src=src, c=c: src[register_utils.plane_index(lead, c_pos, c, ys, xs)]
+            def write(ys, xs, arr, k=k):
+                level0[register_utils.plane_index(lead, c_pos, k, ys, xs)] = arr
+            if i == 0:
+                register_utils.copy_plane(read, out_hw, write)
+            else:
+                register_utils.warp_plane(read, tuple(src.shape[-2:]), transforms[i], out_hw, write,
+                                          np.dtype(ref_levels[0].dtype))
+            log.progress(step, n_steps); step += 1
+        log.log('>> build multiscale pyramid')
+        zarr_utils.write_multiscale_pyramid(group, level0, ref_du, len(ref_levels), list(pchunks))
+        ome_xml_utils.save_meta_in_zarr(staging, im_paths[0], changed_shape=tuple(out_shape),
+                                        dim_utils=ref_du)
+        zarr_utils.write_calibration(staging, ref_du)
+        # VALID-BOX-EXEMPT: as the whole-plane path below — the moving cycles are resampled onto the
+        # reference grid and read as 0 where their scan does not reach.
+    log.progress(step, n_steps)
+    return records
 
 
 def run(params):
@@ -88,6 +184,7 @@ def run(params):
     samples_per_parameter = int(params.get('samplesPerParameter', 5000))
     expand_val            = int(params.get('expand', 0))
     expand                = expand_val if expand_val > 0 else None
+    keep_reg              = bool(params.get('keepRegChannels', False))
 
     n_cycles = len(im_paths)
     n_steps  = 2 + 2 * (n_cycles - 1)  # open + write + (register + resample) per moving cycle
@@ -110,13 +207,25 @@ def run(params):
     if ref_du.dim_val('T') > 1:
         log.log('[WARN] reference has T > 1 — registering on frame 0 only (staining cycles are static per cycle)')
 
-    # Output shape: reference shape, C = ref_C + Σ(cycle_C - 1).
+    # Output shape: reference shape, C = ref_C + Σ cycle_C (less each alignment channel unless kept).
     out_shape = list(ref_arr.shape)
     c_idx     = ref_du.dim_idx('C')
-    total_c   = ref_du.dim_val('C') + sum(dim_utils_list[i].dim_val('C') - 1 for i in range(1, n_cycles))
+    plan      = output_plan([du.dim_val('C') for du in dim_utils_list], reg_channels, keep_reg)
+    total_c   = len(plan)
     if c_idx is not None:
         out_shape[c_idx] = total_c
     log.log(f'>> output shape: {tuple(out_shape)}  (total channels = {total_c})')
+
+    if _is_slide(dim_utils_list, input_arrays):
+        records = run_slide(params, log, im_paths, input_arrays, dim_utils_list, reg_channels, plan,
+                            out_shape)
+        write_json_atomic(tx_out_path, {'reference_zarr': im_paths[0],
+                                        'reg_channel_index_reference': reg_channels[0],
+                                        'path': 'pyramid', 'cycles': records}, indent=2)
+        if params.get('qcOutPath'):
+            write_json_atomic(params['qcOutPath'], {'cycles': records}, indent=2)
+        log.log(f'>> wrote {len(records)} cycle transform(s); done')
+        return
 
     # Fixed image for ITK — the reference's reg channel, single T, single C.
     fixed_np = _slice_registration_plane(ref_arr, ref_du, reg_channels[0])
@@ -192,7 +301,7 @@ def run(params):
             mov_du  = dim_utils_list[i]
             k = 0
             for c in range(mov_du.dim_val('C')):
-                if c == reg_channels[i]:
+                if c == reg_channels[i] and not keep_reg:
                     continue
                 mov_np = np.squeeze(np.asarray(zarr_utils.fortify(
                     mov_arr[_plane_slice(mov_du, mov_arr.shape, c)])))
@@ -208,7 +317,7 @@ def run(params):
                 arr = sitk.GetArrayFromImage(resampled_im).astype(ref_arr.dtype, copy=False)
                 level0[dst_slot] = arr.reshape(np.asarray(level0[dst_slot]).shape) if arr.ndim != len(dst_slot) else arr
                 k += 1
-            channel_sum += mov_du.dim_val('C') - 1
+            channel_sum += k
             log.progress(step, n_steps); step += 1
 
         # Build the downscaled levels FROM the on-disk level 0 — the same helper drift/AF/smooth use.
@@ -242,9 +351,7 @@ def run(params):
 
 
 def main():
-    params = script_utils.script_params(
-        flatten_except=['imPaths', 'regChannels']
-    )
+    params = script_utils.script_params()
     if params is None:
         print('[ERROR] No params file provided (--params missing or not found)', flush=True)
         raise SystemExit(1)

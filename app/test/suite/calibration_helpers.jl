@@ -267,3 +267,62 @@ end
     plain = delete!(copy(src), "TimeIncrementDeclared")
     @test !haskey(Cecelia._bin_inherited_meta(plain, 2, 2), "TimeIncrementDeclared")
 end
+
+@testset "Register: channel plan, names, acquisition and per-cycle QC (pure helpers)" begin
+    # three cycles, DAPI first in each; cycle 3 has three channels
+    plan = Cecelia._register_channel_plan([4, 4, 3], [0, 0, 0], true)
+    @test length(plan) == 11 && plan[5] == (2, 0) && plan[9] == (3, 0)
+    plan_drop = Cecelia._register_channel_plan([4, 4, 3], [0, 0, 0], false)
+    @test length(plan_drop) == 4 + 3 + 2 && !((2, 0) in plan_drop)
+    names = [["DAPI", "IL-10", "NOD2", "IL1-B"], ["DAPI", "NOS2", "B-actin", "TNFa"], ["DAPI", "CD3", "IL-10"]]
+    out = Cecelia._register_channel_names(names, plan)
+    @test out[1:4] == ["DAPI (cycle 1)", "IL-10 (cycle 1)", "NOD2", "IL1-B"]
+    @test out[5] == "DAPI (cycle 2)" && out[6] == "NOS2" && out[10] == "CD3" && out[11] == "IL-10 (cycle 3)"
+    @test Cecelia._register_channel_names([["A"], String[]], [(1, 0), (2, 1)]) == ["A", "ch1"]
+
+    # per-channel acquisition follows the channel; the scan's own cycle number is kept as scanCycle
+    acq(n, sub) = Dict{String,Any}("system" => "PhenoImager Fusion", "modes" => ["tiled"],
+        "channels" => [Dict{String,Any}("name" => "c$i", "cycle" => 1, "afSubtracted" => sub) for i in 1:n])
+    a = Cecelia._register_acquisition([acq(4, true), acq(4, false), acq(3, true)], plan_drop)
+    @test length(a["channels"]) == 9
+    @test a["channels"][5]["cycle"] == 2 && a["channels"][5]["scanCycle"] == 1
+    @test a["channels"][5]["afSubtracted"] === false && a["channels"][8]["afSubtracted"] === true
+    @test "cyclic" in a["modes"] && a["cycles"]["count"] == 3
+    @test isnothing(Cecelia._register_acquisition([acq(4, true), nothing, acq(3, true)], plan_drop))
+    @test isnothing(Cecelia._register_acquisition([acq(4, true), acq(2, true), acq(3, true)], plan_drop))
+
+    # QC: one warn per failing check, numbers in detail; ratios banked, no finding
+    good = Dict{String,Any}("cycle" => 2, "name" => "c2", "residualUm" => Dict("median" => 0.4),
+                            "tissueCovered" => 0.99, "tissueRetained" => 0.95, "tissueOnlyInCycle" => 0.1,
+                            "signalRatio" => 0.3)
+    bad = Dict{String,Any}("cycle" => 3, "name" => "c3", "residualUm" => Dict("median" => 4.2),
+                           "tissueCovered" => 0.7, "tissueRetained" => 0.5)
+    @test isempty(Cecelia._register_qc_findings([good]))
+    f = Cecelia._register_qc_findings([good, bad])
+    @test sort([x["code"] for x in f]) == ["register.misaligned", "register.tissue_lost", "register.tissue_not_covered"]
+    @test all(x -> x["level"] == "warn" && x["detail"]["cycle"] == 3, f)
+    m = Cecelia._register_qc_metrics([good, bad], 3)
+    @test m["nCycles"] == 3 && m["worstResidualUm"] == 4.2 && m["minTissueRetained"] == 0.5
+    @test m["minTissueCovered"] == 0.7 && m["maxTissueOnlyInCycle"] == 0.1
+    # the whole-plane path writes no per-cycle checks: the count is still the images registered
+    @test Cecelia._register_qc_metrics(Any[], 4) == Dict{String,Any}("nCycles" => 4)
+    # the order `register_run.output_plan` writes ([2, 3], [0, 1] there, images 0-based)
+    @test Cecelia._register_channel_plan([2, 3], [0, 1], false) == [(1, 0), (1, 1), (2, 0), (2, 2)]
+end
+
+@testset "AF correction skips channels the scanner already AF-subtracted" begin
+    acq = Dict{String,Any}("channels" => [Dict{String,Any}("afSubtracted" => true),
+                                          Dict{String,Any}("afSubtracted" => false),
+                                          Dict{String,Any}(), Dict{String,Any}("afSubtracted" => true)])
+    @test Cecelia.scanner_af_subtracted(acq) == Set([0, 3])
+    @test isempty(Cecelia.scanner_af_subtracted(nothing))
+    combos = Dict{String,Any}("0" => Dict(), "1" => Dict(), "3" => Dict(), "x" => Dict())
+    @test Cecelia.drop_scanner_af_targets!(combos, acq) == [0, 3]
+    # the import probe reads the same flag through the same reader
+    @test sort(collect(keys(Cecelia.photons_untestable(acq)))) == ["0", "3"]
+    # a slide scan's tissue survives into meta.saturation (the data-path note reads it)
+    sat = Cecelia._saturation_from_result(Dict{String,Any}("channels" => [Dict("index" => 0)],
+        "tissue" => Dict("fraction" => 0.052, "level" => 5, "patches" => 14)))
+    @test sat["tissue"]["patches"] == 14
+    @test sort(collect(keys(combos))) == ["1", "x"]
+end

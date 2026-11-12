@@ -68,6 +68,17 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Record a hand-check on a real stack')],
   }) },
+  { id: 'register-cycles', title: 'Register staining cycles', group: 'Data', maturity: covering(['editImages.register'], {
+    tier: 'experimental', testedOn: 'One PhenoCycler slide, three scans, one lab',
+    evidence: [
+      { path: 'python/cecelia/tests/test_tissue_and_slide_register.py', test: 'test_recovers_the_offset_and_rotation',
+        failsIf: 'a known slide offset and rotation is not recovered' },
+      { path: 'python/cecelia/tests/test_tissue_and_slide_register.py', test: 'test_warp_and_checks',
+        failsIf: 'lost tissue in a cycle goes unreported' },
+    ],
+    next: [todo('Maintainer look at a registered slide in the viewer'), todo('A run on a second multiplex dataset')],
+    needs: '3D staining cycles (IBEX or similar)', datasetAsk: 'static-3d-registration',
+  }) },
   { id: 'flow-register', title: 'Flow-based registration', group: 'Data', maturity: covering(['cleanupImages.flowRegister'], {
     tier: 'experimental', testedOn: '—',
     next: [todo('A known-warp recovery test')],

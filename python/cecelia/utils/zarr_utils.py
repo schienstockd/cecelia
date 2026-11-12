@@ -1521,6 +1521,39 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
 _DERIVE_T = object()   # sentinel: derive the time axis from dim_utils
 
 
+#: Elements one pyramid write may hold in memory. Past this, a level (one timepoint of it, with a time
+#: axis — a slide's label store keeps a T of 1) is written in bands of rows, not as one read — level 1 of a
+#: nine-channel 1.5 Gpx scan is 7 GB in one piece.
+PYRAMID_BAND_ELEMENTS = 64 * 1024 * 1024
+
+
+def _pyramid_bands(src_slices, dest_shape, dest_chunks):
+    """``[(write, read)]`` index pairs that fill one pyramid level: the whole level in one pair when it
+    is at most `PYRAMID_BAND_ELEMENTS`, else bands of rows along its Y axis (the first strided
+    axis of ``src_slices``), each a whole number of chunks deep. Pure."""
+    whole = [(tuple(slice(None) for _ in dest_shape), tuple(src_slices))]
+    n = int(np.prod(dest_shape)) if len(dest_shape) else 0
+    if n <= PYRAMID_BAND_ELEMENTS:
+        return whole
+    y_ax = next((d for d, sl in enumerate(src_slices)
+                 if isinstance(sl, slice) and (sl.step or 1) > 1), None)
+    if y_ax is None:
+        return whole
+    rows = dest_shape[y_ax]
+    per_row = n // max(1, rows)
+    chunk = max(1, int(dest_chunks[y_ax]))
+    band = max(chunk, (PYRAMID_BAND_ELEMENTS // max(1, per_row)) // chunk * chunk)
+    ysl = src_slices[y_ax]
+    start, step = (ysl.start or 0), ysl.step
+    out = []
+    for r0 in range(0, rows, band):
+        r1 = min(rows, r0 + band)
+        wr = [slice(None)] * len(dest_shape); wr[y_ax] = slice(r0, r1)
+        rd = list(src_slices); rd[y_ax] = slice(start + r0 * step, start + r1 * step, step)
+        out.append((tuple(wr), tuple(rd)))
+    return out
+
+
 def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales, im_chunks,
                              x_idx=None, y_idx=None, t_idx=_DERIVE_T, ignore_channel=False,
                              squeeze=False, idx_adjust=0, kind='image', on_progress=None):
@@ -1566,14 +1599,17 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
         n_t = 1 if t_idx is None else shape0[t_idx]
         total = len(slices) * n_t
         if t_idx is None:
-            dest[:] = _read(tuple(x))
+            for wr, rd in _pyramid_bands(x, dest_shape, dest_chunks):
+                dest[wr] = _read(rd)
             if on_progress is not None:
                 on_progress(i + 1, total)
         else:
             for t in range(n_t):
                 rd = list(x);              rd[t_idx] = slice(t, t + 1, 1)
-                wr = [slice(None)] * len(dest_shape); wr[t_idx] = slice(t, t + 1, 1)
-                dest[tuple(wr)] = _read(tuple(rd))
+                one_t = list(dest_shape);  one_t[t_idx] = 1
+                for wr, band_rd in _pyramid_bands(tuple(rd), tuple(one_t), dest_chunks):
+                    wr = list(wr);         wr[t_idx] = slice(t, t + 1, 1)
+                    dest[tuple(wr)] = _read(band_rd)
                 if on_progress is not None:
                     on_progress(i * n_t + t + 1, total)
 

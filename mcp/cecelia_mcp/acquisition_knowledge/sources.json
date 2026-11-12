@@ -82,5 +82,25 @@
   "icha2017": {
     "cite": "Icha J, Weber M, Waters JC, Norden C (2017). Phototoxicity in live fluorescence microscopy, and how to avoid it. BioEssays 39:1700003",
     "doi": "10.1002/bies.201700003"
+  },
+  "radtke2020": {
+    "cite": "Radtke AJ, Kandov E, Lowekamp B, et al. (2020). IBEX: A versatile multiplex optical imaging approach for deep phenotyping and spatial analysis of cells in complex tissues. PNAS 117:33455-33465",
+    "doi": "10.1073/pnas.2018488117"
+  },
+  "goltsev2018": {
+    "cite": "Goltsev Y, Samusik N, Kennedy-Darling J, et al. (2018). Deep Profiling of Mouse Splenic Architecture with CODEX Multiplexed Imaging. Cell 174:968-981.e15",
+    "doi": "10.1016/j.cell.2018.07.010"
+  },
+  "black2021": {
+    "cite": "Black S, Phillips D, Hickey JW, et al. (2021). CODEX multiplexed tissue imaging with DNA-conjugated antibodies. Nat Protoc 16:3802-3835",
+    "doi": "10.1038/s41596-021-00556-8"
+  },
+  "lin2018": {
+    "cite": "Lin JR, Izar B, Wang S, et al. (2018). Highly multiplexed immunofluorescence imaging of human tissues and tumors using t-CyCIF and conventional optical microscopes. eLife 7:e31657",
+    "doi": "10.7554/eLife.31657"
+  },
+  "guizarsicairos2008": {
+    "cite": "Guizar-Sicairos M, Thurman ST, Fienup JR (2008). Efficient subpixel image registration algorithms. Opt Lett 33:156-158",
+    "doi": "10.1364/OL.33.000156"
   }
 }

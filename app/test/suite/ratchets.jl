@@ -403,7 +403,6 @@ end
         "editImages.cropImage"               => "deterministic geometric subset",
         "editImages.dtype"                   => "deterministic value remap",
         "editImages.flip"                    => "deterministic geometric op",
-        "editImages.register"                => "deterministic channel stack of registered cycles",
         "editImages.resampleZ"               => "deterministic resample",
         "editImages.tProject"                => "deterministic reduction",
         "editImages.zProject"                => "deterministic reduction",

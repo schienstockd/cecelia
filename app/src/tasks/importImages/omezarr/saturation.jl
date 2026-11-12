@@ -52,11 +52,12 @@ function photons_untestable(acquisition)::Dict{String,String}
     # `_ag`: a stored ccid hands nested settings back as JSON3 objects with Symbol keys
     proc = _ag(acquisition, "processing")
     proc = proc isa AbstractString && !isempty(proc) && lowercase(proc) != "none" ? String(proc) : nothing
+    af_done = scanner_af_subtracted(acquisition)    # the reader AF correction skips them by, too
     for (i, ch) in enumerate(something(_ag(acquisition, "channels"), Any[]))
         ch isa AbstractDict || continue
         why = String[]
         isnothing(proc) || push!(why, "corrected by the scanner before writing ($proc)")
-        _ag(ch, "afSubtracted") === true && push!(why, "autofluorescence subtracted by the scanner")
+        (i - 1) in af_done && push!(why, "autofluorescence subtracted by the scanner")
         isempty(why) || (out[string(i - 1)] = join(why, "; "))
     end
     out
@@ -75,8 +76,10 @@ function _saturation_from_result(res::AbstractDict)::Union{Dict{String,Any},Noth
     isnothing(pt) || (out["partialTimepoint"] = Dict{String,Any}(pt))
     # the signal pass's whole-image results (`data_path.measure_signal`); per-channel ones ride in
     # `channels`
-    v = get(res, "sharedStructure", nothing)
-    isnothing(v) || (out["sharedStructure"] = v)
+    for k in ("sharedStructure", "tissue")     # `tissue`: a slide scan's, `tissue_utils`
+        v = get(res, k, nothing)
+        isnothing(v) || (out[k] = v)
+    end
     out
 end
 

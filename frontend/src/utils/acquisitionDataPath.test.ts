@@ -31,6 +31,14 @@ describe('dataPathChannels — real FV4000 store (no clipping, photon-counted ze
     expect(dataPathNotes({})).toEqual([])
   })
 
+  it('says how much of a slide scan is tissue and that the signal was measured on it', () => {
+    // the import probe on a PhenoCycler cycle (mjphFQ cycle 1, 51120 x 30720): data_path.measure_store
+    const slide = { cleanupFacts: { channels: [], tissue: { fraction: 0.05205006783552494, level: 5, patches: 14 } } }
+    expect(dataPathNotes(slide)).toEqual([{ text: 'Tissue: 5% of the scan; signal measured on it', source: 'measured' }])
+    const glass = { cleanupFacts: { channels: [], tissue: { fraction: 0, level: 5, patches: 0 } } }
+    expect(dataPathNotes(glass)[0].text).toBe('Tissue: none found; signal measured on a grid over the scan')
+  })
+
   it('says on the channel itself when the scanner processed it and its photons were not measured', () => {
     const img = { cleanupFacts: { channels: [
       { index: 0, name: 'DAPI', zeroPct: 0, clippedPct: 0, photons: { notMeasured: null } },

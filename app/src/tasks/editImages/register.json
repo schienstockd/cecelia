@@ -14,8 +14,6 @@
   "resource_pool": "cpu",
   "scope": "set",
   "outputValueName": "registered",
-  "comingSoon": true,
-  "comingSoonNote": "Call for Datasets",
   "params": [
     {
       "key": "regChannel",
@@ -26,6 +24,13 @@
       "required": true,
       "requiredMessage": "Select the channel used to align cycles",
       "tip": "Shared marker across cycles — first selected image is the reference"
+    },
+    {
+      "key": "keepRegChannels",
+      "label": "Keep each cycle's alignment channel",
+      "type": "bool",
+      "default": true,
+      "tip": "Shows the alignment and tissue loss cycle by cycle"
     },
     {
       "key": "doAffine2d",

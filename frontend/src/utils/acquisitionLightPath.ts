@@ -56,6 +56,9 @@ export interface CleanupFactsChannel {
 }
 
 /** The slice of the image payload the diagram reads. */
+/** A slide scan's tissue, from the import probe (`data_path.measure_store`, `tissue_utils`): the share
+ *  of the plane that is tissue and how many signal-pass patches sat on it (0 = none found, grid used). */
+export interface CleanupFactsTissue { fraction: number; level?: number; patches?: number }
 export interface LightPathImage {
   acquisition?: AcquisitionSettings | null
   channelNames?: string[]
@@ -66,7 +69,7 @@ export interface LightPathImage {
   physicalSizeUnit?: string | null
   timeIncrement?: number | null
   timeIncrementUnit?: string | null
-  cleanupFacts?: { channels?: CleanupFactsChannel[] } | null
+  cleanupFacts?: { channels?: CleanupFactsChannel[]; tissue?: CleanupFactsTissue | null } | null
   /** QC sidecars, as on the image payload (`lib/qc.ts` reads them). */
   qc?: CciaImage['qc']
 }

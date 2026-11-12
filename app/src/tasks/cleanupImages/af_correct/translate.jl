@@ -97,3 +97,39 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
     end
     af_combos
 end
+
+"""
+    scanner_af_subtracted(acquisition) -> Set{Int}
+
+0-based channels the scanner already subtracted autofluorescence from before writing the file
+(`afSubtracted` per channel — a PhenoCycler run subtracts its blank cycles). AF correction skips them
+as targets: the tissue's autofluorescence is already gone from them, so correcting again removes
+marker signal. Empty without an acquisition record.
+"""
+function scanner_af_subtracted(acquisition)::Set{Int}
+    out = Set{Int}()
+    chans = _ag(acquisition, "channels")
+    chans isa AbstractVector || return out
+    for (i, ch) in enumerate(chans)
+        _ag(ch, "afSubtracted") === true && push!(out, i - 1)
+    end
+    out
+end
+
+"""
+    drop_scanner_af_targets!(af_combos, acquisition) -> Vector{Int}
+
+Remove the combinations whose target the scanner already AF-subtracted (`scanner_af_subtracted`);
+returns the dropped targets, sorted, for the log.
+"""
+function drop_scanner_af_targets!(af_combos::AbstractDict, acquisition)::Vector{Int}
+    done = scanner_af_subtracted(acquisition)
+    dropped = Int[]
+    for k in collect(keys(af_combos))
+        t = tryparse(Int, string(k))
+        if !isnothing(t) && t in done
+            delete!(af_combos, k); push!(dropped, t)
+        end
+    end
+    sort!(dropped)
+end

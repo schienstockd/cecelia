@@ -19,6 +19,7 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.intensity_utils as intensity_utils
 import cecelia.utils.photon_utils as photon_utils
+import cecelia.utils.tissue_utils as tissue_utils
 from cecelia.utils.dim_utils import DimUtils
 
 #: Timepoints the signal pass (`measure_signal`) samples, evenly spread; all of them when fewer.
@@ -31,7 +32,8 @@ SIGNAL_SAMPLE_VOXELS = 20000
 #: plane is gigapixels per channel, and the float copies the photon fit makes of it ran a 1.2 Gpx
 #: four-channel scan out of memory. A microscope frame (up to 4096²) is read whole, as before.
 SIGNAL_WHOLE_PLANE_PX = 4096 * 4096
-#: Patches per side on a large plane, evenly spread over it, the same in every channel.
+#: Patches per side on a large plane, the same in every channel: one per grid cell, centred on the
+#: tissue in that cell (cells with no tissue are skipped), evenly spread when no tissue was found.
 SIGNAL_PATCH_GRID = 4
 #: Side of a patch's sampled interior (pixels).
 SIGNAL_PATCH_PX = 1024
@@ -46,6 +48,9 @@ def measure_store(im_path, log=None, photons_untestable=None):
     `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
     `partialTimepoint` when the last timepoint stopped mid-volume (left out of every stat), plus the
     signal pass (`measure_signal`): a `photons` entry per channel and top-level `sharedStructure`.
+    A slide-sized plane (past `SIGNAL_WHOLE_PLANE_PX`) adds top-level `tissue` — `{fraction, level,
+    patches}`, the share of the plane `tissue_utils` calls tissue at pyramid ``level`` and how many
+    signal-pass patches sat on it — and the signal pass reads its patches there, not on the glass.
     ``photons_untestable`` (`measure_signal`) names channels whose photons the file cannot tell: no
     photon fit, and a `photon-counted` floor on one is read as `indeterminate` (no photon count).
     Raises on a store that is not integer data (`channel_histograms`) — the caller decides whether
@@ -107,8 +112,17 @@ def measure_store(im_path, log=None, photons_untestable=None):
             f'= {stats["clippedSignalFrac"] * 100:.4f}% of signal)')
     out = {'channels': channels, 'sampling': 'full pass'}
     skip_t = partial['t'] if partial is not None else None
+    tissue = None
+    if level0.shape[-2] * level0.shape[-1] > SIGNAL_WHOLE_PLANE_PX and len(levels) > 1:
+        lead = tuple(None if i == c_idx else 0 for i in range(level0.ndim - 2))
+        mask, li, factor = tissue_utils.level_tissue(levels, lead=lead)
+        tissue = (mask, factor)
+        out['tissue'] = {'fraction': float(mask.mean()), 'level': int(li)}
+        say(f'>> tissue: {mask.mean() * 100:.1f}% of the plane (pyramid level {li})')
     out.update(measure_signal(level0, axes, channels, skip_t=skip_t, log=say,
-                              photons_untestable=photons_untestable))
+                              photons_untestable=photons_untestable, tissue=tissue))
+    if tissue is not None:
+        out['tissue']['patches'] = out.pop('patchesOnTissue')
     if partial is not None:
         out['partialTimepoint'] = partial
         say(f'>> [WARN] last timepoint (t{partial["t"]}) is incomplete: '
@@ -140,28 +154,52 @@ def _sample_positions(n, k, seed):
     return rng.choice(n, size=min(k, n), replace=False)
 
 
-def _signal_regions(h, w):
+def _tissue_starts(h, w, sy, sx, tissue):
+    """Patch corners (y, x) on the tissue: one per `SIGNAL_PATCH_GRID`² cell of the plane that holds
+    any, centred on the tissue in that cell and kept inside the plane. ``tissue`` is ``(mask,
+    (fy, fx))`` — a coarse mask and level-0 pixels per mask pixel. Empty when the mask is."""
+    mask, (fy, fx) = tissue
+    mh, mw = mask.shape
+    out = []
+    for gy in range(SIGNAL_PATCH_GRID):
+        for gx in range(SIGNAL_PATCH_GRID):
+            ry = slice(gy * mh // SIGNAL_PATCH_GRID, (gy + 1) * mh // SIGNAL_PATCH_GRID)
+            rx = slice(gx * mw // SIGNAL_PATCH_GRID, (gx + 1) * mw // SIGNAL_PATCH_GRID)
+            yy, xx = np.nonzero(mask[ry, rx])
+            if yy.size == 0:
+                continue
+            cy = (ry.start + yy.mean() + 0.5) * fy
+            cx = (rx.start + xx.mean() + 0.5) * fx
+            out.append((int(min(max(0, round(cy - sy / 2)), h - sy)),
+                        int(min(max(0, round(cx - sx / 2)), w - sx))))
+    return out
+
+
+def _signal_regions(h, w, tissue=None):
     """Where the signal pass reads one plane: ``[(read, inner)]`` — ``read`` the (y, x) slices to read,
     ``inner`` the slices, within what was read, that the sample positions come from. The whole plane
-    when it is at most `SIGNAL_WHOLE_PLANE_PX`; otherwise `SIGNAL_PATCH_GRID`² patches of
-    `SIGNAL_PATCH_PX` evenly spread over it, each read with `SIGNAL_PATCH_MARGIN_PX` of context."""
+    when it is at most `SIGNAL_WHOLE_PLANE_PX`; otherwise patches of `SIGNAL_PATCH_PX`, each read with
+    `SIGNAL_PATCH_MARGIN_PX` of context: on the tissue (`_tissue_starts`) when ``tissue`` finds any,
+    else `SIGNAL_PATCH_GRID`² evenly spread over the plane."""
     if h * w <= SIGNAL_WHOLE_PLANE_PX:
         return [((slice(0, h), slice(0, w)), (slice(0, h), slice(0, w)))]
     def starts(n):
         side = min(SIGNAL_PATCH_PX, n)
         return side, sorted(set(np.linspace(0, n - side, SIGNAL_PATCH_GRID).round().astype(int).tolist()))
     (sy, ys), (sx, xs) = starts(h), starts(w)
+    corners = _tissue_starts(h, w, sy, sx, tissue) if tissue is not None else []
+    if not corners:
+        corners = [(y, x) for y in ys for x in xs]
     m = SIGNAL_PATCH_MARGIN_PX
     out = []
-    for y in ys:
-        for x in xs:
-            y0, x0 = max(0, y - m), max(0, x - m)
-            read = (slice(y0, min(h, y + sy + m)), slice(x0, min(w, x + sx + m)))
-            out.append((read, (slice(y - y0, y - y0 + sy), slice(x - x0, x - x0 + sx))))
+    for y, x in corners:
+        y0, x0 = max(0, y - m), max(0, x - m)
+        read = (slice(y0, min(h, y + sy + m)), slice(x0, min(w, x + sx + m)))
+        out.append((read, (slice(y - y0, y - y0 + sy), slice(x - x0, x - x0 + sx))))
     return out
 
 
-def measure_signal(level0, axes, channels, skip_t=None, log=None, photons_untestable=None):
+def measure_signal(level0, axes, channels, skip_t=None, log=None, photons_untestable=None, tissue=None):
     """The test-acquisition checks that need where a voxel sits, from a SAMPLE of planes
     (`docs/todo/ACQUISITION_TEST_CHECK_PLAN.md`): `SIGNAL_SAMPLE_T` timepoints x `SIGNAL_SAMPLE_Z`
     planes, every channel read at the same planes and positions. A plane past `SIGNAL_WHOLE_PLANE_PX`
@@ -176,6 +214,8 @@ def measure_signal(level0, axes, channels, skip_t=None, log=None, photons_untest
     ``notMeasured`` repeats the reason (only a skipped channel has it — what the data-path panel shows).
     Returns ``{sharedStructure: photon_utils.shared_structure}``.
     A sample suffices: none of these is a voxel count (clipping is, and stays on the full pass).
+    ``tissue`` — ``(coarse mask, (fy, fx))`` from `tissue_utils` — puts a slide's patches on the tissue;
+    the result then carries ``patchesOnTissue`` (how many; 0 = no tissue found, grid used).
     ``skip_t`` is a timepoint that is not acquisition data (a stopped acquisition's last frame).
     """
     say = log or (lambda _m: None)
@@ -189,8 +229,13 @@ def measure_signal(level0, axes, channels, skip_t=None, log=None, photons_untest
         return [i for i in idx if not (axis == t_idx and i == skip_t)]
     ts, zs = spread(t_idx, SIGNAL_SAMPLE_T), spread(z_idx, SIGNAL_SAMPLE_Z)
     n_c = level0.shape[c_idx] if c_idx is not None else 1
-    regions = _signal_regions(level0.shape[-2], level0.shape[-1])
-    where = f'{len(regions)} patches per plane' if len(regions) > 1 else 'whole planes'
+    regions = _signal_regions(level0.shape[-2], level0.shape[-1], tissue=tissue)
+    on_tissue = (len(_tissue_starts(level0.shape[-2], level0.shape[-1],
+                                    min(SIGNAL_PATCH_PX, level0.shape[-2]),
+                                    min(SIGNAL_PATCH_PX, level0.shape[-1]), tissue))
+                 if tissue is not None else None)
+    where = (f'{len(regions)} patches per plane' + (' on the tissue' if on_tissue else '')
+             if len(regions) > 1 else 'whole planes')
     say(f'>> signal pass: {len(ts)} timepoint(s) x {len(zs)} plane(s), {where}: photons, objects, shared structure')
 
     ceil = {i: (ch['topValue'] if ch.get('saturated') else None) for i, ch in enumerate(channels)}
@@ -248,4 +293,7 @@ def measure_signal(level0, axes, channels, skip_t=None, log=None, photons_untest
                              + (f', objects p50 {objects["p50Photons"]:.1f} photons'
                                 if objects and objects.get('p50Photons') is not None else '')
                              if g is not None else f'photons untestable ({fit["untestable"]})'))
-    return {'sharedStructure': photon_utils.shared_structure(struct)}
+    out = {'sharedStructure': photon_utils.shared_structure(struct)}
+    if on_tissue is not None:
+        out['patchesOnTissue'] = on_tissue
+    return out

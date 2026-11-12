@@ -241,7 +241,11 @@ end
         @test p.doAffine3d === true
         @test p.sigma === 0.5
         @test p.samplesPerParameter === 8000
+        @test p.keepRegChannels === true      # default: every cycle's alignment channel kept
     end
+    # the picker's one-element list is one name, not the string of a list
+    @test Cecelia.parse_register_params(Dict{String,Any}("regChannel" => ["DAPI"])).regChannel == "DAPI"
+    @test Cecelia.parse_register_params(Dict{String,Any}("regChannel" => Any[])).regChannel == ""
 
     # ResampleZ — order LOWERCASED at parse.
     let p = Cecelia.parse_resample_z_params(Dict{String,Any}("order" => "CUBIC"))

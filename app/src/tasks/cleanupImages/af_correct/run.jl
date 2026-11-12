@@ -24,7 +24,10 @@ task_previewable(::AfCorrect) = true
 # same reason as cellpose's: sharing the compute does not make the params shared.
 function preview_params(::AfCorrect, params::AbstractDict, img::CciaImage)::Dict{String,Any}
     out = Dict{String,Any}(String(k) => v for (k, v) in params)
-    out["afCombinations"] = af_combinations_for_python(params, read_ccid_raw(state_file(img)))
+    raw = read_ccid_raw(state_file(img))
+    combos = af_combinations_for_python(params, raw)
+    drop_scanner_af_targets!(combos, _ag(_ag(raw, "meta"), "acquisition"))   # as the run does
+    out["afCombinations"] = combos
     out
 end
 
@@ -58,6 +61,13 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
     # Channel names → 0-based indices. Shared with the preview so the two cannot disagree about
     # which channels were used — see `af_combinations_for_python`.
     af_combos = af_combinations_for_python(params, raw)
+    skipped = drop_scanner_af_targets!(af_combos, _ag(_ag(raw, "meta"), "acquisition"))
+    isempty(skipped) || on_log("[WARN] ch$(join(skipped, ", ch")): autofluorescence already subtracted " *
+                               "by the scanner — not corrected again")
+    if isempty(af_combos)
+        on_log("[ERROR] Nothing to correct: every target channel was already AF-subtracted by the scanner.")
+        return nothing
+    end
 
     on_log("[INFO] Input:  $im_path")
     on_log("[INFO] Output: $im_correction_path")

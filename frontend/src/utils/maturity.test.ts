@@ -26,6 +26,10 @@ const TASKS: TaskSpecLite[] = Object.entries(SPECS)
   .map(([, s]) => s as TaskSpecLite)
   .filter(t => !t.fun_name.startsWith('testTasks.'))
 const FUNS = new Set(TASKS.map(t => t.fun_name))
+// A Coming-soon task as its JSON flag reads: no registered task carries the flag at times (the last,
+// editImages.register, shipped), so the flag's handling is pinned on this one.
+const SOON: TaskSpecLite = { fun_name: 'testSoon.someTask', label: 'Some task', comingSoon: true, comingSoonNote: 'Call for Datasets' }
+const WITH_SOON = [...TASKS, SOON]
 
 // Every test file evidence may cite, as text, keyed repo-relative. Vite keys this directory's own files
 // './x' and the rest of src '../x' (and leaves this file out of its own glob).
@@ -61,7 +65,8 @@ describe('every feature has a tier (Decision 5)', () => {
   })
   it('Coming soon comes from the flags only — a flagged feature has no record', () => {
     expect(flaggedAndTiered(TASKS)).toEqual([])
-    expect(TASKS.some(t => t.comingSoon)).toBe(true)
+    const tiered = { ...SOON, fun_name: 'editImages.register' }        // a flagged task that has a record
+    expect(flaggedAndTiered([tiered])).toEqual(['editImages.register ← register-cycles'])
   })
   it('unguided features have unique ids, a guide-picker group, and are not guides', () => {
     const ids = UNGUIDED.map(u => u.id)
@@ -176,8 +181,8 @@ describe('the map’s maturity rows', () => {
     expect(rows.find(r => r.id === 'unguided:phenotype')?.guided).toBe(false)
   })
   it('derives Coming soon from the task flag, with its note', () => {
-    const soon = groups.find(g => g.heading === 'Coming soon')!
-    expect(soon.rows.map(r => r.id)).toContain('task:editImages.register')
+    const soon = maturityGroups(WITH_SOON).find(g => g.heading === 'Coming soon')!
+    expect(soon.rows.map(r => r.id)).toContain('task:testSoon.someTask')
     expect(soon.rows.every(r => r.maturity === null && r.tier === 'comingSoon')).toBe(true)
   })
   it('gives a page its guide’s tier, an unguided page its record’s', () => {
@@ -207,8 +212,8 @@ describe('badges on the pages and in the task picker (P2)', () => {
     expect(ROUTES.filter(r => !exempt.includes(r) && !pageMaturity(r))).toEqual([])
   })
   it('a task takes its flag, its record, or its composite’s tier', () => {
-    const flagged = TASKS.find(t => t.comingSoon)!
-    expect(taskMaturity(flagged, TASKS)).toMatchObject({ tier: 'comingSoon', rowId: `task:${flagged.fun_name}` })
+    const flagged = SOON
+    expect(taskMaturity(flagged, WITH_SOON)).toMatchObject({ tier: 'comingSoon', rowId: `task:${flagged.fun_name}` })
     const step = TASKS.find(t => !coverIndex().has(t.fun_name) && !t.comingSoon
       && TASKS.some(p => p.composite?.includes(t.fun_name)))
     if (step) {

@@ -363,6 +363,18 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Flow saturated the clamp on {value} of frames",
         long  = "Many frames' flow field hit the maxShiftPx clamp — either raise the clamp or the pyramid levels, or pick a structured reference channel."),
 
+    # staining-cycle registration (editImages.register `_register_qc_findings`): per cycle, against
+    # the reference cycle, on its tissue. `{value}` = the cycle's position in the selection.
+    "register.misaligned" => (
+        short = "Cycle {value} misaligned",
+        long  = "Its residual offset is over half a nucleus — check that cycle in the viewer against the reference's alignment channel."),
+    "register.tissue_not_covered" => (
+        short = "Cycle {value} misses tissue",
+        long  = "Its scan does not reach part of the reference's tissue; those cells read 0 in its markers — exclude them or rescan."),
+    "register.tissue_lost" => (
+        short = "Tissue lost by cycle {value}",
+        long  = "Part of the section is gone in that cycle (lifted or torn); those cells read 0 in its markers — exclude them."),
+
     # cell contacts (spatialAnalysis.cellContacts / contactsMeshes): one column set per target, so a
     # target that resolved no cells is skipped rather than failing the run. Its refs go in `detail`.
     "contact.no_cells" => (

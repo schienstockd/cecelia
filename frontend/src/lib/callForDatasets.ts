@@ -120,7 +120,7 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
     need: 'A multi-cycle 3D acquisition (CODEX, IBEX or similar), or 3D tiles that need stitching.',
     fig: 'cycles',
     blurb:
-      "`editImages.register` uses sitkibex for 2D staining-cycle alignment. A 3D extension would " +
+      "`editImages.register` aligns 2D staining cycles (whole-slide scans on their pyramid). A 3D extension would " +
       "let a multi-round staining protocol be registered across cycles in 3D, or align a set of " +
       "3D tiles into one volume. The path is straightforward (SimpleITK does this natively), but " +
       "we've never had a dataset to profile against — the cost-vs-quality trade of the metric / " +
