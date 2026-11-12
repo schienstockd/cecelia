@@ -25,6 +25,11 @@ import urllib.request
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _SWAP = {"http": "https", "https": "http", "ws": "wss", "wss": "ws"}
 _NOVERIFY = ssl._create_unverified_context()
+# TLS 1.2 on loopback: with TLS 1.3 the server's post-handshake session tickets race the websockets sync
+# client's first read — the upgrade then hangs to the open timeout or reads no HTTP response (~1 in 80
+# against websockets' sync server, ~1 in 300 against its asyncio server; 0 in 800 each with this cap).
+# Loopback is our own app with a self-signed certificate, so 1.3 buys nothing here.
+_NOVERIFY.maximum_version = ssl.TLSVersion.TLSv1_2
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]   # python/cecelia/utils/ → the checkout
 
