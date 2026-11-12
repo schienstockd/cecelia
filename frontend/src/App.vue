@@ -220,7 +220,7 @@ const bare = computed(() => popout || route.meta.bare === true)
     <!-- Viewer controls: a floating dockable panel (toggled from the sidebar "Viewer" button),
          floating above the content so it's usable on any page while an image is open in the viewer -->
     <FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
-                   accent="var(--cc-viewer)" @close="settings.viewerPanelOpen = false">
+                   accent="var(--cc-guide)" @close="settings.viewerPanelOpen = false">
       <ViewerPanel />
     </FloatingPanel>
     <!-- lab log: per-project append-only analysis memory (human + Claude), reachable on any page -->

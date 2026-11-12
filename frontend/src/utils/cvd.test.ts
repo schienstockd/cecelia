@@ -45,7 +45,13 @@ const MUST_SEPARATE: Record<string, string[]> = {
   severity:   ['--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
   statusInk:  ['--cc-ink-red', '--cc-ink-amber', '--cc-ink-green', '--cc-ink-blue'],
   attention:  ['--cc-warn', '--cc-danger'],
-  statusDots: ['--cc-dot-ok', '--cc-dot-warn', '--cc-dot-fail', '--cc-dot-info'],
+  // the identity hues left after the merge (one AI colour, neutral viewer + checks) against the states
+  identity:   ['--cc-accent', '--cc-kiwi', '--cc-selected', '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
+}
+// Pairs that fail and are kept on purpose — each always has a second cue where they meet.
+const ACCEPTED: Record<string, string> = {
+  '--cc-kiwi ↔ --cc-sev-ok': 'Kiwi is always a labelled pill or ✦; the nearest hue that clears the ok-green is a blue that meets the violet instead',
+  '--cc-accent ↔ --cc-active': 'the running light is a labelled task status; violet is control chrome (light scheme only)',
 }
 // Category hues that always sit beside a text label — a second cue, so the floor applies.
 const LABELLED: Record<string, string[]> = {
@@ -62,6 +68,7 @@ describe.each(COLOUR_SCHEMES.map(s => s.value))('the %s scheme', scheme => {
   it.each(Object.entries(MUST_SEPARATE))('keeps %s apart under colour blindness (ΔE ≥ 8) and normal vision (≥ 15)', (_g, names) => {
     const bad = pairs(names).flatMap(([a, b]) => {
       const cvd = cvdSeparation(hexOf(t, a), hexOf(t, b)), normal = deltaE(hexOf(t, a), hexOf(t, b))
+      if (`${a} ↔ ${b}` in ACCEPTED) return []
       return cvd < CVD_TARGET || normal < NORMAL_FLOOR ? [`${a} ↔ ${b}: cvd ${cvd.toFixed(1)}, normal ${normal.toFixed(1)}`] : []
     })
     expect(bad).toEqual([])
@@ -74,4 +81,15 @@ describe.each(COLOUR_SCHEMES.map(s => s.value))('the %s scheme', scheme => {
     })
     expect(bad).toEqual([])
   })
+})
+
+it('every accepted exception still fails somewhere (else drop it)', () => {
+  for (const pair of Object.keys(ACCEPTED)) {
+    const [a, b] = pair.split(' ↔ ')
+    const failsIn = COLOUR_SCHEMES.map(s => schemeTokens(s.value)).filter(t => {
+      const x = hexOf(t, a), y = hexOf(t, b)
+      return cvdSeparation(x, y) < CVD_TARGET || deltaE(x, y) < NORMAL_FLOOR
+    })
+    expect(failsIn.length, pair).toBeGreaterThan(0)
+  }
 })

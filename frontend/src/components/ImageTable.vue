@@ -1011,8 +1011,8 @@ const unselectableUids = computed(() =>
 .sel-row:hover .viewer-btn { opacity: 0.7; }
 .viewer-btn:hover { opacity: 1 !important; color: var(--cc-active); background: var(--cc-tint-blue); }
 .viewer-btn:disabled { opacity: 0.2 !important; cursor: not-allowed; }
-.viewer-active { opacity: 1 !important; color: var(--cc-viewer); }
-.viewer-active:hover { color: var(--cc-viewer); background: color-mix(in srgb, var(--cc-viewer) 13%, transparent); }
+.viewer-active { opacity: 1 !important; color: var(--cc-text); }
+.viewer-active:hover { color: var(--cc-text); background: var(--cc-wash-strong); }
 
 /* ⋯ actions button: faintly visible at rest (discoverable), full on hover/open */
 .actions-btn { opacity: 0.5; }
