@@ -30,6 +30,7 @@ import { svgPolygon, svgEsc, svgClip } from '../../plots/export'
 import { gateLabelPos } from '../../utils/gateLabel'
 import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateShape, gateAt } from '../../plots/gateGeometry'
 import { handleRadius } from '../../utils/drawGeometry'
+import { parseHex, luminance } from '../../utils/colour'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -56,11 +57,15 @@ function size() { const c = canvasEl.value!; return { w: c.clientWidth, h: c.cli
 // a white/default gate outline is invisible on the light PDF export — resolve those to the themed
 // `--cc-text` var so they flip DARK-on-white for export and stay white on the dark screen (same trick
 // as the contour ink). Gates with a real pop colour are left as-is (visible on either ground).
-function ink(): string {
+function themed(token: string, fallback: string): string {
   const el = canvasEl.value
-  const v = el && getComputedStyle(el).getPropertyValue('--cc-text').trim()
-  return v || '#fafafa'
+  const v = el && getComputedStyle(el).getPropertyValue(token).trim()
+  return v || fallback
 }
+const ink = () => themed('--cc-text', '#fafafa')
+// a label halo is the ground's tone, the opposite of the ink: dark on a dark plot, light on a light one
+const halo = () => parseHex(ink()) && luminance(ink()) < 0.4 ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.7)'
+const tint = (hex: string, a: number) => { const c = parseHex(hex); return c ? `rgba(${c[0]},${c[1]},${c[2]},${a})` : hex }
 function gateColour(colour?: string): string {
   const c = (colour ?? '').trim().toLowerCase()
   return (!c || c === 'white' || c === '#fff' || c === '#ffffff' || c === '#fafafa') ? ink() : colour!
@@ -197,7 +202,7 @@ function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string
   const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
   const c = ctx!; c.save()
   c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'
-  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.7)'   // dark halo for legibility
+  c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = halo()   // ground-toned halo for legibility
   const { w, h } = size()
   const pos = gateLabelPos(pts, c.measureText(name).width, w, h)    // placement rules: utils/gateLabel.ts
   if (!pos) { c.restore(); return }
@@ -225,10 +230,10 @@ function drawHandles(g: GateSpec, colour: string) {
 function paintGates() {
   for (const g of props.gates ?? []) {
     const spec = g.path === editPath && draft.value ? draft.value : g.gate
-    // outline flips for white/default gates (invisible on white export); the label keeps its colour —
-    // it has a dark halo, so white text stays legible on either ground.
+    // a white/default gate flips to the ground's ink, outline and label alike — the label's halo is
+    // ground-toned, so a white label would vanish on a light plot.
     strokeShape(spec, gateColour(g.colour))
-    if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa', g.label)
+    if (props.showLabels) drawGateLabel(spec, g.path, gateColour(g.colour), g.label)
   }
 }
 // ── TRUE-VECTOR SVG export (docs/PLOTS.md) ──────────────────────────────────────────────────────────
@@ -248,9 +253,9 @@ function gateLabelSvg(g: GateSpec, path: string, colour: string, label: string |
   // canvas `textBaseline` → SVG: a 'top' label's baseline sits one glyph height lower
   const y = pos.baseline === 'top' ? pos.y + SIZE : pos.y
   const r1 = (n: number) => Math.round(n * 10) / 10
-  // paint-order:stroke → dark halo BEHIND the coloured fill (legible over dense dots), like the canvas
+  // paint-order:stroke → ground-toned halo BEHIND the coloured fill (legible over dense dots), like the canvas
   return `<text x="${r1(pos.x)}" y="${r1(y)}" font-family="system-ui, sans-serif" font-size="${SIZE}" ` +
-         `font-weight="bold" text-anchor="middle" paint-order="stroke" stroke="rgba(0,0,0,0.7)" ` +
+         `font-weight="bold" text-anchor="middle" paint-order="stroke" stroke="${halo()}" ` +
          `stroke-width="3" stroke-linejoin="round" fill="${colour}">${svgEsc(name)}</text>`
 }
 // Outlines are clipped to the plot area like the canvas (an open-ended gate runs far off-axis).
@@ -262,7 +267,7 @@ function exportSvgContent(): string {
       .map(p => dataToPx(p[0], p[1])) as [number, number][]
     if (pts.length < 2) continue
     outlines += svgPolygon(pts, { stroke: gateColour(g.colour), width: props.lineWidth })
-    if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, g.colour || '#fafafa', g.label, w, h)
+    if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, gateColour(g.colour), g.label, w, h)
   }
   return svgClip({ w, h }, outlines) + labels
 }
@@ -285,7 +290,8 @@ function draw() {
   }
 
   // in-progress NEW shape (accent)
-  ctx.strokeStyle = '#a78bfa'; ctx.fillStyle = 'rgba(167,139,250,0.12)'; ctx.lineWidth = 1.5
+  const accent = themed('--cc-accent', '#a78bfa')
+  ctx.strokeStyle = accent; ctx.fillStyle = tint(accent, 0.12); ctx.lineWidth = 1.5
   if (props.mode === 'rectangle' && start && cur) {
     const x = Math.min(start[0], cur[0]), y = Math.min(start[1], cur[1])
     ctx.fillRect(x, y, Math.abs(cur[0] - start[0]), Math.abs(cur[1] - start[1]))

@@ -68,6 +68,7 @@ import {
 import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 import type { SeriesTarget } from '../../plots/types'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import { tokenColour } from '../../utils/colour'
 
 type Mode = 'paths' | 'star' | 'rose'
 
@@ -368,16 +369,17 @@ async function render() {
   // in the correct cell.
   const claude = claudeTrackIds.value
   if (claude.size) {
+    const claudeMark = tokenColour('--cc-claude-mark', '#e836b4')
     if (mode.value === 'rose') {
       const hlV = vectors.filter(v => claude.has(v.id))
       if (hlV.length) {
-        marks.push(Plot.link(hlV, { x1: 0, y1: 0, x2: 'x', y2: 'y', stroke: '#e836b4',
+        marks.push(Plot.link(hlV, { x1: 0, y1: 0, x2: 'x', y2: 'y', stroke: claudeMark,
                                     strokeWidth: 2.6, markerEnd: 'arrow', ...fch }))
       }
     } else {
       const hlPts = pts.filter(p => claude.has(p.id))
       if (hlPts.length) {
-        marks.push(Plot.line(hlPts, { x: 'x', y: 'y', z: 'track', stroke: '#e836b4',
+        marks.push(Plot.line(hlPts, { x: 'x', y: 'y', z: 'track', stroke: claudeMark,
                                       strokeWidth: 2.6, strokeOpacity: 0.9, ...fch }))
       }
     }

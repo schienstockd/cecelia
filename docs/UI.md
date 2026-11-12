@@ -564,6 +564,14 @@ is held to the 6 floor. Failing pairs kept on purpose are listed with their reas
 (Kiwi ↔ ok-green; accent ↔ active in light). The four stage colours always sit beside their name and are
 not in the check. The status dots alias the severity set, so there is one "ok" colour.
 
+**Colours drawn from script.** Canvas and SVG built in TypeScript can't read CSS, so the CSS guard can't
+see them. Chrome there reads the scheme through `tokenColour(name, fallback)` (`utils/colour.ts`), an inline
+`var(--cc-*)` style, or `plotTheme(dark)` for plot ink/ground; a colour that is rightly fixed (a data
+palette, an export ground, a mark over the image) stays a literal. `findScriptColourLiterals` holds each
+file to its baseline count (`cssScenarios.test.ts`), so a new literal is a decision, not an accident.
+New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `palettes.json` = the Julia
+list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
+
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
 Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
 launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
