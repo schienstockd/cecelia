@@ -19,6 +19,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { isCompact } from '../../utils/viewer/channelCards'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/viewerColormap'
 import { channelHexFrom } from '../../utils/viewerProps'
+import { WHITE } from '../../plots/fixedColours'
 
 defineProps<{
   /** the channels shown (the window caps how many) */
@@ -72,7 +73,7 @@ const AUTO_CONTRAST_OPTIONS = [
 /** A picked colour is a two-stop black→colour LUT (exact for a channel colormap); the swatch shows
  *  the LUT's top stop. */
 const CHANNEL_PALETTE = [...new Set(CHANNEL_COLORMAP_OPTIONS.map(o => o.hex))]
-const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ?? []) || '#ffffff'
+const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ?? []) || WHITE
 </script>
 
 <template>

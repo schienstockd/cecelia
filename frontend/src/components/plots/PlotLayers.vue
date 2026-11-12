@@ -27,6 +27,7 @@ import { BLUE_HEAT_RGB, heatCss } from '../../plots/flowColors'
 import { normValues, barTicks, fitLabel, barStops, colourBarSvg } from '../../plots/valueColour'
 import { svgImage, svgCircles, svgPath, svgRect, svgClip } from '../../plots/export'
 import { paintDimmed } from '../../plots/dimLayer'
+import { NEUTRAL } from '../../plots/fixedColours'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
 
@@ -69,7 +70,7 @@ function size() { const c = canvasEl.value!; return { w: c.clientWidth, h: c.cli
 function ink(): string {
   const el = canvasEl.value
   const v = el && getComputedStyle(el).getPropertyValue('--cc-text-dim').trim()
-  return v || '#64748b'
+  return v || NEUTRAL
 }
 // ONE mapping for every layer on this canvas — see plots/axisMap.ts. `flipY` is set when the y axis
 // is an image ROW coordinate, which grows downward; the points, the density raster, the contour rings
@@ -135,7 +136,8 @@ function paintDensityDots(points: Float32Array) {
   for (let b = 0; b < DOT_BUCKETS; b++) {
     const g = groups[b]; if (!g.length) continue
     const ci = Math.min(255, Math.round((b / (DOT_BUCKETS - 1)) * 255))
-    c.fillStyle = `rgb(${BLUE_HEAT_RGB[ci * 3]},${BLUE_HEAT_RGB[ci * 3 + 1]},${BLUE_HEAT_RGB[ci * 3 + 2]})`
+      // COLOUR-OK: a ramp stop as a CSS colour
+      c.fillStyle = `rgb(${BLUE_HEAT_RGB[ci * 3]},${BLUE_HEAT_RGB[ci * 3 + 1]},${BLUE_HEAT_RGB[ci * 3 + 2]})`
     stamp(g)
   }
 }

@@ -152,6 +152,7 @@ import VwPopulationsSection, { type VwPopLayer } from '../components/viewerWindo
 import { viewerRefFor } from '../utils/kiwiTurn'
 import { useCaptureDestination } from '../composables/useCaptureDestination'
 import { useKiwiStore } from '../stores/kiwi'
+import { MEDIA_BG } from '../plots/fixedColours'
 
 const route = useRoute()
 const settings = useSettingsStore()
@@ -5340,7 +5341,7 @@ async function viewerScreenshot(): Promise<{ png: string; imageName: string }> {
   if (!host) throw new Error('viewer host not found')
   const frame = await readViewerFrame()
   if (!frame) throw new Error('viewer frame unavailable')
-  const png = await plotHostToImageURL(host, 'black', {
+  const png = await plotHostToImageURL(host, MEDIA_BG, {
     hiRes: async (cv) => cv === el ? frame : null,   // other canvases (overview minimap) fall through
   })
   if (!png) throw new Error('screenshot composite failed')

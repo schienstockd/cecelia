@@ -1,5 +1,6 @@
 import { svgDoc, svgText, svgImage, nestSvg } from './export'
 import { layoutPages, type PdfPage } from './pdf'
+import { PAPER, PAPER_INK } from './fixedColours'
 
 // Board → VECTOR SVG (docs/ANALYSIS.md). One SVG document per board tab, laid out on the SAME A4 page
 // geometry as the PDF (`layoutPages` — one geometry, two backends) so the two exports land identically.
@@ -14,14 +15,14 @@ export function buildBoardSvgs(pages: PdfPage[], metadata?: (i: number) => strin
   return layoutPages(pages).map((lp, i) => {
     let body = ''
     // page title (top-origin, baseline just below the top margin — mirrors the PDF's drawText)
-    body += svgText(16, 16 + lp.titleSize, lp.title, { fill: '#111', size: lp.titleSize, weight: 600 })
+    body += svgText(16, 16 + lp.titleSize, lp.title, { fill: PAPER_INK, size: lp.titleSize, weight: 600 })
     for (const ls of lp.slots) {
       const { slot } = ls
-      if (slot.title) body += svgText(ls.x + ls.w / 2, ls.yTop + 9, slot.title, { fill: '#111', size: 9, anchor: 'middle' })
+      if (slot.title) body += svgText(ls.x + ls.w / 2, ls.yTop + 9, slot.title, { fill: PAPER_INK, size: 9, anchor: 'middle' })
       // vector when we have it; else the raster fallback, aspect-fit like the PDF image placement
       if (slot.svg) body += nestSvg(slot.svg, ls.x, ls.imgTop, ls.w, ls.imgH)
       else if (slot.png) body += svgImage(slot.png, ls.x, ls.imgTop, ls.w, ls.imgH, 'meet')
     }
-    return { title: lp.title, svg: svgDoc({ width: lp.pageW, height: lp.pageH, background: '#ffffff', body, metadata: metadata?.(i) }) }
+    return { title: lp.title, svg: svgDoc({ width: lp.pageW, height: lp.pageH, background: PAPER, body, metadata: metadata?.(i) }) }
   })
 }

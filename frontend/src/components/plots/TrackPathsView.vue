@@ -68,7 +68,9 @@ import {
 import { resolveTrackValueName } from '../../plots/trackDiagnostics'
 import type { SeriesTarget } from '../../plots/types'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import { usePlotDark } from '../../composables/usePlotDark'
 import { tokenColour } from '../../utils/colour'
+import { NEUTRAL } from '../../plots/fixedColours'
 
 type Mode = 'paths' | 'star' | 'rose'
 
@@ -247,6 +249,8 @@ watch([pinned, effectiveValueName], load)
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
 const forceLight = ref(false)
+const plotDark = usePlotDark()
+watch(plotDark, () => render())
 let Plot: typeof import('@observablehq/plot') | null = null
 let node: SVGElement | null = null
 
@@ -301,7 +305,7 @@ async function render() {
   const pts = rows.value
   if (!pts.length) { host.value.replaceChildren(); node = null; return }
 
-  const dark = !forceLight.value
+  const dark = !forceLight.value && plotDark.value
   const { ink: fg, ground: bg } = plotTheme(dark)
   const facet = plan.value.facet
   const grid = facetGrid(facet ? groups.value.length : 1)
@@ -369,7 +373,7 @@ async function render() {
   // in the correct cell.
   const claude = claudeTrackIds.value
   if (claude.size) {
-    const claudeMark = tokenColour('--cc-claude-mark', '#e836b4')
+    const claudeMark = tokenColour('--cc-claude-mark', NEUTRAL)
     if (mode.value === 'rose') {
       const hlV = vectors.filter(v => claude.has(v.id))
       if (hlV.length) {
@@ -425,18 +429,19 @@ function exportAs(kind: string) {
     const text = csv()
     if (text) downloadBlob(`${stem.value}.csv`, new Blob([text], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(host.value, kind, plotTheme(true).ground)
-      .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
+    lightImage(kind).then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
 // board PDF/CSV/SVG: a plot-only LIGHT re-render, per the contract in docs/UI.md
-async function exportImage(): Promise<string | null> {
+// every export is light (a figure goes on paper); the on-screen plot follows the app scheme
+async function lightImage(kind: 'png' | 'svg'): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
+  const url = await elementToImageURL(host.value, kind, plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
+const exportImage = () => lightImage('png')
 async function exportSvg(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()

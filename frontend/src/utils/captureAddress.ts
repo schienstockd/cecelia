@@ -86,6 +86,7 @@ export type OverlayKind = 'rect' | 'poly' | 'stroke' | 'circle' | 'arrow'
 // default), matching every capture written before this field existed. `black` was added when
 // the canvas Share flow started producing white-background plot composites — the earlier four
 // options all disappeared or read poorly on white.
+// COLOUR-OK: the annotation palette's NAMES (values in utils/overlayCompose.ts)
 export type OverlayColor = 'magenta' | 'cyan' | 'yellow' | 'white' | 'black'
 
 // Stroke-thickness slot on a mark. Named presets rather than raw pixels so a single value scales

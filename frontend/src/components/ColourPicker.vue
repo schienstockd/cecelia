@@ -17,6 +17,7 @@
 import { ref, computed } from 'vue'
 import { POPULATION_PALETTE } from '../plots/plot'
 import TeleportPopover from './TeleportPopover.vue'
+import { WHITE } from '../plots/fixedColours'
 
 const model = defineModel<string>({ required: true })
 const props = withDefaults(defineProps<{
@@ -31,7 +32,7 @@ const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 // Case-insensitive: a palette entry and a value that came back from a native picker differ in case.
 const isCurrent = (c: string) => c.toLowerCase() === (model.value ?? '').toLowerCase()
-const current = computed(() => model.value ?? '#ffffff')
+const current = computed(() => model.value ?? WHITE)
 
 function toggle(e: MouseEvent) {
   if (props.disabled) return

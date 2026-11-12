@@ -37,6 +37,7 @@ import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { splitXYL, splitXYZL } from '../../plots/valueColour'
+import { UNASSIGNED_POP, PAPER } from '../../plots/fixedColours'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -323,7 +324,7 @@ async function loadPopLayers() {
   if (!hl.length || notTracked.value) { popLayers.value = []; return }   // untracked → nothing to overlay
   try {
     popLayers.value = await Promise.all(hl.map(async path =>
-      ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee',
+      ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? UNASSIGNED_POP,
          points: await fetchBuf(plotQ(path, effXs.value, effYs.value)) })))
   } catch (e) {
     log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -375,14 +376,14 @@ async function onEdit(e: { path: string; gate: GateSpec }) {
 // true-vector dots/gates/axes, docs/PLOTS.md); CSV = the shown per-event channel values + population
 // (Prism-ready). We name the file + assemble the CSV rows here.
 const cell = useTemplateRef<{
-  exportImage(bg?: string): Promise<string | null>
+  exportImage(bg?: string, light?: boolean): Promise<string | null>
   exportSvg(bg?: string, light?: boolean): string
 }>('cell')
 function exportAs(kind: string) {
   const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
-  if (kind === 'png') cell.value?.exportImage('#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  if (kind === 'png') cell.value?.exportImage(PAPER, true).then(url => url && downloadDataUrl(`${stem}.png`, url))
   else if (kind === 'svg') {
-    const svg = cell.value?.exportSvg('#ffffff', true)
+    const svg = cell.value?.exportSvg(PAPER, true)
     if (svg) { const w = svgSizeWarning(svg, 'This gating plot'); if (w) log.warn(w, { source: 'gating' }); downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
   }
   else if (kind === 'csv') { const csv = buildCsv(); if (csv) downloadText(`${stem}.csv`, csv, 'text/csv') }

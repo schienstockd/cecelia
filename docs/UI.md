@@ -567,8 +567,11 @@ not in the check. The status dots alias the severity set, so there is one "ok" c
 **Colours drawn from script.** Canvas and SVG built in TypeScript can't read CSS, so the CSS guard can't
 see them. Chrome there reads the scheme through `tokenColour(name, fallback)` (`utils/colour.ts`), an inline
 `var(--cc-*)` style, or `plotTheme(dark)` for plot ink/ground; a colour that is rightly fixed (a data
-palette, an export ground, a mark over the image) stays a literal. `findScriptColourLiterals` holds each
-file to its baseline count (`cssScenarios.test.ts`), so a new literal is a decision, not an accident.
+palette, an export ground, a mark over the image) is a named constant in one home — `plots/fixedColours.ts`
+(paper, over-image, track tones, neutral fallbacks) or a palette file — never a literal at the call site.
+`findScriptColourLiterals` allows literals only in those homes (`cssScenarios.test.ts`); `COLOUR-OK:`
+marks a computed one (a ramp stop). **Plots follow the app scheme** on screen (`usePlotDark()` →
+`plotTheme`); every export — PNG, SVG, board PDF — is light. There is no per-plot dark/light option.
 New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `palettes.json` = the Julia
 list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
 
@@ -2258,8 +2261,8 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   every user-settable option in `state` (see "Persisting view state").
 - **Standard bag**: `projectUid, setUid, imageUids, vis, state` (+ for cluster plots `popType, suffix,
   shownPops`; + panel chrome `index, active, docked, persistKey`).
-- **Export hooks** for the board's PDF/CSV: `exportImage()` → a plot-only **light-theme** PNG (dark theme
-  is on-screen only), and `getCsv()` → the shown data. (Interactive views may instead expose
+- **Export hooks** for the board's PDF/CSV: `exportImage()` → a plot-only **light-theme** PNG (every export is
+  light; on screen a plot follows the app scheme), and `getCsv()` → the shown data. (Interactive views may instead expose
   `exportFormats`/`exportAs`.)
 
 **Two registries carry the surface "checkboxes":**

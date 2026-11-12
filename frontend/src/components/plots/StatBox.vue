@@ -19,6 +19,7 @@
 import { computed } from 'vue'
 import type { CardStat } from './cardsPanel'
 import { shortTrackMeasure } from '../../utils/measureGroups'
+import { WHITE, PAPER_INK } from '../../plots/fixedColours'
 
 const props = defineProps<{
   stat: CardStat
@@ -73,10 +74,10 @@ function viridis(t: number): string {
       const r = Math.round(c0[0] + u * (c1[0] - c0[0]))
       const g = Math.round(c0[1] + u * (c1[1] - c0[1]))
       const b = Math.round(c0[2] + u * (c1[2] - c0[2]))
-      return `rgb(${r},${g},${b})`
+      return `rgb(${r},${g},${b})`   // COLOUR-OK: viridis interpolated
     }
   }
-  return 'rgb(253,231,37)'
+  return 'rgb(253,231,37)'   // COLOUR-OK: viridis top stop
 }
 
 const boxFill = computed(() => {
@@ -89,7 +90,7 @@ const boxFill = computed(() => {
 const medianStroke = computed(() => {
   const [lo, hi] = props.scale
   const t = hi > lo ? (props.stat.median - lo) / (hi - lo) : 0.5
-  return t < 0.6 ? '#ffffff' : '#0f172a'
+  return t < 0.6 ? WHITE : PAPER_INK
 })
 
 const shortName = computed(() => shortTrackMeasure(props.stat.name))

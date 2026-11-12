@@ -37,6 +37,8 @@ import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { axisTitle, type BehaviourAxes } from '../../utils/behaviourAxes'
 import { plotTheme } from '../../plots/overlays'
+import { usePlotDark } from '../../composables/usePlotDark'
+import { PAPER, PAPER_INK, HALO_LIGHT, CLUSTER_EXTRA, UNCLUSTERED, CLUSTER_GHOST, LABEL_EDGE } from '../../plots/fixedColours'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -88,7 +90,7 @@ const pathTip = computed(() => {
 const showLegend = computed(() => props.vis?.legend !== false)
 const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
 
-// `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only) —
+// `forceLight` flips to a light render for every export (on screen it follows the app scheme) —
 // like the cluster panels. It re-themes the OVERLAYS (label chips, legend ink) + the composite ground,
 // but deliberately NOT the WebGL scatter's own background (see `scatterGround`).
 const forceLight = ref(false)
@@ -96,34 +98,31 @@ const forceLight = ref(false)
 // background prop fires an async re-render that races `exportCanvas` and snapshots a BLANK point
 // cloud. The export goes light via the composite `bg` arg + transparent host instead
 // (exactly like the gating cell, which never re-grounds its scatter for export).
-const screenDark = computed(() => props.vis?.darkTheme !== false)
-const scatterGround = computed(() => (screenDark.value ? '#0d0b1a' : '#ffffff'))
-// dark-theme knob (default dark): drives the label chip / legend ink AND the composite ground used as
+const screenDark = usePlotDark()
+const scatterGround = computed(() => plotTheme(screenDark.value).ground)
+// the app scheme: drives the label chip / legend ink AND the composite ground used as
 // the PNG background (points are drawn transparent, so this fill IS the exported ground).
 const dark = computed(() => !forceLight.value && screenDark.value)
-const ground = computed(() => (dark.value ? '#0d0b1a' : '#ffffff'))
+const ground = computed(() => plotTheme(dark.value).ground)
 // cluster label chip: the ggplot `geom_label` look (white box, thin black border, black text) in BOTH
 // themes — it reads on the dark on-screen ground AND the white PDF export (the old light-export chip
 // was a dark box with white text, which didn't match the R figures). See geom_label_repel in
 // plotClustersUMAPServer.R.
-const labelStyle = computed(() => ({ color: '#111', background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.55)' }))
+const labelStyle = computed(() => ({ color: PAPER_INK, background: HALO_LIGHT, borderColor: LABEL_EDGE }))
 const legendInk = computed(() => plotTheme(dark.value).ink)
 // legend box background follows the theme too — in light mode the dark ink sat on the app's dark
 // panel surface (unreadable on the canvas); give it a light box so the pop names are legible.
-const legendBg = computed(() => (dark.value ? 'transparent' : '#ffffff'))
+const legendBg = computed(() => (dark.value ? 'transparent' : PAPER))
 
 // default cluster colours = the Cecelia house palette (the R behaviour-figure colours: yellow /
 // steel-blue / crimson / grey lead), so the UMAP matches the published look out of the box. Extra
 // hues follow for runs with >8 clusters. The pop-manager palette knob still overrides via paletteRange.
 const PALETTE = [
-  ...PALETTES.cecelia,
-  '#ef4444', '#10b981', '#a78bfa', '#f97316', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4',
-  '#a3e635', '#d946ef', '#fb7185', '#2dd4bf',
+  ...PALETTES.cecelia, ...CLUSTER_EXTRA,
 ]
-const UNCLUSTERED = '#555a6e'
 // faint whole-cloud backdrop behind each facet — dark grey on the dark ground, light grey on the light
 // (export) ground, so it always reads as a subtle "shape" layer rather than competing with the dots.
-const ghostColour = () => (dark.value ? '#3a3f4b' : '#d4d7dd')
+const ghostColour = () => (dark.value ? CLUSTER_GHOST.dark : CLUSTER_GHOST.light)
 const points = ref<Float32Array | null>(null)
 const categories = ref<Float32Array | null>(null)
 const palette = ref<string[]>([])
@@ -551,7 +550,11 @@ const hiRes = async (cv: HTMLCanvasElement, scale: number) =>
   cv === dotsEl.value ? (await exportDots(scale)) : null
 function exportAs(kind: string) {
   const stem = `${basis.value}_${props.suffix}`.replace(/[^\w.-]+/g, '_')
-  if (kind === 'png') plotHostToImageURL(plotEl.value, ground.value, { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
+  if (kind === 'png') {   // light like every export: flip the overlays, then rasterise over the white ground
+    forceLight.value = true
+    nextTick().then(() => plotHostToImageURL(plotEl.value, ground.value, { hiRes }))
+      .then(url => url && downloadDataUrl(`${stem}.png`, url)).finally(() => { forceLight.value = false })
+  }
   else if (kind === 'svg') {
     const svg = exportSvg()
     if (svg) {
@@ -579,12 +582,12 @@ function exportSvg(): string {
   const S = Math.round(boxH.value || boxW.value || 600)   // square plot area (vector = resolution-free)
   const LW = (showLegend.value && legend.value.length) ? 150 : 0
   const alpha = dotAlpha.value, r = dotR.value, fsz = labelFont.value
-  const ghostLight = '#d4d7dd'
+  const ghostLight = CLUSTER_GHOST.light
   // ggplot geom_label look: white box + thin dark border + dark text (matches labelStyle, both themes)
   const chip = (px: number, py: number, s: string): string => {
     const w = s.length * fsz * 0.6 + 8, h = fsz + 6
-    return svgRect(px - w / 2, py - h / 2, w, h, { fill: '#ffffff', stroke: 'rgba(0,0,0,0.55)', width: 0.8, rx: 3, opacity: 0.9 }) +
-           svgText(px, py + fsz * 0.35, s, { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
+    return svgRect(px - w / 2, py - h / 2, w, h, { fill: PAPER, stroke: LABEL_EDGE, width: 0.8, rx: 3, opacity: 0.9 }) +
+           svgText(px, py + fsz * 0.35, s, { fill: PAPER_INK, size: fsz, anchor: 'middle', weight: 700 })
   }
   let body = ''
   const fs = facets.value
@@ -611,22 +614,22 @@ function exportSvg(): string {
         body += svgCircles(g.map(i => mapRect(pts[2 * i], pts[2 * i + 1], cell)),
                            { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
       }
-      body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fitFacetTitle(fs[fi].label, cell.cw, fsz), { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
+      body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fitFacetTitle(fs[fi].label, cell.cw, fsz), { fill: PAPER_INK, size: fsz, anchor: 'middle', weight: 700 })
     }
   }
   // named diffusion axes: x title along the bottom edge, y title up the left edge, inside the square
-  if (xTitle.value) body += svgText(S / 2, S - 4, xTitle.value, { fill: '#111', size: fsz, anchor: 'middle' })
-  if (yTitle.value) body += svgText(fsz, S / 2, yTitle.value, { fill: '#111', size: fsz, anchor: 'middle', rotate: -90 })
+  if (xTitle.value) body += svgText(S / 2, S - 4, xTitle.value, { fill: PAPER_INK, size: fsz, anchor: 'middle' })
+  if (yTitle.value) body += svgText(fsz, S / 2, yTitle.value, { fill: PAPER_INK, size: fsz, anchor: 'middle', rotate: -90 })
   // legend column (swatch + label + count per row) as vector, right of the plot
   if (LW) {
     let ly0 = 14
     for (const l of legend.value) {
       body += svgRect(S + 8, ly0 - 8, 9, 9, { fill: l.colour, rx: 1 })
-      body += svgText(S + 21, ly0, `${l.label}  (${l.n.toLocaleString()})`, { fill: '#111', size: 11 })
+      body += svgText(S + 21, ly0, `${l.label}  (${l.n.toLocaleString()})`, { fill: PAPER_INK, size: 11 })
       ly0 += 15
     }
   }
-  return svgDoc({ width: S + LW, height: S, background: '#ffffff', body })
+  return svgDoc({ width: S + LW, height: S, background: PAPER, body })
 }
 // board export (surfaced by InteractivePanel.exportImage → the PDF): a plot-only, LIGHT-theme, HI-RES
 // PNG via the SHARED raster-export helper (rasterPlotToImageURL — the same crisp fixed-resolution path

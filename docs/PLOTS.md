@@ -739,16 +739,17 @@ docs/TODO.md.)
    longest label × the angle, capped at 40% / 30% of the panel, and labels past the cap are shortened
    with a middle ellipsis — full label on hover — `plots/axisLabelFit.ts`; the flipped chart's y
    labels shorten past the same 240 px cap `yLabelMargin` reserves),
-   **facet** (small multiples per series), **dark theme**, Y-range override; jitter type
+   **facet** (small multiples per series), Y-range override; jitter type
    (beeswarm/random/none), colour-data, point size/opacity; **palette** (**`Cecelia`** house palette, Okabe-Ito, Tol bright/
    muted/light, `distinct`, user list); title, X/Y axis labels, font size. All builder ink is
-   `currentColor` so the dark theme flips with one `style.color`. The `Cecelia` palette
+   `currentColor` so the scheme flips with one `style.color` (plots follow the app's colour scheme on
+   screen — `composables/usePlotDark.ts` — and every export is light; there is no per-plot theme). The `Cecelia` palette
    (`PALETTES.cecelia` in `plot.ts`) is the old R behaviour-figure `colPal` (yellow / steel-blue /
    crimson / grey) + accents; it is also offered as clickable swatches in the pop colour picker
    (`PopulationManager`; the native picker is kept for custom colours). The **cluster UMAP**
    (`ClusterMapView`, a 2D canvas of **circular** points) honours the picker for the colour-by-cluster
    **palette** (via `paletteRange`; the built-in fallback is now the Cecelia palette), **point
-   size/opacity**, **dark theme**, **legend** (`vis.legend` — no UMAP-only toggle) and label **font
+   size/opacity**, **legend** (`vis.legend` — no UMAP-only toggle) and label **font
    size**. Jitter/log/grid/axis-label knobs are N/A (a fixed embedding, no measured axes); colour &
    facet have richer UMAP-native controls.
 8. **Track populations in the picker** — a track-granularity plot's picker unions `live` (cell gates
@@ -846,7 +847,7 @@ It never picks K — see `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 **More ported adjustments** (second pass): **`coord_flip` (rotate 90°)** — `axM(o)` maps the
 position/measure axes (series→Y, measure→X when rotated) so each distribution builder has one path;
-long series labels then sit on Y with horizontal room. **Dark theme on by default** (all ink is
+long series labels then sit on Y with horizontal room. **The app scheme sets the plot ground** (all ink is
 `currentColor`; PlotChart draws the legend + title overlays in the theme ink so they're visible on the
 dark ground — Plot's HTML title/legend would otherwise inherit the app's text colour). **Colour by
 population** is consistent across images (a population reads identically in every image; facet/x

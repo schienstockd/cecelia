@@ -22,7 +22,7 @@ import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
 import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx } from './axisLabelFit'
-import { plotTheme } from './overlays'
+import { plotTheme, PLOT_INK_DARK } from './overlays'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured
@@ -81,6 +81,7 @@ export function backendChart(c: ChartType): { chartType: string; rawPoints?: boo
 // colours (yellow / steel-blue / berry / grey, matching the published UMAPs) + a dark slate accent;
 // the rest are muted, distinct hues chosen AROUND that theme so a larger domain stays on-brand.
 import palettesJson from './palettes.json'
+import { PAPER, PAPER_INK, NEUTRAL, WHITE } from './fixedColours'
 export const PALETTES: Record<string, string[]> = palettesJson.palettes
 /** THE default colours for new populations (gates, cluster / filter / boolean pops) and for unnamed
  *  categories — colour-blind safe to 8 (utils/cvd.test.ts), the Julia `POPULATION_PALETTE`. */
@@ -99,7 +100,7 @@ export function distinctColors(n: number): string[] {
   for (let i = 0; i < n; i++) {
     const h = (i * 137.508) % 360                 // golden angle → well-separated hues
     const s = 62 + (i % 2) * 12, l = 50 + (i % 3) * 6
-    out.push(`hsl(${h.toFixed(0)} ${s}% ${l}%)`)
+    out.push(`hsl(${h.toFixed(0)} ${s}% ${l}%)`)   // COLOUR-OK: generated hues past the palette
   }
   return out
 }
@@ -133,7 +134,6 @@ export interface VisProps {
   rotateXLabel: boolean                      // rotate x tick labels (R rotateXLabel); angle = rotateXAngle
   rotateXAngle?: number                       // x tick-label rotation angle in degrees (default 45)
   rotate: boolean                            // flip plot 90° — measure on X, series on Y (R coord_flip)
-  darkTheme: boolean                         // dark plot ground + light ink (R darkTheme)
   // Small multiples (R faceting). WHAT a panel is one OF is the choice:
   //   'series' — one panel per plotted series (image·segmentation·population), the original behaviour
   //   'image'  — one panel per IMAGE, with the remaining dimensions overlaid INSIDE each panel. This
@@ -234,7 +234,7 @@ export function legendTopPad(
 export function paletteRange(vis: Pick<VisProps, 'palette' | 'userColors'>, n: number): string[] | null {
   if (vis.palette === 'user') {
     const pal = vis.userColors.split(',').map(s => s.trim()).filter(Boolean)
-    return Array.from({ length: n }, (_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6')
+    return Array.from({ length: n }, (_, i) => pal.length ? pal[i % pal.length] : NEUTRAL)
   }
   if (vis.palette === 'distinct') return distinctColors(n)
   const pal = PALETTES[vis.palette]
@@ -289,7 +289,7 @@ const facetKeyOf = (v: Pick<VisProps, 'facetBy' | 'facet'>, s: PlotSeries, serie
 
 export const defaultVis = (): VisProps => ({
   jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
-  legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facetBy: 'none',
+  legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, facetBy: 'none',
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
   heatmapScale: 'minmax', heatmapValues: false,
   statsEnabled: false, statsTest: 'auto', statsShowNs: false, statsUseStars: false, statsUseLetters: false,
@@ -315,6 +315,7 @@ export const defaultVis = (): VisProps => ({
 export const DEFAULT_VIS: VisProps = Object.freeze(defaultVis())
 
 export interface BuildOpts extends VisProps {
+  darkTheme?: boolean                    // render-time: the app scheme on screen, false for every export
   chartType: ChartType
   byImage: boolean                       // cross-image per_image scope
   normalize: boolean                     // frequency: proportion vs count
@@ -437,7 +438,7 @@ const facetLabels = (r: PlotDataResponse, o: BuildOpts, keyOf: (s: PlotSeries) =
   [...new Set(r.series.map(s => facetKeyOf(o, s, keyOf(s))))]
 
 const THEME = {
-  style: { background: 'white', color: '#111', fontFamily: FONT, fontSize: '11px' },
+  style: { background: PAPER, color: PAPER_INK, fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
 }
 
@@ -588,7 +589,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   if (o.palette === 'user') {
     // user list, cycled by series order; an EMPTY list → everything grey (not the population colours)
     const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
-    color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }
+    color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : NEUTRAL) }
   } else if (groupColouring || identityColouring || (o.palette && o.palette !== 'standard')) {
     const pal = o.palette === 'distinct' ? distinctColors(color.domain.length)
       : (groupColouring || identityColouring) ? categoricalColours(color.domain.length)
@@ -773,7 +774,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // at the scale midpoint (good enough — the labels are a readout, not a precise encoding).
   const lo = Math.min(...vals), hi = Math.max(...vals), mid = (lo + hi) / 2
   const textInk = (c: { value: number; norm?: number }) =>
-    diverging ? '#111' : useMinmax ? ((c.norm ?? 0) > 0.5 ? '#111' : '#eee') : (c.value > mid ? '#111' : '#eee')
+    diverging ? PAPER_INK : useMinmax ? ((c.norm ?? 0) > 0.5 ? PAPER_INK : PLOT_INK_DARK) : (c.value > mid ? PAPER_INK : PLOT_INK_DARK)
   // profile heatmaps blank the category axis title (R uses xlab("")/ylab("")); crosstab keeps to/from.
   const xLab = r.matrixMode === 'crosstab' ? 'to' : null
   const yLab = r.matrixMode === 'crosstab' ? 'from' : null
@@ -782,7 +783,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab' || interaction)
   // tile border: white (R's geom_tile colour="white") — a thin gap that reads on both the dark ground
   // and the white export; never black (that framed every cell too heavily).
-  const tileStroke = '#ffffff'
+  const tileStroke = WHITE
   // the star ladder comes from the server (one ladder, shared with the hypothesis tests)
   const valFmt = (c: MatrixCell) =>
     interaction && c.significance ? `${fmt(c.value)} ${c.significance}` : fmt(c.value)
@@ -909,7 +910,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const collide = coloursCollide(color)
   if (o.palette === 'user') {
     const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
-    color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }
+    color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : NEUTRAL) }
   } else if (collide || (o.palette && o.palette !== 'standard')) {
     const pal = (o.palette && o.palette !== 'standard' && o.palette !== 'distinct') ? (PALETTES[o.palette] ?? []) : []
     const hues = pal.length ? color.domain.map((_, i) => pal[i % pal.length])

@@ -411,55 +411,21 @@ describe('colour literals', () => {
 })
 
 describe('colour literals in script code', () => {
-  // Canvas and SVG drawn from script bypass the CSS guard above. Most such colours are rightly fixed —
-  // data palettes (populations, channel LUTs, heat ramps), export grounds, marks over the image — so this
-  // is a per-file RATCHET, not a ban: a new one in script must either read a token (`tokenColour`,
-  // `plotTheme`, a `var(--cc-*)` inline style) or carry `COLOUR-OK: <reason>`. Lower a count when you
-  // remove one. docs/UI.md → *Colour schemes*.
+  // Canvas and SVG drawn from script can't read CSS, so the guard above can't see them. Chrome there
+  // reads the scheme (`tokenColour`, an inline `var(--cc-*)`, `plotTheme`); a colour that is rightly
+  // FIXED — export paper, a mark over the image, a data palette, a neutral fallback — is a named
+  // constant in one of the homes below, never a literal at the call site. `COLOUR-OK: <reason>` marks
+  // a computed colour (a ramp stop, a tint of a token). docs/UI.md → *Colour schemes*.
   const SCRIPT = import.meta.glob('/src/**/*.{ts,vue}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
-  const BASELINE: Record<string, number> = {
-    'components/AcquisitionCardDialog.vue': 1,
-    'components/AxesGizmo.vue': 3,
-    'components/ColourPicker.vue': 1,
-    'components/canvas/LayoutCanvas.vue': 1,
-    'components/plots/CardsPanelInner.vue': 1,
-    'components/plots/ClusterMapView.vue': 32,
-    'components/plots/FlowTrainingView.vue': 1,
-    'components/plots/GateMontage.vue': 3,
-    'components/plots/GateOverlay.vue': 11,
-    'components/plots/GateScatterCell.vue': 8,
-    'components/plots/GatingStrategyView.vue': 2,
-    'components/plots/ImageStripView.vue': 2,
-    'components/plots/PlotLayers.vue': 2,
-    'components/plots/StatBox.vue': 4,
-    'components/plots/TrackDiagnosticsView.vue': 9,
-    'components/plots/TrackPathsView.vue': 1,
-    'components/plots/TrackSchemeView.vue': 14,
-    'components/viewerWindow/VwChannelsSection.vue': 1,
-    'composables/useSummaryData.ts': 1,
-    'lib/colorLegend.ts': 5,
-    'modules/ChainModule.vue': 1,
-    'modules/ViewerWindow.vue': 1,
-    'modules/animation/AnimationTimeline.vue': 1,
-    'modules/batchmovies/overlayPreview.ts': 11,
-    'modules/cluster/ClusterHeatmapPanel.vue': 1,
-    'modules/gate/GatePairsPanel.vue': 3,
-    'modules/gate/GatePlotPanel.vue': 3,
-    'plots/boardSvg.ts': 3,
-    'plots/export.ts': 3,
-    'plots/flowColors.ts': 1,
-    'plots/imageGrid.ts': 2,
-    'plots/overlays.ts': 4,
-    'plots/plot.ts': 12,
-    'utils/captureAddress.ts': 2,
-    'utils/colour.ts': 1,
-    'utils/figureSpec.ts': 1,
-    'utils/landscape.ts': 5,
-    'utils/maskPopTable.ts': 1,
-    'utils/overlayCompose.ts': 11,
-    'utils/taskModule.ts': 14,
-    'utils/viewerColormap.ts': 15,
-    'utils/viewerOverlays.ts': 9,
+  const HOMES: Record<string, string> = {
+    'plots/fixedColours.ts':                 'paper, over-image, track tones, fallbacks',
+    'plots/overlays.ts':                     'plot ink + ground (plotTheme)',
+    'utils/viewerColormap.ts':               'channel LUT colours',
+    'utils/overlayCompose.ts':               'the annotation palette',
+    'utils/taskModule.ts':                   'module identity colours',
+    'utils/landscape.ts':                    'landscape swatches, pinned to the server',
+    'lib/colorLegend.ts':                    'the legend\'s ramp swatches',
+    'modules/batchmovies/overlayPreview.ts': 'the schematic preview palette',
   }
 
   it('finds quoted colours in scripts, not in templates, comments or COLOUR-OK lines', () => {
@@ -471,15 +437,18 @@ describe('colour literals in script code', () => {
     expect(hits.map(h => h.literal)).toEqual(['#e8a33d', 'rgba(…)', 'black'])
   })
 
-  it('stay at or below each file\'s baseline', () => {
+  it('live only in the colour homes — anywhere else, name a constant or read a token', () => {
     const sources = Object.entries(SCRIPT).filter(([p]) => !p.endsWith('.test.ts'))
       .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
     expect(sources.length).toBeGreaterThan(100)
-    const count: Record<string, number> = {}
-    for (const h of findScriptColourLiterals(sources)) count[h.path] = (count[h.path] ?? 0) + 1
-    const over = Object.entries(count).filter(([p, n]) => n > (BASELINE[p] ?? 0)).map(([p, n]) => `${p}: ${n} > ${BASELINE[p] ?? 0}`)
-    const under = Object.entries(BASELINE).filter(([p, n]) => (count[p] ?? 0) < n).map(([p, n]) => `${p}: ${count[p] ?? 0} < ${n} — lower the baseline`)
-    expect([...over, ...under]).toEqual([])
+    const stray = findScriptColourLiterals(sources).filter(h => !HOMES[h.path]).map(h => `${h.path}:${h.line} ${h.literal}`)
+    expect(stray).toEqual([])
+  })
+
+  it('every home still holds colours (else drop it from the list)', () => {
+    const sources = Object.keys(HOMES).map(path => ({ path, text: SCRIPT[`/src/${path}`] ?? '' }))
+    const held = new Set(findScriptColourLiterals(sources).map(h => h.path))
+    expect(Object.keys(HOMES).filter(p => !held.has(p))).toEqual([])
   })
 })
 
