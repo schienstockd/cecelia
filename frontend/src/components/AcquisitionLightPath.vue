@@ -7,6 +7,9 @@
   Colours are Okabe–Ito (plots/palettes.json), and nothing relies on colour alone: excitation is a
   solid line, emission a dashed one, and each value source has its own shape. The optics are generic,
   not this scope's real layout — the caption says so.
+
+  Above MANY_CHANNELS the stages summarise and the per-channel detail is one table under them
+  (AcquisitionChannelTable.vue); selecting a channel there puts its lines back into the stages.
 -->
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
@@ -17,11 +20,18 @@ import LightPathFigureAiryscan from './lightPath/LightPathFigureAiryscan.vue'
 import LightPathFigureWidefield from './lightPath/LightPathFigureWidefield.vue'
 import { LIGHT_PATH_COLOURS as C } from './lightPath/colours'
 import './lightPath/art.css'
+import AcquisitionChannelTable from './AcquisitionChannelTable.vue'
 import { acquisitionTechnology, lightPathStages, LIGHT_PATH_SOURCES, type LightPathImage, type Technology } from '../utils/acquisitionLightPath'
+import { manyChannels, summariseStages } from '../utils/acquisitionChannelTable'
 
 const props = defineProps<{ image: LightPathImage }>()
 
-const stages = computed(() => lightPathStages(props.image))
+const many = computed(() => manyChannels(props.image.acquisition))
+// The channel selected in the table (its `order`). Transient, like the hover.
+const selected = ref<number | null>(null)
+const stages = computed(() => (many.value
+  ? summariseStages(lightPathStages(props.image, { laserTargets: false }), props.image.acquisition, selected.value)
+  : lightPathStages(props.image)))
 
 const FIGURES: Record<Technology, Component> = {
   'two-photon': LightPathFigureTwoPhoton, confocal: LightPathFigureConfocal,
@@ -47,7 +57,7 @@ const hover = ref<number | null>(null)
         <ul class="lp-items">
           <li v-for="(it, i) in s.items" :key="i" class="lp-item">
             <LightPathSourceGlyph :source="it.source" class="lp-src" />
-            <span :class="{ 'cc-muted': it.source === 'missing' }">{{ it.text }}</span>
+            <span :class="{ 'cc-muted': it.source === 'missing', 'lp-sel': many && it.channel != null }">{{ it.text }}</span>
           </li>
           <li v-if="!s.items.length" class="lp-item cc-muted">—</li>
         </ul>
@@ -61,6 +71,9 @@ const hover = ref<number | null>(null)
         <LightPathSourceGlyph :source="src.key" />{{ src.label }}
       </span>
     </div>
+
+    <AcquisitionChannelTable v-if="many && image.acquisition" v-model="selected" :acquisition="image.acquisition"
+                             :channel-names="image.channelNames" />
   </div>
 </template>
 
@@ -78,5 +91,6 @@ const hover = ref<number | null>(null)
 .lp-item { display: flex; align-items: flex-start; gap: 0.35rem; word-break: break-word; }
 .lp-src { margin-top: 0.25em; }
 .lp-line { flex: none; width: 10px; height: 10px; }
+.lp-sel { color: var(--cc-accent); }
 .lp-key { display: inline-flex; align-items: center; gap: 0.3rem; }
 </style>

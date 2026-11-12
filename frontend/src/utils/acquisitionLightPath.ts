@@ -132,14 +132,18 @@ export function autoHVItem(chans: { hv: number | null }[]): LightPathItem {
     : item('Auto HV on', 'file')
 }
 
-export function lightPathStages(img: LightPathImage): LightPathStage[] {
+/** `laserTargets: false` drops each laser's "→ channels it excites" list — with many channels the
+ *  channel table says it (`acquisitionChannelTable.ts`). */
+export interface LightPathOptions { laserTargets?: boolean }
+
+export function lightPathStages(img: LightPathImage, opts: LightPathOptions = {}): LightPathStage[] {
   const tech = acquisitionTechnology(img.acquisition) ?? 'two-photon'
-  const byKey = stageItems(img)
+  const byKey = stageItems(img, opts.laserTargets ?? true)
   return TECHNOLOGY_STAGES[tech].map(([key, title], i) => ({ n: i + 1, key, title, items: byKey[key] ?? [] }))
 }
 
 /** Every stage's items, by stage key; a technology picks the ones it has. */
-function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
+function stageItems(img: LightPathImage, laserTargets: boolean): Record<string, LightPathItem[]> {
   const acq = img.acquisition ?? {}
   const chans = acq.channels ?? []
   const facts = img.cleanupFacts?.channels ?? []
@@ -157,7 +161,7 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
   const laser = (acq.lasers ?? []).map(l => {
     const excites = chans.filter(c => c.laser === l.name).map(chName)
     const what = join([l.name, l.wavelengthNm != null && `${n(l.wavelengthNm)} nm`])
-    return item(excites.length > 0 ? `${what} → ${excites.join(', ')}` : what, 'file')
+    return item(laserTargets && excites.length > 0 ? `${what} → ${excites.join(', ')}` : what, 'file')
   })
 
   // 2 · power control — transmission and whether it follows depth
@@ -198,7 +202,7 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
   if (sizeZ > 1) sample.push(item(`${depthAt(sizeZ - 1)} deep · ${sizeZ} planes`, 'ome'))
   for (const f of facts) {
     const ends = f.profile ? endsText(f.profile.byZ.p99, depthAt) : null
-    if (ends) sample.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))
+    if (ends) sample.push({ ...item(`${f.name} brightest 1 %: ${ends}`, 'measured'), channel: f.index + 1 })
   }
   if (sizeZ > 1 && !facts.some(f => f.profile)) {
     sample.push(item('Signal by depth not measured yet: refresh metadata', 'missing'))
@@ -248,7 +252,7 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
   const bits = [...new Set(chans.map(c => c.bitDepth).filter((v): v is number => v != null))]
   if (bits.length > 0) digit.push(item(`${bits.map(n).join(', ')} bit`, 'file'))
   for (const f of facts) {
-    if (f.clippedPct != null && f.clippedPct > 0) digit.push(item(`${f.name} ${n(f.clippedPct)} % of signal clipped`, 'measured'))
+    if (f.clippedPct != null && f.clippedPct > 0) digit.push({ ...item(`${f.name} ${n(f.clippedPct)} % of signal clipped`, 'measured'), channel: f.index + 1 })
   }
 
   // 9 · stack and time
@@ -261,14 +265,20 @@ function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
     if (short) stack.push(item(`${short}: stopped early or cropped`, 'file'))
     for (const f of facts) {
       const ends = f.profile ? endsText(f.profile.byT.p99, i => `frame ${i + 1}`) : null
-      if (ends) stack.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))
+      if (ends) stack.push({ ...item(`${f.name} brightest 1 %: ${ends}`, 'measured'), channel: f.index + 1 })
     }
   }
   const acqModes = img.acquisition?.modes ?? []
   if (acqModes.includes('tiled')) stack.push(item('Stitched from tiles', 'file'))
   const cyc = img.acquisition?.cycles
   if (cyc) {
-    stack.push(item(join([`${cyc.count} cycles`, cyc.blank != null && `${cyc.blank} blank planned`]), 'file'))
+    const plan = [cyc.planned != null && `${cyc.planned} planned`, cyc.blank != null && `${cyc.blank} blank`].filter(Boolean).join(', ')
+    stack.push(item(`${cyc.count} cycles imaged${plan ? ` (${plan})` : ''}`, 'file'))
+    const afOn = chans.filter(c => c.afSubtracted === true).length
+    if (afOn > 0) {
+      stack.push(item(afOn === chans.length ? 'Autofluorescence subtracted by the scanner'
+        : `Autofluorescence subtracted by the scanner on ${afOn} of ${chans.length} channels`, 'file'))
+    }
     for (const c of chans.filter(c => c.cycle != null)) stack.push({ ...item(`${chName(c)} cycle ${c.cycle}`, 'file'), channel: c.order })
   }
 
