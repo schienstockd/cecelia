@@ -18,6 +18,7 @@ import ChipSelect from './ChipSelect.vue'
 import { COLOUR_SCHEMES, type ColourScheme } from '../utils/colourScheme'
 import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
 import HpcSettings from './HpcSettings.vue'
 import { preferencesPane, type PreferencesPane } from '../lib/preferencesOpen'
@@ -64,6 +65,13 @@ const roster = ref<ProfileRoster>({
   profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
   legacyReserved: ['legacy'],
 })
+// Name fills; each action is a fixed column so its button holds its place across rows.
+const PROFILE_COLUMNS: SelectionColumn[] = [
+  { key: 'name',   label: 'Profile' },
+  { key: 'switch', label: '', fixed: true, width: 96 },
+  { key: 'rename', label: '', fixed: true, width: 40 },
+  { key: 'delete', label: '', fixed: true, width: 40 },
+]
 const rowActions = (p: Profile) => profileRowActions(p, roster.value.active, appCtl.canManageMachine)
 const profilesBusy = ref<string>('')      // name currently being selected/retired — drives per-row spinner
 const profilesError = ref<string | null>(null)
@@ -213,76 +221,72 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
       <p class="pref-note cc-muted cc-fs-xs">
         Profiles set Kiwi's login, preferences and projects. Switching reloads the app.
       </p>
-      <!-- One grid for the whole list (rows are subgrid rows), so every action owns a fixed
-           column: Switch never moves when Rename/Delete aren't offered on a row. -->
-      <ul class="pp-list" data-guide="prefs.profilesPane">
-        <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
-            :class="{ 'pp-row-active': p.name === roster.active,
-                      'pp-row-retired': p.retired }">
-          <!-- Inline rename: the name span becomes an <input> when `renamingName` matches. Enter
-               commits, Escape cancels. Client-side validity mirrors the server rule
-               (`isValidProfileName`) so the save button gates before the round-trip. -->
-          <template v-if="renamingName === p.name">
-            <span class="pp-name pp-name-edit">
-              <i class="pi pi-pencil" />
-              <input v-model="renameDraft" class="pp-rename-input"
-                     v-tooltip.bottom="'1-32 chars, lower-ASCII alnum + `-` / `_`'"
-                     @keyup.enter="commitRename"
-                     @keyup.escape="cancelRename" />
-            </span>
-            <span class="cc-row cc-row-tight pp-actions-edit">
-              <button class="cc-btn cc-btn-primary cc-fs-xs"
-                      :disabled="!renameDraftValid || !!profilesBusy"
-                      @click="commitRename"
-                      v-tooltip.bottom="'Save the new name'">
-                <i class="pi pi-check" /> Save
-              </button>
-              <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="cancelRename"
-                      v-tooltip.bottom="'Cancel — keep the old name'">
-                <i class="pi pi-times" />
-              </button>
-            </span>
-          </template>
-          <template v-else>
-            <span class="pp-name">
-              <i class="pi" :class="p.retired ? 'pi-user-minus' : 'pi-user'" />
-              {{ profileDisplayName(p) }}
-              <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
-              <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
-              <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
-            </span>
-            <!-- Which actions a row offers: `profileRowActions` (utils/profileApi.ts) — peanut
-                 manages every profile; anyone else renames only their own. Each cell renders
-                 even when empty, so the columns hold their place. -->
-            <span class="pp-cell">
-              <button v-if="rowActions(p).switch"
-                      class="cc-btn cc-btn-ghost cc-fs-xs"
-                      :disabled="!!profilesBusy"
-                      @click="pickProfile(p.name)"
-                      v-tooltip.bottom="`Switch to ${profileDisplayName(p)} — the app will reload`">
-                <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
-                Switch
-              </button>
-            </span>
-            <span class="pp-cell">
-              <button v-if="rowActions(p).rename"
-                      class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
-                      :disabled="!!profilesBusy"
-                      @click="startRename(p.name)"
-                      v-tooltip.bottom="'Rename — past turn logs still reference the old name'">
-                <i class="pi pi-pencil" />
-              </button>
-            </span>
-            <span class="pp-cell">
-              <ConfirmDeleteButton v-if="rowActions(p).delete"
-                                   :disabled="!!profilesBusy"
-                                   title="Delete this profile — credentials + settings + turn provenance gone"
-                                   armed-title="Click again to permanently delete this profile"
-                                   @confirm="deleteProfileByName(p.name)" />
-            </span>
-          </template>
-        </li>
-      </ul>
+      <!-- Switch / Rename / Delete are fixed columns, so a row that doesn't offer one leaves
+           its cell empty and Switch never moves. -->
+      <SelectionTable selection-mode="none" headerless data-guide="prefs.profilesPane"
+                      :columns="PROFILE_COLUMNS" :rows="roster.profiles" id-key="name"
+                      :row-class="p => ({ 'pp-row-active': p.name === roster.active,
+                                          'pp-row-retired': p.retired })"
+                      :row-tooltip="p => profileDisplayName(p)">
+        <template #cell-name="{ row: p }">
+          <!-- Inline rename: Enter commits, Escape cancels. Client-side validity mirrors the
+               server rule (`isValidProfileName`) so Save gates before the round-trip. -->
+          <span v-if="renamingName === p.name" class="pp-name">
+            <input v-model="renameDraft" class="pp-rename-input"
+                   v-tooltip.bottom="'1-32 chars, lower-ASCII alnum + `-` / `_`'"
+                   @keyup.enter="commitRename"
+                   @keyup.escape="cancelRename" />
+            <button class="cc-btn cc-btn-primary cc-fs-xs"
+                    :disabled="!renameDraftValid || !!profilesBusy"
+                    @click="commitRename"
+                    v-tooltip.bottom="'Save the new name'">
+              <i class="pi pi-check" /> Save
+            </button>
+            <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="cancelRename"
+                    v-tooltip.bottom="'Cancel — keep the old name'">
+              <i class="pi pi-times" />
+            </button>
+          </span>
+          <span v-else class="pp-name">
+            <i class="pi" :class="p.retired ? 'pi-user-minus' : 'pi-user'" />
+            {{ profileDisplayName(p) }}
+            <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
+            <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
+            <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
+          </span>
+        </template>
+        <!-- Which actions a row offers: `profileRowActions` (utils/profileApi.ts) — peanut manages
+             every profile; anyone else renames only their own. -->
+        <template #cell-switch="{ row: p }">
+          <button v-if="rowActions(p).switch && renamingName !== p.name"
+                  class="cc-btn cc-btn-ghost cc-fs-xs"
+                  :disabled="!!profilesBusy"
+                  @click="pickProfile(p.name)"
+                  v-tooltip.bottom="`Switch to ${profileDisplayName(p)} — the app will reload`">
+            <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
+            Switch
+          </button>
+          <span v-else />
+        </template>
+        <template #cell-rename="{ row: p }">
+          <button v-if="rowActions(p).rename && renamingName !== p.name"
+                  class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
+                  :disabled="!!profilesBusy"
+                  @click="startRename(p.name)"
+                  v-tooltip.bottom="'Rename — past turn logs still reference the old name'">
+            <i class="pi pi-pencil" />
+          </button>
+          <span v-else />
+        </template>
+        <template #cell-delete="{ row: p }">
+          <ConfirmDeleteButton v-if="rowActions(p).delete && renamingName !== p.name"
+                               :disabled="!!profilesBusy"
+                               title="Delete this profile — credentials + settings + turn provenance gone"
+                               armed-title="Click again to permanently delete this profile"
+                               @confirm="deleteProfileByName(p.name)" />
+          <span v-else />
+        </template>
+      </SelectionTable>
 
       <p v-if="profilesError" class="pref-error cc-fs-md">
         <i class="pi pi-exclamation-circle" /> {{ profilesError }}
@@ -596,23 +600,9 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pk-note strong { color: var(--cc-sev-warn); }
 .pk-note code { font-family: var(--cc-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
 .pref-error { color: var(--cc-sev-fail); display: flex; align-items: center; gap: 0.35rem; margin: 0.35rem 0 0; }
-.pp-list {
-  list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); row-gap: 0.3rem;
-}
-.pp-row {
-  grid-column: 1 / -1; display: grid; grid-template-columns: subgrid;
-  align-items: center; column-gap: 0.3rem;
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm);
-}
-.pp-row-active   { border-color: var(--cc-kiwi); }
-.pp-row-retired  { opacity: 0.6; }
+:deep(.pp-row-active) td:first-child { box-shadow: inset 3px 0 0 var(--cc-kiwi); }
+:deep(.pp-row-retired) { opacity: 0.6; }
 .pp-name { display: flex; align-items: center; gap: 0.4rem; }
-.pp-name-edit { min-width: 0; }
-.pp-actions-edit { grid-column: 2 / -1; justify-content: flex-end; }
-.pp-cell { display: flex; justify-content: center; }
 .pp-rename-input { flex: 1; min-width: 6rem; }
 .pp-tag  { padding-inline: 0.25rem; }
 .pp-tag-active { color: var(--cc-kiwi); }
