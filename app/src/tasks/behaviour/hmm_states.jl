@@ -168,8 +168,12 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
                 # carries many HMM runs (a K = 2…5 sweep), and a vn-only key let each run overwrite
                 # the last run's QC.
                 m = category_dist_metrics(vals)
-                fit === nothing ||
-                    put_props_sidecar_entry!(hmm_fit_path(props), p.colName, _hmm_fit_record(p, fit, uids))
+                # no fit → no record for THIS run, and an earlier run's record under the same
+                # colName must not stand beside the column just written
+                sidecar = hmm_fit_path(props)
+                fit === nothing ?
+                    drop_props_sidecar_keys!(sidecar, read_props_sidecar(sidecar), [String(p.colName)]) :
+                    put_props_sidecar_entry!(sidecar, p.colName, _hmm_fit_record(p, fit, uids))
                 write_qc(img, "behaviour.hmm_states", "$(vn).$(p.colName)",
                          hmm_states_qc_findings(m; fit = fit); runSuffix = string(p.colName), labelSet = string(vn),
                          metrics = Dict{String,Any}("nDecoded" => m.n, "nStates" => m.n_distinct,
