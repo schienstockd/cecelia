@@ -15,12 +15,34 @@ import {
   claudeLoginPrompt,
   claudeLogoutError,
   claudeLoginLabel,
+  profileRowActions,
 } from './profileApi'
 
 describe('profileNameLabel', () => {
   it('shows the default profile by its display alias, others as-is', () => {
     expect(profileNameLabel('default')).toBe('peanut')
     expect(profileNameLabel('alice')).toBe('alice')
+  })
+})
+
+describe('profileRowActions', () => {
+  const peanut = { name: 'default', isDefault: true,  retired: false }
+  const alice  = { name: 'alice',   isDefault: false, retired: false }
+  const bob    = { name: 'bob',     isDefault: false, retired: false }
+  const old    = { name: 'old',     isDefault: false, retired: true }
+
+  it('peanut renames and deletes other profiles', () => {
+    expect(profileRowActions(alice, 'default', true)).toEqual({ switch: true, rename: true, delete: true })
+    expect(profileRowActions(peanut, 'default', true)).toEqual({ switch: false, rename: false, delete: false })
+  })
+  it('others rename only themselves and delete nobody', () => {
+    expect(profileRowActions(alice, 'alice', false)).toEqual({ switch: false, rename: true, delete: false })
+    expect(profileRowActions(bob, 'alice', false)).toEqual({ switch: true, rename: false, delete: false })
+    expect(profileRowActions(peanut, 'alice', false)).toEqual({ switch: true, rename: false, delete: false })
+  })
+  it('retired profiles are never switched to or renamed', () => {
+    expect(profileRowActions(old, 'default', true)).toEqual({ switch: false, rename: false, delete: true })
+    expect(profileRowActions(old, 'alice', false)).toEqual({ switch: false, rename: false, delete: false })
   })
 })
 

@@ -155,6 +155,7 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     ok || return nothing
 
     on_log("[INFO] Tracking complete.")
+    prune_stale_hmmfit!(props_path; on_log)   # the write-back dropped every `live.cell.*`, HMM states too
 
     # The write-back renumbered track ids — this source's new tracks AND every surviving source's
     # (compacted to 1..N) — so a per-track table from before joins its measures and track clusters

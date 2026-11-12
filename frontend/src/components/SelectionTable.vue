@@ -38,7 +38,7 @@ import { useColumnResize } from '../composables/useColumnResize'
 import { fillColumnKey, fillExtraPx, lengthPx } from '../utils/columnFill'
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { allSelected as allChosen, someSelected as someChosen,
-         toggleAllSelection, toggleOneSelection } from '../utils/tableSelection'
+         toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep } from '../utils/tableSelection'
 
 export interface SelectionColumn {
   /** key into the row object; its value is rendered verbatim */
@@ -283,7 +283,97 @@ function onRowDblClick(row: Row, e: MouseEvent) {
   if (!t.closest('.sel-sticky-pick') && t.closest('button, a, input, select, textarea')) return
   emit('row-dblclick', row)
 }
-function pick(row: Row) {
+// ── File-manager picking (`multi` + `pickBy: 'row'`) ────────────────────────────
+// What every file browser does, so nobody has to learn it: a click selects THAT row only, ctrl/⌘-click
+// (or a click on the checkbox) toggles one, shift-click selects the range from the last clicked row,
+// and pressing on a row and dragging sweeps a range (ctrl/⌘ held adds the sweep to the selection).
+// Ranges follow the rows as RENDERED — sorted, filtered — and skip `disabledIds` (`rangeSelection`).
+const fileStyle = computed(() => props.selectionMode === 'multi' && !boxPicks.value)
+const INTERACTIVE = 'button, a, input, select, textarea, [contenteditable]'
+const additive = (e: MouseEvent) => e.ctrlKey || e.metaKey
+let anchorId: string | null = null
+let drag: { anchor: string; base: string[]; moved: boolean } | null = null
+// a drag that ends back on its own row still produces a `click` there — which must not undo the sweep
+let swallowClick = false
+const renderedIds = () => sortedRows.value.map(idOf)
+
+function onRowMouseDown(row: Row, e: MouseEvent) {
+  swallowClick = false
+  if (!fileStyle.value || props.disabled || e.button !== 0) return
+  const t = e.target as HTMLElement
+  if (t.closest('.sel-sticky-pick') || t.closest(INTERACTIVE)) return
+  // no text selection while sweeping rows or extending with shift (the browser's own shift-click)
+  e.preventDefault()
+  if (e.shiftKey) return
+  drag = { anchor: idOf(row), base: additive(e) ? [...selectedIds.value] : [], moved: false }
+  pointer = { x: e.clientX, y: e.clientY }
+  scroller = scrollBoxOf(tableEl.value)
+  window.addEventListener('mousemove', onDragMove)
+  window.addEventListener('mouseup', endDrag, { once: true })
+  scrollFrame = requestAnimationFrame(autoScroll)
+}
+function sweepTo(id: string) {
+  if (!drag || (!drag.moved && id === drag.anchor)) return
+  drag.moved = true
+  anchorId = drag.anchor
+  emit('update:selected', rangeSelection(renderedIds(), drag.anchor, id, props.disabledIds, drag.base))
+}
+function onRowMouseEnter(row: Row) { if (drag) sweepTo(idOf(row)) }
+function endDrag() {
+  if (drag?.moved) swallowClick = true
+  drag = null
+  scroller = null
+  cancelAnimationFrame(scrollFrame)
+  window.removeEventListener('mousemove', onDragMove)
+}
+onBeforeUnmount(() => { window.removeEventListener('mouseup', endDrag); endDrag() })
+
+// Auto-scroll: holding the pointer near (or past) the top/bottom of the box the table scrolls in keeps
+// the sweep going, like a file browser. Scrolling moves rows under a STILL pointer, which fires no
+// `mouseenter`, so each scrolled frame hit-tests the pointer for the row now beneath it. The pointer
+// may also be past the box (above a header, below the panel) — then the nearest row along the edge
+// is taken, by clamping the hit-test into the table's visible band.
+let pointer = { x: 0, y: 0 }
+let scroller: HTMLElement | null = null
+let scrollFrame = 0
+function onDragMove(e: MouseEvent) { pointer = { x: e.clientX, y: e.clientY } }
+function scrollBoxOf(el: HTMLElement | null): HTMLElement {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && p.scrollHeight > p.clientHeight) return p
+  }
+  return (document.scrollingElement as HTMLElement) ?? document.documentElement
+}
+function autoScroll() {
+  if (!drag || !scroller || !tableEl.value) return
+  const page = scroller === document.scrollingElement || scroller === document.documentElement
+  const box = page ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect()
+  const step = edgeScrollStep(pointer.y, box.top, box.bottom)
+  if (step) {
+    scroller.scrollTop += step
+    const t = tableEl.value.getBoundingClientRect()
+    const head = tableEl.value.tHead?.getBoundingClientRect().height ?? 0
+    const y = Math.min(Math.max(pointer.y, Math.max(box.top, t.top) + head + 2), Math.min(box.bottom, t.bottom) - 2)
+    const x = Math.min(Math.max(pointer.x, t.left + 2), t.right - 2)
+    const tr = document.elementFromPoint(x, y)?.closest<HTMLElement>('tr[data-sel-id]')
+    if (tr && tableEl.value.contains(tr)) sweepTo(tr.dataset.selId!)
+  }
+  scrollFrame = requestAnimationFrame(autoScroll)
+}
+
+function pickMulti(id: string, e: MouseEvent) {
+  const onBox = !!(e.target as HTMLElement).closest('.sel-sticky-pick')
+  if (e.shiftKey && anchorId) {
+    emit('update:selected',
+      rangeSelection(renderedIds(), anchorId, id, props.disabledIds, additive(e) ? selectedIds.value : []))
+    return                                                  // the anchor stays, as in a file browser
+  }
+  anchorId = id
+  emit('update:selected', additive(e) || onBox ? toggleOneSelection(id, selectedIds.value) : [id])
+}
+
+function pick(row: Row, e: MouseEvent) {
+  if (swallowClick) { swallowClick = false; return }
   emit('row-click', row)
   if (props.disabled || props.selectionMode === 'none') return
   const id = idOf(row)
@@ -291,10 +381,7 @@ function pick(row: Row) {
   // click anywhere else on the row selects what the checkbox says cannot be selected
   if (boxPicks.value) { if (id !== props.modelValue) emit('update:modelValue', id); return }
   if (props.disabledIds.includes(id)) return
-  if (props.selectionMode === 'multi') {
-    emit('update:selected', toggleOneSelection(id, selectedIds.value))
-    return
-  }
+  if (props.selectionMode === 'multi') { pickMulti(id, e); return }
   if (id !== props.modelValue) emit('update:modelValue', id)
 }
 
@@ -518,9 +605,10 @@ function colStyle(c: SelectionColumn) {
     </thead>
     <tbody>
       <template v-for="row in sortedRows" :key="idOf(row)">
-      <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isOn(row) }, rowClass?.(row)]"
+      <tr :class="[{ 'sel-row': rowsClickable, 'sel-on': isOn(row) }, rowClass?.(row)]" :data-sel-id="idOf(row)"
           v-tooltip.top="tipOf(row)"
-          @click="pick(row)" @dblclick="onRowDblClick(row, $event)">
+          @click="pick(row, $event)" @dblclick="onRowDblClick(row, $event)"
+          @mousedown="onRowMouseDown(row, $event)" @mouseenter="onRowMouseEnter(row)">
         <td v-if="selectionMode !== 'none'" class="sel-sticky sel-sticky-pick">
           <input :type="selectionMode === 'multi' ? 'checkbox' : 'radio'"
                  :checked="isPicked(row)"

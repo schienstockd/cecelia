@@ -8,7 +8,7 @@
     "Fibre orientation and anisotropy across an image"
   ],
   "notWhen": [
-    "No segmentation of the structure yet: segment it first",
+    { "text": "No segmentation of the structure yet: segment it first", "check": "!segmented" },
     "Measuring cells: skeleton paths are not cell regions",
     "Unreliable segmentation: read anisotropy from the channel instead"
   ],

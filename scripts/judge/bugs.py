@@ -482,8 +482,15 @@ def _merge(group: list[dict]) -> dict:
              for b in group if b["key"] not in seen]
     # a shipped repro anywhere in the group keeps the merged bug the owner's to close
     owner = any(_record.shipped_reproduced(b) for b in group)
+    # per-bug evidence a non-lead may hold: every member's landed fix (`_reverify`, the judge's hint and
+    # the `fix-landed` label read the merged bug; `landed_fixes` never finds it again), the latest session
+    landed: list[dict] = []
+    for b in group:
+        landed += [c for c in b.get("fix_landed") or [] if c["commit"] not in {h["commit"] for h in landed}]
+    session = max((b["fix_session"] for b in group if b.get("fix_session")), default=None)
     return {**lead, **({"sources": sources, "also": also} if len(sources) > 1 else {}),
-            **({"owner_only": True} if owner else {})}
+            **({"owner_only": True} if owner else {}), **({"fix_landed": landed} if landed else {}),
+            **({"fix_session": session} if session else {})}
 
 
 def stranded_commits(head: str | None, head_oid: str | None, sha: str, repo: pathlib.Path,

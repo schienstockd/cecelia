@@ -35,6 +35,11 @@ export interface OpenImage {
   /** how many multiscale levels the OPEN IMAGE has — the range the 3D detail control offers on
    *  movie surfaces. 0 or 1 = no choice to make, so the control hides. */
   nLevels?: number
+  /** the segmentations the viewer draws its mask from (`meta.labelNames`) — a recording reads these, not
+   *  the registry's, so it picks the mask on screen (`readDrawSpec`) */
+  labelNames?: string[]
+  /** the segmentations with a cell table — the track eyes' keys (`meta.cellTableNames`) */
+  trackNames?: string[]
 }
 
 const K_OPEN_IMAGE       = 'cc.viewer.openImage'
