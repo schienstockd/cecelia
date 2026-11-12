@@ -26,6 +26,7 @@ import { rectFrame, type Frame } from '../../plots/frame'
 import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from './PlotPointOutMark.vue'
 import { PAPER, PAPER_INK, PAPER_INK_DIM, PAPER_BORDER } from '../../plots/fixedColours'
+import { fmtCompact } from '../../utils/compactNumber'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -104,11 +105,7 @@ const tickY = (pos: number, e: Ext) => `${yFrac(e, pos, props.flipY) * 100}%`
 function fmtTick(label: string): string {
   const n = parseFloat(label)
   if (!isFinite(n)) return label
-  const a = Math.abs(n), trim = (s: string) => s.replace(/\.0$/, '')
-  if (a >= 1e9) return trim((n / 1e9).toFixed(1)) + 'G'
-  if (a >= 1e6) return trim((n / 1e6).toFixed(1)) + 'M'
-  if (a >= 1e3) return trim((n / 1e3).toFixed(1)) + 'k'
-  return label
+  return Math.abs(n) >= 1e3 ? fmtCompact(n) : label
 }
 
 // export: each stacked canvas (WebGL scatter + canvas2D contours/gates) re-renders itself at export

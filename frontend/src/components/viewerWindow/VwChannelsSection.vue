@@ -19,6 +19,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { isCompact } from '../../utils/viewer/channelCards'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/viewerColormap'
 import { channelHexFrom } from '../../utils/viewerProps'
+import { fmtContrastWindow } from '../../utils/contrastReadout'
 import { WHITE } from '../../plots/fixedColours'
 
 defineProps<{
@@ -194,7 +195,8 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
           @update:lo="v => emit('range', c, v, ch.hi)"
           @update:hi="v => emit('range', c, ch.lo, v)"
         />
-        <span class="cc-readout cc-fs-3xs vw-ch-val">{{ ch.lo }}–{{ ch.hi }}</span>
+        <span class="cc-readout cc-fs-3xs vw-ch-val"
+              v-tooltip.left="`${ch.lo} – ${ch.hi}`">{{ fmtContrastWindow(ch.lo, ch.hi) }}</span>
       </div>
     </div>
     <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
@@ -225,7 +227,9 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
 .vw-ch-master { margin-bottom: 0.35rem; }
 .vw-ch-master-end { margin-left: auto; }
-/* sized for the widest reading ("0–65535"), so the slider beside it does not breathe as `hi` drops */
-.vw-ch-val { flex: none; white-space: nowrap; min-width: 3rem; text-align: right; }
+/* FIXED width, not min-width: a readout that grows with its digits shifts the slider beside it, so
+   channels with different windows stop lining up. 11ch fits the longest `fmtContrast` window
+   (`65.5k–65.5k`). */
+.vw-ch-val { flex: none; white-space: nowrap; width: 11ch; overflow: hidden; text-align: right; }
 .vw-adv-note { padding: 0.2rem 0 0.1rem; margin-left: calc(var(--cc-lbl-col) + 0.4rem); }
 </style>

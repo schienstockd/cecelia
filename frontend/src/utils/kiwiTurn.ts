@@ -15,6 +15,7 @@
 import type { KiwiRef, KiwiRefResult } from './kiwiRef'
 import { svcPost } from './serviceApi'
 import { formatTaskDuration } from './taskElapsed'
+import { fmtCompact } from './compactNumber'
 import { NAV_GROUPS, navItemFor, prettifyCategory } from '../lib/navGroups'
 import type { MentionTarget } from './taskDiscovery'
 
@@ -266,11 +267,6 @@ export function stepLabel(step: string): string {
   return step.replace(/_/g, ' ')
 }
 
-/** `10468` → `10.5k`. */
-function kTokens(n: number): string {
-  return n < 1000 ? String(n) : `${(n / 1000).toFixed(1)}k`
-}
-
 /** One muted line under a finished turn: time, tool calls, a re-ask, the model and what it wrote.
  *  Output tokens only — the CLI reports input net of its cache, so that number reads as ~0. */
 export function turnMeta(t: KiwiTurn): string {
@@ -282,7 +278,7 @@ export function turnMeta(t: KiwiTurn): string {
     if (r.reasked) parts.push('re-asked')
   }
   if (t.model) parts.push(t.model)
-  if (r?.usage?.output) parts.push(`${kTokens(r.usage.output)} tokens`)
+  if (r?.usage?.output) parts.push(`${fmtCompact(r.usage.output)} tokens`)
   if (t.reasoning) parts.push('thought first')
   return parts.join(' · ')
 }
