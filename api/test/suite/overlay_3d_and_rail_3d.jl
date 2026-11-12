@@ -488,26 +488,27 @@ end
 end
 
 @testset "API: colour-by — one scale over every segmentation (`_cb_scale_of` ≡ pooledColourScale)" begin
+    NOCLAIMS = Dict{String,String}()   # no population claims a level
     DataFrame = Cecelia.DataFrames.DataFrame   # the api project does not depend on DataFrames itself
     df(v) = DataFrame(var"live.cell.speed" = v)
     a = df([0.5, 5.5]); b = df([5.5, 20.5])   # fractional: a quantity (`_is_categorical_col`)
     s = _cb_scale_of([a[!, 1], b[!, 1]], "live.cell.speed")
     @test s.continuous && s.range == (0.5, 20.5)
     # the same value is one colour on both segmentations — per table, A's 5 would be the ramp's top
-    ra = _cb_prepare(a, "live.cell.speed", nothing, nothing; scale = s)
-    rb = _cb_prepare(b, "live.cell.speed", nothing, nothing; scale = s)
+    ra = _cb_prepare(a, "live.cell.speed", nothing, NOCLAIMS; scale = s)
+    rb = _cb_prepare(b, "live.cell.speed", nothing, NOCLAIMS; scale = s)
     d = RGB{N0f8}(0, 0, 0)
     @test ra(d, 2) == rb(d, 1) == _heat_ramp(0.25)
-    @test _cb_prepare(a, "live.cell.speed", nothing, nothing)(d, 2) == _heat_ramp(1.0)
+    @test _cb_prepare(a, "live.cell.speed", nothing, NOCLAIMS)(d, 2) == _heat_ramp(1.0)
     # a zero-width range shades at the middle, as the viewer's `colourByValue`
-    @test _cb_prepare(df([4.25, 4.25]), "live.cell.speed", nothing, nothing)(d, 1) == _heat_ramp(0.5)
+    @test _cb_prepare(df([4.25, 4.25]), "live.cell.speed", nothing, NOCLAIMS)(d, 1) == _heat_ramp(0.5)
     # categorical: the levels' union, so a level keeps its palette slot across tables
     ca = DataFrame(var"clusters.leiden" = ["2", "3"]); cb = DataFrame(var"clusters.leiden" = ["1", "2"])
     sc = _cb_scale_of([ca[!, 1], cb[!, 1]], "clusters.leiden")
     @test !sc.continuous && Set(sc.levels) == Set(["1", "2", "3"])
-    @test _cb_prepare(ca, "clusters.leiden", nothing, nothing; scale = sc)(d, 1) ==
-          _cb_prepare(cb, "clusters.leiden", nothing, nothing; scale = sc)(d, 2)
-    @test sc.levels == ["1", "2", "3"]   # sorted by `string`, as the viewer payload's
+    @test _cb_prepare(ca, "clusters.leiden", nothing, NOCLAIMS; scale = sc)(d, 1) ==
+          _cb_prepare(cb, "clusters.leiden", nothing, NOCLAIMS; scale = sc)(d, 2)
+    @test sc.levels == ["1", "2", "3"]   # category order (`category_sort_key`), as the viewer payload's
     # a table storing the codes as numbers does not pool with text ones (no sort across types)
     mixed = _cb_scale_of(Any[["2", "3"], [1, 2]], "clusters.leiden")
     @test mixed.levels == ["2", "3"]

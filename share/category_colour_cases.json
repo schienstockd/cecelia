@@ -1,0 +1,257 @@
+{
+  "_meta": "Cases for THE category colour rule — Julia `category_colours` (app/src/gating/popmanager/clustering_colour.jl) and TypeScript `categoryColours` (frontend/src/plots/categoryColours.ts) must both give `expect` for `values` + `claims`. `slot` = index into the population palette (repeats past its length); `hex` = a claiming population's colour. Checked by app/test/suite/filter_pop.jl and frontend/src/plots/categoryColours.test.ts.",
+  "cases": [
+    {
+      "name": "sorted position, duplicates once",
+      "values": [
+        5,
+        3,
+        3,
+        1
+      ],
+      "claims": {},
+      "expect": [
+        [
+          1,
+          {
+            "slot": 0
+          }
+        ],
+        [
+          3,
+          {
+            "slot": 1
+          }
+        ],
+        [
+          5,
+          {
+            "slot": 2
+          }
+        ]
+      ]
+    },
+    {
+      "name": "numbers sort as numbers (10 after 9)",
+      "values": [
+        10,
+        2,
+        1,
+        9
+      ],
+      "claims": {},
+      "expect": [
+        [
+          1,
+          {
+            "slot": 0
+          }
+        ],
+        [
+          2,
+          {
+            "slot": 1
+          }
+        ],
+        [
+          9,
+          {
+            "slot": 2
+          }
+        ],
+        [
+          10,
+          {
+            "slot": 3
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a claimed value takes the pop colour and keeps its slot",
+      "values": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "claims": {
+        "2": "#ff1493"
+      },
+      "expect": [
+        [
+          0,
+          {
+            "slot": 0
+          }
+        ],
+        [
+          1,
+          {
+            "slot": 1
+          }
+        ],
+        [
+          2,
+          {
+            "hex": "#ff1493"
+          }
+        ],
+        [
+          3,
+          {
+            "slot": 3
+          }
+        ],
+        [
+          4,
+          {
+            "slot": 4
+          }
+        ]
+      ]
+    },
+    {
+      "name": "past the palette it repeats",
+      "values": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ],
+      "claims": {},
+      "expect": [
+        [
+          7,
+          {
+            "slot": 7
+          }
+        ],
+        [
+          8,
+          {
+            "slot": 0
+          }
+        ],
+        [
+          11,
+          {
+            "slot": 3
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a whole-number float is claimed by its integer key",
+      "values": [
+        2.0,
+        3.0
+      ],
+      "claims": {
+        "2": "#abcdef"
+      },
+      "expect": [
+        [
+          2.0,
+          {
+            "hex": "#abcdef"
+          }
+        ],
+        [
+          3.0,
+          {
+            "slot": 1
+          }
+        ]
+      ]
+    },
+    {
+      "name": "text sorts as text",
+      "values": [
+        "b",
+        "a",
+        "c"
+      ],
+      "claims": {
+        "c": "#123456"
+      },
+      "expect": [
+        [
+          "a",
+          {
+            "slot": 0
+          }
+        ],
+        [
+          "b",
+          {
+            "slot": 1
+          }
+        ],
+        [
+          "c",
+          {
+            "hex": "#123456"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a Bool sorts as 0/1 and is claimed by its wire key or its text",
+      "values": [
+        true,
+        false
+      ],
+      "claims": {
+        "1": "#00aa00"
+      },
+      "expect": [
+        [
+          false,
+          {
+            "slot": 0
+          }
+        ],
+        [
+          true,
+          {
+            "hex": "#00aa00"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "a filter stored as text still claims a Bool",
+      "values": [
+        true,
+        false
+      ],
+      "claims": {
+        "true": "#aa0000"
+      },
+      "expect": [
+        [
+          false,
+          {
+            "slot": 0
+          }
+        ],
+        [
+          true,
+          {
+            "hex": "#aa0000"
+          }
+        ]
+      ]
+    }
+  ]
+}

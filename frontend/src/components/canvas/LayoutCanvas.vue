@@ -368,6 +368,7 @@ const clustSuffix = computed<string>({
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
         featureOptions: clustFeatureOptions, labelMap: clustNameMap,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
+        clusterClaims: clustClaims,
         clusterAxes: clustAxes } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
                       popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot,
@@ -417,7 +418,7 @@ function ctxFor(c: SlotContent, i: number) {
   if (isClusterSlot(c)) return {
     projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
     popType: clustPopType.value, suffix: clustSuffix.value,
-    shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
+    shownPops: shownPopsFor(panelClustHl(c)), clusterClaims: clustClaims.value, vis: panelVis(c),
     axes: clustAxes.value[clustSuffix.value] ?? null, nameMap: clustNameMap.value,
   }
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }

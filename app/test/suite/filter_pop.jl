@@ -162,6 +162,21 @@ end
     @test isempty(missing_gate_columns(m2, ["label", "x", "y"]))
 end
 
+@testset "category_colours — the shared cases (share/category_colour_cases.json)" begin
+    # the SAME cases frontend/src/plots/categoryColours.test.ts checks, so the movie and the viewer/UMAP
+    # cannot drift apart on which colour a category takes
+    cases = JSON3.read(read(joinpath(@__DIR__, "..", "..", "..", "share", "category_colour_cases.json"), String))
+    for c in cases.cases
+        claims = Dict{String,String}(String(k) => String(v) for (k, v) in pairs(c.claims))
+        got = category_colours(collect(c.values), claims)
+        for e in c.expect
+            v, want = e[1], e[2]
+            hex = haskey(want, :hex) ? String(want.hex) : POPULATION_PALETTE[want.slot % length(POPULATION_PALETTE) + 1]
+            @test got[v] == hex
+        end
+    end
+end
+
 @testset "colour_by_palette — pop colour else default" begin
     # a value a user pop FILTERS for on the column → that pop's colour; the rest → POPULATION_PALETTE by
     # sorted position. Generalises "use the population's colour where one exists" (a cluster pop is
@@ -174,7 +189,7 @@ end
     pal = colour_by_palette(m, "clusters.mov", [0, 1, 2, 3, 4])
     @test pal[2] == "#ff1493"                 # user pop colour
     @test pal[0] == "#ffd700" && pal[3] == "#ffd700" && pal[4] == "#ffd700"
-    @test pal[1] == POPULATION_PALETTE[1]              # uncovered value 1 → first default
+    @test pal[1] == POPULATION_PALETTE[2]              # uncovered value 1 keeps its slot (2nd of 0..4)
     # a pop filtering a DIFFERENT column never leaks its colour in
     @test pal[1] != "#000001"
 

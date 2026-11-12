@@ -115,6 +115,17 @@ export function useClusterContext(opts: {
     .map(p => ({ path: p.path, name: p.name, colour: p.colour,
                  clusterIds: Array.isArray(p.filter?.values) ? (p.filter!.values as unknown[]).map(Number) : [] }))
 
+  // every cluster a population of THIS run claims → that pop's colour (first pop in tree order wins) — so
+  // colour-by-cluster draws a claimed cluster in its population's colour (plots/categoryColours.ts)
+  const clusterClaims = computed<Record<string, string>>(() => {
+    const out: Record<string, string> = {}
+    for (const p of g.flat) {
+      if (p.filter?.measure !== clusterMeasure(popType.value, suffix.value) || !Array.isArray(p.filter.values)) continue
+      for (const v of p.filter.values as unknown[]) out[String(Number(v))] ??= p.colour
+    }
+    return out
+  })
+
   // drive the caller's gating store for the pop tree: primary = first valid image,
   // the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
   // `resolvedVn` is a dependency (not just read): loadFeatures resolves it asynchronously, so without it
@@ -155,6 +166,6 @@ export function useClusterContext(opts: {
     suffixes, clusterFeatures, featureFallback, nameMap, featureLabels, labelMap,
     clusterIds, clusterMembers, clusterAxes, resolvedVn,
     hmmStateCols, hmmTransitionCols, allFeatures, featureOptions,
-    runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor,
+    runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor, clusterClaims,
   }
 }

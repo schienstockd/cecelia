@@ -1034,10 +1034,13 @@ function api_viewer_overlays(req::HTTP.Request)
         kind = scale === nothing ? nothing : (scale.continuous ? "numeric" : "categorical")
         levels = kind == "categorical" ? scale.levels : nothing
         range_ = (kind == "numeric" && scale.range !== nothing) ? collect(scale.range) : nothing
+        # the levels a user population claims ({value → pop hex}): the client colours those in the pop's
+        # colour and every other level by `categoryColours` — the rule the movie applies (`category_colours`)
+        claims = kind == "categorical" ? _colour_overrides_for(img, used, COLOUR_BY_POP_TYPES) : nothing
         200, JSON3.write((; nCells = length(idx), nDropped = n - length(idx),
                             axes, hasT = has("centroid_t"), cells, pops,
                             colourColumns = obs, colourBy = used, valueKind = kind,
-                            valueLevels = levels, valueRange = range_,
+                            valueLevels = levels, valueRange = range_, levelClaims = claims,
                             values = vals, valueName = vn, popType = pt))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
