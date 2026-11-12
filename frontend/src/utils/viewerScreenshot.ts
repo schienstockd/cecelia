@@ -29,3 +29,14 @@ export function screenshotFilename(imageName: string | null | undefined, now?: D
   const base = stripExt((imageName ?? '').trim()) || 'viewer'
   return `${base}-${timestampForFilename(now)}.png`
 }
+
+// What the screenshot keeps of the viewer's canvas wrap: the image canvas and the elements marked
+// `data-screenshot-keep` (the scale bar + timestamp — what a movie or still draws too). Every other
+// child is GUI chrome or a viewing aid (playback bar, overview minimap, grid, status chips, ROI
+// spotlight) and is left out. An allow-list, so chrome added later stays out without anyone
+// remembering to tag it.
+export const SCREENSHOT_KEEP = 'data-screenshot-keep'
+interface ChromeNode { readonly parentElement: unknown; hasAttribute(name: string): boolean }
+export function isScreenshotChrome(el: ChromeNode, host: unknown, imageCanvas: unknown): boolean {
+  return el.parentElement === host && el !== imageCanvas && !el.hasAttribute(SCREENSHOT_KEEP)
+}

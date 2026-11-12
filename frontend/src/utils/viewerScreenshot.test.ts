@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { stripExt, timestampForFilename, screenshotFilename } from './viewerScreenshot'
+import { stripExt, timestampForFilename, screenshotFilename, isScreenshotChrome, SCREENSHOT_KEEP } from './viewerScreenshot'
 
 describe('stripExt', () => {
   it('drops a short trailing extension only', () => {
@@ -46,5 +46,21 @@ describe('screenshotFilename', () => {
     expect(screenshotFilename('', now)).toBe('viewer-2026-09-18_14-05-03.png')
     expect(screenshotFilename(null, now)).toBe('viewer-2026-09-18_14-05-03.png')
     expect(screenshotFilename('   ', now)).toBe('viewer-2026-09-18_14-05-03.png')
+  })
+})
+
+describe('isScreenshotChrome — what Save PNG leaves out of the viewer', () => {
+  const host = {}, canvas = { parentElement: host, hasAttribute: () => false }
+  const child = (keep = false, parent: unknown = host) =>
+    ({ parentElement: parent, hasAttribute: (a: string) => keep && a === SCREENSHOT_KEEP })
+  it('keeps the image canvas and the marked scale bar / timestamp', () => {
+    expect(isScreenshotChrome(canvas, host, canvas)).toBe(false)
+    expect(isScreenshotChrome(child(true), host, canvas)).toBe(false)
+  })
+  it('drops every other child of the wrap (playback bar, overview, grid, chips)', () => {
+    expect(isScreenshotChrome(child(), host, canvas)).toBe(true)
+  })
+  it('leaves nested elements to their kept parent', () => {
+    expect(isScreenshotChrome(child(false, {}), host, canvas)).toBe(false)
   })
 })

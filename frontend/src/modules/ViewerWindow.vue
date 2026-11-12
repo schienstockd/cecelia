@@ -124,7 +124,7 @@ import TileMarkOverlay from '../components/TileMarkOverlay.vue'
 import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
 import { plotHostToImageURL, loadImg, downloadDataUrl } from '../plots/export'
-import { screenshotFilename } from '../utils/viewerScreenshot'
+import { screenshotFilename, isScreenshotChrome } from '../utils/viewerScreenshot'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
@@ -5370,8 +5370,9 @@ interface ViewerCapture {
 // User-facing "Save PNG" (napari-parity screenshot). Different from `__cceceliaViewerCapture`
 // above — that one is the strip's canvas-pixels-only path, used by an internal reader that already
 // draws its own scale bar / legend. This one is what a HUMAN wants when they hit a Screenshot button:
-// the WebGPU canvas WITH the SVG overlays composited on top (StillOverlay's scale bar + timestamp,
-// GridOverlay's mesh), so the shot matches what the eye sees.
+// the WebGPU canvas WITH StillOverlay's scale bar + timestamp composited on top — the look a movie or
+// still records. Everything else in the canvas wrap (playback bar, overview minimap, grid, chips) is
+// GUI chrome and stays out (`isScreenshotChrome`, an allow-list on `data-screenshot-keep`).
 //
 // Composited through `plots/export.ts::plotHostToImageURL` — the canonical canvas-pixels + HTML/SVG
 // overlay compositor (the plot/board exports already use it): it clones the host, inlines computed
@@ -5387,7 +5388,8 @@ async function viewerScreenshot(): Promise<{ png: string; imageName: string }> {
   const frame = await readViewerFrame()
   if (!frame) throw new Error('viewer frame unavailable')
   const png = await plotHostToImageURL(host, MEDIA_BG, {
-    hiRes: async (cv) => cv === el ? frame : null,   // other canvases (overview minimap) fall through
+    hiRes: async (cv) => cv === el ? frame : null,
+    exclude: (n) => isScreenshotChrome(n, host, el),
   })
   if (!png) throw new Error('screenshot composite failed')
   return { png, imageName: imageName.value ?? '' }
@@ -5950,6 +5952,7 @@ onUnmounted(() => {
       <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
            35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
       <StillOverlay
+        data-screenshot-keep
         v-if="meta && shownT >= 0" :extent-um="overlayExtent" :time-label="timeLabel" chrome="fixed"
         :show-scale-bar="spec.scaleBar" :show-timestamp="spec.timestamp"
         :bar-font-px="spec.scaleBarPx" :time-font-px="spec.timestampPx"

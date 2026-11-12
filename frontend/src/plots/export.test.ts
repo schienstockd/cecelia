@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { svgDoc, svgCircles, svgPolygon, svgPath, svgRect, svgLine, svgText, svgImage, svgEsc, nestSvg, svgClip,
-         svgSizeWarning, SVG_SIZE_WARN_BYTES } from './export'
+         svgSizeWarning, SVG_SIZE_WARN_BYTES, pruneExcluded, insideExcluded } from './export'
 
 // The dot plots (UMAP, gating) export a TRUE-VECTOR SVG so figures open editable in Illustrator and the
 // boss can recolour the dots (docs/PLOTS.md). These pure string builders are the shared engine — tested
@@ -186,5 +186,49 @@ describe('svg roots all come from svgDoc', () => {
 
   it('the glob resolved', () => {
     expect(Object.keys(SRC).length).toBeGreaterThan(100)
+  })
+})
+
+// A host export drops GUI chrome (the viewer's playback bar and overview minimap) from the clone.
+// Fake nodes carry just `children`/`remove`/`parentElement` — the slice the helpers read.
+interface FakeNode { name: string; children: FakeNode[]; parentElement: FakeNode | null; remove(): void }
+function tree(name: string, kids: FakeNode[] = []): FakeNode {
+  const n: FakeNode = { name, children: kids, parentElement: null,
+    remove() { const p = n.parentElement; if (p) p.children = p.children.filter(c => c !== n) } }
+  for (const k of kids) k.parentElement = n
+  return n
+}
+const host = () => tree('wrap', [tree('canvas'), tree('bar', [tree('select')]), tree('scale'),
+                                tree('corner', [tree('overview', [tree('ovcanvas')])])])
+const names = (n: FakeNode) => n.children.map(c => c.name)
+
+describe('pruneExcluded — chrome left out of an exported clone', () => {
+  it('removes every match from the clone, keeping the live tree whole', () => {
+    const src = host(), dst = host()
+    pruneExcluded(src, dst, n => n.name === 'bar' || n.name === 'corner')
+    expect(names(dst)).toEqual(['canvas', 'scale'])
+    expect(names(src)).toEqual(['canvas', 'bar', 'scale', 'corner'])
+  })
+  it('removes adjacent matches without skipping one (indices read before removal)', () => {
+    const src = host(), dst = host()
+    pruneExcluded(src, dst, n => n.name !== 'canvas')
+    expect(names(dst)).toEqual(['canvas'])
+  })
+  it('reaches nested matches', () => {
+    const src = host(), dst = host()
+    pruneExcluded(src, dst, n => n.name === 'overview')
+    expect(names(dst.children[3])).toEqual([])
+  })
+})
+
+describe('insideExcluded — a canvas inside chrome skips the pixel pass', () => {
+  const src = host()
+  const ov = src.children[3].children[0].children[0]
+  it('true for a canvas under an excluded ancestor', () => {
+    expect(insideExcluded(ov, src, n => n.name === 'corner')).toBe(true)
+  })
+  it('false for the image canvas, and never tests the host itself', () => {
+    expect(insideExcluded(src.children[0], src, n => n.name === 'corner')).toBe(false)
+    expect(insideExcluded(src.children[0], src, n => n.name === 'wrap')).toBe(false)
   })
 })
