@@ -82,7 +82,7 @@ describe('lightPathStages per technology', () => {
       channels: [{ order: 2, name: 'Podoplanin', dyePreset: null, laser: null, detector: null, hv: null, gain: 1, offset: 0, cycle: 2 }] }
     const st = lightPathStages({ acquisition: run } as LightPathImage)
     expect(st.find(s => s.key === 'stack')!.items.map(i => i.text))
-      .toEqual(['Stitched from tiles', '3 cycles · 2 blank planned', 'Podoplanin cycle 2'])
+      .toEqual(['Stitched from tiles', '3 cycles imaged (2 blank)', 'Podoplanin cycle 2'])
   })
 
   it('airyscan: the processing stage names each channel\'s mode', () => {
