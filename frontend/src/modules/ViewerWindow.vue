@@ -122,7 +122,8 @@ import LandscapeOverlay from '../components/LandscapeOverlay.vue'
 import TileMarkOverlay from '../components/TileMarkOverlay.vue'
 import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
-import { plotHostToImageURL, loadImg } from '../plots/export'
+import { plotHostToImageURL, loadImg, downloadDataUrl } from '../plots/export'
+import { screenshotFilename } from '../utils/viewerScreenshot'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
 import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
@@ -5321,7 +5322,7 @@ interface ViewerCapture {
 // the overlays through an SVG foreignObject wrapper, and drawImages canvas pixels + overlay onto
 // one target. The WebGPU canvas is fed in via the `hiRes` hook as `readViewerFrame`'s GPU read —
 // never the canvas itself, whose snapshot can read back blank.
-;(window as unknown as { __cceceliaViewerScreenshot?: () => Promise<{ png: string; imageName: string }> }).__cceceliaViewerScreenshot = async () => {
+async function viewerScreenshot(): Promise<{ png: string; imageName: string }> {
   const el = canvas.value
   if (!el) throw new Error('viewer canvas not ready')
   const host = el.parentElement as HTMLElement | null
@@ -5333,6 +5334,17 @@ interface ViewerCapture {
   })
   if (!png) throw new Error('screenshot composite failed')
   return { png, imageName: imageName.value ?? '' }
+}
+;(window as unknown as { __cceceliaViewerScreenshot?: typeof viewerScreenshot }).__cceceliaViewerScreenshot = viewerScreenshot
+/** Share ▾ → Save image: the same composite, downloaded here (the main window's Viewer panel saves
+ *  through the hook above). */
+async function saveViewImage() {
+  try {
+    const { png, imageName: name } = await viewerScreenshot()
+    downloadDataUrl(screenshotFilename(name), png)
+  } catch (e) {
+    showShareToast('fail', `Save image failed: ${e instanceof Error ? e.message : String(e)}`)
+  }
 }
 
 // ── Share-in draw mode (BIDIR PR #3 of docs/todo/BIDIR_CONTEXT_PLAN.md) ────────────────────────
@@ -5368,8 +5380,8 @@ const drawAddressLine = computed(() => {
 })
 // Sharing over an already-open capture starts fresh: close the capture view so DrawSurface
 // mounts on the LIVE viewer (what the user is currently looking at), not on the frozen PNG.
-;(window as unknown as { __cceceliaViewerBeginDraw?: () => void }).__cceceliaViewerBeginDraw =
-  () => { captureView.value = null; drawMode.value = true }
+function beginDraw() { captureView.value = null; drawMode.value = true }
+;(window as unknown as { __cceceliaViewerBeginDraw?: () => void }).__cceceliaViewerBeginDraw = beginDraw
 
 // The frozen frame that survives Save (`CaptureViewSurface` renders it). Set here on a
 // successful POST; cleared by the surface's close button or by a new draw.
@@ -5805,7 +5817,8 @@ onUnmounted(() => {
   <!-- The window's header: way back, what is on screen, Help, Ask Kiwi (GUI_LAYOUT_PLAN V1) -->
   <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
             :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
-            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true" />
+            :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
+            @save-image="saveViewImage" @draw="beginDraw" />
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
