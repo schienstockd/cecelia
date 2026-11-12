@@ -244,6 +244,18 @@ end
     @test Cecelia.ccid_channel_names(raw) == names                  # default
     @test Cecelia.ccid_channel_names(raw, nothing) == ["a", "b"]    # active
     @test Cecelia.ccid_channel_names(Dict{String,Any}()) == String[]
+    # A version with no names of its own falls back to the active one — the same rule as
+    # `channel_names(img; value_name)`, which feeds the picker; one shared lookup, so they agree.
+    @test Cecelia.ccid_channel_names(raw, "driftCorrected") == ["a", "b"]
+    only_default = Dict{String,Any}("imChannelNames" => Dict{String,Any}("default" => names, "_active" => "default"))
+    @test Cecelia.ccid_channel_names(only_default, "driftCorrected") == names
+    img = Cecelia.CciaImage(; dir = ""); img.im_channel_names = Dict{String,Union{Vector{String},String}}(
+        "default" => names, "corrected" => ["a", "b"], "_active" => "corrected")
+    @test Cecelia.ccid_channel_names(Dict{String,Any}("imChannelNames" => names)) == names   # legacy bare list
+    @test Cecelia.ccid_channel_names(JSON3.read(JSON3.write(raw)), "driftCorrected") == ["a", "b"]  # Symbol keys
+    for vn in ("default", "corrected", "driftCorrected", nothing)
+        @test Cecelia.ccid_channel_names(raw, vn) == Cecelia.channel_names(img; value_name = vn)
+    end
 
     # NO SEVENTH COPY. The detector, not just the extraction — this is the second time this file has
     # had to count these sites, and grep-based guesses were wrong both times.

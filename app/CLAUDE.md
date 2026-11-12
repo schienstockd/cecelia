@@ -56,11 +56,12 @@ channels = channel_indices(get(params, "channels", nothing), names; what = "chan
   drift correction silently fell back to channel 0 — registering a whole timelapse against SHG.
 - **`channel_names(img; value_name)`** is where the list comes from, because it **falls back to the
   active version**. Names are typically registered only under `default` while a processed version
-  carries none of its own, so reading the raw versioned field (`versioned_get_field(raw,
-  "imChannelNames", value_name)` / `ccid_channel_names(raw, value_name)`) returns `nothing` and the
-  task reports "(none registered)" for an image whose channels the picker is happily listing — the
-  picker is fed by `channel_names(img)` in the image payload, so any other source disagrees with what
-  the user just clicked.
+  carries none of its own. A handler holding only `raw` uses **`ccid_channel_names(raw, value_name)`**,
+  which shares that lookup (`_versioned_channel_names`), so the two cannot disagree. Never resolve a
+  pick against the raw field (`versioned_get_field(raw, "imChannelNames", value_name)` — fine for
+  copying the stored entry to a new image, as the editImages writers do): it has no fallback, returns
+  `nothing`, and the task reports "(none registered)" for an image whose channels the picker is
+  happily listing — the picker is fed by `channel_names(img)` in the image payload.
 
 Enforced by the `channelSelection params resolve through channel_indices` testset: a task whose
 resolved spec declares one and whose handler never calls `channel_indices` fails the suite.

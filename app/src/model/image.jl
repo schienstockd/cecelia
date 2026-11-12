@@ -477,9 +477,17 @@ often stored only under a base version (e.g. `default`) while labelProps use oth
 """
 function channel_names(img::CciaImage; value_name=nothing)::Union{Vector{String},Nothing}
     isempty(img.im_channel_names) && return nothing
-    v = versioned_get(img.im_channel_names, value_name)   # nothing → active
-    isnothing(v) && !isnothing(value_name) && (v = versioned_get(img.im_channel_names, nothing))
-    isnothing(v) ? nothing : collect(String, v)
+    _versioned_channel_names(img.im_channel_names, value_name)
+end
+
+# The one lookup behind both `channel_names` (a loaded image) and `ccid_channel_names` (a raw
+# ccid.json dict): the version's own names, else the active version's (`nothing` → active). Two
+# copies of this rule once disagreed — the raw one had no fallback — so a handler could report
+# "(none registered)" for a channel the picker was listing.
+function _versioned_channel_names(d::AbstractDict, value_name)::Union{Vector{String},Nothing}
+    v = versioned_get(d, value_name)
+    isnothing(v) && !isnothing(value_name) && (v = versioned_get(d, nothing))
+    v isa AbstractVector ? collect(String, v) : nothing
 end
 
 # ── Channel name → 0-based index ──────────────────────────────────────────────
@@ -555,13 +563,17 @@ end
     ccid_channel_names(raw, value_name=VERSIONED_DEFAULT_VAL) -> Vector{String}
 
 Channel names straight off a `ccid.json` dict, for a task handler that has `raw` rather than a loaded
-`CciaImage`. The same three lines were repeated in all six handlers; `nothing` for `value_name` means
-the ACTIVE version (what `segment/branching` wants — a corrected image with renamed channels).
+`CciaImage` — the same lookup as `channel_names(img; value_name)`, fallback to the active version
+included, so a handler and the picker (fed by `channel_names`) cannot disagree. `nothing` for
+`value_name` means the ACTIVE version (what `segment/branching` wants — a corrected image with
+renamed channels). Empty, not `nothing`, when none are registered.
 """
 function ccid_channel_names(raw::AbstractDict,
                             value_name = VERSIONED_DEFAULT_VAL)::Vector{String}
-    v = versioned_get_field(raw, "imChannelNames", value_name)
-    v isa AbstractVector ? collect(String, v) : String[]
+    d = get(raw, "imChannelNames", get(raw, :imChannelNames, nothing))   # JSON3 may give Symbol keys
+    d isa AbstractVector && return collect(String, d)                    # legacy: unversioned list
+    d isa AbstractDict || return String[]
+    something(_versioned_channel_names(d, value_name), String[])
 end
 
 # ── State file — the object owns its own path ─────────────────────────────────

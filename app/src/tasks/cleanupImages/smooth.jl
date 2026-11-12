@@ -155,9 +155,9 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
                "same pixel across frames, so run drift correction first or the statistic mixes tissue.")
     end
 
-    # `ccid_channel_names(raw)` — the DEFAULT version, not `value_name`. Channel names are stored
-    # once under "default"; asking for them under a derived version ("driftCorrected") returns an
-    # empty list and every channel name then fails to resolve. Same call as drift_correct.jl.
+    # `ccid_channel_names(raw)` — the DEFAULT version, where channel names are stored; a derived
+    # version ("driftCorrected") has none of its own. Same lookup as `channel_names`, which feeds the
+    # picker. Same call as drift_correct.jl.
     ch_names = ccid_channel_names(raw)
     channel_idx = channel_indices(p.channels, ch_names; what = "channels")
     if isempty(channel_idx)
