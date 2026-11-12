@@ -53,7 +53,8 @@ describe('guide anchors exist in the source', () => {
   it('every data-guide anchor a step points at is present in the markup', () => {
     const missing = anchorIds()
       .filter(a => !a.id.startsWith(NAV_PREFIX))
-      .filter(a => !SOURCE.includes(`data-guide="${a.id}"`))
+      // a SettingsShell category's `guide: '…'` is rendered as its nav button's data-guide
+      .filter(a => !SOURCE.includes(`data-guide="${a.id}"`) && !SOURCE.includes(`guide: '${a.id}'`))
       .map(a => `${a.id} (${a.where})`)
     expect(missing).toEqual([])
   })

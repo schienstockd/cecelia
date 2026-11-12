@@ -1,5 +1,5 @@
 // One home for the backend service-control endpoints — the Pluto notebooks server and the task-
-// preview worker. Both the Settings service panel (SettingsModule) and the Notebooks page
+// preview worker. Both the Settings service panel (SettingsModal) and the Notebooks page
 // (NotebooksModule) drive these; route through here so an endpoint string / request shape lives in
 // exactly ONE place (the same reason app quit goes through the appControl store). App-level
 // lifecycle (quit / update / dev restart) stays in appControl — this is only the per-service

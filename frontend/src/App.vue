@@ -30,12 +30,14 @@ import CallForDatasetsModal from './components/CallForDatasetsModal.vue'
 import GuideBubble from './components/GuideBubble.vue'
 import PointerBubble from './components/PointerBubble.vue'
 import PreferencesModal from './components/PreferencesModal.vue'
+import SettingsModal from './components/SettingsModal.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { isGuidesOpen } from './lib/guideOpen'
 import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { isColorLegendOpen } from './lib/colorLegendOpen'
 import { isCallForDatasetsOpen, openCallForDatasets } from './lib/callForDatasetsOpen'
 import { isPreferencesOpen, closePreferences } from './lib/preferencesOpen'
+import { isSettingsOpen, closeSettings } from './lib/settingsOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
@@ -255,6 +257,9 @@ const bare = computed(() => popout || route.meta.bare === true)
          lib/callForDatasetsOpen.ts; opened from AppHeader and (once wired) from vis-aid chips via
          `?ask=<id>`. -->
     <CallForDatasetsModal v-if="isCallForDatasetsOpen" />
+    <!-- Project + machine settings (sidebar footer, `openSettings()`). Mounted BEFORE Preferences:
+         Settings → HPC opens Preferences on top of it, and DOM order is stacking order. -->
+    <SettingsModal v-if="isSettingsOpen" @close="closeSettings" />
     <!-- Per-profile preferences modal (USER_PROFILE_PLAN Phase 4). Mounted here so any caller
          — sidebar footer, header, KiwiCockpit's read-only profile row (Phase 6) — can open it
          via `openPreferences()`. -->

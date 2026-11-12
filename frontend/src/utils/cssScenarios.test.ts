@@ -327,7 +327,7 @@ describe('shadowed utilities', () => {
   //   - one was the SAME value as the utility's base, a pure no-op;
   //   - the error line became `.cc-muted-error`, the severity family's missing member (`-warn`
   //     shipped alone, so "this failed" was hand-rolled — once here as a scoped rule, and once in
-  //     `SettingsModule` as an inline style, which this ratchet cannot see at all).
+  //     `SettingsModal` as an inline style, which this ratchet cannot see at all).
   // Before adding an entry, check the utility does not already exist, or is not one modifier away.
   const ALLOWED = [
     // Tick labels size off `--gate-font`, a per-panel CSS var driven by the vis Font size slider, so
@@ -465,7 +465,7 @@ describe('form controls', () => {
     // .mono is on the REPL <input> and on plain <span>s. The span inherits body size, so
     // dropping this would push those spans up a tier. (`.field-input.mono` needs both classes and is
     // input-only, so that one was removed.)
-    'modules/SettingsModule.vue | .mono | font-size: var(--cc-fs-sm)',
+    'components/SettingsModal.vue | .mono | font-size: var(--cc-fs-sm)',
   ]
 
   // `[type="text"]` matches the ATTRIBUTE, not the field: a bare `<input v-model>` has no type, is a

@@ -25,6 +25,7 @@
 
 import type { GuideDef, Reveal } from './types'
 import { PREREQ } from './prereqs'
+import { settingsClosed, settingsReveal } from './settingsSteps'
 import { KIWI_LOOP, TERMINAL_MODE } from '../claudeOverview'
 import { GUIDE_MATURITY } from './maturityRecords'
 
@@ -83,7 +84,7 @@ export const viewProfileGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'nav:/settings',
+      anchor: 'sidebar.settings',
       placement: 'right',
       title: 'Settings',
       text: 'Sidebar layouts live in Settings — they curate the sidebar down to the pages this user actually works on.',
@@ -92,16 +93,10 @@ export const viewProfileGuide: GuideDef = {
     },
     {
       anchor: 'settings.viewProfile',
-      route: '/settings',
       placement: 'left',
       title: 'Pick or edit one',
       text: 'The chip row picks which layout is active; Edit opens the builder.',
-      reveal: {
-        needed: c => c.anchorExists('settings.viewProfile') && !c.anchorReachable('settings.viewProfile'),
-        anchor: 'settings.interface',
-        text: 'Open Interface to see the sidebar layouts.',
-        placement: 'bottom-start',
-      },
+      reveal: settingsReveal('settings.viewProfile', 'settings.interface', 'Interface'),
       bullets: ['"All pages" is the default — you never lose access to a page by picking a layout.'],
     },
     {
@@ -111,11 +106,12 @@ export const viewProfileGuide: GuideDef = {
       text: 'One row per sidebar group — tick the pages this layout should surface.',
       bullets: ['Great for handing a colleague a "just the segmentation bits" cecelia.'],
       reveal: [
+        settingsClosed('settings.interface'),
         {
-          needed: c => !c.anchorExists('viewProfile.editor') && !c.anchorReachable('settings.viewProfile'),
+          needed: c => !c.anchorExists('viewProfile.editor') && !c.anchorExists('settings.viewProfile'),
           anchor: 'settings.interface',
           text: 'Open Interface, then click Edit to open the layout builder.',
-          placement: 'bottom-start',
+          placement: 'right',
         },
         {
           // The editor only exists once the user clicks Edit in the previous step.
