@@ -261,3 +261,24 @@ end
     out = Cecelia._run_task(Cecelia.MeasureSignal(), img, Dict{String,Any}(); on_log = l -> push!(logs, l))
     @test out == Dict{String,Any}("measured" => false) && any(occursin("Already measured", l) for l in logs)
 end
+
+# A widefield camera's per-channel settings, as `lif_meta` writes them (no lasers): exposure or gain that
+# differs between images is a settings finding, the way a laser % is; equal settings are not.
+@testset "acq_check — camera settings differ between images" begin
+    cam(ms, g) = Dict{String,Any}("PhysicalSizeX" => 1.02, "saturation" => Dict{String,Any}("channels" => Any[]),
+        "acquisition" => Dict{String,Any}("lasers" => Any[], "objective" => Dict("name" => "HC PL FLUOTAR 20x/0.50 DRY"),
+            "camera" => Dict("name" => "DFC365FX", "binning" => 2, "bitDepth" => 12),
+            "channels" => [Dict("filterCube" => "A4", "exposureMs" => ms, "gain" => g, "illuminationIntensity" => 3),
+                           Dict("filterCube" => "Y5", "exposureMs" => ms, "gain" => 2.6, "illuminationIntensity" => 4)]))
+    names = ["ASC", "Nuclei"]
+    differ = [_acq_f(u, m, names) for (u, m) in (("a", cam(122.5, 2.0)), ("b", cam(234.8, 2.3)))]
+    f = filter(f -> f["code"] == "acq.settings_differ" && f["subs"]["variable"] == "camera setting",
+               Cecelia.acq_check(nothing, differ)["findings"])
+    @test length(f) == 1
+    @test occursin("A4 122.5 ms gain 2.0 lamp 3.0 / Y5 122.5 ms gain 2.6 lamp 4.0",
+                   join((g["value"] for g in f[1]["detail"]["groups"]), " | "))
+    same = [_acq_f(u, cam(122.5, 2.0), names) for u in ("a", "b")]
+    @test !any(f -> get(f["subs"], "variable", "") == "camera setting", Cecelia.acq_check(nothing, same)["findings"])
+    # a laser-scanning image has no camera: it never joins the camera comparison
+    @test _acq_f("c", _acq_meta())["camera"] === nothing
+end

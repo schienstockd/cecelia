@@ -117,6 +117,11 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
                                           for l in _ag(acq, "lasers", Any[]) if l isa AbstractDict]; by = first) : nothing
     bz = acq isa AbstractDict ? _ag(_ag(acq, "brightZ"), "enabled") : nothing
     obj = acq isa AbstractDict ? _ag(_ag(acq, "objective"), "name") : nothing
+    # A camera's per-channel settings (`lif_meta`): cube, exposure, gain, lamp step — what scales a widefield
+    # image's intensities the way laser % and HV scale a scanned one. `nothing` without a camera.
+    camera = acq isa AbstractDict && _ag(acq, "camera") isa AbstractDict ?
+        [(_ag(c, "filterCube"), _anum(_ag(c, "exposureMs")), _anum(_ag(c, "gain")), _anum(_ag(c, "illuminationIntensity")))
+         for c in _ag(acq, "channels", Any[]) if c isa AbstractDict] : nothing
     filters = acq isa AbstractDict ? Dict(i - 1 => _ag(c, "emissionFilter") for (i, c) in enumerate(_ag(acq, "channels", Any[]))) : Dict()
     chans = Dict{Int,Dict{String,Any}}()
     probed = false
@@ -142,7 +147,7 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
     nch = max(length(channel_names), isempty(chans) ? 0 : maximum(keys(chans)) + 1)
     Dict{String,Any}("uid" => String(uid), "name" => String(name), "designKey" => acq_design_key(channel_names),
         "channelNames" => String[i <= length(channel_names) ? String(channel_names[i]) : "Channel $i" for i in 1:nch],
-        "lasers" => lasers, "brightZ" => bz isa Bool ? bz : nothing,
+        "lasers" => lasers, "camera" => camera, "brightZ" => bz isa Bool ? bz : nothing,
         "brightZRamp" => acq isa AbstractDict ? acq_bright_z_ramp(_ag(acq, "brightZ")) : nothing,
         # no ramp found while some ramp value went unread: whether one was saved is unknown
         "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ")) !== nothing ||
@@ -204,6 +209,14 @@ function _acq_channels(plan, field, did, f, missing)
     end
     out
 end
+
+"""A camera's per-channel settings as one line: "A4 122.5 ms gain 2 lamp 3 / Y5 …"."""
+_acq_camera_text(c) = c === nothing || isempty(c) ? "—" :
+    join((join(filter(!isempty, [something(cube, "?") |> string,
+                                 ms === nothing ? "" : "$(round(ms; digits = 1)) ms",
+                                 g === nothing ? "" : "gain $(round(g; digits = 2))",
+                                 il === nothing ? "" : "lamp $(round(il; digits = 1))"]), " ")
+          for (cube, ms, g, il) in c), " / ")
 
 _acq_lasers_text(l) = l === nothing || isempty(l) ? "—" :
     join((string(round(Int, w)) for (w, _) in l), "/") * " nm · " *
@@ -334,6 +347,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     where_of(gs, value_of) = k -> join((value_of(g[1]) * ": " * join((f[k] for f in g), ", ") for g in gs), " · ")
     for (variable, get_v, same) in (
             ("laser setting", f -> f["lasers"], ==),
+            ("camera setting", f -> get(f, "camera", nothing), ==),
                 # on/off, and whether a ramp is saved — not the ramp's text, which an unread value changes;
                 # a movie whose ramp is unknown (values unread) sits out
             ("Bright Z setting", f -> (f["brightZ"] === nothing || !f["brightZRampKnown"]) ? nothing :
@@ -343,6 +357,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         known = filter(f -> get_v(f) !== nothing && !(has_plan && design[f["uid"]] === nothing), facts)
         length(known) < 2 && continue
         value_of(f) = (v = get_v(f); variable == "laser setting" ? _acq_lasers_text(v) :
+                       variable == "camera setting" ? _acq_camera_text(v) :
                        variable == "Bright Z setting" ? (v[1] ? "on" : "off") * (v[2] ? " · ramp saved" : "") : string(v))
         groups_detail(gs) = Dict("groups" => [Dict("value" => value_of(g[1]), "imageUids" => [f["uid"] for f in g]) for g in gs])
         gs = group_by(known, get_v, same)

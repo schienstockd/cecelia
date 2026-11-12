@@ -39,6 +39,12 @@ describe('viewerLook', () => {
     expect(viewerLook(base({ maskValueName: '' })).labelValueNames).toEqual([])
   })
 
+  it('the mask’s hidden halo / nuc files ride along; none hidden → absent (all drawn)', () => {
+    expect(viewerLook(base({ labelFilesHidden: ['halo'] })).labelFilesHidden).toEqual({ cpSAM: ['halo'] })
+    expect(viewerLook(base({ labelFilesHidden: [] })).labelFilesHidden).toBeUndefined()
+    expect(viewerLook(base({ maskValueName: '', labelFilesHidden: ['halo'] })).labelFilesHidden).toBeUndefined()
+  })
+
   it('3D → captures the camera + canvas for a batch', () => {
     const l = viewerLook(base({ viewState: { layers: {},
       camera: { center: [1, 2, 3], zoom: 2, angles: [30, 45, 0], perspective: 0 },

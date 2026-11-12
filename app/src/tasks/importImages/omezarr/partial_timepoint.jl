@@ -13,7 +13,7 @@ bioformats2raw keeps `OME/` whatever the series) and `zarr_meta["SizeT"]`.
 
 Bio-Formats keeps such a timepoint and fills its missing z-planes with zeros, so kept, it reads as
 cells vanishing from the deep planes in the last frame. `pt` of `nothing` (a complete last
-timepoint, or a probe that could not run) clears the field. When the trim fails the timepoint stays
+timepoint, or a probe that could not run) records nothing; the import merge clears the old record. When the trim fails the timepoint stays
 and the record says so (`trimmed = false`); QC then warns.
 """
 function _apply_partial_timepoint!(zarr_meta::AbstractDict, pt, resolved_zarr::AbstractString,
@@ -21,9 +21,9 @@ function _apply_partial_timepoint!(zarr_meta::AbstractDict, pt, resolved_zarr::A
                                    on_log::Function = _ -> nothing,
                                    on_progress::Function = (n, t) -> nothing,
                                    on_process::Function = _ -> nothing)
-    # A clean probe clears the field: the ccid merge keeps a key it is not given, so a re-import of a
-    # fixed or re-acquired file would otherwise carry the previous import's record.
-    isnothing(pt) && (zarr_meta["partialTimepoint"] = nothing; return nothing)
+    # Nothing to record: the import's ccid merge clears a previous import's record
+    # (`_OME_DERIVED_META_KEYS`), so a fixed or re-acquired file doesn't inherit it.
+    isnothing(pt) && return nothing
     size_t  = Int(get(zarr_meta, "SizeT", 0))
     n_empty = length(pt["emptyZ"])
     record  = Dict{String,Any}("t" => Int(pt["t"]), "emptyZ" => Int.(pt["emptyZ"]),

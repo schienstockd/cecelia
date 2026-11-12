@@ -1479,7 +1479,9 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                                   pops_filter = mask_scope.pops_filter, pop_eyes = mask_scope.pop_eyes,
                                   all_cells = all_cells,
                                   all_cells_colour = all_cells_col,
-                                  colour_by = mask_cb, colour_overrides = mask_co)
+                                  colour_by = mask_cb, colour_overrides = mask_co,
+                                  files_hidden = get(mask_files_hidden(_ov(ov_raw, :maskFilesHidden, nothing)),
+                                                     mask_vn, String[]))
                 if mask === nothing
                     mask_diag["reason"] = "no label store, or its colours could not be resolved"
                 else
