@@ -26,6 +26,31 @@ function _stamp_sources!(props, f)
     df
 end
 
+# an HMM run's state column + fit record on the cell table; every path that drops `live.cell.*`
+# must take the record with it (`prune_stale_hmmfit!`) — its readers don't check the column
+function _seed_hmm_run!(props)
+    df = label_props(props) |> select_cols(["track_id"]) |> as_df
+    st = DataFrame("label" => Int.(df.label), "live.cell.hmm.state.mv" => fill(1.0, nrow(df)))
+    label_props(props) |> add_obs(st) |> save!
+    Cecelia.put_props_sidecar_entry!(Cecelia.hmm_fit_path(props), "mv", Dict("numStates" => 3))
+    @test Cecelia.hmm_fit_entry(props, "mv") !== nothing
+end
+_hmm_run_gone(props) = !("live.cell.hmm.state.mv" in col_names(label_props(props); data_type = :obs)) &&
+                       Cecelia.hmm_fit_entry(props, "mv") === nothing && !isfile(Cecelia.hmm_fit_path(props))
+
+@testset "deleting the only track set takes the HMM fit records with the state columns" begin
+    if !_have_kdieem_b()
+        @test_skip "KDIeEm B fixture missing"
+    else
+        img = _kdieem_b_img(); props = img_label_props_path(img, "B")
+        _stamp_sources!(props, _ -> "popA")
+        _seed_hmm_run!(props)
+        @test delete_analysis_run!(img, "tracks", "popA", "B")
+        @test isempty(Cecelia.label_track_sources(img, "B"))
+        @test _hmm_run_gone(props)
+    end
+end
+
 @testset "tracking QC counts only the run's own tracks" begin
     if !_have_kdieem_b()
         @test_skip "KDIeEm B fixture missing"
@@ -55,10 +80,12 @@ end
     else
         img = _kdieem_b_img()
         trk = img_track_props_path(img, "B")
+        _seed_hmm_run!(img_label_props_path(img, "B"))
         logs = String[]
         res = Cecelia._run_task(Cecelia.BayesianTracking(), img,
             Dict{String,Any}("valueName" => "B", "minTimepoints" => 2); on_log = l -> push!(logs, l))
         @test res !== nothing || error(join(logs, "\n"))
+        @test _hmm_run_gone(img_label_props_path(img, "B"))   # states dropped with `live.cell.*`, record too
         @test !isfile(trk)
         @test !isfile(Cecelia._clustfeatures_path(trk))
         # track measures rebuild it for the new ids
@@ -80,9 +107,11 @@ end
         r = findfirst(i -> isfinite(tt.track_id[i]) && tt.track_id[i] != 1 && !(tt[i, t_col] in held),
                       1:nrow(tt))
         lbl = Int(tt.label[r])
+        _seed_hmm_run!(props)
         res = Cecelia._run_task(Cecelia.TrackCorrect(), img, Dict{String,Any}("valueName" => "B",
             "trackOps" => [Dict("op" => "points.add", "labels" => [lbl], "trackId" => 1)]); on_log = _ -> nothing)
         @test res !== nothing
+        @test _hmm_run_gone(props)            # stale `live.cell.*` (HMM states among them) and their records
         after = label_props(props) |> select_cols(["track_id", "track_source"]) |> as_df
         i = findfirst(==(lbl), Int.(after.label))
         @test after.track_id[i] == 1.0

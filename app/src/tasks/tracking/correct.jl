@@ -202,6 +202,7 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
     isempty(stale) || on_log("[INFO] Dropping $(length(stale)) stale track-measure column(s)")
 
     label_props(props_path) |> v -> drop_obs(v, stale) |> v -> add_obs(v, out) |> save!
+    prune_stale_hmmfit!(props_path; on_log)   # HMM state columns were among `stale`: their fit records go too
     on_log("[INFO] Wrote track_id + $(length(lineage_present)) lineage column(s) → $props_path")
     # A cell that joined a track took that track's `track_source` (`_copy_lineage_from!`). Left
     # unstamped, a re-track of that source would delete the rest of the track and keep this cell as
