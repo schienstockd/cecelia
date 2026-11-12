@@ -50,8 +50,8 @@ stack. Per-tag notes are also on the
 
 ### Added
 
-- **Register staining cycles** (*Edit → Register images*), now on: whole-slide scans register on their
-  pyramid, keep one DAPI (tick to keep each cycle's, to compare), and QC flags a misaligned cycle or lost tissue.
+- **Register staining cycles** (*Edit → Register images*), now on: slide scans register on their
+  pyramid into one image with one DAPI; QC flags a misaligned cycle or lost tissue.
 - **AF correction skips channels the scanner already AF-subtracted** (PhenoCycler), and says so.
 - **Slide scans: import measures the signal on the tissue**, not the glass; the data path shows how much is tissue.
 - **Record ROIs.** Movie section → *ROIs*: a movie or figure per ROI ticked in the ROI list, *pad* frames either side; *make* movies, + sheet, or the sheet only.
