@@ -477,8 +477,8 @@ photon-limited.
 function photon_limited_qc_findings(meta::AbstractDict)
     hits = Tuple{Int,Float64,Union{Float64,Nothing}}[]
     for ch in _saturation_channels(meta)
+        channel_photon_limited(ch) === true || continue
         zf = _cal_num(get(ch, "zeroFrac", nothing))
-        (isnothing(zf) || zf < _PHOTON_LIMITED_ZERO_FRAC) && continue
         i  = _cal_int(get(ch, "index", nothing), 0)
         sf = _cal_num(get(ch, "signalFrac", nothing))
         push!(hits, (i, zf, sf))
@@ -625,6 +625,38 @@ function _saturation_channels(meta::AbstractDict)::Vector{Dict{String,Any}}
         ch isa AbstractDict && push!(out, Dict{String,Any}(String(k) => v for (k, v) in ch))
     end
     out
+end
+
+"""
+    channel_photon_limited(ch) -> Union{Bool,Nothing}
+
+The per-channel rule behind `import.photon_limited`: `zeroFrac >= _PHOTON_LIMITED_ZERO_FRAC`. `ch` is
+one entry of [`_saturation_channels`](@ref). `nothing` when the probe has no zero fraction for it.
+"""
+function channel_photon_limited(ch::AbstractDict)::Union{Bool,Nothing}
+    zf = _cal_num(get(ch, "zeroFrac", nothing))
+    isnothing(zf) ? nothing : zf >= _PHOTON_LIMITED_ZERO_FRAC
+end
+
+"""
+    channel_signal_flags(meta, wanted) -> NamedTuple
+
+The two import facts a cleanup task's channel pick depends on, for the `wanted` 0-based channel
+indices: `saturated` (the flag the denoise gate refuses), `photonLimited` and `notPhotonLimited`
+(the `import.photon_limited` rule). A channel the probe has no number for is in neither photon list.
+Each list is sorted. Pure.
+"""
+function channel_signal_flags(meta::AbstractDict, wanted::AbstractVector{<:Integer})
+    sat, pl, npl = Int[], Int[], Int[]
+    for ch in _saturation_channels(meta)
+        idx = get(ch, "index", nothing)
+        idx isa Integer && Int(idx) in wanted || continue
+        get(ch, "saturated", false) === true && push!(sat, Int(idx))
+        p = channel_photon_limited(ch)
+        p === true  && push!(pl, Int(idx))
+        p === false && push!(npl, Int(idx))
+    end
+    (saturated = sort!(sat), photonLimited = sort!(pl), notPhotonLimited = sort!(npl))
 end
 
 """

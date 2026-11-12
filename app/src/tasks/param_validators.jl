@@ -68,3 +68,25 @@ end
 Enumerate what's registered. Used by tests and the API introspection route.
 """
 param_validator_keys() = collect(keys(PARAM_VALIDATORS))
+
+"""
+    stamp_backend_advisories!(spec, fun_name) -> spec
+
+Mark every param of `spec` (sections and groups included) that has a validator registered for
+`fun_name` with `"backendAdvisory" => true`. The task-definitions route calls this, so the form asks
+`/api/tasks/validate` for exactly those params — no request, and no "checking…" line, for the rest.
+Set by the server, never written in a spec file, so it cannot disagree with this registry.
+"""
+function stamp_backend_advisories!(spec::AbstractDict, fun_name::AbstractString)
+    walk(ps) = for p in ps
+        p isa AbstractDict || continue
+        k = get(p, "key", nothing)
+        k isa AbstractString && haskey(PARAM_VALIDATORS, (String(fun_name), k)) &&
+            (p["backendAdvisory"] = true)
+        sub = get(p, "params", nothing)
+        sub isa AbstractVector && walk(sub)
+    end
+    ps = get(spec, "params", nothing)
+    ps isa AbstractVector && walk(ps)
+    spec
+end

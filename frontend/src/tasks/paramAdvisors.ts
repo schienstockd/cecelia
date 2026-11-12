@@ -121,6 +121,8 @@ export interface FrameGeometry {
 /** Everything an advisor may read: the current value + the task panel's context. */
 export interface AdvisorContext {
   projectUid?: string
+  /** The task the form is for (`TaskDef.fun_name`) — what `taskBackendAdvisor` asks the backend about. */
+  funName?: string
   images?: AdvisorImage[]
   values?: Record<string, unknown>
 }
@@ -139,6 +141,8 @@ export interface AdvisorParam {
   /** `optionsFrom` on a `select` — surfaced so a key-registered advisor (`model` is used by BOTH
    *  `segment.cellpose` and `segment.coastal`) can self-gate to the source that actually applies. */
   optionsFrom?: string
+  /** Server-set: a Julia validator is registered for this task + key (see `taskBackendAdvisor`). */
+  backendAdvisory?: boolean
   /** `namespace` on a `valueNameInput` — which registry the name writes into (`labels`, …). */
   namespace?: string
   /** `outputRegistry` on a label writer's `valueNameInput` — `branch_labels` for branching. */
@@ -688,35 +692,53 @@ export function searchRadiusSpeedAdvisory(
  */
 export function backendAdvisor(funName: string, paramKey: string): ParamAdvisor {
   return {
-    // The set of images matters (min sizeT across the selection is what most validators look at) —
-    // re-run when the picked images change even if the value hasn't. `sizeT` is on the payload the
-    // form already has, so a change there tracks a re-import, not just a re-selection.
-    reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.sizeT ?? ''}`).join(',')],
-    advise: async (value, ctx) => {
-      try {
-        const res = await fetch('/api/tasks/validate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            funName, paramKey, value,
-            projectUid:    ctx.projectUid ?? '',
-            imageUids:     (ctx.images ?? []).map(i => i.uid).filter(Boolean),
-            siblingValues: ctx.values ?? {},
-          }),
-        })
-        if (!res.ok) return null
-        const body = await res.json()
-        // The endpoint returns `null` (as JSON) when the validator had nothing useful to say. Fall
-        // through to `null` on any other shape — an advisory is never load-bearing.
-        if (!body || typeof body !== 'object') return null
-        const b = body as Partial<ParamAdvisory>
-        if (typeof b.severity !== 'string' || typeof b.message !== 'string' ||
-            typeof b.tip !== 'string') return null
-        return b as ParamAdvisory
-      } catch {
-        return null      // network failed / server down — silence beats an error banner
-      }
-    },
+    reloadOn: imagesKey,
+    advise: (value, ctx) => validateOnBackend(funName, paramKey, value, ctx),
+  }
+}
+
+// The set of images matters (min sizeT across the selection is what most validators look at) —
+// re-run when the picked images change even if the value hasn't. `sizeT` is on the payload the form
+// already has, so a change there tracks a re-import, not just a re-selection.
+const imagesKey = (ctx: AdvisorContext) => [(ctx.images ?? []).map(i => `${i.uid}:${i.sizeT ?? ''}`).join(',')]
+
+/**
+ * The same backend advisory, for any param the server stamped `backendAdvisory` (a Julia validator is
+ * registered for this task + key — `stamp_backend_advisories!`, app/src/tasks/param_validators.jl).
+ * The task comes from the form (`ctx.funName`), the key from the param. `paramAdvisor` returns it
+ * for a stamped param before the type/key registry, so a shared key (`channels`, `model`) asks the
+ * backend on the tasks that registered it and on no other.
+ */
+export const taskBackendAdvisor: ParamAdvisor = {
+  reloadOn: imagesKey,
+  advise: async (value, ctx, param) =>
+    ctx.funName && param?.key ? validateOnBackend(ctx.funName, param.key, value, ctx) : null,
+}
+
+async function validateOnBackend(funName: string, paramKey: string, value: unknown,
+                                 ctx: AdvisorContext): Promise<ParamAdvisory | null> {
+  try {
+    const res = await fetch('/api/tasks/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        funName, paramKey, value,
+        projectUid:    ctx.projectUid ?? '',
+        imageUids:     (ctx.images ?? []).map(i => i.uid).filter(Boolean),
+        siblingValues: ctx.values ?? {},
+      }),
+    })
+    if (!res.ok) return null
+    const body = await res.json()
+    // The endpoint returns `null` (as JSON) when the validator had nothing useful to say. Fall
+    // through to `null` on any other shape — an advisory is never load-bearing.
+    if (!body || typeof body !== 'object') return null
+    const b = body as Partial<ParamAdvisory>
+    if (typeof b.severity !== 'string' || typeof b.message !== 'string' ||
+        typeof b.tip !== 'string') return null
+    return b as ParamAdvisory
+  } catch {
+    return null      // network failed / server down — silence beats an error banner
   }
 }
 
@@ -1050,6 +1072,7 @@ export function frameGeometry(
 export function clearFrameGeometryCache(): void { _geomCache.clear() }
 
 export function paramAdvisor(param: AdvisorParam): ParamAdvisor | undefined {
+  if (param.backendAdvisory) return taskBackendAdvisor
   return (param.type ? PARAM_ADVISORS[param.type] : undefined)
     ?? (param.key ? PARAM_ADVISORS[param.key] : undefined)
 }

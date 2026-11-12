@@ -126,6 +126,10 @@ def run(params):
             input_frames = max(input_frames, int((e.get('subManifest') or {}).get('arch', {}).get('inputFrames', 0)))
     if input_frames <= 0:
         input_frames = 61
+    # The handler reads the window once for the picked channels (denoise_advisory.jl ->
+    # denoise_input_frames) and the model advisory uses the same number; prefer it when sent.
+    if int(params.get('inputFrames') or 0) > 0:
+        input_frames = int(params['inputFrames'])
 
     _, device = torch_device()
     if device is None:

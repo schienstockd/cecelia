@@ -1234,9 +1234,10 @@ const paramContext = computed(() => {
   // `projectUid` — WITHOUT it `loadPops`/`loadCols` early-return, so every `popSelection` (13 specs)
   // and `labelPropsColsSelection` (4 specs) param rendered EMPTY in the chain editor while working in
   // the task runner: same spec, two behaviours, no error. `params` lets a widget find its sibling by
-  // type rather than by a hardcoded key.
+  // type rather than by a hardcoded key. `funName` — the task a backend advisory is asked about.
   return { images: imgs, extraValueNames, values: selectedNode.value?.data.params,
-           projectUid: projectMeta.current?.uid ?? '', params: selectedTaskDef.value?.params }
+           projectUid: projectMeta.current?.uid ?? '', params: selectedTaskDef.value?.params,
+           funName: selectedTaskDef.value?.fun_name }
 })
 
 // ── VN versioning: per-node "Input version" picker ───────────────────────────

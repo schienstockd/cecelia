@@ -29,6 +29,7 @@ include(joinpath(@__DIR__, "suite", "config.jl"))
 # aggregating testset scope, so any helpers defined earlier in suite.jl are still in scope
 # for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "models_training.jl"))
+include(joinpath(@__DIR__, "suite", "channel_advisory.jl"))   # channel-pick + denoise model advisories
 
 # ── Cohort stages + guides + flow + CellposeSegment testsets ───────────
 # 9 sections covering: cohort-stages vs cohort-metrics parity, guide catalogue name

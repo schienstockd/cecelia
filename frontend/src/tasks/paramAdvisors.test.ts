@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
-  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
+  paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, taskBackendAdvisor, popsCompatAdvisor,
   cellposeModelAdvisory, pyramidLevelsAdvisory, searchRadiusSpeedAdvisory, pyramidDeepestDims, labelsTakenAdvisory, freeLabelName,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
@@ -362,6 +362,37 @@ describe('spatialSigmaAdvisory', () => {
 // endpoint (URL, body shape, response handling) — the actual rule lives in Julia
 // (`app/src/tasks/param_validators.jl`) and is pinned by the Julia test suite. That split is the
 // whole point of migrating client-side mirrors: one source of truth, tested where it lives.
+describe('taskBackendAdvisor — a shared key or type, asked about the form\'s task', () => {
+  const CTX = { projectUid: 'p', images: [{ uid: 'a', sizeT: 31 }], values: {},
+                funName: 'cleanupImages.denoise' } as Parameters<typeof taskBackendAdvisor.advise>[1]
+  const okReply = () => vi.fn(async (_url: string, init?: RequestInit) => ({
+    ok: true, json: async () => ({ severity: 'warn', message: 'SHG saturated: skipped at Run', tip: 't',
+                                   echo: JSON.parse(String(init?.body)) }) }) as unknown as Response)
+
+  it('POSTs ctx.funName + the param key', async () => {
+    const f = okReply(); globalThis.fetch = f as unknown as typeof fetch
+    const out = await taskBackendAdvisor.advise(['SHG'], CTX, { key: 'channels', type: 'channelSelection' })
+    expect(out?.message).toBe('SHG saturated: skipped at Run')
+    const body = JSON.parse(String(f.mock.calls[0][1]?.body))
+    expect(body.funName).toBe('cleanupImages.denoise')
+    expect(body.paramKey).toBe('channels')
+  })
+
+  it('asks nothing without a task — a form with no funName stays silent', async () => {
+    const f = okReply(); globalThis.fetch = f as unknown as typeof fetch
+    expect(await taskBackendAdvisor.advise(['SHG'], { ...CTX, funName: undefined },
+                                           { key: 'channels', type: 'channelSelection' })).toBeNull()
+    expect(f).not.toHaveBeenCalled()
+  })
+
+  it('serves exactly the params the server stamped — before the type/key registry', () => {
+    expect(paramAdvisor({ key: 'channels', type: 'channelSelection', backendAdvisory: true })).toBe(taskBackendAdvisor)
+    expect(paramAdvisor({ key: 'channels', type: 'channelSelection' })).toBeUndefined()
+    expect(paramAdvisor({ key: 'model', type: 'select', backendAdvisory: true })).toBe(taskBackendAdvisor)
+    expect(paramAdvisor({ key: 'model', type: 'select' })).not.toBe(taskBackendAdvisor)   // cellpose's own
+  })
+})
+
 describe('backendAdvisor', () => {
   const CTX = { projectUid: 'p', images: [{ uid: 'a', sizeT: 31 }, { uid: 'b', sizeT: 60 }],
                 values: { learningRate: 0.0005 } } as unknown as Parameters<

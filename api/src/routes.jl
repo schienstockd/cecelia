@@ -238,6 +238,10 @@ function api_task_definitions(req::HTTP.Request)
         # Model training vault manager listed every model, both reading the same `list_coastal_models`.
         spec isa Dict{String,Any} && Cecelia.resolve_spec_sources!(spec)
 
+        # Which params have a form-time validator (`register_param_validator!`) — the form asks
+        # `/api/tasks/validate` for those and no others. Stamped here, like `previewable` below.
+        spec isa Dict{String,Any} && Cecelia.stamp_backend_advisories!(spec, fn)
+
         task = try Cecelia._task_from_fun_name(fn) catch; nothing end
         task === nothing && continue
 
