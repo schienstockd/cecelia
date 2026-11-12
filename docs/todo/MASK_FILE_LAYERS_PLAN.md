@@ -66,9 +66,14 @@ files are skipped, never a 500. Meta gains `labelFiles: {vn: [suffix…]}` (regi
    id and the three fetch paths; panel chips.
 4. Docs: `SEGMENTATION.md` → *Viewer integration* (still described napari), API route, ARCHITECTURE.
 
+**D8 — Movies and stills draw them too** (follow-up PR). The look carries the mask's hidden files
+(`labelFilesHidden`, `{segmentation: [suffix…]}`; absent = all drawn), `movie_mask` resolves the rest
+(`movie_mask_files`) and the runner packs them per frame with `wgpu_host.compose_label_files` — the
+slab route's rule, pinned by the same cases in both test suites. A batch with no look draws them all,
+the viewer's default.
+
 ## Not covered
 
-- Movies draw the base mask only (the offline renderer reads `img_labels_path`).
 - Pick routes read the base store — a click on a halo ring outside the cell picks nothing.
 - Label correction rewrites the base only, so after one the siblings are stale — `docs/TODO.md` →
   *Label correction leaves a segmentation's halo / nuc stores on the old ids*.

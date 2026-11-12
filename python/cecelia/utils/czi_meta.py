@@ -239,8 +239,9 @@ def parse_settings(xml_bytes):
     }
 
 
-def acquisition_settings(path):
-    """Settings for a `.czi`, or `{'reason': …}` when none can be read. Never raises."""
+def acquisition_settings(path, series=0):
+    """Settings for a `.czi`, or `{'reason': …}` when none can be read. Never raises. `series` is
+    the reader contract (`acquisition_readers.json`); the settings are file-level, so it is unused."""
     try:
         xml = read_settings_xml(path)
     except OSError as e:

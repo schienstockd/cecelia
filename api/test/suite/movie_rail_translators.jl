@@ -18,6 +18,11 @@
     # shape. If it drifts, the record button silently regresses to channels-only movies.
     @test _overlays_raw_from_config(Dict{String,Any}(), false) === nothing
     @test _overlays_raw_from_config(nothing, false) === nothing
+    # the viewer's hidden mask files (`labelFilesHidden`) reach `movie_mask`; absent = none hidden
+    @test _overlays_raw_from_config(Dict{String,Any}("labelFilesHidden" => Dict("cells" => ["halo"])),
+                                    true)["maskFilesHidden"] == Dict("cells" => ["halo"])
+    @test isempty(_overlays_raw_from_config(Dict{String,Any}(), true)["maskFilesHidden"])
+    @test isempty(mask_files_hidden([1, 2]))
     ov = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "popType" => "flow",
                                                      "pointsSize" => 8), false)
     @test ov isa AbstractDict
@@ -459,6 +464,12 @@ end
     @test _ov_look_seg(Dict{String,Any}(), "default"; mask = "cpSAM") == "cpSAM"
     @test _ov_look_seg(Dict{String,Any}("popValueName" => "flowTom"), "default"; mask = "cpSAM") == "flowTom"
     @test _ov_look_seg(Dict{String,Any}(), "default"; mask = nothing) == "default"
+    # a keyframe request's mask: absent / empty → none, one → it, 2+ → refused (an animation has no
+    # compare grid, and no mask would drop the overlays onto the image version)
+    @test _keyframe_mask(nothing) === nothing
+    @test _keyframe_mask(String[]) === nothing
+    @test _keyframe_mask(["cpSAM"]) == "cpSAM"
+    @test_throws ArgumentError _keyframe_mask(["cpSAM", "flowTom"])
 end
 
 @testset "API: movie rail — a recording renders the viewer's colours and framing" begin

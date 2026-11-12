@@ -710,8 +710,17 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
             # (what,            python file,                          python const,       julia value)
             ("preview worker",  "preview/preview_worker.py",           "PROTOCOL",         Cecelia.PREVIEW_PROTOCOL),
             ("params contract", "python/cecelia/utils/script_utils.py", "CONTRACT_VERSION", Cecelia.PY_CONTRACT_VERSION),
-            ("acquisition reader", "python/cecelia/utils/oir_meta.py",  "READER_VERSION",   Cecelia.ACQUISITION_READER_VERSIONS["oir"]),
         ]
+        # Every acquisition settings reader in the registry (`acquisition_readers.json`): its module's
+        # READER_VERSION is the registry's version. A module with no constant is version 1.
+        for r in Cecelia.ACQUISITION_READERS
+            rel = "python/cecelia/utils/$(r["module"]).py"
+            if occursin(r"^READER_VERSION\s*="m, read(joinpath(repo, rel), String))
+                push!(boundaries, ("acquisition reader $(r["source"])", rel, "READER_VERSION", Int(r["version"])))
+            else
+                @test Int(r["version"]) == 1
+            end
+        end
         for (what, rel, const_name, julia_value) in boundaries
             path = joinpath(repo, rel)
             @test isfile(path)
