@@ -29,6 +29,7 @@ import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { UNASSIGNED_POP, PAPER } from '../../plots/fixedColours'
+import { fmtCompact } from '../../utils/compactNumber'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
@@ -138,9 +139,8 @@ watch([() => g.columns, () => g.spatialAxes, () => g.imageUid, () => g.valueName
 const parentCount = computed(() => g.stats[parent.value]?.count ?? null)
 const load = computed(() => estimateMatrixLoad(channels.value.length, parentCount.value))
 const heavy = computed(() => load.value.heavy)
-const fmtN = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`
 const heavyTip = computed(() => {
-  const pts = load.value.estPoints != null ? `, ~${fmtN(load.value.estPoints)} points` : ''
+  const pts = load.value.estPoints != null ? `, ~${fmtCompact(load.value.estPoints)} points` : ''
   return `${load.value.fetches} scatter plots${pts}. Pick fewer channels or a smaller population to speed up.`
 })
 

@@ -6861,11 +6861,6 @@ onUnmounted(() => {
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
 .vw-ch-master { margin-bottom: 0.35rem; }
 .vw-ch-master-end { margin-left: auto; }
-/* min-width sized for the widest reading ("0–65535") — without it the readout column shrinks as
-   `hi` drops, the flex-1 slider gains width, and the histogram silhouette appears to breathe with
-   every drag. Same fix as .vw-num above. `tabular-nums` on .cc-readout keeps
-   the character width deterministic. */
-.vw-ch-val { flex: none; white-space: nowrap; min-width: 3rem; text-align: right; }
 .vw-grow { flex: 1; min-width: 0; }
 /* The numbers beside a slider change width as they count up (9 → 10 → 100), and the slider is `flex: 1`
    next to them — so without a fixed box the track resized on every frame of playback. That is the other
