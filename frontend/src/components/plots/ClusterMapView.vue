@@ -27,7 +27,7 @@ import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv,
          svgDoc, svgCircles, svgText, svgRect, downloadText, svgSizeWarning } from '../../plots/export'
-import { paletteRange, PALETTES, type VisProps } from '../../plots/plot'
+import { paletteRange, POPULATION_PALETTE, type VisProps } from '../../plots/plot'
 import { fitLabel } from '../../plots/valueColour'
 import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
@@ -38,7 +38,7 @@ import { useRoute } from 'vue-router'
 import { axisTitle, type BehaviourAxes } from '../../utils/behaviourAxes'
 import { plotTheme } from '../../plots/overlays'
 import { usePlotDark } from '../../composables/usePlotDark'
-import { PAPER, PAPER_INK, HALO_LIGHT, CLUSTER_EXTRA, UNCLUSTERED, CLUSTER_GHOST, LABEL_EDGE } from '../../plots/fixedColours'
+import { PAPER, PAPER_INK, HALO_LIGHT, UNCLUSTERED, CLUSTER_GHOST, LABEL_EDGE } from '../../plots/fixedColours'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -114,12 +114,11 @@ const legendInk = computed(() => plotTheme(dark.value).ink)
 // panel surface (unreadable on the canvas); give it a light box so the pop names are legible.
 const legendBg = computed(() => (dark.value ? 'transparent' : PAPER))
 
-// default cluster colours = the Cecelia house palette (the R behaviour-figure colours: yellow /
-// steel-blue / crimson / grey lead), so the UMAP matches the published look out of the box. Extra
-// hues follow for runs with >8 clusters. The pop-manager palette knob still overrides via paletteRange.
-const PALETTE = [
-  ...PALETTES.cecelia, ...CLUSTER_EXTRA,
-]
+// default cluster colours = the population palette by sorted cluster id — the palette Julia's
+// `colour_by_palette` defaults to for tracks and movies. Colour-blind safe to 8; past that it repeats
+// and the cluster label chips carry identity. The pop-manager palette knob still overrides via
+// paletteRange.
+const PALETTE = POPULATION_PALETTE
 // faint whole-cloud backdrop behind each facet — dark grey on the dark ground, light grey on the light
 // (export) ground, so it always reads as a subtle "shape" layer rather than competing with the dots.
 const ghostColour = () => (dark.value ? CLUSTER_GHOST.dark : CLUSTER_GHOST.light)

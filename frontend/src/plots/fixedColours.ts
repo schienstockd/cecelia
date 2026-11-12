@@ -38,11 +38,7 @@ export const TRACK_TONE = {
   queuedEdge: '#8fe0a3',
 } as const
 
-// ── cluster map (UMAP) — hues past the `cecelia` palette, the unclustered grey, the backdrop ──────────
-export const CLUSTER_EXTRA = [
-  '#ef4444', '#10b981', '#a78bfa', '#f97316', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4',
-  '#a3e635', '#d946ef', '#fb7185', '#2dd4bf',
-] as const
+// ── cluster map (UMAP) — the unclustered grey and the whole-cloud backdrop ─────────────────────────────
 export const UNCLUSTERED = '#555a6e'
 export const CLUSTER_GHOST = { dark: '#3a3f4b', light: '#d4d7dd' } as const
 

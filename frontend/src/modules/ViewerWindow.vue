@@ -115,7 +115,7 @@ import {
   type GpuFrameSample,
 } from '../utils/benchRecorder'
 import { toHex as rgbHex } from '../utils/colour'
-import { PALETTES } from '../plots/plot'
+import { PALETTES, POPULATION_PALETTE } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
@@ -1832,8 +1832,10 @@ const frame = usePlotResize(canvas, () => {
  * inside it (see `buildPointBuffer`).
  */
 function rebuildOverlays() {
+  // categories (a cluster column) default to the population palette, the one the UMAP and Julia's
+  // `colour_by_palette` default to
   points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })),
-                                 meta.value, PALETTES.cecelia)
+                                 meta.value, POPULATION_PALETTE)
   pointCount.value = points.count
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
   // population layers — one Tracks layer per segmentation, several at once. P7 of
