@@ -158,10 +158,11 @@ onBeforeUnmount(() => {
 
 // Escape leaves the guide — but NOT when a dialog is open, because Escape is how you close the dialog
 // (`BaseModal` listens for it too). The import guide opens the FileBrowser mid-walkthrough, so without
-// this guard dismissing the picker would silently kill the guide as well.
+// this guard dismissing the picker would silently kill the guide as well. An open `TeleportPopover`
+// owns Escape the same way — the set `BaseModal.isTopmost` checks.
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
-  if (document.querySelector('.cc-modal-overlay')) return
+  if (document.querySelector('.cc-modal-overlay, .cc-popover')) return
   guide.exit()
   e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
 }

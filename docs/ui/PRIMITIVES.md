@@ -36,6 +36,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | The ⚙ that holds those two blocks | `components/MovieOptionsButton.vue` — the button + tooltip + popover; the blocks go in its slot | a second gear, or the blocks laid out flat in a page header |
 | Which image VERSIONS a movie records (incl. side-by-side) | `components/MovieCompareControls.vue` (`v-model:versions`/`:layout`/`:contrast`, `available`) | a per-panel version `<select>`, or a separate "compare" switch beside a list |
 | Modal / dialog | `components/BaseModal.vue` | a hand-rolled `position:fixed` backdrop |
+| Settings-style modal (category list left, pane right) | `components/SettingsShell.vue` — one named slot per category id (Preferences, Settings) | a per-modal nav column + `v-if` chain, or a long accordion of settings sections |
 | Popover / dropdown menu | `components/TeleportPopover.vue` | an absolutely-positioned panel |
 | Chips in a list cell that would wrap (tags, owners) | `components/ChipOverflow.vue` — the first `max` chips (`#chip` renders one) and a "+N" whose tooltip names the rest; `@more` for a popover of all, else the click falls through to the cell. Hosts: Movies tags, project owners | every chip wrapped (a row per tag), or a per-list "+N" button |
 | The ITEM LIST inside a row's ⋯ overflow menu | `.cc-actions-menu` + `.cc-actions-item` (+ `.cc-actions-head` for a section label, `.danger`, `.armed`) in `style.css`, inside a `TeleportPopover flush`; destructive items arm in place with `ConfirmButton`. Hosts: `ImageTable`, `canvas/PopulationManager`, `kiwi/KiwiAsk`, `HpcSettings` | a per-component `.menu-item` block, or a dialog for a one-click action |
@@ -185,7 +186,7 @@ is deliberately *not* checked: `surface + border + radius` is the shape of a car
 badge and an icon-button alike, and ~60% of matches wanted `.cc-btn`/`ChipSelect` instead, so it stays a
 review-time rule.
 
-**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** (Settings too: `layout="scroll"`, closed `CollapsibleSection`s.) 16 of the 23 module
+**Standalone pages use `ModulePage`; the image-table pages use `ModuleLayout`.** 16 of the 23 module
 pages are built on `ModuleLayout` and were already consistent. The standalone ones were not: Notebooks,
 Animation and Movies had each grown their own frame — three h1 sizes (1.1 / 1.15 / 1.4rem), two paddings,
 two subtitle widths, and `.nb-header`/`.anim-head`/`.mov-head` doing the same flex-space-between under

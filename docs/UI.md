@@ -191,16 +191,27 @@ starts). Design + decisions: [`docs/todo/SETTINGS_SCOPE_PLAN.md`](todo/SETTINGS_
 
 ## Settings layout
 
-`SettingsModule.vue` is a `ModulePage layout="scroll"`: one column of `CollapsibleSection`s in ONE accordion
-(`cc.settings.section`, remembered per profile): Project is open on a first visit, every other section
-shows its name only, and opening one closes the last (maintainer, 2026-11-11). Diagnostics (with WebGPU and Packages), Data patches, Developer and the Debug console
-sit together under one closed **Troubleshooting** section. Guide steps that point inside a closed
-section (`settings.storageScan`, `settings.viewProfile`) first point at the section header
-(`settings.storage`, `settings.interface`).
+Settings and Preferences are the same shape: a modal on `components/SettingsShell.vue` — category
+list left, the chosen category's content right (one named slot per category id; only the shown one
+renders, so a pane's fetches run when it is opened). **Preferences** (`PreferencesModal.vue`) is the
+active profile's choices; **Settings** (`SettingsModal.vue`) is the project and the machine. Both are
+mounted once in `App.vue` and opened through `lib/preferencesOpen.ts` / `lib/settingsOpen.ts`
+(`openSettings(pane?)` — Settings reopens on the last pane). The sidebar footer opens Settings; the
+old `/settings` URL still does, over the welcome page.
+
+A category is listed only where its content applies (machine panes for `canManageMachine`, Server
+when TLS/threads loaded, Shared workstation, Other MCP connections) — the shell falls back to the
+first category if the remembered one is hidden. Diagnostics (with WebGPU and Packages), Data patches,
+Developer and the Debug console sit together under **Troubleshooting**. A guide step that points
+inside a pane (`settings.storageScan`, `settings.viewProfile`) reveals through
+`lib/guides/settingsSteps.ts`: open Settings first (`sidebar.settings`), then the pane's nav button
+(`settings.storage`, `settings.interface` — a category's `guide` id). Only the topmost `BaseModal`
+answers Escape, so closing a dialog opened from a pane (Packages, the layout builder, Preferences from
+Settings → HPC) leaves Settings open.
 
 ## Settings → System (service control panel)
 
-`SettingsModule.vue` has a **System** section: one row per runtime component (Application / Viewer /
+`SettingsModal.vue` has a **System** pane: one row per runtime component (Application / Viewer /
 Notebooks) with a status pill (Running / Starting… / Stopped, polled every ~4 s from the existing
 `/api/{napari,notebooks}/status` endpoints — ephemeral UI state, a plain `ref`, NOT persisted) and
 start/stop/restart buttons that reuse the existing control endpoints, plus a

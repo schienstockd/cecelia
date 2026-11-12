@@ -8,6 +8,7 @@ import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { allNavGroups, navGroupFor, stageTint, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
+import { isSettingsOpen, openSettings } from '../lib/settingsOpen'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { useGuideStore } from '../stores/guide'
 import { NAV_PREFIX } from '../utils/guideAnchor'
@@ -145,15 +146,15 @@ function isNavDisabled(item: NavItem): boolean {
     <!-- ── Footer: Settings. An app preference, not a pipeline step, so it sits apart from the module
          nav. Quit / Log out / Restart moved to the header's avatar menu. -->
     <div class="sidebar-footer">
-      <!-- An explicit `data-guide`, NOT the `nav:/settings` scheme. That scheme exists because the nav
-           groups above are data-driven and so carry no attributes of their own; this is hand-written
-           markup and can just say what it is. Addressing it by href made the one guide that points here
-           the only one resolving a `nav:` anchor outside `.nav-scroll`. -->
-      <RouterLink to="/settings" class="nav-item footer-link"
-                  data-guide="sidebar.settings"
-                  v-tooltip.right="'Project name, ID, and interface preferences'">
+      <!-- Opens the Settings MODAL (components/SettingsModal.vue) — not a route, so guides address it
+           by its `data-guide`, never a `nav:` anchor. Styled as a nav row so the footer reads the same. -->
+      <button type="button" class="nav-item footer-link"
+              :class="{ 'router-link-active': isSettingsOpen }"
+              data-guide="sidebar.settings"
+              v-tooltip.right="'Project, storage, system and machine settings'"
+              @click="openSettings()">
         <span class="nav-label">Settings</span>
-      </RouterLink>
+      </button>
     </div>
 
   </nav>
@@ -255,5 +256,5 @@ function isNavDisabled(item: NavItem): boolean {
   gap: 0.4rem;
   padding: 0.35rem 0.35rem 0;
 }
-.footer-link { flex: 1; margin: 0; }
+.footer-link { flex: 1; margin: 0; background: none; border: 0; font-family: inherit; text-align: left; }
 </style>

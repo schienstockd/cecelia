@@ -148,7 +148,7 @@ failure from the duplicate-tip rule above (the texts differ, so no detector catc
 *hover areas nesting*, not about repeated words. Anchor the row's tip on a leaf that no control sits
 on top of — the status pill, or the truncated text that actually needs expanding — and leave every
 button owning its own. Sibling anchors are fine: two tips on two elements side by side can never both
-be hovered. Example: the MCP-connections rows in `SettingsModule.vue`.
+be hovered. Example: the MCP-connections rows in `SettingsModal.vue`.
 
 Enforced by `nestedTooltips` (`utils/uiCopy.ts`, pinned in `uiCopy.test.ts`), which reads the same
 ancestor stack the coverage check uses — a tipped ancestor makes a child *covered* and, at the same

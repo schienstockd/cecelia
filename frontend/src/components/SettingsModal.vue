@@ -7,18 +7,18 @@ import { useSettingsStore } from '../stores/settings'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useSavedFlash } from '../composables/useFlash'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
-import PackagesDialog from '../components/PackagesDialog.vue'
-import ModulePage from '../components/ModulePage.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
-import ConfirmButton from '../components/ConfirmButton.vue'
-import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
+import PackagesDialog from './PackagesDialog.vue'
+import SettingsShell, { type SettingsCategory } from './SettingsShell.vue'
+import { settingsPane, type SettingsPane } from '../lib/settingsOpen'
+import ConfirmButton from './ConfirmButton.vue'
+import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import { notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { notebooksApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore, type PluginEntry } from '../stores/customModules'
 import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
-import ViewProfileEditor from '../components/ViewProfileEditor.vue'
-import ChipSelect from '../components/ChipSelect.vue'
+import ViewProfileEditor from './ViewProfileEditor.vue'
+import ChipSelect from './ChipSelect.vue'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
          fetchStoreLayout, setStoreLayout, fetchKeepPrevVersion, setKeepPrevVersion,
          fetchChunkCache, setChunkCache, chunkCacheOptions, type ChunkCacheSettings,
@@ -32,11 +32,11 @@ import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import { useMcpConnections } from '../composables/useMcpConnections'
 import { dotClass } from '../utils/statusDot'
-import CcToggle from '../components/CcToggle.vue'
-import CcProgressBar from '../components/CcProgressBar.vue'
-import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
-import GpuDiagnostic from '../components/GpuDiagnostic.vue'
-import HpcSettings from '../components/HpcSettings.vue'
+import CcToggle from './CcToggle.vue'
+import CcProgressBar from './CcProgressBar.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
+import GpuDiagnostic from './GpuDiagnostic.vue'
+import HpcSettings from './HpcSettings.vue'
 import { sharedWorkstationRows, fetchSharedWorkstation, setSharedWorkstation,
          type SharedWorkstationRow } from '../utils/sharedWorkstation'
 
@@ -734,12 +734,39 @@ async function switchWt(path: string) {
   svcMsg.value = appCtl.message
   pollServices()
 }
+// ── The modal shell: one category per former accordion section ─────────────────────────────────
+// A category is listed only where its section used to render — machine-wide ones for the profile
+// that manages the machine (SETTINGS_SCOPE_PLAN), the rest on what they depend on.
+defineEmits<{ (e: 'close'): void }>()
+const categories = computed<SettingsCategory<SettingsPane>[]>(() => {
+  const machine = appCtl.canManageMachine
+  const all: (SettingsCategory<SettingsPane> & { show?: boolean })[] = [
+    { id: 'project',               label: 'Project',          icon: 'pi-folder' },
+    { id: 'interface',             label: 'Interface',        icon: 'pi-sliders-h', guide: 'settings.interface' },
+    { id: 'software-updates',      label: 'Software updates', icon: 'pi-download',  guide: 'settings.updates', show: machine },
+    { id: 'storage',               label: 'Storage',          icon: 'pi-database',  guide: 'settings.storage' },
+    { id: 'storage-defaults',      label: 'Storage defaults', icon: 'pi-save',      show: machine },
+    { id: 'custom-modules',        label: 'Custom modules',   icon: 'pi-th-large',  show: machine },
+    { id: 'plugins',               label: 'Plugins',          icon: 'pi-box',       show: machine },
+    { id: 'system',                label: 'System',           icon: 'pi-desktop' },
+    { id: 'server',                label: 'Server',           icon: 'pi-server',    show: machine && !!(tls.value || thr.value) },
+    { id: 'shared-workstation',    label: 'Shared workstation', icon: 'pi-users',   guide: 'settings.sharedWorkstation', show: showShared.value },
+    { id: 'other-mcp-connections', label: 'Other MCP connections', icon: 'pi-link', show: observer.ai.enabled },
+    { id: 'hpc',                   label: 'HPC',              icon: 'pi-sitemap',   show: machine },
+    { id: 'troubleshooting',       label: 'Troubleshooting',  icon: 'pi-wrench',
+      tip: 'Diagnostics, packages, data patches and the developer console' },
+  ]
+  return all.filter(c => c.show !== false).map(({ show: _show, ...c }) => c)
+})
+// Reopening returns to the last pane; a caller may name one (`openSettings('storage')`).
+const active = computed({ get: () => settingsPane.value, set: v => { settingsPane.value = v } })
 </script>
 
 <template>
-  <ModulePage layout="scroll" class="settings-page">
+  <SettingsShell v-model="active" title="Settings" icon="pi-cog" :categories="categories"
+                 aria-label="Settings categories" width="960px" height="680px" @close="$emit('close')">
     <!-- ── Project ─────────────────────────────────────────────────────── -->
-    <CollapsibleSection class="settings-section" label="Project" accordion="cc.settings.section" section="project" :default-open="true" max-height="none">
+    <template #project>
       <div class="settings-body">
 
       <template v-if="projectMeta.current">
@@ -783,10 +810,10 @@ async function switchWt(path: string) {
 
       <p v-else class="no-project cc-muted cc-fs-md">No project open. Open or create a project first.</p>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Interface ───────────────────────────────────────────────────── -->
-    <CollapsibleSection data-guide="settings.interface" class="settings-section" label="Interface" accordion="cc.settings.section" section="interface" max-height="none">
+    <template #interface>
       <div class="settings-body">
 
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
@@ -813,10 +840,10 @@ async function switchWt(path: string) {
         </span>
       </div>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" data-guide="settings.updates" class="settings-section" label="Software updates" accordion="cc.settings.section" section="software-updates" max-height="none">
+    <template #software-updates>
       <div class="settings-body">
 
       <div class="field">
@@ -890,10 +917,10 @@ async function switchWt(path: string) {
 
       <span v-if="appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">{{ appCtl.updateMsg }}</span>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
-    <CollapsibleSection data-guide="settings.storage" class="settings-section" label="Storage" accordion="cc.settings.section" section="storage" max-height="none">
+    <template #storage>
       <div class="settings-body">
 
       <div class="field">
@@ -1006,10 +1033,10 @@ async function switchWt(path: string) {
         </ul>
       </template>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Storage defaults — how every NEW store on this machine is written (peanut only) ── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Storage defaults" accordion="cc.settings.section" section="storage-defaults" max-height="none">
+    <template #storage-defaults>
       <div class="settings-body">
 
       <!-- Advanced: what compression the image stores we write use. A TABLE, not a dropdown — the
@@ -1073,9 +1100,9 @@ async function switchWt(path: string) {
       </div>
       <span v-if="chunkCacheError" class="field-hint cc-muted-error cc-fs-xs">{{ chunkCacheError }}</span>
       </div>
-    </CollapsibleSection>
+    </template>
 
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Custom modules" accordion="cc.settings.section" section="custom-modules" max-height="none">
+    <template #custom-modules>
       <div class="settings-body">
       <div class="field">
         <label class="field-label">Modules directory</label>
@@ -1120,10 +1147,10 @@ async function switchWt(path: string) {
         </div>
       </div>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Plugins (module sets installed from a URL) ─────────────────────── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Plugins" accordion="cc.settings.section" section="plugins" max-height="none">
+    <template #plugins>
       <div class="settings-body">
       <p class="field-hint cc-muted cc-fs-xs">
         Module sets installed from a URL. Plugin code runs unsandboxed, with full access to this machine.
@@ -1203,15 +1230,14 @@ async function switchWt(path: string) {
         </SelectionTable>
       </div>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── System (service control panel) ──────────────────────────────── -->
-    <CollapsibleSection class="settings-section" label="System" accordion="cc.settings.section" section="system" max-height="none">
-      <template #after-label><span v-if="diag?.dev" class="svc-tag" v-tooltip.top="'Development server (pixi run dev, Revise hot-reload)'">dev</span></template>
+    <template #system>
       <div class="settings-body">
 
       <div class="svc-row">
-        <span class="svc-name">Application</span>
+        <span class="svc-name">Application <span v-if="diag?.dev" class="svc-tag" v-tooltip.top="'Development server (pixi run dev, Revise hot-reload)'">dev</span></span>
         <span class="svc-pill"><span class="cc-dot cc-dot-ok" /> Running</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
         <span class="svc-actions">
@@ -1341,10 +1367,10 @@ async function switchWt(path: string) {
       <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
       <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Server — launch-time settings for everyone on this machine (peanut only) ── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine && (tls || thr)" class="settings-section" label="Server" accordion="cc.settings.section" section="server" max-height="none">
+    <template #server>
       <div class="settings-body">
 
       <!-- HTTPS + HTTP/2 preference. Default off: HTTP/2 loads bricks slower (WEBGPU_UPLOAD_PATH_PLAN U4).
@@ -1388,10 +1414,10 @@ async function switchWt(path: string) {
         </span>
       </div>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Shared workstation (app/src/config/shared_workstation.jl) ─────── -->
-    <CollapsibleSection v-if="showShared" data-guide="settings.sharedWorkstation" class="settings-section" label="Shared workstation" accordion="cc.settings.section" section="shared-workstation" max-height="none">
+    <template #shared-workstation>
       <div class="settings-body">
       <div v-for="r in sharedRows" :key="r.key" class="field">
         <CcToggle class="toggle-row"
@@ -1402,7 +1428,7 @@ async function switchWt(path: string) {
       </div>
       <span v-if="sharedError" class="field-hint cc-muted-error cc-fs-xs">{{ sharedError }}</span>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Other MCP connections ───────────────────────────────────────── -->
     <!-- What ELSE Claude can reach — the CLI itself, third-party machine servers, and account-
@@ -1410,7 +1436,7 @@ async function switchWt(path: string) {
          picture is. Machine rows come from the user's Claude config (real state); account rows are
          managed by their claude.ai account and are NOT detectable from here, so they carry no dot.
          Row model: utils/mcpConnections.ts -->
-    <CollapsibleSection v-if="observer.ai.enabled" class="settings-section" label="Other MCP connections" accordion="cc.settings.section" section="other-mcp-connections" max-height="none">
+    <template #other-mcp-connections>
       <div class="settings-body">
 
       <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a
@@ -1438,17 +1464,17 @@ async function switchWt(path: string) {
         <button class="cc-btn cc-btn-bare cc-fs-xs" @click="settings.hiddenMcpAccounts = []">show again</button>
       </span>
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="HPC" accordion="cc.settings.section" section="hpc" max-height="none">
+    <template #hpc>
       <div class="settings-body">
       <HpcSettings scope="machine" :project-uid="projectUid" />
       </div>
-    </CollapsibleSection>
+    </template>
 
     <!-- ── Troubleshooting — what the maintainer or support needs, one click deeper (GUI clarity audit p4 #15) ── -->
-    <CollapsibleSection class="settings-section" label="Troubleshooting" accordion="cc.settings.section" section="troubleshooting" max-height="none" tip="Diagnostics, packages, data patches and the developer console">
+    <template #troubleshooting>
       <div class="settings-body">
       <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
       <div class="settings-sub">
@@ -1572,20 +1598,18 @@ async function switchWt(path: string) {
       </div>
 
       </div>
-    </CollapsibleSection>
+    </template>
 
-    <PackagesDialog v-if="showPackages" @close="showPackages = false" />
-    <ViewProfileEditor v-if="showProfileEditor" @close="showProfileEditor = false" />
-  </ModulePage>
+    <template #after>
+      <PackagesDialog v-if="showPackages" @close="showPackages = false" />
+      <ViewProfileEditor v-if="showProfileEditor" @close="showProfileEditor = false" />
+    </template>
+  </SettingsShell>
 </template>
 
 <style scoped>
-/* ModulePage (layout=scroll) owns the padding and the scroll; one column of collapsed sections, each
-   remembered per profile, so a first visit shows the section names and nothing else. */
-.settings-page { max-width: 980px; }
-.settings-section:last-of-type { border-bottom: 1px solid var(--cc-border); }
-/* the body under a section's header row: indented to the header's label, room above and below */
-.settings-body { padding: var(--cc-space-md) var(--cc-space-lg) var(--cc-space-lg); }
+/* SettingsShell owns the scroll and the pane column; a pane's body only needs room at the bottom */
+.settings-body { padding: 0 0 var(--cc-space-lg); }
 /* a block inside Troubleshooting: an eyebrow heading, a gap before the next */
 .settings-sub + .settings-sub { margin-top: var(--cc-space-xl); }
 .settings-sub > .subsection-title:first-child { margin-top: 0; }

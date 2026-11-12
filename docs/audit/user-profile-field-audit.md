@@ -7,7 +7,7 @@ Enumerates every above-project setting Cecelia currently exposes and classifies 
 **project-scoped** / **per-profile** / **per-machine** / **per-project-display-state (data)**.
 
 Sources swept:
-- `frontend/src/modules/SettingsModule.vue` — the settings page (11 sections, `Project` + 10 others).
+- `frontend/src/components/SettingsModal.vue` — the settings page (11 sections, `Project` + 10 others).
 - `frontend/src/stores/settings.ts` — the Pinia settings store (~60 keys, all in `localStorage`).
 - `app/config.toml` and `custom.toml` — the Julia-side install config
   (`[dirs] [files] [images] [zarr] [tasks] [pools] [ai] [tls]`).

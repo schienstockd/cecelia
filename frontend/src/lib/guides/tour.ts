@@ -15,6 +15,7 @@
 
 import type { GuideDef } from './types'
 import { GUIDE_MATURITY } from './maturityRecords'
+import { settingsClosed, settingsReveal } from './settingsSteps'
 
 export const tourGuide: GuideDef = {
   id: 'find-your-way-around',
@@ -102,25 +103,19 @@ export const tourGuide: GuideDef = {
     },
     {
       anchor: 'settings.updates',
-      onlyIf: c => c.canManageMachine,      // the section is peanut-only (SETTINGS_SCOPE_PLAN)
-      route: '/settings',
-      placement: 'top-start',
+      onlyIf: c => c.canManageMachine,      // the pane is peanut-only (SETTINGS_SCOPE_PLAN)
+      placement: 'right',
       title: 'Updates',
       text: 'Your version, and a Check button — a new release installs from here.',
+      reveal: settingsClosed('settings.updates'),
       bullets: ['A shared installation is updated by whoever administers it.'],
     },
     {
       anchor: 'settings.storageScan',
-      route: '/settings',
       placement: 'top-start',
       title: 'Disk space',
       text: 'Scan shows where the project’s bytes went, and what can be freed without losing work.',
-      reveal: {
-        needed: c => c.anchorExists('settings.storageScan') && !c.anchorReachable('settings.storageScan'),
-        anchor: 'settings.storage',
-        text: 'Open Storage to see the Scan button.',
-        placement: 'bottom-start',
-      },
+      reveal: settingsReveal('settings.storageScan', 'settings.storage', 'Storage'),
       bullets: [
         'Corrections and crops keep the old version around — those are the reclaimable ones.',
         'Freeing them keeps each image’s active version.',

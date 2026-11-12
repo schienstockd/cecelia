@@ -39,7 +39,7 @@ describe('ensureLoaded waits for an in-flight load', () => {
     const profile = { id: 'imaging', label: 'Imaging', items: ['/explore'] }
     const { f, release } = gatedFetch({ dir: '/cfg/view-profiles', profiles: [profile], errors: [] })
     const store = useViewProfilesStore()
-    const first = store.refresh()                // e.g. SettingsModule's onMounted refresh
+    const first = store.refresh()                // e.g. SettingsModal's onMounted refresh
     let seen: unknown = 'not yet'
     const second = store.ensureLoaded().then(() => { seen = store.profiles.map(p => p.id) })
     await ticks()
