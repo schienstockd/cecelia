@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { applyPlotTheme, plotTheme, PLOT_GROUND_DARK, PLOT_GROUND_LIGHT } from './overlays'
 import { stripComments } from '../utils/cssTokens'
+import { PAPER, PAPER_INK } from './fixedColours'
 
 // Reported on the Training convergence plot: the hover was light-grey text on a white box.
 //
@@ -39,7 +40,7 @@ describe('applyPlotTheme', () => {
 
   it('plotTheme pairs an ink with a ground', () => {
     expect(plotTheme(true)).toEqual({ ink: '#e6e6e6', ground: '#1f2226' })
-    expect(plotTheme(false)).toEqual({ ink: '#111', ground: 'white' })
+    expect(plotTheme(false)).toEqual({ ink: PAPER_INK, ground: PAPER })   // the light plot is the export's paper
   })
 })
 

@@ -28,6 +28,7 @@ import { transformOverride, overrideTooltip } from '../../plots/autoOverride'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { UNASSIGNED_POP, PAPER } from '../../plots/fixedColours'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
@@ -84,7 +85,7 @@ const defs = computed(() => buildPairDefs(channels.value, parent.value, transfor
 // coloured overlays: the pops highlighted for THIS panel (manager eye + viewer transient), with colours
 // resolved from the store (GateMontage is store-agnostic).
 const highlightPops = computed(() => (props.highlight ?? []).map(path =>
-  ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee' })))
+  ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? UNASSIGNED_POP })))
 // a task finished on the image we show (e.g. tracking) → refetch the tiles. Same universal mechanism
 // every other plot uses (gated by autoRefreshOnTask); interactive gating was the gap. Bumping this
 // token flows into reloadKey below, which GateMontage watches to refetch.
@@ -150,8 +151,8 @@ const montageRef = useTemplateRef<{
 }>('montageRef')
 function exportAs(kind: string) {
   const stem = (`pairs_${channels.value.map(c => g.colLabel(c)).join('_')}`.replace(/[^\w.-]+/g, '_').slice(0, 80)) || 'pairs'
-  if (kind === 'png') montageRef.value?.exportImage('#0d0b1a', false).then(url => url && downloadDataUrl(`${stem}.png`, url))
-  else if (kind === 'svg') { const svg = montageRef.value?.exportSvg('#ffffff', true); if (svg) downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
+  if (kind === 'png') montageRef.value?.exportImage(PAPER, true).then(url => url && downloadDataUrl(`${stem}.png`, url))
+  else if (kind === 'svg') { const svg = montageRef.value?.exportSvg(PAPER, true); if (svg) downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
   else if (kind === 'csv') { const csv = montageRef.value?.exportCsv(); if (csv) downloadText(`${stem}.csv`, csv, 'text/csv') }
 }
 

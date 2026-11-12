@@ -47,7 +47,7 @@ returns just the population-imposed `{value(str)→hex}` for the wire (the legac
 defaults and returns the legend). This generalises "use the population's colour where one exists" —
 a `clust`/`trackclust` pop is just a filter on `clusters.{suffix}`, so clusters, HMM states and any
 categorical measure resolve identically, and a track pop and its source cell pop share a colour when
-both filter the same value. `OKABE_ITO` matches the frontend (`plots/plot.ts`) + bridge palettes.
+both filter the same value. `POPULATION_PALETTE` equals `population` in `frontend/src/plots/palettes.json` (colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
 
 ## Language boundaries (per `ARCHITECTURE.md`)
 

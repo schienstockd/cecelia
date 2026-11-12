@@ -75,7 +75,7 @@
 
   /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
   --cc-warn:       #f59e0b;
-  --cc-danger:     #ef4444;
+  --cc-danger:     #f54a49;
 
   /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
      (ok / warn / fail) drawn WITH its shape-distinct icon. Every pair of ok / warn / fail / --cc-active
@@ -88,7 +88,7 @@
      through here via lib/taskStatus.ts; ParamRenderer's QC flag uses lib/severity.ts. */
   --cc-sev-ok:     #61c28e;
   --cc-sev-warn:   #ef9d14;
-  --cc-sev-fail:   #f34739;
+  --cc-sev-fail:   #f64a3c;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
      highlight ring, and the Guides compass mark (dialog title). Deliberately NOT
      --cc-accent: purple is form/control chrome, so a guide ringing a purple button in purple reads as
@@ -335,7 +335,7 @@ body {
 /* The right panel's Next button (NextStep.vue) — one per page, navigates only. */
 .cc-btn-next {
   background: var(--cc-next-fill);
-  color: var(--cc-bg);
+  color: var(--cc-on-primary);   /* fixed dark ink: the fill does not follow the scheme, so neither does its text */
   border-color: var(--cc-next-fill);
   font-weight: 600;
 }
@@ -1063,8 +1063,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    The avatar menu (one-click switch) or Preferences → Interface sets `data-theme="light"` on <html> (utils/colourScheme.ts).
    Overrides the SCHEME-FOLLOWING tokens only; the fixed ones (--cc-hud-*, --cc-paper*, --cc-on-*,
    --cc-media-bg, --cc-claude-mark) stay, because what sits under them is not the page. Warm-neutral
-   like the dark scheme. Every text pair is ≥ 4.5:1 (WCAG AA) on --cc-surface-1: text 15.4, dim 6.2,
-   accent 5.7, white on accent-fill 5.95, stages 5.7–6.9, kiwi 5.3, severity 4.6–7.7, ink 4.7–8.9.
+   like the dark scheme. Every text colour is ≥ 4.5:1 (WCAG AA) on all three grounds (bg, surface-1,
+   surface-2), and every fill against its ink — utils/schemeContrast.test.ts, per scheme.
    State colours are also held apart under colour blindness (utils/cvd.test.ts); the status dots alias
    them. Same token, same meaning — only the value changes. docs/UI.md → *Colour schemes*. */
 :root[data-theme="light"] {
@@ -1087,16 +1087,16 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-stage-populations: #a04a26;
   --cc-stage-explore:     #8a5560;
   --cc-stage-analysis:    #5e5838;
-  --cc-kiwi:        #0f766e;
+  --cc-kiwi:        #1d7281;
   --cc-kiwi-strong: #115e59;
-  --cc-kiwi-soft:   #0f766e;
+  --cc-kiwi-soft:   #1d7281;
   --cc-kiwi-tint:   #d5f5ee;
 
-  --cc-warn:     #a16507;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
-  --cc-danger:   #972334;   /* = sev-fail */
-  --cc-sev-ok:   #248160;
-  --cc-sev-warn: #a16507;
-  --cc-sev-fail: #972334;
+  --cc-warn:     #8f5d02;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
+  --cc-danger:   #941328;   /* = sev-fail */
+  --cc-sev-ok:   #17745d;
+  --cc-sev-warn: #8f5d02;
+  --cc-sev-fail: #941328;
   --cc-guide:    rgba(0, 0, 0, 0.5);
   --cc-active:   #0a44c7;
 
@@ -1106,11 +1106,11 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-wash:        rgba(0, 0, 0, 0.04);
   --cc-wash-strong: rgba(0, 0, 0, 0.08);
 
-  --cc-ink-red:    #900e23;
-  --cc-ink-amber:  #9d5e01;
-  --cc-ink-green:  #247f5d;
+  --cc-ink-red:    #900e26;
+  --cc-ink-amber:  #935a0f;
+  --cc-ink-green:  #057558;
   --cc-ink-blue:   #254d90;
-  --cc-ink-cyan:   #0e7490;
+  --cc-ink-cyan:   #06718d;
   /* tints restated: the dark mixes are too strong on a light ground (ink on them would drop below AA) */
   --cc-tint-red:   color-mix(in srgb, var(--cc-danger) 12%, transparent);
   --cc-tint-amber: color-mix(in srgb, var(--cc-warn) 14%, transparent);

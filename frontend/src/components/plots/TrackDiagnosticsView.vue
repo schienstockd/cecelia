@@ -63,6 +63,8 @@ import {
 } from '../../plots/trackGroups'
 import type { SeriesTarget } from '../../plots/types'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
+import { usePlotDark } from '../../composables/usePlotDark'
+import { TRACK_TONE } from '../../plots/fixedColours'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -171,6 +173,8 @@ const claudeChip = computed<{ count: number } | null>(() => {
 // ── drawing ───────────────────────────────────────────────────────────────────
 const host = useTemplateRef<HTMLElement>('host')
 const forceLight = ref(false)
+const plotDark = usePlotDark()
+watch(plotDark, () => render())
 let Plot: typeof import('@observablehq/plot') | null = null
 let node: SVGElement | null = null
 
@@ -192,7 +196,7 @@ async function render() {
   const d = data.value
   if (!m || !d || !groups.value.length) { host.value.replaceChildren(); node = null; return }
 
-  const dark = !forceLight.value
+  const dark = !forceLight.value && plotDark.value
   const { ink: fg, ground: bg } = plotTheme(dark)
   const facet = plan.value.facet
   const grid = facetGrid(facet ? groups.value.length : 1)
@@ -211,8 +215,8 @@ async function render() {
   const fch = facet ? { fx: fxOf, fy: fyOf } : {}
   // ONE colour vocabulary, whatever the group count: blue is the measurement, amber the expectation it
   // is read against. Groups are told apart by their facet title, not by a colour and a legend.
-  const stroke = '#5aa9e6'
-  const fill = '#5aa9e6'
+  const stroke = TRACK_TONE.measured
+  const fill = TRACK_TONE.measured
 
   const marks: unknown[] = []
   let xOpts: Record<string, unknown> = { label: xLabel, grid: true }
@@ -226,11 +230,11 @@ async function render() {
       yOpts = { ...yOpts, type: 'log' }
       const fit = diagFitRows(d)
       if (fit.length) marks.push(Plot.line(fit, { x: 'lag', y: 'value', z: 'g',
-                                                 stroke: '#e8a33d', strokeDasharray: '4,3', ...fch }))
+                                                 stroke: TRACK_TONE.expected, strokeDasharray: '4,3', ...fch }))
       // the Fürth curve (server-fitted M, P, σ): its bend is the persistence time, its floor the noise
       const furth = furthFitRows(d)
       if (furth.length) marks.push(Plot.line(furth, { x: 'lag', y: 'value', z: 'g',
-                                                     stroke: '#e8a33d', strokeWidth: 1, ...fch }))
+                                                     stroke: TRACK_TONE.expected, strokeWidth: 1, ...fch }))
     } else {
       // the sign matters here (a negative lag-1 is the jitter signature), so zero stays on screen
       yOpts = { ...yOpts, domain: [Math.min(-0.2, ...pts.map(p => p.value)), 1] }
@@ -251,13 +255,13 @@ async function render() {
       // a moving mean needs the points in x order — the window walks the data as given
       marks.push(Plot.line([...pts].sort((a, b) => a.duration - b.duration),
         Plot.windowY({ k: Math.max(5, Math.round(pts.length / 10)) },
-          { x: 'duration', y: 'speed', z: 'g', stroke: '#e8a33d', strokeWidth: 1.5, ...fch })))
+          { x: 'duration', y: 'speed', z: 'g', stroke: TRACK_TONE.expected, strokeWidth: 1.5, ...fch })))
   } else if (m === 'order') {
     const pts = orderRows(d)
     // amber = the expectation: the φ random directions reach with this frame's steps. Few steps read
     // high by chance, so alignment is the gap ABOVE this line, not the height above 0.
     const chance = pts.filter(p => p.chance !== null)
-    if (chance.length) marks.push(Plot.line(chance, { x: 't', y: 'chance', z: 'g', stroke: '#e8a33d',
+    if (chance.length) marks.push(Plot.line(chance, { x: 't', y: 'chance', z: 'g', stroke: TRACK_TONE.expected,
                                                       strokeDasharray: '4,3', strokeWidth: 1, ...fch }))
     marks.push(Plot.line(pts, { x: 't', y: 'phi', z: 'g', stroke, strokeWidth: 1.5, ...fch }))
     marks.push(Plot.dot(pts, { x: 't', y: 'phi', fill, r: 2, tip: true, ...fch, channels: { group: 'label', steps: 'n', chance: 'chance' } }))
@@ -267,16 +271,16 @@ async function render() {
     marks.push(Plot.dot(cloud, { x: 'distance', y: 'angle', fill, r: 1.3, fillOpacity: 0.35, ...fch }))
     // the trend is what the vignette reads off this plot, not the individual points
     if (cloud.length > 5)
-      marks.push(Plot.line(cloud, { x: 'distance', y: 'angle', z: 'g', stroke: '#e8a33d',
+      marks.push(Plot.line(cloud, { x: 'distance', y: 'angle', z: 'g', stroke: TRACK_TONE.expected,
                                     strokeWidth: 1.5, curve: 'basis', sort: 'distance', ...fch }))
     yOpts = { ...yOpts, domain: [0, 90] }
   }
 
   if (refLine) {
-    marks.push(Plot.ruleY([refLine.value], { stroke: '#d9534f', strokeDasharray: '3,3' }))
+    marks.push(Plot.ruleY([refLine.value], { stroke: TRACK_TONE.alert, strokeDasharray: '3,3' }))
     // the line needs to say WHAT it is, or it is a red line with no meaning
     marks.push(Plot.text([refLine], { y: 'value', text: 'label', frameAnchor: 'right',
-                                      dx: -4, dy: -6, fill: '#d9534f', fontSize: 10 }))
+                                      dx: -4, dy: -6, fill: TRACK_TONE.alert, fontSize: 10 }))
   }
   if (facet) {
     // a facet HEADER is per column and cannot name a cell of a grid — so the title is a mark
@@ -315,17 +319,18 @@ function exportAs(kind: string) {
     const rows = diagnosticsCsvRows(mode.value ?? 'msd', data.value)
     if (rows.length) downloadBlob(`${stem.value}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(host.value, kind, plotTheme(true).ground)
-      .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
+    lightImage(kind).then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
-async function exportImage(): Promise<string | null> {
+// every export is light (a figure goes on paper); the on-screen plot follows the app scheme
+async function lightImage(kind: 'png' | 'svg'): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
+  const url = await elementToImageURL(host.value, kind, plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
+const exportImage = () => lightImage('png')
 async function exportSvg(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()

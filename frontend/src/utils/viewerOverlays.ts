@@ -16,6 +16,7 @@ import { BLUE_HEAT_RGB } from '../plots/flowColors'
 import palettesJson from '../plots/palettes.json'
 import { parseOverlays } from './overlayLayers'
 import { channelLegend, type LegendItem } from './viewLegend'
+import { WHITE, OVERLAY_GREY } from '../plots/fixedColours'
 
 // ── Capture-view legend (shared: analysis-board strip + movie title card) ───────
 // The ONE path that turns a captured viewState snapshot into legend pieces: channels from the
@@ -254,9 +255,7 @@ export function timepointRange(buf: PointBuffer, t: number): [number, number] | 
   return buf.ranges.get(Math.round(t)) ?? null
 }
 
-/** The overlay author's neutral (`OVERLAY_GREY`, `api/src/overlay_author.jl`): an all-cells mask, an
- *  all-tracks tail — whatever a movie draws without a population colour. */
-export const OVERLAY_GREY = '#9ca3af'
+export { OVERLAY_GREY }
 
 /** `#rrggbb` → three floats in 0..1. Unknown or malformed → white, never invisible: a point that is
  *  there but the wrong colour is a bug you can see, one that is not drawn looks like missing data. */
@@ -500,7 +499,7 @@ export function buildTrackBuffer(
   for (const [id, rows] of byTrack) {
     if (rows.length < 2) continue                     // a single detection is a point, not a path
     rows.sort((p, q) => t[p] - t[q])
-    const rgb = hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
+    const rgb = hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : WHITE)
     for (let k = 1; k < rows.length; k++) {
       const a = rows[k - 1], b = rows[k]
       if (Math.round(t[b]) - Math.round(t[a]) !== 1) continue    // a gap the tracker bridged
@@ -653,19 +652,19 @@ export function buildMultiTrackBuffer(
   // Per-source solid colour: the caller's override wins (user picked one in the Tracks legend);
   // otherwise cycle the palette by source index. Cached in an array so `solidRgb` is O(1) per hit.
   const solidCache: [number, number, number][] = payloads.map((p, i) =>
-    hexToUnit(p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
+    hexToUnit(p.colour ?? (palette.length ? palette[i % palette.length] : WHITE)))
   const solidRgb = (src: number): [number, number, number] => solidCache[src] ?? [0.9, 0.9, 0.9]
   // Per-source POPULATION colour: the gated pop's own swatch (`pop.colour`) — set only for gated
   // track pops, not for the per-vn track eye. When absent, cycle the palette (so a non-pop source
   // still draws something rather than going invisible). Independent of `solidCache` so the Solid
   // mode's ColourPicker override doesn't leak into Population mode.
   const popCache: [number, number, number][] = payloads.map((p, i) =>
-    hexToUnit(p.popColour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
+    hexToUnit(p.popColour ?? (palette.length ? palette[i % palette.length] : WHITE)))
   const popRgb = (src: number): [number, number, number] => popCache[src] ?? [0.9, 0.9, 0.9]
   // By the track's OWN id — not the source-namespaced grouping key — so a track keeps its colour
   // whatever order the sources come in, and the movie (`_build_overlay_state`) can use the same rule.
   const trackRgb = (id: number): [number, number, number] =>
-    hexToUnit(palette.length ? palette[Math.abs(Math.round(id)) % palette.length] : '#ffffff')
+    hexToUnit(palette.length ? palette[Math.abs(Math.round(id)) % palette.length] : WHITE)
   const speedRgb = (speedSq: number): [number, number, number] => {
     if (!speedRange || speedSpan <= 0) return [0.9, 0.9, 0.9]
     const s = Math.sqrt(speedSq)
@@ -708,12 +707,12 @@ export function buildMultiTrackBuffer(
     // Legend hex mirrors what solid mode draws — the override if the caller supplied one, otherwise
     // the same palette cycle solidRgb uses. Track/speed modes don't paint by source, so the legend
     // is only consulted when the mode UI actually shows it.
-    hex: p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff'),
+    hex: p.colour ?? (palette.length ? palette[i % palette.length] : WHITE),
     count: perSource[i],
     // The ONE colour this source's tails ARE drawn in — what a captured legend may name. Null when
     // coloured by track or speed: no single swatch is true then.
-    drawn: mode === 'solid' ? (p.colour ?? (palette.length ? palette[i % palette.length] : '#ffffff'))
-         : mode === 'pop' ? (p.popColour ?? (palette.length ? palette[i % palette.length] : '#ffffff'))
+    drawn: mode === 'solid' ? (p.colour ?? (palette.length ? palette[i % palette.length] : WHITE))
+         : mode === 'pop' ? (p.popColour ?? (palette.length ? palette[i % palette.length] : WHITE))
          : null,
   })).filter(s => s.count > 0)
 
@@ -869,7 +868,7 @@ export function colourByValue(
     const levels = s.levels
     const index = new Map<string, number>()
     levels.forEach((v, i) => index.set(String(v), i))
-    const pal = palette.length ? palette : ['#ffffff']
+    const pal = palette.length ? palette : [WHITE]
     const rgbs = pal.map(hexToUnit)
     return (r: number) => {
       const v = vals[r]

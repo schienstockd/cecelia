@@ -36,7 +36,7 @@ import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
 // `PALETTES` is gone from here on purpose: the swatch is `ColourPicker` now, which owns the default
 // palette. Only `DOT_R` is still needed, for the gate colour-by legend main added.
-import { type VisProps } from '../../plots/plot'
+import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
 import { DOT_R } from '../../plots/density'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
 import { eyeKey, offPaths, popEyeOn } from '../../utils/viewer/popEyes'
@@ -198,10 +198,7 @@ async function convertGate(p: FlatPop) {
 // cluster belongs to AT MOST ONE pop (ticking it into B moves it off A) — mirrors old R
 // setClusterForPop. Writes go set-wide via the store's mirrorUids. ────────────────────────────
 const clusterMode = computed(() => isClusterPopType(props.popType))
-const POP_PALETTE = [
-  '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
-  '#f97316', '#22d3ee', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4', '#a3e635', '#d946ef',
-]
+const POP_PALETTE = POPULATION_PALETTE
 // PER-RUN scoping (cluster mode): a run's populations are exactly the pops whose filter targets THIS
 // run's `clusters.{suffix}` column. The store holds every run's pops for the segmentation in ONE
 // sidecar (gating/{vn}__{popType}.json), so we scope to the active run here — switching the run

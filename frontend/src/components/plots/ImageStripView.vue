@@ -32,6 +32,8 @@ import CcToggle from '../CcToggle.vue'
 import type { Frame, FrameCell } from '../../plots/frame'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { PAPER } from '../../plots/fixedColours'
+import { OVERLAY_GREY } from '../../utils/viewerOverlays'
 
 const settings = useSettingsStore()
 const project = useProjectStore()
@@ -224,7 +226,7 @@ function legendSections(c: Cell) {
   const MASK_RE = /^\(([^)]+)\) Labels$/
   for (const name of Object.keys(layers)) {
     const m = MASK_RE.exec(name)
-    if (m) masks.push({ label: m[1], colour: '#9ca3af' })
+    if (m) masks.push({ label: m[1], colour: OVERLAY_GREY })
   }
   const secs: LegendSection[] = []
   if (colourBy.length)    secs.push({ title: cbyTitle, items: colourBy })
@@ -368,7 +370,7 @@ async function exportImage(): Promise<string | null> {
   exportSrcs.value = map
   capturingStrip.value = true
   await nextTick()
-  try { return await elementToImageURL(stripRef.value, 'png', '#ffffff') }
+  try { return await elementToImageURL(stripRef.value, 'png', PAPER) }
   finally { capturingStrip.value = false; exportSrcs.value = {} }
 }
 

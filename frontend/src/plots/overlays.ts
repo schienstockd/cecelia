@@ -1,3 +1,4 @@
+import { PAPER, PAPER_INK } from './fixedColours'
 // Themed legend / title OVERLAYS for canvas plots. Observable Plot's inline `legend: true` wraps the
 // chart in a <figure> whose swatch legend sits on its own (white) ground and eats layout height —
 // which clips the axis and renders light-grey text invisible on the dark theme. So every canvas plot
@@ -41,9 +42,9 @@ export function titleOverlay(text: string, ink: string): HTMLElement {
 // `Plot.plot()`, which is how the tip bug below survived in four of them: PlotChart grew the fix and
 // the copies could not inherit it.
 export const PLOT_INK_DARK = '#e6e6e6'
-export const PLOT_INK_LIGHT = '#111'
+export const PLOT_INK_LIGHT = PAPER_INK   // the light plot IS the export: paper
 export const PLOT_GROUND_DARK = '#1f2226'
-export const PLOT_GROUND_LIGHT = 'white'
+export const PLOT_GROUND_LIGHT = PAPER
 
 /** The ink (text/axis) and ground (background) for a plot, given the effective dark-theme flag. */
 export function plotTheme(dark: boolean): { ink: string, ground: string } {

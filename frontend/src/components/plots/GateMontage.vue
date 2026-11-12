@@ -30,6 +30,7 @@ import { DOT_R } from '../../plots/density'
 import ColourBarLegend from './ColourBarLegend.vue'
 import type { RenderMode } from './RenderModeToggle.vue'
 import type { Frame, FrameCell } from '../../plots/frame'
+import { PAPER, PAPER_INK } from '../../plots/fixedColours'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
@@ -260,7 +261,7 @@ type CellExport = {
 }
 const cellRefs = new Map<string, CellExport>()
 function setCellRef(key: string, el: unknown) { if (el) cellRefs.set(key, el as CellExport); else cellRefs.delete(key) }
-async function exportImage(bg = '#ffffff', light = true): Promise<string | null> {
+async function exportImage(bg = PAPER, light = true): Promise<string | null> {
   const defs = props.defs.filter(isScatter)
   // a single tile keeps its OWN bar (it is a full-size plot, not a montage cell), so it exports itself
   if (defs.length === 1) return (await cellRefs.get(defs[0].key)?.exportImage(bg, light)) ?? null
@@ -299,7 +300,7 @@ async function exportImage(bg = '#ffffff', light = true): Promise<string | null>
 // scatter tile's vector BODY (dots/gates/axes, in cell-capture coords) translated to its grid rect, plus
 // the ggpairs non-scatter cells (diagonal channel names + correlation values) as SVG <text>. Same rect
 // math as exportImage (getBoundingClientRect ÷ ancestor-zoom k), so it lines up identically.
-function exportSvg(bg = '#ffffff', light = true): string {
+function exportSvg(bg = PAPER, light = true): string {
   const scatterDefs = props.defs.filter(isScatter)
   const el = hostRef.value; if (!el) return ''
   if (scatterDefs.length === 1) return cellRefs.get(scatterDefs[0].key)?.exportSvg?.(bg, light) ?? ''
@@ -315,7 +316,7 @@ function exportSvg(bg = '#ffffff', light = true): string {
       const r = host.getBoundingClientRect()
       body += `<g transform="translate(${(r.left - gr.left) / k} ${(r.top - gr.top) / k})">${cbody}</g>`
     }
-    const ink = getComputedStyle(el).getPropertyValue('--cc-text').trim() || '#111'
+    const ink = getComputedStyle(el).getPropertyValue('--cc-text').trim() || PAPER_INK
     // the colour-bar legend, as the SAME vector body it draws on screen, translated to where it sits
     const lel = legendRef.value?.getEl()
     if (lel) {

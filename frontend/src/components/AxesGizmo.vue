@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { projectAxes, formatZoom } from '../utils/axesGizmo'
+import { AXIS_XYZ } from '../plots/fixedColours'
 
 const props = withDefaults(defineProps<{
   yaw: number
@@ -33,11 +34,7 @@ const tips = computed(() =>
 
 /** Blender/viewer convention — the axis identity, not tied to the app's purple/warn palette
  *  (which is UI chrome, not a coordinate frame). */
-const COLOUR: Record<string, string> = {
-  X: '#e5484d',
-  Y: '#46a758',
-  Z: '#4a8fef',
-}
+const COLOUR = AXIS_XYZ
 function axisOf(key: string) { return key[1] }        // '+X' → 'X'
 function signOf(key: string) { return key[0] === '+' }
 

@@ -36,27 +36,26 @@ const elapsed = computed(() => taskElapsed(
   now.value,
 ))
 
-const STATUS_COLORS: Record<TaskStatus, string> = {
-  queued:    '#3f3f46',
-  running:   '#1e40af',
-  waiting:   '#713f12',
-  done:      '#14532d',
-  failed:    '#7f1d1d',
-  cancelled: '#3f3f46',
+// The node's frame: a tint of the state behind the status bar, the state colour on the border — both
+// scheme tokens, so the status text (TASK_STATUS colour, lib/taskStatus.ts) reads on it in either scheme.
+const STATUS_LOOK: Record<TaskStatus, { bg: string, border: string }> = {
+  queued:    { bg: 'var(--cc-surface-2)',  border: 'var(--cc-border)' },
+  running:   { bg: 'var(--cc-tint-blue)',  border: 'var(--cc-active)' },
+  waiting:   { bg: 'var(--cc-tint-amber)', border: 'var(--cc-sev-warn)' },
+  done:      { bg: 'var(--cc-tint-green)', border: 'var(--cc-sev-ok)' },
+  failed:    { bg: 'var(--cc-tint-red)',   border: 'var(--cc-sev-fail)' },
+  cancelled: { bg: 'var(--cc-surface-2)',  border: 'var(--cc-border)' },
 }
-
-// icon + text colour come from the canonical map (lib/taskStatus.ts); STATUS_COLORS above is this
-// node's own dark background tint (component chrome), kept separate.
 </script>
 
 <template>
   <div class="live-node" :class="{ 'restart-start': data.restart === 'start', 'restart-rerun': data.restart === 'rerun' }"
-       :style="{ borderColor: data.restart ? undefined : STATUS_COLORS[data.status] }">
+       :style="{ borderColor: data.restart ? undefined : STATUS_LOOK[data.status].border }">
     <!-- anchor points for the execution-order edges (not user-connectable) -->
     <Handle type="target" :position="Position.Left" class="live-handle" :connectable="false" />
     <Handle type="source" :position="Position.Right" class="live-handle" :connectable="false" />
     <span v-if="data.restart === 'start'" class="restart-badge">resume from</span>
-    <div class="live-status-bar" :style="{ background: STATUS_COLORS[data.status] }">
+    <div class="live-status-bar" :style="{ background: STATUS_LOOK[data.status].bg }">
       <i :class="['pi', TASK_STATUS[data.status].icon]"
          :style="{ color: TASK_STATUS[data.status].color }" />
       <span class="live-status-label" :style="{ color: TASK_STATUS[data.status].color }">

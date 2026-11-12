@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues, findRawSpacing,
-  findHandRolledIconButtons, findColourLiterals, findRestatedInputBase, inputBase,
+  findHandRolledIconButtons, findColourLiterals, findScriptColourLiterals, findRestatedInputBase, inputBase,
   findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities, findDeepFillOverrides,
   findBoxedPanelSections,
 } from './cssScenarios'
@@ -407,6 +407,48 @@ describe('colour literals', () => {
 
     const found = findColourLiterals(sources).map(r => `${r.path}:${r.line} ${r.literal}`)
     expect(found).toEqual([])
+  })
+})
+
+describe('colour literals in script code', () => {
+  // Canvas and SVG drawn from script can't read CSS, so the guard above can't see them. Chrome there
+  // reads the scheme (`tokenColour`, an inline `var(--cc-*)`, `plotTheme`); a colour that is rightly
+  // FIXED — export paper, a mark over the image, a data palette, a neutral fallback — is a named
+  // constant in one of the homes below, never a literal at the call site. `COLOUR-OK: <reason>` marks
+  // a computed colour (a ramp stop, a tint of a token). docs/UI.md → *Colour schemes*.
+  const SCRIPT = import.meta.glob('/src/**/*.{ts,vue}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+  const HOMES: Record<string, string> = {
+    'plots/fixedColours.ts':                 'paper, over-image, track tones, fallbacks',
+    'plots/overlays.ts':                     'plot ink + ground (plotTheme)',
+    'utils/viewerColormap.ts':               'channel LUT colours',
+    'utils/overlayCompose.ts':               'the annotation palette',
+    'utils/taskModule.ts':                   'module identity colours',
+    'utils/landscape.ts':                    'landscape swatches, pinned to the server',
+    'lib/colorLegend.ts':                    'the legend\'s ramp swatches',
+    'modules/batchmovies/overlayPreview.ts': 'the schematic preview palette',
+  }
+
+  it('finds quoted colours in scripts, not in templates, comments or COLOUR-OK lines', () => {
+    const hits = findScriptColourLiterals([{ path: 'a.vue', text: [
+      '<template><div style="color:#fff" /></template>', '<script setup lang="ts">',
+      "const a = '#e8a33d'", '// const b = "#123456"', "const c = 'rgba(0,0,0,0.5)'",
+      "const d = '#abcdef'   // COLOUR-OK: a data ramp", "const e = 'black'", "const f = 'blackbird'", '</script>',
+    ].join('\n') }])
+    expect(hits.map(h => h.literal)).toEqual(['#e8a33d', 'rgba(…)', 'black'])
+  })
+
+  it('live only in the colour homes — anywhere else, name a constant or read a token', () => {
+    const sources = Object.entries(SCRIPT).filter(([p]) => !p.endsWith('.test.ts'))
+      .map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+    expect(sources.length).toBeGreaterThan(100)
+    const stray = findScriptColourLiterals(sources).filter(h => !HOMES[h.path]).map(h => `${h.path}:${h.line} ${h.literal}`)
+    expect(stray).toEqual([])
+  })
+
+  it('every home still holds colours (else drop it from the list)', () => {
+    const sources = Object.keys(HOMES).map(path => ({ path, text: SCRIPT[`/src/${path}`] ?? '' }))
+    const held = new Set(findScriptColourLiterals(sources).map(h => h.path))
+    expect(Object.keys(HOMES).filter(p => !held.has(p))).toEqual([])
   })
 })
 

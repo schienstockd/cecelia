@@ -30,5 +30,6 @@ export const BLUE_HEAT_RGB: Uint8ClampedArray = (() => {
 // colour bar that labels them) have to agree, or the legend describes a colour the dots don't use.
 export function heatCss(t: number): string {
   const i = Math.min(255, Math.max(0, Math.round((isFinite(t) ? t : 0) * 255))) * 3
+  // COLOUR-OK: a ramp stop as a CSS colour
   return `rgb(${BLUE_HEAT_RGB[i]},${BLUE_HEAT_RGB[i + 1]},${BLUE_HEAT_RGB[i + 2]})`
 }

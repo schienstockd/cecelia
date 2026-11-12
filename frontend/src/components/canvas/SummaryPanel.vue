@@ -78,7 +78,7 @@ const props = defineProps<{
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]]
                            readout: [PlotReadout] }>()
 const plotRef = useTemplateRef<{
-  toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null>
+  toImageURL(t: 'png' | 'svg'): Promise<string | null>
   axisRect(): FrameRect | null
 }>('plotRef')
 const settings = useSettingsStore()
@@ -867,11 +867,11 @@ function csvName(): string {
   return plotAxisSuffix(measure.value, applied ? groupBy.value : '', hasMeasure.value)
 }
 // a plot-only, LIGHT-theme PNG for the PDF export (no panel chrome; dark theme is on-screen only)
-async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
+async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png')) ?? null }
 // full vector <svg> string for the board→SVG export (docs/ANALYSIS.md). PlotChart.toImageURL('svg')
 // returns an SVG DATA URL; decode its payload back to the raw markup so the board can nest it.
 async function exportSvg(): Promise<string | null> {
-  const url = await plotRef.value?.toImageURL('svg', true)
+  const url = await plotRef.value?.toImageURL('svg')
   if (!url) return null
   const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
 }
