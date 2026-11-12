@@ -24,7 +24,7 @@ function parse_af_channel_stats(d::AbstractDict)::AfChannelStats
         parsed_leaks)
 end
 """
-    af_qc_findings(per_channel; export_channels) -> (findings, worst)
+    af_qc_findings(per_channel; export_channels, technology) -> (findings, worst)
 
 QC for AF correction from the per-channel output stats. Advisory only, per `docs/MODULES.md` — never
 an `error`, never a gate.
@@ -44,7 +44,7 @@ Cohort metric `levelsUsedFrac` is banked but not gated (its threshold was retire
 rejected alternatives (a suppression finding; retention of `af-low-range` / `clippedFrac` / `ceiling`),
 and the datasets that shaped these decisions: [`docs/todo/AF_CORRECTION_AUDIT.md`](../../../../docs/todo/AF_CORRECTION_AUDIT.md).
 """
-function af_qc_findings(per_channel::AbstractDict; export_channels::Vector{Int} = Int[])
+function af_qc_findings(per_channel::AbstractDict; export_channels::Vector{Int} = Int[], technology = nothing)
     findings = Vector{Dict{String,Any}}()
     worst_saturated, worst_levels, worst_leak = 0.0, 1.0, 0.0
     for (ch, raw) in sort(collect(per_channel); by = first)
@@ -59,7 +59,7 @@ function af_qc_findings(per_channel::AbstractDict; export_channels::Vector{Int} 
             # at an 8-bit export's ceiling (the image's `export_ceiling_channels`): no gain advice
             from_export = something(tryparse(Int, string(ch)), -1) in export_channels
             push!(findings, qc_finding("warn", "af.saturated_input"; channel = ch,
-                key = from_export ? "af.saturated_input_export" : "af.saturated_input",
+                key = from_export ? "af.saturated_input_export" : qc_technology_key("af.saturated_input", technology),
                 detail = Dict{String,Any}(
                     "saturatedFrac" => round(s.saturatedFrac; digits = 5),
                     "saturatedPct"  => round(s.saturatedFrac * 100; digits = 3))))

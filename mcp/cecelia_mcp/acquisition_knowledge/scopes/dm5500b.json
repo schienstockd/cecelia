@@ -1,6 +1,8 @@
 {
   "system": "DM5500B",
-  "technology": "widefield",
+  "technologies": [
+    "widefield"
+  ],
   "features": [
     {
       "stage": "illumination",

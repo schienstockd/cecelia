@@ -107,10 +107,56 @@ class TestFile(_LifCase):
         self.assertIn('not in the file', self.settings(_xml(), series=3)['reason'])
         self.assertIn('reason', lif_meta.acquisition_settings('/nonexistent/x.lif'))
 
-    def test_confocal_element_is_not_guessed(self):
-        xml = _xml().replace('ATLCameraSettingDefinition', 'ATLConfocalSettingDefinition')
-        self.assertIn('confocal', self.settings(xml, series=0)['reason'])
+    def test_neither_camera_nor_confocal_is_a_reason(self):
+        xml = _xml().replace('ATLCameraSettingDefinition', 'ATLUnknownSettingDefinition')
+        self.assertIn('no camera settings', self.settings(xml, series=0)['reason'])
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
+CONFOCAL = os.path.join(_FIX, 'lif_sp8_las-x-3.5.7_header.xml')
+
+
+class TestConfocalSequential(_LifCase):
+    """A TCS SP8 sequential z-stack (header cut to two images, WT and Mer1; paths scrubbed). Four
+    sequences, one channel each, all on PMT 2; the channel order in the data is Red, Green, Magenta,
+    Gray. Expected values are read from each sequence's own XML."""
+
+    @classmethod
+    def setUpClass(cls):
+        with open(CONFOCAL, encoding='utf-8') as f:
+            cls.xml = f.read()
+        root = ET.fromstring(cls.xml)
+        wt = next(e for e in root.iter('Element') if e.get('Name') == 'WT')
+        cls.seqs = wt.findall("Data/Image/Attachment[@Name='HardwareSetting']/LDM_Block_Sequential/"
+                              "LDM_Block_Sequential_List/ATLConfocalSettingDefinition")
+
+    def setUp(self):
+        self.s = self.settings(self.xml, series=0)
+
+    def test_system_technology_and_stack(self):
+        s = self.s
+        self.assertEqual((s['technology'], s['system'], s['microscopeBody']), ('confocal', 'TCS SP8', 'DMI6000B-CS'))
+        self.assertTrue(s['sequential'])
+        self.assertEqual(s['objective']['na'], 1.3)
+        self.assertEqual(s['zStack']['count'], 27)
+        self.assertEqual(s['pinholeAiry'], 1.0)
+
+    def test_each_channel_takes_its_own_sequence(self):
+        self.assertEqual(len(self.seqs), 4)
+        self.assertEqual(len(self.s['channels']), 4)
+        for ch, seq in zip(self.s['channels'], self.seqs):
+            det = next(d for d in seq.iter('Detector') if d.get('IsActive') == '1')
+            on = [int(float(l.get('LaserLine'))) for l in seq.iter('LaserLineSetting') if float(l.get('IntensityDev')) > 0]
+            with self.subTest(channel=ch['name']):
+                self.assertAlmostEqual(ch['hv'], float(det.get('Gain')))          # PMT: gain is its voltage
+                self.assertEqual([l['wavelengthNm'] for l in ch['laserLines']], on)
+                self.assertEqual(ch['detector'], det.get('Name'))
+        self.assertEqual([c['dyePreset'] for c in self.s['channels']], ['dTomato', 'EGFP', 'ALEXA 647', 'DAPI'])
+
+    def test_a_second_image_has_its_own_settings(self):
+        mer = self.settings(self.xml, series=1)
+        self.assertEqual(mer['imageName'], 'Mer1')
+        self.assertNotEqual([c['hv'] for c in mer['channels']], [c['hv'] for c in self.s['channels']])

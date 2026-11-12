@@ -64,10 +64,17 @@ const _ACQ_STAGE_STEP = Dict("test" => "change at the scope or in the plan", "fi
 const _ACQ_STAGE_NARROW = Dict("test" => "",
     "final" => " If these movies cannot answer the plan at all, write instead \"These movies can answer: <the narrower question they can>.\"")
 
+"""The prompt's TEMPLATE text in the set's noun (`acq_check`'s `item`/`items`: "movie" only when every
+image is a time-lapse). Applied to the template pieces only — never to the user's names, plan or the
+rule findings (already worded) — so an image called "movie_3" stays as it is."""
+_acq_noun(s::AbstractString, item::AbstractString, items::AbstractString) =
+    replace(s, "Movies" => titlecase(items), "movies" => items, "movie" => item)
+
 """The heading over the review's verdict on the plan's entry and in the dialog, by the plan's stage."""
 acq_verdict_heading(plan) = Cecelia.acq_stage(plan) == "final" ? "Before analysing" : "Before acquiring the rest"
 
-acq_review_system_prompt(project_uid::AbstractString, stage::AbstractString = "test") = """
+acq_review_system_prompt(project_uid::AbstractString, stage::AbstractString = "test";
+                         item::AbstractString = "movie", items::AbstractString = "movies") = _acq_noun("""
 $(_ACQ_STAGE_INTRO[stage])
 
 The project is `$(project_uid)` — pass exactly that as `project_uid` in every tool call. Read the movies'
@@ -84,7 +91,7 @@ Reply ONLY through the structured output. Each claim is ONE point, with refs to 
 `observation` for a problem you saw in a tool result, `question` for something the user must answer
 that the record can't. Then one `interpretation`, last: the one step you add to the verdict on the plan.
 If nothing would change, abstain and say in `note` what you checked.
-"""
+""", item, items)
 
 # The plan as the prompt states it: each object and reference with its channel per design.
 function _acq_plan_lines(plan::AbstractDict)::String
@@ -111,8 +118,10 @@ end
 # `found` are the rule findings as lines; `noted` the ones that are expected, not a problem (an info
 # finding — "different laser between designs, compare within each").
 function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::AbstractVector = String[],
-                           noted::AbstractVector = String[]; verdict::AbstractString = "")::String
+                           noted::AbstractVector = String[]; verdict::AbstractString = "",
+                           item::AbstractString = "movie", items::AbstractString = "movies")::String
     stage = Cecelia.acq_stage(plan)
+    N(s) = _acq_noun(s, item, items)
     known = isempty(found) ? "The rule checks found nothing." :
         "The rule checks already found these — the user sees them, so do NOT repeat or rephrase them:\n" *
         join(("- " * f for f in found), "\n")
@@ -122,14 +131,14 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
     """
     Plan: “$(isempty(text) ? "(no sentence)" : text)”
     $(_acq_plan_lines(plan))
-    Movies (name — image uid):
+    $(N("Movies")) (name — image uid):
     $(join(("- " * m for m in movies), "\n"))
 
     $(known)
 
-    $(_ACQ_STAGE_ASK[stage]) Report only what the checks above don't already say; if that is nothing, abstain.
+    $(N(_ACQ_STAGE_ASK[stage])) Report only what the checks above don't already say; if that is nothing, abstain.
 
-    Write each observation or question as `<Category>: <what is wrong, and where — name the movies and
+    Write each observation or question as `<Category>: <what is wrong, and where — name the $(items) and
     channels> → <$(_ACQ_STAGE_ARROW[stage])>`, with Category one of: $(_acq_review_category_list()).
     Each side of the arrow is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS) characters, with no semicolon:
     two problems are two claims.
@@ -138,10 +147,10 @@ function acq_review_prompt(plan::AbstractDict, movies::AbstractVector, found::Ab
     “$(isempty(verdict) ? "(none)" : verdict)” — so add only the ONE most important thing to $(_ACQ_STAGE_STEP[stage])
     that they don't cover, as one imperative sentence with no lead-in, naming the plan's objects and
     channels. A step that needs something the record lacks (a Mouse attribute, a control) says to add it
-    first. If nothing matters beyond those steps, write exactly "Nothing to add."$(_ACQ_STAGE_NARROW[stage]) At most
+    first. If nothing matters beyond those steps, write exactly "Nothing to add."$(N(_ACQ_STAGE_NARROW[stage])) At most
     $(KIWI_CLAIM_MAX_CHARS) characters, no arrow.
 
-    Name a movie in your text by its full name exactly as listed above — never shortened, never by its uid:
+    Name a$(item == "image" ? "n" : "") $(item) in your text by its full name exactly as listed above — never shortened, never by its uid:
     the app shows names or uids as the reader chooses.
     """
 end
@@ -177,8 +186,9 @@ function acq_review_start(uid::AbstractString, set_uid::AbstractString; model::A
     names = Dict(f["uid"] => f["name"] for f in facts)
     movies = [string(f["name"], " — ", f["uid"]) for f in facts]
     found, noted = _acq_found_lines(result, names)
-    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted; verdict = result["verdict"]); model,
-                    system_prompt = acq_review_system_prompt(uid, Cecelia.acq_stage(plan)), allowed_tools = acq_review_tools(),
+    noun = (item = result["item"], items = result["items"])
+    kiwi_start_turn(uid, acq_review_prompt(plan, movies, found, noted; verdict = result["verdict"], noun...); model,
+                    system_prompt = acq_review_system_prompt(uid, Cecelia.acq_stage(plan); noun...), allowed_tools = acq_review_tools(),
                     extra = Dict{String,Any}("acqReview" => Dict{String,Any}("entryId" => id, "setUid" => String(set_uid),
                                                                             "round" => get(a, "round", 1))),
                     on_done = _acq_review_done!)

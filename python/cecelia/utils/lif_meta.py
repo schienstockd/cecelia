@@ -8,16 +8,22 @@ One file holds many images. `series` is the picker's index (`probe_series_run._p
 entry's own path and name, never by counting elements a second way — two counts that disagree (a
 zero-size image, a nested folder) would attach a neighbour's settings.
 
-Domain: camera (widefield) elements, which Leica marks `HardwareSetting DataSourceTypeName="Camera"`
-and describes in `ATLCameraSettingDefinition` plus one `WideFieldChannelInfo` per configured channel.
-Checked on LAS X 3.4.2 files from a DM5500B with a DFC365 FX camera. A confocal element
-(`ATLConfocalSettingDefinition`) returns a reason: no confocal file has been seen, so no parse is
-guessed for it.
+Two kinds of element, by what `HardwareSetting` holds:
+- camera (widefield): `ATLCameraSettingDefinition` plus one `WideFieldChannelInfo` per configured
+  channel. Checked on LAS X 3.4.2 files from a DM5500B with a DFC365 FX camera.
+- confocal (point scanning): `ATLConfocalSettingDefinition`. In sequential mode the settings that ran
+  are one definition per sequence under `LDM_Block_Sequential/LDM_Block_Sequential_List` (the top-level
+  one is the live setting, not a sequence); otherwise the top-level one. Per sequence: the active
+  detectors (`Detector IsActive="1"`: PMT gain is its voltage, HyD gain a %), the laser lines on
+  (`LaserLineSetting IntensityDev` > 0, in %), the emission band (`MultiBand`, by detector channel),
+  the dye preset. Objective, scanner and pinhole are read from the top-level definition: a sequence
+in the files checked records no zoom, and its pinhole matches the top-level one. Checked on LAS X 3.5.7 files from a TCS SP8 (DMI6000B-CS), 4 sequences.
 
-Two readings are ours, not Leica's, stated where made: a channel's settings are matched to the
-recorded channel by LUT name (the configuration lists every channel set up, the data can hold fewer —
-a single-channel image still lists both); and `acquiredAt` is the first time stamp, a Windows FILETIME
-(100 ns ticks since 1601, UTC).
+Three readings are ours, not Leica's, stated where made: a channel's settings are matched to the
+recorded channel by LUT colour (the configuration lists every channel set up, the data can hold fewer
+— a single-channel image still lists both; a sequence's colour is its active detector's `LUT`);
+`acquiredAt` is the first time stamp, a Windows FILETIME (100 ns ticks since 1601, UTC); and a laser
+line at or above 680 nm makes the image two-photon (the frontend's `isMultiphoton` rule), else confocal.
 
 Fixtures: `test-data/acquisition/lif_*`, from real files.
 """
@@ -26,8 +32,10 @@ from datetime import datetime, timedelta, timezone
 
 #: Bump when the settings dict gains a field: images read by an older reader are re-read
 #: (its row in app/src/tasks/importImages/acquisition_readers.json must match).
-READER_VERSION = 1
+READER_VERSION = 2   # 2: confocal elements
 
+#: Shortest excitation that still means multiphoton (`MULTIPHOTON_MIN_NM`, frontend acquisitionLightPath.ts).
+_MULTIPHOTON_MIN_NM = 680
 _FILETIME_EPOCH = datetime(1601, 1, 1, tzinfo=timezone.utc)
 #: `DimensionDescription DimID`: 1 x, 2 y, 3 z, 4 t (Bio-Formats `LIFReader.translateImageNodes`).
 _DIM_Z, _DIM_T = '3', '4'
@@ -135,6 +143,109 @@ def _objective(cam):
             'immersion': (cam.get('Immersion') or '').strip().lower() or None}
 
 
+def _by_lut(recorded, entries, lut_of):
+    """Pair each recorded `ChannelDescription` with the entry of its LUT colour; positional when the
+    colours don't tell them apart and the counts agree; else None."""
+    groups = {}
+    for e in entries:
+        groups.setdefault((lut_of(e) or '').lower(), []).append(e)
+    out = []
+    for i, c in enumerate(recorded):
+        hits = groups.get((c.get('LUTName') or '').lower(), [])
+        out.append(hits[0] if len(hits) == 1 else (entries[i] if len(recorded) == len(entries) else None))
+    return out
+
+
+def _sequences(hw):
+    """The confocal settings that ran: one per sequence in sequential mode, else the one."""
+    seqs = hw.findall('LDM_Block_Sequential/LDM_Block_Sequential_List/ATLConfocalSettingDefinition')
+    return seqs or [hw.find('ATLConfocalSettingDefinition')], bool(seqs)
+
+
+def _detections(conf):
+    """One entry per active detector of a sequence: what reached it and how it was set."""
+    laser_names = {l.get('Wavelength'): l.get('LaserName') for l in conf.iter('Laser')}
+    lines = [(int(round(_num(l.get('LaserLine')) or 0)), round(_num(l.get('IntensityDev')) or 0, 2))
+             for l in conf.iter('LaserLineSetting') if (_num(l.get('IntensityDev')) or 0) > 0]
+    luts = {l.get('Channel'): l.get('LutName') for l in conf.iter('LUT')}
+    bands = {b.get('Channel'): b for b in conf.iter('MultiBand')}
+    out = []
+    for d in conf.iter('Detector'):
+        if d.get('IsActive') != '1':
+            continue
+        band = bands.get(d.get('Channel'))
+        lo, hi = (_num(band.get('LeftWorld')), _num(band.get('RightWorld'))) if band is not None else (None, None)
+        dye = (band.get('DyeName') or '').split('/')[-1] or None if band is not None else None
+        out.append({'lut': luts.get(d.get('Channel')), 'detector': d.get('Name'), 'type': d.get('Type'),
+                    'gain': _num(d.get('Gain')), 'offset': _num(d.get('Offset')), 'lines': lines,
+                    'laserNames': [laser_names.get(str(wl)) or f'{wl} nm' for wl, _ in lines],
+                    'band': None if lo is None or hi is None else f'{round(lo)}-{round(hi)} nm', 'dye': dye})
+    return out
+
+
+def _integration(conf):
+    """Averaging/accumulation that ran, in the shape the `.oir` and `.czi` readers give."""
+    for key, kind, avg in (('LineAverage', 'Line', True), ('FrameAverage', 'Frame', True),
+                           ('Line_Accumulation', 'Line', False), ('FrameAccumulation', 'Frame', False)):
+        n = _int(conf.get(key))
+        if n and n > 1:
+            return {'type': kind, 'count': n, 'average': avg}
+    return {'type': 'None', 'count': 1, 'average': None}
+
+
+def _confocal_settings(el, image, hw):
+    seqs, sequential = _sequences(hw)
+    # Image-level values (objective, scanner, pinhole) sit on the top-level definition; a sequence
+    # carries its own lasers and detectors but not always these.
+    first = hw.find('ATLConfocalSettingDefinition')
+    dets = [d for conf in seqs for d in _detections(conf)]
+    recorded = list(image.iterfind('ImageDescription/Channels/ChannelDescription'))
+    channels = []
+    for i, (c, d) in enumerate(zip(recorded, _by_lut(recorded, dets, lambda d: d['lut']))):
+        pmt = d is not None and (d['type'] or '').upper() == 'PMT'
+        channels.append({
+            'order': i + 1, 'name': (d and d['dye']) or c.get('LUTName'), 'dyePreset': d and d['dye'],
+            'laser': ' + '.join(d['laserNames']) if d else None, 'detector': d and d['detector'],
+            # a PMT's gain is its voltage (HV); a HyD's is a %
+            'hv': d['gain'] if pmt else None, 'gain': None if (d is None or pmt) else d['gain'],
+            'offset': d and d['offset'], 'bitDepth': _int(c.get('Resolution')),
+            'emissionFilter': d and d['band'],
+            'laserLines': [{'wavelengthNm': wl, 'pct': pct} for wl, pct in d['lines']] if d else [],
+        })
+    if not channels:
+        return {'reason': 'no channels in the image description'}
+    lasers = {}
+    for d in dets:
+        for name, (wl, pct) in zip(d['laserNames'], d['lines']):
+            lasers.setdefault((name, wl, pct), {'name': name, 'wavelengthNm': wl, 'transmissionPct': pct})
+    wavelengths = [wl for d in dets for wl, _ in d['lines']]
+    pinhole = _num(first.get('Pinhole'))
+    dwell = _num(first.get('PixelDwellTime'))
+    splitter = next((w.get('FilterName') for w in first.iter('Wheel')
+                     if w.get('FilterWheelName') == 'Excitation Beam Splitter'), None)
+    return {
+        'source': 'lif', 'readerVersion': READER_VERSION,
+        'technology': 'two-photon' if any(wl >= _MULTIPHOTON_MIN_NM for wl in wavelengths) else 'confocal',
+        'system': hw.get('SystemTypeName') or None, 'softwareVersion': hw.get('Software') or None,
+        'microscopeBody': first.get('MicroscopeModel') or None,
+        'acquiredAt': _acquired_at(image), 'imageName': el.get('Name'),
+        'objective': _objective(first),
+        'lasers': list(lasers.values()),
+        'sequential': sequential,
+        'dichroics': [{'slot': 'excitation beam splitter', 'name': splitter.strip()}] if splitter else [],
+        'scanner': {'type': (first.get('ScanDirectionXName') or '').lower() or None,
+                    'zoom': _num(first.get('Zoom')),
+                    'pixelDwellUs': None if dwell is None else round(dwell * 1e6, 4),   # s → µs
+                    'lineHz': _num(first.get('ScanSpeed')),
+                    'integration': _integration(first)},
+        'autoHV': None,
+        'pinholeUm': None if pinhole is None else round(pinhole * 1e6, 2),   # m → µm
+        'pinholeAiry': None if first.get('PinholeAiry') is None else round(_num(first.get('PinholeAiry')), 2),
+        'channels': channels,
+        **_axes(image),
+    }
+
+
 def parse_settings(root, image_list, series=0):
     """Normalised settings dict for image `series` (readlif's `xml_root` + `image_list`), or `{'reason': …}`."""
     if not 0 <= series < len(image_list):
@@ -146,8 +257,8 @@ def parse_settings(root, image_list, series=0):
     hw = image.find("Attachment[@Name='HardwareSetting']")
     if hw is None:
         return {'reason': 'no hardware settings recorded for this image'}
-    if hw.find('.//ATLConfocalSettingDefinition') is not None:
-        return {'reason': 'Leica confocal settings are not read yet (no confocal .lif seen)'}
+    if hw.find('ATLConfocalSettingDefinition') is not None:
+        return _confocal_settings(el, image, hw)
     cam = hw.find('.//ATLCameraSettingDefinition')
     if cam is None:
         return {'reason': f'no camera settings ({hw.get("DataSourceTypeName") or "unknown source"})'}

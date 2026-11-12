@@ -1,0 +1,572 @@
+<ImageDocument>
+  <Metadata>
+    <Information>
+      <User Id="0" />
+      <Application>
+        <Name>ZEN (blue edition)</Name>
+        <Version>3.7.97.07000</Version>
+        <BuildId>3.16.23221.71</BuildId>
+      </Application>
+      <Document>
+        <CreationDate>2025-03-20T12:40:55.2399457-07:00</CreationDate>
+        <UserName>zeiss</UserName>
+      </Document>
+      <Image>
+        <SizeX>3180</SizeX>
+        <SizeY>3180</SizeY>
+        <SizeT>1</SizeT>
+        <SizeH>2</SizeH>
+        <OriginalCompressionMethod>Uncompressed</OriginalCompressionMethod>
+        <OriginalEncodingQuality>100</OriginalEncodingQuality>
+        <AcquisitionDateAndTime>2025-03-20T19:40:55.214927Z</AcquisitionDateAndTime>
+        <SizeC>8</SizeC>
+        <SizeZ>50</SizeZ>
+        <ComponentBitCount>16</ComponentBitCount>
+        <PixelType>Gray16</PixelType>
+        <Dimensions>
+          <Channels>
+            <Channel Id="Channel:0" Name="AF647-T1">
+              <ExcitationWavelength>653</ExcitationWavelength>
+              <EmissionWavelength>668</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0057</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FFFF00FF</Color>
+              <Fluor>Alexa Fluor 647</Fluor>
+              <Reflector>none</Reflector>
+              <NACondenser>0.09</NACondenser>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>356.32241698471</PinholeSize>
+              <PinholeSizeAiry>5.4393625986363121</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>300-735</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <HasFocusRoi>false</HasFocusRoi>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <DetectorMode>Integration</DetectorMode>
+                <Voltage>700</Voltage>
+                <PhotonConversionFactor>NaN</PhotonConversionFactor>
+                <Detector Id="Detector: Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>0.98</Attenuation>
+                  <Transmission>0.020000000000000018</Transmission>
+                  <Wavelength>639</Wavelength>
+                  <IsNlo>false</IsNlo>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-1</StokesParameter2>
+                    <StokesParameter3>0</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLKM980LaserLine639" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <FrameTime>0.97794529752953807</FrameTime>
+                <PixelTime>3.2996777658431791E-07</PixelTime>
+                <ScanSpeed>7</ScanSpeed>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>0</SampleOffsetY>
+                <SampleRotation>0</SampleRotation>
+                <ZoomX>1.2</ZoomX>
+                <ZoomY>1.2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <LineStep>4</LineStep>
+                <ScanningMode>Frame</ScanningMode>
+                <MainBeamSplitterVis>Beamsplitter.2175-136</MainBeamSplitterVis>
+                <MainBeamSplitterInVis>Beamsplitter.Plate</MainBeamSplitterInVis>
+                <SecondaryBeamSplitter>SecondaryBeamsplitter.1499-327</SecondaryBeamSplitter>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>-0.85771975839792292</TransformationXX>
+                <TransformationXY>-0.51411751191124455</TransformationXY>
+                <TransformationYX>-0.51411751191124455</TransformationYX>
+                <TransformationYY>0.85771975839792292</TransformationYY>
+                <Magnification>1126.5751097235513</Magnification>
+                <Mode>FastAiryScanSheppardSum</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+                <FastAiryScanSettings>
+                  <EffectiveNA_in_x>0</EffectiveNA_in_x>
+                  <EffectiveNA_in_y>0</EffectiveNA_in_y>
+                  <UseOnlineBidiCorrection>true</UseOnlineBidiCorrection>
+                  <IlluminationLinePixels>2 4</IlluminationLinePixels>
+                </FastAiryScanSettings>
+              </AiryscanSettings>
+            </Channel>
+            <Channel Id="Channel:2" Name="AF546-T2">
+              <ExcitationWavelength>557</ExcitationWavelength>
+              <EmissionWavelength>572</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0044</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FFFF0000</Color>
+              <Fluor>Alexa Fluor 546</Fluor>
+              <Reflector>none</Reflector>
+              <NACondenser>0.09</NACondenser>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>312.82766185982</PinholeSize>
+              <PinholeSizeAiry>5.6128344814131728</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>380-608</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <HasFocusRoi>false</HasFocusRoi>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <DetectorMode>Integration</DetectorMode>
+                <Voltage>700</Voltage>
+                <PhotonConversionFactor>NaN</PhotonConversionFactor>
+                <Detector Id="Detector: Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>0.99</Attenuation>
+                  <Transmission>0.010000000000000009</Transmission>
+                  <Wavelength>561</Wavelength>
+                  <IsNlo>false</IsNlo>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-1</StokesParameter2>
+                    <StokesParameter3>0</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLKM980LaserLine561" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <FrameTime>0.97794529752953807</FrameTime>
+                <PixelTime>3.2996777658431791E-07</PixelTime>
+                <ScanSpeed>7</ScanSpeed>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>0</SampleOffsetY>
+                <SampleRotation>0</SampleRotation>
+                <ZoomX>1.2</ZoomX>
+                <ZoomY>1.2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <LineStep>4</LineStep>
+                <ScanningMode>Frame</ScanningMode>
+                <MainBeamSplitterVis>Beamsplitter.2175-135</MainBeamSplitterVis>
+                <MainBeamSplitterInVis>Beamsplitter.Plate</MainBeamSplitterInVis>
+                <SecondaryBeamSplitter>SecondaryBeamsplitter.2035-352</SecondaryBeamSplitter>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>-0.85771975839792292</TransformationXX>
+                <TransformationXY>-0.51411751191124455</TransformationXY>
+                <TransformationYX>-0.51411751191124455</TransformationYX>
+                <TransformationYY>0.85771975839792292</TransformationYY>
+                <Magnification>1126.5751097235513</Magnification>
+                <Mode>FastAiryScanSheppardSum</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+                <FastAiryScanSettings>
+                  <EffectiveNA_in_x>0</EffectiveNA_in_x>
+                  <EffectiveNA_in_y>0</EffectiveNA_in_y>
+                  <UseOnlineBidiCorrection>true</UseOnlineBidiCorrection>
+                  <IlluminationLinePixels>2 4</IlluminationLinePixels>
+                </FastAiryScanSettings>
+              </AiryscanSettings>
+            </Channel>
+            <Channel Id="Channel:4" Name="AF488-T3">
+              <ExcitationWavelength>493</ExcitationWavelength>
+              <EmissionWavelength>517</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0038</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FF00FF33</Color>
+              <Fluor>Alexa Fluor 488</Fluor>
+              <Reflector>none</Reflector>
+              <NACondenser>0.09</NACondenser>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>272.12103206344</PinholeSize>
+              <PinholeSizeAiry>5.5092686671633784</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>380-548</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <HasFocusRoi>false</HasFocusRoi>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <DetectorMode>Integration</DetectorMode>
+                <Voltage>725</Voltage>
+                <PhotonConversionFactor>NaN</PhotonConversionFactor>
+                <Detector Id="Detector: Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>0.95</Attenuation>
+                  <Transmission>0.050000000000000044</Transmission>
+                  <Wavelength>488</Wavelength>
+                  <IsNlo>false</IsNlo>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-1</StokesParameter2>
+                    <StokesParameter3>0</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLKM980LaserLine488" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <FrameTime>0.97794529752953807</FrameTime>
+                <PixelTime>3.2996777658431791E-07</PixelTime>
+                <ScanSpeed>7</ScanSpeed>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>0</SampleOffsetY>
+                <SampleRotation>0</SampleRotation>
+                <ZoomX>1.2</ZoomX>
+                <ZoomY>1.2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <LineStep>4</LineStep>
+                <ScanningMode>Frame</ScanningMode>
+                <MainBeamSplitterVis>Beamsplitter.2175-135</MainBeamSplitterVis>
+                <MainBeamSplitterInVis>Beamsplitter.Plate</MainBeamSplitterInVis>
+                <SecondaryBeamSplitter>SecondaryBeamsplitter.2301-266</SecondaryBeamSplitter>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>-0.85771975839792292</TransformationXX>
+                <TransformationXY>-0.51411751191124455</TransformationXY>
+                <TransformationYX>-0.51411751191124455</TransformationYX>
+                <TransformationYY>0.85771975839792292</TransformationYY>
+                <Magnification>1126.5751097235513</Magnification>
+                <Mode>FastAiryScanSheppardSum</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+                <FastAiryScanSettings>
+                  <EffectiveNA_in_x>0</EffectiveNA_in_x>
+                  <EffectiveNA_in_y>0</EffectiveNA_in_y>
+                  <UseOnlineBidiCorrection>true</UseOnlineBidiCorrection>
+                  <IlluminationLinePixels>2 4</IlluminationLinePixels>
+                </FastAiryScanSettings>
+              </AiryscanSettings>
+            </Channel>
+            <Channel Id="Channel:6" Name="AF405-T4">
+              <ExcitationWavelength>401</ExcitationWavelength>
+              <EmissionWavelength>422</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0032</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FF1B00FF</Color>
+              <Fluor>Alexa Fluor 405</Fluor>
+              <Reflector>none</Reflector>
+              <NACondenser>0.09</NACondenser>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>225.83815161003</PinholeSize>
+              <PinholeSizeAiry>5.2398695854681385</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>350-499</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <HasFocusRoi>false</HasFocusRoi>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <DetectorMode>Integration</DetectorMode>
+                <Voltage>650</Voltage>
+                <PhotonConversionFactor>NaN</PhotonConversionFactor>
+                <Detector Id="Detector: Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>0.98</Attenuation>
+                  <Transmission>0.020000000000000018</Transmission>
+                  <Wavelength>405</Wavelength>
+                  <IsNlo>false</IsNlo>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-1</StokesParameter2>
+                    <StokesParameter3>0</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLKM980LaserLine405" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <FrameTime>0.97794529752953807</FrameTime>
+                <PixelTime>3.2996777658431791E-07</PixelTime>
+                <ScanSpeed>7</ScanSpeed>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>0</SampleOffsetY>
+                <SampleRotation>0</SampleRotation>
+                <ZoomX>1.2</ZoomX>
+                <ZoomY>1.2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <LineStep>4</LineStep>
+                <ScanningMode>Frame</ScanningMode>
+                <MainBeamSplitterVis>Beamsplitter.Plate</MainBeamSplitterVis>
+                <MainBeamSplitterInVis>Beamsplitter.1520-117</MainBeamSplitterInVis>
+                <SecondaryBeamSplitter>SecondaryBeamsplitter.2220-614</SecondaryBeamSplitter>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>-0.85771975839792292</TransformationXX>
+                <TransformationXY>-0.51411751191124455</TransformationXY>
+                <TransformationYX>-0.51411751191124455</TransformationYX>
+                <TransformationYY>0.85771975839792292</TransformationYY>
+                <Magnification>1126.5751097235513</Magnification>
+                <Mode>FastAiryScanSheppardSum</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+                <FastAiryScanSettings>
+                  <EffectiveNA_in_x>0</EffectiveNA_in_x>
+                  <EffectiveNA_in_y>0</EffectiveNA_in_y>
+                  <UseOnlineBidiCorrection>true</UseOnlineBidiCorrection>
+                  <IlluminationLinePixels>2 4</IlluminationLinePixels>
+                </FastAiryScanSettings>
+              </AiryscanSettings>
+            </Channel>
+          </Channels>
+          <Tracks>
+            <Track Id="Track:1">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:0" />
+                <ChannelRef Id="Channel:1" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:2">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:2" />
+                <ChannelRef Id="Channel:3" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:3">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:4" />
+                <ChannelRef Id="Channel:5" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:4">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:6" />
+                <ChannelRef Id="Channel:7" />
+              </ChannelRefs>
+            </Track>
+          </Tracks>
+          <X>
+            <AxisOrientation>-1</AxisOrientation>
+          </X>
+          <Y>
+            <AxisOrientation>-1</AxisOrientation>
+          </Y>
+          <T>
+            <StartTime>2025-03-20T19:40:55.214927Z</StartTime>
+            <Positions>
+              <BinaryList>
+                <AttachmentName>TimeStamps</AttachmentName>
+              </BinaryList>
+            </Positions>
+          </T>
+          <Z>
+            <XYZHandedness>RightHanded</XYZHandedness>
+            <ZAxisDirection>FromObjectiveToSpecimen</ZAxisDirection>
+            <StartPosition>0</StartPosition>
+            <Positions>
+              <Interval>
+                <Start>-3.185</Start>
+                <Increment>0.13</Increment>
+              </Interval>
+            </Positions>
+          </Z>
+        </Dimensions>
+        <ObjectiveSettings>
+          <RefractiveIndex>1.518</RefractiveIndex>
+          <Medium>Oil</Medium>
+          <ObjectiveRef Id="Objective:1" />
+        </ObjectiveSettings>
+        <MicroscopeRef Id="Microscope:1" />
+        <MicroscopeSettings>
+          <EyepieceSettings>
+            <TotalMagnification>630</TotalMagnification>
+          </EyepieceSettings>
+        </MicroscopeSettings>
+        <TubeLenses>
+          <TubeLensRef Id="TubeLens:1" />
+        </TubeLenses>
+        <Session SessionId="f6ed3442-8636-47f8-8b2f-1fe1040f2a44" SessionName="LSM - 20250320_100526" SessionCreation="AutomaticStageCalibration">
+          <SessionMatrix>1 0 0 0 0 -1 0 0 0 0 1 0 -65000 50000 0 1</SessionMatrix>
+          <HolderCwsId>0</HolderCwsId>
+          <RotationCenter>
+            <X>65000</X>
+            <Y>50000</Y>
+          </RotationCenter>
+          <SessionCount>0</SessionCount>
+        </Session>
+        <SpatialRelations />
+      </Image>
+      <Instrument>
+        <Microscopes>
+          <Microscope Id="Microscope:1" Name="Axio Observer.Z1 / 7">
+            <Type>Inverted</Type>
+            <UserDefinedName>2841000155 without 5x</UserDefinedName>
+            <System>LSM 800</System>
+          </Microscope>
+        </Microscopes>
+        <LightSources>
+          <LightSource Id="MTBLKM980LaserLine639">
+            <Power>10</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="MTBLKM980LaserLine561">
+            <Power>13</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="MTBLKM980LaserLine488">
+            <Power>10</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="MTBLKM980LaserLine405">
+            <Power>15</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+        </LightSources>
+        <Detectors>
+          <Detector Id="Detector: Airyscan" Name="Airyscan">
+            <GammaDefault>1</GammaDefault>
+            <Type>GaAsP-PMT</Type>
+            <Zoom>1.2,1.2</Zoom>
+            <Offset>0</Offset>
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+          <Detector Id="Detector:LSM 980" Name="LSM 980">
+            <GammaDefault>1</GammaDefault>
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+        </Detectors>
+        <Objectives>
+          <Objective Id="Objective:1" Name="Plan-Apochromat 63x/1.40 Oil DIC M27">
+            <LensNA>1.4</LensNA>
+            <NominalMagnification>63</NominalMagnification>
+            <WorkingDistance>193</WorkingDistance>
+            <PupilGeometry>Circular</PupilGeometry>
+            <ImmersionRefractiveIndex>1.518</ImmersionRefractiveIndex>
+            <Immersion>Oil</Immersion>
+            <Manufacturer>
+              <Model>Plan-Apochromat 63x/1.40 Oil DIC M27</Model>
+            </Manufacturer>
+          </Objective>
+        </Objectives>
+        <TubeLenses>
+          <TubeLens Id="TubeLens:1" Name="Tubelens LSM" />
+        </TubeLenses>
+        <Dichroics>
+          <Dichroic Id="Beamsplitter.2175-136" Name="MBS 488/561/639" />
+          <Dichroic Id="Beamsplitter.Plate" Name="Plate" />
+          <Dichroic Id="SecondaryBeamsplitter.1499-327" Name="Plate" />
+          <Dichroic Id="Beamsplitter.2175-135" Name="MBS 488/561" />
+          <Dichroic Id="SecondaryBeamsplitter.2035-352" Name="SBS SP 615" />
+          <Dichroic Id="SecondaryBeamsplitter.2301-266" Name="SBS SP 550" />
+          <Dichroic Id="Beamsplitter.1520-117" Name="MBS -405" />
+          <Dichroic Id="SecondaryBeamsplitter.2220-614" Name="SBS SP 505" />
+        </Dichroics>
+      </Instrument>
+      <Processing>
+        <LSM>
+          <SamplingFactor>1.9998550905684</SamplingFactor>
+        </LSM>
+        <Airyscan>
+          <Channels>
+            <Channel Id="Channel:0">
+              <SuperResolutionParameter>4.0385289192199707</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>2D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+            <Channel Id="Channel:2">
+              <SuperResolutionParameter>3.9956176280975342</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>2D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+            <Channel Id="Channel:4">
+              <SuperResolutionParameter>4.0986690521240234</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>2D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+            <Channel Id="Channel:6">
+              <SuperResolutionParameter>4.2689590454101562</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>2D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+          </Channels>
+        </Airyscan>
+      </Processing>
+    </Information>
+    <Scaling>
+      <Metadata />
+      <AutoScaling>
+        <Type>Measured</Type>
+        <Objective>Objective.420782-9900-799</Objective>
+        <Optovar>Aquila.Tubelens LSM</Optovar>
+        <Reflector>Reflector.none</Reflector>
+        <ObjectiveName>Plan-Apochromat 63x/1.40 Oil DIC M27</ObjectiveName>
+        <OptovarMagnification>1</OptovarMagnification>
+        <ReflectorMagnification>1</ReflectorMagnification>
+        <CameraName>LSM 980</CameraName>
+        <CameraPixelDistance>2.22361111111111,2.22361111111111</CameraPixelDistance>
+        <CreationDateTime>03/20/2025 22:11:14</CreationDateTime>
+      </AutoScaling>
+      <Items>
+        <Distance Id="X">
+          <Value>3.5295414462081115E-08</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Y">
+          <Value>3.5295414462081115E-08</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Z">
+          <Value>1.3E-07</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+      </Items>
+    </Scaling>
+    <HardwareSetting><Configuration><Device Id="MTBLSMImagingDevice" Name="LSM 980" UniqueName="LSM880.ImagingDevice" Model="" IsAvailable="true" IsBroken="false" IsBrokenReason="" Motorization="Motorized" IsEmitter="true" IsDetector="true" FirmwareDate="" FirmwareName="" FirmwareVersion="" MaximumScannerDistance="0.017741974428596326" Zoom1ScannerDistance="0.0084853" MinimumZoom="0.6" MaximumZoom="40" MinimumZoomForFullRotation="1" IsSimulated="false" /></Configuration></HardwareSetting></Metadata>
+</ImageDocument>
