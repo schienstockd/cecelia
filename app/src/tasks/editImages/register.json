@@ -29,8 +29,8 @@
       "key": "keepRegChannels",
       "label": "Keep each cycle's alignment channel",
       "type": "bool",
-      "default": true,
-      "tip": "Shows the alignment and tissue loss cycle by cycle"
+      "default": false,
+      "tip": "One copy (the reference's) unless ticked — each cycle's shows its alignment"
     },
     {
       "key": "doAffine2d",

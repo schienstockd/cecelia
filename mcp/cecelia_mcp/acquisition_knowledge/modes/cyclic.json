@@ -33,7 +33,7 @@
       "id": "tissue-lost-over-cycles",
       "symptom": "Part of a section is missing in later cycles: those cells have DAPI in the first cycle but nothing in later ones.",
       "explanation": "Repeated staining, washing and stripping lift, fold or tear the section, more so at its edges and in fragile tissue. Every marker of a cycle after the loss reads 0 on those cells.",
-      "check": "Task QC of editImages.register: tissueRetained per cycle — the fraction of the reference's tissue the cycle still shows as tissue. Look at the 'DAPI (cycle N)' channels of the registered image for the region that goes dark.",
+      "check": "Task QC of editImages.register: tissueRetained per cycle — the fraction of the reference's tissue the cycle still shows as tissue. Re-run with keepRegChannels ticked and look at the 'DAPI (cycle N)' channels for the region that goes dark.",
       "alternatives": "A cycle whose shared marker stained weakly (signalRatio low everywhere, not only in one region), or a focus failure over that region (sharpnessRatio low).",
       "sources": [
         "lin2018",
