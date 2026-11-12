@@ -8,7 +8,7 @@
     "After HMM states, to cluster on state and transition frequencies"
   ],
   "notWhen": [
-    "Not tracked yet: run tracking first, or use Cluster cells",
+    { "text": "Not tracked yet: run tracking first, or use Cluster cells", "check": "!trackMeasured" },
     "Grouping cells by what they express: use Cluster cells"
   ],
   "category": "Clustering",

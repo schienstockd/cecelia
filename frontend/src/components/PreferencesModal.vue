@@ -31,8 +31,8 @@ import { fetchSharedWorkstation } from '../utils/sharedWorkstation'
 import { AI_OFF_COPY } from '../utils/aiSwitch'
 import { openAiOptIn } from '../lib/aiOptInOpen'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
-         isValidProfileName, profileDisplayName,
-         type ProfileRoster } from '../utils/profileApi'
+         isValidProfileName, profileDisplayName, profileRowActions,
+         type Profile, type ProfileRoster } from '../utils/profileApi'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -64,6 +64,7 @@ const roster = ref<ProfileRoster>({
   profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
   legacyReserved: ['legacy'],
 })
+const rowActions = (p: Profile) => profileRowActions(p, roster.value.active, appCtl.canManageMachine)
 const profilesBusy = ref<string>('')      // name currently being selected/retired — drives per-row spinner
 const profilesError = ref<string | null>(null)
 const showCreateProfile = ref(false)
@@ -212,12 +213,14 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
       <p class="pref-note cc-muted cc-fs-xs">
         Profiles set Kiwi's login, preferences and projects. Switching reloads the app.
       </p>
+      <!-- One grid for the whole list (rows are subgrid rows), so every action owns a fixed
+           column: Switch never moves when Rename/Delete aren't offered on a row. -->
       <ul class="pp-list" data-guide="prefs.profilesPane">
         <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
             :class="{ 'pp-row-active': p.name === roster.active,
                       'pp-row-retired': p.retired }">
-          <!-- Inline rename: the name span becomes an <input> when this row is being renamed.
-               Enter commits, Escape cancels. Client-side validity mirrors the server rule
+          <!-- Inline rename: the name span becomes an <input> when `renamingName` matches. Enter
+               commits, Escape cancels. Client-side validity mirrors the server rule
                (`isValidProfileName`) so the save button gates before the round-trip. -->
           <template v-if="renamingName === p.name">
             <span class="pp-name pp-name-edit">
@@ -227,7 +230,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                      @keyup.enter="commitRename"
                      @keyup.escape="cancelRename" />
             </span>
-            <span class="cc-row cc-row-tight">
+            <span class="cc-row cc-row-tight pp-actions-edit">
               <button class="cc-btn cc-btn-primary cc-fs-xs"
                       :disabled="!renameDraftValid || !!profilesBusy"
                       @click="commitRename"
@@ -248,10 +251,11 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
               <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
               <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
             </span>
-            <span class="cc-row cc-row-tight">
-              <!-- Switch: any non-active, non-retired profile — INCLUDING `default`. Excluding
-                   default was the bug that stranded users who wanted to go back to `~/.claude`. -->
-              <button v-if="p.name !== roster.active && !p.retired"
+            <!-- Which actions a row offers: `profileRowActions` (utils/profileApi.ts) — peanut
+                 manages every profile; anyone else renames only their own. Each cell renders
+                 even when empty, so the columns hold their place. -->
+            <span class="pp-cell">
+              <button v-if="rowActions(p).switch"
                       class="cc-btn cc-btn-ghost cc-fs-xs"
                       :disabled="!!profilesBusy"
                       @click="pickProfile(p.name)"
@@ -259,19 +263,18 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                 <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
                 Switch
               </button>
-              <!-- Rename: not offered for `default` (magic name) or retired profiles (the
-                   retired marker is a stable reference — renaming would silently invalidate
-                   both semantics). See USER_PROFILE_PLAN Decision 11. -->
-              <button v-if="!p.isDefault && !p.retired"
+            </span>
+            <span class="pp-cell">
+              <button v-if="rowActions(p).rename"
                       class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
                       :disabled="!!profilesBusy"
                       @click="startRename(p.name)"
                       v-tooltip.bottom="'Rename — past turn logs still reference the old name'">
                 <i class="pi pi-pencil" />
               </button>
-              <!-- Delete: not offered for `default` or the active profile (server enforces
-                   both; the button just doesn't render). Canonical ConfirmDeleteButton. -->
-              <ConfirmDeleteButton v-if="!p.isDefault && p.name !== roster.active"
+            </span>
+            <span class="pp-cell">
+              <ConfirmDeleteButton v-if="rowActions(p).delete"
                                    :disabled="!!profilesBusy"
                                    title="Delete this profile — credentials + settings + turn provenance gone"
                                    armed-title="Click again to permanently delete this profile"
@@ -593,9 +596,13 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pk-note strong { color: var(--cc-sev-warn); }
 .pk-note code { font-family: var(--cc-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
 .pref-error { color: var(--cc-sev-fail); display: flex; align-items: center; gap: 0.35rem; margin: 0.35rem 0 0; }
-.pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.pp-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); row-gap: 0.3rem;
+}
 .pp-row {
-  display: flex; align-items: center; justify-content: space-between;
+  grid-column: 1 / -1; display: grid; grid-template-columns: subgrid;
+  align-items: center; column-gap: 0.3rem;
   padding: 0.5rem 0.7rem;
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
@@ -603,7 +610,9 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pp-row-active   { border-color: var(--cc-kiwi); }
 .pp-row-retired  { opacity: 0.6; }
 .pp-name { display: flex; align-items: center; gap: 0.4rem; }
-.pp-name-edit { flex: 1; min-width: 0; }
+.pp-name-edit { min-width: 0; }
+.pp-actions-edit { grid-column: 2 / -1; justify-content: flex-end; }
+.pp-cell { display: flex; justify-content: center; }
 .pp-rename-input { flex: 1; min-width: 6rem; }
 .pp-tag  { padding-inline: 0.25rem; }
 .pp-tag-active { color: var(--cc-kiwi); }

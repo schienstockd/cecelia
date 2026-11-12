@@ -7,7 +7,7 @@
     "Same tissue imaged over several staining cycles",
     "Each cycle carries the same marker channel to align on"
   ],
-  "notWhen": ["A movie: uses the first frame only, so use Drift correction"],
+  "notWhen": [{ "text": "A movie: uses the first frame only, so use Drift correction", "check": "timeSeries" }],
   "category": "Edit",
   "group": "Register",
   "env": ["local"],
