@@ -64,14 +64,16 @@ const atStyle = computed(() => {
   border-radius: var(--cc-radius-sm); box-shadow: 0 2px 10px var(--cc-shadow);
   white-space: nowrap; z-index: 2;
 }
-/* buttons · buttons · slider · readout · chip · fold — fixed, so the rows line up and nothing jumps */
+/* buttons · buttons · slider · readout · chip · fold — every column fixed and the box `max-content`,
+   so its size depends on nothing: not the values shown, and not the canvas (an absolutely placed box at
+   `left: 50%` otherwise shrinks to the space beside it, and resizes whenever the canvas does) */
 .vw-pbar-grid {
   display: grid; align-items: center; column-gap: 0.4rem; row-gap: 0.2rem; padding: 0.3rem 0.5rem;
-  grid-template-columns: 1.6rem 1.6rem minmax(8rem, 15rem) 5.6rem 5.4rem 1.6rem;
+  grid-template-columns: 1.6rem 1.6rem 12rem 5.6rem 5.4rem 1.6rem; width: max-content;
 }
 .vw-pbar-collapsed {
   display: flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.4rem 0.35rem;
-  border-radius: var(--cc-radius-pill);
+  border-radius: var(--cc-radius-pill); width: max-content;
 }
 .vw-pbar-line {
   position: absolute; left: 0.9rem; right: 0.9rem; bottom: 0.15rem; height: 2px;

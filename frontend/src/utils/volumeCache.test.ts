@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   cacheCapacity, prefetchWindow, prefetchDepth, lruEvictions, stripCells, playbackAdvance,
-  cacheRuns, cacheGradient,
+  cacheRuns, cacheGradient, readoutWidth,
   playbackIntervalMs, walkPrefetch, type PrefetchWalkIO,
 } from './volumeCache'
 import { debouncedLatest } from './debouncedLatest'
@@ -275,5 +275,11 @@ describe('cacheRuns / cacheGradient', () => {
   it('draws hard stops from token colours only', () => {
     const g = cacheGradient(cacheRuns(cells('resident', 'absent', 'absent', 'loading')))
     expect(g).toBe('linear-gradient(to right, var(--cc-accent) 0% 25%, var(--cc-surface-2) 25% 75%, var(--cc-accent-tint) 75% 100%)')
+  })
+})
+
+describe('readoutWidth', () => {
+  it('sizes for the longest text, so 9 and 179 take the same room', () => {
+    expect(readoutWidth('t 179 / 179')).toBe('12.5ch')
   })
 })

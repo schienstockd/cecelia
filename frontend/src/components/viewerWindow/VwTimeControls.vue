@@ -12,7 +12,7 @@
 import { computed, ref } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { useSettingsStore } from '../../stores/settings'
-import { cacheGradient, cacheRuns, type CellState } from '../../utils/volumeCache'
+import { cacheGradient, cacheRuns, readoutWidth, type CellState } from '../../utils/volumeCache'
 
 const props = defineProps<{
   /** play and t only, for the folded playback bar (default: the bar's time row, grid columns 1–5) */
@@ -30,6 +30,8 @@ const emit = defineEmits<{ togglePlay: []; stop: []; goto: [t: number] }>()
 const settings = useSettingsStore()
 // the bar's scrubber track: which timepoints are instant to scrub to
 const track = computed(() => cacheGradient(cacheRuns(props.cells)))
+// the pill's t readout sized for the longest value it can show, so the pill keeps one width
+const tWidth = computed(() => readoutWidth(`t ${props.nT - 1} / ${props.nT - 1}`))
 const fpsOpen = ref(false)
 const fpsAnchor = ref<HTMLElement | null>(null)
 </script>
@@ -41,7 +43,7 @@ const fpsAnchor = ref<HTMLElement | null>(null)
             :aria-label="playing ? 'Pause' : 'Play'">
       <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
     </button>
-    <span class="cc-readout cc-fs-2xs vw-tro">t {{ t }} / {{ nT - 1 }}<span class="cc-dot vw-dot" :class="busy ? 'cc-dot-warn' : 'vw-dot-off'" /></span>
+    <span class="cc-readout cc-fs-2xs vw-tro" :style="{ minWidth: tWidth }">t {{ t }} / {{ nT - 1 }}<span class="cc-dot vw-dot" :class="busy ? 'cc-dot-warn' : 'vw-dot-off'" /></span>
   </template>
   <template v-else>
     <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" style="grid-column: 1" @click="emit('togglePlay')"
@@ -80,14 +82,15 @@ const fpsAnchor = ref<HTMLElement | null>(null)
           v-tooltip.top="'Playback rate — waits rather than skip an uncached frame'"
           aria-label="Playback rate (fps)"
         >
-        <span class="cc-readout cc-fs-2xs">{{ settings.viewerFps }}</span>
+        <span class="cc-readout cc-fs-2xs vw-fps-ro">{{ settings.viewerFps }}</span>
       </div>
     </TeleportPopover>
   </template>
 </template>
 
 <style scoped>
-.vw-tro { text-align: right; white-space: nowrap; }
+.vw-tro { display: inline-block; text-align: right; white-space: nowrap; }
+.vw-fps-ro { display: inline-block; min-width: 2ch; text-align: right; }
 .vw-chip { width: 100%; justify-content: center; border: 1px solid var(--cc-border); font-variant-numeric: tabular-nums; }
 .vw-fps-slider { width: 7rem; }
 .vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }

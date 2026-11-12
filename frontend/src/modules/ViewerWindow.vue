@@ -77,7 +77,7 @@ import {
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
 import {
-  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, cacheRuns,
+  prefetchWindow, prefetchDepth, walkPrefetch, stripCells, cacheRuns, readoutWidth,
 } from '../utils/volumeCache'
 import type { PlaybackHint } from '../utils/pageTable'
 import {
@@ -3480,6 +3480,11 @@ function commitZWindow(apply: () => void) {
 const setZWindow = (on: boolean) => commitZWindow(() => { zWindowOn.value = on })
 /** 3D with no ± window: z is a depth range to project, not a plane. */
 const zDepthMode = computed(() => mode.value === 'volume' && !zWindowActive.value)
+/** The pill's z readout sized for its longest form (a range at the top of the stack), so it keeps one width. */
+const zPillWidth = computed(() => {
+  const n = Math.max((meta.value?.nZ ?? 1) - 1, 0)
+  return readoutWidth(`z ${n}–${n} / ${n}`)
+})
 const zWindowPopOpen = ref(false)
 const zWindowAnchor = ref<HTMLElement | null>(null)
 /** The folded bar's hairline (`VwPlaybackBar` `line`): the cache and t on a timecourse, else where the
@@ -5984,13 +5989,13 @@ onUnmounted(() => {
           <template v-if="meta.nZ > 1">
             <span v-if="nT > 1" class="cc-toolbar-sep" aria-hidden="true" />
             <template v-if="zDepthMode">
-              <span class="cc-readout cc-fs-2xs vw-bar-ro">z {{ zRange[0] }}–{{ zRange[1] }} / {{ meta.nZ - 1 }}</span>
+              <span class="cc-readout cc-fs-2xs vw-bar-ro" :style="{ minWidth: zPillWidth }">z {{ zRange[0] }}–{{ zRange[1] }} / {{ meta.nZ - 1 }}</span>
             </template>
             <template v-else>
               <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane <= 0"
                       v-tooltip.top="'Previous z plane'" aria-label="Previous z plane"
                       @click="stepZ(zPlane - 1)"><i class="pi pi-chevron-left" /></button>
-              <span class="cc-readout cc-fs-2xs vw-bar-ro">z {{ zWindowActive ? `${zLoaded[0]}–${zLoaded[1]}` : zPlane }} / {{ meta.nZ - 1 }}</span>
+              <span class="cc-readout cc-fs-2xs vw-bar-ro" :style="{ minWidth: zPillWidth }">z {{ zWindowActive ? `${zLoaded[0]}–${zLoaded[1]}` : zPlane }} / {{ meta.nZ - 1 }}</span>
               <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :disabled="zPlane >= meta.nZ - 1"
                       v-tooltip.top="'Next z plane'" aria-label="Next z plane"
                       @click="stepZ(zPlane + 1)"><i class="pi pi-chevron-right" /></button>
@@ -6023,7 +6028,7 @@ onUnmounted(() => {
                 @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
                 v-tooltip.top="'Planes either side — more is slower, in proportion'"
               >
-              <span class="cc-readout cc-fs-2xs">±{{ zWindowDraft }}</span>
+              <span class="cc-readout cc-fs-2xs vw-bar-pmro">±{{ zWindowDraft }}</span>
             </div>
           </TeleportPopover>
           <RangeSlider v-if="zDepthMode" class="vw-bar-slider" style="grid-column: 3"
@@ -6786,6 +6791,7 @@ onUnmounted(() => {
 .vw-bar-ro { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.2rem;
   white-space: nowrap; }
 .vw-bar-zw { width: 6rem; }
+.vw-bar-pmro { display: inline-block; min-width: 3ch; text-align: right; }
 .vw-bar-level { width: 100%; min-width: 0; }
 .vw-top { flex-wrap: wrap; row-gap: 0.35rem; }
 .vw-top-end { margin-left: auto; }

@@ -218,6 +218,15 @@ export function cacheRuns(cells: readonly { state: CellState }[]): CacheRun[] {
   return out
 }
 
+/**
+ * A CSS width that fits `longest` — the widest text a readout can show (its maximum values) — so the
+ * readout keeps one width as its numbers change. In `ch` (the width of a digit; readouts use tabular
+ * figures), plus room for the loading dot.
+ */
+export function readoutWidth(longest: string): string {
+  return `${longest.length + 1.5}ch`
+}
+
 /** CSS colour per run state — tokens only, so the track follows the colour scheme. */
 const RUN_COLOUR: Record<CacheRun['state'], string> = {
   resident: 'var(--cc-accent)', loading: 'var(--cc-accent-tint)', absent: 'var(--cc-surface-2)',
