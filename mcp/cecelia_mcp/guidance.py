@@ -109,7 +109,7 @@ workflow — the in-app guides and whole-pipeline recipes the user follows: get_
 WHEN AN IMAGE LOOKS OFF AND THE QUESTION IS THE ACQUISITION ("darker with depth", "noisy", "why does \
 it clip"). get_image_info has what the microscope was ASKED to do (`acquisition`: power, Bright Z, \
 scanner, detectors, per channel) and what LANDED in the file (`cleanupFacts`: clipping, zeros and, \
-where measured, per-depth and per-frame numbers); get_acquisition_knowledge(system) maps a symptom to \
+where measured, per-depth and per-frame numbers); get_acquisition_knowledge(system, technology) maps a symptom to \
 its stage, the number that shows it, the other causes, and sources, for that microscope's technology \
 (`acquisition.technology`: two-photon, widefield, ...) — never apply one technology's advice to \
 another, and say so when a microscope has no profile yet. When images differ within a set, compare \

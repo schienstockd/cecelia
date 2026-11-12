@@ -554,8 +554,10 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                 @test acq["scanner"]["type"] == "Resonant"
 
                 @test acq["readerVersion"] == Cecelia.ACQUISITION_READER_VERSIONS["oir"]
-                # A reader with no version yet (czi) is current, not re-read on every refresh.
-                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
+                # A reader still at version 1 (ims) is current, not re-read on every refresh; the .czi
+                # reader is at 2 (technology, modes, camera), so a .czi read before it is re-read.
+                @test !Cecelia._acquisition_outdated(Dict{String,Any}("source" => "ims", "system" => "LSM 780"))
+                @test Cecelia._acquisition_outdated(Dict{String,Any}("source" => "czi", "system" => "LSM 780"))
                 # Settings with no `source` predate the .czi reader: an .oir read, so outdated at v1.
                 @test Cecelia._acquisition_outdated(Dict{String,Any}("system" => "FV4000"))
                 @test acq["channels"][1]["emissionFilter"] == "BA410-455"
@@ -899,7 +901,10 @@ end
                      "file", "published",
                      # acquisition check (acq_check.jl) — `snr` shot-noise SNR, `base` the movie's
                      # median shared-structure r, `typical` the set's median for a movie out of line
-                     "snr", "base", "typical"])
+                     "snr", "base", "typical",
+                     # the set's noun, "movie(s)" only when every member is a time-lapse, else
+                     # "image(s)" — acq_check.jl, every acq.* finding
+                     "item", "items"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]

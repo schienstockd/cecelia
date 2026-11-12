@@ -189,6 +189,20 @@ def read_imagej_metadata(im_path):
     return tif.imagej_metadata
 
 
+def tiff_page_descriptions(im_path):
+  """Per page of a TIFF, WITHOUT reading pixels: `{'description', 'datetime', 'shape'}` (the
+  ImageDescription text, the DateTime tag, the page's array shape). For vendor metadata a TIFF keeps
+  per page (an Akoya `.qptiff`: one XML document per channel page). Raises if `im_path` isn't a
+  readable TIFF."""
+  with tifffile.TiffFile(im_path) as tf:
+    out = []
+    for page in tf.pages:
+      dt = page.tags.get('DateTime')
+      out.append({'description': page.description or '', 'datetime': dt.value if dt else None,
+                  'shape': tuple(page.shape)})
+    return out
+
+
 def peek_tiff_shape(im_path):
   """(nX, nY, nZ, nT, nC) from a TIFF WITHOUT reading pixels. Prefers the OME-XML `Pixels`
   attrs (right dims for a multi-series OME-TIFF), falls back to the first series' shape + axes

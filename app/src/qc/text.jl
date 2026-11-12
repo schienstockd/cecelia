@@ -111,6 +111,12 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "import.brighter_with_depth_bright_z" => (
         short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
         long  = "Check the Bright Z ramp — power may rise faster than signal is lost. Channels: {channels}."),
+    "import.brighter_with_depth@widefield" => (
+        short = "Brightest signal rises up to {pct}% with depth ({n} channel{s})",
+        long  = "Check whether exposure or gain was raised with depth — it may rise faster than signal is lost. Channels: {channels}."),
+    "import.darker_with_depth@widefield" => (
+        short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
+        long  = "Check whether there are fewer cells deeper, or haze from out-of-focus light. Channels: {channels}."),
     "import.darker_with_depth" => (
         short = "Brightest signal falls up to {pct}% with depth ({n} channel{s})",
         long  = "Check whether laser power was raised with depth, or whether there are fewer cells deeper. Channels: {channels}."),
@@ -120,6 +126,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "import.clipped_deep" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
         long  = "Lower the laser power at depth if it was raised there, or the HV. Channels: {channels}."),
+    "import.clipped_deep@widefield" => (
+        short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
+        long  = "Shorten the exposure or lower the camera gain. Channels: {channels}."),
     "import.clipped_deep_export" => (
         short = "Clipping sits deep — up to {pct}% in the deeper half ({n} channel{s})",
         long  = "Judge depth clipping on the original acquisition file — this 8-bit file looks like a rescaled export. Channels: {channels}."),
@@ -269,6 +278,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
 
     # AF correction (af_qc_findings). The only finding this task has: the correction itself has no free
     # parameter left to land behaviourally wrong, so the one objective signal is about the INPUT.
+    "af.saturated_input@widefield" => (
+        short = "Channel {channel} saturated",
+        long  = "Input pixels are clipped at the top of the range, so their true value is already lost — shorten the exposure or lower the camera gain and reacquire."),
     "af.saturated_input" => (
         short = "Channel {channel} saturated",
         long  = "Input voxels are clipped at the top of the range, so their true value is already lost — lower the gain or laser power and reacquire."),
@@ -465,7 +477,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     # the next acquisition; a `.data` entry's `long` is what it means for analysing these movies (the
     # action on final data). A finding with no `.data` entry has a `long` that holds at either stage.
     "acq.not_measured" => (
-        short = "{n} movie{s} not measured yet",
+        short = "{n} {item}{s} not measured yet",
         long  = "Measure them so the check can read their photons and channels."),
     "acq.channels_unnamed" => (
         short = "Channels not named",
@@ -474,20 +486,20 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "{what}: no channel {variable}",
         long  = "Pick its channel again in the plan."),
     "acq.not_in_plan" => (
-        short = "{n} movie{s} not in any plan design",
+        short = "{n} {item}{s} not in any plan design",
         long  = "Add their channel names to the plan as a design."),
     "acq.settings_differ" => (
-        short = "Different {variable} between movies",
-        long  = "Use one {variable} for every movie you compare."),
+        short = "Different {variable} between {items}",
+        long  = "Use one {variable} for every {item} you compare."),
     "acq.settings_differ.data" => (
         short = "Intensities differ by setting",
-        long  = "Compare intensities only between movies with the same {variable}; check detection in each group."),
+        long  = "Compare intensities only between {items} with the same {variable}; check detection in each group."),
     "acq.settings_within_design" => (
         short = "Different {variable} within one design ({what})",
-        long  = "Use one {variable} for every movie of a design — they are compared directly."),
+        long  = "Use one {variable} for every {item} of a design — they are compared directly."),
     "acq.settings_within_design.data" => (
         short = "Intensities differ by setting",
-        long  = "Compare intensities only between movies with the same {variable}; check detection in each group."),
+        long  = "Compare intensities only between {items} with the same {variable}; check detection in each group."),
     "acq.settings_by_design" => (
         short = "Different {variable} between the label designs",
         long  = "Expected with different dyes — compare within each design."),
@@ -501,7 +513,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Designs differ in setting",
         long  = "Compare objects within each design; across designs compare behaviour, not intensity."),
     "acq.brightz_ramp_unused" => (
-        short = "Bright Z off — the saved ramp wasn't applied ({n} movie{s})",
+        short = "Bright Z off — the saved ramp wasn't applied ({n} {item}{s})",
         long  = "Turn Bright Z on, or check after segmentation whether cells dim with depth."),
     "acq.brightz_ramp_unused_image" => (
         short = "Bright Z off — the saved ramp ({what}) wasn't applied",
@@ -510,7 +522,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Deep cells may be dimmer",
         long  = "Check after segmentation whether cells dim with depth — deep cells may be missed."),
     "acq.brightz_off" => (
-        short = "Bright Z off, no ramp saved ({n} movie{s})",
+        short = "Bright Z off, no ramp saved ({n} {item}{s})",
         long  = "Check after segmentation whether cells dim with depth."),
     "acq.gain_high" => (
         short = "Bright objects come within {value}× of the detector range (~{n} photons)",
@@ -531,44 +543,55 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Detection differs by object",
         long  = "Compare detection per object before comparing behaviour."),
     "acq.shares_object" => (
-        short = "{what} share more structure than the movie's other channels in {n} movie{s} (r up to {value}, others ~{base})",
+        short = "{what} share more structure than the {item}'s other channels in {n} {item}{s} (r up to {value}, others ~{base})",
         long  = "Separate the two channels: a narrower filter, or another dye for one of them."),
     "acq.shares_object_image" => (
-        short = "{what} share more structure than the movie's other channels (r {value}, others ~{base})",
+        short = "{what} share more structure than the {item}'s other channels (r {value}, others ~{base})",
         long  = "Separate the two channels: a narrower filter, or another dye for one of them."),
     "acq.shares_object.data" => (
         short = "Identity at risk",
         long  = "Correct bleed-through before gating — cells of one object can read as the other."),
     "acq.shares_reference" => (
-        short = "{what} share more structure than the movie's other channels in {n} movie{s} (r up to {value}, others ~{base})",
+        short = "{what} share more structure than the {item}'s other channels in {n} {item}{s} (r up to {value}, others ~{base})",
         long  = "Keep recording the reference channel."),
     "acq.shares_reference_image" => (
-        short = "{what} share more structure than the movie's other channels (r {value}, others ~{base})",
+        short = "{what} share more structure than the {item}'s other channels (r {value}, others ~{base})",
         long  = "Keep recording the reference channel."),
     "acq.shares_reference.data" => (
         short = "Label and reference share structure",
         long  = "Compare each object's label-to-reference ratio before excluding any — the label may spill into the reference."),
     "acq.shares_all" => (
-        short = "Every channel shares structure in {n} movie{s} (r ~{value})",
+        short = "Every channel shares structure in {n} {item}{s} (r ~{value})",
         long  = "A leak can't be told from shared tissue here — image a single-label or unlabelled control."),
     "acq.shares_no_baseline" => (
-        short = "Too few channels to judge shared structure ({n} movie{s})",
+        short = "Too few channels to judge shared structure ({n} {item}{s})",
         long  = "Add an empty or autofluorescence channel as a reference — to the plan, or at the next acquisition."),
     "acq.dim_movie" => (
-        short = "{what} dimmer than in the set's other movies (~{value} vs ~{typical} photons)",
-        long  = "Check focus, depth and laser power on this movie."),
+        short = "{what} dimmer than in the set's other {items} (~{value} vs ~{typical} photons)",
+        long  = "Check focus, depth and laser power on this {item}."),
     "acq.dim_movie.data" => (
         short = "Detection may be lower here",
-        long  = "Check detection in this movie before pooling it with the others."),
+        long  = "Check detection in this {item} before pooling it with the others."),
+    # widefield (camera) variants of the advice that names a laser or a detector HV — chosen by
+    # `qc_technology_key` when the set's settings say widefield (docs/todo/MICROSCOPE_PROFILES_PLAN.md)
+    "acq.gain_high@widefield" => (
+        short = "Bright objects come within {value}× of the camera range (~{n} photons)",
+        long  = "Shorten the exposure or lower the camera gain."),
+    "acq.few_photons@widefield" => (
+        short = "{what} carries ~{value} photons per pixel (SNR {snr})",
+        long  = "Collect more light: longer exposure, a brighter lamp step, or binning."),
+    "acq.dim_movie@widefield" => (
+        short = "{what} dimmer than in the set's other {items} (~{value} vs ~{typical} photons)",
+        long  = "Check focus, exposure and lamp intensity on this {item}."),
     # what the acquisition check's findings (and its model review) are about: `short` the heading
-    "acq.cat.movies" => (short = "Movies and channels", long = "Which movies the check could read, and which channel holds each object."),
-    "acq.cat.settings" => (short = "Settings", long = "Whether movies compared with each other were acquired the same way."),
-    "acq.cat.depth" => (short = "Depth", long = "Whether signal was compensated for depth (Bright Z)."),
+    "acq.cat.movies" => (short = "Images and channels", long = "Which images the check could read, and which channel holds each object."),
+    "acq.cat.settings" => (short = "Settings", long = "Whether images compared with each other were acquired the same way."),
+    "acq.cat.depth" => (short = "Depth", long = "Whether signal was compensated for depth."),
     "acq.cat.photons" => (short = "Photons", long = "How much light the objects carry, against the detector's range — noise and range in one."),
     "acq.cat.balance" => (short = "Balance", long = "Whether the plan's objects are similarly bright."),
     "acq.cat.shared" => (short = "Shared structure", long = "Whether one channel shows another's structure — bleed-through or autofluorescence."),
-    "acq.cat.fading" => (short = "Fading", long = "Signal lost over the movie, per channel."),
-    "acq.cat.other" => (short = "Other", long = "Anything else in these movies that bears on the plan."),
+    "acq.cat.fading" => (short = "Fading", long = "Signal lost over time or over the session, per channel."),
+    "acq.cat.other" => (short = "Other", long = "Anything else in these images that bears on the plan."),
     # what the claim checks (and the model review) are about: `short` the heading, `long` what it covers
     "claim.cat.images" => (
         short = "Images",

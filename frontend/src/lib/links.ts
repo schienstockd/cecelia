@@ -65,7 +65,7 @@ export function formatSupportRequestUrl(exts: string[]): string {
 
 /** A "support my microscope" request: a settings reader for a file type (the ask is a sample file —
  *  a reader is written and tested against a real one), or the diagram and settings card for a
- *  microscope whose settings are read but which is not two-photon, prefilled with what the file names. */
+ *  microscope whose settings are read but whose technology has no diagram yet, prefilled with what the file names. */
 export function acquisitionSupportRequestUrl(req: MicroscopeRequest): string {
   const title = req.what === 'settings'
     ? `Acquisition settings: support ${req.ext} files (microscope: …)`

@@ -1,8 +1,9 @@
 /**
- * The two-photon light-path diagram's content (`AcquisitionLightPath.vue`): this image's values placed
- * at the stage of the acquisition where each one acts — laser → power control → scanner → objective →
- * sample → filters → detectors → digitisation → stack and time — each tagged with where the value came
- * from. Numbers only; nothing here judges them (findings need thresholds set on real bad images,
+ * The light-path diagram's content (`AcquisitionLightPath.vue`), per imaging technology: this image's
+ * values placed at the stage of the acquisition where each one acts, each tagged with where the value
+ * came from. Each technology has its own stages (`TECHNOLOGY_STAGES`), whose keys are its knowledge
+ * file's (mcp/cecelia_mcp/acquisition_knowledge/technologies/), so the diagram and the assistant name
+ * the same stage. docs/todo/MICROSCOPE_PROFILES_PLAN.md → P6. Numbers only; nothing here judges them (findings need thresholds set on real bad images,
  * docs/todo/ACQUISITION_ADVISOR_PLAN.md → P4).
  */
 
@@ -71,9 +72,35 @@ export interface LightPathImage {
  *  two-photon Ti:sapphire / OPO sources start near 680 nm. */
 const MULTIPHOTON_MIN_NM = 680
 
-/** Whether the diagram applies: a recorded laser in the near infrared. Only two-photon is drawn. */
+/** A recorded laser in the near infrared: the fallback for settings read before readers recorded
+ *  `technology` (they use the same 680 nm rule). */
 export function isMultiphoton(acq: AcquisitionSettings | null | undefined): boolean {
   return (acq?.lasers ?? []).some(l => l.wavelengthNm != null && l.wavelengthNm >= MULTIPHOTON_MIN_NM)
+}
+
+export type Technology = 'two-photon' | 'confocal' | 'airyscan' | 'widefield'
+
+/** Each technology's stages, in light-path order: key (= its knowledge file's stage key) and title. */
+export const TECHNOLOGY_STAGES: Record<Technology, [string, string][]> = {
+  'two-photon': [['laser', 'Laser'], ['power', 'Power control'], ['scanner', 'Scanner'], ['objective', 'Objective'],
+    ['sample', 'Sample'], ['filters', 'Dichroics · filters'], ['detectors', 'Detectors'],
+    ['digitisation', 'Digitisation'], ['stack', 'Stack · time']],
+  confocal: [['laser', 'Lasers'], ['power', 'Power control'], ['scanner', 'Scanner'], ['objective', 'Objective'],
+    ['sample', 'Sample'], ['pinhole', 'Pinhole'], ['filters', 'Emission filters'], ['detectors', 'Detectors'],
+    ['digitisation', 'Digitisation'], ['stack', 'Stack · time · tiles']],
+  airyscan: [['laser', 'Lasers'], ['power', 'Power control'], ['scanner', 'Scanner'], ['objective', 'Objective'],
+    ['sample', 'Sample'], ['pinhole', 'Pinhole'], ['filters', 'Emission filters'], ['detectors', 'Array detector'],
+    ['processing', 'Processing'], ['stack', 'Stack · time · tiles']],
+  widefield: [['illumination', 'Illumination'], ['filters', 'Filter cube'], ['objective', 'Objective'],
+    ['sample', 'Sample'], ['camera', 'Camera'], ['digitisation', 'Digitisation'], ['stack', 'Stack · time · tiles']],
+}
+
+/** The image's imaging technology: what its reader recorded, else the near-infrared rule for older
+ *  reads, else null (no diagram — settings not read, or a technology with no stages yet). */
+export function acquisitionTechnology(acq: AcquisitionSettings | null | undefined): Technology | null {
+  const t = acq?.technology
+  if (t && t in TECHNOLOGY_STAGES) return t as Technology
+  return isMultiphoton(acq) ? 'two-photon' : null
 }
 
 /** The vendor's light-path slot names (`oir_meta._DICHROIC_SLOTS`), as the diagram labels them. */
@@ -103,6 +130,13 @@ export function autoHVItem(chans: { hv: number | null }[]): LightPathItem {
 }
 
 export function lightPathStages(img: LightPathImage): LightPathStage[] {
+  const tech = acquisitionTechnology(img.acquisition) ?? 'two-photon'
+  const byKey = stageItems(img)
+  return TECHNOLOGY_STAGES[tech].map(([key, title], i) => ({ n: i + 1, key, title, items: byKey[key] ?? [] }))
+}
+
+/** Every stage's items, by stage key; a technology picks the ones it has. */
+function stageItems(img: LightPathImage): Record<string, LightPathItem[]> {
   const acq = img.acquisition ?? {}
   const chans = acq.channels ?? []
   const facts = img.cleanupFacts?.channels ?? []
@@ -227,12 +261,51 @@ export function lightPathStages(img: LightPathImage): LightPathStage[] {
       if (ends) stack.push(item(`${f.name} brightest 1 %: ${ends}`, 'measured'))
     }
   }
+  const acqModes = img.acquisition?.modes ?? []
+  if (acqModes.includes('tiled')) stack.push(item('Stitched from tiles', 'file'))
+  const cyc = img.acquisition?.cycles
+  if (cyc) {
+    stack.push(item(join([`${cyc.count} cycles`, cyc.blank != null && `${cyc.blank} blank planned`]), 'file'))
+    for (const c of chans.filter(c => c.cycle != null)) stack.push({ ...item(`${chName(c)} cycle ${c.cycle}`, 'file'), channel: c.order })
+  }
 
-  const stages: [string, string, LightPathItem[]][] = [
-    ['laser', 'Laser', laser], ['power', 'Power control', power], ['scanner', 'Scanner', scanner],
-    ['objective', 'Objective', objective], ['sample', 'Sample', sample],
-    ['filters', 'Dichroics · filters', filters], ['detectors', 'Detectors', detectors],
-    ['digitisation', 'Digitisation', digit], ['stack', 'Stack · time', stack],
-  ]
-  return stages.map(([key, title, items], i) => ({ n: i + 1, key, title, items }))
+  // pinhole — size in Airy units and µm (confocal, Airyscan)
+  const pinhole: LightPathItem[] = []
+  if (acq.pinholeAiry != null || acq.pinholeUm != null) {
+    pinhole.push(item(join([acq.pinholeAiry != null && `${n(acq.pinholeAiry)} AU`, acq.pinholeUm != null && `${n(acq.pinholeUm)} µm`]), 'file'))
+  } else {
+    pinhole.push(item('Pinhole not recorded (differs per track, or not read)', 'missing'))
+  }
+  if (acq.sequential) filters.unshift(item('Sequential: one sequence per channel', 'file'))
+
+  // processing — the Airyscan mode each channel was processed with
+  const processing: LightPathItem[] = chans.filter(c => c.airyscan)
+    .map(c => ({ ...item(`${chName(c)} ${c.airyscan}`, 'file'), channel: c.order }))
+  if (processing.length === 0) processing.push(item('Processing not recorded', 'missing'))
+
+  // illumination — the light source, then per channel its intensity step and excitation band (widefield)
+  const illumination: LightPathItem[] = acq.lightSource ? [item(acq.lightSource, 'file')] : []
+  for (const c of chans) {
+    if (c.illuminationIntensity == null && !c.excitationFilter) continue
+    illumination.push({ ...item(`${chName(c)} ${join([c.illuminationIntensity != null && `intensity ${n(c.illuminationIntensity)}`,
+      c.excitationFilter && `ex ${c.excitationFilter}`])}`, 'file'), channel: c.order })
+  }
+  if (illumination.length === 0) illumination.push(item('Illumination not recorded', 'missing'))
+
+  // camera — the camera, then exposure and gain per channel (widefield)
+  const cam = acq.camera
+  const camera: LightPathItem[] = cam ? [item(join([cam.name, cam.binning != null && `binning ${n(cam.binning)}×${n(cam.binning)}`]), 'file')]
+                                      : [item('Camera not recorded', 'missing')]
+  for (const c of chans) {
+    if (c.exposureMs == null && c.gain == null) continue
+    camera.push({ ...item(join([chName(c), c.exposureMs != null && `${n(c.exposureMs)} ms`, c.gain != null && `gain ${n(c.gain)}`]), 'file'), channel: c.order })
+  }
+  // widefield filters: the cube per channel, where the reader names one
+  const cubes = chans.filter(c => c.filterCube)
+    .map(c => ({ ...item(join([`${chName(c)} cube ${c.filterCube}`, c.emissionFilter && `em ${c.emissionFilter}`]), 'file'), channel: c.order }))
+
+  return {
+    laser, power, scanner, objective, sample, filters: cubes.length > 0 ? cubes : filters, detectors,
+    digitisation: digit, stack, pinhole, processing, illumination, camera,
+  }
 }

@@ -62,5 +62,25 @@
   "foi2008": {
     "cite": "Foi A, Trimeche M, Katkovnik V, Egiazarian K (2008). Practical Poissonian-Gaussian noise modeling and fitting for single-image raw-data. IEEE Trans Image Process 17:1737-1754",
     "doi": "10.1109/TIP.2008.2001399"
+  },
+  "jonkman2020": {
+    "cite": "Jonkman J, Brown CM, Wright GD, Anderson KI, North AJ (2020). Tutorial: guidance for quantitative confocal microscopy. Nat Protoc 15:1585-1611",
+    "doi": "10.1038/s41596-020-0313-9"
+  },
+  "huff2015": {
+    "cite": "Huff J (2015). The Airyscan detector from ZEISS: confocal imaging with improved signal-to-noise ratio and super-resolution. Nat Methods 12:i-ii (application note)",
+    "doi": "10.1038/nmeth.f.388"
+  },
+  "wilson2011": {
+    "cite": "Wilson T (2011). Resolution and optical sectioning in the confocal microscope. J Microsc 244:113-121",
+    "doi": "10.1111/j.1365-2818.2011.03549.x"
+  },
+  "zimmermann2003": {
+    "cite": "Zimmermann T, Rietdorf J, Pepperkok R (2003). Spectral imaging and its applications in live cell microscopy. FEBS Lett 546:87-92",
+    "doi": "10.1016/S0014-5793(03)00521-0"
+  },
+  "icha2017": {
+    "cite": "Icha J, Weber M, Waters JC, Norden C (2017). Phototoxicity in live fluorescence microscopy, and how to avoid it. BioEssays 39:1700003",
+    "doi": "10.1002/bies.201700003"
   }
 }

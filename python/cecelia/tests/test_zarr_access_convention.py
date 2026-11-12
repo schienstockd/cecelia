@@ -37,7 +37,7 @@ _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # Files allowed to talk to zarr / tifffile / OME-XML / lxml directly. Every entry has a reason.
 # _BASELINE_MAX is a meta-ratchet: adding a file requires bumping the cap in the same PR, so a
 # reviewer sees "weaken the check" attempts. See docs/todo/DRIFT_PREVENTION_ASSESSMENT.md.
-_BASELINE_MAX = 8   # 8: lif_meta, a third vendor-XML settings reader (Leica)
+_BASELINE_MAX = 9   # 9: qptiff_meta, a fourth vendor-XML settings reader (Akoya)
 _BASELINE = {
     # Owns the idiom: zarr_utils IS the canonical zarr wrapper; ome_xml_utils IS the OME-XML parser.
     os.path.join('python', 'cecelia', 'utils', 'zarr_utils.py'),
@@ -62,6 +62,9 @@ _BASELINE = {
     os.path.join('python', 'cecelia', 'utils', 'czi_meta.py'),
     # The same for a Leica `.lif`: its header block is vendor XML, not OME.
     os.path.join('python', 'cecelia', 'utils', 'lif_meta.py'),
+    # The same for an Akoya `.qptiff`: its per-page ImageDescription is vendor (QPI) XML, not OME. The
+    # TIFF itself is opened by ome_xml_utils.tiff_page_descriptions, never here.
+    os.path.join('python', 'cecelia', 'utils', 'qptiff_meta.py'),
 }
 
 # Banned top-level modules (via `import X` or `from X import ...`). The last-segment name matches.

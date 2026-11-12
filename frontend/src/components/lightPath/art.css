@@ -1,0 +1,17 @@
+/* Line art shared by the light-path figures (LightPathFigure*.vue): theme-token strokes, round caps,
+   Okabe–Ito excitation (solid) and emission (dashed). Scoped by `.lp-fig`, the figure's svg. */
+.lp-fig { width: 100%; max-width: 560px; height: auto; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.3; }
+.lp-fig .lp-frame { stroke: var(--cc-border); stroke-width: 1.3; fill: var(--cc-surface-1); }
+.lp-fig .lp-ink { stroke: var(--cc-text); }
+.lp-fig .lp-dim { stroke: var(--cc-text-dim); }
+.lp-fig .lp-heavy { stroke-width: 2.2; }
+.lp-fig .lp-hair { stroke-width: 0.6; stroke-dasharray: 3 3; }
+.lp-fig .lp-filter { stroke-width: 2.5; }
+.lp-fig .lp-glass { stroke: var(--cc-text); stroke-width: 1.1; fill: var(--cc-surface-2); }
+.lp-fig .lp-tissue { fill: var(--cc-surface-2); stroke: var(--cc-text-dim); }
+.lp-fig .lp-exc { stroke-width: 2.4; }
+.lp-fig .lp-em { stroke-width: 2.4; stroke-dasharray: 6 3; }
+.lp-fig .lp-thin { stroke-width: 1.2; }
+.lp-fig .lp-mark circle { fill: var(--cc-text); stroke: none; }
+.lp-fig .lp-mark text { fill: var(--cc-bg); font-size: var(--cc-fs-3xs); font-weight: 700; text-anchor: middle; stroke: none; }
+.lp-fig .lp-mark.on circle { fill: var(--cc-accent); }
