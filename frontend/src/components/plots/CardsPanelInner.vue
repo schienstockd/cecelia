@@ -322,7 +322,7 @@ useVisualPanel(
                      :src="displaySrc(c)" :alt="c.name"
                      :family="pointOutFamily" :plot-id="plotId" :cell-key="c.path"
                      @click="emit('cardSelect', c)" />
-          <span v-if="claudeCardPaths.has(c.path)" class="ccv-claude-badge"
+          <span v-if="claudeCardPaths.has(c.path)" class="cc-claude-badge ccv-claude-badge"
                 v-tooltip.top="'Claude pointed at this card'">C</span>
           <button v-if="family.reshuffle && !capturing"
                   class="ccv-shuffle cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" type="button"
@@ -389,12 +389,8 @@ useVisualPanel(
    per-cluster borderColor stays intact as the identity signal) + "C" badge top-left corner.
    Palette from Decision 8 amendment (magenta / cyan / yellow / white); magenta reads distinct
    from the amber/blue cluster colours the cards use. */
-.ccv-card--claude .ccv-frame { box-shadow: 0 0 0 2px #e836b4; }
-.ccv-claude-badge { position: absolute; top: 4px; left: 4px; z-index: 9;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; background: #e836b4;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1;
-  pointer-events: auto; }
+.ccv-card--claude .ccv-frame { box-shadow: 0 0 0 2px var(--cc-claude-mark); }
+.ccv-claude-badge { position: absolute; top: 4px; left: 4px; z-index: 9; pointer-events: auto; }
 .ccv-cell { flex: 1; min-height: 0; cursor: pointer; }
 .ccv-ctrl { display: flex; justify-content: flex-end; gap: 4px; padding: 4px 6px; }
 /* Per-card reshuffle — top-right, revealed on card hover (the Claude badge owns top-left). */
@@ -414,7 +410,6 @@ useVisualPanel(
 .ccv-stat-name { text-align: left; white-space: nowrap; }
 .ccv-stat-plot { width: 100%; }
 .ccv-stat-plot :deep(svg) { display: block; width: 100%; }
-.ccv.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; --cc-bg: #fff;
-  --cc-surface-1: #fff; --cc-surface-2: #f0f0f3; --cc-surface-3: #e5e7eb; background: #fff; }
-.ccv.cc-light :deep(.cc-card) { background: #fff; border-color: var(--cc-border); }
+.ccv.cc-light { background: var(--cc-paper); }
+.ccv.cc-light :deep(.cc-card) { background: var(--cc-paper); border-color: var(--cc-border); }
 </style>

@@ -28,6 +28,8 @@ export interface ViewerLookInput {
   version: string
   /** the segmentation whose mask is drawn ('' = none) */
   maskValueName: string
+  /** that mask's derived files (halo / nuc) the viewer hides — every other one is drawn with it */
+  labelFilesHidden?: string[]
   /** the pop manager's current (segmentation, popType) — what the viewer draws pops from */
   gating: { valueName: string; popType: string }
   popVisible: (popType: string) => boolean
@@ -81,6 +83,9 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...seedConfigFromViewState(i.viewState, i.channelNames),
     ...(i.version ? { valueNames: [i.version] } : {}),
     labelValueNames: i.maskValueName ? [i.maskValueName] : [],
+    // its halo / nuc files are drawn as the viewer draws them: all but the hidden ones
+    ...(i.maskValueName && i.labelFilesHidden?.length
+      ? { labelFilesHidden: { [i.maskValueName]: [...i.labelFilesHidden] } } : {}),
     // the viewer's mask is every cell of its segmentation in the per-id palette — or, with *Colour*
     // on pops and pops shown, coloured by its own segmentation's pops (`maskPopTable`; the movie
     // draws the same rule, `mask_pop_colours`). With no pop type on, the viewer keeps the palette too.
@@ -184,6 +189,7 @@ export function readViewerLook(img: LookImage, setUid: string,
   const labelNames = Object.keys(img.labels ?? {})
   // The viewer draws ONE mask: the first ticked segmentation (ViewerWindow `labelName`).
   const labelVis = settings.getLabelVisibility(img.uid, labelNames)
+  const maskValueName = labelNames.find(n => labelVis[n]) ?? ''
   const colourBy = setUid ? settings.getColourBy(setUid) : ''
   const gating = readGatingCurrent(img.uid)
   return viewerLook({
@@ -191,7 +197,8 @@ export function readViewerLook(img: LookImage, setUid: string,
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
     version: (onImg ? viewer.openImage?.valueName : '') || img.activeValueName || '',
-    maskValueName: labelNames.find(n => labelVis[n]) ?? '',
+    maskValueName,
+    labelFilesHidden: maskValueName ? [...settings.getLabelFilesHidden(img.uid, maskValueName)] : [],
     gating,
     popVisible: pt => setUid ? settings.getPopVisible(setUid, pt) : false,
     trackVisible: settings.getTrackVisibility(img.uid, trackableValueNames(img)),

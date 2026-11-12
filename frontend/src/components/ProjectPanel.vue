@@ -751,8 +751,8 @@ function formatDate(iso: string | null): string {
 
 .pp-io-label { color: var(--cc-text); font-weight: 500; }
 .pp-io-state { text-transform: uppercase; font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; }
-.pp-io-status.done  .pp-io-state { color: #34d399; }
-.pp-io-status.failed .pp-io-state, .pp-io-status.cancelled .pp-io-state { color: #fca5a5; }
+.pp-io-status.done  .pp-io-state { color: var(--cc-ink-green); }
+.pp-io-status.failed .pp-io-state, .pp-io-status.cancelled .pp-io-state { color: var(--cc-ink-red); }
 .pp-io-bar { flex: 0 0 90px; }   /* geometry only — the bar itself is CcProgressBar */
 .pp-io-log {
   flex: 1 1 100%; min-width: 0;
@@ -763,7 +763,7 @@ function formatDate(iso: string | null): string {
 /* The ALREADY-OPEN project — a fainter tint than the selection, which SelectionTable draws. Scoped
    styles carry the component's data attribute, and the row is SelectionTable's element, so this needs
    `:deep` to reach it. */
-:deep(.active) { background: #a78bfa0a; }
+:deep(.active) { background: color-mix(in srgb, var(--cc-accent) 4%, transparent); }
 
 .proj-name { color: var(--cc-text); font-weight: 500; margin-right: 0.4rem; }
 /* uid cell — monospace so the alphanumeric id lines up column-wise; tooltip carries the full path.
@@ -801,8 +801,8 @@ function formatDate(iso: string | null): string {
 .open-badge {
   font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase;
   padding: 0.05rem 0.35rem; border-radius: var(--cc-radius-xs);
-  background: #a78bfa22; color: var(--cc-accent);
-  border: 1px solid #a78bfa44;
+  background: color-mix(in srgb, var(--cc-accent) 13%, transparent); color: var(--cc-accent);
+  border: 1px solid color-mix(in srgb, var(--cc-accent) 27%, transparent);
 }
 /* form */
 .pp-form { padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
@@ -816,7 +816,7 @@ function formatDate(iso: string | null): string {
 .form-input.input-error { border-color: var(--cc-sev-fail); }
 .form-input::placeholder { color: var(--cc-text-dim); }
 
-.field-error { font-size: var(--cc-fs-sm); color: #fca5a5; }
+.field-error { font-size: var(--cc-fs-sm); color: var(--cc-ink-red); }
 .field-hint { display: flex; align-items: center; gap: 0.3rem; }
 .dir-hint {
   font-family: var(--cc-mono);
@@ -835,8 +835,8 @@ function formatDate(iso: string | null): string {
 
 /* buttons use the global .cc-btn utilities (style.css) */
 .pp-danger-note {
-  color: #fca5a5; font-size: var(--cc-fs-sm); display: flex; gap: 0.4rem; align-items: flex-start;
+  color: var(--cc-ink-red); font-size: var(--cc-fs-sm); display: flex; gap: 0.4rem; align-items: flex-start;
   margin-top: 0.6rem; padding: 0.4rem 0.55rem; border-radius: var(--cc-radius-sm);
-  background: #b91c1c1a; border: 1px solid #b91c1c44;
+  background: var(--cc-tint-red); border: 1px solid color-mix(in srgb, var(--cc-danger) 27%, transparent);
 }
 </style>

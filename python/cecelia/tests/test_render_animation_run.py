@@ -195,6 +195,26 @@ class Render2DRunTest(unittest.TestCase):
         self.assertLess(tl[0], 60)
         self.assertLess(f[42:54, 42:54, 2].mean(), 40)      # label 5 is not in the table
 
+    def test_a_halo_file_draws_its_ring_as_the_viewer_does(self):
+        # The viewer packs a segmentation's halo into its mask and outlines the ring past the cell
+        # (docs/todo/MASK_FILE_LAYERS_PLAN.md); a movie of the same plane must draw it too.
+        halo = np.zeros((1, N, N, N), np.uint32)
+        halo[:, :, 1:15, 1:15] = 2                          # label 2 (4:12) grown by 3 voxels
+        hp = _store(os.path.join(self.d, "lab_halo.zarr"), halo, "tzyx")
+        mask = dict(labelsPath=self.labels, labelOpacity=1.0, labelContourPx=0)
+        base = self._frame([3, 3], **mask)
+        ringed = self._frame([3, 3], labelFiles=[{"path": hp, "inside": False}], **mask)
+        ring = (slice(2, 30), slice(2, 7))                  # voxels 1..3 of the ring, 2 px each
+        self.assertGreater(np.abs(ringed[ring] - base[ring]).max(), 100, "no halo ring drawn")
+        cell = (slice(12, 20), slice(12, 20))               # inside the cell: as without the halo
+        self.assertLess(np.abs(ringed[cell] - base[cell]).max(), 20)
+        # a store not on the mask's grid is skipped, not drawn misplaced
+        bad = _store(os.path.join(self.d, "lab_bad.zarr"), halo[:, :, :16], "tzyx")
+        np.testing.assert_array_equal(self._frame([3, 3], labelFiles=[{"path": bad}], **mask), base)
+        # and so is one that cannot be read — the movie still draws the base mask
+        broken = os.path.join(self.d, "lab_broken.zarr"); os.makedirs(broken, exist_ok=True)
+        np.testing.assert_array_equal(self._frame([3, 3], labelFiles=[{"path": broken}], **mask), base)
+
     def test_an_empty_colour_table_draws_no_mask(self):
         # A population with no cells on this image — not the palette's every label.
         f = self._frame([0, N - 1], labelsPath=self.labels, labelOpacity=1.0, labelContourPx=0,
@@ -400,3 +420,24 @@ class RenderStillsTest(unittest.TestCase):
         p["outPaths"] = p["outPaths"][:1]
         with self.assertRaises(ValueError):
             r.run(p)
+
+
+class ComposeLabelFilesTest(unittest.TestCase):
+    """``wgpu_host.compose_label_files`` — the movie's twin of the slab route's ``compose_label_files!``;
+    the same cases as its Julia testset (``viewer_slab_and_meta.jl``)."""
+
+    def test_flags_follow_the_slab_route(self):
+        from cecelia.utils import wgpu_host, wgsl_utils
+        c = wgsl_utils.shader_constants()
+        out, inn = int(c["LABEL_FILE_OUT_BIT"]), int(c["LABEL_FILE_IN_BIT"])
+        base = np.array([0, 5, 5, 0, 7], np.uint32)
+        halo = np.array([5, 5, 5, 0, 0], np.uint32)        # whole-cell halo of 5, grown one voxel left
+        nuc = np.array([0, 0, 5, 0, 7], np.uint16)         # a narrower store type composes the same
+        m = wgpu_host.compose_label_files(base.copy(), halo)
+        np.testing.assert_array_equal(m, [5 | out, 5 | inn, 5 | inn, 0, 7])
+        wgpu_host.compose_label_files(m, nuc)              # a voxel keeps the first flag it got
+        np.testing.assert_array_equal(m, [5 | out, 5 | inn, 5 | inn, 0, 7 | inn])
+        # a halo packs only its part past the cell: after a nucleus it must not merge the cell
+        m = wgpu_host.compose_label_files(base.copy(), nuc)
+        wgpu_host.compose_label_files(m, halo, inside=False)
+        np.testing.assert_array_equal(m, [5 | out, 5, 5 | inn, 0, 7 | inn])

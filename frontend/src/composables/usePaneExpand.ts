@@ -8,14 +8,14 @@ import { loadPane, savePane, nextPane, type PaneExpand, type PaneHalf } from '..
  * which one CSS rule per half hides against — see `docs/UI.md` → *Two-half side panels*.
  *
  * ```ts
- * const { pane, toggle } = usePaneExpand('cc-taskrunner-pane')
+ * const { pane, toggle } = usePaneExpand('cc-taskrunner-pane-v2', 'top')
  * ```
  *
  * `storageKey` is per panel, so the task runner and the batch-movies panel remember their own
- * arrangement.
+ * arrangement. `fallback` is the arrangement before the user picks one.
  */
-export function usePaneExpand(storageKey: string) {
-  const pane = ref<PaneExpand>(loadPane(storageKey))
+export function usePaneExpand(storageKey: string, fallback: PaneExpand = 'split') {
+  const pane = ref<PaneExpand>(loadPane(storageKey, fallback))
 
   function toggle(half: PaneHalf) {
     pane.value = nextPane(pane.value, half)

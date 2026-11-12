@@ -2,7 +2,7 @@
   The header's project crumb: "Project › set ▾" (docs/todo/GUI_LAYOUT_PLAN.md, mock frame 1). Moved
   from the sidebar's project block: the project name opens the project panel (switch, open, create),
   the active set is named after it, and an active sidebar layout (view profile) shows as a small chip.
-  With no project it offers "Open a project…". Switching SETS stays in the set row (SetBar).
+  With no project it offers "Open a project…"; a spinner shows while one loads. Switching SETS stays in the set row (SetBar).
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -40,6 +40,9 @@ const setName = computed(() => project.activeSet()?.name ?? '')
             v-tooltip.bottom="'Open or create a project to get started'">
       <i class="pi pi-folder-open" /> Open a project…
     </button>
+    <!-- a project takes a moment to load, whichever control opened it -->
+    <i v-if="projectMeta.loading" class="pi pi-spin pi-spinner cc-muted cc-fs-xs" role="status"
+       aria-label="Loading the project" v-tooltip.bottom="'Loading the project…'" />
   </span>
   <ProjectPanel v-if="showPanel" @close="showPanel = false" />
 </template>

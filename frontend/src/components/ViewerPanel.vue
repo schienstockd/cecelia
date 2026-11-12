@@ -949,6 +949,22 @@ function shortLevelsTooltip(vn: string): string {
   return `Mask has ${n} zoom levels — zoom in to see it, or re-run the task that made it`
 }
 
+/** A segmentation's derived label files (`halo`, `nuc`) — from the open viewer's meta, so only while a
+ *  viewer is open, which is the only time the chips do anything. */
+function labelFilesOf(vn: string): string[] {
+  return dimMismatchInfo.value?.labelFiles?.[vn] ?? []
+}
+function shownFilesOf(vn: string): string[] {
+  const uid = projectStore.openImageUid
+  const hidden = uid ? settings.getLabelFilesHidden(uid, vn) : new Set<string>()
+  return labelFilesOf(vn).filter(f => !hidden.has(f))
+}
+// Stored as what is HIDDEN (settings.getLabelFilesHidden); the pop-out reads it through the bag channel.
+function setShownFiles(vn: string, shown: string[]) {
+  const uid = projectStore.openImageUid
+  if (uid) settings.setLabelFilesHidden(uid, vn, new Set(labelFilesOf(vn).filter(f => !shown.includes(f))))
+}
+
 function toggleLabel(valueName: string) {
   // Write the settings bag; the WebGPU viewer reads it via `storage` events.
   //
@@ -1150,7 +1166,8 @@ onUnmounted(() => {
         <!-- segmentation label sets: show labels / tracks, delete -->
         <div v-if="shownLabelRows.length" class="viewer-labels-list"
              :class="{ 'is-scrolled': labelsExpanded }">
-          <div v-for="row in shownLabelRows" :key="row.valueName" class="viewer-label-row">
+          <template v-for="row in shownLabelRows" :key="row.valueName">
+          <div class="viewer-label-row">
             <i :class="['pi', row.masked ? 'pi-th-large' : 'pi-circle-fill', 'viewer-label-icon']"
                v-tooltip.right="row.masked ? undefined : 'Points only — tracks, no mask'" />
             <span class="viewer-label-name cc-muted" :title="row.valueName">{{ row.valueName }}</span>
@@ -1202,6 +1219,17 @@ onUnmounted(() => {
                    does not curate what exists on disk. -->
             </template>
           </div>
+          <!-- The shown mask's derived files (halo, nuc): drawn as outlines on it, all on by default
+               (docs/todo/MASK_FILE_LAYERS_PLAN.md). Only while the mask is on — they are part of it. -->
+          <ChipSelect
+            v-if="row.masked && visibleLabels[row.valueName] && labelFilesOf(row.valueName).length"
+            class="viewer-label-files cc-fs-2xs" multiple :collapse-above="0"
+            :options="labelFilesOf(row.valueName).map(f => ({ value: f, tip: `Outline the ${f}` }))"
+            :model-value="shownFilesOf(row.valueName)"
+            :aria-label="`${row.valueName} label files`"
+            @update:model-value="v => setShownFiles(row.valueName, v as string[])"
+          />
+          </template>
         </div>
         <!-- The fold. Named by COUNT rather than "Show all": the number is the whole reason to click,
              and a section that silently shows a subset would read as segmentations having vanished. -->
@@ -1450,7 +1478,7 @@ onUnmounted(() => {
   gap: 0.35rem;
   min-width: 0;
 }
-.viewer-eye { font-size: var(--cc-fs-sm); color: #f97316; flex-shrink: 0; }
+.viewer-eye { font-size: var(--cc-fs-sm); color: var(--cc-viewer); flex-shrink: 0; }
 .viewer-name {
   font-size: var(--cc-fs-sm);
   color: var(--cc-text);
@@ -1520,6 +1548,8 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .viewer-label-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the shown mask's file chips, under its row, indented past the row icon */
+.viewer-label-files { margin: 0 0 0.15rem 1.2rem; }
 /* Mask-doesn't-fit-image flag: warn severity, sits between name and actions. Always shown (the
    whole point is that it must NOT wait for hover), and its host row's eye is disabled. */
 .viewer-label-warn { font-size: var(--cc-fs-sm); color: var(--cc-sev-warn); flex-shrink: 0; }

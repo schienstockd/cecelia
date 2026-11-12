@@ -159,6 +159,29 @@ def label_table(ids: Sequence[int], rgb: Sequence[Sequence[float]]) -> np.ndarra
     return out.reshape(rows, LABEL_TABLE_W, 4)
 
 
+def compose_label_files(mask: np.ndarray, file: np.ndarray, inside: bool = True) -> np.ndarray:
+    """Pack one derived label file (a halo, a nucleus) into a uint32 base mask in place, as flag bits
+    on the cell id — the Python twin of the slab route's ``compose_label_files!`` (``viewer_api.jl``,
+    ``docs/todo/MASK_FILE_LAYERS_PLAN.md`` D2), so a movie draws the files as the viewer does:
+
+    - file set, base empty → ``file_id | LABEL_FILE_OUT_BIT`` (past the cell: a halo ring)
+    - file set, base set   → ``base_id | LABEL_FILE_IN_BIT`` (over the cell: a nucleus); not with
+      ``inside=False`` (a halo, which repeats its cell inside it)
+
+    A voxel already flagged by an earlier file keeps its flag."""
+    c = wgsl_utils.shader_constants()
+    out_bit, in_bit, id_mask = (np.uint32(int(c[k])) for k in
+                                ("LABEL_FILE_OUT_BIT", "LABEL_FILE_IN_BIT", "LABEL_ID_MASK"))
+    f = file.astype(np.uint32, copy=False) & id_mask
+    free = (f != 0) & ((mask & (in_bit | out_bit)) == 0)
+    past = free & (mask == 0)
+    mask[past] = f[past] | out_bit
+    if inside:
+        over = free & (mask != 0) & ~past
+        mask[over] = (mask[over] & id_mask) | in_bit
+    return mask
+
+
 class MipHost:
     """One device + the MIP pipeline and its overlay passes. Set the inputs, then ``render`` a frame.
 

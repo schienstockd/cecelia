@@ -32,3 +32,11 @@ describe('nextPane', () => {
     expect(nextPane('bottom', 'top')).toBe('top')
   })
 })
+
+describe('a panel default', () => {
+  it('is what an unset or unreadable value falls back to', () => {
+    expect(parsePane(null, 'top')).toBe('top')
+    expect(parsePane('nonsense', 'top')).toBe('top')
+    expect(parsePane('bottom', 'top')).toBe('bottom')
+  })
+})

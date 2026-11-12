@@ -513,7 +513,7 @@ useVisualPanel(
 /* inner layout only — the teleported TeleportPopover shell provides surface/border/shadow/position */
 .is-pop { display: flex; flex-direction: column; gap: 6px; }   /* padding: TeleportPopover */
 .is-val { min-width: 1.2rem; text-align: right; font-weight: 700; color: var(--cc-text); }
-.is-err { color: #fca5a5; font-size: var(--cc-fs-xs); }
+.is-err { color: var(--cc-ink-red); font-size: var(--cc-fs-xs); }
 .is-slider { display: inline-flex; align-items: center; gap: 4px; }
 .is-slider input[type="range"] { width: 4.5rem; }
 /* Three-column grid for the overlay toggle rows: toggle | slider | readout. Fixed widths on cols
@@ -534,7 +534,7 @@ useVisualPanel(
    line whose width is EXACTLY --sep-thick, independent of the angle (--sk). */
 /* padding:0 here — the base 6px padding + white bg would draw a white frame around the whole strip;
    in angled mode white must ONLY show through the diagonal gaps between frames */
-.is-strip.angled.row { gap: 0; background: #fff; padding: 0; }
+.is-strip.angled.row { gap: 0; background: var(--cc-paper); padding: 0; }
 .is-strip.angled.row .is-cell { border: none; border-radius: 0; background: transparent; }
 .is-strip.angled.row .is-cell + .is-cell { margin-left: calc(var(--sep-thick, 2px) - var(--sk, 22px)); }
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;

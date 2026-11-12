@@ -27,9 +27,10 @@ export type PaneHalf = 'top' | 'bottom'
 
 const PANES: PaneExpand[] = ['split', 'top', 'bottom']
 
-/** A stored value, or `'split'` for anything unrecognised (absent, stale, hand-edited). */
-export function parsePane(raw: unknown): PaneExpand {
-  return PANES.includes(raw as PaneExpand) ? raw as PaneExpand : 'split'
+/** A stored value, or the panel's default (`'split'` unless it names one) for anything unrecognised
+ *  (absent, stale, hand-edited). */
+export function parsePane(raw: unknown, fallback: PaneExpand = 'split'): PaneExpand {
+  return PANES.includes(raw as PaneExpand) ? raw as PaneExpand : fallback
 }
 
 /**
@@ -43,8 +44,8 @@ export function nextPane(current: PaneExpand, clicked: PaneHalf): PaneExpand {
   return current === clicked ? 'split' : clicked
 }
 
-export function loadPane(storageKey: string): PaneExpand {
-  try { return parsePane(profileStorage.getItem(storageKey)) } catch { return 'split' }
+export function loadPane(storageKey: string, fallback: PaneExpand = 'split'): PaneExpand {
+  try { return parsePane(profileStorage.getItem(storageKey), fallback) } catch { return fallback }
 }
 
 export function savePane(storageKey: string, pane: PaneExpand): void {

@@ -128,11 +128,11 @@ const tipsOptOut = computed({
   letter-spacing: 0.05em;
   padding: 2px 6px;
   border-radius: var(--cc-radius-sm);
-  color: #ffffff;
+  color: var(--cc-on-solid);
 }
 .wn-kind-update { background: var(--cc-accent-fill); }
-.wn-kind-tip    { background: var(--cc-sev-warn); color: #1a1a1a; }
-.wn-kind-fix    { background: var(--cc-sev-ok);   color: #1a1a1a; }   /* white is 3.35:1 on it */
+.wn-kind-tip    { background: var(--cc-sev-warn); color: var(--cc-on-bright); }
+.wn-kind-fix    { background: var(--cc-sev-ok);   color: var(--cc-on-bright); }   /* white is 3.35:1 on it */
 .wn-kind-about  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
 .wn-title { flex: 1; margin: 0; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text); }
 .wn-version {
@@ -168,7 +168,7 @@ const tipsOptOut = computed({
   aspect-ratio: 2 / 1;
   height: auto;
   border: none;
-  background: #fafaf7;
+  background: #fafaf7;   /* COLOUR-OK: the feijoa sketch's own SVG paper, matched so the letterbox disappears */
   border-radius: var(--cc-radius-md);
   padding: 0;
   position: relative;
@@ -193,8 +193,8 @@ const tipsOptOut = computed({
 .wn-nav .pi { font-size: 1.5rem; }
 .wn-nav-prev { left: 0; justify-content: flex-start; }
 .wn-nav-next { right: 0; justify-content: flex-end; }
-.wn-nav-prev:hover { color: var(--cc-text-dim); background: linear-gradient(to right, rgba(0,0,0,0.06), transparent); }
-.wn-nav-next:hover { color: var(--cc-text-dim); background: linear-gradient(to left,  rgba(0,0,0,0.06), transparent); }
+.wn-nav-prev:hover { color: var(--cc-text-dim); background: linear-gradient(to right, color-mix(in srgb, var(--cc-paper-ink) 6%, transparent), transparent); }
+.wn-nav-next:hover { color: var(--cc-text-dim); background: linear-gradient(to left,  color-mix(in srgb, var(--cc-paper-ink) 6%, transparent), transparent); }
 
 .wn-description { margin: 10px 0 6px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.5; }
 

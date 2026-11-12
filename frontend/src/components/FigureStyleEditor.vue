@@ -176,6 +176,6 @@ const dirty = computed(() => JSON.stringify(draft.value) !== saved.value)
 .fs-label { justify-content: flex-end; text-align: right; }
 .fs-num { width: 4.25rem; }
 .fs-preview { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
-.fs-svg { width: 100%; height: auto; max-height: 24rem; border: 1px solid var(--cc-border); background: #fff; }
+.fs-svg { width: 100%; height: auto; max-height: 24rem; border: 1px solid var(--cc-border); background: var(--cc-paper); }
 .fs-actions { grid-column: 1 / -1; justify-content: flex-end; }
 </style>

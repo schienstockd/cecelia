@@ -425,6 +425,28 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         r2 = init_object(proj.uid, img.uid)
         @test r2.meta["PhysicalSizeZ"] == 0.6
         @test !haskey(r2.meta, "PhysicalSizeZ_raw")              # zombie marker cleared
+
+        # A re-import whose saturation probe failed (or found a complete last timepoint) passes no
+        # `saturation` / `partialTimepoint`: the previous store's records must not survive.
+        commit_state!(r2) do raw
+            m = Dict{String,Any}(String(k) => v for (k, v) in raw["meta"])
+            m["saturation"] = Dict{String,Any}("channels" => [
+                Dict{String,Any}("index" => 0, "saturated" => true, "zeroFrac" => 0.9)])
+            m["partialTimepoint"] = Dict{String,Any}(
+                "t" => 2, "emptyZ" => [1], "sizeZ" => 3, "trimmed" => false)
+            raw["meta"] = m
+        end
+        @test haskey(init_object(proj.uid, img.uid).meta, "saturation")
+        # …but a fill-only resync leaves them alone
+        Cecelia._merge_zarr_meta_into_ccid!(init_object(proj.uid, img.uid),
+            Dict{String,Any}("PhysicalSizeZ" => 0.6); overwrite = false)
+        @test haskey(init_object(proj.uid, img.uid).meta, "saturation")
+        Cecelia._merge_zarr_meta_into_ccid!(init_object(proj.uid, img.uid),
+            Dict{String,Any}("PhysicalSizeZ" => 0.6); overwrite = true)
+        r3 = init_object(proj.uid, img.uid)
+        @test !haskey(r3.meta, "saturation")
+        @test !haskey(r3.meta, "partialTimepoint")
+        @test isempty(Cecelia.saturation_qc_findings(r3.meta))
         rm(proj.root; recursive = true)
     end
 
@@ -767,10 +789,11 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
                     @test za[:shape][1] == (keep ? 3 : 2)
                 end
             end
-            # a complete last timepoint clears a previous import's record
+            # a complete last timepoint records nothing (the import merge clears an old record —
+            # "merge fill-only vs overwrite")
             meta = Dict{String,Any}("SizeT" => 3)
             Cecelia._apply_partial_timepoint!(meta, nothing, "", "", "", false)
-            @test haskey(meta, "partialTimepoint") && isnothing(meta["partialTimepoint"])
+            @test meta == Dict{String,Any}("SizeT" => 3)
         end
     end
 

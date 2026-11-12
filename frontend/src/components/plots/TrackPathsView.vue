@@ -423,7 +423,7 @@ function exportAs(kind: string) {
     const text = csv()
     if (text) downloadBlob(`${stem.value}.csv`, new Blob([text], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(host.value, kind, '#1f2226')
+    elementToImageURL(host.value, kind, plotTheme(true).ground)
       .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
@@ -431,7 +431,7 @@ function exportAs(kind: string) {
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }

@@ -341,6 +341,13 @@ The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays an
   thumbnails) are the same frames as PNGs, served by the resident preview worker so a still does not
   pay a renderer's start-up (`docs/todo/STILLS_WORKER_PLAN.md`). Julia's CPU compositor
   (`image_render.jl`) is left for the crop panel's preview. See `docs/todo/SHARED_RENDERER_PLAN.md`.
+- **Recording parity — a viewer drawing feature ships with the recording path, in the same change.**
+  A shared shader is not enough: what the viewer draws is also decided by its INPUTS (which store, which
+  files, which pops, which settings), and those reach a movie / still by a separate route —
+  `viewerLook.ts` (the look) → movie config → `_overlays_raw_from_config` → `movie_mask` / the overlay
+  closure → `render_animation_run.py`. A feature that changes what is drawn adds its input there too, with
+  a runner test that draws it. "Movies don't draw it yet" is not a *Not covered* line in a plan — it is
+  unfinished work, and only the maintainer can decide to ship without it.
 
 ### Slab reads — server side
 
@@ -390,7 +397,9 @@ rewrite stamp); `ViewerWindow`'s `applyMaskSource` hands it to whichever rendere
   fresh zeroed ones for a new mask — and the tick loop backfills every resident brick's mask
   (`labelBackfill`, timepoint on screen first). A label-atlas OOM falls back to a joint `setImage`.
 
-Design + decisions: `docs/todo/MASK_DECOUPLE_PLAN.md`.
+Design + decisions: `docs/todo/MASK_DECOUPLE_PLAN.md`. A segmentation's halo / nuc files ride the same
+mask as flag bits (their file set is part of the mask id), so toggling one is a mask change like any
+other — `docs/todo/MASK_FILE_LAYERS_PLAN.md`.
 
 ### Multi-atlas contract (WebGPU brick renderer)
 

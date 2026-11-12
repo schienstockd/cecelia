@@ -110,7 +110,7 @@ async function copy() {
     <template #title><i class="pi pi-copy" /> Copy {{ label }} to images</template>
 
     <div class="cg-body">
-      <p v-if="!warnLines.length" class="cg-warn"><i class="pi pi-exclamation-triangle" />
+      <p v-if="!warnLines.length" class="cg-warn cc-callout-warn"><i class="pi pi-exclamation-triangle" />
         Overwrites the {{ label }} on each selected image ({{ valueName }}) — no undo.</p>
 
       <!-- refused targets, copied ones lacking a column (which populations are empty there), and ones matched by channel name -->
@@ -158,8 +158,8 @@ async function copy() {
 
 <style scoped>
 .cg-body { display: flex; flex-direction: column; gap: 0.7rem; }   /* padding from BaseModal */
-.cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: var(--cc-fs-sm); color: #fcd34d;
-  background: #7c2d1244; border: 1px solid #92400e55; border-radius: var(--cc-radius-sm); padding: 0.4rem 0.55rem; line-height: 1.35; }
+.cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: var(--cc-fs-sm);
+  padding: 0.4rem 0.55rem; line-height: 1.35; }
 .cg-empty { margin: 0; }   /* + .cc-muted */
 .cg-all { font-size: var(--cc-fs-sm); color: var(--cc-text-dim); display: flex; align-items: center; gap: 0.4rem; cursor: pointer; }
 .cg-list { display: flex; flex-direction: column; gap: 0.15rem; max-height: 240px; overflow: auto;

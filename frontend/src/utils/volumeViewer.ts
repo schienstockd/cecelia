@@ -84,6 +84,9 @@ export interface ViewerMeta {
    * already broken in ways the picker can't fix).
    */
   labelDims?: Record<string, { nX: number; nY: number; nZ: number; nLevels?: number }>
+  /** Per segmentation, its derived label files by suffix (`{cells: ['halo']}`) — what the slab
+   *  route's `files=` takes. Only segmentations that have any; absent on an older server. */
+  labelFiles?: Record<string, string[]>
   /**
    * Cheap per-store fingerprints (root + metadata `stat`s, server `_store_rev`). Compared across a
    * task-done meta refetch so the viewer reloads only when a store it SHOWS changed. Absent from an
@@ -185,6 +188,10 @@ export interface SlabQuery {
   /** The running task's `started_at`. Once the staging store is promoted (the task still running —
    *  a composite's later step), the server serves the final store only if it was written since. */
   liveSince?: string
+  /** A segmentation's derived files (`halo`, `nuc` — `ViewerMeta.labelFiles`) to pack into the mask
+   *  as flag bits (docs/todo/MASK_FILE_LAYERS_PLAN.md). The durable store only: ignored with
+   *  `preview` / `live`. Empty / absent = the base mask, today's URL. */
+  labelFiles?: readonly string[]
   /**
    * Swap this channel's image slab onto the AF preview scratch store (P7.1). The worker writes one
    * store per corrected channel at
@@ -240,6 +247,7 @@ export function slabUrl(q: SlabQuery): string {
     if (q.liveId !== undefined) p.set('_lv', String(q.liveId))
     if (q.liveSince) p.set('liveSince', q.liveSince)
   }
+  if (q.labels && !q.preview && !q.live && q.labelFiles?.length) p.set('files', q.labelFiles.join(','))
   // AF preview (P7.1): only meaningful WITHOUT `labels` (this is an image swap, not a mask swap).
   if (!q.labels && q.preview_af && q.sourceChannel !== undefined && q.previewValueName) {
     p.set('preview_af', '1')
@@ -519,6 +527,31 @@ export function shownStoresChanged(
   if (!a || !b) return true
   if (a.image !== b.image) return true
   return !!shownLabel && a.labels[shownLabel] !== b.labels[shownLabel]
+}
+
+/**
+ * The in-place half of a task-done meta refresh (`shownStoresChanged` false): take the server's new
+ * store lists onto `prev` without touching the frame. Returns whether the CELL TABLES changed, so
+ * the caller re-fetches pops and tracks. A segmentation measured while the viewer is open (its mask
+ * already on disk, so nothing drawn changed) gains a table here, and its pops only reach the viewer
+ * if the overlays are reloaded against the new list.
+ */
+export function refreshMetaInPlace(
+  prev: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'storeRevs'
+    | 'valueNames' | 'activeValueName'>,
+  next: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'storeRevs'
+    | 'valueNames' | 'activeValueName'>,
+): boolean {
+  const was = prev.cellTableNames ?? []
+  const now = next.cellTableNames ?? []
+  prev.labelNames = next.labelNames
+  prev.labelDims = next.labelDims
+  prev.labelFiles = next.labelFiles
+  prev.cellTableNames = next.cellTableNames
+  prev.storeRevs = next.storeRevs
+  prev.valueNames = next.valueNames
+  prev.activeValueName = next.activeValueName
+  return was.length !== now.length || was.some((vn, i) => vn !== now[i])
 }
 
 /**

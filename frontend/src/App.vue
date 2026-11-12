@@ -39,7 +39,7 @@ import { isPreferencesOpen, closePreferences } from './lib/preferencesOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
-import { isPopoutWindow } from './lib/popout'
+import { isPopoutWindow, nameMainWindow } from './lib/popout'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -112,6 +112,8 @@ watch([() => pm.current?.uid, () => projectStore.loadedProjectUid], ([openUid, l
 // A popout is a VIEW of the app, not a second copy of it.
 // `lib/popout.ts` reads the hash, not the route: the first navigation has not resolved during setup.
 const popout = isPopoutWindow()
+// the main window's name is how a popout's ← back finds it (lib/popout.ts → focusMainWindow)
+if (!popout) nameMainWindow()
 
 // Restore each image's remembered viewer overlays (labels, branches, tracks, populations) when it
 // opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with

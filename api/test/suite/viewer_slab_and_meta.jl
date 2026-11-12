@@ -312,8 +312,7 @@ Base.getindex(p::_WriterProbe, i::Int) = p.data[i]
     @test _fetch_unwrapped(Threads.@spawn 1 + 1) == 2
     # Every pool hop that writes the response from the spawned task fetches it unwrapped — a bare
     # `fetch(Threads.@spawn …)` in api/src would turn each client disconnect into an Error log.
-    for f in readdir(joinpath(@__DIR__, "..", "..", "src"); join = true)
-        endswith(f, ".jl") || continue
+    for f in api_src_jl_files()                      # recursive: api/src/routes/ included
         @test (basename(f), occursin(r"\bfetch\(Threads\.@spawn", read(f, String))) == (basename(f), false)
     end
 end
@@ -535,6 +534,84 @@ end
         @test haskey(j[:labelDims], :mismatched)
         @test (j[:labelDims][:matching][:nX],   j[:labelDims][:matching][:nY])   == (8,  6)
         @test (j[:labelDims][:mismatched][:nX], j[:labelDims][:mismatched][:nY]) == (10, 6)
+        @test isempty(j[:labelFiles])     # neither segmentation has a derived file
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: viewer slab — a segmentation's halo / nuc files packed into its mask" begin
+    # docs/todo/MASK_FILE_LAYERS_PLAN.md D2: a derived file carries the base's ids, so it rides the
+    # base mask as a flag bit — OUT where it reaches past the cell, IN where it overlaps it.
+    OUT, IN = LABEL_FILE_OUT_BIT, LABEL_FILE_IN_BIT
+    @test OUT == 0x80000000 && IN == 0x40000000 && LABEL_ID_MASK == 0x3fffffff
+    base = UInt32[0, 5, 5, 0, 7]
+    halo = UInt32[5, 5, 5, 0, 0]          # whole-cell halo of 5, grown one voxel left
+    nuc  = UInt16[0, 0, 5, 0, 7]          # a narrower store type composes the same
+    m = copy(base)
+    compose_label_files!(m, halo)
+    @test m == UInt32[5 | OUT, 5 | IN, 5 | IN, 0, 7]
+    compose_label_files!(m, nuc)          # a voxel keeps the first flag it got
+    @test m == UInt32[5 | OUT, 5 | IN, 5 | IN, 0, 7 | IN]
+    @test (m .& LABEL_ID_MASK) == UInt32[5, 5, 5, 0, 7]     # what colour / pick read
+    # a halo packs only its part past the cell: a whole-cell halo after a nucleus must not merge the
+    # cell into one flagged region, or the nucleus outline vanishes into the halo's
+    m = compose_label_files!(copy(base), nuc)
+    compose_label_files!(m, halo; inside = !Cecelia.is_halo_file("halo"))
+    @test m == UInt32[5 | OUT, 5, 5 | IN, 0, 7 | IN]
+    @test !Cecelia.is_halo_file("nuc")
+    @test Cecelia.segment_label_files("cells", nothing; halo = true)[end] ==
+          "cells_$(Cecelia.HALO_LABEL_SUFFIX).zarr"     # the suffix the writer's mirror names
+
+    axes_ms(names) = Dict("multiscales" => [Dict("axes" => [Dict("name" => n) for n in names],
+                                                 "datasets" => [Dict("path" => "0")])])
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "mask-files")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        labels_dir = joinpath(img._dir, "labels"); mkpath(labels_dir)
+        # x-fastest: a 4×1 plane — cell 3 at x=1..2, its halo ring at x=0 and x=3
+        for (name, vals) in (("cells", UInt32[0, 3, 3, 0]), ("cells_halo", UInt32[3, 0, 0, 3]))
+            lg = zgroup(Zarr.DirectoryStore(joinpath(labels_dir, "$(name).zarr"));
+                        attrs = axes_ms(["t", "c", "z", "y", "x"]))
+            la = zcreate(UInt32, lg, "0", 4, 1, 1, 1, 1; chunks = (4, 1, 1, 1, 1))
+            la[:, :, :, :, :] = reshape(vals, 4, 1, 1, 1, 1)
+        end
+        img.labels = Dict("cells" => ["cells.zarr", "cells_halo.zarr", "cells_nuc.zarr"])
+        save!(img)
+
+        # suffixes off the base stem; a registered file not on disk is left out
+        @test img_label_files(img, "cells") == ["halo" => joinpath(labels_dir, "cells_halo.zarr")]
+        @test img_label_files(img, "nope") == Pair{String,String}[]
+        @test label_file_paths(proj.uid, img.uid, "cells", "halo,nuc,../x") ==
+              ["halo" => joinpath(labels_dir, "cells_halo.zarr")]
+        @test isempty(label_file_paths(proj.uid, img.uid, "cells", ""))
+        # a movie draws the same files as the viewer: all but the hidden ones, a halo outside-only
+        @test movie_mask_files(img, "cells", String[]) == [(joinpath(labels_dir, "cells_halo.zarr"), false)]
+        @test isempty(movie_mask_files(img, "cells", ["halo"]))
+        @test movie_mask(img; value_name = "cells", contour_px = 1, opacity = 1.0, all_cells = true).files ==
+              [(joinpath(labels_dir, "cells_halo.zarr"), false)]
+        @test isempty(movie_mask(img; value_name = "cells", contour_px = 1, opacity = 1.0, all_cells = true,
+                                 files_hidden = ["halo"]).files)
+
+        srv = HTTP.listen!(s -> try_serve_slab(s, s.message.target) ||
+                                (HTTP.setstatus(s, 404); HTTP.startwrite(s)), "127.0.0.1", 0)
+        try
+            get_mask(q) = begin
+                r = HTTP.get("http://127.0.0.1:$(HTTP.port(srv))/api/viewer/slab?projectUid=$(proj.uid)" *
+                             "&imageUid=$(img.uid)&labels=cells&t=0&c=0&z=0$q"; retry = false)
+                reinterpret(UInt32, r.body)
+            end
+            @test get_mask("") == UInt32[0, 3, 3, 0]                   # no `files` → today's bytes
+            @test get_mask("&files=halo") == UInt32[3 | OUT, 3, 3, 3 | OUT]
+            @test get_mask("&files=bogus") == UInt32[0, 3, 3, 0]       # unknown suffix → base only
+        finally
+            close(srv)
+        end
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

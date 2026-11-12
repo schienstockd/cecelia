@@ -99,7 +99,7 @@ _specs_payload(specs) = [begin
                          "lut" => [Float64[rgb[1], rgb[2], rgb[3]] for rgb in lut])
     end for s in specs]
 
-# A movie mask (`MovieMask`) onto the runner's params: the label store, its outline and opacity, and
+# A movie mask (`MovieMask`) onto the runner's params: the label store, its derived files, its outline and opacity, and
 # its colouring — `labelColouring` "palette", or "table" with `labelColours` (an empty table draws no
 # labels; the runner must not read it as "no table").
 function _mask_params!(params::AbstractDict, mask::Union{Nothing,MovieMask})
@@ -107,6 +107,9 @@ function _mask_params!(params::AbstractDict, mask::Union{Nothing,MovieMask})
     params["labelsPath"]     = mask.labels_path
     params["labelContourPx"] = mask.contour_px
     params["labelOpacity"]   = mask.opacity
+    # its halo / nuc stores, packed into it per frame as the slab route packs them
+    isempty(mask.files) ||
+        (params["labelFiles"] = [Dict{String,Any}("path" => p, "inside" => i) for (p, i) in mask.files])
     _label_colouring!(params, mask.colours)
     params
 end
@@ -708,7 +711,9 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
                    # colour-by only when asked (`maskColourBy`, the batch's `colourLabels`) — else
                    # the per-id palette, as the viewer's mask
                    colour_by = _ov_bool(overlays_config, "maskColourBy", true) ? colour_by : nothing,
-                   colour_overrides = colour_overrides)
+                   colour_overrides = colour_overrides,
+                   files_hidden = get(mask_files_hidden(get(overlays_config, "maskFilesHidden", nothing)),
+                                      mask_vn, String[]))
     (per_t3d, mask)
 end
 

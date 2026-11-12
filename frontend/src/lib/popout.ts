@@ -95,6 +95,33 @@ export function openPopoutWindow(
   return w
 }
 
+// ── The way back: a popout raising the MAIN window ──────────────────────────────────────────────────
+// `window.opener.focus()` is ignored by Chrome — a page may not raise another window. Targeting a
+// window by NAME with `window.open` does raise it (it is a navigation in that window, on a user
+// gesture). So the main window names itself once (`nameMainWindow`, App.vue) and a popout opens its
+// current URL by that name: the same hash, so the main window stays exactly where it was.
+export const MAIN_WINDOW_NAME = 'cecelia-main'
+
+/** Give the main window its name, unless it already has one (a popout is never renamed). */
+export function nameMainWindow(win: { name: string } = window): void {
+  if (!win.name) win.name = MAIN_WINDOW_NAME
+}
+
+/** The URL to open in the main window: its own, when the opener can be read, else the app's root. */
+export function mainWindowUrl(opener: { closed?: boolean; location?: { href: string } } | null,
+                              origin: string, pathname: string): string {
+  try {
+    if (opener && !opener.closed && opener.location?.href) return opener.location.href
+  } catch { /* closed or unreadable opener */ }
+  return origin + pathname + '#/'
+}
+
+/** Raise (or, if it was closed, reopen) the main window from a popout. Call it from a click. */
+export function focusMainWindow(): void {
+  const w = window.open(mainWindowUrl(window.opener as Window | null, location.origin, location.pathname), MAIN_WINDOW_NAME)
+  try { w?.focus() } catch { /* opened; raising it is the browser's call */ }
+}
+
 /** Is the window running this code one of the popouts? The NAME decides (see the header); the hash is
  *  the fallback, for a window that has the URL but not the name — someone opening `#/console` in a
  *  tab by hand. Asked during App.vue's setup, before the first navigation has resolved, so it reads

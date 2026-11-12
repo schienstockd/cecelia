@@ -381,8 +381,8 @@ export const useTheBlackboardGuide: GuideDef = {
 }
 
 // ── Correction cockpit — the hand-tools panel for fixing what a run got wrong ────────────────────
-// The cockpit is a floating panel over the viewer, so the guide opens it via the sidebar CTA (which
-// already had an anchor from the tour) and then walks the four anchor targets inside. The chip
+// The cockpit is a floating panel over the viewer, so the guide opens it from Segment's "Correct labels"
+// (Track has "Correct tracks" too) and then walks the four anchor targets inside. The chip
 // strip only renders once something is picked — reveal covers that. The panel also needs an image
 // open in the viewer; the "Open an image in the viewer to begin" empty state is inside the panel
 // and covers that.
@@ -397,8 +397,9 @@ export const correctAMaskGuide: GuideDef = {
 
   steps: [
     {
-      anchor: 'launcher.correction',
-      placement: 'right',
+      anchor: 'segment.correct',
+      route: '/segment',
+      placement: 'bottom',
       title: 'The correction cockpit',
       text: 'When segmentation gets a cell wrong, fix it here — a floating panel that sits over the viewer so you keep looking at the image.',
       clickAnchor: true,
@@ -411,9 +412,9 @@ export const correctAMaskGuide: GuideDef = {
       bullets: ['Review pages over the picked labels one at a time.'],
       reveal: {
         needed: c => !c.anchorExists('correction.modePicker'),
-        anchor: 'launcher.correction',
+        anchor: 'segment.correct',
         text: 'Open the correction cockpit first — the mode chips are inside the panel.',
-        placement: 'right',
+        placement: 'bottom',
       },
     },
     {

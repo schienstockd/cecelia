@@ -607,6 +607,23 @@ end
     end
 end
 
+# Call sites of `preview_request(` under `src` that are not an argument to `send(` — recursive, so
+# api/src/routes/ is covered. Returns "relpath:offset" per offender.
+function _unsent_preview_requests(src::AbstractString)
+    offenders = String[]
+    for file in api_src_jl_files(src)
+        text = read(file, String)
+        for m in eachmatch(r"preview_request\(", text)
+            # the enclosing call — `send(w, preview_request(…))` — sits just before it; allow for the
+            # keyword-heavy wrapping the real call sites use
+            before = text[thisind(text, max(1, m.offset - 240)):m.offset]
+            occursin("send(", before) || occursin("function preview_request", before) ||
+                push!(offenders, "$(relpath(file, src)):$(m.offset)")
+        end
+    end
+    offenders
+end
+
 @testset "API: a built preview request is always sent" begin
     # `preview_request` BUILDS a request; `send(w, …)` runs it. Returning the request instead is a
     # 200 full of plausible-looking JSON — right imPath, right params, right funName — that simply
@@ -615,15 +632,20 @@ end
     #
     # Building one without sending it has no other use, so the rule is total: every call site is an
     # argument to `send`.
-    for file in filter(f -> endswith(f, ".jl"), readdir(joinpath(API_TEST_DIR, "..", "src"); join = true))
-        src = read(file, String)
-        for m in eachmatch(r"preview_request\(", src)
-            # the enclosing call — `send(w, preview_request(…))` — sits just before it; allow for the
-            # keyword-heavy wrapping the real call sites use
-            before = src[max(1, m.offset - 240):m.offset]
-            @test occursin("send(", before) ||
-                  occursin("function preview_request", before)   # the definition itself
-        end
+    offenders = _unsent_preview_requests(joinpath(API_TEST_DIR, "..", "src"))
+    @test isempty(offenders)
+    isempty(offenders) || @info "wrap each preview_request(…) in send(w, …)" offenders
+
+    # ...including the route files in api/src/routes/, which a top-level scan never reached
+    tmp = mktempdir()
+    try
+        mkpath(joinpath(tmp, "routes"))
+        write(joinpath(tmp, "ok.jl"), "h(w) = send(w, preview_request(w))\n")
+        write(joinpath(tmp, "routes", "r.jl"), "# — a non-ASCII comment first\nh(w) = preview_request(w)\n")
+        @test length(_unsent_preview_requests(tmp)) == 1
+        @test startswith(only(_unsent_preview_requests(tmp)), joinpath("routes", "r.jl"))
+    finally
+        rm(tmp; recursive = true, force = true)
     end
 end
 

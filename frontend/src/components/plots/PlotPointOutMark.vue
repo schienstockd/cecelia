@@ -28,8 +28,8 @@ defineProps<{ mark: PlotMark }>()
   position: absolute; z-index: 6; pointer-events: none;
   width: 20px; height: 20px; margin-left: -10px; margin-top: -10px;
   border-radius: 50%; border: 2px solid var(--cc-warn);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.5);
-  background: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 0 1px var(--cc-hud-bg-soft), inset 0 0 0 1px var(--cc-hud-bg-soft);
+  background: color-mix(in srgb, var(--cc-warn) 15%, transparent);
   display: flex; align-items: center; justify-content: center;
   animation: pt-out-pulse 1.4s ease-out infinite;
 }

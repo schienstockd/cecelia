@@ -1108,6 +1108,26 @@ class SegmentationUtils:
             norm_cache.write(im_path, fp, cache)
         return result
 
+    # Most non-zero voxels one frame of a tile may hold in a channel that has no frame/image window.
+    # Below a cell's worth, so stretching them per tile cannot change which cells are found. Fixed on
+    # purpose rather than read from `_percentile_range`: raising that cut-off must trip this check,
+    # not move it.
+    MAX_UNWINDOWED_VOXELS = 100
+
+    @classmethod
+    def _refuse_unwindowed_signal(cls, frame, ch_idx):
+        """Raise when one frame of a tile holds real signal in a channel `norm_params` has no window
+        for. The subclass's fallback would then window the tile by its own percentiles, i.e. give
+        each tile its own brightness, with no error. A missing entry is only legitimate for a channel
+        the base found too empty for a window, and a tile is part of its frame, so it is near-empty
+        too. Callers pass ONE frame: a temporal window spans several, and the limit is per frame."""
+        nonzero = int(np.count_nonzero(frame))
+        if nonzero > cls.MAX_UNWINDOWED_VOXELS:
+            raise ValueError(
+                f'channel {ch_idx} has {nonzero} non-zero voxels in this tile but no '
+                'frame/image intensity window. A per-tile window would give each tile its own '
+                'brightness. The base must supply `norm_params` for every channel with signal.')
+
     @staticmethod
     def _percentile_range(data, normalise_perc):
         """`(lo, hi)` at the `100 - p` / `p` percentiles of the non-zero voxels — None when fewer than

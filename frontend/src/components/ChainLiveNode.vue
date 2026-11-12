@@ -89,7 +89,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 <style scoped>
 .live-node {
   background: var(--cc-surface-1);
-  border: 1.5px solid #3f3f46;
+  border: 1.5px solid var(--cc-border-hover);
   border-radius: var(--cc-radius-sm);
   padding: 5px 9px;
   font-size: var(--cc-fs-xs);
@@ -126,7 +126,7 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 .live-handle {
   width: 6px;
   height: 6px;
-  background: #52525b;
+  background: var(--cc-text-dim);
   border: none;
   opacity: 0.5;
 }

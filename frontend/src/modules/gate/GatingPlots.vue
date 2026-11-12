@@ -711,12 +711,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
              it has no popType to give, so every series it built was filtered out again (see
              ctxForView). No `vis`: the track panels read none of the styling block. -->
         <template #overlay>
-          <div v-if="shareToast" class="gp-share-chip"
-               :class="{ 'gp-share-chip-error': shareToast.kind === 'fail' }">
-            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                        'gp-share-chip-icon']" />
+          <div v-if="shareToast" class="cc-hud-chip cc-hud-chip-corner"
+               :class="{ 'cc-hud-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle']" />
             <span>{{ shareToast.message }}</span>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro gp-share-chip-dismiss"
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                     @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                     aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
           </div>
@@ -764,17 +763,4 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; padding: 3px 4px; }
 
-/* Share-outcome chip — mirrors `.sc-share-chip` in SummaryCanvas so all three canvases (summary,
-   cluster, gate) present the same chip on the same push branch. Bottom-left, above CVS. */
-.gp-share-chip {
-  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
-  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
-  background: rgba(0, 0, 0, 0.78); color: #fff;
-  font-size: var(--cc-fs-xs); pointer-events: auto;
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
-}
-.gp-share-chip-error { color: var(--cc-sev-fail); }
-.gp-share-chip-icon { font-size: 1em; }
-.gp-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
-.gp-share-chip-dismiss:hover { opacity: 1; }
 </style>

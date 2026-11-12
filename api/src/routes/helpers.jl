@@ -89,6 +89,7 @@ function _scan_projects_raw()::Vector{Dict{String,Any}}
             raw  = JSON3.read(read(meta_file, String))
             proj = Dict{String,Any}(String(k) => v for (k, v) in raw)
             proj["path"] = entry
+            proj["nSets"], proj["nImages"] = _project_counts(entry, proj)
             # `type` and `kind` are legacy — project-wide static/live/flow distinction was dropped
             # in favour of per-image axis gating (Cecelia.task_applies). Fields kept for on-disk
             # round-trip only; not surfaced by the frontend.
@@ -99,6 +100,26 @@ function _scan_projects_raw()::Vector{Dict{String,Any}}
     end
     # Ordered by THIS profile's opens, not the install's (see `overlay_profile_recents!`).
     overlay_profile_recents!(projects, read_profile_recents())
+end
+
+# Set and image counts for the Welcome page's recent list ("T cells · 2 sets, 17 images"). Read from
+# the manifests alone — `project.json`'s `set_uids`, each set's `1/{set_uid}/ccid.json` `image_uids` —
+# so listing every project never loads an image. A missing or unreadable set manifest counts no images.
+function _project_counts(dir::AbstractString, raw::AbstractDict)::Tuple{Int,Int}
+    set_uids = get(raw, "set_uids", nothing)
+    set_uids isa AbstractVector || return (0, 0)
+    n_images = 0
+    for su in set_uids
+        f = state_file(dir, string(su))
+        isfile(f) || continue
+        try
+            uids = get(read_ccid_raw(f), "image_uids", nothing)
+            uids isa AbstractVector && (n_images += length(uids))
+        catch
+            # a half-written manifest: the set still counts, its images do not
+        end
+    end
+    (length(set_uids), n_images)
 end
 
 # `meta_int` / `meta_float` / `meta_str` (`app/src/model/image.jl`) are the ONE way to read a

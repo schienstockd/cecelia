@@ -475,6 +475,9 @@ population to the open gating plots (`docs/todo/README.md` links `project_napari
 
 ### PX — multi-mask rendering (N-slot bind group with configurable cap)
 
+> **Superseded by [`MULTI_MASK_PLAN.md`](MULTI_MASK_PLAN.md) (2026-11-11).** Direction kept; the
+> N-binding mechanism no longer fits the multi-atlas brick renderer (see that plan, D2).
+
 **Independent of the panel-split work; deferrable.** Landed here rather than folded into P3 because
 it's a renderer/shader extension, not a controls question. Numbered `PX` because it can happen at any
 point after P3 (P3's "first-ticked wins" is the interim behaviour).

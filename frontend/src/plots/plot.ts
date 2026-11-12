@@ -22,6 +22,7 @@ import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
 import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx } from './axisLabelFit'
+import { plotTheme } from './overlays'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured
@@ -698,8 +699,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // HTML <figure> wrapper that re-clips the bottom axis and inherits the app's text colour.
   // dark theme: flip the ground + ink. All builder ink is `currentColor`, so setting style.color
   // carries the axes/box/median/mean/whiskers; box fills come from the (palette) colour scale.
-  const fg = o.darkTheme ? '#e6e6e6' : '#111'
-  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   opts.style = { ...(opts.style as object ?? {}), fontSize: `${o.fontSize || 11}px`, color: fg, background: bg }
 
   // legend reflects the DISTINCT colours drawn (deduped) — PlotChart reads `_legend` for the overlay.
@@ -730,8 +730,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
 function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Record<string, unknown> | null {
   const cells = (r.cells ?? []).filter(c => Number.isFinite(c.value))
   if (!cells.length) return null
-  const fg = o.darkTheme ? '#e6e6e6' : '#111'
-  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   // THREE modes, not two. `interaction` was falling into the profile branch (`!== 'crosstab'`), which
   // per-row min-max rescales every row to [0,1] on viridis — and that destroys a LOG-ODDS matrix: the
   // sign disappears, so association (+) and avoidance (−) get colours that only say "biggest/smallest
@@ -952,8 +951,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
     })
   }
   if (!fit.length) return null
-  const fg = o.darkTheme ? '#e6e6e6' : '#111'
-  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   const yhi = o.logScale ? hi : hi * 1.05
   const legend = dedupLegend(color)
   const legendN = legend.domain.length
@@ -1001,8 +999,7 @@ function buildHmmElbow(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Rec
   const metric: ElbowMetric = o.elbowMetric ?? 'logLik'
   const rows = elbowRows(r.curves, metric)
   if (!rows.length) return null
-  const fg = o.darkTheme ? '#e6e6e6' : '#111'
-  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   const domain = [...new Set(rows.map(p => p.curve))]
   const color = { domain, range: distinctColors(domain.length) }
   const ks = [...new Set(rows.map(p => p.k))].sort((a, b) => a - b)
@@ -1192,7 +1189,7 @@ function statsBracketMarks(
     const p = idx.get(keyOf(s))
     if (p !== undefined) posByLabel.set(label, p)
   }
-  const ink = o.darkTheme ? '#e6e6e6' : '#111'
+  const { ink } = plotTheme(!!o.darkTheme)
 
   // ── Compact Letter Display branch ───────────────────────────────────────────
   // One letter (or letter cluster) per group at the measure-axis edge. Group N's letters come from

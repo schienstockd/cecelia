@@ -9,12 +9,17 @@ import { computed, ref } from 'vue'
 import TeleportPopover from './TeleportPopover.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import { useAppControlStore } from '../stores/appControl'
+import { useSettingsStore } from '../stores/settings'
+import { nextColourScheme, colourSchemeLabel } from '../utils/colourScheme'
 import { openPreferences } from '../lib/preferencesOpen'
 import { runningTaskCount } from '../utils/runningTasks'
 import { quitConfirmTooltip } from '../utils/quitWarning'
 import { useToast } from '../composables/useToast'
 
 const appCtl = useAppControlStore()
+const settings = useSettingsStore()
+// one click to the other colour scheme; the menu stays open so the change is seen in place
+const nextScheme = computed(() => nextColourScheme(settings.colourScheme))
 const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 
@@ -58,6 +63,9 @@ function prefs(pane: 'profiles' | 'interface') { open.value = false; openPrefere
       <div class="cc-actions-head">{{ appCtl.activeProfileDisplayName }}</div>
       <button class="cc-actions-item" role="menuitem" @click="prefs('profiles')">
         <i class="pi pi-user" /> Switch profile
+      </button>
+      <button class="cc-actions-item" role="menuitem" @click="settings.colourScheme = nextScheme">
+        <i class="pi pi-palette" /> {{ colourSchemeLabel(nextScheme) }}
       </button>
       <button class="cc-actions-item" role="menuitem" @click="prefs('interface')">
         <i class="pi pi-cog" /> Preferences

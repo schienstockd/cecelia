@@ -739,8 +739,7 @@ async function switchWt(path: string) {
 <template>
   <ModulePage layout="scroll" class="settings-page">
     <!-- ── Project ─────────────────────────────────────────────────────── -->
-    <CollapsibleSection class="settings-section" label="Project" storage-key="cc-settings-project"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection class="settings-section" label="Project" accordion="cc.settings.section" section="project" :default-open="true" max-height="none">
       <div class="settings-body">
 
       <template v-if="projectMeta.current">
@@ -787,8 +786,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Interface ───────────────────────────────────────────────────── -->
-    <CollapsibleSection data-guide="settings.interface" class="settings-section" label="Interface" storage-key="cc-settings-interface"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection data-guide="settings.interface" class="settings-section" label="Interface" accordion="cc.settings.section" section="interface" max-height="none">
       <div class="settings-body">
 
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
@@ -818,8 +816,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" data-guide="settings.updates" class="settings-section" label="Software updates" storage-key="cc-settings-software-updates"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="appCtl.canManageMachine" data-guide="settings.updates" class="settings-section" label="Software updates" accordion="cc.settings.section" section="software-updates" max-height="none">
       <div class="settings-body">
 
       <div class="field">
@@ -896,8 +893,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
-    <CollapsibleSection data-guide="settings.storage" class="settings-section" label="Storage" storage-key="cc-settings-storage"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection data-guide="settings.storage" class="settings-section" label="Storage" accordion="cc.settings.section" section="storage" max-height="none">
       <div class="settings-body">
 
       <div class="field">
@@ -1013,8 +1009,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Storage defaults — how every NEW store on this machine is written (peanut only) ── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Storage defaults" storage-key="cc-settings-storage-defaults"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Storage defaults" accordion="cc.settings.section" section="storage-defaults" max-height="none">
       <div class="settings-body">
 
       <!-- Advanced: what compression the image stores we write use. A TABLE, not a dropdown — the
@@ -1080,8 +1075,7 @@ async function switchWt(path: string) {
       </div>
     </CollapsibleSection>
 
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Custom modules" storage-key="cc-settings-custom-modules"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Custom modules" accordion="cc.settings.section" section="custom-modules" max-height="none">
       <div class="settings-body">
       <div class="field">
         <label class="field-label">Modules directory</label>
@@ -1129,8 +1123,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Plugins (module sets installed from a URL) ─────────────────────── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Plugins" storage-key="cc-settings-plugins"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="Plugins" accordion="cc.settings.section" section="plugins" max-height="none">
       <div class="settings-body">
       <p class="field-hint cc-muted cc-fs-xs">
         Module sets installed from a URL. Plugin code runs unsandboxed, with full access to this machine.
@@ -1213,8 +1206,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── System (service control panel) ──────────────────────────────── -->
-    <CollapsibleSection class="settings-section" label="System" storage-key="cc-settings-system"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection class="settings-section" label="System" accordion="cc.settings.section" section="system" max-height="none">
       <template #after-label><span v-if="diag?.dev" class="svc-tag" v-tooltip.top="'Development server (pixi run dev, Revise hot-reload)'">dev</span></template>
       <div class="settings-body">
 
@@ -1352,8 +1344,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Server — launch-time settings for everyone on this machine (peanut only) ── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine && (tls || thr)" class="settings-section" label="Server" storage-key="cc-settings-server"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="appCtl.canManageMachine && (tls || thr)" class="settings-section" label="Server" accordion="cc.settings.section" section="server" max-height="none">
       <div class="settings-body">
 
       <!-- HTTPS + HTTP/2 preference. Default off: HTTP/2 loads bricks slower (WEBGPU_UPLOAD_PATH_PLAN U4).
@@ -1400,8 +1391,7 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── Shared workstation (app/src/config/shared_workstation.jl) ─────── -->
-    <CollapsibleSection v-if="showShared" data-guide="settings.sharedWorkstation" class="settings-section" label="Shared workstation" storage-key="cc-settings-shared-workstation"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="showShared" data-guide="settings.sharedWorkstation" class="settings-section" label="Shared workstation" accordion="cc.settings.section" section="shared-workstation" max-height="none">
       <div class="settings-body">
       <div v-for="r in sharedRows" :key="r.key" class="field">
         <CcToggle class="toggle-row"
@@ -1420,8 +1410,7 @@ async function switchWt(path: string) {
          picture is. Machine rows come from the user's Claude config (real state); account rows are
          managed by their claude.ai account and are NOT detectable from here, so they carry no dot.
          Row model: utils/mcpConnections.ts -->
-    <CollapsibleSection v-if="observer.ai.enabled" class="settings-section" label="Other MCP connections" storage-key="cc-settings-other-mcp-connections"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="observer.ai.enabled" class="settings-section" label="Other MCP connections" accordion="cc.settings.section" section="other-mcp-connections" max-height="none">
       <div class="settings-body">
 
       <!-- the hint hangs off the pill + the (ellipsable) detail, NEVER the row: a tooltip on a
@@ -1452,16 +1441,14 @@ async function switchWt(path: string) {
     </CollapsibleSection>
 
     <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
-    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="HPC" storage-key="cc-settings-hpc"
-                        :default-open="false" max-height="none">
+    <CollapsibleSection v-if="appCtl.canManageMachine" class="settings-section" label="HPC" accordion="cc.settings.section" section="hpc" max-height="none">
       <div class="settings-body">
       <HpcSettings scope="machine" :project-uid="projectUid" />
       </div>
     </CollapsibleSection>
 
     <!-- ── Troubleshooting — what the maintainer or support needs, one click deeper (GUI clarity audit p4 #15) ── -->
-    <CollapsibleSection class="settings-section" label="Troubleshooting" storage-key="cc-settings-troubleshooting"
-                        :default-open="false" max-height="none" tip="Diagnostics, packages, data patches and the developer console">
+    <CollapsibleSection class="settings-section" label="Troubleshooting" accordion="cc.settings.section" section="troubleshooting" max-height="none" tip="Diagnostics, packages, data patches and the developer console">
       <div class="settings-body">
       <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
       <div class="settings-sub">

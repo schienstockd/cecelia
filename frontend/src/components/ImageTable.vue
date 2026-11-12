@@ -836,8 +836,8 @@ const unselectableUids = computed(() =>
 /* Batch-fix buttons in the Name header (select-flagged, re-sync) */
 .select-flagged-btn { margin-left: 0.3rem; vertical-align: middle; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
-.select-flagged-btn.active { color: #fbbf24; }
-.select-flagged-btn.active:hover { color: #fcd34d; }
+.select-flagged-btn.active { color: var(--cc-warn); }
+.select-flagged-btn.active:hover { color: var(--cc-ink-amber); }
 .select-flagged-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Excluded: greyed but still visible — .cc-row-excluded (style.css), un-dimmed a touch on hover. */
@@ -909,14 +909,14 @@ const unselectableUids = computed(() =>
 /* excluded — icon only, for the same no-shift reason; the note rides its tooltip */
 .excl-badge {
   flex-shrink: 0; display: inline-flex; align-items: center; cursor: help;
-  color: #fca5a5;
+  color: var(--cc-ink-red);
 }
 .excl-badge .pi { font-size: var(--cc-fs-xs); }
 
 /* include/exclude toggle: hidden until row hover like the other row actions, but ALWAYS visible on
    an excluded row so there's an obvious way back */
 .cc-row-excluded .incl-toggle { opacity: 1; }
-.incl-toggle:hover { color: #fca5a5; }
+.incl-toggle:hover { color: var(--cc-ink-red); }
 
 /* exclusion note — editable reason under the uid, only on excluded rows */
 .note-row { display: flex; align-items: center; margin-top: 0.15rem; }
@@ -977,15 +977,15 @@ const unselectableUids = computed(() =>
   font-size: var(--cc-fs-xs); font-weight: 600; padding: 0.15rem 0.5rem;
   border-radius: var(--cc-radius-pill); text-transform: uppercase; letter-spacing: 0.04em;
 }
-.st-pending  { background: #27272a;    color: #71717a; }
+.st-pending  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
 .st-queued   { background: var(--cc-accent-tint);    color: var(--cc-accent-soft); }
-.st-running  { background: #1e3a5f;    color: var(--cc-active); }
-.st-done     { background: #14532d44;  color: #86efac; }
-.st-failed   { background: #7f1d1d44;  color: #fca5a5; }
+.st-running  { background: var(--cc-tint-blue);    color: var(--cc-active); }
+.st-done     { background: var(--cc-tint-green); color: var(--cc-ink-green); }
+.st-failed   { background: var(--cc-tint-red); color: var(--cc-ink-red); }
 
 .spinner {
   width: 7px; height: 7px; border-radius: var(--cc-radius-pill);
-  border: 1.5px solid #93c5fd44; border-top-color: var(--cc-active);
+  border: 1.5px solid color-mix(in srgb, var(--cc-active) 27%, transparent); border-top-color: var(--cc-active);
   animation: spin 0.7s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -1009,10 +1009,10 @@ const unselectableUids = computed(() =>
   opacity: 0.25; transition: opacity 0.12s, color 0.12s, background 0.12s; line-height: 1;
 }
 .sel-row:hover .viewer-btn { opacity: 0.7; }
-.viewer-btn:hover { opacity: 1 !important; color: var(--cc-active); background: #1e3a5f44; }
+.viewer-btn:hover { opacity: 1 !important; color: var(--cc-active); background: var(--cc-tint-blue); }
 .viewer-btn:disabled { opacity: 0.2 !important; cursor: not-allowed; }
-.viewer-active { opacity: 1 !important; color: #f97316; }
-.viewer-active:hover { color: #fb923c; background: #f9731622; }
+.viewer-active { opacity: 1 !important; color: var(--cc-viewer); }
+.viewer-active:hover { color: var(--cc-viewer); background: color-mix(in srgb, var(--cc-viewer) 13%, transparent); }
 
 /* ⋯ actions button: faintly visible at rest (discoverable), full on hover/open */
 .actions-btn { opacity: 0.5; }

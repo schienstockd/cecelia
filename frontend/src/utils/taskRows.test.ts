@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { taskRow, taskRows, taskMatchesQuery, taskPoolOptions, type TaskRowContext } from './taskRows'
+import { taskRow, taskRows, taskMatchesQuery, taskPoolOptions, lastRunSummary, type TaskRowContext } from './taskRows'
 import { sortRows } from './sortRows'
 import type { TaskEntry } from '../stores/tasks'
 
@@ -182,5 +182,19 @@ describe('taskMatchesQuery', () => {
     expect(taskMatchesQuery(t, 'm1a FLOW')).toBe(true)
     expect(taskMatchesQuery(t, 'vjy1nx train')).toBe(true)
     expect(taskMatchesQuery(t, 'm1a denoise')).toBe(false)
+  })
+})
+
+describe('the runner last-run line', () => {
+  it('counts live, done and failed, and keeps the newest finish', () => {
+    const s = lastRunSummary([
+      { status: 'done', finishedAt: new Date('2026-11-11T09:00:00') },
+      { status: 'failed', finishedAt: new Date('2026-11-11T09:30:00') },
+      { status: 'running' }, { status: 'queued' }, { status: 'cancelled', finishedAt: new Date('2026-11-11T08:00:00') },
+    ])
+    expect(s).toEqual({ live: 2, done: 1, failed: 1, lastFinished: new Date('2026-11-11T09:30:00') })
+  })
+  it('is empty with no tasks', () => {
+    expect(lastRunSummary([])).toEqual({ live: 0, done: 0, failed: 0 })
   })
 })

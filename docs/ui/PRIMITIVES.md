@@ -15,7 +15,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
 | The Run of a panel (the one action that starts work) | `.cc-btn .cc-btn-primary .cc-btn-run` — TaskRunner Run, Chains Run, Animation Render, Batch movies Generate | a per-file `.run-btn` with its own colour, size or disabled look |
-| The page's next step (navigates only) | `components/NextStep.vue` — the right panel's footer, or `inline` in the action bar of a page with no right panel (ModuleLayout mounts it); `.cc-btn-next` (plum, `--cc-next-fill`) is its button | a hand-written "go to X" link or button on a page |
+| The page's next step (navigates only) | `components/NextStep.vue` — the right panel's footer, or, on a page with no right panel, the same block as a `footer` in the bottom-right corner (ModuleLayout mounts it); `.cc-btn-next` (plum, `--cc-next-fill`) is its button | a hand-written "go to X" link or button on a page |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
 | Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) | a scoped `.on`/`.active` colour rule |
 | Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |
@@ -95,7 +95,11 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Corner radius | `--cc-radius-xs/sm/md/lg/pill` | a raw `rem`/`px` radius |
 | Small text size | the `--cc-fs-*` token in CSS, or the `.cc-fs-*` class in markup | a raw `rem`/`px` font-size (incl. inline `style=`) |
 | Compact input / select / textarea | `.cc-input-xs` (11px) / `.cc-input-2xs` (10px) — sets size AND padding. **The base is already 12px**, so most fields need neither | a scoped class re-typing the base's border/colour/background to change the size |
-| A colour a token already holds | that token — `var(--cc-accent)`, not `#a78bfa` | a hex literal, **or** a `var(--x, #hex)` fallback (add the token, never a fallback) |
+| ANY colour in component CSS | a `--cc-*` token — scheme-following (surfaces, `--cc-ink-*` text hues, `--cc-tint-*` washes, `--cc-wash`, `--cc-shadow`, `--cc-backdrop`) or fixed (`--cc-hud-*` over images, `--cc-on-solid`/`--cc-on-bright` on a fill, `--cc-paper*` on an export). A tint of a token is `color-mix(in srgb, var(--cc-x) N%, transparent)`. A colour that is not the app's to theme (a data ramp, a figure ground) carries `/* COLOUR-OK: reason */`. See `docs/UI.md` → *Colour schemes* | a hex / `rgba()` / `white` literal (a light scheme leaves it dark), **or** a `var(--x, #hex)` fallback. Enforced by `findColourLiterals` in `utils/cssScenarios.test.ts` |
+| A status chip floating over an image or plot (the post-Save share outcome) | `.cc-hud-chip` (+ `-error`, `-corner` for the canvases' bottom-left spot, `-dismiss` on its ✕) | a scoped `rgba(0,0,0,.78)` + `#fff` chip per canvas (four existed) |
+| The amber box round a warning that must be read before acting | `.cc-callout-warn` (colour only — the host keeps its flex/padding); the line inside is an `InlineNote` where it fits | scoped `#fcd34d` text on a `#7c2d1244` box |
+| Claude's "C" on a card / point / cell, or the "C n" count chip on an aggregate plot | `.cc-claude-badge` (+ `-ring` on a data point) / `.cc-claude-chip` — the host positions it | a scoped magenta circle per plot (six existed) |
+| Re-inking a subtree dark-on-white for an export (PDF/PNG/SVG capture) | the `.cc-light` class on the capture host, for the duration of the export | per-component `--cc-text: #111; …` overrides (four existed, drifting) |
 
 **Pick a scenario, then a size.** `.cc-muted .cc-fs-xs` · `.cc-eyebrow .cc-fs-2xs` ·
 `.cc-readout .cc-fs-2xs` · `.cc-empty-inline .cc-fs-3xs`. The size ladder is ONE shared set of classes

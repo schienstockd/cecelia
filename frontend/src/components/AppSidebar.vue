@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
@@ -8,10 +8,10 @@ import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { allNavGroups, navGroupFor, stageTint, type NavItem } from '../lib/navGroups'
 import { applyProfile } from '../utils/viewProfiles'
-import { profileStorage } from '../utils/profileStorage'
-import { toggleValue } from '../utils/chipSelect'
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
+import { useGuideStore } from '../stores/guide'
+import { NAV_PREFIX } from '../utils/guideAnchor'
 import { pageMaturity } from '../utils/maturity'
-import PanelLaunchers from './PanelLaunchers.vue'
 import MaturityIndicator from './MaturityIndicator.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 import { useProjectStore } from '../stores/project'
@@ -31,32 +31,43 @@ onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded(); viewProfile
 // `ensureLoaded` fetched once at boot and never retried). Also refreshes the per-category cohortFuns.
 watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() })
 
-// Every group starts OPEN and folds on its own (GUI_LAYOUT_PLAN, mock frame 1): with text-only rows
-// the whole menu fits, and seeing every page at once is what answers "where do I click". What is kept
-// is the set of groups the user CLOSED, per profile, so a new group (a custom-module category)
-// arrives open.
-const CLOSED_KEY = 'cc.sidebar.closedGroups'
-function readClosed(): string[] {
-  try { const v = JSON.parse(profileStorage.getItem(CLOSED_KEY) ?? '[]'); return Array.isArray(v) ? v : [] }
-  catch { return [] }
-}
-const closed = ref<string[]>(readClosed())
-watch(closed, v => profileStorage.setItem(CLOSED_KEY, JSON.stringify(v)))
-const isOpen = (heading: string) => !closed.value.includes(heading)
-const toggleGroup = (heading: string) => { closed.value = toggleValue(closed.value, heading) }
+// Accordion: ONE nav group open at a time (maintainer, 2026-11-11: accordions show one entry by
+// default). Same rule + composable as the viewer window's control accordion and Settings. On
+// first-ever load, pick the first shown group so the sidebar isn't empty; after that profileStorage
+// takes over (including an intentional "all closed" state). The headings are plain buttons, not
+// CollapsibleSections, so this script drives the group directly.
+const navGroup = useSingleOpenSection('cc.sidebar.openGroup', '')
+const { open: openGroup, isOpen, toggle: toggleGroup } = navGroup
 
 // static pipeline groups + the dynamic custom-module group (when any new-category modules exist).
 // The catalogue itself lives in lib/navGroups.ts — the view-profile editor and the guide picker read
 // the SAME list, so nothing can offer a page this sidebar doesn't have.
 const allGroups = computed(() => allNavGroups(customModules.categories))
 
-// Follow navigation: arriving on a page in a closed group — by a link elsewhere, a guide, Kiwi pointing
-// at a plot — reopens it, else the menu reads as if nothing changed. Only on a route CHANGE, so a group
-// the user closes on the page they're on stays closed.
+// The first visible group is the DEFAULT until the user picks one — offered, not written, so it never
+// overrides a choice (an explicit "all closed" included) and a later default reaches users who never
+// chose. A blank sidebar reads as broken.
+watch(() => allGroups.value, gs => { if (gs.length) navGroup.offerDefault(gs[0].heading) }, { immediate: true })
+
+// A guide step pointing at a sidebar link (`nav:/gate`, or the page an off-route step belongs to)
+// needs that link on screen: open its group, as arriving on the page would.
+const guide = useGuideStore()
+watch(() => {
+  const s = guide.currentStep
+  const nav = s?.anchor?.startsWith(NAV_PREFIX) ? s.anchor.slice(NAV_PREFIX.length) : null
+  return guide.offRoute && s?.route ? s.route : nav
+}, path => {
+  const g = path ? navGroupFor(allGroups.value, path) : null
+  if (g && !isOpen(g)) openGroup.value = g
+})
+
+// Follow navigation: arriving on a page — by a link elsewhere, a guide, Kiwi pointing at a plot — opens
+// its group, else the accordion keeps showing the old one and the menu reads as if nothing changed.
+// Only on a route CHANGE, so a group the user closes on the page they're on stays closed.
 const route = useRoute()
 watch(() => route.path, p => {
   const g = navGroupFor(allGroups.value, p)
-  if (g && !isOpen(g)) toggleGroup(g)
+  if (g && !isOpen(g)) openGroup.value = g
 })
 
 // The page's maturity: the open page carries its full indicator (dot → map row, and "Something
@@ -117,7 +128,7 @@ function isNavDisabled(item: NavItem): boolean {
             :aria-disabled="isNavDisabled(item)"
           >
             <span class="nav-label">{{ item.label }}</span>
-            <MaturityIndicator v-if="route.path === item.to" class="nav-maturity" :maturity="pageMaturity(item.to)"
+            <MaturityIndicator v-if="route.path === item.to" class="nav-maturity" micro :maturity="pageMaturity(item.to)"
                                :page="item.to" @click.stop.prevent />
             <ComingSoonBadge v-else-if="handCheck(item.to)" tier="experimental" dot class="nav-maturity" />
             <span v-if="item.soon" class="soon-badge">soon</span>
@@ -130,10 +141,6 @@ function isNavDisabled(item: NavItem): boolean {
         </template>
       </template>
     </div>
-
-    <!-- ── The correction cockpit's launcher. Viewer, Lab log and Kiwi moved to the header; this one
-         moves to "Correct labels" on the result line (docs/todo/GUI_LAYOUT_PLAN.md, M3). ── -->
-    <PanelLaunchers :kinds="['correction']" />
 
     <!-- ── Footer: Settings. An app preference, not a pipeline step, so it sits apart from the module
          nav. Quit / Log out / Restart moved to the header's avatar menu. -->

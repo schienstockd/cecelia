@@ -81,7 +81,7 @@ const zoomLabel = computed(() =>
 /* Placed by the parent — the viewer's top-right corner column. */
 .vw-gizmo {
   position: relative;
-  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs);
   pointer-events: auto; touch-action: none;
   display: flex; flex-direction: column;
@@ -90,7 +90,7 @@ const zoomLabel = computed(() =>
 .vw-gizmo-lbl {
   font: 600 var(--cc-fs-3xs) / 1 system-ui, sans-serif;
   paint-order: stroke;
-  stroke: rgba(0, 0, 0, 0.9);
+  stroke: var(--cc-hud-halo);
   stroke-width: 2;
   stroke-linejoin: round;
 }
@@ -101,7 +101,7 @@ const zoomLabel = computed(() =>
   text-align: center;
   padding: 0.15rem 0.35rem;
   font: 600 var(--cc-fs-2xs) / 1 system-ui, sans-serif;
-  color: #fff;
+  color: var(--cc-hud-text);
   border-top: 1px solid var(--cc-border);
   font-variant-numeric: tabular-nums;
 }

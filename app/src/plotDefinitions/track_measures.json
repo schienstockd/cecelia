@@ -3,6 +3,7 @@
   "label": "Track measures",
   "module": "behaviourAnalysis",
   "family": "summary",
+  "defaultOn": ["behaviourAnalysis"],
   "chartTypes": ["histogram", "boxplot", "violin", "bar", "strip"],
   "whiteboardCompatible": true,
   "dataSource": {

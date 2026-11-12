@@ -259,3 +259,15 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: project list counts sets and images from the manifests" begin
+    mktempdir() do dir
+        mkpath(joinpath(dir, "1", "SetA")); mkpath(joinpath(dir, "1", "SetB"))
+        write(joinpath(dir, "1", "SetA", "ccid.json"), """{"image_uids": ["i1", "i2", "i3"]}""")
+        write(joinpath(dir, "1", "SetB", "ccid.json"), "{ not json")
+        raw = Dict{String,Any}("set_uids" => ["SetA", "SetB", "SetGone"])
+        @test _project_counts(dir, raw) == (3, 3)          # a broken or missing set counts, its images do not
+        @test _project_counts(dir, Dict{String,Any}()) == (0, 0)
+        @test _project_counts(dir, Dict{String,Any}("set_uids" => [])) == (0, 0)
+    end
+end
