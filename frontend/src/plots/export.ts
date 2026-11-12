@@ -43,6 +43,37 @@ async function rasterize(svgUrl: string, w: number, h: number): Promise<string |
   })
 }
 
+// Which elements of an exported host are left out (GUI chrome, not content). Called with the LIVE
+// element; returning true drops it and everything under it.
+export type ExportExclude = (el: Element) => boolean
+
+// The structural slice of `Element` the two helpers below touch — kept minimal so they test without a DOM.
+interface PruneNode { readonly children: ArrayLike<PruneNode>; remove(): void }
+interface AncestorNode { readonly parentElement: AncestorNode | null }
+
+// Remove from `dst` (a deep clone of `src`) every node whose `src` counterpart `exclude` matches.
+// Matches are collected first and removed after: removing during the walk would shift the parallel
+// `children` indices the walk relies on.
+export function pruneExcluded<N extends PruneNode>(src: N, dst: N, exclude: (el: N) => boolean): void {
+  const drop: PruneNode[] = []
+  const walk = (s: N, d: N) => {
+    const sc = s.children, dc = d.children
+    for (let i = 0; i < sc.length; i++) {
+      if (exclude(sc[i] as N)) drop.push(dc[i])
+      else walk(sc[i] as N, dc[i] as N)
+    }
+  }
+  walk(src, dst)
+  for (const n of drop) n.remove()
+}
+
+// True when `el` or an ancestor below `host` is excluded — a canvas inside excluded chrome (the
+// overview minimap's tissue canvas) is skipped in the pixel pass too.
+export function insideExcluded<N extends AncestorNode>(el: N, host: N, exclude: (el: N) => boolean): boolean {
+  for (let a: N | null = el; a && a !== host; a = a.parentElement as N | null) if (exclude(a)) return true
+  return false
+}
+
 // recursively copy COMPUTED styles from a live tree onto its clone (so a detached clone rasterises
 // with the same look — scoped-CSS classes don't apply inside a serialised <foreignObject>).
 function inlineComputedStyles(src: Element, dst: Element) {
@@ -67,13 +98,16 @@ function inlineComputedStyles(src: Element, dst: Element) {
 // `bg` = 'transparent' (or '') → no background fill (for compositing over already-drawn canvas pixels).
 // `opts.blankCanvases` hides <canvas> in the clone (their pixels are composited separately — a canvas
 // serialises blank inside foreignObject, and its CSS background would otherwise cover the composite).
+// `opts.exclude` drops every element it matches (and its subtree) from the clone — GUI chrome over a
+// canvas (a viewer's playback bar, its overview minimap) that must not land in the exported image.
 export async function elementToImageURL(el: HTMLElement | null, type: 'png' | 'svg', bg: string,
-                                        opts: { blankCanvases?: boolean } = {}): Promise<string | null> {
+                                        opts: { blankCanvases?: boolean; exclude?: ExportExclude } = {}): Promise<string | null> {
   if (!el) return null
   const w = el.clientWidth || el.offsetWidth, h = el.clientHeight || el.offsetHeight
   if (!w || !h) return null
   const clone = el.cloneNode(true) as HTMLElement
-  inlineComputedStyles(el, clone)
+  inlineComputedStyles(el, clone)   // walks src/clone in parallel, so it runs BEFORE any pruning
+  if (opts.exclude) pruneExcluded(el, clone, opts.exclude)
   const transparent = !bg || bg === 'transparent'
   if (transparent) clone.style.background = 'transparent'
   if (opts.blankCanvases) for (const cv of Array.from(clone.querySelectorAll('canvas'))) {
@@ -110,8 +144,10 @@ export function loadImg(url: string): Promise<HTMLImageElement | null> {
 // (each canvas layer re-renders its content at `scale`× — the on-screen backing store
 // is only CSS×DPR, so drawing the live canvas would upscale and pixelate). Resolver returns null →
 // composite the live canvas as-is (canvas2D overlays with no hi-res path).
+// `opts.exclude` leaves matching elements out of BOTH passes (see `elementToImageURL`).
 export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
-  opts: { hiRes?: (cv: HTMLCanvasElement, scale: number) => Promise<CanvasImageSource | null>; scale?: number } = {}): Promise<string | null> {
+  opts: { hiRes?: (cv: HTMLCanvasElement, scale: number) => Promise<CanvasImageSource | null>; scale?: number;
+          exclude?: ExportExclude } = {}): Promise<string | null> {
   if (!host) return null
   const w = host.clientWidth || host.offsetWidth, h = host.clientHeight || host.offsetHeight
   if (!w || !h) return null
@@ -129,11 +165,12 @@ export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
   // zoomed board/module (scale ≠ 1) exports the dots/gate at a different scale than the axis ticks.
   const k = w ? hr.width / w : 1
   for (const cv of Array.from(host.querySelectorAll('canvas'))) {
+    if (opts.exclude && insideExcluded<Element>(cv, host, opts.exclude)) continue
     const r = cv.getBoundingClientRect()
     const hi = opts.hiRes ? await opts.hiRes(cv, scale) : null
     try { ctx.drawImage(hi ?? cv, (r.left - hr.left) / k, (r.top - hr.top) / k, r.width / k, r.height / k) } catch { /* tainted/empty */ }
   }
-  const overlayUrl = await elementToImageURL(host, 'svg', 'transparent', { blankCanvases: true })
+  const overlayUrl = await elementToImageURL(host, 'svg', 'transparent', { blankCanvases: true, exclude: opts.exclude })
   if (overlayUrl) { const img = await loadImg(overlayUrl); if (img) ctx.drawImage(img, 0, 0, w, h) }
   return c.toDataURL('image/png')
 }
