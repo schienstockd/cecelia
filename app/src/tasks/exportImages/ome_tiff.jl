@@ -123,8 +123,8 @@ function _run_task(task::ExportOmeTiff, img::CciaImage, params::Dict{String,Any}
     #
     # Names come from `channel_names`, which falls back to the ACTIVE version when the requested one
     # has no entry of its own — names are typically registered only under `default` while processed
-    # versions carry none. That fallback is the whole point of the helper, and reading the raw
-    # versioned field instead (`ccid_channel_names(raw, value_name)`) is what made this report
+    # versions carry none. That fallback is the whole point of the helper (`ccid_channel_names` now
+    # shares it), and reading the raw versioned field instead, with no fallback, is what made this report
     # "(none registered)" for an image whose channels the picker was happily listing: the picker is
     # fed by `channel_names(img)` in the image payload, so anything else disagrees with the UI.
     all_names = something(channel_names(img; value_name = p.valueName), String[])
