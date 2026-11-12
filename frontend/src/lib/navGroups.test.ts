@@ -24,7 +24,7 @@ function routerPaths(): string[] {
 // list exists to keep visible rather than tolerate silently.
 const NOT_IN_MENU: Record<string, string> = {
   '/':                  'the neutral welcome page — the shell is the landmark, not a nav row',
-  '/settings':          'lives in the sidebar FOOTER, and must never be hideable (a profile could strand the user)',
+  '/settings':          'opens the Settings modal (sidebar FOOTER); never hideable — a profile could strand the user',
   '/console':           'bare route, opened in its own window',
   '/tasks-window':      'bare route, the Task Manager opened in its own window',
   '/viewer-window':     'bare route, the volume viewer opened in its own window from the viewer panel',

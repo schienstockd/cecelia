@@ -1,19 +1,18 @@
 <script setup lang="ts">
 // PreferencesModal — the active profile's per-user preferences (USER_PROFILE_PLAN Phase 4).
-// Two-pane layout (Firefox / Thunderbird / GNOME Settings pattern): category list left, the
-// selected category's fields right. Every field two-way-binds to a ref on `useSettingsStore`;
+// Two-pane layout (`SettingsShell`, shared with Settings): category list left, the selected
+// category's fields right. Every field two-way-binds to a ref on `useSettingsStore`;
 // the store's own PATCH debouncer coalesces changes into one `/api/profile/settings/patch`
 // round-trip per burst, so this component has no save button — writes are automatic.
 //
 // This modal edits the *active* profile's settings only; it is NOT a shared machine panel.
-// Machine-scoped settings (VRAM budget, image compressor, storage layout, plugin registry,
-// port toggles) stay on SettingsModule.vue (soon rebranded "System settings" as Phase 4
-// tidies up).
+// Machine-scoped settings (image compressor, storage layout, plugin registry, port toggles) live
+// on SettingsModal.vue, the same shell.
 import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { renameLiveMirrorOwner } from '../utils/profileStorage'
-import BaseModal from './BaseModal.vue'
+import SettingsShell, { type SettingsCategory } from './SettingsShell.vue'
 import CcToggle from './CcToggle.vue'
 import ChipSelect from './ChipSelect.vue'
 import { COLOUR_SCHEMES, type ColourScheme } from '../utils/colourScheme'
@@ -32,8 +31,8 @@ import { fetchSharedWorkstation } from '../utils/sharedWorkstation'
 import { AI_OFF_COPY } from '../utils/aiSwitch'
 import { openAiOptIn } from '../lib/aiOptInOpen'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
-         isValidProfileName, profileDisplayName,
-         type ProfileRoster } from '../utils/profileApi'
+         isValidProfileName, profileDisplayName, profileRowActions,
+         type Profile, type ProfileRoster } from '../utils/profileApi'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -44,7 +43,7 @@ const appCtl   = useAppControlStore()
 // answer to "how do I switch" needs to be one click away. The other panes follow roughly by how
 // often they get touched.
 type CategoryId = PreferencesPane
-const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
+const CATEGORIES: SettingsCategory<CategoryId>[] = [
   { id: 'profiles',  label: 'Profiles',  icon: 'pi-user' },
   { id: 'interface', label: 'Interface', icon: 'pi-sliders-h' },
   { id: 'viewer',    label: 'Viewer',    icon: 'pi-eye' },
@@ -65,6 +64,7 @@ const roster = ref<ProfileRoster>({
   profiles: [{ name: 'default', dir: '', isDefault: true, retired: false }],
   legacyReserved: ['legacy'],
 })
+const rowActions = (p: Profile) => profileRowActions(p, roster.value.active, appCtl.canManageMachine)
 const profilesBusy = ref<string>('')      // name currently being selected/retired — drives per-row spinner
 const profilesError = ref<string | null>(null)
 const showCreateProfile = ref(false)
@@ -206,404 +206,368 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 </script>
 
 <template>
-  <BaseModal title="Preferences" icon="pi-user" width="720px" height="560px" @close="$emit('close')">
-    <div class="pref-cols">
-      <!-- Left: category list. Keeps focus discipline (arrow keys, click). -->
-      <nav class="pref-nav" aria-label="Preference categories">
-        <button v-for="c in CATEGORIES" :key="c.id"
-                class="pref-nav-btn"
-                :class="{ 'pref-nav-btn-active': active === c.id }"
-                @click="active = c.id">
-          <i :class="['pi', c.icon]" />
-          <span>{{ c.label }}</span>
+  <SettingsShell v-model="active" title="Preferences" icon="pi-user" :categories="CATEGORIES"
+                 aria-label="Preference categories" @close="$emit('close')">
+    <!-- ── Profiles ──────────────────────────────────────────────────── -->
+    <template #profiles>
+      <p class="pref-note cc-muted cc-fs-xs">
+        Profiles set Kiwi's login, preferences and projects. Switching reloads the app.
+      </p>
+      <!-- One grid for the whole list (rows are subgrid rows), so every action owns a fixed
+           column: Switch never moves when Rename/Delete aren't offered on a row. -->
+      <ul class="pp-list" data-guide="prefs.profilesPane">
+        <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
+            :class="{ 'pp-row-active': p.name === roster.active,
+                      'pp-row-retired': p.retired }">
+          <!-- Inline rename: the name span becomes an <input> when `renamingName` matches. Enter
+               commits, Escape cancels. Client-side validity mirrors the server rule
+               (`isValidProfileName`) so the save button gates before the round-trip. -->
+          <template v-if="renamingName === p.name">
+            <span class="pp-name pp-name-edit">
+              <i class="pi pi-pencil" />
+              <input v-model="renameDraft" class="pp-rename-input"
+                     v-tooltip.bottom="'1-32 chars, lower-ASCII alnum + `-` / `_`'"
+                     @keyup.enter="commitRename"
+                     @keyup.escape="cancelRename" />
+            </span>
+            <span class="cc-row cc-row-tight pp-actions-edit">
+              <button class="cc-btn cc-btn-primary cc-fs-xs"
+                      :disabled="!renameDraftValid || !!profilesBusy"
+                      @click="commitRename"
+                      v-tooltip.bottom="'Save the new name'">
+                <i class="pi pi-check" /> Save
+              </button>
+              <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="cancelRename"
+                      v-tooltip.bottom="'Cancel — keep the old name'">
+                <i class="pi pi-times" />
+              </button>
+            </span>
+          </template>
+          <template v-else>
+            <span class="pp-name">
+              <i class="pi" :class="p.retired ? 'pi-user-minus' : 'pi-user'" />
+              {{ profileDisplayName(p) }}
+              <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
+              <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
+              <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
+            </span>
+            <!-- Which actions a row offers: `profileRowActions` (utils/profileApi.ts) — peanut
+                 manages every profile; anyone else renames only their own. Each cell renders
+                 even when empty, so the columns hold their place. -->
+            <span class="pp-cell">
+              <button v-if="rowActions(p).switch"
+                      class="cc-btn cc-btn-ghost cc-fs-xs"
+                      :disabled="!!profilesBusy"
+                      @click="pickProfile(p.name)"
+                      v-tooltip.bottom="`Switch to ${profileDisplayName(p)} — the app will reload`">
+                <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
+                Switch
+              </button>
+            </span>
+            <span class="pp-cell">
+              <button v-if="rowActions(p).rename"
+                      class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
+                      :disabled="!!profilesBusy"
+                      @click="startRename(p.name)"
+                      v-tooltip.bottom="'Rename — past turn logs still reference the old name'">
+                <i class="pi pi-pencil" />
+              </button>
+            </span>
+            <span class="pp-cell">
+              <ConfirmDeleteButton v-if="rowActions(p).delete"
+                                   :disabled="!!profilesBusy"
+                                   title="Delete this profile — credentials + settings + turn provenance gone"
+                                   armed-title="Click again to permanently delete this profile"
+                                   @confirm="deleteProfileByName(p.name)" />
+            </span>
+          </template>
+        </li>
+      </ul>
+
+      <p v-if="profilesError" class="pref-error cc-fs-md">
+        <i class="pi pi-exclamation-circle" /> {{ profilesError }}
+      </p>
+
+      <div class="cc-row cc-row-tight" style="flex-wrap:wrap; margin-top:0.6rem;">
+        <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.newProfile"
+                @click="showCreateProfile = true"
+                v-tooltip.top="'A separate credential + MCP scope for this seat login'">
+          <i class="pi pi-user-plus" /> New profile
         </button>
-      </nav>
+        <!-- Retire (LOGIN_CREDENTIAL_ISOLATION_PLAN D11). Only offered when the active
+             profile is a named, non-retired one — retiring `default` is meaningless. -->
+        <ConfirmButton v-if="roster.active !== 'default' &&
+                             !roster.profiles.find(p => p.name === roster.active)?.retired"
+                       @confirm="retireActive" v-slot="{ armed, press }">
+          <button class="cc-btn cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                  :disabled="!!profilesBusy" @click="press"
+                  v-tooltip.top="armed ? `Click again to retire ${roster.active}`
+                                       : 'Retire this profile — non-selectable after, data stays on disk'">
+            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-user-minus'" />
+            Retire active
+          </button>
+        </ConfirmButton>
+      </div>
+    </template>
 
-      <!-- Right: the selected category's fields. Every control writes straight to the store. -->
-      <section class="pref-pane">
+    <!-- ── Interface ─────────────────────────────────────────────────── -->
+    <!-- Grouped by WHAT THE TOGGLE IS ABOUT, not alphabetically — 10 unrelated switches read
+         as noise. Subheadings match the primitive on the page they affect (Task Manager,
+         the moment tasks finish, the Import dialog, the update checker, first launch). Two
+         items relocated to the panes where the affected surface lives:
+         `animationSyncViewer` → Movies (animation is the Movies page's sibling),
+         `viewerAutoSaveLayerProps` → Viewer (formerly Overlays). -->
+    <template #interface>
+      <div class="pref-group cc-eyebrow cc-fs-2xs">Appearance</div>
+      <ChipSelect :options="[...COLOUR_SCHEMES]" :model-value="settings.colourScheme"
+                  aria-label="Colour scheme"
+                  v-tooltip.bottom="'App colours only — images and exports stay as they are'"
+                  @update:model-value="settings.colourScheme = $event as ColourScheme" />
 
-        <!-- ── Profiles ──────────────────────────────────────────────────── -->
-        <template v-if="active === 'profiles'">
-          <p class="pref-note cc-muted cc-fs-xs">
-            Profiles set Kiwi's login, preferences and projects. Switching reloads the app.
-          </p>
-          <ul class="pp-list" data-guide="prefs.profilesPane">
-            <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
-                :class="{ 'pp-row-active': p.name === roster.active,
-                          'pp-row-retired': p.retired }">
-              <!-- Inline rename: the name span becomes an <input> when this row is being renamed.
-                   Enter commits, Escape cancels. Client-side validity mirrors the server rule
-                   (`isValidProfileName`) so the save button gates before the round-trip. -->
-              <template v-if="renamingName === p.name">
-                <span class="pp-name pp-name-edit">
-                  <i class="pi pi-pencil" />
-                  <input v-model="renameDraft" class="pp-rename-input"
-                         v-tooltip.bottom="'1-32 chars, lower-ASCII alnum + `-` / `_`'"
-                         @keyup.enter="commitRename"
-                         @keyup.escape="cancelRename" />
-                </span>
-                <span class="cc-row cc-row-tight">
-                  <button class="cc-btn cc-btn-primary cc-fs-xs"
-                          :disabled="!renameDraftValid || !!profilesBusy"
-                          @click="commitRename"
-                          v-tooltip.bottom="'Save the new name'">
-                    <i class="pi pi-check" /> Save
-                  </button>
-                  <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="cancelRename"
-                          v-tooltip.bottom="'Cancel — keep the old name'">
-                    <i class="pi pi-times" />
-                  </button>
-                </span>
-              </template>
-              <template v-else>
-                <span class="pp-name">
-                  <i class="pi" :class="p.retired ? 'pi-user-minus' : 'pi-user'" />
-                  {{ profileDisplayName(p) }}
-                  <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
-                  <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
-                  <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
-                </span>
-                <span class="cc-row cc-row-tight">
-                  <!-- Switch: any non-active, non-retired profile — INCLUDING `default`. Excluding
-                       default was the bug that stranded users who wanted to go back to `~/.claude`. -->
-                  <button v-if="p.name !== roster.active && !p.retired"
-                          class="cc-btn cc-btn-ghost cc-fs-xs"
-                          :disabled="!!profilesBusy"
-                          @click="pickProfile(p.name)"
-                          v-tooltip.bottom="`Switch to ${profileDisplayName(p)} — the app will reload`">
-                    <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
-                    Switch
-                  </button>
-                  <!-- Rename: not offered for `default` (magic name) or retired profiles (the
-                       retired marker is a stable reference — renaming would silently invalidate
-                       both semantics). See USER_PROFILE_PLAN Decision 11. -->
-                  <button v-if="!p.isDefault && !p.retired"
-                          class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
-                          :disabled="!!profilesBusy"
-                          @click="startRename(p.name)"
-                          v-tooltip.bottom="'Rename — past turn logs still reference the old name'">
-                    <i class="pi pi-pencil" />
-                  </button>
-                  <!-- Delete: not offered for `default` or the active profile (server enforces
-                       both; the button just doesn't render). Canonical ConfirmDeleteButton. -->
-                  <ConfirmDeleteButton v-if="!p.isDefault && p.name !== roster.active"
-                                       :disabled="!!profilesBusy"
-                                       title="Delete this profile — credentials + settings + turn provenance gone"
-                                       armed-title="Click again to permanently delete this profile"
-                                       @confirm="deleteProfileByName(p.name)" />
-                </span>
-              </template>
-            </li>
-          </ul>
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Task Manager</div>
+      <CcToggle v-model="settings.taskListAutoFollow"
+                label="Auto-follow running tasks"
+                v-tooltip.bottom="'When a task starts, select it in the manager log panel'" />
+      <CcToggle v-model="settings.tasksThisProjectOnly"
+                label="Show only the open project"
+                v-tooltip.bottom="'Off: also shows tasks from other projects'" />
+      <CcToggle v-model="settings.tasksShowHistory"
+                label="Also show durable run history"
+                v-tooltip.bottom="'On: previous runs from the log, not just this session'" />
 
-          <p v-if="profilesError" class="pref-error cc-fs-md">
-            <i class="pi pi-exclamation-circle" /> {{ profilesError }}
-          </p>
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">When tasks finish</div>
+      <CcToggle v-model="settings.autoRefreshOnTask"
+                label="Refresh plots"
+                v-tooltip.bottom="'Reload plots automatically when a task succeeds'" />
+      <CcToggle v-model="settings.viewerAutoUpdate"
+                label="Refresh the viewer"
+                v-tooltip.bottom="'Heavy on large images — default off'" />
 
-          <div class="cc-row cc-row-tight" style="flex-wrap:wrap; margin-top:0.6rem;">
-            <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.newProfile"
-                    @click="showCreateProfile = true"
-                    v-tooltip.top="'A separate credential + MCP scope for this seat login'">
-              <i class="pi pi-user-plus" /> New profile
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Import</div>
+      <CcToggle v-model="settings.importPyramidAdvisor"
+                label="Suggest pyramid levels"
+                v-tooltip.bottom="'Peek source dims to advise a level count'" />
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Launch</div>
+      <CcToggle v-model="settings.tipsOnLaunch"
+                label="Show tip of the day"
+                v-tooltip.bottom="'Prepends the daily tip to the What is New modal once per day'" />
+    </template>
+
+    <!-- ── Viewer (behaviour + on-image chrome + sizes) ─────────────── -->
+    <template #viewer>
+      <div class="pref-group cc-eyebrow cc-fs-2xs">Behaviour</div>
+      <CcToggle v-model="settings.viewerAutoSaveLayerProps"
+                label="Autosave viewer layer props per image"
+                v-tooltip.bottom="'Contrast, colormap, T/Z snapshot every image change'" />
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">On-image chrome</div>
+      <CcToggle v-model="settings.viewerScaleBar" label="Show scale bar"
+                v-tooltip.bottom="'Draw the calibrated scale bar over every frame'" />
+      <CcToggle v-model="settings.viewerTimestamp" label="Show elapsed timestamp"
+                v-tooltip.bottom="'Draw elapsed time on time-lapse frames'" />
+      <CcToggle v-model="settings.viewerGrid" label="Show grid (SoM overlay)"
+                v-tooltip.bottom="'Set-of-Mark reference grid for pointing at regions'" />
+      <CcToggle v-model="settings.viewerLandscape" label="Show landscape overlay"
+                v-tooltip.bottom="'Tile-level semantic heatmap over the frame'" />
+      <CcToggle v-model="settings.viewerLandscapeLabels" label="Show landscape debug labels"
+                v-tooltip.bottom="'Print the k-means category on each landscape tile'" />
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Sizes (px)</div>
+      <label class="pref-num">Scale bar text
+        <input type="number" min="8" max="60" v-model.number="settings.viewerScaleBarPx"
+               v-tooltip.bottom="'Overlay text size in screen pixels'" /></label>
+      <label class="pref-num">Timestamp text
+        <input type="number" min="8" max="60" v-model.number="settings.viewerTimestampPx"
+               v-tooltip.bottom="'Overlay text size in screen pixels'" /></label>
+      <label class="pref-num">Point size
+        <input type="number" min="1" max="30" v-model.number="settings.viewerPointSize"
+               v-tooltip.bottom="'Cell marker size in image pixels — scales with zoom'" /></label>
+      <label class="pref-num">Point outline
+        <input type="number" min="0" max="10" v-model.number="settings.viewerPointBorder"
+               v-tooltip.bottom="'Black outline width around each point; 0 = no outline'" /></label>
+      <label class="pref-num">Grid density
+        <input type="number" min="2" max="32" v-model.number="settings.viewerGridDensity"
+               v-tooltip.bottom="'Cells per axis on the grid + landscape overlays'" /></label>
+      <label class="pref-num">Tail length (frames)
+        <input type="number" min="0" max="500" v-model.number="settings.viewerTailLength"
+               v-tooltip.bottom="'Track tail length in frames; 0 hides tails'" /></label>
+      <label class="pref-num">Tail width
+        <input type="number" min="0" max="12" v-model.number="settings.viewerTailWidth"
+               v-tooltip.bottom="'Track tail width in image pixels — scales with zoom'" /></label>
+      <label class="pref-num">Label opacity (0-1)
+        <input type="number" min="0" max="1" step="0.05" v-model.number="settings.viewerLabelOpacity"
+               v-tooltip.bottom="'Segmentation mask fill opacity; 0 = invisible, 1 = solid'" /></label>
+      <label class="pref-num">Label contour (voxels)
+        <input type="number" min="0" max="8" v-model.number="settings.viewerLabelContour"
+               v-tooltip.bottom="'Outline width in voxels; 0 = filled mask'" /></label>
+      <label class="pref-num">Point z-tolerance
+        <input type="number" min="0" max="20" v-model.number="settings.viewerPointZTol"
+               v-tooltip.bottom="'Planes either side of a single 2D plane that still show a cell'" /></label>
+      <label class="pref-num">Track z-tolerance
+        <input type="number" min="0" max="20" v-model.number="settings.viewerTrackZTol"
+               v-tooltip.bottom="'Planes either side of a single 2D plane that still show a tail'" /></label>
+    </template>
+
+    <!-- ── Movies ────────────────────────────────────────────────────── -->
+    <template #movies>
+      <div class="pref-group cc-eyebrow cc-fs-2xs">Playback</div>
+      <label class="pref-num">Playback rate
+        <input type="number" min="0.1" max="8" step="0.1" v-model.number="settings.moviesPlaybackRate"
+               v-tooltip.bottom="'Movies page playback speed multiplier'" /></label>
+      <label class="pref-num">Zoom
+        <input type="number" min="0.1" max="8" step="0.1" v-model.number="settings.moviesZoom"
+               v-tooltip.bottom="'Movies page zoom multiplier'" /></label>
+      <CcToggle v-model="settings.moviesAutoplay" label="Autoplay on select"
+                v-tooltip.bottom="'Start playback as soon as a movie is opened'" />
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">On end</div>
+      <select class="pref-input" v-model="settings.moviesEndMode"
+              v-tooltip.bottom="'What happens when a movie ends'">
+        <option value="stop">Stop</option>
+        <option value="repeat">Repeat</option>
+        <option value="next">Play next</option>
+      </select>
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Movie list</div>
+      <CcToggle v-model="settings.moviesShowDetails" label="Show Details columns"
+                v-tooltip.bottom="'Extra columns on the movie list — channels + attributes'" />
+      <label class="pref-num" style="margin-top:0.35rem">Channel scope
+        <select class="pref-input" v-model="settings.moviesChannelMode"
+                v-tooltip.bottom="'Which channels fill the Details columns'">
+          <option value="image">Image channels</option>
+          <option value="movie">Movie channels only</option>
+        </select></label>
+
+      <!-- Animation page settings live here (sibling of Movies) — the Animation page banks
+           per-keyframe view state on top of movie-page state, so a user who cares about one
+           often cares about the other. -->
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Animation page</div>
+      <CcToggle v-model="settings.animationSyncViewer"
+                label="Sync the animation page to the viewer"
+                v-tooltip.bottom="'Selecting a keyframe pushes its view into the viewer'" />
+    </template>
+
+    <!-- ── Layout ────────────────────────────────────────────────────── -->
+    <template #layout>
+      <!-- Only what no live control already sets. The sidebar (☰), the task panel (its chevron) and
+           the floating panels (the header launchers) persist through those controls. -->
+      <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Collapse viewer-window controls"
+                v-tooltip.bottom="'Hide the viewer pop-out sidebar (independent of the module page)'" />
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Correction cockpit mode</div>
+      <select class="pref-input" v-model="settings.correctionCockpitMode"
+              v-tooltip.bottom="'Which mode the correction cockpit opens in'">
+        <option value="tracks">Tracks</option>
+        <option value="labels">Labels</option>
+        <option value="review">Review</option>
+      </select>
+
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Viewer selection mode</div>
+      <select class="pref-input" v-model="settings.viewerSelectMode"
+              v-tooltip.bottom="'What a viewer click does — pan/zoom, or Select a cell'">
+        <option value="off">Off</option>
+        <option value="select">Select</option>
+      </select>
+    </template>
+
+    <!-- ── Kiwi ──────────────────────────────────────────────────────── -->
+    <template #kiwi>
+      <!-- The AI switch for this profile (utils/aiSwitch.ts). ON goes through the opt-in dialog;
+           OFF is immediate. Locked when peanut turned AI off for the workstation. -->
+      <CcToggle :model-value="observer.ai.enabled" :disabled="observer.ai.setBy === 'workstation'"
+                label="AI features"
+                v-tooltip.bottom="observer.ai.setBy === 'workstation' ? AI_OFF_COPY.workstation
+                                  : 'Kiwi, claim review and Claude in the terminal'"
+                @update:model-value="onAiToggle" />
+      <CcToggle v-if="!observer.ai.enabled" style="margin-top:0.4rem"
+                :model-value="!settings.kiwiHidden" label="Show the Kiwi button"
+                v-tooltip.bottom="'Opens a short note while AI is off'"
+                @update:model-value="settings.kiwiHidden = !$event" />
+      <template v-if="observer.ai.enabled">
+      <CcToggle v-model="settings.kiwiReasoning"
+                label="Think first (write reasoning before claims)"
+                v-tooltip.bottom="'~40% more tokens; no measurable quality gain in comparison'" />
+      <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Model</div>
+      <select class="pref-input" v-model="settings.kiwiModel"
+              v-tooltip.bottom="'Which Claude model Kiwi turns run under'">
+        <!-- the ONE Kiwi model picker; options are the backend allow-list (OBSERVER_MODELS) -->
+        <option v-for="m in observer.models" :key="m" :value="m">{{ m.charAt(0).toUpperCase() + m.slice(1) }}</option>
+      </select>
+      </template>
+      <!-- never peanut: its conversations are terminal claude's (claude_conversations.jl) -->
+      <CcToggle v-if="appCtl.activeProfileName !== 'default'" style="margin-top:0.8rem"
+                :model-value="settings.purgeClaudeConversations || purgeForcedByWorkstation"
+                :disabled="purgeForcedByWorkstation"
+                label="Delete my conversations on log out"
+                v-tooltip.bottom="purgeForcedByWorkstation ? 'Required on this workstation'
+                                  : 'Transcripts and prompt history; your Claude memory stays'"
+                @update:model-value="settings.purgeClaudeConversations = $event" />
+      <template v-if="observer.ai.enabled">
+      <!-- The Cecelia plugin (observer MCP + caller hook) in this profile's Claude config — set up once per profile. -->
+      <template v-if="observerRow">
+        <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia plugin</div>
+        <div class="pk-mcp">
+          <span class="pk-state cc-fs-sm" v-tooltip.top="observerRow.hint">
+            <span class="cc-dot" :class="dotClass(observerRow.tone)" /> {{ observerRow.label }}
+          </span>
+          <span v-if="observerInstallShort" class="pk-install cc-muted cc-fs-xs"
+                v-tooltip.top="observerRow.installPath">{{ observerInstallShort }}</span>
+          <button v-if="observerRow.tone === 'warn'" class="cc-btn cc-btn-ghost cc-fs-xs"
+                  :disabled="observer.registering" @click="observer.registerMcp()"
+                  v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
+            <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
+            {{ observer.registering ? CLAUDE_TERMINAL.busy
+               : terminalCta(observer.available, observer.terminalState) === 'resync'
+                 ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
+          </button>
+        </div>
+        <!-- one-click setup FAILED: the resolved command to run by hand, next to the row it fixes -->
+        <div v-if="observer.registerError" class="pk-note cc-row cc-row-tight">
+          <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
+          <template v-if="observerFallbackCommand">
+            <code class="cc-fs-2xs">{{ observerFallbackCommand }}</code>
+            <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyObserverFallback"
+                    v-tooltip.left="observerCmdCopied() ? 'Copied!' : 'Copy command'">
+              <i :class="observerCmdCopied() ? 'pi pi-check' : 'pi pi-copy'" />
             </button>
-            <!-- Retire (LOGIN_CREDENTIAL_ISOLATION_PLAN D11). Only offered when the active
-                 profile is a named, non-retired one — retiring `default` is meaningless. -->
-            <ConfirmButton v-if="roster.active !== 'default' &&
-                                 !roster.profiles.find(p => p.name === roster.active)?.retired"
-                           @confirm="retireActive" v-slot="{ armed, press }">
-              <button class="cc-btn cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
-                      :disabled="!!profilesBusy" @click="press"
-                      v-tooltip.top="armed ? `Click again to retire ${roster.active}`
-                                           : 'Retire this profile — non-selectable after, data stays on disk'">
-                <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-user-minus'" />
-                Retire active
-              </button>
-            </ConfirmButton>
-          </div>
-        </template>
-
-        <!-- ── Interface ─────────────────────────────────────────────────── -->
-        <!-- Grouped by WHAT THE TOGGLE IS ABOUT, not alphabetically — 10 unrelated switches read
-             as noise. Subheadings match the primitive on the page they affect (Task Manager,
-             the moment tasks finish, the Import dialog, the update checker, first launch). Two
-             items relocated to the panes where the affected surface lives:
-             `animationSyncViewer` → Movies (animation is the Movies page's sibling),
-             `viewerAutoSaveLayerProps` → Viewer (formerly Overlays). -->
-        <template v-if="active === 'interface'">
-          <div class="pref-group cc-eyebrow cc-fs-2xs">Appearance</div>
-          <ChipSelect :options="[...COLOUR_SCHEMES]" :model-value="settings.colourScheme"
-                      aria-label="Colour scheme"
-                      v-tooltip.bottom="'App colours only — images and exports stay as they are'"
-                      @update:model-value="settings.colourScheme = $event as ColourScheme" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Task Manager</div>
-          <CcToggle v-model="settings.taskListAutoFollow"
-                    label="Auto-follow running tasks"
-                    v-tooltip.bottom="'When a task starts, select it in the manager log panel'" />
-          <CcToggle v-model="settings.tasksThisProjectOnly"
-                    label="Show only the open project"
-                    v-tooltip.bottom="'Off: also shows tasks from other projects'" />
-          <CcToggle v-model="settings.tasksShowHistory"
-                    label="Also show durable run history"
-                    v-tooltip.bottom="'On: previous runs from the log, not just this session'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">When tasks finish</div>
-          <CcToggle v-model="settings.autoRefreshOnTask"
-                    label="Refresh plots"
-                    v-tooltip.bottom="'Reload plots automatically when a task succeeds'" />
-          <CcToggle v-model="settings.viewerAutoUpdate"
-                    label="Refresh the viewer"
-                    v-tooltip.bottom="'Heavy on large images — default off'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Import</div>
-          <CcToggle v-model="settings.importPyramidAdvisor"
-                    label="Suggest pyramid levels"
-                    v-tooltip.bottom="'Peek source dims to advise a level count'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Launch</div>
-          <CcToggle v-model="settings.tipsOnLaunch"
-                    label="Show tip of the day"
-                    v-tooltip.bottom="'Prepends the daily tip to the What is New modal once per day'" />
-        </template>
-
-        <!-- ── Viewer (behaviour + on-image chrome + sizes) ─────────────── -->
-        <template v-else-if="active === 'viewer'">
-          <div class="pref-group cc-eyebrow cc-fs-2xs">Behaviour</div>
-          <CcToggle v-model="settings.viewerAutoSaveLayerProps"
-                    label="Autosave viewer layer props per image"
-                    v-tooltip.bottom="'Contrast, colormap, T/Z snapshot every image change'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">On-image chrome</div>
-          <CcToggle v-model="settings.viewerScaleBar" label="Show scale bar"
-                    v-tooltip.bottom="'Draw the calibrated scale bar over every frame'" />
-          <CcToggle v-model="settings.viewerTimestamp" label="Show elapsed timestamp"
-                    v-tooltip.bottom="'Draw elapsed time on time-lapse frames'" />
-          <CcToggle v-model="settings.viewerGrid" label="Show grid (SoM overlay)"
-                    v-tooltip.bottom="'Set-of-Mark reference grid for pointing at regions'" />
-          <CcToggle v-model="settings.viewerLandscape" label="Show landscape overlay"
-                    v-tooltip.bottom="'Tile-level semantic heatmap over the frame'" />
-          <CcToggle v-model="settings.viewerLandscapeLabels" label="Show landscape debug labels"
-                    v-tooltip.bottom="'Print the k-means category on each landscape tile'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Sizes (px)</div>
-          <label class="pref-num">Scale bar text
-            <input type="number" min="8" max="60" v-model.number="settings.viewerScaleBarPx"
-                   v-tooltip.bottom="'Overlay text size in screen pixels'" /></label>
-          <label class="pref-num">Timestamp text
-            <input type="number" min="8" max="60" v-model.number="settings.viewerTimestampPx"
-                   v-tooltip.bottom="'Overlay text size in screen pixels'" /></label>
-          <label class="pref-num">Point size
-            <input type="number" min="1" max="30" v-model.number="settings.viewerPointSize"
-                   v-tooltip.bottom="'Cell marker size in image pixels — scales with zoom'" /></label>
-          <label class="pref-num">Point outline
-            <input type="number" min="0" max="10" v-model.number="settings.viewerPointBorder"
-                   v-tooltip.bottom="'Black outline width around each point; 0 = no outline'" /></label>
-          <label class="pref-num">Grid density
-            <input type="number" min="2" max="32" v-model.number="settings.viewerGridDensity"
-                   v-tooltip.bottom="'Cells per axis on the grid + landscape overlays'" /></label>
-          <label class="pref-num">Tail length (frames)
-            <input type="number" min="0" max="500" v-model.number="settings.viewerTailLength"
-                   v-tooltip.bottom="'Track tail length in frames; 0 hides tails'" /></label>
-          <label class="pref-num">Tail width
-            <input type="number" min="0" max="12" v-model.number="settings.viewerTailWidth"
-                   v-tooltip.bottom="'Track tail width in image pixels — scales with zoom'" /></label>
-          <label class="pref-num">Label opacity (0-1)
-            <input type="number" min="0" max="1" step="0.05" v-model.number="settings.viewerLabelOpacity"
-                   v-tooltip.bottom="'Segmentation mask fill opacity; 0 = invisible, 1 = solid'" /></label>
-          <label class="pref-num">Label contour (voxels)
-            <input type="number" min="0" max="8" v-model.number="settings.viewerLabelContour"
-                   v-tooltip.bottom="'Outline width in voxels; 0 = filled mask'" /></label>
-          <label class="pref-num">Point z-tolerance
-            <input type="number" min="0" max="20" v-model.number="settings.viewerPointZTol"
-                   v-tooltip.bottom="'Planes either side of a single 2D plane that still show a cell'" /></label>
-          <label class="pref-num">Track z-tolerance
-            <input type="number" min="0" max="20" v-model.number="settings.viewerTrackZTol"
-                   v-tooltip.bottom="'Planes either side of a single 2D plane that still show a tail'" /></label>
-        </template>
-
-        <!-- ── Movies ────────────────────────────────────────────────────── -->
-        <template v-else-if="active === 'movies'">
-          <div class="pref-group cc-eyebrow cc-fs-2xs">Playback</div>
-          <label class="pref-num">Playback rate
-            <input type="number" min="0.1" max="8" step="0.1" v-model.number="settings.moviesPlaybackRate"
-                   v-tooltip.bottom="'Movies page playback speed multiplier'" /></label>
-          <label class="pref-num">Zoom
-            <input type="number" min="0.1" max="8" step="0.1" v-model.number="settings.moviesZoom"
-                   v-tooltip.bottom="'Movies page zoom multiplier'" /></label>
-          <CcToggle v-model="settings.moviesAutoplay" label="Autoplay on select"
-                    v-tooltip.bottom="'Start playback as soon as a movie is opened'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">On end</div>
-          <select class="pref-input" v-model="settings.moviesEndMode"
-                  v-tooltip.bottom="'What happens when a movie ends'">
-            <option value="stop">Stop</option>
-            <option value="repeat">Repeat</option>
-            <option value="next">Play next</option>
-          </select>
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Movie list</div>
-          <CcToggle v-model="settings.moviesShowDetails" label="Show Details columns"
-                    v-tooltip.bottom="'Extra columns on the movie list — channels + attributes'" />
-          <label class="pref-num" style="margin-top:0.35rem">Channel scope
-            <select class="pref-input" v-model="settings.moviesChannelMode"
-                    v-tooltip.bottom="'Which channels fill the Details columns'">
-              <option value="image">Image channels</option>
-              <option value="movie">Movie channels only</option>
-            </select></label>
-
-          <!-- Animation page settings live here (sibling of Movies) — the Animation page banks
-               per-keyframe view state on top of movie-page state, so a user who cares about one
-               often cares about the other. -->
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Animation page</div>
-          <CcToggle v-model="settings.animationSyncViewer"
-                    label="Sync the animation page to the viewer"
-                    v-tooltip.bottom="'Selecting a keyframe pushes its view into the viewer'" />
-        </template>
-
-        <!-- ── Layout ────────────────────────────────────────────────────── -->
-        <template v-else-if="active === 'layout'">
-          <!-- Only what no live control already sets. The sidebar (☰), the task panel (its chevron) and
-               the floating panels (the header launchers) persist through those controls. -->
-          <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Collapse viewer-window controls"
-                    v-tooltip.bottom="'Hide the viewer pop-out sidebar (independent of the module page)'" />
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Correction cockpit mode</div>
-          <select class="pref-input" v-model="settings.correctionCockpitMode"
-                  v-tooltip.bottom="'Which mode the correction cockpit opens in'">
-            <option value="tracks">Tracks</option>
-            <option value="labels">Labels</option>
-            <option value="review">Review</option>
-          </select>
-
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Viewer selection mode</div>
-          <select class="pref-input" v-model="settings.viewerSelectMode"
-                  v-tooltip.bottom="'What a viewer click does — pan/zoom, or Select a cell'">
-            <option value="off">Off</option>
-            <option value="select">Select</option>
-          </select>
-        </template>
-
-        <!-- ── Kiwi ──────────────────────────────────────────────────────── -->
-        <template v-else-if="active === 'kiwi'">
-          <!-- The AI switch for this profile (utils/aiSwitch.ts). ON goes through the opt-in dialog;
-               OFF is immediate. Locked when peanut turned AI off for the workstation. -->
-          <CcToggle :model-value="observer.ai.enabled" :disabled="observer.ai.setBy === 'workstation'"
-                    label="AI features"
-                    v-tooltip.bottom="observer.ai.setBy === 'workstation' ? AI_OFF_COPY.workstation
-                                      : 'Kiwi, claim review and Claude in the terminal'"
-                    @update:model-value="onAiToggle" />
-          <CcToggle v-if="!observer.ai.enabled" style="margin-top:0.4rem"
-                    :model-value="!settings.kiwiHidden" label="Show the Kiwi button"
-                    v-tooltip.bottom="'Opens a short note while AI is off'"
-                    @update:model-value="settings.kiwiHidden = !$event" />
-          <template v-if="observer.ai.enabled">
-          <CcToggle v-model="settings.kiwiReasoning"
-                    label="Think first (write reasoning before claims)"
-                    v-tooltip.bottom="'~40% more tokens; no measurable quality gain in comparison'" />
-          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Model</div>
-          <select class="pref-input" v-model="settings.kiwiModel"
-                  v-tooltip.bottom="'Which Claude model Kiwi turns run under'">
-            <!-- the ONE Kiwi model picker; options are the backend allow-list (OBSERVER_MODELS) -->
-            <option v-for="m in observer.models" :key="m" :value="m">{{ m.charAt(0).toUpperCase() + m.slice(1) }}</option>
-          </select>
           </template>
-          <!-- never peanut: its conversations are terminal claude's (claude_conversations.jl) -->
-          <CcToggle v-if="appCtl.activeProfileName !== 'default'" style="margin-top:0.8rem"
-                    :model-value="settings.purgeClaudeConversations || purgeForcedByWorkstation"
-                    :disabled="purgeForcedByWorkstation"
-                    label="Delete my conversations on log out"
-                    v-tooltip.bottom="purgeForcedByWorkstation ? 'Required on this workstation'
-                                      : 'Transcripts and prompt history; your Claude memory stays'"
-                    @update:model-value="settings.purgeClaudeConversations = $event" />
-          <template v-if="observer.ai.enabled">
-          <!-- The Cecelia plugin (observer MCP + caller hook) in this profile's Claude config — set up once per profile. -->
-          <template v-if="observerRow">
-            <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia plugin</div>
-            <div class="pk-mcp">
-              <span class="pk-state cc-fs-sm" v-tooltip.top="observerRow.hint">
-                <span class="cc-dot" :class="dotClass(observerRow.tone)" /> {{ observerRow.label }}
-              </span>
-              <span v-if="observerInstallShort" class="pk-install cc-muted cc-fs-xs"
-                    v-tooltip.top="observerRow.installPath">{{ observerInstallShort }}</span>
-              <button v-if="observerRow.tone === 'warn'" class="cc-btn cc-btn-ghost cc-fs-xs"
-                      :disabled="observer.registering" @click="observer.registerMcp()"
-                      v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
-                <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
-                {{ observer.registering ? CLAUDE_TERMINAL.busy
-                   : terminalCta(observer.available, observer.terminalState) === 'resync'
-                     ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
-              </button>
-            </div>
-            <!-- one-click setup FAILED: the resolved command to run by hand, next to the row it fixes -->
-            <div v-if="observer.registerError" class="pk-note cc-row cc-row-tight">
-              <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
-              <template v-if="observerFallbackCommand">
-                <code class="cc-fs-2xs">{{ observerFallbackCommand }}</code>
-                <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyObserverFallback"
-                        v-tooltip.left="observerCmdCopied() ? 'Copied!' : 'Copy command'">
-                  <i :class="observerCmdCopied() ? 'pi pi-check' : 'pi pi-copy'" />
-                </button>
-              </template>
-            </div>
-          </template>
-          </template>
-        </template>
+        </div>
+      </template>
+      </template>
+    </template>
 
-        <!-- ── Lab log ───────────────────────────────────────────────────── -->
-        <!-- Distinct from Kiwi: the lab log is the durable per-project activity + narrative
-             surface (Cecelia digests + human notes + Claude append), independent of whether any
-             assistant is paired. Bunched together in the first draft; split out per feedback. -->
-        <template v-else-if="active === 'lablog'">
-          <CcToggle v-model="settings.labLogAutoContext"
-                    label="Summarise app activity automatically"
-                    v-tooltip.bottom="'Cecelia appends a rolling daily digest of task activity'" />
-          <CcToggle v-model="settings.labLogShowNames"
-                    label="Show image names in the lab log (else UIDs)"
-                    v-tooltip.bottom="'Show human-readable names instead of the stable UIDs'" />
-        </template>
+    <!-- ── Lab log ───────────────────────────────────────────────────── -->
+    <!-- Distinct from Kiwi: the lab log is the durable per-project activity + narrative
+         surface (Cecelia digests + human notes + Claude append), independent of whether any
+         assistant is paired. Bunched together in the first draft; split out per feedback. -->
+    <template #lablog>
+      <CcToggle v-model="settings.labLogAutoContext"
+                label="Summarise app activity automatically"
+                v-tooltip.bottom="'Cecelia appends a rolling daily digest of task activity'" />
+      <CcToggle v-model="settings.labLogShowNames"
+                label="Show image names in the lab log (else UIDs)"
+                v-tooltip.bottom="'Show human-readable names instead of the stable UIDs'" />
+    </template>
 
-        <!-- ── HPC ───────────────────────────────────────────────────────── -->
-        <!-- Your cluster login and job classes (HPC_PLAN D9). The cluster itself (scheduler, host,
-             port) and the environment install are machine-wide, on Settings → HPC. -->
-        <template v-else-if="active === 'hpc'">
-          <HpcSettings scope="user" project-uid="" />
-        </template>
+    <!-- ── HPC ───────────────────────────────────────────────────────── -->
+    <!-- Your cluster login and job classes (HPC_PLAN D9). The cluster itself (scheduler, host,
+         port) and the environment install are machine-wide, on Settings → HPC. -->
+    <template #hpc>
+      <HpcSettings scope="user" project-uid="" />
+    </template>
 
-      </section>
-    </div>
-    <CreateProfileDialog v-if="showCreateProfile"
-                         @close="showCreateProfile = false"
-                         @created="onProfileCreated" />
-  </BaseModal>
+    <template #after>
+      <CreateProfileDialog v-if="showCreateProfile"
+                           @close="showCreateProfile = false"
+                           @created="onProfileCreated" />
+    </template>
+  </SettingsShell>
 </template>
 
 <style scoped>
 .pref-hint { padding: 0.4rem 1rem; border-bottom: 1px solid var(--cc-border);
              display: flex; align-items: center; gap: 0.35rem; }
-.pref-cols { display: grid; grid-template-columns: 12rem 1fr; gap: 1rem; height: 100%; min-height: 0; }
-.pref-nav { display: flex; flex-direction: column; gap: 0.2rem;
-            border-right: 1px solid var(--cc-border); padding-right: 0.6rem; }
-.pref-nav-btn {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.45rem 0.7rem;
-  background: transparent; border: 1px solid transparent;
-  border-radius: var(--cc-radius-sm);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  text-align: left;
-  font-size: var(--cc-fs-md);
-}
-.pref-nav-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.pref-nav-btn-active { background: var(--cc-surface-2); color: var(--cc-text);
-                       border-color: var(--cc-border); }
-.pref-pane {
-  min-width: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  padding-right: 0.25rem;
-}
 /* No color override here — `.cc-eyebrow` (the utility applied alongside) already provides the
    muted colour, and re-stating it would silently shadow the utility (`cssScenarios.test.ts`). */
 .pref-num {
@@ -632,9 +596,13 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pk-note strong { color: var(--cc-sev-warn); }
 .pk-note code { font-family: var(--cc-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
 .pref-error { color: var(--cc-sev-fail); display: flex; align-items: center; gap: 0.35rem; margin: 0.35rem 0 0; }
-.pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.pp-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); row-gap: 0.3rem;
+}
 .pp-row {
-  display: flex; align-items: center; justify-content: space-between;
+  grid-column: 1 / -1; display: grid; grid-template-columns: subgrid;
+  align-items: center; column-gap: 0.3rem;
   padding: 0.5rem 0.7rem;
   border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm);
@@ -642,7 +610,9 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pp-row-active   { border-color: var(--cc-kiwi); }
 .pp-row-retired  { opacity: 0.6; }
 .pp-name { display: flex; align-items: center; gap: 0.4rem; }
-.pp-name-edit { flex: 1; min-width: 0; }
+.pp-name-edit { min-width: 0; }
+.pp-actions-edit { grid-column: 2 / -1; justify-content: flex-end; }
+.pp-cell { display: flex; justify-content: center; }
 .pp-rename-input { flex: 1; min-width: 6rem; }
 .pp-tag  { padding-inline: 0.25rem; }
 .pp-tag-active { color: var(--cc-kiwi); }

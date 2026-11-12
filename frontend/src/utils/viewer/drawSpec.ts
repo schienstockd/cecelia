@@ -2,13 +2,13 @@
 //
 // `readDrawSpec` is the ONE reader of the settings that decide the picture. Every recording (Record,
 // batch Fill from view, Animation) turns it into a movie config through `viewerLook`; the viewer itself
-// moves onto it in the plan's Phase 2. `RECORDED` says, per field, whether a recording draws it — adding
+// reads the same fields live (`drawSpecOf`). `RECORDED` says, per field, whether a recording draws it — adding
 // a field without deciding is a type error, and `drawSpec.test.ts` checks every `recorded` field reaches
 // the look.
 
 import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
-import { trackableValueNames } from '../overlayAutoShow'
+import { CELL_POP_TYPES, trackableValueNames } from '../overlayAutoShow'
 import type { ViewerLookInput } from './viewerLook'
 
 /** The pop manager's current (segmentation, popType) for one image, as published to
@@ -73,55 +73,114 @@ export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   grid: AID, gridDensity: AID, landscape: AID, landscapeLabels: AID, roiSpotlight: AID,
 }
 
-/** The draw spec of `img` from the stores: the published view state of the browser viewer, and the
- *  per-set / per-image settings the viewer draws from. `onImg`: the viewer shows `img`, so its version
- *  is the one on screen. */
-export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): ViewerDrawSpec {
+/** What a draw spec is read for: one image, in one set. Each field may be a getter, so a live viewer
+ *  passes its own reactive state (`meta`'s names, its gating ref) and a recording passes plain values. */
+export interface DrawSpecSource {
+  imageUid: string
+  setUid: string
+  /** the image's segmentations — the mask is the first ticked one */
+  labelNames: string[]
+  /** the segmentations with a cell table — the track eyes' and ribbon hides' keys */
+  trackNames: string[]
+  /** the skeleton segmentations */
+  branchNames: string[]
+  channelNames: string[]
+  nZ: number
+  version: string
+  viewState: ViewerLookInput['viewState']
+  gating: { valueName: string; popType: string }
+}
+
+/** The pop types a draw spec carries an on / off for: the cell pop types and the track clusters. */
+export const SPEC_POP_TYPES = [...CELL_POP_TYPES, 'trackclust'] as const
+
+/** The draw spec of `src`, every field a getter over the stores. Reading one field tracks only the
+ *  settings it reads, so the viewer's computeds react as they did when they read the settings
+ *  themselves; `{ ...drawSpecOf(src) }` is a snapshot (`readDrawSpec`). */
+export function drawSpecOf(src: DrawSpecSource): ViewerDrawSpec {
   const settings = useSettingsStore()
-  const viewer = useViewerStore()
-  const labelNames = Object.keys(img.labels ?? {})
-  // The viewer draws ONE mask: the first ticked segmentation (ViewerWindow `labelName`).
-  const labelVis = settings.getLabelVisibility(img.uid, labelNames)
-  const maskValueName = labelNames.find(n => labelVis[n]) ?? ''
-  const colourBy = setUid ? settings.getColourBy(setUid) : ''
+  const perSet = <T>(read: (su: string) => T, none: T): T => src.setUid ? read(src.setUid) : none
   return {
-    viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
+    get viewState() { return src.viewState },
+    get channelNames() { return src.channelNames },
+    get nZ() { return src.nZ },
+    get version() { return src.version },
+    // The viewer draws ONE mask: the first ticked segmentation.
+    get maskValueName() {
+      const names = src.labelNames
+      if (!src.imageUid || !names.length) return ''
+      const vis = settings.getLabelVisibility(src.imageUid, names)
+      return names.find(n => vis[n]) ?? ''
+    },
+    get labelFilesHidden() {
+      const vn = this.maskValueName
+      return vn && src.imageUid ? [...settings.getLabelFilesHidden(src.imageUid, vn)] : []
+    },
+    get gating() { return src.gating },
+    // one getter per pop type, so a reader of one type tracks that type's setting only
+    get popVisible() {
+      const out: Record<string, boolean> = {}
+      for (const pt of SPEC_POP_TYPES)
+        Object.defineProperty(out, pt, { enumerable: true, get: () => perSet(su => settings.getPopVisible(su, pt), false) })
+      return out
+    },
+    get trackVisible() {
+      return src.imageUid ? settings.getTrackVisibility(src.imageUid, src.trackNames) : {}
+    },
+    get trackSourceColours() { return perSet(su => settings.getTrackSourceColours(su), {}) },
+    get showGatedTracks() { return perSet(su => settings.getShowGatedTracks(su), false) },
+    get hiddenTrackPops() {
+      return Object.fromEntries(src.trackNames.map(vn => [vn, [...settings.getTrackPopHidden(src.imageUid, vn)]]))
+    },
+    get popEyes() { return settings.getImagePopEyes(src.imageUid, 'points') },
+    get ribbonEyes() { return settings.getImagePopEyes(src.imageUid, 'ribbons') },
+    get pointSize() { return perSet(su => settings.getPointSize(su), settings.viewerPointSize) },
+    get pointBorder() { return perSet(su => settings.getPointBorder(su), settings.viewerPointBorder) },
+    get labelOpacity() { return settings.viewerLabelOpacity },
+    get pointZTol() { return settings.viewerPointZTol },
+    get trackZTol() { return settings.viewerTrackZTol },
+    get tailWidth() { return settings.viewerTailWidth },
+    get tailLength() { return settings.viewerTailLength },
+    get labelContour() { return settings.viewerLabelContour },
+    get maskColour() { return settings.viewerMaskColour },
+    get trackColourMode() { return perSet(su => settings.getTrackColorMode(su), 'track') },
+    get colourBy() { return perSet(su => settings.getColourBy(su), '') },
+    get colourOverrides() {
+      const by = this.colourBy
+      return src.setUid && by ? settings.getColourOverrides(src.setUid, by) : {}
+    },
+    get branchVisible() {
+      return src.imageUid ? settings.getBranchVisibility(src.imageUid, src.branchNames) : {}
+    },
+    get scaleBar() { return settings.viewerScaleBar },
+    get timestamp() { return settings.viewerTimestamp },
+    get scaleBarPx() { return settings.viewerScaleBarPx },
+    get timestampPx() { return settings.viewerTimestampPx },
+    get steps() { return settings.viewerSteps },
+    get grid() { return settings.viewerGrid },
+    get gridDensity() { return settings.viewerGridDensity },
+    get landscape() { return settings.viewerLandscape },
+    get landscapeLabels() { return settings.viewerLandscapeLabels },
+    get roiSpotlight() { return settings.viewerRoiSpotlight },
+  }
+}
+
+/** The draw spec of `img` from the stores, as plain data: the published view state of the browser
+ *  viewer, and the per-set / per-image settings the viewer draws from. `onImg`: the viewer shows `img`,
+ *  so its version, and the segmentation names it draws from (`openImage`), are the ones on screen. */
+export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): ViewerDrawSpec {
+  const viewer = useViewerStore()
+  const open = onImg ? viewer.openImage : null
+  const live = drawSpecOf({
+    imageUid: img.uid, setUid,
+    labelNames: open?.labelNames ?? Object.keys(img.labels ?? {}),
+    trackNames: open?.trackNames ?? trackableValueNames(img),
+    branchNames: Object.keys(img.branchLabels ?? {}),
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
-    version: (onImg ? viewer.openImage?.valueName : '') || img.activeValueName || '',
-    maskValueName,
-    labelFilesHidden: maskValueName ? [...settings.getLabelFilesHidden(img.uid, maskValueName)] : [],
+    version: open?.valueName || img.activeValueName || '',
+    viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
     gating: readGatingCurrent(img.uid),
-    popVisible: pt => setUid ? settings.getPopVisible(setUid, pt) : false,
-    trackVisible: settings.getTrackVisibility(img.uid, trackableValueNames(img)),
-    trackSourceColours: setUid ? settings.getTrackSourceColours(setUid) : {},
-    showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
-    hiddenTrackPops: Object.fromEntries(trackableValueNames(img).map(vn =>
-      [vn, [...settings.getTrackPopHidden(img.uid, vn)]])),
-    popEyes: settings.getImagePopEyes(img.uid, 'points'),
-    ribbonEyes: settings.getImagePopEyes(img.uid, 'ribbons'),
-    pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
-    pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
-    labelOpacity: settings.viewerLabelOpacity,
-    pointZTol: settings.viewerPointZTol,
-    trackZTol: settings.viewerTrackZTol,
-    tailWidth: settings.viewerTailWidth,
-    tailLength: settings.viewerTailLength,
-    labelContour: settings.viewerLabelContour,
-    maskColour: settings.viewerMaskColour,
-    trackColourMode: setUid ? settings.getTrackColorMode(setUid) : 'track',
-    colourBy,
-    colourOverrides: setUid && colourBy ? settings.getColourOverrides(setUid, colourBy) : {},
-    branchVisible: settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {})),
-    scaleBar: settings.viewerScaleBar,
-    timestamp: settings.viewerTimestamp,
-    scaleBarPx: settings.viewerScaleBarPx,
-    timestampPx: settings.viewerTimestampPx,
-    steps: settings.viewerSteps,
-    grid: settings.viewerGrid,
-    gridDensity: settings.viewerGridDensity,
-    landscape: settings.viewerLandscape,
-    landscapeLabels: settings.viewerLandscapeLabels,
-    roiSpotlight: settings.viewerRoiSpotlight,
-  }
+  })
+  return { ...live, popVisible: { ...live.popVisible } }
 }

@@ -46,3 +46,41 @@ export function toggleAllSelection(selectableIds: string[], selectedIds: string[
 export function toggleOneSelection(id: string, selectedIds: string[]): string[] {
   return selectedIds.includes(id) ? selectedIds.filter(x => x !== id) : [...selectedIds, id]
 }
+
+/**
+ * The selection after a RANGE pick — shift-click, or a mouse drag across rows (file-manager style).
+ *
+ * `orderedIds` is the rows as RENDERED (sorted, filtered), because a range is what the user sees
+ * between two rows, not what the data order says. Disabled ids inside the range are skipped, not
+ * selected. `base` is what the range is added to: `[]` for a plain drag/shift-click (the range
+ * REPLACES the selection), the current selection when ctrl/⌘ is held (it ADDS). An anchor that has
+ * left the view (filtered out, deleted) degrades to a range of just the target row.
+ */
+export function rangeSelection(
+  orderedIds: string[], anchorId: string, targetId: string,
+  disabledIds: string[] = [], base: string[] = [],
+): string[] {
+  const to = orderedIds.indexOf(targetId)
+  if (to < 0) return base
+  let from = orderedIds.indexOf(anchorId)
+  if (from < 0) from = to
+  const [lo, hi] = from <= to ? [from, to] : [to, from]
+  const off = new Set(disabledIds)
+  const range = orderedIds.slice(lo, hi + 1).filter(id => !off.has(id))
+  return [...new Set([...base, ...range])]
+}
+
+/**
+ * Pixels to scroll this frame while a drag-select is held near the edge of its scroll box — negative
+ * up, positive down, 0 away from the edges. Speed ramps linearly from 0 at `edge` px inside the box to
+ * `max` at the edge and stays at `max` past it, so dragging BELOW a short panel keeps scrolling rather
+ * than stopping dead, and the user controls the speed by how far in they hold the pointer.
+ */
+export function edgeScrollStep(y: number, top: number, bottom: number, edge = 40, max = 18): number {
+  if (bottom - top < 2 * edge) edge = (bottom - top) / 4     // a short box: keep a dead middle
+  if (edge <= 0) return 0
+  const ramp = (depth: number) => Math.round(Math.min(1, depth / edge) * max)
+  if (y < top + edge) return -ramp(top + edge - y)
+  if (y > bottom - edge) return ramp(y - (bottom - edge))
+  return 0
+}

@@ -2,6 +2,7 @@ import { createApp, watch } from 'vue'
 import { keepAlivePause } from './composables/useKeepAlive'
 import { createPinia } from 'pinia'
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { openSettings } from './lib/settingsOpen'
 import './icons.css'
 import './style.css'
 import App from './App.vue'
@@ -63,7 +64,9 @@ export const router = createRouter({
     { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Chains' } },
     // Generic page for a user custom-module category with no built-in page (docs/CUSTOM_MODULES.md).
     { path: '/custom/:category', component: () => import('./modules/CustomModule.vue'),  meta: { label: 'Custom', customPage: true } },
-    { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },
+    // Settings is a modal (components/SettingsModal.vue, opened from the sidebar footer); the old
+    // page URL still opens it, over the welcome page, so a bookmark or a pasted link lands somewhere.
+    { path: '/settings',  redirect: () => { openSettings(); return '/' },               meta: { label: 'Settings' } },
     // bare = rendered full-window without the app shell (opened in its own window via window.open)
     { path: '/console',   component: () => import('./modules/ConsoleView.vue'),         meta: { label: 'Console', bare: true } },
     // the Task Manager in its own window — same idiom, and it carries `?project=<uid>` because a

@@ -12,7 +12,7 @@
           body), #footer (fixed action row). Props size the box; body scrolls, header/footer are pinned.
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useWindowListener } from '../composables/useKeepAlive'
 
 const props = withDefaults(defineProps<{
@@ -33,13 +33,26 @@ let pressedOnOverlay = false
 function onOverlayMouseDown(e: MouseEvent) { pressedOnOverlay = e.target === e.currentTarget }
 function onOverlayClick() { if (pressedOnOverlay) emit('close'); pressedOnOverlay = false }
 
-// preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it
-function onKey(e: KeyboardEvent) { if (e.key === 'Escape') { emit('close'); e.preventDefault() } }
+// preventDefault = "this Esc was used" — the maximised-layout Esc (usePlotFullscreen) yields to it.
+// Only the TOPMOST surface answers: a dialog opened from inside another (Packages over Settings, New
+// profile over Preferences), or a `TeleportPopover` open in a pane (HPC's ⋯ menu), would otherwise
+// close its parent modal with the same keypress. Topmost = last overlay or popover in document order
+// — a nested dialog sits inside its parent's DOM, popovers teleport to the end of <body>, and App.vue
+// mounts the app-level modals in stacking order, so DOM order IS stacking order.
+const overlay = ref<HTMLElement | null>(null)
+function isTopmost(): boolean {
+  const all = document.querySelectorAll('.cc-modal-overlay, .cc-popover')
+  return all.length === 0 || all[all.length - 1] === overlay.value
+}
+function onKey(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !isTopmost()) return
+  emit('close'); e.preventDefault()
+}
 useWindowListener('keydown', onKey)
 </script>
 
 <template>
-  <div class="cc-modal-overlay" @mousedown="onOverlayMouseDown" @click.self="onOverlayClick">
+  <div ref="overlay" class="cc-modal-overlay" @mousedown="onOverlayMouseDown" @click.self="onOverlayClick">
     <div class="cc-modal" :style="boxStyle">
       <div class="cc-modal-header">
         <span class="cc-modal-title">

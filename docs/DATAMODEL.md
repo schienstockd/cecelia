@@ -110,7 +110,10 @@ decoded) into every segmentation it read, and beside each table a **fit record**
 converged, partOf, at`. Only `modelMeasurements` drove the states — any other measure plotted
 against them is a correlate. `logLik` is of the preprocessed observations, so two runs compare only
 when pops, measures and preprocessing match. Read it with `hmm_fit_entry(props, colName)`; runs fitted
-before the record existed have none. Deleting the run drops its key. Why and how it's used:
+before the record existed have none. Deleting the run drops its key; so does a re-run under the
+same `colName` that fits nothing. A re-measure, re-track, track correction or track-set delete
+drops the state columns, so each one prunes every key whose state column the table no longer
+carries (`prune_stale_hmmfit!`). A record never outlives its column. Why and how it's used:
 `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 All three per-run manifests — `clustfeatures`, `motiffeatures`, `hmmfit` — go through

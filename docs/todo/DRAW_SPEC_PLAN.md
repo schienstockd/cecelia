@@ -1,8 +1,6 @@
 # Draw spec — one description of what the viewer draws, for the viewer and every recording
 
-**Status:** building. Phase 0 decided, Phase 1 built (`feat/draw-spec-p1`, 2026-11-12). Phase 2 waits
-for the playback bar (GUI layout V2, #2164) — V0 / V1 merged — so the two refactors don't rebase over
-each other in `ViewerWindow.vue`.
+**Status:** building. Phase 0 decided, Phases 1 and 2 built (2026-11-12). Phase 3 next.
 
 ## Why
 
@@ -65,8 +63,17 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
 1. **BUILT** — **`drawSpec` + `RECORDED` map**, behaviour-neutral: `utils/viewer/drawSpec.ts`, and
    `readViewerLook` = `viewerLook(readDrawSpec(…))`. D4 checks: `drawSpec.test.ts` and the Julia read of
    `lookKeys.parity.json`. The fields Phase 0 decided to record are `pending` until Phase 3 wires them.
-2. **The viewer consumes the spec** (D2), after GUI layout V0–V2. Behaviour-neutral; proof as the
-   split's: typecheck, full vitest, pixel-identical before/after.
+2. **BUILT** — **The viewer consumes the spec** (D2). `drawSpecOf(src)` is the one reader, every field a
+   getter (a computed reading one field tracks only that field's settings — `drawSpecRead.test.ts`);
+   `ViewerWindow`'s `spec` reads it over its own `meta` names and gating ref, and its draw reads (mask
+   pick, pop types, track eyes / colours / mode, point and tail sizes, z tolerances, mask colour /
+   opacity / contour, Steps, scale bar / timestamp, grid, landscape, ROI spotlight) go through it.
+   `readDrawSpec` is its plain-data snapshot. The viewer publishes its segmentation names
+   (`openImage.labelNames` / `trackNames`), so a recording picks the mask and track sources from the
+   list the viewer draws from rather than the registry's. `popVisible` is data (per pop type), not a
+   function. Left on the settings store: eye reconciles and write-backs, the preview / live mask
+   override, `maskFilesOf` (it takes any segmentation, the preview's too). The viewer has no skeleton
+   names (`branchNames: []`) — it draws none; Phase 3.
 3. **Close the Phase 0 gaps** marked "record it", each with a runner test that draws it.
 4. **Server resolver** (D5).
 

@@ -2,7 +2,7 @@
 // `app/src/config/shared_workstation.jl` (`[sharedWorkstation]` in custom.toml), routes
 // GET /api/config/shared-workstation and POST /api/config/shared-workstation/set.
 //
-// Settings shows the section to the default profile only (`SettingsModule.vue`) — a
+// Settings shows the section to the default profile only (`SettingsModal.vue`) — a
 // visibility gate, not security. Each item is its own toggle; there is no master "shared machine"
 // switch. To add an item: one entry in SHARED_WORKSTATION_ITEMS on BOTH sides.
 

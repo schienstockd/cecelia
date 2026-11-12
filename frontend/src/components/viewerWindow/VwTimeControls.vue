@@ -30,7 +30,7 @@ const emit = defineEmits<{ togglePlay: []; stop: []; goto: [t: number] }>()
 const settings = useSettingsStore()
 // the bar's scrubber track: which timepoints are instant to scrub to
 const track = computed(() => cacheGradient(cacheRuns(props.cells)))
-// the pill's t readout sized for the longest value it can show, so the pill keeps one width
+// the t readout sized for the longest value it can show, so the bar and the pill keep one width
 const tWidth = computed(() => readoutWidth(`t ${props.nT - 1} / ${props.nT - 1}`))
 const fpsOpen = ref(false)
 const fpsAnchor = ref<HTMLElement | null>(null)
@@ -65,7 +65,7 @@ const fpsAnchor = ref<HTMLElement | null>(null)
       v-tooltip.top="'Scrub the timecourse — the filled track is cached and instant'"
       aria-label="Timepoint"
     >
-    <span class="cc-readout cc-fs-2xs vw-tro" style="grid-column: 4">t {{ t }} / {{ nT - 1 }}<span
+    <span class="cc-readout cc-fs-2xs vw-tro" style="grid-column: 4" :style="{ minWidth: tWidth }">t {{ t }} / {{ nT - 1 }}<span
       class="cc-dot vw-dot" :class="busy ? 'cc-dot-warn' : 'vw-dot-off'" /></span>
     <button ref="fpsAnchor" class="cc-btn cc-btn-ghost cc-btn-dense vw-chip" style="grid-column: 5"
             :class="{ 'cc-btn-on': fpsOpen, 'vw-fps-warn': throttled }" aria-haspopup="dialog"
@@ -91,7 +91,7 @@ const fpsAnchor = ref<HTMLElement | null>(null)
 <style scoped>
 .vw-tro { display: inline-block; text-align: right; white-space: nowrap; }
 .vw-fps-ro { display: inline-block; min-width: 2ch; text-align: right; }
-.vw-chip { width: 100%; justify-content: center; border: 1px solid var(--cc-border); font-variant-numeric: tabular-nums; }
+.vw-chip { width: 4.6rem; justify-content: center; border: 1px solid var(--cc-border); font-variant-numeric: tabular-nums; }
 .vw-fps-slider { width: 7rem; }
 .vw-fps-warn { color: var(--cc-sev-warn); font-weight: 600; }
 /* the scrubber's track IS the cache strip (`.cc-range-paint`) — the thumb marks where t is */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { allSelected, someSelected, toggleAllSelection, toggleOneSelection } from './tableSelection'
+import { allSelected, someSelected, toggleAllSelection, toggleOneSelection, rangeSelection, edgeScrollStep } from './tableSelection'
 
 describe('allSelected', () => {
   it('is true only when every selectable row is chosen', () => {
@@ -50,5 +50,46 @@ describe('toggleOneSelection', () => {
   it('preserves order, so an unrelated toggle does not reshuffle the list', () => {
     expect(toggleOneSelection('c', ['a', 'b'])).toEqual(['a', 'b', 'c'])
     expect(toggleOneSelection('b', ['a', 'b', 'c'])).toEqual(['a', 'c'])
+  })
+})
+
+describe('rangeSelection', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e']
+  it('selects everything between anchor and target, either direction', () => {
+    expect(rangeSelection(ids, 'b', 'd')).toEqual(['b', 'c', 'd'])
+    expect(rangeSelection(ids, 'd', 'b')).toEqual(['b', 'c', 'd'])
+    expect(rangeSelection(ids, 'c', 'c')).toEqual(['c'])
+  })
+  it('skips disabled rows inside the range', () => {
+    expect(rangeSelection(ids, 'a', 'd', ['b'])).toEqual(['a', 'c', 'd'])
+  })
+  it('adds to the base (ctrl/⌘) without duplicating', () => {
+    expect(rangeSelection(ids, 'c', 'd', [], ['a', 'c'])).toEqual(['a', 'c', 'd'])
+  })
+  it('a missing anchor degrades to the target alone; a missing target changes nothing', () => {
+    expect(rangeSelection(ids, 'gone', 'c')).toEqual(['c'])
+    expect(rangeSelection(ids, 'a', 'gone', [], ['x'])).toEqual(['x'])
+  })
+})
+
+describe('edgeScrollStep', () => {
+  // box 0..400, 40px edge zones, max 18px/frame
+  it('is still in the middle of the box', () => {
+    expect(edgeScrollStep(200, 0, 400)).toBe(0)
+    expect(edgeScrollStep(40, 0, 400)).toBe(0)
+    expect(edgeScrollStep(360, 0, 400)).toBe(0)
+  })
+  it('ramps up toward an edge, in the direction of that edge', () => {
+    expect(edgeScrollStep(380, 0, 400)).toBe(9)
+    expect(edgeScrollStep(20, 0, 400)).toBe(-9)
+    expect(edgeScrollStep(399, 0, 400)).toBeGreaterThan(edgeScrollStep(370, 0, 400))
+  })
+  it('keeps scrolling at full speed past the box', () => {
+    expect(edgeScrollStep(900, 0, 400)).toBe(18)
+    expect(edgeScrollStep(-50, 0, 400)).toBe(-18)
+  })
+  it('a short box still has a dead middle', () => {
+    expect(edgeScrollStep(30, 0, 60)).toBe(0)
+    expect(edgeScrollStep(59, 0, 60)).toBeGreaterThan(0)
   })
 })
