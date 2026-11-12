@@ -50,15 +50,6 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 
     <ProjectCrumb />
 
-    <!-- The viewer chip: opens / closes the Viewer panel, which drives the viewer window. Green is
-         the viewer's identity colour; the dot says the panel is open. -->
-    <button type="button" class="viewer-chip" data-guide="launcher.viewer"
-            :class="{ on: settings.viewerPanelOpen }"
-            v-tooltip.bottom="settings.viewerPanelOpen ? 'Close viewer controls' : 'Viewer controls — populations, tracks, colour-by'"
-            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen">
-      <span class="cc-dot vc-on" /> Viewer
-    </button>
-
     <span class="spacer" />
 
     <!-- the tip sits on the badge TEXT, not the badge: the badge also holds the dismiss button, whose
@@ -87,6 +78,15 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
     </span>
 
     <JumpSearch />
+    <!-- The viewer chip: opens / closes the Viewer panel, which drives the viewer window. Green is
+         the viewer's identity colour; the dot says the panel is open. It sits in the right-hand launcher
+         group, not after the project crumb, so a long project name never moves it. -->
+    <button type="button" class="viewer-chip" data-guide="launcher.viewer"
+            :class="{ on: settings.viewerPanelOpen }"
+            v-tooltip.bottom="settings.viewerPanelOpen ? 'Close viewer controls' : 'Viewer controls — populations, tracks, colour-by'"
+            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen">
+      <span class="cc-dot vc-on" /> Viewer
+    </button>
     <button type="button" class="bell cc-btn cc-btn-bare cc-btn-icon" data-guide="launcher.labLog"
             :class="{ 'cc-btn-on': settings.labLogPanelOpen }" aria-label="Lab log"
             v-tooltip.bottom="bellTip" @click="settings.labLogPanelOpen = !settings.labLogPanelOpen">

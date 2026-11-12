@@ -18,6 +18,11 @@
     # shape. If it drifts, the record button silently regresses to channels-only movies.
     @test _overlays_raw_from_config(Dict{String,Any}(), false) === nothing
     @test _overlays_raw_from_config(nothing, false) === nothing
+    # the viewer's hidden mask files (`labelFilesHidden`) reach `movie_mask`; absent = none hidden
+    @test _overlays_raw_from_config(Dict{String,Any}("labelFilesHidden" => Dict("cells" => ["halo"])),
+                                    true)["maskFilesHidden"] == Dict("cells" => ["halo"])
+    @test isempty(_overlays_raw_from_config(Dict{String,Any}(), true)["maskFilesHidden"])
+    @test isempty(mask_files_hidden([1, 2]))
     ov = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "popType" => "flow",
                                                      "pointsSize" => 8), false)
     @test ov isa AbstractDict
@@ -459,6 +464,12 @@ end
     @test _ov_look_seg(Dict{String,Any}(), "default"; mask = "cpSAM") == "cpSAM"
     @test _ov_look_seg(Dict{String,Any}("popValueName" => "flowTom"), "default"; mask = "cpSAM") == "flowTom"
     @test _ov_look_seg(Dict{String,Any}(), "default"; mask = nothing) == "default"
+    # a keyframe request's mask: absent / empty → none, one → it, 2+ → refused (an animation has no
+    # compare grid, and no mask would drop the overlays onto the image version)
+    @test _keyframe_mask(nothing) === nothing
+    @test _keyframe_mask(String[]) === nothing
+    @test _keyframe_mask(["cpSAM"]) == "cpSAM"
+    @test_throws ArgumentError _keyframe_mask(["cpSAM", "flowTom"])
 end
 
 @testset "API: movie rail — a recording renders the viewer's colours and framing" begin
@@ -594,4 +605,18 @@ end
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end
   end
+end
+
+@testset "API: movie rail — the server reads every key the viewer's look sends (DRAW_SPEC_PLAN D4)" begin
+    # `frontend/src/utils/viewer/lookKeys.parity.json` is every key `viewerLook` sends (pinned by
+    # `drawSpec.test.ts`). A key no server file names would be dropped on the way to the renderer —
+    # a viewer feature that never reaches a recording.
+    fx = JSON3.read(read(normpath(joinpath(@__DIR__, "..", "..", "..", "frontend", "src", "utils", "viewer",
+                                           "lookKeys.parity.json")), String))
+    @test length(fx.keys) >= 30
+    src_dir = normpath(joinpath(@__DIR__, "..", "..", "src"))
+    src = join((read(joinpath(src_dir, f), String) for f in readdir(src_dir) if endswith(f, ".jl")), "\n")
+    for k in String.(fx.keys)
+        @test (k, occursin("\"$k\"", src) || occursin(":$k", src)) == (k, true)   # the key names itself on failure
+    end
 end

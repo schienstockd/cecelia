@@ -19,10 +19,26 @@ transmission is 1 − `Attenuation` when `Transmission` is absent (it matches th
 `Transmission` there); and averaging is not called a sum or a mean, because the channel block does
 not say which.
 
+Beyond laser scanning (checked on an Axio Scan.Z1 slide scan, LSM 880 spectral, LSM 800/900/980
+Airyscan): `technology` from the channels — `WideField` acquisition mode → widefield (camera fields:
+exposure, filter cube = `Reflector`, light-source intensity, binning); `AiryscanSettings` → airyscan;
+a multiphoton mode or a line at or above 680 nm → two-photon; other laser scanning → confocal. `modes`
+adds `spectral` (`SpectralImaging`: channels are wavelength bins) and `tiled` (`SizeM` > 1). ZEN blue
+writes `System` "LSM 800" for an LSM 900 and 980 alike; the model is the imaging device's name
+(`HardwareSetting/Configuration/Device[@Id="MTBLSMImagingDevice"]`), and the stand moves to
+`microscopeBody`. A slide scanner records no `System`: its stand name is the system.
+
 Fixtures: `test-data/acquisition/czi_*`, from real files.
 """
 import struct
 import xml.etree.ElementTree as ET  # vendor .czi XML, not OME-XML: test_zarr_access_convention _BASELINE
+
+#: Bump when the settings dict gains a field (its row in acquisition_readers.json must match).
+READER_VERSION = 2   # 2: technology, modes, camera fields, the LSM model name
+
+#: Shortest excitation that still means multiphoton (`MULTIPHOTON_MIN_NM`, frontend acquisitionLightPath.ts).
+_MULTIPHOTON_MIN_NM = 680
+_NS_PER_MS = 1e6   # ZEN `ExposureTime` is in ns
 
 _FILE_MAGIC = b'ZISRAWFILE'
 _META_MAGIC = b'ZISRAWMETADATA'
@@ -127,8 +143,13 @@ def _channels(info, block):
         ds = ch.find('DetectorSettings')
         det_id = ds.find('Detector').get('Id') if ds is not None and ds.find('Detector') is not None else None
         bits = _num(_text(ch, 'ComponentBitCount')) or image_bits
+        mode = _text(ch, 'AcquisitionMode')
+        camera = mode == 'WideField'
+        exposure = _num(_text(ch, 'ExposureTime'))
+        intensity = _text(ch, 'LightSourcesSettings/LightSourceSettings/Intensity')
         chans.append({
             'order': i + 1,
+            'acquisitionMode': mode,
             'name': ch.get('Name'),
             'dyePreset': _text(ch, 'Fluor'),
             'laser': ' + '.join(dict.fromkeys(on)) or None,
@@ -141,6 +162,12 @@ def _channels(info, block):
             'offset': _num(_text(ds, 'Offset')),
             'detectorMode': _text(ds, 'DetectorMode'),   # Integration / PhotonCounting, ZEN blue only
             'bitDepth': int(bits) if bits else None,
+            **({'filterCube': _text(ch, 'Reflector'),
+                'exposureMs': None if exposure is None else round(exposure / _NS_PER_MS, 3),
+                'illuminationIntensity': _num((intensity or '').replace('%', '')),
+                'binning': _text(ds, 'Binning')} if camera else {}),
+            # ZEN writes Mode "Off" on a plain LSM channel: only another mode is Airyscan
+            'airyscan': None if (_text(ch, 'AiryscanSettings/Mode') or 'Off') == 'Off' else _text(ch, 'AiryscanSettings/Mode'),
         })
     return chans, list(lasers.values())
 
@@ -208,6 +235,35 @@ def _axes(info, md):
     return out
 
 
+def _imaging_device(md):
+    """The LSM model ZEN records on the imaging device ("LSM 980"), or None."""
+    d = md.find("HardwareSetting/Configuration/Device[@Id='MTBLSMImagingDevice']")
+    return (d.get('Name') or '').strip() or None if d is not None else None
+
+
+def _technology(channels, lasers):
+    modes = {c.get('acquisitionMode') or '' for c in channels}
+    if modes and modes <= {'WideField'}:
+        return 'widefield'
+    if any(c.get('airyscan') for c in channels):
+        return 'airyscan'
+    if any('MultiPhoton' in m for m in modes) or any((l['wavelengthNm'] or 0) >= _MULTIPHOTON_MIN_NM for l in lasers):
+        return 'two-photon'
+    if any(m in ('LaserScanningConfocalMicroscopy', 'SpectralImaging') for m in modes):
+        return 'confocal'
+    return None
+
+
+def _camera(info, channels):
+    cams = [c for c in channels if c.get('acquisitionMode') == 'WideField']
+    if not cams:
+        return None
+    binning = _one(c.get('binning') for c in cams)
+    b = _num(binning.split(',')[0]) if binning else None
+    return {'name': _one(c['detector'] for c in cams), 'binning': None if b is None else int(b),
+            'bitDepth': _one(c['bitDepth'] for c in cams), 'sensorPixelUm': None}
+
+
 def parse_settings(xml_bytes):
     """Normalised settings dict from the `ImageDocument` metadata XML."""
     root = ET.fromstring(xml_bytes)
@@ -224,9 +280,23 @@ def parse_settings(xml_bytes):
     # transmitted channel has none).
     pinhole = _one(None if v is None else round(v, 2) for v in (
         _num(_text(c, 'PinholeSize')) for c in info.iterfind('Image/Dimensions/Channels/Channel')))
+    stand = info.find('Instrument/Microscopes/Microscope')
+    stand_name = stand.get('Name') if stand is not None else None
+    device = _imaging_device(md)
+    modes = [m for m, on in (
+        ('spectral', any(c.get('acquisitionMode') == 'SpectralImaging' for c in channels)),
+        ('tiled', (_num(_text(info, 'Image/SizeM')) or 1) > 1)) if on]
+    camera = _camera(info, channels)
+    for c in channels:
+        c.pop('binning', None)
     return {
         'source': 'czi',
-        'system': _text(info, 'Instrument/Microscopes/Microscope/System'),
+        'readerVersion': READER_VERSION,
+        'technology': _technology(channels, lasers),
+        'modes': modes,
+        'system': device or _text(info, 'Instrument/Microscopes/Microscope/System') or stand_name,
+        'microscopeBody': stand_name if (device or _text(info, 'Instrument/Microscopes/Microscope/System')) else None,
+        'camera': camera,
         'softwareVersion': _text(info, 'Application/Version'),
         'objective': _objective(info),
         'lasers': lasers,
@@ -239,8 +309,9 @@ def parse_settings(xml_bytes):
     }
 
 
-def acquisition_settings(path):
-    """Settings for a `.czi`, or `{'reason': …}` when none can be read. Never raises."""
+def acquisition_settings(path, series=0):
+    """Settings for a `.czi`, or `{'reason': …}` when none can be read. Never raises. `series` is
+    the reader contract (`acquisition_readers.json`); the settings are file-level, so it is unused."""
     try:
         xml = read_settings_xml(path)
     except OSError as e:

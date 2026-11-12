@@ -1,0 +1,377 @@
+<ImageDocument>
+  <Metadata>
+    <Information>
+      <User Id="0" />
+      <Application>
+        <Name>ZEN 3.1 (blue edition)</Name>
+        <Version>3.1.0.00015</Version>
+        <BuildId>3.3.19301.1</BuildId>
+      </Application>
+      <Document>
+        <CreationDate>2024-11-19T10:22:47.9761033+00:00</CreationDate>
+        <UserName>zeiss</UserName>
+      </Document>
+      <Image>
+        <AcquisitionDateAndTime>2024-11-19T10:22:47.9331276Z</AcquisitionDateAndTime>
+        <SizeC>4</SizeC>
+        <ComponentBitCount>14</ComponentBitCount>
+        <PixelType>Gray16</PixelType>
+        <SizeX>37462</SizeX>
+        <SizeY>32053</SizeY>
+        <SizeS>1</SizeS>
+        <SizeM>255</SizeM>
+        <OriginalCompressionMethod>JpgXr</OriginalCompressionMethod>
+        <OriginalEncodingQuality>85</OriginalEncodingQuality>
+        <SizeH>1</SizeH>
+        <AcquisitionDuration>1513630.6576</AcquisitionDuration>
+        <Dimensions>
+          <Channels>
+            <Channel Id="Channel:0" Name="H3342">
+              <ExcitationWavelength>348</ExcitationWavelength>
+              <EmissionWavelength>455</EmissionWavelength>
+              <DyeId>McNamara-Boswell-1326</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FF0000FF</Color>
+              <Fluor>Hoechst 33342</Fluor>
+              <ExposureTime>7000000</ExposureTime>
+              <Reflector>96 HE BFP</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <CustomAttributes>
+                <MM.TotalMagnification>19.98971</MM.TotalMagnification>
+              </CustomAttributes>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>14</ComponentBitCount>
+              <AcquisitionMode>WideField</AcquisitionMode>
+              <IlluminationWavelength>
+                <SinglePeak>385</SinglePeak>
+                <Ranges>370-400</Ranges>
+              </IlluminationWavelength>
+              <DetectorSettings>
+                <Binning>1,1</Binning>
+                <Detector Id="Detector:Axiocam 506" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Intensity>50.00 %</Intensity>
+                  <LightSource Id="LightSource:1" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <FilterSetRef Id="FilterSet:1" />
+            </Channel>
+            <Channel Id="Channel:1" Name="FITC">
+              <ExcitationWavelength>495</ExcitationWavelength>
+              <EmissionWavelength>519</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0172</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FF00FF28</Color>
+              <Fluor>FITC</Fluor>
+              <ExposureTime>30000000</ExposureTime>
+              <Reflector>38 HE Green Fluorescent Prot</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <CustomAttributes>
+                <MM.TotalMagnification>19.98971</MM.TotalMagnification>
+              </CustomAttributes>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>14</ComponentBitCount>
+              <AcquisitionMode>WideField</AcquisitionMode>
+              <IlluminationWavelength>
+                <SinglePeak>475</SinglePeak>
+                <Ranges>450-488</Ranges>
+              </IlluminationWavelength>
+              <DetectorSettings>
+                <Binning>1,1</Binning>
+                <Detector Id="Detector:Axiocam 506" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Intensity>50.00 %</Intensity>
+                  <LightSource Id="LightSource:2" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <FilterSetRef Id="FilterSet:2" />
+            </Channel>
+            <Channel Id="Channel:2" Name="Cy3">
+              <ExcitationWavelength>548</ExcitationWavelength>
+              <EmissionWavelength>561</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0615</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FFFFFF00</Color>
+              <Fluor>Cy3</Fluor>
+              <ExposureTime>30000000</ExposureTime>
+              <Reflector>none</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <CustomAttributes>
+                <MM.TotalMagnification>19.98971</MM.TotalMagnification>
+              </CustomAttributes>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>14</ComponentBitCount>
+              <AcquisitionMode>WideField</AcquisitionMode>
+              <DetectorSettings>
+                <Binning>1,1</Binning>
+                <Detector Id="Detector:Axiocam 506" />
+              </DetectorSettings>
+            </Channel>
+            <Channel Id="Channel:3" Name="Cy5">
+              <ExcitationWavelength>650</ExcitationWavelength>
+              <EmissionWavelength>673</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0774</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FFFF0014</Color>
+              <Fluor>Cy5</Fluor>
+              <ExposureTime>10000000</ExposureTime>
+              <Reflector>50 Cy 5</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <CustomAttributes>
+                <MM.TotalMagnification>19.98971</MM.TotalMagnification>
+              </CustomAttributes>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>14</ComponentBitCount>
+              <AcquisitionMode>WideField</AcquisitionMode>
+              <IlluminationWavelength>
+                <SinglePeak>630</SinglePeak>
+                <Ranges>615-648</Ranges>
+              </IlluminationWavelength>
+              <DetectorSettings>
+                <Binning>1,1</Binning>
+                <Detector Id="Detector:Axiocam 506" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Intensity>50.00 %</Intensity>
+                  <LightSource Id="LightSource:3" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <FilterSetRef Id="FilterSet:3" />
+            </Channel>
+          </Channels>
+          <Tracks>
+            <Track Id="Track:1">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:0" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:2">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:1" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:3">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:2" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:4">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:3" />
+              </ChannelRefs>
+            </Track>
+          </Tracks>
+          <X>
+            <AxisOrientation>-1</AxisOrientation>
+          </X>
+          <Y>
+            <AxisOrientation>-1</AxisOrientation>
+          </Y>
+          <T>
+            <StartTime>2024-11-19T10:22:47.9331276Z</StartTime>
+            <Positions>
+              <BinaryList>
+                <AttachmentName>TimeStamps</AttachmentName>
+              </BinaryList>
+            </Positions>
+          </T>
+          <S>
+            <Scenes>
+              <Scene Index="0" Name="ScanRegion0">
+                <RegionId>638676047251082194</RegionId>
+                <ScanMode>Comb</ScanMode>
+                <CenterPosition>-29078.71,9702.26</CenterPosition>
+                <ContourSize>8089.51,6809.983</ContourSize>
+                <PyramidInfo>
+                  <IsSane>true</IsSane>
+                  <PyramidLayersCount>4</PyramidLayersCount>
+                  <IsMinimalCoverage>true</IsMinimalCoverage>
+                  <MinificationFactor>3</MinificationFactor>
+                </PyramidInfo>
+              </Scene>
+            </Scenes>
+          </S>
+        </Dimensions>
+        <ObjectiveSettings>
+          <RefractiveIndex>1.000293</RefractiveIndex>
+          <Medium>Air</Medium>
+          <ObjectiveRef Id="Objective:1" />
+        </ObjectiveSettings>
+        <MicroscopeRef Id="Microscope:1" />
+        <Session SessionId="4551bd6f-1093-4c0f-a897-a2d6a4ec1762" SessionName="AS - 20241108_174957" SessionCreation="Uncalibrated">
+          <SessionMatrix>1 0 0 0 0 -1 0 0 0 0 1 0 0 0 0 1</SessionMatrix>
+          <HolderCwsId>0</HolderCwsId>
+          <SessionCount>0</SessionCount>
+        </Session>
+      </Image>
+      <Instrument>
+        <Microscopes>
+          <Microscope Id="Microscope:1" Name="Axio Scan.Z1">
+            <Type>Upright</Type>
+          </Microscope>
+        </Microscopes>
+        <LightSources>
+          <LightSource Id="LightSource:1" Name="LED-Module 385nm    ">
+            <LightSourceType>
+              <LightEmittingDiode />
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="LightSource:2" Name="LED-Module 475nm    ">
+            <LightSourceType>
+              <LightEmittingDiode />
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="LightSource:3" Name="LED-Module 630nm    ">
+            <LightSourceType>
+              <LightEmittingDiode />
+            </LightSourceType>
+          </LightSource>
+        </LightSources>
+        <Detectors>
+          <Detector Id="Detector:Axiocam 506" Name="Axiocam 506">
+            <GammaDefault>1</GammaDefault>
+            <Manufacturer>
+              <Model>Axiocam506m</Model>
+            </Manufacturer>
+            <Adapter>
+              <Manufacturer>
+                <Model>1x Camera Adapter</Model>
+              </Manufacturer>
+            </Adapter>
+          </Detector>
+        </Detectors>
+        <Objectives>
+          <Objective Id="Objective:1" Name="Plan-Apochromat 20x/0.8 M27">
+            <LensNA>0.8</LensNA>
+            <NominalMagnification>20</NominalMagnification>
+            <WorkingDistance>610</WorkingDistance>
+            <PupilGeometry>Circular</PupilGeometry>
+            <ImmersionRefractiveIndex>1.000293</ImmersionRefractiveIndex>
+            <Immersion>Air</Immersion>
+            <Manufacturer>
+              <Model>Plan-Apochromat 20x/0.8 M27</Model>
+            </Manufacturer>
+          </Objective>
+        </Objectives>
+        <FilterSets>
+          <FilterSet Id="FilterSet:1">
+            <DichroicRef Id="Dichroic:1" />
+            <EmissionFilters>
+              <EmissionFilterRef Id="Filter:2" />
+            </EmissionFilters>
+            <ExcitationFilters>
+              <ExcitationFilterRef Id="Filter:1" />
+            </ExcitationFilters>
+          </FilterSet>
+          <FilterSet Id="FilterSet:2">
+            <DichroicRef Id="Dichroic:2" />
+            <EmissionFilters>
+              <EmissionFilterRef Id="Filter:4" />
+            </EmissionFilters>
+            <ExcitationFilters>
+              <ExcitationFilterRef Id="Filter:3" />
+            </ExcitationFilters>
+          </FilterSet>
+          <FilterSet Id="FilterSet:3">
+            <DichroicRef Id="Dichroic:3" />
+            <EmissionFilters>
+              <EmissionFilterRef Id="Filter:6" />
+            </EmissionFilters>
+            <ExcitationFilters>
+              <ExcitationFilterRef Id="Filter:5" />
+            </ExcitationFilters>
+          </FilterSet>
+        </FilterSets>
+        <Filters>
+          <Filter Id="Filter:1">
+            <TransmittanceRange>
+              <CutIn>370</CutIn>
+              <CutOut>410</CutOut>
+            </TransmittanceRange>
+          </Filter>
+          <Filter Id="Filter:2">
+            <TransmittanceRange>
+              <CutIn>430</CutIn>
+              <CutOut>470</CutOut>
+            </TransmittanceRange>
+          </Filter>
+          <Filter Id="Filter:3">
+            <TransmittanceRange>
+              <CutIn>450</CutIn>
+              <CutOut>490</CutOut>
+            </TransmittanceRange>
+          </Filter>
+          <Filter Id="Filter:4">
+            <TransmittanceRange>
+              <CutIn>500</CutIn>
+              <CutOut>550</CutOut>
+            </TransmittanceRange>
+          </Filter>
+          <Filter Id="Filter:5">
+            <TransmittanceRange>
+              <CutIn>625</CutIn>
+              <CutOut>655</CutOut>
+            </TransmittanceRange>
+          </Filter>
+          <Filter Id="Filter:6">
+            <TransmittanceRange>
+              <CutIn>665</CutIn>
+              <CutOut>715</CutOut>
+            </TransmittanceRange>
+          </Filter>
+        </Filters>
+        <Dichroics>
+          <Dichroic Id="Dichroic:1">
+            <Wavelengths>
+              <Wavelength>420</Wavelength>
+            </Wavelengths>
+          </Dichroic>
+          <Dichroic Id="Dichroic:2">
+            <Wavelengths>
+              <Wavelength>495</Wavelength>
+            </Wavelengths>
+          </Dichroic>
+          <Dichroic Id="Dichroic:3">
+            <Wavelengths>
+              <Wavelength>660</Wavelength>
+            </Wavelengths>
+          </Dichroic>
+        </Dichroics>
+      </Instrument>
+    </Information>
+    <Scaling>
+      <Metadata />
+      <AutoScaling>
+        <Type>Measured</Type>
+        <Objective>Objective.420650-9901-000</Objective>
+        <Reflector>Reflector.489096-9100-000</Reflector>
+        <CameraAdapter>CameraAdapter.1x</CameraAdapter>
+        <ObjectiveName>Plan-Apochromat 20x/0.8 M27</ObjectiveName>
+        <ReflectorMagnification>1</ReflectorMagnification>
+        <CameraName>Axiocam 506</CameraName>
+        <CameraAdapterMagnification>1</CameraAdapterMagnification>
+        <CameraPixelDistance>4.54,4.54</CameraPixelDistance>
+        <CreationDateTime>11/19/2024 10:36:52</CreationDateTime>
+      </AutoScaling>
+      <Items>
+        <Distance Id="X">
+          <Value>2.2711685162015858E-07</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Y">
+          <Value>2.2711685162015858E-07</Value>
+          <DefaultUnitFormat>µm</DefaultUnitFormat>
+        </Distance>
+      </Items>
+    </Scaling>
+    </Metadata>
+</ImageDocument>

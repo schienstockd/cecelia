@@ -8,17 +8,21 @@ The acquisition clipping + sparsity probe (`saturation_run.py`): one streamed hi
 `zarr_path`, returning the `meta["saturation"]` value `Dict("channels" => [...])` — plus a
 `"partialTimepoint"` entry when the acquisition stopped mid-volume, which callers pop into its own
 meta field — or `nothing` when
-the probe failed or the store is not integer data. The ONE implementation — import runs it on every
+the probe failed or the store is not integer data. `acquisition` is the image's
+`meta["acquisition"]` (or `nothing`): channels it says were processed before writing get no photon
+fit (`photons_untestable`). The ONE implementation — import runs it on every
 new store, `ensure_saturation_meta!` on images imported before the field existed. Advisory: never
 throws. No drift estimate: that is the drift correction task's (`data_path` docstring).
 """
 function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
+                           acquisition = nothing,
                            on_log::Function = _ -> nothing,
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function = _ -> nothing)::Union{Dict{String,Any},Nothing}
     result_file = joinpath(run_dir, "saturation.$(string(rand(UInt32); base = 16)).result.json")
     ok = run_py("tasks/importImages/saturation_run.py",
-                (; imPath = zarr_path, resultPath = result_file), run_dir;
+                (; imPath = zarr_path, resultPath = result_file,
+                   photonsUntestable = photons_untestable(acquisition)), run_dir;
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     (ok && isfile(result_file)) || return nothing
     try
@@ -31,6 +35,31 @@ function _probe_saturation(zarr_path::AbstractString, run_dir::AbstractString;
     finally
         rm(result_file; force = true)
     end
+end
+
+"""
+    photons_untestable(acquisition) -> Dict{String,String}
+
+Channels (0-based index as a string → reason) whose photon count the noise can no longer tell,
+because the instrument processed the pixels before writing (`meta["acquisition"]`, from the
+source reader): a flat-field (shading) correction scales each part of the field by its own gain,
+and a subtracted autofluorescence shifts and widens the noise, so a variance-against-mean fit reads
+a wrong gain with confidence. Empty without settings or processing.
+"""
+function photons_untestable(acquisition)::Dict{String,String}
+    out = Dict{String,String}()
+    acquisition isa AbstractDict || return out
+    # `_ag`: a stored ccid hands nested settings back as JSON3 objects with Symbol keys
+    proc = _ag(acquisition, "processing")
+    proc = proc isa AbstractString && !isempty(proc) && lowercase(proc) != "none" ? String(proc) : nothing
+    for (i, ch) in enumerate(something(_ag(acquisition, "channels"), Any[]))
+        ch isa AbstractDict || continue
+        why = String[]
+        isnothing(proc) || push!(why, "corrected by the scanner before writing ($proc)")
+        _ag(ch, "afSubtracted") === true && push!(why, "autofluorescence subtracted by the scanner")
+        isempty(why) || (out[string(i - 1)] = join(why, "; "))
+    end
+    out
 end
 
 """
@@ -57,18 +86,27 @@ const SATURATION_CURRENT_KEYS = ("profile", "range", "floor", "noise", "photons"
 
 """Whether a stored `meta` carries a probe with every `SATURATION_CURRENT_KEYS` field on every channel.
 Through `_saturation_channels`, which normalises JSON3's Symbol keys — a raw `haskey(ch, "profile")`
-on the persisted ccid would never match."""
+on the persisted ccid would never match. Also not current: a channel `photons_untestable` names
+whose `photons` has no `notMeasured` (fitted before the scanner skip existed)."""
 function _saturation_is_current(meta::AbstractDict)::Bool
     chans = _saturation_channels(meta)
-    !isempty(chans) && all(ch -> all(k -> haskey(ch, k), SATURATION_CURRENT_KEYS), chans)
+    isempty(chans) && return false
+    all(ch -> all(k -> haskey(ch, k), SATURATION_CURRENT_KEYS), chans) || return false
+    # a channel the settings say the scanner processed must carry the skip, not a photon fit from a
+    # probe that ran before the skip existed
+    skip = photons_untestable(get(meta, "acquisition", nothing))
+    all(chans) do ch
+        idx = _ag(ch, "index")
+        idx === nothing || !haskey(skip, string(Int(idx))) || _ag(_ag(ch, "photons"), "notMeasured") !== nothing
+    end
 end
 
 """
     ensure_saturation_meta!(img) -> Bool
 
 Backfill `meta["saturation"]` for an image imported before the probe existed — or before it
-recorded every `SATURATION_CURRENT_KEYS` field (any of `SATURATION_CURRENT_KEYS`), in which
-case the key is replaced, not merged — so denoise's
+recorded every `SATURATION_CURRENT_KEYS` field, or with a photon fit on a channel the scanner
+processed (`_saturation_is_current`), in which case the key is replaced, not merged — so denoise's
 saturation gate, the import QC dot and the Cleanup facts (`img_cleanup_facts`) have their signal.
 Called by the denoise task and by Refresh metadata in the image dialog (`measure: true` on
 `POST /api/images/meta/resync`). A no-op when
@@ -93,7 +131,8 @@ function ensure_saturation_meta!(img::CciaImage;
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     # progress + the process handle reach the runner: a full pass over a big movie is minutes, and
     # cancel needs the handle
-    sat = _probe_saturation(zarr_path, task_run_dir(img._dir); on_log = on_log,
+    sat = _probe_saturation(zarr_path, task_run_dir(img._dir);
+                            acquisition = get(meta, "acquisition", nothing), on_log = on_log,
                             on_progress = on_progress, on_process = on_process)
     isnothing(sat) && return false
     # An already-imported store is not trimmed (derived stores and labels depend on its T); the record

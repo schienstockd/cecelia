@@ -27,14 +27,27 @@ SIGNAL_SAMPLE_T = 4
 SIGNAL_SAMPLE_Z = 16
 #: Voxels per plane kept for the object and shared-structure statistics (same positions in every channel).
 SIGNAL_SAMPLE_VOXELS = 20000
+#: A plane larger than this (pixels) is read as `SIGNAL_PATCH_GRID`² patches, not whole: a slide scan's
+#: plane is gigapixels per channel, and the float copies the photon fit makes of it ran a 1.2 Gpx
+#: four-channel scan out of memory. A microscope frame (up to 4096²) is read whole, as before.
+SIGNAL_WHOLE_PLANE_PX = 4096 * 4096
+#: Patches per side on a large plane, evenly spread over it, the same in every channel.
+SIGNAL_PATCH_GRID = 4
+#: Side of a patch's sampled interior (pixels).
+SIGNAL_PATCH_PX = 1024
+#: Context read around a patch so its band-pass (`photon_utils.structure_plane`, background sigma
+#: `STRUCTURE_BG_SIGMA_PX`, Gaussian truncated at 4 sigma) sees real pixels at the interior's edge.
+SIGNAL_PATCH_MARGIN_PX = int(4 * photon_utils.STRUCTURE_BG_SIGMA_PX)
 
 
-def measure_store(im_path, log=None):
+def measure_store(im_path, log=None, photons_untestable=None):
     """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
     with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
     `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
     `partialTimepoint` when the last timepoint stopped mid-volume (left out of every stat), plus the
     signal pass (`measure_signal`): a `photons` entry per channel and top-level `sharedStructure`.
+    ``photons_untestable`` (`measure_signal`) names channels whose photons the file cannot tell: no
+    photon fit, and a `photon-counted` floor on one is read as `indeterminate` (no photon count).
     Raises on a store that is not integer data (`channel_histograms`) — the caller decides whether
     that fails anything."""
     say = log or (lambda _m: None)
@@ -73,6 +86,7 @@ def measure_store(im_path, log=None):
         profile.drop_t(partial['t'])
 
     bits = int(np.dtype(level0.dtype).itemsize * 8)
+    processed = {int(k): v for k, v in (photons_untestable or {}).items() if v}
     channels = []
     for i, h in enumerate(hists):
         stats = intensity_utils.saturation_stats(h)
@@ -80,6 +94,11 @@ def measure_store(im_path, log=None):
         stats['containerBits'] = bits
         stats['range'] = intensity_utils.range_stats(h)
         stats['floor'] = intensity_utils.floor_stats(h)
+        if i in processed and stats['floor']['kind'] == 'photon-counted':
+            # the scanner wrote these values after its own processing: a gap then evenly spaced
+            # peaks is not one photon per step, so no photon count is read from it
+            stats['floor'].update(kind='indeterminate', photonStep=None, photons=None,
+                                  evidence=f'not photon counts: {processed[i]}')
         stats['noise'] = intensity_utils.noise_stats(h, floor=stats['floor'])
         stats['profile'] = profile.summary(i, intensity_utils.profile_ceiling(stats))
         channels.append(stats)
@@ -88,7 +107,8 @@ def measure_store(im_path, log=None):
             f'= {stats["clippedSignalFrac"] * 100:.4f}% of signal)')
     out = {'channels': channels, 'sampling': 'full pass'}
     skip_t = partial['t'] if partial is not None else None
-    out.update(measure_signal(level0, axes, channels, skip_t=skip_t, log=say))
+    out.update(measure_signal(level0, axes, channels, skip_t=skip_t, log=say,
+                              photons_untestable=photons_untestable))
     if partial is not None:
         out['partialTimepoint'] = partial
         say(f'>> [WARN] last timepoint (t{partial["t"]}) is incomplete: '
@@ -120,19 +140,46 @@ def _sample_positions(n, k, seed):
     return rng.choice(n, size=min(k, n), replace=False)
 
 
-def measure_signal(level0, axes, channels, skip_t=None, log=None):
+def _signal_regions(h, w):
+    """Where the signal pass reads one plane: ``[(read, inner)]`` — ``read`` the (y, x) slices to read,
+    ``inner`` the slices, within what was read, that the sample positions come from. The whole plane
+    when it is at most `SIGNAL_WHOLE_PLANE_PX`; otherwise `SIGNAL_PATCH_GRID`² patches of
+    `SIGNAL_PATCH_PX` evenly spread over it, each read with `SIGNAL_PATCH_MARGIN_PX` of context."""
+    if h * w <= SIGNAL_WHOLE_PLANE_PX:
+        return [((slice(0, h), slice(0, w)), (slice(0, h), slice(0, w)))]
+    def starts(n):
+        side = min(SIGNAL_PATCH_PX, n)
+        return side, sorted(set(np.linspace(0, n - side, SIGNAL_PATCH_GRID).round().astype(int).tolist()))
+    (sy, ys), (sx, xs) = starts(h), starts(w)
+    m = SIGNAL_PATCH_MARGIN_PX
+    out = []
+    for y in ys:
+        for x in xs:
+            y0, x0 = max(0, y - m), max(0, x - m)
+            read = (slice(y0, min(h, y + sy + m)), slice(x0, min(w, x + sx + m)))
+            out.append((read, (slice(y - y0, y - y0 + sy), slice(x - x0, x - x0 + sx))))
+    return out
+
+
+def measure_signal(level0, axes, channels, skip_t=None, log=None, photons_untestable=None):
     """The test-acquisition checks that need where a voxel sits, from a SAMPLE of planes
     (`docs/todo/ACQUISITION_TEST_CHECK_PLAN.md`): `SIGNAL_SAMPLE_T` timepoints x `SIGNAL_SAMPLE_Z`
-    planes, every channel read at the same planes and positions.
+    planes, every channel read at the same planes and positions. A plane past `SIGNAL_WHOLE_PLANE_PX`
+    (a slide scan) is read as patches (`_signal_regions`), so memory stays bounded at any image size.
 
     Adds ``photons`` to each entry of ``channels`` (this pass's per-channel result, from
     `measure_store`): ``{fit: photon_utils.fit_photon_transfer, objects: photon_utils.object_photons}``,
     offset at the channel's background median and windows at its ceiling dropped when it clipped.
+    ``photons_untestable`` — ``{channel index: reason}`` — skips the fit on channels whose noise no
+    longer follows the photons (a scanner that corrected shading or subtracted autofluorescence
+    before writing): their ``fit`` carries the reason as ``untestable``, ``objects`` is None and
+    ``notMeasured`` repeats the reason (only a skipped channel has it — what the data-path panel shows).
     Returns ``{sharedStructure: photon_utils.shared_structure}``.
     A sample suffices: none of these is a voxel count (clipping is, and stays on the full pass).
     ``skip_t`` is a timepoint that is not acquisition data (a stopped acquisition's last frame).
     """
     say = log or (lambda _m: None)
+    skip_fit = {int(k): v for k, v in (photons_untestable or {}).items() if v}
     c_idx, t_idx, z_idx = axes['C'], axes['T'], axes['Z']
     def spread(axis, k):
         if axis is None:
@@ -142,7 +189,9 @@ def measure_signal(level0, axes, channels, skip_t=None, log=None):
         return [i for i in idx if not (axis == t_idx and i == skip_t)]
     ts, zs = spread(t_idx, SIGNAL_SAMPLE_T), spread(z_idx, SIGNAL_SAMPLE_Z)
     n_c = level0.shape[c_idx] if c_idx is not None else 1
-    say(f'>> signal pass: {len(ts)} timepoint(s) x {len(zs)} plane(s): photons, objects, shared structure')
+    regions = _signal_regions(level0.shape[-2], level0.shape[-1])
+    where = f'{len(regions)} patches per plane' if len(regions) > 1 else 'whole planes'
+    say(f'>> signal pass: {len(ts)} timepoint(s) x {len(zs)} plane(s), {where}: photons, objects, shared structure')
 
     ceil = {i: (ch['topValue'] if ch.get('saturated') else None) for i, ch in enumerate(channels)}
     # a photon-counted channel's zeros are photon-free voxels: data for the fit, and its zero-photon
@@ -153,35 +202,45 @@ def measure_signal(level0, axes, channels, skip_t=None, log=None):
     smooth = {c: [] for c in range(n_c)}
     struct = {c: [] for c in range(n_c)}
     raw = {c: [] for c in range(n_c)}
+    per_region = max(1, SIGNAL_SAMPLE_VOXELS // len(regions))
     seed = 0
     for t in ts:
         for z in zs:
-            planes = []
-            for c in range(n_c):
-                sl = [0] * (level0.ndim - 2) + [slice(None), slice(None)]
-                for ax, v in ((c_idx, c), (t_idx, t), (z_idx, z)):
-                    if ax is not None:
-                        sl[ax] = v
-                planes.append(np.asarray(level0[tuple(sl)]))
-            pos = _sample_positions(planes[0].size, SIGNAL_SAMPLE_VOXELS, seed)
-            seed += 1
-            for c, p in enumerate(planes):
-                m, v = photon_utils.window_stats(p, ceil.get(c), drop_zeros=not counted.get(c, False))
-                win_mu[c].append(m)
-                win_var[c].append(v)
-                smooth[c].append(photon_utils.smooth_plane(p).ravel()[pos])
-                struct[c].append(photon_utils.structure_plane(p).ravel()[pos])
-                raw[c].append(p.ravel()[pos])
+            for read, inner in regions:
+                planes = []
+                for c in range(n_c):
+                    sl = [0] * (level0.ndim - 2) + list(read)
+                    for ax, v in ((c_idx, c), (t_idx, t), (z_idx, z)):
+                        if ax is not None:
+                            sl[ax] = v
+                    planes.append(np.asarray(level0[tuple(sl)]))
+                pos = _sample_positions(planes[0][inner].size, per_region, seed)
+                seed += 1
+                for c, p in enumerate(planes):
+                    if c not in skip_fit:
+                        m, v = photon_utils.window_stats(p, ceil.get(c), drop_zeros=not counted.get(c, False))
+                        win_mu[c].append(m)
+                        win_var[c].append(v)
+                        smooth[c].append(photon_utils.smooth_plane(p)[inner].ravel()[pos])
+                        raw[c].append(p[inner].ravel()[pos])
+                    struct[c].append(photon_utils.structure_plane(p)[inner].ravel()[pos])
 
     for c in range(n_c):
-        offset = (0.0 if counted.get(c) else
-                  (channels[c].get('noise') or {}).get('bgMedian') if c < len(channels) else None)
-        fit = photon_utils.fit_photon_transfer(np.concatenate(win_mu[c]), np.concatenate(win_var[c]),
-                                               offset=offset)
-        objects = photon_utils.object_photons(np.concatenate(smooth[c]), fit, ceiling=ceil.get(c),
-                                              raw=np.concatenate(raw[c]))
+        if c in skip_fit:
+            fit = photon_utils.fit_photon_transfer(np.zeros(0), np.zeros(0))
+            fit['untestable'] = skip_fit[c]
+            objects = None
+        else:
+            offset = (0.0 if counted.get(c) else
+                      (channels[c].get('noise') or {}).get('bgMedian') if c < len(channels) else None)
+            fit = photon_utils.fit_photon_transfer(np.concatenate(win_mu[c]), np.concatenate(win_var[c]),
+                                                   offset=offset)
+            objects = photon_utils.object_photons(np.concatenate(smooth[c]), fit, ceiling=ceil.get(c),
+                                                  raw=np.concatenate(raw[c]))
         if c < len(channels):
             channels[c]['photons'] = {'fit': fit, 'objects': objects}
+            if c in skip_fit:
+                channels[c]['photons']['notMeasured'] = skip_fit[c]
         g = fit['greyPerPhoton']
         say(f'   ch{c}: ' + (f'{g:.1f} grey levels per photon'
                              + (f', ceiling = {objects["ceilingPhotons"]:.1f} photons'

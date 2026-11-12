@@ -51,8 +51,20 @@ const glyph = (c: { source: CardCell['source'] }) => CARD_GLYPH[c.source]
       </tbody>
     </table>
 
-    <h2>2 · Detectors, per channel</h2>
-    <table>
+    <h2 v-if="card.camera">2 · Camera, per channel</h2>
+    <table v-if="card.camera">
+      <thead><tr><th>Channel</th><th>Filter cube</th><th>Exposure</th><th>Gain</th><th>Lamp</th><th class="acs-run">This run</th></tr></thead>
+      <tbody>
+        <tr v-for="c in card.camera" :key="c.channel">
+          <td><b>{{ c.channel }}</b></td>
+          <td v-for="(x, i) in [c.cube, c.exposure, c.gain, c.lamp]" :key="i" :class="{ 'acs-blank': x.source === 'missing' }">{{ glyph(x) }} {{ x.text }}</td>
+          <td class="acs-run" />
+        </tr>
+      </tbody>
+    </table>
+
+    <h2 v-if="!card.camera">2 · Detectors, per channel</h2>
+    <table v-if="!card.camera">
       <thead><tr><th>Channel</th><th>Dye preset</th><th>Laser</th><th>Detector</th><th>Emission filter</th><th>HV</th><th>Gain · offset</th><th class="acs-run">This run</th></tr></thead>
       <tbody>
         <tr v-for="(d, i) in card.detectors" :key="d.channel">

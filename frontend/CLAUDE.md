@@ -25,6 +25,8 @@ bullets; never read it whole), then `grep -rn src/` for what your code READS (`d
 
 ## Conventions
 
+**Viewer features record too.** A change to what the viewer DRAWS (a mask, its files, overlays, colours) carries its input through the recording path in the same change — a field on `ViewerDrawSpec` (`utils/viewer/drawSpec.ts`, marked in `RECORDED`) → `viewerLook.ts` → the movie config → the Julia mask / overlays → `render_animation_run.py`. Movies and stills must match the viewer. `../docs/ARCHITECTURE.md` → *Recording parity*.
+
 **Keep UI copy short.** Default to NO explanatory text in the app — no page subtitles, no paragraph tooltips, no prose QC findings. Where orientation genuinely isn't self-evident, one phrase under ~10 words, never two sentences. Long in-app prose is noise forever for the person who uses the page daily, and is the most reliable tell that a screen was generated. The explanation goes in the relevant `../docs/<AREA>.md`. Per-surface budgets: [`docs/ui/COPY.md`](../docs/ui/COPY.md).
 
 **Persist every user-settable option.** Any option on a module page / canvas (chart type, scope, compare mode, highlights, sliders, …) MUST live in persisted view state (`useViewState` over a store-backed bag / panel `state`), never a bare `ref()` — a `ref()` resets on remount, so options vanish when the user navigates away and back. This is a hard convention for new pages; see `../docs/MODULES.md` → "RULE: persist every user-settable option" and `../docs/UI.md` → "Persisting view state".

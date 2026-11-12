@@ -43,7 +43,9 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
                          ``LABEL_OPACITY``) / ``labelContourPx``; ``labelColouring``
                          ``palette`` (default) or ``table``: ``labelColours`` = ``{ids,
                          colours}`` draws only those labels, in those colours (a population
-                         mask) — an empty table draws no mask
+                         mask) — an empty table draws no mask; ``labelFiles`` ``[{path, inside}]``:
+                         its derived stores (halo / nuc), packed into it per frame
+                         (``wgpu_host.compose_label_files``) — a store not on the mask's grid is skipped
     ``pointSizePx`` / ``pointBorderPx`` / ``segmentWidthPx`` : overlay style, in output pixels —
                          or, the size and width, in IMAGE pixels when ``overlaySizeUnit`` is
                          ``image`` (the viewer's unit: they then scale with the camera, as in the
@@ -321,6 +323,7 @@ def render_frames(params, host, log):
     host.set_palette(palette)
     host.set_labels(None)
     labels_arr = label_style = None
+    label_files = []
     if params.get('labelsPath'):
         # The mask goes on the same grid as the image level, or not at all — a mismatched texture
         # would outline the wrong voxels (Julia's `mask_fits_frame` already checked level 0).
@@ -337,6 +340,20 @@ def render_frames(params, host, log):
             log.log(f'[WARN] mask skipped — its level {level} is not the image level\'s size')
         elif level < len(lab_levels):
             labels_arr, lab_axes = lab_levels[level], read_axes(params['labelsPath'])
+            # a file that is unreadable or off the mask's grid is skipped, as the slab route skips it
+            for lf in params.get('labelFiles') or []:
+                name = os.path.basename(lf['path'])
+                try:
+                    f_levels, _ = open_as_zarr(lf['path'])
+                    f_axes = read_axes(lf['path'])
+                except Exception as e:
+                    log.log(f'[WARN] mask file skipped — {name} could not be read: {e}')
+                    continue
+                if level < len(f_levels) and f_levels[level].shape == labels_arr.shape \
+                        and list(f_axes) == list(lab_axes):
+                    label_files.append((f_levels[level], f_axes, bool(lf.get('inside', True)), name))
+                else:
+                    log.log(f"[WARN] mask file skipped — {name} is not on the mask's grid")
             opacity = params.get('labelOpacity', wgsl_utils.shader_constants()['LABEL_OPACITY'])
             label_style = {'opacity': float(opacity),
                            'contourPx': max(0, int(round(float(params.get('labelContourPx', 0))))),
@@ -375,7 +392,15 @@ def render_frames(params, host, log):
             dims = vol.shape
             if labels_arr is not None:
                 lab = _load_at_t(labels_arr, t_idx, lab_axes, want=('z', 'y', 'x'), z_slice=zs, yx=yx)
-                host.set_labels(np.ascontiguousarray(lab, dtype=np.uint32))
+                lab = np.array(lab, dtype=np.uint32, order='C')
+                for f_arr, f_axes, inside, name in label_files:
+                    try:
+                        f = _load_at_t(f_arr, t_idx, f_axes, want=('z', 'y', 'x'), z_slice=zs, yx=yx)
+                    except Exception as e:
+                        log.log(f'[WARN] mask file {name} skipped at t={t_idx}: {e}')
+                        continue
+                    wgpu_host.compose_label_files(lab, np.asarray(f), inside=inside)
+                host.set_labels(lab)
             cached = key
         host.set_lut(wgpu_host.lut_rows([s.get('lut') or [] for s in state.get('specs') or []]))
         ov = state.get('overlays3d') or {}

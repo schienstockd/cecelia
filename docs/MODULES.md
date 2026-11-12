@@ -1656,9 +1656,9 @@ working untouched; there is no migration.
   the re-measure as a write INTO that set and its `replaces`); a composite inherits its first step's
   (`task_writes_into_key` folds the same way).
   The track-set delete reads the rebuild's `dims` + `windowMinutes` from the run log's latest done
-  measures run for the name, falling back to the by-name record only when the log has no
-  failed/cancelled/running run for it (dispatch writes the record whatever the outcome), then to what
-  the measures QC banked (`motionDims`, `windowMinutes`), and otherwise refuses before deleting
+  measures run for the name — never from the by-name record, which dispatch writes whatever the
+  outcome and which every params-era run also logged (one with no log entry means the log was lost) —
+  then from what the measures QC banked (`motionDims`, `windowMinutes`), and otherwise refuses before deleting
   anything (`_track_measures_rebuild_params`).
 - **The name comes from the spec, not from a key.** `Cecelia.task_output_name(fun, params)` reads the
   `namespace` declaration, because six different keys can carry it. It is the Julia twin of

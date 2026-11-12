@@ -70,3 +70,37 @@ let oir_doc = normpath(joinpath(test_projects_dir(), "..", "acquisition",
         @test_skip "acquisition fixture missing"
     end
 end
+
+# ── A multi-image `.lif`: the reader registry routes it, and `series` picks the image ──
+# The header is the real LAS X fixture (test-data/acquisition/lif_*), wrapped in the LIF block layout
+# (`write_lif` in python/cecelia/tests/test_lif_meta.py). Its series 1 (Image002) records two channels, series 2 (Image007) one: a
+# store with one channel takes series 2's settings and is refused series 1's.
+@testset "acquisition settings: .lif via the registry, by series" begin
+    @test ".lif" in Cecelia.ACQUISITION_SETTINGS_FORMATS
+    @test Cecelia.ACQUISITION_READER_VERSIONS["lif"] >= 1
+    xml = read(normpath(joinpath(test_projects_dir(), "..", "acquisition",
+                                 "lif_dm5500b_las-x-3.4.2_header.xml")), String)
+    mktempdir() do dir
+        lif = joinpath(dir, "speck.lif")
+        data = transcode(UInt16, xml)
+        open(lif, "w") do io
+            write(io, Int32(0x70), Int32(2 * length(data) + 5), UInt8(0x2A), Int32(length(data)))
+            write(io, htol.(data))
+            # one 1-byte stand-in data block per image (3): readlif refuses a file without them
+            for _ in 1:3
+                write(io, Int32(0x70), Int32(0), UInt8(0x2A), Int32(1), UInt8(0x2A), Int32(0), UInt8(0))
+            end
+        end
+        one = Dict{String,Any}("SizeC" => 1, "SizeZ" => 1, "SizeT" => 1)
+        @test Cecelia._recover_acquisition_settings!(one, lif, dir; series = 2)
+        acq = one["acquisition"]
+        @test (acq["source"], acq["technology"], acq["system"]) == ("lif", "widefield", "DM5500B")
+        @test acq["imageName"] == "Image007" && length(acq["channels"]) == 1
+        wrong = Dict{String,Any}("SizeC" => 1, "SizeZ" => 1, "SizeT" => 1)
+        @test !Cecelia._recover_acquisition_settings!(wrong, lif, dir; series = 1)
+        @test wrong["acquisitionMissing"]["reason"] == "other-stack"
+    end
+    img_meta(s) = (meta = Dict{String,Any}("ori_series" => s),)
+    @test Cecelia._source_series(img_meta(3)) == 3
+    @test Cecelia._source_series((meta = Dict{String,Any}(),)) == 0
+end

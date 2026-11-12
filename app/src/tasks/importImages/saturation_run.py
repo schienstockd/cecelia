@@ -17,6 +17,8 @@ pile-up down with it and flips marginal channels.
 Parameter contract (JSON written by Julia):
   imPath     - absolute path to the .ome.zarr the import just wrote
   resultPath - absolute path to write the result JSON to
+  photonsUntestable - optional {"<channel index>": reason}: channels the source file says were
+               processed before writing, so their noise no longer counts photons (no photon fit)
 
 Result JSON: `cecelia.utils.data_path.measure_store` — {"channels": [{"index", "saturated",
 "topValue", …, "containerBits", "range", "floor", "noise", "profile", "photons"}, …], "sampling",
@@ -42,7 +44,8 @@ def run(params):
     log.progress(0, 2)
     try:
         log.progress(1, 2)
-        result = data_path.measure_store(im_path, log=log.log)
+        result = data_path.measure_store(im_path, log=log.log,
+                                         photons_untestable=params.get('photonsUntestable'))
     except Exception as e:
         # Advisory QC on a store that already converted successfully: report and move on. A
         # non-integer dtype (channel_histograms raises) or an unreadable OME is not an import failure.

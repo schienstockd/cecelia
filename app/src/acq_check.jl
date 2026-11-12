@@ -117,6 +117,21 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
                                           for l in _ag(acq, "lasers", Any[]) if l isa AbstractDict]; by = first) : nothing
     bz = acq isa AbstractDict ? _ag(_ag(acq, "brightZ"), "enabled") : nothing
     obj = acq isa AbstractDict ? _ag(_ag(acq, "objective"), "name") : nothing
+    # A camera's per-channel settings (`lif_meta`): cube, exposure, gain, lamp step — what scales a widefield
+    # image's intensities the way laser % and HV scale a scanned one. `nothing` without a camera.
+    # Detector settings per channel (laser scanning): detector, HV and gain — a different gain between
+    # images scales their intensities like a laser %. Not under Auto HV, where the recorded HV is not
+    # the one used (an FV4000 records 0). Scan settings: dwell and averaging (zoom is the pixel size).
+    det_on = acq isa AbstractDict && _ag(acq, "camera") === nothing && _ag(acq, "autoHV") !== true
+    detectors = det_on ? [(_ag(c, "detector"), _anum(_ag(c, "hv")), _anum(_ag(c, "gain")))
+                          for c in _ag(acq, "channels", Any[]) if c isa AbstractDict] : nothing
+    detectors !== nothing && all(d -> d[2] === nothing && d[3] === nothing, detectors) && (detectors = nothing)
+    sc = acq isa AbstractDict ? _ag(acq, "scanner") : nothing
+    scan = sc isa AbstractDict ? (_anum(_ag(sc, "pixelDwellUs")), _anum(_ag(_ag(sc, "integration"), "count"))) : nothing
+    scan !== nothing && all(isnothing, scan) && (scan = nothing)
+    camera = acq isa AbstractDict && _ag(acq, "camera") isa AbstractDict ?
+        [(_ag(c, "filterCube"), _anum(_ag(c, "exposureMs")), _anum(_ag(c, "gain")), _anum(_ag(c, "illuminationIntensity")))
+         for c in _ag(acq, "channels", Any[]) if c isa AbstractDict] : nothing
     filters = acq isa AbstractDict ? Dict(i - 1 => _ag(c, "emissionFilter") for (i, c) in enumerate(_ag(acq, "channels", Any[]))) : Dict()
     chans = Dict{Int,Dict{String,Any}}()
     probed = false
@@ -142,7 +157,11 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
     nch = max(length(channel_names), isempty(chans) ? 0 : maximum(keys(chans)) + 1)
     Dict{String,Any}("uid" => String(uid), "name" => String(name), "designKey" => acq_design_key(channel_names),
         "channelNames" => String[i <= length(channel_names) ? String(channel_names[i]) : "Channel $i" for i in 1:nch],
-        "lasers" => lasers, "brightZ" => bz isa Bool ? bz : nothing,
+        "lasers" => lasers, "camera" => camera, "detectors" => detectors, "scan" => scan,
+        "brightZ" => bz isa Bool ? bz : nothing,
+        # a time-lapse (more than one frame) — the set's findings call its members "movies" only when
+        # every one is; and the technology whose wording the advice takes (`qc_technology_key`)
+        "timeLapse" => something(_anum(_ag(meta, "SizeT")), 1.0) > 1, "technology" => acquisition_technology(meta),
         "brightZRamp" => acq isa AbstractDict ? acq_bright_z_ramp(_ag(acq, "brightZ")) : nothing,
         # no ramp found while some ramp value went unread: whether one was saved is unknown
         "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ")) !== nothing ||
@@ -205,43 +224,78 @@ function _acq_channels(plan, field, did, f, missing)
     out
 end
 
+"""A laser-scanning image's detectors as one line: "PMT 2 721 V / PMT 2 673 V / …" (gain when no HV)."""
+_acq_detectors_text(d) = d === nothing || isempty(d) ? "—" :
+    join((join(filter(!isempty, [something(n, "?") |> string,
+                                 hv === nothing ? "" : "$(round(Int, hv)) V",
+                                 g === nothing || hv !== nothing ? "" : "gain $(round(g; digits = 2))"]), " ")
+          for (n, hv, g) in d), " / ")
+
+"""Dwell and averaging as one line: "dwell 1.2 µs · ×1"."""
+_acq_scan_text(s) = s === nothing ? "—" :
+    join(filter(!isempty, [s[1] === nothing ? "" : "dwell $(round(s[1]; digits = 2)) µs",
+                           s[2] === nothing ? "" : "×$(round(Int, s[2]))"]), " · ")
+
+"""How each compared setting reads in a finding's value list, by its `variable`; others print as is."""
+const ACQ_SETTING_TEXT = Dict{String,Function}(
+    "laser setting" => l -> _acq_lasers_text(l), "camera setting" => c -> _acq_camera_text(c),
+    "detector setting" => d -> _acq_detectors_text(d), "scan setting" => s -> _acq_scan_text(s),
+    "Bright Z setting" => v -> (v[1] ? "on" : "off") * (v[2] ? " · ramp saved" : ""))
+
+"""A camera's per-channel settings as one line: "A4 122.5 ms gain 2 lamp 3 / Y5 …"."""
+_acq_camera_text(c) = c === nothing || isempty(c) ? "—" :
+    join((join(filter(!isempty, [something(cube, "?") |> string,
+                                 ms === nothing ? "" : "$(round(ms; digits = 1)) ms",
+                                 g === nothing ? "" : "gain $(round(g; digits = 2))",
+                                 il === nothing ? "" : "lamp $(round(il; digits = 1))"]), " ")
+          for (cube, ms, g, il) in c), " / ")
+
 _acq_lasers_text(l) = l === nothing || isempty(l) ? "—" :
     join((string(round(Int, w)) for (w, _) in l), "/") * " nm · " *
     join((p === nothing ? "?" : string(round(p; digits = 1)) |> s -> replace(s, r"\.0$" => "") for (_, p) in l), "/") * " %"
 
 # The verdict's steps, from the rule warnings: per finding code, what to do at a `test` acquisition and on
 # `final` data (`nothing` = no step at that stage). `{whats}` is every finding of the code's `what`,
-# listed ("OTI, P14 and gBT"); `{variable}` its setting. In the order the verdict lists them.
+# listed ("OTI, P14 and gBT"); `{variable}` its setting; `{item}` / `{items}` the set's noun (`acq_check`).
+# In the order the verdict lists them. A step worded for one technology is `ACQ_VERDICT_STEPS_TECH`.
 const ACQ_VERDICT_STEPS = [
-    "acq.not_measured"             => (test = "measure the remaining movies", final = "measure the remaining movies"),
+    "acq.not_measured"             => (test = "measure the remaining {items}", final = "measure the remaining {items}"),
     "acq.channels_unnamed"         => (test = "name the channels", final = "name the channels"),
     "acq.few_photons"              => (test = "collect more light for {whats}", final = "denoise {whats}"),
     "acq.gain_high"                => (test = "lower the detector gain", final = "check bright cells for clipping"),
     "acq.shares_object"            => (test = "separate the {whats} channels", final = "correct bleed-through between {whats}"),
     "acq.balance"                  => (test = "brighten {whats}", final = "check detection per object"),
     "acq.settings_within_design"   => (test = "use one {variable} per design", final = nothing),
-    "acq.settings_differ"          => (test = "use one {variable} for every compared movie", final = nothing),
+    "acq.settings_differ"          => (test = "use one {variable} for every compared {item}", final = nothing),
     "acq.settings_by_design_cross" => (test = "put every compared object in each design", final = "compare within each design"),
     "acq.brightz_ramp_unused"      => (test = "turn Bright Z on", final = "check whether cells dim with depth")]
 
+"""Verdict steps worded for one technology, keyed like the catalog's variants (`qc_technology_key`)."""
+const ACQ_VERDICT_STEPS_TECH = Dict(
+    "acq.gain_high@widefield"  => (test = "shorten the exposure or lower the camera gain", final = "check bright cells for clipping"),
+    "acq.few_photons@widefield" => (test = "collect more light for {whats}: longer exposure or binning", final = "denoise {whats}"))
+
 """
-    acq_verdict(findings, stage) -> (steps, text)
+    acq_verdict(findings, stage; item, items, technology) -> (steps, text)
 
 The rule part of the verdict on a plan: one step per warning code with a step at this stage (see
 `ACQ_VERDICT_STEPS`; "measure the remaining movies" from the not-measured note too — unmeasured movies
 are unchecked, never an all-clear), and the sentence they make — "Denoise OTI, P14 and gBT." — or, with none, "Ready to acquire as planned." /
 "Analyse as planned.". The model review adds at most one step of its own after it.
 """
-function acq_verdict(findings::AbstractVector, stage::AbstractString)
+function acq_verdict(findings::AbstractVector, stage::AbstractString; item::AbstractString = "movie",
+                     items::AbstractString = "movies", technology = nothing)
     steps = String[]
-    for (code, st) in ACQ_VERDICT_STEPS
+    for (code, st0) in ACQ_VERDICT_STEPS
+        st = get(ACQ_VERDICT_STEPS_TECH, string(code, "@", technology), st0)
         t = getproperty(st, Symbol(stage))
         t === nothing && continue
         fs = filter(f -> f["code"] == code && f["scope"] == "set" && (f["level"] == "warn" || code == "acq.not_measured"), findings)
         isempty(fs) && continue
         sub(k) = unique(string(get(get(f, "subs", Dict()), k, "")) for f in fs)
         for v in (occursin("{variable}", t) ? sub("variable") : [""])
-            push!(steps, replace(t, "{whats}" => _acq_list(filter(!isempty, sub("what"))), "{variable}" => v))
+            push!(steps, replace(t, "{whats}" => _acq_list(filter(!isempty, sub("what"))), "{variable}" => v,
+                                 "{items}" => items, "{item}" => item))
         end
     end
     text = isempty(steps) ? (stage == "final" ? "Analyse as planned." : "Ready to acquire as planned.") :
@@ -275,8 +329,13 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     has_plan = plan isa AbstractDict && !isempty(_ag(plan, "objects", Any[]))
     plan_objs = has_plan ? _ag(plan, "objects", Any[]) : Any[]
     findings = Dict{String,Any}[]
+    # One noun for the whole set, so a dialog never mixes them: "movie" only when every member is a
+    # time-lapse. One technology when the set shares it, for the advice's wording.
+    item, items = !isempty(facts) && all(f -> get(f, "timeLapse", false), facts) ? ("movie", "movies") : ("image", "images")
+    techs = unique(get(f, "technology", nothing) for f in facts)
+    tech = length(techs) == 1 ? only(techs) : nothing
     add!(level, code, scope; data = nothing, where = nothing, detail = nothing, subs...) = begin
-        f = qc_finding(level, code; detail = detail, subs...)
+        f = qc_finding(level, code; key = qc_technology_key(code, tech), detail = detail, item = item, items = items, subs...)
         f["scope"] = scope
         f["category"] = get(ACQ_CATEGORY_OF, code, "other")
         # which movies (or designs) hold which value; the line's label says which it lists
@@ -284,11 +343,11 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         # the uids as `whereIds` (the dialog shows either — a set of long names reads as a wall)
         where === nothing || (f["where"] = where isa Function ? where("name") : where;
                               where isa Function && (f["whereIds"] = where("uid"));
-                              f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : "Movies")
+                              f["whereLabel"] = startswith(code, "acq.settings_by_design") ? "Designs" : titlecase(items))
         # what it means for analysing these movies: the code's `.data` entry (a movie's finding reads its
         # set finding's), unless a call names one ("" = none)
         dk = something(data, replace(code, r"_image$" => "") * ".data")
-        haskey(QC_TEXT, dk) && (f["thisData"] = qc_text(dk; subs...).long)
+        haskey(QC_TEXT, dk) && (f["thisData"] = qc_text(qc_technology_key(dk, tech); item = item, items = items, subs...).long)
         push!(findings, f)
     end
     unmeasured = [f["uid"] for f in facts if !f["probed"]]
@@ -334,6 +393,9 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     where_of(gs, value_of) = k -> join((value_of(g[1]) * ": " * join((f[k] for f in g), ", ") for g in gs), " · ")
     for (variable, get_v, same) in (
             ("laser setting", f -> f["lasers"], ==),
+            ("camera setting", f -> get(f, "camera", nothing), ==),
+            ("detector setting", f -> get(f, "detectors", nothing), ==),
+            ("scan setting", f -> get(f, "scan", nothing), ==),
                 # on/off, and whether a ramp is saved — not the ramp's text, which an unread value changes;
                 # a movie whose ramp is unknown (values unread) sits out
             ("Bright Z setting", f -> (f["brightZ"] === nothing || !f["brightZRampKnown"]) ? nothing :
@@ -342,8 +404,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
             ("pixel size", f -> f["pixelSize"], (a, b) -> a !== nothing && b !== nothing && abs(a - b) <= ACQ_REL_TOLERANCE * max(abs(a), abs(b))))
         known = filter(f -> get_v(f) !== nothing && !(has_plan && design[f["uid"]] === nothing), facts)
         length(known) < 2 && continue
-        value_of(f) = (v = get_v(f); variable == "laser setting" ? _acq_lasers_text(v) :
-                       variable == "Bright Z setting" ? (v[1] ? "on" : "off") * (v[2] ? " · ramp saved" : "") : string(v))
+        value_of(f) = get(ACQ_SETTING_TEXT, variable, string)(get_v(f))
         groups_detail(gs) = Dict("groups" => [Dict("value" => value_of(g[1]), "imageUids" => [f["uid"] for f in g]) for g in gs])
         gs = group_by(known, get_v, same)
         length(gs) < 2 && continue
@@ -394,6 +455,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
         end
         row = Dict{String,Any}("uid" => f["uid"], "name" => f["name"], "design" => design[f["uid"]],
                                "lasers" => _acq_lasers_text(f["lasers"]), "brightZ" => f["brightZ"],
+                               "camera" => get(f, "camera", nothing) === nothing ? nothing : _acq_camera_text(f["camera"]),
                                "probed" => f["probed"], "objects" => Dict{String,Any}())
         chs = has_plan ? [c for (_, c) in objs if haskey(f["channels"], c)] : all_ch(f)
         row["brightZRamp"] = f["brightZRamp"]
@@ -536,8 +598,9 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     skipped = String[]
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])
-    steps, verdict = acq_verdict(findings, stage)
-    Dict{String,Any}("stage" => stage, "steps" => steps, "verdict" => verdict, "findings" => findings, "rows" => rows, "ran" => ran, "skipped" => skipped,
+    steps, verdict = acq_verdict(findings, stage; item = item, items = items, technology = tech)
+    Dict{String,Any}("stage" => stage, "steps" => steps, "verdict" => verdict, "findings" => findings, "rows" => rows,
+                     "item" => item, "items" => items, "ran" => ran, "skipped" => skipped,
                      "nImages" => length(facts), "nMeasured" => length(facts) - length(unmeasured))
 end
 

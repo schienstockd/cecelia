@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
+  slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, refreshMetaInPlace, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -896,6 +896,24 @@ describe('shownStoresChanged', () => {
 
   it('missing fingerprints (older server) count as changed', () => {
     expect(shownStoresChanged(meta(), meta({ storeRevs: revs }), '')).toBe(true)
+  })
+})
+
+describe('refreshMetaInPlace', () => {
+  it('a segmentation measured while the viewer is open joins the cell tables, and says so', () => {
+    // Mask on disk before the measure ran, so nothing drawn changed — the in-place path. Its pops
+    // only draw if the viewer re-fetches overlays against the new list.
+    const prev = meta({ labelNames: ['cells', 'specks'], cellTableNames: ['cells'] })
+    const next = meta({ labelNames: ['cells', 'specks'], cellTableNames: ['cells', 'specks'],
+                        labelFiles: { cells: ['halo'] } })
+    expect(refreshMetaInPlace(prev, next)).toBe(true)
+    expect(prev.cellTableNames).toEqual(['cells', 'specks'])
+    expect(prev.labelFiles).toEqual({ cells: ['halo'] })
+  })
+
+  it('an unchanged list is no reload', () => {
+    const prev = meta({ cellTableNames: ['cells', 'specks'] })
+    expect(refreshMetaInPlace(prev, meta({ cellTableNames: ['cells', 'specks'] }))).toBe(false)
   })
 })
 
