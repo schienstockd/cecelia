@@ -593,7 +593,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <option value="">+ Track…</option>
           <option v-for="v in trackOptions" :key="v.key" :value="v.key">{{ v.label }}</option>
         </select>
-        <!-- Spatial cell-selection tools — pencil (mode), clear, z-scope. Shared across every
+        <!-- Spatial cell-selection tools — pointer (mode), clear, z-scope. Shared across every
              gating-capable module page via `CellSelectionTools`. Track pops have no spatial
              selection, so hide the whole cluster. . -->
         <CellSelectionTools :show="!isTrack" />

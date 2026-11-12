@@ -1091,7 +1091,7 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   and sets its parent so the manager selection "shows up on the plot".
 - **PopulationManager drag is clamped** to its offset-parent (keeps a 24px grab strip on every
   edge, never above the top) so the floating window can't be dragged off-frame and lost.
-- **Linked brushing.** The gating bar has `pi-pencil` *pick cell* and *pick rectangle* buttons
+- **Linked brushing.** The gating bar has `pi-mouse-pointer` *pick cell* and *pick rectangle* buttons
   that hand a click / drag off to the browser viewer's picker
   (`/api/viewer/pick-cell`, `/api/viewer/pick-rect`). The picked cells arrive back (via
   `gating:popmap`) as a **transient "Pick selection" population** (cyan `pi-map-marker` row, no

@@ -498,7 +498,7 @@ body {
    ~1px taller at `--cc-fs-sm`. The group takes the taller, so the square's background stopped a pixel
    short of the group's bottom edge and its glyph sat a pixel high — which reads as "that icon is
    smaller than its neighbour" even though the two glyphs are the same 1em (gating's viewer brush:
-   `pi-pencil` beside `pi-clone` + "Z"). Let the square STRETCH to the group instead; its fixed width,
+   `pi-mouse-pointer` beside `pi-clone` + "Z"). Let the square STRETCH to the group instead; its fixed width,
    and so the centring of the glyph, is untouched. Scoped with `:has` so a group of only icon buttons
    keeps its square at whatever density tier it chose (micro/dense/lg). */
 .cc-btn-group:is(:has(> .cc-btn:not(.cc-btn-icon)), :has(> .confirm-btn > .cc-btn:not(.cc-btn-icon))) > .cc-btn-icon,

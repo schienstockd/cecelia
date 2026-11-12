@@ -341,7 +341,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // open/closed state, toggled from the sidebar "Viewer" button. Off by default (opt-in, no intrusion).
   const viewerPanelOpen = ref(localStorage.getItem('cc.viewerPanelOpen') === 'true')
   // WebGPU viewer's SELECT MODE. Off by default so a click never picks accidentally while a user is
-  // panning around; the gating toolbar's pencil toggles it on. When 'select', a click sends a
+  // panning around; the gating toolbar's pointer toggles it on. When 'select', a click sends a
   // /api/viewer/pick-cell request; drag will draw a rectangle (follow-up). Shift/alt still route to
   // the multi-select modes. Cross-window via the same localStorage event bridge the other viewer
   // bags use (the popup viewer is a separate Pinia instance — see decodeViewerBagEvent).
@@ -926,7 +926,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
     // only fire in OTHER windows, so this is the path the popup viewer's mode toggle takes to
     // reach the main window's settings store. Without this the pop-manager
-    // pencil stayed in its old state when the viewer flipped the mode.
+    // pointer stayed in its old state when the viewer flipped the mode.
     window.addEventListener('storage', e => {
       if (e.key === 'cc.viewerSelectMode') {
         viewerSelectMode.value = e.newValue === 'select' ? 'select' : 'off'

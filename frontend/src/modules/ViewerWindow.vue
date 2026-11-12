@@ -869,7 +869,7 @@ function readSelectMode(): boolean {
   if (typeof localStorage === 'undefined') return false
   return localStorage.getItem('cc.viewerSelectMode') === 'select'
 }
-/** Flip the mode from the viewer itself — mirrors what the gating toolbar's pencil does, so a user
+/** Flip the mode from the viewer itself — mirrors what the gating toolbar's pointer does, so a user
  *  can stay in the viewer window without reaching back to the module page. Writes both the local
  *  ref (immediate) AND localStorage (the main-window's settings store watches this key). */
 function toggleSelectMode() {
@@ -1460,13 +1460,15 @@ function setChannelColour(c: number, hex: string) {
   pushChannels()
 }
 
-/** What a click on the image does: View moves the view, Select picks cells (the same knob the pop
- *  manager's pencil writes), Edit is the slot the redesigned correction tools fill (GUI_LAYOUT_PLAN
+/** What a click on the image does: View moves the view, Select picks cells (the same knob, and
+ *  glyph, as the pop manager's pointer button), Edit is the slot the redesigned correction tools fill (GUI_LAYOUT_PLAN
  *  Decision 5, V5): it reserves the place and edits nothing yet, so a click there behaves as View. */
 const INTERACT_MODES = [
-  { value: 'view', label: 'View', tip: 'Drag moves the view; a click picks nothing' },
-  { value: 'select', label: 'Select', tip: 'A click picks a cell' },
-  { value: 'edit', label: 'Edit', tip: 'Correction tools — coming soon' },
+  // Icon-only, with the mode's name leading the tooltip: three worded chips pushed 2D/3D onto a
+  // second row on a narrow panel for what is only a "which mode am I in" readout.
+  { value: 'view', label: '', icon: 'pi pi-hand', tip: 'View — drag moves the view; a click picks nothing' },
+  { value: 'select', label: '', icon: 'pi pi-mouse-pointer', tip: 'Select — a click picks a cell' },
+  { value: 'edit', label: '', icon: 'pi pi-pencil', tip: 'Edit — correction tools, coming soon' },
 ]
 /** The Edit slot is open. Not persisted: it edits nothing yet, so a reload lands back on the view. */
 const editMode = ref(false)
@@ -5271,7 +5273,7 @@ function onOverlaysTick(e: StorageEvent) {
   // the set of ticked vns is unchanged — `loadTracks` reuses the cache and only fetches new vns.
   void loadTracks()
 }
-// Cross-window mode sync — the gating toolbar's pencil writes `cc.viewerSelectMode`; here we
+// Cross-window mode sync — the gating toolbar's pointer writes `cc.viewerSelectMode`; here we
 // mirror it into the local ref so the pointer path sees the update without a Pinia round trip.
 function onSelectModeTick(e: StorageEvent) {
   if (e.key !== 'cc.viewerSelectMode') return

@@ -1,7 +1,7 @@
 <!--
   Spatial cell-selection toolset for module pages that do gating (Gate / Cluster / Tracking / …).
   One control cluster:
-    • Pencil — toggles the WebGPU viewer's SELECT MODE (`settings.viewerSelectMode`). When ON, a
+    • Pointer — toggles the WebGPU viewer's SELECT MODE (`settings.viewerSelectMode`). When ON, a
       click in the viewer picks a cell; shift = add, alt = toggle. When OFF, the viewer stays in
       pan/rotate mode and clicks do nothing ("clear. pan around mode. and
       clear selection mode. otherwise i'm confused what mode i'm in").
@@ -40,7 +40,7 @@ const g = useGatingStore()
               ? 'In selection mode — click to exit'
               : 'Enter selection mode'"
             @click="settings.viewerSelectMode = settings.viewerSelectMode === 'select' ? 'off' : 'select'">
-      <i class="pi pi-pencil" />
+      <i class="pi pi-mouse-pointer" />
     </button>
     <button class="cc-btn cc-btn-bare cc-btn-icon"
             v-tooltip.bottom="'Clear the current cell selection'"
