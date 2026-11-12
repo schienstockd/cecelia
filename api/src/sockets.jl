@@ -121,6 +121,16 @@ function _ov_look_seg(cfg, dflt::AbstractString; mask::Union{Nothing,AbstractStr
     (mask === nothing || isempty(mask)) ? String(dflt) : String(mask)
 end
 
+# The one mask a keyframe animation draws (`nothing` = none). An animation has no compare grid, so
+# 2+ `labelValueNames` mean nothing to it — and with no mask to hand `_ov_look_seg` the overlays would
+# silently come from the image version instead of a segmentation. Refused rather than guessed.
+function _keyframe_mask(label_vns)::Union{Nothing,String}
+    (label_vns === nothing || isempty(label_vns)) && return nothing
+    length(label_vns) == 1 ||
+        throw(ArgumentError("an animation draws at most one mask — got $(length(label_vns)) labelValueNames"))
+    String(only(label_vns))
+end
+
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
                    started_at=nothing, finished_at="")
     # `started_at` is passed only by a relay (the runner's stamp, authoritative even when ""); `nothing`
@@ -426,6 +436,17 @@ function handle_movie_record(ws, data)
         ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
         return
     end
+    kf_mask = nothing
+    if keyframes !== nothing
+        kf_mask = try
+            _keyframe_mask(label_vns)
+        catch e
+            e isa ArgumentError || rethrow()
+            ws_log(ws, task_id, "[ERROR] $(e.msg)")
+            ws_status(ws, task_id, "failed", image_uid; fun=fun, pool="viewer")
+            return
+        end
+    end
     # The browser viewer's viewState snapshot rides on the record request when it's the source
     # (`ViewerPanel.recordTimelapse` publishes it). Threaded to every recorder that crops against
     # the visible rectangle — single, compare grid, and keyframe animation (which reads it per
@@ -474,8 +495,8 @@ function handle_movie_record(ws, data)
         # `look` → nothing → channels-only movie (pre-P5.5 behaviour).
         look_cfg = get(data, :look, nothing)
         # One mask asked for (the viewer's 3D Record sends its mask; the animation page sends none)
-        # → the 3D renderer draws it the way the viewer's shader does.
-        kf_mask = n_lvns == 1 ? String(only(label_vns)) : nothing
+        # → the 3D renderer draws it the way the viewer's shader does. `kf_mask` was resolved above
+        # (`_keyframe_mask`), which refused 2+.
         ovs_cfg  = look_cfg isa AbstractDict ? _overlays_raw_from_config(look_cfg, kf_mask !== nothing) : nothing
         # `valueName` lives on `look` (populations + tracks belong to a segmentation), fall back to
         # the request's first valueName. Same for `pointsSize`, `tailWidth`, `tailLength`, `popType`

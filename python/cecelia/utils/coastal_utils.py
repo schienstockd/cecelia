@@ -814,6 +814,10 @@ class CoastalUtils(SegmentationUtils):
             if norm_params and ch in norm_params:
                 lo, hi = norm_params[ch]
             else:
+                # Only for a channel the base found too empty for a window, or a caller passing
+                # none: anything more would give this tile its own scale (module docstring).
+                for frame in arr:
+                    self._refuse_unwindowed_signal(frame, ch)
                 lo = float(np.percentile(arr, PERCENTILE_LO))
                 hi = float(np.percentile(arr, PERCENTILE_HI))
             arr -= lo

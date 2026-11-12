@@ -1,16 +1,22 @@
 # Acquisition settings the source file records but Bio-Formats drops (`meta["acquisition"]`): read at
 # import, and backfilled by `resync_ome_meta!` for images imported before this existed.
 
-"""Source formats with a settings reader. Keep in step with `_READERS` in
-`read_acquisition_settings_run.py` — this gate stops a Python spawn for formats it has no reader for."""
-const ACQUISITION_SETTINGS_FORMATS = (".oir", ".czi", ".ims")
+"""The acquisition settings readers: `app/src/tasks/importImages/acquisition_readers.json`, the ONE list the
+Python dispatcher also reads (one row per source format: `ext`, `source`, `module`, `version`).
+Adding a format is a module + a row there, nothing here. docs/todo/MICROSCOPE_PROFILES_PLAN.md"""
+const ACQUISITION_READERS_PATH = joinpath(dirname(@__DIR__), "acquisition_readers.json")
+include_dependency(ACQUISITION_READERS_PATH)
+const ACQUISITION_READERS = [Dict{String,Any}(r) for r in
+                             JSON3.read(read(ACQUISITION_READERS_PATH, String), Dict{String,Any})["readers"]]
 
-"""Each settings reader's version, by the `source` it stamps (`READER_VERSION` in
-`python/cecelia/utils/oir_meta.py`, kept in step by the "language boundaries agree on their protocol"
-table in app/test/suite/segmentation.jl; `czi_meta` has no version yet, i.e. 1). Settings stored by an
-older reader lack fields the newer one returns, so Refresh metadata re-reads them
-(`_resync_acquisition_settings!`)."""
-const ACQUISITION_READER_VERSIONS = Dict("oir" => 2, "czi" => 1, "ims" => 1)
+"""Source formats with a settings reader — this gate stops a Python spawn for formats it has none for."""
+const ACQUISITION_SETTINGS_FORMATS = Tuple(String(r["ext"]) for r in ACQUISITION_READERS)
+
+"""Each settings reader's version, by the `source` it stamps (the module's `READER_VERSION`, kept in
+step by the "language boundaries agree on their protocol" table in app/test/suite/segmentation.jl).
+Settings stored by an older reader lack fields the newer one returns, so Refresh metadata re-reads
+them (`_resync_acquisition_settings!`)."""
+const ACQUISITION_READER_VERSIONS = Dict(String(r["source"]) => Int(r["version"]) for r in ACQUISITION_READERS)
 
 """Whether stored settings came from an older version of their reader (no version = the first)."""
 function _acquisition_outdated(acq)::Bool
@@ -22,23 +28,24 @@ function _acquisition_outdated(acq)::Bool
 end
 
 """
-    _read_acquisition_settings(src_path, run_dir; on_log) -> (settings, reason)
+    _read_acquisition_settings(src_path, run_dir; series, on_log) -> (settings, reason)
 
 The source file's acquisition settings — laser power and Bright Z ramp, scan timing, detector
 settings, the channel→laser/detector map — as `read_acquisition_settings_run.py` normalises them, and
 `nothing` for the reason; or `nothing` and why not (`ACQUISITION_MISSING`): no reader for the format,
 the source is gone, or nothing could be read. Reads the SOURCE, not the store: these values never
-reach the OME-XML (see `python/cecelia/utils/oir_meta.py`, `czi_meta.py`). Advisory: never throws, and a missing
+reach the OME-XML (see the modules in `acquisition_readers.json`). `series` picks the image of a
+multi-image file (`meta.ori_series`, the series picker's index; a `.lif` holds many). Advisory: never throws, and a missing
 result never fails an import.
 """
 function _read_acquisition_settings(src_path::AbstractString, run_dir::AbstractString;
-                                    on_log::Function = _ -> nothing)
+                                    series::Integer = 0, on_log::Function = _ -> nothing)
     any(ext -> endswith(lowercase(src_path), ext), ACQUISITION_SETTINGS_FORMATS) || return nothing, "format"
     isfile(src_path) || return nothing, "source"
     result_file = joinpath(run_dir, "acquisition_settings.$(string(rand(UInt32); base = 16)).result.json")
     try
         ok = run_py("tasks/importImages/read_acquisition_settings_run.py",
-                    (; imPath = src_path, resultPath = result_file), run_dir; on_log = on_log)
+                    (; imPath = src_path, series = series, resultPath = result_file), run_dir; on_log = on_log)
         (ok && isfile(result_file)) || return nothing, "unread"
         res = JSON3.read(read(result_file, String), Dict{String,Any})
         if haskey(res, "reason")
@@ -53,6 +60,9 @@ function _read_acquisition_settings(src_path::AbstractString, run_dir::AbstractS
         rm(result_file; force = true)
     end
 end
+
+"""Which image of its source file `img` is (`meta.ori_series`, the series picker's index), 0 when unrecorded."""
+_source_series(img)::Int = (s = get(img.meta, "ori_series", nothing); s isa Real ? Int(s) : 0)
 
 """Why an image has no `meta["acquisition"]`, stored as `meta["acquisitionMissing"]` = `{reason, ext}` so
 the metadata dialog can say so instead of hiding the section: `format` (no settings reader for the
@@ -93,7 +103,7 @@ function _acquisition_describes_store(settings::AbstractDict, zarr_meta::Abstrac
 end
 
 """
-    _recover_acquisition_settings!(zarr_meta, src_path, run_dir; on_log) -> Bool
+    _recover_acquisition_settings!(zarr_meta, src_path, run_dir; series, on_log) -> Bool
 
 Put the source's acquisition settings into `zarr_meta["acquisition"]` when they describe this store
 (`_acquisition_describes_store`), with `timelapse.acquired` set when the store has fewer frames than
@@ -101,10 +111,10 @@ the source planned; otherwise record why not in `zarr_meta["acquisitionMissing"]
 (`ACQUISITION_MISSING`). Only ADDS: a value already there is kept. Returns whether it filled settings.
 """
 function _recover_acquisition_settings!(zarr_meta::Dict{String,Any}, src_path::AbstractString,
-                                        run_dir::AbstractString;
+                                        run_dir::AbstractString; series::Integer = 0,
                                         on_log::Function = _ -> nothing)::Bool
     haskey(zarr_meta, "acquisition") && return false
-    settings, reason = _read_acquisition_settings(src_path, run_dir; on_log = on_log)
+    settings, reason = _read_acquisition_settings(src_path, run_dir; series = series, on_log = on_log)
     if isnothing(settings)
         zarr_meta["acquisitionMissing"] = _acquisition_missing(reason, src_path)
         return false
@@ -146,7 +156,7 @@ function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
         src = string(get(img.meta, "ori_path", ""))
         isempty(src) && return
         fresh = Dict{String,Any}(k => v for (k, v) in zarr_meta if k in ("SizeC", "SizeZ", "SizeT"))
-        _recover_acquisition_settings!(fresh, src, task_run_dir(img._dir)) &&
+        _recover_acquisition_settings!(fresh, src, task_run_dir(img._dir); series = _source_series(img)) &&
             (zarr_meta["acquisition"] = fresh["acquisition"])
         return
     end
@@ -156,6 +166,6 @@ function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     elseif isempty(src)
         zarr_meta["acquisitionMissing"] = _acquisition_missing("no-source", src)
     else
-        _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir))
+        _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir); series = _source_series(img))
     end
 end

@@ -120,6 +120,11 @@ end
     empty_tbl = _mask_params!(Dict{String,Any}(), MovieMask("/x", Dict{Int,RGB{N0f8}}(), 1, 0.5))
     @test empty_tbl["labelColouring"] == "table" && isempty(empty_tbl["labelColours"]["ids"])
     @test _mask_params!(Dict{String,Any}(), MovieMask("/x", ViewerPalette(), 1, 0.5))["labelColouring"] == "palette"
+    # its halo / nuc stores ride along for the runner to pack (`compose_label_files`); none = no key
+    @test !haskey(_mask_params!(Dict{String,Any}(), MovieMask("/x", ViewerPalette(), 1, 0.5)), "labelFiles")
+    @test _mask_params!(Dict{String,Any}(), MovieMask("/x", ViewerPalette(), 1, 0.5,
+                                                      [("/x_halo", false), ("/x_nuc", true)]))["labelFiles"] ==
+          [Dict("path" => "/x_halo", "inside" => false), Dict("path" => "/x_nuc", "inside" => true)]
 
     v2 = api_fixture("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
     if !api_have_fixture(v2)

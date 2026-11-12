@@ -1,0 +1,128 @@
+{
+  "technology": "widefield",
+  "summary": "Whole field lit at once by a lamp or LED through a filter cube; a camera records it in one exposure. No optical sectioning. Cell culture, slides, thin samples.",
+  "status": "Experimental. Our own wording of the cited sources; a cause stays 'consistent with' until the alternatives are ruled out. Scope feature lines are unverified until a facility checks them; `seenInFiles` is what the lab's own files record.",
+  "stages": [
+    {
+      "key": "illumination",
+      "does": "A lamp or LED lights the whole field through the excitation filter; its intensity setting and the field diaphragm set how much light, and how evenly.",
+      "symptoms": [
+        {
+          "id": "uneven-field",
+          "symptom": "The centre of the field is brighter than the edges, or the same kind of object reads brighter in the middle.",
+          "explanation": "Illumination and collection are not flat across the field (shading, vignetting), so a pixel's value depends on where in the field it sits. Intensities compared across the field, or across fields placed differently, carry that pattern.",
+          "check": "Acquired data: background or objects brighter in the centre than at the corners (look at the image; Cecelia does not measure field flatness yet). A flat-field image of a uniform fluorescent slide shows the pattern itself.",
+          "alternatives": "Thicker tissue or denser cells in the middle of the sample, or a real gradient of the label.",
+          "sources": ["model2001", "peng2017"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "filters",
+      "does": "A filter cube (excitation filter, dichroic, emission filter) picks which dye is excited and which emission reaches the camera; one cube per channel, imaged one after the other.",
+      "symptoms": [
+        {
+          "id": "signal-in-two-channels",
+          "symptom": "The same objects appear in two channels.",
+          "explanation": "A dye's emission or excitation spectrum overlaps the other cube's band (bleed-through, crosstalk), so a bright label shows in a channel it was not meant for.",
+          "check": "Acquired data: the channels' shared structure; a single-label control imaged through both cubes.",
+          "alternatives": "The two labels really are on the same objects (co-localisation), or autofluorescence present in both bands.",
+          "sources": ["bolte2006", "north2006"],
+          "qcCodes": ["af.bleedthrough", "acq.shares_object", "acq.shares_object_image", "acq.shares_all"]
+        }
+      ]
+    },
+    {
+      "key": "objective",
+      "does": "Collects the light; magnification and NA set resolution, light collected, and with the camera pixel the pixel size.",
+      "symptoms": []
+    },
+    {
+      "key": "sample",
+      "does": "Fluoresces, bleaches under the light, and in a widefield image contributes light from above and below the focal plane as well as from it.",
+      "symptoms": [
+        {
+          "id": "out-of-focus-haze",
+          "symptom": "A diffuse haze around bright objects; dim objects sit on a raised, blurred background.",
+          "explanation": "A widefield microscope collects light from the whole depth of the sample, not only the focal plane, so out-of-focus light adds a blurred background. Thicker samples add more.",
+          "check": "Light path: technology widefield; Acquired data: background level (noise.bgLevel) high relative to objects (photons.objects).",
+          "alternatives": "Diffuse real staining (a label in the cytoplasm or medium), autofluorescence, or a dirty coverslip.",
+          "sources": ["conchello2005", "waters2009"],
+          "qcCodes": []
+        },
+        {
+          "id": "fades-with-exposure",
+          "symptom": "Fields imaged later, or imaged again, are dimmer.",
+          "explanation": "Each exposure, and time spent focusing under the lamp, bleaches the dye. Fields that saw more light read dimmer for the same labelling.",
+          "check": "Acquisition: acquiredAt order of the images against their brightness; exposure and illumination intensity per channel.",
+          "alternatives": "Fewer or weaker-labelled cells in those fields (biology), or a focus that drifted.",
+          "sources": ["waters2009", "lee2018"],
+          "qcCodes": ["import.signal_fades"]
+        }
+      ]
+    },
+    {
+      "key": "camera",
+      "does": "Records the image: exposure time sets how long light is collected, gain amplifies the read-out, a fixed offset keeps the dark level above zero.",
+      "symptoms": [
+        {
+          "id": "clipped-bright",
+          "symptom": "The brightest objects are flat-topped at the top value.",
+          "explanation": "Pixels past the camera's full well or its digitiser's top value (4095 at 12 bit) are clipped; their intensity is lost, and sums or means over them read low.",
+          "check": "Acquired data: clipped % and top value against the camera's bit depth (Acquisition: camera.bitDepth); a 12-bit camera in a 16-bit file tops out at 4095, not 65535.",
+          "alternatives": "None for the clipped pixels themselves; a very bright artefact (debris) can be the clipped object.",
+          "sources": ["waters2009", "lambert2014"],
+          "qcCodes": ["import.channel_saturated", "af.saturated_input", "denoise.channel_saturated"]
+        },
+        {
+          "id": "dim-and-noisy",
+          "symptom": "Objects barely stand out from a grainy background.",
+          "explanation": "Few photons per pixel: the shot noise of the signal and the camera's read noise are large next to it. Longer exposure or binning collect more per pixel; each costs time, bleaching or resolution.",
+          "check": "Acquisition: exposureMs, gain, camera.binning; Acquired data: noise.snr and photons.objects (Foi-style noise fit).",
+          "alternatives": "Weak or failed labelling (biology or staining), or the wrong filter cube for the dye.",
+          "sources": ["lambert2014", "foi2008", "waters2009"],
+          "qcCodes": []
+        },
+        {
+          "id": "camera-offset",
+          "symptom": "The darkest pixels are well above zero.",
+          "explanation": "A scientific camera adds a fixed offset (dark level) so noise is not cut at zero; background never reaches 0. Subtract the dark level, not the image minimum. A camera has no photon-counted floor: that reading belongs to a photon-counting detector, so a 'photon-counted' floor on a camera channel is a misread, not a finding.",
+          "check": "Acquired data: floor and noise.bgMedian; zero % near 0 is expected on a camera.",
+          "alternatives": "Real background fluorescence (medium, autofluorescence) on top of the offset.",
+          "sources": ["lambert2014", "waters2009"],
+          "qcCodes": []
+        },
+        {
+          "id": "settings-differ-between-images",
+          "symptom": "Images of one set that should be comparable differ in brightness.",
+          "explanation": "Exposure, camera gain or illumination intensity changed between images. Raw intensities are only comparable at the same settings; a changed exposure scales the signal, and gain scales signal and noise together.",
+          "check": "Acquisition: exposureMs, gain and illuminationIntensity per channel, compared across the set's images.",
+          "alternatives": "Real differences between samples or conditions, uneven field placement, or bleaching.",
+          "sources": ["lee2018", "waters2009", "north2006"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "digitisation",
+      "does": "Turns the camera read-out into numbers: bit depth sets the range, binning adds neighbouring pixels into one.",
+      "symptoms": [
+        {
+          "id": "binning-vs-question",
+          "symptom": "Small objects (a few hundred nm to ~1 µm) span only one or two pixels.",
+          "explanation": "Binning sums neighbouring pixels: more signal per pixel, coarser pixels. Resolving a feature needs a pixel about half its size or smaller (Nyquist); counting bright spots needs less than measuring their size or shape.",
+          "check": "Acquisition: camera.binning, camera.sensorPixelUm and objective magnification; Image: pixel size against the size of the objects in question.",
+          "alternatives": "Coarse is normal when the question is a count or a presence, not a size; ask what the images are for before calling it a mistake.",
+          "sources": ["pawley2006", "lambert2014"],
+          "qcCodes": []
+        }
+      ]
+    },
+    {
+      "key": "stack",
+      "does": "Repeats the exposure over z positions or time points, or tiles fields.",
+      "symptoms": []
+    }
+  ]
+}

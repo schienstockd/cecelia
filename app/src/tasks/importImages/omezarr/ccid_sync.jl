@@ -9,18 +9,18 @@ function _update_image_status!(img::CciaImage, status::ImageStatus)
     end
 end
 
-# Keys `read_ome_metadata` is the sole, authoritative source for. Cleared unconditionally before
-# merging so a re-import always reflects exactly what THIS read found — never a zombie value
-# left over from some earlier (possibly much older, possibly buggy) import that this run's
-# zarr_meta simply doesn't happen to produce again (e.g. TimeIncrement staying missing is a real,
-# meaningful "we found nothing" that a plain additive merge would otherwise mask forever).
+# Keys the import alone is the authoritative source for. Cleared before an overwrite merge so a re-import
+# reflects exactly what THIS run found: a key it no longer produces (TimeIncrement still missing, a
+# failed probe) is a real "we found nothing" that a plain additive merge would mask with a zombie value.
 const _OME_DERIVED_META_KEYS = (
     "SizeC", "SizeT", "SizeZ",
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
     "TimeIncrement", "TimeIncrementUnit", "TimeIncrementDeclared",
-    # Read from the SOURCE file, not the store, but the same rule holds: a re-import from another
-    # source (or one whose settings can't be read) must not keep the previous source's settings.
+    # Read from the SOURCE file, same rule: a re-import must not keep the previous source's settings.
     "acquisition", "acquisitionMissing",
+    # The saturation probe of the store just written: a failed probe must not keep the previous
+    # store's verdict (`ensure_saturation_meta!` re-probes only an absent or outdated record).
+    "saturation", "partialTimepoint",
 )
 
 # Replaced even by a fill-only resync: what THIS read found, not a value a human set. `acquisition`

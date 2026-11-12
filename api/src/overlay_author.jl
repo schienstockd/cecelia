@@ -1312,23 +1312,54 @@ struct ViewerPalette end
 A movie's mask, for the shader (`_mask_params!`): the label store, its outline width and opacity, and
 how labels are coloured — `ViewerPalette()` or a `Dict{Int,RGB{N0f8}}` table (an id absent from it is
 not drawn). `movie_mask` never builds an empty table: no cells to colour is the palette.
+
+`files` are the segmentation's derived stores drawn with it, `(path, inside)` in the viewer's order —
+the renderer packs them into the mask as the slab route does (`compose_label_files!`,
+`docs/todo/MASK_FILE_LAYERS_PLAN.md`). Empty = the base mask alone.
 """
 struct MovieMask
     labels_path::String
     colours::Union{ViewerPalette,Dict{Int,RGB{N0f8}}}
     contour_px::Int
     opacity::Float64
+    files::Vector{Tuple{String,Bool}}
 end
+MovieMask(labels_path, colours, contour_px, opacity) =
+    MovieMask(labels_path, colours, contour_px, opacity, Tuple{String,Bool}[])
 
 """
-    movie_mask(img; value_name, contour_px, opacity, kwargs...) -> MovieMask | nothing
+    movie_mask_files(img, value_name, hidden) -> Vector{Tuple{String,Bool}}
+
+The derived files the viewer draws with `value_name`'s mask: every one on disk (`img_label_files`)
+whose suffix is not in `hidden` — the viewer's rule, all shown unless hidden (`cc.viewerLabelFilesHidden`)
+— as `(path, inside)`; a halo packs only its part past the cell (`is_halo_file`).
+"""
+movie_mask_files(img, value_name::AbstractString, hidden) =
+    Tuple{String,Bool}[(path, !Cecelia.is_halo_file(suffix))
+                       for (suffix, path) in img_label_files(img, value_name) if !(suffix in hidden)]
+
+"""
+    mask_files_hidden(raw) -> Dict{String,Vector{String}}
+
+A config's `labelFilesHidden` / overlays' `maskFilesHidden` — `{segmentation => [suffix…]}`, the
+derived files the viewer hides — read leniently: anything else is "none hidden".
+"""
+mask_files_hidden(raw) = raw isa AbstractDict ?
+    Dict{String,Vector{String}}(String(k) => String[String(x) for x in v]
+                                for (k, v) in raw if v isa AbstractVector) :
+    Dict{String,Vector{String}}()
+
+"""
+    movie_mask(img; value_name, contour_px, opacity, files_hidden, kwargs...) -> MovieMask | nothing
 
 "All cells" with no `colour_by` draws every label in the viewer's palette; otherwise the colours are
 `mask_id_colours` — the population mask (`mask_pop_colours`), or every cell recoloured by `colour_by`. `nothing` when the label store is not
-on disk or the colours could not be resolved (logged). `kwargs` are `mask_id_colours`'s.
+on disk or the colours could not be resolved (logged). `files_hidden`: the derived files not drawn
+(`movie_mask_files`). `kwargs` are `mask_id_colours`'s.
 """
 function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacity::Real,
-                    all_cells::Bool = false, colour_by = nothing, kwargs...)
+                    all_cells::Bool = false, colour_by = nothing,
+                    files_hidden::AbstractVector{<:AbstractString} = String[], kwargs...)
     lp = img_labels_path(img, value_name)
     isdir(lp) || return nothing
     colours = if all_cells && (colour_by === nothing || isempty(String(colour_by)))
@@ -1344,5 +1375,6 @@ function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacit
         # no cells to colour (no cell table) — the palette, as the viewer's `maskPopTable` → null
         isempty(table) ? ViewerPalette() : table
     end
-    MovieMask(String(lp), colours, Int(contour_px), Float64(opacity))
+    MovieMask(String(lp), colours, Int(contour_px), Float64(opacity),
+              movie_mask_files(img, value_name, files_hidden))
 end

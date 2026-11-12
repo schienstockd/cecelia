@@ -1,0 +1,27 @@
+{
+  "system": "DM5500B",
+  "technology": "widefield",
+  "features": [
+    {
+      "stage": "illumination",
+      "name": "IL intensity",
+      "line": "IL intensity: the lamp's intensity step per channel, set in LAS X; a higher step is more light and more bleaching.",
+      "verified": false,
+      "seenInFiles": "17 of 17 DM5500B .lif images (LAS X 3.4.2): step 3 on the A4 cube, 4 on Y5, in every image."
+    },
+    {
+      "stage": "camera",
+      "name": "Exposure and gain",
+      "line": "Exposure and gain: set per channel in LAS X, and kept per image, so images of one session can differ.",
+      "verified": false,
+      "seenInFiles": "17 of 17 DM5500B .lif images: DFC365 FX camera; exposure 0.12-0.25 s and gain 1-3.1 differ between images of one session."
+    },
+    {
+      "stage": "digitisation",
+      "name": "Binning",
+      "line": "Binning: set on the camera in LAS X; 2x2 halves the pixel count each way and doubles the pixel size.",
+      "verified": false,
+      "seenInFiles": "17 of 17 DM5500B .lif images: 2x2 binning, 696x520 pixels, 12 bit; 1.02 um pixels with the 20x/0.50 objective."
+    }
+  ]
+}
