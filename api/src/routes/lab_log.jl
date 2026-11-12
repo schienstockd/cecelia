@@ -148,7 +148,8 @@ end
 # reader ImportOmezarr uses) without touching the original source file or re-running
 # bioformats2raw. Returns the refreshed payload per uid so the frontend can drop the warning icon
 # immediately, no page reload needed. `measure: true` also runs the import's pixel probe when the
-# stored one is missing or lacks a `SATURATION_CURRENT_KEYS` field (`ensure_saturation_meta!`, a full pass
+# stored one is missing or not current (`_saturation_is_current`: a `SATURATION_CURRENT_KEYS` field
+# missing, or a photon fit on a scanner-processed channel; `ensure_saturation_meta!`, a full pass
 # over the store — seconds per image), so a single image's dialog can fill it without a re-import.
 function api_images_meta_resync(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)

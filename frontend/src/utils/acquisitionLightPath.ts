@@ -50,6 +50,9 @@ export interface CleanupFactsChannel {
   profile?: { byZ: PlaneProfileAxis; byT: PlaneProfileAxis } | null
   containerBits?: number | null; topValue?: number | null; saturated?: boolean | null
   range?: ChannelRange | null; floor?: ChannelFloor | null; noise?: ChannelNoise | null
+  /** The signal pass's photons; only `notMeasured` is read here — why the fit was skipped (the
+   *  scanner processed this channel before writing, `photons_untestable` in saturation.jl). */
+  photons?: { notMeasured?: string | null } | null
 }
 
 /** The slice of the image payload the diagram reads. */

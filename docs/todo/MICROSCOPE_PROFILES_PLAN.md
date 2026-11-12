@@ -149,8 +149,18 @@ Today's acquisition texts say "movie" throughout: `app/src/qc/text.jl` (28 lines
 - `modes/cyclic.json` knowledge: blank/background cycles, autofluorescence carried across cycles,
   marker signal falling with cycle number, failed cycles, cross-cycle registration, stitching seams.
 - Channel names = markers: the designs in the set check are marker lists already (`acq_design_key`).
-- Scale: whole-slide, 40+ channels — the data-path panel and card list channels in a table;
-  per-channel measurements at import must stay bounded (check `cleanupFacts` cost on one file).
+- Scale: whole-slide, 40+ channels — the data-path panel and card list channels in a table.
+- **Import measures at slide scale — built** (branch `feat/slide-scale-measures`). The probe read a
+  whole plane per channel and the photon fit made float copies of it: a 1.2 Gpx four-channel scan
+  (0064520) ran the machine out of memory. Now the histogram pass reads a plane past
+  `HIST_BLOCK_PX` in row blocks, and the signal pass reads a plane past `SIGNAL_WHOLE_PLANE_PX` as
+  4 × 4 patches (`data_path._signal_regions`); a microscope frame is read whole, results unchanged.
+  Measured on that scan's cycle 3 (48960 × 24960, 3 channels): 27 s, 0.84 GB peak. Channels the
+  scanner processed before writing (`processing`, `afSubtracted`) get no photon fit — reason in
+  `photons.fit.untestable` (`photons_untestable` in `saturation.jl`), one note in the data-path panel.
+- **Open — multiplex QC** (next): statistics on a slide mostly describe glass — a tissue mask first,
+  then patches and stats inside it; per-cycle checks (DAPI intensity and sharpness across cycles =
+  tissue loss / focus; offset between cycles, with registration); shared structure inside tissue.
 
 ### Series index — one count (found at review, 2026-11-11)
 
