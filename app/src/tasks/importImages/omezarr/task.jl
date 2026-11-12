@@ -255,6 +255,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # still "re-acquire with less gain". One streamed pass over the store we just wrote (~3 s/GB), in
     # the io pool alongside the conversion. Advisory: a failure here never fails the import.
     let sat = _probe_saturation(resolved_zarr, task_run_dir(img._dir);
+                                acquisition = get(zarr_meta, "acquisition", nothing),
                                 on_log = on_log, on_progress = on_progress, on_process = on_process)
         # before the `isnothing(sat)` check: a failed probe must still clear a previous import's record
         _apply_partial_timepoint!(zarr_meta, isnothing(sat) ? nothing : pop!(sat, "partialTimepoint", nothing),

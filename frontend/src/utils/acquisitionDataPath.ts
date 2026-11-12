@@ -50,6 +50,8 @@ function channelItems(f: CleanupFactsChannel, recordedBits: number | null | unde
     items.push({ text: 'no ceiling pile-up detected', source: 'measured' })
   }
   if (f.zeroPct != null) items.push({ text: `${pct(f.zeroPct)} % of voxels at 0${zeroCause(f.floor, camera)}`, source: 'measured' })
+  // the import skipped the photon fit (and read no photon floor): the scanner processed this channel
+  if (f.photons?.notMeasured) items.push({ text: `Photons not measurable: ${f.photons.notMeasured}`, source: 'missing' })
   const fl = f.floor
   if (fl?.kind === 'photon-counted' && fl.photons && !camera) {
     // Counts are the measure here: there is no background distribution to take an SNR against.

@@ -68,7 +68,7 @@ function num(v: number | null | undefined): string {
 // micrometer`) — one shared helper, `formatPhysicalSize`, so the two surfaces stay in sync.
 // Fill-only: adds what the store or the source file records and ccid.json lacks (size, timing,
 // acquisition settings); never overwrites a value already set (`resync_ome_meta!`). Also runs the
-// import's pixel probe when any `SATURATION_CURRENT_KEYS` field is missing (saturation.jl) — one
+// import's pixel probe when the stored one is not current (`_saturation_is_current`, saturation.jl) — one
 // image, so the pixel pass is affordable here.
 const resyncing = ref(false)
 async function resync() {

@@ -31,6 +31,16 @@ describe('dataPathChannels — real FV4000 store (no clipping, photon-counted ze
     expect(dataPathNotes({})).toEqual([])
   })
 
+  it('says on the channel itself when the scanner processed it and its photons were not measured', () => {
+    const img = { cleanupFacts: { channels: [
+      { index: 0, name: 'DAPI', zeroPct: 0, clippedPct: 0, photons: { notMeasured: null } },
+      { index: 1, name: 'CD8', zeroPct: 0, clippedPct: 0, photons: { notMeasured: 'autofluorescence subtracted by the scanner' } },
+    ] } } as unknown as LightPathImage
+    const [dapi, cd8] = dataPathChannels(img)
+    expect(dapi.items.some(i => i.text.startsWith('Photons not measurable'))).toBe(false)
+    expect(cd8.items).toContainEqual({ text: 'Photons not measurable: autofluorescence subtracted by the scanner', source: 'missing' })
+  })
+
   it('says the zeros are voxels with no photon, with the evidence, and gives photons instead of an SNR', () => {
     expect(texts(2)).toContain('86 % of voxels at 0: likely no photon detected (photon-counted: nothing from 1 to 18, then a peak at 32)')
     expect(texts(2).at(-1)).toBe('photons per non-zero voxel: median 1.06 · p99.9 5.97 (~32 per photon)')
