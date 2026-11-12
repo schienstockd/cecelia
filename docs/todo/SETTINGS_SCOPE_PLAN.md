@@ -77,6 +77,9 @@ Locked 2026-10-17 (the maintainer).
 11. **The Cecelia MCP row moved to Preferences → Kiwi.** It reads the active profile's own Claude
     config. `composables/useMcpConnections.ts` now serves both it and Settings → Other MCP
     connections.
+12. **Other people's profiles are peanut's** (2026-11-12). In Preferences → Profiles only peanut
+    may rename or delete other profiles; anyone else may rename their own and switch.
+    `profileRowActions` in `utils/profileApi.ts`; the routes stay ungated (decision 2).
 
 ## How it was built
 
