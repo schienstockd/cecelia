@@ -20,16 +20,17 @@ import type { MaturityRef } from '../utils/maturity'
 import { tierTip } from '../lib/guides/tiers'
 import { openMaturityRow } from '../lib/guideOpen'
 
-defineProps<{ maturity: MaturityRef | null; page: string }>()
+// `micro`: sized to sit inside a text row without making it taller (the sidebar's open-page row)
+defineProps<{ maturity: MaturityRef | null; page: string; micro?: boolean }>()
 </script>
 
 <template>
   <span v-if="maturity" class="mi cc-row cc-row-tight">
-    <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(maturity.rowId)"
+    <button class="cc-btn cc-btn-bare" :class="micro ? 'cc-btn-micro' : 'cc-btn-dense'" @click="openMaturityRow(maturity.rowId)"
             v-tooltip.bottom="`${tierTip(maturity.tier)} — show why`">
       <ComingSoonBadge :tier="maturity.tier" dot />
     </button>
-    <ReportProblemButton :feature="maturity.title" :tier="maturity.tier" :page="page" />
+    <ReportProblemButton :feature="maturity.title" :tier="maturity.tier" :page="page" :micro="micro" />
   </span>
 </template>
 

@@ -65,6 +65,7 @@ interface PathsGroup {
   tracked?: boolean; total?: number; shown?: number; timeStep?: number | null
   paths?: TrackPathMap
 }
+import { plotTheme } from '../../plots/overlays'
 import {
   buildLanes, frameDomain, orderLanes, filterLanes, laneWindow, windowNote,
   issueMarkers, laneSeverity, candidateTracks, selectionOverlaps,
@@ -635,8 +636,7 @@ function render() {
   const el = host.value
   if (!el) return
   const dark = !forceLight.value
-  const fg = dark ? '#e6e6e6' : '#111'
-  const bg = dark ? '#1f2226' : '#ffffff'
+  const { ink: fg, ground: bg } = plotTheme(dark)
   const muted = dark ? '#8b949e' : '#666'
   const grid = dark ? '#30363d' : '#ddd'
 
@@ -937,14 +937,14 @@ function exportAs(kind: string) {
     const rows = schemeCsvRows(filtered.value)
     if (rows.length) downloadBlob(`${stem.value}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(host.value, kind, '#1f2226')
+    elementToImageURL(host.value, kind, plotTheme(true).ground)
       .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); render()
-  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
   forceLight.value = false; render()
   return url
 }

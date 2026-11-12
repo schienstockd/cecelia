@@ -7,7 +7,8 @@
 // as it needs, id at (id % W, id / W), and alpha 0 = this label is not drawn. That is how a movie
 // draws a population-filtered, population-coloured mask with this pass, and how the viewer's
 // "Colour by population" draws one (`utils/maskPopTable.ts`); otherwise it sends the palette's row count.
-fn labColour(id: u32) -> vec4<f32> {
+fn labColour(raw: u32) -> vec4<f32> {
+  let id = raw & ${LABEL_ID_MASK}u;     // a derived-file flag (label_layers.wgsl) colours as its cell
   let rows = i32(p.lab.z);
   if (rows < 0) {
     let w = u32(-rows);

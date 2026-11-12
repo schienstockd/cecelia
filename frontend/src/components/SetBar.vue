@@ -8,7 +8,9 @@ import { setNameTaken } from '../utils/setDestination'
 import ConfirmButton from './ConfirmButton.vue'
 import SetRecipePicker from './SetRecipePicker.vue'
 
-const props = defineProps<{ allowManage?: boolean }>()
+// `inline`: sits inside a module page's set row (ModuleLayout) — no bar chrome of its own, no ID (the
+// row's ⋯ menu copies it) and no trailing spacer, so the row's counts and checks follow it.
+const props = defineProps<{ allowManage?: boolean; inline?: boolean }>()
 
 const project     = useProjectStore()
 const projectMeta = useProjectMetaStore()
@@ -136,7 +138,7 @@ async function deleteSet() {
 </script>
 
 <template>
-  <div class="set-bar">
+  <div class="set-bar" :class="{ inline }">
     <div class="set-selector">
       <label class="set-label"
         v-tooltip.bottom="'The active image set — all operations apply to it'">
@@ -153,7 +155,7 @@ async function deleteSet() {
         <option value="" disabled>— no sets —</option>
         <option v-for="s in project.sets" :key="s.uid" :value="s.uid">{{ s.name }}</option>
       </select>
-      <template v-if="activeSet">
+      <template v-if="activeSet && !inline">
         <span class="set-uid cc-muted cc-fs-xs">{{ activeSet.uid }}</span>
         <button class="set-uid-copy cc-btn cc-btn-bare cc-btn-icon" @click="copySetUid(activeSet.uid)"
           v-tooltip.bottom="copiedSetUid() ? 'Copied!' : 'Copy set UID to clipboard'">
@@ -185,30 +187,34 @@ async function deleteSet() {
           v-tooltip.bottom="'Cancel'">Cancel</button>
       </template>
       <template v-else>
-        <button class="cc-btn cc-btn-ghost" data-guide="set.new" @click="openNameInput('create')"
+        <!-- inline (the module set row): the same buttons, icon-only, so the row keeps its counts -->
+        <button class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-icon': inline }" data-guide="set.new"
+          @click="openNameInput('create')" aria-label="New set"
           v-tooltip.bottom="'Create a new image set to group related images together'">
-          <i class="pi pi-plus" /> New set
+          <i class="pi pi-plus" /><template v-if="!inline"> New set</template>
         </button>
-        <button v-if="activeSet" class="cc-btn cc-btn-ghost" @click="openNameInput('rename')"
+        <button v-if="activeSet" class="cc-btn cc-btn-ghost" :class="{ 'cc-btn-icon': inline }"
+          @click="openNameInput('rename')" aria-label="Rename set"
           v-tooltip.bottom="`Rename set '${activeSet.name}' — the images and their data are untouched`">
-          <i class="pi pi-pencil" /> Rename
+          <i class="pi pi-pencil" /><template v-if="!inline"> Rename</template>
         </button>
       </template>
 
-      <span class="spacer" />
+      <span v-if="!inline" class="spacer" />
 
       <!-- the set's NAME rides on the armed tooltip: deleting a whole set is the one place a wrong
            target costs every image in it -->
       <ConfirmButton v-if="activeSet" @confirm="deleteSet" v-slot="{ armed, press }">
-        <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-danger-ghost'" @click="press" :disabled="busy"
+        <button class="cc-btn" :class="[armed ? 'cc-btn-danger' : 'cc-btn-danger-ghost', { 'cc-btn-icon': inline && !armed }]"
+          @click="press" :disabled="busy" aria-label="Delete set"
           v-tooltip.bottom="armed ? `Click again — permanently delete '${activeSet.name}' and its images from disk`
                                   : `Delete set '${activeSet.name}' and all its images — cannot be undone`">
-          <i class="pi" :class="busy ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete set
+          <i class="pi" :class="busy ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-trash'" /><template v-if="!inline || armed"> Delete set</template>
         </button>
       </ConfirmButton>
     </template>
 
-    <span v-else class="spacer" />
+    <span v-else-if="!inline" class="spacer" />
   </div>
 </template>
 
@@ -222,6 +228,8 @@ async function deleteSet() {
   border-bottom: 1px solid var(--cc-border);
   flex-shrink: 0;
 }
+.set-bar.inline { padding: 0; background: none; border-bottom: none; gap: var(--cc-space-2xs); }
+.set-bar.inline .set-select { min-width: 140px; max-width: 14rem; }
 .set-selector { display: flex; align-items: center; gap: var(--cc-space-sm); }
 .set-uid { font-family: var(--cc-mono); letter-spacing: 0.03em; }
 /* .set-uid-copy → cc-btn cc-btn-bare cc-btn-icon */

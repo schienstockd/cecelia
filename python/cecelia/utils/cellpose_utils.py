@@ -69,10 +69,6 @@ def _cellpose_major_version() -> int:
 
 
 _CELLPOSE_MAJOR = _cellpose_major_version()
-
-# Most non-zero voxels a tile may hold in a channel that has no frame/image window. Below a cell's
-# worth, so stretching them per tile cannot change which cells are found (`_prepare_channel`).
-_MAX_UNWINDOWED_VOXELS = 100
 _CELLPOSE_V3_BUILTINS = ('cyto2', 'cyto3')
 
 
@@ -280,17 +276,8 @@ class CellposeUtils(SegmentationUtils):
         if norm_params and ch_idx in norm_params:
             norm_min, norm_max = norm_params[ch_idx]
         else:
-            # Only for a channel the base found too empty for a window (or a caller passing none),
-            # and a tile is part of its frame, so the tile is near-empty too. A tile with real
-            # signal here would get a window of its own, i.e. its own brightness. Refuse that
-            # instead. The limit is fixed on purpose rather than read from `_percentile_range`:
-            # raising that cut-off must trip this check, not move it.
-            nonzero = int(np.count_nonzero(ch_data))
-            if nonzero > _MAX_UNWINDOWED_VOXELS:
-                raise ValueError(
-                    f'channel {ch_idx} has {nonzero} non-zero voxels in this tile but no '
-                    'frame/image intensity window. A per-tile window would give each tile its own '
-                    'brightness. The base must supply `norm_params` for every channel with signal.')
+            # Only for a channel the base found too empty for a window (or a caller passing none).
+            self._refuse_unwindowed_signal(ch_data, ch_idx)
             rng = self._percentile_range(arr, float(model_params.get('normalise', 99.9)))
             norm_min, norm_max = rng if rng is not None else (0.0, float(arr.max()) or 1.0)
 

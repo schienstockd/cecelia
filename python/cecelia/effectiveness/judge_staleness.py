@@ -64,6 +64,30 @@ def judge_record_warning(store: pathlib.Path | None = None, *, today: _dt.date |
     return backlog_warning([p for _, p in sorted(dated)])
 
 
+class JudgeWarning:
+    """The warning for a long-running console: recomputed when a run record is written or the day
+    changes, so a later good pass clears an old failure without a restart. Checking costs a
+    directory listing; the records are only re-read when that changes."""
+
+    def __init__(self, store: pathlib.Path, *, today=None):
+        self._store, self._today = store, today or (lambda: _dt.datetime.now(_dt.timezone.utc).date())
+        self._key: tuple | None = None
+        self._text: str | None = None
+
+    def _signature(self) -> tuple:
+        try:
+            files = tuple(sorted((p.name, p.stat().st_mtime_ns) for p in self._store.glob("*.json")))
+        except OSError:
+            files = ()
+        return self._today(), files
+
+    def get(self) -> str | None:
+        key = self._signature()
+        if key != self._key:
+            self._key, self._text = key, judge_record_warning(self._store, today=key[0])
+        return self._text
+
+
 def backlog(bugs: list[dict]) -> int:
     """A pass's backlog: candidates waiting for the judge (`unjudged`), what the sweep budget didn't
     reach. The one definition; `scripts/judge/record.py` reports it."""

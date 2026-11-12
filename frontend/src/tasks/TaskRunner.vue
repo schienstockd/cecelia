@@ -46,6 +46,8 @@ import { mentionTargets } from '../utils/kiwiTurn'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { useRoute, useRouter } from 'vue-router'
 import { useStoredSectionOpen } from '../utils/sectionOpen'
+import { lastRunSummary } from '../utils/taskRows'
+import { formatAgo } from '../utils/formatAgo'
 import InlineNote from '../components/InlineNote.vue'
 import PhysicalSizeDialog from '../components/PhysicalSizeDialog.vue'
 import { calibrationCheckpoint, checkpointCoversGate, type CheckpointLine } from '../utils/calibrationCheckpoint'
@@ -67,7 +69,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
-import { isLiveStatus } from '../lib/taskStatus'
+import { isLiveStatus, TASK_STATUS } from '../lib/taskStatus'
 import { expandSweep, parseSweepState, sweepStateKey, sweepableParams, type SweepState } from '../utils/paramSweep'
 
 const props = defineProps<{
@@ -662,7 +664,9 @@ function goToTask(to: MentionTarget) {
   profileStorage.setItem(`cc-fn:${to.module}`, to.task)
   void router.push(to.path)
 }
-const whenOpen = useStoredSectionOpen('cc-task-about-open')
+// Closed by default (mock frame 1): the purpose line says what it is for; "when to use" is a second
+// read. A fresh key, so the default reaches everyone once; the choice persists after that.
+const whenOpen = useStoredSectionOpen('cc-task-about-open-v2', false)
 // ── Task runner down ──────────────────────────────────────────────────────────
 // Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
 // backend is a surprise: it works, but it dies with the next Restart, which is the one thing you
@@ -856,7 +860,13 @@ const hiddenTaskNote = computed(() => {
 // ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
 // Vertical space is the scarce one here: a long param list and a busy task list can't both fit on a
 // laptop screen. Top half = this runner, bottom half = the module's task list.
-const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
+// The function runner has the panel by default; the task list is one click away through the
+// "Last run" line under Run, or the bar above (GUI_LAYOUT_PLAN M4). A fresh key, so the default reaches
+// everyone once; the arrangement persists after that.
+const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane-v2', 'top')
+const lastRun = computed(() => lastRunSummary(taskStore.forModule(props.module, projectUid.value)))
+const lastRunAgo = computed(() => lastRun.value.lastFinished ? formatAgo(lastRun.value.lastFinished.toISOString()) : '')
+function showTaskList() { if (pane.value === 'top') togglePane('top') }
 </script>
 
 <template>
@@ -1154,6 +1164,17 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           </div>
         </TeleportPopover>
       </div>
+
+      <!-- Last run: what the folded task list would say; the link opens it in place -->
+      <div v-if="pane === 'top' && (lastRun.live || lastRun.lastFinished)" class="last-run cc-muted cc-fs-xs">
+        <span v-if="lastRun.live"><i :class="['pi', TASK_STATUS.running.icon]" /> {{ lastRun.live }} running or queued</span>
+        <span v-else>Last run{{ lastRunAgo ? ` ${lastRunAgo} ago` : '' }}
+          <template v-if="lastRun.done"> · {{ lastRun.done }} done</template>
+          <template v-if="lastRun.failed"> · <span class="cc-muted-error">{{ lastRun.failed }} failed</span></template>
+        </span>
+        <button class="cc-btn cc-btn-bare cc-btn-dense cc-fs-xs last-run-tasks" data-guide="task.lastRun"
+                v-tooltip.left="'Show this page’s tasks — watch, cancel, read logs'" @click="showTaskList">Tasks</button>
+      </div>
     </section>
 
     <!-- ── Task list ── (its heading + the two list-wide actions belong to TaskList itself, so the
@@ -1174,6 +1195,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 </template>
 
 <style scoped>
+/* the runner's "Last run" line under Run (the task list's summary while it is folded) */
+.last-run { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; }
+.last-run-tasks { margin-left: auto; color: var(--cc-accent-soft); }
 .handoff-note {
   display: flex; align-items: center; gap: 0.4rem;
   margin: 0 0 0.5rem; padding: 0.3rem 0.45rem;

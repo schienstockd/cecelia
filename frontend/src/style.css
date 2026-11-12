@@ -1,5 +1,5 @@
 /* ── Cecelia design tokens ──────────────────────────────────────────────────── */
-/* Dark-first. The .cc-dark class is always applied at shell level.             */
+/* Dark-first; a light scheme overrides the colour tokens (search: Light colour scheme). */
 
 /* Declared on :root, NOT on .cc-dark — and that is load-bearing, not tidiness.
    `.cc-dark` is a <div> inside <body> (App.vue's shell), so anything a library appends to
@@ -83,17 +83,17 @@
   --cc-danger:     #ef4444;
 
   /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
-     (ok / warn / fail) drawn WITH its shape-distinct icon. Hues from the dataviz status palette,
-     validated for CVD separation on ADJACENT pairs (worst ΔE 11.3 under protanopia > the ΔE≥8 bar);
-     ok-vs-fail is only ΔE 5.4 under deuteranopia, which the icon covers. A bare status dot has no
+     (ok / warn / fail) drawn WITH its shape-distinct icon. Every pair of ok / warn / fail / --cc-active
+     is ≥ ΔE 8 under protan- and deuteranopia (worst 10.8) and ≥ 15 for normal vision, in each scheme —
+     enforced by utils/cvd.test.ts, which reads these values. Each also reads as text (≥ 4.5:1). A bare status dot has no
      icon, so it does NOT use these: `.cc-dot` tones are `--cc-dot-*` (sky-blue ok). Colour is NEVER the sole cue:
      always paired with a shape-distinct icon + label via frontend/src/lib/severity.ts (pi-check-circle
      / pi-exclamation-triangle / pi-times-circle). See docs/todo/QC_OBSERVER_PLAN.md.
      Supersedes --cc-warn/--cc-danger for severity semantics. Task-status lights (done/failed) route
      through here via lib/taskStatus.ts; ParamRenderer's QC flag uses lib/severity.ts. */
-  --cc-sev-ok:     #0ca30c;
-  --cc-sev-warn:   #fab219;
-  --cc-sev-fail:   #d03b3b;
+  --cc-sev-ok:     #61c28e;
+  --cc-sev-warn:   #ef9d14;
+  --cc-sev-fail:   #f34739;
   /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
      from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
      button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok` —
@@ -108,7 +108,57 @@
   --cc-guide:      rgba(255, 255, 255, 0.6);
   /* "active / in-progress" (blue) — the running-task light. NOT a severity (ok/warn/fail); it's the
      4th task-status tone alongside neutral (queued/cancelled). See lib/taskStatus.ts. */
-  --cc-active:     #93c5fd;
+  --cc-active:     #5b8dd4;
+
+  /* ── Scheme-following neutrals. A colour scheme overrides these with the rest of the palette. A
+     component never writes rgba(0,0,0,…) / rgba(255,255,255,…) itself: those mean "darker / lighter
+     than the surface", and only on a dark scheme do they mean what was intended. */
+  --cc-shadow:      rgba(0, 0, 0, 0.4);    /* popover, panel, toast and modal drop shadows */
+  --cc-shadow-soft: rgba(0, 0, 0, 0.28);   /* the hairline shadow under a sticky control strip */
+  --cc-backdrop:    rgba(0, 0, 0, 0.65);   /* the dim behind a modal or an in-page overlay */
+  --cc-wash:        rgba(255, 255, 255, 0.06);   /* a hover wash on a row or bare control */
+  --cc-wash-strong: rgba(255, 255, 255, 0.1);    /* the same, engaged */
+
+  /* Ink — a hue that reads AS TEXT on the scheme's surfaces (status lines, category labels, error
+     messages). Distinct from the severity trio, which is drawn with its icon; ink is the coloured word.
+     A light scheme gives each a darker value. red / amber / green / blue carry state, so every pair is
+     ≥ ΔE 8 under protan/deutan in each scheme (utils/cvd.test.ts); cyan is a labelled category, held to
+     the 6 floor. There is no orange: at text contrast on a light ground it cannot be told from amber. */
+  --cc-ink-red:    #fc5858;
+  --cc-ink-amber:  #fcb52c;
+  --cc-ink-green:  #77edae;
+  --cc-ink-blue:   #6ea1d9;
+  --cc-ink-cyan:   #67e8f9;
+  /* Tints — the washed background behind ink (a failed chip, a warning callout). Derived, so a scheme
+     that changes --cc-danger / --cc-warn / --cc-sev-ok / --cc-dot-info gets matching tints for free. */
+  --cc-tint-red:   color-mix(in srgb, var(--cc-danger) 16%, transparent);
+  --cc-tint-amber: color-mix(in srgb, var(--cc-warn) 14%, transparent);
+  --cc-tint-green: color-mix(in srgb, var(--cc-sev-ok) 18%, transparent);
+  --cc-tint-blue:  color-mix(in srgb, var(--cc-dot-info) 30%, transparent);
+
+  /* ── Fixed: NOT overridden by a colour scheme. These sit on something whose colour the scheme does
+     not choose — microscopy pixels, a solid fill, an exported white figure — so they must stay put. */
+  /* over images and plots (the HUD): pixels are dark whatever the scheme */
+  --cc-media-bg:      #000;                    /* letterbox / thumbnail ground behind an image */
+  --cc-hud-bg:        rgba(0, 0, 0, 0.78);     /* a chip or readout floating over an image or plot */
+  --cc-hud-bg-soft:   rgba(0, 0, 0, 0.55);     /* the lighter variant: hints, counters, a veil */
+  --cc-hud-shade:     rgba(0, 0, 0, 0.35);     /* a dark ring that lifts a marker off bright pixels */
+  --cc-hud-halo:      rgba(0, 0, 0, 0.85);     /* the outline/text-shadow that keeps white text legible on pixels */
+  --cc-hud-text:      #fff;
+  --cc-hud-text-dim:  #938d86;
+  --cc-hud-wash:      rgba(255, 255, 255, 0.08);   /* a drafted region's fill over an image */
+  --cc-swatch-edge:   rgba(128, 128, 128, 0.4);    /* hairline round a colour swatch — mid-grey, reads on any ground */
+  /* on a solid fill: the fill picks the ink, not the scheme */
+  --cc-on-solid:      #fff;      /* on --cc-accent-fill / --cc-danger-fill and other deep fills */
+  --cc-on-bright:     #1a1a1a;   /* on a bright fill (--cc-sev-warn, --cc-warn, a population colour) */
+  /* paper — an exported or printed figure is white, and `.cc-light` (below) re-inks a subtree for it */
+  --cc-paper:         #fff;
+  --cc-paper-2:       #f0f0f3;
+  --cc-paper-ink:     #111;
+  --cc-paper-ink-dim: #555;
+  --cc-paper-border:  #c9ccd1;
+  /* Claude's mark on a plot/card — the magenta "C" ring. A data-surface mark, so fixed. */
+  --cc-claude-mark:   #e836b4;
 
   /* monospace */
   --cc-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
@@ -329,17 +379,17 @@ body {
    component with drifted colours — this is the one source. */
 .cc-btn-danger {
   background: var(--cc-danger-fill);
-  color: #fff;
+  color: var(--cc-on-solid);
   border-color: var(--cc-danger-fill);
 }
 .cc-btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
 
 .cc-btn-danger-ghost {
-  background: #7f1d1d44;
-  border-color: #7f1d1d;
-  color: #fca5a5;
+  background: var(--cc-tint-red);
+  border-color: color-mix(in srgb, var(--cc-danger) 45%, transparent);
+  color: var(--cc-ink-red);
 }
-.cc-btn-danger-ghost:hover:not(:disabled) { background: #7f1d1d88; }
+.cc-btn-danger-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--cc-danger) 22%, transparent); }
 
 /* Bare — transparent, no border, dim until hovered. The most common button in the app by far (~50
    icon-only sites had hand-rolled exactly this). `ghost` is its boxed counterpart: same colour
@@ -417,13 +467,13 @@ body {
 .cc-btn-on.cc-btn-on-solid {
   background: var(--cc-accent-fill);
   border-color: var(--cc-accent-fill);
-  color: #fff;
+  color: var(--cc-on-solid);
 }
 .cc-btn.cc-btn-on.cc-btn-on-solid:hover:not(:disabled) {
   filter: brightness(1.12);
   background: var(--cc-accent-fill);
   border-color: var(--cc-accent-fill);
-  color: #fff;
+  color: var(--cc-on-solid);
 }
 
 /* Button GROUP — a joined strip of related buttons sharing one outline, with hairline dividers
@@ -936,12 +986,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   opacity: 0; pointer-events: none; transition: opacity 0.12s ease;
   background: color-mix(in srgb, var(--cc-surface-2) 96%, transparent);
   border-bottom: 1px solid var(--cc-border);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 2px 10px var(--cc-shadow-soft);
 }
 .cc-panel-controls.bottom {
   top: auto; bottom: 0;
   border-bottom: none; border-top: 1px solid var(--cc-border);
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 -2px 10px var(--cc-shadow-soft);
 }
 .panel:hover .cc-panel-controls,
 .panel.controls-pinned .cc-panel-controls { opacity: 1; pointer-events: auto; }
@@ -988,6 +1038,12 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
    than fit beside it": the image table's per-image menu and the population manager's per-population
    menu render the same list, so it lives here rather than twice in scoped blocks. The ⋯ TRIGGER stays
    with its host — how visible a button is at rest is a per-table decision. */
+/* The worded "Ask Kiwi" button — Kiwi's identity teal, outlined. Two hosts: the main header and the
+   viewer window's header (AddToKiwiButton `label`). Pressed = tinted. */
+.cc-btn-kiwi { color: var(--cc-kiwi); border: 1px solid color-mix(in srgb, var(--cc-kiwi) 45%, transparent); background: none; }
+.cc-btn-kiwi:hover, .cc-btn-kiwi.on { background: var(--cc-kiwi-tint); }
+.cc-btn-kiwi.on { border-color: var(--cc-kiwi); }
+
 .cc-actions-menu { display: flex; flex-direction: column; min-width: 200px; }
 .cc-actions-item {
   display: flex; align-items: center; gap: 0.55rem;
@@ -1006,3 +1062,136 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   padding: 0.35rem 0.6rem 0.2rem; color: var(--cc-text-dim); font-size: var(--cc-fs-2xs);
   text-transform: uppercase; letter-spacing: 0.04em;
 }
+
+/* ── Light colour scheme ──────────────────────────────────────────────────────
+   The avatar menu (one-click switch) or Preferences → Interface sets `data-theme="light"` on <html> (utils/colourScheme.ts).
+   Overrides the SCHEME-FOLLOWING tokens only; the fixed ones (--cc-hud-*, --cc-paper*, --cc-on-*,
+   --cc-media-bg, --cc-claude-mark) stay, because what sits under them is not the page. Warm-neutral
+   like the dark scheme. Every text pair is ≥ 4.5:1 (WCAG AA) on --cc-surface-1: text 15.4, dim 6.2,
+   accent 5.7, white on accent-fill 5.95, stages 5.7–6.9, kiwi 5.3, severity 4.6–7.7, ink 4.7–8.9.
+   State colours are also held apart under colour blindness (utils/cvd.test.ts). Okabe–Ito dots stay: they are
+   marks, not text. Same token, same meaning — only the value changes. docs/UI.md → *Colour schemes*. */
+:root[data-theme="light"] {
+  --cc-bg:          #f4f2ef;
+  --cc-surface-1:   #fbfaf8;
+  --cc-surface-2:   #ebe8e4;
+  --cc-console-bg:  #f7f6f4;
+  --cc-text:        #1d1b19;
+  --cc-text-dim:    #635d57;
+  --cc-border:      #d6d0c9;
+  --cc-border-hover:#b5aea6;
+
+  --cc-accent:        #6a4bd0;
+  --cc-accent-strong: #5b3cc4;
+  --cc-accent-fill:   #6a4bd0;
+  --cc-accent-soft:   #4a2ea6;
+  --cc-accent-tint:   #e8e2fa;
+  --cc-accent-tint-2: #dcd2f7;
+  --cc-stage-data:        #7d5d1c;
+  --cc-stage-populations: #a04a26;
+  --cc-stage-explore:     #8a5560;
+  --cc-stage-analysis:    #5e5838;
+  --cc-check-text:  #9c3a5f;
+  --cc-kiwi:        #0f766e;
+  --cc-kiwi-strong: #115e59;
+  --cc-kiwi-soft:   #0f766e;
+  --cc-kiwi-tint:   #d5f5ee;
+  --cc-claude:      #b0502f;
+  --cc-selected:    #e07000;
+
+  --cc-warn:     #a16507;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
+  --cc-danger:   #972334;   /* = sev-fail */
+  --cc-sev-ok:   #248160;
+  --cc-sev-warn: #a16507;
+  --cc-sev-fail: #972334;
+  --cc-viewer:   #15803d;
+  --cc-guide:    rgba(0, 0, 0, 0.5);
+  --cc-active:   #0a44c7;
+
+  --cc-shadow:      rgba(0, 0, 0, 0.14);
+  --cc-shadow-soft: rgba(0, 0, 0, 0.08);
+  --cc-backdrop:    rgba(0, 0, 0, 0.35);
+  --cc-wash:        rgba(0, 0, 0, 0.04);
+  --cc-wash-strong: rgba(0, 0, 0, 0.08);
+
+  --cc-ink-red:    #900e23;
+  --cc-ink-amber:  #9d5e01;
+  --cc-ink-green:  #247f5d;
+  --cc-ink-blue:   #254d90;
+  --cc-ink-cyan:   #0e7490;
+  /* tints restated: the dark mixes are too strong on a light ground (ink on them would drop below AA) */
+  --cc-tint-red:   color-mix(in srgb, var(--cc-danger) 12%, transparent);
+  --cc-tint-amber: color-mix(in srgb, var(--cc-warn) 14%, transparent);
+  --cc-tint-green: color-mix(in srgb, var(--cc-sev-ok) 14%, transparent);
+  --cc-tint-blue:  color-mix(in srgb, var(--cc-dot-info) 16%, transparent);
+}
+@layer cc-base {
+  :root[data-theme="light"] .cc-dark { color-scheme: light; }
+}
+
+/* ── Paper ink (`.cc-light`) ────────────────────────────────────────────────────
+   Re-inks a subtree for a white ground: a figure being exported to PDF/PNG/SVG, a plot capture, a card
+   grid rasterised for a report. Put the class on the CAPTURE HOST for the duration of the export; the
+   tokens below resolve on it and everything inside follows. The one non-:root token scope in this file,
+   and deliberately so — it is applied to the element it re-inks, so there is no reachability gap (the
+   :root note at the top). */
+.cc-light {
+  --cc-text:      var(--cc-paper-ink);
+  --cc-text-dim:  var(--cc-paper-ink-dim);
+  --cc-border:    var(--cc-paper-border);
+  --cc-bg:        var(--cc-paper);
+  --cc-surface-1: var(--cc-paper);
+  --cc-surface-2: var(--cc-paper-2);
+}
+
+/* ── HUD chip ───────────────────────────────────────────────────────────────────
+   A short status line floating over an image or a plot canvas — the post-Save "prompt on your
+   clipboard" outcome on the summary / layout / cluster / gate canvases. Fixed dark (--cc-hud-*), since
+   it sits on pixels, not on a scheme surface. Position it locally; `-error` for a failed outcome,
+   `-dismiss` on its ✕ button (a `.cc-btn-bare .cc-btn-icon .cc-btn-micro`). */
+.cc-hud-chip {
+  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
+  background: var(--cc-hud-bg); color: var(--cc-hud-text);
+  font-size: var(--cc-fs-xs); pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+}
+.cc-hud-chip-error { color: var(--cc-sev-fail); }
+.cc-hud-chip > .pi { font-size: 1em; }
+.cc-hud-chip-dismiss { margin-left: 0.15rem; color: var(--cc-hud-text); opacity: 0.8; }
+.cc-btn.cc-hud-chip-dismiss:hover:not(:disabled) { opacity: 1; color: var(--cc-hud-text); }
+
+/* ── Warning callout ──────────────────────────────────────────────────────────
+   The amber box round an inline warning that needs reading before acting (mixed physical sizes, a
+   gating copy that will overwrite, cluster members that need fixing). Colour only — the host keeps its
+   own layout (flex, gap, padding). A one-line meta warning is `.cc-muted-warn`, not this. */
+.cc-callout-warn {
+  color: var(--cc-ink-amber);
+  background: var(--cc-tint-amber);
+  border: 1px solid color-mix(in srgb, var(--cc-warn) 33%, transparent);
+  border-radius: var(--cc-radius-sm);
+}
+/* the canvases' placement: bottom-left, above CaptureViewSurface (z:40) so the outcome reads whether or
+   not the frozen frame is up */
+.cc-hud-chip-corner {
+  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50; max-width: calc(100% - 1.5rem);
+}
+
+/* ── Claude's mark on a plot ──────────────────────────────────────────────────
+   The magenta "C" Claude leaves where it pointed: on a card, a scatter point, a cell detail. Shape and
+   colour here; the host only positions it. `-ring` for one sitting on a data point (a white ring and a
+   magenta halo lift it off the dots). `.cc-claude-chip` is the "C n" count chip on an aggregate plot. */
+.cc-claude-badge {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--cc-claude-mark); color: var(--cc-on-solid);
+  font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1;
+}
+.cc-claude-badge-ring { border: 1.5px solid var(--cc-on-solid); box-shadow: 0 0 0 1px var(--cc-claude-mark); }
+.cc-claude-chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 3px;
+  background: color-mix(in srgb, var(--cc-claude-mark) 15%, transparent);
+  border: 1px solid var(--cc-claude-mark); border-radius: var(--cc-radius-xs);
+  color: var(--cc-text); font-size: var(--cc-fs-2xs); font-weight: 600; line-height: 1;
+  pointer-events: auto;
+}
+.cc-claude-chip > .cc-claude-badge { width: 14px; height: 14px; }

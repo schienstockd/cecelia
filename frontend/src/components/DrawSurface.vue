@@ -938,7 +938,7 @@ const firstVertexMarker = computed(() => {
 .ds-mode {
   margin-left: 0.25rem;
   padding: 0.2rem 0.5rem;
-  background: rgba(0, 0, 0, 0.55); color: var(--cc-text-dim);
+  background: var(--cc-hud-bg-soft); color: var(--cc-hud-text-dim);
   border-radius: var(--cc-radius-md);
   pointer-events: none;
 }
@@ -951,7 +951,7 @@ const firstVertexMarker = computed(() => {
    it inline. `vector-effect: non-scaling-stroke` keeps the on-screen width in CSS px regardless
    of the SVG's viewBox scale, so the same preset reads the same across zooms. */
 .ds-committed rect, .ds-committed path {
-  fill: none; stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke;
+  fill: none; stroke: var(--cc-hud-text); stroke-width: 2; vector-effect: non-scaling-stroke;
   paint-order: stroke;
 }
 /* Selection halo — a second stroke painted underneath via `filter: drop-shadow`. Simple, cheap,
@@ -961,22 +961,22 @@ const firstVertexMarker = computed(() => {
   filter: drop-shadow(0 0 3px var(--cc-accent)) drop-shadow(0 0 3px var(--cc-accent));
 }
 .ds-committed text {
-  fill: #fff; stroke: rgba(0, 0, 0, 0.7); stroke-width: 3; paint-order: stroke;
+  fill: var(--cc-hud-text); stroke: var(--cc-hud-halo); stroke-width: 3; paint-order: stroke;
   font-size: var(--cc-fs-sm); font-family: var(--cc-mono);
   vector-effect: non-scaling-stroke;
 }
-.ds-draft { fill: rgba(255, 255, 255, 0.08); stroke: var(--cc-accent); stroke-width: 2;
+.ds-draft { fill: var(--cc-hud-wash); stroke: var(--cc-accent); stroke-width: 2;
             stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .ds-poly-first { fill: none; stroke: var(--cc-accent); stroke-width: 2;
                  stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .ds-poly-first.armed { fill: var(--cc-accent); fill-opacity: 0.25; stroke-dasharray: none; }
 .ds-corner {
-  fill: #fff; stroke: rgba(0, 0, 0, 0.75); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+  fill: var(--cc-hud-text); stroke: var(--cc-hud-halo); stroke-width: 1.5; vector-effect: non-scaling-stroke;
 }
 /* Poly vertex handles — same visual language as rect corners (white fill, dark ring) so a user
    who has drawn a rect reads them as the same affordance. */
 .ds-vertex {
-  fill: #fff; stroke: rgba(0, 0, 0, 0.75); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+  fill: var(--cc-hud-text); stroke: var(--cc-hud-halo); stroke-width: 1.5; vector-effect: non-scaling-stroke;
   cursor: grab;
 }
 /* Poly / stroke selection frame — dashed accent outline showing the AA bounding box that the
@@ -998,9 +998,9 @@ const firstVertexMarker = computed(() => {
   pointer-events: none;
 }
 .ds-delete { cursor: pointer; }
-.ds-delete circle { fill: rgba(0, 0, 0, 0.7); stroke: #fff; stroke-width: 1.5;
+.ds-delete circle { fill: var(--cc-hud-halo); stroke: var(--cc-hud-text); stroke-width: 1.5;
                     vector-effect: non-scaling-stroke; }
 .ds-delete:hover circle { fill: var(--cc-accent); }
-.ds-delete text { fill: #fff; stroke: none; font-family: var(--cc-mono); font-weight: bold;
+.ds-delete text { fill: var(--cc-hud-text); stroke: none; font-family: var(--cc-mono); font-weight: bold;
                   pointer-events: none; }
 </style>

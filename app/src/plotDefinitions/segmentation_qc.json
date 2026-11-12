@@ -3,6 +3,7 @@
   "label": "Segmentation QC",
   "module": "segment",
   "family": "summary",
+  "defaultOn": ["segment"],
   "chartTypes": ["count", "boxplot", "violin", "strip", "bar", "histogram"],
   "whiteboardCompatible": true,
   "dataSource": {

@@ -334,6 +334,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # The mask takes the colour-by column only when asked (`colourLabels`, the batch chip); else
         # the per-id palette — the viewer's mask, which colour-by never recolours.
         out["maskColourBy"]    = _cfg_bool(cfg, "colourLabels")
+        # the derived files (halo / nuc) the viewer hides, per segmentation — absent = all drawn,
+        # the viewer's default (`movie_mask_files`)
+        out["maskFilesHidden"] = mask_files_hidden(_cfg_maybe(cfg, "labelFilesHidden"))
     end
     # colourBy / colourOverrides — same knobs the overlay author reads (`_build_overlay_state`).
     # `mask_id_colours` picks them up so a labels layer coloured by "clusters" and the pop dots

@@ -114,7 +114,8 @@ describe('useVaultModel', () => {
     vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
       const key = String(url)
       if (key === '/api/optical-flow/models') { flowCalls++
-        return { ok: true, json: async () => ({ models: [] }) } as Response }
+        return { ok: true, json: async () => ({ models: ['a', 'b', 'c'].map(n =>
+          ({ name: n, stem: n, hasManifest: true, manifest: {} })) }) } as Response }
       if (key === '/api/denoise/models') { denoiseCalls++
         return { ok: true, json: async () => ({ models: [] }) } as Response }
       throw new Error(`unexpected fetch: ${url}`)
@@ -151,6 +152,35 @@ describe('useVaultModel', () => {
     await out.refresh()
     // First name is now stale — the fresh flow-model list has flow3.pt, not flow1.pt.
     expect(out.kind.value).toBeNull()
+    scope.stop()
+  })
+
+  it('a name missing from a stale cache refetches once and resolves (model trained since the fetch)', async () => {
+    let trained = false
+    let denoiseCalls = 0
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+      const key = String(url)
+      if (key.includes('denoise')) denoiseCalls++
+      const models = key.includes('denoise') && trained
+        ? [{ name: 'supp.full.pt', stem: 'supp.full', hasManifest: true, manifest: { kind: 'denoise-support' } }]
+        : []
+      return { ok: true, json: async () => ({ models }) } as Response
+    })
+    const scope = effectScope()
+    const name = ref('older')
+    let out!: ReturnType<typeof useVaultModel>
+    scope.run(() => { out = useVaultModel(name) })
+    await vi.waitFor(() => expect(out.loading.value).toBe(false))
+    trained = true                  // training finished; no task-done refresh reached this plot
+    name.value = 'supp.full.pt'     // the vault selection moves to the new model
+    await vi.waitFor(() => expect(out.kind.value).toBe('denoise'))
+    // a name no vault holds refetches once, then stops — no loop on a deleted model
+    name.value = 'ghost'
+    await flush(); await flush()
+    const after = denoiseCalls
+    name.value = 'supp.full.pt'; await flush()
+    name.value = 'ghost'; await flush(); await flush()
+    expect(denoiseCalls).toBe(after)   // same missing name again → no refetch
     scope.stop()
   })
 

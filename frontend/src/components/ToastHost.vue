@@ -56,7 +56,7 @@ function activate(id: number, onClick: (() => void) | null) {
   background: var(--cc-surface-2); color: var(--cc-text);
   border: 1px solid var(--cc-border); border-left: 3px solid var(--sev);
   border-radius: var(--cc-radius-md);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 6px 20px var(--cc-shadow);
   font-size: var(--cc-fs-md);
 }
 .cc-toast-action { cursor: pointer; }

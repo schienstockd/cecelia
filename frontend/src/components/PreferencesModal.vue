@@ -15,6 +15,8 @@ import { useAppControlStore } from '../stores/appControl'
 import { renameLiveMirrorOwner } from '../utils/profileStorage'
 import BaseModal from './BaseModal.vue'
 import CcToggle from './CcToggle.vue'
+import ChipSelect from './ChipSelect.vue'
+import { COLOUR_SCHEMES, type ColourScheme } from '../utils/colourScheme'
 import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
@@ -328,7 +330,13 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
              `animationSyncViewer` → Movies (animation is the Movies page's sibling),
              `viewerAutoSaveLayerProps` → Viewer (formerly Overlays). -->
         <template v-if="active === 'interface'">
-          <div class="pref-group cc-eyebrow cc-fs-2xs">Task Manager</div>
+          <div class="pref-group cc-eyebrow cc-fs-2xs">Appearance</div>
+          <ChipSelect :options="[...COLOUR_SCHEMES]" :model-value="settings.colourScheme"
+                      aria-label="Colour scheme"
+                      v-tooltip.bottom="'App colours only — images and exports stay as they are'"
+                      @update:model-value="settings.colourScheme = $event as ColourScheme" />
+
+          <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Task Manager</div>
           <CcToggle v-model="settings.taskListAutoFollow"
                     label="Auto-follow running tasks"
                     v-tooltip.bottom="'When a task starts, select it in the manager log panel'" />
@@ -455,7 +463,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
         <!-- ── Layout ────────────────────────────────────────────────────── -->
         <template v-else-if="active === 'layout'">
           <!-- Only what no live control already sets. The sidebar (☰), the task panel (its chevron) and
-               the floating panels (the sidebar launchers) persist through those controls. -->
+               the floating panels (the header launchers) persist through those controls. -->
           <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Collapse viewer-window controls"
                     v-tooltip.bottom="'Hide the viewer pop-out sidebar (independent of the module page)'" />
 

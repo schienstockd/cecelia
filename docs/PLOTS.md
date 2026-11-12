@@ -19,6 +19,13 @@ build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
    the canvas's population picker does not drive it). See `docs/CUSTOM_MODULES.md` and
    `docs/todo/PLUGINS_PLAN.md` → Decision 11.
 
+**A page's default plots** are declared on the spec: `"defaultOn": ["segment"]` names the pages whose
+canvas starts with it. `SummaryCanvas` places them once, when that canvas is first seen with no
+panels, and records it in the canvas's `shared` bag (`defaultsSeeded`), so a removed default never
+returns (`utils/defaultPlots.ts`, tested). A page named there must offer the spec — pinned in
+`app/test/suite/plot_specs.jl`. Today: Segmentation QC (Segment), Population summary (Phenotype), Track
+measures (Behaviour), Spatial cell measures (Spatial). The board has none.
+
 Reusing `PlotChart` alone inside a hand-rolled panel is **not** compliance — that's the anti-pattern.
 A new data source is normally a new `popType` in `pop_df` (e.g. `labels` = ungated all-cells), **not** a
 new route.

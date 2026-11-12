@@ -2,9 +2,9 @@ import { computed, ref, watch, onActivated, onDeactivated, onBeforeUnmount,
          type Ref, type WritableComputedRef } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 
-// Whether the current module page's image panel (ModuleLayout's action bar + filters + Images +
-// #plots) is expanded to fill the browser window (covering AppHeader, AppSidebar and the module
-// page's own SetBar / right panel; floating panels lift above it — PANEL_Z_LIFTED in
+// Whether the current module page's image panel (ModuleLayout's set row + result line + filters +
+// Images + #plots) is expanded to fill the browser window (covering AppHeader, AppSidebar and the
+// module page's right panel; floating panels lift above it — PANEL_Z_LIFTED in
 // utils/panelStack.ts). ONE app-wide flag — module pages switch,
 // the maximised layout persists — kept in the per-profile settings store (`plotsMaximised`).
 // The Esc handler is a module-level singleton: install once on first use, no matter how many

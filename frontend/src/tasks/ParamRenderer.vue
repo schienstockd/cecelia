@@ -1369,7 +1369,7 @@ function onChannelUpdate(next: string[]) {
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
 .md-note { display: inline-flex; align-items: center; gap: 0.3rem; }
 .md-note .pi { font-size: var(--cc-fs-sm); }
-.md-note.warn { color: #fbbf24; }
+.md-note.warn { color: var(--cc-ink-amber); }
 /* traffic-light flag: how usable is the z-axis (ok real 3D · warn borderline · fail jitter). A
    shape-distinct severity icon (canonical severity model) — colour is never the sole cue. */
 .md-flag { font-size: var(--cc-fs-sm); flex: none; }
@@ -1391,7 +1391,7 @@ function onChannelUpdate(next: string[]) {
 
 .group-actions { flex: 0 0 auto; }
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
-.group-add-btn:hover { background: var(--cc-accent-fill); border-color: var(--cc-accent-fill); color: #fff; }
+.group-add-btn:hover { background: var(--cc-accent-fill); border-color: var(--cc-accent-fill); color: var(--cc-on-solid); }
 .group-empty { font-style: italic; padding: 0.3rem 0; }
 .group-entry {
   margin-bottom: 0.4rem;
@@ -1426,7 +1426,7 @@ function onChannelUpdate(next: string[]) {
   font-size: var(--cc-fs-3xs);
   transition: color 0.1s;
 }
-.group-remove-btn:hover { color: #f87171; }
+.group-remove-btn:hover { color: var(--cc-ink-red); }
 /* + cc-btn cc-btn-bare cc-btn-icon cc-btn-micro — accent tone on hover is the site-specific bit */
 .group-dup-btn:hover:not(:disabled) { color: var(--cc-accent); }
 .group-entry-body { padding: 0 0.4rem; }

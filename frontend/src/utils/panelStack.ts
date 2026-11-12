@@ -17,7 +17,7 @@
 export const PANEL_Z_BASE = 60
 
 // Base while the module page's plot canvas is maximised (ModuleLayout `.is-plots-maximised`,
-// z-index 200 — it covers the app header and the sidebar launchers). Panels must still float over
+// z-index 200 — it covers the app header and its launchers). Panels must still float over
 // it, or the Viewer / Lab log / Kiwi / Correction cockpit opened from its launcher strip would open
 // underneath. Still far below BaseModal (500) and TeleportPopover (1000).
 export const PANEL_Z_LIFTED = 210

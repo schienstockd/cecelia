@@ -338,7 +338,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 
       <!-- membership: cluster pops only apply to images that were in the run (carry clusters.{suffix}).
            Tell the user when their selection doesn't match, so they can fix it. -->
-      <div v-if="strayUids.length || missingUids.length" class="cp-members">
+      <div v-if="strayUids.length || missingUids.length" class="cp-members cc-callout-warn">
         <i class="pi pi-info-circle" />
         <span>
           Clustering run “{{ suffix }}” covers {{ runMembers.length }} image{{ runMembers.length === 1 ? '' : 's' }}.
@@ -405,12 +405,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
              in the host's `overlay` slot (inside `.floating-canvas`, outside the zoom transform)
              — same pattern as GatingPlots' rail and SummaryCanvas's share toast. -->
         <template #overlay>
-          <div v-if="shareToast" class="cp-share-chip"
-               :class="{ 'cp-share-chip-error': shareToast.kind === 'fail' }">
-            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle',
-                        'cp-share-chip-icon']" />
+          <div v-if="shareToast" class="cc-hud-chip cc-hud-chip-corner"
+               :class="{ 'cc-hud-chip-error': shareToast.kind === 'fail' }">
+            <i :class="['pi', shareToast.kind === 'ok' ? 'pi-clipboard' : 'pi-exclamation-triangle']" />
             <span>{{ shareToast.message }}</span>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cp-share-chip-dismiss"
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro cc-hud-chip-dismiss"
                     @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                     aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
           </div>
@@ -438,24 +437,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 .cp-bar select { min-width: 7rem; }
 .cp-hint { opacity: 0.7; }
 .cp-members { display: flex; align-items: flex-start; gap: 6px; margin: 0 4px 6px; padding: 6px 9px;
-  font-size: var(--cc-fs-xs); color: #fcd34d; background: #78350f22; border: 1px solid #b4530933; border-radius: var(--cc-radius-sm); }
+  font-size: var(--cc-fs-xs); }
 .cp-members .pi { margin-top: 1px; }
 .cp-fix { flex-shrink: 0; margin-left: auto; align-self: center; font-size: var(--cc-fs-xs); padding: 3px 9px;
-  border: 1px solid #b45309; border-radius: var(--cc-radius-xs); background: #78350f44; color: #fcd34d; cursor: pointer; white-space: nowrap; }
-.cp-fix:hover { background: #78350f88; }
+  border: 1px solid color-mix(in srgb, var(--cc-warn) 60%, transparent); border-radius: var(--cc-radius-xs); background: var(--cc-tint-amber); color: var(--cc-ink-amber); cursor: pointer; white-space: nowrap; }
+.cp-fix:hover { background: color-mix(in srgb, var(--cc-warn) 28%, transparent); }
 .cp-add { padding: 4px 8px; }
 
-/* Share-outcome chip — mirrors `.sc-share-chip` in SummaryCanvas so the two surfaces present the
-   same look on the same push branch. Bottom-left, above CaptureViewSurface. */
-.cp-share-chip {
-  position: absolute; left: 0.75rem; bottom: 0.75rem; z-index: 50;
-  padding: 0.3rem 0.55rem; border-radius: var(--cc-radius-xs);
-  background: rgba(0, 0, 0, 0.78); color: #fff;
-  font-size: var(--cc-fs-xs); pointer-events: auto;
-  display: inline-flex; align-items: center; gap: 0.35rem; max-width: calc(100% - 1.5rem);
-}
-.cp-share-chip-error { color: var(--cc-sev-fail); }
-.cp-share-chip-icon { font-size: 1em; }
-.cp-share-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
-.cp-share-chip-dismiss:hover { opacity: 1; }
 </style>

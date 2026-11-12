@@ -439,9 +439,6 @@ const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value
   align-content: stretch; }
 .gm-grid.matrix { grid-auto-rows: max-content; overflow: auto; align-content: start; }
 .gm-grid.single { grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; }
-/* light theme for PDF export: dark ink on white — set on the CAPTURE host, so the grid, its tiles and
-   the legend strip all inherit the flipped vars */
-.gm-host.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; --cc-bg: #fff; --cc-surface-2: #f0f0f3; }
 .gm-cell { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-sm); overflow: hidden; background: var(--cc-bg); }
 /* montage plot area is SQUARE — but the SQUARE is the DOTS (.panel-plot in GateScatterCell), not this

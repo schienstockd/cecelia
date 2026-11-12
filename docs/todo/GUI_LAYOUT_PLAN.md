@@ -1,6 +1,6 @@
 # GUI layout — build the final mocks for both windows
 
-**Status:** plan, building (2026-11-11). Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
+**Status:** building (2026-11-11). M1–M8 + accordions in PR (#2139–#2146, stacked); V0–V5 next. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
 slices landed the colour tokens, Next, recipes, the checks cluster and Run wording, but most of the
 mocked *layout* did not land (the helper icons were never consolidated, the launchers still sit in the
 sidebar, the viewer kept its single sidebar). This plan builds the layout.
@@ -28,7 +28,11 @@ an isolated instance sits next to its mock frame and matches, not when the code 
    § Splitting the viewer.
 7. **A jump search goes in the header** (maintainer, 2026-11-11): Ctrl K, pages / functions / images.
    The one new feature in this plan; everything else is a move.
-8. Supersedes `GUI_CLARITY_PLAN` Decision 17's "the mocks are not fixed": the final mocks are the
+8. **Accordions open one section by default** (maintainer, 2026-11-11): the sidebar's groups and
+   Settings' sections. A mock drawing every group open shows content, not fold behaviour.
+9. **Default plots are declared on the plot spec** (`defaultOn: [page]`, M6): a page's canvas places
+   them once, when first seen empty; a removed default stays removed.
+10. Supersedes `GUI_CLARITY_PLAN` Decision 17's "the mocks are not fixed": the final mocks are the
    layout spec. The journey bar stays parked.
 
 ## Today → new home
@@ -92,7 +96,7 @@ before and after on an isolated instance.
 |---|---|---|
 | Sidebar sections: Annotations, Channels, Segmentation, Populations, Tracks (6435–6920) | `components/viewerWindow/Vw*Section.vue`, props down, events up; ROIs is already `RoiSection.vue` and stays it | V3 panel |
 | Debug section (6929–7135) + Advanced popover (6133–6214) | `VwAdvanced.vue` | V3 panel ⚙ |
-| Z / level / time / fps controls (6280–6434) + playback script (3131–3215) | `VwPlaybackBar.vue` + `useVwPlayback.ts` | V2 playback bar |
+| Z / level / time / fps controls (6280–6434) + playback script (3131–3215) | `VwPlaybackBar.vue` + `useVwPlayback.ts` (V0: the loop is `useVwPlayback.ts`, the time rows `VwTimeControls.vue`) | V2 playback bar |
 | Status chips (5947–6010) | the console row: reuse `ErrorConsole.vue` (the main window's docked bar) if it can carry loading / bricks / GPU state; a viewer-only strip only if it cannot, with the reason in the PR | V2 console row |
 | Share-in draw + capture hooks (5312–5839) | `useVwShare.ts` | V4 Share |
 

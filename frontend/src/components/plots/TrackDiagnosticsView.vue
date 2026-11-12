@@ -315,14 +315,14 @@ function exportAs(kind: string) {
     const rows = diagnosticsCsvRows(mode.value ?? 'msd', data.value)
     if (rows.length) downloadBlob(`${stem.value}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(host.value, kind, '#1f2226')
+    elementToImageURL(host.value, kind, plotTheme(true).ground)
       .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  const url = await elementToImageURL(host.value, 'png', plotTheme(false).ground)
   forceLight.value = false; await render()
   return url
 }
@@ -377,9 +377,9 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
     <!-- BIDIR PR #4b Decision 19 residual — aggregate-plot chip. Curves are per-group, not
          per-track; the chip is the visual grounding for a Claude highlight scoped to this
          image + valueName. Same shape as SummaryPanel's chip. -->
-    <span v-if="claudeChip" class="tdv-claude-chip"
+    <span v-if="claudeChip" class="cc-claude-chip tdv-claude-chip"
           v-tooltip.top="`Claude highlighted ${claudeChip.count} track${claudeChip.count === 1 ? '' : 's'}`">
-      <span class="tdv-claude-badge">C</span>{{ claudeChip.count }}
+      <span class="cc-claude-badge">C</span>{{ claudeChip.count }}
     </span>
   </div>
 </template>
@@ -400,13 +400,5 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 .tdv-note { position: absolute; right: 6px; bottom: 4px; }
 /* BIDIR PR #4b Decision 19 residual — matches `.sp-claude-chip` in SummaryPanel. Top-right so it
    doesn't collide with the diagnostic-mode ChipSelect (top-left) or the cap note (bottom-right). */
-.tdv-claude-chip { position: absolute; top: 6px; right: 6px; z-index: 5;
-  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 3px;
-  background: rgba(232, 54, 180, 0.15); border: 1px solid #e836b4;
-  border-radius: var(--cc-radius-xs);
-  color: var(--cc-text); font-size: var(--cc-fs-2xs); font-weight: 600; line-height: 1;
-  pointer-events: auto; }
-.tdv-claude-chip .tdv-claude-badge { display: inline-flex; align-items: center; justify-content: center;
-  width: 14px; height: 14px; border-radius: 50%; background: #e836b4;
-  color: #fff; font-size: var(--cc-fs-2xs); font-weight: 700; line-height: 1; }
+.tdv-claude-chip { position: absolute; top: 6px; right: 6px; z-index: 5; }
 </style>

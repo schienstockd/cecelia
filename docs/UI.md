@@ -43,7 +43,7 @@ model + the gating plot stack's internals), `docs/MODULES.md` (task JSON + param
 
 ## Design tokens
 
-All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at the `<body>` level).
+All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlays reach them). Colour tokens split into scheme-following and fixed — see *Colour schemes* below.
 
 | Token | Value | Use |
 |-------|-------|-----|
@@ -192,9 +192,9 @@ starts). Design + decisions: [`docs/todo/SETTINGS_SCOPE_PLAN.md`](todo/SETTINGS_
 
 ## Settings layout
 
-`SettingsModule.vue` is a `ModulePage layout="scroll"`: one column of `CollapsibleSection`s, all closed by
-default and remembered per profile (`cc-settings-<section>`), so a first visit shows the section names
-and nothing else. Diagnostics (with WebGPU and Packages), Data patches, Developer and the Debug console
+`SettingsModule.vue` is a `ModulePage layout="scroll"`: one column of `CollapsibleSection`s in ONE accordion
+(`cc.settings.section`, remembered per profile): Project is open on a first visit, every other section
+shows its name only, and opening one closes the last (maintainer, 2026-11-11). Diagnostics (with WebGPU and Packages), Data patches, Developer and the Debug console
 sit together under one closed **Troubleshooting** section. Guide steps that point inside a closed
 section (`settings.storageScan`, `settings.viewProfile`) first point at the section header
 (`settings.storage`, `settings.interface`).
@@ -519,6 +519,50 @@ Two rules, both learned the hard way in the 2026-08-17 audit (126 glyphs, ~600 u
   `pi-spin pi-spinner`**, which frees `pi-cog` to mean only settings/options. `pi-spin` is a *modifier*,
   not a glyph. "Edit" was split between `pi-pencil` and `pi-file-edit`; it is `pi-pencil`.
 
+## Colour schemes — what a scheme overrides, and what it must not
+
+A colour scheme is one block of token values on `:root` (e.g. `:root[data-theme="light"] { … }`); no
+component changes. That holds because **component CSS contains no colour literals** —
+`findColourLiterals` in `utils/cssScenarios.test.ts` fails on any hex / `rgb()` / `white` / `black` in a
+`<style>` block or an inline `style=`. Every colour reads a token from one of two groups in `style.css`:
+
+- **Scheme-following** — a scheme gives each a new value: surfaces and text (`--cc-bg`, `--cc-surface-*`,
+  `--cc-text*`, `--cc-border*`), the accent/stage/primary families, `--cc-shadow` / `--cc-shadow-soft` /
+  `--cc-backdrop`, `--cc-wash` / `--cc-wash-strong` (hover washes — white on dark, so a light scheme
+  makes them dark), and `--cc-ink-*` (a hue that reads *as text* on the scheme's surfaces: red, amber,
+  green, blue, cyan — a light scheme darkens each). `--cc-tint-*` are `color-mix()`es of
+  `--cc-danger` / `--cc-warn` / `--cc-sev-ok` / `--cc-dot-info`, so they follow for free.
+- **Fixed** — a scheme leaves them alone, because what is underneath is not the page: `--cc-hud-*`
+  (chips, halos and marks over microscopy pixels and plot canvases, which are dark in any scheme),
+  `--cc-media-bg`, `--cc-on-solid` / `--cc-on-bright` (ink on a filled control — the fill decides),
+  `--cc-paper*` (an exported or printed figure is white), `--cc-swatch-edge`, `--cc-claude-mark`.
+
+`.cc-light` re-inks a subtree onto paper for an export — put it on the capture host; it is not a scheme.
+Plot figures keep their own dark/paper pair (`plots/overlays.ts` → `plotTheme`) — a per-plot option,
+not the app's scheme. JS that must *compute* with a scheme colour (contrast for module tags) reads it
+live with `tokenColour()` (`utils/colour.ts`), so it follows too. A colour that is not the app's to
+theme (a data ramp, a figure ground, an external asset's paper) carries `/* COLOUR-OK: reason */`.
+
+Two schemes ship: **Dark** (the default — no attribute) and **Light** (`:root[data-theme="light"]`
+in `style.css`, its contrast figures in the block's comment). The user switches with one click from the
+avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
+is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
+`<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
+chosen for AA contrast; they have not had the CVD check the dark trio had.
+
+**State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
+scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
+`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger` and the status
+dots to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
+OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labelled category ink (cyan)
+is held to the 6 floor. Identity hues that always appear with their name — the four stage colours,
+accent / Kiwi / Claude / viewer — are not in the check. There is no orange ink: on a light ground, at
+text contrast, it cannot be told from amber.
+
+Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
+`--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its
+swatches live, so it shows the active scheme.
+
 ## Colours — one meaning per token, and the glossary is the reference
 
 Sibling to the icon glossary. `frontend/src/lib/colorLegend.ts` is THE list of what every colour this
@@ -753,7 +797,7 @@ Use `splice()` to mutate arrays in place inside setup stores.
 ## Adding a new module page
 
 A module page is the full screen that opens when the user clicks a sidebar item.
-The standard layout is: **SetBar** (top bar) + **image panel** (left, scrollable image list) + **right panel** (task runner, metadata editor, or a custom panel).
+The standard layout is: **image panel** (left) + **right panel** (task runner, metadata editor, or a custom panel), the right panel running the page's full height. The image panel opens with the **set row** — `SetBar inline` (set, recipe, and on Manage images the New / Rename / Delete icons), the counts, the checks, the row filters and a **⋯ menu** (CSV export, the processed-with filter, maximise, copy set ID) — then the **result line** (`utils/resultLine.ts`: the last run on this page and its outcome, from the run logs, with a link to Tasks) carrying the page's `#actions` (Correct labels / tracks, Import's copy / move / remove). Then the image table and the plots. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md` (M3).
 A custom right panel builds its blocks from `.cc-panel-section` (divider between sections, eyebrow heading via `.cc-panel-heading`), the same as TaskRunner — never bordered boxes (`docs/ui/PRIMITIVES.md` → right-panel section). Sections run edge to edge: the panel root has no padding or gap of its own.
 
 **Convention — attributes + filtering.** Every module page **except Import** must show
@@ -833,10 +877,10 @@ screen, neither gets enough vertical room. Both panels that have this shape use 
 
 | Panel | Top half | Bottom half | Storage key |
 |---|---|---|---|
-| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane` |
+| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` (default `top`: a "Last run · Tasks" line under Run summarises the folded list and opens it — GUI_LAYOUT_PLAN M4) |
 | `modules/batchmovies/BatchMoviesPanel.vue` | the movie config | the batch's task list | `cc-batchmovies-pane` |
 
-Three modes — `split` (default), `top`, `bottom` — persisted per panel. Each half's button also
+Three modes — `split` (default unless the panel names one), `top`, `bottom` — persisted per panel. Each half's button also
 *un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
 can't click out of. The recipe is the mode on the root plus one CSS rule per half:
 
@@ -1287,7 +1331,8 @@ nothing for anyone who already had the console open.
 One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six header icons, in two groups:
 **Learn** (Guides and the map, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
 the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
-`.cc-actions-menu`. The rest of the header: the viewer chip, the lab-log bell, **Ask Kiwi** and the avatar
+`.cc-actions-menu`. The rest of the header: the project crumb, the viewer chip, the **jump search** (`JumpSearch.vue`, Ctrl K:
+pages, task functions, images), the lab-log button, **Ask Kiwi** and the avatar
 menu (`components/ProfileMenu.vue`: switch profile, Preferences, Restart backend (dev), Log out, Quit).
 The version and the connection sit at the right end of the console bar; the connection shows only when
 it drops. Layout spec: `docs/todo/GUI_LAYOUT_PLAN.md`.
@@ -2587,14 +2632,19 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   growing it moves all three.
 - **`/` is the welcome page** (`modules/WelcomeModule.vue`), NOT a redirect. A `redirect` on the `/`
   record resolves before any guard — i.e. before the profile list has arrived — so a profile-derived
-  landing page bounced on a cold boot. No page is privileged as "the start": with no project open it
-  lists recent projects; with one open it shows the active set's recipe (picked there, stored per set)
-  and one Start button to that recipe's first page (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
+  landing page bounced on a cold boot. No page is privileged as "the start". It is one step at a
+  time: with no project open (or after its "← Projects" button) it lists recent projects, with a
+  spinner naming the project while it loads; with one open, only the active set's recipe (picked
+  there, stored per set) and one Start / Continue button to the first recipe step not yet run on the
+  set (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
 - **A set's recipe lights the sidebar and names each page's next step.** `utils/setRecipe.ts`
   (`resolveSetRecipe`, `suggestRecipe`, `nextStepFor`, `litRoutes`), saved through
   `composables/useSetRecipe.ts` (`POST /api/sets/recipe`). Pages on a confirmed recipe stay bright and
   the rest dim (still clickable); a suggestion from the axes restyles nothing until it is picked.
-  The picker sits in the set bar (`SetRecipePicker.vue`); the Next button is `NextStep.vue`.
+  The picker sits in the set row (`SetRecipePicker.vue`) as the recipe's own icon (from
+  `lib/guides/recipes.ts`) with a menu, never its spelled-out title: the row is on every page and
+  the title was too wide. An unconfirmed suggestion shows dimmed with a dot. The Next button is
+  `NextStep.vue`.
 - A guide whose steps visit hidden pages gets one **derived prereq** in the picker
   (`stores/guide.ts` → `profilePrereq`) — an amber "needs pages your view profile hides (…)" line,
   counted in "N missing", with **Start still working**. Derived from the guide's own `steps`, so a new

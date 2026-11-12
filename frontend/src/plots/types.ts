@@ -32,6 +32,10 @@ export interface PlotSpec {
   // reaches here `popTypes` already holds only what this page offers. See docs/PLOTS.md.
   module?: string
   modules?: Record<string, string[]>
+  // The pages whose plot canvas starts with this plot (docs/todo/GUI_LAYOUT_PLAN.md, M6): placed once,
+  // when that page's canvas is first seen empty, and never again — a removed default stays removed.
+  // A page named here must be one the spec is offered on (`module`/`modules`).
+  defaultOn?: string[]
   family: 'summary' | 'interactive'
   // the chart types valid for this data source's measures (the panel lets the user switch among
   // them); chart type is INDEPENDENT of the data source (single image vs cross-image set).

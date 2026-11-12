@@ -42,6 +42,26 @@ class _FakeModel:
         return np.ones(shape, np.uint32), None, None
 
 
+class TestUnwindowedChannelGuard(unittest.TestCase):
+    """`_prepare_channel` refuses a per-tile window for a channel with signal (shared base check)."""
+
+    def setUp(self):
+        self.seg = CellposeUtils({'taskDir': '/tmp'}, None)
+
+    def test_a_channel_with_signal_and_no_window_raises(self):
+        tile = np.zeros((16, 16), np.uint16)
+        tile[:, :8] = 500                              # 128 > the limit
+        for norm in (None, {}, {1: (0.0, 1000.0)}):
+            with self.assertRaisesRegex(ValueError, 'no frame/image intensity window'):
+                self.seg._prepare_channel(tile, {'normalise': 99.9}, norm, 0)
+
+    def test_a_near_empty_channel_still_gets_a_window(self):
+        tile = np.zeros((16, 16), np.uint16)
+        tile[0, :CellposeUtils.MAX_UNWINDOWED_VOXELS // 10] = 500
+        out = self.seg._prepare_channel(tile, {'normalise': 99.9}, None, 0)
+        self.assertTrue(np.all((out >= 0) & (out <= 1)))
+
+
 class TestCellposeV4CallPath(unittest.TestCase):
 
     def setUp(self):

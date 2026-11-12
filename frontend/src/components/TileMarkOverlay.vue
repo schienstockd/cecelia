@@ -62,8 +62,8 @@ const boxes = computed(() => props.marks.flatMap(m => {
   font-weight: 600;
   /* halo as on the grid labels, so the text reads over any frame */
   text-shadow:
-    0 0 2px rgba(0, 0, 0, 0.9),
-    0 0 3px rgba(0, 0, 0, 0.75);
+    0 0 2px var(--cc-hud-halo),
+    0 0 3px var(--cc-hud-halo);
   white-space: nowrap;
 }
 </style>

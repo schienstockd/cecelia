@@ -103,14 +103,14 @@ const barY = computed(() => ey.value - my.value - barH.value)
 .ovl-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* timestamp: white with a dark outline (four text-shadows ≈ SVG paint-order stroke) so it reads on any
    background, matching the channel legend's on-image styling (.is-legend). */
-.ovl-ts { position: absolute; top: 5px; left: 6px; color: #fff; font-weight: 700; line-height: 1;
+.ovl-ts { position: absolute; top: 5px; left: 6px; color: var(--cc-hud-text); font-weight: 700; line-height: 1;
   font-family: system-ui, sans-serif; font-size: var(--cc-fs-xs);
-  text-shadow: -1px -1px 0 rgba(0,0,0,0.85), 1px -1px 0 rgba(0,0,0,0.85),
-               -1px 1px 0 rgba(0,0,0,0.85), 1px 1px 0 rgba(0,0,0,0.85); }
+  text-shadow: -1px -1px 0 var(--cc-hud-halo), 1px -1px 0 var(--cc-hud-halo),
+               -1px 1px 0 var(--cc-hud-halo), 1px 1px 0 var(--cc-hud-halo); }
 /* white with a dark outline so it reads on any background (like the viewer's overlays) */
-.ovl-text { fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,0.85); stroke-width: 0.5;
+.ovl-text { fill: var(--cc-hud-text); paint-order: stroke; stroke: var(--cc-hud-halo); stroke-width: 0.5;
   font-weight: 700; font-family: system-ui, sans-serif; }
-.ovl-fill { fill: #fff; stroke: rgba(0,0,0,0.85); stroke-width: 0.3; }
+.ovl-fill { fill: var(--cc-hud-text); stroke: var(--cc-hud-halo); stroke-width: 0.3; }
 /* In fixed mode the outline is a screen hairline, not a fraction of the image — `non-scaling-stroke`
    is what keeps it one px at any zoom, and the same for the label's outline. */
 .still-ovl.is-fixed .ovl-fill, .still-ovl.is-fixed .ovl-text {

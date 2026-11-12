@@ -21,6 +21,7 @@ import { canCancelTask, canRerunTask } from './taskRerun'
 import { taskProjectLabel } from './taskScope'
 import { hpcStageLabel, hpcShownStatus } from './hpcRun'
 import { matchesQuery } from './textQuery'
+import { isLiveStatus } from '../lib/taskStatus'
 
 /** One task, flattened for a table. `entry` rides along so a row action doesn't re-look-up by id. */
 export interface TaskRow {
@@ -159,4 +160,26 @@ export function taskPoolOptions(tasks: TaskEntry[]): string[] {
  */
 export function taskMatchesQuery(t: TaskEntry, query: string): boolean {
   return matchesQuery([t.imageName, t.imageUid, t.label, t.funName, t.module, t.pool], query)
+}
+
+// ── The runner's "Last run" line (docs/todo/GUI_LAYOUT_PLAN.md, M4; mock frame 1) ─────────────────
+// With the task list folded away by default, one line under Run says what the list would: how many are
+// live, else when the last one finished and how they ended. Clicking it opens the list in place, so
+// watching and cancelling stay one click away.
+export interface LastRunSummary {
+  live: number
+  done: number
+  failed: number
+  /** the newest finish among this module's tasks, or undefined when none has finished */
+  lastFinished?: Date
+}
+export function lastRunSummary(tasks: readonly Pick<TaskEntry, 'status' | 'finishedAt'>[]): LastRunSummary {
+  const out: LastRunSummary = { live: 0, done: 0, failed: 0 }
+  for (const t of tasks) {
+    if (isLiveStatus(t.status)) out.live++
+    else if (t.status === 'done') out.done++
+    else if (t.status === 'failed') out.failed++
+    if (t.finishedAt && (!out.lastFinished || t.finishedAt > out.lastFinished)) out.lastFinished = t.finishedAt
+  }
+  return out
 }

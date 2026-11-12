@@ -343,7 +343,9 @@ describe('UI copy stays short (docs/ui/COPY.md)', () => {
 // checks lives in `app/test/runtests.jl`, for the same reason the `tip` budget does.
 
 // A label whose Title Case is a real proper name rather than a style slip.
-const ALLOWED_TITLE_CASE: string[] = []
+const ALLOWED_TITLE_CASE: string[] = [
+  'Ask Kiwi',   // Kiwi is the assistant's name; the same words as the main header's button (AppHeader text)
+]
 
 // A tooltip that ends in a period because it is genuinely a sentence, not a fragment.
 const ALLOWED_TRAILING_PERIOD: string[] = []

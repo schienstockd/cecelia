@@ -73,12 +73,12 @@ const cellH = computed(() => vbH / Math.max(1, props.landscape?.grid.rows ?? 1))
 .cc-landscape-label {
   position: absolute;
   transform: translate(-50%, -50%);
-  color: #fff;
+  color: var(--cc-hud-text);
   font: 600 10px system-ui, sans-serif;
   /* Halo mirrors GridOverlay so the label stays readable over any tile colour. */
   text-shadow:
-    0 0 2px rgba(0, 0, 0, 0.9),
-    0 0 3px rgba(0, 0, 0, 0.75);
+    0 0 2px var(--cc-hud-halo),
+    0 0 3px var(--cc-hud-halo);
   white-space: nowrap;
 }
 </style>

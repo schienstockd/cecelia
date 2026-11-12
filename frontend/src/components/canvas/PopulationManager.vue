@@ -654,7 +654,7 @@ function moveTo(target: string) {
              :style="{ paddingLeft: 22 + p.depth * 14 + 'px' }">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
                   :class="{ on: popClusterIds(p).includes(id), ro: readonly }" :disabled="readonly"
-                  :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: '#111' } : {}"
+                  :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: 'var(--cc-on-bright)' } : {}"
                   v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
                   @click.stop="!readonly && toggleCluster(p, id)">{{ id }}</button>
           <span v-if="!props.clusterIds.length" class="pm-chip-empty cc-empty-inline cc-fs-2xs">no clusters at this suffix</span>
@@ -807,7 +807,7 @@ function moveTo(target: string) {
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
-.pm-row.transient { font-style: italic; background: color-mix(in srgb, #22d3ee 8%, transparent); }
+.pm-row.transient { font-style: italic; background: color-mix(in srgb, var(--cc-ink-cyan) 8%, transparent); }
 .pm-viewer { width: 16px; text-align: center; font-size: var(--cc-fs-md); }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-rename { flex: 1; background: var(--cc-bg); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
@@ -876,8 +876,8 @@ function moveTo(target: string) {
 /* the parent pair shares its line with the operator, so IT takes the slack (and shrinks) rather than
    sizing to its longest option — a deep path would otherwise push "in any of" off the row */
 .pm-ff-parent, .pm-ff-parent select { flex: 1; min-width: 0; }
-.pm-bool-badge { color: #38bdf8; }
-.pm-filter-badge { font-size: var(--cc-fs-2xs); color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
+.pm-bool-badge { color: var(--cc-ink-blue); }
+.pm-filter-badge { font-size: var(--cc-fs-2xs); color: var(--cc-accent); margin-left: 2px; opacity: 0.8; }
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
 button.pm-filter-badge:hover { opacity: 1; }
 .pm-clusters { padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
@@ -889,7 +889,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 /* read-only (Analysis board): chips show assignment but aren't clickable */
 .pm-chip.ro { cursor: default; }
 .pm-chip.ro:hover { border-color: var(--cc-border); color: var(--cc-text-dim); }
-.pm-chip.ro.on:hover { color: #111; }
+.pm-chip.ro.on:hover { color: var(--cc-on-bright); }
 .pm-chip-empty { font-style: italic; }   /* + .cc-empty-inline .cc-fs-2xs (row/colour/10px tier) */
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
