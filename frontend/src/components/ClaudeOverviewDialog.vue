@@ -48,7 +48,7 @@ const COLUMNS: SelectionColumn[] = [
             <i :class="['pi', row.kiwi ? 'pi-check co-kiwi' : 'pi-minus co-no']" :aria-label="row.kiwi ? 'yes' : 'no'" />
           </template>
           <template #cell-terminal="{ row }">
-            <i :class="['pi', row.terminal ? 'pi-check co-claude' : 'pi-minus co-no']" :aria-label="row.terminal ? 'yes' : 'no'" />
+            <i :class="['pi', row.terminal ? 'pi-check co-kiwi' : 'pi-minus co-no']" :aria-label="row.terminal ? 'yes' : 'no'" />
           </template>
         </SelectionTable>
       </CollapsibleSection>
@@ -61,7 +61,6 @@ const COLUMNS: SelectionColumn[] = [
 .co-uses { margin-top: 14px; }
 .co-uses-title { margin-bottom: 4px; }
 .co-kiwi { color: var(--cc-kiwi); }
-.co-claude { color: var(--cc-claude); }
 .co-no { color: var(--cc-text-dim); }
 .co-note { margin: 10px 0 0; }
 </style>

@@ -134,7 +134,7 @@ async function waitForBackend(timeoutMs = 60000) {
 .setup-label { margin-bottom: 0.15rem; }
 .setup-input { width: 100%; font-family: var(--cc-mono, monospace); }
 .setup-hint { min-height: 1.2rem; margin: 0.15rem 0 0.5rem; display: flex; align-items: center; gap: 0.35rem; }
-.setup-hint.ok  { color: var(--cc-viewer); }
+.setup-hint.ok  { color: var(--cc-sev-ok); }
 .setup-hint.bad { color: var(--cc-sev-fail); }
 .setup-go { margin-top: 0.5rem; align-self: flex-end; }
 </style>

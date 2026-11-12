@@ -953,12 +953,9 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-chip-status-open     { background: var(--cc-surface-2); color: var(--cc-text); }
 .bb-chip-status-resolved { background: var(--cc-tint-green); color: var(--cc-ink-green); border-color: color-mix(in srgb, var(--cc-sev-ok) 40%, transparent); }
 .bb-chip-status-parked   { background: color-mix(in srgb, var(--cc-dot-idle) 15%, transparent); color: var(--cc-text-dim); border-color: color-mix(in srgb, var(--cc-dot-idle) 40%, transparent); }
-/* Outcome verdict colours — Okabe-Ito blue (good) / vermilion (bad). Red↔green is textbook
-   deuteran/protan hostile (see `frontend/src/utils/overlayCompose.ts` for the same reasoning
-   on the annotation palette); this pair reads distinct under every common CVD type AND is
-   already Cecelia's canonical CVD-safe qualitative palette (`plots/palettes.json:okabe-ito`).
-   Colour is not the sole cue — thumbs-up / thumbs-down icons carry the semantic redundantly. */
-.bb-chip-outcome-good { background: color-mix(in srgb, var(--cc-dot-ok) 18%, transparent); color: var(--cc-active); border-color: color-mix(in srgb, var(--cc-dot-ok) 50%, transparent); }
+/* Outcome verdict colours — the status ok / fail (their green and red are held apart under colour
+   blindness by utils/cvd.test.ts). Colour is not the sole cue — thumbs-up / thumbs-down icons. */
+.bb-chip-outcome-good { background: color-mix(in srgb, var(--cc-dot-ok) 18%, transparent); color: var(--cc-ink-green); border-color: color-mix(in srgb, var(--cc-dot-ok) 50%, transparent); }
 .bb-chip-outcome-bad  { background: color-mix(in srgb, var(--cc-dot-fail) 18%, transparent); color: var(--cc-ink-red); border-color: color-mix(in srgb, var(--cc-dot-fail) 50%, transparent); }
 
 /* ── entry pane ─────────────────────────────────────────────────────────────── */

@@ -62,11 +62,10 @@ All tokens live in `frontend/src/style.css` on `:root` (so body-appended overlay
 | `--cc-stage-data` / `-populations` / `-explore` / `-analysis` | `#CEA966` / `#E9A587` / `#B98A93` / `#F5EFD0` | Stage colour: the sidebar group heading and the active page's bar only (`navGroups.stageTint`) |
 | `--cc-accent-soft` | `#c4b5fd` | Pale violet — text on an accent-tinted surface |
 | `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
-| `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
+| `--cc-selected` | `var(--cc-text)` | Selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — neutral, by contrast not hue; distinct from `--cc-accent` (form controls) and every state colour |
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
 | `--cc-danger` | `#ef4444` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
 | `--cc-danger-fill` | `#b33a3a` | Muted red — a SOLID destructive surface under white text: `.cc-btn-danger`, armed delete / quit (white 5.86:1) |
-| `--cc-viewer` | `#22c55e` | Green accent for the browser viewer controls button + its floating-panel border (stands apart from purple chrome) |
 | `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
 | `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
 | `--cc-sev-fail` | `#d03b3b` | Severity **fail** — any *status indicator* saying "this is broken" (an invalid field, an error dot, a failed task) |
@@ -548,15 +547,22 @@ in `style.css`, its contrast figures in the block's comment). The user switches 
 avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
 is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
 `<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are
-chosen for AA contrast; they have not had the CVD check the dark trio had.
+chosen for AA contrast and pass the CVD check below.
 
 **State colours are colour-blind safe, and a test holds them there.** `utils/cvd.test.ts` reads each
 scheme's values from `style.css` and requires every pair within the severity set (ok / warn / fail /
-`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger` and the status
-dots to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
+`--cc-active`), the status ink (red / amber / green / blue), `--cc-warn` vs `--cc-danger`, and the
+identity hues against the states (accent, Kiwi), to be ≥ ΔE 8 under protan- and deuteranopia and ≥ 15 for normal vision (Machado 2009 simulation,
 OKLab ΔE — `utils/cvd.ts`, cross-checked against the dataviz validator). Labelled category ink (cyan)
-is held to the 6 floor. Identity hues that always appear with their name — the four stage colours,
-accent / Kiwi / Claude / viewer — are not in the check. There is no orange ink: on a light ground, at
+is held to the 6 floor. Failing pairs kept on purpose are listed with their reason in `ACCEPTED`
+(Kiwi ↔ ok-green; accent ↔ active in light). The four stage colours always sit beside their name and are
+not in the check. The status dots alias the severity set, so there is one "ok" colour.
+
+**Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
+Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
+launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
+(`--cc-selected` = the text colour). A new surface
+reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
 text contrast, it cannot be told from amber.
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
@@ -1834,7 +1840,7 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 
 **The two task surfaces render through one list and one row mapper.** The `/tasks` manager
 (`TasksModule.vue`) is a `SelectionTable` in `single` mode — a row IS selected, and what it selects is
-what the log pane shows — so its selected-row highlight is the table's own amber `--cc-selected`
+what the log pane shows — so its selected-row highlight is the table's own `--cc-selected`
 rather than the purple left rule it hand-rolled for a long time (`--cc-accent` is form-control chrome;
 see `docs/todo/TASK_LIST_UNIFICATION_PLAN.md` for the dating). Both surfaces flatten `TaskEntry` to
 row fields through **`utils/taskRows.ts`**, because `SelectionTable` renders `row[key]` and sorts by

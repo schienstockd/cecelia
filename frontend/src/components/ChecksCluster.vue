@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The "Checks" cluster in ModuleLayout's action bar (docs/todo/GUI_CLARITY_PLAN.md, Decision 15; audit
-// slice 7): one rounded group with a plum frame and label, one `CheckButton` per check — Acquisition,
+// slice 7): one rounded group with a neutral frame and label (the check icons carry the colour), one `CheckButton` per check — Acquisition,
 // QC (n flagged; a click filters the image table to them) and Cohort (only where the page banks cohort
 // metrics, so it sits last and the other two never move).
 import { computed } from 'vue'
@@ -33,9 +33,9 @@ const qc = computed(() => qcCheckView(project.sets.find(s => s.uid === props.set
   align-items: center;
   gap: var(--cc-space-2xs);
   padding: var(--cc-space-3xs) var(--cc-space-xs);
-  border: 1px solid var(--cc-check);
+  border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-md);
   flex-shrink: 0;
 }
-.checks-label { color: var(--cc-check-text); padding-right: var(--cc-space-3xs); }
+.checks-label { color: var(--cc-text-dim); padding-right: var(--cc-space-3xs); }
 </style>

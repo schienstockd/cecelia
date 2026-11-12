@@ -220,7 +220,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
 .tl-thumb { cursor: grab; }
 .tl-thumb.dragging { opacity: 0.4; }
 .tl-col.dragover .tl-thumb { outline: 2px dashed var(--cc-selected); outline-offset: 2px; }
-/* selected keyframe = the highlighted box → amber ring (--cc-selected), matching the plot panels'
+/* selected keyframe = the highlighted box → --cc-selected ring, matching the plot panels'
    selected state. "edited" is a separate flag (the badge), not a ring. */
 .tl-thumb.selected { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 55%, transparent); }
 .tl-badge { position: absolute; top: 4px; right: 4px; font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase;

@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { dotClass, LOG_LEVEL_TONE, WS_STATUS_TONE } from './statusDot'
 import STYLE from '../style.css?raw'
-import PALETTE_JSON from '../../../share/console_palette.json?raw'
 
 describe('cc-dot tones', () => {
   it('maps a tone to its modifier, and nothing to no modifier', () => {
@@ -22,22 +21,14 @@ describe('cc-dot tones', () => {
   })
 })
 
-describe('cc-dot tones are the consoles\' CVD-safe swatches', () => {
-  // share/console_palette.json is the one source; style.css cannot import it, so it is pinned here.
-  const SWATCH: Record<string, string> = {
-    ok: 'sky_blue', warn: 'orange', fail: 'vermillion', idle: 'grey', info: 'blue',
-  }
-  const swatches = JSON.parse(PALETTE_JSON).swatches as Record<string, string>
+describe('cc-dot tones are the severity palette', () => {
+  // One "ok" colour in the app: a dot follows the scheme and inherits utils/cvd.test.ts's guarantee.
+  const ALIAS: Record<string, string> = { ok: '--cc-sev-ok', warn: '--cc-sev-warn', fail: '--cc-sev-fail', info: '--cc-active' }
 
-  it('each tone uses its swatch\'s hex', () => {
-    for (const [tone, name] of Object.entries(SWATCH)) {
-      const hex = new RegExp(`--cc-dot-${tone}:\\s*(#[0-9a-fA-F]{6})`).exec(STYLE)
-      expect(hex?.[1]?.toUpperCase(), tone).toBe(swatches[name].toUpperCase())
+  it('each tone aliases its severity token', () => {
+    for (const [tone, token] of Object.entries(ALIAS)) {
+      expect(STYLE, tone).toMatch(new RegExp(`--cc-dot-${tone}:\\s*var\\(${token}\\)`))
       expect(STYLE).toMatch(new RegExp(`\\.cc-dot-${tone}\\s*\\{\\s*background:\\s*var\\(--cc-dot-${tone}\\)`))
     }
-  })
-
-  it('good is never a green — it sits beside fail', () => {
-    expect(SWATCH.ok).not.toMatch(/green/)
   })
 })

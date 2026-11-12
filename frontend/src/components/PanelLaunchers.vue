@@ -103,10 +103,9 @@ const labLogTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnse
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
 .panel-launcher > i { font-size: 1rem; }
-/* Viewer — green (--cc-viewer). */
-.panel-launcher-viewer { color: var(--cc-viewer); }
-.panel-launcher-viewer:hover { border-color: color-mix(in srgb, var(--cc-viewer) 70%, transparent); background: color-mix(in srgb, var(--cc-viewer) 8%, transparent); }
-.panel-launcher-viewer.on { background: color-mix(in srgb, var(--cc-viewer) 18%, transparent); border-color: var(--cc-viewer); }
+/* Viewer — neutral, like Lab log: the eye icon carries it. */
+.panel-launcher-viewer:hover { border-color: var(--cc-guide); background: var(--cc-wash); }
+.panel-launcher-viewer.on { background: var(--cc-wash-strong); border-color: var(--cc-guide); }
 /* Correction — purple (--cc-accent), matching the CorrectionCockpit's floating-panel border. */
 .panel-launcher-correction { color: var(--cc-accent); }
 .panel-launcher-correction:hover { border-color: var(--cc-accent-strong); background: var(--cc-accent-tint); }

@@ -670,7 +670,7 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 .sel-empty { text-align: center; padding: 0.6rem; }
 .sel-row { cursor: pointer; }
 .sel-row:hover { background: var(--cc-surface-2); }
-/* selected = amber, as a tint + left rule rather than a solid fill — `--cc-selected` is the house
+/* selected = `--cc-selected` (neutral), as a tint + left rule rather than a solid fill — `--cc-selected` is the house
    ACCENT (canvas panels ring with it), so filling the row would read as a different component */
 .sel-on { background: color-mix(in srgb, var(--cc-selected) 12%, transparent); }
 .sel-on td:first-child { box-shadow: inset 2px 0 0 var(--cc-selected); }
