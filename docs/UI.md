@@ -906,17 +906,21 @@ Every module page uses this same slot, so the plot canvas collapses identically 
 
 ### Two-half side panels — `usePaneExpand` + `PaneExpandBar`
 
-A recurring **scenario**, not a widget: a right-hand panel made of two stacked halves where, on a laptop
-screen, neither gets enough vertical room. Both panels that have this shape use the same primitive:
+A recurring **scenario**, not a widget: a right-hand panel made of two halves that, on a laptop screen,
+don't fit together. Every panel that has this shape uses the same primitive:
 
 | Panel | Top half | Bottom half | Storage key |
 |---|---|---|---|
-| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` (default `top`: a "Last run · Tasks" line under Run summarises the folded list and opens it — GUI_LAYOUT_PLAN M4) |
+| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` |
 | `modules/batchmovies/BatchMoviesPanel.vue` | the movie config | the batch's task list | `cc-batchmovies-pane` |
+| `modules/animation/AnimationPanel.vue` | the animation controls | the module's task list | `cc-animation-pane` |
 
-Three modes — `split` (default unless the panel names one), `top`, `bottom` — persisted per panel. Each half's button also
-*un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
-can't click out of. The recipe is the mode on the root plus one CSS rule per half:
+**One half at a time, never both** — `top` (the default) or `bottom`, persisted per panel. A split view
+used to exist; with long param lists it left neither half usable. A click on the showing half's button
+flips to the other, so there is no state the user can't click out of; a stored `split` reads as the
+default. The top half stands in for the hidden list with **`tasks/TaskSummaryLine.vue`** under its
+action button — "2 running or queued" / "Last run 3m ago · 4 done", and a **Tasks** link that switches
+to the list (GUI_LAYOUT_PLAN M4). The recipe is the mode on the root plus one CSS rule per half:
 
 ```ts
 const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
@@ -928,7 +932,7 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
   …
 ```
 ```css
-.mypanel.pane-bottom > .my-config { display: none; }   /* bottom expanded → hide the top half */
+.mypanel.pane-bottom > .my-config { display: none; }   /* list showing → hide the top half */
 .mypanel.pane-top    > .my-tasks  { display: none; }
 ```
 
@@ -939,16 +943,15 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
 - **Never `v-if`.** Unmounting a config half discards whatever its children have fetched (population
   lists, model lists) and refetches on the way back. `display: none` keeps them alive.
 - **The bar owns the tooltip wording**, so every panel phrases the action identically; the consumer only
-  names its halves (lower-case, short — they go straight into "Expand the …").
+  names its halves (lower-case, short — they go straight into "Show the …").
 - **Growth is the consumer's** — the primitive decides what's visible, not how the survivor uses the
-  space. `TaskRunner` lifts its `params-section` `max-height` cap under `.pane-top`; `BatchMoviesPanel`
-  needs nothing, because `ModuleLayout`'s `.right-slot` already scrolls.
-- Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s "napari is busy" banner
-  is deliberately outside both, since it matters most while you are watching the task list.
-- **The bar's default slot is a readout for the hidden half.** Expanding a half means losing sight of the
-  other one, so put back the one thing you'd miss rather than nothing: `TaskRunner` shows
-  `3 running · 1 queued` there while the task list is collapsed (and nothing when it's visible, which
-  would just restate the list). One line, `.cc-readout`, no new row — the bar is already paid for.
+  space. `TaskRunner`'s `params-section` grows to fill the runner (`flex: 1`, no cap); the movie panels
+  scroll themselves (`.bm` / `.ap`), and their task wrappers take `min-height: 0` since the list is alone.
+- Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s restore notice sits
+  above the bar for that reason.
+- **The bar's default slot is a readout for the hidden half.** `TaskRunner` shows `3 running · 1 queued`
+  there while the task list is hidden (and nothing when it's showing, which would just restate the list).
+  One line, `.cc-readout`, no new row — the bar is already paid for.
 
 ### Collapsible side panels — `CollapsiblePanel`
 

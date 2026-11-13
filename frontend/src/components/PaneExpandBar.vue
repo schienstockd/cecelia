@@ -1,7 +1,7 @@
 <!--
-  The control for a two-half side panel: one toggle per half, each expanding its half to the whole panel
-  (and un-expanding it on a second click). Pair with `usePaneExpand` + a `pane-<mode>` class on the panel root — see
-  `utils/paneExpand.ts` for the scenario, `docs/MODULES.md` for the consumer recipe.
+  The control for a two-half side panel: one toggle per half, each showing its half on the whole panel
+  (a second click flips to the other half — the two never share the panel). Pair with `usePaneExpand` + a `pane-<mode>` class on the panel root — see
+  `utils/paneExpand.ts` for the scenario, `docs/UI.md` → *Two-half side panels* for the consumer recipe.
 
   Deliberately thin and title-less: vertical space is the thing this exists to reclaim, so the bar spends
   as little of it as possible. Icons are the consumer's, because they name that panel's halves; the
@@ -29,10 +29,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{ toggle: [half: PaneHalf] }>()
 
-// Expanded → the action is to bring the OTHER half back, so say that instead of repeating "expand".
-const tip = (half: PaneHalf) => props.pane === half
-  ? `Show the ${half === 'top' ? props.bottomLabel : props.topLabel} again`
-  : `Expand the ${half === 'top' ? props.topLabel : props.bottomLabel}`
+// A click on the showing half flips to the other one, so its tip names that one.
+const label = (half: PaneHalf) => half === 'top' ? props.topLabel : props.bottomLabel
+const other = (half: PaneHalf): PaneHalf => half === 'top' ? 'bottom' : 'top'
+const tip = (half: PaneHalf) => `Show the ${label(props.pane === half ? other(half) : half)}`
 </script>
 
 <template>
