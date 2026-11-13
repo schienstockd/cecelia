@@ -7,10 +7,9 @@
 // relaunches the node standalone with the JSON spec's defaults instead of what the chain ran it with.
 // A predicate that decides whether clicking silently does the WRONG thing is not one to keep two of.
 
-import { isLiveStatus } from '../lib/taskStatus'
+import { isLiveStatus, isTerminalStatus } from '../lib/taskStatus'
 import type { TaskEntry } from '../stores/tasks'
 
-const TERMINAL = new Set(['done', 'failed', 'cancelled'])
 
 /**
  * Re-run is offered only when every one of these holds:
@@ -34,7 +33,7 @@ const TERMINAL = new Set(['done', 'failed', 'cancelled'])
 export function canRerunTask(
   t: Pick<TaskEntry, 'status' | 'module' | 'chainRunId' | 'paramsUnknown' | 'history'>,
 ): boolean {
-  return TERMINAL.has(t.status) && !t.paramsUnknown && !t.chainRunId &&
+  return isTerminalStatus(t.status) && !t.paramsUnknown && !t.chainRunId &&
          t.module !== 'maintenance' && !t.history
 }
 

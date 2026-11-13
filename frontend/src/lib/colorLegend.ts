@@ -124,6 +124,8 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-accent-tint-2') },
       { token: '--cc-kiwi',          means: 'The AI colour — Kiwi and Claude Code',
         swatch: varSwatch('--cc-kiwi') },
+      { token: '--cc-claude',        means: 'Claude Code, where it sits beside Kiwi',
+        swatch: varSwatch('--cc-claude') },
       { token: '--cc-kiwi-strong',   means: 'Engaged variant — border on a pressed kiwi control',
         swatch: varSwatch('--cc-kiwi-strong') },
       { token: '--cc-kiwi-soft',     means: 'Text on a kiwi-tinted surface',

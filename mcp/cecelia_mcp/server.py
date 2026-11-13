@@ -230,7 +230,9 @@ def list_images(project_uid: str) -> list:
     """Every image in the project: uid, name, processing status, which set it belongs to, `attr` (its
     attribute ASSIGNMENT, e.g. `{"Mouse": "3", "Location": "b"}`), and `included` — false means
     EXCLUDED from analysis (a silent member; downstream/cohort counts should drop it). An excluded
-    image that is still "done" is intentional but easy to miss — get_image_notes says why.
+    image that is still "done" is intentional but easy to miss — get_image_notes says why. `rating`
+    is the user's mark: "good" (starred), "caution" (kept, but they doubt it — say so when its
+    numbers carry a conclusion), or "" (not rated).
 
     Use `attr` to size the groups before choosing a cross-image plot: get_image_attributes says what you
     MAY group by, this says how many images land in each group once the excluded ones are dropped. A

@@ -43,7 +43,7 @@ def raw_ccid(src: dict, uid: str, filename: str) -> dict:
     names = vn_versioning.versioned_get_field_at(src, "imChannelNames", "default") or \
         vn_versioning.versioned_get_field_at(src, "imChannelNames")
     return {"uid": uid, "class": "CciaImage", "name": src.get("name", uid), "status": "done",
-            "included": True, "starred": False, "note": "", "attr": {}, "branch_labels": {},
+            "included": True, "rating": "", "note": "", "attr": {}, "branch_labels": {},
             "imChannelNames": {"default": list(names or []), "_active": "default"},
             "meta": {k: v for k, v in (src.get("meta") or {}).items() if k not in _DROP_META},
             "filepath": {"default": filename, "_active": "default"}, "labels": {}, "label_props": {}}

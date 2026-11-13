@@ -8,11 +8,24 @@ import type { CciaImage } from '../stores/project'
 
 export interface Includable { uid: string; included?: boolean | null }
 
-/** Starred — a plain user bookmark ("I like this one"), any number per set. Drives the Starred row
- *  filter and NOTHING else: it does not affect selection, runs, or processing. Absent/null = not
- *  starred, so legacy images read false. */
-export function isStarred(img: { starred?: boolean | null }): boolean {
-  return img.starred === true
+/** The user's rating of an image (backend: `CciaImage.rating`, `@enum ImageRating`). '' = not rated,
+ *  `good` = the star ("I like this one"), `caution` = keep it but read it with care — the step between
+ *  a star and excluding it. Any number per set, and it drives the rating button and the Scored row
+ *  filter and NOTHING else: no effect on selection, runs, or processing. */
+export type ImageRating = '' | 'good' | 'caution'
+
+/** The rating button's states, in click order: one button cycles not rated → good → caution. The
+ *  `cls` colours the icon (ImageTable `.rating-*`). */
+export const IMAGE_RATINGS: { value: ImageRating; icon: string; tip: string; cls: string }[] = [
+  { value: '',        icon: 'pi pi-star',           tip: 'Rate this image', cls: 'rating-none' },
+  { value: 'good',    icon: 'pi pi-star-fill',      tip: 'Good',            cls: 'rating-good' },
+  { value: 'caution', icon: 'pi pi-star-half-fill', tip: 'Use with care',   cls: 'rating-caution' },
+]
+
+/** An image's rating; absent/unknown = not rated, so legacy rows read ''. */
+export function imageRating(img: { rating?: string | null }): ImageRating {
+  const r = img.rating
+  return r === 'good' || r === 'caution' ? r : ''
 }
 
 // THE canonical "is this image usable yet?" predicate — one source of truth for every gate that needs

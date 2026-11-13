@@ -19,6 +19,18 @@ const _IMAGE_STATUS_PARSE = Dict(v => k for (k, v) in _IMAGE_STATUS_STR)
 Base.string(s::ImageStatus) = _IMAGE_STATUS_STR[s]
 parse_image_status(s::AbstractString)::ImageStatus = _IMAGE_STATUS_PARSE[s]
 
+# The user's rating of an image: not rated, the star ("I like this one"), or keep-but-read-with-care.
+# Same shape as ImageStatus — the string is the ccid.json / API form; `parse_image_rating` reads it
+# back and refuses anything else.
+@enum ImageRating RATING_NONE RATING_GOOD RATING_CAUTION
+const _IMAGE_RATING_STR = Dict(
+    RATING_NONE    => "",
+    RATING_GOOD    => "good",
+    RATING_CAUTION => "caution",
+)
+const _IMAGE_RATING_PARSE = Dict(v => k for (k, v) in _IMAGE_RATING_STR)
+Base.string(r::ImageRating) = _IMAGE_RATING_STR[r]
+
 mutable struct CciaImage
     uid::String
     name::String
@@ -51,12 +63,14 @@ mutable struct CciaImage
     # somehow selected. `note` is a free-text reason the user can leave (why it was excluded).
     included::Bool
     note::String
-    # A plain user bookmark — "I like this one". ANY number of images in a set can be starred, and
-    # nothing downstream reads it: it does not affect selection, runs, or processing. It exists so a
-    # long import can be narrowed to the handful worth looking at, via the Starred row filter that
-    # sits beside Excluded/Imported. Deliberately not a nomination — the 8-bit import once derived a
-    # set-wide intensity window from a single starred "reference", and that coupling is gone.
-    starred::Bool
+    # The user's rating of the image — "" (not rated), "good" (the star: "I like this one") or
+    # "caution" (keep it, but read it with care — the step between a star and excluding it). ANY
+    # number of images in a set can carry either, and nothing downstream reads it: it does not affect
+    # selection, runs, or processing. It exists so a long import can be narrowed to the handful worth
+    # looking at (the Scored row filter) and so a doubtful image says so wherever it is listed. One
+    # field, not a second Bool beside `starred`, because the states are exclusive. Legacy ccid.jsons
+    # carry `starred: true`, read as RATING_GOOD.
+    rating::ImageRating
     _dir::String                      # {proj}/1/{uid}/ — runtime only
     # runtime-only pop_df result cache (keyed by request hash; values are DataFrames).
     # Mirrors R cciaImage `private$filteredPopDT`. Not serialised; cleared via
@@ -73,7 +87,7 @@ function CciaImage(; uid=gen_uid(), name="", status::ImageStatus=IMAGE_PENDING, 
               Dict{String,Union{Vector{String},Dict{String,Any}}}(),  # branch_labels (Decision 6)
               Dict{String,Union{Vector{String},String}}(),   # im_channel_names (versioned)
               Dict{String,String}(), Dict{String,Any}(),
-              true, "", false,                    # included (default), note, starred
+              true, "", RATING_NONE,              # included (default), note, rating
               dir,
               Dict{String,Any}())                 # _pop_df_cache (runtime only)
 end
@@ -111,6 +125,21 @@ Whether the image is included in further processing & analysis (default `true`).
 Image-owned accessor so run-dispatch code asks the model, not the raw field.
 """
 image_included(img::CciaImage)::Bool = img.included
+
+"""
+    parse_image_rating(x) -> ImageRating
+
+A rating from its string form (`""` / `"good"` / `"caution"`; `nothing` = not rated), or an
+`ArgumentError` for anything else — so a stray value fails at the route instead of rendering as an
+unknown state.
+"""
+function parse_image_rating(x)::ImageRating
+    x === nothing && return RATING_NONE
+    r = x isa AbstractString ? get(_IMAGE_RATING_PARSE, String(x), nothing) : nothing
+    isnothing(r) && throw(ArgumentError(
+        "rating must be one of $(join(repr.(sort(collect(values(_IMAGE_RATING_STR)))), ", ")), got $(repr(x))"))
+    r
+end
 
 # The reason recorded when a run drops an excluded image before dispatch — in the chain run record
 # (run.json `excluded_images`) or the image's own run log (`skip_run_log!`).
@@ -633,7 +662,7 @@ function save!(img::CciaImage)
         "meta"           => img.meta,
         "included"       => img.included,
         "note"           => img.note,
-        "starred"        => img.starred,
+        "rating"         => string(img.rating),
     )
     write_json_atomic(state_file(img), d)
 end
@@ -1106,8 +1135,12 @@ function _load_image(dir::String)::CciaImage
         icn,
         to_spaths("attr"),
         Dict{String,Any}(get(d, "meta", Dict{String,Any}())),
-        # Legacy images (pre-inclusion) have none of these → included, no note, not starred.
-        Bool(get(d, "included", true)), String(get(d, "note", "")), Bool(get(d, "starred", false)),
+        # Legacy images (pre-inclusion) have none of these → included, no note, not rated. Before
+        # `rating` there was only the star (`starred: true`), which is the "good" rating.
+        Bool(get(d, "included", true)), String(get(d, "note", "")),
+        # An unknown value reads as not rated: a hand-edit must not make the image unloadable.
+        haskey(d, "rating") ? get(_IMAGE_RATING_PARSE, string(d["rating"]), RATING_NONE) :
+            (get(d, "starred", false) === true ? RATING_GOOD : RATING_NONE),
         dir,
         Dict{String,Any}(),                 # _pop_df_cache (runtime only)
     )

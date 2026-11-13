@@ -222,36 +222,36 @@ end
     @test !is_reserved_value_name("stroma.branch")   # dot-suffix is the old R convention; not reserved
 end
 
-# ── Per-image user flags (included / note / starred) round-trip ──────────────
-# Guards: new images default to included + unstarred; the flags survive save!/init_object; and a
+# ── Per-image user flags (included / note / rating) round-trip ───────────────
+# Guards: new images default to included + not rated; the flags survive save!/init_object; and a
 # legacy ccid.json with none of the keys loads as included (the accessor never sees a missing field).
-@testset "Image included/note/starred round-trip" begin
+@testset "Image included/note/rating round-trip" begin
     proj = create_project!(name="incl-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
     img  = add_image!(s; name="img")
     @test image_included(img)                 # default: included
     @test img.note == ""
-    @test img.starred == false                # default: not starred
+    @test img.rating == RATING_NONE           # default: not rated
 
     img.included = false
     img.note = "bad drift reference channel"
-    img.starred = true
+    img.rating = RATING_CAUTION
     save!(img)
     r = init_object(proj.uid, img.uid)
     @test r isa CciaImage
     @test !image_included(r)
     @test r.note == "bad drift reference channel"
-    @test r.starred
+    @test r.rating == RATING_CAUTION
 
-    # legacy file (none of the keys) → included, empty note, unstarred
+    # legacy file (none of the keys) → included, empty note, not rated
     ccid = joinpath(r._dir, "ccid.json")
     raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
-    delete!(raw, "included"); delete!(raw, "note"); delete!(raw, "starred")
+    delete!(raw, "included"); delete!(raw, "note"); delete!(raw, "rating")
     open(ccid, "w") do io; JSON3.write(io, raw); end
     legacy = init_object(proj.uid, img.uid)
     @test image_included(legacy)
     @test legacy.note == ""
-    @test legacy.starred == false
+    @test legacy.rating == RATING_NONE
     rm(proj.root; recursive=true)
 end
 

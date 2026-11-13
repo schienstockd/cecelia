@@ -22,6 +22,18 @@ describe('sameBrickImage', () => {
   })
 })
 
+describe('brickLabelSourceId: the mask has its own rewrite stamp', () => {
+  const src = { projectUid: 'p', imageUid: 'i', valueName: 'default', labelName: 'DAPI', rev: 'r1' }
+  it('a mask rewrite moves the mask id and leaves the image identity', () => {
+    const next = { ...src, labelRev: 'r2' }
+    expect(brickLabelSourceId(next)).not.toBe(brickLabelSourceId({ ...src, labelRev: 'r1' }))
+    expect(sameBrickImage({ ...src, labelRev: 'r1' }, next)).toBe(true)
+  })
+  it('no labelRev falls back to rev', () => {
+    expect(brickLabelSourceId(src)).toBe(brickLabelSourceId({ ...src, labelRev: 'r1' }))
+  })
+})
+
 describe('brickLabelSourceId', () => {
   it('is empty with no mask', () => {
     expect(brickLabelSourceId(null)).toBe('')

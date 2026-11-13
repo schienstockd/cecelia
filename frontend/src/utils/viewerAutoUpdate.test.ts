@@ -13,6 +13,13 @@ describe('onStatusActions', () => {
   })
 })
 
+describe('onStatusActions after the same task\'s result', () => {
+  it('the overlay ping is not sent twice; the unscoped clear always is', () => {
+    expect(onStatusActions({ status: 'done', imageUid: 'a' }, 'a', true, new Set(['cacheClear', 'onlyMask', 'ping'])))
+      .toEqual([{ kind: 'cacheClear' }])
+  })
+})
+
 describe('onResultActions', () => {
   it('a pixel writer: show the new version, refresh, clear that version', () => {
     expect(onResultActions({ imageUid: 'a', meta: { valueName: 'smoothed', filename: 'x.ome.zarr' } }, 'a', true))

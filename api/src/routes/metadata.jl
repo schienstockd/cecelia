@@ -257,10 +257,10 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
 end
 
 # Set the per-image user flags for one or more images. `values` maps uid → a partial dict
-# {included?, note?, starred?}; only the keys present are changed (toggle inclusion without
-# clobbering a note, star without touching inclusion). First-class CciaImage fields, so this rounds
-# through the model (save! preserves every other field) rather than the meta bag. One route for all
-# three because they are the same operation — flip a user-owned flag on an image — and a second
+# {included?, note?, rating?}; only the keys present are changed (toggle inclusion without
+# clobbering a note, rate without touching inclusion); a rating that is not an `ImageRating` string is a 400.
+# First-class CciaImage fields, so this rounds through the model (save! preserves every other
+# field) rather than the meta bag. One route for all three because they are the same operation — flip a user-owned flag on an image — and a second
 # route would duplicate the load/mutate/save path.
 function api_images_inclusion_set(body_bytes::Vector{UInt8})
     proj_dir, data, err = _parse_meta_request(body_bytes)
@@ -269,12 +269,22 @@ function api_images_inclusion_set(body_bytes::Vector{UInt8})
     values_raw  = get(data, :values, nothing)
     isnothing(values_raw) && return 400, JSON3.write((; error="values required"))
 
+    # Validate every rating before writing any, so a bad value cannot leave half the images changed.
+    for (_, fields_raw) in values_raw
+        haskey(fields_raw, :rating) || continue
+        try
+            Cecelia.parse_image_rating(fields_raw[:rating])
+        catch e
+            e isa ArgumentError || rethrow()
+            return 400, JSON3.write((; error=e.msg))
+        end
+    end
     for (image_uid, fields_raw) in values_raw
         fields = Dict{String,Any}(String(k) => v for (k, v) in fields_raw)
         _mutate_images!(project_uid, [String(image_uid)]) do img
             haskey(fields, "included") && (img.included = Bool(fields["included"]))
             haskey(fields, "note")     && (img.note     = string(fields["note"]))
-            haskey(fields, "starred")  && (img.starred  = Bool(fields["starred"]))
+            haskey(fields, "rating")   && (img.rating   = Cecelia.parse_image_rating(fields["rating"]))
         end
         # Notify observers (mcp/) that a note was set — first-class user context (OBSERVER.md §4).
         if haskey(fields, "note")

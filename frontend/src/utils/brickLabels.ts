@@ -19,6 +19,9 @@ export interface BrickSourceFields {
   labelStoreId?: number
   liveSince?: string
   rev?: string
+  /** The mask's own rewrite stamp — a mask rewrite refetches the label atlas alone, never the image's
+   *  bricks. Absent = `rev`. */
+  labelRev?: string
   /** Derived files packed into the mask (`SlabQuery.labelFiles`). */
   labelFiles?: readonly string[]
 }
@@ -39,7 +42,7 @@ export function sameBrickImage(a: BrickSourceFields | null, b: BrickSourceFields
 export function brickLabelSourceId(s: BrickSourceFields | null): string {
   return tileMaskSourceId({
     vn: s?.labelName ?? '', hidden: false, store: s?.labelStore, storeId: s?.labelStoreId,
-    liveSince: s?.liveSince, rev: s?.rev, files: s?.labelFiles,
+    liveSince: s?.liveSince, rev: s?.labelRev ?? s?.rev, files: s?.labelFiles,
   })
 }
 

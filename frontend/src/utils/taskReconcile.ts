@@ -22,6 +22,7 @@
 // Endpoint ownership: this module owns `/api/tasks/recent`; `runningTasks.ts` owns `/api/tasks`. Don't
 // add a third asker.
 
+import { isTerminalStatus } from '../lib/taskStatus'
 /** One row of `GET /api/tasks/recent` (snake_case, like `/api/tasks`). */
 export interface RecentTaskOutcome {
   id: string
@@ -55,7 +56,6 @@ export interface InFlightTask {
   chainName?: string
 }
 
-const TERMINAL = new Set(['done', 'failed', 'cancelled'])
 
 /**
  * The terminal frames that should have arrived but didn't.
@@ -81,7 +81,7 @@ export function recoveredTaskFrames(
   for (const t of inFlight) {
     const backendId = t.backendTaskId || t.id
     const o = byId.get(backendId)
-    if (!o || !TERMINAL.has(o.status) || emitted.has(t.id)) continue
+    if (!o || !isTerminalStatus(o.status) || emitted.has(t.id)) continue
     emitted.add(t.id)
     // the ring carries the scheduler's representative image; fall back to what we launched with
     const imageUid = o.image_uid || t.imageUid || ''

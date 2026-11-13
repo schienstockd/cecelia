@@ -587,11 +587,13 @@ New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `pa
 list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
 
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
-Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
+Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta) — except where the two sit side by side
+(the `ClaudeWaysIn.vue` cards, the Claude Code column of Kiwi's `?` table), where Claude Code wears its clay (`--cc-claude`) so the pair reads as two tools, and the Viewer
 launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
 (`--cc-selected` = the text colour). A new surface
 reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
-text contrast, it cannot be told from amber.
+text contrast, it cannot be told from amber — the clay is the one exception, and only because those places
+are labelled and carry no state (its severity pairs are accepted in `cvd.test.ts`).
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
 `--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its
@@ -1716,7 +1718,7 @@ optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/
 - **Hide-excluded toggle.** One of the row filters below (default: show excluded rows, greyed).
 
 **Row filters — add one by adding a table row, not a component.** The on/off toggles next to the
-**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Starred**) are declared
+**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Scored**) are declared
 as data in `frontend/src/utils/rowFilters.ts` (`ROW_FILTERS`) and rendered by ONE `v-for` in
 `ModuleLayout`. Each entry supplies its id, label, both icons, the `hides(img)` predicate, its count,
 whether the button is worth showing at all, and a two-state tooltip. `ModuleLayout` holds a single
@@ -1726,9 +1728,11 @@ watch + computed + template. Add a `RowFilterDef`; the persistence, the button, 
 `filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
 processed-with filters.
 
-**Star.** A plain per-image bookmark (`CciaImage.starred`, `isStarred`) — click the star in any row,
-any number per set. It drives the Starred row filter and **nothing else**: no effect on selection,
-runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
+**Rating.** One button per row (`CciaImage.rating`, `imageRating`/`IMAGE_RATINGS` in
+`utils/inclusion.ts`, drawn by `CcCycleButton`) cycles **not rated → good (star) → use with care (half
+star, warn colour)**, any number per set. "Use with care" is the step short of excluding: keep the
+image, but doubt it. The rating drives the **Scored** row filter — one button stepping off → good only (★) → use-with-care only (half star) → off, a `RowFilterDef` with `modes` — and **nothing else**: no
+effect on selection, runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
 intensity window was derived from; that whole mechanism is gone — see `docs/FUTURE.md`.)
 
 **Attribute extraction — regex + builder** (`MetadataPanel.vue` → *Extract via regex*). Pulls an

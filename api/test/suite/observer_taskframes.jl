@@ -51,6 +51,18 @@
                     Dict("projectUid"=>uid, "values"=>Dict(img.uid=>Dict("included"=>false))))[1] == 200
         @test isempty(filter(x -> x.type == "image_note_added", drain()))
 
+        # ── rating: a known value is stored; an unknown one is a 400 that writes nothing — not even
+        # to an image listed beside it with a valid value ──
+        img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+        @test _post(api_images_inclusion_set,
+                    Dict("projectUid"=>uid, "values"=>Dict(img.uid=>Dict("rating"=>"caution"))))[1] == 200
+        @test init_object(uid, img.uid).rating == RATING_CAUTION
+        @test _post(api_images_inclusion_set,
+                    Dict("projectUid"=>uid, "values"=>Dict(img2.uid=>Dict("rating"=>"good"),
+                                                            img.uid=>Dict("rating"=>"great"))))[1] == 400
+        @test init_object(uid, img.uid).rating == RATING_CAUTION
+        @test init_object(uid, img2.uid).rating == RATING_NONE
+
         # ── lab_log_entry_added fires for USER entries only (anti-loop); lab_log_updated (the panel-
         # reload signal) fires for EVERY append so an external Chat-to-Claude append still refreshes ──
         drain()

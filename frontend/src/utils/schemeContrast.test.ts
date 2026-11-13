@@ -7,7 +7,7 @@ import CSS from '../style.css?raw'
 // Text colours must read (WCAG AA, 4.5:1) on every ground a panel can put them on, in every scheme.
 const GROUNDS = ['--cc-bg', '--cc-surface-1', '--cc-surface-2']
 const TEXT = [
-  '--cc-text', '--cc-text-dim', '--cc-accent', '--cc-accent-soft', '--cc-kiwi', '--cc-kiwi-soft',
+  '--cc-text', '--cc-text-dim', '--cc-accent', '--cc-accent-soft', '--cc-kiwi', '--cc-kiwi-soft', '--cc-claude',
   '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active', '--cc-warn', '--cc-danger',
   '--cc-ink-red', '--cc-ink-amber', '--cc-ink-green', '--cc-ink-blue', '--cc-ink-cyan',
   '--cc-stage-data', '--cc-stage-populations', '--cc-stage-explore', '--cc-stage-analysis',

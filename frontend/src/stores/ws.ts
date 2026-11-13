@@ -30,7 +30,6 @@ export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | '
 type MessageHandler = (data: Record<string, unknown>) => void
 const handlers = new Map<string, MessageHandler[]>()
 
-const TERMINAL_STATUS = new Set(['done', 'failed', 'cancelled'])
 
 // Stable identifier for THIS browser tab / process (BIDIR PR #8 — list_plots registry). Sent on
 // every WS reconnect via `viewer:hello`, then threaded into every /api/viewer/plots/{register,
@@ -39,6 +38,7 @@ const TERMINAL_STATUS = new Set(['done', 'failed', 'cancelled'])
 // so a Vitest importer can pull it without dragging this file's DOM-reading transitive deps —
 // re-exported here for legacy import sites.
 import { wsClientId as _CLIENT_ID } from '../utils/clientId'
+import { isTerminalStatus } from '../lib/taskStatus'
 export { wsClientId } from '../utils/clientId'
 
 export const useWsStore = defineStore('ws', () => {
@@ -206,7 +206,7 @@ export const useWsStore = defineStore('ws', () => {
     if (!data.recovered && (type === 'task:status' || type === 'chain:node:done' ||
                             type === 'chain:node:failed')) {
       const tid = String(data.taskId ?? '')
-      const terminal = type !== 'task:status' || TERMINAL_STATUS.has(String(data.status ?? ''))
+      const terminal = type !== 'task:status' || isTerminalStatus(String(data.status ?? ''))
       if (tid && terminal && recovered.has(tid)) {
         recovered.delete(tid)
         return
@@ -510,7 +510,7 @@ export const useWsStore = defineStore('ws', () => {
         }
         // The cluster env install or clean-up (hpc_api.jl) — Settings → HPC re-reads the env state.
         if ((taskId === HPC_ENV_JOB_ID || taskId === HPC_CLEAN_JOB_ID) &&
-            (status === 'done' || status === 'failed' || status === 'cancelled')) {
+            isTerminalStatus(status)) {
           notifyHpcEnvChanged()
         }
         if (imageUid) {
