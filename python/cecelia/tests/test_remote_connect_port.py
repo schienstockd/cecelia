@@ -40,6 +40,8 @@ exit 0
 """
 FAKE_NC = '#!/bin/sh\n[ -f "$FAKE_DIR/open-$3" ]\n'
 FAKE_OK = "#!/bin/sh\nexit 0\n"
+# The name the launcher's warning and INSTALL.md must mention; this test never reads the variable.
+MOVED_DIR_VAR = "CECELIA_DEV_DIR"  # DEV-DIR-OK: asserted as text in a message/doc, never read
 
 
 @unittest.skipIf(sys.platform == "win32" or shutil.which("sh") is None, "POSIX launcher script")
@@ -117,26 +119,26 @@ class RemoteConnectPortTest(unittest.TestCase):
         self.assertEqual(self._connect(), "8080:localhost:8080")
 
     def test_no_remote_lock_warns_that_the_config_dir_may_be_moved(self):
-        # A VM running Cecelia with CECELIA_DEV_DIR (env or a clone's .env) writes its lock outside
+        # A VM running Cecelia with a moved config dir (env or a clone's .env) writes its lock outside
         # ~/.cecelia, so the launcher finds none and falls back to the profile's port, which may be
         # another user's slot. That fallback must not be silent.
         self._connect()
-        self.assertIn("CECELIA_DEV_DIR", self.stderr)
+        self.assertIn(MOVED_DIR_VAR, self.stderr)
         self.assertIn("8080", self.stderr)
 
     def test_lock_found_prints_no_missing_lock_warning(self):
         (self.fake / "remote-lock").write_text('{"pid":1,"api_port":8080}', encoding="utf-8")
         self._connect()
-        self.assertNotIn("CECELIA_DEV_DIR", self.stderr)
+        self.assertNotIn(MOVED_DIR_VAR, self.stderr)
 
     def test_manual_tunnel_docs_name_the_moved_config_dir(self):
         # docs/INSTALL.md's manual tunnel reads cecelia.lock and api-token from ~/.cecelia; on a VM
-        # with CECELIA_DEV_DIR both live elsewhere, and the section must say so.
+        # with a moved config dir both live elsewhere, and the section must say so.
         text = (REPO / "docs" / "INSTALL.md").read_text(encoding="utf-8")
         start = text.index("**Tunnel from the laptop.**")
         section = text[start:text.index("**Viewer.**", start)]
         self.assertIn("cecelia.lock", section)
-        self.assertIn("CECELIA_DEV_DIR", section)
+        self.assertIn(MOVED_DIR_VAR, section)
 
 
 if __name__ == "__main__":
