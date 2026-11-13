@@ -59,7 +59,7 @@ def measure_store(im_path, log=None, photons_untestable=None):
     dim_utils = DimUtils(ome_xml_utils.load_ome_xml(im_path))
     levels, _ = zarr_utils.open_as_zarr(im_path)
     level0 = levels[0]
-    dim_utils.calc_image_dimensions(level0.shape)
+    dim_utils.calc_image_dimensions(level0.shape, axes=zarr_utils.read_axes(im_path))
     from_ome = {d: (dim_utils.dim_idx(d) if d in dim_utils.im_dim_order else None) for d in ('C', 'T', 'Z')}
     axes = intensity_utils.stack_axis_indices(zarr_utils.read_axes(im_path), level0.ndim, from_ome)
     c_idx = axes['C']

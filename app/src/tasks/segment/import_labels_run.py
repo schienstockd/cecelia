@@ -29,7 +29,7 @@ def run(params):
     log.log(f'>> image: {im_path}')
     im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
-    dim_utils.calc_image_dimensions(im_dat[0].shape)
+    dim_utils.calc_image_dimensions(im_dat[0].shape, axes=zarr_utils.read_axes(im_path))
     log.log(f'>> dims: {dim_utils.im_dim_order} {dim_utils.im_dim}  levels: {len(im_dat)}')
 
     try:

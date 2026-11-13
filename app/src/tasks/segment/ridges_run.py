@@ -150,7 +150,7 @@ def run(params):
     level0 = im_list[0]
     omexml = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
-    dim_utils.calc_image_dimensions(level0.shape)
+    dim_utils.calc_image_dimensions(level0.shape, axes=zarr_utils.read_axes(im_path))
 
     # Axis PRESENCE, not just size>1 — dim_utils.is_3D() returns False for size_z=1, but the array
     # keeps the Z axis in `im_dim_order`, so reading has to squeeze it whether or not is_3D() says

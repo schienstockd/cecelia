@@ -77,7 +77,7 @@ def run(params):
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
-    dim_utils.calc_image_dimensions(arr.shape)
+    dim_utils.calc_image_dimensions(arr.shape, axes=zarr_utils.read_axes(im_path))
     dim_order = list(dim_utils.im_dim_order)
     log.log(f'>> image dims: {dim_order} {list(arr.shape)}')
 

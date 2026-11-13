@@ -38,7 +38,7 @@ class _Dims2D:
         self.im_dim_order = ["C", "Y", "X"]
         self.im_dim = [2, 40000, 40000]
 
-    def calc_image_dimensions(self, _shape):
+    def calc_image_dimensions(self, _shape, axes=None):
         pass
 
 

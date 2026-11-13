@@ -463,7 +463,7 @@ def run(params: dict):
     omexml = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
     im_list, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)   # plain zarr — reads are per-frame slices
-    dim_utils.calc_image_dimensions(im_list[0].shape)
+    dim_utils.calc_image_dimensions(im_list[0].shape, axes=zarr_utils.read_axes(im_path))
 
     # The label store's axes as WRITTEN, not the image's minus C: ridges writes a single plane, or a
     # Z-MIP of a stack, as (T)YX — labels with no Z are 2D whatever the image is.

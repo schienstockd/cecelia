@@ -314,7 +314,7 @@ class PreviewState:
         if im_path not in self._images:
             levels, _ = zarr_utils.open_as_zarr(im_path)
             dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
-            dim_utils.calc_image_dimensions(levels[0].shape)
+            dim_utils.calc_image_dimensions(levels[0].shape, axes=zarr_utils.read_axes(im_path))
             self._images[im_path] = (levels, dim_utils)
         return self._images[im_path]
 

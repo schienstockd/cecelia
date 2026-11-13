@@ -199,7 +199,7 @@ def run(params):
         input_arrays.append(arr)
         omexml = ome_xml_utils.parse_meta(p)
         du = DimUtils(omexml, use_channel_axis=True)
-        du.calc_image_dimensions(arr[0].shape)
+        du.calc_image_dimensions(arr[0].shape, axes=zarr_utils.read_axes(p))
         dim_utils_list.append(du)
 
     ref_arr = input_arrays[0][0]

@@ -60,7 +60,7 @@ def run(params):
     # dims from the image OME metadata; label axis order = the A store's own (a Z-projected label set
     # on a Z stack has no Z, and must fail `require_volume` before any read)
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
-    dim_utils.calc_image_dimensions(zarr_utils.open_as_zarr(im_path)[0][0].shape)
+    dim_utils.calc_image_dimensions(zarr_utils.open_as_zarr(im_path)[0][0].shape, axes=zarr_utils.read_axes(im_path))
     a_dat, _ = zarr_utils.open_as_zarr(params["aLabelPath"])
     b_dat, _ = zarr_utils.open_as_zarr(params["bLabelPath"])
     a_arr, b_arr = a_dat[0], b_dat[0]

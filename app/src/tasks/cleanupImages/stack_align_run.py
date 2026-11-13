@@ -45,7 +45,7 @@ def run(params):
     im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
-    dim_utils.calc_image_dimensions(im_dat[0].shape)
+    dim_utils.calc_image_dimensions(im_dat[0].shape, axes=zarr_utils.read_axes(im_path))
 
     log.log(f'>> image dims: {dim_utils.im_dim_order} {dim_utils.im_dim}')
     log.log(f'>> align channel: {align_channel}, reference: {reference_mode}, '

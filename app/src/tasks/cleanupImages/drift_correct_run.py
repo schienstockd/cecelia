@@ -61,7 +61,7 @@ def run(params):
 
     omexml    = ome_xml_utils.parse_meta(im_path)
     dim_utils = DimUtils(omexml, use_channel_axis=True)
-    dim_utils.calc_image_dimensions(im_dat[0].shape)
+    dim_utils.calc_image_dimensions(im_dat[0].shape, axes=zarr_utils.read_axes(im_path))
 
     log.log(f'>> image dims: {dim_utils.im_dim_order} {dim_utils.im_dim}')
     _est_extra = (f' (max lag {max_lag})' if estimator == 'multiLag'
