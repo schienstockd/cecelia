@@ -66,8 +66,6 @@ const valueNames = computed(() => Object.keys(props.img?.filepaths ?? {}))
 const labelNames = computed(() => Object.keys(props.img?.labels ?? {}))
 const visibleLabels = computed<Record<string, boolean>>(() => props.img
   ? settings.getLabelVisibility(props.img.uid, labelNames.value) : {})
-const branchVns = computed<Record<string, boolean>>(() => props.img
-  ? settings.getBranchVisibility(props.img.uid, Object.keys(props.img.branchLabels ?? {})) : {})
 // Deliberately the SAME stored value the viewer's 2D / 3D switch writes — one setting.
 const show3D = computed<boolean>({
   get: () => currentSetUid.value ? settings.getShow3D(currentSetUid.value) : false,
@@ -246,12 +244,6 @@ const movieLabelValueNames = computed<string[]>(() =>
   compareSegmentations.value.length
     ? compareSegmentations.value
     : labelNames.value.filter(vn => visibleLabels.value[vn]))
-// Skeletons (`segment.branching`) are a separate registry with a separate toggle, and they had the
-// same bug masks did — the re-open cleared them and nothing asked for them back. There is no movie
-// picker for them (they are deliberately kept out of the generic labels picker), so the recorder
-// takes what is ON SCREEN, which is what "record what's shown" means for an overlay with no config.
-const movieBranchValueNames = computed<string[]>(() =>
-  Object.keys(openedImage.value?.branchLabels ?? {}).filter(vn => branchVns.value[vn]))
 const compareLayout = computed<CompareLayout>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).compareLayout : COMPARE_LAYOUT_DEFAULT,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { compareLayout: v }) } })
@@ -485,7 +477,6 @@ async function recordTimelapse() {
       // which stretch of the timelapse to sweep; null end = the last frame, clamped per image
       tStart: movieTStart.value, tEnd: movieTEnd.value,
       ...(movieLabelValueNames.value.length ? { labelValueNames: movieLabelValueNames.value } : {}),
-      ...(movieBranchValueNames.value.length ? { branchValueNames: movieBranchValueNames.value } : {}),
       compareLayout: compareLayout.value, compareContrast: compareContrast.value,
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
       // banked with the movie, not acted on by the recorder — it already records this look by
@@ -552,10 +543,9 @@ async function recordViewerMatch(uid: string, projectUid: string) {
                            movieSizeY.value ?? snapshot.canvas?.height ?? null) })
     } else {
       ws.send({ ...common,
-        // explicit lists: the mask the viewer draws (or none), at most one skeleton set — more
-        // than one of either would turn the record into a comparison grid
+        // the mask the viewer draws (or none) — more than one would turn the record into a comparison
+        // grid; skeletons ride in the look (`skeletons`)
         labelValueNames: look.labelValueNames ?? [],
-        branchValueNames: movieBranchValueNames.value.slice(0, 1),
         labelContour: look.labelContour ?? 0,
         // the plane, and with the ±n window on its planes (a range wins: the max over them)
         show3D: false, zSlice: look.zSlice ?? null, zRange: look.zRange ?? null,
