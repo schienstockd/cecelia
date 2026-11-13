@@ -1,7 +1,7 @@
 <!--
   The viewer window's Tracks section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): one ribbon
   row per gated population with tracks, colour mode (track / speed / source / population) with its
-  legend, z reach and tail. Which segmentations draw is ticked in the main window's Viewer panel; the
+  legend, z reach and tail. Which segmentations draw is ticked under "On the image" (`VwOnImageOverlay`); the
   window owns the ribbon state, this renders it and reports the user's changes.
 -->
 <script setup lang="ts">

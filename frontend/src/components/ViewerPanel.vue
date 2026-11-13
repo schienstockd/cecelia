@@ -18,6 +18,7 @@ import {
 } from '../composables/useOverlayAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
 import { resolveValueName } from '../utils/valueName'
+import { fetchColourByColumns } from '../utils/viewer/colourByColumns'
 import { flipMaskVisibility, flipTracks, onlyMask, mismatchTip, shortLevelsTip } from '../utils/viewer/segRows'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
@@ -834,17 +835,7 @@ async function loadObsCols() {
   const uid = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   const vn = selectedValueName.value
-  if (!uid || !projectUid || !vn) { obsCols.value = []; return }
-  try {
-    const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(vn)}`
-    const res = await fetch(`/api/gating/channels?${q}`)
-    if (res.ok) {
-      const j = await res.json() as { obsColumns?: string[]; trackColourColumns?: string[] }
-      // cell obs columns + track-level clusters.* (colour-by broadcasts a track column to its cells,
-      // so you can colour tracks by their cluster/population). Track columns last; de-duplicated.
-      obsCols.value = [...new Set([...(j.obsColumns ?? []), ...(j.trackColourColumns ?? [])])]
-    } else obsCols.value = []
-  } catch { obsCols.value = [] }
+  obsCols.value = uid && projectUid && vn ? await fetchColourByColumns(projectUid, uid, vn) : []
 }
 
 // User picked a colour-by column: persist per-set; the WebGPU viewer picks it up via the overlay

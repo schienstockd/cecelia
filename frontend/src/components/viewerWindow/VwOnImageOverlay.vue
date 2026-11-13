@@ -1,7 +1,8 @@
 <!--
   The viewer window's "On the image" overlay (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, Decisions 2–3):
   WHAT is drawn, floating top left of the image and folding like the play bar. Every control here picks
-  something from the project — a segmentation, a population type, a ribbon family. HOW it looks (eyes per row, size,
+  something from the project — a segmentation, a population type, a ribbon family, a column to colour
+  by, a highlight to clear. HOW it looks (eyes per row, size,
   opacity, colour) stays in the right sidebar's sections; a slider or a colour does not belong here.
 
   The switches write the same settings the main window's Viewer panel writes (per image: label, track
@@ -14,7 +15,8 @@
 import { computed, ref, watch } from 'vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
-import type { LabelsDimMismatch } from '../../stores/viewer'
+import { useViewerStore, type LabelsDimMismatch } from '../../stores/viewer'
+import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
 import { segRows, segRowActive, flipMaskVisibility, flipTracks, mismatchTip, shortLevelsTip } from '../../utils/viewer/segRows'
 import { useSettingsStore } from '../../stores/settings'
 import { useStoredSectionOpen } from '../../utils/sectionOpen'
@@ -34,8 +36,12 @@ const props = defineProps<{
   labelFiles: Record<string, string[]>
   /** masks that do not fit the shown image version (the window publishes it) */
   dims: LabelsDimMismatch | null
+  projectUid: string
+  /** the image version on screen — its segmentation's columns are the colour-by options */
+  version: string
 }>()
 const settings = useSettingsStore()
+const viewerStore = useViewerStore()
 const open = useStoredSectionOpen('cc.vw.onImage', true)
 
 const label = (popType: string) => popTypeInfo(popType)?.label ?? popType
@@ -71,12 +77,24 @@ function setShownFiles(vn: string, shown: string[]) {
   if (props.imageUid) settings.setLabelFilesHidden(props.imageUid, vn, new Set(filesOf(vn).filter(f => !shown.includes(f))))
 }
 
+// ── Colour by: a column of the segmentation's table (the column is a pick; recolouring is a look) ──
+const colourCols = ref<string[]>([])
+watch(() => [props.projectUid, props.imageUid, props.version] as const,
+      async ([p, i, v]) => { colourCols.value = await fetchColourByColumns(p, i, v) }, { immediate: true })
+// per set; shown only when this image's table has it (segmentations differ across a set)
+const colourBy = computed(() => {
+  const c = props.setUid ? settings.getColourBy(props.setUid) : ''
+  return colourCols.value.includes(c) ? c : ''
+})
+const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(props.setUid, c) }
+
 /** the folded pill's summary: the population types and ribbon families that are on */
 const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
   ...CELL_POP_TYPES.filter(popOn).map(label),
   ...(ribbonsOn.value ? ['cell-track ribbons'] : []),
   ...(popOn('trackclust') ? ['track-cluster ribbons'] : []),
+  ...(colourBy.value ? [`by ${colourBy.value}`] : []),
 ].join(' · ') || 'nothing')
 </script>
 
@@ -132,6 +150,25 @@ const summary = computed(() => [
         <CcToggle class="cc-fs-2xs" label="Track-cluster ribbons" :model-value="popOn('trackclust')"
                   @update:model-value="v => setPop('trackclust', v)" />
       </div>
+      <div v-if="colourCols.length" class="vw-onimg-group">
+        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Colour tracks and labels by a cell property'">Colour by</div>
+        <select class="cc-fs-2xs" :value="colourBy" aria-label="Colour by"
+                v-tooltip.bottom="'Column that colours tracks and labels'"
+                @change="setColourBy(($event.target as HTMLSelectElement).value)">
+          <option value="">population</option>
+          <option v-for="c in colourCols" :key="c" :value="c">{{ c }}</option>
+        </select>
+      </div>
+      <div v-if="viewerStore.trackHighlight || viewerStore.pickHighlight" class="vw-onimg-group vw-onimg-clear">
+        <button v-if="viewerStore.pickHighlight" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs"
+                v-tooltip.bottom="'Clear the highlighted cells'" @click="viewerStore.setPickHighlight(null)">
+          <i class="pi pi-eraser" /> {{ viewerStore.pickHighlight.labels.length }} cell{{ viewerStore.pickHighlight.labels.length === 1 ? '' : 's' }}
+        </button>
+        <button v-if="viewerStore.trackHighlight" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs"
+                v-tooltip.bottom="'Clear the highlighted tracks'" @click="viewerStore.setTrackHighlight(null)">
+          <i class="pi pi-filter-slash" /> {{ viewerStore.trackHighlight.trackIds.length }} track{{ viewerStore.trackHighlight.trackIds.length === 1 ? '' : 's' }}
+        </button>
+      </div>
     </template>
   </div>
 </template>
@@ -152,4 +189,5 @@ const summary = computed(() => [
 .vw-onimg-seg { display: flex; align-items: center; gap: 0.2rem; }
 .vw-onimg-seg-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-onimg-more { align-self: flex-start; }
+.vw-onimg-clear { flex-direction: row; flex-wrap: wrap; }
 </style>

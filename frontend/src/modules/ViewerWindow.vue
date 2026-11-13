@@ -64,7 +64,7 @@ import {
 import { publishUiLog } from '../lib/uiLogChannel'
 import { onViewerImageMeta } from '../lib/viewerImageMetaChannel'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
-import { onViewerCacheClear, readViewerCacheClearRev,
+import { onViewerCacheClear, publishViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import { adapterNameText, classifiedByText, collectGpuDiagnostics, groupAdapterDiags, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
@@ -5887,6 +5887,8 @@ onUnmounted(() => {
   <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
             :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
             :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
+            :versions="meta?.valueNames ?? []" :active-version="meta?.activeValueName ?? ''"
+            @version="vn => { if (imageUid) settings.setImageVersion(imageUid, vn) }"
             @save-image="saveViewImage" @draw="beginDraw" />
   <!-- Edit slot (GUI_LAYOUT_PLAN V5, mock frame 5): says the mode is on and that it writes nothing. -->
   <div v-if="editMode" class="vw-edit-banner cc-row cc-row-tight" role="status">
@@ -6177,7 +6179,8 @@ onUnmounted(() => {
            other's height; the map stays off the overview because the overview is for navigating. -->
       <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="spec.timestamp && shownT >= 0 ? spec.timestampPx + 8 : 0"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
-                        :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null" />
+                        :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
+                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" />
       <div class="vw-corner-tr">
         <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
              a small image still benefits from a corner reference while zoomed in.
@@ -6279,6 +6282,19 @@ onUnmounted(() => {
       <TeleportPopover v-model="advancedOpen" :anchor="advancedTrigger" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Advanced viewer</div>
         <div class="vw-adv-body">
+          <!-- From the main window's Viewer panel (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S3). -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col" v-tooltip.right="'Save contrast, colours, T and Z as you change them'">Remember</span>
+            <CcToggle v-model="settings.viewerAutoSaveLayerProps" aria-label="Save contrast, colours, T and Z as you change them" />
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Pixels</span>
+            <button class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs" :disabled="!imageUid"
+                    v-tooltip.right="'Use if the image looks stale after a task re-ran'"
+                    @click="imageUid && publishViewerCacheClear({ imageUid, force: true })">
+              <i class="pi pi-sync" /> Re-read from disk
+            </button>
+          </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Auto picks based on movie size vs cache'">Renderer</span>

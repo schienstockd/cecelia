@@ -1,7 +1,8 @@
 <!--
   The viewer window's header (docs/todo/GUI_LAYOUT_PLAN.md, V1; mock frame 4): the way back to the main
   window, WHAT is on screen (image name, image version, the labels shown and whether they are a
-  preview or a live run), Help and Ask Kiwi. The window has no app shell (a bare route), so this is
+  preview or a live run), Help and Ask Kiwi. The provenance chip is also the version picker
+  (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S3), marking which version tasks run against. The window has no app shell (a bare route), so this is
   its only chrome; the controls stay in the side panel.
 
   Back: raises the main window, named by the page it is on (lib/popout.ts → focusMainWindow — Chrome
@@ -24,12 +25,20 @@ const props = defineProps<{
   /** the labels shown ('' = none) and where they come from */
   labels: string
   labelsState: '' | 'preview' | 'live'
+  /** every registered version of the image, and the one tasks read */
+  versions: string[]
+  activeVersion: string
   projectUid: string
   kiwiRef: () => KiwiRef | null
   kiwiTip: string
 }>()
-const emit = defineEmits<{ shortcuts: []; saveImage: []; draw: [] }>()
+const emit = defineEmits<{ shortcuts: []; saveImage: []; draw: []; version: [valueName: string] }>()
 const observer = useObserverStore()
+
+const versionOpen = ref(false)
+const versionBtn = ref<HTMLElement | null>(null)
+function pickVersion(vn: string) { versionOpen.value = false; if (vn !== props.valueName) emit('version', vn) }
+const notActive = computed(() => !!props.activeVersion && !!props.valueName && props.valueName !== props.activeVersion)
 
 const shareOpen = ref(false)
 const shareBtn = ref<HTMLElement | null>(null)
@@ -64,8 +73,21 @@ const prov = computed(() => [
       <i class="pi pi-arrow-left" /> {{ openerPage || 'Main window' }}
     </button>
     <span class="vwh-name" :title="imageName">{{ imageName }}</span>
-    <span v-if="prov" class="vwh-prov cc-muted cc-fs-xs"
-          v-tooltip.bottom="'The image version and labels are picked in the main window’s Viewer panel'">{{ prov }}</span>
+    <button v-if="prov && versions.length > 1" ref="versionBtn" type="button" class="vwh-prov cc-fs-xs"
+            :class="notActive ? 'cc-muted-warn' : 'cc-muted'" aria-haspopup="menu" @click="versionOpen = !versionOpen"
+            v-tooltip.bottom="notActive ? `Not the active version — tasks read ${activeVersion}` : 'Select the image version'">
+      {{ prov }} <i class="pi pi-chevron-down cc-fs-3xs" />
+    </button>
+    <span v-else-if="prov" class="vwh-prov cc-muted cc-fs-xs"
+          v-tooltip.bottom="'Labels are picked under On the image'">{{ prov }}</span>
+    <TeleportPopover v-model="versionOpen" :anchor="versionBtn" placement="bottom-start" flush>
+      <div class="cc-actions-menu" role="menu">
+        <button v-for="vn in versions" :key="vn" class="cc-actions-item" role="menuitem"
+                :class="{ 'cc-btn-on': vn === valueName }" @click="pickVersion(vn)">
+          {{ vn }} <span v-if="vn === activeVersion" class="cc-muted cc-fs-xs">active — tasks read this</span>
+        </button>
+      </div>
+    </TeleportPopover>
     <span class="vwh-grow" />
     <button ref="shareBtn" type="button" class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'cc-btn-on': shareOpen }"
             aria-haspopup="menu" @click="shareOpen = !shareOpen"
@@ -104,5 +126,6 @@ const prov = computed(() => [
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1rem 0.5rem;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
 }
+button.vwh-prov { background: none; cursor: pointer; font: inherit; }
 .vwh-grow { flex: 1; }
 </style>

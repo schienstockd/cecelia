@@ -1,7 +1,7 @@
 <!--
   The viewer window's Segmentation section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): what
   mask is on screen, its visibility, opacity, outline and colour mode. No picker — which segmentation
-  is shown is decided in the main window's Viewer panel (docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md, P3).
+  is shown is picked under "On the image" (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, Decision 2).
   The window owns the mask state; this renders it and asks for a redraw.
 -->
 <script setup lang="ts">
