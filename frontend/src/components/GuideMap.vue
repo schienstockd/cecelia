@@ -159,7 +159,8 @@ const assistTip = (s: RecipeStep) =>
 .gm-title { color: var(--cc-text); font-weight: 600; }
 .gm-why { margin: 2px 0 0; }
 .gm-done { color: var(--cc-accent); }
-.gm-assist { color: var(--cc-accent); }
+/* the ✦ wears the same quiet ink as the Maturity rows' bug button — markers, not controls */
+.gm-assist { color: var(--cc-text-dim); }
 
 .gm-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .gm-card { padding: 8px; display: flex; flex-direction: column; gap: 2px; }

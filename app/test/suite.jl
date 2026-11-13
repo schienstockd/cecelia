@@ -76,7 +76,7 @@ include(joinpath(@__DIR__, "suite", "observer.jl"))
 include(joinpath(@__DIR__, "suite", "claude_auth.jl"))
 
 # ── Model + storage + observer-state testsets ─────────────────────────
-# 11 sections covering: create project + image, per-image bookmarking (starred), REPL /
+# 11 sections covering: create project + image, per-image rating (good / caution), REPL /
 # notebook data-access surface (Observer Phase 2 foundation), run log (open→close + reaping),
 # session briefing + all_qc_docs, lockfile guard, atomic commit_state! (concurrent-registration
 # safety), durable state writes, state_file derivation, and resolve_value_name (the defaultOnly
@@ -179,7 +179,7 @@ include(joinpath(@__DIR__, "suite", "plugins.jl"))
 # ── Image + data-model round-trip testsets ─────────────────────────────
 # 12 testsets covering: legacy `kind` silently ignored on load, image status/attr round-trip,
 # task-subdir housekeeping, branch labels round-trip, reserved value_name suffixes, per-image
-# user flags (included / note / starred), per-task funParams memory (R moduleFunParams parity),
+# user flags (included / note / rating), per-task funParams memory (R moduleFunParams parity),
 # versioned channel names, destructive ops, boundary contract (real module fn end-to-end),
 # storage reclaim, and analysis reset. Extracted from this file to keep it small enough to merge
 # without EOF conflicts on every append. The extracted file loads inside this file's aggregating

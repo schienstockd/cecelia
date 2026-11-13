@@ -494,7 +494,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
       <ul v-if="detailCaptions.length" class="ftv-captions cc-fs-xs">
         <li v-for="cap in detailCaptions" :key="cap.term">
           <svg class="ftv-cap-swatch" width="8" height="8" aria-hidden="true">
-            <rect width="8" height="8" :fill="cap.color" />
+            <rect x="0.5" y="0.5" width="7" height="7" :fill="cap.color" stroke="currentColor" stroke-width="1" />
           </svg>
           <span class="ftv-cap-term">{{ cap.term }}</span>
           <span class="cc-muted">{{ cap.text }}</span>

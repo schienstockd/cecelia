@@ -593,6 +593,15 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     else
         label_level(zp, lvl_req)
     end
+    # A RUNNING segmentation's store has level 0 only — the pyramid is built when the run ends. A
+    # zoomed-out view (any big multiplex scan at fit zoom) would get the 409 for the whole run, so the
+    # live store answers a level it does not have yet by striding level 0, which is exactly how the
+    # pyramid will build it (`live_level_stride`).
+    stride = 1
+    if lvl_err !== nothing && live_labels
+        stride = live_level_stride(zp, lvl_req)
+        stride > 1 && ((level, lvl_err) = (lvl_req, nothing))
+    end
     if lvl_err !== nothing
         return _slab_json_error(stream, 409, lvl_err)
     end
@@ -623,7 +632,9 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     r = _fetch_unwrapped(Threads.@spawn begin
         got = try
             t0 = time()
-            vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
+            vol, nx, ny, nz, nc = stride > 1 ?
+                read_slab_strided(zp, t, c, stride; z = z, x = xr, y = yr) :
+                read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
             if !isempty(file_zps)
                 vol = UInt32.(vol)
                 for (suffix, fz) in file_zps
@@ -832,6 +843,45 @@ function label_level(label_zp::AbstractString, lvl_req::Integer)
 end
 
 """
+    live_level_stride(label_zp, lvl_req) -> Int
+
+The level-0 stride that stands in for pyramid level `lvl_req` of a store a run is still writing: `2^lvl_req`
+when the store DECLARES that level (its `.zattrs` lists the whole pyramid from creation) but has not
+written it, else 1 (serve nothing new — the caller keeps its 409). Level L of every label pyramid is
+`level0[::2^L, ::2^L]` in X/Y (`zarr_utils.write_label_pyramid` → `create_slices_multiscales`), so a
+strided read is the level the run will write, pixel for pixel.
+"""
+function live_level_stride(label_zp::AbstractString, lvl_req::Integer)::Int
+    lvl_req > 0 || return 1
+    ms = ngff_multiscales(Cecelia.series_base(label_zp))
+    isnothing(ms) && return 1
+    declared = length(something(get(first(ms), :datasets, nothing), []))
+    lvl_req < declared ? 2^Int(lvl_req) : 1
+end
+
+"""
+    read_slab_strided(zarr_path, t, c, stride; z, x, y) -> (vol, nx, ny, nz, nc)
+
+`read_slab` of a level the store has not written, from level 0: `x`/`y` are in that level's pixels, so
+they are scaled up by `stride`, read at full resolution and sampled every `stride`-th pixel in X and Y.
+Costs `stride²` times the bytes of a real level read — for the live preview only, where the level
+does not exist yet (`live_level_stride`).
+"""
+function read_slab_strided(zarr_path::AbstractString, t::Int, c::Union{Int,AbstractUnitRange{Int}},
+                           stride::Int;
+                           z::Union{Int,AbstractUnitRange{Int},Nothing} = nothing,
+                           x::Union{AbstractUnitRange{Int},Nothing} = nothing,
+                           y::Union{AbstractUnitRange{Int},Nothing} = nothing)
+    # saturating: an open-ended range arrives as `typemax(Int)`, which `read_slab` clamps to the store
+    up(v) = v === nothing ? nothing :
+        (first(v) * stride):(last(v) > typemax(Int) ÷ stride ? typemax(Int) : last(v) * stride)
+    vol, _, _, nz, nc = read_slab(zarr_path, t, c; z = z, x = up(x), y = up(y), level = 0)
+    idx = ntuple(d -> d <= 2 ? (1:stride:size(vol, d)) : Colon(), ndims(vol))
+    sub = vol[idx...]
+    sub, size(sub, 1), ndims(sub) >= 2 ? size(sub, 2) : 1, nz, nc
+end
+
+"""
     preview_labels_store_path(project_uid, image_uid, value_name) -> (path, err)
 
 The scratch preview labels store for one segmentation. Keyed only on the vn — the worker's convention
@@ -861,7 +911,7 @@ The staging store a RUNNING segmentation is writing for `value_name` — the bas
 `segment_label_files` plus the staging suffix, which is what `segment_live_outputs` declares. Built from
 the vn rather than taken from the client, so the query cannot name an arbitrary path; a vn carrying a
 path separator is refused for the same reason. Mid-run only level 0 exists (the pyramid is built at
-the end), which `store_pyramid_levels` already reports, so a zoomed-out view gets the usual 409.
+the end); a zoomed-out view is served by striding level 0 (`live_level_stride`).
 
 `live_since` (the task's `started_at`, ISO-8601 UTC) covers a task that keeps running after its
 segmentation promoted the store — a composite like `segment.coastalMeasure` measuring for minutes

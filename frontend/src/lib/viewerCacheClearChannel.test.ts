@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   viewerCacheClearFromStorageEvent,
   viewerCacheClearMatches,
+  mergeCacheClearJobs,
+  cacheClearReload,
 } from './viewerCacheClearChannel'
 
 // Pure decision functions only — the pub/sub side hits window/localStorage and is DOM-adjacent,
@@ -164,5 +166,29 @@ describe('viewerCacheClearMatches', () => {
       { imageUid: 'zolIMa', labelValueName: 'NSfanU' },
       { imageUid: 'jFWePN', labelValueName: '', knownLabelNames: [] },
     )).toBe(false)
+  })
+})
+
+describe('mergeCacheClearJobs', () => {
+  it('a burst folds into one job: newest rev, anything any event named', () => {
+    const result = { rev: '1', namedImage: false, namedMask: true }
+    const status = { rev: '2', namedImage: false, namedMask: false }
+    expect(mergeCacheClearJobs(null, result)).toEqual(result)
+    expect(mergeCacheClearJobs(result, status)).toEqual({ rev: '2', namedImage: false, namedMask: true })
+  })
+})
+
+describe('cacheClearReload', () => {
+  const job = { rev: '1', namedImage: false, namedMask: false }
+  it('a mask change reloads the mask alone, never the channels', () => {
+    expect(cacheClearReload({ ...job, namedMask: true }, { image: false, mask: false })).toBe('mask')
+    expect(cacheClearReload(job, { image: false, mask: true })).toBe('mask')
+  })
+  it('an image change, named or measured, reloads the image', () => {
+    expect(cacheClearReload({ ...job, namedImage: true }, { image: false, mask: false })).toBe('image')
+    expect(cacheClearReload({ ...job, namedMask: true }, { image: true, mask: true })).toBe('image')
+  })
+  it('nothing drawn changed: nothing reloads', () => {
+    expect(cacheClearReload(job, { image: false, mask: false })).toBe('none')
   })
 })

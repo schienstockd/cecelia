@@ -62,12 +62,14 @@
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
   --cc-accent-tint-2: #3b2382;   /* its hover step */
   /* THE AI colour — teal: Kiwi and Claude Code alike (one hue for "AI is involved"; the icon tells
-     which). Claude's mark ON data stays the annotation magenta (--cc-claude-mark). Distinct from --cc-accent (violet, form-control chrome). See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
+     which) — except where the two sit side by side (--cc-claude below). Claude's mark ON data stays the annotation magenta (--cc-claude-mark). Distinct from --cc-accent (violet, form-control chrome). See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
      accent so a Kiwi-tinted control has the same tools an accent-tinted one does. */
   --cc-kiwi:         #14b8a6;
   --cc-kiwi-strong:  #0d9488;   /* deeper teal — borders on an engaged/active kiwi control */
   --cc-kiwi-soft:    #5eead4;   /* pale teal — text on a kiwi-tinted surface */
   --cc-kiwi-tint:    #134e4a;   /* dark teal wash — the tinted "option is on" surface */
+  --cc-claude:       #d97757;   /* Claude Code's clay — only where Kiwi and Claude Code sit side by side
+                                   (ClaudeWaysIn cards, Kiwi ? table), so they read as two tools */
   /* selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — the text
      colour, a ring by contrast not hue. Amber read as a warning under colour blindness, violet as the
      running light and as "option on"; neutral clears every state (utils/cvd.test.ts). */
@@ -139,7 +141,7 @@
   --cc-swatch-edge:   rgba(128, 128, 128, 0.4);    /* hairline round a colour swatch — mid-grey, reads on any ground */
   /* on a solid fill: the fill picks the ink, not the scheme */
   --cc-on-solid:      #fff;      /* on --cc-accent-fill / --cc-danger-fill and other deep fills */
-  --cc-on-bright:     #1a1a1a;   /* on a bright fill (--cc-sev-warn, --cc-warn, a population colour) */
+  --cc-on-bright:     #1a1a1a;   /* on a fixed bright fill (a population colour) — not on a severity: the light scheme darkens those; a state word is .cc-label-chip */
   /* paper — an exported or printed figure is white, and `.cc-light` (below) re-inks a subtree for it */
   --cc-paper:         #fff;
   --cc-paper-2:       #f0f0f3;
@@ -778,6 +780,27 @@ body {
 .cc-row-group-top { align-items: flex-start; }
 .cc-row-group-top > .cc-lbl-col { padding-top: 0.2rem; }
 
+/* A short UPPERCASE kind/state word in a tinted box — a log level, a task status, a What's-new card
+   kind. A tone sets the hue and its ink; the box is that hue at 12% over `--cc-surface-1`, OPAQUE, so
+   the word reads the same on any ground (a see-through tint on the light scheme's darker surface-2 card
+   fell under AA). A solid severity fill is not an option: the light scheme darkens the severities for
+   text, so dark ink on them vanished. Every tone >= 4.5:1 in every scheme (`schemeContrast.test.ts`).
+   The host keeps only its own size/shape tweaks. */
+.cc-label-chip {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 0.05rem 0.35rem; border-radius: var(--cc-radius-xs);
+  background: var(--cc-surface-2); color: var(--cc-text-dim);
+}
+.cc-label-chip[class*="cc-label-chip-"] {
+  background: color-mix(in srgb, var(--chip-hue) 12%, var(--cc-surface-1));
+}
+.cc-label-chip-red    { --chip-hue: var(--cc-danger);  color: var(--cc-ink-red); }
+.cc-label-chip-amber  { --chip-hue: var(--cc-warn);    color: var(--cc-ink-amber); }
+.cc-label-chip-green  { --chip-hue: var(--cc-sev-ok);  color: var(--cc-ink-green); }
+.cc-label-chip-blue   { --chip-hue: var(--cc-active);  color: var(--cc-ink-blue); }
+.cc-label-chip-accent { --chip-hue: var(--cc-accent);  color: var(--cc-accent-soft); }
+
 /* MODULE TAG — "which module/task did this come from", as a pill tinted with that module's accent.
    The colours are NOT here: they come from `utils/taskModule.ts` (`moduleTagStyle`, over the one
    `MODULE_COLORS` palette) as an inline style, because the tint is a runtime lookup per module.
@@ -1091,6 +1114,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-kiwi-strong: #115e59;
   --cc-kiwi-soft:   #1d7281;
   --cc-kiwi-tint:   #d5f5ee;
+  --cc-claude:      #a3472a;
 
   --cc-warn:     #8f5d02;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
   --cc-danger:   #941328;   /* = sev-fail */

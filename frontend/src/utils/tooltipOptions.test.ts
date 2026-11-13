@@ -21,6 +21,11 @@ describe('tooltipSpec', () => {
   it('the object form escapes unless told not to', () => {
     expect(tooltipSpec({ value: 'x' })!.escape).toBe(true)
   })
+  it('a bound side wins over the modifier, and brings its own fallbacks', () => {
+    const s = tooltipSpec({ value: 'x', side: 'right' }, { bottom: true })!
+    expect(s.side).toBe('right')
+    expect(s.fallbacks).toEqual(['left', 'top', 'bottom'])
+  })
   it('disabled means no tooltip', () => {
     expect(tooltipSpec({ value: 'x', disabled: true })).toBeNull()
   })

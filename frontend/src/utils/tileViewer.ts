@@ -65,6 +65,21 @@ export function tileMaskSourceId(o: {
   return `${o.vn}${files}|${store}|${o.rev || 0}`
 }
 
+/**
+ * Whether a slot's mask, uploaded under `slotSource`, may still be drawn while `current` is fetched —
+ * true when both name the same segmentation and file set and differ only in store or rewrite stamp
+ * (a durable-store rewrite, a live run promoted to its final store). Drawing the previous bytes until
+ * the new ones land is what keeps a refresh from blanking the mask; another segmentation's bytes must
+ * never draw under the new name. A task preview is never "the same": its re-run is another parameter
+ * set, the very thing being compared.
+ */
+export function sameMaskLayer(slotSource: string, current: string): boolean {
+  if (!slotSource || !current) return false
+  const [a, aStore = ''] = slotSource.split('|'), [b, bStore = ''] = current.split('|')
+  if (aStore.startsWith('preview') || bStore.startsWith('preview')) return false
+  return a === b
+}
+
 /** Viewport in level-0 (native) pixel coordinates — the client thinks in L0, the slab route thinks in
  *  level-local. The conversion lives in `tileFetchRect`. */
 export interface ViewportL0 {

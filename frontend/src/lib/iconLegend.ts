@@ -25,6 +25,8 @@ export interface IconEntry {
   lucide: string
   /** Render the outline filled — Lucide is outline-only, and a few meanings need the solid shape. */
   fill?: true
+  /** Draw it over this glyph's OUTLINE — `star-half` filled over `star` is a half-filled star. */
+  over?: string
   /** What it means here — one short line, the user's words not the developer's. */
   means: string
 }
@@ -75,8 +77,9 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-circle-fill', lucide: 'circle', fill: true, means: 'Points, coloured by density' },
       { icon: 'pi-chart-line', lucide: 'chart-line', means: 'Density contours only — fastest' },
       { icon: 'pi-asterisk', lucide: 'asterisk', means: 'Contours plus the sparse outliers' },
-      { icon: 'pi-star', lucide: 'star', means: 'Not starred' },
-      { icon: 'pi-star-fill', lucide: 'star', fill: true, means: 'Starred' },
+      { icon: 'pi-star', lucide: 'star', means: 'Not starred, or an image not rated yet' },
+      { icon: 'pi-star-fill', lucide: 'star', fill: true, means: 'Starred — a good image' },
+      { icon: 'pi-star-half-fill', lucide: 'star-half', fill: true, over: 'star', means: 'An image to use with care' },
       { icon: 'pi-filter', lucide: 'funnel', means: 'Filter what is listed' },
       { icon: 'pi-link', lucide: 'link', means: 'Combine populations — one defined by others' },
       { icon: 'pi-filter-slash', lucide: 'funnel-x', means: 'Clear the filter' },

@@ -27,31 +27,55 @@
     rm(proj.root; recursive=true)
 end
 
-# ── Starred: a plain per-image bookmark ───────────────────────────────────────────────────────────
-# ANY number of images can be starred, and nothing downstream reads it — it drives the Starred row
-# filter and nothing else. It replaced a SET-level single "reference image" nomination, from which
-# the 8-bit import used to derive one intensity window for the whole set; that coupling is gone, so
-# the load-bearing property here is just that the flag round-trips and is independent per image.
-@testset "starred images" begin
+# ── Rating: a plain per-image mark (not rated / good / caution) ──────────────────────────────────
+# ANY number of images can carry either rating, and nothing downstream reads it — it drives the
+# rating button and the Starred row filter and nothing else. The load-bearing properties: the value
+# round-trips, is independent per image, a pre-rating `starred: true` reads as "good", and a value
+# outside the ImageRating strings is refused by the parser the route uses.
+@testset "image ratings" begin
     proj = create_project!(name = "star-$(rand(1000:9999))")
     s    = add_set!(proj; name = "set")
     img1 = add_image!(s; name = "a")
     img2 = add_image!(s; name = "b")
 
-    @test img1.starred == false                                 # not starred is the default
-    @test img2.starred == false
+    @test img1.rating == RATING_NONE                                     # not rated is the default
+    @test img2.rating == RATING_NONE
 
-    img1.starred = true
-    img2.starred = true                                         # multi-select: not one per set
+    img1.rating = RATING_GOOD
+    img2.rating = RATING_CAUTION
     save!(img1); save!(img2)
 
-    rs = load_project(proj.uid)._sets[1]
-    @test all(i -> i.starred, rs._images)                       # persisted through ccid.json
+    rs = Dict(i.name => i.rating for i in load_project(proj.uid)._sets[1]._images)
+    @test rs == Dict("a" => RATING_GOOD, "b" => RATING_CAUTION)           # persisted through ccid.json
 
-    img1.starred = false
+    img1.rating = RATING_NONE
     save!(img1)
     reloaded = load_project(proj.uid)._sets[1]._images
-    @test count(i -> i.starred, reloaded) == 1                  # independent per image
+    @test count(i -> i.rating == RATING_GOOD, reloaded) == 0         # independent per image
+    @test count(i -> i.rating == RATING_CAUTION, reloaded) == 1
+
+    # A ccid.json from before ratings carries `starred`; a star is the "good" rating.
+    for (starred, want) in ((true, RATING_GOOD), (false, RATING_NONE))
+        ccid = joinpath(img1._dir, "ccid.json")
+        raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+        delete!(raw, "rating"); raw["starred"] = starred
+        open(ccid, "w") do io; JSON3.write(io, raw); end
+        @test init_object(proj.uid, img1.uid).rating == want
+    end
+
+    # an unknown value on disk reads as not rated — a hand-edit must not make the image unloadable
+    let ccid = joinpath(img1._dir, "ccid.json")
+        raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+        raw["rating"] = "great"
+        open(ccid, "w") do io; JSON3.write(io, raw); end
+        @test init_object(proj.uid, img1.uid).rating == RATING_NONE
+    end
+
+    @test parse_image_rating("caution") == RATING_CAUTION
+    @test parse_image_rating(nothing) == RATING_NONE
+    @test_throws ArgumentError parse_image_rating("great")
+    @test_throws ArgumentError parse_image_rating(true)         # the old Bool wire value
+    @test string(RATING_CAUTION) == "caution"                   # the on-disk / wire form
 
     rm(proj.root; recursive=true)
 end

@@ -47,7 +47,7 @@ import type { LabelTable } from '../../utils/maskPopTable'
 import { createLabelColourTexture } from './labelColourTexture'
 import { renderToPixels } from './frameReadback'
 export { WebGpuUnavailable, type AdapterReport }
-import { tileKeyStr, tileFetchRect, tileSlotShape, type TileKey } from '../../utils/tileViewer'
+import { tileKeyStr, tileFetchRect, tileSlotShape, sameMaskLayer, type TileKey } from '../../utils/tileViewer'
 
 /** Bytes per voxel the atlas is currently allocated for. Set on `setImage` from the store's dtype
  *  (`meta.bytesPerVoxel`): 1 for `|u1` sources (Manual IBEX .ims), 2 for `|u2` sources. Feeds both
@@ -525,7 +525,8 @@ export async function createTileRenderer(
         data[o + 4] = t.sampledX
         data[o + 5] = t.sampledY
         data[o + 6] = t.slot
-        data[o + 7] = labelSource && labelSrcBySlot[t.slot] === labelSource ? 1 : 0
+        // a refresh of the same mask keeps drawing the slot's previous bytes until the new ones land
+        data[o + 7] = sameMaskLayer(labelSrcBySlot[t.slot] ?? '', labelSource) ? 1 : 0
       }
       device.queue.writeBuffer(instBuf, 0, data)
     }

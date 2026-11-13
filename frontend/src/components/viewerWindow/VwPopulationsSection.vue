@@ -1,8 +1,8 @@
 <!--
   The viewer window's Populations section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): one
   row per gated population drawn as points, the section-wide eyes, the colour-by in use and its
-  legend, z reach, point size and border. No colour-by picker: the choice lives in the main window's
-  Viewer panel (docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4). The window owns the layers and the eyes;
+  legend, z reach, point size and border. No colour-by picker: the column is
+  picked under "On the image" (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, Decision 2). The window owns the layers and the eyes;
   this renders them and reports the user's changes.
 -->
 <script setup lang="ts">
@@ -64,7 +64,7 @@ const settings = useSettingsStore()
          Empty-state phrasing lines up with Segmentation and Tracks. -->
     <template v-if="!panelOn">
       <div class="cc-empty-inline cc-fs-2xs">
-        No populations shown — enable in the viewer panel
+        No populations shown — turn a type on under On the image
       </div>
     </template>
     <template v-else-if="summary.cells > 0 || error">
@@ -110,9 +110,8 @@ const settings = useSettingsStore()
             />
           </div>
         </template>
-        <!-- No colour-by picker: locked decision 3. The CHOICE lives in ViewerPanel's Colour by
-             section, keyed per set. This row shows what it resolved to; the legend below shows
-             its scale. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4. -->
+        <!-- No colour-by picker: the column is a pick, so it is under "On the image", keyed per set.
+             This row shows what it resolved to; the legend below shows its scale. -->
         <div class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour by</span>
           <span class="cc-fs-2xs vw-grow" :title="colourBy || 'population'">

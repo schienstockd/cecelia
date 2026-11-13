@@ -39,7 +39,7 @@ import { useWindowListener } from '../../composables/useKeepAlive'
 import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
 import { DOT_R } from '../../plots/density'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
-import { eyeKey, offPaths, popEyeOn } from '../../utils/viewer/popEyes'
+import { eyeKey, offPaths, popEyeOn, popTypeSwitch } from '../../utils/viewer/popEyes'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
 import { SEVERITY } from '../../lib/severity'
@@ -145,6 +145,9 @@ async function toggleViewer(p: FlatPop) {
       settings.setPopEyes(uid, g.valueName, { ...settings.getPopEyes(uid, g.valueName, layer), [k]: on }, layer)
     // the ribbon eyes' per-path projection, as the pop-out's `storeRibbonEyes` keeps it
     settings.setTrackPopHidden(uid, g.valueName, new Set(offPaths(settings.getPopEyes(uid, g.valueName, 'ribbons'))))
+    // an eye under a switched-off population type draws nothing: turning a pop on turns its type on
+    const sw = on ? popTypeSwitch(g.popType) : null, su = sw ? projectStore.setUidOfImage(uid) : null
+    if (sw && su) settings.setPopVisible(su, sw, true)
   }
   await g.updatePop(p.path, { show: on })
   g.refreshOverlays()

@@ -18,23 +18,29 @@
     />
 
   `on: true` toggles the `.cc-btn-on` styling for that state (highlights the "engaged" look for
-  visible/pinned states; leave off/undefined for the neutral default). The button reuses the
-  `.cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense` chain so it slots into any panel header row.
+  visible/pinned states; leave off/undefined for the neutral default). `cls` adds a per-state class
+  instead (e.g. a colour). The button reuses the `.cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense` chain
+  so it slots into any panel header row; `bare` swaps it for `.cc-btn-bare .cc-btn-icon`, for a table
+  row's gutter (the image table's rating). `side` sets the tooltip side (default bottom).
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { Side } from '../utils/anchorPosition'
 
 export interface CycleOption {
   value: string
   icon: string    // full pi class chain, e.g. "pi pi-thumbtack"
   tip: string     // tooltip text
   on?: boolean    // when true, current state renders in the "engaged" (.cc-btn-on) look
+  cls?: string    // extra class on the button while in this state
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   modelValue: string
   options: CycleOption[]
-}>()
+  bare?: boolean
+  side?: Side
+}>(), { bare: false, side: 'bottom' })
 const emit = defineEmits<{ 'update:modelValue': [string] }>()
 
 const currentIdx = computed(() => {
@@ -53,9 +59,9 @@ function next() {
 <template>
   <button
     type="button"
-    class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
-    :class="{ 'cc-btn-on': !!current.on }"
-    v-tooltip.bottom="current.tip"
+    class="cc-btn cc-btn-icon"
+    :class="[bare ? 'cc-btn-bare' : 'cc-btn-ghost cc-btn-dense', current.cls, { 'cc-btn-on': !!current.on }]"
+    v-tooltip="{ value: current.tip, side }"
     :aria-label="current.tip"
     @click.stop="next"
   >

@@ -69,7 +69,8 @@ export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!, rename_set!, set_recipe!, set_name_taken, move_image!
 export discard!, move_aside, discard_later, sweep_discarded!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes, img_defaulted_scale, run_scale_defaults,
-       image_included, IMAGE_EXCLUDED_REASON
+       image_included, IMAGE_EXCLUDED_REASON, ImageRating, RATING_NONE, RATING_GOOD, RATING_CAUTION,
+       parse_image_rating
 export img_axes, img_has_time
 export meta_int, meta_float, meta_str, crop_source
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name, resolve_version

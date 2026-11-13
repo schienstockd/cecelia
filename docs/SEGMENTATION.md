@@ -1557,6 +1557,13 @@ then filled one timepoint at a time, and every per-frame step (seam stitching, s
 matching) runs *before* the frame is written. So a completed frame in the preview is the **final** label
 data, not a provisional pass.
 
+Within a frame, each XY tile's **raw** labels go to the store as soon as the tile is done
+(`_stream_tile`), so the frame fills in tile by tile — the only progress a single-plane image (a big
+multiplex scan: one frame, minutes of tiles) has to show. Those are provisional: seams unstitched,
+nothing filtered or matched, and the frame write overwrites every pixel of them. A frame of one tile
+skips it (the frame write follows at once), and so does an empty tile. Measured on a 4280×6199 plane at
+1280 px tiles: 20 tile writes, 174 ms in all, against a run of about two minutes.
+
 What makes it discoverable is the task, not the image: `ccid.json` registers a label set only when the
 run **succeeds**, so mid-run there is no `labels` entry to put in a picker. Instead the task declares
 its in-flight output via the `live_outputs` trait (`app/src/tasks/task.jl`), the scheduler records that
@@ -1583,9 +1590,13 @@ server derives the `{vn}.zarr.partial` path from the vn and never takes a path f
 takes precedence over a ticked segmentation and gets the Segmentation section's opacity, outline and
 show/hide controls. A few things differ from a normal mask:
 
-- **Level 0 only.** A label store declares its whole pyramid in `.zattrs` when created, but levels 1…N
-  only exist once the run finalises it. `store_pyramid_levels` skips the missing arrays, so a
-  zoomed-out view gets the usual 409 and draws the image without the mask.
+- **Level 0 only on disk, every level served.** A label store declares its whole pyramid in `.zattrs`
+  when created, but levels 1…N only exist once the run finalises it. A big scan at fit zoom asks for
+  one of those, so the live read answers a declared-but-unwritten level by striding level 0
+  (`live_level_stride` / `read_slab_strided`, `api/src/viewer_api.jl`) — level L of every label pyramid
+  IS `level0[::2^L, ::2^L]`, so it is the level the run will write. It reads `4^L` times the bytes of a
+  real level: ~95–115 ms for the whole 4280×6199 plane at L2–L3 against 3–7 ms, once per re-stamp.
+  A durable mask still gets the 409 for a level it lacks (`label_level`).
 - **Refetch on a re-stamp.** Progress ticks re-stamp `liveLabels` (at most one per 2 s, since cellpose
   emits a tick per XY tile). Each stamp reloads the frame on screen, and its `_lv` cache-buster
   misses the HTTP cache, because the same URL returns more filled frames each time.

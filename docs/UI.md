@@ -587,11 +587,13 @@ New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `pa
 list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
 
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
-Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
+Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta) — except where the two sit side by side
+(the `ClaudeWaysIn.vue` cards, the Claude Code column of Kiwi's `?` table), where Claude Code wears its clay (`--cc-claude`) so the pair reads as two tools, and the Viewer
 launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
 (`--cc-selected` = the text colour). A new surface
 reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
-text contrast, it cannot be told from amber.
+text contrast, it cannot be told from amber — the clay is the one exception, and only because those places
+are labelled and carry no state (its severity pairs are accepted in `cvd.test.ts`).
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
 `--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its
@@ -906,17 +908,21 @@ Every module page uses this same slot, so the plot canvas collapses identically 
 
 ### Two-half side panels — `usePaneExpand` + `PaneExpandBar`
 
-A recurring **scenario**, not a widget: a right-hand panel made of two stacked halves where, on a laptop
-screen, neither gets enough vertical room. Both panels that have this shape use the same primitive:
+A recurring **scenario**, not a widget: a right-hand panel made of two halves that, on a laptop screen,
+don't fit together. Every panel that has this shape uses the same primitive:
 
 | Panel | Top half | Bottom half | Storage key |
 |---|---|---|---|
-| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` (default `top`: a "Last run · Tasks" line under Run summarises the folded list and opens it — GUI_LAYOUT_PLAN M4) |
+| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` |
 | `modules/batchmovies/BatchMoviesPanel.vue` | the movie config | the batch's task list | `cc-batchmovies-pane` |
+| `modules/animation/AnimationPanel.vue` | the animation controls | the module's task list | `cc-animation-pane` |
 
-Three modes — `split` (default unless the panel names one), `top`, `bottom` — persisted per panel. Each half's button also
-*un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
-can't click out of. The recipe is the mode on the root plus one CSS rule per half:
+**One half at a time, never both** — `top` (the default) or `bottom`, persisted per panel. A split view
+used to exist; with long param lists it left neither half usable. A click on the showing half's button
+flips to the other, so there is no state the user can't click out of; a stored `split` reads as the
+default. The top half stands in for the hidden list with **`tasks/TaskSummaryLine.vue`** under its
+action button — "2 running or queued" / "Last run 3m ago · 4 done", and a **Tasks** link that switches
+to the list (GUI_LAYOUT_PLAN M4). The recipe is the mode on the root plus one CSS rule per half:
 
 ```ts
 const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
@@ -928,7 +934,7 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
   …
 ```
 ```css
-.mypanel.pane-bottom > .my-config { display: none; }   /* bottom expanded → hide the top half */
+.mypanel.pane-bottom > .my-config { display: none; }   /* list showing → hide the top half */
 .mypanel.pane-top    > .my-tasks  { display: none; }
 ```
 
@@ -939,16 +945,15 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
 - **Never `v-if`.** Unmounting a config half discards whatever its children have fetched (population
   lists, model lists) and refetches on the way back. `display: none` keeps them alive.
 - **The bar owns the tooltip wording**, so every panel phrases the action identically; the consumer only
-  names its halves (lower-case, short — they go straight into "Expand the …").
+  names its halves (lower-case, short — they go straight into "Show the …").
 - **Growth is the consumer's** — the primitive decides what's visible, not how the survivor uses the
-  space. `TaskRunner` lifts its `params-section` `max-height` cap under `.pane-top`; `BatchMoviesPanel`
-  needs nothing, because `ModuleLayout`'s `.right-slot` already scrolls.
-- Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s "napari is busy" banner
-  is deliberately outside both, since it matters most while you are watching the task list.
-- **The bar's default slot is a readout for the hidden half.** Expanding a half means losing sight of the
-  other one, so put back the one thing you'd miss rather than nothing: `TaskRunner` shows
-  `3 running · 1 queued` there while the task list is collapsed (and nothing when it's visible, which
-  would just restate the list). One line, `.cc-readout`, no new row — the bar is already paid for.
+  space. `TaskRunner`'s `params-section` grows to fill the runner (`flex: 1`, no cap); the movie panels
+  scroll themselves (`.bm` / `.ap`), and their task wrappers take `min-height: 0` since the list is alone.
+- Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s restore notice sits
+  above the bar for that reason.
+- **The bar's default slot is a readout for the hidden half.** `TaskRunner` shows `3 running · 1 queued`
+  there while the task list is hidden (and nothing when it's showing, which would just restate the list).
+  One line, `.cc-readout`, no new row — the bar is already paid for.
 
 ### Collapsible side panels — `CollapsiblePanel`
 
@@ -1712,7 +1717,7 @@ optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/
 - **Hide-excluded toggle.** One of the row filters below (default: show excluded rows, greyed).
 
 **Row filters — add one by adding a table row, not a component.** The on/off toggles next to the
-**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Starred**) are declared
+**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Scored**) are declared
 as data in `frontend/src/utils/rowFilters.ts` (`ROW_FILTERS`) and rendered by ONE `v-for` in
 `ModuleLayout`. Each entry supplies its id, label, both icons, the `hides(img)` predicate, its count,
 whether the button is worth showing at all, and a two-state tooltip. `ModuleLayout` holds a single
@@ -1722,9 +1727,11 @@ watch + computed + template. Add a `RowFilterDef`; the persistence, the button, 
 `filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
 processed-with filters.
 
-**Star.** A plain per-image bookmark (`CciaImage.starred`, `isStarred`) — click the star in any row,
-any number per set. It drives the Starred row filter and **nothing else**: no effect on selection,
-runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
+**Rating.** One button per row (`CciaImage.rating`, `imageRating`/`IMAGE_RATINGS` in
+`utils/inclusion.ts`, drawn by `CcCycleButton`) cycles **not rated → good (star) → use with care (half
+star, warn colour)**, any number per set. "Use with care" is the step short of excluding: keep the
+image, but doubt it. The rating drives the **Scored** row filter — one button stepping off → good only (★) → use-with-care only (half star) → off, a `RowFilterDef` with `modes` — and **nothing else**: no
+effect on selection, runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
 intensity window was derived from; that whole mechanism is gone — see `docs/FUTURE.md`.)
 
 **Attribute extraction — regex + builder** (`MetadataPanel.vue` → *Extract via regex*). Pulls an

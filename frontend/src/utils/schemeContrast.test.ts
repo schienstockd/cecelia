@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { schemeTokens, tokenHex } from './cssTokens'
-import { contrastRatio, WCAG_AA } from './colour'
+import { composite, contrastRatio, WCAG_AA } from './colour'
 import { COLOUR_SCHEMES } from './colourScheme'
 import CSS from '../style.css?raw'
 
 // Text colours must read (WCAG AA, 4.5:1) on every ground a panel can put them on, in every scheme.
 const GROUNDS = ['--cc-bg', '--cc-surface-1', '--cc-surface-2']
 const TEXT = [
-  '--cc-text', '--cc-text-dim', '--cc-accent', '--cc-accent-soft', '--cc-kiwi', '--cc-kiwi-soft',
+  '--cc-text', '--cc-text-dim', '--cc-accent', '--cc-accent-soft', '--cc-kiwi', '--cc-kiwi-soft', '--cc-claude',
   '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active', '--cc-warn', '--cc-danger',
   '--cc-ink-red', '--cc-ink-amber', '--cc-ink-green', '--cc-ink-blue', '--cc-ink-cyan',
   '--cc-stage-data', '--cc-stage-populations', '--cc-stage-explore', '--cc-stage-analysis',
@@ -26,6 +26,21 @@ describe.each(COLOUR_SCHEMES.map(s => s.value))('the %s scheme', scheme => {
   it('every text colour reads on every ground', () => {
     const bad = TEXT.flatMap(f => GROUNDS.map(g => [f, g, ratio(f, g)] as const))
       .filter(([, , r]) => r < WCAG_AA).map(([f, g, r]) => `${f} on ${g}: ${r.toFixed(2)}`)
+    expect(bad).toEqual([])
+  })
+
+  // `.cc-label-chip-<tone>`: the box is the tone's hue at 12% over surface-1 (opaque), the word its ink.
+  // Read off style.css so a new tone, or a change to the mix, is checked too.
+  it('every label-chip tone reads on its own box', () => {
+    const mix = /\.cc-label-chip\[[^\]]*\]\s*\{[^}]*color-mix\(in srgb, var\(--chip-hue\) (\d+)%, var\((--[\w-]+)\)\)/.exec(CSS)
+    expect(mix).not.toBeNull()
+    const [pct, ground] = [Number(mix![1]) / 100, mix![2]]
+    const tones = [...CSS.matchAll(/\.cc-label-chip-(\w+)\s*\{\s*--chip-hue:\s*var\((--[\w-]+)\);\s*color:\s*var\((--[\w-]+)\)/g)]
+    expect(tones.length).toBeGreaterThanOrEqual(5)
+    const bad = tones.map(([, tone, hue, ink]) => {
+      const box = composite(tokenHex(t, hue), tokenHex(t, ground), pct)
+      return [tone, contrastRatio(tokenHex(t, ink), box)] as const
+    }).filter(([, r]) => r < WCAG_AA).map(([tone, r]) => `${tone}: ${r.toFixed(2)}`)
     expect(bad).toEqual([])
   })
 

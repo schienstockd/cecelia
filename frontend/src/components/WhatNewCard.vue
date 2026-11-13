@@ -26,7 +26,13 @@ const kindLabel = computed(() => (
   props.card.kind === 'about'  ? 'ABOUT' :
                                  'TIP'
 ))
-const kindTone = computed(() => 'wn-kind-' + props.card.kind)
+// Tone per kind (`.cc-label-chip-*`): a tint + ink pair, so the word reads in either scheme.
+const kindTone = computed(() => (
+  props.card.kind === 'update' ? 'cc-label-chip-accent' :
+  props.card.kind === 'fix'    ? 'cc-label-chip-green' :
+  props.card.kind === 'about'  ? '' :
+                                 'cc-label-chip-amber'
+))
 const dateLabel = computed(() => formatCardDate(props.card.publishedAt))
 // Straight to the form, not the issues list: the user is on a card about a specific thing, so they
 // already know what they would be reporting. The header's GitHub icon is the browse-first one.
@@ -64,9 +70,9 @@ const tipsOptOut = computed({
 <template>
   <article class="wn-card cc-card cc-card-2">
     <header class="wn-head">
-      <span class="wn-kind" :class="kindTone">{{ kindLabel }}</span>
+      <span class="cc-label-chip" :class="kindTone">{{ kindLabel }}</span>
       <h3 class="wn-title">{{ card.title }}</h3>
-      <span v-if="card.releaseVersion" class="wn-version">{{ card.releaseVersion }}</span>
+      <span v-if="card.releaseVersion" class="wn-version cc-fs-xs">{{ card.releaseVersion }}</span>
     </header>
 
     <div v-if="dateLabel" class="wn-date cc-muted cc-fs-2xs">{{ dateLabel }}</div>
@@ -95,7 +101,7 @@ const tipsOptOut = computed({
     <div v-if="bodyHtml" class="wn-body" v-html="bodyHtml" />
 
     <div v-if="card.steps?.length" class="wn-steps">
-      <div class="wn-steps-label cc-muted cc-fs-xs">Try it</div>
+      <div class="wn-steps-label cc-eyebrow cc-fs-2xs">Try it</div>
       <ol>
         <li v-for="(step, i) in card.steps" :key="i">{{ step }}</li>
       </ol>
@@ -119,35 +125,22 @@ const tipsOptOut = computed({
 </template>
 
 <style scoped>
-.wn-card { padding: 14px 16px; }
+.wn-card { padding: var(--cc-space-md) var(--cc-space-lg); }
 
-.wn-head { display: flex; align-items: center; gap: 8px; }
-.wn-kind {
-  font-size: var(--cc-fs-2xs);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 2px 6px;
-  border-radius: var(--cc-radius-sm);
-  color: var(--cc-on-solid);
-}
-.wn-kind-update { background: var(--cc-accent-fill); }
-.wn-kind-tip    { background: var(--cc-sev-warn); color: var(--cc-on-bright); }
-.wn-kind-fix    { background: var(--cc-sev-ok);   color: var(--cc-on-bright); }   /* white is 3.35:1 on it */
-.wn-kind-about  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
+.wn-head { display: flex; align-items: center; gap: var(--cc-space-sm); }
 .wn-title { flex: 1; margin: 0; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text); }
 .wn-version {
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-  font-size: var(--cc-fs-xs);
+  font-family: var(--cc-mono);
   color: var(--cc-text-dim);
-  padding: 2px 6px;
-  background: var(--cc-surface-2);
-  border-radius: var(--cc-radius-sm);
+  padding: var(--cc-space-3xs) var(--cc-space-xs);
+  background: var(--cc-surface-1);
+  border-radius: var(--cc-radius-xs);
 }
 
-.wn-date { margin-top: 2px; }
+.wn-date { margin-top: var(--cc-space-3xs); }
 
 .wn-sketch {
-  margin-top: 10px;
+  margin-top: var(--cc-space-md);
   height: 170px;
   border-radius: var(--cc-radius-md);
   background: var(--cc-surface-2);
@@ -196,10 +189,10 @@ const tipsOptOut = computed({
 .wn-nav-prev:hover { color: var(--cc-text-dim); background: linear-gradient(to right, color-mix(in srgb, var(--cc-paper-ink) 6%, transparent), transparent); }
 .wn-nav-next:hover { color: var(--cc-text-dim); background: linear-gradient(to left,  color-mix(in srgb, var(--cc-paper-ink) 6%, transparent), transparent); }
 
-.wn-description { margin: 10px 0 6px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.5; }
+.wn-description { margin: var(--cc-space-md) 0 var(--cc-space-xs); color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.5; }
 
 .wn-body {
-  margin: 8px 0 0;
+  margin: var(--cc-space-sm) 0 0;
   color: var(--cc-text);
   font-size: var(--cc-fs-md);
   line-height: 1.55;
@@ -213,35 +206,36 @@ const tipsOptOut = computed({
 .wn-body :deep(li) { margin: 2px 0; }
 .wn-body :deep(a) { color: var(--cc-accent); }
 .wn-body :deep(code) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--cc-mono);
   font-size: 0.9em;
-  background: var(--cc-surface-2);
+  background: var(--cc-surface-1);
   padding: 0 4px;
   border-radius: var(--cc-radius-xs);
 }
 .wn-body :deep(pre) {
-  background: var(--cc-surface-2);
-  padding: 8px 10px;
+  background: var(--cc-surface-1);
+  padding: var(--cc-space-sm) var(--cc-space-md);
   border-radius: var(--cc-radius-sm);
   overflow-x: auto;
 }
 
-.wn-steps { margin-top: 10px; }
-.wn-steps-label { margin-bottom: 2px; }
+.wn-steps { margin-top: var(--cc-space-md); }
+.wn-steps-label { margin-bottom: var(--cc-space-2xs); }
 .wn-steps ol { margin: 0; padding-left: 20px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
 
 .wn-foot {
   display: flex;
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 8px;
+  align-items: center;
+  gap: var(--cc-space-md);
+  margin-top: var(--cc-space-md);
+  padding-top: var(--cc-space-sm);
   border-top: 1px solid var(--cc-border);
 }
 .wn-link {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--cc-space-2xs);
 }
 .wn-link:hover { color: var(--cc-accent); }
 .wn-link .pi { font-size: 0.85em; }

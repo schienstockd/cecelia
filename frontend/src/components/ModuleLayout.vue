@@ -49,7 +49,8 @@ import { usePlotFullscreen, reportCanvasMaximised } from '../composables/usePlot
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded } from '../utils/inclusion'
-import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters } from '../utils/rowFilters'
+import { ROW_FILTERS, rowFilterKey, anyRowFilterActive, hiddenByRowFilters, nextRowFilterValue,
+  parseRowFilterValue, serializeRowFilterValue, rowFilterButton, type RowFilterState } from '../utils/rowFilters'
 import { emptyAttrFilter, attrFilterActive, matchesAttrFilter, attrKeysOf,
          type AttrFilterState } from '../utils/attrFilter'
 import AttrFilterPanel from './AttrFilterPanel.vue'
@@ -172,22 +173,22 @@ const attrFilter = ref<AttrFilterState>(emptyAttrFilter())
 const filtersOpen = useStoredSectionOpen(`cc-filters-open:${props.module ?? 'default'}`, false)
 const taskOpen = useStoredSectionOpen(`cc-task-open:${props.module ?? 'default'}`, false)
 
-// ── Row filters (Excluded / Imported / Starred) ─────────────────────────────────
-// One persisted on/off toggle per filter, declared as data in utils/rowFilters.ts and rendered by a
+// ── Row filters (Excluded / Imported / Scored) ──────────────────────────────────
+// One persisted toggle per filter (Scored steps off → good → use with care), declared as data in utils/rowFilters.ts and rendered by a
 // single v-for below — see that file for why they aren't three hand-written blocks. Excluded images
 // are shown greyed by DEFAULT (not hidden); each toggle hides its rows only when switched on.
-const rowFilterActive = ref<Record<string, boolean>>(Object.fromEntries(
-  ROW_FILTERS.map(f => [f.id, profileStorage.getItem(rowFilterKey(f.id, props.module)) === '1'])))
+const rowFilterActive = ref<RowFilterState>(Object.fromEntries(
+  ROW_FILTERS.map(f => [f.id, parseRowFilterValue(f, profileStorage.getItem(rowFilterKey(f.id, props.module)))])))
 watch(rowFilterActive, v => {
   for (const f of ROW_FILTERS) {
-    try { profileStorage.setItem(rowFilterKey(f.id, props.module), v[f.id] ? '1' : '0') } catch { /* ignore */ }
+    try { profileStorage.setItem(rowFilterKey(f.id, props.module), serializeRowFilterValue(v[f.id])) } catch { /* ignore */ }
   }
 }, { deep: true })
 // the filters worth showing, with their current count resolved once for the button + its tooltip
 const rowFilters = computed(() => {
   const imgs = activeSet.value?.images ?? []
   return ROW_FILTERS.filter(f => !f.host && f.visible(imgs))   // a hosted one is drawn by its host
-    .map(f => ({ def: f, count: f.count(imgs), images: imgs }))
+    .map(f => ({ def: f, btn: rowFilterButton(f, rowFilterActive.value[f.id], imgs) }))
 })
 // separate from the filter toggle above: the set header always states how many images are excluded,
 // whether or not the Excluded filter is being used to hide them
@@ -340,15 +341,15 @@ const visibleUids = computed<string[]>(() =>
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Checks: Acquisition, QC (its click is the qcFlagged row filter), Cohort -->
             <ChecksCluster :set-uid="activeSet.uid" :module="module" :cohort-funs="cohortFuns"
-              :qc-filter-on="rowFilterActive.qcFlagged"
+              :qc-filter-on="!!rowFilterActive.qcFlagged"
               @toggle-qc-filter="rowFilterActive.qcFlagged = !rowFilterActive.qcFlagged" />
-            <!-- Row filters (Excluded / Imported / Starred) — declared in utils/rowFilters.ts -->
+            <!-- Row filters (Excluded / Imported / Scored) — declared in utils/rowFilters.ts -->
             <button v-for="f in rowFilters" :key="f.def.id"
-              class="filter-toggle" :class="{ active: rowFilterActive[f.def.id] }"
-              @click="rowFilterActive[f.def.id] = !rowFilterActive[f.def.id]"
-              v-tooltip.left="f.def.tip(rowFilterActive[f.def.id], f.images)">
-              <i :class="['pi', rowFilterActive[f.def.id] ? f.def.iconOn : f.def.iconOff]" />
-              <span class="filter-label">{{ f.def.label }} {{ f.count }}</span>
+              class="filter-toggle" :class="{ active: f.btn.on }"
+              @click="rowFilterActive[f.def.id] = nextRowFilterValue(f.def, rowFilterActive[f.def.id])"
+              v-tooltip.left="f.btn.tip">
+              <i :class="['pi', f.btn.icon]" />
+              <span class="filter-label">{{ f.def.label }} {{ f.btn.count }}</span>
             </button>
             <!-- Filter: filter to images by attribute value (own dropdown) -->
             <button v-if="showFilter && attrKeys.length > 0"

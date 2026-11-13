@@ -514,22 +514,32 @@ export function labelLevelsShort(
 }
 
 /**
- * After a task-done meta refetch: did anything the viewer DRAWS change — the intensity store, the
- * shown mask's store, or the dims? `false` means the frame on screen is still right and a reload
- * would only throw away the cache (a gating or measure task touches no pixels). Unknown
- * fingerprints (older server) count as changed — a needless reload beats stale pixels.
+ * After a task-done meta refetch: WHICH of the stores the viewer draws changed — the intensity store
+ * (or the dims), and the shown mask's store. Kept apart because they reload apart: a mask rewrite (a
+ * segmentation finishing on the open image) refetches the mask alone and must leave the channels on
+ * the GPU. Unknown fingerprints (older server) count as both changed — a needless reload beats stale
+ * pixels.
  */
+export function changedStores(
+  prev: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
+  next: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
+  shownLabel: string,
+): { image: boolean; mask: boolean } {
+  const a = prev.storeRevs, b = next.storeRevs
+  if (prev.nX !== next.nX || prev.nY !== next.nY || prev.nZ !== next.nZ
+      || prev.nT !== next.nT || prev.nC !== next.nC || !a || !b) return { image: true, mask: !!shownLabel }
+  return { image: a.image !== b.image, mask: !!shownLabel && a.labels[shownLabel] !== b.labels[shownLabel] }
+}
+
+/** Did anything the viewer DRAWS change (`changedStores`, either half)? `false` means the frame on
+ *  screen is still right and a reload would only throw away the cache. */
 export function shownStoresChanged(
   prev: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
   next: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
   shownLabel: string,
 ): boolean {
-  if (prev.nX !== next.nX || prev.nY !== next.nY || prev.nZ !== next.nZ
-      || prev.nT !== next.nT || prev.nC !== next.nC) return true
-  const a = prev.storeRevs, b = next.storeRevs
-  if (!a || !b) return true
-  if (a.image !== b.image) return true
-  return !!shownLabel && a.labels[shownLabel] !== b.labels[shownLabel]
+  const c = changedStores(prev, next, shownLabel)
+  return c.image || c.mask
 }
 
 /**

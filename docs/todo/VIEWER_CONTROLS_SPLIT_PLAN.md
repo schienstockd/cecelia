@@ -1,5 +1,8 @@
 # Viewer controls — split between window and panel
 
+> **Decisions 1 and 3 superseded (2026-11-13)** by [`VIEWER_ON_THE_IMAGE_PLAN.md`](VIEWER_ON_THE_IMAGE_PLAN.md):
+> the Viewer panel moves into the viewer. "No source of truth lives in the viewer" still holds.
+
 Status: **P0-P8 + PY + PZ shipped** (2026-08-31). PZ landed via #687 (`feat/viewer-p5-movie-rail`).
 P9 (delete the bridge) unblocked and now in progress on `feat/napari-retire`, sequenced across
 several PRs — see the phase table's P9 row. PX (multi-mask rendering) remains optional and

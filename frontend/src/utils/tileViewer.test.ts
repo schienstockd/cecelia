@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
-  tileSlotShape, tileMaskSourceId,
+  tileSlotShape, tileMaskSourceId, sameMaskLayer,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -296,6 +296,24 @@ describe('levelMeta', () => {
   })
   it('coerces an undefined level to 0 — the caller can be in first-mount', () => {
     expect(levelMeta(META, undefined)).toBe(L0)
+  })
+})
+
+describe('sameMaskLayer', () => {
+  it('a refresh of the same mask keeps drawing the old bytes until the new land', () => {
+    // a rewrite stamp, and a live run promoted to its final store
+    expect(sameMaskLayer('DAPI|labels|1', 'DAPI|labels|2')).toBe(true)
+    expect(sameMaskLayer('DAPI|live:3@s|1', 'DAPI|labels|2')).toBe(true)
+  })
+  it('another segmentation or file set never draws under the new name', () => {
+    expect(sameMaskLayer('cells|labels|1', 'DAPI|labels|1')).toBe(false)
+    expect(sameMaskLayer('DAPI|labels|1', 'DAPI+halo|labels|1')).toBe(false)
+    expect(sameMaskLayer('', 'DAPI|labels|1')).toBe(false)
+    expect(sameMaskLayer('DAPI|labels|1', '')).toBe(false)
+  })
+  it('a task preview re-run is another parameter set, never kept', () => {
+    expect(sameMaskLayer('DAPI|preview:1|0', 'DAPI|preview:2|0')).toBe(false)
+    expect(sameMaskLayer('DAPI|labels|0', 'DAPI|preview:2|0')).toBe(false)
   })
 })
 

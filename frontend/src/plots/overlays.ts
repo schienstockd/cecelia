@@ -22,8 +22,26 @@ export function legendOverlay(Plot: PlotModule, colorScale: object, ink: string)
     if (!el) return null
     el.classList.add('plot-legend-overlay')
     el.style.color = ink
+    outlineSwatches(el)
     return el
   } catch { return null }
+}
+
+// A thin ink border round each categorical swatch, so a white (or paper-pale) colour still reads on the
+// white ground. Drawn INTO the swatch's own <svg> — not CSS — because the export copies that markup
+// (`collectOverlayItems`), so the PNG/SVG/board PDF get the same border. `currentColor` is the legend's
+// ink: black on paper, light on the dark theme. Inset half a pixel so the 1px stroke isn't clipped.
+// A continuous ramp (the legend root is itself an <svg>) is left alone.
+export function outlineSwatches(el: Element): void {
+  if (el.tagName.toLowerCase() === 'svg') return
+  for (const rect of el.querySelectorAll<SVGRectElement>('svg > rect')) {
+    const svg = rect.parentElement!
+    const w = Number(svg.getAttribute('width')), h = Number(svg.getAttribute('height'))
+    if (!(w > 1 && h > 1)) continue
+    rect.setAttribute('x', '0.5'); rect.setAttribute('y', '0.5')
+    rect.setAttribute('width', String(w - 1)); rect.setAttribute('height', String(h - 1))
+    rect.setAttribute('stroke', 'currentColor'); rect.setAttribute('stroke-width', '1')
+  }
 }
 
 // A themed title (top-left overlay), ink from the theme.
