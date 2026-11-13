@@ -72,6 +72,7 @@ class RemoteConnectPortTest(unittest.TestCase):
         r = subprocess.run(["sh", str(CONNECT)], env=env, capture_output=True, text=True,
                            encoding="utf-8", timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.stderr = r.stderr
         return True
 
     def test_tunnels_to_the_port_in_the_users_remote_lock(self):
@@ -114,6 +115,28 @@ class RemoteConnectPortTest(unittest.TestCase):
 
     def test_no_remote_lock_keeps_the_profile_port(self):
         self.assertEqual(self._connect(), "8080:localhost:8080")
+
+    def test_no_remote_lock_warns_that_the_config_dir_may_be_moved(self):
+        # A VM running Cecelia with CECELIA_DEV_DIR (env or a clone's .env) writes its lock outside
+        # ~/.cecelia, so the launcher finds none and falls back to the profile's port, which may be
+        # another user's slot. That fallback must not be silent.
+        self._connect()
+        self.assertIn("CECELIA_DEV_DIR", self.stderr)
+        self.assertIn("8080", self.stderr)
+
+    def test_lock_found_prints_no_missing_lock_warning(self):
+        (self.fake / "remote-lock").write_text('{"pid":1,"api_port":8080}', encoding="utf-8")
+        self._connect()
+        self.assertNotIn("CECELIA_DEV_DIR", self.stderr)
+
+    def test_manual_tunnel_docs_name_the_moved_config_dir(self):
+        # docs/INSTALL.md's manual tunnel reads cecelia.lock and api-token from ~/.cecelia; on a VM
+        # with CECELIA_DEV_DIR both live elsewhere, and the section must say so.
+        text = (REPO / "docs" / "INSTALL.md").read_text(encoding="utf-8")
+        start = text.index("**Tunnel from the laptop.**")
+        section = text[start:text.index("**Viewer.**", start)]
+        self.assertIn("cecelia.lock", section)
+        self.assertIn("CECELIA_DEV_DIR", section)
 
 
 if __name__ == "__main__":
