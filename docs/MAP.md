@@ -56,7 +56,7 @@ The area-per-area reference: [root doc index](../CLAUDE.md).
 
 | I want to… | Go to |
 |---|---|
-| Change what appears in the viewer's side panel (label rows, live previews, populations) | `frontend/src/components/ViewerPanel.vue` |
+| Change what appears on the image in the viewer (label rows, live previews, populations, colour-by) | `frontend/src/components/viewerWindow/VwOnImageOverlay.vue` (rows: `utils/viewer/segRows.ts`) |
 | Add or change the smoothing-method schematic | `frontend/src/tasks/smoothVis.ts` (design-doc-in-code — read the header) |
 | Render **any** UI primitive (button, toggle, popover, chip, modal, spinner, badge, empty state) | [`docs/ui/PRIMITIVES.md`](ui/PRIMITIVES.md) — canonical catalog. A new variant is a bug. |
 | Write user-facing text | [`docs/ui/COPY.md`](ui/COPY.md) — before typing any label, tooltip or empty state |

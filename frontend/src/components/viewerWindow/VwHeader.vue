@@ -86,7 +86,7 @@ const prov = computed(() => [
 
 <template>
   <header class="vwh">
-    <button type="button" class="cc-btn cc-btn-ghost cc-btn-dense vwh-back" @pointerenter="readOpener" @click="back"
+    <button type="button" class="cc-btn cc-btn-ghost cc-btn-dense vwh-back" data-guide="viewer.back" @pointerenter="readOpener" @click="back"
             v-tooltip.bottom="'Back to the main window'">
       <i class="pi pi-arrow-left" /> {{ openerPage || 'Main window' }}
     </button>
@@ -107,9 +107,9 @@ const prov = computed(() => [
       </div>
     </TeleportPopover>
     <span class="vwh-grow" />
-    <button ref="shareBtn" type="button" class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'cc-btn-on': shareOpen }"
+    <button ref="shareBtn" type="button" class="cc-btn cc-btn-ghost cc-btn-dense" data-guide="viewer.share" :class="{ 'cc-btn-on': shareOpen }"
             aria-haspopup="menu" @click="shareOpen = !shareOpen"
-            v-tooltip.bottom="'Save this view, or draw on it and send it to Kiwi'">
+            v-tooltip.bottom="'Save this view, record a movie, or draw on it for Kiwi'">
       Share <i class="pi pi-chevron-down cc-fs-2xs" />
     </button>
     <TeleportPopover v-model="shareOpen" :anchor="shareBtn" placement="bottom-end" flush>

@@ -311,7 +311,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     viewerImageUid: null,
     selection: () => [],
     rightPanelCollapsed: false,
-    viewerPanelOpen: false,
+    viewerOpen: false,
     anchorValue: () => null,
     anchorExists: () => false,
     anchorReachable: () => false,

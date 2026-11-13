@@ -1,5 +1,5 @@
 /**
- * The three movie surfaces (`ViewerPanel`, `AnimationPanel`, `BatchMoviesPanel`) all want the same
+ * The three movie surfaces (`QuickMovie`, `AnimationPanel`, `BatchMoviesPanel`) all want the same
  * facts to fill placeholders on their config controls:
  *   * canvas size — what a movie records at when the size fields are blank, shown as the fields'
  *     placeholder so the honest default is visible.

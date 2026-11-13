@@ -1,6 +1,6 @@
 // Keeps an open viewer current as tasks finish (Preferences → Auto-update), and drops cached pixels a
-// task rewrote. Mount ONCE, app-level (App.vue, main window only), like `useOverlayAutoShow`: it used
-// to live in the floating Viewer panel, so with the panel closed — the default — nothing listened.
+// task rewrote. Mount ONCE, app-level (App.vue, main window only), like `useOverlayAutoShow`, so it
+// listens whether or not any panel is open.
 // The decisions are `utils/viewerAutoUpdate.ts` (pure, tested); this applies them.
 import { onMounted, onUnmounted } from 'vue'
 import { useWsStore } from '../stores/ws'

@@ -85,15 +85,14 @@ so movies and stills keep matching the viewer (`drawSpec.ts` `RECORDED` is uncha
 | S1 | Left overlay shell (fold, pill, persisted) + population-type and ribbon switches + self-write watches | right-sidebar empty states re-pointed |
 | S2 | Segmentation rows in the overlay: mask (one at a time), tracks, label-file chips, mismatch warnings, fold to rows in use (`utils/viewer/segRows.ts`, shared with the panel) | **Left in the panel for now:** branch toggles (the WebGPU viewer draws no skeletons — `specSource.branchNames` is empty) (live preview moved in S4: ⚡ rows in the overlay). Guide anchors `viewer.toggleLabels` / `viewer.toggleTracks` stay on the panel until S4 deletes it (`taskGuides.ts`, MCP examples `guidance.py`, `server.py`) |
 | S3 | Colour by (column picker in the overlay), version picker in the header chip (active version marked), clear-highlight rows, ⚙ Remember + Re-read from disk | **Recolour legend dropped** (Dominik, 2026-11-13): the panel's swatch legend is dead — `colourLegend` (`useOverlayAutoShow.ts`) is never filled, and the live viewer sends no colour overrides (`overlaysUrl` takes `colourBy` only). It goes with the panel in S4; the colour-by column picker stays |
-| S4 | ~~Movie~~ (done: `QuickMovie` in Share); ~~auto-update handlers to app level~~ (done: `useViewerAutoUpdate`); ~~live preview~~ (done: `useLivePreview` in the viewer, ⚡ rows in the overlay); delete `ViewerPanel.vue` and the floating panel; header launcher opens/raises the viewer | `guides.test.ts`, `dataRefreshCoverage.test.ts` pin the panel |
+| S4 | ~~Movie~~ (done: `QuickMovie` in Share); ~~auto-update handlers to app level~~ (done: `useViewerAutoUpdate`); ~~live preview~~ (done: `useLivePreview` in the viewer, ⚡ rows in the overlay); ~~delete `ViewerPanel.vue` and the floating panel~~ (done); ~~header launcher opens/raises the viewer~~ (done: `useViewerLauncher`, the Viewer chip; ← back is the way home); ~~guides~~ (done: `window: 'viewer'` steps mirrored into the viewer, `lib/guides/remote.ts`) | Shipped across #2206–#2216 and the S4 PR |
 
 Every slice that changes what the viewer draws needs Dominik's eyes on a real GPU before merge
 (headless Chromium cannot draw the WebGPU viewer).
 
 ## Risks
 
-- Guides cannot point into the pop-out today (no `data-guide` anchors found there; not tested).
-- A movie started from the pop-out runs `taskStore.add` in the pop-out's store; the main window's task
-  list may not show it (unchecked).
+- ~~Guides cannot point into the pop-out~~ — they can: the main window publishes the running guide, the viewer mirrors it (`stores/guideMirror.ts`); the bubble in the main window points at the Viewer chip. The chip raises a window only this main window opened (a reload loses the handle: it then reopens on the last image).
+- A movie started from the pop-out shows in the main window's task list (adopted job row, generic `movie:record` name).
 - Population types `track` and `live` have no viewer master switch of their own; S0 leaves them as
   they are.

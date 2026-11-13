@@ -1562,7 +1562,8 @@ run **succeeds**, so mid-run there is no `labels` entry to put in a picker. Inst
 its in-flight output via the `live_outputs` trait (`app/src/tasks/task.jl`), the scheduler records that
 on the `TaskRecord` at submit time, and `GET /api/tasks` publishes it. The frontend reads that
 snapshot on every task lifecycle event (`liveLabelPreviews` in `utils/overlayAutoShow.ts`) and offers a
-⚡ toggle per in-flight store in the ViewerPanel segmentations list.
+⚡ row per in-flight store in the viewer window's "On the image" overlay (`VwOnImageOverlay.vue`,
+`composables/useLivePreview.ts`).
 
 Declaring it is opt-in per task, because writing-as-you-go is a property of the backend:
 `segment.cellpose` streams (`live_outputs(::CellposeSegment, params) = segment_live_outputs(params)`),

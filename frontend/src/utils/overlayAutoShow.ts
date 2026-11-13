@@ -2,20 +2,15 @@
 // (re)opens in the viewer — which label sets, branch (skeleton) sets, track ribbons and population
 // point layers to ask for, and which segmentation's obs columns to read.
 //
-// WHY THIS IS NOT IN THE COMPONENT: the autoshow used to live entirely inside ViewerPanel.vue, which
-// App.vue mounts behind `v-if="settings.viewerPanelOpen"` — the floating Viewer panel is OFF by
-// default. So opening an image while that panel was closed restored nothing at all, and the toggles
-// — read from localStorage, so they still showed ON — only took effect once the user flipped them
-// off and on by hand. The orchestration now lives in composables/useOverlayAutoShow.ts, mounted once
-// at app level; the decisions live here, pure and unit-tested, so they can't drift from the panel's
-// own per-toggle requests.
+// Not in a component: the restore must run whether or not any panel is mounted. The app-level glue is
+// composables/useOverlayAutoShow.ts; the decisions live here, pure and unit-tested.
 
 import type { InFlightTaskRow } from './runningTasks'
 
 // The CELL-grained population types that render as centroid POINT overlays, in display order. Only
 // these belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
-// (membership is track_ids) and render as ribbons via show-tracks. ONE list — the ViewerPanel toggle
-// row and the autoshow both derive from it, so adding a pop type can't restore-but-not-show (or the
+// (membership is track_ids) and render as ribbons via show-tracks. ONE list — the "On the image" pop-type
+// switches (VwOnImageOverlay) and the autoshow both derive from it, so adding a pop type can't restore-but-not-show (or the
 // reverse).
 // A literal tuple so `CellPopType` keys the toggle UI; popTypeRegistry.test.ts pins it to the registry.
 // POP-TYPES-OK: equals STORED_CELL_POP_TYPES, kept literal for the type
@@ -179,19 +174,4 @@ export function createClaimRegistry(): ClaimRegistry {
     consume: uid => claims.delete(uid),
     size: () => claims.size,
   }
-}
-
-// The segmentation/version whose obs columns back the colour-by dropdown and the colour-labels push.
-// Mirrors what the server opens when no valueName is passed: the registered `_active` version, else
-// the last non-default, else "default", else nothing. Shared by ViewerPanel's dropdown and the
-// app-level autoshow so the two can't disagree about which segmentation is being shown.
-export function activeValueName(
-  img: { filepaths?: Record<string, unknown>; activeValueName?: string } | null | undefined,
-): string {
-  const names = Object.keys(img?.filepaths ?? {})
-  const nonDefault = names.filter(n => n !== 'default')
-  if (img?.activeValueName && names.includes(img.activeValueName)) return img.activeValueName
-  if (nonDefault.length > 0) return nonDefault[nonDefault.length - 1]
-  if (names.includes('default')) return 'default'
-  return names[0] ?? ''
 }

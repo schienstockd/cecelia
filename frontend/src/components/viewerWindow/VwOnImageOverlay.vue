@@ -5,8 +5,8 @@
   by, a highlight to clear. HOW it looks (eyes per row, size,
   opacity, colour) stays in the right sidebar's sections; a slider or a colour does not belong here.
 
-  The switches write the same settings the main window's Viewer panel writes (per image: label, track
-  and label-file visibility; per set: `popVisible`, `showGatedTracks`), so movies and stills still match (`drawSpec.ts` RECORDED). The window watches
+  The switches write the per-image (label, track and label-file visibility) and per-set (`popVisible`,
+  `showGatedTracks`) settings that movies and stills read, so they still match (`drawSpec.ts` RECORDED). The window watches
   those settings and refetches; this component owns only the placement, the rows and the fold.
 
   Folded (per profile, `cc.vw.onImage`) it is a pill naming what is on.
@@ -136,12 +136,12 @@ const summary = computed(() => [
             <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" disabled
                     :aria-label="`Branches of ${r.valueName}`" v-tooltip.bottom="'Branches — coming soon'">
               <i class="pi pi-wave-pulse" /></button>
-            <button v-if="r.registered && timecourse" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
+            <button v-if="r.registered && timecourse" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="viewer.toggleTracks" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
                     :disabled="!hasTracks(r.valueName)"
                     v-tooltip.bottom="!hasTracks(r.valueName) ? 'No tracks — run Track first' : trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"
                     @click="flipTrack(r.valueName)"><i class="pi pi-share-alt" /></button>
-            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="viewer.toggleLabels"
                     :class="{ 'cc-btn-on cc-btn-on-tint': labelVis[r.valueName] }"
                     :aria-pressed="!!labelVis[r.valueName]" :aria-label="`Mask of ${r.valueName}`"
                     v-tooltip.bottom="labelVis[r.valueName] ? 'Hide its mask' : 'Show its mask'"

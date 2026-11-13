@@ -391,9 +391,8 @@ async function resyncFlagged() {
  * No version is sent because this table shows images, not versions: the server resolves the default.
  */
 function openViewer(img: CciaImage) {
-  // Record the focus so the ViewerPanel (in this window) shows this image's controls. The popup
-  // itself is a fresh app instance and cannot write back into this store; this write is what makes
-  // the panel see the image at all. See P1 in docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
+  // Record the focus in this window (the viewer launcher and the autoshow key off `openImageUid`).
+  // The popup is a fresh app instance and cannot write into this store directly.
   project.openImageUid = img.uid
   openViewerWindow({
     projectUid: projectMeta.current?.uid ?? '',

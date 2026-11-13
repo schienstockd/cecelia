@@ -1113,6 +1113,6 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   `settings.get/setPointSize(setUid)`, re-pushes on release). The *Show populations* preference
   re-pushes live on every `gating:popmap` while on, so the viewer overlay tracks gate edits / pop
   add-remove as you gate — driven by `handleGatingChange` in `composables/useViewerAutoShow`, which
-  `App.vue` mounts app-level, so it works whether or not the floating Viewer panel is open. The
+  `App.vue` mounts app-level. The
   transient selection pop is **not** pushed back to the viewer (it is the selection *source* — a
   round trip would loop through the picker).

@@ -33,6 +33,8 @@ import { GUIDES, guideById } from '../lib/guides'
 import { guideStepsFor, type GuideCtx, type GuideDef, type GuideStep, type Prereq, type Reveal } from '../lib/guides/types'
 import { readAnchorValue, resolveAnchor, isReachable, routePathFromHash } from '../utils/guideAnchor'
 import { awaitedRun, highestSeq } from '../utils/guideAwait'
+import { getOpenPopoutWindow, isPopoutWindow } from '../lib/popout'
+import { GUIDE_REMOTE_KEY, GUIDE_CMD_KEY, remoteStep, viewerStandIn, parseGuideCmd, type GuideRemote } from '../lib/guides/remote'
 
 const doneKey = (id: string) => `cc.guide.${id}.done`
 const POLL_MS = 250
@@ -96,6 +98,7 @@ export const useGuideStore = defineStore('guide', () => {
   const ctx = computed<GuideCtx>(() => {
     void domTick.value                        // the DOM reads below must re-run on the poll
     const set = project.activeSet()
+    const viewerOpen = getOpenPopoutWindow('/viewer-window') !== null
     return {
       route: currentPath.value,
       hasProject: meta.current !== null,
@@ -103,10 +106,10 @@ export const useGuideStore = defineStore('guide', () => {
       setUid: set?.uid ?? null,
       setCount: project.sets.length,
       images: set?.images ?? [],
-      viewerImageUid: project.viewerImageUid,
+      viewerImageUid: viewerOpen ? project.openImageUid : null,
       selection: (module: string) => (set ? project.getImageSelection(module, set.uid) : []),
       rightPanelCollapsed: settings.rightPanelCollapsed,
-      viewerPanelOpen: settings.viewerPanelOpen,
+      viewerOpen,
       anchorValue: readAnchorValue,
       anchorExists: (id: string) => resolveAnchor(id) !== null,
       anchorReachable: (id: string) => isReachable(resolveAnchor(id)),
@@ -131,7 +134,7 @@ export const useGuideStore = defineStore('guide', () => {
   // unforeseen way of hiding a control still produces advice rather than a bubble pointing at nothing.
   const activeReveal = computed<Reveal | null>(() => {
     const s = currentStep.value
-    if (!s?.reveal || offRoute.value) return null
+    if (!s?.reveal || offRoute.value || s.window === 'viewer') return null
     void domTick.value
     const causes = Array.isArray(s.reveal) ? s.reveal : [s.reveal]
     for (const r of causes) if (r.needed(ctx.value)) return r
@@ -145,6 +148,7 @@ export const useGuideStore = defineStore('guide', () => {
   const step = computed<GuideStep | null>(() => {
     const s = currentStep.value
     if (!s) return null
+    if (s.window === 'viewer') return viewerStandIn(s)   // the viewer window shows the step itself
     const r = activeReveal.value
     if (r) {
       return {
@@ -284,6 +288,27 @@ export const useGuideStore = defineStore('guide', () => {
     phase.value = 'step'
   }
 
+  // ── the viewer window (lib/guides/remote.ts) ──────────────────────────────────────────────────
+  // Publish the running guide for the viewer window to mirror, and take its Next / Back / leave and
+  // anchor clicks back. Data only: every gate stays here. The main window only: a popout that builds
+  // this store (its Help menu) runs no guide, and publishing its empty one would wipe the real one.
+  const publishes = !isPopoutWindow()
+  if (publishes) watch(() => active.value ? JSON.stringify({
+    title: active.value.title, index: index.value, total: total.value, phase: phase.value,
+    gateSatisfied: gateSatisfied.value, step: currentStep.value ? remoteStep(currentStep.value) : null,
+  } satisfies GuideRemote) : null, raw => {
+    try { raw ? localStorage.setItem(GUIDE_REMOTE_KEY, raw) : localStorage.removeItem(GUIDE_REMOTE_KEY) } catch { /* private mode */ }
+  }, { immediate: true })
+  const onRemoteCmd = (e: StorageEvent) => {
+    if (e.key !== GUIDE_CMD_KEY || !active.value) return
+    const c = parseGuideCmd(e.newValue)
+    if (c?.cmd === 'next') next()
+    else if (c?.cmd === 'back') back()
+    else if (c?.cmd === 'exit') exit()
+    else if (c?.cmd === 'click' && currentStep.value?.window === 'viewer') satisfyClick()
+  }
+  if (publishes) window.addEventListener('storage', onRemoteCmd)
+
   // ── the poll ────────────────────────────────────────────────────────────────────────────────
   let poll: ReturnType<typeof setInterval> | null = null
   watch(active, g => {
@@ -295,6 +320,7 @@ export const useGuideStore = defineStore('guide', () => {
     cancelAdvance()
     window.removeEventListener('hashchange', syncPath)
     window.removeEventListener('popstate', syncPath)
+    window.removeEventListener('storage', onRemoteCmd)
   })
 
   // ── prerequisites (plan D6) ─────────────────────────────────────────────────────────────────

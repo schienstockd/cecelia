@@ -1,4 +1,4 @@
-// Filename generator for the viewer's "Save PNG" button (`ViewerPanel.vue` Screenshot section).
+// Filename generator for the viewer's Save image (Share ▾ in VwHeader).
 // Pure — the composite itself lives in `modules/ViewerWindow.vue` behind
 // `window.__cceceliaViewerScreenshot` because it needs live DOM (the WebGPU canvas element and the
 // SVG overlays layered over it). Kept out here so at least the filename has a testable contract.

@@ -379,7 +379,7 @@ function api_viewer_marks_ui(body_bytes::Vector{UInt8})
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
     anchor = _clean_anchor(get(body, :anchor, nothing))
-    isempty(anchor) && return 400, JSON3.write((; error = "anchor required (e.g. 'viewer.movieSection' or 'nav:/segment')"))
+    isempty(anchor) && return 400, JSON3.write((; error = "anchor required (e.g. 'layout.plotsSection' or 'nav:/segment')"))
     label = _clean_label(get(body, :label, nothing))
     ttl   = _clean_ttl(get(body, :ttl_s, get(body, :ttlSeconds, _MARK_TTL_DEFAULT)))
     m = UiFreeformMark(_new_mark_id(), "ui", project_uid, label, _now_epoch(), ttl,

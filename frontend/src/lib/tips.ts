@@ -74,7 +74,7 @@ export const TIPS: WhatNewCard[] = [
     steps: [
       'Draw a polygon gate in the Gate module.',
       'Open the image in viewer.',
-      'Toggle the population\'s "Show" in the Viewer panel.',
+      'Turn its population type on under "On the image".',
     ],
     sketchAnimation: { id: 'gating' },
   },

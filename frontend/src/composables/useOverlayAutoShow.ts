@@ -1,20 +1,10 @@
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { createClaimRegistry } from '../utils/overlayAutoShow'
 
 // The main window's app-level overlay glue: the autoshow claims, keyed off the project store's
-// `openImageUid`, and the colour-by legend bag (dead until the panel goes — the legend is dropped,
-// docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S3). Mounted ONCE in App.vue: never in a component that can
+// `openImageUid`. Mounted ONCE in App.vue: never in a component that can
 // be unmounted, and reading stores, never a component's refs.
-
-// ── Shared colour-by legend ──────────────────────────────────────────────────────
-// {category value → hex} and {category value → population name} — module-level (not
-// ViewerPanel-local) because whoever ends up populating them app-side (a route reply, the browser
-// viewer's own legend derivation, or the animation-snapshot legend) needs to leave them correct
-// whether or not the panel is open. Empty during PR 2; PR 4 rewires the source.
-export const colourLegend       = ref<Record<string, string>>({})
-export const colourLegendLabels = ref<Record<string, string>>({})
-export function resetColourLegend() { colourLegend.value = {}; colourLegendLabels.value = {} }
 
 // Live preview of a running task's label store moved to the viewer window: composables/useLivePreview.ts.
 

@@ -18,7 +18,7 @@ const props = defineProps<{
   /** a task preview or a live run's mask, not a stored one */
   maskState: '' | 'preview' | 'live'
   hidden: boolean
-  /** stored segmentations ticked in the Viewer panel — only the first renders */
+  /** stored segmentations ticked on ("On the image") — only the first renders */
   shownLabelCount: number
   labelName: string
   /** why Colour draws the palette or all grey; '' when it draws what was asked */
@@ -52,7 +52,7 @@ const colourOptions = computed<{ value: MaskColour; label: string; tip: string }
          `labelNames` is the server's directory check, not the label registry, so an imported
          track set with a table and no mask does not offer a phantom row.
          Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
-         the viewer panel" using .cc-empty-inline, so the three sections read coherently
+         On the image" using .cc-empty-inline, so the three sections read coherently
 . -->
     <template v-if="maskName">
       <!-- The task preview's mask counts as shown too: it gets the same opacity + outline, and

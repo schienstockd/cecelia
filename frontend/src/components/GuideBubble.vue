@@ -1,7 +1,8 @@
 <!--
   The guide bubble: a teleported card beside the control a step is about, plus a ring drawn around
   that control. Mounted ONCE in App.vue (it has to survive route changes); everything it shows comes
-  from `stores/guide.ts`. Design: docs/todo/GUIDE_SYSTEM_PLAN.md.
+  from `stores/guide.ts` — in the viewer window from its mirror, `stores/guideMirror.ts`
+  (lib/guides/remote.ts). Design: docs/todo/GUIDE_SYSTEM_PLAN.md.
 
   Deliberately NOT `TeleportPopover` (plan D10). The two share their positioning maths — both call
   `utils/anchorPosition.placeBox` — but the event models genuinely conflict: a popover dismisses on
@@ -21,12 +22,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useGuideStore } from '../stores/guide'
+import { useGuideMirrorStore } from '../stores/guideMirror'
+import { isPopoutWindow } from '../lib/popout'
 import { openGuides } from '../lib/guideOpen'
 import { placeBox, arrowOffset, type Placed } from '../utils/anchorPosition'
 import { resolveAnchor, isReachable, isOccluded, visibleRect, scrollAnchorIntoView,
          NAV_PREFIX } from '../utils/guideAnchor'
 
-const guide = useGuideStore()
+// In the viewer window: the mirror of the main window's guide (lib/guides/remote.ts), same fields.
+const mirror = isPopoutWindow()
+const guide = mirror ? useGuideMirrorStore() : useGuideStore()
 
 const boxEl = ref<HTMLElement | null>(null)
 const anchorEl = ref<HTMLElement | null>(null)
@@ -248,7 +253,7 @@ const waitLabel = computed(() => guide.currentStep?.awaitTask?.label ?? 'Running
 
       <footer class="gb-foot">
         <template v-if="guide.phase === 'done'">
-          <button class="cc-btn cc-btn-bare cc-btn-micro cc-fs-xs" @click="openGuides()"
+          <button v-if="!mirror" class="cc-btn cc-btn-bare cc-btn-micro cc-fs-xs" @click="openGuides()"
                   v-tooltip.top="'Back to the guide list'">More guides</button>
           <span class="gb-spacer" />
           <button class="cc-btn cc-btn-primary cc-btn-micro cc-fs-xs" @click="guide.exit()"

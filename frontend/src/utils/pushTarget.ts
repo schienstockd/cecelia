@@ -1,7 +1,7 @@
 // Bidir Part 5 — push pairing (BIDIR_PUSH_PLAN PR #1).
 //
 // Pure helper for reading the /api/push/target GET response and deriving the "paired ✓ / not
-// paired" state the ViewerPanel chip renders. NO writes here — pairing is written by the MCP
+// paired" state the Kiwi pairing chip (KiwiCockpit) renders. NO writes here — pairing is written by the MCP
 // client's auto-pair middleware or the explicit `register_push_target` MCP tool; the frontend
 // only observes.
 //

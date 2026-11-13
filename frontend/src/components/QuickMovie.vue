@@ -1,9 +1,8 @@
 <!--
   Quick movie: record the image as the viewer shows it (or each ROI, or a version comparison) to an mp4
   in the project's movies/ folder, or save it as a figure — without going to the Movies page. Used in the
-  viewer window (Share → Record movie…) and the main window's Viewer panel until that goes
-  (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md). Every option is per set (`settings.getMovieConfig`), so both
-  places show the same form. The render runs as a task: progress and Cancel are in the task list.
+  viewer window (Share → Record movie…). Every option is per set (`settings.getMovieConfig`), shared with
+  the Batch movies page's fps and size. The render runs as a task: progress and Cancel are in the task list.
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'

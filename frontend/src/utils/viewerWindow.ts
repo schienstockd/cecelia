@@ -7,7 +7,7 @@
 // already knows all of it. Both moved to `/api/viewer/meta` (2026-08-28); the pop-out's query is now
 // `project + image` plus optional `valueName`.
 //
-import { openPopoutWindow } from '../lib/popout'
+import { openPopoutWindow, getOpenPopoutWindow, POPOUT_WINDOW_NAMES } from '../lib/popout'
 
 export interface ViewerWindowTarget {
   projectUid: string
@@ -30,4 +30,19 @@ export function viewerWindowQuery(t: ViewerWindowTarget): string {
 export function openViewerWindow(t: ViewerWindowTarget): void {
   if (!t.projectUid || !t.imageUid) return
   openPopoutWindow('/viewer-window', 1200, 800, '?' + viewerWindowQuery(t))
+}
+
+/** Bring the viewer window forward, or open it on `t` when this window holds no live handle to one.
+ *  Raising re-opens the window's OWN url by name: Chrome ignores `w.focus()` from another page, but a
+ *  named `window.open` is a navigation that raises, and a same-url hash navigation does not reload
+ *  (the way `focusMainWindow` raises the main window). False when there is nothing to show. */
+export function raiseViewerWindow(t: ViewerWindowTarget | null): boolean {
+  const w = getOpenPopoutWindow('/viewer-window')
+  if (w) {
+    try { window.open(w.location.href, POPOUT_WINDOW_NAMES['/viewer-window']) } catch { /* same origin: cannot throw */ }
+    return true
+  }
+  if (!t?.projectUid || !t.imageUid) return false
+  openViewerWindow(t)
+  return true
 }

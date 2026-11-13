@@ -10,7 +10,7 @@
   can take the whole panel instead of scrolling past the other.
 
   Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps
-  reuse the same per-set movie config as the ViewerPanel recorder. Progress/cancel ride the normal task
+  reuse the same per-set movie config as QuickMovie. Progress/cancel ride the normal task
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
 <script setup lang="ts">
@@ -84,7 +84,7 @@ const segNames     = computed(() => uniq(imgs.value.flatMap(i => Object.keys(i.l
 // ── persisted config (per set) ────────────────────────────────────────────────
 const cfg = computed(() => setUid.value ? settings.getBatchMovieConfig(setUid.value) : {})
 function patch(p: Record<string, unknown>) { if (setUid.value) settings.setBatchMovieConfig(setUid.value, p) }
-// fps + output size reuse the ViewerPanel recorder's per-set config (null size = the viewer's canvas size)
+// fps + output size reuse QuickMovie's per-set config (null size = the viewer's canvas size)
 const movie = computed(() => setUid.value
   ? settings.getMovieConfig(setUid.value)
   // no set open yet — the store's own defaults, so every reader below sees the same shape
@@ -497,7 +497,7 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     settings.replaceBatchMovieConfig(set, r.cfg)
     // `titleCard` deliberately NOT patched into the per-set `movie` bag: this page reads its card from
     // its OWN config (`cfg.titleCard`), and that bag is the viewer recorder's card. Restoring a batch
-    // would otherwise silently rewrite the title card of the ViewerPanel Record button.
+    // would otherwise silently rewrite the title card of QuickMovie's Record.
     const { titleCard: _card, ...output } = r.output
     settings.setMovieConfig(set, output)
     // AFTER the current tick, because arriving here is a NAVIGATION: `ImageTable` seeds its checkboxes

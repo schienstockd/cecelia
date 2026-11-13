@@ -448,7 +448,7 @@ function handle_movie_record(ws, data)
         end
     end
     # The browser viewer's viewState snapshot rides on the record request when it's the source
-    # (`ViewerPanel.recordTimelapse` publishes it). Threaded to every recorder that crops against
+    # (`QuickMovie.vue` `recordTimelapse` publishes it). Threaded to every recorder that crops against
     # the visible rectangle — single, compare grid, and keyframe animation (which reads it per
     # keyframe). Absent snapshot (an old client) leaves the record path at whole-image aspect.
     view_state_raw = get(data, :viewState, nothing)

@@ -88,19 +88,12 @@ export const useProjectStore = defineStore('project', () => {
   const activeSetUid = ref<string | null>(null)
   const viewerImageUid = ref<string | null>(null)
   // WHICH image the user is currently focused on IN A VIEWER — viewer or the browser (WebGPU) viewer.
-  // The panel treats this as "the image whose controls I show"; viewer-specific state (whether viewer
-  // itself has this image open) stays on `viewerImageUid`. See
-  // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1 for the split; when viewer retires (P9) the two merge.
+  // Read by the Viewer chip (`useViewerLauncher`), the guide ctx and the autoshow claims; `viewerImageUid`
+  // is napari's and no longer written.
   //
-  // Writers: the viewer WS `open` event (setting both fields — viewer opened X, that IS the current
-  // focus) and the ImageTable eye click that opens the browser viewer (setting this one only).
+  // Writers: the image table's ↗ (ImageTable `openViewer`) and the viewer window's focus bridge
+  // (`cc.viewerFocus`, below).
   const openImageUid = ref<string | null>(null)
-  // Reload signal for the browser viewer: bumped by anything asking to refresh the SHOWN image (the
-  // image-table eye clicked on the already-open image). ViewerPanel owns the overlay logic —
-  // data-only via a ping, and a same-store rewrite is caught by the cache-clear channel published
-  // from `onTaskStatus`, not by yanking the image.
-  const viewerReloadTick = ref(0)
-  const requestViewerReload = () => { viewerReloadTick.value++ }
   // Data freshness — TARGETED per-image invalidation. A finished task (ws `task:status` == 'done')
   // bumps only the image(s) it touched; a plot watches `dataVersionFor(itsImages)` and refetches ONLY
   // when one of the images IT shows changed — not on every task in the project. This replaces the
@@ -401,12 +394,9 @@ export const useProjectStore = defineStore('project', () => {
     return {}
   }
   // Cross-window focus bridge. The WebGPU viewer runs in a popup with its own Pinia store, so a
-  // focus change there doesn't reach `openImageUid` here. Mirrors the viewer path (`viewerImageUid`
-  // is set by the WS `open` event whenever viewer opens an image, so panel + viewer agree on WHICH
-  // image the toggles govern). The popup writes `cc.viewerFocus = imageUid` on mount and window
-  // focus; this listener picks it up. Without it, the panel keeps controlling the last-eye-clicked
-  // image while a stranded popup shows a different image ("popup shows dots
-  // even though every panel toggle is off" — panel keyed to M2b, popup to fXgbTl).
+  // focus change there doesn't reach `openImageUid` here. The popup writes `cc.viewerFocus = imageUid`
+  // on mount and window focus; this listener picks it up, so the Viewer chip and the guides name the
+  // image the viewer is actually showing.
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', e => {
       if (e.key !== 'cc.viewerFocus' || !e.newValue) return
@@ -431,7 +421,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, setSetRecipe, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, resyncImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, setSetRecipe, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, resyncImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

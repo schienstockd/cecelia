@@ -1,8 +1,7 @@
 /**
  * The segmentation rows of "On the image" (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S2): which
  * segmentations get a row, which are in use, the one-mask-at-a-time visibility bag, the track flip and
- * the warnings a row carries. The main window's Viewer panel shares the bag, the flip and the warnings
- * until it goes (S4). Pure; the components own the store writes.
+ * the warnings a row carries. Pure; the components own the store writes.
  */
 import type { LabelsDimMismatch } from '../../stores/viewer'
 

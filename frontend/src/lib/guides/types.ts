@@ -27,10 +27,10 @@ export interface GuideCtx {
   // sets there is nothing to select, so a step saying "pick a set" has to point at "New set" instead.
   setCount: number
   images: CciaImage[]                        // images in the ACTIVE set (the ones a page shows)
-  viewerImageUid: string | null              // image currently open in the viewer window, if any
+  viewerImageUid: string | null              // image in the viewer window, while one is open
   selection: (module: string) => string[]    // checkbox selection for a module page
   rightPanelCollapsed: boolean
-  viewerPanelOpen: boolean
+  viewerOpen: boolean                        // the viewer window is open (this window opened it)
   // Live DOM reads against a `data-guide` anchor — for controls whose state is not in any store
   // (`TaskRunner`'s function `<select>`, a checkbox). Re-read on the runtime's poll, so a predicate
   // using these updates without the control having to report to a store.
@@ -88,6 +88,9 @@ export interface GuideStep {
   clickAnchor?: boolean       // advance when the anchor element is clicked
   awaitTask?: AwaitTask
   reveal?: Reveal | Reveal[]      // several causes ⇒ first match wins
+  // The control is in the VIEWER window: the main window points at the Viewer chip and the viewer
+  // window shows the step (lib/guides/remote.ts). Its gates still read the main window's state.
+  window?: 'viewer'
   // Include the step at all? Read ONCE when the guide starts (`guideStepsFor`), so a step whose
   // control this window can never show is dropped instead of pointing at nothing.
   onlyIf?: GatePredicate
