@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
-  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey, reconcileTrackclustEyes,
+  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey, reconcileTrackclustEyes, popTypeSwitch,
   type EyePop, type PopEyes, type ListedPop,
 } from './popEyes'
 
@@ -187,5 +187,15 @@ describe('eyeTurnedOn', () => {
 
   it('a first load (segmentation not held before) is not a toggle', () => {
     expect(eyeTurnedOn(eyes({}), eyes({ a: { 'flow::/x': true } }))).toBeNull()
+  })
+})
+
+describe('popTypeSwitch', () => {
+  it('names the viewer switch a pop type is drawn under', () => {
+    for (const t of ['flow', 'clust', 'region', 'trackclust']) expect(popTypeSwitch(t)).toBe(t)
+  })
+  it('has none for track-grained gating types', () => {
+    expect(popTypeSwitch('track')).toBeNull()
+    expect(popTypeSwitch('live')).toBeNull()
   })
 })

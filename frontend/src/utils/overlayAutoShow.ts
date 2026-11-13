@@ -20,6 +20,9 @@ import type { InFlightTaskRow } from './runningTasks'
 // A literal tuple so `CellPopType` keys the toggle UI; popTypeRegistry.test.ts pins it to the registry.
 // POP-TYPES-OK: equals STORED_CELL_POP_TYPES, kept literal for the type
 export const CELL_POP_TYPES = ['flow', 'clust', 'region'] as const
+/** The pop types the viewer has an on / off switch for (`settings.getPopVisible`, per set) and a draw
+ *  spec carries: the cell pop types and the track clusters. */
+export const SPEC_POP_TYPES = [...CELL_POP_TYPES, 'trackclust'] as const
 
 
 // ── Which value names can have TRACKS ──────────────────────────────────────────────────────────────

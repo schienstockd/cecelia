@@ -8,7 +8,7 @@
 
 import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
-import { CELL_POP_TYPES, trackableValueNames } from '../overlayAutoShow'
+import { SPEC_POP_TYPES, trackableValueNames } from '../overlayAutoShow'
 import type { ViewerLookInput } from './viewerLook'
 
 /** The pop manager's current (segmentation, popType) for one image, as published to
@@ -91,8 +91,6 @@ export interface DrawSpecSource {
   gating: { valueName: string; popType: string }
 }
 
-/** The pop types a draw spec carries an on / off for: the cell pop types and the track clusters. */
-export const SPEC_POP_TYPES = [...CELL_POP_TYPES, 'trackclust'] as const
 
 /** The draw spec of `src`, every field a getter over the stores. Reading one field tracks only the
  *  settings it reads, so the viewer's computeds react as they did when they read the settings
