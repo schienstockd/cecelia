@@ -11,6 +11,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import QuickMovie from '../QuickMovie.vue'
+import type { CciaImage } from '../../stores/project'
 import { useObserverStore } from '../../stores/observer'
 import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
@@ -29,6 +31,8 @@ const props = defineProps<{
   versions: string[]
   activeVersion: string
   projectUid: string
+  imageUid: string
+  setUid: string
   kiwiRef: () => KiwiRef | null
   kiwiTip: string
 }>()
@@ -45,6 +49,20 @@ const shareBtn = ref<HTMLElement | null>(null)
 function share(ev: 'saveImage' | 'draw') {
   shareOpen.value = false
   if (ev === 'saveImage') emit('saveImage'); else emit('draw')
+}
+
+// Record movie… — the quick movie form, here rather than on the Movies page. The window has no project
+// loaded, so the image object the form needs is fetched when it opens.
+const movieOpen = ref(false)
+const movieImg = ref<CciaImage | null>(null)
+async function openMovie() {
+  shareOpen.value = false
+  movieOpen.value = true
+  try {
+    const q = `projectUid=${encodeURIComponent(props.projectUid)}&imageUid=${encodeURIComponent(props.imageUid)}`
+    const res = await fetch(`/api/images/meta?${q}`)
+    movieImg.value = res.ok ? ((await res.json()) as { image: CciaImage }).image : null
+  } catch { movieImg.value = null }
 }
 
 // The opener's page, read when the pointer reaches the button — same origin, so its hash is readable;
@@ -99,9 +117,19 @@ const prov = computed(() => [
         <button class="cc-actions-item" role="menuitem" @click="share('saveImage')">
           Save image (PNG) <span class="cc-muted cc-fs-xs">with the scale bar and overlays</span>
         </button>
+        <button class="cc-actions-item" role="menuitem" data-guide="viewer.recordMovie" @click="openMovie">
+          Record movie… <span class="cc-muted cc-fs-xs">or save a figure</span>
+        </button>
         <button v-if="observer.ai.enabled" class="cc-actions-item" role="menuitem" @click="share('draw')">
           Draw and note <span class="cc-muted cc-fs-xs">mark the view for Kiwi</span>
         </button>
+      </div>
+    </TeleportPopover>
+    <TeleportPopover v-model="movieOpen" :anchor="shareBtn" placement="bottom-end">
+      <div class="vwh-movie">
+        <div class="cc-eyebrow cc-fs-2xs">Record movie</div>
+        <QuickMovie v-if="movieImg" :img="movieImg" :project-uid="projectUid" :set-uid="setUid" :shown-version="valueName" />
+        <span v-else class="cc-muted cc-fs-xs">Loading…</span>
       </div>
     </TeleportPopover>
     <HelpMenu windowed>
@@ -126,6 +154,8 @@ const prov = computed(() => [
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1rem 0.5rem;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
 }
+/* the quick movie form's width; its options open in their own popover */
+.vwh-movie { width: 20rem; display: flex; flex-direction: column; gap: 0.4rem; }
 button.vwh-prov { background: none; cursor: pointer; font: inherit; }
 .vwh-grow { flex: 1; }
 </style>

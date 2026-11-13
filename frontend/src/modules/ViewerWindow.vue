@@ -5889,7 +5889,7 @@ onUnmounted(() => {
   <div class="vw-page">
   <!-- The window's header: way back, what is on screen, Help, Ask Kiwi (GUI_LAYOUT_PLAN V1) -->
   <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
-            :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
+            :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid" :image-uid="imageUid ?? ''" :set-uid="setUid"
             :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
             :versions="meta?.valueNames ?? []" :active-version="meta?.activeValueName ?? ''"
             @version="vn => { if (imageUid) settings.setImageVersion(imageUid, vn) }"

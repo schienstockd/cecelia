@@ -38,8 +38,10 @@ and the population manager's per-population 👁.
 5. **The population manager's 👁 is enough on its own.** Turning a population on also turns its
    population type on in the viewer (S0).
 
-Open: **where Movie goes** — Share → "Record movie…" holding today's form, or the layout mock's
-handoff to the Movies & figures page (`GUI_LAYOUT_PLAN` mock frame 6 says the latter).
+6. **Movie is a quick movie in the viewer** (2026-11-13): Share → Record movie… holds the panel's form
+   (`components/QuickMovie.vue`: record the view, ROIs or a version comparison, or save a figure). It
+   says "just a quick movie here" — the Movies page stays for batches and remakes, not a detour.
+7. **What a click does is one menu button** (Move / Select / Edit), not three chips.
 
 ## Where each control goes
 
@@ -54,7 +56,7 @@ handoff to the Movies & figures page (`GUI_LAYOUT_PLAN` mock frame 6 says the la
 | Colour by + recolour legend + Reset | left overlay → Colour by (the column is a pick); the swatch recolour sits in the right Populations legend (a look) |
 | Save contrast / T / Z as you change; re-read pixels from disk | viewer ⚙ |
 | Auto-update, 3D, Screenshot | deleted (Decision 4) |
-| Movie | open question |
+| Movie | viewer Share → Record movie… (`QuickMovie`, Decision 6) |
 
 The right sidebar's empty states ("No populations shown — enable in the viewer panel", "No mask shown
 — tick one in the viewer panel", "No tracks shown — tick a segmentation in the viewer panel") point at
@@ -80,7 +82,7 @@ so movies and stills keep matching the viewer (`drawSpec.ts` `RECORDED` is uncha
 | S1 | Left overlay shell (fold, pill, persisted) + population-type and ribbon switches + self-write watches | right-sidebar empty states re-pointed |
 | S2 | Segmentation rows in the overlay: mask (one at a time), tracks, label-file chips, mismatch warnings, fold to rows in use (`utils/viewer/segRows.ts`, shared with the panel) | **Left in the panel for now:** branch toggles (the WebGPU viewer draws no skeletons — `specSource.branchNames` is empty) and live preview (main-window state). Guide anchors `viewer.toggleLabels` / `viewer.toggleTracks` stay on the panel until S4 deletes it (`taskGuides.ts`, MCP examples `guidance.py`, `server.py`) |
 | S3 | Colour by (column picker in the overlay), version picker in the header chip (active version marked), clear-highlight rows, ⚙ Remember + Re-read from disk | **Open: the recolour legend.** The panel's swatch legend is dead — `colourLegend` (`useOverlayAutoShow.ts`) is never filled, and the live viewer sends no colour overrides (`overlaysUrl` takes `colourBy` only). Not moved; decide whether to rebuild it in the right Populations legend or delete it in S4 |
-| S4 | Movie (after the decision); ~~auto-update handlers to app level~~ (done: `useViewerAutoUpdate`); delete `ViewerPanel.vue` and the floating panel; header launcher opens/raises the viewer | `guides.test.ts`, `dataRefreshCoverage.test.ts` pin the panel |
+| S4 | ~~Movie~~ (done: `QuickMovie` in Share); ~~auto-update handlers to app level~~ (done: `useViewerAutoUpdate`); delete `ViewerPanel.vue` and the floating panel; header launcher opens/raises the viewer | `guides.test.ts`, `dataRefreshCoverage.test.ts` pin the panel |
 
 Every slice that changes what the viewer draws needs Dominik's eyes on a real GPU before merge
 (headless Chromium cannot draw the WebGPU viewer).
