@@ -745,6 +745,19 @@ class SegmentationUtils:
                         self._write_tile_to_arr(
                             frame[match_as], masks, 0, None, fa_y, fa_x, write_yx)
 
+                    # Live preview: put this tile's labels on disk now, so a viewer watching the
+                    # staging store sees the frame fill in tile by tile (`live_outputs`). Without it a
+                    # single-plane image — a big multiplex scan — wrote nothing until its one frame was
+                    # done. Raw labels: seams unstitched, not post-processed or matched; the frame write
+                    # below overwrites every pixel of it. One tile per frame skips it (that write
+                    # follows at once), and so does an empty tile (zero is the store's fill value).
+                    if len(xy_tiles_by_t[t]) > 1:
+                        for ma in store_types:
+                            if ma in frame:
+                                self._stream_tile(stores[ma][1], frame[ma], t, write_yx,
+                                                  (store_la_t, store_la_z, store_la_y, store_la_x),
+                                                  (z0, z1), (y0, x0), drop_z, fa_y, fa_x)
+
                     done += 1
                     self.logger.progress(done, total)
 
@@ -979,6 +992,29 @@ class SegmentationUtils:
         idx[la_x] = write_yx[1]
         idx = tuple(idx)
         arr[idx] = self.fill_unlabelled(arr[idx], masks)
+
+    @staticmethod
+    def _stream_tile(level0, frame_arr, t, write_yx, store_axes, z_span, yx_off, drop_z, fa_y, fa_x):
+        """Write one tile's region of the frame buffer into the on-disk level 0 at its place in the
+        store — the same placement as the frame write in `predict_from_zarr`, cut to the tile.
+
+        Write regions tile the frame disjointly (`_create_xy_tiles`), so tiles never overwrite each
+        other; chunks a tile edge cuts through are read-modify-write, which is safe because only this
+        thread writes the store. Skipped when the region holds no label."""
+        la_t, la_z, la_y, la_x = store_axes
+        wy, wx = write_yx
+        src = [slice(None)] * frame_arr.ndim
+        src[fa_y], src[fa_x] = wy, wx
+        tile = frame_arr[tuple(src)]
+        if not tile.any():
+            return
+        y_off, x_off = yx_off
+        dst = tuple(t if i == la_t else
+                    (0 if drop_z else slice(*z_span)) if i == la_z else
+                    slice(y_off + wy.start, y_off + wy.stop) if i == la_y else
+                    slice(x_off + wx.start, x_off + wx.stop) if i == la_x else
+                    slice(None) for i in range(level0.ndim))
+        level0[dst] = tile
 
     @staticmethod
     def fill_unlabelled(dst, src):
