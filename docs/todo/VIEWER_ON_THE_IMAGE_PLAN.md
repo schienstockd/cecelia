@@ -74,6 +74,9 @@ so movies and stills keep matching the viewer (`drawSpec.ts` `RECORDED` is uncha
   cannot race the viewer's own writes.
 - ~~Live preview state is a main-window ref~~ — moved: the viewer window owns it (`useLivePreview.ts`, its own WS), the one writer of `liveLabels`.
 
+- **A still image shows no track controls** (Dominik, 2026-11-13): with one timepoint the overlay's
+  per-row tracks buttons, its Tracks group and the sidebar Tracks section are hidden (`nT > 1`).
+
 ## Slices
 
 | Slice | What | Notes |

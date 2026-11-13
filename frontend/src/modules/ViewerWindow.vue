@@ -6187,7 +6187,7 @@ onUnmounted(() => {
       <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="spec.timestamp && shownT >= 0 ? spec.timestampPx + 8 : 0"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
-                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" />
+                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" />
       <div class="vw-corner-tr">
         <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
              a small image still benefits from a corner reference while zoomed in.
@@ -6462,7 +6462,7 @@ onUnmounted(() => {
                                v-model:hidden="maskHidden" :shown-label-count="shownLabelCount"
                                :label-name="labelName" :colour-note="maskColourNote"
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
-                               :single-plane="singlePlane" :mode="mode" @redraw="frame.redraw()" />
+                               :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
                               :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
@@ -6472,7 +6472,8 @@ onUnmounted(() => {
                               :point-count="pointCount" :mode="mode" :z-loaded="zLoaded"
                               @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
 
-        <VwTracksSection :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
+        <!-- a still image has no tracks -->
+        <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"
                          @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />

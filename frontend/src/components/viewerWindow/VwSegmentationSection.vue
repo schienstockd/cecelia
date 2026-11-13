@@ -9,9 +9,10 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useSettingsStore } from '../../stores/settings'
+import { computed } from 'vue'
 import type { MaskColour } from '../../utils/maskPopTable'
 
-defineProps<{
+const props = defineProps<{
   /** the mask on screen ('' = none) */
   maskName: string
   /** a task preview or a live run's mask, not a stored one */
@@ -26,25 +27,28 @@ defineProps<{
   truncatedPast: number | null
   singlePlane: boolean
   mode: 'plane' | 'volume'
+  /** more than one timepoint; a still image has no track clusters to colour by */
+  timecourse: boolean
 }>()
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
 
-const MASK_COLOUR_OPTIONS: { value: MaskColour; label: string; tip: string }[] = [
+// Track clusters only on a timecourse — unless already picked, so the stored choice stays visible and switchable.
+const colourOptions = computed<{ value: MaskColour; label: string; tip: string }[]>(() => [
   { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
   { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
-  { value: 'trackclust', label: 'Track clusters', tip: 'Each tracked cell by its track cluster' },
-]
+  ...(props.timecourse || settings.viewerMaskColour === 'trackclust'
+    ? [{ value: 'trackclust' as const, label: 'Track clusters', tip: 'Each tracked cell by its track cluster' }] : []),
+])
 </script>
 
 <template>
   <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
                       accordion="cc.vw.section" section="seg"
                       fill>
-    <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
-         is decided in the ViewerPanel per image and reaches this window via the P2
-         storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
-         for it. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P3.
+    <!-- No picker: WHICH segmentation is shown is picked in "On the image" (VwOnImageOverlay,
+         docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md). The row below just SHOWS what's on and offers
+         opacity, contour and colour for it.
          `labelNames` is the server's directory check, not the label registry, so an imported
          track set with a table and no mask does not offer a phantom row.
          Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
@@ -90,7 +94,7 @@ const MASK_COLOUR_OPTIONS: { value: MaskColour; label: string; tip: string }[] =
       <div class="cc-row cc-row-tight">
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
         <ChipSelect
-          :options="MASK_COLOUR_OPTIONS" :model-value="settings.viewerMaskColour"
+          :options="colourOptions" :model-value="settings.viewerMaskColour"
           variant="segmented" aria-label="Colour mask by"
           @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
         />

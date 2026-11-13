@@ -41,6 +41,8 @@ const props = defineProps<{
   projectUid: string
   /** the image version on screen — its segmentation's columns are the colour-by options */
   version: string
+  /** more than one timepoint: a still image has no tracks, so every track switch is hidden */
+  timecourse: boolean
 }>()
 const settings = useSettingsStore()
 const viewerStore = useViewerStore()
@@ -97,8 +99,8 @@ const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(prop
 const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
   ...CELL_POP_TYPES.filter(popOn).map(label),
-  ...(ribbonsOn.value ? ['cell-track ribbons'] : []),
-  ...(popOn('trackclust') ? ['track-cluster ribbons'] : []),
+  ...(props.timecourse && ribbonsOn.value ? ['cell-track ribbons'] : []),
+  ...(props.timecourse && popOn('trackclust') ? ['track-cluster ribbons'] : []),
   ...(colourBy.value ? [`by ${colourBy.value}`] : []),
 ].join(' · ') || 'nothing')
 </script>
@@ -134,7 +136,7 @@ const summary = computed(() => [
             <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" disabled
                     :aria-label="`Branches of ${r.valueName}`" v-tooltip.bottom="'Branches — coming soon'">
               <i class="pi pi-wave-pulse" /></button>
-            <button v-if="r.registered" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
+            <button v-if="r.registered && timecourse" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
                     :disabled="!hasTracks(r.valueName)"
                     v-tooltip.bottom="!hasTracks(r.valueName) ? 'No tracks — run Track first' : trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"
@@ -160,7 +162,7 @@ const summary = computed(() => [
         <CcToggle v-for="pt in CELL_POP_TYPES" :key="pt" class="cc-fs-2xs" :label="label(pt)"
                   :model-value="popOn(pt)" @update:model-value="v => setPop(pt, v)" />
       </div>
-      <div class="vw-onimg-group">
+      <div v-if="timecourse" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Ribbons along the tracks of shown populations'">Tracks</div>
         <CcToggle class="cc-fs-2xs" label="Cell-track ribbons" :model-value="ribbonsOn" @update:model-value="setRibbons" />
         <CcToggle class="cc-fs-2xs" label="Track-cluster ribbons" :model-value="popOn('trackclust')"
