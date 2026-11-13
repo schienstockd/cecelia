@@ -209,7 +209,7 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-swatch-edge') },
       { token: '--cc-on-solid', means: 'Text or a knob on a deep fill (a picked chip, a delete)',
         swatch: varSwatch('--cc-on-solid') },
-      { token: '--cc-on-bright', means: 'Text on a bright fill (amber, a population colour)',
+      { token: '--cc-on-bright', means: 'Text on a bright fill (a population colour)',
         swatch: varSwatch('--cc-on-bright') },
       { token: '--cc-paper', means: 'An exported or printed figure\'s white ground',
         swatch: varSwatch('--cc-paper') },

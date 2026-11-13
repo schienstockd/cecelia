@@ -139,7 +139,7 @@
   --cc-swatch-edge:   rgba(128, 128, 128, 0.4);    /* hairline round a colour swatch — mid-grey, reads on any ground */
   /* on a solid fill: the fill picks the ink, not the scheme */
   --cc-on-solid:      #fff;      /* on --cc-accent-fill / --cc-danger-fill and other deep fills */
-  --cc-on-bright:     #1a1a1a;   /* on a bright fill (--cc-sev-warn, --cc-warn, a population colour) */
+  --cc-on-bright:     #1a1a1a;   /* on a fixed bright fill (a population colour) — not on a severity: the light scheme darkens those; a state word is .cc-label-chip */
   /* paper — an exported or printed figure is white, and `.cc-light` (below) re-inks a subtree for it */
   --cc-paper:         #fff;
   --cc-paper-2:       #f0f0f3;
@@ -777,6 +777,27 @@ body {
    eyebrow against the first row of chips rather than against the top of their box. */
 .cc-row-group-top { align-items: flex-start; }
 .cc-row-group-top > .cc-lbl-col { padding-top: 0.2rem; }
+
+/* A short UPPERCASE kind/state word in a tinted box — a log level, a task status, a What's-new card
+   kind. A tone sets the hue and its ink; the box is that hue at 12% over `--cc-surface-1`, OPAQUE, so
+   the word reads the same on any ground (a see-through tint on the light scheme's darker surface-2 card
+   fell under AA). A solid severity fill is not an option: the light scheme darkens the severities for
+   text, so dark ink on them vanished. Every tone >= 4.5:1 in every scheme (`schemeContrast.test.ts`).
+   The host keeps only its own size/shape tweaks. */
+.cc-label-chip {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  font-size: var(--cc-fs-2xs); font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 0.05rem 0.35rem; border-radius: var(--cc-radius-xs);
+  background: var(--cc-surface-2); color: var(--cc-text-dim);
+}
+.cc-label-chip[class*="cc-label-chip-"] {
+  background: color-mix(in srgb, var(--chip-hue) 12%, var(--cc-surface-1));
+}
+.cc-label-chip-red    { --chip-hue: var(--cc-danger);  color: var(--cc-ink-red); }
+.cc-label-chip-amber  { --chip-hue: var(--cc-warn);    color: var(--cc-ink-amber); }
+.cc-label-chip-green  { --chip-hue: var(--cc-sev-ok);  color: var(--cc-ink-green); }
+.cc-label-chip-blue   { --chip-hue: var(--cc-active);  color: var(--cc-ink-blue); }
+.cc-label-chip-accent { --chip-hue: var(--cc-accent);  color: var(--cc-accent-soft); }
 
 /* MODULE TAG — "which module/task did this come from", as a pill tinted with that module's accent.
    The colours are NOT here: they come from `utils/taskModule.ts` (`moduleTagStyle`, over the one

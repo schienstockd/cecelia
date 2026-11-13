@@ -22,7 +22,7 @@ describe('white text sits only on a fill token', () => {
     for (const [path, text] of Object.entries(SOURCES)) {
       const blocks = path.endsWith('.css') ? [text] : styleBlocks(text)
       const rules = blocks.flatMap(b => cssRules(b))
-      // White text set on a BASE class, the fill on its modifier (`.wn-kind` + `.wn-kind-update`).
+      // White text set on a BASE class, the fill on its modifier (`.x-kind` + `.x-kind-update`).
       const whiteBases = new Set(rules.filter(r => WHITE_TEXT.test(r.body)).map(r => r.selector.trim()))
       const inheritsWhite = (sel: string) => {
         const m = /^\.([\w-]+)$/.exec(sel.trim())
