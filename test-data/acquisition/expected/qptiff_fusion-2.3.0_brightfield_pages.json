@@ -1,0 +1,51 @@
+{
+ "acquiredAt": "2026-04-01T11:13:02",
+ "camera": {
+  "binning": 1,
+  "bitDepth": 12,
+  "name": "Sony IMX421-based camera",
+  "sensorPixelUm": null
+ },
+ "channels": [
+  {
+   "afSubtracted": null,
+   "barcode": null,
+   "biomarker": null,
+   "bitDepth": 12,
+   "clone": null,
+   "cycle": null,
+   "detector": "Sony IMX421-based camera",
+   "dyePreset": null,
+   "emissionFilter": null,
+   "excitationFilter": null,
+   "exposureMs": 5.131,
+   "filterCube": null,
+   "gain": 1.0,
+   "hv": null,
+   "illuminationIntensity": null,
+   "laser": null,
+   "name": "BF",
+   "offset": 0.0,
+   "order": 1,
+   "plannedExposureMs": null,
+   "reporter": null
+  }
+ ],
+ "lasers": [],
+ "lightSource": "WhiteLED",
+ "modes": [],
+ "objective": {
+  "immersion": null,
+  "magnification": 10.0,
+  "na": null,
+  "name": "10x"
+ },
+ "pixelSizeUm": 0.5,
+ "processing": null,
+ "readerVersion": 1,
+ "saturationProtection": "None",
+ "softwareVersion": "Fusion 2.3.0",
+ "source": "qptiff",
+ "system": "PhenoImager Fusion",
+ "technology": "brightfield"
+}

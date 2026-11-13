@@ -1,0 +1,54 @@
+{
+ "acquiredAt": "2026-07-09T04:31:57+00:00",
+ "camera": {
+  "binning": 2,
+  "bitDepth": 12,
+  "name": "DFC365FX",
+  "sensorPixelUm": 6.45
+ },
+ "channels": [
+  {
+   "bitDepth": 12,
+   "detector": "DFC365FX",
+   "dyePreset": null,
+   "emissionFilter": null,
+   "exposureMs": 122.536,
+   "filterCube": "A4",
+   "gain": 1.998573,
+   "hv": null,
+   "illuminationIntensity": 3.0,
+   "laser": null,
+   "name": "New 1",
+   "offset": null,
+   "order": 1
+  },
+  {
+   "bitDepth": 12,
+   "detector": "DFC365FX",
+   "dyePreset": null,
+   "emissionFilter": null,
+   "exposureMs": 122.536,
+   "filterCube": "Y5",
+   "gain": 2.6,
+   "hv": null,
+   "illuminationIntensity": 4.0,
+   "laser": null,
+   "name": "New 2",
+   "offset": null,
+   "order": 2
+  }
+ ],
+ "imageName": "Image002",
+ "lasers": [],
+ "objective": {
+  "immersion": "dry",
+  "magnification": 20.0,
+  "na": 0.5,
+  "name": "HC PL FLUOTAR 20x/0.50 DRY"
+ },
+ "readerVersion": 2,
+ "softwareVersion": "LAS X 3.4.2.18368",
+ "source": "lif",
+ "system": "DM5500B",
+ "technology": "widefield"
+}

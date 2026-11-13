@@ -1,0 +1,64 @@
+{
+ "autoHV": null,
+ "brightZ": {
+  "enabled": false,
+  "points": []
+ },
+ "camera": null,
+ "channels": [
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": "MA-Pmt1",
+   "detectorMode": "Integration",
+   "dyePreset": null,
+   "gain": 1.0,
+   "hv": 649.98626708984,
+   "laser": "488 nm",
+   "name": "Ch1",
+   "offset": 0.0,
+   "order": 1
+  }
+ ],
+ "lasers": [
+  {
+   "name": "488 nm",
+   "transmissionPct": 0.2,
+   "wavelengthNm": 488.0
+  }
+ ],
+ "microscopeBody": "Axio Observer.Z1 / 7",
+ "modes": [],
+ "objective": {
+  "immersion": "air",
+  "magnification": 20.0,
+  "na": 0.8,
+  "name": "Plan-Apochromat 20x/0.8 M27",
+  "refractiveIndex": 1.000293
+ },
+ "pinholeUm": 28.58,
+ "readerVersion": 2,
+ "scanner": {
+  "integration": {
+   "average": null,
+   "count": 1,
+   "type": "None"
+  },
+  "pixelDwellUs": 8.192,
+  "type": null,
+  "zoom": 4.0
+ },
+ "softwareVersion": "3.6.095.08000",
+ "source": "czi",
+ "system": "LSM 800",
+ "technology": "confocal",
+ "timelapse": {
+  "count": 5.0,
+  "intervalS": 21.189249999999998
+ },
+ "zStack": {
+  "count": 715.0,
+  "stepUm": 0.21
+ }
+}

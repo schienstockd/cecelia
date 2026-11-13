@@ -1,0 +1,99 @@
+{
+ "autoHV": null,
+ "brightZ": null,
+ "camera": {
+  "binning": 1,
+  "bitDepth": 14,
+  "name": "Axiocam506m",
+  "sensorPixelUm": null
+ },
+ "channels": [
+  {
+   "acquisitionMode": "WideField",
+   "airyscan": null,
+   "bitDepth": 14,
+   "detector": "Axiocam506m",
+   "detectorMode": null,
+   "dyePreset": "Hoechst 33342",
+   "exposureMs": 7.0,
+   "filterCube": "96 HE BFP",
+   "gain": null,
+   "hv": null,
+   "illuminationIntensity": 50.0,
+   "laser": null,
+   "name": "H3342",
+   "offset": null,
+   "order": 1
+  },
+  {
+   "acquisitionMode": "WideField",
+   "airyscan": null,
+   "bitDepth": 14,
+   "detector": "Axiocam506m",
+   "detectorMode": null,
+   "dyePreset": "FITC",
+   "exposureMs": 30.0,
+   "filterCube": "38 HE Green Fluorescent Prot",
+   "gain": null,
+   "hv": null,
+   "illuminationIntensity": 50.0,
+   "laser": null,
+   "name": "FITC",
+   "offset": null,
+   "order": 2
+  },
+  {
+   "acquisitionMode": "WideField",
+   "airyscan": null,
+   "bitDepth": 14,
+   "detector": "Axiocam506m",
+   "detectorMode": null,
+   "dyePreset": "Cy3",
+   "exposureMs": 30.0,
+   "filterCube": "none",
+   "gain": null,
+   "hv": null,
+   "illuminationIntensity": null,
+   "laser": null,
+   "name": "Cy3",
+   "offset": null,
+   "order": 3
+  },
+  {
+   "acquisitionMode": "WideField",
+   "airyscan": null,
+   "bitDepth": 14,
+   "detector": "Axiocam506m",
+   "detectorMode": null,
+   "dyePreset": "Cy5",
+   "exposureMs": 10.0,
+   "filterCube": "50 Cy 5",
+   "gain": null,
+   "hv": null,
+   "illuminationIntensity": 50.0,
+   "laser": null,
+   "name": "Cy5",
+   "offset": null,
+   "order": 4
+  }
+ ],
+ "lasers": [],
+ "microscopeBody": null,
+ "modes": [
+  "tiled"
+ ],
+ "objective": {
+  "immersion": "air",
+  "magnification": 20.0,
+  "na": 0.8,
+  "name": "Plan-Apochromat 20x/0.8 M27",
+  "refractiveIndex": 1.000293
+ },
+ "pinholeUm": null,
+ "readerVersion": 2,
+ "scanner": null,
+ "softwareVersion": "3.1.0.00015",
+ "source": "czi",
+ "system": "Axio Scan.Z1",
+ "technology": "widefield"
+}

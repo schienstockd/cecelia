@@ -104,6 +104,19 @@ rebuilds a container from the real headers. `czi_lsm780_multitrack_metadata.xml`
 byte from another file of the same LSM 780 record: four sequential tracks with four lasers and four
 different pinholes, the case where one image-level pinhole would be wrong.
 
+`expected/<case>.json` (16 files, 80 KB): each reader's whole record for each fixture above (a `.lif`
+per image, `_s<series>`; the qptiff pages through a written TIFF), pinned by
+`test_acquisition_full_records.py`. Each was checked against its source document, not taken on trust
+from the reader. Every value was searched for in the document (exact string, or a number at a unit
+factor: s → µs, fraction → %, m → µm), and the element it came from was checked to be the field's own
+element: HV is `DetectorSettings/Gain`, which equals the track setup's `Detector/Voltage`; transmission
+is `Attenuator/Transmission` × 100; pixel dwell is `PixelTime` × 10⁶. Values with no single source
+element were checked by hand: the `source` constant, `technology` and `modes` from the reader's
+documented rules, joined laser names, filter ranges, timestamps, and rounding (`50.00 %` → 50.0, a
+28.5847 µm pinhole → 28.58, the serial cut from `DFC365FX-630613412`). If a reader change moves a
+value, update the file in the same change and say why. A new value is checked against the source the
+same way.
+
 `floor_photon_counted_fv4000.json` (4 KB): the low end (values 0–400) of the raw-value histogram of
 four mid-depth planes, first frame, every channel of a real FV4000 two-photon store, by `np.bincount`.
 Nothing from 1 to 18, then peaks every ~30: photon-counted output. `test_floor_stats.py` checks that

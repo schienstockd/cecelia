@@ -1,0 +1,162 @@
+{
+ "acquiredAt": "2026-07-16T13:44:05.228+10:00",
+ "autoHV": true,
+ "brightZ": {
+  "enabled": true,
+  "points": [
+   {
+    "hv": {
+     "7a0605e9-2826-4c42-a02d-32ab5b8930b1": 0.0,
+     "7b8efd46-6b14-4f84-88b5-8a61802400c9": 0.0,
+     "bb8d4d5d-5dad-43bd-b536-39ab647b597b": 0.0,
+     "f87dad19-fef9-4b41-8806-22dd152d2fab": 0.0
+    },
+    "transmissionPct": {
+     "INSIGHT X3-OL": 14.9,
+     "MaiTai e HP DS-OL": 14.4
+    },
+    "zFromStartUm": 0.0
+   },
+   {
+    "hv": {
+     "7a0605e9-2826-4c42-a02d-32ab5b8930b1": 0.0,
+     "7b8efd46-6b14-4f84-88b5-8a61802400c9": 0.0,
+     "bb8d4d5d-5dad-43bd-b536-39ab647b597b": 0.0,
+     "f87dad19-fef9-4b41-8806-22dd152d2fab": 0.0
+    },
+    "transmissionPct": {
+     "INSIGHT X3-OL": 20.4,
+     "MaiTai e HP DS-OL": 21.0
+    },
+    "zFromStartUm": 60.0
+   }
+  ]
+ },
+ "channels": [
+  {
+   "bitDepth": 16.0,
+   "detector": "BNDD1",
+   "detectorId": "__FV40-EXBSD_D_1__",
+   "dyePreset": "SHG",
+   "emissionFilter": "BA410-455",
+   "gain": 1.0,
+   "hv": 0.0,
+   "laser": "MaiTai e HP DS-OL",
+   "name": "CH1",
+   "offset": 0.0,
+   "order": 1
+  },
+  {
+   "bitDepth": 16.0,
+   "detector": "BNDD2",
+   "detectorId": "__FV40-EXBSD_D_2__",
+   "dyePreset": "eGFP",
+   "emissionFilter": "BA495-540",
+   "gain": 1.0,
+   "hv": 0.0,
+   "laser": "MaiTai e HP DS-OL",
+   "name": "CH2",
+   "offset": 0.0,
+   "order": 2
+  },
+  {
+   "bitDepth": 16.0,
+   "detector": "RNDD3",
+   "detectorId": "__FV40-EXRSD_D_3__",
+   "dyePreset": "tdTomato",
+   "emissionFilter": "ET585/40M",
+   "gain": 1.0,
+   "hv": 0.0,
+   "laser": "INSIGHT X3-OL",
+   "name": "CH3",
+   "offset": 0.0,
+   "order": 3
+  },
+  {
+   "bitDepth": 16.0,
+   "detector": "RNDD4",
+   "detectorId": "__FV40-EXRSD_D_4__",
+   "dyePreset": "Katushka2S",
+   "emissionFilter": "ET720/60M",
+   "gain": 1.0,
+   "hv": 0.0,
+   "laser": "INSIGHT X3-OL",
+   "name": "CH4",
+   "offset": 0.0,
+   "order": 4
+  }
+ ],
+ "dichroics": [
+  {
+   "name": "MIRROR",
+   "slot": "excitationDM"
+  },
+  {
+   "name": "Empty",
+   "slot": "dmSlider"
+  },
+  {
+   "name": "LCDM690-1050",
+   "slot": "irLaserDichroic"
+  },
+  {
+   "name": "DM760",
+   "slot": "firstMirrorCube"
+  },
+  {
+   "name": "MIRROR",
+   "slot": "secondMirrorCube"
+  }
+ ],
+ "lasers": [
+  {
+   "name": "MaiTai e HP DS-OL",
+   "transmissionPct": 14.4,
+   "wavelengthNm": 900.0
+  },
+  {
+   "name": "INSIGHT X3-OL",
+   "transmissionPct": 14.9,
+   "wavelengthNm": 1140.0
+  }
+ ],
+ "microscopeBody": "BX63LF",
+ "objective": {
+  "immersion": "water",
+  "magnification": 25.0,
+  "na": 1.05,
+  "name": "XLPLN25XWM",
+  "refractiveIndex": 1.334
+ },
+ "phaseCount": 1,
+ "pinholeUm": 50.0,
+ "readerVersion": 3,
+ "scanner": {
+  "frameTimeMs": 130.6717363751584,
+  "integration": {
+   "average": false,
+   "count": 2.0,
+   "type": "Frame"
+  },
+  "kalman": {
+   "accumulate": 2.0,
+   "average": 5.0
+  },
+  "lineTimeMs": 0.06337135614702154,
+  "pixelDwellUs": 0.033,
+  "type": "Resonant",
+  "zoom": 1.5
+ },
+ "softwareVersion": "3.2.1.85",
+ "source": "oir",
+ "system": "FV4000",
+ "technology": "two-photon",
+ "timelapse": {
+  "count": 181.0,
+  "intervalS": 15.0
+ },
+ "zStack": {
+  "count": 31.0,
+  "stepUm": 2.0
+ }
+}
