@@ -11,7 +11,6 @@ import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
-import ViewerPanel from './components/ViewerPanel.vue'
 import LabLogPanel from './components/LabLogPanel.vue'
 import CorrectionCockpit from './components/correction/CorrectionCockpit.vue'
 import KiwiCockpit from './components/kiwi/KiwiCockpit.vue'
@@ -39,6 +38,7 @@ import { isCallForDatasetsOpen, openCallForDatasets } from './lib/callForDataset
 import { isPreferencesOpen, closePreferences } from './lib/preferencesOpen'
 import { isSettingsOpen, closeSettings } from './lib/settingsOpen'
 import { useGuideStore } from './stores/guide'
+import { useGuideMirrorStore } from './stores/guideMirror'
 import { todayKey } from './lib/tips'
 import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
 import { useViewerAutoUpdate } from './composables/useViewerAutoUpdate'
@@ -115,15 +115,14 @@ watch([() => pm.current?.uid, () => projectStore.loadedProjectUid], ([openUid, l
 // A popout is a VIEW of the app, not a second copy of it.
 // `lib/popout.ts` reads the hash, not the route: the first navigation has not resolved during setup.
 const popout = isPopoutWindow()
+// the viewer window's copy of the main window's guide; built only there
+const guideMirror = popout ? useGuideMirrorStore() : null
 // the main window's name is how a popout's ← back finds it (lib/popout.ts → focusMainWindow)
 if (!popout) nameMainWindow()
 
-// Restore each image's remembered viewer overlays (labels, branches, tracks, populations) when it
-// opens. Mounted HERE, not in the v-if'd ViewerPanel — same reason as the observer store above: with
-// the floating Viewer panel closed (its default) nothing was listening for the image-open event, so
-// the toggles read ON but no overlay was ever requested until the user flipped them by hand.
+// The autoshow claims, consumed on image open (composables/useOverlayAutoShow.ts).
 if (!popout) useOverlayAutoShow()
-// Keep an open viewer current as tasks finish (Preferences → Auto-update); also HERE, not in the panel.
+// Keep an open viewer current as tasks finish (Preferences → Auto-update).
 if (!popout) useViewerAutoUpdate()
 
 // Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
@@ -199,6 +198,8 @@ const bare = computed(() => popout || route.meta.bare === true)
   <!-- bare: full-window single view (own window via window.open) -->
   <div v-if="bare" class="cc-dark cc-bare">
     <RouterView />
+    <!-- the viewer window mirrors the main window's guide (lib/guides/remote.ts) -->
+    <GuideBubble v-if="guideMirror?.active" />
   </div>
   <!-- normal app shell -->
   <div v-else class="cc-dark cc-shell">
@@ -222,12 +223,6 @@ const bare = computed(() => popout || route.meta.bare === true)
         </RouterView>
       </main>
     </div>
-    <!-- Viewer controls: a floating dockable panel (toggled from the sidebar "Viewer" button),
-         floating above the content so it's usable on any page while an image is open in the viewer -->
-    <FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
-                   accent="var(--cc-guide)" @close="settings.viewerPanelOpen = false">
-      <ViewerPanel />
-    </FloatingPanel>
     <!-- lab log: per-project append-only analysis memory (human + Claude), reachable on any page -->
     <FloatingPanel v-if="settings.labLogPanelOpen" title="Lab log" icon="pi-book" storage-key="lablog"
                    accent="var(--cc-guide)"

@@ -658,7 +658,7 @@ index in the store; `name` is the display name the frontend uses. Unknown indice
 are silently dropped — a stale visibility snapshot doesn't break the write.
 
 `labelsValueName` is the (Phase 2a) visibility snapshot for the segmentation layer:
-the vn of the labels the user has toggled on in `ViewerPanel`. Non-empty ⇒ each
+the vn of the mask shown in the viewer ("On the image", `VwOnImageOverlay.vue`). Non-empty ⇒ each
 tile gets a `segCount` (int) — how many segmented objects have centroids inside
 that tile at the shown t. Empty / omitted ⇒ tiles have no `segCount` key (sparse
 by visibility per Decision 3). A vn that has no `label_props` on disk is treated

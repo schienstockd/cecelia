@@ -4,7 +4,7 @@
   playable timecourse over a VRAM cache.
 
   WHY ITS OWN WINDOW. A side-by-side comparison needs a second view surface — same idiom as the
-  console and the Task Manager: a named window (`lib/popout.ts`) opened from the ViewerPanel's ↗.
+  console and the Task Manager: a named window (`lib/popout.ts`) opened from the header Viewer chip or the image table's ↗.
 
   WHAT IT IS TOLD, and why. A popup is a fresh app instance with no project open, so the image comes
   from the `?project=&image=&valueName=` seed written when the window was opened. Unlike the Task
@@ -34,6 +34,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
+import { useLivePreview } from '../composables/useLivePreview'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
@@ -173,8 +174,8 @@ const imageUid = String(route.query.image ?? '')
 const captureDest = useCaptureDestination(() => projectUid)
 const kiwiStore = useKiwiStore()
 
-// The cache-clear rev — bumped by `ViewerPanel` on task completion (or by any other publisher on the
-// channel). Threaded into `sourceId` (tile atlas) and `BrickSource.rev` (brick page table) so a
+// The cache-clear rev — bumped by `useViewerAutoUpdate` on task completion (or by any other publisher on
+// the channel). Threaded into `sourceId` (tile atlas) and `BrickSource.rev` (brick page table) so a
 // same-store rewrite invalidates the same way a version swap does: #779's mechanism reused, one
 // more field. Reallocate() is called from the subscribe callback, so the atlas drops on the next
 // tick. Read at mount so a viewer opened AFTER a publish still starts on the current rev.
@@ -476,9 +477,9 @@ function benchSave() {
        `first ${blob.firstFrameMs?.toFixed(0) ?? '—'} ms`)
 }
 /**
- * Which VERSION of the image is on screen. The picker lives in the main-window ViewerPanel now
- * (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). On mount, prefer the shared bag over the URL query —
- * the URL was frozen when the popup opened; the bag is what the panel has said since.
+ * Which VERSION of the image is on screen. The picker is the header's provenance chip (VwHeader). On
+ * mount, prefer the shared bag over the URL query — the URL was frozen when the popup opened; the bag
+ * is what has been picked since.
  *
  * Empty means "whatever the server resolves", which is the ACTIVE version (what a task would run
  * against). The meta response says which one that was.
@@ -936,8 +937,8 @@ const pointBorder = computed({
 })
 /**
  * Which obs column shades the points, '' for the population colour. **Read only** in the viewer —
- * locked decision 3: the viewer has no selectors. The CHOICE lives in `ViewerPanel`, keyed per set
- * in `settings.setColourBy`, and reaches this window via the P2 storage-event bridge. A change here
+ * locked decision 3. The CHOICE is the "On the image" colour-by select (VwOnImageOverlay), keyed per
+ * set in `settings.setColourBy`. A change here
  * is a request for the server (the values come from disk), so a watch refetches the overlays.
  * See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4.
  */
@@ -946,10 +947,8 @@ watch(colourBy, () => { void loadOverlays() })
 /**
  * Which segmentation's MASK is drawn, '' for none.
  *
- * Not a selector any more — the CHOICE lives in `ViewerPanel`, keyed per image in
- * `settings.getLabelVisibility` (P3, docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md). Locked decision 3:
- * the viewer has no selectors. Here we read whichever vn the panel has ticked on and render it;
- * the panel's write hits localStorage and reaches this window via the P2 storage-event bridge.
+ * The CHOICE is the mask eye in "On the image" (VwOnImageOverlay), keyed per image in
+ * `settings.getLabelVisibility`. Here we read whichever vn is ticked on and render it.
  *
  * STILL ONE AT A TIME. Multi-mask rendering (multi-texture bind group) is a later phase; if the
  * panel has more than one ticked, the first one wins deterministically. This is the visible
@@ -974,8 +973,7 @@ const previewVn = computed(() => {
   const p = viewerStore.previewLabels
   return p && p.imageUid === imageUid ? p.valueName : ''
 })
-// A running segmentation's store the user asked to watch from the viewer panel ("preview this run
-// while it writes") — read from the run's staging store, refetched on each re-stamp (`maskSourceId`).
+// A running segmentation's store the user asked to watch (the ⚡ row in "On the image", `useLivePreview`) — read from the run's staging store, refetched on each re-stamp (`maskSourceId`).
 const liveVn = computed(() => {
   const l = viewerStore.liveLabels
   return l && l.imageUid === imageUid ? l.valueName : ''
@@ -1477,12 +1475,16 @@ function setChannelColour(c: number, hex: string) {
  *  glyph, as the pop manager's pointer button), Edit is the slot the redesigned correction tools fill (GUI_LAYOUT_PLAN
  *  Decision 5, V5): it reserves the place and edits nothing yet, so a click there behaves as View. */
 const INTERACT_MODES = [
-  // Icon-only, with the mode's name leading the tooltip: three worded chips pushed 2D/3D onto a
-  // second row on a narrow panel for what is only a "which mode am I in" readout.
-  { value: 'view', label: '', icon: 'pi pi-hand', tip: 'View — drag moves the view; a click picks nothing' },
-  { value: 'select', label: '', icon: 'pi pi-mouse-pointer', tip: 'Select — a click picks a cell' },
-  { value: 'edit', label: '', icon: 'pi pi-pencil', tip: 'Edit — correction tools, coming soon' },
+  { value: 'view', name: 'Move', icon: 'pi pi-hand', tip: 'Drag moves the view' },
+  { value: 'select', name: 'Select', icon: 'pi pi-mouse-pointer', tip: 'A click picks a cell' },
+  { value: 'edit', name: 'Edit', icon: 'pi pi-pencil', tip: 'Correction tools, coming soon' },
 ]
+// One button showing the current mode; the three sit in a menu under it — a "which mode am I in"
+// readout does not need three buttons' width beside 2D / 3D.
+const interactMode = computed(() => editMode.value ? 'edit' : selectModeActive.value ? 'select' : 'view')
+const interactShown = computed(() => INTERACT_MODES.find(m => m.value === interactMode.value) ?? INTERACT_MODES[0])
+const interactOpen = ref(false)
+const interactBtn = ref<HTMLElement | null>(null)
 /** The Edit slot is open. Not persisted: it edits nothing yet, so a reload lands back on the view. */
 const editMode = ref(false)
 function setInteractMode(v: string) {
@@ -4816,9 +4818,8 @@ watch([zWindowOn, zWindowHalf], () => propsSink.schedule())
 watch(t,         () => propsSink.schedule())
 watch(valueName, () => propsSink.schedule())
 
-// The panel's 3D button (`ViewerPanel.vue` → `settings.setShow3D`) reaches the popup viewer
-// through the `cc.viewerSetPrefs` bag sync (see `utils/viewerBagChannel.ts`). Watch the setter's
-// derived value here so a panel-side flip drives THIS viewer's mode. Guarded on a real change to
+// `settings.setShow3D` (QuickMovie's 3D option, or another window via the `cc.viewerSetPrefs` bag sync —
+// see `utils/viewerBagChannel.ts`) drives THIS viewer's mode: watch the setter's derived value here. Guarded on a real change to
 // avoid re-entrant loops with `onModeChange` (chip → setShow3D).
 //
 // `starting.value` guard: during loadVersion, the trigger for this watcher is `setUid` becoming
@@ -4855,7 +4856,7 @@ function onModeChange(v: 'plane' | 'volume'): void {
 // mis-strides the label texture (silent wrong render — see volumeRenderer.uploadFrame's
 // `bytesPerRow = imageNX * LABEL_BPV`) or trips the frontend shape guard ("Slab is AxBxC but
 // XxYxZ was asked for"). Meta now carries per-vn L0 dims (`labelDims`); publish the mismatch set
-// so `ViewerPanel` can flag the offending rows in the segmentation list — the fix from #814 does
+// so "On the image" can flag the offending rows — the fix from #814 does
 // not cover this case (a version SWITCH has a different URL, so the cache-bust never fires) and
 // resample-to-fit would render a spatially-shifted overlay (see commit message).
 // Also keyed on `labelDims` itself: a task-done that changed nothing drawn swaps it in place (no
@@ -5113,11 +5114,9 @@ watch(meta, m => {
   })
 })
 
-// The panel is now the single version picker (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). Its
-// `<select>` writes `cc.viewerImageVersion` via `settings.setImageVersion`; the popup's own copy
-// of the settings ref rehydrates through the storage bridge (P2). Watch the getter so a panel
-// change here calls `changeVersion` internally — no picker in this window, but the version still
-// updates. Skip when the value matches (initial rehydrate on mount, echo from our own writes).
+// The provenance chip (VwHeader) and `useViewerAutoUpdate` write `cc.viewerImageVersion` via
+// `settings.setImageVersion`; a write from the main window rehydrates here through the storage
+// bridge. Watch the getter so any change calls `changeVersion`. Skip when the value matches (initial rehydrate on mount, echo from our own writes).
 watch(() => settings.getImageVersion(imageUid), vn => {
   if (vn && vn !== valueName.value) void changeVersion(vn)
 })
@@ -5230,7 +5229,7 @@ async function start() {
 }
 
 onMounted(() => {
-  if (!projectUid || !imageUid) { error.value = 'No image — open this window from the viewer panel'; return }
+  if (!projectUid || !imageUid) { error.value = 'No image — open one with its ↗ in the image table'; return }
   if (viewerCrashedLastTime(imageUid)) {
     heldAfterCrash.value = true
     void probeWebGpu().then(p => {
@@ -5319,8 +5318,8 @@ function onOverlaysTick(e: StorageEvent) {
   // here rather than in a separate storage listener — one storage event, one refetch.
   gatingCurrent.value = readGatingCurrent()
   void loadOverlays()
-  // The panel's track eye also fires this ping (see ViewerPanel.vue `toggleTrack`), so refetching
-  // per-vn track payloads here is what actually gets ribbons on screen after a toggle. Cheap when
+  // A track toggle from the main window (`showTracksInViewer`, the image strip) also fires this ping,
+  // so refetching per-vn track payloads here is what gets ribbons on screen. Cheap when
   // the set of ticked vns is unchanged — `loadTracks` reuses the cache and only fetches new vns.
   void loadTracks()
 }
@@ -5331,10 +5330,8 @@ function onSelectModeTick(e: StorageEvent) {
   selectModeActive.value = readSelectMode()
 }
 
-// Tell the main window which image THIS popup is on, so the ViewerPanel's per-set controls (pop
-// toggles etc) key off the FOCUSED popup's image — not whichever image the ImageTable eye was last
-// clicked. Sets `viewerImageUid` on mount so the panel + the popup viewer always agree on WHICH
-// image the toggles govern. Written on mount + on every focus
+// Tell the main window which image THIS popup is on, so main-window state keyed on the open image
+// follows the FOCUSED popup — not whichever image the ImageTable eye was last clicked. Written on mount + on every focus
 // so switching between several open popups follows attention ("popup shows
 // dots despite panel off" — panel keyed to M2b, popup to fXgbTl).
 function publishViewerFocus() {
@@ -5345,9 +5342,9 @@ function publishViewerFocus() {
     localStorage.setItem('cc.viewerFocus', `${imageUid}:${Date.now()}`)
   }
 }
-// Cache-clear signals from `ViewerPanel` (main window) or any other publisher on the channel —
-// pushed via localStorage for cross-window pop-outs and via a same-window CustomEvent for the
-// panel-viewer path. A bumped rev threads into `sourceId`/`BrickSource.rev`, so the same
+// Cache-clear signals from `useViewerAutoUpdate` (main window) or any other publisher on the channel —
+// pushed via localStorage across windows and via a same-window CustomEvent for this window's own
+// Re-read from disk. A bumped rev threads into `sourceId`/`BrickSource.rev`, so the same
 // invalidation logic #779 wired for a version swap fires for a same-store rewrite too.
 let stopCacheClearWatch: (() => void) | null = null
 /** The clears heard while one was being applied, folded into one (`mergeCacheClearJobs`); the
@@ -5513,8 +5510,7 @@ async function viewerScreenshot(): Promise<{ png: string; imageName: string }> {
   return { png, imageName: imageName.value ?? '' }
 }
 ;(window as unknown as { __cceceliaViewerScreenshot?: typeof viewerScreenshot }).__cceceliaViewerScreenshot = viewerScreenshot
-/** Share ▾ → Save image: the same composite, downloaded here (the main window's Viewer panel saves
- *  through the hook above). */
+/** Share ▾ → Save image: the same composite, downloaded here. */
 async function saveViewImage() {
   try {
     const { png, imageName: name } = await viewerScreenshot()
@@ -5525,9 +5521,9 @@ async function saveViewImage() {
 }
 
 // ── Share-in draw mode (BIDIR PR #3 of docs/todo/BIDIR_CONTEXT_PLAN.md) ────────────────────────
-// Draw directly on the viewer (no modal, no frozen frame): the caller in the OPENER window (the
-// main-window ViewerPanel's Share button) invokes `__cceceliaViewerBeginDraw()` on this popup,
-// which flips `drawMode` on. `DrawSurface.vue` mounts as a peer of the canvas + StillOverlay /
+// Draw directly on the viewer (no modal, no frozen frame): Share ▾ → Draw and note (VwHeader) calls
+// `beginDraw`, and the OPENER window (Kiwi's Share, via `stores/shareTarget.ts`) invokes
+// `__cceceliaViewerBeginDraw()` on this popup. Either flips `drawMode` on. `DrawSurface.vue` mounts as a peer of the canvas + StillOverlay /
 // GridOverlay, absolute-positioned to cover the canvas, and drives its own tools. On Save it
 // hands back the overlay marks; we grab the CURRENT frame (`readViewerFrame`), build the address
 // from live viewer state, and POST.
@@ -5866,6 +5862,8 @@ function onDrawCancel() { drawMode.value = false }
 // every window; the one showing this image answers with the landscape it shows now, tagged with the
 // request id the server is waiting on. Overlay toggle irrelevant — same snapshot Share attaches.
 const ws = useWsStore()
+// a running segmentation's store, watched while it writes (⚡ rows in "On the image")
+useLivePreview(imageUid)
 async function onLandscapeRequest(data: Record<string, unknown>) {
   if (String(data.imageUid ?? '') !== imageUid || String(data.projectUid ?? '') !== projectUid) return
   const requestId = String(data.requestId ?? '')
@@ -5949,7 +5947,7 @@ onUnmounted(() => {
   <div class="vw-page">
   <!-- The window's header: way back, what is on screen, Help, Ask Kiwi (GUI_LAYOUT_PLAN V1) -->
   <VwHeader :image-name="imageName || imageUid" :value-name="valueName" :labels="maskName"
-            :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid"
+            :labels-state="previewVn ? 'preview' : liveVn ? 'live' : ''" :project-uid="projectUid" :image-uid="imageUid ?? ''" :set-uid="setUid"
             :kiwi-ref="() => kiwiViewRef.ref" :kiwi-tip="kiwiViewRef.tip" @shortcuts="keysOpen = true"
             :versions="meta?.valueNames ?? []" :active-version="meta?.activeValueName ?? ''"
             @version="vn => { if (imageUid) settings.setImageVersion(imageUid, vn) }"
@@ -6035,7 +6033,7 @@ onUnmounted(() => {
       />
       <!-- Set-of-Mark grid — user-facing region names ("look at C4"). PR #2 of BIDIR_CONTEXT_PLAN.md.
            Viewport coords: at zoom-in "C4" is a quarter of the current view, not a quarter of the
-           image scrolled off screen. Toggled from the Annotations section of the viewer panel. -->
+           image scrolled off screen. Toggled from VwAnnotationsSection. -->
       <!-- Landscape overlay — cheap categorical heatmap under the grid so the grid's letters stay
            legible over the fills. BIDIR PR #6 (Decision 14 reframe). Density is shared with the
            grid so the "cell B3" both overlays name is the same tile. -->
@@ -6047,8 +6045,8 @@ onUnmounted(() => {
       <TileMarkOverlay v-if="meta && shownT >= 0" :cols="spec.gridDensity"
                        :marks="viewerStore.tileMarks.filter(m => m.imageUid === imageUid)" />
       <!-- Share-in draw overlay (BIDIR PR #3): mounts DIRECTLY on the viewer so users draw on
-           what they're looking at. Triggered from the main-window ViewerPanel's Share button
-           via `__cceceliaViewerBeginDraw()` exposed above. -->
+           what they're looking at. Triggered from Share ▾ → Draw and note, or from Kiwi's
+           Share via `__cceceliaViewerBeginDraw()` exposed above. -->
       <DrawSurface :visible="drawMode" :address-line="drawAddressLine" :busy="drawBusy"
                    v-model:attach-to-kiwi="captureDest.attachToKiwi.value"
                    v-model:send-to-paired="captureDest.sendToPaired.value"
@@ -6244,7 +6242,7 @@ onUnmounted(() => {
       <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="spec.timestamp && shownT >= 0 ? spec.timestampPx + 8 : 0"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
-                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" />
+                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" />
       <div class="vw-corner-tr">
         <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
              a small image still benefits from a corner reference while zoomed in.
@@ -6346,7 +6344,6 @@ onUnmounted(() => {
       <TeleportPopover v-model="advancedOpen" :anchor="advancedTrigger" placement="bottom-end">
         <div class="cc-eyebrow cc-fs-2xs">Advanced viewer</div>
         <div class="vw-adv-body">
-          <!-- From the main window's Viewer panel (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S3). -->
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col" v-tooltip.right="'Save contrast, colours, T and Z as you change them'">Remember</span>
             <CcToggle v-model="settings.viewerAutoSaveLayerProps" aria-label="Save contrast, colours, T and Z as you change them" />
@@ -6450,9 +6447,8 @@ onUnmounted(() => {
           </div>
         </div>
       </TeleportPopover>
-      <!-- Which VERSION is on screen: the header's provenance chip (VwHeader). The picker lives in the
-           main-window ViewerPanel (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended); a change there reaches
-           this window via the storage bridge and calls `changeVersion` internally. -->
+      <!-- Which VERSION is on screen: the header's provenance chip (VwHeader). Its pick goes through
+           `settings.setImageVersion`; the watch on that calls `changeVersion`. -->
 
 
       <template v-if="meta">
@@ -6460,11 +6456,20 @@ onUnmounted(() => {
              view and the advanced settings. -->
         <!-- two non-wrapping groups: a narrow panel breaks the row between them, never inside one -->
         <div class="cc-row cc-row-tight vw-top">
-          <ChipSelect
-            :options="INTERACT_MODES" :model-value="editMode ? 'edit' : selectModeActive ? 'select' : 'view'"
-            variant="segmented" aria-label="What a click does"
-            @update:model-value="v => setInteractMode(String(v))"
-          />
+          <button ref="interactBtn" class="cc-btn cc-btn-ghost cc-btn-dense" aria-haspopup="menu"
+                  :aria-label="`What a click does: ${interactShown.name}`" @click="interactOpen = !interactOpen"
+                  v-tooltip.bottom="`${interactShown.name} — ${interactShown.tip}`">
+            <i :class="interactShown.icon" /> <i class="pi pi-chevron-down cc-fs-3xs" />
+          </button>
+          <TeleportPopover v-model="interactOpen" :anchor="interactBtn" placement="bottom-start" flush>
+            <div class="cc-actions-menu" role="menu">
+              <button v-for="m in INTERACT_MODES" :key="m.value" class="cc-actions-item" role="menuitem"
+                      :class="{ 'cc-btn-on': m.value === interactMode }"
+                      @click="interactOpen = false; setInteractMode(m.value)">
+                <i :class="m.icon" /> {{ m.name }} <span class="cc-muted cc-fs-xs">{{ m.tip }}</span>
+              </button>
+            </div>
+          </TeleportPopover>
           <div class="cc-row-group vw-top-end">
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
@@ -6510,7 +6515,7 @@ onUnmounted(() => {
                                v-model:hidden="maskHidden" :shown-label-count="shownLabelCount"
                                :label-name="labelName" :colour-note="maskColourNote"
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
-                               :single-plane="singlePlane" :mode="mode" @redraw="frame.redraw()" />
+                               :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
                               :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"
@@ -6520,7 +6525,8 @@ onUnmounted(() => {
                               :point-count="pointCount" :mode="mode" :z-loaded="zLoaded"
                               @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
 
-        <VwTracksSection :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
+        <!-- a still image has no tracks -->
+        <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"
                          @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />

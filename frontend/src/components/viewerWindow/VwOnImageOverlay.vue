@@ -5,23 +5,25 @@
   by, a highlight to clear. HOW it looks (eyes per row, size,
   opacity, colour) stays in the right sidebar's sections; a slider or a colour does not belong here.
 
-  The switches write the same settings the main window's Viewer panel writes (per image: label, track
-  and label-file visibility; per set: `popVisible`, `showGatedTracks`), so movies and stills still match (`drawSpec.ts` RECORDED). The window watches
+  The switches write the per-image (label, track and label-file visibility) and per-set (`popVisible`,
+  `showGatedTracks`) settings that movies and stills read, so they still match (`drawSpec.ts` RECORDED). The window watches
   those settings and refetches; this component owns only the placement, the rows and the fold.
 
   Folded (per profile, `cc.vw.onImage`) it is a pill naming what is on.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useViewerStore, type LabelsDimMismatch } from '../../stores/viewer'
 import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
+import { useTrackValueNames } from '../../composables/useTrackValueNames'
 import { segRows, segRowActive, flipMaskVisibility, flipTracks, mismatchTip, shortLevelsTip } from '../../utils/viewer/segRows'
 import { useSettingsStore } from '../../stores/settings'
 import { useStoredSectionOpen } from '../../utils/sectionOpen'
 import { CELL_POP_TYPES } from '../../utils/overlayAutoShow'
 import { popTypeInfo } from '../../plots/popTypeRegistry'
+import { livePreviews, previewShown, togglePreview } from '../../composables/useLivePreview'
 
 const props = defineProps<{
   /** the image's set — every switch here is per set. '' = no set context: nothing to switch */
@@ -39,6 +41,8 @@ const props = defineProps<{
   projectUid: string
   /** the image version on screen — its segmentation's columns are the colour-by options */
   version: string
+  /** more than one timepoint: a still image has no tracks, so every track switch is hidden */
+  timecourse: boolean
 }>()
 const settings = useSettingsStore()
 const viewerStore = useViewerStore()
@@ -53,7 +57,7 @@ const setRibbons = (v: boolean) => { if (props.setUid) settings.setShowGatedTrac
 // ── Segmentations: one mask at a time, tracks per segmentation, the mask's derived files ──
 const labelVis = computed(() => props.imageUid ? settings.getLabelVisibility(props.imageUid, props.labelNames) : {})
 const trackVis = computed(() => props.imageUid ? settings.getTrackVisibility(props.imageUid, props.trackNames) : {})
-const rows = computed(() => segRows(props.labelNames, props.trackNames, props.dims))
+const rows = computed(() => segRows(props.labelNames, props.trackNames, props.dims, livePreviews.value.map(p => p.valueName)))
 const activeRows = computed(() => rows.value.filter(r => segRowActive(r, labelVis.value, trackVis.value)))
 // Rows in use only, the rest one click away: seven segmentations is an ordinary image, and a row each
 // would make this taller than the image. Per image, like the panel's fold.
@@ -67,6 +71,9 @@ function flipMask(vn: string) {
 function flipTrack(vn: string) {
   if (props.imageUid) settings.setTrackVisibility(props.imageUid, flipTracks(trackVis.value, vn))
 }
+// Which segmentations have tracks (a `track_id` column) — the tracks button is off without them.
+const { trackedNames } = useTrackValueNames(toRef(props, 'projectUid'), toRef(props, 'imageUid'), ref(''))
+const hasTracks = (vn: string) => trackedNames.value.includes(vn) || !!trackVis.value[vn]
 const filesOf = (vn: string) => props.labelFiles[vn] ?? []
 const shownFilesOf = (vn: string) => {
   const hidden = props.imageUid ? settings.getLabelFilesHidden(props.imageUid, vn) : new Set<string>()
@@ -92,8 +99,8 @@ const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(prop
 const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
   ...CELL_POP_TYPES.filter(popOn).map(label),
-  ...(ribbonsOn.value ? ['cell-track ribbons'] : []),
-  ...(popOn('trackclust') ? ['track-cluster ribbons'] : []),
+  ...(props.timecourse && ribbonsOn.value ? ['cell-track ribbons'] : []),
+  ...(props.timecourse && popOn('trackclust') ? ['track-cluster ribbons'] : []),
   ...(colourBy.value ? [`by ${colourBy.value}`] : []),
 ].join(' · ') || 'nothing')
 </script>
@@ -113,17 +120,28 @@ const summary = computed(() => [
     </div>
     <template v-if="open">
       <div v-if="rows.length" class="vw-onimg-group">
-        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'One mask at a time; tracks per segmentation'">Segmentation</div>
+        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'One mask at a time; tracks per segmentation; ⚡ a run writing now'">Segmentation</div>
         <template v-for="r in shownRows" :key="r.valueName">
           <div class="vw-onimg-seg">
             <span class="cc-fs-2xs vw-onimg-seg-name" :title="r.valueName">{{ r.valueName }}</span>
             <i v-if="r.dimMismatch" class="pi pi-exclamation-triangle cc-muted-warn" v-tooltip.bottom="mismatchTip(dims, r.valueName)" />
             <i v-else-if="r.shortLevels" class="pi pi-exclamation-triangle cc-muted-warn" v-tooltip.bottom="shortLevelsTip(dims, r.valueName)" />
-            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
+            <!-- Live preview: exists only while the run does, so it is first and always shown. -->
+            <button v-if="r.live" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+                    :class="{ 'cc-btn-on cc-btn-on-tint': previewShown[r.valueName] }"
+                    :aria-pressed="!!previewShown[r.valueName]" :aria-label="`Live preview of ${r.valueName}`"
+                    v-tooltip.bottom="previewShown[r.valueName] ? 'Hide the live preview' : 'Preview this run while it writes'"
+                    @click="togglePreview(r.valueName)"><i class="pi pi-bolt" /></button>
+            <!-- Branches (skeletons): not drawn by this viewer yet — the button holds the place. -->
+            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" disabled
+                    :aria-label="`Branches of ${r.valueName}`" v-tooltip.bottom="'Branches — coming soon'">
+              <i class="pi pi-wave-pulse" /></button>
+            <button v-if="r.registered && timecourse" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="viewer.toggleTracks" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
-                    v-tooltip.bottom="trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"
+                    :disabled="!hasTracks(r.valueName)"
+                    v-tooltip.bottom="!hasTracks(r.valueName) ? 'No tracks — run Track first' : trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"
                     @click="flipTrack(r.valueName)"><i class="pi pi-share-alt" /></button>
-            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="viewer.toggleLabels"
                     :class="{ 'cc-btn-on cc-btn-on-tint': labelVis[r.valueName] }"
                     :aria-pressed="!!labelVis[r.valueName]" :aria-label="`Mask of ${r.valueName}`"
                     v-tooltip.bottom="labelVis[r.valueName] ? 'Hide its mask' : 'Show its mask'"
@@ -144,7 +162,7 @@ const summary = computed(() => [
         <CcToggle v-for="pt in CELL_POP_TYPES" :key="pt" class="cc-fs-2xs" :label="label(pt)"
                   :model-value="popOn(pt)" @update:model-value="v => setPop(pt, v)" />
       </div>
-      <div class="vw-onimg-group">
+      <div v-if="timecourse" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Ribbons along the tracks of shown populations'">Tracks</div>
         <CcToggle class="cc-fs-2xs" label="Cell-track ribbons" :model-value="ribbonsOn" @update:model-value="setRibbons" />
         <CcToggle class="cc-fs-2xs" label="Track-cluster ribbons" :model-value="popOn('trackclust')"

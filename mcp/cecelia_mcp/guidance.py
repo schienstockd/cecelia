@@ -234,14 +234,14 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   looks the same as a broken tool. Set `sample=True` for coverage across the whole population \
   rather than "the first 200 in one corner".
 - `point_at_ui(anchor, label?, ttl_s?)` — a CONTROL, not data. `anchor` is a `data-guide` id \
-  (`"viewer.movieSection"`) or a `nav:/<route>`. Prefer naming a SECTION over a single button — \
+  (`"layout.plotsSection"`) or a `nav:/<route>`. Prefer naming a SECTION over a single button — \
   ids may shift; sections are stable.
 - `mark_freeform(capture_id, overlay, label?, ttl_s?)` — freeform overlay on a stored CAPTURE. \
   `capture_id` is a `cap-…` from `get_recent_captures`; coords are 0..1 in the frame's own \
   space. Paints ON the frozen shared frame in the pop-out viewer (which stays visible after \
   Save), so the user sees exactly where you're pointing. Use when there's no id — a region the \
   segmentation missed, or circling something on a shared frame. If the user hasn't shared a \
-  frame yet, ASK them to (Share button in the viewer panel) rather than making up a captureId.
+  frame yet, ASK them to (Share in the viewer window) rather than making up a captureId.
 - `mark_tile(image_uid, cell_id, label?, ttl_s?)` — highlight ONE grid tile (`"B3"`) when there is \
   no segmented object to name and no capture in hand. Pairs with `get_landscape(...)`: read the \
   landscape's tiles, then point at the tile that matters. Coarser than mark_cells / \

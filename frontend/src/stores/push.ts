@@ -8,7 +8,7 @@ import { ref } from 'vue'
 // tick + read a small `lastEvent` bag; they decide (a) whether the event is for their project
 // and (b) what to do with it (refetch `/api/push/target`, show a transient "sent ✓" chip, etc).
 //
-// Kept intentionally small — the four-state chip lives in `ViewerPanel.vue` where the projectUid
+// Kept intentionally small — the four-state chip lives in `KiwiCockpit.vue` where the projectUid
 // context is already resolved, and per-consumer "am I paired for THIS project" filtering doesn't
 // belong in a shared store. Same shape as `labCapture` / `viewer` mark bags: WS in, tick out.
 export const usePushStore = defineStore('push', () => {

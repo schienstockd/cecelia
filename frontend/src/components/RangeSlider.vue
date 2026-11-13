@@ -2,7 +2,7 @@
 // A compact dual-thumb range slider (min + max on one track). Native <input type="range"> is
 // single-thumb only, so this is a small pointer-driven control that matches the app's accent styling.
 // Drag a thumb to move one end; drag the span between them to move the whole range.
-// Reusable — v-model:lo / v-model:hi. Used for the 3D-crop z/t ranges (ViewerPanel) and, with
+// Reusable — v-model:lo / v-model:hi. Used for the 3D-crop z/t ranges (ViewerCropBar) and, with
 // `scale="log"` + a `samples` buffer, for the viewer's per-channel contrast window.
 import { computed, ref } from 'vue'
 import { posFromValue, valueFromPos, binSamplesByPos, type SliderScale } from '../utils/rangeScale'

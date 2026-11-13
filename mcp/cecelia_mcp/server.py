@@ -2042,7 +2042,7 @@ def select_on_plot(project_uid: str, kind: str, sources: list[dict],
 def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300) -> dict:
     """Point at a UI CONTROL on the user's screen — your "click here" pointer.
 
-    `anchor` is a `data-guide` id (`"viewer.movieSection"`, `"nav.settings"`) or a route in
+    `anchor` is a `data-guide` id (`"layout.plotsSection"`, `"nav.settings"`) or a route in
     `nav:/<path>` form (`"nav:/segment"`). The frontend resolves it via
     `utils/guideAnchor.ts::resolveAnchor` and paints a small pointer beside the element — same
     resolution scheme the onboarding guides already use. If the anchor doesn't resolve (element
@@ -2052,7 +2052,7 @@ def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300
 
     When to use this vs `mark_tracks` / `mark_cells`: those point at DATA (specific cells or
     trajectories); this points at CONTROLS ("click this button", "look at that section"). Prefer
-    naming a section (`viewer.movieSection`) over a single button — the anchor may shift as the
+    naming a section (`layout.plotsSection`) over a single button — the anchor may shift as the
     app changes, but sections are stable.
 
     Returns `{ok: true, markerId}`. No follow-up needed — the frontend paints on receipt.
@@ -2078,7 +2078,7 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
     EPHEMERAL: 5-min default TTL. When to use this vs `mark_tracks` / `mark_cells`: those point at
     identified objects. Use `mark_freeform` when there's no id — you saw something in a capture
     that the segmentation didn't pick up, or you want to circle a REGION rather than a specific
-    cell. If the user hasn't shared a frame yet, ask them to (Share button in the viewer panel)
+    cell. If the user hasn't shared a frame yet, ask them to (Share in the viewer window)
     rather than making up a captureId.
 
     Returns `{ok: true, markerId}`.

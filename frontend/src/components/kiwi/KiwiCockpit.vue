@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Kiwi — the assist cockpit. A floating panel that gathers AI-assistant-adjacent controls
-// so the user doesn't scavenger-hunt across ViewerPanel (push chip), LabLogPanel (chat button)
+// so the user doesn't scavenger-hunt across LabLogPanel (chat button)
 // and Settings → MCP (connection health) to find them.
 //
 // Rows, in visible order:
-//   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too).
+//   - Pairing chip.
 //   - Chat — Start in terminal (copies the command that starts a session already pointed at this
 //     project) + a chat-starter icon (just the opener, for a session that is already running).
 //   - Share — viewer / canvas buttons.
@@ -187,9 +187,8 @@ onMounted(() => observer.refresh())
 
 // ── Share with Claude ─────────────────────────────────────────────────────────
 // Two targets, one store — see `stores/shareTarget.ts`. Kiwi owns the buttons; the store owns
-// availability + the actual `beginShare` handshake so ViewerPanel's transitional copy and Kiwi's
-// button run the same code. Poll on mount so the viewer button's disabled state stays honest as
-// the pop-out opens / closes over the session.
+// availability + the actual `beginShare` handshake. Poll on mount so the viewer button's disabled
+// state stays honest as the pop-out opens / closes over the session.
 const shareStore = useShareTargetStore()
 onMounted(() => shareStore.startViewerPoll())
 onUnmounted(() => shareStore.stopViewerPoll())

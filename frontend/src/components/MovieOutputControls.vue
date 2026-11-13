@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Frame rate + output size for a rendered movie. ONE implementation for the three places that produce
-// one — the ViewerPanel recorder, BatchMoviesPanel and AnimationModule.
+// one — QuickMovie, BatchMoviesPanel and AnimationModule.
 //
 // The size is two explicit pixel fields, not a multiplier. A 1-3x `res` slider used to live here and
 // was removed: an earlier recorder screenshotted the canvas and then upscaled the frame, so it bought

@@ -195,8 +195,8 @@ export const useWsStore = defineStore('ws', () => {
 
   // ONE path for every task/chain frame — whether it arrived on the socket or was RECONSTRUCTED from
   // the backend's outcome ring (see startOutcomePoll). That's what makes the backstop a fix for all five
-  // completion listeners (this store's image-status/dataVersion/meta refresh, ViewerPanel's viewer
-  // reload, TasksModule's auto-follow, useOverlayAutoShow, the observer's completion watch) instead of a
+  // completion listeners (this store's image-status/dataVersion/meta refresh, useViewerAutoUpdate's viewer
+  // refresh, TasksModule's auto-follow, useOverlayAutoShow, the observer's completion watch) instead of a
   // second, drifting copy of the completion side effects.
   function dispatch(data: Record<string, unknown>) {
     const type = data.type as string | undefined

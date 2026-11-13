@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The floating-panel launchers — Viewer / Correction / Lab log / Kiwi — as one row of icon toggles.
+// The panel launchers — Viewer (brings the viewer window forward) / Correction / Lab log / Kiwi — as one row of icon buttons.
 // Viewer, Lab log and Kiwi live in the header (AppHeader); this row is the copy for the module action
 // bar while the plot canvas is maximised (ModuleLayout), which covers the header and sidebar, so the
 // panels stay openable there. The correction cockpit's everyday home is "Correct labels" / "Correct
@@ -15,6 +15,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
 import { showKiwiLauncher } from '../utils/aiSwitch'
 import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
+import { useViewerLauncher } from '../composables/useViewerLauncher'
 
 type Launcher = 'viewer' | 'correction' | 'labLog' | 'kiwi'
 const props = withDefaults(defineProps<{ compact?: boolean; kinds?: Launcher[] }>(),
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<{ compact?: boolean; kinds?: Launcher[] }
 const has = (k: Launcher) => props.kinds.includes(k)
 
 const settings = useSettingsStore()
+const viewer = useViewerLauncher()
 const observer = useObserverStore()
 // lab-log badge + tip: the shared rule in utils/labLog.ts (the header bell uses it too)
 const labLogBadgeStyle = computed(() => {
@@ -36,11 +38,8 @@ const labLogTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnse
   <div class="panel-launcher-row" :class="{ compact }">
     <button v-if="has('viewer')" class="panel-launcher panel-launcher-viewer cc-btn cc-btn-bare"
             data-guide="launcher.viewer"
-            :class="{ on: settings.viewerPanelOpen }"
-            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
-            v-tooltip.right="settings.viewerPanelOpen
-              ? 'Close viewer controls'
-              : 'Viewer controls — populations, tracks, colour-by'">
+            :class="{ on: viewer.open.value }" :disabled="viewer.disabled.value"
+            @click="viewer.raise()" v-tooltip.right="viewer.tip.value">
       <i class="pi pi-eye" />
     </button>
     <button v-if="has('correction')" class="panel-launcher panel-launcher-correction cc-btn cc-btn-bare"

@@ -1,8 +1,8 @@
 // Stacking order for the top-level floating panels (see components/FloatingPanel.vue).
 //
 // Every FloatingPanel used to carry the same hardcoded `z-index: 60`, so when two were open at
-// once the winner fell back to DOM order — the Lab log panel is declared after the Viewer panel
-// in App.vue, so it always covered the Viewer no matter which one you were actually using. These
+// once the winner fell back to DOM order — a panel declared later in App.vue always covered an
+// earlier one no matter which one you were actually using. These
 // helpers keep a most-recently-raised-last ordering of panel storage keys; the panel you last
 // touched ends up at the end of the stack and therefore on top.
 //

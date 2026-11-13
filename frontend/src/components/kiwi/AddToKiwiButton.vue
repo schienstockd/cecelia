@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<{
   projectUid?: string
   size?: 'micro' | 'dense'
   tip?: string
-  /** Worded instead of the bare `@` — the viewer window's header "Ask Kiwi" (GUI_LAYOUT_PLAN V1). */
+  /** Worded beside the `@` — the viewer window's header "@ Kiwi" (GUI_LAYOUT_PLAN V1). */
   label?: string
 }>(), { size: 'micro', tip: 'Add to Kiwi' })
 
@@ -31,7 +31,7 @@ function add() {
   <!-- hidden while AI is off (utils/aiSwitch.ts); kiwi.addRef refuses then too, for the menus that call it directly -->
   <button v-if="observer.ai.enabled && label" class="cc-btn cc-btn-dense cc-btn-kiwi"
           @mousedown.stop @click.stop="add" v-tooltip.bottom="tip">
-    {{ label }}
+    <i class="pi pi-at" /> {{ label }}
   </button>
   <button v-else-if="observer.ai.enabled" class="cc-btn cc-btn-bare cc-btn-icon kiwi-add" :class="`cc-btn-${size}`"
           @mousedown.stop @click.stop="add" v-tooltip.bottom="tip">

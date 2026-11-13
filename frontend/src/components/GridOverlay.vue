@@ -2,7 +2,7 @@
   Set-of-Mark grid drawn over the WebGPU viewer (`modules/ViewerWindow.vue`). A N×N mesh with
   spreadsheet-style cell labels (A1..H8 at the default 8×8) so a share-in / point-out session can
   cite a region by NAME instead of pixel coords. PR #2 of `docs/todo/BIDIR_CONTEXT_PLAN.md`;
-  toggled from the Annotations section of ViewerWindow's viewer panel.
+  toggled from ViewerWindow's Annotations section (VwAnnotationsSection).
 
   In VIEWPORT coords, not image coords: at zoom-in "C4" means a quarter of the currently visible
   view, which is what the SoM use case wants. When the user pans/zooms, the grid stays put over

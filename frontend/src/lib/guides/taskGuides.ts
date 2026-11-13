@@ -25,50 +25,34 @@ import type { GuideStep } from './types'
 import { GUIDE_MATURITY } from './maturityRecords'
 
 // Where segmentation and tracking both end up: the mask/tracks are only trustworthy once you have
-// LOOKED at them. So we point at the control that puts them on screen and say what to look for.
+// LOOKED at them. So we point at the control that puts them on screen and say what to look for. The
+// switches are in the viewer window's "On the image" overlay (`window: 'viewer'`, lib/guides/remote.ts).
 const viewerCheck = (what: string, toggleAnchor: string, lookFor: string[]): GuideStep[] => [
   {
     anchor: 'images.viewerBtn',
     placement: 'right',
     title: 'Open it in the viewer',
-    text: 'The ↗ opens the image itself — the overlay is a separate switch.',
+    text: 'The ↗ opens the image in its own window.',
     when: c => c.viewerImageUid !== null,
   },
   {
-    anchor: 'launcher.viewer',
-    placement: 'bottom',
-    title: 'Open the Viewer panel',
-    text: 'This panel drives the viewer — overlays, contrast, 3D, recording.',
-    reveal: {
-      needed: c => !c.viewerPanelOpen,
-      anchor: 'launcher.viewer',
-      text: 'The Viewer panel is closed — open it here.',
-      placement: 'bottom',
-    },
-    when: c => c.viewerPanelOpen,
-  },
-  {
     // The step users get stuck on: a finished run puts nothing on the image by itself. Each
-    // segmentation has its own row here with a per-overlay switch, and until you flip it the viewer
+    // segmentation has its own row with a per-overlay switch, and until you flip it the viewer
     // shows the raw channels and it looks like the run did nothing.
-    anchor: toggleAnchor,
-    placement: 'left',
+    window: 'viewer',
+    anchor: 'viewer.onImage',
+    placement: 'right',
     title: `Switch the ${what} on`,
-    text: `Nothing is drawn on the image until you toggle the ${what} for that segmentation.`,
+    text: `Nothing is drawn until the ${what} is on for that segmentation.`,
     bullets: [
-      'One row per segmentation, each with its own switches.',
+      'One row per segmentation; "more" lists the ones not in use.',
       'The choice is remembered, so it comes back next time you open the image.',
     ],
-    reveal: {
-      needed: c => !c.viewerPanelOpen,
-      anchor: 'launcher.viewer',
-      text: 'The Viewer panel is closed — open it to reach the overlay switches.',
-      placement: 'bottom',
-    },
   },
   {
+    window: 'viewer',
     anchor: toggleAnchor,
-    placement: 'left',
+    placement: 'right',
     title: `Now judge the ${what}`,
     text: 'With it on screen, this is what to look for.',
     bullets: lookFor,
@@ -630,10 +614,11 @@ export const behaviourStatesGuide = moduleTaskGuide({
       ],
     },
     {
-      anchor: 'launcher.viewer',
-      placement: 'bottom',
+      window: 'viewer',
+      anchor: 'viewer.onImage',
+      placement: 'right',
       title: 'Colour tracks by state',
-      text: 'The Viewer panel can colour tracks by the new state column.',
+      text: 'In the viewer, Colour by the new state column.',
       bullets: ['That is the quickest sanity check that the states mean something.'],
     },
     {

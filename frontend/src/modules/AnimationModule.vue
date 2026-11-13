@@ -11,13 +11,13 @@
   Single-select: a timeline interpolates views of ONE image, so there is nothing a second one could mean.
 -->
 <script setup lang="ts">
-import { useProjectStore } from '../stores/project'
+import { useViewerStore } from '../stores/viewer'
 import { activeAnimationUid } from '../utils/animationTimeline'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import AnimationPanel from './animation/AnimationPanel.vue'
 import AnimationTimeline from './animation/AnimationTimeline.vue'
 
-const project = useProjectStore()
+const viewer = useViewerStore()
 </script>
 
 <template>
@@ -26,9 +26,9 @@ const project = useProjectStore()
       <AnimationPanel :selected-uids="selectedUids" :set-uid="setUid" />
     </template>
     <!-- With nothing selected the timeline still shows whatever the viewer has open, so landing on
-         the page is never a blank canvas — that fallback is the helper, shared with the panel. -->
+         the page is never a blank canvas — the fallback is the viewer's published `openImage`, as in AnimationPanel. -->
     <template #plots="{ selectedUids }">
-      <AnimationTimeline :image-uid="activeAnimationUid(selectedUids, project.viewerImageUid)" />
+      <AnimationTimeline :image-uid="activeAnimationUid(selectedUids, viewer.openImage?.imageUid ?? null)" />
     </template>
   </ModuleLayout>
 </template>

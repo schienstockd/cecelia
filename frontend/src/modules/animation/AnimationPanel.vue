@@ -227,7 +227,7 @@ async function render() {
         { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides, includeChannels: true })
     }
 
-    // The look — same shape ViewerPanel emits for single-record. `seedConfigFromViewState` reads the
+    // The look — same shape QuickMovie records with. `seedConfigFromViewState` reads the
     // union's `layers` bag (channel colormaps + which overlays are present); colour-by rides along
     // from per-set settings because it isn't in the snapshot. The overlay author's `valueName` needs
     // the active segmentation — animations run against one segmentation at a time.

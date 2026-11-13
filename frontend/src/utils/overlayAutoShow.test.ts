@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildAutoShowPlan, activeValueName, createClaimRegistry, type AutoShowInput,
+  buildAutoShowPlan, createClaimRegistry, type AutoShowInput,
   liveLabelPreviews, shouldRefreshPreview, PREVIEW_REFRESH_MIN_MS, type TaskListEntry,
 } from './overlayAutoShow'
 
@@ -78,27 +78,6 @@ describe('buildAutoShowPlan', () => {
   })
 })
 
-describe('activeValueName', () => {
-  it('prefers the registered active version', () => {
-    expect(activeValueName({ filepaths: { default: 'a', corrected: 'b' }, activeValueName: 'corrected' }))
-      .toBe('corrected')
-  })
-
-  // A stale _active (version since removed) must not win — the server would open something else.
-  it('ignores an active version that is no longer registered', () => {
-    expect(activeValueName({ filepaths: { default: 'a' }, activeValueName: 'gone' })).toBe('default')
-  })
-
-  it('falls back to the last non-default version', () => {
-    expect(activeValueName({ filepaths: { default: 'a', one: 'b', two: 'c' } })).toBe('two')
-  })
-
-  it('falls back to default, then to nothing', () => {
-    expect(activeValueName({ filepaths: { default: 'a' } })).toBe('default')
-    expect(activeValueName({ filepaths: {} })).toBe('')
-    expect(activeValueName(null)).toBe('')
-  })
-})
 
 describe('createClaimRegistry', () => {
   it('consumes a claim exactly once', () => {

@@ -110,7 +110,7 @@ const CONTRAST_OPTIONS: ChipOption[] = [
    these rows line up with the recorder's fps/px/name/show/title rows rather than near them. */
 .mc-line { min-width: 0; }
 /* + .cc-row (wrap/align/gap). Nothing else shares this row: a hint line here pushed the second
-   control onto its own line in the viewer panel, and the cost it stated now rides the action
+   control onto its own line in QuickMovie, and the cost it stated now rides the action
    button's tooltip, where the user is actually committing to it. */
 .mc-row { gap: 0.35rem; }
 /* same proportions as MovieOutputControls' fps slider, so the two rows read as one block */

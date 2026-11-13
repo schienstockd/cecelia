@@ -1,8 +1,8 @@
 // "Record a movie" — the most-asked-for OUTPUT, and the one place the app has three routes to the same
 // result, which is exactly why it needs a guide.
 //
-// The three routes, as the /movies empty state itself lists them: the Viewer panel (records the current
-// view — what you see is what you get), Batch movies (the same config across a whole selection), and
+// The three routes, as the /movies empty state itself lists them: the viewer's Share → Record movie
+// (records the current view — what you see is what you get), Batch movies (the same config across a whole selection), and
 // Animation (a keyframed timeline). This guide teaches the first two: one movie to get the look right,
 // then the same look across the set. Animation is a different job — a crafted camera move — and
 // belongs in its own guide rather than as a coda to this one.
@@ -38,33 +38,39 @@ export const recordMovieGuide: GuideDef = {
     {
       anchor: 'launcher.viewer',
       placement: 'bottom',
-      title: 'Open the Viewer panel',
-      text: 'The overlay switches and the recorder both live here.',
-      reveal: {
-        needed: c => !c.viewerPanelOpen,
-        anchor: 'launcher.viewer',
-        text: 'The Viewer panel is closed — open it here.',
-        placement: 'bottom',
-      },
-      when: c => c.viewerPanelOpen,
+      title: 'Go to the viewer',
+      text: 'Movies are recorded from the viewer window — bring it up here.',
+      clickAnchor: true,
     },
     {
+      window: 'viewer',
+      anchor: 'viewer.share',
+      placement: 'bottom',
+      title: 'Share',
+      text: 'The recorder is under Share.',
+      clickAnchor: true,
+    },
+    {
+      window: 'viewer',
+      anchor: 'viewer.recordMovie',
+      placement: 'left',
+      title: 'Record movie',
+      text: 'Opens the recorder for this view.',
+      clickAnchor: true,
+    },
+    {
+      window: 'viewer',
       anchor: 'viewer.movieSection',
       placement: 'left',
-      title: 'The Movie block',
-      text: 'The gear holds fps, output size, filename, timestamp, scale bar and the title card.',
+      title: 'The recorder',
+      text: 'Fps, output size, filename, timestamp, scale bar and the title card are all here.',
       bullets: [
         'Trim the time range here if you only want part of the timelapse.',
         'Pick two versions to record them side by side instead.',
       ],
-      reveal: {
-        needed: c => !c.viewerPanelOpen,
-        anchor: 'launcher.viewer',
-        text: 'The Viewer panel is closed — open it to reach the Movie block.',
-        placement: 'bottom',
-      },
     },
     {
+      window: 'viewer',
       anchor: 'viewer.record',
       placement: 'left',
       title: 'Record',

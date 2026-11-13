@@ -119,9 +119,8 @@ export interface PendingViewState {
   updateId: number
 }
 
-/** The label store a RUNNING segmentation is writing, which the user asked to watch (ViewerPanel's
- *  "preview this run while it writes" row). Set by the main window's overlay glue
- *  (`useOverlayAutoShow`), read by ViewerWindow to read that vn's labels slab from the staging store.
+/** The label store a RUNNING segmentation is writing, which the user asked to watch (the ⚡ row
+ *  in "On the image"). Set by `useLivePreview` in the viewer window, read by ViewerWindow to read that vn's labels slab from the staging store.
  *  Re-stamped on throttled progress ticks — a new `updateId` is what makes the viewer refetch the
  *  frames written since. */
 export interface LiveLabels {
@@ -189,7 +188,7 @@ export interface TrackHighlight {
 /**
  * Which mask stores' spatial dims no longer match the open image version, per (imageUid,
  * valueName). ViewerWindow computes this from its meta payload on load / on version pick and
- * publishes here; ViewerPanel reads it to flag the offending rows in the segmentation list, so a
+ * publishes here; "On the image" (VwOnImageOverlay) reads it to flag the offending rows, so a
  * user can see WHY the eye toggle silently refused to overlay. Bridged across the popup ⇄ main
  * window through the same `storage`-event pattern as the other viewer bags.
  *

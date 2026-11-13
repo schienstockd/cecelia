@@ -1,7 +1,7 @@
 <!--
   The viewer window's header (docs/todo/GUI_LAYOUT_PLAN.md, V1; mock frame 4): the way back to the main
   window, WHAT is on screen (image name, image version, the labels shown and whether they are a
-  preview or a live run), Help and Ask Kiwi. The provenance chip is also the version picker
+  preview or a live run), Help and @ Kiwi (adds the view to the next Kiwi question). The provenance chip is also the version picker
   (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S3), marking which version tasks run against. The window has no app shell (a bare route), so this is
   its only chrome; the controls stay in the side panel.
 
@@ -11,6 +11,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import QuickMovie from '../QuickMovie.vue'
+import type { CciaImage } from '../../stores/project'
 import { useObserverStore } from '../../stores/observer'
 import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
@@ -29,6 +31,8 @@ const props = defineProps<{
   versions: string[]
   activeVersion: string
   projectUid: string
+  imageUid: string
+  setUid: string
   kiwiRef: () => KiwiRef | null
   kiwiTip: string
 }>()
@@ -45,6 +49,20 @@ const shareBtn = ref<HTMLElement | null>(null)
 function share(ev: 'saveImage' | 'draw') {
   shareOpen.value = false
   if (ev === 'saveImage') emit('saveImage'); else emit('draw')
+}
+
+// Record movie… — the quick movie form, here rather than on the Movies page. The window has no project
+// loaded, so the image object the form needs is fetched when it opens.
+const movieOpen = ref(false)
+const movieImg = ref<CciaImage | null>(null)
+async function openMovie() {
+  shareOpen.value = false
+  movieOpen.value = true
+  try {
+    const q = `projectUid=${encodeURIComponent(props.projectUid)}&imageUid=${encodeURIComponent(props.imageUid)}`
+    const res = await fetch(`/api/images/meta?${q}`)
+    movieImg.value = res.ok ? ((await res.json()) as { image: CciaImage }).image : null
+  } catch { movieImg.value = null }
 }
 
 // The opener's page, read when the pointer reaches the button — same origin, so its hash is readable;
@@ -68,7 +86,7 @@ const prov = computed(() => [
 
 <template>
   <header class="vwh">
-    <button type="button" class="cc-btn cc-btn-ghost cc-btn-dense vwh-back" @pointerenter="readOpener" @click="back"
+    <button type="button" class="cc-btn cc-btn-ghost cc-btn-dense vwh-back" data-guide="viewer.back" @pointerenter="readOpener" @click="back"
             v-tooltip.bottom="'Back to the main window'">
       <i class="pi pi-arrow-left" /> {{ openerPage || 'Main window' }}
     </button>
@@ -89,9 +107,9 @@ const prov = computed(() => [
       </div>
     </TeleportPopover>
     <span class="vwh-grow" />
-    <button ref="shareBtn" type="button" class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'cc-btn-on': shareOpen }"
+    <button ref="shareBtn" type="button" class="cc-btn cc-btn-ghost cc-btn-dense" data-guide="viewer.share" :class="{ 'cc-btn-on': shareOpen }"
             aria-haspopup="menu" @click="shareOpen = !shareOpen"
-            v-tooltip.bottom="'Save this view, or draw on it and send it to Kiwi'">
+            v-tooltip.bottom="'Save this view, record a movie, or draw on it for Kiwi'">
       Share <i class="pi pi-chevron-down cc-fs-2xs" />
     </button>
     <TeleportPopover v-model="shareOpen" :anchor="shareBtn" placement="bottom-end" flush>
@@ -99,9 +117,19 @@ const prov = computed(() => [
         <button class="cc-actions-item" role="menuitem" @click="share('saveImage')">
           Save image (PNG) <span class="cc-muted cc-fs-xs">with the scale bar and overlays</span>
         </button>
+        <button class="cc-actions-item" role="menuitem" data-guide="viewer.recordMovie" @click="openMovie">
+          Record movie… <span class="cc-muted cc-fs-xs">or save a figure</span>
+        </button>
         <button v-if="observer.ai.enabled" class="cc-actions-item" role="menuitem" @click="share('draw')">
           Draw and note <span class="cc-muted cc-fs-xs">mark the view for Kiwi</span>
         </button>
+      </div>
+    </TeleportPopover>
+    <TeleportPopover v-model="movieOpen" :anchor="shareBtn" placement="bottom-end">
+      <div class="vwh-movie">
+        <div class="cc-eyebrow cc-fs-2xs">Record movie</div>
+        <QuickMovie v-if="movieImg" :img="movieImg" :project-uid="projectUid" :set-uid="setUid" :shown-version="valueName" inline-options />
+        <span v-else class="cc-muted cc-fs-xs">Loading…</span>
       </div>
     </TeleportPopover>
     <HelpMenu windowed>
@@ -111,7 +139,7 @@ const prov = computed(() => [
         </button>
       </template>
     </HelpMenu>
-    <AddToKiwiButton :kiwi-ref="kiwiRef" :tip="kiwiTip" :project-uid="projectUid" label="Ask Kiwi" />
+    <AddToKiwiButton :kiwi-ref="kiwiRef" :tip="kiwiTip" :project-uid="projectUid" label="Kiwi" />
   </header>
 </template>
 
@@ -126,6 +154,8 @@ const prov = computed(() => [
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1rem 0.5rem;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
 }
+/* the quick movie form, its options inline: the movie block's width, scrolling past the screen */
+.vwh-movie { width: var(--cc-movie-block); max-width: 80vw; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; }
 button.vwh-prov { background: none; cursor: pointer; font: inherit; }
 .vwh-grow { flex: 1; }
 </style>

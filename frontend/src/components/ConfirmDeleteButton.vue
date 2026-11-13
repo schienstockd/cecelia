@@ -1,6 +1,6 @@
 <!--
   The ONE delete affordance for the whole app — a single icon button that ARMS on the first click
-  (trash → warning, solid danger fill) and fires @confirm on the second (the ViewerPanel labels
+  (trash → warning, solid danger fill) and fires @confirm on the second (the old per-label delete
   pattern D picked as the standard). Before this, delete confirmations diverged: some flipped one icon,
   some sprouted a Confirm+Cancel pair, some deleted instantly. Use this everywhere a destructive icon
   action needs an inline "are you sure" (docs/UI.md → confirm-delete).
