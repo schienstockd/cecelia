@@ -12,11 +12,12 @@
   Folded (per profile, `cc.vw.onImage`) it is a pill naming what is on.
 -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useViewerStore, type LabelsDimMismatch } from '../../stores/viewer'
 import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
+import { useTrackValueNames } from '../../composables/useTrackValueNames'
 import { segRows, segRowActive, flipMaskVisibility, flipTracks, mismatchTip, shortLevelsTip } from '../../utils/viewer/segRows'
 import { useSettingsStore } from '../../stores/settings'
 import { useStoredSectionOpen } from '../../utils/sectionOpen'
@@ -67,6 +68,9 @@ function flipMask(vn: string) {
 function flipTrack(vn: string) {
   if (props.imageUid) settings.setTrackVisibility(props.imageUid, flipTracks(trackVis.value, vn))
 }
+// Which segmentations have tracks (a `track_id` column) — the tracks button is off without them.
+const { trackedNames } = useTrackValueNames(toRef(props, 'projectUid'), toRef(props, 'imageUid'), ref(''))
+const hasTracks = (vn: string) => trackedNames.value.includes(vn) || !!trackVis.value[vn]
 const filesOf = (vn: string) => props.labelFiles[vn] ?? []
 const shownFilesOf = (vn: string) => {
   const hidden = props.imageUid ? settings.getLabelFilesHidden(props.imageUid, vn) : new Set<string>()
@@ -125,7 +129,8 @@ const summary = computed(() => [
               <i class="pi pi-wave-pulse" /></button>
             <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
-                    v-tooltip.bottom="trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"
+                    :disabled="!hasTracks(r.valueName)"
+                    v-tooltip.bottom="!hasTracks(r.valueName) ? 'No tracks — run Track first' : trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"
                     @click="flipTrack(r.valueName)"><i class="pi pi-share-alt" /></button>
             <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
                     :class="{ 'cc-btn-on cc-btn-on-tint': labelVis[r.valueName] }"
