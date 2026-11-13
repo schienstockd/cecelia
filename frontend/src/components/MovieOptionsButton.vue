@@ -7,6 +7,9 @@
   Shared rather than written twice: the viewer had this inline and the Animation page needed the same
   thing, which is how one surface ends up with a different tooltip, icon or popover width. Same split
   as TeleportPopover itself — the component owns the shell, the caller owns the content.
+
+  `inline`: no gear, the blocks right here — for a caller that is already a popover (the viewer's
+  Record movie…), where a second popover would hide the options behind another click.
 -->
 <script setup lang="ts">
 import { ref } from 'vue'
@@ -15,12 +18,15 @@ import TeleportPopover from './TeleportPopover.vue'
 // two root nodes (the anchor and the teleported popover), so a caller's `class` has to be routed to
 // the button explicitly rather than auto-inherited onto a fragment
 defineOptions({ inheritAttrs: false })
+defineProps<{ inline?: boolean }>()
 
 const open = ref(false)
 const anchor = ref<HTMLElement | null>(null)
 </script>
 
 <template>
+  <div v-if="inline" class="mob-body mob-inline"><slot /></div>
+  <template v-else>
   <button ref="anchor" v-bind="$attrs" class="cc-btn cc-btn-ghost cc-btn-icon"
           :class="{ 'cc-btn-on cc-btn-on-tint': open }"
           @click="open = !open"
@@ -30,12 +36,15 @@ const anchor = ref<HTMLElement | null>(null)
   <TeleportPopover v-model="open" :anchor="anchor" placement="bottom-end">
     <div class="mob-body"><slot /></div>
   </TeleportPopover>
+  </template>
 </template>
 
 <style scoped>
 /* The popover IS the movie block, so it takes the width the blocks inside are capped to. */
 .mob-body { display: flex; flex-direction: column; gap: 0.45rem;
   width: var(--cc-movie-block); max-width: 80vw; }
+/* inline under the caller's own row: a rule splits it from the row above */
+.mob-inline { border-top: 1px solid var(--cc-border); padding-top: 0.45rem; }
 /* A caller's section heading (`.mob-head`): a rule above it splits the blocks — output, frames, ROIs,
    figure, title card — that otherwise run together in one stack. The first one needs no rule. */
 .mob-body :slotted(.mob-head) { color: var(--cc-text-dim); padding-top: 0.35rem;

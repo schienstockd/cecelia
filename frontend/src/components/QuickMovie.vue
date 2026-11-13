@@ -50,7 +50,9 @@ const props = withDefaults(defineProps<{
   shownVersion: string
   /** show the "Movie" heading (the panel's section); the viewer's popover has its own */
   heading?: boolean
-}>(), { heading: false })
+  /** the options below the buttons, not behind a gear — when this form is already in a popover */
+  inlineOptions?: boolean
+}>(), { heading: false, inlineOptions: false })
 
 const settings    = useSettingsStore()
 const ws          = useWsStore()
@@ -598,7 +600,7 @@ async function recordViewerMatch(uid: string, projectUid: string) {
                                   v-model:layout="compareLayout"
                                   v-model:contrast="compareContrast" />
           </div>
-          <MovieOptionsButton class="opt-btn">
+          <MovieOptionsButton class="opt-btn" :inline="inlineOptions">
             <div class="mob-head cc-eyebrow cc-fs-2xs">Output</div>
             <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="movieFps" v-model:sizeX="movieSizeX" v-model:sizeY="movieSizeY"
                                  v-model:suffix="movieSuffix" v-model:numbered="numberIfTaken" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
@@ -680,7 +682,9 @@ async function recordViewerMatch(uid: string, projectUid: string) {
 .quick-movie { display: flex; flex-direction: column; gap: 0.35rem; }
 /* ONE row: the version chips take the width, the gear and Record are pinned to its right, top-aligned
    so they stay on the first line when the chips run to several. */
-.movie-row { display: flex; align-items: flex-start; gap: 0.3rem; }
+.movie-row { display: flex; align-items: flex-start; gap: 0.3rem; flex-wrap: wrap; }
+/* inline options (`inlineOptions`) sit in the row's markup but wrap to a full line under the buttons */
+.movie-row :deep(.mob-inline) { order: 9; flex-basis: 100%; }
 .movie-versions { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .movie-rec { margin-left: 0.1rem; }
 .opt-btn { transition: background 0.1s, color 0.1s, border-color 0.1s; }

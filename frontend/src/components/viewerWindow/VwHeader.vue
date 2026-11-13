@@ -128,7 +128,7 @@ const prov = computed(() => [
     <TeleportPopover v-model="movieOpen" :anchor="shareBtn" placement="bottom-end">
       <div class="vwh-movie">
         <div class="cc-eyebrow cc-fs-2xs">Record movie</div>
-        <QuickMovie v-if="movieImg" :img="movieImg" :project-uid="projectUid" :set-uid="setUid" :shown-version="valueName" />
+        <QuickMovie v-if="movieImg" :img="movieImg" :project-uid="projectUid" :set-uid="setUid" :shown-version="valueName" inline-options />
         <span v-else class="cc-muted cc-fs-xs">Loading…</span>
       </div>
     </TeleportPopover>
@@ -154,8 +154,8 @@ const prov = computed(() => [
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0.1rem 0.5rem;
   border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
 }
-/* the quick movie form's width; its options open in their own popover */
-.vwh-movie { width: 20rem; display: flex; flex-direction: column; gap: 0.4rem; }
+/* the quick movie form, its options inline: the movie block's width, scrolling past the screen */
+.vwh-movie { width: var(--cc-movie-block); max-width: 80vw; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; }
 button.vwh-prov { background: none; cursor: pointer; font: inherit; }
 .vwh-grow { flex: 1; }
 </style>
