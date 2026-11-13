@@ -44,6 +44,7 @@ import type { LabelTable } from '../../utils/maskPopTable'
 import { createLabelColourTexture } from './labelColourTexture'
 import { renderToPixels } from './frameReadback'
 import { measureRgba } from '../../utils/canvasSample'
+import { sameMaskLayer } from '../../utils/tileViewer'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
 const UNIFORM_BYTES = MIP_LAYOUT.bytes
@@ -257,6 +258,8 @@ export interface VolumeRenderer {
      *  overwriting `ccidSmoothed.ome.zarr`). Treated as an identity component: any diff drops the
      *  atlas the same way a valueName change does. See `viewerCacheClearChannel.ts`. */
     rev?: string
+    /** The mask's rewrite stamp, apart from `rev`: a change refetches the label atlas alone. */
+    labelRev?: string
   } | null): void
   /**
    * Brick renderer only: how to ask the caller for a redraw when a fetched brick lands. Brick
@@ -935,14 +938,15 @@ export async function createVolumeRenderer(
         return
       }
 
-      // Bytes fetched under a mask that is no longer on screen are not this frame's mask.
-      const ownMask = labelTexture !== null && labelSrc === labelSource ? labelTexture : null
+      // Bytes fetched under a mask that is no longer on screen are not this frame's mask — except the
+      // same segmentation's previous stamp (`sameMaskLayer`), kept until the refetch replaces it.
+      const ownMask = labelTexture !== null && sameMaskLayer(labelSrc, labelSource) ? labelTexture : null
       if (labelTexture !== ownMask && !dead) labelTexture?.destroy()
       const bg = slotBindGroup(texture, ownMask)
       dropSlot(t)                                    // a re-upload replaces, never leaks
       slots.set(t, {
         texture, labelTexture: ownMask, bindGroup: bg, planeVersion: plane,
-        labelSrc: labelSrc === labelSource ? labelSrc : '',
+        labelSrc: ownMask ? labelSrc : '',   // a stale stamp stays stale, so `needsLabel` refetches
       })
       touch(t)
       for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
@@ -978,11 +982,13 @@ export async function createVolumeRenderer(
     setLabelSource(sourceId: string) {
       if (sourceId === labelSource) return
       labelSource = sourceId
-      // Every slot's mask is now another source's: draw without it (and free it) until refetched.
+      // Every slot's mask is now another source's: draw without it (and free it) until refetched —
+      // unless it is a refresh of the same segmentation (`sameMaskLayer`), whose previous bytes keep
+      // drawing until `uploadLabel` replaces them (`needsLabel` still asks for the refetch).
       if (!usable()) return
       let freed = false
       for (const [t, slot] of slots) {
-        if (slot.labelSrc !== '') { setSlotLabel(t, null, ''); freed = true }
+        if (slot.labelSrc !== '' && !sameMaskLayer(slot.labelSrc, sourceId)) { setSlotLabel(t, null, ''); freed = true }
       }
       if (freed) retireFreed()
     },

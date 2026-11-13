@@ -14,12 +14,20 @@ export type ViewerAutoUpdateAction =
   | { kind: 'onlyMask'; valueName: string }
 
 /** `task:status` — done on the open image: refresh overlays, and drop the image's cached pixels
- *  (a re-run overwrites a store in place, keeping its name). */
+ *  (a re-run overwrites a store in place, keeping its name). `covered` is what the same task's
+ *  `task:result` already did — it arrives first — so its overlay ping is not sent twice. The clear is
+ *  always sent: the result's was scoped to the mask it wrote, which a viewer showing another mask
+ *  rejects, and this unscoped one makes it re-check every store it draws. A second clear costs the
+ *  viewer one meta fetch, never a second reload (it queues them, `mergeCacheClearJobs`). */
 export function onStatusActions(data: Record<string, unknown>, openUid: string | null,
-                                autoUpdate: boolean): ViewerAutoUpdateAction[] {
+                                autoUpdate: boolean,
+                                covered: ReadonlySet<ViewerAutoUpdateAction['kind']> = new Set()): ViewerAutoUpdateAction[] {
   if (!autoUpdate || String(data.status ?? '') !== 'done') return []
   if (!openUid || String(data.imageUid ?? '') !== openUid) return []
-  return [{ kind: 'ping' }, { kind: 'cacheClear' }]
+  const out: ViewerAutoUpdateAction[] = []
+  if (!covered.has('ping')) out.push({ kind: 'ping' })
+  out.push({ kind: 'cacheClear' })
+  return out
 }
 
 /** `task:result` on the open image: a new image version is shown, a new mask is shown alone, a label

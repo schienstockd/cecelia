@@ -65,7 +65,8 @@ import { publishUiLog } from '../lib/uiLogChannel'
 import { onViewerImageMeta } from '../lib/viewerImageMetaChannel'
 import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, publishViewerCacheClear, readViewerCacheClearRev,
-         viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
+         viewerCacheClearMatches, mergeCacheClearJobs, cacheClearReload,
+         type CacheClearJob } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import { adapterNameText, classifiedByText, collectGpuDiagnostics, groupAdapterDiags, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
 import { MAX_ATLASES, atlasCountForBudget } from '../utils/brickAtlas'
@@ -73,7 +74,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged, refreshMetaInPlace,
+  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, changedStores, refreshMetaInPlace,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -178,6 +179,10 @@ const kiwiStore = useKiwiStore()
 // more field. Reallocate() is called from the subscribe callback, so the atlas drops on the next
 // tick. Read at mount so a viewer opened AFTER a publish still starts on the current rev.
 const cacheClearRev = ref(readViewerCacheClearRev())
+/** The mask's half of the rev: every mask fetch and mask id carries this one, so a rewritten mask (a
+ *  segmentation finishing on the open image) refetches the mask alone and the channels stay. An image
+ *  reload bumps both. */
+const maskRev = ref(cacheClearRev.value)
 /** Last cache-clear event handled — dedupes events that matched but didn't need a reload. */
 let seenClearRev = ''
 /**
@@ -1013,7 +1018,7 @@ const maskHidden = ref(false)
 // their mask came from, and the channels already on the GPU stay (docs/todo/MASK_DECOUPLE_PLAN.md).
 // `hidden` is left out: hiding is a redraw at opacity 0, not a different mask.
 const maskSourceId = computed(() => tileMaskSourceId({
-  vn: maskName.value, hidden: false, ...maskStoreOf(maskName.value), rev: cacheClearRev.value,
+  vn: maskName.value, hidden: false, ...maskStoreOf(maskName.value), rev: maskRev.value,
   files: maskFilesOf(maskName.value),
 }))
 // The flat renderer budgets a timepoint WITH its mask whenever the image has a segmentation, so ticking
@@ -2359,8 +2364,8 @@ async function fetchMaskSlab(
   const url = slabUrl({
     projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
     ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince), labelFiles: maskFilesOf(vn),
-    // Same cache-buster for the durable labels store's own rewrites.
-    rev: cacheClearRev.value || undefined,
+    // The mask's cache-buster for the durable labels store's own rewrites.
+    rev: maskRev.value || undefined,
   })
   const res = await fetch(url, { cache: 'default', signal })
   if (res.status === 409) return null
@@ -2813,7 +2818,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
  *  preview re-run or a durable-store rewrite is a NEW source: the renderer then reports every slot's
  *  mask stale and the pump refetches the mask bytes alone, never the image's channels. */
 const tileMaskSource = computed(() => tileMaskSourceId({
-  vn: maskName.value, hidden: maskHidden.value, ...maskStoreOf(maskName.value), rev: cacheClearRev.value,
+  vn: maskName.value, hidden: maskHidden.value, ...maskStoreOf(maskName.value), rev: maskRev.value,
   files: maskFilesOf(maskName.value),
 }))
 const tileLabelAborts = new Map<string, AbortController>()
@@ -2851,7 +2856,7 @@ async function fetchTileLabel(key: TileKey): Promise<boolean> {
       enc: settings.viewerCompress ? 'zstd' : 'identity', labels: vn,
       x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
       ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince), labelFiles: maskFilesOf(vn),
-      rev: cacheClearRev.value || undefined,
+      rev: maskRev.value || undefined,
     })
     const res = await fetch(url, { cache: 'default', signal: ac.signal })
     if (!res.ok) {
@@ -4410,6 +4415,7 @@ function brickSource(): BrickSource {
     // a rev change as an image switch and drops the atlas — same discipline as the tile atlas's
     // sourceId change.
     rev: cacheClearRev.value || undefined,
+    labelRev: maskRev.value || undefined,
   }
 }
 
@@ -5307,6 +5313,69 @@ function publishViewerFocus() {
 // panel-viewer path. A bumped rev threads into `sourceId`/`BrickSource.rev`, so the same
 // invalidation logic #779 wired for a version swap fires for a same-store rewrite too.
 let stopCacheClearWatch: (() => void) | null = null
+/** The clears heard while one was being applied, folded into one (`mergeCacheClearJobs`); the
+ *  scheduler runs one at a time and runs again for anything that arrived meanwhile. */
+let clearJob: CacheClearJob | null = null
+const cacheClears = debouncedLatest<void>(async () => {
+  const job = clearJob
+  clearJob = null
+  if (job) await applyCacheClear(job)
+}, { wait: 0 })
+
+async function applyCacheClear(job: CacheClearJob): Promise<void> {
+  // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
+  // recomputes per run, stackAlign, crop), so refetch meta before reallocating — otherwise the
+  // renderer resizes against stale nX/nY/nZ and every slab trips the shape guard. Channel state
+  // (lo/hi/lut) is preserved: a pixel-only task doesn't change channels.
+  let m: ViewerMeta
+  try {
+    const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
+    m = await readJson<ViewerMeta>(res, 'Metadata')
+  } catch (e) {
+    vlog('warn', 'Meta refresh on cache-clear failed: ' + (e instanceof Error ? e.message : String(e)))
+    cacheClearRev.value = job.rev   // can't tell what changed — reload, the pre-fingerprint answer
+    maskRev.value = job.rev
+    reallocate()
+    return
+  }
+  const prev = meta.value
+  const changed = prev ? changedStores(prev, m, pickLabelName(m.labelNames ?? [])) : { image: true, mask: true }
+  const reload = cacheClearReload(job, changed)
+  if (prev && reload !== 'image') {
+    // The channels stay. Take the server's new store lists in place — a new segmentation becomes
+    // tickable, and a mask ticked on for it (`labelName`) now resolves, which moves `maskSourceId`.
+    // A segmentation that just gained a cell table: the overlay ping that came with this task
+    // already ran against the old list, so re-fetch pops + tracks against the new one.
+    if (refreshMetaInPlace(prev, m)) {
+      void loadOverlays()
+      void loadTracks()
+    }
+    // A rewritten mask: its new stamp moves `maskSourceId`, whose watcher refetches the mask alone.
+    if (reload === 'mask') maskRev.value = job.rev
+    return
+  }
+  cacheClearRev.value = job.rev
+  maskRev.value = job.rev
+  if (prev && prev.channels.length === m.channels.length) {
+    for (let i = 0; i < m.channels.length; i++) {
+      m.channels[i].lo = prev.channels[i].lo
+      m.channels[i].hi = prev.channels[i].hi
+      m.channels[i].lut = prev.channels[i].lut
+    }
+  }
+  // Same-shape reload keeps the channel that was being shown.
+  applySolo(m, prev && prev.channels.length === m.channels.length
+    ? prev.channels.findIndex(ch => ch.visible) : undefined)
+  meta.value = m
+  // Clamp any z-state that outran the new depth. A shrunk nZ leaves zPlane/zRange indexing
+  // past the end, which drives zDepth negative in `slabZ` and every request is rejected.
+  const maxZ = Math.max(m.nZ - 1, 0)
+  zPlane.value = Math.min(zPlane.value, maxZ)
+  zRange.value = [Math.min(zRange.value[0], maxZ), Math.min(zRange.value[1], maxZ)]
+  // Reallocate reads both revs fresh, so the new sourceId / rev flow through to the tile atlas and
+  // the brick page table on this pass. `refit=false` keeps the camera put.
+  reallocate()
+}
 let stopImageMetaWatch: (() => void) | null = null
 
 // The frame on screen as a 2D canvas — the ONE reader of the viewer's pixels (Save PNG, the board
@@ -5792,8 +5861,8 @@ onMounted(() => {
   window.addEventListener('storage', onSelectModeTick)
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
-  stopCacheClearWatch = onViewerCacheClear(async (ev) => {
-    if (ev.rev === cacheClearRev.value || ev.rev === seenClearRev) return   // duplicate double-fire
+  stopCacheClearWatch = onViewerCacheClear((ev) => {
+    if (ev.rev === cacheClearRev.value || ev.rev === maskRev.value || ev.rev === seenClearRev) return   // double-fire
     // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
     // us. Was the whole reason the labels-only `cc.viewerSlabsTick` existed alongside the rev —
     // that channel filtered, this one didn't. Same rule now, one channel.
@@ -5802,60 +5871,15 @@ onMounted(() => {
       knownLabelNames: meta.value?.labelNames ?? [],
     })) return
     seenClearRev = ev.rev
-    // The task's result NAMED a store we draw (it wrote it), or the manual resync forces it — reload.
-    const named = ev.force === true
-      || (ev.valueName !== undefined && ev.valueName === valueName.value)
-      || (ev.labelValueName !== undefined && ev.labelValueName === labelName.value)
-    // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
-    // recomputes per run, stackAlign, crop), so refetch meta before reallocating — otherwise the
-    // renderer resizes against stale nX/nY/nZ and every slab trips the shape guard with
-    // "Slab is AxBxC but XxYxZ was asked for" (x4E5HU: drift correct rerun
-    // produced 34x296x296 while viewer meta still said 32x295x297). Same-shape rewrites (smooth,
-    // denoise) fall through unchanged. Channel state (lo/hi/lut) is preserved because a pixel-only
-    // task doesn't change channels, and losing an in-progress auto-contrast on every rerun would
-    // yank the view we're trying to keep stable.
-    try {
-      const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
-      const m = await readJson<ViewerMeta>(res, 'Metadata')
-      const prev = meta.value
-      // Most task-dones (gating, measures, clustering) touch nothing we draw: take the new store
-      // list in place — a new segmentation becomes tickable — and keep the cache and the frame.
-      // A changed shown mask (`labelName` flipping) reloads through `maskSourceId`'s watcher.
-      if (!named && prev && !shownStoresChanged(prev, m, pickLabelName(m.labelNames ?? []))) {
-        // A segmentation that just gained a cell table: the overlay ping that came with this task
-        // already ran against the old list, so re-fetch pops + tracks against the new one.
-        if (refreshMetaInPlace(prev, m)) {
-          void loadOverlays()
-          void loadTracks()
-        }
-        return
-      }
-      cacheClearRev.value = ev.rev
-      if (prev && prev.channels.length === m.channels.length) {
-        for (let i = 0; i < m.channels.length; i++) {
-          m.channels[i].lo = prev.channels[i].lo
-          m.channels[i].hi = prev.channels[i].hi
-          m.channels[i].lut = prev.channels[i].lut
-        }
-      }
-      // Same-shape reload keeps the channel that was being shown.
-      applySolo(m, prev && prev.channels.length === m.channels.length
-        ? prev.channels.findIndex(ch => ch.visible) : undefined)
-      meta.value = m
-      // Clamp any z-state that outran the new depth. A shrunk nZ leaves zPlane/zRange indexing
-      // past the end, which drives zDepth negative in `slabZ` and every request is rejected.
-      const maxZ = Math.max(m.nZ - 1, 0)
-      zPlane.value = Math.min(zPlane.value, maxZ)
-      zRange.value = [Math.min(zRange.value[0], maxZ), Math.min(zRange.value[1], maxZ)]
-    } catch (e) {
-      cacheClearRev.value = ev.rev   // can't tell what changed — reload, the pre-fingerprint answer
-      vlog('warn', 'Meta refresh on cache-clear failed: '
-        + (e instanceof Error ? e.message : String(e)))
-    }
-    // Reallocate reads `cacheClearRev.value` fresh, so the new sourceId / rev flow through to the
-    // tile atlas and the brick page table on this pass. `refit=false` keeps the camera put — the
-    // point of this path is to swap pixels without yanking the view.
-    reallocate()
+    // Queued, not handled per event: a finishing task sends a burst, and each handled alone compared
+    // the server's meta against a copy the one before had not replaced yet, so the image reloaded
+    // once per event.
+    clearJob = mergeCacheClearJobs(clearJob, {
+      rev: ev.rev,
+      namedImage: ev.force === true || (ev.valueName !== undefined && ev.valueName === valueName.value),
+      namedMask: ev.force === true || (ev.labelValueName !== undefined && ev.labelValueName === labelName.value),
+    })
+    cacheClears.schedule()
   })
 })
 
@@ -5868,6 +5892,7 @@ onUnmounted(() => {
   delete (window as unknown as { __cceceliaViewerScreenshot?: unknown }).__cceceliaViewerScreenshot
   delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
+  cacheClears.cancel()
   stopImageMetaWatch?.(); stopImageMetaWatch = null
   ws.off('viewer:landscape-request', onLandscapeRequest)
   stopPlay()

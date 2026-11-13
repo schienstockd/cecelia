@@ -62,6 +62,7 @@ import {
   type BrickShaderBindings,
 } from './brickShader'
 import type { GpuFrameSample } from '../../utils/benchRecorder'
+import { sameMaskLayer } from '../../utils/tileViewer'
 
 /** Where to fetch bricks from — the renderer builds `/api/viewer/slab?cTo=nC-1` URLs itself in
  *  P5c because the SCHEDULER decides which bricks are wanted every frame; a call through
@@ -90,6 +91,9 @@ export interface BrickSource {
    *  change: any diff drops the atlas. Undefined defaults to no rev, so callers that don't opt in
    *  keep the pre-#779 behaviour. */
   rev?: string
+  /** The mask's own rewrite stamp (`brickLabelSourceId`): a change swaps the label atlas only. Absent =
+   *  `rev`. */
+  labelRev?: string
 }
 
 /** Brick edge in voxels — Decision 2 in KILN_BRICK_PLAN.md. Kept a module constant so both the
@@ -633,6 +637,9 @@ export async function createBrickVolumeRenderer(
     if (want === '' && !a.labelsEnabled) return
     labelGen++
     abortLabelFetches()
+    // A refresh of the same segmentation (a rewrite, a live run promoted to its final store): keep the
+    // atlases and their bytes on screen, and let the backfill overwrite every resident brick's mask.
+    if (want !== '' && a.labelsEnabled && sameMaskLayer(a.labelSrc, want)) { claimLabels(a, want); return }
     if (a.labelsEnabled) {
       for (const t of a.labelTextures) t.destroy()
       setLabelTextures(a, Array.from({ length: a.variantN }, () => noLabelAtlas), false)

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, refreshMetaInPlace, LABEL_BPV,
+  slabZ, loadedPlanes, heldPlanes, canMovePlanesInPlace, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, changedStores, refreshMetaInPlace, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -896,6 +896,26 @@ describe('shownStoresChanged', () => {
 
   it('missing fingerprints (older server) count as changed', () => {
     expect(shownStoresChanged(meta(), meta({ storeRevs: revs }), '')).toBe(true)
+  })
+})
+
+describe('changedStores', () => {
+  const revs = { image: 'i1', labels: { nuc: 'n1' } }
+  it('a new segmentation shown on the open image moves the mask alone', () => {
+    // The segmentation-finished case: the channels must stay on the GPU.
+    const next = { image: 'i1', labels: { ...revs.labels, DAPI: 'd1' } }
+    expect(changedStores(meta({ storeRevs: revs }), meta({ storeRevs: next }), 'DAPI'))
+      .toEqual({ image: false, mask: true })
+  })
+  it('an image rewrite is the image half', () => {
+    expect(changedStores(meta({ storeRevs: revs }), meta({ storeRevs: { ...revs, image: 'i2' } }), 'nuc'))
+      .toEqual({ image: true, mask: false })
+  })
+  it('dims or unknown fingerprints reload both', () => {
+    expect(changedStores(meta({ storeRevs: revs }), meta({ nX: 9, storeRevs: revs }), 'nuc'))
+      .toEqual({ image: true, mask: true })
+    expect(changedStores(meta(), meta({ storeRevs: revs }), ''))
+      .toEqual({ image: true, mask: false })
   })
 })
 

@@ -37,6 +37,10 @@ const LIVE_RANK: Partial<Record<TaskStatus, number>> = { waiting: 3, running: 2,
 export function isLiveStatus(s: TaskStatus): boolean {
   return LIVE_RANK[s] !== undefined
 }
+/** A finished task: it will send no more status. The one copy — takes a raw WS string too. */
+export function isTerminalStatus(s: string): boolean {
+  return s === 'done' || s === 'failed' || s === 'cancelled'
+}
 /** Tie-break WITHIN the terminal tier, when two runs finished at the same instant. Higher wins. */
 const TERMINAL_RANK: Partial<Record<TaskStatus, number>> = { failed: 2, cancelled: 1, done: 0 }
 
