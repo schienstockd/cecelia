@@ -41,6 +41,7 @@ import { isSettingsOpen, closeSettings } from './lib/settingsOpen'
 import { useGuideStore } from './stores/guide'
 import { todayKey } from './lib/tips'
 import { useOverlayAutoShow } from './composables/useOverlayAutoShow'
+import { useViewerAutoUpdate } from './composables/useViewerAutoUpdate'
 import { isPopoutWindow, nameMainWindow } from './lib/popout'
 
 const ws = useWsStore()
@@ -122,6 +123,8 @@ if (!popout) nameMainWindow()
 // the floating Viewer panel closed (its default) nothing was listening for the image-open event, so
 // the toggles read ON but no overlay was ever requested until the user flipped them by hand.
 if (!popout) useOverlayAutoShow()
+// Keep an open viewer current as tasks finish (Preferences → Auto-update); also HERE, not in the panel.
+if (!popout) useViewerAutoUpdate()
 
 // Universal "started in background" confirmation: any client-dispatched background job (crop, copy,
 // project export/import, task:run) registers via taskStore.add(), which bumps `lastStarted`. One
