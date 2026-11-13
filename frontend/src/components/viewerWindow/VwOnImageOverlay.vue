@@ -119,6 +119,10 @@ const summary = computed(() => [
             <span class="cc-fs-2xs vw-onimg-seg-name" :title="r.valueName">{{ r.valueName }}</span>
             <i v-if="r.dimMismatch" class="pi pi-exclamation-triangle cc-muted-warn" v-tooltip.bottom="mismatchTip(dims, r.valueName)" />
             <i v-else-if="r.shortLevels" class="pi pi-exclamation-triangle cc-muted-warn" v-tooltip.bottom="shortLevelsTip(dims, r.valueName)" />
+            <!-- Branches (skeletons): not drawn by this viewer yet — the button holds the place. -->
+            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" disabled
+                    :aria-label="`Branches of ${r.valueName}`" v-tooltip.bottom="'Branches — coming soon'">
+              <i class="pi pi-wave-pulse" /></button>
             <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
                     v-tooltip.bottom="trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"

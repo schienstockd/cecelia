@@ -1472,12 +1472,16 @@ function setChannelColour(c: number, hex: string) {
  *  glyph, as the pop manager's pointer button), Edit is the slot the redesigned correction tools fill (GUI_LAYOUT_PLAN
  *  Decision 5, V5): it reserves the place and edits nothing yet, so a click there behaves as View. */
 const INTERACT_MODES = [
-  // Icon-only, with the mode's name leading the tooltip: three worded chips pushed 2D/3D onto a
-  // second row on a narrow panel for what is only a "which mode am I in" readout.
-  { value: 'view', label: '', icon: 'pi pi-hand', tip: 'View — drag moves the view; a click picks nothing' },
-  { value: 'select', label: '', icon: 'pi pi-mouse-pointer', tip: 'Select — a click picks a cell' },
-  { value: 'edit', label: '', icon: 'pi pi-pencil', tip: 'Edit — correction tools, coming soon' },
+  { value: 'view', name: 'Move', icon: 'pi pi-hand', tip: 'Drag moves the view' },
+  { value: 'select', name: 'Select', icon: 'pi pi-mouse-pointer', tip: 'A click picks a cell' },
+  { value: 'edit', name: 'Edit', icon: 'pi pi-pencil', tip: 'Correction tools, coming soon' },
 ]
+// One button showing the current mode; the three sit in a menu under it — a "which mode am I in"
+// readout does not need three buttons' width beside 2D / 3D.
+const interactMode = computed(() => editMode.value ? 'edit' : selectModeActive.value ? 'select' : 'view')
+const interactShown = computed(() => INTERACT_MODES.find(m => m.value === interactMode.value) ?? INTERACT_MODES[0])
+const interactOpen = ref(false)
+const interactBtn = ref<HTMLElement | null>(null)
 /** The Edit slot is open. Not persisted: it edits nothing yet, so a reload lands back on the view. */
 const editMode = ref(false)
 function setInteractMode(v: string) {
@@ -6396,11 +6400,20 @@ onUnmounted(() => {
              view and the advanced settings. -->
         <!-- two non-wrapping groups: a narrow panel breaks the row between them, never inside one -->
         <div class="cc-row cc-row-tight vw-top">
-          <ChipSelect
-            :options="INTERACT_MODES" :model-value="editMode ? 'edit' : selectModeActive ? 'select' : 'view'"
-            variant="segmented" aria-label="What a click does"
-            @update:model-value="v => setInteractMode(String(v))"
-          />
+          <button ref="interactBtn" class="cc-btn cc-btn-ghost cc-btn-dense" aria-haspopup="menu"
+                  :aria-label="`What a click does: ${interactShown.name}`" @click="interactOpen = !interactOpen"
+                  v-tooltip.bottom="`${interactShown.name} — ${interactShown.tip}`">
+            <i :class="interactShown.icon" /> <i class="pi pi-chevron-down cc-fs-3xs" />
+          </button>
+          <TeleportPopover v-model="interactOpen" :anchor="interactBtn" placement="bottom-start" flush>
+            <div class="cc-actions-menu" role="menu">
+              <button v-for="m in INTERACT_MODES" :key="m.value" class="cc-actions-item" role="menuitem"
+                      :class="{ 'cc-btn-on': m.value === interactMode }"
+                      @click="interactOpen = false; setInteractMode(m.value)">
+                <i :class="m.icon" /> {{ m.name }} <span class="cc-muted cc-fs-xs">{{ m.tip }}</span>
+              </button>
+            </div>
+          </TeleportPopover>
           <div class="cc-row-group vw-top-end">
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
