@@ -93,7 +93,9 @@ is needed before implementation.
    `--cc-kiwi-strong` / `--cc-kiwi-soft` / `--cc-kiwi-tint`. Token allocation lands in
    `frontend/src/style.css` + `docs/ui/PRIMITIVES.md` as part of PR #1. Amended 2026-11-12:
    `--cc-viewer` is retired (the viewer is neutral) and teal is now the one AI colour, Claude Code
-   included; teal vs the ok-green is an accepted pair in `utils/cvd.test.ts`.
+   included; teal vs the ok-green is an accepted pair in `utils/cvd.test.ts`. Amended 2026-11-13:
+   one exception — where the two sit side by side (`ClaudeWaysIn.vue` cards, the Claude Code column
+   of Kiwi's `?` table) Claude Code wears its clay `--cc-claude`; clay vs the severity hues is accepted.
 3. **Entry = sidebar footer button ONLY. No keyboard shortcut at v1** (amended 2026-09-19).
    Correction cockpit has no shortcut either; matching the pattern keeps the keymap
    uncluttered and avoids a per-floating-panel inconsistency. Add one later only if real

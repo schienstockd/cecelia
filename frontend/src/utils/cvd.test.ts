@@ -31,13 +31,19 @@ const MUST_SEPARATE: Record<string, string[]> = {
   severity:   ['--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
   statusInk:  ['--cc-ink-red', '--cc-ink-amber', '--cc-ink-green', '--cc-ink-blue'],
   attention:  ['--cc-warn', '--cc-danger'],
-  // the identity hues left after the merge (one AI colour, neutral viewer + checks) against the states
-  identity:   ['--cc-accent', '--cc-kiwi', '--cc-selected', '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
+  // the identity hues left after the merge (one AI colour + Claude Code's clay for the side-by-side cards,
+  // neutral viewer + checks) against the states
+  identity:   ['--cc-accent', '--cc-kiwi', '--cc-claude', '--cc-selected', '--cc-sev-ok', '--cc-sev-warn', '--cc-sev-fail', '--cc-active'],
 }
 // Pairs that fail and are kept on purpose — each always has a second cue where they meet.
 const ACCEPTED: Record<string, string> = {
   '--cc-kiwi ↔ --cc-sev-ok': 'Kiwi is always a labelled pill or ✦; the nearest hue that clears the ok-green is a blue that meets the violet instead',
   '--cc-accent ↔ --cc-active': 'the running light is a labelled task status; violet is control chrome (light scheme only)',
+  // Claude Code's clay is only the edge, ticks and schematic of its own titled card beside Kiwi's —
+  // never a state, and no severity light sits on those cards
+  '--cc-claude ↔ --cc-sev-ok': 'clay marks the titled Claude Code card only, never a state',
+  '--cc-claude ↔ --cc-sev-warn': 'clay marks the titled Claude Code card only, never a state',
+  '--cc-claude ↔ --cc-sev-fail': 'clay marks the titled Claude Code card only, never a state',
 }
 // Category hues that always sit beside a text label — a second cue, so the floor applies.
 const LABELLED: Record<string, string[]> = {
