@@ -244,7 +244,7 @@ export TASK_QUEUED, TASK_RUNNING, TASK_DONE, TASK_FAILED, TASK_CANCELLED
 export run_task, run_tasks, DuplicateRunError
 export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks,
        recent_tasks, record_task_outcome!, pool_status
-export note_task_started!, task_started_at, forget_task_start!, iso_utc, parse_iso_utc, TASK_TS_FORMAT
+export note_task_started!, note_relayed_start!, task_started_at, forget_task_start!, iso_utc, parse_iso_utc, TASK_TS_FORMAT
 export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
 export start_job!, claim_job!, job_active, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
