@@ -15,6 +15,13 @@ describe('segRows', () => {
       ['imported', false, false, false],
     ])
   })
+  it('adds a row for a store a run is writing, once', () => {
+    const rows = segRows(['cells'], [], null, ['cells', 'new'])
+    expect(rows.map(r => [r.valueName, r.live, r.registered, r.masked])).toEqual([
+      ['cells', true, true, true], ['new', true, false, false],
+    ])
+    expect(segRowActive(rows[1], {}, {})).toBe(true)
+  })
   it('a row is active when its mask or its tracks are on', () => {
     const [cells, old] = segRows(['cells', 'old'], [], null)
     expect(segRowActive(cells, { cells: true }, {})).toBe(true)

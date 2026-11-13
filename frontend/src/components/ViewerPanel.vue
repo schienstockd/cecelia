@@ -10,10 +10,7 @@ import { openViewerWindow } from '../utils/viewerWindow'
 import { getOpenPopoutWindow } from '../lib/popout'
 import { screenshotFilename } from '../utils/viewerScreenshot'
 import { downloadDataUrl } from '../plots/export'
-import {
-  colourLegend, colourLegendLabels, resetColourLegend,
-  livePreviews, previewShown, togglePreview,
-} from '../composables/useOverlayAutoShow'
+import { colourLegend, colourLegendLabels, resetColourLegend } from '../composables/useOverlayAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
 import { resolveValueName } from '../utils/valueName'
 import { fetchColourByColumns } from '../utils/viewer/colourByColumns'
@@ -107,10 +104,8 @@ const openedImage = computed(() => {
 const valueNames = computed(() => Object.keys(openedImage.value?.filepaths ?? {}))
 const labelNames  = computed(() => Object.keys(openedImage.value?.labels ?? {}))
 
-// One row per label set, registered ones plus any store a task is writing RIGHT NOW (see
-// `livePreviews`). A live-only set has no h5ad, no tracks and no branches yet — and deleting a store
-// mid-write makes no sense — so its row offers the preview toggle and nothing else. A re-run to an
-// EXISTING name is both at once: one row, with the preview watching the store the re-run recreated.
+// One row per label set (a store a run is writing now is previewed in the viewer's "On the image"
+// overlay, `useLivePreview`).
 // Value names with a measurement table but NO mask — a track set imported directly from ImageJ or
 // TrackMate for an image nothing has segmented. `labels` and `labelPropsNames` are two independent
 // ccid.json registries, and such a set is only in the second, so before this it had no row at all:
@@ -133,11 +128,7 @@ const mismatchedMaskVns = computed<Set<string>>(() =>
   new Set(dimMismatchInfo.value?.mismatched ?? []))
 
 const labelRows = computed(() => {
-  const live = new Set(livePreviews.value.map(p => p.valueName))
-  const names = [...labelNames.value,
-                 ...pointsOnlyNames.value,
-                 ...[...live].filter(vn => !labelNames.value.includes(vn)
-                                        && !pointsOnlyNames.value.includes(vn))]
+  const names = [...labelNames.value, ...pointsOnlyNames.value]
   return names.map(valueName => ({
     valueName,
     registered: labelNames.value.includes(valueName) || pointsOnlyNames.value.includes(valueName),
@@ -145,7 +136,6 @@ const labelRows = computed(() => {
     // Tracks need only a `track_id` column, so they stay available on a points row — which is the
     // whole reason the row exists.
     masked: labelNames.value.includes(valueName),
-    live: live.has(valueName),
     dimMismatch: mismatchedMaskVns.value.has(valueName),
     shortLevels: !!dimMismatchInfo.value?.shortLevels?.[valueName],
   }))
@@ -161,7 +151,7 @@ const hasLabelRows = computed(() => labelRows.value.length > 0)
  * segmentations EXIST is still the question this section answers.
  */
 const activeLabelRows = computed(() => labelRows.value.filter(
-  r => r.live || previewShown.value[r.valueName] || visibleLabels.value[r.valueName]
+  r => visibleLabels.value[r.valueName]
     || trackVns.value[r.valueName] || branchVns.value[r.valueName]))
 const labelsExpanded = ref(false)
 const shownLabelRows = computed(() =>
@@ -545,14 +535,6 @@ onUnmounted(() => ws.off('task:result', onTaskResult))
                v-tooltip.right="shortLevelsTooltip(row.valueName)" />
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
-            <!-- The live-preview toggle is NOT hover-hidden: it exists only while the run does, so a
-                 hidden affordance would be missed for good. -->
-            <button
-              v-if="row.live"
-              class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': previewShown[row.valueName] }"
-              @click="togglePreview(row.valueName)"
-              v-tooltip.right="previewShown[row.valueName] ? 'Hide the live preview' : 'Preview this run while it writes'"
-            ><i class="pi pi-bolt" /></button>
             <!-- Ordered DERIVED → BASIS, left to right: branches, tracks, then the segmentation itself
                  rightmost, because the segmentation is what the other two are computed from. -->
             <template v-if="row.registered">

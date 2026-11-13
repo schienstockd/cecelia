@@ -34,6 +34,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
+import { useLivePreview } from '../composables/useLivePreview'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
@@ -5762,6 +5763,8 @@ function onDrawCancel() { drawMode.value = false }
 // every window; the one showing this image answers with the landscape it shows now, tagged with the
 // request id the server is waiting on. Overlay toggle irrelevant — same snapshot Share attaches.
 const ws = useWsStore()
+// a running segmentation's store, watched while it writes (⚡ rows in "On the image")
+useLivePreview(imageUid)
 async function onLandscapeRequest(data: Record<string, unknown>) {
   if (String(data.imageUid ?? '') !== imageUid || String(data.projectUid ?? '') !== projectUid) return
   const requestId = String(data.requestId ?? '')

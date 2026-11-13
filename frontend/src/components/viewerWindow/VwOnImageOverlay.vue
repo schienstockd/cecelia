@@ -23,6 +23,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useStoredSectionOpen } from '../../utils/sectionOpen'
 import { CELL_POP_TYPES } from '../../utils/overlayAutoShow'
 import { popTypeInfo } from '../../plots/popTypeRegistry'
+import { livePreviews, previewShown, togglePreview } from '../../composables/useLivePreview'
 
 const props = defineProps<{
   /** the image's set — every switch here is per set. '' = no set context: nothing to switch */
@@ -54,7 +55,7 @@ const setRibbons = (v: boolean) => { if (props.setUid) settings.setShowGatedTrac
 // ── Segmentations: one mask at a time, tracks per segmentation, the mask's derived files ──
 const labelVis = computed(() => props.imageUid ? settings.getLabelVisibility(props.imageUid, props.labelNames) : {})
 const trackVis = computed(() => props.imageUid ? settings.getTrackVisibility(props.imageUid, props.trackNames) : {})
-const rows = computed(() => segRows(props.labelNames, props.trackNames, props.dims))
+const rows = computed(() => segRows(props.labelNames, props.trackNames, props.dims, livePreviews.value.map(p => p.valueName)))
 const activeRows = computed(() => rows.value.filter(r => segRowActive(r, labelVis.value, trackVis.value)))
 // Rows in use only, the rest one click away: seven segmentations is an ordinary image, and a row each
 // would make this taller than the image. Per image, like the panel's fold.
@@ -117,17 +118,23 @@ const summary = computed(() => [
     </div>
     <template v-if="open">
       <div v-if="rows.length" class="vw-onimg-group">
-        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'One mask at a time; tracks per segmentation'">Segmentation</div>
+        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'One mask at a time; tracks per segmentation; ⚡ a run writing now'">Segmentation</div>
         <template v-for="r in shownRows" :key="r.valueName">
           <div class="vw-onimg-seg">
             <span class="cc-fs-2xs vw-onimg-seg-name" :title="r.valueName">{{ r.valueName }}</span>
             <i v-if="r.dimMismatch" class="pi pi-exclamation-triangle cc-muted-warn" v-tooltip.bottom="mismatchTip(dims, r.valueName)" />
             <i v-else-if="r.shortLevels" class="pi pi-exclamation-triangle cc-muted-warn" v-tooltip.bottom="shortLevelsTip(dims, r.valueName)" />
+            <!-- Live preview: exists only while the run does, so it is first and always shown. -->
+            <button v-if="r.live" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+                    :class="{ 'cc-btn-on cc-btn-on-tint': previewShown[r.valueName] }"
+                    :aria-pressed="!!previewShown[r.valueName]" :aria-label="`Live preview of ${r.valueName}`"
+                    v-tooltip.bottom="previewShown[r.valueName] ? 'Hide the live preview' : 'Preview this run while it writes'"
+                    @click="togglePreview(r.valueName)"><i class="pi pi-bolt" /></button>
             <!-- Branches (skeletons): not drawn by this viewer yet — the button holds the place. -->
             <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" disabled
                     :aria-label="`Branches of ${r.valueName}`" v-tooltip.bottom="'Branches — coming soon'">
               <i class="pi pi-wave-pulse" /></button>
-            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
+            <button v-if="r.registered" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
                     :disabled="!hasTracks(r.valueName)"
                     v-tooltip.bottom="!hasTracks(r.valueName) ? 'No tracks — run Track first' : trackVis[r.valueName] ? 'Hide its tracks' : 'Show its tracks'"

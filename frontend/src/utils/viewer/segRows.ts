@@ -2,7 +2,7 @@
  * The segmentation rows of "On the image" (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S2): which
  * segmentations get a row, which are in use, the one-mask-at-a-time visibility bag, the track flip and
  * the warnings a row carries. The main window's Viewer panel shares the bag, the flip and the warnings
- * until it goes (S4); its own rows also carry live preview and branches. Pure; the components own the store writes.
+ * until it goes (S4). Pure; the components own the store writes.
  */
 import type { LabelsDimMismatch } from '../../stores/viewer'
 
@@ -12,23 +12,32 @@ export interface SegRow {
   masked: boolean
   dimMismatch: boolean
   shortLevels: boolean
+  /** a running task is writing this store now (`useLivePreview`) — the row offers the ⚡ preview */
+  live: boolean
+  /** registered on the image (mask or table); a live-only row has nothing else to toggle yet */
+  registered: boolean
 }
 
-/** One row per segmentation: masks first, then points-only tables (tracks, no mask). */
+/** One row per segmentation: masks first, then points-only tables (tracks, no mask), then stores a
+ *  running task is writing that are not registered yet. A re-run to an existing name is one row. */
 export function segRows(labelNames: string[], trackNames: string[],
-                        dims: LabelsDimMismatch | null | undefined): SegRow[] {
+                        dims: LabelsDimMismatch | null | undefined, liveNames: string[] = []): SegRow[] {
   const masks = new Set(labelNames)
+  const live = new Set(liveNames)
   const mismatched = new Set(dims?.mismatched ?? [])
-  return [...labelNames, ...trackNames.filter(vn => !masks.has(vn))].map(valueName => ({
+  const registered = [...labelNames, ...trackNames.filter(vn => !masks.has(vn))]
+  const known = new Set(registered)
+  return [...registered, ...liveNames.filter(vn => !known.has(vn))].map(valueName => ({
     valueName, masked: masks.has(valueName),
     dimMismatch: mismatched.has(valueName),
     shortLevels: !!dims?.shortLevels?.[valueName],
+    live: live.has(valueName), registered: known.has(valueName),
   }))
 }
 
-/** A row worth showing without being asked: its mask or its tracks are on. */
+/** A row worth showing without being asked: its mask or its tracks are on, or a run is writing it. */
 export const segRowActive = (r: SegRow, labelVis: Record<string, boolean>, trackVis: Record<string, boolean>) =>
-  !!(labelVis[r.valueName] || trackVis[r.valueName])
+  !!(r.live || labelVis[r.valueName] || trackVis[r.valueName])
 
 /**
  * The label-visibility bag that shows only `valueName`'s mask (`null` = none): the viewer draws one

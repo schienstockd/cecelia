@@ -1,7 +1,7 @@
 <!--
   The viewer window's header (docs/todo/GUI_LAYOUT_PLAN.md, V1; mock frame 4): the way back to the main
   window, WHAT is on screen (image name, image version, the labels shown and whether they are a
-  preview or a live run), Help and Ask Kiwi. The provenance chip is also the version picker
+  preview or a live run), Help and @ Kiwi (adds the view to the next Kiwi question). The provenance chip is also the version picker
   (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, S3), marking which version tasks run against. The window has no app shell (a bare route), so this is
   its only chrome; the controls stay in the side panel.
 
@@ -139,7 +139,7 @@ const prov = computed(() => [
         </button>
       </template>
     </HelpMenu>
-    <AddToKiwiButton :kiwi-ref="kiwiRef" :tip="kiwiTip" :project-uid="projectUid" label="Ask Kiwi" />
+    <AddToKiwiButton :kiwi-ref="kiwiRef" :tip="kiwiTip" :project-uid="projectUid" label="Kiwi" />
   </header>
 </template>
 
