@@ -235,6 +235,14 @@ end
             @test code == 409
             @test active_profile_name() == "default"
 
+            # The terminal one-liner starts `claude` under the profile — refused for a retired one,
+            # like select. The shared guard still reaches it for routes that don't start claude.
+            code, _ = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=alice"))
+            @test code == 409
+            @test _kiwi_claude_dir("alice"; reject_retired = true)[1] == 409
+            @test _kiwi_claude_dir("alice") == joinpath(tmp, "user-profiles", "alice")
+            @test api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=bob"))[1] == 200
+
             # Idempotent retire → 200 + alreadyRetired flag.
             code, body = api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 200
