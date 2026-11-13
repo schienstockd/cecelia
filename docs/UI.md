@@ -587,11 +587,13 @@ New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `pa
 list), colour-blind safe to 8 on the dark plot ground, white exports and black images.
 
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
-Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta), and the Viewer
+Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta) — except where the two sit side by side
+(the `ClaudeWaysIn.vue` cards, the Claude Code column of Kiwi's `?` table), where Claude Code wears its clay (`--cc-claude`) so the pair reads as two tools, and the Viewer
 launcher and the Checks cluster frame are neutral — their icon and label carry them — and so is selection
 (`--cc-selected` = the text colour). A new surface
 reuses a role's colour; a new hue must join a group in `cvd.test.ts`. There is no orange ink: on a light ground, at
-text contrast, it cannot be told from amber.
+text contrast, it cannot be told from amber — the clay is the one exception, and only because those places
+are labelled and carry no state (its severity pairs are accepted in `cvd.test.ts`).
 
 Adding a scheme: an entry in `COLOUR_SCHEMES` and one `:root[data-theme=…]` block overriding the scheme-following tokens, and the contrast checks each token's comment records (white on
 `--cc-accent-fill` ≥ 4.5:1, ink on surfaces, …). The legend (`lib/colorLegend.ts`) resolves its

@@ -62,12 +62,14 @@
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
   --cc-accent-tint-2: #3b2382;   /* its hover step */
   /* THE AI colour — teal: Kiwi and Claude Code alike (one hue for "AI is involved"; the icon tells
-     which). Claude's mark ON data stays the annotation magenta (--cc-claude-mark). Distinct from --cc-accent (violet, form-control chrome). See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
+     which) — except where the two sit side by side (--cc-claude below). Claude's mark ON data stays the annotation magenta (--cc-claude-mark). Distinct from --cc-accent (violet, form-control chrome). See docs/todo/KIWI_PLAN.md → Decision 2 (locked 2026-09-19). Family shape mirrors
      accent so a Kiwi-tinted control has the same tools an accent-tinted one does. */
   --cc-kiwi:         #14b8a6;
   --cc-kiwi-strong:  #0d9488;   /* deeper teal — borders on an engaged/active kiwi control */
   --cc-kiwi-soft:    #5eead4;   /* pale teal — text on a kiwi-tinted surface */
   --cc-kiwi-tint:    #134e4a;   /* dark teal wash — the tinted "option is on" surface */
+  --cc-claude:       #d97757;   /* Claude Code's clay — only where Kiwi and Claude Code sit side by side
+                                   (ClaudeWaysIn cards, Kiwi ? table), so they read as two tools */
   /* selection/active highlight for BOXES (panels, cards, timeline keyframes, table rows) — the text
      colour, a ring by contrast not hue. Amber read as a warning under colour blindness, violet as the
      running light and as "option on"; neutral clears every state (utils/cvd.test.ts). */
@@ -1112,6 +1114,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   --cc-kiwi-strong: #115e59;
   --cc-kiwi-soft:   #1d7281;
   --cc-kiwi-tint:   #d5f5ee;
+  --cc-claude:      #a3472a;
 
   --cc-warn:     #8f5d02;   /* = sev-warn: a lighter amber cannot be told from the red under deutan */
   --cc-danger:   #941328;   /* = sev-fail */
