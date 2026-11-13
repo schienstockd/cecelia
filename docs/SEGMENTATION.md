@@ -1901,7 +1901,17 @@ Pipeline:
 6. Write a per-branch labelProps sidecar at `labelProps/{value_name}__branch.h5ad`: one row per
    skeleton path, `X` = skan's measurements (`branch-distance`, `branch-type`, endpoint indices,
    Euclidean distance, etc.), `obsm['spatial']` = median of the branch's two endpoint coordinates
-   (Decision 8), `obsm['temporal']` = `centroid_t` on timeseries.
+   (Decision 8), `obsm['temporal']` = `centroid_t` on timeseries. Each branch's **path** rides along
+   as a polyline — skan's voxel path thinned by Ramer–Douglas–Peucker to `pathTolerance` px (*Line
+   simplify*, default 0.5): `uns['paths'] = {offsets, coords}` (one polyline per row, voxel index of
+   its frame), axes in `uns['path_axes']` (`python/cecelia/utils/skeleton_paths.py`). This is what
+   the viewer and every recording draw — the skeleton as **lines**, not a second mask texture, so it
+   costs no GPU cache budget (`skeleton_segments`, `app/src/skeleton_lines.jl`;
+   `/api/viewer/skeletons`; `docs/todo/DRAW_SPEC_PLAN.md` Phase 3). A segment crossing z planes is
+   split one piece per plane, so a plane view shows a branch on every plane it passes through. On real
+   SHG data: Y7oL9h (3D, 7 t, 2,642 branches) 2.4 points per branch, ~18.7k segments after the plane
+   split, ~0.8 MB of GPU line buffer; EaMaVq (Z-flattened, 201 t, 66,834 branches) 1.8 points per
+   branch, ~170k segments, ~7.5 MB for the whole movie.
 7. **Optional** anisotropy (`calcAnisotropy`): local structure tensor via
    `skimage.feature.structure_tensor` at the `Smoothing scale`, aggregated over `Grid spacing`
    boxes, eigendecomposed (both params are µm — see below). All the maths lives in

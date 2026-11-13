@@ -113,6 +113,9 @@ export interface BatchMovieCfg {
   ribbonEyes?: Record<string, PopEyes>
   // The viewer's Tracks-legend colours, keyed as its ribbon sources (`vn`, `vn::path`, …).
   trackSourceColours?: Record<string, string>
+  // The skeletons (`segment.branching`) drawn as lines, `{segmentation → colour}` — a viewer look's
+  // shown ones (`skeleton_segments` draws them). Absent / empty = none.
+  skeletons?: Record<string, string>
   // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
   // with pops on).
   maskAllCells?: boolean
@@ -187,6 +190,7 @@ export interface BatchMovieRequestConfig {
   hiddenTrackPops?: string[] | Record<string, string[]>
   /** the viewer's Tracks-legend colours (a look filled from the viewer) */
   trackSourceColours?: Record<string, string>
+  skeletons?: Record<string, string>
   /** the mask paints every cell, as the viewer's does */
   maskAllCells?: boolean
   showPopulations: boolean
@@ -299,6 +303,7 @@ export function buildBatchMovieConfig(
     ...(cfg.trackSourceColours && Object.keys(cfg.trackSourceColours).length
       ? { trackSourceColours: cfg.trackSourceColours } : {}),
     ...(cfg.maskAllCells ? { maskAllCells: true } : {}),
+    ...(cfg.skeletons && Object.keys(cfg.skeletons).length ? { skeletons: { ...cfg.skeletons } } : {}),
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',
     // Which segmentation the popsFilter paths belong to. Empty → the batch's first mask column,

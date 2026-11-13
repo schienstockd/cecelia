@@ -18,6 +18,7 @@ import { readDrawSpec, type LookImage } from './drawSpec'
 import { colourForRender, channelsForRender } from '../viewerColormap'
 import type { PopEyes } from './popEyes'
 import type { MaskColour } from '../maskPopTable'
+import { SKELETON_COLOUR } from '../viewerOverlays'
 
 export { readGatingCurrent, type LookImage } from './drawSpec'
 
@@ -59,6 +60,8 @@ export interface ViewerLookInput {
   trackColourMode: string
   colourBy: string
   colourOverrides: Record<string, string>
+  /** per skeleton segmentation, its eye (`settings.getBranchVisibility`) — the shown ones draw as lines */
+  branchVisible: Record<string, boolean>
 }
 
 export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
@@ -139,6 +142,9 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     tailLength: i.tailLength,
     trackColourMode: i.trackColourMode,
   }
+  // the shown skeletons, as lines in the viewer's colour (`appendSkeletonLines`)
+  const skeletons = Object.keys(i.branchVisible).filter(vn => i.branchVisible[vn])
+  if (skeletons.length) out.skeletons = Object.fromEntries(skeletons.map(vn => [vn, SKELETON_COLOUR]))
   if (i.colourBy) {
     out.colourBy = i.colourBy
     if (Object.keys(i.colourOverrides).length) out.colourOverrides = i.colourOverrides

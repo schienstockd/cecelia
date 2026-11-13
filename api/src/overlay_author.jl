@@ -838,7 +838,13 @@ function overlay_track_plan(ov)
         Dict{String,String}()
     pop_eyes = parse_look_eyes(g("popEyes", nothing))
     ribbon_eyes = parse_look_eyes(g("ribbonEyes", nothing))
-    rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
+    # the skeletons drawn as lines, `{valueName => colour}` (a look's `skeletons`, `skeleton_segments`)
+    sk_raw = g("skeletons", nothing)
+    skeletons = sk_raw isa AbstractDict ?
+        sort!(Tuple{String,String}[(String(k), v isa AbstractString ? String(v) : "") for (k, v) in sk_raw]) :
+        Tuple{String,String}[]
+    rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes,
+              ribbon_eyes, skeletons)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -981,8 +987,17 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         end
     end
 
+    # Skeletons — static lines, each frame's own (`skeleton_segments`, the viewer's reader too)
+    skels = Tuple{SkeletonSegments,RGB{N0f8}}[]
+    for (svn, col) in get(plan, :skeletons, Tuple{String,String}[])
+        s = skeleton_segments(img, svn)
+        s === nothing && (@warn "skeleton '$svn' has no drawn lines — re-run branching" image = img.uid; continue)
+        length(s) == 0 && continue
+        push!(skels, (s, something(rgb(col), hex_to_rgb(SKELETON_COLOUR))))
+    end
+
     sources = vcat(seg_srcs, gated_srcs, tc_srcs)
-    (isempty(pts) && all(s -> isempty(s.hops), sources)) && return nothing
+    (isempty(pts) && all(s -> isempty(s.hops), sources) && isempty(skels)) && return nothing
     tracks_active = has_t && tail_length > 0 && !isempty(sources)
     segs = tracks_active ? _colour_hops(sources, _track_mode(track_color_mode); um = _voxel_um(img)) :
            Dict{Int,_SegBag}()
@@ -990,9 +1005,36 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     return function(t::Int)
         p, sg = _state_at(state, t)
         (p === nothing || isempty(p.x)) && (p = nothing)
+        sg = _with_skeleton_lines(sg, skels, t)
         (sg === nothing || isempty(sg.x0)) && (sg = nothing)
         (p, sg)
     end
+end
+
+# A skeleton's colour when the look names none — the viewer's `SKELETON_COLOUR`.
+const SKELETON_COLOUR = "#ffffff"
+
+# One frame's tail segments with the skeletons' lines appended, every segment with its `plane` (the
+# plane it draws on; -1 = every plane, a Z-flattened skeleton). A skeleton line's `t1` is -1: the
+# shader draws it unfaded (`tailAlpha`), as the viewer does (`appendSkeletonLines`).
+function _with_skeleton_lines(sg, skels, t::Int)
+    isempty(skels) && return sg === nothing ? nothing : merge(sg, (; plane = floor.(Float64.(sg.z1))))
+    x0 = Float64[]; y0 = Float64[]; z0 = Float64[]; x1 = Float64[]; y1 = Float64[]; z1 = Float64[]
+    cs = RGB{N0f8}[]; t1 = Int[]; tail = Int[]; plane = Float64[]
+    if sg !== nothing
+        append!(x0, sg.x0); append!(y0, sg.y0); append!(z0, sg.z0)
+        append!(x1, sg.x1); append!(y1, sg.y1); append!(z1, sg.z1)
+        append!(cs, sg.colour); append!(t1, sg.t1); append!(tail, sg.tail)
+        append!(plane, floor.(Float64.(sg.z1)))
+    end
+    for (s, c) in skels
+        idx = skeleton_segments_at(s, t)
+        append!(x0, s.x0[idx]); append!(y0, s.y0[idx]); append!(z0, s.z0[idx])
+        append!(x1, s.x1[idx]); append!(y1, s.y1[idx]); append!(z1, s.z1[idx])
+        append!(cs, fill(c, length(idx))); append!(t1, fill(-1, length(idx))); append!(tail, zeros(Int, length(idx)))
+        append!(plane, Float64.(s.plane[idx]))
+    end
+    (; x0, y0, z0, x1, y1, z1, colour = cs, t1, tail, plane)
 end
 
 """

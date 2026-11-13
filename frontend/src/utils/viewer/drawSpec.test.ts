@@ -58,7 +58,7 @@ const PROBES: Record<keyof ViewerDrawSpec, [Partial<ViewerDrawSpec>, Partial<Vie
   trackColourMode: [{}, { trackColourMode: 'solid' }],
   colourBy: [{}, { colourBy: 'clusters' }],
   colourOverrides: [{ colourBy: 'clusters' }, { colourOverrides: { a: '#00ff00' } }],
-  branchVisible: [{}, { branchVisible: { skel: false } }],
+  branchVisible: [{}, { branchVisible: { skel: true } }],
   scaleBar: [{}, { scaleBar: false }],
   timestamp: [{}, { timestamp: false }],
   scaleBarPx: [{}, { scaleBarPx: 30 }],

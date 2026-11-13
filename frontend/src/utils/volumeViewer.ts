@@ -75,6 +75,9 @@ export interface ViewerMeta {
   /** The segmentations with a cell table, mask or not — what populations, tracks and track clusters
    *  draw from (the movie's `_overlay_segmentations`, same order). Absent on an older server. */
   cellTableNames?: string[]
+  /** The skeletons (`segment.branching`) with a branch table — what `/api/viewer/skeletons` draws.
+   *  Absent on an older server. */
+  branchNames?: string[]
   /**
    * Per-vn (nX, nY, nZ) of each mask store's L0. Lets the client flag a mask that was segmented on a
    * DIFFERENT image version whose spatial dims no longer match this image version's — overlaying such
@@ -547,10 +550,10 @@ export function shownStoresChanged(
  * if the overlays are reloaded against the new list.
  */
 export function refreshMetaInPlace(
-  prev: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'storeRevs'
-    | 'valueNames' | 'activeValueName'>,
-  next: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'storeRevs'
-    | 'valueNames' | 'activeValueName'>,
+  prev: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'branchNames'
+    | 'storeRevs' | 'valueNames' | 'activeValueName'>,
+  next: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'branchNames'
+    | 'storeRevs' | 'valueNames' | 'activeValueName'>,
 ): boolean {
   const was = prev.cellTableNames ?? []
   const now = next.cellTableNames ?? []
@@ -558,6 +561,7 @@ export function refreshMetaInPlace(
   prev.labelDims = next.labelDims
   prev.labelFiles = next.labelFiles
   prev.cellTableNames = next.cellTableNames
+  prev.branchNames = next.branchNames
   prev.storeRevs = next.storeRevs
   prev.valueNames = next.valueNames
   prev.activeValueName = next.activeValueName

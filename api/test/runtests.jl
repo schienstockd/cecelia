@@ -297,6 +297,7 @@ include(joinpath(@__DIR__, "suite", "movie_rail_translators.jl"))
 # camera payload + scale bar, palette + track-mode JSON as the shared source of truth
 # (VIEWER_PARITY 1+2). Path expression uses API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
+include(joinpath(@__DIR__, "suite", "skeleton_lines.jl"))
 
 # ── /api/tasks/validate + /api/cell_cards + _require_ids testsets ─
 # Three testsets: /api/tasks/validate wiring (form-time advisory), /api/cell_cards metadata + sidecar

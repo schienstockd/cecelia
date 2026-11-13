@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { roiRerecordRequest, roiMovieFocus, restoreKind, lookRestore, keyframeRestore, missingRefs, restoreNote, restoreTargetSet,
          RESTORE_ROUTE } from './movieRestore'
+import { SKELETON_COLOUR } from './viewerOverlays'
 
 describe('restoreKind', () => {
   it('routes each kind to the page that owns it', () => {
@@ -98,17 +99,24 @@ describe('lookRestore — the viewer shape', () => {
     expect(r.output.titleCard).toEqual({ enabled: true, note: 'day 3', durationSec: 4 })
   })
 
-  // The one field with nowhere to land. Reporting beats losing it silently: the two surfaces are the
-  // same KIND, not the same controls.
-  it('reports skeletons, which the batch page cannot express', () => {
+  // A recording from before skeletons rode in the look named them in `branchValueNames`: they come
+  // back as the look's `skeletons`, drawn as lines.
+  it("restores a legacy recording's skeletons as the look's", () => {
     const r = lookRestore({ ...banked, branchValueNames: ['skel'] })!
-    expect(r.dropped).toHaveLength(1)
-    expect(r.dropped[0]).toContain('skel')
+    expect(r.dropped).toEqual([])
+    expect(r.cfg.skeletons).toEqual({ skel: SKELETON_COLOUR })
     expect(r.cfg).not.toHaveProperty('branchValueNames')
+  })
+
+  it('a look that carries its own skeletons keeps them', () => {
+    const r = lookRestore({ ...banked, look: { ...(banked.look as object), skeletons: { a: '#ff0000' } },
+                            branchValueNames: ['skel'] })!
+    expect(r.cfg.skeletons).toEqual({ a: '#ff0000' })
   })
 
   it('says nothing when there were no skeletons', () => {
     expect(lookRestore({ ...banked, branchValueNames: [] })!.dropped).toEqual([])
+    expect(lookRestore({ ...banked, branchValueNames: [] })!.cfg.skeletons).toBeUndefined()
   })
 })
 

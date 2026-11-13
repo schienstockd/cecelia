@@ -111,7 +111,8 @@ export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, drop_obsm, 
 export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col, selectable_cols
 export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
-export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df
+export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df, branch_paths
+export SkeletonSegments, skeleton_segments, skeleton_segments_at
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
@@ -321,6 +322,7 @@ include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
 include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (notebooks)
+include("skeleton_lines.jl")   # a skeleton's branch polylines as segments (viewer + movies)
 include("plotting/plot_data.jl")
 include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "elbow") from the hmmfit records
 include("plotting/stats.jl")

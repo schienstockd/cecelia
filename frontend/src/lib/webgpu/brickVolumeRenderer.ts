@@ -526,6 +526,7 @@ export async function createBrickVolumeRenderer(
   let segCap = 0
   let segFirst = 0
   let segCount = 0
+  let lineRanges: readonly (readonly [number, number])[] = []
   let segWidthPx = 3
   let segPlaneLo = -1
   let segPlaneHi = -1
@@ -1564,11 +1565,12 @@ export async function createBrickVolumeRenderer(
     pass.setBindGroup(0, atlas.bindGroup)
     pass.draw(3, 1, 0, 0)
     if (!withOverlays) return
-    if (segBuf !== null && segCount > 0) {
+    if (segBuf !== null && (segCount > 0 || lineRanges.length)) {
       pass.setPipeline(v.segPipeline)
       pass.setBindGroup(0, atlas.bindGroup)
       pass.setVertexBuffer(0, segBuf)
-      pass.draw(6, segCount, 0, segFirst)
+      if (segCount > 0) pass.draw(6, segCount, 0, segFirst)
+      for (const [f, c] of lineRanges) if (c > 0) pass.draw(6, c, 0, f)
     }
     if (pointBuf !== null && pointCount > 0) {
       pass.setPipeline(v.pointsPipeline)
@@ -1791,6 +1793,9 @@ export async function createBrickVolumeRenderer(
       segWidthPx = widthPx
       segPlaneLo = planeLo
       segPlaneHi = planeHi ?? planeLo
+    },
+    setOverlayLineDraw(ranges) {
+      lineRanges = ranges
     },
     setTailFade(head, length) {
       tailFadeHead = head

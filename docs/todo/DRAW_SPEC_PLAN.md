@@ -1,6 +1,7 @@
 # Draw spec — one description of what the viewer draws, for the viewer and every recording
 
-**Status:** building. Phase 0 decided, Phases 1 and 2 built (2026-11-12). Phase 3 next.
+**Status:** building. Phase 0 decided, Phases 1 and 2 built (2026-11-12). Phase 3: skeletons built
+(2026-11-13); scale bar / timestamp sizes and Steps next.
 
 ## Why
 
@@ -55,7 +56,7 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
    | Grid overlay (`viewerGrid`, density) | not drawn | **not recorded** (maintainer, 2026-11-12) |
    | Landscape overlay (`viewerLandscape`, labels) | not drawn | **not recorded** (maintainer, 2026-11-12) |
    | ROI spotlight, tile marks, crop box | not drawn | **not recorded** (maintainer, 2026-11-12) — on-screen aids |
-   | Skeletons (`getBranchVisibility`) | viewer panel Record only (`branchValueNames`); not in the look, so batch Fill from view drops them | **recorded**, Fill from view too (maintainer, 2026-11-12) |
+   | Skeletons (`getBranchVisibility`) | not drawn anywhere: the panel's Record sent `branchValueNames`, which only counted toward a compare grid (a napari leftover); the WebGPU viewer drew none (corrected 2026-11-13) | **recorded**, Fill from view too (maintainer, 2026-11-12) — drawn as LINES (2026-11-13, below) |
    | Scale bar / timestamp sizes (`viewerScaleBarPx`, `viewerTimestampPx`) | on/off from the record options; the movie's own sizes | **recorded**: the viewer's sizes (maintainer, 2026-11-12) |
    | 3D ray steps (`viewerSteps`) | separate `renderQuality` knob (draft / standard / high = 128 / 256 / 512 steps — the same quantity as the viewer's Steps slider, 64–512, default 256) | **recorded**: the viewer's Steps by default; Render quality stays as an optional override (maintainer, 2026-11-12) |
    Shader lanes: the movie host sets every `mip` lane except `zwin` (it loads the exact planes, so
@@ -75,6 +76,14 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
    override, `maskFilesOf` (it takes any segmentation, the preview's too). The viewer has no skeleton
    names (`branchNames: []`) — it draws none; Phase 3.
 3. **Close the Phase 0 gaps** marked "record it", each with a runner test that draws it.
+   - **Skeletons — BUILT** (2026-11-13). Drawn as lines, not a second mask texture: a texture would be
+     the parked multi-mask refactor (`MULTI_MASK_PLAN.md`) and 4 B/voxel per cached timepoint outside
+     the brick / tile budget (maintainer: lines, simplified paths). `segment.branching` stores each
+     branch's Ramer–Douglas–Peucker-simplified path (`uns/paths`, `pathTolerance` 0.5 px); one reader
+     (`skeleton_segments`) feeds the viewer route and the movie closure; the viewer appends them to the
+     track segment buffer (`appendSkeletonLines`, end timepoint -1 = unfaded, plane -1 = every plane);
+     the look carries `skeletons`. Branch tables written before need a branching re-run.
+   - Scale bar / timestamp sizes, Steps: next.
 4. **Server resolver** (D5).
 
 ## Not covered

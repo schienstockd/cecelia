@@ -341,7 +341,7 @@ class SkeletoniseDilationOrderTest(unittest.TestCase):
     def test_skeletonise_does_not_dilate_before_skan_sees_it(self):
         mod = _load_runner()
         thin = mod._skeletonise(self._t_junction(), pre=0, is_3d=False)
-        df, arr = mod._summarise_paths(thin, t_index=None)
+        df, arr, _ = mod._summarise_paths(thin, t_index=None)
         # The real topology: 3 paths, all endpoint-to-junction. If `_skeletonise` dilated the
         # mask before this point (the bug), skan would read dozens of spurious paths instead.
         self.assertEqual(len(df), 3)
@@ -351,7 +351,7 @@ class SkeletoniseDilationOrderTest(unittest.TestCase):
     def test_post_dilation_grows_footprint_without_changing_topology(self):
         mod = _load_runner()
         thin = mod._skeletonise(self._t_junction(), pre=0, is_3d=False)
-        df, arr = mod._summarise_paths(thin, t_index=None)
+        df, arr, _ = mod._summarise_paths(thin, t_index=None)
         dilated = mod._dilate_label_image(arr, post=2, is_3d=False)
         # More pixels lit up (visibility), but the SET of distinct path labels is unchanged —
         # dilation must never re-derive or corrupt the topology skan already read.

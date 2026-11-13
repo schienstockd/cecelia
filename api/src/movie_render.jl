@@ -661,7 +661,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
               _to_str_dict(overlays_config))
     plan = overlay_track_plan(ov_legacy)
     # cell-track ribbons ride on the pops — without them they are nothing to draw
-    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust
+    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || !isempty(plan.skeletons)
     (show_pops || any_tracks || show_mask) || return (nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
@@ -671,7 +671,8 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     end
     # The mask's segmentation, when the caller names it apart from the overlays' (`maskValueName`).
     mask_vn = _ov_str(overlays_config, "maskValueName", vn)
-    isempty(vn) && isempty(mask_vn) && !plan.trackclust && !plan.pop_all_segs && return (nothing, nothing)
+    isempty(vn) && isempty(mask_vn) && !plan.trackclust && !plan.pop_all_segs && isempty(plan.skeletons) &&
+        return (nothing, nothing)
     isempty(vn) && (vn = mask_vn)
     # `frame` = the recorded version's `(arr, caxes)` — a mask from another version's grid is skipped.
     show_mask && frame !== nothing && !mask_fits_frame(img, mask_vn, frame...; on_log = on_log) &&
@@ -776,6 +777,8 @@ function _overlays3d_state(per_t3d, t::Int)
         "x0" => Float64.(segs.x0), "y0" => Float64.(segs.y0), "z0" => Float64.(segs.z0),
         "x1" => Float64.(segs.x1), "y1" => Float64.(segs.y1), "z1" => Float64.(segs.z1),
         "colour" => [rgb(c) for c in segs.colour]))
+    # the plane each segment draws on (-1 = every plane, a Z-flattened skeleton) — absent: its end's
+    segs !== nothing && hasproperty(segs, :plane) && (out["segments"]["plane"] = Float64.(segs.plane))
     if segs !== nothing && hasproperty(segs, :t1) && hasproperty(segs, :tail) && !isempty(segs.t1)
         out["segments"]["t1"] = Float64.(segs.t1)
         out["segments"]["head"] = t + 1

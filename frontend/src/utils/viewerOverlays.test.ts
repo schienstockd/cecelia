@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  appendSkeletonLines, skeletonLineRanges, SEG_STRIDE as SEG_W, type SkeletonPayload,
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
@@ -623,11 +624,13 @@ describe('setOverlayWindow', () => {
   // payload(): track 1 runs t0 → t1, so a tail at t = 1 holds its one segment.
   const style = { pointPx: 5, borderPx: 1, umPerSize: 0.5, pointZTol: 1, tailFrames: 2, tailPx: 3, trackZTol: 2 }
   const rec = () => {
-    const calls: { pts?: number[]; segs?: number[]; fade?: number[]; unit?: number[] } = {}
+    const calls: { pts?: number[]; segs?: number[]; fade?: number[]; unit?: number[];
+                   lines?: readonly (readonly [number, number])[] } = {}
     return {
       calls,
       setOverlayDraw: (...a: number[]) => { calls.pts = a },
       setOverlaySegmentDraw: (...a: number[]) => { calls.segs = a },
+      setOverlayLineDraw: (r: readonly (readonly [number, number])[]) => { calls.lines = r },
       setTailFade: (...a: number[]) => { calls.fade = a },
       setOverlaySizeUnit: (...a: number[]) => { calls.unit = a },
     }
@@ -676,5 +679,56 @@ describe('ribbon eye', () => {
     expect(isTrackDrawable({ ...pop, show: false } as typeof pop)).toBe(true)
     expect(isTrackDrawable({ ...pop, hasTracks: false })).toBe(false)
     expect(isTrackDrawable({ ...pop, labels: [] })).toBe(false)
+  })
+})
+
+describe('skeleton lines (appendSkeletonLines)', () => {
+  // three segments: one on every frame, one at t=0, one at t=2; z at plane 1 (vz = 2 µm)
+  const skel = (over: Partial<SkeletonPayload> = {}): SkeletonPayload => ({
+    valueName: 'SHG', flat: false, nSegments: 3, t: [2, -1, 0], plane: [1, 1, 1],
+    x0: [0, 1, 2], y0: [0, 0, 0], z0: [2, 2, 2], x1: [1, 2, 3], y1: [1, 1, 1], z1: [2, 2, 2], ...over,
+  })
+
+  it('appends after the tracks, every-frame lines first, then frame order', () => {
+    const tracks = buildTrackBuffer(payload(), meta(), ['#ff0000'])
+    const buf = appendSkeletonLines(tracks, [{ payload: skel(), colour: '#00ff00' }], meta())
+    expect(buf.count).toBe(tracks.count)                  // the tails' range is untouched
+    expect(buf.data.length).toBe((tracks.count + 3) * SEG_W)
+    const row = (k: number) => Array.from(buf.data.subarray((tracks.count + k) * SEG_W, (tracks.count + k + 1) * SEG_W))
+    expect(row(0).slice(0, 3)).toEqual([1, 0, 2])          // the every-frame line
+    expect(row(1)[0]).toBe(2)                              // t = 0
+    expect(row(2)[0]).toBe(0)                              // t = 2
+    expect(row(0).slice(6, 9)).toEqual([0, 1, 0])
+    expect(row(0)[9]).toBe(1)                              // plane of its end
+    expect(row(0)[10]).toBe(-1)                            // static: drawn unfaded
+  })
+
+  it("draws at t the every-frame lines and t's own", () => {
+    const tracks = buildTrackBuffer(payload(), meta(), ['#ff0000'])
+    const buf = appendSkeletonLines(tracks, [{ payload: skel(), colour: '#00ff00' }], meta())
+    const s = tracks.count
+    expect(skeletonLineRanges(buf, 0)).toEqual([[s, 1], [s + 1, 1]])
+    expect(skeletonLineRanges(buf, 1)).toEqual([[s, 1]])
+    expect(skeletonLineRanges(buf, 2)).toEqual([[s, 1], [s + 2, 1]])
+    expect(skeletonLineRanges(tracks, 0)).toEqual([])
+  })
+
+  it('a flattened skeleton is on every plane', () => {
+    const buf = appendSkeletonLines(buildTrackBuffer(payload(), meta(), []),
+                                    [{ payload: skel({ flat: true, plane: [-1, -1, -1] }), colour: '#ffffff' }], meta())
+    expect(buf.data[(buf.count) * SEG_W + 9]).toBe(-1)
+  })
+
+  it('setOverlayWindow hands the frame\'s line ranges to the renderer', () => {
+    const style = { pointPx: 5, borderPx: 1, umPerSize: 0.5, pointZTol: 1, tailFrames: 0, tailPx: 3, trackZTol: 2 }
+    const pts = buildPointBuffer(payload(), meta())
+    const buf = appendSkeletonLines(buildTrackBuffer(payload(), meta(), []),
+                                    [{ payload: skel(), colour: '#ffffff' }], meta())
+    let lines: readonly (readonly [number, number])[] = []
+    const r = { setOverlayDraw: () => {}, setOverlaySegmentDraw: () => {}, setTailFade: () => {},
+                setOverlaySizeUnit: () => {}, setOverlayLineDraw: (x: readonly (readonly [number, number])[]) => { lines = x } }
+    setOverlayWindow(r, pts, buf, 2, [1, 1], style, 'plane')
+    expect(lines).toEqual(skeletonLineRanges(buf, 2))
+    expect(lines.length).toBe(2)
   })
 })

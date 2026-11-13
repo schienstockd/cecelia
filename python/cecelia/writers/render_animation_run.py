@@ -195,8 +195,10 @@ def _point_instances(pts, voxel_um, origin_yx=(0.0, 0.0)):
 
 
 def _segment_instances(segs, voxel_um, origin_yx=(0.0, 0.0)):
-    """Julia's per-frame tail segments → ``SEG_STRIDE`` rows: from, to (image µm), rgb, end plane,
-    end timepoint (0 when Julia sent none — the fade is then off, see ``trail_lanes``)."""
+    """Julia's per-frame tail segments → ``SEG_STRIDE`` rows: from, to (image µm), rgb, plane (Julia's
+    ``plane`` when sent — -1 = every plane, a Z-flattened skeleton — else the end's), end timepoint (0
+    when Julia sent none — the fade is then off, see ``trail_lanes``; -1 = a static skeleton line,
+    drawn unfaded)."""
     if not segs or not segs.get('x0'):
         return None
     vx, vy, vz = voxel_um
@@ -206,7 +208,8 @@ def _segment_instances(segs, voxel_um, origin_yx=(0.0, 0.0)):
     for k, (a, s) in enumerate((('x0', vx), ('y0', vy), ('z0', vz), ('x1', vx), ('y1', vy), ('z1', vz))):
         out[:, k] = (np.asarray(segs[a]) - shift.get(a, 0.0)) * s
     out[:, 6:9] = np.asarray(segs['colour'], np.float64).reshape(-1, 3)
-    out[:, 9] = np.floor(np.asarray(segs['z1'], np.float64))
+    out[:, 9] = (np.asarray(segs['plane'], np.float64) if segs.get('plane') is not None
+                 else np.floor(np.asarray(segs['z1'], np.float64)))
     out[:, 10] = np.asarray(segs['t1'], np.float64) if segs.get('t1') else 0.0
     return out
 

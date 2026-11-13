@@ -35,8 +35,6 @@ export interface LookImage {
 
 /** Everything that decides the viewer's picture. The recorded half is `viewerLook`'s input. */
 export interface ViewerDrawSpec extends ViewerLookInput {
-  /** per skeleton segmentation, its eye (`settings.getBranchVisibility`) */
-  branchVisible: Record<string, boolean>
   scaleBar: boolean
   timestamp: boolean
   scaleBarPx: number
@@ -64,7 +62,7 @@ export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   pointBorder: 'recorded', labelOpacity: 'recorded', pointZTol: 'recorded', trackZTol: 'recorded',
   tailWidth: 'recorded', tailLength: 'recorded', labelContour: 'recorded', maskColour: 'recorded',
   trackColourMode: 'recorded', colourBy: 'recorded', colourOverrides: 'recorded',
-  branchVisible: { pending: 'skeletons in every recording, Fill from view too' },
+  branchVisible: 'recorded',
   scaleBar: { pending: 'today the record options decide on / off' },
   timestamp: { pending: 'today the record options decide on / off' },
   scaleBarPx: { pending: 'the viewer’s size' },
@@ -173,7 +171,7 @@ export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): Vi
     imageUid: img.uid, setUid,
     labelNames: open?.labelNames ?? Object.keys(img.labels ?? {}),
     trackNames: open?.trackNames ?? trackableValueNames(img),
-    branchNames: Object.keys(img.branchLabels ?? {}),
+    branchNames: open?.branchNames ?? Object.keys(img.branchLabels ?? {}),
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
     version: open?.valueName || img.activeValueName || '',

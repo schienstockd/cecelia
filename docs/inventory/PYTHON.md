@@ -2,6 +2,7 @@
 
 # Python utilities (`python/cecelia/utils/`)
 
+- **skeleton_paths**: `simplify_polyline` (Ramer–Douglas–Peucker, any dimension), `skeleton_polylines(skan.Skeleton, tol)`, `pack_polylines` / `unpack_polylines` — a branch table's drawn paths, `uns['paths']` (`segment.branching`); read back via `LabelPropsView.branch_paths()`.
 - **measure_utils**: `measure_from_zarr` — per-cell morphology + intensity; writes a NEW `labelProps/{vn}.h5ad`.
 - **label_import_utils**: `import_labels` — an external label image (OME-Zarr or TIFF) → label stores shaped like the image minus C: shape check (only length-1 axes may differ), uint32 cast that refuses what it would change, ids made unique across timepoints only where they collide (`frame_offsets`), optional overlap matching of non-base roles to base (`match_to_base`, the `_match_nuc_cyto` rule on sparse block-accumulated overlaps), the image's pyramid depth. Streams block by block — never a whole frame. Runner `app/src/tasks/segment/import_labels_run.py`; `docs/SEGMENTATION.md` → *Importing labels*.
 - **segmentation_utils**: `SegmentationUtils` base — tiled segmentation loop, seam stitching, post-processing, nuc↔cyto matching, `_write_labels_zarr`. **Swapping the algorithm is one subclass + `predict_slice`** (cellpose, coastal) — the Julia-side counterpart is `app/src/segmentation.jl`, below.

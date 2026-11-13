@@ -177,6 +177,9 @@ export interface TileRenderer {
   /** Which slice of the segment buffer to draw, its width in px, and its own plane window. */
   setOverlaySegmentDraw(first: number, count: number, widthPx: number,
                         planeLo: number, planeHi?: number): void
+  /** Static line ranges of the same segment buffer — skeletons (`appendSkeletonLines`), drawn after
+   *  the tail with its width and plane window, unfaded (their end timepoint is negative). */
+  setOverlayLineDraw(ranges: readonly (readonly [number, number])[]): void
   /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
    *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
   setTailFade(head: number, length: number): void
@@ -358,6 +361,7 @@ export async function createTileRenderer(
   let segCap = 0
   let segFirst = 0
   let segCount = 0
+  let lineRanges: readonly (readonly [number, number])[] = []
 
 
   function rebuildBindGroup() {
@@ -537,11 +541,12 @@ export async function createTileRenderer(
     }
     // Overlays blend over the finished tiles. Tails first, then points: a marker sits ON TOP of the
     // path that leads to it.
-    if (segBuf && segCount > 0) {
+    if (segBuf && (segCount > 0 || lineRanges.length)) {
       pass.setPipeline(segPipeline)
       pass.setBindGroup(0, overlayBindGroup)
       pass.setVertexBuffer(0, segBuf)
-      pass.draw(6, segCount, 0, segFirst)
+      if (segCount > 0) pass.draw(6, segCount, 0, segFirst)
+      for (const [f, c] of lineRanges) if (c > 0) pass.draw(6, c, 0, f)
     }
     if (pointBuf && pointCount > 0) {
       pass.setPipeline(pointsPipeline)
@@ -773,6 +778,9 @@ export async function createTileRenderer(
       u[U.ov.tailPx] = Math.max(1, widthPx)
       u[U.ovx.ribbonLo] = planeLo
       u[U.ovx.ribbonHi] = Math.max(planeLo, planeHi)
+    },
+    setOverlayLineDraw(ranges) {
+      lineRanges = ranges
     },
     setTailFade(head, length) {
       u[U.ovx.trailHead] = head

@@ -220,3 +220,39 @@ end
         @test nrow(anisotropy_df([img, img3]; value_name="SHG")) == 3
     end
 end
+
+# The skeleton as drawn lines (`skeleton_segments`, app/src/skeleton_lines.jl) — the reader the viewer
+# route and the movie closure share. The fixture is the real branching writer's output: a T-junction
+# (bar on row 10, cols 2–38; stub on col 20, rows 2–10) at t 0 and 2, each branch straight, so each
+# simplifies to one segment. x and y differ, so a swapped read fails.
+@testset "skeleton lines (branch paths)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "skel__branch.h5ad")
+    if !have_fixture(h5)
+        @test_skip "skel__branch fixture (missing)"
+    else
+        offsets, coords, axes = branch_paths(label_props(h5))
+        @test axes == ["y", "x"]
+        @test length(offsets) == 7 && offsets[1] == 0
+        s = skeleton_segments(h5; is_stack = false)
+        @test length(s) == 6                                  # 3 branches × 2 frames, 1 segment each
+        @test sort(unique(s.t)) == [0, 2]
+        @test !s.flat
+        @test skeleton_segments(h5; is_stack = true).flat     # 2D lines over a stack: every plane
+        segs0 = Set(Set([(s.x0[i], s.y0[i]), (s.x1[i], s.y1[i])]) for i in skeleton_segments_at(s, 0))
+        # the stub (x = 20, y 2 → 10) and the two bar halves (y = 10) — x and y not swapped
+        @test Set([(20f0, 2f0), (20f0, 10f0)]) in segs0
+        @test Set([(2f0, 10f0), (20f0, 10f0)]) in segs0
+        @test isempty(skeleton_segments_at(s, 1))
+        @test all(==(0), s.plane)                             # 2D on one plane
+        @test all(==(-1), skeleton_segments(h5; is_stack = true).plane)
+        # a segment crossing planes is split, one piece per plane it passes through
+        pcs = Cecelia._plane_pieces((0f0, 0f0, 3f0), (6f0, 0f0, 6f0))
+        @test last.(pcs) == [3, 4, 5, 6]
+        @test pcs[1][1] == (0f0, 0f0, 3f0) && pcs[end][2] == (6f0, 0f0, 6f0)
+        @test pcs[2][1][3] ≈ 3.5f0 && pcs[2][2][3] ≈ 4.5f0
+        @test last.(Cecelia._plane_pieces((0f0, 0f0, 6f0), (1f0, 0f0, 3f0))) == [6, 5, 4, 3]
+        @test last.(Cecelia._plane_pieces((0f0, 0f0, 2f0), (5f0, 0f0, 2f0))) == [2]
+        # a table without paths (written before them) draws nothing rather than guessing
+        @test skeleton_segments(fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")) === nothing
+    end
+end

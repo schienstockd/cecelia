@@ -512,6 +512,23 @@ function uns_dict(lp::LabelProps, key::AbstractString)
 end
 
 """
+    branch_paths(lp) -> (offsets, coords, axes) | nothing
+
+A branch table's drawn polylines (`segment.branching`, `python/cecelia/utils/skeleton_paths.py`):
+row `i` (1-based, obs order) is `coords[offsets[i]+1:offsets[i+1], :]`, voxel index of its frame,
+columns named by `axes` (e.g. `["z","y","x"]`). `nothing` for a table written without them.
+"""
+function branch_paths(lp::LabelProps)
+    paths = uns_dict(lp, "paths")
+    (paths === nothing || !haskey(paths, "offsets") || !haskey(paths, "coords")) && return nothing
+    axes = _with_h5(lp.path, "r") do fid
+        _read_uns_strings(fid, "uns/path_axes")
+    end
+    coords = Matrix{Float32}(reshape(paths["coords"], :, length(axes)))
+    (Vector{Int}(paths["offsets"]), coords, axes)
+end
+
+"""
     uns_df(lp, key) -> DataFrame | nothing
 
 A pandas DataFrame stored under `uns` (AnnData's `encoding-type: dataframe`) — e.g. the branch

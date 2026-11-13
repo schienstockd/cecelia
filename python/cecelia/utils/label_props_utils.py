@@ -174,6 +174,16 @@ class LabelPropsView:
     def var_names(self) -> list:
         return list(self.adata.var_names)
 
+    def branch_paths(self):
+        """A branch table's drawn polylines (`segment.branching`, `utils/skeleton_paths.py`):
+        `(polylines, axes)` — one K×D array per row in row order, voxel index of its frame, `axes`
+        e.g. `['z','y','x']`. `None` for a table written without them."""
+        from cecelia.utils.skeleton_paths import PATHS_KEY, PATH_AXES_KEY, unpack_polylines
+        paths = self.adata.uns.get(PATHS_KEY)
+        if paths is None:
+            return None
+        return unpack_polylines(paths), [str(a) for a in self.adata.uns.get(PATH_AXES_KEY, [])]
+
     def channel_columns(self, as_channel_names=False) -> list:
         """Per-channel intensity var names (`{measure}_intensity_i`), or their channel display names if
         `as_channel_names=True` (needs `channel_names`). Mirror of the Julia `channel_columns`."""

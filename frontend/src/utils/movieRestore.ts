@@ -21,6 +21,7 @@
 import { roiPadFrames } from './roiMovie'
 import { TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from './batchMovie'
 import { COMPARE_LAYOUTS, type CompareLayout } from './movieCompare'
+import { SKELETON_COLOUR } from './viewerOverlays'
 
 /** A registry entry as `GET /api/movies/meta` returns it (api/src/movies_api.jl). */
 export interface MovieRegistryEntry {
@@ -132,9 +133,8 @@ export interface LookRestore {
  * the live view, and the masks/versions/3D fields sat at the top level of the record request, because
  * the recorder consumed them directly rather than through a config object.
  *
- * `branchValueNames` is the one field with nowhere to land: the viewer can record skeletons, the batch
- * page has no control for them, so it is REPORTED rather than quietly lost. That is the honest version
- * of "edit this on the page that owns the kind" — the kinds match, the surfaces are not identical.
+ * `branchValueNames` is how a recording made before skeletons rode in the look named them; it comes
+ * back as the look's `skeletons` (drawn as lines, `appendSkeletonLines`), unless the look has its own.
  */
 export function lookRestore(config: Record<string, unknown> | null | undefined): LookRestore | null {
   if (!isObj(config)) return null
@@ -172,7 +172,8 @@ export function lookRestore(config: Record<string, unknown> | null | undefined):
   cfg.nameByImage = true
 
   const branches = strList(config.branchValueNames) ?? []
-  if (branches.length) dropped.push(`skeletons (${branches.join(', ')}) — the batch page has no control for them`)
+  if (branches.length && !cfg.skeletons)
+    cfg.skeletons = Object.fromEntries(branches.map(vn => [vn, SKELETON_COLOUR]))
 
   const uid = typeof config.imageUid === 'string' ? config.imageUid : ''
   return { cfg, output, imageUids: uid ? [uid] : [], dropped }
