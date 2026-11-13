@@ -1,7 +1,7 @@
 // Features with no guide — listed, not invisible (docs/todo/FEATURE_MATURITY_PLAN.md, Decision 4).
 // Each carries the same maturity record a guide does; `maturity.covers` is the feature's key: the
 // sidebar routes and task fun_names it stands for (empty for a feature that is neither, e.g. the
-// viewer panel). This list is the gap list: either a guide gets written, or the feature isn't ready.
+// viewer window). This list is the gap list: either a guide gets written, or the feature isn't ready.
 //
 // `utils/maturity.test.ts` fails when a sidebar page or a registered task is in neither a guide nor
 // here. Coming soon is NOT written here — it is the task JSON `comingSoon` / nav `soon` flag, and a
@@ -229,7 +229,7 @@ export const UNGUIDED: UnguidedFeature[] = [
       { path: 'python/cecelia/tests/test_roi_utils.py', test: 'test_groups_at_any_density_need_no_radius',
         failsIf: 'planted groups at different densities aren’t found' },
     ],
-    next: [todo('Look at the viewer panel on real data')],
+    next: [todo('Look at the viewer ROIs section on real data')],
   }) },
   { id: 'spatial-pattern', title: 'Spatial pattern', group: 'Explore', maturity: covering(['spatialAnalysis.spatialPattern'], {
     tier: 'experimental', testedOn: 'A real measured fixture; a real movie; synthetic',

@@ -3,15 +3,14 @@
 // #779 invalidates the tile atlas when the STORE identity changes (e.g. `default` → `smoothed`,
 // same imageUid, different valueName). What it can't detect is a re-run of a task that overwrites
 // the SAME `ccidSmoothed.ome.zarr` (or a label store) IN PLACE: identity string unchanged, bytes
-// changed, cache HIT still returns stale pixels. `ViewerPanel` publishes on task completion; every
-// viewer (in-panel and pop-out) threads the rev into its `sourceId`/`BrickSource.rev`, and the
+// changed, cache HIT still returns stale pixels. `useViewerAutoUpdate` publishes on task completion; every
+// viewer threads the rev into its `sourceId`/`BrickSource.rev`, and the
 // invalidation logic #779 wired for a version swap fires the same way for a same-store rewrite.
 //
 // **`localStorage` + `storage` AND a same-window CustomEvent**, mirroring `openProjectChannel.ts`
 // but adding the same-window path. The `storage` event fires only in the OTHER windows of the
-// origin, so a pop-out viewer hears it, but the in-panel viewer living in the SAME window as
-// `ViewerPanel` does not — publishing on task-done and having nothing happen in-panel is the exact
-// bug this channel exists to close. The CustomEvent covers the same-window case; pop-outs get the
+// origin, so a pop-out viewer hears it but a publisher's OWN window (ViewerWindow's Re-read from
+// disk) does not. The CustomEvent covers the same-window case; pop-outs get the
 // storage event as normal.
 //
 // **Scoped.** The rev alone is a broadcast — every viewer in the origin reallocates on every task

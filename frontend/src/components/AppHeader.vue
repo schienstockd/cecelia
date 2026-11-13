@@ -11,8 +11,10 @@ import ProfileMenu from './ProfileMenu.vue'
 import { useObserverStore } from '../stores/observer'
 import { showKiwiLauncher } from '../utils/aiSwitch'
 import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
+import { useViewerLauncher } from '../composables/useViewerLauncher'
 
 const settings = useSettingsStore()
+const viewer = useViewerLauncher()
 const appCtl = useAppControlStore()
 const observer = useObserverStore()
 
@@ -78,13 +80,13 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
     </span>
 
     <JumpSearch />
-    <!-- The viewer chip: opens / closes the Viewer panel, which drives the viewer window. Green is
-         the viewer's identity colour; the dot says the panel is open. It sits in the right-hand launcher
-         group, not after the project crumb, so a long project name never moves it. -->
+    <!-- The viewer chip: brings the viewer window forward, or opens it on the last image
+         (`useViewerLauncher`); the viewer's ← back is the way home. The dot says the viewer is open. It
+         sits in the right-hand launcher group, not after the project crumb, so a long project name
+         never moves it. -->
     <button type="button" class="viewer-chip" data-guide="launcher.viewer"
-            :class="{ on: settings.viewerPanelOpen }"
-            v-tooltip.bottom="settings.viewerPanelOpen ? 'Close viewer controls' : 'Viewer controls — populations, tracks, colour-by'"
-            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen">
+            :class="{ on: viewer.open.value }" :disabled="viewer.disabled.value"
+            v-tooltip.bottom="viewer.tip.value" @click="viewer.raise()">
       <span class="cc-dot vc-on" /> Viewer
     </button>
     <button type="button" class="bell cc-btn cc-btn-bare cc-btn-icon" data-guide="launcher.labLog"
@@ -149,6 +151,7 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 .viewer-chip:hover { background: var(--cc-wash); border-color: var(--cc-guide); }
 .viewer-chip.on { background: var(--cc-wash-strong); border-color: var(--cc-guide); }
 .viewer-chip.on .vc-on { background: var(--cc-text); }
+.viewer-chip:disabled { opacity: 0.5; cursor: default; }
 
 /* Lab-log bell — the unseen dot sits on the bell's shoulder. */
 .bell { position: relative; }

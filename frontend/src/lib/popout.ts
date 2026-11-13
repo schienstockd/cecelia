@@ -1,7 +1,7 @@
 // Opening one of the app's views in its OWN browser window — the single place that builds the URL,
 // names the window and knows which routes are popouts.
 //
-// Three surfaces do this (the console's ↗, the Task Manager's ↗ and the viewer panel's ↗) and they all
+// Three surfaces do this (the console's ↗, the Task Manager's ↗ and the image table's ↗) and they all
 // need the same three things, none of which is obvious:
 //
 //  - a HASH url (`origin + pathname + '#/console'`), because the popup boots the same SPA from the

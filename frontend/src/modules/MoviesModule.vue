@@ -626,8 +626,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
         </div>
         <!-- Both empty states live in the STAGE, so the panel beside it (and its Refresh) stays
              reachable in a project with no movies yet — it used to replace the whole page. -->
-        <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
-          Animation, Batch movies or Viewer panels, or save a figure from the Viewer; they appear here.</p>
+        <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from
+          Animation, Batch movies or the viewer's Share, or save a figure there; they appear here.</p>
         <p v-else class="cc-empty">Select a {{ nouns.one }}.</p>
       </div>
 

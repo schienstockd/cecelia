@@ -49,7 +49,7 @@ const settings = useSettingsStore()
   <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
                       accordion="cc.vw.section" section="tracks"
                       fill>
-    <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
+    <!-- Tracks. The per-segmentation tracks switch in "On the image" ticks vns on; this
          section colours + shapes the ribbons. Gated on a ribbon-drawable pop as well as on
          drawn segments: hiding every pop's ribbon drops segCount to 0, and the per-pop eyes
          that turn them back on must stay. -->

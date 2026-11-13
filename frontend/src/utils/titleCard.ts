@@ -1,5 +1,5 @@
 // Movie title-card payload + the helpers that build it. Shared by every place that records a movie —
-// the ViewerPanel single-record, the batch page, and the animation page — so all three cards read
+// the viewer's Record movie (QuickMovie), the batch page, and the animation page — so all three cards read
 // identically. Split out of the viewer's overlay-push layer because a card is a MOVIE-side artefact:
 // it lives on the recorded frames, not on the interactive canvas.
 //

@@ -1420,10 +1420,10 @@ sequences the results so a slider drag can't land an out-of-order answer.
 
 ### Tasks launched outside a module page (computed params, new-image output)
 
-A task doesn't have to be driven by a module-page form. **`editImages.cropImage`** is launched from the
-napari **Viewer panel**: the user draws a crop box, the bridge computes the pixel bbox, and the frontend
-fires `task:run` with those params directly (no page fetches its category's definitions). Two patterns it
-demonstrates:
+A task's params don't have to be typed into a form. **`editImages.cropImage`**: its form asks the
+viewer window for a box (`utils/viewer/cropPick.ts`, bridged through `viewerStore.cropPick`), the user
+draws it on the image (`ViewerCropBar.vue`), and the form sends the computed box as the task's params.
+Two patterns it demonstrates:
 
 - **Computed params, minimal spec.** Only `valueName` + `x0/x1/y0/y1` are declared in the JSON (for
   validation); the optional `z0/z1/t0/t1` are sent as extra params and pass through untouched

@@ -1569,7 +1569,8 @@ run **succeeds**, so mid-run there is no `labels` entry to put in a picker. Inst
 its in-flight output via the `live_outputs` trait (`app/src/tasks/task.jl`), the scheduler records that
 on the `TaskRecord` at submit time, and `GET /api/tasks` publishes it. The frontend reads that
 snapshot on every task lifecycle event (`liveLabelPreviews` in `utils/overlayAutoShow.ts`) and offers a
-⚡ toggle per in-flight store in the ViewerPanel segmentations list.
+⚡ row per in-flight store in the viewer window's "On the image" overlay (`VwOnImageOverlay.vue`,
+`composables/useLivePreview.ts`).
 
 Declaring it is opt-in per task, because writing-as-you-go is a property of the backend:
 `segment.cellpose` streams (`live_outputs(::CellposeSegment, params) = segment_live_outputs(params)`),
@@ -1583,8 +1584,8 @@ computed. `live_outputs` therefore declares the `.partial` filenames while carry
 `value_name` alongside them, because the viewer names the layer from the value_name (`({vn})` is what
 the recolour and layer-eviction logic match on), not from the file.
 
-In the browser viewer the ⚡ toggle hands the store to the viewer window through
-`viewerStore.liveLabels` (`_syncLiveLabels` in `composables/useOverlayAutoShow.ts`), and the viewer reads
+In the viewer window's "On the image" overlay the ⚡ toggle points the viewer at the store through
+`viewerStore.liveLabels` (`syncLiveLabels` in `composables/useLivePreview.ts`), and the viewer reads
 that vn's mask with `live=1` on the slab route (`live_labels_store_path`, `api/src/viewer_api.jl`). The
 server derives the `{vn}.zarr.partial` path from the vn and never takes a path from the client. It
 takes precedence over a ticked segmentation and gets the Segmentation section's opacity, outline and

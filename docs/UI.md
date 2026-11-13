@@ -27,7 +27,7 @@ Both are enforced by tests, so skipping them fails the build.
 | Modals · confirms · deletes · popovers | **Modals & dialogs** |
 | Floating windows, legends | **Floating panels** · **View legend** |
 | Building a new module page (route, sidebar, layout) | **Adding a new module page** |
-| The image table, task runner, sidebar, viewer | **ImageTable** · **TaskRunner** · **AppSidebar** · **ViewerPanel** |
+| The image table, task runner, sidebar, viewer | **ImageTable** · **TaskRunner** · **AppSidebar** · **Viewer window controls** |
 | Adding a plot to a page or the board | **Adding a plot or visualization panel** |
 | Floating/draggable plot panels, tile & cascade | **Shared canvas shell** |
 | Making a plot option survive navigation | **Persisting view state — the three scopes** |
@@ -715,7 +715,7 @@ modal decision (not a single button), use `BaseModal`.
 For a **destructive icon delete** (label set, population, attribute, notebook, chain, node, …) use
 **`frontend/src/components/ConfirmDeleteButton.vue`** — the ONE delete affordance. It's a single icon
 button that arms on the first click (**trash → warning triangle, solid danger fill**) and fires
-`@confirm` on the second (the ViewerPanel labels pattern D picked as the standard). It **wraps**
+`@confirm` on the second (the pattern D picked as the standard). It **wraps**
 `ConfirmButton` for the arm/confirm/dismiss logic and renders its own self-contained chrome (`.cc-del`)
 — self-styled *because* it must look identical everywhere (and hosts' scoped `.opt-btn`/`.pm-icon`/
 `.wb-btn` classes can't reach a button rendered inside it anyway). Don't hand-roll a per-site
@@ -730,8 +730,7 @@ icon-flip or a Confirm+Cancel pair for deletes; that inconsistency is exactly wh
 Props: `title` / `armedTitle` (tooltips), `disabled`, `needsConfirm`, `autoDismissMs`; default slot →
 a text label beside the icon (e.g. "Delete set"). Tooltip position is the directive's default + its
 out-of-bounds flip (a `tip` prop can't drive position — dynamic directive modifiers aren't possible).
-For a host with a **hover-reveal** row action, target the inner button with `:deep(.cc-del)` (see
-`ViewerPanel`). Whole-set deletion (`SetBar`) names the set in its armed tooltip — it is still the
+For a host with a **hover-reveal** row action, target the inner button with `:deep(.cc-del)`. Whole-set deletion (`SetBar`) names the set in its armed tooltip — it is still the
 same single flip-in-place button, not a Confirm + Cancel pair.
 
 ### Coord-fixed plots — 1:1 square
@@ -764,14 +763,13 @@ titles, gate labels) line up with the canvas dots.
 
 **A floating, draggable, resizable, collapsible box that floats above the app content
 (`position: fixed`).** Use it for tool controls that should be reachable on any page rather than
-pinned into the sidebar. `frontend/src/components/FloatingPanel.vue` is generic (not viewer-specific);
-the **napari Viewer controls** are its first consumer — mounted in `App.vue`, toggled by the sidebar's
-"Viewer controls" button (`settings.viewerPanelOpen`, persisted):
+pinned into the sidebar. `frontend/src/components/FloatingPanel.vue` is generic; e.g. the **Lab log**,
+mounted in `App.vue` and toggled by a persisted setting:
 
 ```vue
-<FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
-               @close="settings.viewerPanelOpen = false">
-  <ViewerPanel />
+<FloatingPanel v-if="settings.labLogPanelOpen" title="Lab log" icon="pi-book" storage-key="lablog"
+               @close="settings.labLogPanelOpen = false">
+  <LabLogPanel />
 </FloatingPanel>
 ```
 
@@ -1237,9 +1235,12 @@ be a real matching pair, and teaching the bare half of a composite must be decla
 
 **Two boundaries to keep in mind when writing steps:**
 
-- **napari is a separate window** — no bubble can point into it. Guides stop at the `ViewerPanel`
-  control that puts something on screen and then *describe* what to look for. This is the one place a
-  screencast genuinely beats the system.
+- **The viewer is a separate window.** A step marked `window: 'viewer'` (`lib/guides/types.ts`) is
+  shown there by a mirror (`lib/guides/remote.ts`, `stores/guideMirror.ts`) while the main window
+  points at the header's Viewer chip; gates still run in the main window. Viewer anchors:
+  `viewer.back`, `viewer.share`, `viewer.recordMovie`, `viewer.movieSection`, `viewer.record`,
+  `viewer.onImage`, `viewer.toggleLabels`, `viewer.toggleTracks`. napari is out of reach: a guide
+  stops at the control that puts something there and *describes* what to look for.
 - **No demo data.** Guides run on real projects, which is what the prerequisite system makes honest.
   Guides are not a substitute for the first-launch wizard and shouldn't grow into one.
 
@@ -1623,7 +1624,7 @@ value_name** (the graph pools across segmentations), so there is no per-value_na
 
 The modal **collects a plan and emits it**; the execution, the `k/N` readout and the toast stay in
 `ImageFileActions`. Its own footer button carries the arm/confirm, so no scope is ever one click from
-deleting. Two surfaces were removed once it covered them: the napari **ViewerPanel** no longer deletes
+deleting. Two surfaces were removed once it covered them: the viewer does not delete
 a label set (the viewer shows and hides layers; it does not curate the disk), and the
 `importImages.remove` **task** is `hidden` from the module page — see *MODULES.md → hidden tasks*; it
 stays registered, REPL-runnable and valid as a chain node.
@@ -1983,7 +1984,7 @@ Two things are NOT the same as the console's, and both are load-bearing:
 ### The volume viewer in its own window
 
 **A third popout, and the only one with no docked twin.** `modules/ViewerWindow.vue` is a `bare` route
-(`/viewer-window`, window `cecelia-viewer`) opened from the ViewerPanel's ↗ — an in-browser WebGPU MIP
+(`/viewer-window`, window `cecelia-viewer`) opened from the image table's eye — an in-browser WebGPU MIP
 raycast of the image napari is showing, so the two can be looked at side by side while the browser side
 catches up. It has no docked half because napari occupies that slot until it is removed; the plan and
 the measurements behind it are [`docs/todo/WEB_VIEWER_PLAN.md`](todo/WEB_VIEWER_PLAN.md).
@@ -2656,9 +2657,8 @@ This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old
 All nav group headings are collapsible buttons. Clicking a heading toggles the group open/closed;
 a chevron icon (`pi-chevron-down` / `pi-chevron-right`) reflects the current state.
 
-The **browser viewer controls** are NOT in the sidebar — the sidebar only carries the button that
-toggles them. They live in a `FloatingPanel` mounted in `App.vue`; see *Floating panels* above and
-*ViewerPanel component* below.
+The **browser viewer controls** are NOT in the sidebar — the sidebar only carries a launcher that
+brings the viewer window forward. They live in that window; see *Viewer window controls* below.
 
 ### The nav catalogue lives outside the SFC
 
@@ -2738,39 +2738,28 @@ Icons: pick from `lib/iconLegend.ts` (see *Icons* above) — use the `pi-*` name
 
 ---
 
-## ViewerPanel component
+## Viewer window controls
 
-`frontend/src/components/ViewerPanel.vue`
+The viewer's controls live in its own window (`modules/ViewerWindow.vue`); the main window has no
+viewer panel. Design: [`docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md`](todo/VIEWER_ON_THE_IMAGE_PLAN.md).
 
-Shows the current napari image and switches between versions (value names). Mounted in `App.vue`
-inside a `FloatingPanel` (`storage-key="viewer"`), toggled by the sidebar's "Viewer controls" button
-(`settings.viewerPanelOpen`, persisted) — it was a sidebar group once and outgrew the 190px nav.
+- **WHAT is shown** — the "On the image" overlay (`components/viewerWindow/VwOnImageOverlay.vue`):
+  segmentation rows (mask eye, one at a time; tracks; label-file chips; ⚡ live-preview rows via
+  `composables/useLivePreview.ts`), population types, track ribbons, colour-by column, clear
+  highlights. Rows/bags from `utils/viewer/segRows.ts`, colour-by columns from
+  `utils/viewer/colourByColumns.ts`.
+- **HOW it looks** — the right sidebar sections (`components/viewerWindow/Vw*Section.vue`).
+- **Version** — the provenance chip in `VwHeader.vue` (a picker when the image has several).
+- **Share ▾** (`VwHeader.vue`) — Record movie… (`QuickMovie.vue` in a popover), Save image, Draw and
+  note (AI on only).
+- **⚙ Advanced** — Remember (`viewerAutoSaveLayerProps`) and Re-read from disk.
+- **Auto-update on task results** — `composables/useViewerAutoUpdate.ts`, mounted once in `App.vue`
+  (main window), so it runs whether or not the viewer is open.
 
-**State**: image name, `valueName` dropdown (options from `img.filepaths` keys in the project
-store). Changing `valueName` auto-opens the image in Viewer via the REST `/api/napari/open`
-endpoint.
-
-**Auto-refresh**: subscribes to `task:status` WS events in `onMounted`; when a task transitions
-to `"done"` the viewer refreshes its image data so newly written versions appear immediately.
-
-**Populations sub-menu** (per-pop-type point toggles, after a `.opt-sep` divider): one icon per
-CELL-grained pop type — `flow` (`pi-chart-scatter`) and `clust` (`pi-palette`) — each showing that
-pop type's populations as coloured cell-centroid Points in napari. **Icons match the sidebar module
-nav** (Gate/Cluster-cells/Track/Cluster-tracks) so a pop type reads the same everywhere. POSTs
-`/api/napari/show-populations` with `popType` + `show` and **blank valueName → the server resolves
-the ACTIVE segmentation** (the one gating/clustering write to; sending `labelNames[0]` was a bug —
-the first label set isn't necessarily active, so clust pops never resolved). The bridge namespaces
-layers by `(popType)` so flow and clust coexist.
-State is per-pop-type and **remembered** (`settings.popVisible`/`setPopVisible`, keyed by pop type;
-default off), auto-applied on image open, and **re-pushed on every `gating:popmap`** for the changed
-pop type so the overlay tracks edits live. Only cell-grained types are here: `track`/`trackclust`
-are track-grained (membership is track_ids, not cell labels) so points would be wrong — their viz is
-**ribbons** via `show-tracks` (two more toggles: `pi-directions` = gated track pops, `pi-sitemap` =
-trackclust cluster pops; both route through `pushTracks`, which sends `showGatedTracks` +
-`showTrackclust` in one call, and the bridge namespaces Tracks layers by `(popType)`). Per-pop
-visibility and the dot-size slider live in the population manager — see the gating section.
-**Icon convention**: append new toggles at the end of the row; group unrelated toggles behind an
-`.opt-sep` divider.
+**Getting there**: the image table's eye opens the window; the header's Viewer chip (`AppHeader.vue`)
+and the sidebar launcher (`PanelLaunchers.vue`) bring it forward or reopen it on the last image
+(`composables/useViewerLauncher.ts` → `raiseViewerWindow`). The viewer's ← back returns to the main
+window.
 
 ---
 

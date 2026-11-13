@@ -1,6 +1,6 @@
 // What the browser viewer is DRAWING, read into the one movie-config shape (`BatchMovieCfg`).
 //
-// Three surfaces want "the look on screen": the viewer panel's Record (match-viewer mode), the Batch
+// Three surfaces want "the look on screen": QuickMovie's Record (match-viewer mode), the Batch
 // page's Fill from view, and the Animation page's render. They used to read it from the published
 // `viewState` alone (`seedConfigFromViewState`), which only carries CHANNEL layers — the browser viewer
 // draws populations, tracks and masks from per-set / per-image settings, not from layers, so every

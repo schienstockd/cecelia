@@ -7,8 +7,7 @@
 //
 // - VIEWER share is a same-origin popup handshake: the popup exposes `__cceceliaViewerBeginDraw`
 //   on `window`, we reach in via `getOpenPopoutWindow('/viewer-window')`. Availability = a live
-//   handle exists. Was inlined in `ViewerPanel.openShare()`; that copy now delegates here so the
-//   Kiwi button and the (transitional) ViewerPanel button run the same code.
+//   handle exists. Kiwi's Share button runs it.
 //
 // - CANVAS share targets whatever module page is currently mounted. The page registers itself
 //   here on mount (`registerCanvasHost({ beginShare, label })`) and unregisters on unmount. Kiwi
@@ -35,7 +34,7 @@ export interface CanvasShareHost {
 
 /** Failure shape returned by the two `begin*` methods when the target isn't ready. `null` means
  *  success (the target entered share mode). Kept small: Kiwi renders it as a transient inline
- *  note the same way ViewerPanel does today. */
+ *  note. */
 export type BeginShareResult =
   | null
   | { severity: 'warn' | 'fail'; short: string; detail: string }
@@ -48,8 +47,12 @@ export const useShareTargetStore = defineStore('shareTarget', () => {
   // relative-time nudge.
   const viewerHandle = ref<Window | null>(getOpenPopoutWindow('/viewer-window'))
   const viewerAvailable = computed(() => viewerHandle.value !== null)
+  // Counted: Kiwi and the Viewer chip (`useViewerLauncher`) each start it, and one closing must not
+  // stop the other's.
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let pollUsers = 0
   function startViewerPoll() {
+    pollUsers++
     if (pollTimer) return
     pollTimer = setInterval(() => {
       const w = getOpenPopoutWindow('/viewer-window')
@@ -57,7 +60,8 @@ export const useShareTargetStore = defineStore('shareTarget', () => {
     }, 750)
   }
   function stopViewerPoll() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+    pollUsers = Math.max(0, pollUsers - 1)
+    if (pollUsers === 0 && pollTimer) { clearInterval(pollTimer); pollTimer = null }
   }
 
   // ── Canvas host registration ──────────────────────────────────────────────

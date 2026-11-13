@@ -227,7 +227,7 @@ function cellSize(f: VisFrame): number {
 <style scoped>
 /* Pads ITSELF. `FloatingPanel`'s `.fp-body` has no padding on purpose — `LabLogPanel` needs its
    section dividers to run full-bleed to the panel edge — so a consumer that wants inset content pads
-   its own root, as `ViewerPanel` does. */
+   its own root. */
 .visual-aid { padding: 0.35rem 0.6rem 0.45rem; }
 
 /* One line per row. `align-items: stretch` + the SAME symmetric padding on the label and the cells is

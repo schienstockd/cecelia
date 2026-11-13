@@ -15,7 +15,7 @@ import type { ColourScale, OverlayPayload, OverlayPop } from '../../utils/viewer
 export interface VwPopLayer { vn: string; popType: string; payload: OverlayPayload }
 
 defineProps<{
-  /** the Viewer panel has a pop type on — off reads as inactive, not as an empty summary */
+  /** "On the image" has a pop type on — off reads as inactive, not as an empty summary */
   panelOn: boolean
   summary: { cells: number; pops: number; dropped: number }
   /** why the overlays failed to load, '' when they did */
