@@ -741,8 +741,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 .bm-tasks {
   display: flex; flex-direction: column;
   flex: 1 1 auto; min-width: 0;
-  /* A FLOOR, not `min-height: 0`. The config half above has no cap (TaskRunner's `.params-section` is
-     capped at 45vh), so `flex: 1` handed the list whatever was left — which on a long config was a
+  /* A FLOOR, not `min-height: 0`. The config half above has no cap and, in `split`, shares the column
+     with this list, so `flex: 1` handed the list whatever was left — which on a long config was a
      clipped sliver. It scrolls itself from here rather than shrinking away. */
   min-height: 14rem;
   overflow: auto;

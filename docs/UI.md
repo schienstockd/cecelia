@@ -911,12 +911,15 @@ screen, neither gets enough vertical room. Both panels that have this shape use 
 
 | Panel | Top half | Bottom half | Storage key |
 |---|---|---|---|
-| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2` (default `top`: a "Last run · Tasks" line under Run summarises the folded list and opens it — GUI_LAYOUT_PLAN M4) |
+| `tasks/TaskRunner.vue` (every module page) | function + params + run + pool | the module's task list | `cc-taskrunner-pane-v2`, **exclusive** (default `top`: a "Last run · Tasks" line under Run summarises the hidden list and switches to it — GUI_LAYOUT_PLAN M4) |
 | `modules/batchmovies/BatchMoviesPanel.vue` | the movie config | the batch's task list | `cc-batchmovies-pane` |
 
 Three modes — `split` (default unless the panel names one), `top`, `bottom` — persisted per panel. Each half's button also
 *un*-expands it, so whichever half is hidden its own button brings it back and there is no state the user
-can't click out of. The recipe is the mode on the root plus one CSS rule per half:
+can't click out of. **Exclusive panels** (`usePaneExpand(key, 'top', { exclusive: true })` + `exclusive` on the
+bar) drop `split`: one half or the other, a click on the showing half flips to the other, and a stored
+`split` reads as the default. `TaskRunner` is one — with long param lists a split left neither half usable.
+The recipe is the mode on the root plus one CSS rule per half:
 
 ```ts
 const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
@@ -941,7 +944,7 @@ const { pane, toggle } = usePaneExpand('cc-mypanel-pane')
 - **The bar owns the tooltip wording**, so every panel phrases the action identically; the consumer only
   names its halves (lower-case, short — they go straight into "Expand the …").
 - **Growth is the consumer's** — the primitive decides what's visible, not how the survivor uses the
-  space. `TaskRunner` lifts its `params-section` `max-height` cap under `.pane-top`; `BatchMoviesPanel`
+  space. `TaskRunner`'s `params-section` grows to fill the runner (`flex: 1`, no cap); `BatchMoviesPanel`
   needs nothing, because `ModuleLayout`'s `.right-slot` already scrolls.
 - Anything in **neither** half stays visible in every mode — `BatchMoviesPanel`'s "napari is busy" banner
   is deliberately outside both, since it matters most while you are watching the task list.

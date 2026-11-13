@@ -28,9 +28,11 @@ export type PaneHalf = 'top' | 'bottom'
 const PANES: PaneExpand[] = ['split', 'top', 'bottom']
 
 /** A stored value, or the panel's default (`'split'` unless it names one) for anything unrecognised
- *  (absent, stale, hand-edited). */
-export function parsePane(raw: unknown, fallback: PaneExpand = 'split'): PaneExpand {
-  return PANES.includes(raw as PaneExpand) ? raw as PaneExpand : fallback
+ *  (absent, stale, hand-edited). On an `exclusive` panel a stored `split` (from before it went either/or)
+ *  is unreachable, so it falls back too — `top` if the default is itself `split`. */
+export function parsePane(raw: unknown, fallback: PaneExpand = 'split', exclusive = false): PaneExpand {
+  const pane = PANES.includes(raw as PaneExpand) ? raw as PaneExpand : fallback
+  return exclusive && pane === 'split' ? (fallback === 'split' ? 'top' : fallback) : pane
 }
 
 /**
@@ -44,8 +46,19 @@ export function nextPane(current: PaneExpand, clicked: PaneHalf): PaneExpand {
   return current === clicked ? 'split' : clicked
 }
 
-export function loadPane(storageKey: string, fallback: PaneExpand = 'split'): PaneExpand {
-  try { return parsePane(profileStorage.getItem(storageKey), fallback) } catch { return fallback }
+/**
+ * The either/or variant, for a panel where the two halves never share the space (TaskRunner: the params
+ * or the task list, never both — with a long param list neither half is usable at half height).
+ * Clicking a half shows it; clicking the half already showing flips to the other, so each button is
+ * still a toggle and there is no `split` to land in.
+ */
+export function nextPaneExclusive(current: PaneExpand, clicked: PaneHalf): PaneExpand {
+  if (current !== clicked) return clicked
+  return clicked === 'top' ? 'bottom' : 'top'
+}
+
+export function loadPane(storageKey: string, fallback: PaneExpand = 'split', exclusive = false): PaneExpand {
+  try { return parsePane(profileStorage.getItem(storageKey), fallback, exclusive) } catch { return parsePane(null, fallback, exclusive) }
 }
 
 export function savePane(storageKey: string, pane: PaneExpand): void {

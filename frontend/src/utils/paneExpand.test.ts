@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parsePane, nextPane } from './paneExpand'
+import { parsePane, nextPane, nextPaneExclusive } from './paneExpand'
 
 describe('parsePane', () => {
   it('accepts the three modes', () => {
@@ -38,5 +38,22 @@ describe('a panel default', () => {
     expect(parsePane(null, 'top')).toBe('top')
     expect(parsePane('nonsense', 'top')).toBe('top')
     expect(parsePane('bottom', 'top')).toBe('bottom')
+  })
+})
+
+describe('an exclusive (either/or) panel', () => {
+  it('never lands in split — clicking the showing half flips to the other', () => {
+    expect(nextPaneExclusive('top', 'top')).toBe('bottom')
+    expect(nextPaneExclusive('bottom', 'bottom')).toBe('top')
+    expect(nextPaneExclusive('top', 'bottom')).toBe('bottom')
+    expect(nextPaneExclusive('bottom', 'top')).toBe('top')
+  })
+
+  it('reads a split stored by the three-state version as the default half', () => {
+    expect(parsePane('split', 'top', true)).toBe('top')
+    expect(parsePane('split', 'bottom', true)).toBe('bottom')
+    expect(parsePane('split', 'split', true)).toBe('top')
+    expect(parsePane(null, 'split', true)).toBe('top')
+    expect(parsePane('bottom', 'top', true)).toBe('bottom')
   })
 })

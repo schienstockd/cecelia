@@ -89,7 +89,7 @@ export function taskRunSteps(o: TaskRunStepsOpts): GuideStep[] {
     {
       needed: c => c.anchorExists(anchorId) && !c.anchorReachable(anchorId),
       anchor: 'layout.paneBar',
-      text: 'That half of the panel is collapsed — these toggles bring it back.',
+      text: 'That half of the panel is hidden — these toggles switch to it.',
       placement: 'left',
     },
   ]

@@ -6,11 +6,10 @@
     - selectedUids: string[] — image UIDs to run on (from the module's image table)
     - selectedNames: string[] — matching display names (for task labels)
 
-  Two stacked halves — the function runner (function + params + run + pool) as the TOP half, the module's
-  task list as the BOTTOM — with the shared `PaneExpandBar` giving either one the whole panel
-  (`utils/paneExpand.ts`; the batch-movies panel uses the same primitive). Width is drag-resizable;
-  height is not, because there are only three states worth having and a click reaches them faster than a
-  drag. The halves are hidden by the `pane-<mode>` rules in this file's CSS, never `v-if`: unmounting the
+  Two halves — the function runner (function + params + run + pool) as the TOP half, the module's task
+  list as the BOTTOM — and only ever ONE of them showing: the shared `PaneExpandBar` in its exclusive mode
+  (`utils/paneExpand.ts`) switches between them. A split view gave neither half usable height once the
+  param lists grew; the runner keeps a one-line task summary under Run instead. The halves are hidden by the `pane-<mode>` rules in this file's CSS, never `v-if`: unmounting the
   params would throw away what each ParamRenderer has loaded (population lists, model lists) and refetch
   it on the way back.
 -->
@@ -858,16 +857,16 @@ const hiddenTaskNote = computed(() => {
 // its own stored 280px, so the content shifted instead of reflowing.
 // `CollapsiblePanel`'s header already recorded this as the half-finished consolidation.
 
-// ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
-// Vertical space is the scarce one here: a long param list and a busy task list can't both fit on a
-// laptop screen. Top half = this runner, bottom half = the module's task list.
+// ── Which half is showing — the shared two-half panel primitive (utils/paneExpand.ts), exclusive ──
+// Vertical space is the scarce one here: a long param list and a busy task list can't both fit, so it is
+// one or the other, never a split. Top half = this runner, bottom half = the module's task list.
 // The function runner has the panel by default; the task list is one click away through the
-// "Last run" line under Run, or the bar above (GUI_LAYOUT_PLAN M4). A fresh key, so the default reaches
-// everyone once; the arrangement persists after that.
-const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane-v2', 'top')
+// "Last run" line under Run, or the bar above (GUI_LAYOUT_PLAN M4). A `split` stored by the older
+// three-state version falls back to the runner.
+const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane-v2', 'top', { exclusive: true })
 const lastRun = computed(() => lastRunSummary(taskStore.forModule(props.module, projectUid.value)))
 const lastRunAgo = computed(() => lastRun.value.lastFinished ? formatAgo(lastRun.value.lastFinished.toISOString()) : '')
-function showTaskList() { if (pane.value === 'top') togglePane('top') }
+function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 </script>
 
 <template>
@@ -877,11 +876,11 @@ function showTaskList() { if (pane.value === 'top') togglePane('top') }
     <PaneExpandBar
       :pane="pane"
       top-label="function runner" bottom-label="task list"
-      top-icon="pi-cog" bottom-icon="pi-bars"
+      top-icon="pi-cog" bottom-icon="pi-bars" exclusive
       @toggle="togglePane"
     >
       <span v-if="hiddenTaskNote" class="cc-readout"
-            v-tooltip.right="'Tasks still running in this module — expand the task list to see them'">
+            v-tooltip.right="'Tasks still running in this module — show the task list to see them'">
         {{ hiddenTaskNote }}
       </span>
       <template #actions><slot name="bar-actions" /></template>
@@ -1219,14 +1218,6 @@ function showTaskList() { if (pane.value === 'top') togglePane('top') }
 .task-runner.pane-bottom > .runner-section:not(.tasks-section) { display: none; }
 .task-runner.pane-top    > .tasks-section                      { display: none; }
 
-/* With the task list hidden, the params are what should grow — otherwise the runner keeps its 45vh cap
-   and the reclaimed space just sits empty below it. */
-.task-runner.pane-top .params-section {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-}
-
 /* each `.runner-section` is a `.cc-panel-section` (style.css): padding + divider come from there */
 
 .tasks-section {
@@ -1330,14 +1321,13 @@ function showTaskList() { if (pane.value === 'top') togglePane('top') }
 .hpc-res-foot .hpc-note { margin-top: 0; }
 
 /* params */
+/* The params have the runner's space to themselves (the task list is never beside them), so they grow
+   to fill it — and are also the one section that gives way when the panel is short (a small window, or
+   the Next footer under the runner): it already scrolls, so shrinking it keeps Run in view. */
 .params-section {
   overflow-y: auto;
-  max-height: 45vh;
-  /* The one section that gives way when the panel is short (a small window, or the Next footer
-     under the runner): it already scrolls, so shrinking it keeps Run in view instead of pushing it
-     past the panel's clipped bottom. The floor keeps a couple of params visible. */
-  flex: 0 1 auto;
-  min-height: 5rem;
+  flex: 1;
+  min-height: 0;
 }
 .params-list { display: flex; flex-direction: column; }
 /* mirrors ParamRenderer's `.param-row` / `.param-label` so the sweep reads as more params */
