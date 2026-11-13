@@ -133,7 +133,7 @@ const settings = useSettingsStore()
       </div>
     </template>
     <div v-else class="cc-empty-inline cc-fs-2xs">
-      No tracks shown — tick a segmentation in the viewer panel
+      No tracks shown — turn tracks on under On the image
     </div>
 
   </CollapsibleSection>

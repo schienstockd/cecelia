@@ -104,7 +104,7 @@ const MASK_COLOUR_OPTIONS: { value: MaskColour; label: string; tip: string }[] =
       </div>
     </template>
     <div v-else class="cc-empty-inline cc-fs-2xs">
-      No mask shown — tick one in the viewer panel
+      No mask shown — turn one on under On the image
     </div>
 
   </CollapsibleSection>

@@ -18,6 +18,7 @@ import {
 } from '../composables/useOverlayAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
 import { resolveValueName } from '../utils/valueName'
+import { flipMaskVisibility, flipTracks, onlyMask, mismatchTip, shortLevelsTip } from '../utils/viewer/segRows'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
@@ -792,7 +793,7 @@ function toggleTrack(vn: string) {
   // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write.
   const uid = projectStore.openImageUid
-  if (uid) settings.setTrackVisibility(uid, { ...trackVns.value, [vn]: !trackVns.value[vn] })
+  if (uid) settings.setTrackVisibility(uid, flipTracks(trackVns.value, vn))
   pingViewerOverlays()
 }
 
@@ -935,19 +936,10 @@ function pingViewerOverlays() {
  *  cropped version cannot be overlaid without either mis-striding the texture or landing
  *  spatially shifted from the underlying cells (rendering it silently would be a lie). Falls
  *  back to a short claim if `byVn` didn't carry dims for this vn (unreadable pyramid). */
-function mismatchTooltip(vn: string): string {
-  const info = dimMismatchInfo.value
-  const d = info?.byVn?.[vn]
-  if (!info || !d) return "Mask doesn't match this image version — pick a matching version, or re-segment"
-  return `Mask is ${d.nX}×${d.nY}, image version is ${info.imageNX}×${info.imageNY} — pick a matching version, or re-segment`
-}
+function mismatchTooltip(vn: string): string { return mismatchTip(dimMismatchInfo.value, vn) }
 
 /** Tooltip for a mask with fewer zoom levels than the image: it draws only where it has a level. */
-function shortLevelsTooltip(vn: string): string {
-  const d = dimMismatchInfo.value?.shortLevels?.[vn]
-  const n = d ? `${d.nLevels} of ${d.imageLevels}` : 'too few'
-  return `Mask has ${n} zoom levels — zoom in to see it, or re-run the task that made it`
-}
+function shortLevelsTooltip(vn: string): string { return shortLevelsTip(dimMismatchInfo.value, vn) }
 
 /** A segmentation's derived label files (`halo`, `nuc`) — from the open viewer's meta, so only while a
  *  viewer is open, which is the only time the chips do anything. */
@@ -973,19 +965,8 @@ function toggleLabel(valueName: string) {
   // panel matches what you see in the viewer, instead of the viewer silently picking one of several
   // ticked.
   const uid = projectStore.openImageUid
-  const wasVisible = visibleLabels.value[valueName] ?? false
-  const next = !wasVisible
-  // Every label name gets an EXPLICIT boolean — `settings.getLabelVisibility` defaults unknown
-  // names to true (so a fresh image shows all masks), which means omitting a name leaves it
-  // reading as visible in the viewer. Radio-like: only `valueName` is true when enabling; all
-  // false when disabling. Build the full name set from the panel + the store's current view so
-  // no name gets orphaned.
-  const allNames = new Set<string>([
-    ...Object.keys(openedImage.value?.labels ?? {}),
-    ...Object.keys(visibleLabels.value),
-  ])
-  const bag: Record<string, boolean> = {}
-  for (const n of allNames) bag[n] = next && n === valueName
+  // One mask at a time, every name explicit (`flipMaskVisibility`): the panel's list plus the store's.
+  const bag = flipMaskVisibility(Object.keys(openedImage.value?.labels ?? {}), visibleLabels.value, valueName)
   if (uid) settings.setLabelVisibility(uid, bag)
   pingViewerOverlays()
 }
@@ -1070,10 +1051,7 @@ function onTaskResult(data: Record<string, unknown>) {
     // Mark newly added label as visible; the WebGPU viewer picks it up via the overlay tick
     // fired by pingViewerOverlays. Radio-like — clear the others so only this new one is on.
     const uid = projectStore.openImageUid
-    const bag: Record<string, boolean> = {}
-    for (const n of Object.keys(openedImage.value?.labels ?? {})) bag[n] = n === labelValueName
-    bag[labelValueName] = true
-    if (uid) settings.setLabelVisibility(uid, bag)
+    if (uid) settings.setLabelVisibility(uid, onlyMask(Object.keys(openedImage.value?.labels ?? {}), labelValueName))
     nextTick(() => pingViewerOverlays())
   }
 }
