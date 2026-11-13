@@ -2,19 +2,19 @@ import { ref } from 'vue'
 import { loadPane, savePane, nextPane, type PaneExpand, type PaneHalf } from '../utils/paneExpand'
 
 /**
- * Which half of a two-half side panel is expanded, persisted per panel.
+ * Which half of a two-half side panel is showing (one at a time), persisted per panel.
  *
  * Pair it with `components/PaneExpandBar.vue` (the control) and a `pane-<mode>` class on the panel root,
  * which one CSS rule per half hides against — see `docs/UI.md` → *Two-half side panels*.
  *
  * ```ts
- * const { pane, toggle } = usePaneExpand('cc-taskrunner-pane-v2', 'top')
+ * const { pane, toggle } = usePaneExpand('cc-taskrunner-pane-v2')
  * ```
  *
  * `storageKey` is per panel, so the task runner and the batch-movies panel remember their own
- * arrangement. `fallback` is the arrangement before the user picks one.
+ * arrangement. `fallback` is the half shown before the user picks one.
  */
-export function usePaneExpand(storageKey: string, fallback: PaneExpand = 'split') {
+export function usePaneExpand(storageKey: string, fallback: PaneExpand = 'top') {
   const pane = ref<PaneExpand>(loadPane(storageKey, fallback))
 
   function toggle(half: PaneHalf) {

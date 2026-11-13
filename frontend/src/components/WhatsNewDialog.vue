@@ -76,7 +76,7 @@ const canInstall = computed(() =>
       <template v-if="tipCard">
         <!-- Position counter ABOVE the card so it doesn't move vertically when sketch aspect
              ratios differ. Nav happens by clicking the sketch's left/right edges. -->
-        <div v-if="canCycle" class="wn-counter cc-muted cc-fs-2xs"
+        <div v-if="canCycle" class="wn-counter cc-eyebrow cc-fs-2xs"
              :class="{ 'wn-counter-today': currentIndex === dailyIndex }">
           {{ tipCounter }}
         </div>
@@ -84,49 +84,46 @@ const canInstall = computed(() =>
       </template>
       <WhatNewCard v-for="c in otherCards" :key="c.id" :card="c" />
     </div>
-    <div v-else class="wn-empty cc-muted cc-fs-md">
-      Nothing new right now — you're up to date.
-    </div>
+    <div v-else class="cc-empty">Nothing new — you're up to date.</div>
 
     <template #footer>
       <a :href="CECELIA_RELEASES_URL" target="_blank" rel="noopener" class="wn-foot-link cc-muted">
         All releases <i class="pi pi-external-link" />
       </a>
       <span v-if="app.updateMsg" class="wn-foot-msg cc-muted cc-fs-xs">{{ app.updateMsg }}</span>
-      <button v-if="restartUpd.show.value" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
+      <span class="wn-spacer" />
+      <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="$emit('close')">Close</button>
+      <button v-if="restartUpd.show.value" class="cc-btn cc-btn-primary cc-btn-dense"
               :disabled="restartUpd.blocked.value" v-tooltip.top="restartUpd.tip.value"
               @click="restartUpd.restart">
         <i :class="['pi', app.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
         {{ app.busy ? 'Updating…' : 'Restart now' }}
       </button>
-      <button v-else-if="canInstall" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
+      <button v-else-if="canInstall" class="cc-btn cc-btn-primary cc-btn-dense"
               :disabled="app.updateBusy || !app.updateLatest" @click="app.applyUpdate">
         <i :class="['pi', app.updateBusy ? 'pi-spin pi-spinner' : 'pi-download']" />
         {{ app.updateBusy ? 'Installing…' : `Install ${app.updateLatest ?? '(no version)'}` }}
       </button>
-      <button class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'wn-close-btn': !canInstall && !restartUpd.show.value }" @click="$emit('close')">Close</button>
     </template>
   </BaseModal>
 </template>
 
 <style scoped>
-.wn-list { display: flex; flex-direction: column; gap: 14px; }
-.wn-empty { padding: 24px 0; text-align: center; }
+.wn-list { display: flex; flex-direction: column; gap: var(--cc-space-md); }
 
 /* Tip position counter — static above the card so it doesn't jump when sketch heights differ.
    The "· today" suffix flips the label to accent when the user is viewing today's tip. */
-.wn-counter { text-align: center; letter-spacing: 0.06em; text-transform: uppercase; }
+.wn-counter { text-align: center; }
 .wn-counter-today { color: var(--cc-accent); }
 
 .wn-foot-link {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--cc-space-2xs);
 }
 .wn-foot-link:hover { color: var(--cc-accent); }
 .wn-foot-link .pi { font-size: 0.85em; }
-.wn-foot-msg { margin-left: 12px; }
-.wn-install-btn { margin-left: auto; }
-.wn-close-btn { margin-left: auto; }
+.wn-foot-msg { margin-left: var(--cc-space-md); }
+.wn-spacer { flex: 1; }
 </style>
