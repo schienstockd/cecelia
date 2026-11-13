@@ -13,6 +13,7 @@
  */
 import { makePopPathRemap, type PopIdent } from '../popRenameRemap'
 import { soloVisibility } from './channelSolo'
+import { SPEC_POP_TYPES } from '../overlayAutoShow'
 
 /** Which eye: a pop's points or its cell-track ribbon. Each is its own stored bag. */
 export type EyeLayer = 'points' | 'ribbons'
@@ -173,4 +174,14 @@ export function offPaths(eyes: Readonly<PopEyes>): string[] {
     out.add(parseEyeKey(k).path)
   }
   return [...out].sort()
+}
+
+/**
+ * The viewer's population-type switch (per set, `settings.getPopVisible`) that has to be on for a pop
+ * of this type to be drawn at all, or null for a type with no switch of its own (`track`, `live`).
+ * The manager's 👁 turns it on with the pop's eye — an eye under a switched-off type drew nothing,
+ * and the switch sat in another window (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, Decision 5).
+ */
+export function popTypeSwitch(popType: string): string | null {
+  return (SPEC_POP_TYPES as readonly string[]).includes(popType) ? popType : null
 }
