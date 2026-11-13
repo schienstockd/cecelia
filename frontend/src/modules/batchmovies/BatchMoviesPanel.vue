@@ -5,9 +5,9 @@
   mp4 per selected image. The batch runs through the offline renderer (see api/src/movie_rail.jl →
   run_batch_offline), one image at a time.
 
-  Two stacked halves like the module pages' TaskRunner — the movie CONFIG as the top half, the batch's
-  task list as the bottom — sharing the same `PaneExpandBar` primitive (`utils/paneExpand.ts`), so either
-  can take the whole panel instead of scrolling past the other.
+  Two halves like the module pages' TaskRunner — the movie CONFIG or the batch's task list, never both,
+  switched by the shared `PaneExpandBar` primitive (`utils/paneExpand.ts`); a one-line task summary sits
+  under Generate.
 
   Config is persisted per-set in the settings store (getBatchMovieConfig/setBatchMovieConfig); fps
   reuse the same per-set movie config as the ViewerPanel recorder. Progress/cancel ride the normal task
@@ -37,6 +37,7 @@ import { buildOverlayScene, drawsTails, renderOverlayPreview } from './overlayPr
 import CcToggle from '../../components/CcToggle.vue'
 import ColourPicker from '../../components/ColourPicker.vue'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
+import TaskSummaryLine from '../../tasks/TaskSummaryLine.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
 import { usePaneExpand } from '../../composables/usePaneExpand'
@@ -532,10 +533,11 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
   },
 })
 
-// ── Which half is expanded — the shared two-half panel primitive (utils/paneExpand.ts) ──
-// Same arrangement as the module pages' TaskRunner: config on top, task list below. Its own storage key,
-// so this panel remembers its arrangement separately from the runner's.
+// ── Which half is showing — the shared two-half panel primitive (utils/paneExpand.ts) ──
+// Same arrangement as the module pages' TaskRunner: config or task list. Its own storage key, so this
+// panel remembers its arrangement separately from the runner's.
 const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
+function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 </script>
 
 <template>
@@ -709,6 +711,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
                 v-tooltip.top="compareActionTip(compareShapeNow, 'Record one movie per selected image')">
           <i class="pi pi-video" /> Generate movies ({{ selectedUids.length }})
         </button>
+        <TaskSummaryLine module="batchMovies" @show="showTaskList" />
       </div>
 
       <!-- ── The TASKS half ── wrapped so the same `pane-<mode>` CSS hides it: TaskList's root belongs to
@@ -741,15 +744,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
 .bm-tasks {
   display: flex; flex-direction: column;
   flex: 1 1 auto; min-width: 0;
-  /* A FLOOR, not `min-height: 0`. The config half above has no cap and, in `split`, shares the column
-     with this list, so `flex: 1` handed the list whatever was left — which on a long config was a
-     clipped sliver. It scrolls itself from here rather than shrinking away. */
-  min-height: 14rem;
+  min-height: 0;
   overflow: auto;
   border-bottom: none; padding-bottom: 0;   /* + .cc-panel-section: the last one, so no divider */
 }
-/* …unless the pane bar has given it the WHOLE panel, where a floor would be a ceiling on nothing */
-.bm.pane-bottom > .bm-tasks { min-height: 0; }
 /* .bm-sec / .bm-actions are .cc-panel-section (style.css): divider, never a box */
 /* Centred wrapper for the schematic overlay preview — small margin below the chip row so the
    frame reads as a separate element rather than part of the toggle row. */

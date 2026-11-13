@@ -7,8 +7,8 @@
     - selectedNames: string[] — matching display names (for task labels)
 
   Two halves — the function runner (function + params + run + pool) as the TOP half, the module's task
-  list as the BOTTOM — and only ever ONE of them showing: the shared `PaneExpandBar` in its exclusive mode
-  (`utils/paneExpand.ts`) switches between them. A split view gave neither half usable height once the
+  list as the BOTTOM — and only ever ONE of them showing: the shared `PaneExpandBar` (`utils/paneExpand.ts`)
+  switches between them. A split view gave neither half usable height once the
   param lists grew; the runner keeps a one-line task summary under Run instead. The halves are hidden by the `pane-<mode>` rules in this file's CSS, never `v-if`: unmounting the
   params would throw away what each ParamRenderer has loaded (population lists, model lists) and refetch
   it on the way back.
@@ -35,6 +35,7 @@ import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/task
 import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
+import TaskSummaryLine from './TaskSummaryLine.vue'
 import { taskGatingReason } from '../utils/taskGating'
 import { taskMaturity, taskOptionSuffix } from '../utils/maturity'
 import MaturityIndicator from '../components/MaturityIndicator.vue'
@@ -45,8 +46,6 @@ import { mentionTargets } from '../utils/kiwiTurn'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { useRoute, useRouter } from 'vue-router'
 import { useStoredSectionOpen } from '../utils/sectionOpen'
-import { lastRunSummary } from '../utils/taskRows'
-import { formatAgo } from '../utils/formatAgo'
 import InlineNote from '../components/InlineNote.vue'
 import PhysicalSizeDialog from '../components/PhysicalSizeDialog.vue'
 import { calibrationCheckpoint, checkpointCoversGate, type CheckpointLine } from '../utils/calibrationCheckpoint'
@@ -68,7 +67,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
-import { isLiveStatus, TASK_STATUS } from '../lib/taskStatus'
+import { isLiveStatus } from '../lib/taskStatus'
 import { expandSweep, parseSweepState, sweepStateKey, sweepableParams, type SweepState } from '../utils/paramSweep'
 
 const props = defineProps<{
@@ -857,15 +856,13 @@ const hiddenTaskNote = computed(() => {
 // its own stored 280px, so the content shifted instead of reflowing.
 // `CollapsiblePanel`'s header already recorded this as the half-finished consolidation.
 
-// ── Which half is showing — the shared two-half panel primitive (utils/paneExpand.ts), exclusive ──
+// ── Which half is showing — the shared two-half panel primitive (utils/paneExpand.ts) ──
 // Vertical space is the scarce one here: a long param list and a busy task list can't both fit, so it is
 // one or the other, never a split. Top half = this runner, bottom half = the module's task list.
 // The function runner has the panel by default; the task list is one click away through the
 // "Last run" line under Run, or the bar above (GUI_LAYOUT_PLAN M4). A `split` stored by the older
 // three-state version falls back to the runner.
-const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane-v2', 'top', { exclusive: true })
-const lastRun = computed(() => lastRunSummary(taskStore.forModule(props.module, projectUid.value)))
-const lastRunAgo = computed(() => lastRun.value.lastFinished ? formatAgo(lastRun.value.lastFinished.toISOString()) : '')
+const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane-v2')
 function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 </script>
 
@@ -876,7 +873,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
     <PaneExpandBar
       :pane="pane"
       top-label="function runner" bottom-label="task list"
-      top-icon="pi-cog" bottom-icon="pi-bars" exclusive
+      top-icon="pi-cog" bottom-icon="pi-bars"
       @toggle="togglePane"
     >
       <span v-if="hiddenTaskNote" class="cc-readout"
@@ -1165,16 +1162,8 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
         </TeleportPopover>
       </div>
 
-      <!-- Last run: what the folded task list would say; the link opens it in place -->
-      <div v-if="pane === 'top' && (lastRun.live || lastRun.lastFinished)" class="last-run cc-muted cc-fs-xs">
-        <span v-if="lastRun.live"><i :class="['pi', TASK_STATUS.running.icon]" /> {{ lastRun.live }} running or queued</span>
-        <span v-else>Last run{{ lastRunAgo ? ` ${lastRunAgo} ago` : '' }}
-          <template v-if="lastRun.done"> · {{ lastRun.done }} done</template>
-          <template v-if="lastRun.failed"> · <span class="cc-muted-error">{{ lastRun.failed }} failed</span></template>
-        </span>
-        <button class="cc-btn cc-btn-bare cc-btn-dense cc-fs-xs last-run-tasks" data-guide="task.lastRun"
-                v-tooltip.left="'Show this page’s tasks — watch, cancel, read logs'" @click="showTaskList">Tasks</button>
-      </div>
+      <!-- what the hidden task list would say; its "Tasks" link switches the panel to it -->
+      <TaskSummaryLine :module="module" @show="showTaskList" />
     </section>
 
     <!-- ── Task list ── (its heading + the two list-wide actions belong to TaskList itself, so the
@@ -1195,9 +1184,6 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 </template>
 
 <style scoped>
-/* the runner's "Last run" line under Run (the task list's summary while it is folded) */
-.last-run { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.5rem; }
-.last-run-tasks { margin-left: auto; color: var(--cc-accent-soft); }
 .handoff-note {
   display: flex; align-items: center; gap: 0.4rem;
   margin: 0 0 0.5rem; padding: 0.3rem 0.45rem;

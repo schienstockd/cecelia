@@ -1,9 +1,9 @@
-// Scenario: a side panel made of TWO stacked halves, where either can take the whole panel.
-//
-// It recurs — the module pages' task runner (function + params + run, over the module's task list) and
-// the batch-movies panel (movie config, over the same task list) — and on a laptop screen neither half
-// gets enough vertical room in both. So each panel offers three states: `split` (both), `top` (the
-// bottom half hidden), `bottom` (the top half hidden).
+// Scenario: a side panel made of TWO halves that never fit together — the module pages' task runner
+// (function + params + run, and the module's task list), the batch-movies panel (movie config, and the
+// batch's task list), the animation panel (controls, and its task list). With a long config neither half
+// is usable at half height, so a panel shows ONE half at a time: `top` (the config/runner) or `bottom`
+// (the task list). The top half keeps a one-line summary of the hidden list under its action button
+// (`components/TaskSummaryLine.vue`).
 //
 // One rule, one storage convention, one control (`components/PaneExpandBar.vue`) for every panel that
 // has this shape, rather than each one growing its own toggle. Halves are named `top`/`bottom` — what
@@ -22,43 +22,30 @@
 
 import { profileStorage } from './profileStorage'
 
-export type PaneExpand = 'split' | 'top' | 'bottom'
 export type PaneHalf = 'top' | 'bottom'
+/** Which half is showing. Kept as its own name: it is the panel's MODE, a half is what a button names. */
+export type PaneExpand = PaneHalf
 
-const PANES: PaneExpand[] = ['split', 'top', 'bottom']
+const PANES: PaneExpand[] = ['top', 'bottom']
 
-/** A stored value, or the panel's default (`'split'` unless it names one) for anything unrecognised
- *  (absent, stale, hand-edited). On an `exclusive` panel a stored `split` (from before it went either/or)
- *  is unreachable, so it falls back too — `top` if the default is itself `split`. */
-export function parsePane(raw: unknown, fallback: PaneExpand = 'split', exclusive = false): PaneExpand {
-  const pane = PANES.includes(raw as PaneExpand) ? raw as PaneExpand : fallback
-  return exclusive && pane === 'split' ? (fallback === 'split' ? 'top' : fallback) : pane
+/** A stored value, or the panel's default (`'top'` unless it names one) for anything unrecognised —
+ *  absent, hand-edited, or a `split` stored when panels could show both halves. */
+export function parsePane(raw: unknown, fallback: PaneExpand = 'top'): PaneExpand {
+  return PANES.includes(raw as PaneExpand) ? raw as PaneExpand : fallback
 }
 
 /**
- * What clicking a half's button does: expand that half, or — if it is already expanded — go back to
- * `split`.
+ * What clicking a half's button does: show that half, or — if it is already showing — flip to the other.
  *
- * One button per half, each its own toggle, so whichever half is hidden its own button is still there to
- * bring it back and there is no state the user can't click their way out of.
+ * One button per half, each its own toggle, so there is no state the user can't click their way out of.
  */
 export function nextPane(current: PaneExpand, clicked: PaneHalf): PaneExpand {
-  return current === clicked ? 'split' : clicked
-}
-
-/**
- * The either/or variant, for a panel where the two halves never share the space (TaskRunner: the params
- * or the task list, never both — with a long param list neither half is usable at half height).
- * Clicking a half shows it; clicking the half already showing flips to the other, so each button is
- * still a toggle and there is no `split` to land in.
- */
-export function nextPaneExclusive(current: PaneExpand, clicked: PaneHalf): PaneExpand {
   if (current !== clicked) return clicked
   return clicked === 'top' ? 'bottom' : 'top'
 }
 
-export function loadPane(storageKey: string, fallback: PaneExpand = 'split', exclusive = false): PaneExpand {
-  try { return parsePane(profileStorage.getItem(storageKey), fallback, exclusive) } catch { return parsePane(null, fallback, exclusive) }
+export function loadPane(storageKey: string, fallback: PaneExpand = 'top'): PaneExpand {
+  try { return parsePane(profileStorage.getItem(storageKey), fallback) } catch { return fallback }
 }
 
 export function savePane(storageKey: string, pane: PaneExpand): void {
