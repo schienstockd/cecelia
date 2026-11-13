@@ -15,8 +15,9 @@
 fn clippedPos() -> vec4<f32> { return vec4(0.0, 0.0, 2.0, 1.0); }
 
 // Outside planes [lo, hi], ± half a plane. Negative `lo` means no filter (3D over the whole stack).
+// A negative `plane` is an instance on every plane — a Z-flattened skeleton over a stack.
 fn offPlanes(plane: f32, lo: f32, hi: f32) -> bool {
-  return lo >= 0.0 && (plane < lo - 0.5 || plane > hi + 0.5);
+  return lo >= 0.0 && plane >= 0.0 && (plane < lo - 0.5 || plane > hi + 0.5);
 }
 
 // An overlay size → screen px. `pxPerUm` = canvas px per µm at the instance (each camera's `pxPerUm`).
@@ -73,9 +74,10 @@ fn markerColour(local: vec2<f32>, rgb: vec3<f32>, sizePx: f32, borderPx: f32) ->
 // and a path has no direction. `head` = the newest END timepoint the tail shows (`tailHead` in
 // `utils/viewerOverlays.ts`), `length` = the tail in frames: the hop ending at `head` is age 0 and
 // draws at the peak, the oldest shown (age length - 1) 1/length of the way up from the floor, which
-// keeps the far end of a long tail visible. `length <= 0` = no fade.
+// keeps the far end of a long tail visible. `length <= 0` = no fade. A negative `tEnd` is a static
+// line, not a tail hop — a skeleton branch (`appendSkeletonLines`) — and draws at the peak.
 fn tailAlpha(tEnd: f32, head: f32, length: f32) -> f32 {
-  if (length <= 0.0) { return f32(${TAIL_ALPHA_PEAK}); }
+  if (length <= 0.0 || tEnd < 0.0) { return f32(${TAIL_ALPHA_PEAK}); }
   let f = clamp(1.0 - (head - tEnd) / length, 0.0, 1.0);
   return mix(f32(${TAIL_ALPHA_FLOOR}), f32(${TAIL_ALPHA_PEAK}), f);
 }

@@ -388,6 +388,8 @@ function api_viewer_meta(req::HTTP.Request)
                             # the segmentations with a CELL TABLE — what populations, tracks and track
                             # clusters draw from, mask or not (`_overlay_segmentations`, the movie's list)
                             cellTableNames = try _overlay_segmentations(init_object(pu, iu)) catch; String[] end,
+                            # the skeletons with a branch table — what `/api/viewer/skeletons` draws
+                            branchNames = try img_branch_value_names(init_object(pu, iu)) catch; String[] end,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -888,6 +890,42 @@ function live_labels_store_path(project_uid::AbstractString, image_uid::Abstract
     (nothing, "no run is writing '$vn'")
 end
 
+# ── GET /api/viewer/skeletons ─────────────────────────────────────────────────────
+# ?projectUid=&imageUid=&valueName= → {valueName, flat, nSegments, t, plane, x0, y0, z0, x1, y1, z1}
+#
+# A skeleton (`segment.branching`) as line segments, from the polylines its branch table stores
+# (`skeleton_segments` — the reader the movie overlay closure uses too, so the viewer and a recording
+# draw the same lines). Columnar like `/api/viewer/overlays`, positions in µm, `t` a frame index
+# (-1 = every frame), `plane` the plane each draws on (-1 = every plane: Z-flattened on a stack) —
+# computed server side so the viewer does not floor µm back into planes and round one low. A table written before
+# the paths were answers `nSegments = 0` with a note: re-run branching.
+const SKELETON_MAX_SEGMENTS = 2_000_000
+
+function api_viewer_skeletons(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = get(q, "valueName", "")
+    isempty(vn) && return 400, JSON3.write((; error = "valueName is required"))
+    segs = try
+        skeleton_segments(img, vn)
+    catch e
+        @warn "viewer skeletons: unreadable" value_name = vn exception = e
+        return 500, JSON3.write((; error = "could not read the skeleton '$vn': $(sprint(showerror, e))"))
+    end
+    empty = (; valueName = vn, flat = false, nSegments = 0, t = Int[], plane = Int[], x0 = Float32[], y0 = Float32[],
+               z0 = Float32[], x1 = Float32[], y1 = Float32[], z1 = Float32[])
+    segs === nothing && return 200, JSON3.write(merge(empty, (; note = "no branch lines; re-run branching")))
+    n = length(segs)
+    n > SKELETON_MAX_SEGMENTS && return 413, JSON3.write((;
+        error = "$n skeleton segments is past the limit of $SKELETON_MAX_SEGMENTS"))
+    sz = first(img_physical_sizes(img))
+    ux, uy, uz = (Float32(physical_size_for_axis(sz, a)) for a in (:x, :y, :z))
+    200, JSON3.write((; valueName = vn, flat = segs.flat, nSegments = n, t = segs.t, plane = segs.plane,
+                        x0 = segs.x0 .* ux, y0 = segs.y0 .* uy, z0 = segs.z0 .* uz,
+                        x1 = segs.x1 .* ux, y1 = segs.y1 .* uy, z1 = segs.z1 .* uz))
+end
+
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
 # ?projectUid=&imageUid=&valueName=&popType=flow&colourBy= →
 #   {nCells, axes, hasT, cells: {label, t, x, y, z, track}, pops: [...],
@@ -1379,7 +1417,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # reads the legacy `allTracks` / `includeTracks` / `trackSources` keys of the smoke route.
     plan = overlay_track_plan(ov_raw)
     # cell-track ribbons ride on the pops — without them they are nothing to draw
-    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust
+    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || !isempty(plan.skeletons)
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     style = movie_overlay_style(k -> _ov(ov_raw, Symbol(k), nothing))
@@ -1401,7 +1439,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || any(x -> !isempty(first(x)), plan.segs))
+    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || !isempty(plan.skeletons) ||
+                               any(x -> !isempty(first(x)), plan.segs))
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"

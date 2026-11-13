@@ -20,7 +20,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   maskColour: 'id',
-  trackColourMode: 'speed', colourBy: '', colourOverrides: {},
+  trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {},
   ...over,
 })
 
@@ -227,5 +227,17 @@ describe('volumeViewState', () => {
     expect(v.canvas).toEqual({ width: 640, height: 480 })
     expect(v.camera.perspective).toBe(0)
     expect(volumeViewState(vs, true).camera.perspective).toBe(1)   // the 3D toggle, not 2D's ortho
+  })
+})
+
+describe('viewerLook — skeletons (DRAW_SPEC_PLAN Phase 3)', () => {
+  it('records the shown skeletons as lines, in the viewer colour', () => {
+    const l = viewerLook(base({ branchVisible: { SHG: true, DCs: false } }))
+    expect(l.skeletons).toEqual({ SHG: '#ffffff' })
+    expect(viewerLook(base({ branchVisible: { SHG: false } })).skeletons).toBeUndefined()
+  })
+  it('a batch filled from the view sends them', () => {
+    const cfg = buildBatchMovieConfig(viewerLook(base({ branchVisible: { SHG: true } })), ['cpSAM'], {})
+    expect(cfg.skeletons).toEqual({ SHG: '#ffffff' })
   })
 })

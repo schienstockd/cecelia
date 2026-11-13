@@ -56,6 +56,7 @@ import cecelia.utils.script_utils as script_utils
 import cecelia.utils.zarr_utils as zarr_utils
 from cecelia.utils.dim_utils import DimUtils
 from cecelia.utils.label_props_utils import skimage_centroid_axis_names
+from cecelia.utils.skeleton_paths import PATHS_KEY, PATH_AXES_KEY, pack_polylines, skeleton_polylines
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 
 
@@ -95,12 +96,13 @@ def _skeletonise(bin_im: np.ndarray, pre: int, is_3d: bool) -> np.ndarray:
     return skimage.morphology.skeletonize(bin_im)
 
 
-def _summarise_paths(skeleton_bool: np.ndarray, t_index):
+def _summarise_paths(skeleton_bool: np.ndarray, t_index, path_tolerance: float = 0.5):
     """`skan.Skeleton` + `skan.summarize(separator='-')` → paths DataFrame + label column.
 
     Adds `label` (1..N, unique across timepoints via caller-tracked offset), `path-id`, and
-    (when `t_index` is not None) `centroid_t`. Returns (df, skeleton_array). The skeleton array
-    (`np.asarray(skeleton)`) is the per-pixel path label — write it into the labels zarr.
+    (when `t_index` is not None) `centroid_t`. Returns (df, skeleton_array, polylines). The skeleton
+    array (`np.asarray(skeleton)`) is the per-pixel path label — write it into the labels zarr; the
+    polylines (one per row, `skeleton_paths.skeleton_polylines`) are what the viewer draws.
     `skeleton_bool` MUST be the thin, unmodified skeletonize() output (see `_skeletonise`).
     """
     sk = skan.Skeleton(skeleton_bool)
@@ -108,7 +110,7 @@ def _summarise_paths(skeleton_bool: np.ndarray, t_index):
     df["path-id"] = np.arange(sk.n_paths)
     if t_index is not None:
         df["centroid_t"] = int(t_index)
-    return df, np.asarray(sk)
+    return df, np.asarray(sk), skeleton_polylines(sk, path_tolerance)
 
 
 def _dilate_label_image(label_arr: np.ndarray, post: int, is_3d: bool) -> np.ndarray:
@@ -380,11 +382,11 @@ def _scalar_summary(aniso_im: np.ndarray, skeleton_bool: np.ndarray,
 
 
 def _write_branch_h5ad(paths_df: pd.DataFrame, is_3d: bool, has_time: bool, out_path: str,
-                       aniso_uns: dict = None, obs_cols: dict = None):
+                       aniso_uns: dict = None, obs_cols: dict = None, polylines: list = None):
     """Create the {vn}__branch.h5ad sidecar. Producing-task exception — direct anndata write,
     same shape as `measure_utils._to_anndata` (docs/DATAMODEL.md 'Reading .h5ad' + CLAUDE.md).
     Optional `aniso_uns` merges the anisotropy outputs into `uns` under the `aniso_*` keys
-    (docs/SEGMENTATION.md)."""
+    (docs/SEGMENTATION.md). `polylines` (one per row) go in `uns["paths"]` (`skeleton_paths`)."""
     n_spatial = 3 if is_3d else 2
     obsm_spatial = _spatial_from_endpoints(paths_df, n_spatial)
     obsm_temporal = (
@@ -414,6 +416,9 @@ def _write_branch_h5ad(paths_df: pd.DataFrame, is_3d: bool, has_time: bool, out_
     if aniso_uns:
         for k, v in aniso_uns.items():
             adata.uns[k] = v
+    if polylines is not None:
+        adata.uns[PATHS_KEY] = pack_polylines(polylines, n_spatial)
+        adata.uns[PATH_AXES_KEY] = ["z", "y", "x"][-n_spatial:]
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     write_h5ad_atomic(adata, out_path)
@@ -430,6 +435,7 @@ def run(params: dict):
     label_ids            = script_utils.get_param(params, "labelIds", default=[]) or []
     pre_dilation_size    = int(script_utils.get_param(params, "preDilationSize", default=2))
     post_dilation_size   = int(script_utils.get_param(params, "postDilationSize", default=2))
+    path_tolerance       = float(script_utils.get_param(params, "pathTolerance", default=0.5))
     use_borders          = bool(script_utils.get_param(params, "useBorders", default=False))
     flatten_branching    = bool(script_utils.get_param(params, "flattenBranching", default=False))
     calc_anisotropy      = bool(script_utils.get_param(params, "calcAnisotropy", default=False))
@@ -510,6 +516,7 @@ def run(params: dict):
     im_data = im_list[0] if (calc_anisotropy and aniso_source == "channel" and fibre_channels) else None
 
     paths_tables = []
+    path_lines = []           # one simplified polyline per paths row, in row order
     n_skeletons_total = 0
     label_offset = 0
     aniso_coor, ev_frames, evec_frames = [], [], []
@@ -563,7 +570,7 @@ def run(params: dict):
             log.log(f"> skeletonise{'' if t_index is None else f' T={t_index}'}")
             bin_im = _binary_mask(labels_slice, label_ids, use_borders)
             skeleton_bool = _skeletonise(bin_im, pre_dilation_size, is_3d)
-            df, skeleton_arr = _summarise_paths(skeleton_bool, t_index)
+            df, skeleton_arr, polylines = _summarise_paths(skeleton_bool, t_index, path_tolerance)
             skeleton_arr = _dilate_label_image(skeleton_arr, post_dilation_size, is_3d)
 
             df, arr, label_offset = _globalise_labels(df, skeleton_arr, label_offset)
@@ -577,6 +584,7 @@ def run(params: dict):
 
             if not df.empty:
                 paths_tables.append(df)
+                path_lines.extend(polylines)
                 n_skeletons_total += int(df["skeleton-id"].nunique())
 
             # A4: run the anisotropy pass for EVERY timepoint, including ones whose skeleton came back
@@ -691,6 +699,7 @@ def run(params: dict):
     # is exactly the standard intravital case (SPATIAL_ANISOTROPY_PLAN A7). When `integrateTime`
     # lands it is THAT flag, not this one, that suppresses the temporal axis.
     _write_branch_h5ad(paths_df, is_3d, has_time, branch_props_out, aniso_uns=aniso_uns,
+                       polylines=path_lines,
                        obs_cols=branch_obs)
 
     mean_branch_length = (

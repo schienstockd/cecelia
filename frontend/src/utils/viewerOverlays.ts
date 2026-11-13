@@ -128,6 +128,27 @@ export function overlaysUrl(q: {
   return '/api/viewer/overlays?' + p.toString()
 }
 
+/** `/api/viewer/skeletons` — a skeleton's branch polylines as segments, µm, `t` -1 = every frame. */
+export interface SkeletonPayload {
+  valueName: string
+  flat: boolean
+  nSegments: number
+  t: number[]
+  /** the plane each segment draws on, -1 = every plane (server-computed — never floor µm back) */
+  plane: number[]
+  x0: number[]; y0: number[]; z0: number[]
+  x1: number[]; y1: number[]; z1: number[]
+  note?: string
+}
+
+export function skeletonsUrl(q: { projectUid: string; imageUid: string; valueName: string }): string {
+  return '/api/viewer/skeletons?' + new URLSearchParams(q).toString()
+}
+
+/** A skeleton's line colour when nothing else is set — the same default the movie draws
+ *  (`viewerLook` sends it as the look's `skeletons` colour). */
+export const SKELETON_COLOUR = WHITE
+
 /** Floats per point instance: x, y, z (µm), r, g, b, plane. */
 export const POINT_STRIDE = 7
 
@@ -454,6 +475,10 @@ export interface SegmentBuffer {
   /** One past the last instance whose end timepoint is `<= t`. */
   endAt: Int32Array
   count: number
+  /** Skeleton lines appended after the track segments (`appendSkeletonLines`): `[start, n)` holds the
+   *  lines drawn on every frame, then each frame's in frame order — `linesFirstAt[t]`..`linesEndAt[t]`.
+   *  Absent = no skeletons. */
+  lines?: { start: number; allCount: number; firstAt: Int32Array; endAt: Int32Array }
 }
 
 const EMPTY_SEG: SegmentBuffer = {
@@ -764,6 +789,61 @@ export function tailRange(
 }
 
 /**
+ * `tracks` with `skeletons` appended as static lines — what one segment buffer and one pipeline draw,
+ * so a skeleton costs no texture and no cache budget (docs/todo/DRAW_SPEC_PLAN.md Phase 3). Each line
+ * is a segment instance with end timepoint -1 (`tailAlpha` draws it unfaded) on the server's plane
+ * (`skeleton_segments`: -1 for a Z-flattened skeleton, which `offPlanes` draws on every plane). Lines on every frame come first, then each
+ * frame's in frame order, so a frame's lines are two contiguous ranges (`skeletonLineRanges`).
+ */
+export function appendSkeletonLines(
+  tracks: SegmentBuffer, skeletons: readonly { payload: SkeletonPayload; colour: string }[],
+  meta: ViewerMeta | null,
+): SegmentBuffer {
+  const items: { s: SkeletonPayload; i: number; rgb: [number, number, number] }[] = []
+  for (const { payload, colour } of skeletons) {
+    const rgb = hexToUnit(colour)
+    for (let i = 0; i < payload.nSegments; i++) items.push({ s: payload, i, rgb })
+  }
+  if (!items.length || !meta) return tracks
+  const nT = Math.max(1, meta.nT)
+  items.sort((a, b) => a.s.t[a.i] - b.s.t[b.i])   // -1 (every frame) first, then by frame
+  const start = tracks.count
+  const data = new Float32Array((start + items.length) * SEG_STRIDE)
+  data.set(tracks.data.subarray(0, start * SEG_STRIDE))
+  let allCount = 0
+  items.forEach(({ s, i, rgb }, k) => {
+    const o = (start + k) * SEG_STRIDE
+    data[o] = s.x0[i]; data[o + 1] = s.y0[i]; data[o + 2] = s.z0[i]
+    data[o + 3] = s.x1[i]; data[o + 4] = s.y1[i]; data[o + 5] = s.z1[i]
+    data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
+    data[o + 9] = s.plane[i]
+    data[o + 10] = -1
+    if (s.t[i] < 0) allCount++
+  })
+  const firstAt = new Int32Array(nT + 1), endAt = new Int32Array(nT + 1)
+  let si = allCount, ei = allCount
+  for (let k = 0; k <= nT; k++) {
+    while (si < items.length && items[si].s.t[items[si].i] < k) si++
+    firstAt[k] = start + si
+    while (ei < items.length && items[ei].s.t[items[ei].i] <= k) ei++
+    endAt[k] = start + ei
+  }
+  return { ...tracks, data, lines: { start, allCount, firstAt, endAt } }
+}
+
+/** The skeleton line ranges `[first, count]` drawn at frame `t` (`appendSkeletonLines`). */
+export function skeletonLineRanges(buf: SegmentBuffer, t: number): [number, number][] {
+  const l = buf.lines
+  if (!l || t < 0) return []
+  const out: [number, number][] = []
+  if (l.allCount > 0) out.push([l.start, l.allCount])
+  const k = Math.min(Math.round(t), l.firstAt.length - 1)
+  const n = l.endAt[k] - l.firstAt[k]
+  if (n > 0) out.push([l.firstAt[k], n])
+  return out
+}
+
+/**
  * Hand the built point + segment buffers to a renderer. Every freshly CONSTRUCTED renderer needs this:
  * its GPU buffers start empty, and the viewer only rebuilds the buffers when the population data or
  * visibility changes — so a renderer swapped in by a 2D↔3D, flat↔brick or ±planes switch (each can
@@ -812,6 +892,7 @@ export function setOverlayWindow(
                    borderPx?: number): void
     setOverlaySegmentDraw(first: number, count: number, widthPx: number, planeLo: number,
                           planeHi?: number): void
+    setOverlayLineDraw(ranges: readonly (readonly [number, number])[]): void
     setTailFade(head: number, length: number): void
     setOverlaySizeUnit(umPerSize: number): void
   },
@@ -827,6 +908,8 @@ export function setOverlayWindow(
   const tail = t >= 0 && style.tailFrames > 0 ? tailRange(segments, t, style.tailFrames) : null
   const trackTol = reach ? Math.max(0, style.trackZTol) : 0
   r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, style.tailPx, lo - trackTol, hi + trackTol)
+  // skeleton lines: the tail's width and plane window, this frame's only
+  r.setOverlayLineDraw(skeletonLineRanges(segments, t))
   // Fade by age so a tail reads as a trail in time: the hop arriving now solid, older hops fainter.
   r.setTailFade(tailHead(Math.max(0, t)), style.tailFrames)
 }

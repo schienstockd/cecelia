@@ -68,6 +68,16 @@
       "tip": "Thicken the saved skeleton for visibility; measures are unaffected"
     },
     {
+      "key": "pathTolerance",
+      "label": "Line simplify",
+      "type": "float",
+      "min": 0,
+      "max": 5,
+      "step": 0.1,
+      "default": 0.5,
+      "tip": "Max px a drawn branch line may stray from the skeleton"
+    },
+    {
       "key": "useBorders",
       "label": "Use label boundaries",
       "type": "bool",

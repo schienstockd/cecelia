@@ -259,6 +259,19 @@ class Render2DRunTest(unittest.TestCase):
         flat = self._frame([10, 10], overlays={"segments": segs}, segmentWidthPx=4)[..., 1]
         self.assertAlmostEqual(flat[46:50, 16:48].mean(), flat[14:18, 16:48].mean(), delta=15)
 
+    def test_a_skeleton_line_draws_unfaded_and_a_flat_one_on_every_plane(self):
+        # Skeleton lines ride in the segments (`_with_skeleton_lines`, `appendSkeletonLines`): `t1` -1
+        # draws at the peak whatever the tail's fade, and `plane` -1 (a Z-flattened skeleton) on
+        # every plane, where a line on plane 10 is filtered out of plane 3's window.
+        segs = {"x0": [4.0, 4.0], "y0": [8.0, 24.0], "z0": [10.0, 10.0],
+                "x1": [28.0, 28.0], "y1": [8.0, 24.0], "z1": [10.0, 10.0],
+                "colour": [[0.0, 1.0, 0.0], [0.0, 1.0, 0.0]],
+                "t1": [-1.0, -1.0], "head": 6, "length": 5, "plane": [-1.0, 10.0]}
+        f = self._frame([3, 3], overlays={"segments": segs}, plane_filter={"tracks": [1, 5]},
+                        segmentWidthPx=4)[..., 1]
+        self.assertGreater(f[14:18, 16:48].mean(), 200)   # every plane, unfaded
+        self.assertLess(f[46:50, 16:48].mean(), 40)       # plane 10: not in plane 3's window
+
 
 if __name__ == "__main__":
     unittest.main()

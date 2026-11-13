@@ -160,6 +160,9 @@ export interface VolumeRenderer {
    *  window. Negative `planeLo` disables the filter (3D volume view, no z-slicing). */
   setOverlaySegmentDraw(first: number, count: number, widthPx: number,
                         planeLo: number, planeHi?: number): void
+  /** Static line ranges of the same segment buffer — skeletons (`appendSkeletonLines`), drawn after
+   *  the tail with its width and plane window, unfaded (their end timepoint is negative). */
+  setOverlayLineDraw(ranges: readonly (readonly [number, number])[]): void
   /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
    *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
   setTailFade(head: number, length: number): void
@@ -641,6 +644,7 @@ export async function createVolumeRenderer(
   let segCap = 0
   let segFirst = 0
   let segCount = 0
+  let lineRanges: readonly (readonly [number, number])[] = []
   /** The device is GONE (lost, or destroyed by us). Every entry point below is a no-op afterwards: a
    *  queue that no longer exists is not an error you can catch, it is a browser crash. */
   let dead = false
@@ -735,11 +739,12 @@ export async function createVolumeRenderer(
     // Overlays go in the SAME pass, after the volume: `loadOp: 'clear'` has already run, so this
     // blends over a finished MIP without a second attachment or a second clear. Tails first, then
     // points: a marker has to sit ON TOP of the path that leads to it, not under it.
-    if (segBuf && segCount > 0) {
+    if (segBuf && (segCount > 0 || lineRanges.length)) {
       pass.setPipeline(segPipeline)
       pass.setBindGroup(0, bindGroup!)
       pass.setVertexBuffer(0, segBuf)
-      pass.draw(6, segCount, 0, segFirst)
+      if (segCount > 0) pass.draw(6, segCount, 0, segFirst)
+      for (const [f, c] of lineRanges) if (c > 0) pass.draw(6, c, 0, f)
     }
     if (pointBuf && pointCount > 0) {
       pass.setPipeline(pointsPipeline)
@@ -1107,6 +1112,10 @@ export async function createVolumeRenderer(
       // don't belong on.
       u[U.pan.ribbonLo] = planeLo
       u[U.pan.ribbonHi] = Math.max(planeLo, planeHi)
+    },
+
+    setOverlayLineDraw(ranges: readonly (readonly [number, number])[]) {
+      lineRanges = ranges
     },
 
     setTailFade(head: number, length: number) {

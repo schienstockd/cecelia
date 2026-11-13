@@ -363,6 +363,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
     "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
+    "/api/viewer/skeletons" => (req, body_bytes) -> (api_viewer_skeletons(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
     # bidir PR #8 — live plot registry read (MCP `list_plots`); browser populates via the two POSTs.

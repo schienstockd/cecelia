@@ -14,6 +14,7 @@ Base.@kwdef struct BranchingParams
     anisotropyBoxUm::Float64       = 5.0
     preDilationSize::Int           = 2
     postDilationSize::Int          = 2
+    pathTolerance::Float64         = 0.5
     useBorders::Bool               = false
     flattenBranching::Bool         = false
     integrateTime::Bool            = false
@@ -35,6 +36,7 @@ function parse_branching_params(d::AbstractDict)::BranchingParams
         anisotropyBoxUm        = Float64(get(d, "anisotropyBoxUm", 5.0)),
         preDilationSize        = Int(get(d, "preDilationSize", 2)),
         postDilationSize       = Int(get(d, "postDilationSize", 2)),
+        pathTolerance          = Float64(get(d, "pathTolerance", 0.5)),
         useBorders             = Bool(get(d, "useBorders", false)),
         flattenBranching       = Bool(get(d, "flattenBranching", false)),
         integrateTime          = Bool(get(d, "integrateTime", false)),
@@ -232,6 +234,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
            labelIds             = something(label_ids, Int[]),
            preDilationSize      = p.preDilationSize,
            postDilationSize     = p.postDilationSize,
+           pathTolerance        = p.pathTolerance,
            useBorders           = p.useBorders,
            flattenBranching     = p.flattenBranching,
            integrateTime        = p.integrateTime,

@@ -100,8 +100,8 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
-  filterPayloadByTrackSource,
-  type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_COLOUR,
+  type SkeletonPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
          isTrackDrawable, type TrackColorMode } from '../utils/viewerOverlays'
@@ -845,7 +845,7 @@ const specSource: DrawSpecSource = {
   get setUid() { return setUid.value },
   get labelNames() { return meta.value?.labelNames ?? [] },
   get trackNames() { return cellTableNames() },
-  branchNames: [],
+  get branchNames() { return meta.value?.branchNames ?? [] },
   get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
   get nZ() { return meta.value?.nZ ?? 0 },
   get version() { return meta.value?.valueName ?? valueName.value ?? '' },
@@ -1998,6 +1998,8 @@ function rebuildOverlays() {
     trackSources.value = []
     trackSpeedRange.value = null
   }
+  // the skeletons ride in the same buffer, after the tracks (`appendSkeletonLines`)
+  segments = appendSkeletonLines(segments, shownSkeletons(), meta.value)
   segCount.value = segments.count
   // Whichever renderer owns the canvas draws them — the volume ones or the 2D tile one.
   if (renderer.value) seedRendererOverlays(renderer.value, points, segments)
@@ -2137,6 +2139,40 @@ function toggleTrackPop(pop: { vn: string; popType: string; path: string; show: 
  * If the server payload has no `track` array (the vn has no tracked segmentation), we still cache
  * the payload so ticking that eye repeatedly doesn't retry the fetch every time.
  */
+/** Each shown skeleton's lines (`/api/viewer/skeletons`), by segmentation — fetched once per
+ *  skeleton, dropped when its eye goes off, refetched after a task (`force`). */
+const skeletonPayloads = ref<Map<string, SkeletonPayload>>(new Map())
+const skeletonVns = computed(() => {
+  const vis = spec.branchVisible
+  return (meta.value?.branchNames ?? []).filter(vn => vis[vn])
+})
+const shownSkeletons = () => skeletonVns.value.flatMap(vn => {
+  const payload = skeletonPayloads.value.get(vn)
+  return payload ? [{ payload, colour: SKELETON_COLOUR }] : []
+})
+async function loadSkeletons(force = false) {
+  if (!projectUid || !imageUid) return
+  const want = skeletonVns.value
+  const next = new Map<string, SkeletonPayload>()
+  await Promise.all(want.map(async vn => {
+    const cached = force ? undefined : skeletonPayloads.value.get(vn)
+    if (cached) { next.set(vn, cached); return }
+    try {
+      const res = await fetch(skeletonsUrl({ projectUid, imageUid, valueName: vn }), { cache: 'no-store' })
+      if (!res.ok) return
+      const payload = await res.json() as SkeletonPayload
+      next.set(vn, payload)
+      // a table written before branching stored its paths: say so rather than draw nothing silently
+      if (payload.note) overlaysErr.value = `Skeleton ${vn}: ${payload.note}`
+    } catch { /* no lines for this one; the rest still draw */ }
+  }))
+  // a later eye change has overtaken this fetch
+  if (want.join('\n') !== skeletonVns.value.join('\n')) return
+  skeletonPayloads.value = next
+  rebuildOverlays()
+}
+watch(() => skeletonVns.value.join('\n'), () => { void loadSkeletons() })
+
 async function loadTracks() {
   if (!projectUid || !imageUid) return
   const names = cellTableNames()
@@ -5059,6 +5095,7 @@ watch(meta, m => {
     nLevels: m.levels?.length ?? 1,
     labelNames: m.labelNames ?? [],
     trackNames: cellTableNames(),
+    branchNames: m.branchNames ?? [],
   })
 })
 
@@ -5820,6 +5857,8 @@ onMounted(() => {
           void loadOverlays()
           void loadTracks()
         }
+        // a branching re-run rewrites the lines under the same name
+        void loadSkeletons(true)
         return
       }
       cacheClearRev.value = ev.rev

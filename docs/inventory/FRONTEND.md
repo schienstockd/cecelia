@@ -296,6 +296,7 @@
   `up = cross(right, fwd)` handedness — so the arrows can never drift off the rotating volume
   behind them; a change to either the shader or the projection has to land in the same PR (the
   golden-value test in `axesGizmo.test.ts` fails otherwise).
+- **Skeleton lines in the viewer**: `appendSkeletonLines(tracks, skeletons, meta)` / `skeletonLineRanges(buf, t)` / `skeletonsUrl` / `SKELETON_COLOUR` (`frontend/src/utils/viewerOverlays.ts`) — skeletons appended to the track segment buffer as static lines (end timepoint -1 = unfaded, plane -1 = every plane); every renderer draws them with `setOverlayLineDraw(ranges)` after the tail, same pipeline. `ViewerWindow` loads them per shown skeleton (`spec.branchVisible` over `meta.branchNames`); the look records them as `skeletons`.
 - **Volume-viewer overlays (h5ad-derived points/tracks)**: `frontend/src/utils/viewerOverlays.ts`
   (pure: `overlaysUrl`, `buildPointBuffer` / `buildPointBufferLayers` (every segmentation × pop type in one buffer), `pooledColourScale` (one colour-by scale over every layer — the points and the legend), `timepointRange`, `hexToUnit`, `overlaySummary` / `overlayLayersSummary`,
   `POINT_STRIDE`) + the points pass in `lib/webgpu/shaders/mip_points.wgsl` (`POINTS_WGSL`) and

@@ -40,6 +40,8 @@ export interface OpenImage {
   labelNames?: string[]
   /** the segmentations with a cell table — the track eyes' keys (`meta.cellTableNames`) */
   trackNames?: string[]
+  /** the skeletons it draws as lines (`meta.branchNames`) */
+  branchNames?: string[]
 }
 
 const K_OPEN_IMAGE       = 'cc.viewer.openImage'
