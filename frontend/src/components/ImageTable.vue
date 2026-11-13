@@ -15,7 +15,7 @@ import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary, qcState as qcStateOf, qcTooltipHtml } from '../lib/qc'
 import { staleFindings } from '../lib/staleOutputs'
 import { useStaleOutputsStore } from '../stores/staleOutputs'
-import { isExcluded, isIncluded, isImported, isStarred, isBlocked, blockedReason, excludedReason } from '../utils/inclusion'
+import { isExcluded, isIncluded, isImported, imageRating, IMAGE_RATINGS, type ImageRating, isBlocked, blockedReason, excludedReason } from '../utils/inclusion'
 import { timelapseDuration, sortImages } from '../utils/imageTable'
 import { shortUnit, shortTimeUnit, fmtNum } from '../utils/physicalSize'
 import { type SortState } from '../utils/sortRows'
@@ -26,6 +26,7 @@ import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
 
 const props = defineProps<{
@@ -198,24 +199,25 @@ async function saveNote(img: CciaImage, val: string) {
   }
 }
 
-// ── Star ──────────────────────────────────────────────────────────────────────
-// A plain bookmark — "I like this one". Any number of images can be starred, and nothing downstream
-// reads it: it drives the Starred row filter (utils/rowFilters.ts) and nothing else. Same shape as
-// include/exclude below, so it rides the same per-image flags route.
-async function toggleStarred(img: CciaImage) {
+// ── Rating ────────────────────────────────────────────────────────────────────
+// One button that cycles not rated → good (the star) → use with care. Any number of images can carry
+// either, and nothing downstream reads it: it drives the Scored row filter (utils/rowFilters.ts) and
+// nothing else. "Use with care" is the step short of excluding — keep the image, doubt its numbers.
+// Same shape as include/exclude below, so it rides the same per-image flags route.
+async function setRating(img: CciaImage, rating: ImageRating) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
-  const starred = !isStarred(img)
-  project.setInclusion(img.uid, { starred })                  // reflect immediately
+  const prev = imageRating(img)
+  project.setInclusion(img.uid, { rating })                   // reflect immediately
   try {
     const res = await fetch('/api/images/inclusion/set', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, values: { [img.uid]: { starred } } }),
+      body: JSON.stringify({ projectUid, values: { [img.uid]: { rating } } }),
     })
     if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
   } catch (e) {
-    project.setInclusion(img.uid, { starred: !starred })      // revert on failure
-    log.error(`Failed to star image: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
+    project.setInclusion(img.uid, { rating: prev })           // revert on failure
+    log.error(`Failed to rate image: ${e instanceof Error ? e.message : String(e)}`, { source: 'manageImages' })
   }
 }
 
@@ -616,11 +618,8 @@ const unselectableUids = computed(() =>
               ? 'Currently shown in the viewer — click to reopen'
               : 'Open this image in the viewer'"
         ><i class="pi pi-eye" /></button>
-        <button class="ref-star cc-btn cc-btn-bare cc-btn-icon" :class="{ on: isStarred(img) }"
-          @click.stop="toggleStarred(img)"
-          v-tooltip.right="isStarred(img) ? 'Unstar' : 'Star this image'">
-          <i :class="isStarred(img) ? 'pi pi-star-fill' : 'pi pi-star'" />
-        </button>
+        <CcCycleButton class="ref-star" bare side="right" :options="IMAGE_RATINGS"
+          :model-value="imageRating(img)" @update:model-value="v => setRating(img, v as ImageRating)" />
       </span>
       <span class="name-stack">
       <span class="name-row">
@@ -876,7 +875,7 @@ const unselectableUids = computed(() =>
 .name-row .cell-text { flex: 1; min-width: 0; }
 .name-flags { flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.25rem; }
 
-/* The eye + star gutter — the two controls every row has, paired as in the movies table and living
+/* The eye + rating gutter — the two controls every row has, paired as in the movies table and living
    INSIDE the name cell rather than in a column of its own. A fixed-width column got clipped the moment
    the table was rescaled; here the pair simply refuses to shrink and the name gives way instead.
    `align-items: flex-start` keeps it on the name's line while the uid and note rows run under it. */
@@ -889,11 +888,13 @@ const unselectableUids = computed(() =>
 .warn-icon-btn { color: var(--cc-sev-warn); }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .warn-icon-btn:hover { filter: brightness(1.2); }
 
-/* Star — a per-image bookmark, any number per set. Dim until hovered when unset, so a column of
-   unset stars doesn't compete with the name beside it. */
+/* Rating — not rated / good / use with care, any number per set. Dim until hovered when not rated, so
+   a column of unrated stars doesn't compete with the name beside it. The half star carries "use with
+   care" by shape; the warn colour is secondary. */
 .ref-star { opacity: .25; }
 .ref-star:hover { opacity: .7; }
-.ref-star.on { opacity: 1; color: var(--cc-accent); }
+.ref-star.rating-good { opacity: 1; color: var(--cc-accent); }
+.ref-star.rating-caution { opacity: 1; color: var(--cc-sev-warn); }
 
 /* QC slot — ALWAYS rendered, which is the point: a green tick says "checked, fine", and only a slot
    that is always there can make a dash mean "nothing has run". A text pill ("⚑ QC") lived here and

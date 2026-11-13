@@ -12,8 +12,8 @@ import { ICON_LEGEND, iconMeaning, legendGlyphs } from './iconLegend'
 const ICONS_CSS = Object.values(
   import.meta.glob('/src/icons.css', { query: '?raw', import: 'default', eager: true }),
 ).join('') as string
-/** `.pi-x { --cc-icon: … } /* lucide: y (filled) *\/` → pi-x → `y` / `y (filled)` */
-const VENDORED = new Map([...ICONS_CSS.matchAll(/\.(pi-[a-z0-9-]+) \{ --cc-icon:[^\n]*\/\* lucide: ([a-z0-9-]+(?: \(filled\))?) \*\//g)]
+/** `.pi-x { --cc-icon: … } /* lucide: y (filled) over z *\/` → pi-x → `y` / `y (filled)` / `y (filled) over z` */
+const VENDORED = new Map([...ICONS_CSS.matchAll(/\.(pi-[a-z0-9-]+) \{ --cc-icon:[^\n]*\/\* lucide: ([a-z0-9-]+(?: \(filled\))?(?: over [a-z0-9-]+)?) \*\//g)]
   .map(m => [m[1], m[2]]))
 
 const SRC = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as
@@ -75,7 +75,7 @@ describe('the icon glossary', () => {
 
   it('icons.css is in step with the legend — run `pixi run icons` when it is not', () => {
     const want = new Map(ICON_LEGEND.flatMap(f => f.icons)
-      .map(i => [i.icon, i.fill ? `${i.lucide} (filled)` : i.lucide]))
+      .map(i => [i.icon, `${i.lucide}${i.fill ? ' (filled)' : ''}${i.over ? ` over ${i.over}` : ''}`]))
     expect(Object.fromEntries(VENDORED)).toEqual(Object.fromEntries(want))
   })
 

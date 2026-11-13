@@ -132,7 +132,7 @@ profile; **personal** = per-person state stored for everyone.
 | `lab_log.jl:81` | `lab-log.md` | entries headed `## date [Author]` | **+author** — the GUI sends the literal `"User"` (`utils/labLog.ts:57`) |
 | `blackboard_api.jl` | `blackboard/<id>/…` | entries, revisions, status, outcome | **+author** |
 | `notebooks_api.jl` | `notebooks/*.jl`, `settings/notebooks.json` | notebooks | **+author** |
-| `routes/metadata.jl:266` | `ccid.json note/starred/included` | image notes, stars | **+author** for notes |
+| `routes/metadata.jl:266` | `ccid.json note/rating/included` | image notes, ratings | **+author** for notes |
 | `routes/chain.jl`, `chain/persistence.jl` | `settings/chains/` | chain templates + runs | **+author** (doesn't even say GUI vs MCP) |
 | `routes/project.jl:165` | `settings/analysisBoards.json` | boards | +author (low priority) |
 | `captures_api.jl:289` | `captures/<id>/meta.json` | captures | +author (low priority) |
