@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useTaskStore, type TaskEntry } from '../stores/tasks'
-import { TASK_STATUS, isLiveStatus } from '../lib/taskStatus'
+import { TASK_STATUS, isLiveStatus, isTerminalStatus } from '../lib/taskStatus'
 import { hpcShownStatus } from '../utils/hpcRun'
 import { openPopoutWindow } from '../lib/popout'
 import { useCopyFlash } from '../composables/useCopyFlash'
@@ -422,7 +422,7 @@ const FILTERS: ChipOption[] = [
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(r.entry)" v-tooltip.left="'Rerun'">
               <i class="pi pi-replay" />
             </button>
-            <button v-if="!r.history && (r.status === 'done' || r.status === 'failed' || r.status === 'cancelled')"
+            <button v-if="!r.history && (isTerminalStatus(r.status))"
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(r.id)" v-tooltip.left="'Dismiss'">
               <i class="pi pi-trash" />
             </button>

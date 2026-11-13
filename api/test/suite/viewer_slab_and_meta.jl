@@ -436,6 +436,42 @@ end
     end
 end
 
+@testset "API: viewer — a running segmentation's missing level is level 0, strided" begin
+    # Mid-run a label store has level 0 only (the pyramid is built at the end), so a zoomed-out view of
+    # a big scan drew no live preview for the whole run. The live read strides level 0 instead, which
+    # must equal the level the run will write: `level0[::2^L, ::2^L]` (zarr_utils.write_label_pyramid).
+    mktempdir() do d
+        p = joinpath(d, "mask.zarr")
+        nx, ny = 11, 7                      # odd on both axes: the strided edge is where it could slip
+        ds = [Dict("path" => string(l)) for l in 0:2]
+        g = zgroup(Zarr.DirectoryStore(p); attrs = Dict("multiscales" => [Dict(
+            "axes" => [Dict("name" => n) for n in ("y", "x")], "datasets" => ds)]))
+        a0 = zcreate(UInt32, g, "0", nx, ny; chunks = (4, 4))
+        full = UInt32[x + 100 * y for x in 1:nx, y in 1:ny]
+        a0[:, :] = full
+        # written levels, as the pyramid builder would — only to compare against, then removed
+        for l in 1:2
+            s = 2^l
+            lv = full[1:s:end, 1:s:end]
+            al = zcreate(UInt32, g, string(l), size(lv)...; chunks = size(lv))
+            al[:, :] = lv
+        end
+        for l in 1:2, (xr, yr) in ((nothing, nothing), (1:2, 0:1), (1:99, 1:99))
+            want = read_slab(p, 0, 0; level = l, x = xr, y = yr)
+            got  = read_slab_strided(p, 0, 0, 2^l; x = xr, y = yr)
+            @test got[1] == want[1]
+            @test got[2:3] == want[2:3]
+        end
+        # mid-run: the levels are declared but not on disk → stride; a level never declared → none
+        rm(joinpath(p, "1"); recursive = true); rm(joinpath(p, "2"); recursive = true)
+        @test label_level(p, 1)[2] !== nothing                  # still a 409 for a durable read
+        @test live_level_stride(p, 1) == 2
+        @test live_level_stride(p, 2) == 4
+        @test live_level_stride(p, 3) == 1
+        @test live_level_stride(p, 0) == 1
+    end
+end
+
 @testset "API: viewer meta — per-level shapes (spatial audit LOD)" begin
     # `api_viewer_meta` grew a `levels` field so the CLIENT can pick a pyramid level from its viewport
     # zoom without asking the server. Same store the tile testset builds, exposed through the meta route

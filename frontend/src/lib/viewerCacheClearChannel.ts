@@ -178,3 +178,32 @@ export function onViewerCacheClear(cb: (ev: ViewerCacheClearEvent) => void): () 
     window.removeEventListener(SAME_WINDOW_EVENT, onCustom)
   }
 }
+
+/** One pending reload, for a viewer that heard one or more matching clears: the newest rev, and
+ *  whether any of the events named a store it draws. */
+export interface CacheClearJob {
+  rev: string
+  /** An event named the intensity store on screen (or forced). */
+  namedImage: boolean
+  /** An event named the mask on screen (or forced). */
+  namedMask: boolean
+}
+
+/** Fold a clear that arrived while another was being applied into the pending job. A finishing task
+ *  sends several in a burst (its result, then its status); handled one by one, each compared the
+ *  server's meta against a copy the previous one had not yet replaced and reloaded again. */
+export function mergeCacheClearJobs(pending: CacheClearJob | null, next: CacheClearJob): CacheClearJob {
+  if (!pending) return next
+  return { rev: next.rev, namedImage: pending.namedImage || next.namedImage,
+           namedMask: pending.namedMask || next.namedMask }
+}
+
+/** What a clear reloads: the image (channels + mask), the mask alone, or nothing — from what the
+ *  events named and what the refetched meta shows moved (`changedStores`). A mask change never
+ *  reloads the channels. */
+export function cacheClearReload(job: CacheClearJob,
+                                 changed: { image: boolean; mask: boolean }): 'image' | 'mask' | 'none' {
+  if (job.namedImage || changed.image) return 'image'
+  if (job.namedMask || changed.mask) return 'mask'
+  return 'none'
+}

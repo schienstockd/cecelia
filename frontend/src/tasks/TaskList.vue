@@ -12,7 +12,7 @@ import SelectionTable, { type SelectionColumn } from '../components/SelectionTab
 import { taskRows } from '../utils/taskRows'
 import { useRouter } from 'vue-router'
 import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
-import { TASK_STATUS } from '../lib/taskStatus'
+import { TASK_STATUS, isTerminalStatus } from '../lib/taskStatus'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -246,7 +246,7 @@ const TL_COLUMNS: SelectionColumn[] = [
             <i :class="['pi', isCopied(r.id) ? 'pi-check' : 'pi-copy']" />
           </button>
 
-          <button v-if="r.status === 'done' || r.status === 'failed' || r.status === 'cancelled'"
+          <button v-if="isTerminalStatus(r.status)"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon" @click="tasks.remove(r.id)"
             v-tooltip.left="'Dismiss this task from the list'">
             <i class="pi pi-trash" />

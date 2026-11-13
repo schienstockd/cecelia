@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
@@ -18,6 +18,9 @@ import {
 } from '../composables/useOverlayAutoShow'
 import { activeValueName, CELL_POP_TYPES, type CellPopType, trackableValueNames } from '../utils/overlayAutoShow'
 import { resolveValueName } from '../utils/valueName'
+import { fetchColourByColumns } from '../utils/viewer/colourByColumns'
+import { pingViewerOverlays as pingOverlays } from '../composables/useViewerAutoUpdate'
+import { flipMaskVisibility, flipTracks, mismatchTip, shortLevelsTip } from '../utils/viewer/segRows'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import TitleCardControls from './TitleCardControls.vue'
 import MovieOutputControls from './MovieOutputControls.vue'
@@ -34,7 +37,6 @@ import ColourPicker from './ColourPicker.vue'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { movieSizeParams } from '../utils/movieSize'
-import { writtenImageVersion } from '../utils/taskResultVersion'
 import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT, resolveFrameRange,
          type ViewStateLike, type RenderQuality } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -792,7 +794,7 @@ function toggleTrack(vn: string) {
   // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write.
   const uid = projectStore.openImageUid
-  if (uid) settings.setTrackVisibility(uid, { ...trackVns.value, [vn]: !trackVns.value[vn] })
+  if (uid) settings.setTrackVisibility(uid, flipTracks(trackVns.value, vn))
   pingViewerOverlays()
 }
 
@@ -833,17 +835,7 @@ async function loadObsCols() {
   const uid = projectStore.openImageUid
   const projectUid = projectMeta.current?.uid
   const vn = selectedValueName.value
-  if (!uid || !projectUid || !vn) { obsCols.value = []; return }
-  try {
-    const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(vn)}`
-    const res = await fetch(`/api/gating/channels?${q}`)
-    if (res.ok) {
-      const j = await res.json() as { obsColumns?: string[]; trackColourColumns?: string[] }
-      // cell obs columns + track-level clusters.* (colour-by broadcasts a track column to its cells,
-      // so you can colour tracks by their cluster/population). Track columns last; de-duplicated.
-      obsCols.value = [...new Set([...(j.obsColumns ?? []), ...(j.trackColourColumns ?? [])])]
-    } else obsCols.value = []
-  } catch { obsCols.value = [] }
+  obsCols.value = uid && projectUid && vn ? await fetchColourByColumns(projectUid, uid, vn) : []
 }
 
 // User picked a colour-by column: persist per-set; the WebGPU viewer picks it up via the overlay
@@ -924,30 +916,17 @@ function onValueNameChange(e: Event) {
 // should draw calls this after persisting settings, so a popup viewer with its own store re-reads
 // its inputs (label bag, pop-type bag, track bag) via the `storage` bridge. See P5 of
 // VIEWER_CONTROLS_SPLIT_PLAN.md.
-function pingViewerOverlays() {
-  const openUid = projectStore.openImageUid
-  if (!openUid || typeof localStorage === 'undefined') return
-  localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
-}
+function pingViewerOverlays() { pingOverlays(projectStore.openImageUid) }
 
 /** Tooltip text for a mask whose spatial dims don't match the open image version. Quotes both
  *  dims so the user can see WHY the row is flagged — a mask segmented on a drift-expanded /
  *  cropped version cannot be overlaid without either mis-striding the texture or landing
  *  spatially shifted from the underlying cells (rendering it silently would be a lie). Falls
  *  back to a short claim if `byVn` didn't carry dims for this vn (unreadable pyramid). */
-function mismatchTooltip(vn: string): string {
-  const info = dimMismatchInfo.value
-  const d = info?.byVn?.[vn]
-  if (!info || !d) return "Mask doesn't match this image version — pick a matching version, or re-segment"
-  return `Mask is ${d.nX}×${d.nY}, image version is ${info.imageNX}×${info.imageNY} — pick a matching version, or re-segment`
-}
+function mismatchTooltip(vn: string): string { return mismatchTip(dimMismatchInfo.value, vn) }
 
 /** Tooltip for a mask with fewer zoom levels than the image: it draws only where it has a level. */
-function shortLevelsTooltip(vn: string): string {
-  const d = dimMismatchInfo.value?.shortLevels?.[vn]
-  const n = d ? `${d.nLevels} of ${d.imageLevels}` : 'too few'
-  return `Mask has ${n} zoom levels — zoom in to see it, or re-run the task that made it`
-}
+function shortLevelsTooltip(vn: string): string { return shortLevelsTip(dimMismatchInfo.value, vn) }
 
 /** A segmentation's derived label files (`halo`, `nuc`) — from the open viewer's meta, so only while a
  *  viewer is open, which is the only time the chips do anything. */
@@ -973,54 +952,12 @@ function toggleLabel(valueName: string) {
   // panel matches what you see in the viewer, instead of the viewer silently picking one of several
   // ticked.
   const uid = projectStore.openImageUid
-  const wasVisible = visibleLabels.value[valueName] ?? false
-  const next = !wasVisible
-  // Every label name gets an EXPLICIT boolean — `settings.getLabelVisibility` defaults unknown
-  // names to true (so a fresh image shows all masks), which means omitting a name leaves it
-  // reading as visible in the viewer. Radio-like: only `valueName` is true when enabling; all
-  // false when disabling. Build the full name set from the panel + the store's current view so
-  // no name gets orphaned.
-  const allNames = new Set<string>([
-    ...Object.keys(openedImage.value?.labels ?? {}),
-    ...Object.keys(visibleLabels.value),
-  ])
-  const bag: Record<string, boolean> = {}
-  for (const n of allNames) bag[n] = next && n === valueName
+  // One mask at a time, every name explicit (`flipMaskVisibility`): the panel's list plus the store's.
+  const bag = flipMaskVisibility(Object.keys(openedImage.value?.labels ?? {}), visibleLabels.value, valueName)
   if (uid) settings.setLabelVisibility(uid, bag)
   pingViewerOverlays()
 }
 
-function onTaskStatus(data: Record<string, unknown>) {
-  const status = String(data.status ?? '')
-  if (!settings.viewerAutoUpdate) return
-  if (status !== 'done') return
-  const openUid = projectStore.openImageUid
-  const taskUid = String(data.imageUid ?? '')
-  if (!openUid || taskUid !== openUid) return
-  reloadViewer()
-  // Ping the WebGPU popup so it refetches overlays (pop counts / colours may have changed after a
-  // seg or gating task).
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('cc.viewerOverlaysTick', `${openUid}:${Date.now()}`)
-  }
-  // Same-store rewrite (e.g. a re-run of smoothing overwriting `ccidSmoothed.ome.zarr` in place, or
-  // a re-run of segmentation overwriting a label store) does not change `(imageUid, valueName)`, so
-  // #779's store-identity check can't detect it and the tile atlas / brick page table / label
-  // slab cache would keep serving stale bytes. Publish scoped by image — task-done here doesn't
-  // yet name a specific vn, so any viewer on THIS image reallocates and every other viewer
-  // (different image, or no image) is left alone. See onTaskResult below for the vn-scoped signal.
-  publishViewerCacheClear({ imageUid: openUid })
-}
-
-// Refresh the SHOWN image. Data-only by default (ping the viewer to refetch overlays; the pyramid
-// and camera stay); only reopen the whole image when nothing is shown yet. The old
-// `viewerResetOnReload` toggle existed to force a full reopen after pixels change — auto-
-// invalidation via `viewerCacheClearChannel` now handles that without swapping the store or
-// resetting the camera, so the toggle is gone.
-function reloadViewer() {
-  if (!projectStore.openImageUid) openInViewer(selectedValueName.value)
-  else pingViewerOverlays()
-}
 
 // Manual escape hatch for the "stale slab in browser cache" case. Publishes a cache-clear on the
 // open image — same channel the task-done auto path uses — which bumps the rev to a fresh
@@ -1033,67 +970,21 @@ function forceViewerResync() {
   publishViewerCacheClear({ imageUid: uid, force: true })
 }
 
+// Task results reach the viewer through the app-level `useViewerAutoUpdate`; the panel only refreshes
+// its own colour-by options when a task wrote a new column.
 function onTaskResult(data: Record<string, unknown>) {
-  const imageUid = String(data.imageUid ?? '')
-  if (!imageUid || imageUid !== projectStore.openImageUid) return
-  const meta = (data.meta ?? {}) as Record<string, unknown>
-
-  // `meta.valueName` alone is NOT an image version — tracking, contacts, clustering, … return their
-  // LABEL vn there. Only a pixel writer's (valueName, filename) pair is (utils/taskResultVersion).
-  const addedValueName = writtenImageVersion(meta)
-  if (addedValueName && settings.viewerAutoUpdate) {
-    // Switch the dropdown AND the viewer together — the viewer only follows `cc.viewerImageVersion`,
-    // so setting the dropdown alone left the panel naming the new version over the old pixels.
-    // Auto-update off: neither moves.
-    settings.setImageVersion(imageUid, addedValueName)
-    reloadViewer()
-    // Task result carrying an intensity vn means THAT store's pixels changed. Scope the rev to
-    // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
-    // on the same image but a different vn keeps its atlas.
-    publishViewerCacheClear({ imageUid, valueName: addedValueName })
-  } else if (meta.valueName && settings.viewerAutoUpdate) {
-    // A label/analysis vn (tracks, contacts, clusters): keep the version on screen, refresh overlays
-    // only — a chain node sends no task:status, so this is its one refresh signal.
-    loadObsCols()
-    reloadViewer()
-  }
-
-  const labelValueName = meta.labelValueName as string | undefined
-  // A task that wrote a label store — same rev channel as the intensity path (retired the old
-  // `cc.viewerSlabsTick`: it was labels-only, cross-window-only, and never invalidated the panel
-  // viewer at all). Scoped to `(imageUid, labelValueName)` so only the viewer showing this exact
-  // mask reallocates — a viewer on a different mask on the same image keeps its slabs.
-  if (labelValueName) {
-    publishViewerCacheClear({ imageUid, labelValueName })
-  }
-  if (labelValueName && settings.viewerAutoUpdate) {
-    // Mark newly added label as visible; the WebGPU viewer picks it up via the overlay tick
-    // fired by pingViewerOverlays. Radio-like — clear the others so only this new one is on.
-    const uid = projectStore.openImageUid
-    const bag: Record<string, boolean> = {}
-    for (const n of Object.keys(openedImage.value?.labels ?? {})) bag[n] = n === labelValueName
-    bag[labelValueName] = true
-    if (uid) settings.setLabelVisibility(uid, bag)
-    nextTick(() => pingViewerOverlays())
-  }
+  if (String(data.imageUid ?? '') !== projectStore.openImageUid) return
+  if ((data.meta as Record<string, unknown> | undefined)?.valueName && settings.viewerAutoUpdate) void loadObsCols()
 }
 
-// the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
-watch(() => projectStore.viewerReloadTick, () => reloadViewer())
 
 // Placeholder defaults for the movie size fields + level range for the 3D detail control. Sourced
 // from the browser volume viewer's own published state (see useViewerMovieDefaults) — the canvas is
 // what a movie records at when no size is asked for.
 const { canvasSizeX, canvasSizeY, viewerZ } = useViewerMovieDefaults()
 
-onMounted(() => {
-  ws.on('task:status', onTaskStatus)
-  ws.on('task:result', onTaskResult)
-})
-onUnmounted(() => {
-  ws.off('task:status', onTaskStatus)
-  ws.off('task:result', onTaskResult)
-})
+onMounted(() => ws.on('task:result', onTaskResult))
+onUnmounted(() => ws.off('task:result', onTaskResult))
 </script>
 
 <template>

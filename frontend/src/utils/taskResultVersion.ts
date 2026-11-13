@@ -7,7 +7,7 @@
 // writers also return `filename` (the new store's path), so the pair is the one reliable mark of a
 // new image version.
 //
-// `ws.ts` folds the same pair into the image's `filepaths`; `ViewerPanel.onTaskResult` follows it.
+// `ws.ts` folds the same pair into the image's `filepaths`; `viewerAutoUpdate.onResultActions` follows it.
 export function writtenImageVersion(meta: Record<string, unknown> | null | undefined): string | null {
   const vn = meta?.valueName
   const filename = meta?.filename

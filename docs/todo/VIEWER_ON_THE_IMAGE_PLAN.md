@@ -1,6 +1,6 @@
 # Viewer — the main window's Viewer panel moves into the viewer
 
-Status: **planning → S0 in progress** on `feat/viewer-on-the-image` (2026-11-13). Supersedes
+Status: **in progress** (2026-11-13) — S0 #2206, S1 #2207, S2 #2208, S3 #2209; auto-update handlers to app level on `feat/viewer-auto-update-app-level`. Supersedes
 [`VIEWER_CONTROLS_SPLIT_PLAN.md`](VIEWER_CONTROLS_SPLIT_PLAN.md) locked decisions 1 and 3 ("ViewerWindow
 does NOT host ViewerPanel", "THE VIEWER HAS NO SELECTORS"). Its invariant that **no source of truth lives
 in the viewer** still holds: every control keeps writing the same settings bags.
@@ -78,9 +78,9 @@ so movies and stills keep matching the viewer (`drawSpec.ts` `RECORDED` is uncha
 |---|---|---|
 | S0 | Population manager 👁 on → its population type on (`setPopVisible`, track clusters → `trackclust`) | ~10 lines + test. Fixes the tutorial trip on its own |
 | S1 | Left overlay shell (fold, pill, persisted) + population-type and ribbon switches + self-write watches | right-sidebar empty states re-pointed |
-| S2 | Segmentation rows in the overlay | re-point guide anchors `viewer.toggleLabels` / `viewer.toggleTracks` (`taskGuides.ts`, MCP examples `guidance.py`, `server.py`) |
-| S3 | Colour by, version picker in the header chip, clear-highlight rows, ⚙ items | |
-| S4 | Movie (after the decision); auto-update handlers to app level; delete `ViewerPanel.vue` and the floating panel; header launcher opens/raises the viewer | `guides.test.ts`, `dataRefreshCoverage.test.ts` pin the panel |
+| S2 | Segmentation rows in the overlay: mask (one at a time), tracks, label-file chips, mismatch warnings, fold to rows in use (`utils/viewer/segRows.ts`, shared with the panel) | **Left in the panel for now:** branch toggles (the WebGPU viewer draws no skeletons — `specSource.branchNames` is empty) and live preview (main-window state). Guide anchors `viewer.toggleLabels` / `viewer.toggleTracks` stay on the panel until S4 deletes it (`taskGuides.ts`, MCP examples `guidance.py`, `server.py`) |
+| S3 | Colour by (column picker in the overlay), version picker in the header chip (active version marked), clear-highlight rows, ⚙ Remember + Re-read from disk | **Open: the recolour legend.** The panel's swatch legend is dead — `colourLegend` (`useOverlayAutoShow.ts`) is never filled, and the live viewer sends no colour overrides (`overlaysUrl` takes `colourBy` only). Not moved; decide whether to rebuild it in the right Populations legend or delete it in S4 |
+| S4 | Movie (after the decision); ~~auto-update handlers to app level~~ (done: `useViewerAutoUpdate`); delete `ViewerPanel.vue` and the floating panel; header launcher opens/raises the viewer | `guides.test.ts`, `dataRefreshCoverage.test.ts` pin the panel |
 
 Every slice that changes what the viewer draws needs Dominik's eyes on a real GPU before merge
 (headless Chromium cannot draw the WebGPU viewer).

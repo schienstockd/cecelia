@@ -51,13 +51,12 @@ const EXEMPT: Record<string, string> = {
     'renders the population list its host passes in; holds no fetched state',
   'stores/gating.ts':
     'live-updates from the `gating:popmap` broadcast, which is finer-grained than task completion',
-  'components/ViewerPanel.vue':
-    'viewer reload is a SEPARATE opt-in toggle (viewerAutoUpdate, default off) — expensive on large images',
+  'utils/viewer/colourByColumns.ts':
+    'colour-by options for the viewer and its panel; refetched when the image or its version changes — viewer reload is a SEPARATE opt-in toggle (viewerAutoUpdate)',
   'tasks/ParamRenderer.vue': 'a form; its options come from image metadata, not from task output',
   'tasks/paramAdvisors.ts':
     'form-time advisors — fetch image/VN metadata to render an inline "before you run" line, and reload themselves via `reloadOn(ctx)` when the form context changes; not driven by task completion',
   'modules/ChainModule.vue': 'whiteboard wiring, not a plot surface',
-  'modules/batchmovies/BatchMoviesPanel.vue': 'movie config, not a plot surface',
   'composables/useTrackValueNames.ts':
     'picks the tracked-segmentation label for a picker; the list changes on segmentation completion, not on task output — reload is manual + on (project/image) change',
 }

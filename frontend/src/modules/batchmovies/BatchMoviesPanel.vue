@@ -14,6 +14,7 @@
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
 <script setup lang="ts">
+import { fetchColourByColumns } from '../../utils/viewer/colourByColumns'
 import { computed, ref, watch } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
@@ -238,15 +239,7 @@ async function loadObs() {
   const uid = props.selectedUids[0]
   const projectUid = projectMeta.current?.uid
   const seg = segNames.value[0]
-  if (!uid || !projectUid || !seg) { obsCols.value = []; return }
-  try {
-    const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(seg)}`
-    const res = await fetch(`/api/gating/channels?${q}`)
-    if (res.ok) {
-      const j = await res.json() as { obsColumns?: string[]; trackColourColumns?: string[] }
-      obsCols.value = [...new Set([...(j.obsColumns ?? []), ...(j.trackColourColumns ?? [])])]
-    } else obsCols.value = []
-  } catch { obsCols.value = [] }
+  obsCols.value = uid && projectUid && seg ? await fetchColourByColumns(projectUid, uid, seg) : []
 }
 watch(() => [props.selectedUids[0], segNames.value[0]] as const, loadObs, { immediate: true })
 

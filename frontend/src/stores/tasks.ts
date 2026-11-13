@@ -3,7 +3,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { shortId } from '../utils/id'
 import { useAppControlStore } from './appControl'
-import { isLiveStatus } from '../lib/taskStatus'
+import { isLiveStatus, isTerminalStatus } from '../lib/taskStatus'
 
 export type TaskStatus = 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'cancelled'
 
@@ -165,7 +165,7 @@ export const useTaskStore = defineStore('tasks', () => {
     if (at.startedAt) t.startedAt = at.startedAt
     else if (status === 'running' && !t.startedAt) t.startedAt = new Date()
     if (status === 'waiting' && at.finishedAt) t.finishedAt = at.finishedAt
-    if (status === 'done' || status === 'failed' || status === 'cancelled') {
+    if (isTerminalStatus(status)) {
       t.finishedAt = at.finishedAt ?? prepEnd ?? new Date()
       t.cancelling = t.cancelSentAt = undefined   // answered — by the cancel, or by the task finishing first
     }
@@ -251,13 +251,12 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   function clearFinished(module: string, projectUid?: string) {
-    const done = new Set<TaskStatus>(['done', 'failed', 'cancelled'])
     for (let i = tasks.value.length - 1; i >= 0; i--) {
       const t = tasks.value[i]
       // `!t.history` for the same reason `forModule` has it: these rows are the project's record, not
       // this session's list. Clearing one would delete nothing (it is on disk) and it would be back on
       // the next hydrate — a button that appears to do something and doesn't.
-      if (t.module === module && !t.history && done.has(t.status) &&
+      if (t.module === module && !t.history && isTerminalStatus(t.status) &&
           (!projectUid || t.projectUid === projectUid))
         tasks.value.splice(i, 1)
     }

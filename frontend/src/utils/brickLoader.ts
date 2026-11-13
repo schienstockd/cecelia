@@ -125,7 +125,7 @@ export function brickSlabUrl(
  * header parse — without it, every label brick silently drops on the shape guard.
  */
 export function brickLabelSlabUrl(
-  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string
+  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string; labelRev?: string
           labelStore?: MaskStore; labelStoreId?: number; liveSince?: string
           labelFiles?: readonly string[] },
   labelName: string,
@@ -149,7 +149,7 @@ export function brickLabelSlabUrl(
     z: b.zLo + zOffset,
     zTo: b.zHi + zOffset,
     level: brick.level,
-    rev: base.rev,
+    rev: base.labelRev ?? base.rev,   // the mask's own stamp: a mask rewrite busts only the mask
     ...maskStoreQuery(base.labelStore, base.labelStoreId, base.liveSince),
     labelFiles: base.labelFiles,
   })
