@@ -270,6 +270,7 @@ end
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
         "/api/viewer/overlays",
+        "/api/viewer/skeletons",
         "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
         "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
         "/api/viewer/capture",    # bidir share-in read one; POST at same path writes (below)
