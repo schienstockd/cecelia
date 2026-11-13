@@ -64,7 +64,7 @@ const settings = useSettingsStore()
          Empty-state phrasing lines up with Segmentation and Tracks. -->
     <template v-if="!panelOn">
       <div class="cc-empty-inline cc-fs-2xs">
-        No populations shown — enable in the viewer panel
+        No populations shown — turn a type on under On the image
       </div>
     </template>
     <template v-else-if="summary.cells > 0 || error">

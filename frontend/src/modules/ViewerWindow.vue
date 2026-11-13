@@ -143,6 +143,7 @@ import TeleportPopover from '../components/TeleportPopover.vue'
 import VwHeader from '../components/viewerWindow/VwHeader.vue'
 import ComingSoonBadge from '../components/ComingSoonBadge.vue'
 import VwPlaybackBar from '../components/viewerWindow/VwPlaybackBar.vue'
+import VwOnImageOverlay from '../components/viewerWindow/VwOnImageOverlay.vue'
 import VwConsoleRow from '../components/viewerWindow/VwConsoleRow.vue'
 import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
@@ -853,6 +854,11 @@ const specSource: DrawSpecSource = {
   get gating() { return gatingCurrent.value },
 }
 const spec = drawSpecOf(specSource)
+// The pop-type and ribbon switches are also set in THIS window now ("On the image",
+// docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md), and a window's own localStorage write fires no `storage`
+// event here — so the window watches the switches itself rather than waiting for a ping.
+watch(() => shownPopTypes.value.join(','), () => { void loadOverlays() })
+watch(() => [spec.showGatedTracks, !!spec.popVisible.trackclust].join(','), () => { void loadTracks() })
 
 /**
  * `settings.viewerSelectMode` reactivity ACROSS windows. The popup viewer is its own Pinia
@@ -6167,6 +6173,7 @@ onUnmounted(() => {
       <!-- Top-right corner column: the navigation widget (overview in 2D, axes in 3D) and, under it,
            the cache map toggled from the Advanced popover. A column so neither has to know the
            other's height; the map stays off the overview because the overview is for navigating. -->
+      <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="spec.timestamp && shownT >= 0 ? spec.timestampPx + 8 : 0" />
       <div class="vw-corner-tr">
         <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
              a small image still benefits from a corner reference while zoomed in.

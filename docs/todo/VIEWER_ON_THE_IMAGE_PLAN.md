@@ -1,6 +1,6 @@
 # Viewer — the main window's Viewer panel moves into the viewer
 
-Status: **planning → S0 in progress** on `feat/viewer-on-the-image` (2026-11-13). Supersedes
+Status: **in progress** (2026-11-13) — S0 #2206; S1 on `feat/viewer-on-the-image-s1`. Supersedes
 [`VIEWER_CONTROLS_SPLIT_PLAN.md`](VIEWER_CONTROLS_SPLIT_PLAN.md) locked decisions 1 and 3 ("ViewerWindow
 does NOT host ViewerPanel", "THE VIEWER HAS NO SELECTORS"). Its invariant that **no source of truth lives
 in the viewer** still holds: every control keeps writing the same settings bags.
