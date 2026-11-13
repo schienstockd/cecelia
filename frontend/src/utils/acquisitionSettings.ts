@@ -29,8 +29,16 @@ export interface AcquisitionChannel {
   filterCube?: string | null
   exposureMs?: number | null
   illuminationIntensity?: number | null
-  /** Confocal (`lif_meta`): every line on for this channel and its %. */
-  laserLines?: { wavelengthNm: number; pct: number }[]
+  /** Confocal (`lif_meta`, `czi_meta`): every line on for this channel and its % (null: not read). */
+  laserLines?: { wavelengthNm: number; pct: number | null }[]
+  /** Which Zeiss track (`czi_meta`) or Leica sequence (`lif_meta`) ran this channel, 1-based. */
+  track?: number | null
+  sequence?: number | null
+  /** Pinhole for this channel (`czi_meta`: ZEN records it per channel, tracks can differ). */
+  pinholeUm?: number | null
+  pinholeAiry?: number | null
+  /** Beam splitters this channel ran with, main first (`czi_meta`), named as the file names them. */
+  beamSplitters?: string[]
   /** Zeiss Airyscan mode this channel was acquired/processed with (`czi_meta`), null when not Airyscan. */
   airyscan?: string | null
   /** ZEN's acquisition mode (`WideField`, `LaserScanningConfocalMicroscopy`, `SpectralImaging`). */
@@ -79,7 +87,11 @@ export interface AcquisitionSettings {
   /** How the scanner kept bright pixels from clipping (`qptiff_meta`: "EnhancedDynamicRange"). */
   saturationProtection?: string | null
   /** A cyclic run (`qptiff_meta`): cycles imaged; from the `.xpd` the cycles planned, blanks among them. */
-  cycles?: { count: number; planned?: number | null; blank?: number | null; experiment?: string | null } | null
+  cycles?: {
+    count: number; planned?: number | null; blank?: number | null; experiment?: string | null
+    /** A registered image (editImages.register): each scan's run, in cycle order (null: no run file). */
+    registered?: boolean | null; experiments?: (string | null)[] | null
+  } | null
   phaseCount?: number | null
   zStack?: { stepUm?: number | null; count?: number | null } | null
   /** `acquired` is set when the store has fewer frames than the file planned (stopped early, or cropped). */
@@ -88,6 +100,11 @@ export interface AcquisitionSettings {
 
 /** Why an image has no settings (`ACQUISITION_MISSING` in omezarr/acquisition.jl). */
 export interface AcquisitionMissing { reason: 'format' | 'source' | 'unread' | 'other-stack' | 'registered' | 'no-source'; ext?: string }
+
+/** "1 AU · 65.27 µm", either part when only one is recorded, null for neither. */
+export function pinholeText(airy: number | null | undefined, um: number | null | undefined): string | null {
+  return join([airy != null && `${n(airy)} AU`, um != null && `${n(um)} µm`]) || null
+}
 
 /** The vendor's name for the depth power ramp: Evident's "Bright Z", Zeiss's "Auto Z brightness". */
 export function depthRampName(acq: AcquisitionSettings | null | undefined): string {
@@ -211,11 +228,12 @@ export function acquisitionRows(acq: AcquisitionSettings | null | undefined): Ac
   if (acq.saturationProtection) rows.push({ k: 'Saturation protection', v: acq.saturationProtection })
   const cyc = acq.cycles
   if (cyc) rows.push({ k: 'Cycles', v: join([`${n(cyc.count)} imaged`, cyc.planned != null && `${n(cyc.planned)} planned`,
-    cyc.blank != null && `${n(cyc.blank)} blank`, cyc.experiment]) })
+    cyc.blank != null && `${n(cyc.blank)} blank`, cyc.experiment ?? cyc.experiments?.filter(Boolean).join(', ')]) })
   const chs = acq.channels ?? []
   if (chs.length > 0 && chs.every(c => c.afSubtracted === true)) rows.push({ k: 'Autofluorescence', v: 'subtracted by the scanner' })
   if (acq.autoHV != null) rows.push({ k: 'Auto HV', v: acq.autoHV ? 'on' : 'off' })
-  if (acq.pinholeUm != null) rows.push({ k: 'Pinhole', v: `${n(acq.pinholeUm)} µm` })
+  const ph = pinholeText(acq.pinholeAiry, acq.pinholeUm)
+  if (ph) rows.push({ k: 'Pinhole', v: ph })
   for (const c of acq.channels ?? []) {
     // Under Auto HV the recorded HV is not the one used (the Auto HV row says so), so it is not listed.
     // A camera channel's gain is the camera's; a laser-scanning channel's is shown as its HV.
@@ -224,7 +242,10 @@ export function acquisitionRows(acq: AcquisitionSettings | null | undefined): Ac
       cam ? null : c.detector, c.excitationFilter && `ex ${c.excitationFilter}`, c.emissionFilter && (c.excitationFilter ? `em ${c.emissionFilter}` : c.emissionFilter),
       c.exposureMs != null && `${n(c.exposureMs)} ms`, cam && c.gain != null && `gain ${n(c.gain)}`,
       c.illuminationIntensity != null && `lamp ${n(c.illuminationIntensity)}`,
-      acq.autoHV !== true && c.hv != null && `HV ${n(c.hv)}`]) })
+      acq.autoHV !== true && c.hv != null && `HV ${n(c.hv)}`,
+      // tracks with different pinholes (`czi_meta`): no image-level row above, so each channel says its own
+      acq.pinholeUm == null && acq.pinholeAiry == null && (c.pinholeUm != null || c.pinholeAiry != null)
+        && `pinhole ${pinholeText(c.pinholeAiry, c.pinholeUm)}`]) })
   }
   return rows
 }

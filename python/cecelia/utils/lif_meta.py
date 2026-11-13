@@ -18,6 +18,9 @@ Two kinds of element, by what `HardwareSetting` holds:
   (`LaserLineSetting IntensityDev` > 0, in %), the emission band (`MultiBand`, by detector channel),
   the dye preset. Objective, scanner and pinhole are read from the top-level definition: a sequence
 in the files checked records no zoom, and its pinhole matches the top-level one. Checked on LAS X 3.5.7 files from a TCS SP8 (DMI6000B-CS), 4 sequences.
+Each channel keeps the sequence it ran in (1-based, None when not sequential). A LAS X 3.5.6 file
+(SP8) was seen whose sequences list only detector names and LUTs — no gain, offset or band: those
+read as not recorded, never as the live setting's values, which belong to whichever sequence ran last.
 
 Three readings are ours, not Leica's, stated where made: a channel's settings are matched to the
 recorded channel by LUT colour (the configuration lists every channel set up, the data can hold fewer
@@ -32,7 +35,7 @@ from datetime import datetime, timedelta, timezone
 
 #: Bump when the settings dict gains a field: images read by an older reader are re-read
 #: (its row in app/src/tasks/importImages/acquisition_readers.json must match).
-READER_VERSION = 2   # 2: confocal elements
+READER_VERSION = 3   # 2: confocal elements; 3: the sequence a channel ran in
 
 #: Shortest excitation that still means multiphoton (`MULTIPHOTON_MIN_NM`, frontend acquisitionLightPath.ts).
 _MULTIPHOTON_MIN_NM = 680
@@ -198,7 +201,7 @@ def _confocal_settings(el, image, hw):
     # Image-level values (objective, scanner, pinhole) sit on the top-level definition; a sequence
     # carries its own lasers and detectors but not always these.
     first = hw.find('ATLConfocalSettingDefinition')
-    dets = [d for conf in seqs for d in _detections(conf)]
+    dets = [{**d, 'sequence': k + 1 if sequential else None} for k, conf in enumerate(seqs) for d in _detections(conf)]
     recorded = list(image.iterfind('ImageDescription/Channels/ChannelDescription'))
     channels = []
     for i, (c, d) in enumerate(zip(recorded, _by_lut(recorded, dets, lambda d: d['lut']))):
@@ -211,6 +214,7 @@ def _confocal_settings(el, image, hw):
             'offset': d and d['offset'], 'bitDepth': _int(c.get('Resolution')),
             'emissionFilter': d and d['band'],
             'laserLines': [{'wavelengthNm': wl, 'pct': pct} for wl, pct in d['lines']] if d else [],
+            'sequence': d and d['sequence'],
         })
     if not channels:
         return {'reason': 'no channels in the image description'}

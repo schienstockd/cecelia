@@ -31,6 +31,12 @@ function range(xs: (number | null | undefined)[]): string | null {
   return lo === hi ? fmtNum(lo) : `${fmtNum(lo)}–${fmtNum(hi)}`
 }
 
+/** A band's edges as recorded ("533-559 nm" → [533, 559]), null when it is not a range. */
+export function bandEnds(band: string | null | undefined): [number, number] | null {
+  const m = band?.match(/^\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/)
+  return m ? [Number(m[1]), Number(m[2])] : null
+}
+
 /** Lower edge of a band ("533-559 nm" → 533), to order columns by wavelength. */
 const bandStart = (band: string | null | undefined) => {
   const m = band?.match(/^\s*(\d+(?:\.\d+)?)/)

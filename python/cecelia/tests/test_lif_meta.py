@@ -147,13 +147,14 @@ class TestConfocalSequential(_LifCase):
     def test_each_channel_takes_its_own_sequence(self):
         self.assertEqual(len(self.seqs), 4)
         self.assertEqual(len(self.s['channels']), 4)
-        for ch, seq in zip(self.s['channels'], self.seqs):
+        for k, (ch, seq) in enumerate(zip(self.s['channels'], self.seqs)):
             det = next(d for d in seq.iter('Detector') if d.get('IsActive') == '1')
             on = [int(float(l.get('LaserLine'))) for l in seq.iter('LaserLineSetting') if float(l.get('IntensityDev')) > 0]
             with self.subTest(channel=ch['name']):
                 self.assertAlmostEqual(ch['hv'], float(det.get('Gain')))          # PMT: gain is its voltage
                 self.assertEqual([l['wavelengthNm'] for l in ch['laserLines']], on)
                 self.assertEqual(ch['detector'], det.get('Name'))
+                self.assertEqual(ch['sequence'], k + 1)     # the card groups channels by it
         self.assertEqual([c['dyePreset'] for c in self.s['channels']], ['dTomato', 'EGFP', 'ALEXA 647', 'DAPI'])
 
     def test_a_second_image_has_its_own_settings(self):

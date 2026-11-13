@@ -103,6 +103,10 @@ path to `UseAutoBrightnessCorrection`, re-serialised by ElementTree. `test_czi_m
 rebuilds a container from the real headers. `czi_lsm780_multitrack_metadata.xml` (49 KB), byte for
 byte from another file of the same LSM 780 record: four sequential tracks with four lasers and four
 different pinholes, the case where one image-level pinhole would be wrong.
+`czi_lsm800_zen2.3_airyscan_metadata.xml` (17 KB) is cut from a lab LSM 800 Airyscan file (ZEN 2.3
+blue): `Information` and `Scaling` only, serial numbers blanked, re-serialised by ElementTree; its only
+user field reads "LSM User". Its laser `Attenuation` values (1.9, 2.6, 0.95) come with no
+`Transmission`: the case where 1 − attenuation gave a negative laser power (`test_czi_meta_card_fields.py`).
 
 `floor_photon_counted_fv4000.json` (4 KB): the low end (values 0–400) of the raw-value histogram of
 four mid-depth planes, first frame, every channel of a real FV4000 two-photon store, by `np.bincount`.

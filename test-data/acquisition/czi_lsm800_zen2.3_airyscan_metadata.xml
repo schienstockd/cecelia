@@ -1,0 +1,399 @@
+<ImageDocument>
+  <Metadata>
+    <HardwareSetting>
+      </HardwareSetting>
+    <Information>
+      <User Id="0" />
+      <Application>
+        <Name>ZEN 2.3 (blue edition)</Name>
+        <Version>2.3.69.1018</Version>
+      </Application>
+      <Document>
+        <CreationDate>2024-07-15T18:42:43.5830005-05:00</CreationDate>
+        <UserName>LSM User</UserName>
+      </Document>
+      <Image>
+        <SizeX>1504</SizeX>
+        <SizeY>1504</SizeY>
+        <SizeT>1</SizeT>
+        <SizeH>1</SizeH>
+        <SizeB>1</SizeB>
+        <OriginalCompressionMethod>Uncompressed</OriginalCompressionMethod>
+        <OriginalEncodingQuality>100</OriginalEncodingQuality>
+        <AcquisitionDateAndTime>2024-07-15T23:42:43.5390005Z</AcquisitionDateAndTime>
+        <SizeC>3</SizeC>
+        <SizeZ>16</SizeZ>
+        <ComponentBitCount>16</ComponentBitCount>
+        <PixelType>Gray16</PixelType>
+        <Dimensions>
+          <Channels>
+            <Channel Id="Channel:0" Name="Cy5-T1">
+              <ExcitationWavelength>650</ExcitationWavelength>
+              <EmissionWavelength>673</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0774</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FFFF00FF</Color>
+              <Fluor>Cy5</Fluor>
+              <Reflector>none</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>281.29714285714</PinholeSize>
+              <PinholeSizeAiry>4.9962852897473473</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>645-700</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <Voltage>787</Voltage>
+                <Detector Id="Detector: LSM800 Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>1.9000000000000001</Attenuation>
+                  <Wavelength>640</Wavelength>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-0.69398541419397108</StokesParameter2>
+                    <StokesParameter3>0.7199890588654958</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLSMLaserLine4_Top" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <LineTime>0.00989090909090909</LineTime>
+                <FrameTime>14.875927272727273</FrameTime>
+                <PixelTime>5.6134557837168507E-06</PixelTime>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>3.3270938103667E-06</SampleOffsetY>
+                <SampleRotation>113.02678856241</SampleRotation>
+                <ZoomX>2</ZoomX>
+                <ZoomY>2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <ScanningMode>Frame</ScanningMode>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>0.59444687958780917</TransformationXX>
+                <TransformationXY>-0.80413488131551469</TransformationXY>
+                <TransformationYX>0.80413488131551469</TransformationYX>
+                <TransformationYY>0.59444687958780917</TransformationYY>
+                <Magnification>837.33333333333337</Magnification>
+                <Mode>SuperResolution</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+              </AiryscanSettings>
+            </Channel>
+            <Channel Id="Channel:2" Name="DsRed-T2">
+              <ExcitationWavelength>545</ExcitationWavelength>
+              <EmissionWavelength>572</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0838</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FF00FF00</Color>
+              <Fluor>DsRed</Fluor>
+              <Reflector>none</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>267.70285714286</PinholeSize>
+              <PinholeSizeAiry>5.5944055944056528</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>563.20409761388-625.3949461753</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <Voltage>835.19169777852</Voltage>
+                <Detector Id="Detector: LSM800 Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>2.6</Attenuation>
+                  <Wavelength>561</Wavelength>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-0.69398541419397108</StokesParameter2>
+                    <StokesParameter3>0.7199890588654958</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLSMLaserLine3_Top" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <LineTime>0.00989090909090909</LineTime>
+                <FrameTime>14.875927272727273</FrameTime>
+                <PixelTime>5.6134557837168507E-06</PixelTime>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>3.3270938103667E-06</SampleOffsetY>
+                <SampleRotation>113.02678856241</SampleRotation>
+                <ZoomX>2</ZoomX>
+                <ZoomY>2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <ScanningMode>Frame</ScanningMode>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>0.59444687958780917</TransformationXX>
+                <TransformationXY>-0.80413488131551469</TransformationXY>
+                <TransformationYX>0.80413488131551469</TransformationYX>
+                <TransformationYY>0.59444687958780917</TransformationYY>
+                <Magnification>837.33333333333337</Magnification>
+                <Mode>SuperResolution</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+              </AiryscanSettings>
+            </Channel>
+            <Channel Id="Channel:4" Name="EGFP-T3">
+              <ExcitationWavelength>488</ExcitationWavelength>
+              <EmissionWavelength>509</EmissionWavelength>
+              <DyeId>McNamara-Boswell-0828</DyeId>
+              <DyeDatabaseId>66071726-cbd4-4c41-b371-0a6eee4ae9c5</DyeDatabaseId>
+              <Color>#FF0000FF</Color>
+              <Fluor>EGFP</Fluor>
+              <Reflector>none</Reflector>
+              <IlluminationType>Epifluorescence</IlluminationType>
+              <ContrastMethod>Fluorescence</ContrastMethod>
+              <PinholeSize>267.70285714286</PinholeSize>
+              <PinholeSizeAiry>6.28683693516706</PinholeSizeAiry>
+              <PixelType>Gray16</PixelType>
+              <ComponentBitCount>16</ComponentBitCount>
+              <AcquisitionMode>LaserScanningConfocalMicroscopy</AcquisitionMode>
+              <DetectionWavelength>
+                <Ranges>491.29561199971-551.68874842077</Ranges>
+              </DetectionWavelength>
+              <DetectorSettings>
+                <DigitalGain>1</DigitalGain>
+                <Offset>0</Offset>
+                <Voltage>805</Voltage>
+                <Detector Id="Detector: LSM800 Airyscan" />
+              </DetectorSettings>
+              <LightSourcesSettings>
+                <LightSourceSettings>
+                  <Attenuation>0.949999999999995</Attenuation>
+                  <Wavelength>488</Wavelength>
+                  <Polarization>
+                    <StokesParameter1>1</StokesParameter1>
+                    <StokesParameter2>-0.69398541419397108</StokesParameter2>
+                    <StokesParameter3>0.7199890588654958</StokesParameter3>
+                    <StokesParameter4>0</StokesParameter4>
+                  </Polarization>
+                  <LightSource Id="MTBLSMLaserLine2_Top" />
+                </LightSourceSettings>
+              </LightSourcesSettings>
+              <LaserScanInfo>
+                <Averaging>1</Averaging>
+                <LineTime>0.00989090909090909</LineTime>
+                <FrameTime>14.875927272727273</FrameTime>
+                <PixelTime>5.6134557837168507E-06</PixelTime>
+                <SampleOffsetX>0</SampleOffsetX>
+                <SampleOffsetY>3.3270938103667E-06</SampleOffsetY>
+                <SampleRotation>113.02678856241</SampleRotation>
+                <ZoomX>2</ZoomX>
+                <ZoomY>2</ZoomY>
+                <ScanDirection>Bidirectional</ScanDirection>
+                <LaserBlanking>true</LaserBlanking>
+                <ScanningMode>Frame</ScanningMode>
+              </LaserScanInfo>
+              <AiryscanSettings>
+                <TransformationXX>0.59444687958780917</TransformationXX>
+                <TransformationXY>-0.80413488131551469</TransformationXY>
+                <TransformationYX>0.80413488131551469</TransformationYX>
+                <TransformationYY>0.59444687958780917</TransformationYY>
+                <Magnification>837.33333333333337</Magnification>
+                <Mode>SuperResolution</Mode>
+                <VirtualPinholeSize>NaN</VirtualPinholeSize>
+              </AiryscanSettings>
+            </Channel>
+          </Channels>
+          <Tracks>
+            <Track Id="Track:1">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:0" />
+                <ChannelRef Id="Channel:1" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:2">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:2" />
+                <ChannelRef Id="Channel:3" />
+              </ChannelRefs>
+            </Track>
+            <Track Id="Track:3">
+              <ChannelRefs>
+                <ChannelRef Id="Channel:4" />
+                <ChannelRef Id="Channel:5" />
+              </ChannelRefs>
+            </Track>
+          </Tracks>
+          <T>
+            <StartTime>2024-07-15T23:42:43.5390005Z</StartTime>
+            <Positions>
+              <BinaryList>
+                <AttachmentName>TimeStamps</AttachmentName>
+              </BinaryList>
+            </Positions>
+          </T>
+          <Z>
+            <StartPosition>0</StartPosition>
+            <Positions>
+              <Interval>
+                <Start>-1.125</Start>
+                <Increment>0.15</Increment>
+              </Interval>
+            </Positions>
+          </Z>
+        </Dimensions>
+        <ObjectiveSettings>
+          <RefractiveIndex>1.518</RefractiveIndex>
+          <Medium>Oil</Medium>
+          <ObjectiveRef Id="Objective:1" />
+        </ObjectiveSettings>
+        <MicroscopeRef Id="Microscope:1" />
+        <MicroscopeSettings>
+          <EyepieceSettings>
+            <TotalMagnification>630</TotalMagnification>
+          </EyepieceSettings>
+        </MicroscopeSettings>
+      </Image>
+      <Instrument>
+        <Microscopes>
+          <Microscope Id="Microscope:1" Name="Axio Imager.Z2">
+            <Type>Upright</Type>
+            <System>LSM 800</System>
+          </Microscope>
+        </Microscopes>
+        <LightSources>
+          <LightSource Id="MTBLSMLaserLine4_Top">
+            <Power>5</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="MTBLSMLaserLine3_Top">
+            <Power>10</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+          <LightSource Id="MTBLSMLaserLine2_Top">
+            <Power>10</Power>
+            <LightSourceType>
+              <Laser>
+                <Tuneable>false</Tuneable>
+              </Laser>
+            </LightSourceType>
+          </LightSource>
+        </LightSources>
+        <Detectors>
+          <Detector Id="Detector: LSM800 Airyscan" Name="LSM800 Airyscan">
+            <Type>Airyscan</Type>
+            <Zoom>2</Zoom>
+            <Offset>0</Offset>
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+          <Detector Id="Detector: LSM800 Airyscan" Name="LSM800 Airyscan">
+            <Type>Airyscan</Type>
+            <Zoom>2</Zoom>
+            <Offset>0</Offset>
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+          <Detector Id="Detector: LSM800 Airyscan" Name="LSM800 Airyscan">
+            <Type>Airyscan</Type>
+            <Zoom>2</Zoom>
+            <Offset>0</Offset>
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+          <Detector Id="Detector:LSM 800" Name="LSM 800">
+            <Manufacturer>
+              <Model />
+            </Manufacturer>
+          </Detector>
+        </Detectors>
+        <Objectives>
+          <Objective Id="Objective:1" Name="Plan-Apochromat 63x/1.40 Oil DIC M27">
+            <LensNA>1.4</LensNA>
+            <NominalMagnification>63</NominalMagnification>
+            <WorkingDistance>193</WorkingDistance>
+            <PupilGeometry>Circular</PupilGeometry>
+            <ImmersionRefractiveIndex>1.518</ImmersionRefractiveIndex>
+            <Immersion>Oil</Immersion>
+            <Manufacturer>
+              <Model>Plan-Apochromat 63x/1.40 Oil DIC M27</Model>
+            </Manufacturer>
+          </Objective>
+        </Objectives>
+      </Instrument>
+      <Processing>
+        <Airyscan>
+          <Channels>
+            <Channel Id="Channel:0">
+              <SuperResolutionParameter>6.20188570022583</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>3D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+            <Channel Id="Channel:2">
+              <SuperResolutionParameter>6.0135116577148437</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>3D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+            <Channel Id="Channel:4">
+              <SuperResolutionParameter>6.5426568984985352</SuperResolutionParameter>
+              <ParameterEstimationType>Automatic</ParameterEstimationType>
+              <DeconvolutionType>3D</DeconvolutionType>
+              <IsTileBased>false</IsTileBased>
+              <BaselineShift>false</BaselineShift>
+              <BaselineShiftParameter>0</BaselineShiftParameter>
+            </Channel>
+          </Channels>
+        </Airyscan>
+      </Processing>
+      <TimelineTracks />
+    </Information>
+    <Scaling>
+      <AutoScaling>
+        <Type>Measured</Type>
+        <Objective>Objective.420782-9900-799</Objective>
+        <ObjectiveName>Plan-Apochromat 63x/1.40 Oil DIC M27</ObjectiveName>
+        <CameraName>LSM 800</CameraName>
+        <CameraPixelDistance>2.12400265957447,2.12400265957447</CameraPixelDistance>
+        <CreationDateTime>07/15/2024 23:56:01</CreationDateTime>
+      </AutoScaling>
+      <Items>
+        <Distance Id="X">
+          <Value>3.3714327929753492E-08</Value>
+          <DefaultUnitFormat>&#181;m</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Y">
+          <Value>3.3714327929753492E-08</Value>
+          <DefaultUnitFormat>&#181;m</DefaultUnitFormat>
+        </Distance>
+        <Distance Id="Z">
+          <Value>1.5E-07</Value>
+          <DefaultUnitFormat>&#181;m</DefaultUnitFormat>
+        </Distance>
+      </Items>
+    </Scaling>
+    </Metadata>
+</ImageDocument>

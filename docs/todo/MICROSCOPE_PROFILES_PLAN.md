@@ -120,6 +120,11 @@ Today's acquisition texts say "movie" throughout: `app/src/qc/text.jl` (28 lines
   **Rendering needs the maintainer's eyes before merge** (mock first, side by side).
 - **The card** reads the same stages, so it follows. A 40-marker PhenoCycler image does not fit the
   per-channel column layout: channels become a table (marker · cycle · exposure · landed numbers).
+  **Built 2026-11-13** (`feat/acq-card-per-tech`): a channel table per technology, page 2 for a long
+  one — `ACQUISITION_CARD_PLAN.md` → Status. Readers gained what it needs: `czi_meta` v3 (track, lines
+  with power, band, pinhole and beam splitters per channel; an attenuation above 1 left unread instead
+  of a negative power), `lif_meta` v3 (the sequence per channel); a registered image keeps each scan's
+  run (`cycles.experiments`).
 
 ### P7 — confocal
 

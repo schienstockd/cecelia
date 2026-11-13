@@ -1,6 +1,13 @@
 # Acquisition card — plan
 
-**Status:** **P0–P3 BUILT** (2026-11-06, branch `acquisition-card`) — P4 (a person re-acquires from a card) open. Layout agreed with the maintainer on a mock (below). Audit done against `origin/main` bd436545 on one
+**Status:** **P0–P3 BUILT** (2026-11-06, branch `acquisition-card`) — P4 (a person re-acquires from a card) open.
+**Per technology (2026-11-13, branch `feat/acq-card-per-tech`):** the "This run" columns are gone (they
+overflowed or were too thin); the channel table is laid out per technology — Zeiss tracks / Leica
+sequences with each group's lines and power, a lambda run as one row, the Airyscan mode, the camera
+per channel, a PhenoCycler's markers by cycle (clone, reporter, band, exposure vs plan); the target
+keeps only the columns the image has (no depth on a single plane); the caveat names the technology's
+own causes; a card longer than a page continues on page 2 (`utils/acquisitionCardPages.ts`). Mocks
+agreed with the maintainer first. Layout agreed with the maintainer on a mock (below). Audit done against `origin/main` bd436545 on one
 FV4000 image (zolIMa `20armH`) and one FVMPE-RS source file (TCELL_TYPES 2021-12-01 `z180_0001.oir`,
 read-only). Brief: [`docs/archive/ACQUISITION_CARD_PROMPT.md`](../archive/ACQUISITION_CARD_PROMPT.md).
 Part of [`ACQUISITION_ADVISOR_PLAN.md`](ACQUISITION_ADVISOR_PLAN.md); lands Experimental.
