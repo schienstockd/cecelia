@@ -628,7 +628,7 @@ function exportSvg(): string {
   if (LW) {
     let ly0 = 14
     for (const l of legend.value) {
-      body += svgRect(S + 8, ly0 - 8, 9, 9, { fill: l.colour, rx: 1 })
+      body += svgRect(S + 8, ly0 - 8, 9, 9, { fill: l.colour, rx: 1, stroke: PAPER_INK, width: 0.75 })
       body += svgText(S + 21, ly0, `${l.label}  (${l.n.toLocaleString()})`, { fill: PAPER_INK, size: 11 })
       ly0 += 15
     }
@@ -967,7 +967,8 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
 .uv-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }
 .uv-legend { width: 9.5rem; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm); padding: 5px; }
 .leg-row { display: flex; align-items: center; gap: 5px; padding: 1px 2px; font-size: var(--cc-fs-xs); }
-.leg-dot { width: 0.65rem; height: 0.65rem; border-radius: var(--cc-radius-pill); flex-shrink: 0; }
+.leg-dot { width: 0.65rem; height: 0.65rem; border-radius: var(--cc-radius-pill); flex-shrink: 0;
+           border: 1px solid currentColor; }   /* ink edge: a white cluster still reads on white */
 /* legend ink is themed inline on .uv-legend (light on dark ground, dark on light) so it stays
    legible in the exported PNG; children inherit it. */
 .leg-lbl { flex: 1; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

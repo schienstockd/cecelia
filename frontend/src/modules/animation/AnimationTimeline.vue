@@ -138,7 +138,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
                    own, and a cell tip fired on top of it (docs/UI.md → nested tooltips) -->
               <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`"
                    v-tooltip.bottom="'Click to select (drag to reorder)'" />
-              <span v-if="isEdited(f)" class="tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
+              <span v-if="isEdited(f)" class="cc-label-chip cc-label-chip-amber tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
             </div>
             <div v-if="frameTime(f)" class="tl-time cc-readout cc-fs-2xs">{{ frameTime(f) }}</div>
             <div class="tl-colctl">
@@ -224,8 +224,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
 /* selected keyframe = the highlighted box → --cc-selected ring, matching the plot panels'
    selected state. "edited" is a separate flag (the badge), not a ring. */
 .tl-thumb.selected { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 55%, transparent); }
-.tl-badge { position: absolute; top: 4px; right: 4px; font-size: var(--cc-fs-3xs); font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: var(--cc-on-bright); background: var(--cc-warn); padding: 1px 5px; border-radius: var(--cc-radius-pill); }
+.tl-badge { position: absolute; top: 4px; right: 4px; font-size: var(--cc-fs-3xs); padding: 1px 5px; border-radius: var(--cc-radius-pill); }
 .tl-time { margin-top: 0.15rem; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
 .tl-kf { min-width: 0.9rem; text-align: center; }

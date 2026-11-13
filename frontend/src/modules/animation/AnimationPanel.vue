@@ -2,8 +2,8 @@
   Animation controls — the side panel of /animation: what to capture, how the mp4 comes out, and Render.
   The timeline it acts on is the module page's canvas (AnimationTimeline.vue).
 
-  Same two-half arrangement as the batch-movies panel: the controls as the top half, this module's task
-  list as the bottom, sharing `PaneExpandBar`. Every option is inline — the render options used to sit
+  Same two-half arrangement as the batch-movies panel: the controls OR this module's task list, never
+  both, switched by `PaneExpandBar`; a one-line task summary sits under Render. Every option is inline — the render options used to sit
   behind a gear popover (`MovieOptionsButton`, still the viewer recorder's), which made sense on a page
   with no side panel and is redundant now there is one.
 -->
@@ -33,6 +33,7 @@ import MovieOutputControls from '../../components/MovieOutputControls.vue'
 import TitleCardControls from '../../components/TitleCardControls.vue'
 import RestoreNotice from '../../components/RestoreNotice.vue'
 import PaneExpandBar from '../../components/PaneExpandBar.vue'
+import TaskSummaryLine from '../../tasks/TaskSummaryLine.vue'
 import TaskList from '../../tasks/TaskList.vue'
 import { useMovieSuffixes } from '../../composables/useMovieSuffixes'
 
@@ -339,9 +340,10 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
   },
 })
 
-// Which half is expanded — the shared two-half panel primitive, its own key so this panel remembers
+// Which half is showing — the shared two-half panel primitive, its own key so this panel remembers
 // its arrangement separately from the module pages' task runner.
 const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
+function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 </script>
 
 <template>
@@ -402,11 +404,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
                 v-tooltip.top="canRender ? 'Render the timeline to an mp4' : 'Needs 2 or more keyframes'">
           <i :class="['pi', rendering ? 'pi-spin pi-spinner' : 'pi-play']" /> Render
         </button>
+        <TaskSummaryLine module="animation" @show="showTaskList" />
       </div>
 
       <!-- The TASKS half — wrapped so the `pane-<mode>` CSS below can hide it without reaching into
-           TaskList's own root. Same containment as the batch panel: it owns its overflow, with a floor
-           so a long config above cannot squeeze it to a sliver. -->
+           TaskList's own root. Same containment as the batch panel: it owns its overflow. -->
       <div class="ap-tasks cc-panel-section">
         <TaskList module="animation" />
       </div>
@@ -424,9 +426,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-animation-pane')
 .ap.pane-bottom > .ap-sec,
 .ap.pane-bottom > .ap-actions { display: none; }
 .ap.pane-top    > .ap-tasks   { display: none; }
-.ap-tasks { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 14rem; overflow: auto;
+.ap-tasks { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto;
   border-bottom: none; padding-bottom: 0; }   /* + .cc-panel-section: the last one, so no divider */
-.ap.pane-bottom > .ap-tasks { min-height: 0; }
 
 /* .ap-sec / .ap-actions are .cc-panel-section (style.css): divider, never a box */
 .ap-img { margin-bottom: 5px; }

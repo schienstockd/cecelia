@@ -447,12 +447,12 @@ function imageModuleStatusTip(img: CciaImage): string | Record<string, unknown> 
 }
 
 const statusConfig: Record<string, { label: string; cls: string }> = {
-  pending:   { label: 'Pending',   cls: 'st-pending'  },
-  queued:    { label: 'Queued',    cls: 'st-queued'   },
-  running:   { label: 'Active',    cls: 'st-running'  },
-  done:      { label: 'Done',      cls: 'st-done'     },
-  failed:    { label: 'Failed',    cls: 'st-failed'   },
-  cancelled: { label: 'Cancelled', cls: 'st-pending'  },
+  pending:   { label: 'Pending',   cls: ''                     },
+  queued:    { label: 'Queued',    cls: 'cc-label-chip-accent' },
+  running:   { label: 'Active',    cls: 'cc-label-chip-blue'   },
+  done:      { label: 'Done',      cls: 'cc-label-chip-green'  },
+  failed:    { label: 'Failed',    cls: 'cc-label-chip-red'    },
+  cancelled: { label: 'Cancelled', cls: ''                     },
 }
 
 // ── Dynamic columns (attrs + channels) ───────────────────────────────────────
@@ -744,7 +744,7 @@ const unselectableUids = computed(() =>
 
     <template #cell-status="{ row: img }">
       <span v-if="imageModuleStatus(img)"
-        class="status-badge"
+        class="cc-label-chip status-badge"
         :class="statusConfig[imageModuleStatus(img)!]?.cls"
         v-tooltip.right="imageModuleStatusTip(img)">
         <span v-if="imageModuleStatus(img) === 'running'" class="spinner" />
@@ -971,16 +971,10 @@ const unselectableUids = computed(() =>
 
 /* ── Status badge ────────────────────────────────────────────────────────────── */
 
-.status-badge {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  font-size: var(--cc-fs-xs); font-weight: 600; padding: 0.15rem 0.5rem;
-  border-radius: var(--cc-radius-pill); text-transform: uppercase; letter-spacing: 0.04em;
+.status-badge {   /* .cc-label-chip, one step larger and a pill — it is the column's whole content */
+  gap: 0.35rem; font-size: var(--cc-fs-xs); font-weight: 600; padding: 0.15rem 0.5rem;
+  border-radius: var(--cc-radius-pill);
 }
-.st-pending  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
-.st-queued   { background: var(--cc-accent-tint);    color: var(--cc-accent-soft); }
-.st-running  { background: var(--cc-tint-blue);    color: var(--cc-active); }
-.st-done     { background: var(--cc-tint-green); color: var(--cc-ink-green); }
-.st-failed   { background: var(--cc-tint-red); color: var(--cc-ink-red); }
 
 .spinner {
   width: 7px; height: 7px; border-radius: var(--cc-radius-pill);

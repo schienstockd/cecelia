@@ -132,6 +132,12 @@ const LEVEL_ACCENT: Partial<Record<Filter, string>> = {
   warn:  'var(--cc-ink-amber)',
   info:  'var(--cc-active)',
 }
+// The level word's tone — the same red / amber / blue as the filter chips above.
+const LEVEL_CHIP: Record<string, string> = {
+  error: 'cc-label-chip-red',
+  warn:  'cc-label-chip-amber',
+  info:  'cc-label-chip-blue',
+}
 
 const filterOptions = computed<ChipOption[]>(() =>
   (['all', 'info', 'warn', 'error'] as Filter[]).map(lvl => ({
@@ -267,7 +273,7 @@ const filterOptions = computed<ChipOption[]>(() =>
         :style="entry.detail ? 'cursor: pointer' : undefined"
       >
         <span class="ts">{{ fmt(entry.timestamp) }}</span>
-        <span class="lvl">{{ entry.level }}</span>
+        <span class="cc-label-chip" :class="LEVEL_CHIP[entry.level]">{{ entry.level }}</span>
         <span v-if="entry.source" class="src" :class="'grp-' + logGroup(entry.source)">{{ entry.source }}</span>
         <span class="msg">{{ entry.message }}</span>
         <span v-if="entry.detail" class="expand-icon">
@@ -438,18 +444,6 @@ const filterOptions = computed<ChipOption[]>(() =>
 .src.grp-runner    { color: var(--cc-ink-green); }
 .src.grp-notebooks { color: var(--cc-accent-soft); }
 .src.grp-tasks     { color: var(--cc-ink-cyan); }
-
-.lvl {
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: var(--cc-fs-2xs);
-  flex-shrink: 0;
-  padding: 0.05rem 0.35rem;
-  border-radius: var(--cc-radius-xs);
-}
-.error .lvl { background: var(--cc-tint-red); color: var(--cc-ink-red); }
-.warn  .lvl { background: var(--cc-tint-amber); color: var(--cc-ink-amber); }
-.info  .lvl { background: var(--cc-tint-blue); color: var(--cc-active); }
 
 .msg { color: var(--cc-text); flex: 1; }
 .error .msg { color: var(--cc-ink-red); }
