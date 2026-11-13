@@ -17,6 +17,8 @@ export interface TooltipObject {
   escape?: boolean
   class?: string
   disabled?: boolean
+  /** Which side, for a component that takes it as a prop — a modifier can't be bound. Wins over one. */
+  side?: Side
 }
 
 export type TooltipBinding = string | TooltipObject | null | undefined | false
@@ -52,6 +54,6 @@ export function tooltipSpec(value: TooltipBinding, modifiers: Partial<Record<str
   const obj: TooltipObject = typeof value === 'string' ? { value } : value
   const text = typeof obj.value === 'string' ? obj.value : ''
   if (!text.trim() || obj.disabled) return null
-  const side = sideOf(modifiers)
+  const side = obj.side ?? sideOf(modifiers)
   return { text, escape: obj.escape !== false, cls: obj.class ?? '', side, fallbacks: FALLBACKS[side] }
 }

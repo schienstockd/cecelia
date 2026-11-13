@@ -347,7 +347,7 @@ Drop everything derived from an image while keeping the image itself: `rm -r` ev
 (`labels`, `label_props`, `branch_labels`).
 
 **Touches no image store.** `filepath` (and every version it registers), `imChannelNames`, `meta`,
-`attr`, `included`/`note`/`starred` and `status` are all left exactly as they were — shedding a store
+`attr`, `included`/`note`/`rating` and `status` are all left exactly as they were — shedding a store
 is `remove_image_version!`'s job, and the two are deliberately orthogonal
 (`docs/todo/IMAGE_DELETE_PLAN.md` Decision 9: the derived version is the one you keep, so dropping the
 numbers must leave every store intact).

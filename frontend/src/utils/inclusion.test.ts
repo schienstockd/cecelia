@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isExcluded, isIncluded, includedUids, dropExcluded, isImported, excludedReason } from './inclusion'
+import { isExcluded, isIncluded, includedUids, dropExcluded, isImported, excludedReason,
+  imageRating, IMAGE_RATINGS } from './inclusion'
 
 describe('isImported', () => {
   it('true once a converted version exists (stable — independent of task status)', () => {
@@ -49,5 +50,16 @@ describe('excludedReason', () => {
     expect(excludedReason({ included: false, note: 'drifted' })).toBe('Excluded: drifted')
     expect(excludedReason({ included: false })).toBe('Excluded from processing')
     expect(excludedReason({ included: true, note: 'x' })).toBe('')
+  })
+})
+
+describe('imageRating', () => {
+  it('reads the two ratings, and anything else as not rated', () => {
+    expect(imageRating({ rating: 'good' })).toBe('good')
+    expect(imageRating({ rating: 'caution' })).toBe('caution')
+    for (const r of [undefined, null, '', 'great']) expect(imageRating({ rating: r })).toBe('')
+  })
+  it('the button cycles not rated → good → caution, matching the backend ImageRating order', () => {
+    expect(IMAGE_RATINGS.map(r => r.value)).toEqual(['', 'good', 'caution'])
   })
 })

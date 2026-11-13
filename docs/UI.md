@@ -1715,7 +1715,7 @@ optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/
 - **Hide-excluded toggle.** One of the row filters below (default: show excluded rows, greyed).
 
 **Row filters — add one by adding a table row, not a component.** The on/off toggles next to the
-**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Starred**) are declared
+**Filter** button that hide image-table rows (**Excluded** / **Imported** / **Scored**) are declared
 as data in `frontend/src/utils/rowFilters.ts` (`ROW_FILTERS`) and rendered by ONE `v-for` in
 `ModuleLayout`. Each entry supplies its id, label, both icons, the `hides(img)` predicate, its count,
 whether the button is worth showing at all, and a two-state tooltip. `ModuleLayout` holds a single
@@ -1725,9 +1725,11 @@ watch + computed + template. Add a `RowFilterDef`; the persistence, the button, 
 `filteredUids` clause all follow. Active filters AND together, and combine with the attribute and
 processed-with filters.
 
-**Star.** A plain per-image bookmark (`CciaImage.starred`, `isStarred`) — click the star in any row,
-any number per set. It drives the Starred row filter and **nothing else**: no effect on selection,
-runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
+**Rating.** One button per row (`CciaImage.rating`, `imageRating`/`IMAGE_RATINGS` in
+`utils/inclusion.ts`, drawn by `CcCycleButton`) cycles **not rated → good (star) → use with care (half
+star, warn colour)**, any number per set. "Use with care" is the step short of excluding: keep the
+image, but doubt it. The rating drives the **Scored** row filter — one button stepping off → good only (★) → use-with-care only (half star) → off, a `RowFilterDef` with `modes` — and **nothing else**: no
+effect on selection, runs, or processing. (It replaced a set-level single "reference image" nomination that an import-time
 intensity window was derived from; that whole mechanism is gone — see `docs/FUTURE.md`.)
 
 **Attribute extraction — regex + builder** (`MetadataPanel.vue` → *Extract via regex*). Pulls an

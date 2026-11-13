@@ -64,9 +64,10 @@ export interface CciaImage {
   attr?: Record<string, string>           // user-defined metadata attributes
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)
-  // A plain user bookmark, any number per set. Drives the Starred row filter and nothing else — no
-  // effect on selection, runs, or processing (utils/rowFilters.ts).
-  starred?: boolean
+  // The user's rating, any number per set: '' / 'good' (the star) / 'caution' (read with care).
+  // Drives the rating button and the Scored row filter, nothing else — no effect on selection,
+  // runs, or processing (utils/inclusion.ts → IMAGE_RATINGS).
+  rating?: import('../utils/inclusion').ImageRating
   qc?: Record<string, import('../lib/qc').QcDoc>  // "funName/valueName" → QC doc (docs/todo/QC_PLAN.md)
   runLog?: import('../utils/runLog').RunLogEntry[]  // automatic per-image run history (provenance)
 }
@@ -370,13 +371,13 @@ export const useProjectStore = defineStore('project', () => {
 
   // Reflect a per-image user-flag change immediately, no reload. Only the provided keys change.
   // One setter for all three because they share a route (api_images_inclusion_set) and a shape.
-  function setInclusion(imageUid: string, patch: { included?: boolean; note?: string; starred?: boolean }) {
+  function setInclusion(imageUid: string, patch: { included?: boolean; note?: string; rating?: import('../utils/inclusion').ImageRating }) {
     for (const set of sets.value) {
       const img = set.images.find(i => i.uid === imageUid)
       if (img) {
         if (patch.included !== undefined) img.included = patch.included
         if (patch.note !== undefined) img.note = patch.note
-        if (patch.starred !== undefined) img.starred = patch.starred
+        if (patch.rating !== undefined) img.rating = patch.rating
         return
       }
     }

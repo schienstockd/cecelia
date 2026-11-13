@@ -306,9 +306,10 @@ function _image_payload(img::CciaImage)
         # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.
         included        = img.included,
         note            = img.note,
-        # A plain user bookmark, any number per set — drives the Starred row filter and nothing else
-        # (no effect on selection, runs, or processing). See model/image.jl.
-        starred         = img.starred,
+        # The user's rating: "" / "good" (the star) / "caution" (read with care). Drives the rating
+        # button and the Scored row filter, nothing else (no effect on selection, runs, or
+        # processing). See model/image.jl → `rating`.
+        rating          = string(img.rating),
         # QC findings per "funName/valueName" (docs/todo/QC_PLAN.md) — advisory "output looks off"
         # flags the GUI renders as a badge + tooltip. Includes the live calibration fallback so
         # pre-migration images still surface metadata warnings (see _image_qc_payload).
