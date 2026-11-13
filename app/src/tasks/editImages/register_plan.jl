@@ -88,7 +88,8 @@ end
 # output channel taken from the image it came from (`plan`), its `cycle` set to that image's position
 # in the selection (the scan's own cycle number moves to `scanCycle`: one scan per cycle numbers each
 # scan's cycle 1). So per-channel facts — the scanner's `afSubtracted`, exposure, filters — follow the
-# channel into the stacked image, where the import probe and AF correction read them by index.
+# channel into the stacked image, where the import probe and AF correction read them by index. Each
+# scan's run name is kept in `cycles.experiments`.
 # `nothing` when the reference has no acquisition or any image's channel list does not cover the plan.
 function _register_acquisition(acqs::AbstractVector, plan::AbstractVector{Tuple{Int,Int}})
     ref = acqs[1]
@@ -106,6 +107,10 @@ function _register_acquisition(acqs::AbstractVector, plan::AbstractVector{Tuple{
     end
     out["channels"] = channels
     out["cycles"] = Dict{String,Any}("count" => length(acqs), "registered" => true)
+    # each scan's run (`.xpd` name), in cycle order — the settings card names them; one null per scan
+    # whose run file was not beside it
+    exps = Any[_ag(_ag(a, "cycles"), "experiment") for a in acqs]
+    any(!isnothing, exps) && (out["cycles"]["experiments"] = exps)
     modes = String[string(m) for m in something(_ag(ref, "modes"), Any[])]
     "cyclic" in modes || push!(modes, "cyclic")
     out["modes"] = modes

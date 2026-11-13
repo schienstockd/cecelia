@@ -288,6 +288,10 @@ end
     @test a["channels"][5]["cycle"] == 2 && a["channels"][5]["scanCycle"] == 1
     @test a["channels"][5]["afSubtracted"] === false && a["channels"][8]["afSubtracted"] === true
     @test "cyclic" in a["modes"] && a["cycles"]["count"] == 3
+    @test !haskey(a["cycles"], "experiments")              # no scan had a run file beside it
+    scan_run(n, x) = merge(acq(n, true), Dict{String,Any}("cycles" => Dict{String,Any}("count" => 1, "experiment" => x)))
+    a = Cecelia._register_acquisition([scan_run(4, "Cycle1-Slide2"), acq(4, true), scan_run(3, "Cycle3-slide2")], plan_drop)
+    @test a["cycles"]["experiments"] == ["Cycle1-Slide2", nothing, "Cycle3-slide2"]
     @test isnothing(Cecelia._register_acquisition([acq(4, true), nothing, acq(3, true)], plan_drop))
     @test isnothing(Cecelia._register_acquisition([acq(4, true), acq(2, true), acq(3, true)], plan_drop))
 

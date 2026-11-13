@@ -9,7 +9,7 @@
 
 import type { CciaImage } from '../stores/project'
 import { fmtNum, shortUnit, formatTimeIncrement } from './physicalSize'
-import { depthRampName, framesShortOf, type AcquisitionSettings } from './acquisitionSettings'
+import { depthRampName, framesShortOf, pinholeText, type AcquisitionSettings } from './acquisitionSettings'
 
 /** Where a value came from — drawn as a shape AND a colour, so it reads without colour vision. */
 export type LightPathSource = 'ome' | 'file' | 'measured' | 'missing'
@@ -26,6 +26,9 @@ export interface LightPathItem {
   /** The channel (`order`, 1-based) a per-channel item belongs to — the settings card puts those in its
    *  detector table instead of the settings list. */
   channel?: number
+  /** The laser a power item is for: the card drops these when its channel table carries each
+   *  channel's lines with their power. */
+  laser?: string
   /** As recorded, but what it means is our reading, not checked with the vendor or a facility. */
   unverified?: true
 }
@@ -135,6 +138,13 @@ export function autoHVItem(chans: { hv: number | null }[]): LightPathItem {
     : item('Auto HV on', 'file')
 }
 
+/** A sequential scan as the file records it: how many sequences when the reader kept each channel's. */
+function sequentialText(chans: { sequence?: number | null }[]): string {
+  const seqs = new Set(chans.map(c => c.sequence).filter(s => s != null))
+  if (seqs.size === 0) return 'Sequential scan'
+  return seqs.size === chans.length ? 'Sequential: one sequence per channel' : `Sequential: ${seqs.size} sequence${seqs.size === 1 ? '' : 's'}`
+}
+
 /** `laserTargets: false` drops each laser's "→ channels it excites" list — with many channels the
  *  channel table says it (`acquisitionChannelTable.ts`). */
 export interface LightPathOptions { laserTargets?: boolean }
@@ -170,7 +180,7 @@ function stageItems(img: LightPathImage, laserTargets: boolean): Record<string, 
   // 2 · power control — transmission and whether it follows depth
   const power: LightPathItem[] = (acq.lasers ?? [])
     .filter(l => l.transmissionPct != null)
-    .map(l => item(`${l.name} ${n(l.transmissionPct)} %`, 'file'))
+    .map(l => ({ ...item(`${l.name} ${n(l.transmissionPct)} %`, 'file'), laser: l.name }))
   const bz = acq.brightZ
   const ramp = depthRampName(acq)
   if (bz?.enabled === true) {
@@ -217,12 +227,15 @@ function stageItems(img: LightPathImage, laserTargets: boolean): Record<string, 
   const filled = slots.filter(d => d.name.toLowerCase() !== 'empty')
   const filters: LightPathItem[] = filled.map(d => item(`${DICHROIC_SLOT_LABEL[d.slot] ?? d.slot}: ${d.name}`, 'file'))
   if (slots.length > 0 && filled.length === 0) filters.push(item('No dichroic in the path', 'file'))
+  // Per-channel beam splitters (a `.czi` whose tracks ran with different ones): one line per channel
+  const splitters = slots.length === 0 ? chans.filter(c => c.beamSplitters?.length) : []
+  for (const c of splitters) filters.push({ ...item(`${chName(c)} ${c.beamSplitters!.join(' · ')}`, 'file'), channel: c.order })
   for (const c of chans) {
     filters.push({ ...(c.emissionFilter ? item(`${chName(c)} ${c.emissionFilter}`, 'file')
                                          : item(`${chName(c)} filter not recorded`, 'missing')), channel: c.order })
   }
   if (filters.length === 0) filters.push(item('Dichroics and filters not recorded', 'missing'))
-  else if (slots.length === 0) filters.unshift(item('Dichroics not recorded', 'missing'))
+  else if (slots.length === 0 && splitters.length === 0) filters.unshift(item('Dichroics not recorded', 'missing'))
 
   // 7 · detectors — under Auto HV the recorded HV is not a setting to copy (FV4000 records 0), so it
   // moves to the Auto HV line instead of reading as each detector's value
@@ -288,11 +301,16 @@ function stageItems(img: LightPathImage, laserTargets: boolean): Record<string, 
   // pinhole — size in Airy units and µm (confocal, Airyscan)
   const pinhole: LightPathItem[] = []
   if (acq.pinholeAiry != null || acq.pinholeUm != null) {
-    pinhole.push(item(join([acq.pinholeAiry != null && `${n(acq.pinholeAiry)} AU`, acq.pinholeUm != null && `${n(acq.pinholeUm)} µm`]), 'file'))
+    pinhole.push(item(pinholeText(acq.pinholeAiry, acq.pinholeUm)!, 'file'))
+  } else if (chans.some(c => c.pinholeAiry != null || c.pinholeUm != null)) {
+    for (const c of chans) {
+      const t = pinholeText(c.pinholeAiry, c.pinholeUm)
+      if (t) pinhole.push({ ...item(`${chName(c)} ${t}`, 'file'), channel: c.order })
+    }
   } else {
     pinhole.push(item('Pinhole not recorded (differs per track, or not read)', 'missing'))
   }
-  if (acq.sequential) filters.unshift(item('Sequential: one sequence per channel', 'file'))
+  if (acq.sequential) filters.unshift(item(sequentialText(chans), 'file'))
 
   // processing — the Airyscan mode each channel was processed with
   const processing: LightPathItem[] = chans.filter(c => c.airyscan)

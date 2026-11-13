@@ -47,7 +47,7 @@ describe('lightPathStages per technology', () => {
     const st = lightPathStages({ acquisition: sp8 } as LightPathImage)
     expect(st.map(s => s.key)).toContain('pinhole')
     expect(st.find(s => s.key === 'pinhole')!.items[0].text).toBe('1 AU · 65.27 µm')
-    expect(st.find(s => s.key === 'filters')!.items[0].text).toBe('Sequential: one sequence per channel')
+    expect(st.find(s => s.key === 'filters')!.items[0].text).toBe('Sequential scan')
   })
 
   it('widefield: illumination, cube and camera instead of lasers and detectors', () => {

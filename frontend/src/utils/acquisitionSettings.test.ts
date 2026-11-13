@@ -31,6 +31,14 @@ describe('acquisitionRows', () => {
     expect(row(manual, 'CH1')).toBe('SHG · MaiTai e HP DS-OL · BNDD1 · HV 0')
   })
 
+  it('a pinhole per track (Airy units only, ZEN black) is said per channel when there is no image-level one', () => {
+    const chans = FV4000.channels!.map(c => ({ ...c, pinholeAiry: 1.1 }))
+    const rows = acquisitionRows({ ...FV4000, pinholeUm: null, channels: chans })
+    expect(row(rows, 'Pinhole')).toBeUndefined()
+    expect(row(rows, 'CH1')).toMatch(/pinhole 1\.1 AU$/)
+    expect(row(acquisitionRows({ ...FV4000, pinholeAiry: 1, pinholeUm: 65.27, channels: chans }), 'Pinhole')).toBe('1 AU · 65.27 µm')
+  })
+
   it('Bright Z on shows the ramp; off says off even when points are stored', () => {
     expect(row(acquisitionRows(FV4000), 'Bright Z')).toBe('on · MaiTai e HP DS-OL 14.4 → 21 % over 0 → 60 µm')
     const off = { ...FV4000, brightZ: { ...FV4000.brightZ!, enabled: false } }

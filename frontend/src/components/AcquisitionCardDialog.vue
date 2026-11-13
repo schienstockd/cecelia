@@ -2,7 +2,7 @@
   Preview, print and save of an image's acquisition settings card (AcquisitionCardSheet). The preview
   scales the A4 sheet down to fit the dialog. While this dialog is open a second, unscaled copy of the
   sheet is teleported to <body>, off-screen: Print hides everything else (the print stylesheet below),
-  so only the card prints on one A4 page; Save renders that copy into a one-page PDF download.
+  so only the card prints, one A4 page per sheet page; Save renders each page of that copy into a PDF.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -24,7 +24,7 @@ const today = () => {
 }
 const print = () => window.print()
 // The sheet is A4-wide (186 mm); the preview shrinks it to fit the dialog (narrow window, scrollbar,
-// padding) instead of clipping its right-hand "This run" column. Print and Save use the unscaled copy.
+// padding) instead of clipping its right-hand columns. Print and Save use the unscaled copy.
 const SHEET_PX = 186 * 96 / 25.4
 const preview = ref<HTMLElement | null>(null)
 const zoom = ref(1)
@@ -35,7 +35,7 @@ usePlotResize(preview, () => {
   zoom.value = Math.min(1, (el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) / SHEET_PX)
 })
 
-// Save = the same one-page A4 card as a PDF download, no print dialog: the off-screen copy rendered
+// Save = the same A4 card as a PDF download, a page per sheet page, no print dialog: the off-screen copy rendered
 // to an image and placed on the page by the Analysis board's PDF writer. Captured with the sheet's own
 // (scoped) stylesheet, not `elementToImageURL`'s inlined computed styles: those force content-box and
 // fixed widths, the legend wraps, the copy grows taller than the box measured for it, and the bottom
@@ -69,14 +69,17 @@ async function sheetPng(el: HTMLElement, scale = 3): Promise<string | null> {
   return c.toDataURL('image/png')
 }
 const save = async () => {
-  const el = printCopy.value?.firstElementChild as HTMLElement | null
-  if (!el || saving.value) return
+  const pages = Array.from(printCopy.value?.firstElementChild?.children ?? []) as HTMLElement[]
+  if (pages.length === 0 || saving.value) return
   saving.value = true
   try {
-    const png = await sheetPng(el)
-    if (!png) return
-    await exportTabsToPdf([{ title: '', aspect: el.offsetWidth / el.offsetHeight,
-      slots: [{ rect: { x: 0, y: 0, w: 1, h: 1 }, png }] }], `settings_card_${fileStem()}.pdf`)
+    const out = []
+    for (const el of pages) {
+      const png = await sheetPng(el)
+      if (!png) return
+      out.push({ title: '', aspect: el.offsetWidth / el.offsetHeight, slots: [{ rect: { x: 0, y: 0, w: 1, h: 1 }, png }] })
+    }
+    await exportTabsToPdf(out, `settings_card_${fileStem()}.pdf`)
   } finally { saving.value = false }
 }
 const card = computed(() => acquisitionCard(props.image, { projectUid: props.projectUid, printedOn: today() }))
@@ -102,6 +105,8 @@ const card = computed(() => acquisitionCard(props.image, { projectUid: props.pro
 
 <style scoped>
 .acd-preview { background: var(--cc-paper); padding: 12px; border-radius: var(--cc-radius-sm); overflow-x: hidden; }
+/* pages of a multi-page card, apart on screen; print breaks between them */
+.acd-preview :deep(.acs + .acs) { margin-top: 12mm; padding-top: 6mm; border-top: 1px dashed var(--cc-border); }
 </style>
 
 <style>

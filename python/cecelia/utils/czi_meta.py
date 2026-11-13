@@ -15,8 +15,8 @@ image-level values (scan settings, pinhole): reported only when every channel re
 else None — never one track's value for all. Values are reported as recorded, units in the key names.
 Three readings are ours, not Zeiss's, and stated where made: a ZEN black channel's `Gain` is the
 detector HV (it equals the track setup's `Voltage` in every ZEN black file checked); laser
-transmission is 1 − `Attenuation` when `Transmission` is absent (it matches the track setup's
-`Transmission` there); and averaging is not called a sum or a mean, because the channel block does
+transmission is 1 − `Attenuation` when `Transmission` is absent, in a ZEN black file (it matches the
+track setup's `Transmission` there); and averaging is not called a sum or a mean, because the channel block does
 not say which.
 
 Beyond laser scanning (checked on an Axio Scan.Z1 slide scan, LSM 880 spectral, LSM 800/900/980
@@ -28,13 +28,24 @@ writes `System` "LSM 800" for an LSM 900 and 980 alike; the model is the imaging
 (`HardwareSetting/Configuration/Device[@Id="MTBLSMImagingDevice"]`), and the stand moves to
 `microscopeBody`. A slide scanner records no `System`: its stand name is the system.
 
+Per channel, for a card laid out by track (version 3): the track (ZEN names a multi-track channel
+`<detector>-T<n>`, both editions — our reading: the suffix is the only track link the channel block
+has), the lines on it with their power (`laserLines`), the detection band (`DetectionWavelength/Ranges`),
+the pinhole in µm and Airy units, and the beam splitters (`LaserScanInfo` ids, named from
+`Instrument/Dichroics`). The 1 − `Attenuation` reading below was checked on ZEN black files only
+(`Application/Name` "AIMApplication"); elsewhere an attenuation-only power is not read. ZEN 2.3 blue
+writes 1.9, 2.6 and 0.95 on an LSM 800 with no `Transmission`: not fractions, unit unknown — read as
+1 − attenuation they gave −90 % and −160 %.
+
 Fixtures: `test-data/acquisition/czi_*`, from real files.
 """
+import re
 import struct
 import xml.etree.ElementTree as ET  # vendor .czi XML, not OME-XML: test_zarr_access_convention _BASELINE
 
 #: Bump when the settings dict gains a field (its row in acquisition_readers.json must match).
-READER_VERSION = 2   # 2: technology, modes, camera fields, the LSM model name
+READER_VERSION = 3   # 2: technology, modes, camera fields, the LSM model name; 3: per-channel track,
+#                       band, pinhole, laser lines and beam splitters
 
 #: Shortest excitation that still means multiphoton (`MULTIPHOTON_MIN_NM`, frontend acquisitionLightPath.ts).
 _MULTIPHOTON_MIN_NM = 680
@@ -123,23 +134,51 @@ def _detector_names(info):
     return out
 
 
+_TRACK_SUFFIX = re.compile(r'-T(\d+)$')
+
+
+def _band(ch):
+    """The detection band(s) as recorded, "555-624 nm" (two ranges joined by ", "), or None."""
+    out = []
+    for r in (_text(ch, 'DetectionWavelength/Ranges') or '').split(','):
+        lo, _, hi = r.strip().partition('-')
+        lo, hi = _num(lo), _num(hi)
+        if lo is not None and hi is not None:
+            out.append(f'{round(lo)}-{round(hi)}')
+    return f"{', '.join(out)} nm" if out else None
+
+
+def _splitters(ch, names):
+    """The beam splitters a laser-scanning channel ran with, by name, main before secondary."""
+    lsi = ch.find('LaserScanInfo')
+    ids = [_text(lsi, k) for k in ('MainBeamSplitterVis', 'MainBeamSplitterInVis', 'SecondaryBeamSplitter')]
+    return [names.get(i) or i for i in ids if i]
+
+
 def _channels(info, block):
     names = _track_lasers(block)
     dets = _detector_names(info)
+    splitter_names = {d.get('Id'): (d.get('Name') or '').strip() or None for d in info.iterfind('Instrument/Dichroics/Dichroic')}
     image_bits = _num(_text(info, 'Image/ComponentBitCount'))
+    xml_chans = list(info.iterfind('Image/Dimensions/Channels/Channel'))
+    # 1 − attenuation only where it was checked: ZEN black (see the module docstring)
+    att_known = _text(info, 'Application/Name') == 'AIMApplication'
     chans, lasers = [], {}
-    for i, ch in enumerate(info.iterfind('Image/Dimensions/Channels/Channel')):
-        on = []      # every line exciting this channel: one channel can have two at once
+    for i, ch in enumerate(xml_chans):
+        on, lines = [], []      # every line exciting this channel: one channel can have two at once
         for ls in ch.iterfind('LightSourcesSettings/LightSourceSettings'):
             wl = _nm(_num(_text(ls, 'Wavelength')))
             tr = _num(_text(ls, 'Transmission'))
-            if tr is None and _num(_text(ls, 'Attenuation')) is not None:
+            if tr is None and _num(_text(ls, 'Attenuation')) is not None and att_known:
                 tr = 1 - _num(_text(ls, 'Attenuation'))      # our reading: see the module docstring
             pct = None if tr is None else round(tr * 100, 3)
             laser = names.get(wl) or (f'{wl:g} nm' if wl is not None else None)
             if laser is not None:
                 on.append(laser)
+                lines.append({'wavelengthNm': wl, 'pct': pct})
                 lasers.setdefault((laser, wl, pct), {'name': laser, 'wavelengthNm': wl, 'transmissionPct': pct})
+        track = _TRACK_SUFFIX.search(ch.get('Name') or '')
+        ph_um, ph_au = _num(_text(ch, 'PinholeSize')), _num(_text(ch, 'PinholeSizeAiry'))
         ds = ch.find('DetectorSettings')
         det_id = ds.find('Detector').get('Id') if ds is not None and ds.find('Detector') is not None else None
         bits = _num(_text(ch, 'ComponentBitCount')) or image_bits
@@ -162,6 +201,12 @@ def _channels(info, block):
             'offset': _num(_text(ds, 'Offset')),
             'detectorMode': _text(ds, 'DetectorMode'),   # Integration / PhotonCounting, ZEN blue only
             'bitDepth': int(bits) if bits else None,
+            'track': int(track.group(1)) if track else None,
+            'laserLines': lines,
+            'emissionFilter': _band(ch),
+            'pinholeUm': None if ph_um is None else round(ph_um, 2),
+            'pinholeAiry': None if ph_au is None else round(ph_au, 2),
+            'beamSplitters': _splitters(ch, splitter_names),
             **({'filterCube': _text(ch, 'Reflector'),
                 'exposureMs': None if exposure is None else round(exposure / _NS_PER_MS, 3),
                 'illuminationIntensity': _num((intensity or '').replace('%', '')),
@@ -278,8 +323,9 @@ def parse_settings(xml_bytes):
     # One rule: an image-level pinhole only when every channel records the same one. ZEN black keeps
     # pinholes per track detector, not per channel, so it never qualifies (a non-descanned or
     # transmitted channel has none).
-    pinhole = _one(None if v is None else round(v, 2) for v in (
-        _num(_text(c, 'PinholeSize')) for c in info.iterfind('Image/Dimensions/Channels/Channel')))
+    pinhole = _one(c['pinholeUm'] for c in channels)
+    pinhole_airy = _one(c['pinholeAiry'] for c in channels)
+    shared = _one(tuple(c['beamSplitters']) for c in channels)
     stand = info.find('Instrument/Microscopes/Microscope')
     stand_name = stand.get('Name') if stand is not None else None
     device = _imaging_device(md)
@@ -304,6 +350,9 @@ def parse_settings(xml_bytes):
         'scanner': _scanner(info),
         'autoHV': None,
         'pinholeUm': pinhole,     # None when channels differ (multi-track)
+        'pinholeAiry': pinhole_airy,
+        # image-level only when every channel ran with the same ones; else per channel (`beamSplitters`)
+        'dichroics': [{'slot': 'beam splitter', 'name': n} for n in shared] if shared else [],
         'channels': channels,
         **_axes(info, md),
     }
