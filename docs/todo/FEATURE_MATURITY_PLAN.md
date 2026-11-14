@@ -10,8 +10,8 @@ review → Tested" item, pending the maintainer's review of each fails-if line.
   (which tasks have no guide); [`HARDENING_RESULT_CORRECTNESS.md`](HARDENING_RESULT_CORRECTNESS.md) —
   per-feature gaps and the test evidence that exists.
 - Data gaps: [`CALL_FOR_DATASETS_PLAN.md`](CALL_FOR_DATASETS_PLAN.md) — `frontend/src/lib/callForDatasets.ts`.
-- Guides: `frontend/src/lib/guides/` (`types.ts` → `GuideDef`, `mapData.ts` → `MAP`), the map at the
-  front of the Guides dialog (`components/GuideMap.vue`, joins in `utils/guideMap.ts`), its checks in
+- Guides: `frontend/src/lib/guides/` (`types.ts` → `GuideDef`, `mapData.ts` → `MAP`), the page map
+  (joins in `utils/guideMap.ts`, no longer drawn in the app since 2026-11-14), its checks in
   `utils/guideMap.test.ts`, and `user-docs/README.md` generated from the same data.
 - Pill extended: `components/ComingSoonBadge.vue` ("the ONE way to signal an incomplete surface").
 - Release checklist: [`../RELEASING.md`](../RELEASING.md).
@@ -162,12 +162,15 @@ evidence, and the registry shape is informed by a real case.
     non-exempt feature by group, expandable; Coming soon rows derive from the task flags. Guide rows in
     the picker carry the badge. Words of the scale: `lib/guides/tiers.ts`.
   - user-docs: a Maturity column in the sidebar tables.
+  - **Moved 2026-11-14:** the page map left the Guides dialog, and the Maturity section became its own
+    dialog (`components/MaturityDialog.vue`, open flag `lib/maturityOpen.ts`, legend on top), reached from
+    every maturity dot and Help ▾ → Feature maturity (WORKFLOW_RECIPES_PLAN → *The dialog's first view*).
 - **P2** — **built.** Badges on pages and the task picker; "Something wrong?" link. Where it landed:
   - Pages: `components/MaturityIndicator.vue` in the app HEADER, following the route — pages have no shared
     header (ModuleLayout, ModulePage and the pipeline pages each draw their own), so one mount covers
     every page. Every tier: `ComingSoonBadge tier dot` (the tier dot alone; the tooltip names it) —
-    replaced a `pi-signal` icon for Beta and up, which read as a network indicator. It opens the map on that feature's row
-    (`openMaturityRow`, `lib/guideOpen.ts`). Exempt pages show nothing (no row to open).
+    replaced a `pi-signal` icon for Beta and up, which read as a network indicator. It opens the Feature maturity dialog on that
+    feature's row (`openMaturityRow`, `lib/maturityOpen.ts`). Exempt pages show nothing (no row to open).
   - Task picker: TaskRunner's `<option>` gets `· Experimental` (text only in a native select); the picked
     task gets the same `MaturityIndicator` as the header (its tier dot + report button). Coming soon tasks already read "— Coming soon" and can't be
     picked. The Chains palette is not badged.

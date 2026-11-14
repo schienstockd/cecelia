@@ -1,8 +1,8 @@
 # Start here: what's in Cecelia
 
-This page names every part of Cecelia once: what it is for and what it needs. The same map is the
-front page of **Guides** in the app (Help ▾ → Guides, top right), where each page is one click away and
-each guide shows you the buttons.
+This page names every part of Cecelia once: what it is for and what it needs. In the app, the sidebar
+is this map, and **Guides** (Help ▾ → Guides, top right) opens on your next step, where each guide shows
+you the buttons.
 
 ```mermaid
 flowchart LR
@@ -20,10 +20,10 @@ flowchart LR
 ## Where to start
 
 1. **Find your way around:** the tour runs by itself the first time you close the welcome dialog.
-2. **Open Guides and pick your recipe.** Where you start depends on your data: whether it moves, how
-   many markers it has, and what you want to know. The recipe lights its pages on the map and lists
-   its steps, each with why it is there. The recipes are listed [below](#recipes).
-3. **No recipe fits?** Click **Ask for a recipe** under the recipes: tell us what you image and what
+2. **Open Guides and select your recipe.** Where you start depends on your data: whether it moves, how
+   many markers it has, and what you want to know. The recipe lights its pages in the sidebar, and
+   Guides shows your next step, each with why it is there. The recipes are listed [below](#recipes).
+3. **No recipe fits?** Click **Ask for a recipe** under the recipe list in Guides: tell us what you image and what
    you want to know.
 
 Everything below "Scaling up" can wait.
@@ -41,7 +41,7 @@ Everything below "Scaling up" can wait.
 
 ## Recipes
 
-Pick the one that matches your data at the top of **Guides**: its pages light up on the map and its
+Open **Guides** and select the one that matches your data: its pages light up in the sidebar and its
 steps are listed in order, each with why it is there. Steps marked optional depend on your images.
 Every recipe ends the same way: once the settings work on a few images, run them over the whole set
 as a chain.
@@ -50,8 +50,8 @@ as a chain.
 |---|---|---|
 | **Few-marker tissue** | A fixed section with a handful of markers, e.g. a confocal stack of spleen. | 9 (2 optional) |
 | **Multiplex tissue** | Many markers on one section, e.g. IBEX or CODEX of a lymph node or spleen. | 9 (1 optional) |
-| **Intravital timelapse** | A time-lapse of cells moving in tissue, e.g. T cells in a lymph node. | 12 (5 optional) |
-| **Live cells and structures** | A time-lapse where cells move along a structure, e.g. T cells and lymphatics in skin. | 9 (1 optional) |
+| **Intravital timelapse** | A time-lapse of cells moving in tissue, e.g. T cells in a lymph node. | 13 (5 optional) |
+| **Live cells and structures** | A time-lapse where cells move along a structure, e.g. T cells and lymphatics in skin. | 10 (1 optional) |
 | **In vitro migration** | Cells migrating in a dish or chamber, e.g. a cancer cell line under two treatments. | 8 |
 
 ## The sidebar
@@ -60,8 +60,8 @@ The groups follow the analysis: **Populations** pages *define* who the cells are
 *summarise* those populations across images. Every page except Tasks needs an open project. Each
 page that defines a population names the page that summarises it. **Maturity** says how far to
 trust what the page produces: *Experimental* — check every result by hand; *Beta* — checked by hand
-on real data, spot-check results; *Tested* — a test fails when the result is wrong. The Maturity
-section of the Guides map shows each feature's evidence and what would move it up.
+on real data, spot-check results; *Tested* — a test fails when the result is wrong. **Help** →
+**Feature maturity** shows each feature's evidence and what would move it up.
 
 ### Data: get images in and ready
 

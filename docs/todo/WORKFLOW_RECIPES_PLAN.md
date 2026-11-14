@@ -416,6 +416,40 @@ not reopened, so no new first-run entry — the tour's compass step names it).
   `parts/top.md`); the brief's quiet clusters for Panels / Scale up / Settings (the README covers them;
   the map stays on the sidebar).
 
+### The dialog's first view — built 2026-11-14 (`feat/guides-next-step`)
+
+**Supersedes *The map* above in the app:** the page map is no longer drawn in the dialog (the sidebar is
+the map, and it already lights the set's recipe pages; `mapData.ts` still feeds `user-docs/README.md`
+and the guide checks). The dialog now opens on **one choice and one button**
+(`GuideNextStep.vue`), because "I don't know what to do" met five recipe chips, a page map, a legend,
+Maturity and a second index of the same guides all at once. Brief: `docs/archive/GUIDES_SHOWCASES_PLAN.md` §5.
+It reads the set's stored recipe (GUI_CLARITY_PLAN D13/D16), which the dialog used to ignore.
+
+- **Three views**, picked by `guideStartView` (`utils/setRecipe.ts`, tested):
+  *import*, when the project has no images (Import images, Start); *choose*, "What are you working with?",
+  the written recipes as cards with `whenThisIsYou`, the set's suggestion marked and never applied; *recipe*,
+  the next step as a card (why-line, Start guide / Open), a tick line, every step behind **All steps**.
+- **Next and ticks are one rule with Welcome:** `recipeProgress` (Welcome's `resumeStepOf` now reads it). A
+  tick is a successful run on the set (`ranPagesOf`), not a finished guide, so work done without the
+  guide counts. Next is the required step after the FURTHEST one that has run: only task pages log a run,
+  so Fix metadata, Gate, Build plots and Run a chain never tick, and the old "first unrun step" rule sent
+  every segmented set back to Fix metadata (Welcome's Continue had the same bug). Optional steps are never next; under All steps they sit in their own group with their
+  why-line always shown, since it is the condition.
+- **Selecting a recipe saves it on the set** (the same `POST /api/sets/recipe` as Welcome and the set-row
+  picker). With no set active there is no suggestion and the selection is walked in place, saved nowhere.
+- **Every recipe starts at Import:** `import-images` is step 1 of Intravital and Live structures too, so
+  the empty-project view is honest for every recipe and Welcome resumes them at Import.
+- **Browse all guides** is every guide by sidebar group (the accordion), plus *Walkthroughs on the way*.
+  Gone from the dialog, each with a home: the recipe chips (the first view walks the recipe; **Change**
+  switches it), the page map (the sidebar), the Claude cards (`ClaudeWaysIn`, already Kiwi's `?`), and
+  Maturity (its own dialog, `MaturityDialog.vue`, from every maturity dot and Help ▾ → Feature
+  maturity). The AI help toggle moved to the first view's footer; with it on, the next-step card shows the
+  step's `assist`. Maturity in the first view: the same tier dot
+  as Browse's guide rows (`chipDot`, every tier that has one, `tierTip` on hover).
+- **Dropped:** the showcase strip, a per-recipe outcome image (BOOKLETS_PLAN D8, 2026-11-14). The choose
+  view's "Is this you?" column answers the choice, and an outcome image per recipe would cost fixture
+  curation for little gain.
+
 ## Constraints the build has to satisfy
 
 Not advice — these all fail CI:

@@ -1,7 +1,6 @@
 // user-docs/README.md, generated: the hand-written prose (user-docs/parts/top.md, bottom.md) around
-// two sections built from the same data the in-app map uses — the sidebar (navGroups.ts + the map's
-// guides/mapData.ts) and the recipes (guides/recipes.ts). So the README and the map cannot disagree
-// about a page, a pair or a guide. Written by `userDocs.test.ts` (`npx vitest run -u` refreshes it);
+// two sections built from the app's own data — the sidebar (navGroups.ts + guides/mapData.ts) and the
+// recipes (guides/recipes.ts). So the README and the app cannot disagree about a page, a pair or a guide. Written by `userDocs.test.ts` (`npx vitest run -u` refreshes it);
 // a stale README fails that test in CI. WORKFLOW_RECIPES_PLAN → *The map*.
 import { NAV_GROUPS, navLabelFor } from '../lib/navGroups'
 import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
@@ -19,8 +18,8 @@ export function sidebarSection(): string {
     '*summarise* those populations across images. Every page except Tasks needs an open project. Each',
     'page that defines a population names the page that summarises it. **Maturity** says how far to',
     'trust what the page produces: *Experimental* — check every result by hand; *Beta* — checked by hand',
-    'on real data, spot-check results; *Tested* — a test fails when the result is wrong. The Maturity',
-    'section of the Guides map shows each feature\'s evidence and what would move it up.',
+    'on real data, spot-check results; *Tested* — a test fails when the result is wrong. **Help** →',
+    '**Feature maturity** shows each feature\'s evidence and what would move it up.',
   ]
   for (const g of NAV_GROUPS) {
     out.push('', `### ${g.heading}: ${(GROUP_BLURB[g.heading] ?? '').toLowerCase()}`, '',
@@ -42,7 +41,7 @@ export function recipesSection(): string {
   const out = [
     '## Recipes',
     '',
-    'Pick the one that matches your data at the top of **Guides**: its pages light up on the map and its',
+    'Open **Guides** and select the one that matches your data: its pages light up in the sidebar and its',
     'steps are listed in order, each with why it is there. Steps marked optional depend on your images.',
     'Every recipe ends the same way: once the settings work on a few images, run them over the whole set',
     'as a chain.',

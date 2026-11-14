@@ -1,9 +1,10 @@
 <!--
-  The guide picker: the map first (GuideMap — recipes, every page by sidebar group, the Claude loop),
-  then every guide in an accordion grouped like the sidebar, each with its prerequisites checked live.
-  The map's group cards open the matching accordion section, so the map and the list are one view.
+  Two views. It opens on GuideNextStep — one choice and one button: the set's recipe and its next step,
+  "What are you working with?", or Import images (docs/todo/WORKFLOW_RECIPES_PLAN.md → *The dialog's first
+  view*). "Browse all guides" switches to every guide in an accordion grouped like the sidebar, each with
+  its prerequisites checked live.
   Opened from Help ▾ → Guides (HelpMenu.vue) (and from a What's New tip card's "Show me").
-  Design: docs/todo/GUIDE_SYSTEM_PLAN.md; the map: docs/todo/WORKFLOW_RECIPES_PLAN.md → *The map*.
+  Design: docs/todo/GUIDE_SYSTEM_PLAN.md.
 
   Built on `BaseModal` like every other dialog (docs/UI.md → Modals & dialogs). Patterned on
   `ClaudeOverviewDialog.vue`: static content from a lib module, no store of its own beyond the shared
@@ -26,14 +27,14 @@
   about to open a project; the data is on a drive we haven't listed yet).
 -->
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 import { useGuideStore } from '../stores/guide'
 import { guidesByGroup, guideById } from '../lib/guides'
 import { useObserverStore } from '../stores/observer'
 import { guideGroupsFor } from '../utils/aiSwitch'
-import GuideMap from './GuideMap.vue'
+import GuideNextStep from './GuideNextStep.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { defaultOpenGroup, chipDot, tierLabel } from '../utils/guideMap'
@@ -46,18 +47,13 @@ const guide = useGuideStore()
 const observer = useObserverStore()
 const groups = computed(() => guideGroupsFor(guidesByGroup(), observer.ai.enabled))
 
-// ── the map + the accordion: one view (WORKFLOW_RECIPES_PLAN → *The map*) ──────────────────────────
-// The map (GuideMap) holds the recipes; its group cards open the matching guide group here. One group
-// open at a time; it opens on the group whose guides teach the page
+// Which view: always the next step on open — re-decided every time, like the open group.
+const view = ref<'next' | 'browse'>('next')
+// Browse's accordion: one group open at a time, starting on the group whose guides teach the page
 // you're on, else Start. Not persisted: where you are decides what's useful — so it is re-set on
 // every open. The sections share it through `accordion="cc.guides.openGroup"`.
-const openRecipe = ref('')
 const guideGroups = useSingleOpenSection('cc.guides.openGroup', '', { persist: false })
 guideGroups.set(defaultOpenGroup(guide.currentPath))
-function showGroup(heading: string) {
-  guideGroups.set(heading)
-  void nextTick(() => document.querySelector(`[data-guide-group="${heading}"]`)?.scrollIntoView({ block: 'nearest' }))
-}
 
 function start(g: GuideDef) {
   guide.start(g.id)
@@ -65,8 +61,8 @@ function start(g: GuideDef) {
 }
 
 const isDone = (g: GuideDef) => guide.completed.has(g.id)
-// the badge's hover: what the tier asks of you (FEATURE_MATURITY_PLAN → *The scale*); the map's
-// Maturity section has the evidence behind it
+// the badge's hover: what the tier asks of you (FEATURE_MATURITY_PLAN → *The scale*); Help ▾ → Feature
+// maturity has the evidence behind it
 const tierTip = (g: GuideDef) => tierLine(g.maturity.tier)
 const misses = (g: GuideDef) => guide.prereqState(g).filter(p => !p.met)
 
@@ -92,12 +88,14 @@ function firstFixable(g: GuideDef) {
     <!-- own #title so the compass carries the guide mark.
          BaseModal's plain `icon` prop would inherit the title's text colour. -->
     <template #title><i class="pi pi-compass gd-mark" /> Guides</template>
+    <GuideNextStep v-if="view === 'next'" @browse="view = 'browse'" />
+
+    <template v-else>
+    <button class="cc-btn cc-btn-bare cc-btn-dense cc-fs-xs gd-back" @click="view = 'next'"
+            v-tooltip.bottom="'Back to your next step'"><i class="pi pi-arrow-left" /> Back</button>
     <p class="gd-intro cc-muted cc-fs-md">
       Bubbles appear beside the control to use, on your own data, and step forward as you go.
     </p>
-
-    <!-- the map first: where do I start, and where everything is. Its group cards open the guides below -->
-    <GuideMap v-model:recipe="openRecipe" @open-group="showGroup" />
 
     <section v-for="grp in groups" :key="grp.group" class="gd-group" :data-guide-group="grp.group">
       <CollapsibleSection :label="`${grp.group} · ${grp.guides.length}`" max-height="none"
@@ -159,10 +157,11 @@ function firstFixable(g: GuideDef) {
         <li>Track scheme timeline — Draw, Show, and the keybindings <ComingSoonBadge /></li>
       </ul>
     </section>
+    </template>
 
     <template #footer>
       <span class="gd-spacer" />
-      <button v-if="guide.completed.size" class="cc-btn cc-btn-ghost cc-fs-xs" @click="guide.clearCompleted()"
+      <button v-if="view === 'browse' && guide.completed.size" class="cc-btn cc-btn-ghost cc-fs-xs" @click="guide.clearCompleted()"
               v-tooltip.top="'Clear the finished ticks so the list reads fresh again'">
         Reset ticks
       </button>
@@ -178,6 +177,7 @@ function firstFixable(g: GuideDef) {
 /* size comes from `cc-fs-md` in the markup — a scoped font-size here would shadow `cc-muted`'s own
    and make the utility a no-op (docs/UI.md → pick a scenario, then a size) */
 .gd-intro { margin: 0 0 0.7rem; line-height: 1.4; }
+.gd-back { margin: 0 0 0.4rem; }
 
 .gd-group { margin-bottom: 0.7rem; }
 /* no `color` — `cc-eyebrow` owns it; shadowing a utility's own property makes it a no-op

@@ -1,8 +1,8 @@
 # Start here: what's in Cecelia
 
-This page names every part of Cecelia once: what it is for and what it needs. The same map is the
-front page of **Guides** in the app (Help ▾ → Guides, top right), where each page is one click away and
-each guide shows you the buttons.
+This page names every part of Cecelia once: what it is for and what it needs. In the app, the sidebar
+is this map, and **Guides** (Help ▾ → Guides, top right) opens on your next step, where each guide shows
+you the buttons.
 
 ```mermaid
 flowchart LR
@@ -20,10 +20,10 @@ flowchart LR
 ## Where to start
 
 1. **Find your way around:** the tour runs by itself the first time you close the welcome dialog.
-2. **Open Guides and pick your recipe.** Where you start depends on your data: whether it moves, how
-   many markers it has, and what you want to know. The recipe lights its pages on the map and lists
-   its steps, each with why it is there. The recipes are listed [below](#recipes).
-3. **No recipe fits?** Click **Ask for a recipe** under the recipes: tell us what you image and what
+2. **Open Guides and select your recipe.** Where you start depends on your data: whether it moves, how
+   many markers it has, and what you want to know. The recipe lights its pages in the sidebar, and
+   Guides shows your next step, each with why it is there. The recipes are listed [below](#recipes).
+3. **No recipe fits?** Click **Ask for a recipe** under the recipe list in Guides: tell us what you image and what
    you want to know.
 
 Everything below "Scaling up" can wait.

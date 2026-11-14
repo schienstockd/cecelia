@@ -2,11 +2,10 @@ import { describe, it, expect } from 'vitest'
 import { NAV_GROUPS } from '../lib/navGroups'
 import { MAP, GROUP_BLURB, CLAUDE_MAKES } from '../lib/guides/mapData'
 import { guideById, RECIPES, isWanted, type WrittenRecipe } from '../lib/guides'
-import { buildMap, recipeRoutes, chipTip, defaultOpenGroup, stepRoute, mapCaption } from './guideMap'
-import { availablePaths, applyProfile } from './viewProfiles'
+import { recipeRoutes, defaultOpenGroup, stepRoute } from './guideMap'
+import { pageTier } from './maturity'
 
 const ROUTES = NAV_GROUPS.flatMap(g => g.items.map(i => i.to))
-const visibleWith = (items: string[] | null) => availablePaths(applyProfile(NAV_GROUPS, items))
 const written = RECIPES.filter(r => !isWanted(r)) as WrittenRecipe[]
 
 // The map's CI checks (WORKFLOW_RECIPES_PLAN → *The map*): a page with no entry, or an entry
@@ -73,64 +72,15 @@ describe('recipes light real pages', () => {
   })
 })
 
-describe('buildMap', () => {
-  // No default path: where you start depends on the data and the question, so with no recipe
-  // nothing is lit and nothing is dimmed.
-  it('lights and dims nothing when no recipe is picked', () => {
-    const chips = buildMap(null, visibleWith(null)).flatMap(g => g.chips)
-    expect(chips.some(c => c.lit || c.dim)).toBe(false)
+describe('every sidebar page', () => {
+  it('carries a maturity tier (exempt counts)', () => {
+    expect(ROUTES.filter(r => !pageTier(r))).toEqual([])
+    expect(pageTier('/tasks')).toBe('exempt')
   })
-  it('lights exactly a recipe’s pages when one is picked', () => {
-    const r = written.find(x => x.id === 'multiplex-tissue')!
-    const lit = new Set(buildMap(r, visibleWith(null)).flatMap(g => g.chips).filter(c => c.lit).map(c => c.route))
-    expect(lit).toEqual(new Set(recipeRoutes(r)))
-    expect(lit.has('/clust-cells')).toBe(true)
-    expect(lit.has('/gate')).toBe(false)
-    const gate = buildMap(r, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/gate')!
-    expect(gate.dim).toBe(true)
-  })
-  // An empty layout is "All", as everywhere else (applyProfile) — not "everything hidden".
-  it('treats an empty layout as all pages', () => {
-    expect(buildMap(null, visibleWith([])).flatMap(g => g.chips).some(c => c.hidden)).toBe(false)
-  })
-  it('dims pages the sidebar layout hides, and says so on hover', () => {
-    const chips = buildMap(null, visibleWith(['/segment'])).flatMap(g => g.chips)
-    expect(chips.find(c => c.route === '/segment')!.hidden).toBe(false)
-    const gate = chips.find(c => c.route === '/gate')!
-    expect(gate.hidden).toBe(true)
-    expect(chipTip(gate)).toMatch(/hidden by your sidebar layout/)
-  })
-  it('says what bold means, or to pick a recipe', () => {
-    expect(mapCaption(null)).toMatch(/Pick a recipe/)
-    expect(mapCaption(written[0])).toContain(written[0].title)
-  })
-  it('says what Claude makes on a page only with the Claude toggle on', () => {
-    const chain = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/chain')!
-    expect(chain.claude).toBeTruthy()
-    expect(chipTip(chain)).not.toContain(chain.claude!)
-    expect(chipTip(chain, true)).toContain(chain.claude!)
-    // the line names the mode itself — there is no "Claude:" prefix any more — so every one must
-    for (const c of buildMap(null, visibleWith(null)).flatMap(g => g.chips).filter(c => c.claude)) {
-      expect(c.claude, c.route).toMatch(/Claude Code|Kiwi/)
-    }
-  })
-  it('names the pair and the guide on a chip', () => {
-    const gate = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/gate')!
-    expect(gate.pairedLabel).toBe('Phenotype')
-    expect(gate.guideTitle).toBeTruthy()
-    expect(chipTip(gate)).toMatch(/summarised on Phenotype/)
-  })
-})
-
-describe('the map shows each page’s maturity', () => {
-  const chips = buildMap(null, visibleWith(null)).flatMap(g => g.chips)
-  it('every chip carries a tier, and says it on hover unless exempt', () => {
-    expect(chips.filter(c => !c.tier).map(c => c.route)).toEqual([])
-    const gate = chips.find(c => c.route === '/gate')!
-    expect(chipTip(gate)).toMatch(/^[^·]+ · Beta: /)
-    const tasks = chips.find(c => c.route === '/tasks')!
-    expect(tasks.tier).toBe('exempt')
-    expect(chipTip(tasks)).not.toMatch(/Beta|Experimental|Tested/)
+  // the README prints each line as it stands, with no "Claude:" prefix, so each must name the mode itself
+  it('says which way in makes what Claude makes there', () => {
+    for (const [route, e] of Object.entries(MAP)) if (e.claude) expect(e.claude, route).toMatch(/Claude Code|Kiwi/)
+    expect(MAP['/chain']?.claude).toBeTruthy()
   })
 })
 

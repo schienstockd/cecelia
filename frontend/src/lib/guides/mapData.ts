@@ -1,17 +1,17 @@
 // The map of Cecelia — what the sidebar can't say: what each page is for, which page summarises the populations it defines, and which guide teaches it. ONLY that.
 // Everything else about a page (label, icon, group, order, hover tip) is `navGroups.ts`'s, and what a
 // guide needs is its own prereqs — so this file never restates them (WORKFLOW_RECIPES_PLAN → *The
-// map*, "one source"). Three things read it: the map at the front of the Guides dialog (`GuideMap.vue`),
-// user-docs/README.md (generated from it — `utils/userDocs.ts`), and the checks in
+// map*, "one source"). Three things read it: `utils/guideMap.ts` (which page a guide teaches, so recipe
+// steps land on pages), user-docs/README.md (generated from it — `utils/userDocs.ts`), and the checks in
 // `utils/guideMap.test.ts` (every sidebar page has an entry; every guide and pair exists).
 //
 // Keyed by sidebar route. A renamed page is a one-line change in navGroups.ts; nothing here moves.
 
 export interface MapEntry {
-  what: string          // what it's for, one line, no trailing period — the map's hover, the README's cell
+  what: string          // what it's for, one line, no trailing period — the README's cell
   pairedWith?: string   // the page that summarises what this one defines (Gate → Phenotype)
   guide?: string        // the guide that teaches it, if one exists
-  claude?: string       // what Claude MAKES on this page — the map's ✦ with the Claude toggle on. Only
+  claude?: string       // what Claude MAKES on this page — the README's Claude column. Only
                         // pages where it creates something you keep; Kiwi reads every page, so a
                         // badge for reading would mark them all. Which pages: CLAUDE_MAKES below.
 }
@@ -64,7 +64,7 @@ export const CLAUDE_MAKES: Record<string, string | null> = {
   append_lab_log: null,   // the lab log is a panel, not a sidebar page
 }
 
-// One line under each sidebar group's heading — the README's, and the map's group hover.
+// One line under each sidebar group's heading — the README's.
 export const GROUP_BLURB: Record<string, string> = {
   Data: 'Get images in and ready',
   Populations: 'Define who the cells are',

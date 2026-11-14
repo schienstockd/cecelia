@@ -128,7 +128,7 @@ export interface Evidence {
   failsIf: string             // "fails if …" — the wrong result it catches, so a promoter can judge it
 }
 
-/** A human attestation — can't be tested and goes stale, so the map shows when it was made. */
+/** A human attestation — can't be tested and goes stale, so the Feature maturity dialog shows when it was made. */
 export interface CheckedBy {
   who: string
   when: string                // 'YYYY-MM' — the age signal until a feature → code-path map exists

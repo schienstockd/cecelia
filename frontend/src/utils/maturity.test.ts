@@ -166,7 +166,7 @@ describe('findTest', () => {
   })
 })
 
-describe('the map’s maturity rows', () => {
+describe('the Feature maturity dialog’s rows', () => {
   const groups = maturityGroups(TASKS)
   const rows = groups.flatMap(g => g.rows)
   it('shows no exempt feature (Decision 9)', () => {
@@ -200,7 +200,7 @@ describe('badges on the pages and in the task picker (P2)', () => {
     expect(pageMaturity('/tasks')).toBeNull()        // exempt: no row, no link
     expect(pageMaturity('/settings')).toBeNull()     // not a sidebar page
   })
-  it('every page and task link lands on a row the map shows', () => {
+  it('every page and task link lands on a row the dialog shows', () => {
     const missing = [
       ...ROUTES.map(r => [r, pageMaturity(r)] as const),
       ...TASKS.map(t => [t.fun_name, taskMaturity(t, TASKS)] as const),
