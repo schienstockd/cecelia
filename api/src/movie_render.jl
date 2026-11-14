@@ -10,7 +10,7 @@
 # ── Per-frame text for the renderer (`title_card.draw_frame_overlays`) ────────────
 #
 # Timestamp + scale bar are drawn onto the encoded frame via PIL. Julia builds the per-frame
-# `overlays` list (one dict per frame, `{timestamp?, timestampPx?, scaleBar?}`) upfront and ships it
+# `overlays` list (one dict per frame, `{timestamp?, timestampPx? | timestampFrac?, scaleBar?}`) upfront and ships it
 # in the renderer's params (`FrameTextShow`, `movie_helpers.jl`).
 
 # Pick a "nice" scale-bar length: the LARGEST step ≤ 30% of the frame's physical width, from the
@@ -61,12 +61,12 @@ function _build_timelapse_overlays(ts::AbstractVector{<:Integer}, um_per_px::Rea
     sb = _text_on(show_scale_bar) ? _pick_scale_bar(um_per_px, frame_w) : nothing
     sb_dict = sb === nothing ? nothing :
               Dict{String,Any}("lengthPx" => sb[2], "label" => _scale_bar_label(sb[1]))
-    sb_dict === nothing || _text_px(show_scale_bar) === nothing || (sb_dict["fontPx"] = _text_px(show_scale_bar))
+    sb_dict === nothing || _text_size!(sb_dict, show_scale_bar, "fontPx", "fontFrac")
     ts_ok = _text_on(show_timestamp) && time_step_min !== nothing
     return [begin
         e = Dict{String,Any}()
         ts_ok && (e["timestamp"] = _format_ts(t, time_step_min))
-        ts_ok && _text_px(show_timestamp) !== nothing && (e["timestampPx"] = _text_px(show_timestamp))
+        ts_ok && _text_size!(e, show_timestamp, "timestampPx", "timestampFrac")
         sb_dict === nothing || (e["scaleBar"] = sb_dict)
         e
     end for t in ts]

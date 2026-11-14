@@ -200,14 +200,20 @@ _label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_C
 # which is what every recording did before the setting existed.
 _show_3d(src)::Bool = Bool(get(src, :show3D, false))
 """
-    FrameTextShow = Union{Bool,Int}
+    FrameTextShow = Union{Bool,Int,Float64}
 
-A movie's timestamp or scale bar: `false` off, `true` on at the movie's own size (it scales with the
-frame), `n` on at `n` px — the viewer's size (a look's `timestampPx` / `scaleBarPx`, `_frame_text`).
+A movie's timestamp or scale bar (`_frame_text`): `false` off; `true` on at the movie's own size; `n`
+(Int) on at `n` frame px; `f` (Float64) on at `f` × the frame's height — the viewer's px over its
+canvas height, so the text keeps the proportion it has on screen at any movie size.
 """
-const FrameTextShow = Union{Bool,Int}
+const FrameTextShow = Union{Bool,Int,Float64}
 _text_on(x::FrameTextShow) = x !== false
-_text_px(x::FrameTextShow) = x isa Bool ? nothing : x
+# `x`'s size onto a per-frame overlay dict, as px or as a fraction of the frame height
+function _text_size!(d::AbstractDict, x::FrameTextShow, px_key::String, frac_key::String)
+    x isa Int && (d[px_key] = x)
+    x isa Float64 && (d[frac_key] = x)
+    d
+end
 
 """
     RenderQuality = Union{Symbol,Int}
@@ -233,14 +239,19 @@ function _render_quality(src, look = nothing)::RenderQuality
     steps isa Real && steps > 0 ? clamp(round(Int, steps), RAY_STEPS_RANGE...) : :standard
 end
 
-# A movie's timestamp / scale bar (`FrameTextShow`) from a request / config: off when its
-# `on_key` is false, else at the viewer's px (`px_key`, a look's `timestampPx` / `scaleBarPx`, on the
-# config or in its `look`), else at the movie's own size.
+# A movie's timestamp / scale bar (`FrameTextShow`) from a request / config, each key read off it or
+# else its `look`: off when `on_key` is false (the viewer's switch); at the viewer's px (`px_key`, a
+# look's `timestampPx` / `scaleBarPx`) scaled to the frame by the viewer canvas's height
+# (`textCanvasPx`), or as frame px when that is unknown; else at the movie's own size.
 function _frame_text(src, on_key::AbstractString, px_key::AbstractString, look = nothing)::FrameTextShow
-    Bool(_cfg_get(src, on_key, true)) || return false
-    px = _cfg_maybe(src, px_key)
-    px === nothing && look isa AbstractDict && (px = _cfg_maybe(look, px_key))
-    px isa Real && px > 0 ? clamp(round(Int, px), 6, 200) : true
+    val(k) = (v = _cfg_maybe(src, k); v === nothing && look isa AbstractDict ? _cfg_maybe(look, k) : v)
+    on = val(on_key)
+    on === nothing || Bool(on) || return false
+    px = val(px_key)
+    px isa Real && px > 0 || return true
+    canvas = val("textCanvasPx")
+    canvas isa Real && canvas > 0 ? clamp(Float64(px) / Float64(canvas), 0.005, 0.3) :
+                                    clamp(round(Int, px), 6, 200)
 end
 
 function _z_slice(src)::Union{Int,Nothing}

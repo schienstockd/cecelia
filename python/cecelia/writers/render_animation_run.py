@@ -53,8 +53,9 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
                          ``image`` (the viewer's unit: they then scale with the camera, as in the
                          viewer). The border is always output pixels.
     ``titleCard``      : optional; prepended after the render (``title_card.prepend_title_to_movie``)
-    ``overlays``       : optional per-frame ``[{timestamp?, timestampPx?, scaleBar?}]`` — drawn onto
-                         the encoded frame; the px (and ``scaleBar.fontPx``) are the viewer's text sizes
+    ``overlays``       : optional per-frame ``[{timestamp?, timestampPx? | timestampFrac?, scaleBar?}]``
+                         — drawn onto the encoded frame; the sizes (and ``scaleBar.fontPx`` /
+                         ``fontFrac``) are the viewer's text, in px or a fraction of the frame height
 """
 import math
 import os
@@ -434,7 +435,8 @@ def render_frames(params, host, log):
             from cecelia.utils.title_card import draw_frame_overlays
             frame = draw_frame_overlays(frame, timestamp=item.get('timestamp'),
                                         scale_bar=item.get('scaleBar'),
-                                        timestamp_px=item.get('timestampPx'))
+                                        timestamp_px=item.get('timestampPx'),
+                                        timestamp_frac=item.get('timestampFrac'))
         yield frame
         if (i + 1) % 20 == 0:
             log.log(f'[PROGRESS] {i + 1}/{len(states)}')

@@ -25,8 +25,7 @@ stack. Per-tag notes are also on the
 - **Crop is drawn on the viewer**, optionally square, with a name and a target set.
 - **Aggregate runs have names.** Columns gain `#<name>` (`flow.cell.is.aggregate#default`), and the
   population is `_aggregated_<name>`. Plots and gates on older aggregate columns need re-picking after a re-run.
-- **Recordings match the viewer's text and 3D Steps.** Scale bar and timestamp draw at the viewer's
-  sizes, and 3D Render quality defaults to *viewer* (its Steps); pick draft / standard / high to override.
+- **Recordings follow the viewer's scale bar, timestamp and 3D Steps.** Pick a Render quality to override Steps.
 - **Skeletons draw as lines coloured by branch type**, in the viewer and every recording. Re-run
   branching on older skeletons to see them.
 

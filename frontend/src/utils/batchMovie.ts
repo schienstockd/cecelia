@@ -117,9 +117,13 @@ export interface BatchMovieCfg {
   // The skeletons (`segment.branching`) drawn as lines, `{segmentation → colour}` — a viewer look's
   // shown ones (`skeleton_segments` draws them). Absent / empty = none.
   skeletons?: Record<string, string>
-  /** the viewer's scale bar / timestamp text px and 3D Steps (a look filled from the viewer) */
+  /** the viewer's scale bar / timestamp (on / off, text px on its canvas of `textCanvasPx` height)
+   *  and 3D Steps — a look filled from the viewer. Absent: on, at the movie's own size. */
+  showScaleBar?: boolean
+  showTimestamp?: boolean
   scaleBarPx?: number
   timestampPx?: number
+  textCanvasPx?: number
   steps?: number
   // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
   // with pops on).
@@ -196,8 +200,11 @@ export interface BatchMovieRequestConfig {
   /** the viewer's Tracks-legend colours (a look filled from the viewer) */
   trackSourceColours?: Record<string, string>
   skeletons?: Record<string, string>
+  showScaleBar?: boolean
+  showTimestamp?: boolean
   scaleBarPx?: number
   timestampPx?: number
+  textCanvasPx?: number
   steps?: number
   /** the mask paints every cell, as the viewer's does */
   maskAllCells?: boolean
@@ -314,6 +321,9 @@ export function buildBatchMovieConfig(
     ...(cfg.skeletons && Object.keys(cfg.skeletons).length ? { skeletons: { ...cfg.skeletons } } : {}),
     ...(cfg.scaleBarPx ? { scaleBarPx: cfg.scaleBarPx } : {}),
     ...(cfg.timestampPx ? { timestampPx: cfg.timestampPx } : {}),
+    ...(cfg.textCanvasPx ? { textCanvasPx: cfg.textCanvasPx } : {}),
+    ...(cfg.showScaleBar !== undefined ? { showScaleBar: cfg.showScaleBar } : {}),
+    ...(cfg.showTimestamp !== undefined ? { showTimestamp: cfg.showTimestamp } : {}),
     ...(cfg.steps ? { steps: cfg.steps } : {}),
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',

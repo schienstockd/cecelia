@@ -35,8 +35,6 @@ export interface LookImage {
 
 /** Everything that decides the viewer's picture. The recorded half is `viewerLook`'s input. */
 export interface ViewerDrawSpec extends ViewerLookInput {
-  scaleBar: boolean
-  timestamp: boolean
   grid: boolean
   gridDensity: number
   landscape: boolean
@@ -59,8 +57,7 @@ export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   tailWidth: 'recorded', tailLength: 'recorded', labelContour: 'recorded', maskColour: 'recorded',
   trackColourMode: 'recorded', colourBy: 'recorded', colourOverrides: 'recorded',
   branchVisible: 'recorded',
-  scaleBar: { pending: 'today the record options decide on / off' },
-  timestamp: { pending: 'today the record options decide on / off' },
+  scaleBar: 'recorded', timestamp: 'recorded',
   scaleBarPx: 'recorded', timestampPx: 'recorded', steps: 'recorded',
   grid: AID, gridDensity: AID, landscape: AID, landscapeLabels: AID, roiSpotlight: AID,
 }

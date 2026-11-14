@@ -429,13 +429,20 @@ end
     @test _pick_scale_bar(0.001, 10) === nothing
 end
 
-@testset "API: movie overlays — the viewer's text sizes (DRAW_SPEC_PLAN Phase 3)" begin
-    # on / off is the recorder's; the size the look's (on the config, or in a request's `look`)
+@testset "API: movie overlays — the viewer's scale bar / timestamp (DRAW_SPEC_PLAN Phase 3)" begin
+    # on / off and the size are the look's (on the config, or in a request's `look`); with the
+    # viewer's canvas height the size is a fraction of the frame, so it scales with the movie
     @test _frame_text(Dict("showTimestamp" => true, "timestampPx" => 18), "showTimestamp", "timestampPx") === 18
     @test _frame_text(Dict("showTimestamp" => false, "timestampPx" => 18), "showTimestamp", "timestampPx") === false
     @test _frame_text(Dict{String,Any}(), "showScaleBar", "scaleBarPx") === true
     @test _frame_text(Dict{String,Any}(), "showScaleBar", "scaleBarPx", Dict("scaleBarPx" => 30)) === 30
     @test _frame_text(Dict("scaleBarPx" => 1000), "showScaleBar", "scaleBarPx") === 200
+    @test _frame_text(Dict("timestampPx" => 20, "textCanvasPx" => 800), "showTimestamp", "timestampPx") === 0.025
+    @test _frame_text(Dict{String,Any}(), "showTimestamp", "timestampPx",
+                      Dict("showTimestamp" => false, "timestampPx" => 20)) === false
+    fr = _build_timelapse_overlays([0], 0.5, 600, 0.5; show_timestamp = 0.025, show_scale_bar = 0.03)
+    @test fr[1]["timestampFrac"] == 0.025 && fr[1]["scaleBar"]["fontFrac"] == 0.03
+    @test !haskey(fr[1], "timestampPx")
     ov = _build_timelapse_overlays([0, 1], 0.5, 600, 0.5; show_timestamp = 18, show_scale_bar = 30)
     @test ov[2]["timestamp"] == "0:00:30" && ov[2]["timestampPx"] == 18
     @test ov[1]["scaleBar"]["fontPx"] == 30 && ov[1]["scaleBar"]["lengthPx"] == 100
