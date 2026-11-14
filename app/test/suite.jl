@@ -122,6 +122,7 @@ include(joinpath(@__DIR__, "suite", "qc_af.jl"))
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "spatial_neighbours.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_preceded.jl"))
+include(joinpath(@__DIR__, "suite", "aggregate_runs_boundaries.jl"))
 
 # ── ROI discovery + reviews (docs/todo/ROI_TRIAGE_PLAN.md) ─────────────
 include(joinpath(@__DIR__, "suite", "rois.jl"))
@@ -366,6 +367,7 @@ include(joinpath(@__DIR__, "suite", "acq_check.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_missing.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_compare.jl"))
 include(joinpath(@__DIR__, "suite", "acq_check_ramp_partial.jl"))
+include(joinpath(@__DIR__, "suite", "acq_check_boundaries.jl"))
 # claim recital S0/S1 (claim_checks.jl): seeded faults, each with a clean twin
 include(joinpath(@__DIR__, "suite", "claim_checks.jl"))
 include(joinpath(@__DIR__, "suite", "claim_checks_coverage.jl"))
@@ -375,7 +377,9 @@ include(joinpath(@__DIR__, "suite", "qc_profile.jl"))
 include(joinpath(@__DIR__, "suite", "import_finding_text.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_ome_xml_unit.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_first_gap.jl"))
+include(joinpath(@__DIR__, "suite", "uniform_interval_boundaries.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_paused_interval.jl"))
+include(joinpath(@__DIR__, "suite", "source_timing_ims.jl"))
 
 include(joinpath(@__DIR__, "suite", "vn_pilot_writer.jl"))
 include(joinpath(@__DIR__, "suite", "viewer_cache.jl"))

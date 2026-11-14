@@ -54,7 +54,8 @@ class TestOirRecords(_Records):
 class TestLifRecords(_Records):
     def test_every_image_of_every_lif_fixture(self):
         with tempfile.TemporaryDirectory() as d:
-            for name, n_images in [('lif_dm5500b_las-x-3.4.2', 3), ('lif_sp8_las-x-3.5.7', 2)]:
+            for name, n_images in [('lif_dm5500b_las-x-3.4.2', 3), ('lif_sp8_las-x-3.5.7', 2),
+                                  ('lif_stellaris8_las-x-4.8.2', 2)]:
                 path = write_lif(_read(name + '_header.xml').decode('utf-8'), os.path.join(d, name + '.lif'))
                 for series in range(n_images):
                     self.check(f'{name}_s{series}', lif_meta.acquisition_settings(path, series=series))

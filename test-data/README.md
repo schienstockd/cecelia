@@ -108,7 +108,15 @@ blue): `Information` and `Scaling` only, serial numbers blanked, re-serialised b
 user field reads "LSM User". Its laser `Attenuation` values (1.9, 2.6, 0.95) come with no
 `Transmission`: the case where 1 − attenuation gave a negative laser power (`test_czi_meta_card_fields.py`).
 
-`expected/<case>.json` (16 files, 96 KB): each reader's whole record for each fixture above (a `.lif`
+`lif_stellaris8_las-x-4.8.2_header.xml` (170 KB) is the header XML of a lab `.lif` from a Leica
+STELLARIS 8 (DMI8-CS, LAS X 4.8.2), two-photon at 740 + 900 nm onto three non-descanned HyDs, one
+sequence, line average 2. Cut to two of its four images, re-serialised by ElementTree: `Series001`
+(one plane) and `Series004` (6 z × 126 time points, 30.3 s apart). Each `TimeStampList` keeps only
+its first stamp (the reader reads no other); serial numbers and the `Experiment Path` (a Windows
+autosave path) are blanked; both images read the same before and after the cut. No user names. It is
+the lif fixture with a time series and averaging.
+
+`expected/<case>.json` (18 files, 100 KB): each reader's whole record for each fixture above (a `.lif`
 per image, `_s<series>`; the qptiff pages through a written TIFF), pinned by
 `test_acquisition_full_records.py`. Each was checked against its source document, not taken on trust
 from the reader. Every value was searched for in the document (exact string, or a number at a unit
