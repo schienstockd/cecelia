@@ -95,7 +95,7 @@ def _load_training_volumes(movies, value_name, channels, input_frames, mid_z_onl
 
         omexml = ome_xml_utils.parse_meta(im_path)
         du = DimUtils(omexml, use_channel_axis=True)
-        du.calc_image_dimensions(level.shape)
+        du.calc_image_dimensions(level.shape, axes=zarr_utils.read_axes(im_path))
 
         shape = tuple(level.shape)
         _, nt = _axis_len(du, 'T', shape)

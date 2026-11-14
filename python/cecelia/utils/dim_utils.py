@@ -21,6 +21,16 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 
 
 
+def _store_axis_order(axes, ndim):
+  """Upper-case axis letters from NGFF `axes` when they name each of `ndim` dimensions once, all of
+  them T/Z/C/Y/X; else None (the caller falls back to the OME-XML)."""
+  if not axes or len(axes) != ndim:
+    return None
+  order = [str(a).upper() for a in axes]
+  if len(set(order)) != ndim or not set(order) <= set("TZCYX"):
+    return None
+  return order
+
 
 class DimUtils:
   def __init__(self, omexml, use_channel_axis = True):
@@ -34,7 +44,21 @@ class DimUtils:
   def pixels(self):
     return self.omexml.images[0].pixels
 
-  def calc_image_dimensions(self, im_shape, im_dim_dict = None):
+  def calc_image_dimensions(self, im_shape, im_dim_dict = None, axes = None):
+    """Set `im_dim_order` / `im_dim` for an array of shape `im_shape`.
+
+    `axes`: the store's own NGFF axis names (`zarr_utils.read_axes(path)`). When they name every
+    dimension of `im_shape` they decide the order — they describe the array as written. The OME-XML
+    `DimensionOrder` need not (a bioformats2raw store is always TCZYX), and matching its sizes to the
+    shape cannot tell two axes of equal size apart: T and Z of the same length were filed the wrong
+    way round. Without usable `axes`, the order comes from the OME-XML sizes as before.
+    """
+    store_order = _store_axis_order(axes, len(im_shape))
+    if store_order is not None:
+      self.im_dim = list(im_shape)
+      self.im_dim_order = store_order
+      return
+
     if im_dim_dict is None:
       im_dim_dict = ome_xml_utils.get_im_size_dict(self.omexml)
 
@@ -57,15 +81,18 @@ class DimUtils:
       else:
         im_shape.reverse()
 
-        im_shape_order = np.zeros(len(im_dim), dtype=int)
+        # `axis_at[j]` = which OME axis sits at array position j. Indexing by the OME position
+        # instead (the forward permutation) scrambled every order that is neither the shape's nor
+        # its reverse: XYCZT on a TCZYX store came out T,Z,Y,C,X.
+        axis_at = np.zeros(len(im_dim), dtype=int)
 
         for i, x in enumerate(im_dim):
           idx = im_shape.index(x)
-          im_shape_order[i] = idx
+          axis_at[idx] = i
           im_shape[idx] = 0
 
-        im_dim = [im_dim[i] for i in im_shape_order]
-        im_dim_order = [im_dim_order[i] for i in im_shape_order]
+        im_dim = [im_dim[i] for i in axis_at]
+        im_dim_order = [im_dim_order[i] for i in axis_at]
 
     self.im_dim = im_dim
     self.im_dim_order = im_dim_order

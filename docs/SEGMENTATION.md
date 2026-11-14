@@ -2052,6 +2052,7 @@ tasks, the legacy bridge, and any external consumer (e.g. coastal).
 | **Compression** for any array you create | `compressor=zarr_utils.store_compressor(kind)` — `kind='image'` or `'labels'`. NEVER omit it, never build a `Blosc`/`Zstd` yourself |
 | Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural (checks the `multiscales` attr, not the `.ome.zarr` suffix), read-only |
 | NGFF axes / per-axis scale | `zarr_utils.read_axes(path)` / `read_scale(path)` — NGFF-first, OME-XML fallback |
+| A store's axis order in a `DimUtils` | `dim_utils.calc_image_dimensions(level0.shape, axes=zarr_utils.read_axes(path))` — the store's NGFF axes decide; the OME-XML `DimensionOrder` need not describe a bioformats2raw TCZYX store, and its sizes can't tell T from Z when they tie. Ratchet: `test_dim_utils_store_axes.py` |
 | OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml(path)` / `read_pixel_unit(path)` / `read_scale_from_ome_xml(path, axes)` / `read_time_increment(path)` |
 
 - **Do not** copy these readers into a new module or re-open a store you already opened. The napari

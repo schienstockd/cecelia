@@ -94,7 +94,7 @@ def _open(im_path):
     # (docs/todo/ZARR_STREAMING_PLAN.md decision 2.)
     im_dat, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
     dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
-    dim_utils.calc_image_dimensions(im_dat[0].shape)
+    dim_utils.calc_image_dimensions(im_dat[0].shape, axes=zarr_utils.read_axes(im_path))
     return im_dat, dim_utils
 
 
