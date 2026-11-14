@@ -87,8 +87,22 @@ def copy_knowledge(src_root: pathlib.Path, root: pathlib.Path) -> list[dict]:
 
 # With `results`: what segmenting and measuring left on the image, copied as is (the label stores, the
 # cell table, the cached metadata, QC) and kept registered. Never gates: those are user work, and a
-# booklet fixture recreates the ones it shows.
+# doc-shots fixture recreates the ones it shows.
 _RESULT_DIRS = ("labels", "labelProps", "data", "qc")
+
+
+def _rename_part_of(props_dir: pathlib.Path, renamed: dict) -> None:
+    """A clustering, motif or region run's sidecar (`*features.json`), or an HMM fit's (`*.hmmfit.json`),
+    names the images it pooled (`partOf`) by uid: on a copy, the copied ones by their new uids and the rest left out, or the app
+    reads the copy as outside its own run."""
+    sidecars = [*props_dir.glob("*features.json"), *props_dir.glob("*.hmmfit.json")] if props_dir.is_dir() else []
+    for f in sorted(sidecars):
+        with open(f, encoding="utf-8") as fh:
+            side = json.load(fh)
+        for entry in side.values():
+            if isinstance(entry, dict) and isinstance(entry.get("partOf"), list):
+                entry["partOf"] = [renamed[u] for u in entry["partOf"] if u in renamed]
+        write_json_atomic(f, side, indent=4)
 
 
 def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str], name: str,
@@ -97,7 +111,7 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
     source image, which is how a run's record names images after the copy is deleted. `knowledge`
     lists the lab-knowledge entries carried over (always present; empty without `knowledge`). `into`
     is the projects dir the copy lands in (default: the source's) — an isolated instance's, for the
-    booklet screenshots (scripts/booklets/capture.mjs)."""
+    user docs' screenshots (scripts/docshots/capture.mjs)."""
     into = into or projects_dir
     src_root = projects_dir / source_project
     srcs = []
@@ -130,6 +144,10 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
         write_json_atomic(root / "1" / img_uid / "ccid.json", ccid, indent=4)
         images.append({"imageUid": img_uid, "imageName": src.get("name", img_uid),
                        "sourceImageUid": image_uid})
+    if results:
+        renamed = {im["sourceImageUid"]: im["imageUid"] for im in images}
+        for im in images:
+            _rename_part_of(root / "1" / im["imageUid"] / "labelProps", renamed)
     (root / "1" / set_uid).mkdir(parents=True)
     write_json_atomic(root / "1" / set_uid / "ccid.json",
                       {"uid": set_uid, "class": "CciaSet", "name": "images",

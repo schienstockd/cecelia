@@ -1,6 +1,6 @@
 // The browser the repo's page scripts drive: playwright-core (a frontend devDependency) with a SYSTEM
 // Chromium — no browser download. CECELIA_CHROMIUM picks the binary (scripts/agent_eval/board_render.py
-// reads the same variable). Used by scripts/gui_capture.mjs and scripts/booklets/{build,capture}.mjs.
+// reads the same variable). Used by scripts/gui_capture.mjs and scripts/docshots/{capture,compose}.mjs.
 
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'

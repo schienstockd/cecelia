@@ -1,7 +1,7 @@
 // Driving a running Cecelia from a Node script: sign in with the instance token, reach the app's
 // stores and router, close launch pop-ups, wait for a page's own loading state, land a page on an
-// image, switch profile. Used by scripts/gui_capture.mjs (census) and scripts/booklets/ (booklet
-// fixtures and shots).
+// image, switch profile. Used by scripts/gui_capture.mjs (census) and scripts/docshots/ (the user
+// docs' fixtures and shots).
 //
 // Run against an ISOLATED instance only (own CECELIA_DEV_DIR + CECELIA_PORT_SLOT): opening a project
 // writes (lastOpenedAt), and shots may click through the app. `refuseSlotZero` guards 8080 / 5173.

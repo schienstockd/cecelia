@@ -1,8 +1,19 @@
+> **ARCHIVED — not authoritative, do not act on this.** A frozen record of the user-booklets plan, ended
+> by D9 (2026-11-14): no PDFs at all. It is not a description of how the code works now.
+>
+> **Outcome.** Built and merged: the spec, the PDF build and C1 (#2234), capture and fixtures (#2236). The
+> showcase frame and B1 (#2238) were dropped by D7–D9 before merging. What survives is the screenshot
+> engine, re-homed for the user docs: `user-docs/shots/` (shot sets, `README.md` for how to write one) and
+> `scripts/docshots/` (`pixi run doc-fixture`, `doc-shots`, `doc-images`). C1 is now the generated page
+> `user-docs/using-ai.md` (`frontend/src/utils/usingAiDoc.ts`). Pointer from
+> [`../todo/GUIDE_SCREENSHOTS_PLAN.md`](../todo/GUIDE_SCREENSHOTS_PLAN.md). The `cecelia-booklets` repo
+> was left empty, for the maintainer to keep or delete.
+
 # User booklets — plan
 
-**Status:** **P1 and P2 built** (2026-11-14), C1 complete; D1–D6 locked (D6: B-series are showcases, the doing is the in-app guide). Picks up after the three throwaway drafts in
-[`GUIDE_SCREENSHOTS_PLAN.md`](GUIDE_SCREENSHOTS_PLAN.md) and their review
-[`../archive/BOOKLET_RESERVATIONS.md`](../archive/BOOKLET_RESERVATIONS.md) (banner first). #2216 (viewer
+**Status:** **ENDED** (2026-11-14, D9): no booklets. P1 and P2 were built; D1–D9 locked. Picked up after the
+three throwaway drafts in [`GUIDE_SCREENSHOTS_PLAN.md`](../todo/GUIDE_SCREENSHOTS_PLAN.md) and their review
+[`BOOKLET_RESERVATIONS.md`](BOOKLET_RESERVATIONS.md) (banner first). #2216 (viewer
 rebuild) merged, so captures can start from `origin/main`. Output repo: `schienstockd/cecelia-booklets`
 (created, empty, public; see D1).
 
@@ -27,29 +38,26 @@ imaging properly, (3) analysis, ideally in Cecelia. The booklet series is planne
 | # | Booklet | Session | Fixture (candidate) | Endpoint |
 |---|---|---|---|---|
 | **A1** | **Images you can measure**: what each setting decides later | 2 | one good and one flawed image per failure: saturated, undersampled, short z-range, slow frame interval, bleed-through | Read the metadata dialog, QC flags and acquisition card; know when to re-image |
-| B1 | Few-marker tissue (confocal) — *showcase* | 3 | `4rNbMp` / FtGoJO | Shows: a gated population on the image, its count. Then: the in-app guide |
-| B2 | Multiplex tissue (PhenoCycler) — *showcase* | 2 + 3 | `mjphFQ` / bPkrUs | Shows: the registered, checked multiplex image; clusters and their spatial layout. Then: the in-app guide |
-| B3 | Intravital timelapse (2P) — *showcase* | 3 | `4kS67f` / yFNlw2 | Shows: tracks, behaviour, the board. Then: the in-app guide |
-| B4 | Live cells and structures | 3 | open | from `recipes.ts` `live-structures` |
-| B5 | In vitro migration | 3 | open | from `recipes.ts` `in-vitro-migration` |
 | **C1** | **Using AI in Cecelia**: one page | any | none | Toggle, Kiwi vs Claude Code, what leaves the machine, stamps |
-| C2 | Connect Claude to Cecelia | any | none (terminal + app) | A user's own Claude Code session sees their project (answers the user question "how do I connect claude to cecelia?") |
-| C3 | Ask Kiwi about what you see | 3 | B1's fixture | Point → ask → keep; check a claim's ref |
+| C2 | Connect Claude to Cecelia — *`user-docs/` page* | any | none (terminal + app) | A user's own Claude Code session sees their project (answers the user question "how do I connect claude to cecelia?") |
+| C3 | Ask Kiwi about what you see — *in-app guide, not booklets work* | 3 | — | Point → ask → keep; check a claim's ref |
 
-B1–B5 are the five recipes in `frontend/src/lib/guides/recipes.ts`, one booklet each. Under D6 each is a
-**showcase** that ends by naming the recipe's in-app guide; the steps live only in the app. The order to build them: A1 · B1 · C1 · C2 · B2 · B3 · C3 · B4 · B5. A1 and C2 come early because they answer the facility's question and the user's question.
+Only **A1** and **C1** are PDFs (D7). The per-recipe B-series (one per recipe in `recipes.ts`) is dropped
+entirely, outcome images included (D8). The order to build: A1 · C2 as a page · publish A1 and C1.
+
+**If the B-series is ever reopened**, two fixtures were set up and their numbers measured: B1 on
+`4rNbMp`/FtGoJO (6 channels, 26 z-planes; a P14 gate of 1244 cells, 2.5 %; open: debris gate, tiling artefact,
+plane readout) and B3 on `4kS67f`/k3Tx90 (52 T and 23 B tracks over 75 timepoints at 30 s; each population's
+`qc` gate and the B movement clusters recreated from the source's own). B1's entry is in git history
+(`user-docs/booklets/b1-few-marker-tissue.ts`, #2238).
 
 ## The frame (fixed in every booklet)
 
-Two kinds (D6). A **guide** (A1, C1–C3) has the frame below. A **showcase** (B1–B5) has: cover with the
-**outcome first** (the result figure, then one line on how you get there); *You need* and rough time;
-*Before you image* (kept: it is the training message); three or four capability shots, one per thing it
-shows, each with one line; honest limits; and **Do it**: the recipe's in-app guide by name and where to
-start it. No Do/See/If-wrong steps. The fixture is picked for the best still-honest result.
+Every PDF (A1, C1) has the frame below. D6's second kind, the **showcase**, is withdrawn (D7, D8).
 
 1. **Cover:** title, *what you'll get*, *what you need*, who it is for, where it ends, the tissue or sample in
    one line.
-2. **Before you image** (B-series): 3–5 rows of *setting → what it limits later → where Cecelia shows
+2. **Before you image** (where a booklet has it): 3–5 rows of *setting → what it limits later → where Cecelia shows
    it*. Drawn from the acquisition advisor's bands, not invented per booklet.
 3. **Steps:** each one is *Do* (one pointer) → *You'll see* (the crop) → *If it goes wrong* (one line), plus an
    optional *Why* line for any setting that isn't obvious. Steps are numbered by the build.
@@ -73,8 +81,8 @@ words used for UI controls (always the app's own label, checked by the build).
 | `ai-box` | The Ask AI box and its fine print | all |
 
 A module is a spec fragment plus its caption text, with slots for the technology (for example, which flags an `.oir` image shows).
-Under D6 the B-series no longer walks import → metadata → channels → qc → viewer; those steps are the in-app
-guides'. `metadata` and `qc` stay for A1.
+With the B-series dropped (D8), `metadata` and `qc` are the modules still in use, for A1; import, channels and
+viewer were for the recipe booklets.
 
 ## Pipeline
 
@@ -97,18 +105,17 @@ fixture project (scripted)       ─┘
   visible inside the crop; a viewer shot whose state, read back after setting it, is not the one asked for
   (image, plane, channels, outlines, gated). **Numbers** are the fixture's: a caption writes
   `{{project.image.fact}}` (planes, channels, a gate's count and %), the fixture measures them through the
-  app, the capture checks the shot shows the same number, and a hand-typed count fails the build. A
-  showcase's capability quotes its recipe step's why-line (`step`), so it cannot drift from the in-app guide.
+  app, the capture checks the shot shows the same number, and a hand-typed count fails the build.
 - **Fixtures:** one clean project per booklet on an isolated instance (own `CECELIA_DEV_DIR`). That way the import
   step really starts empty and no other images or internal names leak into a shot. **Reuse, don't write new:**
   `scripts/agent_eval/app_project.py` (copies chosen images of a source project as a fresh project holding only
-  raw `default`; the source is never written) and `setup_project.jl` (imports through the real import task).
-  The recipe→fixture map is `scripts/agent_eval/guide_projects.json`, extended with B1–B5. It already maps
-  `intravital-timelapse` to `tSJpBI`/`k58SK7`; whether B3 uses that or `4kS67f` gets settled in P2, and either way there is one map.
+  raw `default`, or with `--with-results` its segmentation and cell tables too; the source is never written) and
+  `setup_project.jl` (imports through the real import task). Gates are never copied: the fixture recreates the
+  ones a booklet shows, through the population manager's route.
 - **Where things live:** spec, modules, style guide and scripts go in **this repo** (`user-docs/booklets/`), because
   they depend on `data-guide` anchors and must change in the same PR as the UI. Built PDFs go to
   the public **cecelia-booklets** repo as release assets, plus an index README. The app's Help menu links to that
-  index (D1), after B1 ships, not before.
+  index (D1), once A1 ships (P6).
 
 ## Style guide (`user-docs/booklets/STYLE.md`, to write in P1)
 
@@ -136,24 +143,15 @@ check step, experimental features marked as such, and no internal names. Plus th
   **Open:** the viewer (headed Chromium with the ANGLE flags, with P3); the logged-in Account row and a
   tagged entry with a ✦ gate (both left out: a real account would show, and the tag would change the
   fixture on every run).
-- **P3 first showcase:** `Booklet.kind` and the showcase frame (spec, `checkBooklets`, template); **B1** as a
-  showcase on the B1 fixture, gated population first; viewer shots (headed Chromium with the ANGLE flags);
-  recipe steps quoted, numbers from the fixture, viewer state read back. **Open:** the spatial show (run spatial
-  analysis on the fixture) and the time line (no honest source yet: the fixture copies results, so nothing was
-  timed). **Needs eyes.** **Paused** (2026-11-14) for the intravital showcase; B1's review list for when it resumes:
-  fixture first (no debris gate: the gate plot's `pop` is root while the recipe line says drop debris first, and dots
-  sit in tissue-free areas; a tiling artefact of square outlines in the segmentation; a single `cells` label set
-  against "one model per population"); the gate crop shows Plot 1 and a stray axis title, and the count is checked
-  on the population row but not shown in the shot; the viewer's plane readout is an index (13 / 25) against 26
-  planes; one sample name across B1 and C1; say Claude can propose gates (✦); take the Help-menu path from the app's
-  strings once the Guides dialog settles (feat/guides-next-step); *You get* should state the outcome; define P14
-  and CTDR; "this plane" for the hero; "Cells outlined"; trim to fewer pages (link A1 instead of repeating *Before
-  you image*?).
-- **P4:** **A1** (needs a flawed image for each failure) and **C2** (trace the real connect flow first:
-  `pixi run chat`, the terminal plugin "Set up", Kiwi's "Start in terminal").
-- **P5:** B2 and B3 as showcases; C3.
-- **P6 publish:** release workflow to cecelia-booklets; Help menu link to the index (D1).
-- **P7:** B4 and B5.
+- **P3 first showcase — BUILT (#2238), then dropped by D8.** What carried over to the shared tooling: viewer
+  shots (headed WebGPU on the second screen, state read back), fixture facts (`{{project.image.fact}}`, a
+  hand-typed count fails the build), fixture gates recreated through the app (a box in raw values, or the
+  source's own gate or filter), copied results whose pooled runs name the copy. The showcase frame, B1 and B3
+  were removed.
+- **P4 A1** (needs a flawed image for each failure; one page per technology, D4).
+- **P5 C2** as a `user-docs/` page (trace the real connect flow first: `pixi run chat`, the terminal plugin "Set
+  up", Kiwi's "Start in terminal").
+- **P6 publish:** release workflow to cecelia-booklets for A1 and C1; Help menu link to the index (D1).
 
 ## Decisions
 
@@ -174,4 +172,25 @@ check step, experimental features marked as such, and no internal names. Plus th
   steps drift. So B1–B5 are **showcases**: outcome first, what it takes, a few capability shots, honest limits,
   then the in-app guide for the doing. One booklet is never both. The capture pipeline stays the shared base:
   the same scripted shots can feed the in-app guides (`GUIDE_SCREENSHOTS_PLAN.md`). Spec: `Booklet.kind`
-  (`guide` | `showcase`), each with its own frame rules in `checkBooklets` (P3).
+  (`guide` | `showcase`), each with its own frame rules in `checkBooklets` (P3). **Its showcase half is
+  superseded by D7.**
+- **D7 PDFs are A1 and C1; a recipe's showcase is one image on its card — LOCKED (2026-11-14).** The B-series
+  showcase PDFs and the Guides dialog's recipe cards (feat/guides-next-step) were waiting on each other: the cards
+  on the B shots, the PDFs on the dialog's Help path. One outcome image per recipe, on its card in the dialog's
+  "What are you working with?" view, is the whole showcase, and the in-app guide does the rest. So no
+  B-series PDF. C2 becomes a `user-docs/` page and C3 an in-app guide. The capture pipeline, fixtures and checks
+  stay: they now feed A1 and the outcome images. A session-3 handout, if wanted later, is generated from
+  `recipes.ts` plus the image, never hand-written. **Its outcome-image half is superseded by D8.**
+- **D8 No B-series at all — LOCKED (2026-11-14).** Supersedes D7's outcome images: preparing an honest example
+  for each recipe (B1's debris gate, tiling artefact and plane readout, then recapturing as the app changes)
+  costs too much for what it adds, since the Guides dialog's "Is this you?" column already answers which recipe
+  fits. `recipes.ts` gets no `outcome` field. The series is C1, A1 and C2 (a `user-docs/` page); C3 is an in-app
+  guide and not booklets work. The capture pipeline, fixture tooling and checks stay for A1. **Superseded by D9.**
+- **D9 No booklets — LOCKED (2026-11-14).** No PDFs, A1 and C1 included. A1's loop is microscope →
+  workstation → back: the workstation part is the Acquisition check in the app, which gets an in-app guide,
+  and the paper that goes back to the microscope is the per-image acquisition card, which already prints. C1's
+  reader outside the app (the PI, ethics or IT person it is forwarded to) is served as well by a `user-docs/`
+  page on GitHub. So C1 becomes `user-docs/using-ai.md`, generated from the app's own text with its
+  screenshots; the PDF build, the booklet frame and its print rules go; the capture engine (capture,
+  fixtures, figure composition and its checks) stays, re-homed so a shot targets a user-docs image. Its next
+  uses are decided separately.

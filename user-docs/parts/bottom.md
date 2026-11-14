@@ -12,6 +12,9 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 
 ## Working with Claude (optional)
 
+The one page to read, or to forward to whoever decides on AI in your lab:
+[**Using AI in Cecelia**](using-ai.md), with screenshots.
+
 **AI is off until you turn it on.** Turn it on in **Preferences → Kiwi → AI features**. A dialog
 first lists what is sent and what you gain. Turn it off there at any time. With AI off, Kiwi's button
 opens a short note, or you can hide it. Hand-offs to Kiwi and the AI parts of the Guides are hidden.

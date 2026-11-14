@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 //
-// Capture the booklets' screenshots from a running, ISOLATED Cecelia.
+// Capture the user docs' screenshots from a running, ISOLATED Cecelia.
 //
-//     pixi run booklet-shots -- --base http://127.0.0.1:5223 --config-dir <dir> [--only <shot or booklet id>] [--out DIR]
+//     pixi run doc-shots -- --base http://127.0.0.1:5223 --config-dir <dir> [--only <shot or set id>] [--out DIR]
 //
-// Each shot (user-docs/booklets → `Shot`) runs in a FRESH browser context — in one long session,
+// Each shot (user-docs/shots → `Shot`) runs in a FRESH browser context — in one long session,
 // state leaked between pages (screenshots plan, first pass) — in the light scheme at 2× scale: sign
 // in, open the shot's project, focus its image, push its route, run its actions, wait for the page's
 // own loading state, then record the box of every anchor it names and screenshot the viewport.
-// The crop and the pointer are NOT baked in: the build draws them from the recorded boxes, so the
-// look can change without recapturing (screenshots plan → *Booklet direction*).
+// The crop and the pointer are NOT baked in: compose.mjs (`pixi run doc-images`) draws them from the
+// recorded boxes, so the look can change without recapturing.
 //
 // The run FAILS a shot (and exits non-zero) when:
 //   - an anchor it names is missing or invisible (a renamed control, a panel that never opened);
-//   - an `expect` label is not in its anchor's text (the caption cites a label the app no longer shows);
-//     an expect may cite a fixture fact (`{{lt.FtGoJO.P14.count}}`), so the number in the caption is
+//   - an `expect` label is not in its anchor's text (the page cites a label the app no longer shows);
+//     an expect may cite a fixture fact (`{{project.image.<gate>.count}}`), so the number on the page is
 //     the number in the pixels;
 //   - the cropped area shows a relative time, a date or "ago" that no mask covers (it goes stale on the
 //     next capture; the review of the first drafts found "77d" and "12h" baked into the pixels);
@@ -23,7 +23,7 @@
 //     some settings per image, and a click that toggles instead of sets leaves the last shot's state).
 //
 // Output per shot: <out>/<id>.png and <out>/<id>.json (viewport, scale, boxes in CSS px, commit, time),
-// and per booklet <out>/<booklet>.facts.json: the fixture's measured numbers, which the build prints.
+// and per shot set <out>/<set>.facts.json: the fixture's measured numbers.
 // Isolated instance only: shots click through the app and opening a project writes. Refuses 8080/5173.
 //
 // Setting one up: an empty CECELIA_DEV_DIR whose custom.toml already names a projects folder inside it
@@ -31,7 +31,7 @@
 //     projects = "<that dir>/projects"
 // then `CECELIA_DEV_DIR=<that dir> CECELIA_PORT_SLOT=5 pixi run dev` (frontend :5223). Without the
 // [dirs] entry the first-run screen proposes ~/cecelia-projects — outside the isolated dir.
-// Then `pixi run booklet-fixture` (fixture.mjs) copies the booklets' lab images and creates their
+// Then `pixi run doc-fixture` (fixture.mjs) copies the shot sets' lab images and creates their
 // profiles; a shot names those by key, and runs as its `profile` (default: `default`).
 
 import { execFileSync } from 'node:child_process'
@@ -41,9 +41,9 @@ import { pathToFileURL } from 'node:url'
 import { chromium, commit, findChromium, repo } from '../lib/chromium.mjs'
 import { closeDialogs, land, openProject, refuseSlotZero, selectProfile, settle, signIn, vue } from '../lib/app_page.mjs'
 
-const dir = join(repo, 'user-docs', 'booklets')
-const { BOOKLETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkBooklets, fillFacts, FIXTURE_RECORD } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const dir = join(repo, 'user-docs', 'shots')
+const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
+const { checkShotSets, fillFacts, FIXTURE_RECORD } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { anchorSelector } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'guideAnchor.ts')).href)
 
 const VIEWPORT = { width: 1440, height: 900 }
@@ -51,12 +51,12 @@ const SCALE = 2
 // Freeze motion and hide what changes on every run: the console rail's last line and unread badge.
 const FREEZE = `*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}
 .console-bar .bar-last,.console-bar .unread-badge{visibility:hidden!important}
-.booklet-mask,.booklet-mask *{color:transparent!important;text-shadow:none!important}`
+.doc-mask,.doc-mask *{color:transparent!important;text-shadow:none!important}`
 // Text that goes stale between captures: "12h", "77d", "3 min ago", ISO dates, clock times.
 const VOLATILE = /\b\d+\s?(?:s|m|h|d|w|mo|y|min|sec|hrs?)\b|\bago\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b/
 
 function parseArgs(argv) {
-  const a = { out: join(repo, 'booklets-out', 'shots'), only: '' }
+  const a = { out: join(repo, 'docshots-out', 'shots'), only: '' }
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i]
     if (k === '--allow-default-ports') { a.allowDefaultPorts = true; continue }
@@ -225,7 +225,7 @@ async function capture(browser, a, shot, fixture, out, b) {
     await closeDialogs(page)
     await vue(page, g => { const s = g.$pinia._s.get('settings'); s.colourScheme = 'light'; s.plotsMaximised = false; s.kiwiOpen = false })
     const proj = shot.project ? fixture?.projects[shot.project] : null
-    if (shot.project && !proj) throw new Error(`fixture project "${shot.project}" is not set up: run pixi run booklet-fixture`)
+    if (shot.project && !proj) throw new Error(`fixture project "${shot.project}" is not set up: run pixi run doc-fixture`)
     if (proj) await openProject(page, proj.uid)
     const image = shot.image ? proj.images[shot.image] : null
     const name = shot.image ? b.fixture.projects[shot.project].images[shot.image] : undefined
@@ -237,7 +237,7 @@ async function capture(browser, a, shot, fixture, out, b) {
     await settle(page, 60000)            // what the last action or the landing started (a plot loading)
     await page.addStyleTag({ content: FREEZE })
 
-    for (const m of shot.masks ?? []) await loc(page, m).evaluate(el => el.classList.add('booklet-mask')).catch(() => problems.push(`mask ${m} not found`))
+    for (const m of shot.masks ?? []) await loc(page, m).evaluate(el => el.classList.add('doc-mask')).catch(() => problems.push(`mask ${m} not found`))
     const named = [...new Set([...shot.crop, ...(shot.point ? [shot.point.anchor] : []), ...(shot.expect ?? []).map(e => e.anchor)])]
     const boxes = {}
     for (const an of named) {
@@ -247,7 +247,7 @@ async function capture(browser, a, shot, fixture, out, b) {
     }
     for (const e of shot.expect ?? []) {
       const want = fillFacts(e.text, fixture?.facts ?? {})
-      if (want.missing.length) { problems.push(`expect cites ${want.missing.join(', ')}, which the fixture did not measure: run pixi run booklet-fixture`); continue }
+      if (want.missing.length) { problems.push(`expect cites ${want.missing.join(', ')}, which the fixture did not measure: run pixi run doc-fixture`); continue }
       // the app's label as written (textContent) or as shown (innerText: CSS may upper-case it)
       const text = await loc(page, e.anchor).evaluate(el => `${el.innerText}\n${el.textContent}`, null, { timeout: 2000 }).catch(() => '')
       if (!text.includes(want.text)) problems.push(`"${want.text}" not in ${e.anchor} (it reads "${text.replace(/\s+/g, ' ').slice(0, 80)}")`)
@@ -255,8 +255,8 @@ async function capture(browser, a, shot, fixture, out, b) {
     for (const an of shot.crop) {
       const text = await loc(page, an).evaluate(el => {
         // text of the anchor minus anything masked
-        const c = el.cloneNode(true); c.querySelectorAll('.booklet-mask').forEach(x => x.remove())
-        return el.classList.contains('booklet-mask') ? '' : c.innerText ?? c.textContent ?? ''
+        const c = el.cloneNode(true); c.querySelectorAll('.doc-mask').forEach(x => x.remove())
+        return el.classList.contains('doc-mask') ? '' : c.innerText ?? c.textContent ?? ''
       }).catch(() => '')
       const hit = text.match(VOLATILE)
       if (hit) problems.push(`${an} shows "${hit[0]}", which changes between captures: mask it or crop it out`)
@@ -281,12 +281,12 @@ async function capture(browser, a, shot, fixture, out, b) {
 async function main() {
   const a = parseArgs(process.argv.slice(2))
   refuseSlotZero(a.base, a.allowDefaultPorts)
-  const issues = checkBooklets(BOOKLETS)
-  if (issues.length) { for (const i of issues) console.error(`✗ ${i.booklet}: ${i.problem}`); process.exit(1) }
-  const shots = BOOKLETS.flatMap(b => (b.shots ?? []).filter(s => !a.only || a.only === s.id || a.only === b.id).map(s => [b, s]))
+  const issues = checkShotSets(SHOT_SETS)
+  if (issues.length) { for (const i of issues) console.error(`✗ ${i.set}: ${i.problem}`); process.exit(1) }
+  const shots = SHOT_SETS.flatMap(b => b.shots.filter(s => !a.only || a.only === s.id || a.only === b.id).map(s => [b, s]))
   const recordPath = join(a.configDir, FIXTURE_RECORD)
   const record = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, 'utf8')) : {}
-  if (shots.length === 0) throw new Error(a.only ? `no shot or booklet "${a.only}"` : 'no booklet defines a shot')
+  if (shots.length === 0) throw new Error(a.only ? `no shot or set "${a.only}"` : 'no set defines a shot')
   const out = resolve(a.out)
   mkdirSync(out, { recursive: true })
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true })
@@ -294,7 +294,7 @@ async function main() {
   const headed = shots.some(([, s]) => s.viewer)
     ? await chromium.launch({ executablePath: findChromium(), headless: false, args: VIEWER_ARGS }) : null
   let failed = 0
-  // the fixture's numbers, beside the shots they were checked against: the build prints these
+  // the fixture's numbers, beside the shots they were checked against: compose and the page generators read these
   for (const b of new Set(shots.map(([bk]) => bk)))
     if (record[b.id]?.facts) writeFileSync(join(out, `${b.id}.facts.json`), JSON.stringify(record[b.id].facts, null, 1))
   try {
@@ -311,4 +311,4 @@ async function main() {
   if (failed) process.exit(1)
 }
 
-main().catch(e => { console.error(`booklet-shots: ${e.message}`); process.exit(1) })
+main().catch(e => { console.error(`doc-shots: ${e.message}`); process.exit(1) })

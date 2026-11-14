@@ -344,11 +344,22 @@ class TestAppProject(unittest.TestCase):
             ccid = json.loads((src / "ccid.json").read_text(encoding="utf-8"))
             ccid["labels"] = {"cells": ["cells.zarr"]}
             (src / "ccid.json").write_text(json.dumps(ccid), encoding="utf-8")
+            # a pooled clustering run names its images; the copy is renamed in it, the others dropped
+            (src / "labelProps").mkdir()
+            (src / "labelProps" / "cells__tracks.clustfeatures.json").write_text(json.dumps(
+                {"clusters.movement": {"partOf": ["imgB", "imgA"], "features": ["speed"]}}), encoding="utf-8")
+            (src / "labelProps" / "cells.hmmfit.json").write_text(json.dumps(
+                {"movement": {"partOf": ["imgA", "imgC"]}}), encoding="utf-8")
             full = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other, results=True)
             img = other / full["projectUid"] / "1" / full["images"][0]["imageUid"]
             self.assertTrue((img / "labels" / "cells.zarr").is_dir())
             self.assertFalse((img / "gating").exists())
             self.assertEqual(json.loads((img / "ccid.json").read_text(encoding="utf-8"))["labels"], {"cells": ["cells.zarr"]})
+            side = json.loads((img / "labelProps" / "cells__tracks.clustfeatures.json").read_text(encoding="utf-8"))
+            self.assertEqual(side["clusters.movement"], {"partOf": [full["images"][0]["imageUid"]], "features": ["speed"]})
+            hmm = json.loads((img / "labelProps" / "cells.hmmfit.json").read_text(encoding="utf-8"))
+            self.assertEqual(hmm["movement"]["partOf"], [full["images"][0]["imageUid"]])
+            self.assertIn("imgA", (src / "labelProps" / "cells__tracks.clustfeatures.json").read_text(encoding="utf-8"))
         legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
         self.assertEqual(app_project.copy_images(legacy),
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])

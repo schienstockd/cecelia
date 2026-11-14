@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 //
-// Set up the booklets' fixtures (`Booklet.fixture`) on a running, ISOLATED Cecelia, before capture.
+// Set up the doc shots' fixtures (`ShotSet.fixture`) on a running, ISOLATED Cecelia, before capture.
 //
-//     pixi run booklet-fixture -- --base http://127.0.0.1:5223 --config-dir <dir> --source-projects <lab projects dir> [--only <booklet id>]
+//     pixi run doc-fixture -- --base http://127.0.0.1:5223 --config-dir <dir> --source-projects <lab projects dir> [--only <set id>]
 //
 // - Projects: each listed image is copied raw (scripts/agent_eval/app_project.py — no segmentation,
 //   gates or tracks; the source is only read) into the instance's projects dir, renamed to the name the
@@ -16,7 +16,7 @@
 //   off the copy through the app — planes and channels from the image's geometry, each gate's count
 //   and % of parent from the population manager's stats — and recorded with the uids, so a caption
 //   and the screenshot beside it cite one measurement, never a typed number.
-// - The record — fixture key → the copy's uids, and the facts — goes to <config-dir>/booklet-fixtures.json, which
+// - The record — fixture key → the copy's uids, and the facts — goes to <config-dir>/docshot-fixtures.json, which
 //   capture.mjs reads to resolve a shot's `project` and `image`.
 //
 // Refuses 8080/5173, and refuses a projects dir outside --config-dir: a copy must never land among the
@@ -29,8 +29,8 @@ import { pathToFileURL } from 'node:url'
 import { chromium, findChromium, repo } from '../lib/chromium.mjs'
 import { openProject, refuseSlotZero, selectProfile, signIn, vue } from '../lib/app_page.mjs'
 
-const { BOOKLETS } = await import(pathToFileURL(join(repo, 'user-docs', 'booklets', 'index.ts')).href)
-const { FIXTURE_RECORD } = await import(pathToFileURL(join(repo, 'user-docs', 'booklets', 'spec.ts')).href)
+const { SHOT_SETS } = await import(pathToFileURL(join(repo, 'user-docs', 'shots', 'index.ts')).href)
+const { FIXTURE_RECORD, gateKey } = await import(pathToFileURL(join(repo, 'user-docs', 'shots', 'spec.ts')).href)
 
 function parseArgs(argv) {
   const a = { only: '' }
@@ -96,13 +96,30 @@ function axisPos(raw, ticks, extent, end) {
   throw new Error(`value ${raw} is outside the axis ticks ${t.map(k => k.v).join(', ')}`)
 }
 
-/** Recreate gate `g` as a person's box gate (the population manager's own route); false when a
- *  population of that name exists already. Channels are found by their names, as the plot lists them. */
-async function addGate(api, projectUid, imageUid, g) {
-  const q = `projectUid=${projectUid}&imageUid=${imageUid}&valueName=cells&popType=flow`
+/** The source image's own population `g.name` (top level), as its gating file stores it. */
+function sourcePop(srcImageDir, g) {
+  const file = join(srcImageDir, 'gating', `${g.segmentation ?? 'cells'}${g.popType && g.popType !== 'flow' ? `__${g.popType}` : ''}.json`)
+  const pop = (readJson(file).populations ?? []).find(p => p.name === g.name)
+  if (!pop) throw new Error(`source ${file} has no population "${g.name}"`)
+  return pop
+}
+
+/** Recreate gate `g` as a person's gate (the population manager's own route); false when a population
+ *  of that name exists already. A box is placed by its channels' names, as the plot lists them; a
+ *  `fromSource` one takes the source population's gate or filter as stored. */
+async function addGate(api, projectUid, imageUid, g, srcImageDir) {
+  const valueName = g.segmentation ?? 'cells', popType = g.popType ?? 'flow'
+  const q = `projectUid=${projectUid}&imageUid=${imageUid}&valueName=${valueName}&popType=${popType}`
   const tree = (await api(`/api/gating/popmap?${q}`)).body.tree
   // the root's populations (docs/API.md's `{name,gate,filter,children}` is each node below it)
   if ((tree?.populations ?? []).some(c => c.name === g.name)) return false
+  if (g.fromSource) {
+    const pop = sourcePop(srcImageDir, g)
+    const r = await api('/api/gating/pop/add', { projectUid, imageUid, valueName, popType, name: g.name, parent: 'root',
+      colour: pop.colour, ...(pop.gate ? { gate: pop.gate } : { filter: pop.filter }) })
+    if (!r.ok) throw new Error(`gate ${valueName}/${g.name}: ${r.body.error ?? JSON.stringify(r.body).slice(0, 160)}`)
+    return true
+  }
   const ch = (await api(`/api/gating/channels?${q}`)).body
   const col = name => {
     const i = (ch.channelNames ?? []).indexOf(name)
@@ -130,14 +147,27 @@ async function measure(api, fixture, rec) {
     for (const src of Object.keys(spec.images)) {
       const g = await api(`/api/images/geometry?projectUid=${copy.uid}&imageUid=${copy.images[src]}`)
       if (!g.ok) throw new Error(`geometry of ${key}/${src}: ${g.body.error ?? 'failed'}`)
-      Object.assign(facts, { [`${key}.${src}.planes`]: g.body.sizeZ, [`${key}.${src}.channels`]: g.body.sizeC })
+      Object.assign(facts, { [`${key}.${src}.planes`]: g.body.sizeZ, [`${key}.${src}.channels`]: g.body.sizeC,
+                             [`${key}.${src}.timepoints`]: g.body.sizeT })
     }
+    const tracked = new Set()
     for (const gate of spec.gates ?? []) {
-      const q = `projectUid=${copy.uid}&imageUid=${copy.images[gate.image]}&valueName=cells&popType=flow&pop=${encodeURIComponent(`/${gate.name}`)}`
+      const vn = gate.segmentation ?? 'cells'
+      const q = `projectUid=${copy.uid}&imageUid=${copy.images[gate.image]}&valueName=${vn}&popType=${gate.popType ?? 'flow'}&pop=${encodeURIComponent(`/${gate.name}`)}`
       const st = await api(`/api/gating/stats?${q}`)
-      if (!st.ok) throw new Error(`stats of gate ${gate.name}: ${st.body.error ?? 'failed'}`)
-      Object.assign(facts, { [`${key}.${gate.image}.${gate.name}.count`]: st.body.count,
-                             [`${key}.${gate.image}.${gate.name}.pct`]: Number(st.body.pctParent).toFixed(1) })
+      if (!st.ok) throw new Error(`stats of gate ${vn}/${gate.name}: ${st.body.error ?? 'failed'}`)
+      Object.assign(facts, { [`${key}.${gate.image}.${gateKey(gate)}.count`]: st.body.count,
+                             [`${key}.${gate.image}.${gateKey(gate)}.pct`]: Number(st.body.pctParent).toFixed(1) })
+      if (vn !== 'cells') tracked.add(`${gate.image}|${vn}`)
+    }
+    // tracks and the frame interval, as the tracking review counts them (an untracked one is left out)
+    for (const t of tracked) {
+      const [src, vn] = t.split('|')
+      const r = await api(`/api/tracking/issues?projectUid=${copy.uid}&imageUid=${copy.images[src]}&valueName=${vn}&limit=1`)
+      if (!r.ok || !r.body.tracked) continue
+      facts[`${key}.${src}.${vn}.tracks`] = r.body.nTracks
+      // timeStep is in minutes (the track measures' unit); the caption says seconds, as the image records them
+      if (r.body.timeStep) facts[`${key}.${src}.interval`] = Math.round(r.body.timeStep * 60 * 100) / 100
     }
   }
   return facts
@@ -175,8 +205,8 @@ async function main() {
   const into = projectsDir(a.configDir)
   const recordPath = join(a.configDir, FIXTURE_RECORD)
   const record = existsSync(recordPath) ? readJson(recordPath) : {}
-  const booklets = BOOKLETS.filter(b => b.fixture && (!a.only || a.only === b.id))
-  if (booklets.length === 0) throw new Error(a.only ? `booklet "${a.only}" has no fixture` : 'no booklet has a fixture')
+  const sets = SHOT_SETS.filter(b => b.fixture && (!a.only || a.only === b.id))
+  if (sets.length === 0) throw new Error(a.only ? `shot set "${a.only}" has no fixture` : 'no shot set has a fixture')
 
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true })
   try {
@@ -187,7 +217,7 @@ async function main() {
       return { ok: r.ok, body: await r.json().catch(() => ({})) }
     }, [url, body])
 
-    for (const b of booklets) {
+    for (const b of sets) {
       const profiles = b.fixture.profiles ?? []
       const roster = (await api('/api/kiwi/profiles')).body.profiles?.map(p => p.name) ?? []
       for (const p of profiles) {
@@ -221,8 +251,9 @@ async function main() {
           if (!r.ok) throw new Error(`channel names on ${key}/${src}: ${r.body.error ?? 'failed'}`)
         }
         for (const g of spec.gates ?? []) {
-          const made = await addGate(api, copy.uid, copy.images[g.image], g)
-          console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.name}${made ? '' : ' already there'}`)
+          const srcDir = join(resolve(a.sourceProjects), spec.source, '1', g.image)
+          const made = await addGate(api, copy.uid, copy.images[g.image], g, srcDir)
+          console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.segmentation ?? 'cells'}/${g.name}${made ? '' : ' already there'}`)
         }
       }
       rec.facts = await measure(api, b.fixture, rec)
@@ -242,4 +273,4 @@ async function main() {
   console.log(`fixtures → ${recordPath}`)
 }
 
-main().catch(e => { console.error(`booklet-fixture: ${e.message}`); process.exit(1) })
+main().catch(e => { console.error(`doc-fixture: ${e.message}`); process.exit(1) })

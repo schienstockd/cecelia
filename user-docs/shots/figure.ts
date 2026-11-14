@@ -1,8 +1,8 @@
-// Where a booklet figure crops and where its pointer goes, from a capture's recorded boxes (CSS px).
-// Pure, so utils/booklets.test.ts pins it; scripts/booklets/build.mjs draws the result.
+// Where a user-docs figure crops and where its pointer goes, from a capture's recorded boxes (CSS px).
+// Pure, so utils/docShots.test.ts pins it; scripts/docshots/compose.mjs draws the result.
 //
-// One print scale for every crop (0.19 mm per CSS px), so the app's text prints the same size on every
-// page (screenshots plan → *Booklet direction*); only a crop wider than the step column is scaled down.
+// One scale for every crop (the app's own size, 1 CSS px per CSS px), so the app's text reads the same
+// size on every page; only a crop wider than the page column is scaled down.
 
 import { placeBox, type Side } from '../../frontend/src/utils/anchorPosition.ts'
 
@@ -17,10 +17,10 @@ export interface ShotMeta {
   crop: string[]
 }
 
-export const MM_PER_PX = 0.19
-export const COLUMN_MM = 173
-/** Below this share of the print scale the app's text is too small to read (review guideline 8):
- *  the crop is too wide — crop tighter, not smaller. */
+/** The width a GitHub markdown page gives an image, in CSS px. */
+export const COLUMN_PX = 880
+/** Below this share of the app's own size its text is too small to read (review guideline 8): the crop
+ *  is too wide — crop tighter, not smaller. */
 export const MIN_SCALE_SHARE = 0.8
 const PAD = 8
 const GAP = 34                       // between the pointer's ring and its label
@@ -28,9 +28,9 @@ const GAP = 34                       // between the pointer's ring and its label
 export interface Figure {
   /** Crop origin and size in CSS px of the screenshot. */
   x0: number; y0: number; w: number; h: number
-  /** mm per CSS px in print. */
+  /** Shown size per captured CSS px: 1, or less when the crop is wider than the column. */
   k: number
-  /** False when the crop had to shrink below MIN_SCALE_SHARE of the print scale to fit the column. */
+  /** False when the crop had to shrink below MIN_SCALE_SHARE of the app's size to fit the column. */
   legible: boolean
   /** Ring target and label, relative to the crop; null without a pointer. */
   target: Box | null
@@ -74,6 +74,6 @@ export function figureGeometry(m: ShotMeta): Figure {
       ? { x1: lc.x < tc.x ? label.x + label.width : label.x, y1: lc.y, x2: lc.x < tc.x ? target.x - 5 : target.x + target.width + 5, y2: tc.y }
       : { x1: lc.x, y1: lc.y < tc.y ? label.y + label.height : label.y, x2: tc.x, y2: lc.y < tc.y ? target.y - 5 : target.y + target.height + 5 }
   }
-  const k = Math.min(MM_PER_PX, COLUMN_MM / w)
-  return { x0: left, y0: top, w, h, k, legible: k >= MM_PER_PX * MIN_SCALE_SHARE, target, label, arrow }
+  const k = Math.min(1, COLUMN_PX / w)
+  return { x0: left, y0: top, w, h, k, legible: k >= MIN_SCALE_SHARE, target, label, arrow }
 }
