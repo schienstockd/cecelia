@@ -429,6 +429,22 @@ end
     @test _pick_scale_bar(0.001, 10) === nothing
 end
 
+@testset "API: movie overlays — the viewer's text sizes (DRAW_SPEC_PLAN Phase 3)" begin
+    # on / off is the recorder's; the size the look's (on the config, or in a request's `look`)
+    @test _frame_text(Dict("showTimestamp" => true, "timestampPx" => 18), "showTimestamp", "timestampPx") === 18
+    @test _frame_text(Dict("showTimestamp" => false, "timestampPx" => 18), "showTimestamp", "timestampPx") === false
+    @test _frame_text(Dict{String,Any}(), "showScaleBar", "scaleBarPx") === true
+    @test _frame_text(Dict{String,Any}(), "showScaleBar", "scaleBarPx", Dict("scaleBarPx" => 30)) === 30
+    @test _frame_text(Dict("scaleBarPx" => 1000), "showScaleBar", "scaleBarPx") === 200
+    ov = _build_timelapse_overlays([0, 1], 0.5, 600, 0.5; show_timestamp = 18, show_scale_bar = 30)
+    @test ov[2]["timestamp"] == "0:00:30" && ov[2]["timestampPx"] == 18
+    @test ov[1]["scaleBar"]["fontPx"] == 30 && ov[1]["scaleBar"]["lengthPx"] == 100
+    # no size: the movie's own (the runner scales it with the frame)
+    plain = _build_timelapse_overlays([0], 0.5, 600, 0.5)
+    @test !haskey(plain[1], "timestampPx") && !haskey(plain[1]["scaleBar"], "fontPx")
+    @test isempty(_build_timelapse_overlays([0], 0.5, 600, 0.5; show_timestamp = false, show_scale_bar = false)[1])
+end
+
 @testset "API: interpolate_keyframes reaches the incoming keyframe exactly" begin
     # The offline animation renderer relies on the last tween frame BEING the arrival state — not a
     # half-step short. The napari path had this contract already; the offline sibling has to match.

@@ -309,7 +309,7 @@ _OVERLAY_STROKE    = (0, 0, 0)                   # dark outline drawn around eve
 _OVERLAY_MARGIN_PX = 8
 
 
-def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
+def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None, timestamp_px=None):
     """Draw per-frame overlays (timestamp + scale bar) onto an (H, W, 3) uint8 RGB frame in-place-ish.
 
     Returns the modified frame. ONE font stack, ONE colour palette, ONE renderer for every text glyph
@@ -320,28 +320,37 @@ def draw_frame_overlays(frame_np, *, timestamp=None, scale_bar=None):
     ``{"lengthPx": int, "label": str}`` — a solid white bar at the bottom-right with its label above
     — or ``None``. Both can be present. Style matches ``StillOverlay.vue``: bold sans-serif, white
     fill with a thin dark outline for legibility on both dark fluorescence and bright brightfield.
+
+    Sizes: ``timestamp_px`` and the scale bar's ``fontPx`` are the viewer's (``viewerTimestampPx`` /
+    ``viewerScaleBarPx``, a look's ``timestampPx`` / ``scaleBarPx``), in frame px, the bar as thick as
+    the viewer draws it (``StillOverlay``: 0.3 × its label). Absent, both scale with the frame.
     """
     if timestamp is None and scale_bar is None:
         return frame_np
     img = Image.fromarray(frame_np).convert("RGB")
     d = ImageDraw.Draw(img, "RGB")
     W, H = img.size
-    px = max(11, int(min(H, W) * 0.045))
-    f = _bold_font(px)
+    auto_px = max(11, int(min(H, W) * 0.045))
+
     # Stroke width scales with the font — a thin hairline disappears against noisy fluorescence,
     # but too thick and the glyphs bleed into each other. 5–6% of font size matches how the viewer's
     # ``paint-order: stroke`` reads on-screen.
-    stroke_w = max(2, int(px * 0.06))
+    def font_of(px):
+        return _bold_font(px), max(2, int(px * 0.06))
+
     m = _OVERLAY_MARGIN_PX
     if timestamp:
+        f, stroke_w = font_of(int(timestamp_px) if timestamp_px else auto_px)
         s = str(timestamp)
         box = d.textbbox((0, 0), s, font=f, stroke_width=stroke_w)
         d.text((m - box[0], m - box[1]), s, font=f, fill=_OVERLAY_TEXT,
                stroke_width=stroke_w, stroke_fill=_OVERLAY_STROKE)
     if scale_bar:
+        bar_px = scale_bar.get("fontPx")
+        f, stroke_w = font_of(int(bar_px) if bar_px else auto_px)
         length_px = max(2, int(scale_bar.get("lengthPx", 0)))
         label = str(scale_bar.get("label", ""))
-        bar_h = max(3, int(min(H, W) * 0.006))
+        bar_h = max(3, int(bar_px * 0.3)) if bar_px else max(3, int(min(H, W) * 0.006))
         # Bar bottom-right; label centred above the bar.
         bar_x2 = W - m
         bar_x1 = bar_x2 - length_px

@@ -1,7 +1,8 @@
 # Draw spec — one description of what the viewer draws, for the viewer and every recording
 
-**Status:** building. Phase 0 decided, Phases 1 and 2 built (2026-11-12). Phase 3: skeletons built
-(2026-11-13); scale bar / timestamp sizes and Steps next.
+**Status:** building. Phase 0 decided, Phases 1 and 2 built (2026-11-12). Phase 3 built (2026-11-14):
+skeletons, scale bar / timestamp sizes, Steps. Open: scale bar / timestamp on / off (`pending`);
+Phase 4.
 
 ## Why
 
@@ -73,8 +74,7 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
    (`openImage.labelNames` / `trackNames`), so a recording picks the mask and track sources from the
    list the viewer draws from rather than the registry's. `popVisible` is data (per pop type), not a
    function. Left on the settings store: eye reconciles and write-backs, the preview / live mask
-   override, `maskFilesOf` (it takes any segmentation, the preview's too). The viewer has no skeleton
-   names (`branchNames: []`) — it draws none; Phase 3.
+   override, `maskFilesOf` (it takes any segmentation, the preview's too).
 3. **Close the Phase 0 gaps** marked "record it", each with a runner test that draws it.
    - **Skeletons — BUILT** (2026-11-13). Drawn as lines, not a second mask texture: a texture would be
      the parked multi-mask refactor (`MULTI_MASK_PLAN.md`) and 4 B/voxel per cached timepoint outside
@@ -82,8 +82,18 @@ decision, the viewer's routes (slab `files`, overlays). Retires twins such as
      branch's Ramer–Douglas–Peucker-simplified path (`uns/paths`, `pathTolerance` 0.5 px); one reader
      (`skeleton_segments`) feeds the viewer route and the movie closure; the viewer appends them to the
      track segment buffer (`appendSkeletonLines`, end timepoint -1 = unfaded, plane -1 = every plane);
-     the look carries `skeletons`. Branch tables written before need a branching re-run.
-   - Scale bar / timestamp sizes, Steps: next.
+     the look carries `skeletons`. Branch tables written before need a branching re-run. Lines are
+     coloured by skan branch type (`palettes.json` → `branchTypeColours`; the look's colour
+     `branchType`), as the old R viewer did; the "On the image" overlay has the on / off and the key.
+   - **Scale bar / timestamp sizes — BUILT** (2026-11-14). The look carries `scaleBarPx` /
+     `timestampPx`; `_frame_text` makes a recording's `FrameTextShow` (off / the movie's own size /
+     n px), and `draw_frame_overlays` draws the text at n frame px with the bar 0.3 × as thick, as
+     `StillOverlay` does. Frame px, not scaled: a movie larger than the viewer's canvas has
+     relatively smaller text. On / off stays the record options' (`scaleBar` / `timestamp` still
+     `pending`: not decided in Phase 0).
+   - **Steps — BUILT** (2026-11-14). The look carries `steps`; Render quality gains `viewer` (the
+     default: those Steps, `raySteps`), and draft / standard / high stay presets that override
+     (`_render_quality` → `RenderQuality`).
 4. **Server resolver** (D5).
 
 ## Not covered

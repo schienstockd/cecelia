@@ -154,13 +154,15 @@ function _load_palettes()
                frontend/src/plots/palettes.json to keep browser + Julia in sync." path = _PALETTES_JSON_PATH
         return (palette = collect(_CECELIA_TRACK_PALETTE_FALLBACK),
                 modes    = ["track", "speed", "solid", "pop"],
-                heat     = collect(_HEAT_STOPS_FALLBACK))
+                heat     = collect(_HEAT_STOPS_FALLBACK),
+                branch   = RGB{N0f8}[])
     end
     doc = JSON3.read(read(_PALETTES_JSON_PATH, String))
     pal = [_hex_to_rgb_strict(String(h)) for h in doc.palettes.cecelia]
     modes = [String(m) for m in doc.trackColorModes]
     heat  = [_hex_to_rgb_strict(String(h)) for h in doc.heatRamp]
-    (palette = pal, modes = modes, heat = heat)
+    branch = [_hex_to_rgb_strict(String(h)) for h in get(doc, :branchTypeColours, String[])]
+    (palette = pal, modes = modes, heat = heat, branch = branch)
 end
 
 const _PALETTES_DATA = _load_palettes()
@@ -988,12 +990,12 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     end
 
     # Skeletons — static lines, each frame's own (`skeleton_segments`, the viewer's reader too)
-    skels = Tuple{SkeletonSegments,RGB{N0f8}}[]
+    skels = Tuple{SkeletonSegments,Union{Nothing,RGB{N0f8}}}[]
     for (svn, col) in get(plan, :skeletons, Tuple{String,String}[])
         s = skeleton_segments(img, svn)
         s === nothing && (@warn "skeleton '$svn' has no drawn lines — re-run branching" image = img.uid; continue)
         length(s) == 0 && continue
-        push!(skels, (s, something(rgb(col), hex_to_rgb(SKELETON_COLOUR))))
+        push!(skels, (s, col == SKELETON_BY_TYPE || isempty(col) ? nothing : rgb(col)))
     end
 
     sources = vcat(seg_srcs, gated_srcs, tc_srcs)
@@ -1011,8 +1013,19 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     end
 end
 
-# A skeleton's colour when the look names none — the viewer's `SKELETON_COLOUR`.
-const SKELETON_COLOUR = "#ffffff"
+# A look's skeleton colour meaning "by branch type" — the viewer's `SKELETON_BY_TYPE`, and what it
+# always sends: each line takes its branch's skan type colour (`branch_type_colour`).
+const SKELETON_BY_TYPE = "branchType"
+
+"""
+    branch_type_colour(type) -> RGB{N0f8}
+
+A skeleton line's colour by its branch's skan `branch-type` (0 endpoint-to-endpoint, 1
+endpoint-to-junction, 2 junction-to-junction, 3 isolated cycle) — `palettes.json` →
+`branchTypeColours`, the list the viewer reads. Any other code (-1: a table without the column) is white.
+"""
+branch_type_colour(type::Integer) =
+    0 <= type < length(_PALETTES_DATA.branch) ? _PALETTES_DATA.branch[type + 1] : RGB{N0f8}(1, 1, 1)
 
 # One frame's tail segments with the skeletons' lines appended, every segment with its `plane` (the
 # plane it draws on; -1 = every plane, a Z-flattened skeleton). A skeleton line's `t1` is -1: the
@@ -1031,7 +1044,7 @@ function _with_skeleton_lines(sg, skels, t::Int)
         idx = skeleton_segments_at(s, t)
         append!(x0, s.x0[idx]); append!(y0, s.y0[idx]); append!(z0, s.z0[idx])
         append!(x1, s.x1[idx]); append!(y1, s.y1[idx]); append!(z1, s.z1[idx])
-        append!(cs, fill(c, length(idx))); append!(t1, fill(-1, length(idx))); append!(tail, zeros(Int, length(idx)))
+        append!(cs, c === nothing ? branch_type_colour.(s.type[idx]) : fill(c, length(idx))); append!(t1, fill(-1, length(idx))); append!(tail, zeros(Int, length(idx)))
         append!(plane, Float64.(s.plane[idx]))
     end
     (; x0, y0, z0, x1, y1, z1, colour = cs, t1, tail, plane)

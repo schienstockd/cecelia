@@ -37,10 +37,6 @@ export interface LookImage {
 export interface ViewerDrawSpec extends ViewerLookInput {
   scaleBar: boolean
   timestamp: boolean
-  scaleBarPx: number
-  timestampPx: number
-  /** 3D ray steps (`settings.viewerSteps`) */
-  steps: number
   grid: boolean
   gridDensity: number
   landscape: boolean
@@ -65,9 +61,7 @@ export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   branchVisible: 'recorded',
   scaleBar: { pending: 'today the record options decide on / off' },
   timestamp: { pending: 'today the record options decide on / off' },
-  scaleBarPx: { pending: 'the viewer’s size' },
-  timestampPx: { pending: 'the viewer’s size' },
-  steps: { pending: 'the viewer’s Steps by default; Render quality stays an override' },
+  scaleBarPx: 'recorded', timestampPx: 'recorded', steps: 'recorded',
   grid: AID, gridDensity: AID, landscape: AID, landscapeLabels: AID, roiSpotlight: AID,
 }
 

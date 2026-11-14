@@ -441,7 +441,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             label_contour::Int = 1,
                             z_slice::Union{Int,UnitRange{Int},Nothing} = nothing,
                             t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
-                            show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                            show_timestamp::FrameTextShow = true, show_scale_bar::FrameTextShow = true,
                             overlays_raw = nothing,
                             # The viewer's captured `viewState` snapshot
                             # (`frontend/src/utils/viewer/viewState.ts`). Threaded in so the offline
@@ -585,8 +585,9 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     # drives every renderer identically.
     t_start, t_end = _t_range(config)
     by_image       = Bool(get(config, :nameByImage, false))
-    show_ts        = Bool(get(config, :showTimestamp, true))
-    show_sb        = Bool(get(config, :showScaleBar, true))
+    # on / off from the batch, the size the viewer's (a look filled from it) — `FrameTextShow`
+    show_ts        = _frame_text(config, "showTimestamp", "timestampPx")
+    show_sb        = _frame_text(config, "showScaleBar", "scaleBarPx")
     vn_raw         = strip(String(get(config, :valueName, "")))
     value_name     = String(vn_raw)
     lvns_raw       = get(config, :labelValueNames, nothing)
@@ -746,8 +747,8 @@ end
 # logged). A mask is drawn the way the viewer's 3D view draws one (every label, its palette).
 function _render_batch_3d(task_id::String, pu::String, uid::String, img, config,
                           value_name::String, label_vn, out_path::AbstractString;
-                          fps, size_x, size_y, t_start, t_end, title_card, render_quality::Symbol,
-                          show_timestamp::Bool, show_scale_bar::Bool)
+                          fps, size_x, size_y, t_start, t_end, title_card, render_quality::RenderQuality,
+                          show_timestamp::FrameTextShow, show_scale_bar::FrameTextShow)
     frame = _resolve_frame_for_record(pu, uid, value_name)
     if frame[5] !== nothing
         ws_log(nothing, task_id, "[ERROR] $uid: " * String(frame[5])); return nothing
@@ -888,7 +889,7 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                               # match by construction and the timestamps agree per-frame. Redundant
                               # (identical caption in every cell) but visible; a compose-time overlay
                               # would need a stitcher-side overlays block that doesn't exist yet.
-                              show_timestamp::Bool = false, show_scale_bar::Bool = false,
+                              show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
                               pixel_size_um::Union{Nothing,Real} = nothing,
                               time_step_min::Union{Nothing,Real} = nothing,
                               view_state::Union{Nothing,AbstractDict} = nothing)
@@ -1036,7 +1037,7 @@ function run_single_grid_offline(task_id::String, project_uid::String, image_uid
                                   share_contrast::Bool = true,
                                   layout::AbstractString = "row",
                                   t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
-                                  show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                                  show_timestamp::FrameTextShow = true, show_scale_bar::FrameTextShow = true,
                                   # The viewer's captured `viewState` snapshot — same purpose as on
                                   # `run_single_offline`: crop every cell to the visible rectangle
                                   # the user is looking at, not the whole image. Applied per cell
@@ -1120,8 +1121,8 @@ function run_single_keyframes_offline(task_id::String, project_uid::String, imag
                                        title_card = nothing,
                                        keyframes,
                                        value_name::AbstractString = "",
-                                       render_quality::Symbol = :standard,
-                                       show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                                       render_quality::RenderQuality = :standard,
+                                       show_timestamp::FrameTextShow = true, show_scale_bar::FrameTextShow = true,
                                        # Overlay context, opt-in — nothing → channels-only movie,
                                        # dict → run every state through the overlay author
                                        # (`_overlays_raw_from_config` shape + `valueName` +

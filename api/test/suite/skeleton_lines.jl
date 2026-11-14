@@ -35,6 +35,15 @@
             @test cl(1)[2] === nothing                       # no lines at t 1
             st = _overlays3d_state(cl, 2)["segments"]
             @test st["t1"] == fill(-1.0, 3) && st["length"] == 0 && st["plane"] == zeros(3)
+            # the viewer's default: each line in its branch type's colour (palettes.json, as the viewer)
+            ovt = _overlays_raw_from_config(Dict{String,Any}("skeletons" => Dict("SHG" => SKELETON_BY_TYPE)), false)
+            clt = viewer_overlay_closure(img; value_name = "", plan = overlay_track_plan(ovt))
+            @test all(==(branch_type_colour(1)), clt(0)[2].colour)
+            @test branch_type_colour(1) == hex_to_rgb(JSON3.read(read(normpath(joinpath(API_TEST_DIR, "..", "..", "frontend", "src", "plots", "palettes.json")), String)).branchTypeColours[2])
+            @test branch_type_colour(-1) == RGB{N0f8}(1, 1, 1)
+            # the viewer's key names them as the branching task names its pops
+            pj = JSON3.read(read(normpath(joinpath(API_TEST_DIR, "..", "..", "frontend", "src", "plots", "palettes.json")), String))
+            @test String.(pj.branchTypeNames) == [Cecelia._BRANCH_TYPE_POP_NAME[k] for k in 0:3]
             # no skeleton named → nothing to draw
             @test viewer_overlay_closure(img; value_name = "", plan = overlay_track_plan(Dict{String,Any}())) === nothing
 
@@ -47,6 +56,7 @@
             ux = physical_size_for_axis(first(img_physical_sizes(img)), :x)
             segs = skeleton_segments(img, "SHG")
             @test collect(j.x0) ≈ segs.x0 .* ux
+            @test collect(j.type) == segs.type
             # a skeleton with no table answers empty, not an error
             code2, body2 = api_viewer_skeletons(HTTP.Request("GET", replace(q, "SHG" => "none")))
             @test code2 == 200 && JSON3.read(body2).nSegments == 0

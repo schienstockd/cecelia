@@ -37,6 +37,8 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
     ``zAniso``         : physical_z / physical_x
     ``renderQuality``  : ``draft`` | ``standard`` | ``high`` — 128 / 256 / 512 ray steps; the viewer's
                          default is 256
+    ``raySteps``       : the viewer's Steps (a look's ``steps``) — used when no ``renderQuality``
+                         preset overrides it
     ``fps``            : encoder frame rate
     ``labelsPath``     : optional label store drawn as the viewer's 3D mask (nearest id along the
                          ray, ``label_palette``), with ``labelOpacity`` (default the viewer's
@@ -51,8 +53,8 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
                          ``image`` (the viewer's unit: they then scale with the camera, as in the
                          viewer). The border is always output pixels.
     ``titleCard``      : optional; prepended after the render (``title_card.prepend_title_to_movie``)
-    ``overlays``       : optional per-frame ``[{timestamp?, scaleBar?}]`` — drawn onto the encoded
-                         frame
+    ``overlays``       : optional per-frame ``[{timestamp?, timestampPx?, scaleBar?}]`` — drawn onto
+                         the encoded frame; the px (and ``scaleBar.fontPx``) are the viewer's text sizes
 """
 import math
 import os
@@ -66,6 +68,15 @@ from cecelia.utils.movie_io import movie_writer, crop_to_even
 from cecelia.utils.zarr_utils import open_as_zarr, read_axes, fortify
 
 _QUALITY_STEPS = {'draft': 128, 'standard': 256, 'high': 512}
+
+
+def _ray_steps(params):
+    """Samples per ray: the viewer's Steps (``raySteps``) unless a ``renderQuality`` preset overrides
+    them (Julia sends one or the other, ``_ray_steps_params``)."""
+    q = params.get('renderQuality', 'standard')
+    if q in _QUALITY_STEPS:
+        return _QUALITY_STEPS[q]
+    return int(params.get('raySteps') or 256)
 
 
 def _load_at_t(arr, t_idx, axes, want=('c', 'z', 'y', 'x'), z_slice=None, yx=None):
@@ -282,7 +293,7 @@ def render_frames(params, host, log):
     # x-voxel units: the shader only needs the three extents, the camera and the overlays in ONE
     # unit, and the voxel's x size is the one every other length is already relative to.
     voxel_um = (1.0, 1.0, float(params.get('zAniso', 1.0)))
-    steps = _QUALITY_STEPS.get(params.get('renderQuality', 'standard'), 256)
+    steps = _ray_steps(params)
     overlays = params.get('overlays') if isinstance(params.get('overlays'), list) else None
     overlay_style = {'pointPx': float(params.get('pointSizePx', 6)),
                      'borderPx': float(params.get('pointBorderPx', 0)),
@@ -422,7 +433,8 @@ def render_frames(params, host, log):
             item = overlays[i] or {}
             from cecelia.utils.title_card import draw_frame_overlays
             frame = draw_frame_overlays(frame, timestamp=item.get('timestamp'),
-                                        scale_bar=item.get('scaleBar'))
+                                        scale_bar=item.get('scaleBar'),
+                                        timestamp_px=item.get('timestampPx'))
         yield frame
         if (i + 1) % 20 == 0:
             log.log(f'[PROGRESS] {i + 1}/{len(states)}')

@@ -214,9 +214,9 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
     <!-- How densely the 3D render samples each ray: draft is fast and grainy, high is smooth and slow. -->
     <span v-if="hasQuality" class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">quality</span>
-      <ChipSelect variant="segmented" :options="QUALITY_OPTIONS" :model-value="renderQuality ?? 'standard'"
+      <ChipSelect variant="segmented" :options="QUALITY_OPTIONS" :model-value="renderQuality ?? 'viewer'"
                   aria-label="3D render quality"
-                  v-tooltip.bottom="'3D render quality: draft is faster, high is smoother'"
+                  v-tooltip.bottom="'3D render quality: the viewer’s Steps, or draft (faster) to high (smoother)'"
                   @update:model-value="$emit('update:renderQuality', $event as RenderQuality)" />
     </span>
 
