@@ -100,7 +100,7 @@ import { beginRect, updateRect, finishRect, type RectDraft } from '../utils/draw
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
-  overlaysUrl, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
+  overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE,
   type SkeletonPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
@@ -766,6 +766,17 @@ const heldProbe = ref('')
  */
 type PopLayer = VwPopLayer
 const popLayers = ref<PopLayer[]>([])
+/** Which pop types this image has pops of (`/api/viewer/pop-types`) — "On the image" shows a switch
+ *  only for those. `null` until answered. Refetched with every overlay load, so a gate write or a
+ *  finished task updates it on the same pings. */
+const presentPopTypes = ref<PresentPopTypes | null>(null)
+async function loadPresentPopTypes() {
+  if (!projectUid || !imageUid) return
+  try {
+    const res = await fetch(popTypesUrl({ projectUid, imageUid }), { cache: 'no-store' })
+    presentPopTypes.value = await readJson<PresentPopTypes>(res, 'Pop types')
+  } catch { /* keep the last answer: a failed probe must not hide switches */ }
+}
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
 const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}::${path}`
 /** Whether a layer's pop is DRAWN — its eye (`hiddenPops`) is the only authority; the manager's
@@ -2024,6 +2035,7 @@ function rebuildOverlays() {
 
 async function loadOverlays() {
   if (!projectUid || !imageUid) return
+  void loadPresentPopTypes()
   overlaysErr.value = ''
   // Every segmentation × every cell pop type the panel has on. The pop manager's selection is what it
   // EDITS, not what the viewer draws — populations are not a property of the shown segmentation.
@@ -6243,7 +6255,7 @@ onUnmounted(() => {
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :branch-names="meta.branchNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
-                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" />
+                        :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes" />
       <div class="vw-corner-tr">
         <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
              a small image still benefits from a corner reference while zoomed in.

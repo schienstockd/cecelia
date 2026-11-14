@@ -140,7 +140,7 @@ export is_track_pop, pop_category, population_scope_groups, population_accept_gr
 export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
-export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path, stored_pop_map, has_stored_pops
 export pop_gate_hashes, gating_history_path, read_gating_history, gate_state_for_hash
 export copy_gating!, with_popmap_lock
 export co_clustered_value_names

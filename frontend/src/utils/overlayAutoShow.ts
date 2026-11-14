@@ -40,6 +40,20 @@ export function trackableValueNames(img: { labels?: Record<string, unknown>
 }
 export type CellPopType = typeof CELL_POP_TYPES[number]
 
+/** The "On the image" population and ribbon switches worth showing: only the pop types this image has
+ *  pops of, in display order; cell-track ribbons need a shown cell pop type AND a tracked segmentation;
+ *  track-cluster ribbons need track-cluster pops. `present` null = not answered yet → every switch, so a
+ *  slow or failed probe never hides one. Hiding changes no setting — it is per set, and applies again
+ *  on an image that has the type. */
+export function onImageSwitches(present: { popTypes: readonly string[]; tracked: boolean } | null): {
+  popTypes: CellPopType[]; cellTrackRibbons: boolean; trackClusterRibbons: boolean
+} {
+  if (!present) return { popTypes: [...CELL_POP_TYPES], cellTrackRibbons: true, trackClusterRibbons: true }
+  const popTypes = CELL_POP_TYPES.filter(pt => present.popTypes.includes(pt))
+  return { popTypes, cellTrackRibbons: popTypes.length > 0 && present.tracked,
+           trackClusterRibbons: present.popTypes.includes('trackclust') }
+}
+
 export interface AutoShowInput {
   labels: Record<string, string[]>            // registered cell-label sets: {valueName → files}
   branchLabels: Record<string, string[]>      // registered skeleton-label sets: {valueName → files}

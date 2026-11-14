@@ -128,6 +128,13 @@ export function overlaysUrl(q: {
   return '/api/viewer/overlays?' + p.toString()
 }
 
+/** `/api/viewer/pop-types` — which stored pop types this image has pops of, and whether any of its
+ *  segmentations is tracked. What the "On the image" switches are filtered by (`onImageSwitches`). */
+export interface PresentPopTypes { popTypes: string[]; tracked: boolean }
+export function popTypesUrl(q: { projectUid: string; imageUid: string }): string {
+  return '/api/viewer/pop-types?' + new URLSearchParams({ projectUid: q.projectUid, imageUid: q.imageUid }).toString()
+}
+
 /** `/api/viewer/skeletons` — a skeleton's branch polylines as segments, µm, `t` -1 = every frame. */
 export interface SkeletonPayload {
   valueName: string
