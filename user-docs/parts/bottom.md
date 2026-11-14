@@ -24,8 +24,9 @@ Everything above works without Claude. Claude doesn't add steps to your analysis
 state carefully. There are two ways in, and either can come first; Kiwi's **?** and the guide
 *Assist with Kiwi* show the same:
 
-**Kiwi** gives answers you can check. Every claim in its reply links to the data it rests on, and
-Cecelia checks those links before you see the reply; if it can't support a claim, it says so. It
+**Kiwi** gives answers you can check. Every claim in its reply links to the data it is about, and
+Cecelia checks that each link exists and that Kiwi read it before you see the reply; whether the data
+supports the claim is yours to judge. When it can't tell, it says so. It
 can't change anything in your project, and it needs no terminal: log in once and ask. It points at
 the evidence; you decide.
 
@@ -46,7 +47,7 @@ Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't s
 
 | | Kiwi | Terminal | `pixi run chat` (no GUI, experimental) |
 |---|:-:|:-:|:-:|
-| Checks every claim against its data before you see it | ✓ | – | – |
+| Every claim links to data it read, checked before you see it | ✓ | – | – |
 | Can't change anything, enforced | ✓ | – | – |
 | Reads your project, captures, Blackboard and lab log | ✓ | ✓ | ✓ except captures (no viewer to share from) |
 | Warns when a bad-tagged failure keeps coming back | ✓ | ✓ | ✓ |

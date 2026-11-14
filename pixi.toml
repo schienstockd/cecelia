@@ -334,6 +334,10 @@ ui-copy = "node scripts/ui_copy_inventory.mjs"
 # CECELIA_PORT_SLOT — never a working one; it refuses 8080/5173. Usage in the script header.
 gui-capture = "node scripts/gui_capture.mjs"
 
+# Build the user booklets (user-docs/booklets/: specs, STYLE.md) into PDFs under booklets-out/. Fails
+# on a frame rule (checkBooklets). `-- --only <id>` builds one; `-- --html` also writes the HTML.
+booklets = "node scripts/booklets/build.mjs"
+
 # Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
 # frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails
 # until you do. Fetches the pinned lucide-static tarball (network). See scripts/vendor_icons.mjs.

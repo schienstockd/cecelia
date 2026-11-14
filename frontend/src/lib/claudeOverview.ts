@@ -43,7 +43,7 @@ export const KIWI_MODE: Mode = {
   title: 'Kiwi',
   use: 'Answers you can check, in the app',
   only: [
-    'Checks every claim against its data',   // kiwi_validate_reply: refs resolve + were seen; may abstain
+    'Every claim links to data it read',     // kiwi_validate_reply: refs resolve + were seen; NOT that they support it
     'Can’t change anything — enforced',      // --tools "" + only KIWI_READ_TOOLS
     'No terminal — just log in',
     'Attach anything on screen with @',      // Add to Kiwi: images, populations, plots, viewer, tasks

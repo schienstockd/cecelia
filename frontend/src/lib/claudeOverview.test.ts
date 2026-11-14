@@ -28,11 +28,11 @@ describe('claudeOverview content model', () => {
     expect(CLAUDE_BRIDGE).toMatch(/Continue in terminal/)
   })
 
-  // Kiwi's case is what only it gives: answers checked against the data, a guarantee it changes
+  // Kiwi's case is what only it gives: every claim linked to data it read, a guarantee it changes
   // nothing, no terminal. Its example asks are questions — never something for it to make.
   it('leads Kiwi with what only it gives — checked, changes nothing, no terminal', () => {
     expect(KIWI_MODE.use).toMatch(/check/)
-    for (const re of [/Checks every claim/, /Can’t change anything/, /No terminal/]) expect(only(KIWI_MODE)).toMatch(re)
+    for (const re of [/Every claim links to data it read/, /Can’t change anything/, /No terminal/]) expect(only(KIWI_MODE)).toMatch(re)
     for (const q of KIWI_MODE.ask) expect(q.endsWith('?')).toBe(true)
   })
 
