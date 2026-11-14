@@ -199,12 +199,59 @@ _label_contour(src)::Int = clamp(_to_int(get(src, :labelContour, 0)), 0, LABEL_C
 # it silently would be worse than ignoring it. `nothing` for the slice means "whatever is showing",
 # which is what every recording did before the setting existed.
 _show_3d(src)::Bool = Bool(get(src, :show3D, false))
-# 3D ray-cast quality from a request / authored config — the keyframe renderer's `render_quality`
-# (samples per ray: draft 0.5x, standard 1x, high 2x). Anything else is `:standard`.
-function _render_quality(src)::Symbol
-    raw = _cfg_get(src, "renderQuality", "standard")
-    q = raw isa AbstractString ? String(raw) : "standard"
-    q == "draft" ? :draft : q == "high" ? :high : :standard
+"""
+    FrameTextShow = Union{Bool,Int,Float64}
+
+A movie's timestamp or scale bar (`_frame_text`): `false` off; `true` on at the movie's own size; `n`
+(Int) on at `n` frame px; `f` (Float64) on at `f` × the frame's height — the viewer's px over its
+canvas height, so the text keeps the proportion it has on screen at any movie size.
+"""
+const FrameTextShow = Union{Bool,Int,Float64}
+_text_on(x::FrameTextShow) = x !== false
+# `x`'s size onto a per-frame overlay dict, as px or as a fraction of the frame height
+function _text_size!(d::AbstractDict, x::FrameTextShow, px_key::String, frac_key::String)
+    x isa Int && (d[px_key] = x)
+    x isa Float64 && (d[frac_key] = x)
+    d
+end
+
+"""
+    RenderQuality = Union{Symbol,Int}
+
+A 3D movie's ray-cast density: a preset (`:draft` / `:standard` / `:high`) or the viewer's Steps
+(`_render_quality`). `_ray_steps_params` puts it on the renderer's params.
+"""
+const RenderQuality = Union{Symbol,Int}
+_ray_steps_params(q::Symbol) = ("renderQuality" => String(q),)
+_ray_steps_params(q::Int) = ("renderQuality" => "viewer", "raySteps" => q)
+
+# 3D ray-cast quality from a request / authored config — the keyframe renderer's `render_quality`:
+# a preset (`renderQuality` draft / standard / high = 128 / 256 / 512 samples per ray) overrides; any
+# other value ("viewer", or none) is the viewer's Steps, a look's `steps` (on the config, or in its
+# `look`) — `:standard` when it has none (docs/todo/DRAW_SPEC_PLAN.md Phase 3).
+const RAY_STEPS_RANGE = (16, 1024)
+function _render_quality(src, look = nothing)::RenderQuality
+    raw = _cfg_get(src, "renderQuality", "viewer")
+    q = raw isa AbstractString ? String(raw) : "viewer"
+    q in ("draft", "standard", "high") && return Symbol(q)
+    steps = _cfg_maybe(src, "steps")
+    steps === nothing && look isa AbstractDict && (steps = _cfg_maybe(look, "steps"))
+    steps isa Real && steps > 0 ? clamp(round(Int, steps), RAY_STEPS_RANGE...) : :standard
+end
+
+# A movie's timestamp / scale bar (`FrameTextShow`) from a request / config, each key read off it or
+# else its `look`: off when `on_key` is false (the viewer's switch); at the viewer's px (`px_key`, a
+# look's `timestampPx` / `scaleBarPx`) scaled to the frame by the viewer canvas's height
+# (`textCanvasPx`), or as frame px when that is unknown; else at the movie's own size.
+function _frame_text(src, on_key::AbstractString, px_key::AbstractString, look = nothing)::FrameTextShow
+    val(k) = (v = _cfg_maybe(src, k); v === nothing && look isa AbstractDict ? _cfg_maybe(look, k) : v)
+    on = val(on_key)
+    on === nothing || Bool(on) || return false
+    px = val(px_key)
+    px isa Real && px > 0 || return true
+    canvas = val("textCanvasPx")
+    canvas isa Real && canvas > 0 ? clamp(Float64(px) / Float64(canvas), 0.005, 0.3) :
+                                    clamp(round(Int, px), 6, 200)
 end
 
 function _z_slice(src)::Union{Int,Nothing}

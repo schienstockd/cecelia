@@ -119,7 +119,7 @@ function run_roi_offline(task_id::String, project_uid::String, image_uid::String
                          value_name::AbstractString = "",
                          label_value_name::Union{AbstractString,Nothing} = nothing,
                          label_contour::Int = 1,
-                         show_timestamp::Bool = true, show_scale_bar::Bool = true,
+                         show_timestamp::FrameTextShow = true, show_scale_bar::FrameTextShow = true,
                          view_state::Union{Nothing,AbstractDict} = nothing,
                          match_viewer::Bool = true,
                          movie_config::Union{Nothing,MovieRecordConfig} = nothing)

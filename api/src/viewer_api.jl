@@ -941,13 +941,14 @@ function live_labels_store_path(project_uid::AbstractString, image_uid::Abstract
 end
 
 # ── GET /api/viewer/skeletons ─────────────────────────────────────────────────────
-# ?projectUid=&imageUid=&valueName= → {valueName, flat, nSegments, t, plane, x0, y0, z0, x1, y1, z1}
+# ?projectUid=&imageUid=&valueName= → {valueName, flat, nSegments, t, plane, type, x0, y0, z0, x1, y1, z1}
 #
 # A skeleton (`segment.branching`) as line segments, from the polylines its branch table stores
 # (`skeleton_segments` — the reader the movie overlay closure uses too, so the viewer and a recording
 # draw the same lines). Columnar like `/api/viewer/overlays`, positions in µm, `t` a frame index
 # (-1 = every frame), `plane` the plane each draws on (-1 = every plane: Z-flattened on a stack) —
-# computed server side so the viewer does not floor µm back into planes and round one low. A table written before
+# computed server side so the viewer does not floor µm back into planes and round one low. `type` the
+# branch's skan type, which colours the line (`branch_type_colour`). A table written before
 # the paths were answers `nSegments = 0` with a note: re-run branching.
 const SKELETON_MAX_SEGMENTS = 2_000_000
 
@@ -963,7 +964,7 @@ function api_viewer_skeletons(req::HTTP.Request)
         @warn "viewer skeletons: unreadable" value_name = vn exception = e
         return 500, JSON3.write((; error = "could not read the skeleton '$vn': $(sprint(showerror, e))"))
     end
-    empty = (; valueName = vn, flat = false, nSegments = 0, t = Int[], plane = Int[], x0 = Float32[], y0 = Float32[],
+    empty = (; valueName = vn, flat = false, nSegments = 0, t = Int[], plane = Int[], type = Int[], x0 = Float32[], y0 = Float32[],
                z0 = Float32[], x1 = Float32[], y1 = Float32[], z1 = Float32[])
     segs === nothing && return 200, JSON3.write(merge(empty, (; note = "no branch lines; re-run branching")))
     n = length(segs)
@@ -972,7 +973,7 @@ function api_viewer_skeletons(req::HTTP.Request)
     sz = first(img_physical_sizes(img))
     ux, uy, uz = (Float32(physical_size_for_axis(sz, a)) for a in (:x, :y, :z))
     200, JSON3.write((; valueName = vn, flat = segs.flat, nSegments = n, t = segs.t, plane = segs.plane,
-                        x0 = segs.x0 .* ux, y0 = segs.y0 .* uy, z0 = segs.z0 .* uz,
+                        type = segs.type, x0 = segs.x0 .* ux, y0 = segs.y0 .* uy, z0 = segs.z0 .* uz,
                         x1 = segs.x1 .* ux, y1 = segs.y1 .* uy, z1 = segs.z1 .* uz))
 end
 

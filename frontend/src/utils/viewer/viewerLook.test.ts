@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { viewerLook, timelapseKeyframes, volumeViewState, type ViewerLookInput } from './viewerLook'
 import type { ViewerViewState } from './viewState'
 import { buildBatchMovieConfig } from '../batchMovie'
+import { SKELETON_BY_TYPE } from '../viewerOverlays'
 
 const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   viewState: {
@@ -21,6 +22,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   maskColour: 'id',
   trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {},
+  scaleBar: true, timestamp: false, scaleBarPx: 24, timestampPx: 18, steps: 384,
   ...over,
 })
 
@@ -230,14 +232,29 @@ describe('volumeViewState', () => {
   })
 })
 
+describe('viewerLook — the viewer’s scale bar / timestamp and Steps (DRAW_SPEC_PLAN Phase 3)', () => {
+  it('records them, and a batch filled from the view sends them', () => {
+    const l = viewerLook(base())
+    expect([l.scaleBarPx, l.timestampPx, l.steps]).toEqual([24, 18, 384])
+    expect([l.showScaleBar, l.showTimestamp]).toEqual([true, false])   // on / off as the viewer
+    expect(l.textCanvasPx).toBeUndefined()                              // no canvas in the view state
+    const withCanvas = viewerLook(base({ viewState: { ...base().viewState!, canvas: { width: 1200, height: 800 } } }))
+    expect(withCanvas.textCanvasPx).toBe(800)
+    const cfg = buildBatchMovieConfig(withCanvas, ['cpSAM'], {})
+    expect([cfg.scaleBarPx, cfg.timestampPx, cfg.steps, cfg.textCanvasPx]).toEqual([24, 18, 384, 800])
+    expect([cfg.showScaleBar, cfg.showTimestamp]).toEqual([true, false])
+    expect(cfg.renderQuality).toBe('viewer')                // the Steps unless a preset overrides
+  })
+})
+
 describe('viewerLook — skeletons (DRAW_SPEC_PLAN Phase 3)', () => {
-  it('records the shown skeletons as lines, in the viewer colour', () => {
+  it('records the shown skeletons as lines, coloured by branch type', () => {
     const l = viewerLook(base({ branchVisible: { SHG: true, DCs: false } }))
-    expect(l.skeletons).toEqual({ SHG: '#ffffff' })
+    expect(l.skeletons).toEqual({ SHG: SKELETON_BY_TYPE })
     expect(viewerLook(base({ branchVisible: { SHG: false } })).skeletons).toBeUndefined()
   })
   it('a batch filled from the view sends them', () => {
     const cfg = buildBatchMovieConfig(viewerLook(base({ branchVisible: { SHG: true } })), ['cpSAM'], {})
-    expect(cfg.skeletons).toEqual({ SHG: '#ffffff' })
+    expect(cfg.skeletons).toEqual({ SHG: SKELETON_BY_TYPE })
   })
 })

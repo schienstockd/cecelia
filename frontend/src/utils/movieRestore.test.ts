@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { roiRerecordRequest, roiMovieFocus, restoreKind, lookRestore, keyframeRestore, missingRefs, restoreNote, restoreTargetSet,
          RESTORE_ROUTE } from './movieRestore'
-import { SKELETON_COLOUR } from './viewerOverlays'
+import { SKELETON_BY_TYPE } from './viewerOverlays'
 
 describe('restoreKind', () => {
   it('routes each kind to the page that owns it', () => {
@@ -104,7 +104,7 @@ describe('lookRestore — the viewer shape', () => {
   it("restores a legacy recording's skeletons as the look's", () => {
     const r = lookRestore({ ...banked, branchValueNames: ['skel'] })!
     expect(r.dropped).toEqual([])
-    expect(r.cfg.skeletons).toEqual({ skel: SKELETON_COLOUR })
+    expect(r.cfg.skeletons).toEqual({ skel: SKELETON_BY_TYPE })
     expect(r.cfg).not.toHaveProperty('branchValueNames')
   })
 

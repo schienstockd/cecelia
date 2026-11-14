@@ -1908,7 +1908,11 @@ Pipeline:
    the viewer and every recording draw — the skeleton as **lines**, not a second mask texture, so it
    costs no GPU cache budget (`skeleton_segments`, `app/src/skeleton_lines.jl`;
    `/api/viewer/skeletons`; `docs/todo/DRAW_SPEC_PLAN.md` Phase 3). A segment crossing z planes is
-   split one piece per plane, so a plane view shows a branch on every plane it passes through. On real
+   split one piece per plane, so a plane view shows a branch on every plane it passes through. Each
+   line is coloured by its branch's skan `branch-type` (the branch-type pops' names — `palettes.json` →
+   `branchTypeColours` / `branchTypeNames`, Okabe–Ito, read by the viewer and the movie alike), as
+   the old R viewer coloured them; the viewer's "On the image" overlay switches each skeleton on or
+   off and shows the key. On real
    SHG data: Y7oL9h (3D, 7 t, 2,642 branches) 2.4 points per branch, ~18.7k segments after the plane
    split, ~0.8 MB of GPU line buffer; EaMaVq (Z-flattened, 201 t, 66,834 branches) 1.8 points per
    branch, ~170k segments, ~7.5 MB for the whole movie.

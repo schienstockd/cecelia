@@ -454,3 +454,11 @@ class ComposeLabelFilesTest(unittest.TestCase):
         m = wgpu_host.compose_label_files(base.copy(), nuc)
         wgpu_host.compose_label_files(m, halo, inside=False)
         np.testing.assert_array_equal(m, [5 | out, 5, 5 | inn, 0, 7 | inn])
+
+
+class RayStepsTests(unittest.TestCase):
+    def test_the_viewers_steps_unless_a_preset_overrides(self):
+        from cecelia.writers import render_animation_run
+        self.assertEqual(render_animation_run._ray_steps({'renderQuality': 'viewer', 'raySteps': 384}), 384)
+        self.assertEqual(render_animation_run._ray_steps({'renderQuality': 'high', 'raySteps': 384}), 512)
+        self.assertEqual(render_animation_run._ray_steps({}), 256)

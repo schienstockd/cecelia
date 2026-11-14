@@ -244,8 +244,6 @@ const bare = computed(() => popout || route.meta.bare === true)
     <!-- What's New / release-notes modal — one mount, opened from the header badge and Settings.
          State lives in lib/whatsNew.ts (isWhatsNewOpen); callers just call openWhatsNew(). -->
     <WhatsNewDialog v-if="isWhatsNewOpen" @close="closeWhatsNew" />
-    <!-- The one place AI is turned on (every "Turn on…" calls openAiOptIn()). -->
-    <AiOptInDialog v-if="isAiOptInOpen" />
     <!-- Guides: the picker (a modal) and the bubble (one mount, teleported, survives navigation).
          The bubble renders only while a guide is running — see stores/guide.ts. -->
     <GuidesDialog v-if="isGuidesOpen" />
@@ -262,6 +260,9 @@ const bare = computed(() => popout || route.meta.bare === true)
          — sidebar footer, header, KiwiCockpit's read-only profile row (Phase 6) — can open it
          via `openPreferences()`. -->
     <PreferencesModal v-if="isPreferencesOpen" @close="closePreferences" />
+    <!-- The one place AI is turned on (every "Turn on…" calls openAiOptIn()). Mounted AFTER Preferences:
+         Preferences → Kiwi → AI features opens it on top, and DOM order is stacking order. -->
+    <AiOptInDialog v-if="isAiOptInOpen" />
     <GuideBubble v-if="guide.active" />
     <!-- Claude's "click here" pointers — BIDIR PR #5. Always mounted (poll is off when the
          viewerStore.uiMarks bag is empty), so a mark that lands mid-session appears instantly. -->

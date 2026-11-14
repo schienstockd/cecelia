@@ -418,8 +418,9 @@ function handle_movie_record(ws, data)
     share_ctr   = _share_contrast(get(data, :compareContrast, ""))
     layout      = _wstr(data, :compareLayout, "row")
     # Baked overlays, burnt into every frame. Default true = what every movie was.
-    show_ts     = Bool(get(data, :showTimestamp, true))
-    show_sb     = Bool(get(data, :showScaleBar, true))
+    # …at the viewer's sizes when the request's look has them (`FrameTextShow`)
+    show_ts     = _frame_text(data, "showTimestamp", "timestampPx", get(data, :look, nothing))
+    show_sb     = _frame_text(data, "showScaleBar", "scaleBarPx", get(data, :look, nothing))
     # The viewer panel's "Match viewer" record: the request describes the live view (version, mask,
     # overlays, camera) rather than the recorder's own options. A 3D view arrives as keyframes (the
     # only renderer that draws a volume); a 2D one takes the plain path with the view's own contrast.
@@ -476,7 +477,7 @@ function handle_movie_record(ws, data)
         zRange = z_range === nothing ? nothing : [first(z_range), last(z_range)],
         compareLayout = layout,
         compareContrast = String(get(data, :compareContrast, "")),
-        showTimestamp = show_ts, showScaleBar = show_sb,
+        showTimestamp = _text_on(show_ts), showScaleBar = _text_on(show_sb),
         look = get(data, :look, nothing), keyframes = keyframes, viewState = view_state,
         rois = get(data, :rois, nothing))
     # Route decision: everything runs through the offline renderer — plain timelapse, compare grids,
@@ -487,9 +488,9 @@ function handle_movie_record(ws, data)
     is_compare = n_vns > 1 || n_lvns > 1 || n_bvns > 1
     if keyframes !== nothing
         first_vn  = isempty(value_names) ? "" : String(first(value_names))
-        # `renderQuality` picks the 3D ray-cast sample density: draft (0.5×) | standard (1×) | high
-        # (2×). Meaningless for 2D keyframes — one plane is one sample — but harmless to thread.
-        rq_sym = _render_quality(data)
+        # `renderQuality` picks the 3D ray-cast sample density: a preset, or the viewer's Steps (the
+        # look's `steps`). Meaningless for 2D keyframes — one plane is one sample — but harmless to thread.
+        rq_sym = _render_quality(data, get(data, :look, nothing))
         # Overlays for the animation — the frontend's per-set settings (colourBy, pointsSize,
         # tailWidth, showPopulations, showTracks, showGatedTracks, popType, popsFilter, etc.) ride
         # inside `look`, seeded once from the viewer state the title card already reads. Absent

@@ -238,6 +238,32 @@ class FrameOverlayStyleTests(unittest.TestCase):
         self.assertGreater(int(bar_row.mean()),   200)
         self.assertLess   (int(image_above.mean()), 100)
 
+    def test_the_viewers_text_sizes(self):
+        # A look's `timestampPx` / `scaleBar.fontPx` (the viewer's sizes) set the text height on any
+        # frame, and the bar is as thick as the viewer draws it (0.3 × its label).
+        import numpy as np
+
+        def ink_rows(out, rows):
+            band = out[rows] > 150
+            ys = np.where(band.any(axis=(1, 2)))[0]
+            return int(ys.max() - ys.min() + 1) if len(ys) else 0
+
+        H, W = 600, 900
+        base = np.zeros((H, W, 3), dtype=np.uint8)
+        small = tc.draw_frame_overlays(base.copy(), timestamp="0:07:30", timestamp_px=12)
+        big = tc.draw_frame_overlays(base.copy(), timestamp="0:07:30", timestamp_px=48)
+        top = slice(0, H // 3)
+        self.assertGreater(ink_rows(big, top), 3 * ink_rows(small, top))
+        out = tc.draw_frame_overlays(base.copy(), scale_bar={"lengthPx": 200, "label": "", "fontPx": 40})
+        # a fraction of the frame height: the same proportion on a frame twice as tall
+        tall = np.zeros((2 * H, W, 3), dtype=np.uint8)
+        a = ink_rows(tc.draw_frame_overlays(base.copy(), timestamp="0:07:30", timestamp_frac=0.05), top)
+        b = ink_rows(tc.draw_frame_overlays(tall, timestamp="0:07:30", timestamp_frac=0.05), slice(0, 2 * H // 3))
+        self.assertAlmostEqual(b / a, 2.0, delta=0.25)
+        # the bar spans bar_h + 1 rows (inclusive corners), its top and bottom rows the dark outline
+        white_rows = int((out[:, W - 100, 0] > 200).sum())
+        self.assertEqual(white_rows, int(40 * 0.3) - 1)
+
 
 class PrependTests(unittest.TestCase):
     def test_prepends_card_frames(self):

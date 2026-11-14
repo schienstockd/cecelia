@@ -142,13 +142,20 @@ const tStart = computed<number>({
 const tEnd = computed<number | null>({
   get: () => cfg.value.tEnd ?? null, set: v => patch({ tEnd: v }) })
 const tFrames = computed(() => Math.max(1, ...imgs.value.map(i => i.sizeT ?? 1)))
-// baked overlays, burnt into every frame (per set, like fps/size)
+// baked overlays, burnt into every frame: a config filled from the view carries the viewer's on / off
+// (`viewerLook`), and the switch then edits that; otherwise per set, like fps / size
 const movieTimestamp = computed<boolean>({
-  get: () => movie.value.showTimestamp,
-  set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { showTimestamp: v }) } })
+  get: () => cfg.value.showTimestamp ?? movie.value.showTimestamp,
+  set: v => {
+    if (cfg.value.showTimestamp !== undefined) patch({ showTimestamp: v })
+    else if (setUid.value) settings.setMovieConfig(setUid.value, { showTimestamp: v })
+  } })
 const movieScaleBar = computed<boolean>({
-  get: () => movie.value.showScaleBar,
-  set: v => { if (setUid.value) settings.setMovieConfig(setUid.value, { showScaleBar: v }) } })
+  get: () => cfg.value.showScaleBar ?? movie.value.showScaleBar,
+  set: v => {
+    if (cfg.value.showScaleBar !== undefined) patch({ showScaleBar: v })
+    else if (setUid.value) settings.setMovieConfig(setUid.value, { showScaleBar: v })
+  } })
 const compareLayout = computed<CompareLayout>({
   get: () => cfg.value.compareLayout ?? COMPARE_LAYOUT_DEFAULT, set: v => patch({ compareLayout: v }) })
 // Versions across, masks down — picking from BOTH lists fully determines the layout. One list leaves
@@ -341,8 +348,8 @@ const overlayPreview = computed(() => renderOverlayPreview({
   showTrackclust: cfg.value.showTrackclust,
   colourLabels: cfg.value.colourLabels,
   labelValueNames: cfg.value.labelValueNames,
-  showTimestamp: movie.value.showTimestamp,
-  showScaleBar: movie.value.showScaleBar,
+  showTimestamp: movieTimestamp.value,
+  showScaleBar: movieScaleBar.value,
   titleCard: cfg.value.titleCard,
   popsFilter: cfg.value.popsFilter,
   // what the request sends (`undefined` = the backend's grey, `[]` = none)

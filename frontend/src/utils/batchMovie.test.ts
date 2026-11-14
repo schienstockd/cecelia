@@ -214,8 +214,8 @@ describe('clampContour / labelContour', () => {
 describe('buildBatchMovieConfig 3D', () => {
   const build = (cfg: Record<string, unknown>) =>
     buildBatchMovieConfig(cfg, ['segA'], {})
-  it('sends standard quality by default', () => {
-    expect(build({ show3D: true }).renderQuality).toBe('standard')
+  it('sends the viewer’s Steps by default', () => {
+    expect(build({ show3D: true }).renderQuality).toBe('viewer')
   })
   it('carries an explicitly chosen quality', () => {
     expect(build({ show3D: true, renderQuality: 'high' }).renderQuality).toBe('high')

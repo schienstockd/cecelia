@@ -10,6 +10,7 @@ const spec: ViewerDrawSpec = {
   viewState: {
     layers: { DAPI: { visible: true, colormap: 'blue' }, GFP: { visible: false, colormap: 'green' } },
     dims: { ndisplay: 2, current_step: [3, 7], point: [3, 7] },
+    canvas: { width: 1200, height: 800 },
   },
   channelNames: ['DAPI', 'GFP'], nZ: 0, version: 'corrected',
   maskValueName: 'cpSAM', labelFilesHidden: [],

@@ -16,13 +16,24 @@
 // name on the <input>, where a screen reader looks, rather than on the wrapping <label>. It changes
 // nothing visually — a bare `aria-label` at the call site would land on the root <label> and be
 // ignored, which is why this is a prop and not fallthrough.
+//
+// The switch always shows the MODEL, not the click. A caller that refuses or defers a change keeps the
+// value as it was — AI features opens the opt-in dialog instead of turning on — and since the value
+// never changed, Vue never re-renders, so the native checkbox would keep the click's state and show
+// "on" while AI is still off. After each change the input is set back to the model on the next tick.
+import { nextTick } from 'vue'
 const model = defineModel<boolean>({ required: true })
+function onChange(e: Event) {
+  const el = e.target as HTMLInputElement
+  model.value = el.checked
+  void nextTick(() => { el.checked = model.value })
+}
 defineProps<{ label?: string; ariaLabel?: string; disabled?: boolean }>()
 </script>
 
 <template>
   <label class="cc-toggle" :class="{ disabled }">
-    <input type="checkbox" class="cc-toggle-input" v-model="model" :disabled="disabled"
+    <input type="checkbox" class="cc-toggle-input" :checked="model" :disabled="disabled" @change="onChange"
            :aria-label="ariaLabel" />
     <span class="cc-toggle-track"><span class="cc-toggle-thumb" /></span>
     <span v-if="$slots.default || label" class="cc-toggle-label"><slot>{{ label }}</slot></span>

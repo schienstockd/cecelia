@@ -21,7 +21,7 @@
 import { roiPadFrames } from './roiMovie'
 import { TITLE_CARD_DEFAULT, type BatchMovieCfg, type TitleCardCfg } from './batchMovie'
 import { COMPARE_LAYOUTS, type CompareLayout } from './movieCompare'
-import { SKELETON_COLOUR } from './viewerOverlays'
+import { SKELETON_BY_TYPE } from './viewerOverlays'
 
 /** A registry entry as `GET /api/movies/meta` returns it (api/src/movies_api.jl). */
 export interface MovieRegistryEntry {
@@ -173,7 +173,7 @@ export function lookRestore(config: Record<string, unknown> | null | undefined):
 
   const branches = strList(config.branchValueNames) ?? []
   if (branches.length && !cfg.skeletons)
-    cfg.skeletons = Object.fromEntries(branches.map(vn => [vn, SKELETON_COLOUR]))
+    cfg.skeletons = Object.fromEntries(branches.map(vn => [vn, SKELETON_BY_TYPE]))
 
   const uid = typeof config.imageUid === 'string' ? config.imageUid : ''
   return { cfg, output, imageUids: uid ? [uid] : [], dropped }
