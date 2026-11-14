@@ -1,6 +1,7 @@
 // Driving a running Cecelia from a Node script: sign in with the instance token, reach the app's
 // stores and router, close launch pop-ups, wait for a page's own loading state, land a page on an
-// image. Used by scripts/gui_capture.mjs (census) and scripts/booklets/capture.mjs (booklet shots).
+// image, switch profile. Used by scripts/gui_capture.mjs (census) and scripts/booklets/ (booklet
+// fixtures and shots).
 //
 // Run against an ISOLATED instance only (own CECELIA_DEV_DIR + CECELIA_PORT_SLOT): opening a project
 // writes (lastOpenedAt), and shots may click through the app. `refuseSlotZero` guards 8080 / 5173.
@@ -75,4 +76,34 @@ export async function land(page, route, scope, images = []) {
     return g.$router.push(a.route)
   }, { route, scope, images })
   await settle(page)
+}
+
+/** Make `name` the server-active profile, then reload so the app reads it (AI state, login, projects). */
+export async function selectProfile(page, name) {
+  const ok = await page.evaluate(n => fetch('/api/kiwi/profiles/select', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n }) }).then(r => r.ok), name)
+  if (!ok) throw new Error(`could not select profile "${name}"`)
+  await page.reload()
+  await quietNavigation(page)
+  // With two profiles the app opens on "Who's driving?". The server already has `name` active, so
+  // finish the pick the way the picker's own row does (AppProfilePicker → pick).
+  if (page.url().includes('/profile-picker'))
+    // finishing the pick sets off that adopting reload under this very call: expected, not an error
+    await vue(page, g => { g.$pinia._s.get('appControl').completeProfilePick(); return g.$router.replace('/') })
+      .catch(e => { if (!/context was destroyed/.test(String(e))) throw e })
+  await quietNavigation(page)
+  await settle(page)
+}
+
+/** Wait until the page stops reloading itself: on a profile switch the settings store adopts that
+ *  profile's settings with one more reload (stores/settings.ts → adoptLiveProfileBag). */
+async function quietNavigation(page, quietMs = 1500, capMs = 20000) {
+  let last = Date.now()
+  const onNav = f => { if (f === page.mainFrame()) last = Date.now() }
+  page.on('framenavigated', onNav)
+  const t0 = Date.now()
+  try {
+    while (Date.now() - last < quietMs && Date.now() - t0 < capMs) await page.waitForTimeout(250)
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
+  } finally { page.off('framenavigated', onNav) }
 }

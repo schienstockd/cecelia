@@ -7,7 +7,7 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 | Viewer | Your image in 2D/3D with cells, tracks and populations. Opens in its own window; its controls panel stays in the main one |
 | Correction cockpit | Fix masks and tracks by hand: merge, split, remove. *In progress* |
 | Lab log | A dated diary per project, written by you, Claude and Cecelia's activity summary |
-| Kiwi | Ask about your project and get answers you can check; connect your own Claude session |
+| Kiwi | Opened with **Ask Kiwi** at the top right. Ask about your project and get answers you can check; connect your own Claude session |
 | Console | Docked at the bottom: the app's messages. Look here when something fails |
 
 ## Working with Claude (optional)
@@ -30,8 +30,8 @@ supports the claim is yours to judge. When it can't tell, it says so. It
 can't change anything in your project, and it needs no terminal: log in once and ask. It points at
 the evidence; you decide.
 
-1. **Point at it.** Press **@ Add to Kiwi** on what puzzles you: an image row, a population, a plot,
-   the viewer or a Blackboard entry. If it is a spot *in* the picture, **Share** a frame and draw on
+1. **Point at it.** Press **@** on what puzzles you: a population, a plot, the viewer or a Blackboard
+   entry; for an image, **Add to Kiwi** in its row's **⋯** menu. If it is a spot *in* the picture, **Share** a frame and draw on
    it; that's a *capture*.
 2. **Ask Kiwi.** It points and counts, it doesn't judge. Every claim in its reply has a reference;
    click it to see what the claim rests on.

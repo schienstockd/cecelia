@@ -7,6 +7,8 @@
 // IMPORTED from the app's own source (e.g. lib/claudeOverview.ts), never retyped.
 
 /** A: before imaging (training session 2) · B: one recipe end to end · C: using AI. */
+import type { Side } from '../../frontend/src/utils/anchorPosition.ts'
+
 export type Series = 'A' | 'B' | 'C'
 
 /** Inline text. `**bold**` marks an app label the reader will look for; `` `code` `` a command. */
@@ -52,27 +54,58 @@ export type Action =
   | { press: string }
   /** Wait for an anchor to appear (a dialog opening), not a timer. */
   | { waitFor: Anchor }
+  /** Size a floating panel (its `storage-key`) before it opens: a reply taller than the default panel
+   *  would be cut off. Written where FloatingPanel keeps its geometry. */
+  | { panel: string; w: number; h: number; y?: number }
+  /** Scroll the anchor's own scroll container until the anchor's bottom is in view. */
+  | { scroll: Anchor }
 
 /** One screenshot, taken by scripts/booklets/capture.mjs from an ISOLATED instance and composed into the
  *  PDF by the build (crop + pointer drawn on top, so the look can change without recapturing). */
 export interface Shot {
   id: string
-  /** Project uid in the capture instance; none = no project open. */
+  /** The Cecelia profile it runs as (a `fixture.profiles` name); none = `default`. */
+  profile?: string
+  /** A `fixture.projects` key; none = no project open. */
   project?: string
-  /** Image to focus, in the page's selection scope (its ModuleLayout `module`). */
+  /** Image to focus, by its SOURCE uid in the fixture (the copy's uid is looked up), in the page's
+   *  selection scope (its ModuleLayout `module`). */
   image?: string
   scope?: string
   route?: string
   /** What the user does first. A step shows the state BEFORE its action unless the result is the point. */
   actions?: Action[]
   /** The control the reader acts on, drawn as the pointer with this label. */
-  point?: { anchor: Anchor; label: string }
+  /** No `label` = the ring alone, for a narrow panel where any label would cover its text. */
+  point?: { anchor: Anchor; label?: string; side?: Side }
   /** The figure is the union of these boxes (and the pointer's target). */
   crop: Anchor[]
   /** Text blanked before capture: names, ids, times. */
   masks?: Anchor[]
   /** The app's labels the caption cites: the capture fails when an anchor's text lacks one. */
   expect?: { anchor: Anchor; text: string }[]
+}
+
+/** Where booklet-fixture records fixture key → the copy's uids, in the instance's config dir. */
+export const FIXTURE_RECORD = 'booklet-fixtures.json'
+
+/** What `pixi run booklet-fixture` sets up on the capture instance before any shot: lab images copied
+ *  as fresh projects (raw only: no segmentation, gates or tracks; the source is never written) and
+ *  profiles. Shots name these by key, never by the copy's random uid. */
+export interface Fixture {
+  projects?: Record<string, {
+    /** Source project uid in the lab's projects dir. */
+    source: string
+    /** Source image uid → the name the copy shows (no sample ids in the pixels). */
+    images: Record<string, string>
+    name: string
+    /** One Kiwi question about one of these images, asked once on the `default` profile (which uses
+     *  the terminal's Claude login) and saved to the Blackboard; asked again only when the copy has
+     *  no reply. AI output varies between runs, so shots show this saved reply, never a live turn. */
+    kiwi?: { image: string; question: string }
+  }>
+  /** Profiles created on the instance, each owning every fixture project. `ai` turns AI on for it. */
+  profiles?: { name: string; ai: boolean }[]
 }
 
 /** "Before you image" row: a setting at the microscope, what it limits later, where Cecelia shows it. */
@@ -102,6 +135,7 @@ export interface Booklet {
   next?: string
   /** Screenshots its steps name by id. */
   shots?: Shot[]
+  fixture?: Fixture
 }
 
 export interface BuildIssue { booklet: string; problem: string }
@@ -134,6 +168,13 @@ export function checkBooklets(booklets: Booklet[]): BuildIssue[] {
       if (shotIds.has(x.id)) issues.push({ booklet: b.id, problem: `shot id "${x.id}" is used twice` })
       shotIds.add(x.id)
       if (x.crop.length === 0) issues.push({ booklet: b.id, problem: `shot "${x.id}" has nothing to crop to` })
+      const fx = b.fixture ?? {}
+      if (x.profile && x.profile !== 'default' && !fx.profiles?.some(p => p.name === x.profile))
+        issues.push({ booklet: b.id, problem: `shot "${x.id}" runs as profile "${x.profile}", which the fixture does not create` })
+      if (x.project && !fx.projects?.[x.project])
+        issues.push({ booklet: b.id, problem: `shot "${x.id}" opens project "${x.project}", which the fixture does not copy` })
+      if (x.image && !(x.project && fx.projects?.[x.project]?.images[x.image]))
+        issues.push({ booklet: b.id, problem: `shot "${x.id}" focuses image "${x.image}", which its fixture project does not copy` })
       for (const a of shotAnchors(x)) {
         if (!/^(css:.+|nav:\/.*|[a-zA-Z][\w-]*\.[\w.-]+)(@@\d+)?$/.test(a))
           issues.push({ booklet: b.id, problem: `shot "${x.id}": "${a}" is not an anchor (data-guide id, nav:/route or css:…)` })
@@ -165,7 +206,7 @@ export function shotAnchors(x: Shot): Anchor[] {
   const out: Anchor[] = [...x.crop, ...(x.masks ?? []), ...(x.expect ?? []).map(e => e.anchor)]
   if (x.point) out.push(x.point.anchor)
   for (const a of x.actions ?? []) {
-    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : null
+    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : null
     if (t && !t.startsWith('text:')) out.push(t)
   }
   return out

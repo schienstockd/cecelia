@@ -86,10 +86,13 @@ def copy_knowledge(src_root: pathlib.Path, root: pathlib.Path) -> list[dict]:
 
 
 def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str], name: str,
-          knowledge: bool = False) -> dict:
+          knowledge: bool = False, into: pathlib.Path | None = None) -> dict:
     """Copy `image_uids` (in order) into one set of a new project. `images` maps each copy to its
     source image, which is how a run's record names images after the copy is deleted. `knowledge`
-    lists the lab-knowledge entries carried over (always present; empty without `knowledge`)."""
+    lists the lab-knowledge entries carried over (always present; empty without `knowledge`). `into`
+    is the projects dir the copy lands in (default: the source's) — an isolated instance's, for the
+    booklet screenshots (scripts/booklets/capture.mjs)."""
+    into = into or projects_dir
     src_root = projects_dir / source_project
     srcs = []
     for image_uid in image_uids:
@@ -99,12 +102,12 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
         if not filename:
             raise SystemExit(f"{source_project}/{image_uid} has no `default` image version")
         srcs.append((image_uid, src, filename))
-    taken = {p.name for p in projects_dir.iterdir()}
+    taken = {p.name for p in into.iterdir()}
     proj_uid = new_uid(taken)
     taken.add(proj_uid)
     set_uid = new_uid(taken)
     taken.add(set_uid)
-    root = projects_dir / proj_uid
+    root = into / proj_uid
     images = []
     for image_uid, src, filename in srcs:
         img_uid = new_uid(taken)
@@ -143,9 +146,11 @@ def main(argv=None) -> int:
     ap.add_argument("--image", required=True, action="append", help="repeat for each run image")
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--into", help="projects dir the copy lands in (default: --projects-dir)")
     ap.add_argument("--knowledge", action="store_true", help="carry the source's lab-knowledge entries")
     a = ap.parse_args(argv)
-    info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name, a.knowledge)
+    info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name, a.knowledge,
+                 pathlib.Path(a.into).expanduser() if a.into else None)
     write_json_atomic(a.out, info, indent=2)
     print(json.dumps(info))
     return 0

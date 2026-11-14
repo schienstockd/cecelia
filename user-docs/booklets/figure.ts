@@ -4,7 +4,7 @@
 // One print scale for every crop (0.19 mm per CSS px), so the app's text prints the same size on every
 // page (screenshots plan → *Booklet direction*); only a crop wider than the step column is scaled down.
 
-import { placeBox } from '../../frontend/src/utils/anchorPosition.ts'
+import { placeBox, type Side } from '../../frontend/src/utils/anchorPosition.ts'
 
 export interface Box { x: number; y: number; width: number; height: number }
 
@@ -13,7 +13,7 @@ export interface ShotMeta {
   id: string
   viewport: { width: number; height: number }
   boxes: Record<string, Box>
-  point: { anchor: string; label: string } | null
+  point: { anchor: string; label?: string; side?: Side } | null
   crop: string[]
 }
 
@@ -39,14 +39,15 @@ export interface Figure {
   arrow: { x1: number; y1: number; x2: number; y2: number } | null
 }
 
-/** The label's box: right of the target, else left, below or above — the first that fits in the
- *  viewport. Placed by the app's own positioner (the one guide bubbles use), so a pointer here and a
- *  guide bubble in the app sit the same way. */
-export function labelBox(t: Box, label: string, vp: { width: number; height: number }): Box {
+/** The label's box: on `side` of the target (default right), else the next of right, left, below,
+ *  above that fits in the viewport. Placed by the app's own positioner (the one guide bubbles use), so
+ *  a pointer here and a guide bubble in the app sit the same way. A shot picks `side` to keep the
+ *  label inside the panel it shows. */
+export function labelBox(t: Box, label: string, vp: { width: number; height: number }, side: Side = 'right'): Box {
   const box = { width: Math.min(320, 7.4 * label.length + 22), height: 28 }
   const p = placeBox({
     anchor: { top: t.y, left: t.x, width: t.width, height: t.height }, box, viewport: vp,
-    placement: 'right', gap: GAP, fallbacks: ['left', 'bottom', 'top'],
+    placement: side, gap: GAP, fallbacks: (['right', 'left', 'bottom', 'top'] as Side[]).filter(s => s !== side),
   })
   return { x: p.left, y: p.top, ...box }
 }
@@ -54,7 +55,7 @@ export function labelBox(t: Box, label: string, vp: { width: number; height: num
 export function figureGeometry(m: ShotMeta): Figure {
   const boxes = m.crop.map(a => m.boxes[a]).filter((b): b is Box => !!b)
   const t = m.point ? m.boxes[m.point.anchor] ?? null : null
-  const l = t && m.point ? labelBox(t, m.point.label, m.viewport) : null
+  const l = t && m.point?.label ? labelBox(t, m.point.label, m.viewport, m.point.side) : null
   const all = [...boxes, ...(t ? [t] : []), ...(l ? [l] : [])]
   if (all.length === 0) throw new Error(`shot ${m.id}: no recorded box to crop to`)
   const left = Math.max(0, Math.min(...all.map(b => b.x)) - PAD)

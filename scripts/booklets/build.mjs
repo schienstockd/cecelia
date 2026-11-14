@@ -81,6 +81,7 @@ function block(b) {
 // screenshot in the in-app guide bubble's look: a dark ring with a light halo, a dark label.
 const missingShots = []
 const tooWide = []
+const staleShots = []
 
 function figure(id, shotsDir) {
   const meta = join(shotsDir, `${id}.json`), png = join(shotsDir, `${id}.png`)
@@ -89,6 +90,11 @@ function figure(id, shotsDir) {
     return `<figure class="shot missing">Screenshot <code>${esc(id)}</code> not captured yet</figure>`
   }
   const m = JSON.parse(readFileSync(meta, 'utf-8'))
+  // The pointer's label and side come from the spec, so rewording one never needs a recapture; only
+  // the boxes are the capture's. A different target or crop does need one.
+  const spec = BOOKLETS.flatMap(b => b.shots ?? []).find(x => x.id === id)
+  if (spec?.point && spec.point.anchor === m.point?.anchor) m.point = spec.point
+  else if (spec && (spec.point?.anchor !== m.point?.anchor || spec.crop.join() !== m.crop.join())) staleShots.push(id)
   const { x0, y0, w, h, k, legible, target: t, label: l, arrow: ar } = figureGeometry(m)
   if (!legible) tooWide.push(`${id} (${Math.round(w)} px wide → text at ${Math.round(100 * k / 0.19)}%)`)
   const img = `data:image/png;base64,${readFileSync(png).toString('base64')}`
@@ -97,11 +103,11 @@ function figure(id, shotsDir) {
         <path d="M0,0 L10,5 L0,10 z" fill="#1a1918"/></marker></defs>
       <rect x="${t.x - 5}" y="${t.y - 5}" width="${t.width + 10}" height="${t.height + 10}" rx="7" fill="none" stroke="#fff" stroke-width="7" opacity=".9"/>
       <rect x="${t.x - 5}" y="${t.y - 5}" width="${t.width + 10}" height="${t.height + 10}" rx="7" fill="none" stroke="#1a1918" stroke-width="3"/>
-      <line x1="${ar.x1}" y1="${ar.y1}" x2="${ar.x2}" y2="${ar.y2}" stroke="#fff" stroke-width="6" opacity=".9"/>
+      ${!l ? '' : `<line x1="${ar.x1}" y1="${ar.y1}" x2="${ar.x2}" y2="${ar.y2}" stroke="#fff" stroke-width="6" opacity=".9"/>
       <line x1="${ar.x1}" y1="${ar.y1}" x2="${ar.x2}" y2="${ar.y2}" stroke="#1a1918" stroke-width="2.5" marker-end="url(#ah-${esc(id)})"/>
       <rect x="${l.x}" y="${l.y}" width="${l.width}" height="${l.height}" rx="6" fill="#1a1918" stroke="rgba(255,255,255,.6)"/>
       <text x="${l.x + l.width / 2}" y="${l.y + l.height / 2 + 4.5}" text-anchor="middle" font-size="13" font-weight="600" fill="#ece8e3"
-        font-family="system-ui, sans-serif">${esc(m.point.label)}</text></svg>`
+        font-family="system-ui, sans-serif">${esc(m.point.label)}</text>`}</svg>`
   return `<figure class="shot" style="width:${(w * k).toFixed(2)}mm;height:${(h * k).toFixed(2)}mm">
     <img src="${img}" alt="" style="left:${(-x0 * k).toFixed(2)}mm;top:${(-y0 * k).toFixed(2)}mm;width:${(m.viewport.width * k).toFixed(2)}mm">
     ${svg}</figure>`
@@ -183,6 +189,10 @@ try {
 }
 if (tooWide.length) {
   console.warn(`${a.strict ? '✗' : '!'} crop too wide to read in print, crop tighter: ${tooWide.join(', ')}`)
+  if (a.strict) process.exitCode = 1
+}
+if (staleShots.length) {
+  console.warn(`${a.strict ? '✗' : '!'} spec changed the pointer target or crop since capture, recapture: ${staleShots.join(', ')}`)
   if (a.strict) process.exitCode = 1
 }
 if (missingShots.length) {

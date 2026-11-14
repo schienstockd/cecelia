@@ -347,7 +347,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               v-tooltip.bottom="accountTip">
           {{ accountLabel }}
         </span>
-        <button v-if="appCtl.claudeLogin?.state === 'loggedOut'" class="cc-btn cc-btn-ghost cc-fs-2xs"
+        <button v-if="appCtl.claudeLogin?.state === 'loggedOut'" class="cc-btn cc-btn-ghost cc-fs-2xs" data-guide="kiwi.login"
                 @click="showLogin = true" v-tooltip.bottom="'Opens a private browser window to sign in'">
           <i class="pi pi-sign-in" /> Log in
         </button>

@@ -176,7 +176,7 @@ function pick(c: RefCandidate) {
 <template>
   <div class="kiwi-ask" data-guide="kiwi.ask">
     <!-- drag-resizable columns, widths kept per table (the resize handles live in the header) -->
-    <SelectionTable v-if="attachments.length" selection-mode="none" density="compact"
+    <SelectionTable v-if="attachments.length" selection-mode="none" density="compact" data-guide="kiwi.attached"
                     column-width-key="cc.kiwi.attach.colw"
                     :columns="ATTACH_COLUMNS" :rows="attachments" id-key="id" actions-width="1.6rem"
                     :row-tooltip="r => r.tip" @row-click="openRow">
@@ -251,7 +251,7 @@ function pick(c: RefCandidate) {
       <span class="cc-readout cc-fs-2xs">{{ runElapsed }}</span>
     </div>
 
-    <div v-for="t in feed" :key="t.turnId" class="kiwi-turn">
+    <div v-for="t in feed" :key="t.turnId" class="kiwi-turn" data-guide="kiwi.turn">
       <div v-if="t.followUp" class="cc-muted cc-fs-2xs">
         <i class="pi pi-reply" /> {{ promptOf(t.followUp) || 'an earlier reply' }}
       </div>
@@ -285,7 +285,7 @@ function pick(c: RefCandidate) {
             </span>
           </template>
           <template #cell-refs="{ row: r }">
-            <div class="kiwi-refs">
+            <div class="kiwi-refs" data-guide="kiwi.claimRefs">
               <KiwiRefChip v-for="(x, j) in r.refs" :key="j" :kiwi-ref="x.ref" :result="x.result" :seen="x.seen" />
             </div>
           </template>
@@ -301,7 +301,7 @@ function pick(c: RefCandidate) {
       </template>
       <!-- every turn's row carries the anchor; the guide lands on the first (newest) -->
       <div class="cc-row cc-row-tight" data-guide="kiwi.turnActions">
-        <span class="cc-muted cc-fs-3xs kiwi-grow">{{ turnMeta(t) }}</span>
+        <span class="cc-muted cc-fs-3xs kiwi-grow" data-guide="kiwi.turnMeta">{{ turnMeta(t) }}</span>
         <button v-if="t.reply" class="cc-btn cc-btn-ghost cc-fs-2xs" :disabled="saveBusy[t.turnId]"
                 @click="saveTurn(t)"
                 v-tooltip.bottom="'Save this whole turn to the Blackboard'">

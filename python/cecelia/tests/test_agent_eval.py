@@ -328,6 +328,15 @@ class TestAppProject(unittest.TestCase):
                 self.assertTrue((root / "0" / im["imageUid"] / "raw.ome.zarr").is_dir())
             self.assertEqual(info["knowledge"], [])
             self.assertFalse((root / "blackboard").exists())
+            # `into`: the copy lands in another projects dir (an isolated instance's); the source dir
+            # gains nothing
+            other = pathlib.Path(d) / "other"
+            other.mkdir()
+            before = sorted(p.name for p in projects.iterdir())
+            moved = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other)
+            self.assertEqual(pathlib.Path(moved["projectDir"]).parent, other)
+            self.assertTrue((other / moved["projectUid"] / "0" / moved["images"][0]["imageUid"] / "raw.ome.zarr").is_dir())
+            self.assertEqual(sorted(p.name for p in projects.iterdir()), before)
         legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
         self.assertEqual(app_project.copy_images(legacy),
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])

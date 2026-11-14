@@ -63,6 +63,23 @@ describe('user booklets', () => {
       .toEqual(['task.run', 'x.y', 'prefs.kiwi'])
     expect(guideIds(['a.b@@2', 'css:.cc-modal', 'nav:/segment', 'a.b'])).toEqual(['a.b'])
   })
+
+  // A shot names fixture keys, never a copy's random uid: one the fixture doesn't set up would open
+  // nothing (or someone's real project) at capture time.
+  it('refuses a profile, project or image the fixture does not set up', () => {
+    const fixture = { projects: { p: { source: 'SRC', images: { img1: 'A' }, name: 'n' } }, profiles: [{ name: 'sam', ai: true }] }
+    const ok = { id: 's', crop: ['x.y'], profile: 'sam', project: 'p', image: 'img1' }
+    expect(checkBooklets([minimal({ id: 'a', fixture, shots: [ok, { ...ok, id: 's0', profile: 'default' }] })])).toEqual([])
+    const problems = checkBooklets([minimal({ id: 'a', fixture, shots: [
+      { ...ok, profile: 'alex' }, { ...ok, id: 's2', project: 'q' }, { ...ok, id: 's3', image: 'img9' },
+    ] })]).map(i => i.problem)
+    expect(problems).toEqual([
+      'shot "s" runs as profile "alex", which the fixture does not create',
+      'shot "s2" opens project "q", which the fixture does not copy',
+      'shot "s2" focuses image "img1", which its fixture project does not copy',
+      'shot "s3" focuses image "img9", which its fixture project does not copy',
+    ])
+  })
 })
 
 describe('booklet figures', () => {
@@ -87,6 +104,21 @@ describe('booklet figures', () => {
     const l = labelBox(edge, 'A long label for the edge', vp)
     expect(l.x + l.width).toBeLessThanOrEqual(vp.width)
     expect(l.x + l.width <= edge.x || l.y >= edge.y + edge.height).toBe(true)
+  })
+
+  it('draws the ring alone when the pointer has no label', () => {
+    const f = figureGeometry(meta({ point: { anchor: 'btn' } }))
+    expect(f.target).not.toBeNull()
+    expect([f.label, f.arrow]).toEqual([null, null])
+    expect(f.x0 + f.w).toBe(508)                                   // the panel's edge + pad: nothing grew it
+  })
+
+  // A shot of a narrow panel puts the label below or above, so the crop stays inside the panel.
+  it('puts the label on the side the shot asks for', () => {
+    const t = { x: 400, y: 300, width: 60, height: 24 }
+    const below = labelBox(t, 'Here', vp, 'bottom'), above = labelBox(t, 'Here', vp, 'top')
+    expect(below.y).toBeGreaterThanOrEqual(t.y + t.height)
+    expect(above.y + above.height).toBeLessThanOrEqual(t.y)
   })
 
   it('flags a crop so wide its text prints too small', () => {

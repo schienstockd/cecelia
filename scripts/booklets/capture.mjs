@@ -26,16 +26,18 @@
 //     projects = "<that dir>/projects"
 // then `CECELIA_DEV_DIR=<that dir> CECELIA_PORT_SLOT=5 pixi run dev` (frontend :5223). Without the
 // [dirs] entry the first-run screen proposes ~/cecelia-projects — outside the isolated dir.
+// Then `pixi run booklet-fixture` (fixture.mjs) copies the booklets' lab images and creates their
+// profiles; a shot names those by key, and runs as its `profile` (default: `default`).
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { chromium, commit, findChromium, repo } from '../lib/chromium.mjs'
-import { closeDialogs, land, openProject, refuseSlotZero, settle, signIn, vue } from '../lib/app_page.mjs'
+import { closeDialogs, land, openProject, refuseSlotZero, selectProfile, settle, signIn, vue } from '../lib/app_page.mjs'
 
 const dir = join(repo, 'user-docs', 'booklets')
 const { BOOKLETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkBooklets } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkBooklets, FIXTURE_RECORD } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { anchorSelector } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'guideAnchor.ts')).href)
 
 const VIEWPORT = { width: 1440, height: 900 }
@@ -73,10 +75,15 @@ async function runAction(page, act) {
   else if ('hover' in act) await loc(page, act.hover).hover({ timeout: 10000 })
   else if ('press' in act) await page.keyboard.press(act.press)
   else if ('waitFor' in act) await loc(page, act.waitFor).waitFor({ state: 'visible', timeout: 15000 })
+  else if ('scroll' in act) await loc(page, act.scroll).evaluate(el => el.scrollIntoView({ block: 'end' }))
+  else if ('panel' in act) await page.evaluate(a => {
+    // FloatingPanel's own key and shape (components/FloatingPanel.vue → load)
+    localStorage.setItem(`cc.floating.${a.panel}`, JSON.stringify({ x: 260, y: a.y ?? 70, w: a.w, h: a.h, collapsed: false, maximised: false }))
+  }, act)
   await settle(page, 30000)
 }
 
-async function capture(browser, a, shot, out) {
+async function capture(browser, a, shot, fixture, out) {
   const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: SCALE })
   const page = await ctx.newPage()
   const errors = []
@@ -84,10 +91,14 @@ async function capture(browser, a, shot, out) {
   const problems = []
   try {
     await signIn(page, a.base, a.configDir)
+    await selectProfile(page, shot.profile ?? 'default')
     await closeDialogs(page)
-    await vue(page, g => { const s = g.$pinia._s.get('settings'); s.colourScheme = 'light'; s.plotsMaximised = false })
-    if (shot.project) await openProject(page, shot.project)
-    if (shot.route) await land(page, shot.route, shot.scope ?? '', shot.image ? [shot.image] : [])
+    await vue(page, g => { const s = g.$pinia._s.get('settings'); s.colourScheme = 'light'; s.plotsMaximised = false; s.kiwiOpen = false })
+    const proj = shot.project ? fixture?.projects[shot.project] : null
+    if (shot.project && !proj) throw new Error(`fixture project "${shot.project}" is not set up: run pixi run booklet-fixture`)
+    if (proj) await openProject(page, proj.uid)
+    const image = shot.image ? proj.images[shot.image] : null
+    if (shot.route) await land(page, shot.route, shot.scope ?? '', image ? [image] : [])
     else await settle(page)
     await closeDialogs(page)
     for (const act of shot.actions ?? []) await runAction(page, act)
@@ -124,6 +135,8 @@ async function capture(browser, a, shot, out) {
   } catch (e) {
     problems.push(String(e.message ?? e).split('\n')[0].slice(0, 240))
   } finally {
+    // what the shot saw when it failed, to diagnose without rerunning headed
+    if (problems.length) await page.screenshot({ path: join(out, `${shot.id}.fail.png`) }).catch(() => {})
     await ctx.close()
   }
   return problems
@@ -134,15 +147,17 @@ async function main() {
   refuseSlotZero(a.base, a.allowDefaultPorts)
   const issues = checkBooklets(BOOKLETS)
   if (issues.length) { for (const i of issues) console.error(`✗ ${i.booklet}: ${i.problem}`); process.exit(1) }
-  const shots = BOOKLETS.flatMap(b => (b.shots ?? []).filter(s => !a.only || a.only === s.id || a.only === b.id))
+  const shots = BOOKLETS.flatMap(b => (b.shots ?? []).filter(s => !a.only || a.only === s.id || a.only === b.id).map(s => [b, s]))
+  const recordPath = join(a.configDir, FIXTURE_RECORD)
+  const record = existsSync(recordPath) ? JSON.parse(readFileSync(recordPath, 'utf8')) : {}
   if (shots.length === 0) throw new Error(a.only ? `no shot or booklet "${a.only}"` : 'no booklet defines a shot')
   const out = resolve(a.out)
   mkdirSync(out, { recursive: true })
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true })
   let failed = 0
   try {
-    for (const s of shots) {
-      const problems = await capture(browser, a, s, out)
+    for (const [b, s] of shots) {
+      const problems = await capture(browser, a, s, record[b.id], out)
       if (problems.length) { failed++; console.log(`✗ ${s.id}\n${problems.map(p => `    ${p}`).join('\n')}`) }
       else console.log(`✓ ${s.id}`)
     }

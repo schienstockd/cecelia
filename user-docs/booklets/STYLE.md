@@ -73,7 +73,11 @@ real abilities: the app's own cards (`frontend/src/lib/claudeOverview.ts`) are t
 A step names a shot by id; the booklet's `shots` list says how to reach it (project, image, route,
 user actions), what to point at, what to crop to and which labels it must show. Capture with
 `pixi run booklet-shots -- --base <url> --config-dir <dir>` against an **isolated** instance (own
-`CECELIA_DEV_DIR` and `CECELIA_PORT_SLOT`; it refuses 8080/5173), then `pixi run booklets`. The crop and the
+`CECELIA_DEV_DIR` and `CECELIA_PORT_SLOT`; it refuses 8080/5173), then `pixi run booklets`. Before
+that, `pixi run booklet-fixture` sets up what the booklet's `fixture` names: lab images copied raw
+into the instance (never public data, never the source written) and profiles with AI on or off. A
+shot names those by key and runs as its `profile`. The pointer's wording and side live in the spec
+and apply at build time; a pointer with no label is the ring alone, for a narrow panel. The crop and the
 pointer are drawn by the build from the recorded boxes, so restyling never means recapturing.
 
 Anchors are the guides' `data-guide` ids, so a shot and an in-app guide name the same control. A control
