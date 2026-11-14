@@ -18,7 +18,8 @@
    ],
    "name": "dTomato",
    "offset": -0.0266666666666708,
-   "order": 1
+   "order": 1,
+   "sequence": 1
   },
   {
    "bitDepth": 8,
@@ -36,7 +37,8 @@
    ],
    "name": "EGFP",
    "offset": -4.0,
-   "order": 2
+   "order": 2,
+   "sequence": 2
   },
   {
    "bitDepth": 8,
@@ -54,7 +56,8 @@
    ],
    "name": "ALEXA 647",
    "offset": -2.03333333333333,
-   "order": 3
+   "order": 3,
+   "sequence": 3
   },
   {
    "bitDepth": 8,
@@ -76,7 +79,8 @@
    ],
    "name": "DAPI",
    "offset": 0.0533333333333275,
-   "order": 4
+   "order": 4,
+   "sequence": 4
   }
  ],
  "dichroics": [
@@ -122,7 +126,7 @@
  },
  "pinholeAiry": 1.0,
  "pinholeUm": 65.27,
- "readerVersion": 2,
+ "readerVersion": 3,
  "scanner": {
   "integration": {
    "average": null,
