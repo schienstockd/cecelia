@@ -244,6 +244,7 @@ end
         @test Set([(2f0, 10f0), (20f0, 10f0)]) in segs0
         @test isempty(skeleton_segments_at(s, 1))
         @test all(==(0), s.plane)                             # 2D on one plane
+        @test all(==(1), s.type)                              # a T: every branch runs end → junction
         @test all(==(-1), skeleton_segments(h5; is_stack = true).plane)
         # a segment crossing planes is split, one piece per plane it passes through
         pcs = Cecelia._plane_pieces((0f0, 0f0, 3f0), (6f0, 0f0, 6f0))

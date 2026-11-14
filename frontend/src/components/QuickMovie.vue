@@ -257,15 +257,14 @@ const compareContrast = computed<CompareContrast>({
 
 // The movie OPTIONS (fps / size / name / title card) live in a popover off the gear — see
 // MovieOptionsButton, which owns that chrome for both this panel and the Animation page.
-// Baked overlays. They are drawn into the canvas, so a recording burns them in — hiding them
-// is a record-time decision, and the batch RE-OPENS each image (which turns the scale bar back on),
-// so toggling them in the viewer window is not an alternative.
+// The viewer's own timestamp / scale bar: a recording draws what the viewer shows, so these switches
+// are the viewer's (docs/todo/DRAW_SPEC_PLAN.md Phase 3)
 const movieTimestamp = computed<boolean>({
-  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).showTimestamp : true,
-  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { showTimestamp: v }) } })
+  get: () => settings.viewerTimestamp,
+  set: v => { settings.viewerTimestamp = v } })
 const movieScaleBar = computed<boolean>({
-  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).showScaleBar : true,
-  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { showScaleBar: v }) } })
+  get: () => settings.viewerScaleBar,
+  set: v => { settings.viewerScaleBar = v } })
 
 // Title card — per-set, merge-patched so each control keeps the others' values.
 const movieTitleCard = computed<TitleCardCfg>(() =>

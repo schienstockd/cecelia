@@ -105,6 +105,7 @@ function _register_acquisition(acqs::AbstractVector, plan::AbstractVector{Tuple{
         ch["cycle"] = i
         push!(channels, ch)
     end
+    _positional_channel_orders!(channels)
     out["channels"] = channels
     out["cycles"] = Dict{String,Any}("count" => length(acqs), "registered" => true)
     # each scan's run (`.xpd` name), in cycle order — the settings card names them; one null per scan
@@ -115,6 +116,27 @@ function _register_acquisition(acqs::AbstractVector, plan::AbstractVector{Tuple{
     "cyclic" in modes || push!(modes, "cyclic")
     out["modes"] = modes
     out
+end
+
+"""
+    _positional_channel_orders!(channels) -> Bool
+
+Set each channel's `order` to its 1-based position in the registered image, the index every reader
+looks the name list up with (`qc.jl`, `acquisitionChannelTable.ts`). Each scan counts its own channels
+from 1, so a copied `order` repeats every cycle; the scan's own is kept as `scanOrder`, as `cycle` is
+kept as `scanCycle`. True when anything changed, so Refresh metadata can repair a stored stack.
+"""
+function _positional_channel_orders!(channels::AbstractVector)
+    changed = false
+    for (k, ch) in enumerate(channels)
+        ch isa AbstractDict || continue
+        old = get(ch, "order", nothing)
+        old == k && continue
+        isnothing(old) || haskey(ch, "scanOrder") || (ch["scanOrder"] = old)
+        ch["order"] = k
+        changed = true
+    end
+    changed
 end
 
 # The picker (`channelSelection`, `multiple: false`) may hand back a one-element list; a REPL caller a

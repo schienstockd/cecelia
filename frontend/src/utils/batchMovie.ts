@@ -12,11 +12,12 @@ import type { PopEyes } from './viewer/popEyes'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
-// 3D render quality — the keyframe renderer's samples-per-ray multiplier (`render_animation_run.py`:
-// draft 0.5x, standard 1x, high 2x). The only 3D knob it has: it always reads the full-res volume.
-export const RENDER_QUALITIES = ['draft', 'standard', 'high'] as const
+// 3D render quality — the keyframe renderer's samples per ray: `viewer` the viewer's Steps (a look's
+// `steps`), or a preset overriding it (`render_animation_run.py`: draft 128, standard 256, high 512).
+// The only 3D knob it has: it always reads the full-res volume.
+export const RENDER_QUALITIES = ['viewer', 'draft', 'standard', 'high'] as const
 export type RenderQuality = typeof RENDER_QUALITIES[number]
-export const RENDER_QUALITY_DEFAULT: RenderQuality = 'standard'
+export const RENDER_QUALITY_DEFAULT: RenderQuality = 'viewer'
 
 // The 3D camera a batch renders every image from — the viewer's angle + zoom, captured by Fill from
 // view, with the canvas the zoom was measured against (the default output size). The CENTRE is
@@ -116,6 +117,14 @@ export interface BatchMovieCfg {
   // The skeletons (`segment.branching`) drawn as lines, `{segmentation → colour}` — a viewer look's
   // shown ones (`skeleton_segments` draws them). Absent / empty = none.
   skeletons?: Record<string, string>
+  /** the viewer's scale bar / timestamp (on / off, text px on its canvas of `textCanvasPx` height)
+   *  and 3D Steps — a look filled from the viewer. Absent: on, at the movie's own size. */
+  showScaleBar?: boolean
+  showTimestamp?: boolean
+  scaleBarPx?: number
+  timestampPx?: number
+  textCanvasPx?: number
+  steps?: number
   // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
   // with pops on).
   maskAllCells?: boolean
@@ -191,6 +200,12 @@ export interface BatchMovieRequestConfig {
   /** the viewer's Tracks-legend colours (a look filled from the viewer) */
   trackSourceColours?: Record<string, string>
   skeletons?: Record<string, string>
+  showScaleBar?: boolean
+  showTimestamp?: boolean
+  scaleBarPx?: number
+  timestampPx?: number
+  textCanvasPx?: number
+  steps?: number
   /** the mask paints every cell, as the viewer's does */
   maskAllCells?: boolean
   showPopulations: boolean
@@ -304,6 +319,12 @@ export function buildBatchMovieConfig(
       ? { trackSourceColours: cfg.trackSourceColours } : {}),
     ...(cfg.maskAllCells ? { maskAllCells: true } : {}),
     ...(cfg.skeletons && Object.keys(cfg.skeletons).length ? { skeletons: { ...cfg.skeletons } } : {}),
+    ...(cfg.scaleBarPx ? { scaleBarPx: cfg.scaleBarPx } : {}),
+    ...(cfg.timestampPx ? { timestampPx: cfg.timestampPx } : {}),
+    ...(cfg.textCanvasPx ? { textCanvasPx: cfg.textCanvasPx } : {}),
+    ...(cfg.showScaleBar !== undefined ? { showScaleBar: cfg.showScaleBar } : {}),
+    ...(cfg.showTimestamp !== undefined ? { showTimestamp: cfg.showTimestamp } : {}),
+    ...(cfg.steps ? { steps: cfg.steps } : {}),
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',
     // Which segmentation the popsFilter paths belong to. Empty → the batch's first mask column,

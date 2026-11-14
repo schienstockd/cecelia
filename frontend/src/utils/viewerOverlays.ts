@@ -136,6 +136,8 @@ export interface SkeletonPayload {
   t: number[]
   /** the plane each segment draws on, -1 = every plane (server-computed — never floor µm back) */
   plane: number[]
+  /** each segment's branch's skan `branch-type` (0–3, -1 = none) — what `SKELETON_BY_TYPE` colours by */
+  type: number[]
   x0: number[]; y0: number[]; z0: number[]
   x1: number[]; y1: number[]; z1: number[]
   note?: string
@@ -145,9 +147,18 @@ export function skeletonsUrl(q: { projectUid: string; imageUid: string; valueNam
   return '/api/viewer/skeletons?' + new URLSearchParams(q).toString()
 }
 
-/** A skeleton's line colour when nothing else is set — the same default the movie draws
- *  (`viewerLook` sends it as the look's `skeletons` colour). */
-export const SKELETON_COLOUR = WHITE
+/** A skeleton's colour meaning "by branch type" — what the viewer draws and `viewerLook` sends as the
+ *  look's `skeletons` colour; the movie reads it the same way (`branch_type_colour`). A hex instead
+ *  draws every line in that colour. */
+export const SKELETON_BY_TYPE = 'branchType'
+
+/** A skeleton line's colour by its branch's skan type (0 endpoint-to-endpoint, 1 endpoint-to-junction,
+ *  2 junction-to-junction, 3 isolated cycle) — `palettes.json`, the list the movie reads too. */
+export const BRANCH_TYPE_COLOURS: readonly string[] = palettesJson.branchTypeColours
+export const branchTypeColour = (type: number): string => BRANCH_TYPE_COLOURS[type] ?? WHITE
+/** The key the viewer shows beside them, in type order — the branching task's pop names
+ *  (`_BRANCH_TYPE_POP_NAME`, pinned to this JSON by the API suite). */
+export const BRANCH_TYPE_NAMES: readonly string[] = palettesJson.branchTypeNames
 
 /** Floats per point instance: x, y, z (µm), r, g, b, plane. */
 export const POINT_STRIDE = 7
@@ -800,9 +811,12 @@ export function appendSkeletonLines(
   meta: ViewerMeta | null,
 ): SegmentBuffer {
   const items: { s: SkeletonPayload; i: number; rgb: [number, number, number] }[] = []
+  const byType = BRANCH_TYPE_COLOURS.map(hexToUnit)
+  const white = hexToUnit(WHITE)
   for (const { payload, colour } of skeletons) {
-    const rgb = hexToUnit(colour)
-    for (let i = 0; i < payload.nSegments; i++) items.push({ s: payload, i, rgb })
+    const one = colour === SKELETON_BY_TYPE ? null : hexToUnit(colour)
+    for (let i = 0; i < payload.nSegments; i++)
+      items.push({ s: payload, i, rgb: one ?? byType[payload.type?.[i] ?? -1] ?? white })
   }
   if (!items.length || !meta) return tracks
   const nT = Math.max(1, meta.nT)

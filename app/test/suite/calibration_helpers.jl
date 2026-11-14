@@ -282,11 +282,30 @@ end
 
     # per-channel acquisition follows the channel; the scan's own cycle number is kept as scanCycle
     acq(n, sub) = Dict{String,Any}("system" => "PhenoImager Fusion", "modes" => ["tiled"],
-        "channels" => [Dict{String,Any}("name" => "c$i", "cycle" => 1, "afSubtracted" => sub) for i in 1:n])
+        "channels" => [Dict{String,Any}("order" => i, "name" => "c$i", "cycle" => 1, "afSubtracted" => sub) for i in 1:n])
     a = Cecelia._register_acquisition([acq(4, true), acq(4, false), acq(3, true)], plan_drop)
     @test length(a["channels"]) == 9
     @test a["channels"][5]["cycle"] == 2 && a["channels"][5]["scanCycle"] == 1
     @test a["channels"][5]["afSubtracted"] === false && a["channels"][8]["afSubtracted"] === true
+    # `order` is the position in the registered image (what the name list is indexed by), not the
+    # scan's own count, which restarts at 1 every cycle
+    @test [c["order"] for c in a["channels"]] == collect(1:9)
+    @test a["channels"][5]["scanOrder"] == 2 && a["channels"][8]["scanOrder"] == 2   # plan_drop skips each later DAPI
+    # Refresh metadata repairs settings registered before the renumbering: stored orders 1-4,2-4,2-3 →
+    # 1…9, once (a second refresh changes nothing), and only settings marked registered — which a crop
+    # of the stack inherits, so it is repaired too
+    stale = Dict{String,Any}("cycles" => Dict{String,Any}("registered" => true),
+                             "channels" => [Dict{String,Any}("order" => o) for o in [1, 2, 3, 4, 2, 3, 4, 2, 3]])
+    reg = (; meta = Dict{String,Any}())
+    zm = Dict{String,Any}()
+    @test Cecelia._repair_registered_orders!(zm, reg, stale)
+    @test [c["order"] for c in zm["acquisition"]["channels"]] == collect(1:9) && zm["acquisition"]["channels"][5]["scanOrder"] == 2
+    @test stale["channels"][5]["order"] == 2                      # the stored settings are not mutated
+    @test !Cecelia._repair_registered_orders!(Dict{String,Any}(), reg, zm["acquisition"])
+    single = Dict{String,Any}("channels" => [Dict{String,Any}("order" => o) for o in [2, 1]])   # not registered
+    @test !Cecelia._repair_registered_orders!(Dict{String,Any}(), reg, single)
+    stack = (; meta = Dict{String,Any}("register_reference_uid" => "ref"))           # the stack itself, flag or not
+    @test Cecelia._repair_registered_orders!(Dict{String,Any}(), stack, delete!(deepcopy(stale), "cycles"))
     @test "cyclic" in a["modes"] && a["cycles"]["count"] == 3
     @test !haskey(a["cycles"], "experiments")              # no scan had a run file beside it
     scan_run(n, x) = merge(acq(n, true), Dict{String,Any}("cycles" => Dict{String,Any}("count" => 1, "experiment" => x)))

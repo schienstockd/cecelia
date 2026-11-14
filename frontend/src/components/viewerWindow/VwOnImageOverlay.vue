@@ -5,7 +5,7 @@
   by, a highlight to clear. HOW it looks (eyes per row, size,
   opacity, colour) stays in the right sidebar's sections; a slider or a colour does not belong here.
 
-  The switches write the per-image (label, track and label-file visibility) and per-set (`popVisible`,
+  The switches write the per-image (label, track, skeleton and label-file visibility) and per-set (`popVisible`,
   `showGatedTracks`) settings that movies and stills read, so they still match (`drawSpec.ts` RECORDED). The window watches
   those settings and refetches; this component owns only the placement, the rows and the fold.
 
@@ -23,6 +23,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useStoredSectionOpen } from '../../utils/sectionOpen'
 import { CELL_POP_TYPES } from '../../utils/overlayAutoShow'
 import { popTypeInfo } from '../../plots/popTypeRegistry'
+import { BRANCH_TYPE_NAMES, branchTypeColour } from '../../utils/viewerOverlays'
 import { livePreviews, previewShown, togglePreview } from '../../composables/useLivePreview'
 
 const props = defineProps<{
@@ -34,6 +35,8 @@ const props = defineProps<{
   /** segmentations with mask pixels / with a cell table (tracks) — from the viewer's meta */
   labelNames: string[]
   trackNames: string[]
+  /** skeletons (`segment.branching`) with drawable lines — from the viewer's meta */
+  branchNames: string[]
   /** each segmentation's derived files (halo, nuc), outlined on its mask */
   labelFiles: Record<string, string[]>
   /** masks that do not fit the shown image version (the window publishes it) */
@@ -71,6 +74,11 @@ function flipMask(vn: string) {
 function flipTrack(vn: string) {
   if (props.imageUid) settings.setTrackVisibility(props.imageUid, flipTracks(trackVis.value, vn))
 }
+// Skeletons: lines coloured by branch type, each on or off (`settings.getBranchVisibility`, default on)
+const branchVis = computed(() => props.imageUid ? settings.getBranchVisibility(props.imageUid, props.branchNames) : {})
+function setBranch(vn: string, v: boolean) {
+  if (props.imageUid) settings.setBranchVisibility(props.imageUid, { ...branchVis.value, [vn]: v })
+}
 // Which segmentations have tracks (a `track_id` column) — the tracks button is off without them.
 const { trackedNames } = useTrackValueNames(toRef(props, 'projectUid'), toRef(props, 'imageUid'), ref(''))
 const hasTracks = (vn: string) => trackedNames.value.includes(vn) || !!trackVis.value[vn]
@@ -98,6 +106,7 @@ const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(prop
 /** the folded pill's summary: the population types and ribbon families that are on */
 const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
+  ...props.branchNames.filter(vn => branchVis.value[vn]).map(vn => `${vn} skeleton`),
   ...CELL_POP_TYPES.filter(popOn).map(label),
   ...(props.timecourse && ribbonsOn.value ? ['cell-track ribbons'] : []),
   ...(props.timecourse && popOn('trackclust') ? ['track-cluster ribbons'] : []),
@@ -132,10 +141,6 @@ const summary = computed(() => [
                     :aria-pressed="!!previewShown[r.valueName]" :aria-label="`Live preview of ${r.valueName}`"
                     v-tooltip.bottom="previewShown[r.valueName] ? 'Hide the live preview' : 'Preview this run while it writes'"
                     @click="togglePreview(r.valueName)"><i class="pi pi-bolt" /></button>
-            <!-- Branches (skeletons): not drawn by this viewer yet — the button holds the place. -->
-            <button v-if="r.masked" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" disabled
-                    :aria-label="`Branches of ${r.valueName}`" v-tooltip.bottom="'Branches — coming soon'">
-              <i class="pi pi-wave-pulse" /></button>
             <button v-if="r.registered && timecourse" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="viewer.toggleTracks" :class="{ 'cc-btn-on cc-btn-on-tint': trackVis[r.valueName] }"
                     :aria-pressed="!!trackVis[r.valueName]" :aria-label="`Tracks of ${r.valueName}`"
                     :disabled="!hasTracks(r.valueName)"
@@ -156,6 +161,15 @@ const summary = computed(() => [
         <button v-if="foldedCount > 0" class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs vw-onimg-more"
                 v-tooltip.bottom="segsExpanded ? 'Show only the segmentations in use' : 'Show every segmentation on this image'"
                 @click="segsExpanded = !segsExpanded">{{ segsExpanded ? 'Show fewer' : `${foldedCount} more` }}</button>
+      </div>
+      <div v-if="branchNames.length" class="vw-onimg-group">
+        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Lines coloured by branch type'"><i class="pi pi-wave-pulse" /> Skeletons</div>
+        <CcToggle v-for="vn in branchNames" :key="vn" class="cc-fs-2xs" :label="vn"
+                  :model-value="!!branchVis[vn]" @update:model-value="v => setBranch(vn, v)" />
+        <div v-if="branchNames.some(vn => branchVis[vn])" class="cc-row cc-row-tight cc-fs-3xs cc-muted">
+          <span v-for="(name, t) in BRANCH_TYPE_NAMES" :key="name">
+            <span class="vw-onimg-swatch" :style="{ background: branchTypeColour(t) }" />{{ name }}</span>
+        </div>
       </div>
       <div class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Population types drawn as points'">Populations</div>
@@ -208,4 +222,5 @@ const summary = computed(() => [
 .vw-onimg-seg-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-onimg-more { align-self: flex-start; }
 .vw-onimg-clear { flex-direction: row; flex-wrap: wrap; }
+.vw-onimg-swatch { display: inline-block; width: 0.6rem; height: 0.15rem; margin-right: 0.2rem; vertical-align: middle; }
 </style>
