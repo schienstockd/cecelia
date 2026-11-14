@@ -350,7 +350,8 @@ function api_kiwi_terminal_command(req::HTTP.Request)
     # command from `/create`'s `terminalCommand`.
     q = HTTP.queryparams(HTTP.URI(req.target))
     name = get(q, "profile", "")
-    dir = _kiwi_claude_dir(name)
+    # The one-liner starts `claude` under the profile — like select, never under a retired one.
+    dir = _kiwi_claude_dir(name; reject_retired = true)
     dir isa Tuple && return dir
     200, JSON3.write((; ok = true,
                         profile = isempty(name) ? active_profile_name() : name,
@@ -361,7 +362,10 @@ end
 # A profile name → its `CLAUDE_CONFIG_DIR` (`""` for `default`), or an error response tuple. An empty
 # name means the active profile. `must_exist`: a named profile's dir must already be on disk — the
 # CLI creates a missing one, so logging out or probing a typo would mint a stray profile.
-function _kiwi_claude_dir(name::AbstractString; must_exist::Bool = true)
+# `reject_retired`: 409 a retired named profile — for routes that START `claude` under it (new turns
+# must not run under a retired identity, as select enforces). Off by default: auth status, logout and
+# ending a session must still reach a retired profile, whose credentials stay on disk (D11).
+function _kiwi_claude_dir(name::AbstractString; must_exist::Bool = true, reject_retired::Bool = false)
     isempty(name) && return active_profile_dir()
     name == "default" && return active_profile_dir(name)
     _valid_kiwi_profile_name(name) ||
@@ -369,6 +373,8 @@ function _kiwi_claude_dir(name::AbstractString; must_exist::Bool = true)
     dir = active_profile_dir(name)
     must_exist && !isdir(dir) &&
         return (404, JSON3.write((; ok = false, error = "Profile `$(name)` not found.")))
+    reject_retired && _kiwi_profile_retired(dir) &&
+        return (409, JSON3.write((; ok = false, error = "Profile `$(name)` is retired.")))
     dir
 end
 
