@@ -132,6 +132,11 @@ Each phase is a standalone PR. Sizes, risks and tests per slice: audit §9.
   list is read from P2, and its egress lines reuse `CLAUDE_DATA_NOTICE` rather than repeating them. Link to Anthropic's terms rather than paraphrasing them.
 - **P4 · Hide surfaces one area at a time,** **Built** for Kiwi, Add-to-Kiwi, capture hand-offs, Guides, the Claude tip (`docs/inventory/FRONTEND.md` → *The AI switch in the UI*); most visible first. Each mixed surface follows its
   degradation rule from P0.
+- **P4b · A guide to turn it on** — **built 2026-11-14:** `turn-on-ai` (`lib/guides/singleTopicGuides.ts`) walks
+  avatar menu → Preferences → Kiwi → AI features → the opt-in dialog → Kiwi's Account row. Listed only while
+  AI is off (`AI_OFF_ONLY_GUIDES`, the mirror of `AI_ONLY_GUIDES`): before it, the AI guide was hidden from
+  exactly the person who needed the way in. Replaces the B-series-era plan of a C1 PDF as the only
+  walkthrough; C1 stays as the policy sheet.
 - **P5 · User docs:** **Built** (`user-docs/parts/bottom.md` → *Working with Claude*). what AI does in Cecelia, what it sends, and what keeps working with AI off.
 
 P0, P1 and P2 fit the hardening phase. P3 waits on the open calls.

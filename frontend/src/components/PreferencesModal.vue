@@ -50,7 +50,7 @@ const CATEGORIES: SettingsCategory<CategoryId>[] = [
   { id: 'viewer',    label: 'Viewer',    icon: 'pi-eye' },
   { id: 'movies',    label: 'Movies',    icon: 'pi-video' },
   { id: 'layout',    label: 'Layout',    icon: 'pi-window-maximize' },
-  { id: 'kiwi',      label: 'Kiwi',      icon: 'pi-comments' },
+  { id: 'kiwi',      label: 'Kiwi',      icon: 'pi-comments', guide: 'prefs.kiwi' },
   { id: 'lablog',    label: 'Lab log',   icon: 'pi-book' },
   { id: 'hpc',       label: 'HPC',       icon: 'pi-server' },
 ]
@@ -480,7 +480,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
       <!-- The AI switch for this profile (utils/aiSwitch.ts). ON goes through the opt-in dialog;
            OFF is immediate. Locked when peanut turned AI off for the workstation. -->
       <CcToggle :model-value="observer.ai.enabled" :disabled="observer.ai.setBy === 'workstation'"
-                label="AI features"
+                data-guide="prefs.aiSwitch" label="AI features"
                 v-tooltip.bottom="observer.ai.setBy === 'workstation' ? AI_OFF_COPY.workstation
                                   : 'Kiwi, claim review and Claude in the terminal'"
                 @update:model-value="onAiToggle" />

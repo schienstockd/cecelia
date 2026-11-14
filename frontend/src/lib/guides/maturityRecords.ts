@@ -23,6 +23,7 @@ export const GUIDE_MATURITY = {
   'find-your-way-around': EXEMPT,
   'use-a-user-profile': EXEMPT,
   'use-a-view-profile': EXEMPT,
+  'turn-on-ai': EXEMPT,
 
   // ── Data ──
   'import-images': {

@@ -56,7 +56,7 @@ async function turnOn() {
     <InlineNote v-if="error" class="cc-fs-sm" severity="warn" :short="error" />
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="closeAiOptIn">Cancel</button>
-      <button class="cc-btn cc-btn-primary" :disabled="busy" @click="turnOn">
+      <button class="cc-btn cc-btn-primary" :disabled="busy" data-guide="ai.optIn.turnOn" @click="turnOn">
         <i v-if="busy" class="pi pi-spin pi-spinner" /> {{ AI_OPT_IN_COPY.confirm }}
       </button>
     </template>

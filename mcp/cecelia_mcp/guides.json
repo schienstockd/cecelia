@@ -56,6 +56,13 @@
   "text": "# Use a sidebar layout\n\nCurate the sidebar down to the pages you actually work on — declutter, not access control.\n\n\n1. **Settings** — Sidebar layouts live in Settings — they curate the sidebar down to the pages this user actually works on.\n   - This is decluttering, not access control — every page still opens by URL.\n2. **Pick or edit one** — The chip row picks which layout is active; Edit opens the builder.\n   - \"All pages\" is the default — you never lose access to a page by picking a layout.\n3. **Tick pages into a layout** — One row per sidebar group — tick the pages this layout should surface.\n   - Great for handing a colleague a \"just the segmentation bits\" cecelia."
  },
  {
+  "id": "turn-on-ai",
+  "kind": "guide",
+  "title": "Turn on AI",
+  "summary": "Optional and off until you turn it on: where the switch is, and what leaves your computer.",
+  "text": "# Turn on AI\n\nOptional and off until you turn it on: where the switch is, and what leaves your computer.\n\n\n1. **Off until you turn it on** — Everything in Cecelia works with AI off; the switch is in your Preferences.\n   - Turning it on is up to you, your lab and your data policy.\n2. **Preferences** — Open Preferences.\n3. **Kiwi** — AI settings live under Kiwi.\n4. **AI features** — Switch it on; a dialog says what is sent before anything is.\n   - Greyed out, \"Turned off for this workstation\"? Whoever runs this computer decides — ask them.\n5. **Read it, then Turn on** — What is sent, what you gain and what to keep in mind — then Turn on, or Cancel.\n   - Turn it off any time in Preferences → Kiwi; everything else works the same.\n6. **Log in to Claude** — Open Kiwi; on its Account row, Log in signs this profile in to Claude, once.\n   - If the sign-in page does not hand you back, paste the code it shows into Kiwi.\n   - Next: the Assist with Kiwi guide — point at something, ask, keep what holds up."
+ },
+ {
   "id": "import-images",
   "kind": "guide",
   "title": "Import images",
