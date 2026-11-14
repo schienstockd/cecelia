@@ -486,7 +486,7 @@ export const kiwiGuide: GuideDef = {
       placement: 'left',
       title: loopPoint.title,
       text: loopPoint.text,
-      bullets: ['The @ buttons sit on image rows, populations, plots, the viewer and Blackboard entries.',
+      bullets: ['@ sits on populations, plots, the viewer and Blackboard entries; an image row has it in its ⋯ menu.',
                 'Here, + attaches a set, image or task by name.'],
       reveal: openKiwiFirst('kiwi.attach'),
     },

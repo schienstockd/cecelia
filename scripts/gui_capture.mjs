@@ -26,6 +26,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { chromium, findChromium, repo } from './lib/chromium.mjs'
+import { closeDialogs, openProject, refuseSlotZero, settle, signIn } from './lib/app_page.mjs'
 
 // ── args ───────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -72,23 +73,6 @@ function countControlsInPage() {
 }
 
 // ── run ────────────────────────────────────────────────────────────────────────────────────────
-// Launch pop-ups (What's new, tips) would cover every shot. BaseModal renders `.cc-modal-overlay`
-// with a `.cc-modal-close` button; Escape is the fallback for anything else.
-async function closeDialogs(page) {
-  for (let i = 0; i < 4; i++) {
-    const close = await page.$('.cc-modal-overlay .cc-modal-close')
-    if (close) await close.click().catch(() => {})
-    else if (await page.$('[role=dialog]')) await page.keyboard.press('Escape')
-    else return
-    await page.waitForTimeout(400)
-  }
-}
-
-async function settle(page) {
-  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {})
-  await page.waitForTimeout(800)
-}
-
 async function captureState(page, state, routes, outDir) {
   mkdirSync(join(outDir, state), { recursive: true })
   const rows = []
@@ -116,10 +100,7 @@ function markdown(rows, meta) {
 
 async function main() {
   const a = parseArgs(process.argv.slice(2))
-  const port = new URL(a.base).port
-  if (!a.allowDefaultPorts && (port === '5173' || port === '8080'))
-    throw new Error(`refusing ${a.base}: slot 0 is usually someone's working instance (see header)`)
-  const token = readFileSync(join(a.configDir, 'api-token'), 'utf8').trim()
+  refuseSlotZero(a.base, a.allowDefaultPorts)
   const [w, h] = a.size.split('x').map(Number)
   const routes = a.routes ? a.routes.split(',') : routesFromMain()
   const outDir = resolve(a.out)
@@ -128,18 +109,13 @@ async function main() {
   const browser = await chromium.launch({ executablePath: findChromium(), headless: true })
   try {
     const page = await browser.newPage({ viewport: { width: w, height: h } })
-    await page.goto(`${a.base}/api/auth?token=${encodeURIComponent(token)}`)
-    await page.goto(a.base)
+    await signIn(page, a.base, a.configDir)
     await settle(page)
     await closeDialogs(page)
 
     const rows = await captureState(page, 'no-project', routes, outDir)
     for (const uid of a.project.split(',').filter(Boolean)) {
-      const ok = await page.evaluate(([u, peek]) => {
-        const meta = document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('projectMeta')
-        return peek ? meta.peekProject(u) : meta.openProject(u)
-      }, [uid, !!a.peek])
-      if (!ok) throw new Error(`could not open project ${uid}`)
+      await openProject(page, uid, { peek: !!a.peek })
       rows.push(...await captureState(page, uid, routes, outDir))
     }
     const meta = { when: new Date().toISOString(), base: a.base, size: a.size, project: a.project }

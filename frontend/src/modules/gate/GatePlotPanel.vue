@@ -466,7 +466,7 @@ watch(() => props.reloadToken, fetchPlot)
 <template>
   <!-- auto-hide OFF: you draw gates on this canvas constantly, so the render-mode / gate tools stay
        in flow rather than popping over the plot on hover -->
-  <CanvasPanel :index="index" :active="props.active" :arrange="props.arrange" :title="`Plot ${index + 1}`"
+  <CanvasPanel data-guide="gate.plot" :index="index" :active="props.active" :arrange="props.arrange" :title="`Plot ${index + 1}`"
                :persist-key="props.persistKey" :auto-hide="false" :square="true"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <!-- Controls are FIXED (in-flow, above the plot) — you draw gates with the cursor ON the plot, so

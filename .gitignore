@@ -40,4 +40,4 @@ pluto/.plutosecret
 # Committing it would just produce diff noise on every copy change.
 /UI_COPY_INVENTORY.md
 /gui-capture/
-/booklets-out/
+/docshots-out/

@@ -726,12 +726,12 @@ onUnmounted(() => { mermaidRenderSeq++ })
 
           <!-- Viewer -->
           <template v-else-if="selected">
-            <div class="bb-pane-head cc-row cc-row-loose">
+            <div class="bb-pane-head cc-row cc-row-loose" data-guide="blackboard.head">
               <i v-if="selected.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-pane-pin"
                  v-tooltip.top="'About this project'" />
               <span class="bb-pane-title">{{ selected.title }}</span>
               <span class="bb-pane-sub cc-fs-2xs cc-muted">
-                updated {{ formatAgo(selected.updatedAt) }}
+                <span data-guide="blackboard.updated">updated {{ formatAgo(selected.updatedAt) }}</span>
                 <template v-if="authorLabel(selected.updatedBy ?? selected.createdBy)">
                   by {{ authorLabel(selected.updatedBy ?? selected.createdBy) }}</template>
                 <template v-if="selected.current > 0"> · v{{ selected.current }}</template>
@@ -822,7 +822,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                        type="text"
                        placeholder="Why — required (a sentence or two)"
                        v-tooltip.bottom="'Note is required; keep it to what a future session needs to know'" />
-                <button class="cc-btn cc-btn-dense bb-outcome-good"
+                <button class="cc-btn cc-btn-dense bb-outcome-good" data-guide="blackboard.good"
                         :class="{ 'bb-outcome-active': outcomeDraftVerdict === 'good' }"
                         :disabled="savingOutcome || !outcomeDraftNote.trim()"
                         @click="outcomeDraftVerdict = 'good'; saveOutcome()"

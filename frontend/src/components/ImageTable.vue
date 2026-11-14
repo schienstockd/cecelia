@@ -645,6 +645,7 @@ const unselectableUids = computed(() =>
         <!-- all per-row actions collapse into one ⋯ menu (keeps the name column narrow) -->
         <span class="runlog-cell" @click.stop>
           <button class="row-icon-btn cc-btn cc-btn-bare cc-btn-icon actions-btn" :class="{ on: actionsUid === img.uid }"
+            data-guide="images.actions"
             @click.stop="toggleActions(img.uid, $event)"
             v-tooltip.left="'Actions'"><i class="pi pi-ellipsis-h" /></button>
         </span>
