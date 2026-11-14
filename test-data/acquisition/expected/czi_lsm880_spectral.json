@@ -9,466 +9,1358 @@
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "410-419 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "415",
    "offset": 0.0,
-   "order": 1
+   "order": 1,
+   "pinholeAiry": 1.57,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "419-428 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "424",
    "offset": 0.0,
-   "order": 2
+   "order": 2,
+   "pinholeAiry": 1.53,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "428-437 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "433",
    "offset": 0.0,
-   "order": 3
+   "order": 3,
+   "pinholeAiry": 1.5,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "437-446 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "441",
    "offset": 0.0,
-   "order": 4
+   "order": 4,
+   "pinholeAiry": 1.48,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "446-455 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "450",
    "offset": 0.0,
-   "order": 5
+   "order": 5,
+   "pinholeAiry": 1.45,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "455-464 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "459",
    "offset": 0.0,
-   "order": 6
+   "order": 6,
+   "pinholeAiry": 1.42,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "464-473 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "468",
    "offset": 0.0,
-   "order": 7
+   "order": 7,
+   "pinholeAiry": 1.39,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "473-481 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "477",
    "offset": 0.0,
-   "order": 8
+   "order": 8,
+   "pinholeAiry": 1.36,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "481-490 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "486",
    "offset": 0.0,
-   "order": 9
+   "order": 9,
+   "pinholeAiry": 1.34,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "490-499 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "495",
    "offset": 0.0,
-   "order": 10
+   "order": 10,
+   "pinholeAiry": 1.31,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "499-508 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "504",
    "offset": 0.0,
-   "order": 11
+   "order": 11,
+   "pinholeAiry": 1.29,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "508-517 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "513",
    "offset": 0.0,
-   "order": 12
+   "order": 12,
+   "pinholeAiry": 1.27,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "517-526 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "521",
    "offset": 0.0,
-   "order": 13
+   "order": 13,
+   "pinholeAiry": 1.25,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "526-535 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "530",
    "offset": 0.0,
-   "order": 14
+   "order": 14,
+   "pinholeAiry": 1.23,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "535-544 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "539",
    "offset": 0.0,
-   "order": 15
+   "order": 15,
+   "pinholeAiry": 1.21,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "544-553 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "548",
    "offset": 0.0,
-   "order": 16
+   "order": 16,
+   "pinholeAiry": 1.19,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "553-561 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "557",
    "offset": 0.0,
-   "order": 17
+   "order": 17,
+   "pinholeAiry": 1.17,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "561-570 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "566",
    "offset": 0.0,
-   "order": 18
+   "order": 18,
+   "pinholeAiry": 1.15,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "570-579 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "575",
    "offset": 0.0,
-   "order": 19
+   "order": 19,
+   "pinholeAiry": 1.13,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "579-588 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "584",
    "offset": 0.0,
-   "order": 20
+   "order": 20,
+   "pinholeAiry": 1.11,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "588-597 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "593",
    "offset": 0.0,
-   "order": 21
+   "order": 21,
+   "pinholeAiry": 1.1,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "597-606 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "601",
    "offset": 0.0,
-   "order": 22
+   "order": 22,
+   "pinholeAiry": 1.08,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "606-615 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "610",
    "offset": 0.0,
-   "order": 23
+   "order": 23,
+   "pinholeAiry": 1.07,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "615-624 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "619",
    "offset": 0.0,
-   "order": 24
+   "order": 24,
+   "pinholeAiry": 1.05,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "624-633 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "628",
    "offset": 0.0,
-   "order": 25
+   "order": 25,
+   "pinholeAiry": 1.04,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "633-641 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "637",
    "offset": 0.0,
-   "order": 26
+   "order": 26,
+   "pinholeAiry": 1.02,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "641-650 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "646",
    "offset": 0.0,
-   "order": 27
+   "order": 27,
+   "pinholeAiry": 1.01,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "650-659 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "655",
    "offset": 0.0,
-   "order": 28
+   "order": 28,
+   "pinholeAiry": 0.99,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "659-668 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "664",
    "offset": 0.0,
-   "order": 29
+   "order": 29,
+   "pinholeAiry": 0.98,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "668-677 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "673",
    "offset": 0.0,
-   "order": 30
+   "order": 30,
+   "pinholeAiry": 0.97,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "677-686 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "681",
    "offset": 0.0,
-   "order": 31
+   "order": 31,
+   "pinholeAiry": 0.96,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "686-695 nm",
    "gain": 1.0,
    "hv": 630.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "690",
    "offset": 0.0,
-   "order": 32
+   "order": 32,
+   "pinholeAiry": 0.94,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "SpectralImaging",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 16,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": null,
    "gain": 1.0,
    "hv": 300.0,
    "laser": "HeNe633 + DPSS 561-10 + ArgonRemote + Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 0.7,
+     "wavelengthNm": 633.0
+    },
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    },
+    {
+     "pct": 3.0,
+     "wavelengthNm": 458.0
+    },
+    {
+     "pct": 0.8,
+     "wavelengthNm": 514.0
+    },
+    {
+     "pct": 0.5,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "T PMT",
    "offset": 0.0,
-   "order": 33
+   "order": 33,
+   "pinholeAiry": null,
+   "pinholeUm": null,
+   "track": null
   }
  ],
+ "dichroics": [],
  "lasers": [
   {
    "name": "HeNe633",
@@ -507,8 +1399,9 @@
   "name": "Plan-Apochromat 63x/1.40 Oil DIC M27",
   "refractiveIndex": 1.518
  },
+ "pinholeAiry": null,
  "pinholeUm": null,
- "readerVersion": 2,
+ "readerVersion": 3,
  "scanner": {
   "integration": {
    "average": null,

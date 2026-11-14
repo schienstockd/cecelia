@@ -6,60 +6,121 @@
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": "FastAiryScanSheppardSum",
+   "beamSplitters": [
+    "MBS 488/561/639",
+    "Plate",
+    "Plate"
+   ],
    "bitDepth": 16,
    "detector": "Airyscan",
    "detectorMode": "Integration",
    "dyePreset": "Alexa Fluor 647",
+   "emissionFilter": "300-735 nm",
    "gain": 1.0,
    "hv": 700.0,
    "laser": "639 nm",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 639.0
+    }
+   ],
    "name": "AF647-T1",
    "offset": 0.0,
-   "order": 1
+   "order": 1,
+   "pinholeAiry": 5.44,
+   "pinholeUm": 356.32,
+   "track": 1
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": "FastAiryScanSheppardSum",
+   "beamSplitters": [
+    "MBS 488/561",
+    "Plate",
+    "SBS SP 615"
+   ],
    "bitDepth": 16,
    "detector": "Airyscan",
    "detectorMode": "Integration",
    "dyePreset": "Alexa Fluor 546",
+   "emissionFilter": "380-608 nm",
    "gain": 1.0,
    "hv": 700.0,
    "laser": "561 nm",
+   "laserLines": [
+    {
+     "pct": 1.0,
+     "wavelengthNm": 561.0
+    }
+   ],
    "name": "AF546-T2",
    "offset": 0.0,
-   "order": 2
+   "order": 2,
+   "pinholeAiry": 5.61,
+   "pinholeUm": 312.83,
+   "track": 2
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": "FastAiryScanSheppardSum",
+   "beamSplitters": [
+    "MBS 488/561",
+    "Plate",
+    "SBS SP 550"
+   ],
    "bitDepth": 16,
    "detector": "Airyscan",
    "detectorMode": "Integration",
    "dyePreset": "Alexa Fluor 488",
+   "emissionFilter": "380-548 nm",
    "gain": 1.0,
    "hv": 725.0,
    "laser": "488 nm",
+   "laserLines": [
+    {
+     "pct": 5.0,
+     "wavelengthNm": 488.0
+    }
+   ],
    "name": "AF488-T3",
    "offset": 0.0,
-   "order": 3
+   "order": 3,
+   "pinholeAiry": 5.51,
+   "pinholeUm": 272.12,
+   "track": 3
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": "FastAiryScanSheppardSum",
+   "beamSplitters": [
+    "Plate",
+    "MBS -405",
+    "SBS SP 505"
+   ],
    "bitDepth": 16,
    "detector": "Airyscan",
    "detectorMode": "Integration",
    "dyePreset": "Alexa Fluor 405",
+   "emissionFilter": "350-499 nm",
    "gain": 1.0,
    "hv": 650.0,
    "laser": "405 nm",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "AF405-T4",
    "offset": 0.0,
-   "order": 4
+   "order": 4,
+   "pinholeAiry": 5.24,
+   "pinholeUm": 225.84,
+   "track": 4
   }
  ],
+ "dichroics": [],
  "lasers": [
   {
    "name": "639 nm",
@@ -91,8 +152,9 @@
   "name": "Plan-Apochromat 63x/1.40 Oil DIC M27",
   "refractiveIndex": 1.518
  },
+ "pinholeAiry": null,
  "pinholeUm": null,
- "readerVersion": 2,
+ "readerVersion": 3,
  "scanner": {
   "integration": {
    "average": null,
