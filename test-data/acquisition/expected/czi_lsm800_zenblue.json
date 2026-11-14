@@ -9,16 +9,45 @@
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [
+    "MBS 488/639",
+    "Plate",
+    "Mirror"
+   ],
    "bitDepth": 8,
    "detector": "MA-Pmt1",
    "detectorMode": "Integration",
    "dyePreset": null,
+   "emissionFilter": "500-599 nm",
    "gain": 1.0,
    "hv": 649.98626708984,
    "laser": "488 nm",
+   "laserLines": [
+    {
+     "pct": 0.2,
+     "wavelengthNm": 488.0
+    }
+   ],
    "name": "Ch1",
    "offset": 0.0,
-   "order": 1
+   "order": 1,
+   "pinholeAiry": 1.0,
+   "pinholeUm": 28.58,
+   "track": null
+  }
+ ],
+ "dichroics": [
+  {
+   "name": "MBS 488/639",
+   "slot": "beam splitter"
+  },
+  {
+   "name": "Plate",
+   "slot": "beam splitter"
+  },
+  {
+   "name": "Mirror",
+   "slot": "beam splitter"
   }
  ],
  "lasers": [
@@ -37,8 +66,9 @@
   "name": "Plan-Apochromat 20x/0.8 M27",
   "refractiveIndex": 1.000293
  },
+ "pinholeAiry": 1.0,
  "pinholeUm": 28.58,
- "readerVersion": 2,
+ "readerVersion": 3,
  "scanner": {
   "integration": {
    "average": null,

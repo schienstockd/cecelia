@@ -9,60 +9,105 @@
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "300-485 nm",
    "gain": 1.0,
    "hv": 780.0,
    "laser": "Chameleon",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 775.0
+    }
+   ],
    "name": "NDD R1",
    "offset": 2.0,
-   "order": 1
+   "order": 1,
+   "pinholeAiry": null,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "500-550 nm",
    "gain": 1.0,
    "hv": 640.0,
    "laser": "Chameleon",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 775.0
+    }
+   ],
    "name": "NDD R2",
    "offset": 1.0,
-   "order": 2
+   "order": 2,
+   "pinholeAiry": null,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": "570-610 nm",
    "gain": 1.0,
    "hv": 520.0,
    "laser": "Chameleon",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 775.0
+    }
+   ],
    "name": "NDD R3",
    "offset": 1.0,
-   "order": 3
+   "order": 3,
+   "pinholeAiry": null,
+   "pinholeUm": null,
+   "track": null
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": null,
    "gain": 1.0,
    "hv": 100.0,
    "laser": "Chameleon",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 775.0
+    }
+   ],
    "name": "T PMT",
    "offset": 0.0,
-   "order": 4
+   "order": 4,
+   "pinholeAiry": null,
+   "pinholeUm": null,
+   "track": null
   }
  ],
+ "dichroics": [],
  "lasers": [
   {
    "name": "Chameleon",
@@ -81,8 +126,9 @@
   "name": "LD C-Apochromat 63x/1.15 W Korr M27",
   "refractiveIndex": 1.333
  },
+ "pinholeAiry": null,
  "pinholeUm": null,
- "readerVersion": 2,
+ "readerVersion": 3,
  "scanner": {
   "integration": {
    "average": null,
