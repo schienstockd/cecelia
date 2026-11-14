@@ -148,6 +148,7 @@ when that image has them. Other derived images (projection, resample) are caught
 """
 function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     stored = get(img.meta, "acquisition", nothing)
+    _repair_registered_orders!(zarr_meta, img, stored) && return
     (isnothing(stored) || _acquisition_outdated(stored)) && _resync_crop_acquisition!(zarr_meta, img) && return
     if !isnothing(stored)
         _acquisition_outdated(stored) || return
@@ -168,4 +169,17 @@ function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     else
         _recover_acquisition_settings!(zarr_meta, src, task_run_dir(img._dir); series = _source_series(img))
     end
+end
+
+# A registered stack written before its channels were renumbered carries each scan's own `order`
+# (1, 2, 3, 4, 1, 2, …), so every cycle read cycle 1's names. Its source can't be re-read (`ori_path`
+# is only the reference cycle), so the stored settings are repaired in place. True when repaired.
+function _repair_registered_orders!(zarr_meta::Dict{String,Any}, img, stored)
+    (haskey(img.meta, "register_reference_uid") && stored isa AbstractDict) || return false
+    chans = get(stored, "channels", nothing)
+    chans isa AbstractVector || return false
+    fixed = _plain_copy(stored)
+    _positional_channel_orders!(fixed["channels"]) || return false
+    zarr_meta["acquisition"] = fixed
+    true
 end
