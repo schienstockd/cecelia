@@ -270,6 +270,7 @@ end
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
         "/api/viewer/overlays",
+        "/api/viewer/pop-types",
         "/api/viewer/skeletons",
         "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
         "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
@@ -502,7 +503,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 125 && length(POST_ROUTES) == 192
+    @test length(GET_ROUTES) == 126 && length(POST_ROUTES) == 192
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
