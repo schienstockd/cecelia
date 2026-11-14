@@ -171,11 +171,15 @@ function _resync_acquisition_settings!(zarr_meta::Dict{String,Any}, img)
     end
 end
 
-# A registered stack written before its channels were renumbered carries each scan's own `order`
-# (1, 2, 3, 4, 1, 2, …), so every cycle read cycle 1's names. Its source can't be re-read (`ori_path`
-# is only the reference cycle), so the stored settings are repaired in place. True when repaired.
+# Settings of a registered stack written before its channels were renumbered carry each scan's own
+# `order` (1, 2, 3, 4, 1, 2, …), so every cycle read cycle 1's names. Keyed on `cycles.registered` as
+# well as the image, because a crop or projection of the stack inherits the settings but not the image
+# key. The source can't be re-read (`ori_path` is only the reference cycle), so they are repaired in place.
 function _repair_registered_orders!(zarr_meta::Dict{String,Any}, img, stored)
-    (haskey(img.meta, "register_reference_uid") && stored isa AbstractDict) || return false
+    stored isa AbstractDict || return false
+    cycles = get(stored, "cycles", nothing)
+    (haskey(img.meta, "register_reference_uid") ||
+     (cycles isa AbstractDict && get(cycles, "registered", false) === true)) || return false
     chans = get(stored, "channels", nothing)
     chans isa AbstractVector || return false
     fixed = _plain_copy(stored)
