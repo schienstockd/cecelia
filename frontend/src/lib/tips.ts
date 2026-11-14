@@ -5,8 +5,9 @@
 // hasn't opted out. The opt-out lives on the card itself as a checkbox.
 //
 // Tips should read like a one-paragraph hint — brief description, optional 2-4 steps, no walls of
-// text. `sketchAnimation.id` points at a feijoa sketch (rendered inline by WhatNewCard); an id
-// that isn't in feijoa's catalogue falls back to the "coming soon" placeholder.
+// text. `shot.id` is a screenshot of lab data (lib/docShots.ts) and wins over `sketchAnimation.id`, a
+// feijoa sketch (rendered inline by WhatNewCard); a sketch id that isn't in feijoa's catalogue falls
+// back to the "coming soon" placeholder.
 import type { WhatNewCard } from './whatsNew'
 import { KIWI_LOOP, TERMINAL_MODE } from './claudeOverview'
 
@@ -37,6 +38,7 @@ export const TIPS: WhatNewCard[] = [
       'Run Segment → Cellpose on the right channel.',
       'Check the QC panel — it flags low counts, weird sizes, edge cells.',
     ],
+    shot: { id: 'app-outlines' },
     sketchAnimation: { id: 'segmentation' },
   },
   {
@@ -50,6 +52,7 @@ export const TIPS: WhatNewCard[] = [
       'Run Track → btrack; tune the config if links look wrong.',
       'Open in viewer — tracks show as trailing polylines.',
     ],
+    shot: { id: 'app-tracks' },
     sketchAnimation: { id: 'tracking' },
   },
   {

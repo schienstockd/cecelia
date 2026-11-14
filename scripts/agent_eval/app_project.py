@@ -86,7 +86,7 @@ def copy_knowledge(src_root: pathlib.Path, root: pathlib.Path) -> list[dict]:
 
 
 # With `results`: what segmenting and measuring left on the image, copied as is (the label stores, the
-# cell table, the cached metadata, QC) and kept registered. Never gates: those are user work, and a
+# cell table, the cached metadata, QC) and kept registered, with the image version they were made on. Never gates: those are user work, and a
 # doc-shots fixture recreates the ones it shows.
 _RESULT_DIRS = ("labels", "labelProps", "data", "qc")
 
@@ -136,6 +136,14 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
         (root / "1" / img_uid).mkdir(parents=True)
         ccid = raw_ccid(src, img_uid, filename)
         if results:
+            # the labels were made on the source's active version (a drift-corrected one has another
+            # canvas): bring that store too and keep it active, or every outline and track is drawn
+            # off the raw image
+            active = vn_versioning.versioned_get_field_at(src, "filepath")
+            vn = (src.get("filepath") or {}).get("_active", "default")
+            if vn != "default" and active:
+                shutil.copytree(src_root / "0" / image_uid / active, root / "0" / img_uid / active)
+                ccid["filepath"] = {"default": filename, vn: active, "_active": vn}
             for d in _RESULT_DIRS:
                 if (src_root / "1" / image_uid / d).is_dir():
                     shutil.copytree(src_root / "1" / image_uid / d, root / "1" / img_uid / d)

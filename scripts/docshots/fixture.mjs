@@ -137,14 +137,20 @@ async function addGate(api, projectUid, imageUid, g, srcImageDir) {
   return true
 }
 
-/** The numbers a caption may cite, as the app shows them: planes and channels of each copied image
+/** The facts a caption may cite, as the app shows them: the name, planes and channels of each copied image
  *  (its active version's geometry), and each gate's count and % of parent (the population manager's
  *  stats, printed as it prints them: count as is, % to one decimal). Keyed `project.image.fact`. */
 async function measure(api, fixture, rec) {
   const facts = {}
   for (const [key, spec] of Object.entries(fixture.projects ?? {})) {
     const copy = rec.projects[key]
+    // the names the copies show, as the app lists them (a caption names the sample by these)
+    const listing = await api(`/api/images?projectUid=${copy.uid}`)
+    if (!listing.ok) throw new Error(`images of ${key}: ${listing.body.error ?? 'failed'}`)
     for (const src of Object.keys(spec.images)) {
+      const shown = listing.body.images.find(i => i.uid === copy.images[src])
+      if (!shown) throw new Error(`${key}/${src}: the copy is not in its project's image list`)
+      facts[`${key}.${src}.name`] = shown.name
       const g = await api(`/api/images/geometry?projectUid=${copy.uid}&imageUid=${copy.images[src]}`)
       if (!g.ok) throw new Error(`geometry of ${key}/${src}: ${g.body.error ?? 'failed'}`)
       Object.assign(facts, { [`${key}.${src}.planes`]: g.body.sizeZ, [`${key}.${src}.channels`]: g.body.sizeC,

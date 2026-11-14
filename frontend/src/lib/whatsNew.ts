@@ -8,8 +8,10 @@
 // any caller (header badge, Settings button, launch tip in W4) calls `openWhatsNew()`. One
 // modal, one state.
 //
-// `sketchAnimation` points at a feijoa sketch by id (rendered inline by WhatNewCard). Unknown ids
-// fall through to the "coming soon" placeholder. `statsAnnotation` is a typed slot but rendered as
+// `shot` names a real screenshot (lib/docShots.ts) and wins over `sketchAnimation`, which points at a
+// feijoa sketch by id (rendered inline by WhatNewCard); unknown sketch ids fall through to the "coming
+// soon" placeholder. The update card takes its title, line and shot from the newest FEATURE_CARDS entry
+// the update brings, and keeps the release notes (or the merged PRs) as its body. `statsAnnotation` is a typed slot but rendered as
 // a placeholder until STATS_ANNOTATIONS_PLAN.md lands content.
 import { computed, ref, type ComputedRef } from 'vue'
 import { marked } from 'marked'
@@ -29,6 +31,7 @@ export interface WhatNewCard {
   releaseUrl?: string       // "View on GitHub" link on update cards
   publishedAt?: string      // ISO date on update cards
   sketchAnimation?: { id: string }   // feijoa sketch id; WhatNewCard resolves via `sketches[id]`
+  shot?: { id: string }              // an in-app screenshot (lib/docShots.ts); shown instead of the sketch
   statsAnnotation?: unknown           // slot for STATS_ANNOTATIONS_PLAN
   // An in-app guide covering this card's topic (`lib/guides` id). Renders a "Show me" button that
   // starts the bubble walkthrough and closes this dialog. This is why guide steps do NOT restate a
@@ -84,6 +87,26 @@ export function renderMarkdown(md: string | undefined | null): string {
   catch { return md }
 }
 
+/** One feature an update brings, written by hand in that feature's PR: the PR's number, its title and
+ *  one line, and the in-app shot (user-docs/shots/in-app.ts) that shows it. Newest first. */
+export interface FeatureCard { pr: number; title: string; description: string; shot: { id: string }; guideId?: string }
+
+export const FEATURE_CARDS: FeatureCard[] = [
+  {
+    pr: 2097,
+    title: 'Checks in the action bar',
+    description: 'Acquisition, QC and Cohort sit together on every page with images. QC counts the images with a warning; click it to show only those.',
+    shot: { id: 'app-checks' },
+  },
+]
+
+/** The newest feature card whose PR the update brings: one of its merged PRs (dev channel), or one its
+ *  release notes cite as `#n`. */
+export function featureFor(prs: number[], notes: string, cards: FeatureCard[] = FEATURE_CARDS): FeatureCard | null {
+  const cited = new Set([...prs, ...[...notes.matchAll(/#(\d+)\b/g)].map(m => Number(m[1]))])
+  return cards.find(c => cited.has(c.pr)) ?? null
+}
+
 /** Reactive card for the latest release — shown whenever we know a latest version, whether or not
  *  an upgrade is available (dev checkouts and up-to-date installs still deserve the release notes).
  *  The install button in the dialog footer is what gates on `updateAvailable + canApplyUpdate`. */
@@ -98,11 +121,14 @@ export function useUpdateCard(): ComputedRef<WhatNewCard | null> {
       ? (app.updateCurrent ? `You're running ${app.updateCurrent}${behind ? ` — ${behind}` : ''}.` : undefined)
       : (app.updateCurrent ? `You're up to date (${app.updateCurrent}).` : undefined)
     const mergedMd = app.updateAvailable && !app.updatePending ? mergedPrsMd(app.updateMergedPrs) : ''
+    const feature = featureFor(app.updateMergedPrs.map(p => p.number), app.updateNotes)
     return {
       id: `update-${app.updateLatest}`,
       kind: 'update',
-      title: `Cecelia ${app.updateLatest}`,
-      description,
+      title: feature ? feature.title : `Cecelia ${app.updateLatest}`,
+      description: feature ? [feature.description, description].filter(Boolean).join(' ') : description,
+      shot: feature?.shot,
+      guideId: feature?.guideId,
       bodyMd: app.updateNotes || mergedMd || undefined,
       releaseVersion: app.updateLatest,
       releaseUrl: app.updateUrl || undefined,

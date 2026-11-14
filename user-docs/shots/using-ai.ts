@@ -7,6 +7,7 @@ import { AI_OPT_IN_COPY } from '../../frontend/src/utils/aiSwitch.ts'
 export const USING_AI_SHOTS: ShotSet = {
   id: 'using-ai',
   page: 'using-ai.md',
+  themes: ['light'],
   // newcomer: before turning AI on. sam: a new member after it (AI on, not logged in). default
   // asks the one saved question (the terminal's login). One lab image to point at.
   fixture: {

@@ -11,7 +11,10 @@ style*. The engine's history: [`docs/todo/GUIDE_SCREENSHOTS_PLAN.md`](../../docs
 - **`spec.ts`**: `Shot` (how to reach the state: profile, project, image, route, user actions, or the
   pop-out viewer; what to point at, crop to and mask; which labels it must show), `Fixture` (what the
   instance needs before any shot) and `ShotSet` (one page's shots and their fixture).
-- **`index.ts`**: every shot set. One per page, e.g. `using-ai.ts`.
+- **`index.ts`**: every shot set. One per page: a user-docs page (`using-ai.ts`), the repo README
+  (`readme.ts`, written into its `docshots` block by `frontend/src/utils/readmeShots.ts`) or the app
+  (`in-app.ts`: What's new feature cards and tips, through `frontend/src/lib/docShots.ts`).
+  `fixtures.ts`: lab-data fixture projects more than one set copies.
 - **`figure.ts`**: where a figure crops and where its pointer goes (pure, tested).
 - **`scripts/docshots/`**: `fixture.mjs` → `capture.mjs` → `compose.mjs`.
 
@@ -24,8 +27,20 @@ Against an **isolated** instance (own `CECELIA_DEV_DIR` and `CECELIA_PORT_SLOT`;
 pixi run doc-fixture -- --base <url> --config-dir <dir> --source-projects <lab projects dir>
 pixi run doc-shots   -- --base <url> --config-dir <dir>
 pixi run doc-images
-npx vitest run -u src/utils/usingAiDoc.test.ts      # in frontend/: the page picks up the new widths
+npx vitest run src/utils/usingAiDoc.test.ts -u      # in frontend/: the pages pick up the new widths
+npx vitest run src/utils/readmeShots.test.ts -u     #   and the README its captions' facts
 ```
+
+**Colour schemes.** A set names its `themes`; every shot is captured in each, the scheme set on the app
+and read back off the page before the screenshot. Compose refuses a capture in another scheme, and the
+test fails when a shot is missing an image in one, so one page never mixes schemes. A README set with
+both is a `<picture>` GitHub shows in the reader's scheme; an `app` set needs every scheme, so the app
+shows its user's. The pointer is drawn in the image's scheme. A **picture of the image** (a viewer shot,
+cropped to the canvas alone) has no app chrome, so it is captured once and composed as one JPEG
+(`<id>.jpg`): the same pixels in both schemes, and a 2× microscopy PNG is megabytes.
+
+**Slots.** `column` (set) and `width` (shot) are the width an image is shown at; `aspect` trims a crop to
+its slot's shape (a tip's 2:1 frame); `inset` pulls a picture in from chrome over the canvas' edge.
 
 `doc-fixture` sets up what a set's `fixture` names: lab images copied into the instance (never public
 data, never the source written; `results` also brings segmentation and cell tables), channel names,
@@ -57,6 +72,7 @@ From the review of the first drafts ([`docs/archive/BOOKLET_RESERVATIONS.md`](..
 - callouts never cover a value the text cites;
 - AI output (a Kiwi reply) varies between runs: capture it from a **saved** entry on a fixed question,
   never a live turn.
-- **Numbers come from the fixture, never the keyboard.** An `expect` may cite `{{project.image.planes}}`,
-  `.channels`, `.timepoints`, `.interval`, `.<gate>.count` / `.pct` or `.<segmentation>.tracks`;
-  `doc-fixture` measures them on the copy through the app and capture checks the pixels show the same.
+- **Numbers and samples come from the fixture, never the keyboard.** An `expect` or a `caption` may cite
+  `{{project.image.name}}`, `.planes`, `.channels`, `.timepoints`, `.interval`, `.<gate>.count` / `.pct`
+  or `.<segmentation>.tracks`; `doc-fixture` measures them on the copy through the app and capture
+  checks the pixels show the same. A `results` copy brings the image version its labels were made on.

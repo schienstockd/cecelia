@@ -941,10 +941,11 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
            CollapsibleSection: that one carries panel-rail chrome (a surface bar, its own padding) that
            does not sit inside a padded runner section. A check's finding gets its own row under its
            line, so a long line never shares its width with the finding. -->
-      <div v-if="taskDef?.purpose" class="fn-about">
+      <div v-if="taskDef?.purpose" class="fn-about" data-guide="task.about">
         <p class="fn-purpose cc-muted cc-fs-xs">{{ taskDef.purpose }}</p>
         <template v-if="useLines.length || notLines.length">
-          <button class="fn-when-toggle cc-section-toggle cc-eyebrow cc-fs-2xs" @click="whenOpen = !whenOpen"
+          <button class="fn-when-toggle cc-section-toggle cc-eyebrow cc-fs-2xs" data-guide="task.whenToggle"
+                  :aria-expanded="whenOpen" @click="whenOpen = !whenOpen"
                   v-tooltip.right="whenOpen ? 'Hide when this task fits' : 'Show when this task fits'">
             <i :class="['pi', whenOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
             When to use

@@ -4,7 +4,10 @@
 // figure geometry (figure.ts) that compose.mjs draws.
 import { describe, expect, it } from 'vitest'
 import { SHOT_SETS } from '../../../user-docs/shots/index.ts'
-import { checkShotSets, fillFacts, guideIds, shotAnchors, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
+import { checkShotSets, fillFacts, guideIds, imageFile, shotAnchors, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
+import { IN_APP_SHOTS } from '../../../user-docs/shots/in-app.ts'
+import { TIPS } from '../lib/tips'
+import { FEATURE_CARDS, featureFor } from '../lib/whatsNew'
 import { figureGeometry, labelBox, type ShotMeta } from '../../../user-docs/shots/figure.ts'
 
 // The app's source, read the way guides.test.ts reads it: a shot's data-guide id must exist there, so a
@@ -12,7 +15,9 @@ import { figureGeometry, labelBox, type ShotMeta } from '../../../user-docs/shot
 const SFC = import.meta.glob('/src/**/*.vue', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 const SOURCE = Object.values(SFC).join('\n')
 
-const set = (over: Partial<ShotSet> = {}): ShotSet => ({ id: 'x', page: 'x.md', shots: [], ...over })
+const set = (over: Partial<ShotSet> = {}): ShotSet => ({ id: 'x', page: 'x.md', themes: ['light'], shots: [], ...over })
+// what compose.mjs wrote: the committed images and their widths
+const IMAGES = Object.keys(import.meta.glob('../../../user-docs/images/*.{png,jpg}')).map(p => p.split('/').pop()!)
 const shot = (over: Partial<Shot> = {}): Shot => ({ id: 's1', crop: ['task.run'], ...over })
 
 describe('doc shots', () => {
@@ -65,12 +70,60 @@ describe('doc shots', () => {
     expect(checkShotSets([exp('{{p.i.planes}} {{p.i.G.count}} {{p.i.T_qc.pct}} {{p.i.T.tracks}} {{p.i.interval}}')])).toEqual([])
     expect(checkShotSets([exp('{{p.j.planes}} {{p.i.H.count}} {{p.i.depth}} {{p.i.B.tracks}}')]).map(i => i.problem)).toEqual([
       '{{p.j.planes}}: the fixture copies no image "j" in project "p"',
-      '{{p.i.H.count}}: not a fact the fixture measures (planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
-      '{{p.i.depth}}: not a fact the fixture measures (planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
-      '{{p.i.B.tracks}}: not a fact the fixture measures (planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
+      'shot "s1": {{p.i.H.count}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
+      'shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
+      'shot "s1": {{p.i.B.tracks}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)',
     ])
+    // a caption is checked the same way
+    expect(checkShotSets([set({ fixture, shots: [shot({ caption: '{{p.i.name}} {{p.i.depth}}' })] })]).map(i => i.problem))
+      .toEqual(['shot "s1": {{p.i.depth}} is not a fact the fixture measures (name, planes, channels, timepoints, interval, <gate>.count / .pct, or <segmentation>.tracks)'])
     expect(fillFacts('{{p.i.planes}} z-planes, {{p.i.G.pct}}%', { 'p.i.planes': 26 }))
       .toEqual({ text: '26 z-planes, ?%', missing: ['{{p.i.G.pct}}'] })
+  })
+})
+
+// Every shot sets the app's scheme; one page never mixes schemes, and the app shows its user's.
+describe('doc shots: colour schemes', () => {
+  it('refuses a set with no scheme, an unknown or repeated one, and an app set missing one', () => {
+    const problems = (over: Partial<ShotSet>) => checkShotSets([set(over)]).map(i => i.problem)
+    expect(problems({ themes: [] })).toEqual(['names no colour scheme (themes): every shot sets one explicitly'])
+    expect(problems({ themes: ['light', 'light'] })).toEqual(['a colour scheme is listed twice'])
+    expect(problems({ themes: ['sepia' as 'light'] })).toEqual(['"sepia" is not a colour scheme'])
+    expect(problems({ page: 'app', themes: ['dark'] })).toEqual(
+      ['an app set is captured in every colour scheme, so the app shows its user\'s and never mixes them'])
+  })
+
+  // A picture of the image has no app chrome, so one file serves every scheme; it may not crop to more.
+  it('captures a picture once and keeps it to the canvas', () => {
+    const pic = shot({ viewer: {}, crop: ['css:canvas'] })
+    const s = set({ themes: ['dark', 'light'] })
+    expect(shotThemes(s, pic)).toEqual(['dark'])
+    expect([imageFile(pic, 'dark'), imageFile(shot(), 'light'), imageFile(shot(), 'dark')]).toEqual(['s1.jpg', 's1.png', 's1.dark.png'])
+    expect(checkShotSets([set({ shots: [shot({ viewer: {}, crop: ['css:canvas', 'task.run'] })] })]).map(i => i.problem))
+      .toEqual(['shot "s1" is a picture of the image: it crops to css:canvas alone and points at nothing, so no app chrome (which has a scheme) is in it'])
+  })
+
+  // The check that fails a set whose images disagree on scheme: every shot has an image in each of
+  // its set's schemes (compose.mjs refuses a capture in the wrong one).
+  it('every shot of every set is composed in each of its schemes', () => {
+    const missing = SHOT_SETS.flatMap(s => s.shots.flatMap(x => shotThemes(s, x).map(t => imageFile(x, t))))
+      .filter(f => !IMAGES.includes(f))
+    expect(missing).toEqual([])
+  })
+
+  it('the app names only in-app shots', () => {
+    const ids = new Set(IN_APP_SHOTS.shots.map(s => s.id))
+    const named = [...TIPS.map(t => t.shot?.id), ...FEATURE_CARDS.map(f => f.shot.id)].filter((x): x is string => !!x)
+    expect(named.filter(id => !ids.has(id))).toEqual([])
+  })
+})
+
+describe("What's new feature cards", () => {
+  const cards = [{ pr: 30, title: 'B', description: '', shot: { id: 'b' } }, { pr: 20, title: 'A', description: '', shot: { id: 'a' } }]
+  it('the update shows the newest feature it brings, by merged PR or as cited in the notes', () => {
+    expect(featureFor([20, 30], '', cards)?.title).toBe('B')
+    expect(featureFor([], 'Fixes (#20)', cards)?.title).toBe('A')
+    expect(featureFor([21], '#200', cards)).toBeNull()
   })
 })
 
@@ -111,6 +164,16 @@ describe('doc figures', () => {
     const below = labelBox(t, 'Here', vp, 'bottom'), above = labelBox(t, 'Here', vp, 'top')
     expect(below.y).toBeGreaterThanOrEqual(t.y + t.height)
     expect(above.y + above.height).toBeLessThanOrEqual(t.y)
+  })
+
+  // A slot of fixed shape (a tip's 2:1 frame) trims the crop about its centre; a picture has no margin.
+  it('trims to the slot shape and fits the slot width', () => {
+    const m = meta({ crop: ['wide'], point: null, boxes: { wide: { x: 100, y: 100, width: 800, height: 600 } } })
+    const f = figureGeometry(m, { aspect: 2, column: 400, pad: 0 })
+    expect([f.x0, f.w]).toEqual([101, 798])
+    expect(f.w / f.h).toBeCloseTo(2)
+    expect(f.w * f.k).toBeCloseTo(400)
+    expect(figureGeometry(m, { pad: -5 }).x0).toBe(106)
   })
 
   it('flags a crop so wide its text shows too small', () => {
