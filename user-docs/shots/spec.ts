@@ -7,13 +7,14 @@
 // directly (type stripping) — the scripts need no bundler.
 
 import type { Side } from '../../frontend/src/utils/anchorPosition.ts'
+import { COLOUR_SCHEMES, type ColourScheme } from '../../frontend/src/utils/colourScheme.ts'
 
-/** The numbers a page may cite, measured by doc-fixture on the copy (`<set>.facts.json` beside the
- *  captures): `{{<project>.<image>.planes}}`, `.channels`, `.timepoints`, `.interval` (seconds per
- *  frame); per fixture gate `.<gate>.count` / `.<gate>.pct` (`gateKey`); per tracked segmentation
+/** The facts a page may cite, measured by doc-fixture on the copy (`<set>.facts.json` beside the
+ *  captures): `{{<project>.<image>.name}}` (the name the copy shows), `.planes`, `.channels`,
+ *  `.timepoints`, `.interval` (seconds per frame); per fixture gate `.<gate>.count` / `.<gate>.pct` (`gateKey`); per tracked segmentation
  *  `.<seg>.tracks`. A shot's `expect` may cite one, so the page's number is the one in the pixels. */
 export const FACT_TOKEN = /\{\{([\w-]+)\.([\w-]+)\.([\w-]+)(?:\.(count|pct|tracks))?\}\}/g
-const IMAGE_FACTS = ['planes', 'channels', 'timepoints', 'interval']
+const IMAGE_FACTS = ['name', 'planes', 'channels', 'timepoints', 'interval']
 
 /** A fixture gate's fact name: its name, prefixed by its segmentation when that is not `cells`
  *  (every population's segmentation has its own `qc`). */
@@ -38,6 +39,9 @@ export type Action =
   | { panel: string; w: number; h: number; y?: number }
   /** Scroll the anchor's own scroll container until the anchor's bottom is in view. */
   | { scroll: Anchor }
+  /** Unfold a fold toggle (`aria-expanded`): clicked only when folded, as a fold's state persists per
+   *  profile and a plain click would close one the last shot left open. */
+  | { open: Anchor }
 
 /** One screenshot, taken by scripts/docshots/capture.mjs from an ISOLATED instance and composed into a
  *  page's image by scripts/docshots/compose.mjs (crop + pointer drawn on top, so the look can change
@@ -56,8 +60,19 @@ export interface Shot {
   /** Shoot the image in the pop-out viewer (opens a headed browser window: WebGPU needs a display).
    *  `plane` = a z-plane with cells; outlines on unless `outlines: false`; `zoom` = wheel steps in at
    *  `at` (fractions of the canvas), so single cells read on the page; `channels` = the ones shown (by
-   *  name), every other switched off; `gated` = the gated populations drawn. */
-  viewer?: { plane?: number; outlines?: boolean; gated?: boolean; zoom?: number; at?: [number, number]; channels?: string[] }
+   *  name), every other switched off; `gated` = the gated populations drawn; `mask` = the segmentation
+   *  outlined (default `cells`); `tracks` = the segmentations whose tracks are drawn; `time` = the
+   *  timepoint (0-based) of a time-lapse; `tail` = how many frames of each track are drawn behind it. */
+  viewer?: { plane?: number; outlines?: boolean; gated?: boolean; zoom?: number; at?: [number, number]; channels?: string[];
+             mask?: string; tracks?: string[]; time?: number; tail?: number }
+  /** The shape its slot needs, width / height (a What's new card's picture is 2): the crop is trimmed
+   *  about its centre to it. */
+  aspect?: number
+  /** Its slot's width in CSS px, when narrower than the set's `column` (one of two side by side). */
+  width?: number
+  /** A picture's crop pulled in this many CSS px on every side: chrome the canvas runs under (the
+   *  viewer's status bar) or the image's own edge. */
+  inset?: number
   /** Window height in CSS px when the target is taller than the default 900 (a gate plot). */
   height?: number
   /** What the user does first. A shot shows the state BEFORE the action it illustrates, unless the result is the point. */
@@ -72,6 +87,9 @@ export interface Shot {
   /** The app's labels the page cites: the capture fails when an anchor's text lacks one. `text` may be a
    *  fixture fact (`{{project.image.fact}}`), so a number on the page is the number in the pixels. */
   expect?: { anchor: Anchor; text: string }[]
+  /** The line under the image where a page captions it (the README). Names the sample and its numbers
+   *  by fact token (`{{project.image.name}}`), never typed: the caption says what the pixels show. */
+  caption?: string
 }
 
 /** Where doc-fixture records fixture key → the copy's uids, in the instance's config dir. */
@@ -111,15 +129,36 @@ export type FixtureGate = { image: string; name: string; segmentation?: string }
   | { fromSource: true; popType?: 'flow' | 'trackclust' }
 )
 
-/** The shots one user-docs page shows, and the fixture they run on. */
+/** The shots one page shows, and the fixture they run on. */
 export interface ShotSet {
   /** Stable id; also where the fixture's copies are recorded. */
   id: string
-  /** The page these shots illustrate, relative to user-docs/ (it links `images/<shot id>.png`). */
+  /** Where these shots are shown: a page relative to user-docs/ (it links `images/<file>`), or `app`
+   *  (What's new cards and tips, lib/docShots.ts). */
   page: string
+  /** The colour schemes every shot is captured in: set on the app before each capture and read back,
+   *  never inherited from the instance. One image never mixes schemes with another on a page. The
+   *  first is the page's default; a README set with both shows the reader's (`<picture>`), and an
+   *  `app` set needs every scheme, so the app shows the one its user has. */
+  themes: ColourScheme[]
+  /** The width its images are shown at, CSS px: a crop wider is scaled down to it (default the GitHub
+   *  page column, figure.ts → COLUMN_PX). */
+  column?: number
   fixture?: Fixture
   shots: Shot[]
 }
+
+/** A shot's capture (and a screenshot's image) in one scheme: `<id>.png` in light, `<id>.<scheme>.png`
+ *  otherwise. */
+export const shotFile = (id: string, theme: ColourScheme): string => (theme === 'light' ? `${id}.png` : `${id}.${theme}.png`)
+
+/** A picture of the image: a viewer shot, cropped to the canvas. Its pixels are the image's, the same in
+ *  every scheme, so it is captured once (the set's first scheme) and composed as one JPEG
+ *  (`<id>.jpg`): a lossless 2× microscopy picture is megabytes. */
+export const isPicture = (x: Shot): boolean => !!x.viewer
+export const shotThemes = (set: ShotSet, x: Shot): ColourScheme[] => (isPicture(x) ? set.themes.slice(0, 1) : set.themes)
+/** The composed image a page or the app shows, in one scheme (a picture's one file serves every scheme). */
+export const imageFile = (x: Shot, theme: ColourScheme): string => (isPicture(x) ? `${x.id}.jpg` : shotFile(x.id, theme))
 
 export interface ShotIssue { set: string; problem: string }
 
@@ -133,10 +172,17 @@ export function checkShotSets(sets: ShotSet[]): ShotIssue[] {
     ids.add(set.id)
     if (!/^[a-z0-9-]+$/.test(set.id)) bad('id must be kebab-case')
     const fx = set.fixture ?? {}
+    if (!set.themes?.length) bad('names no colour scheme (themes): every shot sets one explicitly')
+    for (const t of set.themes ?? []) if (!COLOUR_SCHEMES.some(c => c.value === t)) bad(`"${t}" is not a colour scheme`)
+    if (new Set(set.themes).size !== set.themes?.length) bad('a colour scheme is listed twice')
+    if (set.page === 'app' && COLOUR_SCHEMES.some(c => !set.themes?.includes(c.value)))
+      bad('an app set is captured in every colour scheme, so the app shows its user\'s and never mixes them')
     for (const x of set.shots) {
       if (shotIds.has(x.id)) bad(`shot id "${x.id}" is used twice`)
       shotIds.add(x.id)
       if (x.crop.length === 0) bad(`shot "${x.id}" has nothing to crop to`)
+      if (x.viewer && (x.crop.join() !== 'css:canvas' || x.point))
+        bad(`shot "${x.id}" is a picture of the image: it crops to css:canvas alone and points at nothing, so no app chrome (which has a scheme) is in it`)
       if (x.profile && x.profile !== 'default' && !fx.profiles?.some(p => p.name === x.profile))
         bad(`shot "${x.id}" runs as profile "${x.profile}", which the fixture does not create`)
       if (x.project && !fx.projects?.[x.project]) bad(`shot "${x.id}" opens project "${x.project}", which the fixture does not copy`)
@@ -145,13 +191,13 @@ export function checkShotSets(sets: ShotSet[]): ShotIssue[] {
       for (const a of shotAnchors(x))
         if (!/^(css:.+|nav:\/.*|[a-zA-Z][\w-]*\.[\w.-]+)(@@\d+)?$/.test(a))
           bad(`shot "${x.id}": "${a}" is not an anchor (data-guide id, nav:/route or css:…)`)
-      for (const e of x.expect ?? []) for (const m of e.text.matchAll(FACT_TOKEN)) {
+      for (const text of [...(x.expect ?? []).map(e => e.text), ...(x.caption ? [x.caption] : [])]) for (const m of text.matchAll(FACT_TOKEN)) {
         const [tok, proj, img, what, stat] = m
         const p = fx.projects?.[proj]
         if (!p?.images[img]) bad(`${tok}: the fixture copies no image "${img}" in project "${proj}"`)
         else if (stat === 'tracks' ? !p.gates?.some(g => g.image === img && g.segmentation === what)
           : stat ? !p.gates?.some(g => g.image === img && gateKey(g) === what) : !IMAGE_FACTS.includes(what))
-          bad(`${tok}: not a fact the fixture measures (${IMAGE_FACTS.join(', ')}, <gate>.count / .pct, or <segmentation>.tracks)`)
+          bad(`shot "${x.id}": ${tok} is not a fact the fixture measures (${IMAGE_FACTS.join(', ')}, <gate>.count / .pct, or <segmentation>.tracks)`)
       }
     }
   }
@@ -175,7 +221,7 @@ export function shotAnchors(x: Shot): Anchor[] {
   const out: Anchor[] = [...x.crop, ...(x.masks ?? []), ...(x.expect ?? []).map(e => e.anchor)]
   if (x.point) out.push(x.point.anchor)
   for (const a of x.actions ?? []) {
-    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : null
+    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : 'open' in a ? a.open : null
     if (t && !t.startsWith('text:')) out.push(t)
   }
   return out

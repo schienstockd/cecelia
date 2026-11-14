@@ -1,7 +1,15 @@
 {
- "ai-attach": 375,
+ "ai-attach": 374,
  "ai-keep": 880,
- "ai-login": 375,
- "ai-reply": 395,
- "ai-turn-on": 497
+ "ai-login": 374,
+ "ai-reply": 394,
+ "ai-turn-on": 497,
+ "app-checks": 260,
+ "app-checks.dark": 260,
+ "app-outlines": 576,
+ "app-tracks": 576,
+ "readme-outlines": 560,
+ "readme-tracks": 880,
+ "readme-when": 248,
+ "readme-when.dark": 248
 }

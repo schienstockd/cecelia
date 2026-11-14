@@ -52,17 +52,33 @@ export function labelBox(t: Box, label: string, vp: { width: number; height: num
   return { x: p.left, y: p.top, ...box }
 }
 
-export function figureGeometry(m: ShotMeta): Figure {
+/** Where the figure goes: its column width in CSS px (default the page's) and, for a slot of fixed
+ *  shape (a What's new card), the width/height it must have: the crop is trimmed about its centre to
+ *  that shape, never grown past what was captured. `pad` is the margin around the crop (default 8;
+ *  0 for a picture of the image, whose margin would be the page around the canvas). */
+export interface Slot { column?: number; aspect?: number; pad?: number }
+
+export function figureGeometry(m: ShotMeta, slot: Slot = {}): Figure {
   const boxes = m.crop.map(a => m.boxes[a]).filter((b): b is Box => !!b)
   const t = m.point ? m.boxes[m.point.anchor] ?? null : null
   const l = t && m.point?.label ? labelBox(t, m.point.label, m.viewport, m.point.side) : null
   const all = [...boxes, ...(t ? [t] : []), ...(l ? [l] : [])]
   if (all.length === 0) throw new Error(`shot ${m.id}: no recorded box to crop to`)
-  const left = Math.max(0, Math.min(...all.map(b => b.x)) - PAD)
-  const top = Math.max(0, Math.min(...all.map(b => b.y)) - PAD)
-  const right = Math.min(m.viewport.width, Math.max(...all.map(b => b.x + b.width)) + PAD)
-  const bottom = Math.min(m.viewport.height, Math.max(...all.map(b => b.y + b.height)) + PAD)
-  const w = right - left, h = bottom - top
+  const pad = slot.pad ?? PAD, out = Math.max(0, pad)
+  let left = Math.max(0, Math.min(...all.map(b => b.x)) - out)
+  let top = Math.max(0, Math.min(...all.map(b => b.y)) - out)
+  const right = Math.min(m.viewport.width, Math.max(...all.map(b => b.x + b.width)) + out)
+  const bottom = Math.min(m.viewport.height, Math.max(...all.map(b => b.y + b.height)) + out)
+  // a picture's edge is the canvas', on a fractional CSS px whose last row is the page's: one whole
+  // px inward on every side, so no line of the page shows
+  // (a negative pad insets further: chrome over the canvas' edge, the status bar)
+  const inset = pad <= 0 ? 1 - pad : 0
+  if (pad <= 0) { left = Math.ceil(left) + inset; top = Math.ceil(top) + inset }
+  let w = (pad <= 0 ? Math.floor(right) - inset : right) - left, h = (pad <= 0 ? Math.floor(bottom) - inset : bottom) - top
+  if (slot.aspect) {
+    if (w / h > slot.aspect) { const nw = h * slot.aspect; left += (w - nw) / 2; w = nw }
+    else { const nh = w / slot.aspect; top += (h - nh) / 2; h = nh }
+  }
   const rel = (b: Box): Box => ({ x: b.x - left, y: b.y - top, width: b.width, height: b.height })
   const target = t ? rel(t) : null, label = l ? rel(l) : null
   let arrow: Figure['arrow'] = null
@@ -74,6 +90,6 @@ export function figureGeometry(m: ShotMeta): Figure {
       ? { x1: lc.x < tc.x ? label.x + label.width : label.x, y1: lc.y, x2: lc.x < tc.x ? target.x - 5 : target.x + target.width + 5, y2: tc.y }
       : { x1: lc.x, y1: lc.y < tc.y ? label.y + label.height : label.y, x2: tc.x, y2: lc.y < tc.y ? target.y - 5 : target.y + target.height + 5 }
   }
-  const k = Math.min(1, COLUMN_PX / w)
+  const k = Math.min(1, (slot.column ?? COLUMN_PX) / w)
   return { x0: left, y0: top, w, h, k, legible: k >= MIN_SCALE_SHARE, target, label, arrow }
 }

@@ -10,6 +10,8 @@
 import { CLAUDE_BRIDGE, CLAUDE_DATA_NOTICE, CLAUDE_PROVISIONAL, KIWI_LOOP, KIWI_MODE, TERMINAL_MODE } from '../lib/claudeOverview'
 import { aiDialogRows } from '../lib/claudeTools'
 import { AI_OFF_COPY, AI_OPT_IN_COPY } from './aiSwitch'
+import { USING_AI_SHOTS } from '../../../user-docs/shots/using-ai.ts'
+import { imageFile } from '../../../user-docs/shots/spec.ts'
 
 /** One step: Do → You'll see → If it goes wrong, plus Why for what isn't obvious. */
 interface DocStep { title: string; do: string; see: string; ifWrong: string; why?: string; optional?: boolean; shot: string; note?: string }
@@ -66,7 +68,8 @@ function mode(m: typeof KIWI_MODE): string {
 /** A composed screenshot at the width it was composed for (`user-docs/images/images.json`, written by
  *  scripts/docshots/compose.mjs); a shot not composed yet is a visible placeholder line. */
 function image(id: string, alt: string, widths: Record<string, number>): string {
-  return widths[id] ? `<img src="images/${id}.png" width="${widths[id]}" alt="${alt.replace(/"/g, '&quot;')}">`
+  const shot = USING_AI_SHOTS.shots.find(s => s.id === id)
+  return shot && widths[id] ? `<img src="images/${imageFile(shot, USING_AI_SHOTS.themes[0])}" width="${widths[id]}" alt="${alt.replace(/"/g, '&quot;')}">`
     : `_Screenshot \`${id}\` not composed yet (pixi run doc-shots, then doc-images)._`
 }
 

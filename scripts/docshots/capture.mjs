@@ -5,8 +5,8 @@
 //     pixi run doc-shots -- --base http://127.0.0.1:5223 --config-dir <dir> [--only <shot or set id>] [--out DIR]
 //
 // Each shot (user-docs/shots → `Shot`) runs in a FRESH browser context — in one long session,
-// state leaked between pages (screenshots plan, first pass) — in the light scheme at 2× scale: sign
-// in, open the shot's project, focus its image, push its route, run its actions, wait for the page's
+// state leaked between pages (screenshots plan, first pass) — once per colour scheme its set names
+// (`themes`), at 2× scale: sign in, open the shot's project, focus its image, push its route, run its actions, wait for the page's
 // own loading state, then record the box of every anchor it names and screenshot the viewport.
 // The crop and the pointer are NOT baked in: compose.mjs (`pixi run doc-images`) draws them from the
 // recorded boxes, so the look can change without recapturing.
@@ -20,10 +20,12 @@
 //     next capture; the review of the first drafts found "77d" and "12h" baked into the pixels);
 //   - a viewer shot's state, read back after it was set, is not the one asked for: another image, plane,
 //     channels, outlines or gated populations (each shot starts a fresh context, but the viewer keeps
-//     some settings per image, and a click that toggles instead of sets leaves the last shot's state).
+//     some settings per image, and a click that toggles instead of sets leaves the last shot's state);
+//   - the page's colour scheme, read back when the screenshot is taken, is not the one asked for (a
+//     profile's own scheme adopted on a reload would otherwise slip one dark shot into a light set).
 //
-// Output per shot: <out>/<id>.png and <out>/<id>.json (viewport, scale, boxes in CSS px, commit, time),
-// and per shot set <out>/<set>.facts.json: the fixture's measured numbers.
+// Output per shot and scheme: <out>/<file> (spec.ts → shotFile: `<id>.png` light, `<id>.dark.png`) and
+// the same name with .json (viewport, scale, boxes in CSS px, scheme, commit, time), and per shot set <out>/<set>.facts.json: the fixture's measured numbers.
 // Isolated instance only: shots click through the app and opening a project writes. Refuses 8080/5173.
 //
 // Setting one up: an empty CECELIA_DEV_DIR whose custom.toml already names a projects folder inside it
@@ -43,7 +45,8 @@ import { closeDialogs, land, openProject, refuseSlotZero, selectProfile, settle,
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, fillFacts, FIXTURE_RECORD } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, fillFacts, FIXTURE_RECORD, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { isScreenshotChrome, SCREENSHOT_KEEP } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'viewerScreenshot.ts')).href)
 const { anchorSelector } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'guideAnchor.ts')).href)
 
 const VIEWPORT = { width: 1440, height: 900 }
@@ -102,11 +105,19 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
   await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
   if (!(await page.evaluate(async () => !!(await navigator.gpu?.requestAdapter()))))
     throw new Error('no WebGPU adapter: the viewer needs a headed Chromium on a display')
-  // the image is read before the controls exist ("Reading image…")
+  // one z plane (2D), set: the viewer may open a stack in 3D, which has no plane to pick. Choosing a
+  // segment is idempotent. The image is read before the controls exist ("Reading image…").
+  await page.locator('[aria-label="View mode"]').getByText('2D', { exact: true }).click({ timeout: 90000 })
   await page.locator('input[aria-label="z plane"]').waitFor({ state: 'attached', timeout: 90000 })
   // in THIS page: a setting written on the main page and navigated away from is not saved yet, and the
   // viewer would read the last shot's value
-  await vue(page, (g, o) => { g.$pinia._s.get('settings').viewerLabelContour = o }, v.outlines === false ? 0 : 2)
+  await vue(page, (g, o) => {
+    const s = g.$pinia._s.get('settings')
+    s.viewerLabelContour = o.contour
+    if (o.tail) s.viewerTailLength = o.tail
+    // a track drawn in full, whichever planes it crosses (the default reach is a cell's few planes)
+    if (o.tracks) s.viewerTrackZTol = 1000
+  }, { contour: v.outlines === false ? 0 : 2, tail: v.tail, tracks: !!v.tracks?.length })
   await page.waitForTimeout(1500)
   const pause = page.locator('[aria-label="Pause"]')
   if (await pause.count()) await pause.first().click()
@@ -160,11 +171,21 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
     ok = now.length > 0 && now.join('|') !== full
   }
   if (!ok) problems.push(`viewer: auto contrast did not take (channel ranges still ${full})`)
-  // On the image: the cell mask and the gated populations, each SET (not toggled: both persist)
-  const mask = page.locator('[aria-label="Mask of cells"]').first()
+  // On the image: the mask, each segmentation's tracks and the gated populations, each SET (not
+  // toggled: all persist). A segmentation not in use folds away under "n more".
+  const seg = v.mask ?? 'cells'
   const want = v.outlines !== false
-  if (want && !(await mask.count())) await page.getByText(/^\d+ more$/).first().click()   // an off mask folds away
-  if ((await mask.getAttribute('aria-pressed')) !== String(want)) await mask.click()
+  const onImage = async (label, on) => {
+    const b = page.locator(`[aria-label="${label}"]`).first()
+    if (!(await b.count()) && on) await page.getByText(/^\d+ more$/).first().click()
+    if (!(await b.count())) { if (on) throw new Error(`viewer: no "${label}" on the image`); return }
+    if ((await b.getAttribute('aria-pressed')) !== String(on)) await b.click()
+  }
+  if (want) await onImage(`Mask of ${seg}`, true)
+  // outlines off: no segmentation's mask, not only the named one's
+  else for (const l of await page.locator('[aria-label^="Mask of "]').evaluateAll(els => els.map(e => e.getAttribute('aria-label'))))
+    await onImage(l, false)
+  for (const t of v.tracks ?? []) await onImage(`Tracks of ${t}`, true)
   const gated = page.locator('label', { hasText: /^\s*Gated\s*$/ }).locator('input').first()
   if (await gated.count() && (await gated.isChecked()) !== !!v.gated) await gated.evaluate(el => el.click())
   // step the plane away and back: reloads the image and label slices, so a mask turned on before its
@@ -177,22 +198,36 @@ async function viewerReady(page, base, projectUid, imageUid, v, problems) {
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
     await page.waitForTimeout(1500)
   }
+  if (v.time !== undefined) {
+    // paused again: switching to 2D or a plane can start playback, which moves the timepoint on
+    const pause = page.locator('[aria-label="Pause"]')
+    if (await pause.count()) await pause.first().click()
+    await page.evaluate(t => {
+      const inp = document.querySelector('input[aria-label="Timepoint"]')
+      inp.value = String(t); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }))
+    }, v.time)
+    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+  }
   await page.waitForTimeout(3000)
   // read the state back: what the caption describes is what was set, not what the last shot left
-  const got = await page.evaluate(() => {
+  const got = await page.evaluate(([seg, tracks]) => {
     const sec = document.querySelector('[aria-label="Auto contrast every channel"]')?.closest('.collapsible-section')
     const gated = [...document.querySelectorAll('label')].find(l => /^\s*Gated\s*$/.test(l.textContent))?.querySelector('input')
     return {
       plane: Number(document.querySelector('input[aria-label="z plane"]')?.value),
       channels: [...(sec?.querySelectorAll('input[aria-label^="Show "]') ?? [])].filter(e => e.checked).map(e => e.getAttribute('aria-label').slice(5)),
-      mask: document.querySelector('[aria-label="Mask of cells"]')?.getAttribute('aria-pressed') === 'true',
+      mask: document.querySelector(`[aria-label="Mask of ${seg}"]`)?.getAttribute('aria-pressed') === 'true',
+      tracks: tracks.filter(t => document.querySelector(`[aria-label="Tracks of ${t}"]`)?.getAttribute('aria-pressed') === 'true'),
+      time: Number(document.querySelector('input[aria-label="Timepoint"]')?.value),
       gated: gated ? gated.checked : null,
       text: document.body.innerText,
     }
-  })
+  }, [seg, v.tracks ?? []])
   if (v.plane !== undefined && got.plane !== v.plane) problems.push(`viewer: on plane ${got.plane}, not ${v.plane}`)
   if (v.channels && [...got.channels].sort().join() !== [...v.channels].sort().join())
     problems.push(`viewer: channels on are ${got.channels.join(', ')}, not ${v.channels.join(', ')}`)
+  if (v.tracks && got.tracks.length !== v.tracks.length) problems.push(`viewer: tracks of ${v.tracks.filter(t => !got.tracks.includes(t)).join(', ')} not drawn`)
+  if (v.time !== undefined && got.time !== v.time) problems.push(`viewer: at timepoint ${got.time}, not ${v.time}`)
   if (got.mask !== (v.outlines !== false)) problems.push(`viewer: outlines ${got.mask ? 'on' : 'off'}, asked ${v.outlines !== false ? 'on' : 'off'}`)
   if (got.gated === null ? !!v.gated : got.gated !== !!v.gated) problems.push(`viewer: gated populations ${got.gated ? 'shown' : 'hidden'}, asked ${v.gated ? 'shown' : 'hidden'}`)
   if (v.name && !got.text.includes(v.name)) problems.push(`viewer: does not show image "${v.name}"`)
@@ -204,6 +239,10 @@ async function runAction(page, act) {
   else if ('hover' in act) await loc(page, act.hover).hover({ timeout: 10000 })
   else if ('press' in act) await page.keyboard.press(act.press)
   else if ('waitFor' in act) await loc(page, act.waitFor).waitFor({ state: 'visible', timeout: 15000 })
+  else if ('open' in act) {
+    const t = loc(page, act.open)
+    if ((await t.getAttribute('aria-expanded', { timeout: 10000 })) !== 'true') await t.click({ timeout: 10000 })
+  }
   else if ('scroll' in act) await loc(page, act.scroll).evaluate(el => el.scrollIntoView({ block: 'end' }))
   else if ('panel' in act) await page.evaluate(a => {
     // FloatingPanel's own key and shape (components/FloatingPanel.vue → load)
@@ -212,7 +251,7 @@ async function runAction(page, act) {
   await settle(page, 30000)
 }
 
-async function capture(browser, a, shot, fixture, out, b) {
+async function capture(browser, a, shot, fixture, out, b, theme) {
   const vp = { ...VIEWPORT, height: shot.height ?? VIEWPORT.height }
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: SCALE })
   const page = await ctx.newPage()
@@ -223,7 +262,7 @@ async function capture(browser, a, shot, fixture, out, b) {
     await signIn(page, a.base, a.configDir)
     await selectProfile(page, shot.profile ?? 'default')
     await closeDialogs(page)
-    await vue(page, g => { const s = g.$pinia._s.get('settings'); s.colourScheme = 'light'; s.plotsMaximised = false; s.kiwiOpen = false })
+    await vue(page, (g, t) => { const s = g.$pinia._s.get('settings'); s.colourScheme = t; s.plotsMaximised = false; s.kiwiOpen = false }, theme)
     const proj = shot.project ? fixture?.projects[shot.project] : null
     if (shot.project && !proj) throw new Error(`fixture project "${shot.project}" is not set up: run pixi run doc-fixture`)
     if (proj) await openProject(page, proj.uid)
@@ -261,18 +300,30 @@ async function capture(browser, a, shot, fixture, out, b) {
       const hit = text.match(VOLATILE)
       if (hit) problems.push(`${an} shows "${hit[0]}", which changes between captures: mask it or crop it out`)
     }
+    // a viewer shot is the image as Save PNG has it: the canvas wrap's chrome (playback bar, minimap, the
+    // On the image panel) hidden by the app's own rule (utils/viewerScreenshot.ts → isScreenshotChrome)
+    // (the function itself, sent into the page, so the two can never disagree)
+    if (shot.viewer) await page.evaluate(([src, keep]) => {
+      const chrome = (0, eval)(`(() => { const SCREENSHOT_KEEP = ${JSON.stringify(keep)}; return (${src}) })()`)
+      const c = document.querySelector('canvas'), host = c?.parentElement
+      for (const el of host?.children ?? []) if (chrome(el, host, c)) el.style.visibility = 'hidden'
+    }, [isScreenshotChrome.toString(), SCREENSHOT_KEEP])
     await page.mouse.move(vp.width - 2, vp.height - 2)   // park the mouse: no stray hover
     await page.waitForTimeout(200)
-    await page.screenshot({ path: join(out, `${shot.id}.png`) })
-    writeFileSync(join(out, `${shot.id}.json`), JSON.stringify({
-      id: shot.id, viewport: vp, scale: SCALE, boxes, point: shot.point ?? null, crop: shot.crop,
+    // the scheme the pixels are in, read off the page (utils/colourScheme.ts: dark is no attribute)
+    const shown = await page.evaluate(() => document.documentElement.dataset.theme ?? 'dark')
+    if (shown !== theme) throw new Error(`the page is in the ${shown} scheme, not ${theme}`)
+    const file = shotFile(shot.id, theme)
+    await page.screenshot({ path: join(out, file) })
+    writeFileSync(join(out, file.replace(/\.png$/, '.json')), JSON.stringify({
+      id: shot.id, viewport: vp, scale: SCALE, boxes, point: shot.point ?? null, crop: shot.crop, theme,
       commit: commit(), capturedAt: new Date().toISOString(), pageErrors: errors,
     }, null, 1))
   } catch (e) {
     problems.push(String(e.message ?? e).split('\n')[0].slice(0, 240))
   } finally {
     // what the shot saw when it failed, to diagnose without rerunning headed
-    if (problems.length) await page.screenshot({ path: join(out, `${shot.id}.fail.png`) }).catch(() => {})
+    if (problems.length) await page.screenshot({ path: join(out, shotFile(shot.id, theme).replace(/\.png$/, '.fail.png')) }).catch(() => {})
     await ctx.close()
   }
   return problems
@@ -298,16 +349,17 @@ async function main() {
   for (const b of new Set(shots.map(([bk]) => bk)))
     if (record[b.id]?.facts) writeFileSync(join(out, `${b.id}.facts.json`), JSON.stringify(record[b.id].facts, null, 1))
   try {
-    for (const [b, s] of shots) {
-      const problems = await capture(s.viewer ? headed : browser, a, s, record[b.id], out, b)
-      if (problems.length) { failed++; console.log(`✗ ${s.id}\n${problems.map(p => `    ${p}`).join('\n')}`) }
-      else console.log(`✓ ${s.id}`)
+    for (const [b, s] of shots) for (const theme of shotThemes(b, s)) {
+      const problems = await capture(s.viewer ? headed : browser, a, s, record[b.id], out, b, theme)
+      if (problems.length) { failed++; console.log(`✗ ${s.id} (${theme})\n${problems.map(p => `    ${p}`).join('\n')}`) }
+      else console.log(`✓ ${s.id} (${theme})`)
     }
   } finally {
     await browser.close()
     await headed?.close()
   }
-  console.log(`${shots.length - failed}/${shots.length} shots → ${out}`)
+  const n = shots.reduce((k, [b, s]) => k + shotThemes(b, s).length, 0)
+  console.log(`${n - failed}/${n} shots → ${out}`)
   if (failed) process.exit(1)
 }
 

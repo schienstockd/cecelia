@@ -1,0 +1,41 @@
+{
+ "in-app": {
+  "spleen.k3Tx90.name": "Spleen, three-photon time-lapse",
+  "spleen.k3Tx90.planes": 21,
+  "spleen.k3Tx90.channels": 4,
+  "spleen.k3Tx90.timepoints": 75,
+  "spleen.k3Tx90.T_qc.count": 982,
+  "spleen.k3Tx90.T_qc.pct": "14.3",
+  "spleen.k3Tx90.B_qc.count": 305,
+  "spleen.k3Tx90.B_qc.pct": "3.2",
+  "spleen.k3Tx90.T.tracks": 52,
+  "spleen.k3Tx90.interval": 30,
+  "spleen.k3Tx90.B.tracks": 23,
+  "lymphoid.FtGoJO.name": "Lymphoid tissue, LCMV",
+  "lymphoid.FtGoJO.planes": 26,
+  "lymphoid.FtGoJO.channels": 6,
+  "lymphoid.FtGoJO.timepoints": 1
+ },
+ "readme": {
+  "spleen.k3Tx90.name": "Spleen, three-photon time-lapse",
+  "spleen.k3Tx90.planes": 21,
+  "spleen.k3Tx90.channels": 4,
+  "spleen.k3Tx90.timepoints": 75,
+  "spleen.k3Tx90.T_qc.count": 982,
+  "spleen.k3Tx90.T_qc.pct": "14.3",
+  "spleen.k3Tx90.B_qc.count": 305,
+  "spleen.k3Tx90.B_qc.pct": "3.2",
+  "spleen.k3Tx90.T.tracks": 52,
+  "spleen.k3Tx90.interval": 30,
+  "spleen.k3Tx90.B.tracks": 23,
+  "lymphoid.FtGoJO.name": "Lymphoid tissue, LCMV",
+  "lymphoid.FtGoJO.planes": 26,
+  "lymphoid.FtGoJO.channels": 6,
+  "lymphoid.FtGoJO.timepoints": 1
+ },
+ "using-ai": {
+  "ln.FtGoJO.planes": 26,
+  "ln.FtGoJO.channels": 6,
+  "ln.FtGoJO.timepoints": 1
+ }
+}
