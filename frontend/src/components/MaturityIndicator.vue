@@ -2,7 +2,7 @@
   A page's or a function's maturity, and "Something wrong?" beside it — ONE look for both, so a picked
   function reads the same as the page it runs on (docs/todo/FEATURE_MATURITY_PLAN.md → P2).
 
-    any tier                     its dot alone (`ComingSoonBadge tier dot`, the map's colour per tier;
+    any tier                     its dot alone (`ComingSoonBadge tier dot`, `chipDot`'s colour per tier;
                                  the tooltip names it), opens the map row — Beta gets one too, so an
                                  unmarked page never reads as "fine"
     beside it                    "Something wrong?" (`ReportProblemButton`)
@@ -18,7 +18,7 @@ import ComingSoonBadge from './ComingSoonBadge.vue'
 import ReportProblemButton from './ReportProblemButton.vue'
 import type { MaturityRef } from '../utils/maturity'
 import { tierTip } from '../lib/guides/tiers'
-import { openMaturityRow } from '../lib/guideOpen'
+import { openMaturityRow } from '../lib/maturityOpen'
 
 // `micro`: sized to sit inside a text row without making it taller (the sidebar's open-page row)
 defineProps<{ maturity: MaturityRef | null; page: string; micro?: boolean }>()

@@ -6,7 +6,7 @@
   builds a chain, a board and a notebook. Then what ONLY that mode does (the reason to pick it),
   example asks, and how to start. Static, theme tokens only — the feijoa sketches are animated
   720×360 explainers on a paper palette, wrong at 72 px in a dark card. One renderer for every place
-  that shows it — Kiwi's `?` dialog (ClaudeOverviewDialog) and the Guides map (GuideMap).
+  that shows it — Kiwi's `?` dialog (ClaudeOverviewDialog).
 -->
 <script setup lang="ts">
 import { KIWI_MODE, TERMINAL_MODE, CLAUDE_BRIDGE, type Mode } from '../lib/claudeOverview'

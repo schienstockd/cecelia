@@ -48,7 +48,7 @@ export const tourGuide: GuideDef = {
       anchor: 'header.helpMenu',
       placement: 'bottom-end',
       title: 'Help',
-      text: 'Guides and the map, the icon and colour glossaries, what’s new, and where to ask.',
+      text: 'Guides, feature maturity, the icon and colour glossaries, what’s new, and where to ask.',
       bullets: [
         'Guides is how you get back here; each walks a real step on your own data.',
         'GitHub for anything broken, the Zulip chat for anything you are unsure about.',

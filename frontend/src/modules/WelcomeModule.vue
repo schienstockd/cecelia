@@ -14,7 +14,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSetRecipe } from '../composables/useSetRecipe'
-import { WRITTEN_RECIPES, resumeStepOf, ranPagesOf } from '../utils/setRecipe'
+import { resumeStepOf, ranPagesOf, recipeChoiceRows, RECIPE_CHOICE_COLUMNS } from '../utils/setRecipe'
 import { formatWhen } from '../utils/formatWhen'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ProjectPanel from '../components/ProjectPanel.vue'
@@ -68,15 +68,8 @@ const picked = computed(() => own.value?.id ?? '')
 // A set that has its recipe shows one line; the table comes back on "Change".
 const changing = ref(false)
 async function pick(id: string) { await save(id); changing.value = false }
-const recipeRows = computed(() => WRITTEN_RECIPES.map(r => ({
-  id: r.id,
-  title: r.id === suggestion.value?.recipe.id ? `${r.title} · suggested (${suggestion.value.reason})` : r.title,
-  when: r.whenThisIsYou,
-})))
-const RECIPE_COLUMNS: SelectionColumn[] = [
-  { key: 'title', label: 'Recipe' },
-  { key: 'when', label: 'Is this you?', ellipsis: true },
-]
+const recipeRows = computed(() => recipeChoiceRows(suggestion.value))
+const RECIPE_COLUMNS: SelectionColumn[] = RECIPE_CHOICE_COLUMNS
 // Pick the set up where it is: the first recipe step whose page has not run on it yet.
 const start = computed(() => {
   const r = own.value ?? suggestion.value?.recipe

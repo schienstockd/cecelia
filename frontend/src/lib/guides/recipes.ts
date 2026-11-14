@@ -29,7 +29,7 @@
 interface StepBase {
   why: string                   // one line: why this step, in THIS recipe. The fork, not a summary.
   optional?: boolean            // "only if your movie drifts"
-  // What Claude adds at this step, shown only with the map's Claude toggle on (WORKFLOW_RECIPES_PLAN
+  // What Claude adds at this step, shown only with the Guides dialog's AI help toggle on (WORKFLOW_RECIPES_PLAN
   // D11). `where` is the way in that can do it: 'kiwi' works in Kiwi AND a terminal session (Kiwi only
   // reads); 'terminal' needs a terminal session. Only shipped tools — a step Claude adds nothing to
   // has no `assist`, not a line saying so.
@@ -109,7 +109,7 @@ export const RECIPES: RecipeDef[] = [
       {
         guide: 'gate-populations',
         why: 'Drop debris on volume × surface:volume; gate sparse populations first, the abundant last.',
-        assist: { where: 'kiwi', text: 'Describes a gate and the cells in it; it cannot draw one' },
+        assist: { where: 'terminal', text: 'Proposes a gate you review (✦), and moves or removes only its own; Kiwi describes one' },
       },
       { guide: 'spatial-analysis', why: 'The neighbour graph first, then who touches whom.', assist: READOUT },
       {
@@ -161,9 +161,10 @@ export const RECIPES: RecipeDef[] = [
     whenThisIsYou: 'A time-lapse of cells moving in tissue, e.g. T cells in a lymph node.',
     icon: 'pi-video',
     steps: [
+      { guide: 'import-images', why: 'One movie per acquisition; group them into sets by mouse or condition.' },
       {
         guide: 'drift-correct',
-        why: 'Tissue drift would read as movement in every track — remove it before anything else.',
+        why: 'Tissue drift would read as movement in every track — remove it before any analysis.',
       },
       // After drift, not before: the AF task carries a drift-corrected store's valid box forward and
       // its background estimate skips the zero padding. The condition is the user's to judge — no
@@ -199,7 +200,7 @@ export const RECIPES: RecipeDef[] = [
       {
         guide: 'gate-populations',
         why: 'QC before tracking: gate out debris and doublets on size × intensity, then track the gate.',
-        assist: { where: 'kiwi', text: 'Describes a gate and the cells in it; it cannot draw one' },
+        assist: { where: 'terminal', text: 'Proposes a gate you review (✦), and moves or removes only its own; Kiwi describes one' },
       },
       {
         guide: 'track-cells',
@@ -232,6 +233,7 @@ export const RECIPES: RecipeDef[] = [
     whenThisIsYou: 'A time-lapse where cells move along a structure, e.g. T cells and lymphatics in skin.',
     icon: 'pi-share-alt',
     steps: [
+      { guide: 'import-images', why: 'One movie per acquisition; group them into sets by condition.' },
       { guide: 'drift-correct', why: 'Tissue drift would read as movement in every track — remove it first.' },
       { guide: 'af-correct', optional: true, why: 'Only if one channel\'s signal shows in another.' },
       {

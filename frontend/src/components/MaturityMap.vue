@@ -1,18 +1,17 @@
 <!--
-  The map's maturity overview (docs/todo/FEATURE_MATURITY_PLAN.md → *The map shows it*): every feature
+  The maturity overview, the body of `MaturityDialog.vue` (docs/todo/FEATURE_MATURITY_PLAN.md): every feature
   by guide-picker group, one expandable row each. Collapsed: the tier badge. Expanded: what it was
   tested on, the evidence, the checklist to the next tier, and the data that would help — linked to its
   call-for-datasets entry. Features with no guide are rows marked "no guide"; exempt features (no
   scientific result) have no row; Coming soon rows come from the task flags, not a record.
 
   All joins live in `utils/maturity.ts` (tested); this file only renders them. Which rows are expanded
-  is a passing look inside a dialog, not a page option, so it is not persisted; the section's own
-  open/closed state is (storage-key). A page's or task's maturity link opens the dialog on its row
-  (`lib/guideOpen.ts` → `openMaturityRow`); every expanded row carries "Something wrong?".
+  is a passing look inside a dialog, not a page option, so it is not persisted. A page's or task's
+  maturity link opens the dialog on its row (`lib/maturityOpen.ts` → `openMaturityRow`); every expanded
+  row carries "Something wrong?".
 -->
 <script setup lang="ts">
 import { computed, nextTick, onMounted, watch } from 'vue'
-import CollapsibleSection from './CollapsibleSection.vue'
 import { chipDot, tierLabel } from '../utils/guideMap'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { maturityGroups, splitColumns, type MaturityRow } from '../utils/maturity'
@@ -20,8 +19,7 @@ import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { tierTip } from '../lib/guides/tiers'
 import { findAsk } from '../lib/callForDatasets'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
-import { closeGuides, maturityFocus } from '../lib/guideOpen'
-import { setSectionOpen } from '../utils/sectionOpen'
+import { closeMaturity, maturityFocus } from '../lib/maturityOpen'
 import ReportProblemButton from './ReportProblemButton.vue'
 
 const taskDefs = useTaskDefsStore()
@@ -34,15 +32,11 @@ const rowOpen = useSingleOpenSection('cc.guides.maturityRow')
 const isOpen = (id: string) => rowOpen.isOpen(id)
 const toggle = (id: string) => rowOpen.toggle(id)
 
-// opened from a page's or task's maturity link: open this section and that row, then scroll to it.
-// In setup, before the section mounts, so it reads the open state already written. The row may be a
+// opened from a page's or task's maturity link: open that row, then scroll to it. The row may be a
 // Coming soon task, which only exists once the task specs have loaded — hence the watch.
 const focus = maturityFocus.value
 maturityFocus.value = null
-if (focus) {
-  setSectionOpen('cc.guides.maturityOpen', true)
-  rowOpen.set(focus)
-}
+if (focus) rowOpen.set(focus)
 function scrollToFocus(): boolean {
   const el = focus ? document.querySelector(`[data-maturity-row="${CSS.escape(focus)}"]`) : null
   el?.scrollIntoView({ block: 'center' })
@@ -61,15 +55,12 @@ const ask = (r: MaturityRow) => findAsk(r.maturity?.datasetAsk)
 
 // the call-for-datasets modal is its own dialog: close this one first rather than stack two
 function shareData(id: string) {
-  closeGuides()
+  closeMaturity()
   openCallForDatasets(id)
 }
 </script>
 
 <template>
-  <CollapsibleSection label="Maturity" :default-open="false" max-height="none"
-                      storage-key="cc.guides.maturityOpen"
-                      tip="How far to trust each feature, and what would move it up">
     <div class="mm-cols">
     <div v-for="(col, ci) in columns" :key="ci" class="mm-col">
     <div v-for="g in col" :key="g.heading" class="mm-group">
@@ -139,7 +130,6 @@ function shareData(id: string) {
     </div>
   </div>
   </div>
-  </CollapsibleSection>
 </template>
 
 <style scoped>

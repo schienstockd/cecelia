@@ -403,8 +403,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // short image uids. Default false — a set's long names read as a wall. The lab log keeps its own
   // (labLogShowNames). See utils/labLog.ts → showImageRefs.
   const showImageNames = ref(localStorage.getItem('cc.showImageNames') === 'true')
-  // The Guides map's Claude toggle: shows the loop and what Claude adds at each recipe step. Off by
-  // default — everything in Cecelia works without Claude, and the map should say so first.
+  // The Guides dialog's AI help toggle (GuideNextStep's footer): shows what Kiwi or Claude Code adds at
+  // each recipe step. Off by default — everything in Cecelia works without Claude.
   const guidesShowClaude = ref(localStorage.getItem('cc.guidesShowClaude') === 'true')
   // "Hide this button" on Kiwi's AI-off panel: with AI off, the sidebar's Kiwi launcher goes away for
   // this profile. Ignored while AI is on (utils/aiSwitch.ts `showKiwiLauncher`); undone in

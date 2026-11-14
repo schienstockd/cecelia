@@ -23,6 +23,7 @@ import WhatsNewDialog from './components/WhatsNewDialog.vue'
 import AiOptInDialog from './components/AiOptInDialog.vue'
 import { isAiOptInOpen } from './lib/aiOptInOpen'
 import GuidesDialog from './components/GuidesDialog.vue'
+import MaturityDialog from './components/MaturityDialog.vue'
 import IconLegendDialog from './components/IconLegendDialog.vue'
 import ColorLegendDialog from './components/ColorLegendDialog.vue'
 import CallForDatasetsModal from './components/CallForDatasetsModal.vue'
@@ -32,6 +33,7 @@ import PreferencesModal from './components/PreferencesModal.vue'
 import SettingsModal from './components/SettingsModal.vue'
 import { isWhatsNewOpen, closeWhatsNew, openWhatsNew } from './lib/whatsNew'
 import { isGuidesOpen } from './lib/guideOpen'
+import { isMaturityOpen } from './lib/maturityOpen'
 import { isIconLegendOpen } from './lib/iconLegendOpen'
 import { isColorLegendOpen } from './lib/colorLegendOpen'
 import { isCallForDatasetsOpen, openCallForDatasets } from './lib/callForDatasetsOpen'
@@ -247,6 +249,7 @@ const bare = computed(() => popout || route.meta.bare === true)
     <!-- Guides: the picker (a modal) and the bubble (one mount, teleported, survives navigation).
          The bubble renders only while a guide is running — see stores/guide.ts. -->
     <GuidesDialog v-if="isGuidesOpen" />
+    <MaturityDialog v-if="isMaturityOpen" />
     <IconLegendDialog v-if="isIconLegendOpen" />
     <ColorLegendDialog v-if="isColorLegendOpen" />
     <!-- Call for Datasets — what we can build, or test, once a real dataset lands. State lives in
