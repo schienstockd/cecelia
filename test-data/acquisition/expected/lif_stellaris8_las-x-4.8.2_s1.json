@@ -1,0 +1,128 @@
+{
+ "acquiredAt": "2025-12-19T00:55:05+00:00",
+ "autoHV": null,
+ "channels": [
+  {
+   "bitDepth": 16,
+   "detector": "HyD NDD 1",
+   "dyePreset": null,
+   "emissionFilter": null,
+   "gain": 238.909551856179,
+   "hv": null,
+   "laser": "740 nm + 900 nm",
+   "laserLines": [
+    {
+     "pct": 6.33,
+     "wavelengthNm": 740
+    },
+    {
+     "pct": 6.15,
+     "wavelengthNm": 900
+    }
+   ],
+   "name": "Blue",
+   "offset": 0.0,
+   "order": 1,
+   "sequence": 1
+  },
+  {
+   "bitDepth": 16,
+   "detector": "HyD NDD 2",
+   "dyePreset": null,
+   "emissionFilter": null,
+   "gain": 185.7109375,
+   "hv": null,
+   "laser": "740 nm + 900 nm",
+   "laserLines": [
+    {
+     "pct": 6.33,
+     "wavelengthNm": 740
+    },
+    {
+     "pct": 6.15,
+     "wavelengthNm": 900
+    }
+   ],
+   "name": "Green",
+   "offset": 0.0,
+   "order": 2,
+   "sequence": 1
+  },
+  {
+   "bitDepth": 16,
+   "detector": "HyD NDD 3",
+   "dyePreset": null,
+   "emissionFilter": null,
+   "gain": 162.627039524923,
+   "hv": null,
+   "laser": "740 nm + 900 nm",
+   "laserLines": [
+    {
+     "pct": 6.33,
+     "wavelengthNm": 740
+    },
+    {
+     "pct": 6.15,
+     "wavelengthNm": 900
+    }
+   ],
+   "name": "Red",
+   "offset": 0.0,
+   "order": 3,
+   "sequence": 1
+  }
+ ],
+ "dichroics": [
+  {
+   "name": "Substrate",
+   "slot": "excitation beam splitter"
+  }
+ ],
+ "imageName": "Series004",
+ "lasers": [
+  {
+   "name": "740 nm",
+   "transmissionPct": 6.33,
+   "wavelengthNm": 740
+  },
+  {
+   "name": "900 nm",
+   "transmissionPct": 6.15,
+   "wavelengthNm": 900
+  }
+ ],
+ "microscopeBody": "DMI8-CS",
+ "objective": {
+  "immersion": "water",
+  "magnification": 25.0,
+  "na": 0.95,
+  "name": "HC FLUOTAR L VISIR 25x/0.95 WATER"
+ },
+ "pinholeAiry": 1.0,
+ "pinholeUm": 55.99,
+ "readerVersion": 3,
+ "scanner": {
+  "integration": {
+   "average": true,
+   "count": 2,
+   "type": "Line"
+  },
+  "lineHz": 600.0,
+  "pixelDwellUs": 1.7625,
+  "type": "unidirectional",
+  "zoom": 1.0
+ },
+ "sequential": true,
+ "softwareVersion": "LAS X 4.8.2.29567",
+ "source": "lif",
+ "system": "STELLARIS 8",
+ "technology": "two-photon",
+ "timelapse": {
+  "count": 126,
+  "intervalS": 30.2952
+ },
+ "zStack": {
+  "count": 6,
+  "stepUm": 4.9998
+ }
+}

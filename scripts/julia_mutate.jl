@@ -1,6 +1,7 @@
 # Line-based mutation testing for one Cecelia source file against chosen test files.
 #
 #   julia --project=app scripts/julia_mutate.jl SRC OUT.tsv TEST.jl... [--timeout 120] [--list]
+#                                               [--sample N --seed S]
 #
 # Applies ONE mutation per mutant to SRC (a file `include`d into module Cecelia), re-includes it into
 # the loaded package (no restart), runs the TEST files in a throwaway testset and records
@@ -9,6 +10,9 @@
 # unmutated file and must survive, or the harness is wrong. Survivors are only "not killed by THESE
 # tests" — confirm a survivor against the whole suite before calling it a gap.
 # Skips comments, string literals and docstrings. Rows: id, line, op, original, mutated, result, secs.
+# --sample N runs N mutants drawn with a fixed --seed (default 1), so a rerun draws the same ones.
+
+using Random
 
 const OPS = [  # (name, regex on the masked line, replacement)
     ("<=>",  r"(?<![<=!>])<=(?!=)", "<"),   ("<=<",  r"(?<![<-])<(?![=:<])", "<="),
@@ -58,7 +62,7 @@ function mutants(path)
     src, ms
 end
 
-function worker(srcpath, out, tests, from)
+function worker(srcpath, out, tests, ids)
     src, ms = mutants(srcpath); tmp = tempname() * ".jl"
     walk(ts) = any(r -> r isa Union{Test.Fail,Test.Error} || (r isa Test.DefaultTestSet && walk(r)), ts.results)
     function run()
@@ -68,7 +72,7 @@ function worker(srcpath, out, tests, from)
         catch; ok = false finally Test.pop_testset() end
         ok && !walk(ts)
     end
-    for id in from:length(ms)
+    for id in ids
         t0 = time(); lines = copy(src)
         id > 0 && (lines[ms[id].line] = ms[id].new)
         write(tmp, join(lines, "\n") * "\n")
@@ -91,7 +95,7 @@ function main(args)
     if get(args, 1, "") == "--worker"   # load the suite preamble only, then run in the new world
         rt = normpath(joinpath(@__DIR__, "..", "app", "test", "runtests.jl"))   # its @__DIR__ must resolve
         Base.include_string(Main, split(read(rt, String), "@testset verbose=true")[1], rt)
-        return Base.invokelatest(worker, args[2], args[3], args[5:end], parse(Int, args[4]))
+        return Base.invokelatest(worker, args[2], args[3], args[5:end], parse.(Int, split(args[4], ',')))
     end
     opt(k, d) = (i = findfirst(==(k), args); i === nothing ? d : args[i+1])
     pos = filter(a -> !startswith(a, "--"), args[1:something(findfirst(startswith("--"), args), length(args) + 1) - 1])
@@ -101,10 +105,16 @@ function main(args)
         foreach(((i, m),) -> println(join((i, m.line, m.op, m.orig, strip(m.new)), '\t')), enumerate(ms)); return
     end
     timeout = parse(Float64, opt("--timeout", "120")); done = 0
+    n_sample = parse(Int, opt("--sample", "0"))
+    ids = 0 < n_sample < length(ms) ?
+        [0; sort(Random.shuffle(Random.MersenneTwister(parse(Int, opt("--seed", "1"))), 1:length(ms))[1:n_sample])] :
+        collect(0:length(ms))
     isfile(out) && (done = maximum(parse(Int, split(l, '\t')[1]) for l in readlines(out); init = -1) + 1)
-    while done <= length(ms)
-        cmd = `$(Base.julia_cmd()) --project=$(Base.active_project()) -O0 $(@__FILE__) --worker $srcpath $out $done $tests`
-        p = run(pipeline(cmd; stdout = devnull, stderr = stderr); wait = false); last = time(); seen = done
+    while any(>=(done), ids)
+        todo = join(filter(>=(done), ids), ',')
+        cmd = `$(Base.julia_cmd()) --project=$(Base.active_project()) -O0 $(@__FILE__) --worker $srcpath $out $todo $tests`
+        p = run(pipeline(cmd; stdout = devnull, stderr = stderr); wait = false); last = time()
+        seen = isfile(out) ? countlines(out) : 0
         while process_running(p)
             sleep(1)
             n = isfile(out) ? countlines(out) : 0
@@ -113,7 +123,8 @@ function main(args)
             time() - last > (seen == 0 ? 10timeout : timeout) && (kill_tree(p); break)
         end
         wait(p); n = isfile(out) ? maximum(parse(Int, split(l, '\t')[1]) for l in readlines(out); init = -1) + 1 : 0
-        if n == done   # no progress: the mutant at `done` hung or crashed the worker
+        if n == done   # no progress: the next mutant hung or crashed the worker
+            done = ids[findfirst(>=(done), ids)]
             open(io -> println(io, join((done, ms[max(done, 1)].line, "-", "", "", done == 0 ? "harness-failed" : "timeout", timeout), '\t')), out, "a")
             done == 0 && error("unmutated run did not complete — see stderr")
             n = done + 1

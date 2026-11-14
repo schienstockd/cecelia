@@ -1,6 +1,6 @@
 # Test value — do the tests fail when the result is wrong?
 
-**Status:** P1 + P2 done (2026-11-13: `stats.jl`; Python readers + floor); P3 next. Supersedes the three archived briefs
+**Status:** P1–P3 done (2026-11-13/14: `stats.jl`; Python readers + floor; Julia result areas); P4 next. Supersedes the three archived briefs
 (`docs/archive/TEST_VALUE_AUDIT_PROMPT.md`, `TEST_VALUE_AUDIT_PROMPT_2.md`,
 `TEST_VALUE_PILOT_GATING_PROMPT.md`).
 
@@ -84,12 +84,39 @@ the lines ran, but many output fields and every threshold boundary went unchecke
 - **Confirmed against the whole Python suite and the Julia acquisition tests** before the new tests:
   the lif `pixelDwellUs` key rename and the second-photon-peak window exit both passed everything.
   A third pick (czi z step × 1000001) was equivalent: `round(…, 4)` absorbs it.
-- **Left:** lif (253 survivors) is mostly branches no lif fixture reaches: timelapse axes, line/frame
-  averaging, binning from the camera node. Needs a real `.lif` with a time series and averaging, not
-  a hand-made one. The rest are equivalent under rounding, message text, or `astype(None)` on int input.
+- **Left:** lif was mostly branches no lif fixture reached: timelapse axes, line/frame averaging.
+  Closed in P3 with a real STELLARIS 8 header (78.8% → 89.7%, below). The rest are equivalent under
+  rounding, message text, or `astype(None)` on int input.
 - **Tool gotchas:** run `mutmut` from `python/` (module names come from the file path), with
   `PYTHONPATH=<copy>/python/mutants` and the `mutants/` dir present before Python starts (otherwise
   the editable install in `.pixi` wins), and `app` / `test-data` linked beside it.
+
+### P3: Julia result areas (2026-11-14)
+
+`scripts/julia_mutate.jl` against each area's mapped test files; `acq_check.jl` sampled (150 of 275,
+`--sample 150 --seed 1`), the others whole. Survivors were triaged by reading the mutated line.
+
+| | Before | After | Survivors left |
+|---|---|---|---|
+| `acq_check.jl` (sample) | 75.3% | 85.6% | plural `s` text, nil guards no caller reaches, row-only ratio |
+| `source_timing.jl` | 54.1% | 86.5% | the Python-failure path, defaults every caller overrides |
+| `_uniform_interval` | 8 / 14 | 12 / 14 | both equivalent (length-2 series, a zero median) |
+| `aggregate_runs.jl` | 76.5% | 93.8% | equivalent: a lone row, id 0 counted, same-frame tracks |
+| `lif_meta.py` (mutmut) | 78.8% | 89.7% | widefield LUT fallbacks, reason-text casing |
+
+- **The real Imaris reader was never run by a test.** Every `_fill_source_time_increment!` test
+  injected `recover`, so the line that turns the reader's `uniform: false` into the veto on a declared
+  interval (the paused-recording result review) could flip and pass. `source_timing_ims.jl` now writes
+  miniature `.ims` files with the Python tests' `_ims` and runs the real path.
+- **Boundaries no test sat on:** every inclusive limit in `aggregate_runs.jl` (within, max gap, max
+  distance, preceded), the warm-up and jitter limits of `_uniform_interval`, the headroom bands and the
+  1 % pixel-size tolerance of `acq_check`, and which design a finding names.
+- **lif:** a STELLARIS 8 two-photon header (LAS X 4.8.2: 6 z × 126 t, line average 2), cut to two
+  images (`test-data/README.md`). Its values pinned in `expected/`; `test_lif_meta_stellaris.py` changes
+  one recorded value at a time: the other averaging kinds, LUT pairing against position, 680 nm, 2-frame
+  axes, the reasons.
+- **Not in P3:** `reader.jl` beyond `_uniform_interval` (bf2raw series-dir pick, NGFF readers: 40 of
+  92 mutants survive in the whole file). Gating was last in the order and not run.
 
 ## Decisions (2026-11-13)
 
@@ -117,10 +144,9 @@ the lines ran, but many output fields and every threshold boundary went unchecke
 - **P1 — `stats.jl` pilot. DONE.** The tool, the 94-mutant run, the new tests, and this plan.
 - **P2 — Python: acquisition readers + photon floor. DONE** (results above). Open: a real `.lif`
   time series with averaging, for the lif branches no fixture reaches.
-- **P3 — Julia result areas, sampled.** In order of past silent bugs: acquisition checks
-  (`acq_check`, `_fill_source_time_increment!`, `_uniform_interval`), tracking events (`_event_preceded`),
-  gating last. Sample at most ~150 mutants per area with a fixed seed. Checkpoint after each area:
-  stop if the score is ≥ 85% with the survivors triaged.
+- **P3 — Julia result areas, sampled. DONE** (results above): acquisition checks, source timing,
+  tracking events, each to ≥ 85% with the survivors triaged. Open: gating, and `reader.jl`'s
+  series-dir and NGFF readers, if evidence points there.
 - **P4 — the per-PR guard (mechanical, no LLM).**
   (a) A test added with a fix must fail on the base commit. This is CLAUDE.md's "watch it fail" rule,
   made a check.
@@ -130,7 +156,7 @@ the lines ran, but many output fields and every threshold boundary went unchecke
 
 ## Tooling
 
-- `scripts/julia_mutate.jl SRC OUT.tsv TEST.jl… [--timeout s] [--list]`. Mutant 0 is the unmutated
+- `scripts/julia_mutate.jl SRC OUT.tsv TEST.jl… [--timeout s] [--list] [--sample N --seed S]`. Mutant 0 is the unmutated
   file and must survive. A test file must run standalone after the `runtests.jl` preamble: a testset
   that leans on a helper defined elsewhere in `suite.jl` has to be extracted. That was the case for
   `run_stats` inside `task_spec_ratchets.jl`.
