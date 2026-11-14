@@ -3,6 +3,7 @@
 **Status:** **parked** (2026-11-13) — trial runs T0–T4, two screenshot passes and three draft booklets
 (intravital, confocal, PhenoCycler) done locally (below); no pipeline code yet, tutorials not committed. Brief: [`docs/archive/GUIDE_SCREENSHOTS_PROMPT.md`](../archive/GUIDE_SCREENSHOTS_PROMPT.md);
 read its banner first, because six of the brief's premises had moved by the time it was archived.
+Review of the three drafts: [`docs/archive/BOOKLET_RESERVATIONS.md`](../archive/BOOKLET_RESERVATIONS.md) (banner first). The booklet series built on this plan: [`BOOKLETS_PLAN.md`](BOOKLETS_PLAN.md).
 Related: [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md) (the layout these shots follow),
 [`GUIDE_SYSTEM_PLAN.md`](GUIDE_SYSTEM_PLAN.md), [`WORKFLOW_RECIPES_PLAN.md`](WORKFLOW_RECIPES_PLAN.md),
 [`FIGURES_PLAN.md`](FIGURES_PLAN.md).
