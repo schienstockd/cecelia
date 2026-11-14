@@ -27,7 +27,7 @@ import { plotsGuide } from './plots'
 import { recordMovieGuide } from './movies'
 import { animationGuide } from './animation'
 import {
-  userProfileGuide, viewProfileGuide,
+  userProfileGuide, viewProfileGuide, turnOnAiGuide,
   fixMetadataGuide, runChainGuide, useTheBlackboardGuide, kiwiGuide,
   correctAMaskGuide,
 } from './singleTopicGuides'
@@ -37,6 +37,7 @@ export const GUIDES: GuideDef[] = [
   tourGuide,
   userProfileGuide,
   viewProfileGuide,
+  turnOnAiGuide,
   // Data — get images in and ready
   importImagesGuide,
   fixMetadataGuide,

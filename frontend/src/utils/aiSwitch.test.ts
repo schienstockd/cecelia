@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aiStateFromStatus, aiCanTurnOn, aiOffLine, showKiwiLauncher, guideGroupsFor, AI_OFF_COPY, AI_ONLY_GUIDES } from './aiSwitch'
+import { aiStateFromStatus, aiCanTurnOn, aiOffLine, showKiwiLauncher, guideGroupsFor, AI_OFF_COPY, AI_ONLY_GUIDES, AI_OFF_ONLY_GUIDES } from './aiSwitch'
 import { isTooLong } from './uiCopy'
 
 describe('aiSwitch', () => {
@@ -34,8 +34,14 @@ describe('guideGroupsFor', () => {
   const groups = [{ group: 'Analysis', guides: [{ id: 'assist-with-kiwi' }, { id: 'gating' }] },
                   { group: 'AI', guides: [{ id: 'assist-with-kiwi' }] }]
   it('drops AI-only guides and emptied groups only while AI is off', () => {
-    expect(guideGroupsFor(groups, true)).toBe(groups)
+    expect(guideGroupsFor(groups, true)).toEqual(groups)
     expect(guideGroupsFor(groups, false)).toEqual([{ group: 'Analysis', guides: [{ id: 'gating' }] }])
+  })
+  // the mirror: the way to turn AI on is listed while it is off — the one time it is needed — and gone after
+  it('lists the turn-on-AI guide only while AI is off', () => {
+    const start = [{ group: 'Start', guides: [{ id: 'tour' }, { id: 'turn-on-ai' }] }]
+    expect(guideGroupsFor(start, false)).toEqual(start)
+    expect(guideGroupsFor(start, true)).toEqual([{ group: 'Start', guides: [{ id: 'tour' }] }])
   })
 })
 
@@ -52,6 +58,6 @@ describe('tipsFor', () => {
 describe('AI_ONLY_GUIDES', () => {
   it('names real guides', async () => {
     const { guideById } = await import('../lib/guides')
-    for (const id of AI_ONLY_GUIDES) expect(guideById(id)).toBeTruthy()
+    for (const id of [...AI_ONLY_GUIDES, ...AI_OFF_ONLY_GUIDES]) expect(guideById(id)).toBeTruthy()
   })
 })

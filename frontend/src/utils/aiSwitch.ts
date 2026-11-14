@@ -53,10 +53,13 @@ export const AI_OPT_IN_COPY = {
 
 /** Guides that only teach AI features — left out of the picker while AI is off. */
 export const AI_ONLY_GUIDES: readonly string[] = ['assist-with-kiwi']
+/** The mirror: the way to turn AI on — left out of the picker once it is on. */
+export const AI_OFF_ONLY_GUIDES: readonly string[] = ['turn-on-ai']
 
-/** The picker's groups with the AI-only guides dropped while AI is off (and an emptied group with them). */
+/** The picker's groups for the AI state: AI-only guides dropped while it is off, the turn-it-on guide
+ *  once it is on (and an emptied group with them). */
 export function guideGroupsFor<G extends { guides: { id: string }[] }>(groups: G[], aiEnabled: boolean): G[] {
-  if (aiEnabled) return groups
-  return groups.map(g => ({ ...g, guides: g.guides.filter(x => !AI_ONLY_GUIDES.includes(x.id)) }))
+  const drop = aiEnabled ? AI_OFF_ONLY_GUIDES : AI_ONLY_GUIDES
+  return groups.map(g => ({ ...g, guides: g.guides.filter(x => !drop.includes(x.id)) }))
     .filter(g => g.guides.length > 0)
 }

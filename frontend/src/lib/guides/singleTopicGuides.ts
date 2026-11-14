@@ -25,7 +25,7 @@
 
 import type { GuideDef, Reveal } from './types'
 import { PREREQ } from './prereqs'
-import { settingsClosed, settingsReveal } from './settingsSteps'
+import { settingsClosed, settingsReveal, preferencesClosed } from './settingsSteps'
 import { KIWI_LOOP, TERMINAL_MODE } from '../claudeOverview'
 import { GUIDE_MATURITY } from './maturityRecords'
 
@@ -439,6 +439,79 @@ export const correctAMaskGuide: GuideDef = {
       title: 'Apply — it becomes a new version',
       text: 'Applying writes a new label-set version — the original run is preserved.',
       bullets: ['Downstream tasks read the ACTIVE version, like everywhere else.'],
+    },
+  ],
+}
+
+// ── Turn on AI — the way in for someone with AI off ─────────────────────────────────────────────
+// Listed ONLY while AI is off (utils/aiSwitch.ts → AI_OFF_ONLY_GUIDES), the mirror of 'assist-with-kiwi',
+// which is listed only while it is on: the person who most needs this path is the one who could not
+// see an AI guide. It walks the always-reachable route — avatar menu → Preferences → Kiwi → AI features
+// — then the opt-in dialog (the one place AI turns on, AiOptInDialog.vue), and ends at Kiwi's Account row,
+// where each profile logs in once. Where it goes next is 'assist-with-kiwi'.
+const prefsClosed = preferencesClosed('prefs.kiwi')
+export const turnOnAiGuide: GuideDef = {
+  id: 'turn-on-ai',
+  maturity: GUIDE_MATURITY['turn-on-ai'],
+  title: 'Turn on AI',
+  group: 'Start',
+  icon: 'pi-sparkles',
+  summary: 'Optional and off until you turn it on: where the switch is, and what leaves your computer.',
+  prereqs: [],
+
+  steps: [
+    {
+      anchor: 'header.profile',
+      placement: 'bottom-end',
+      title: 'Off until you turn it on',
+      text: 'Everything in Cecelia works with AI off; the switch is in your Preferences.',
+      bullets: ['Turning it on is up to you, your lab and your data policy.'],
+      clickAnchor: true,
+    },
+    {
+      anchor: 'header.preferences',
+      placement: 'left',
+      title: 'Preferences',
+      text: 'Open Preferences.',
+      clickAnchor: true,
+      reveal: { needed: c => !c.anchorExists('header.preferences') && !c.anchorExists('prefs.kiwi'),
+                anchor: 'header.profile', text: 'Open your avatar menu.', placement: 'bottom-end' },
+    },
+    {
+      anchor: 'prefs.kiwi',
+      placement: 'right',
+      title: 'Kiwi',
+      text: 'AI settings live under Kiwi.',
+      clickAnchor: true,
+      reveal: prefsClosed,
+    },
+    {
+      anchor: 'prefs.aiFeatures',
+      placement: 'bottom',
+      title: 'AI features',
+      text: 'Switch it on; a dialog says what is sent before anything is.',
+      bullets: ['Greyed out, "Turned off for this workstation"? Whoever runs this computer decides — ask them.'],
+      clickAnchor: true,
+      reveal: settingsReveal('prefs.aiFeatures', 'prefs.kiwi', 'Kiwi', prefsClosed),
+    },
+    {
+      anchor: 'aiOptIn.turnOn',
+      placement: 'top',
+      title: 'Read it, then Turn on',
+      text: 'What is sent, what you gain and what to keep in mind — then Turn on, or Cancel.',
+      bullets: ['Turn it off any time in Preferences → Kiwi; everything else works the same.'],
+      when: c => c.aiEnabled,
+      reveal: { needed: c => !c.aiEnabled && !c.anchorExists('aiOptIn.turnOn'), anchor: 'prefs.aiFeatures',
+                text: 'Switch on AI features first.', placement: 'bottom' },
+    },
+    {
+      anchor: 'launcher.kiwi',
+      placement: 'bottom-end',
+      title: 'Log in to Claude',
+      text: 'Open Kiwi; on its Account row, Log in signs this profile in to Claude, once.',
+      bullets: ['If the sign-in page does not hand you back, paste the code it shows into Kiwi.',
+                'Next: the Assist with Kiwi guide — point at something, ask, keep what holds up.'],
+      clickAnchor: true,
     },
   ],
 }
