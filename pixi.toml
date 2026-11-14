@@ -337,6 +337,10 @@ gui-capture = "node scripts/gui_capture.mjs"
 # Build the user booklets (user-docs/booklets/: specs, STYLE.md) into PDFs under booklets-out/. Fails
 # on a frame rule (checkBooklets). `-- --only <id>` builds one; `-- --html` also writes the HTML.
 booklets = "node scripts/booklets/build.mjs"
+# Capture the booklets' screenshots from an ISOLATED running instance (own CECELIA_DEV_DIR and
+# CECELIA_PORT_SLOT; refuses 8080/5173). Fails a shot whose anchor is gone, whose cited label changed or
+# that shows a stale time. Usage in scripts/booklets/capture.mjs.
+booklet-shots = "node scripts/booklets/capture.mjs"
 
 # Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
 # frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails

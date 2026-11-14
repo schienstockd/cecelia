@@ -68,9 +68,18 @@ AI is optional everywhere, and every booklet works with it off. Booklets say wha
 can do **at that step**. The C-series explains the two in full. Never promise more than the tool's
 real abilities: the app's own cards (`frontend/src/lib/claudeOverview.ts`) are the source.
 
-## Screenshots (P2)
+## Screenshots
 
-Each step that has one names a shot id from the capture manifest. The rules come from the review of
+A step names a shot by id; the booklet's `shots` list says how to reach it (project, image, route,
+user actions), what to point at, what to crop to and which labels it must show. Capture with
+`pixi run booklet-shots -- --base <url> --config-dir <dir>` against an **isolated** instance (own
+`CECELIA_DEV_DIR` and `CECELIA_PORT_SLOT`; it refuses 8080/5173), then `pixi run booklets`. The crop and the
+pointer are drawn by the build from the recorded boxes, so restyling never means recapturing.
+
+Anchors are the guides' `data-guide` ids, so a shot and an in-app guide name the same control. A control
+with no anchor gets one in the app (same change), not a CSS path.
+
+The build warns on a crop too wide to read (`--strict` fails). The rules come from the review of
 the first drafts ([`docs/archive/BOOKLET_RESERVATIONS.md`](../../docs/archive/BOOKLET_RESERVATIONS.md)
 §8; read its banner first):
 

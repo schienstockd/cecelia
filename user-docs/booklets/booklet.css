@@ -61,7 +61,12 @@ td { vertical-align: top; border-bottom: .2mm solid var(--cc-surface-2); padding
 
 .next { text-align: right; color: var(--cc-text-dim); margin-top: 6mm; }
 .next b { color: var(--cc-text); }
-.shot { margin: 2mm 0 0 9mm; }
+/* content-box: the screenshot and the pointer layer must share one size exactly — with border-box the
+   border squeezed the pointer layer and the ring sat ~0.5 mm off its button */
+.shot { box-sizing: content-box; position: relative; overflow: hidden; margin: 2.5mm 0 1mm 9mm; border: .3mm solid var(--cc-border); border-radius: 1.5mm; break-inside: avoid; }
+.shot img { position: absolute; max-width: none; }
+.shot .pointer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.shot.missing { position: static; border-style: dashed; color: var(--cc-text-dim); padding: 4mm; font-size: 9pt; width: auto; height: auto; }
 .terms { display: grid; grid-template-columns: 24mm 1fr; gap: 1mm 3mm; margin: 0 0 4mm; font-size: 9.5pt; break-inside: avoid; }
 .terms dt { font-weight: 600; }
 .terms dd { margin: 0; color: var(--cc-text); }

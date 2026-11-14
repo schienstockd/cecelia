@@ -41,6 +41,7 @@ export const C1_USING_AI: Booklet = {
   steps: [
     {
       title: 'Turn AI on',
+      shot: 'c1-turn-on',
       do: 'Open your avatar menu → **Preferences** → **Kiwi**, then switch on **AI features**.',
       see: `The dialog **${AI_OPT_IN_COPY.title}** lists what is sent and what you gain. Read it, then press **${AI_OPT_IN_COPY.confirm}**. ${AI_OPT_IN_COPY.after}.`,
       ifWrong: `The switch is greyed out and says "${AI_OFF_COPY.workstation}": whoever looks after this computer turned AI off for everyone. Ask them; it is their call, not a fault.`,
@@ -74,4 +75,16 @@ export const C1_USING_AI: Booklet = {
     },
   ],
   askAi: null,
+  shots: [
+    {
+      // The dialog, not the switch: what the reader must read before saying yes is the point. Cropped
+      // from "Keep in mind" down — what is sent is already the table on page 1.
+      id: 'c1-turn-on',
+      actions: [{ click: 'header.profile' }, { click: 'header.preferences' }, { click: 'prefs.kiwi' },
+                { click: 'prefs.aiFeatures' }, { waitFor: 'aiOptIn.turnOn' }],
+      point: { anchor: 'aiOptIn.turnOn', label: 'Read it, then Turn on' },
+      crop: ['aiOptIn.risks', 'aiOptIn.turnOn'],
+      expect: [{ anchor: 'aiOptIn.turnOn', text: AI_OPT_IN_COPY.confirm }],
+    },
+  ],
 }

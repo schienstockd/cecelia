@@ -38,6 +38,43 @@ export interface Step {
   more?: Block[]
 }
 
+/** Where on the page: a `data-guide` id (`prefs.aiFeatures`), `nav:/route` (a sidebar item) — both
+ *  through the app's own `anchorSelector` (utils/guideAnchor.ts) — or `css:<selector>` for an element
+ *  with no anchor (a modal box). `@@n` picks the n-th match (0-based). Prefer a data-guide id: the
+ *  test asserts those exist in the source, so a renamed control fails CI, not the capture. */
+export type Anchor = string
+
+/** A user action, run in order before the capture. `text:` clicks the element showing that text. */
+export type Action =
+  | { click: Anchor | `text:${string}` }
+  | { fill: Anchor; text: string }
+  | { hover: Anchor }
+  | { press: string }
+  /** Wait for an anchor to appear (a dialog opening), not a timer. */
+  | { waitFor: Anchor }
+
+/** One screenshot, taken by scripts/booklets/capture.mjs from an ISOLATED instance and composed into the
+ *  PDF by the build (crop + pointer drawn on top, so the look can change without recapturing). */
+export interface Shot {
+  id: string
+  /** Project uid in the capture instance; none = no project open. */
+  project?: string
+  /** Image to focus, in the page's selection scope (its ModuleLayout `module`). */
+  image?: string
+  scope?: string
+  route?: string
+  /** What the user does first. A step shows the state BEFORE its action unless the result is the point. */
+  actions?: Action[]
+  /** The control the reader acts on, drawn as the pointer with this label. */
+  point?: { anchor: Anchor; label: string }
+  /** The figure is the union of these boxes (and the pointer's target). */
+  crop: Anchor[]
+  /** Text blanked before capture: names, ids, times. */
+  masks?: Anchor[]
+  /** The app's labels the caption cites: the capture fails when an anchor's text lacks one. */
+  expect?: { anchor: Anchor; text: string }[]
+}
+
 /** "Before you image" row: a setting at the microscope, what it limits later, where Cecelia shows it. */
 export interface ImagingRow { setting: string; limits: Text; shows: Text }
 
@@ -63,6 +100,8 @@ export interface Booklet {
   askAi: { prompt: Text; where: Text } | null
   /** Booklet id that follows this one; rendered as its generated number + title. */
   next?: string
+  /** Screenshots its steps name by id. */
+  shots?: Shot[]
 }
 
 export interface BuildIssue { booklet: string; problem: string }
@@ -88,6 +127,22 @@ export function checkBooklets(booklets: Booklet[]): BuildIssue[] {
       for (const k of ['title', 'do', 'see', 'ifWrong'] as const) if (!s[k]?.trim()) bad(`step ${i + 1}: "${k}" is empty`)
     })
   }
+  const shotIds = new Set<string>()
+  for (const b of booklets) {
+    const own = new Set((b.shots ?? []).map(x => x.id))
+    for (const x of b.shots ?? []) {
+      if (shotIds.has(x.id)) issues.push({ booklet: b.id, problem: `shot id "${x.id}" is used twice` })
+      shotIds.add(x.id)
+      if (x.crop.length === 0) issues.push({ booklet: b.id, problem: `shot "${x.id}" has nothing to crop to` })
+      for (const a of shotAnchors(x)) {
+        if (!/^(css:.+|nav:\/.*|[a-zA-Z][\w-]*\.[\w.-]+)(@@\d+)?$/.test(a))
+          issues.push({ booklet: b.id, problem: `shot "${x.id}": "${a}" is not an anchor (data-guide id, nav:/route or css:…)` })
+      }
+    }
+    b.steps.forEach((s, i) => {
+      if (s.shot && !own.has(s.shot)) issues.push({ booklet: b.id, problem: `step ${i + 1} names shot "${s.shot}", which this booklet does not define` })
+    })
+  }
   for (const b of booklets) {
     if (b.next && !ids.has(b.next)) issues.push({ booklet: b.id, problem: `"next" names unknown booklet "${b.next}"` })
   }
@@ -103,4 +158,20 @@ export function bookletNumbers(booklets: Booklet[]): Map<string, string> {
     out.set(b.id, `${b.series}${count[b.series]}`)
   }
   return out
+}
+
+/** Every anchor a shot uses (actions' `text:` targets are not anchors and are left out). */
+export function shotAnchors(x: Shot): Anchor[] {
+  const out: Anchor[] = [...x.crop, ...(x.masks ?? []), ...(x.expect ?? []).map(e => e.anchor)]
+  if (x.point) out.push(x.point.anchor)
+  for (const a of x.actions ?? []) {
+    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : null
+    if (t && !t.startsWith('text:')) out.push(t)
+  }
+  return out
+}
+
+/** The data-guide ids among `anchors` (no `css:`, no `nav:`, no `@@n`) — what the test looks up in the source. */
+export function guideIds(anchors: Anchor[]): string[] {
+  return [...new Set(anchors.filter(a => !a.startsWith('css:') && !a.startsWith('nav:')).map(a => a.replace(/@@\d+$/, '')))]
 }

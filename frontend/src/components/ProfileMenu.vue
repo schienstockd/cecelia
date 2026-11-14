@@ -67,7 +67,7 @@ function prefs(pane: 'profiles' | 'interface') { open.value = false; openPrefere
       <button class="cc-actions-item" role="menuitem" @click="settings.colourScheme = nextScheme">
         <i class="pi pi-palette" /> {{ colourSchemeLabel(nextScheme) }}
       </button>
-      <button class="cc-actions-item" role="menuitem" @click="prefs('interface')">
+      <button class="cc-actions-item" role="menuitem" data-guide="header.preferences" @click="prefs('interface')">
         <i class="pi pi-cog" /> Preferences
       </button>
       <button v-if="appCtl.dev" class="cc-actions-item" role="menuitem" :disabled="appCtl.busy"

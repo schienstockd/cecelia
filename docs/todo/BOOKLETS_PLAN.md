@@ -1,6 +1,6 @@
 # User booklets — plan
 
-**Status:** **P1 built** (2026-11-14); D1–D5 locked. Picks up after the three throwaway drafts in
+**Status:** **P1 built, P2 pipeline built** (2026-11-14); D1–D5 locked. Picks up after the three throwaway drafts in
 [`GUIDE_SCREENSHOTS_PLAN.md`](GUIDE_SCREENSHOTS_PLAN.md) and their review
 [`../archive/BOOKLET_RESERVATIONS.md`](../archive/BOOKLET_RESERVATIONS.md) (banner first). #2216 (viewer
 rebuild) merged, so captures can start from `origin/main`. Output repo: `schienstockd/cecelia-booklets`
@@ -112,7 +112,16 @@ check step, experimental features marked as such, and no internal names. Plus th
   frame rules, `index.ts`, `booklet.css`, `STYLE.md`), `scripts/booklets/build.mjs` (`pixi run booklets`),
   `scripts/lib/chromium.mjs` (shared with `gui_capture.mjs`), CI check `frontend/src/utils/booklets.test.ts`, and
   **C1** (two A4 pages; the app's own AI text imported, not retyped). The Ask AI box is part of the template. **Needs eyes** on the print look.
-- **P2 capture:** manifest mode in `gui_capture.mjs`, rect recording, the build checks, and fixture scripts.
+- **P2 capture — pipeline BUILT, not yet run against an instance** (2026-11-14, branch `docs/booklets-p2`):
+  shots declared per booklet (`Shot` in `spec.ts`), `scripts/booklets/capture.mjs` (`pixi run booklet-shots`) on
+  shared page helpers `scripts/lib/app_page.mjs` (also used by `gui_capture.mjs` now — a separate entry
+  point rather than a mode of the census script, with one shared runner library), crop + pointer composed by
+  the build (`figure.ts`), checks: missing anchor, cited label, stale time in the crop, crop too wide.
+  New anchors `header.preferences`, `prefs.kiwi`, `prefs.aiFeatures`, `aiOptIn.risks`, `aiOptIn.turnOn`.
+  First shot: C1 step 1, **captured** on an isolated slot-5 instance (2026-11-14). That capture found two
+  app bugs (the AI opt-in dialog opened BEHIND Preferences; the AI features switch showed on while the dialog
+  asked) — fixed on `fix/ai-optin-on-top`. **Open:** a run on an isolated instance (the maintainer starts it), fixture
+  scripts for B-series projects (with P3), the viewer (headed Chromium with the ANGLE flags).
   **C1's shots** (from a review of the P1 PDF): step 1 the **Turn on AI features?** dialog; step 2 the Account row
   before (**Not logged in**) and after, with a **fixture account** so no real name or email shows; step 3 the
   **Attached** list; step 4 one reply with a ref and what clicking it shows; step 5 a tagged Blackboard entry

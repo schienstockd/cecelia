@@ -1,13 +1,19 @@
 // The browser the repo's page scripts drive: playwright-core (a frontend devDependency) with a SYSTEM
 // Chromium — no browser download. CECELIA_CHROMIUM picks the binary (scripts/agent_eval/board_render.py
-// reads the same variable). Used by scripts/gui_capture.mjs and scripts/booklets/build.mjs.
+// reads the same variable). Used by scripts/gui_capture.mjs and scripts/booklets/{build,capture}.mjs.
 
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+/** Short commit of the checkout, for stamps; '?' outside git. */
+export function commit() {
+  try { return execFileSync('git', ['-C', repo, 'rev-parse', '--short=9', 'HEAD'], { encoding: 'utf-8' }).trim() } catch { return '?' }
+}
+
 export const { chromium } = createRequire(join(repo, 'frontend', 'package.json'))('playwright-core')
 
 export function findChromium() {
