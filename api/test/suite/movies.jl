@@ -82,6 +82,13 @@ end
     @test _render_quality(Dict("renderQuality" => "high")) === :high
     @test _render_quality(Dict{Symbol,Any}()) === :standard
     @test _render_quality(Dict(:renderQuality => "bogus")) === :standard
+    # the viewer's Steps (a look's `steps`) unless a preset overrides them
+    @test _render_quality(Dict("renderQuality" => "viewer", "steps" => 384)) === 384
+    @test _render_quality(Dict("renderQuality" => "viewer"), Dict("steps" => 96)) === 96
+    @test _render_quality(Dict("renderQuality" => "high", "steps" => 384)) === :high
+    @test _render_quality(Dict("steps" => 5000)) === 1024
+    @test Dict(_ray_steps_params(384)...) == Dict("renderQuality" => "viewer", "raySteps" => 384)
+    @test Dict(_ray_steps_params(:draft)...) == Dict("renderQuality" => "draft")
 
     cfg = Dict{Symbol,Any}(:camera3d => Dict{Symbol,Any}(:angles => [30, 45, 0], :zoom => 1.5,
                                                          :width => 800, :height => 600))

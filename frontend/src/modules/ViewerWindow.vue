@@ -102,7 +102,7 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
-  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_COLOUR,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE,
   type SkeletonPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
@@ -2163,7 +2163,7 @@ const skeletonVns = computed(() => {
 })
 const shownSkeletons = () => skeletonVns.value.flatMap(vn => {
   const payload = skeletonPayloads.value.get(vn)
-  return payload ? [{ payload, colour: SKELETON_COLOUR }] : []
+  return payload ? [{ payload, colour: SKELETON_BY_TYPE }] : []
 })
 async function loadSkeletons(force = false) {
   if (!projectUid || !imageUid) return
@@ -6241,6 +6241,7 @@ onUnmounted(() => {
            other's height; the map stays off the overview because the overview is for navigating. -->
       <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="spec.timestamp && shownT >= 0 ? spec.timestampPx + 8 : 0"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
+                        :branch-names="meta.branchNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" />
       <div class="vw-corner-tr">

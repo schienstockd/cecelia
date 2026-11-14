@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   appendSkeletonLines, skeletonLineRanges, SEG_STRIDE as SEG_W, type SkeletonPayload,
+  SKELETON_BY_TYPE, BRANCH_TYPE_COLOURS, BRANCH_TYPE_NAMES,
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
@@ -9,6 +10,7 @@ import {
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
+import { WHITE } from '../plots/fixedColours'
 
 const meta = (over: Partial<ViewerMeta> = {}): ViewerMeta => ({
   nT: 3, nC: 1, nZ: 4, nX: 10, nY: 8, bytesPerVoxel: 2, slabBytes: 10 * 8 * 4 * 2,
@@ -685,7 +687,7 @@ describe('ribbon eye', () => {
 describe('skeleton lines (appendSkeletonLines)', () => {
   // three segments: one on every frame, one at t=0, one at t=2; z at plane 1 (vz = 2 µm)
   const skel = (over: Partial<SkeletonPayload> = {}): SkeletonPayload => ({
-    valueName: 'SHG', flat: false, nSegments: 3, t: [2, -1, 0], plane: [1, 1, 1],
+    valueName: 'SHG', flat: false, nSegments: 3, t: [2, -1, 0], plane: [1, 1, 1], type: [2, 1, 3],
     x0: [0, 1, 2], y0: [0, 0, 0], z0: [2, 2, 2], x1: [1, 2, 3], y1: [1, 1, 1], z1: [2, 2, 2], ...over,
   })
 
@@ -711,6 +713,17 @@ describe('skeleton lines (appendSkeletonLines)', () => {
     expect(skeletonLineRanges(buf, 1)).toEqual([[s, 1]])
     expect(skeletonLineRanges(buf, 2)).toEqual([[s, 1], [s + 2, 1]])
     expect(skeletonLineRanges(tracks, 0)).toEqual([])
+  })
+
+  it('colours each line by its branch type, unknown types white', () => {
+    const buf = appendSkeletonLines(buildTrackBuffer(payload(), meta(), []),
+                                    [{ payload: skel({ type: [2, -1, 0] }), colour: SKELETON_BY_TYPE }], meta())
+    const f32 = (c: [number, number, number]) => Array.from(new Float32Array(c))
+    const rgb = (k: number) => Array.from(buf.data.subarray((buf.count + k) * SEG_W + 6, (buf.count + k) * SEG_W + 9))
+    expect(rgb(0)).toEqual(f32(hexToUnit(WHITE)))                       // type -1 (the every-frame line)
+    expect(rgb(1)).toEqual(f32(hexToUnit(BRANCH_TYPE_COLOURS[0])))      // t = 0
+    expect(rgb(2)).toEqual(f32(hexToUnit(BRANCH_TYPE_COLOURS[2])))      // t = 2
+    expect(BRANCH_TYPE_COLOURS).toHaveLength(BRANCH_TYPE_NAMES.length)
   })
 
   it('a flattened skeleton is on every plane', () => {

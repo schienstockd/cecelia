@@ -10,8 +10,8 @@
 # ── Per-frame text for the renderer (`title_card.draw_frame_overlays`) ────────────
 #
 # Timestamp + scale bar are drawn onto the encoded frame via PIL. Julia builds the per-frame
-# `overlays` list (one dict per frame, `{timestamp?, scaleBar?}`) upfront and ships it in the
-# renderer's params.
+# `overlays` list (one dict per frame, `{timestamp?, timestampPx? | timestampFrac?, scaleBar?}`) upfront and ships it
+# in the renderer's params (`FrameTextShow`, `movie_helpers.jl`).
 
 # Pick a "nice" scale-bar length: the LARGEST step ≤ 30% of the frame's physical width, from the
 # same ladder `niceScaleBar` in `frontend/src/utils/stillOverlay.ts` uses. One policy across the
@@ -57,14 +57,16 @@ end
 
 function _build_timelapse_overlays(ts::AbstractVector{<:Integer}, um_per_px::Real, frame_w::Int,
                                      time_step_min::Union{Nothing,Real};
-                                     show_timestamp::Bool = true, show_scale_bar::Bool = true)
-    sb = show_scale_bar ? _pick_scale_bar(um_per_px, frame_w) : nothing
+                                     show_timestamp::FrameTextShow = true, show_scale_bar::FrameTextShow = true)
+    sb = _text_on(show_scale_bar) ? _pick_scale_bar(um_per_px, frame_w) : nothing
     sb_dict = sb === nothing ? nothing :
               Dict{String,Any}("lengthPx" => sb[2], "label" => _scale_bar_label(sb[1]))
-    ts_ok = show_timestamp && time_step_min !== nothing
+    sb_dict === nothing || _text_size!(sb_dict, show_scale_bar, "fontPx", "fontFrac")
+    ts_ok = _text_on(show_timestamp) && time_step_min !== nothing
     return [begin
         e = Dict{String,Any}()
         ts_ok && (e["timestamp"] = _format_ts(t, time_step_min))
+        ts_ok && _text_size!(e, show_timestamp, "timestampPx", "timestampFrac")
         sb_dict === nothing || (e["scaleBar"] = sb_dict)
         e
     end for t in ts]
@@ -169,7 +171,7 @@ function record_view_movie(zarr_path::AbstractString, out_path::AbstractString;
                            title_card = nothing,
                            overlays3d_for = nothing, mask = nothing,
                            style = movie_overlay_style(),
-                           show_timestamp::Bool = false, show_scale_bar::Bool = false,
+                           show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
                            pixel_size_um::Union{Nothing,Real} = nothing,
                            time_step_min::Union{Nothing,Real} = nothing,
                            task_dir::AbstractString = mktempdir(),
@@ -210,7 +212,7 @@ function render_view_stills(zarr_path::AbstractString, out_paths::AbstractVector
                             crop = nothing, max_px::Int = 0, min_px::Int = 0,
                             overlays3d_for = nothing, mask = nothing,
                             style = movie_overlay_style(),
-                            show_timestamp::Bool = false, show_scale_bar::Bool = false,
+                            show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
                             pixel_size_um::Union{Nothing,Real} = nothing,
                             time_step_min::Union{Nothing,Real} = nothing,
                             task_dir::AbstractString = mktempdir(),
@@ -338,7 +340,7 @@ function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, 
     _mask_params!(params, mask)
     # Timestamp + scale bar, drawn on the encoded frame. The bar tracks the encoded µm/pixel: native
     # µm × the stride.
-    if show_timestamp || show_scale_bar
+    if _text_on(show_timestamp) || _text_on(show_scale_bar)
         native_um = pixel_size_um === nothing ? 1.0 : Float64(pixel_size_um)
         params["overlays"] = _build_timelapse_overlays(frames, native_um * step, W, time_step_min;
                                                         show_timestamp = show_timestamp,
@@ -826,8 +828,8 @@ function record_keyframes_view_movie(zarr_path::AbstractString, out_path::Abstra
                                      canvas_h::Union{Int,Nothing} = nothing,
                                      canvas_w::Union{Int,Nothing} = nothing,
                                      z_aniso::Real = 1.0,
-                                     render_quality::Symbol = :standard,
-                                     show_timestamp::Bool = false, show_scale_bar::Bool = false,
+                                     render_quality::RenderQuality = :standard,
+                                     show_timestamp::FrameTextShow = false, show_scale_bar::FrameTextShow = false,
                                      pixel_size_um::Union{Nothing,Real} = nothing,
                                      time_step_min::Union{Nothing,Real} = nothing,
                                      title_card = nothing,
@@ -942,7 +944,7 @@ function _view_state_render_params(zarr_path::AbstractString, states::AbstractVe
         "states"         => py_states,
         "canvasH"        => canvas3_h, "canvasW" => canvas3_w,
         "zAniso"         => Float64(z_aniso),
-        "renderQuality"  => String(render_quality),
+        _ray_steps_params(render_quality)...,
         "pointSizePx"    => style.point_size_px,
         "pointBorderPx"  => style.point_border_px,
         "segmentWidthPx" => style.segment_width_px,
@@ -951,7 +953,7 @@ function _view_state_render_params(zarr_path::AbstractString, states::AbstractVe
     _mask_params!(params, movie_mask)
     # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first
     # state's view; an animation that zooms keeps one bar length rather than a flickering one.
-    if show_timestamp || show_scale_bar
+    if _text_on(show_timestamp) || _text_on(show_scale_bar)
         per_frame_ts = Int[clamp(Int(a.t), 0, nT - 1) for a in args_per_frame]
         eff_um = pixel_size_um === nothing ? 1.0 :
                  _um_per_px_3d(args_per_frame[1], states[1], pixel_size_um, canvas3_h)
@@ -975,7 +977,7 @@ function render_view_state_still(zarr_path::AbstractString, out_path::AbstractSt
                                  default_specs::Union{Nothing,AbstractVector} = nothing,
                                  canvas_h::Union{Int,Nothing} = nothing,
                                  canvas_w::Union{Int,Nothing} = nothing,
-                                 z_aniso::Real = 1.0, render_quality::Symbol = :standard,
+                                 z_aniso::Real = 1.0, render_quality::RenderQuality = :standard,
                                  img = nothing, overlays_config::Union{Nothing,AbstractDict} = nothing,
                                  task_dir::AbstractString = mktempdir(),
                                  on_log::Function = println,

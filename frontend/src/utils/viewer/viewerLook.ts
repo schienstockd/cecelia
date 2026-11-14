@@ -18,7 +18,7 @@ import { readDrawSpec, type LookImage } from './drawSpec'
 import { colourForRender, channelsForRender } from '../viewerColormap'
 import type { PopEyes } from './popEyes'
 import type { MaskColour } from '../maskPopTable'
-import { SKELETON_COLOUR } from '../viewerOverlays'
+import { SKELETON_BY_TYPE } from '../viewerOverlays'
 
 export { readGatingCurrent, type LookImage } from './drawSpec'
 
@@ -62,6 +62,14 @@ export interface ViewerLookInput {
   colourOverrides: Record<string, string>
   /** per skeleton segmentation, its eye (`settings.getBranchVisibility`) — the shown ones draw as lines */
   branchVisible: Record<string, boolean>
+  /** the scale bar / timestamp, on or off (`settings.viewerScaleBar` / `viewerTimestamp`) */
+  scaleBar: boolean
+  timestamp: boolean
+  /** their text px (`settings.viewerScaleBarPx` / `viewerTimestampPx`), on the viewer's canvas */
+  scaleBarPx: number
+  timestampPx: number
+  /** 3D ray steps (`settings.viewerSteps`) — a recording's unless its Render quality overrides */
+  steps: number
 }
 
 export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
@@ -142,9 +150,18 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     tailLength: i.tailLength,
     trackColourMode: i.trackColourMode,
   }
-  // the shown skeletons, as lines in the viewer's colour (`appendSkeletonLines`)
+  // the viewer's scale bar / timestamp and 3D Steps (`_frame_text`, `_render_quality`). The text px
+  // are the viewer canvas's (`textCanvasPx`, its height): a movie scales them to its own frame.
+  out.showScaleBar = i.scaleBar
+  out.showTimestamp = i.timestamp
+  out.scaleBarPx = i.scaleBarPx
+  out.timestampPx = i.timestampPx
+  const canvasH = i.viewState?.canvas?.height ?? 0
+  if (canvasH > 0) out.textCanvasPx = canvasH
+  out.steps = i.steps
+  // the shown skeletons, as lines coloured by branch type (`appendSkeletonLines`)
   const skeletons = Object.keys(i.branchVisible).filter(vn => i.branchVisible[vn])
-  if (skeletons.length) out.skeletons = Object.fromEntries(skeletons.map(vn => [vn, SKELETON_COLOUR]))
+  if (skeletons.length) out.skeletons = Object.fromEntries(skeletons.map(vn => [vn, SKELETON_BY_TYPE]))
   if (i.colourBy) {
     out.colourBy = i.colourBy
     if (Object.keys(i.colourOverrides).length) out.colourOverrides = i.colourOverrides

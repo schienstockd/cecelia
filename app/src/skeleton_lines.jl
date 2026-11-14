@@ -12,13 +12,16 @@ One skeleton's segments in native voxel coordinates. `t[i]` is segment i's frame
 without time (drawn on every frame). `plane[i]` is the plane it draws on: a segment crossing planes is
 split so each piece lies within one (`k ± 0.5`), so a plane view shows a branch on every plane it
 passes through. `flat`: a Z-flattened skeleton on a stack — `plane` -1, drawn on every plane (its `z`
-is 0). The plane is computed here, once, so the viewer and a movie cannot round it apart.
+is 0). The plane is computed here, once, so the viewer and a movie cannot round it apart. `type[i]`
+is its branch's skan `branch-type` (0–3, -1 when the table has none) — what the lines are coloured by
+(`palettes.json` → `branchTypeColours`).
 """
 struct SkeletonSegments
     x0::Vector{Float32}; y0::Vector{Float32}; z0::Vector{Float32}
     x1::Vector{Float32}; y1::Vector{Float32}; z1::Vector{Float32}
     t::Vector{Int}
     plane::Vector{Int}
+    type::Vector{Int}
     flat::Bool
 end
 
@@ -45,11 +48,14 @@ function skeleton_segments(h5ad_path::AbstractString; is_stack::Bool = false)
     tcols = temporal_columns(lp)
     tvals = isempty(tcols) ? fill(-1, n_rows) :
         round.(Int, coalesce.(as_df(select_cols(lp, tcols); include_x = false, include_obs = false)[!, tcols[1]], -1))
+    bt = label_props(h5ad_path)
+    btype = isempty(selectable_cols(bt, ["branch-type"])) ? fill(-1, n_rows) :
+        round.(Int, coalesce.(as_df(select_cols(bt, ["branch-type"]))[!, "branch-type"], -1))
     col(a) = (i = findfirst(==(a), axes); i === nothing ? nothing : i)
     ix, iy, iz = col("x"), col("y"), col("z")
     (ix === nothing || iy === nothing) && error("skeleton_segments: path axes $(axes) lack x / y")
     flat = iz === nothing && is_stack
-    out = SkeletonSegments((Float32[] for _ in 1:6)..., Int[], Int[], flat)
+    out = SkeletonSegments((Float32[] for _ in 1:6)..., Int[], Int[], Int[], flat)
     zat(j) = iz === nothing ? 0f0 : coords[j, iz]
     for r in 1:n_rows, j in (offsets[r] + 1):(offsets[r + 1] - 1)
         a = (coords[j, ix], coords[j, iy], zat(j))
@@ -57,7 +63,7 @@ function skeleton_segments(h5ad_path::AbstractString; is_stack::Bool = false)
         for (p0, p1, pl) in (flat ? [(a, b, -1)] : _plane_pieces(a, b))
             push!(out.x0, p0[1]); push!(out.y0, p0[2]); push!(out.z0, p0[3])
             push!(out.x1, p1[1]); push!(out.y1, p1[2]); push!(out.z1, p1[3])
-            push!(out.t, tvals[r]); push!(out.plane, pl)
+            push!(out.t, tvals[r]); push!(out.plane, pl); push!(out.type, btype[r])
         end
     end
     out
