@@ -70,3 +70,17 @@ td { vertical-align: top; border-bottom: .2mm solid var(--cc-surface-2); padding
 .terms { display: grid; grid-template-columns: 24mm 1fr; gap: 1mm 3mm; margin: 0 0 4mm; font-size: 9.5pt; break-inside: avoid; }
 .terms dt { font-weight: 600; }
 .terms dd { margin: 0; color: var(--cc-text); }
+
+/* Showcase (plan → D6): outcome first, what it gives, limits, then Do it (the in-app guide). */
+.outcome { margin: 0 0 4mm; break-inside: avoid; }
+.outcome p { font-size: 11pt; margin: 2mm 0 0; }
+.shows .show { margin: 0 0 4mm; break-inside: avoid; }
+/* the recipe step's own line, as the in-app guide words it */
+.shows .why { border-left: .6mm solid var(--cc-accent); padding-left: 2.5mm; color: var(--cc-text); }
+.shows .why::before { content: 'In the guide: '; font-weight: 600; color: var(--cc-accent); }
+.limits ul { margin: 0 0 4mm 5mm; padding: 0; }
+.doit { border: .4mm solid var(--cc-accent); border-radius: 2mm; padding: 3mm 4mm; margin: 4mm 0; break-inside: avoid; }
+.doit h4 { color: var(--cc-accent); }
+.doit p { margin: 0; }
+.shot.todo { position: static; border: .5mm dashed var(--cc-warn); background: #fdf6e8; padding: 4mm; color: var(--cc-text); width: auto; height: auto; }
+.shot.todo b { color: var(--cc-warn); margin-right: 2mm; text-transform: uppercase; font-size: 8.5pt; letter-spacing: .04em; }

@@ -3,8 +3,10 @@
 // docs/todo/BOOKLETS_PLAN.md → *Series* is the planned list; add an entry when a booklet is written.
 
 import type { Booklet } from './spec.ts'
+import { B1_FEW_MARKER_TISSUE } from './b1-few-marker-tissue.ts'
 import { C1_USING_AI } from './c1-using-ai.ts'
 
 export const BOOKLETS: Booklet[] = [
+  B1_FEW_MARKER_TISSUE,
   C1_USING_AI,
 ]

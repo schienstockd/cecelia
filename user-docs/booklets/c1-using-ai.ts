@@ -83,7 +83,7 @@ export const C1_USING_AI: Booklet = {
   // asks the one saved question (the terminal's login). One lab image to point at.
   fixture: {
     projects: { ln: {
-      source: '4rNbMp', images: { FtGoJO: 'Lymph node, day 8' }, name: 'Lymph node sections',
+      source: '4rNbMp', images: { FtGoJO: 'Lymphoid tissue, LCMV' }, name: 'Lymphoid tissue',
       kiwi: { image: 'FtGoJO', question: 'What are this image’s channels, pixel size and z-depth?' },
     } },
     profiles: [{ name: 'newcomer', ai: false }, { name: 'sam', ai: true }, { name: 'default', ai: true }],

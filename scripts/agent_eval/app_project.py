@@ -85,8 +85,14 @@ def copy_knowledge(src_root: pathlib.Path, root: pathlib.Path) -> list[dict]:
     return copied
 
 
+# With `results`: what segmenting and measuring left on the image, copied as is (the label stores, the
+# cell table, the cached metadata, QC) and kept registered. Never gates: those are user work, and a
+# booklet fixture recreates the ones it shows.
+_RESULT_DIRS = ("labels", "labelProps", "data", "qc")
+
+
 def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str], name: str,
-          knowledge: bool = False, into: pathlib.Path | None = None) -> dict:
+          knowledge: bool = False, into: pathlib.Path | None = None, results: bool = False) -> dict:
     """Copy `image_uids` (in order) into one set of a new project. `images` maps each copy to its
     source image, which is how a run's record names images after the copy is deleted. `knowledge`
     lists the lab-knowledge entries carried over (always present; empty without `knowledge`). `into`
@@ -114,7 +120,14 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
         taken.add(img_uid)
         shutil.copytree(src_root / "0" / image_uid / filename, root / "0" / img_uid / filename)
         (root / "1" / img_uid).mkdir(parents=True)
-        write_json_atomic(root / "1" / img_uid / "ccid.json", raw_ccid(src, img_uid, filename), indent=4)
+        ccid = raw_ccid(src, img_uid, filename)
+        if results:
+            for d in _RESULT_DIRS:
+                if (src_root / "1" / image_uid / d).is_dir():
+                    shutil.copytree(src_root / "1" / image_uid / d, root / "1" / img_uid / d)
+            ccid["labels"] = src.get("labels") or {}
+            ccid["label_props"] = src.get("label_props") or {}
+        write_json_atomic(root / "1" / img_uid / "ccid.json", ccid, indent=4)
         images.append({"imageUid": img_uid, "imageName": src.get("name", img_uid),
                        "sourceImageUid": image_uid})
     (root / "1" / set_uid).mkdir(parents=True)
@@ -147,10 +160,11 @@ def main(argv=None) -> int:
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--into", help="projects dir the copy lands in (default: --projects-dir)")
+    ap.add_argument("--with-results", action="store_true", help="also copy segmentation, cell table and QC")
     ap.add_argument("--knowledge", action="store_true", help="carry the source's lab-knowledge entries")
     a = ap.parse_args(argv)
     info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name, a.knowledge,
-                 pathlib.Path(a.into).expanduser() if a.into else None)
+                 pathlib.Path(a.into).expanduser() if a.into else None, a.with_results)
     write_json_atomic(a.out, info, indent=2)
     print(json.dumps(info))
     return 0

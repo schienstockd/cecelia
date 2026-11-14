@@ -18,7 +18,7 @@ const qc = computed(() => qcCheckView(project.sets.find(s => s.uid === props.set
 </script>
 
 <template>
-  <div class="checks" role="group" aria-label="Checks">
+  <div class="checks" role="group" aria-label="Checks" data-guide="images.checks">
     <span class="checks-label cc-eyebrow cc-fs-2xs">Checks</span>
     <AcqCheckButton :set-uid="setUid" />
     <CheckButton label="QC" :state="qc.state" :count="qc.count" :tip="qc.tip" :pressed="qcFilterOn"

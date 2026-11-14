@@ -8,6 +8,16 @@ verb vocabulary). This file adds only what is specific to print.
 **Reader:** a new lab member who knows microscopy but not Cecelia. Every term they would not know is
 defined the first time it appears, or not used.
 
+## Two kinds
+
+A **guide** (A1, C1–C3) walks the reader through steps; the frame below applies in full. A **showcase**
+(B1–B5) shows what a workflow gives and hands the doing to the in-app guide: outcome first, *You need* and
+rough time, *Before you image*, three or four capability shots with one line each, honest limits, then
+**Do it** naming the recipe's in-app guide. A showcase has no Do/See/If-wrong steps, and no booklet is both.
+Plan → D6. Each capability names its recipe step (`step`), and the build prints that step's own
+why-line under *In the guide*; the booklet's text adds only what you get, never a rewording of the step,
+so the booklet and the in-app guide cannot drift. A step the recipe drops fails the build.
+
 ## Fixed: the same in every booklet
 
 The build enforces these (`checkBooklets` in `spec.ts`) or the template renders them, so a booklet
@@ -51,8 +61,10 @@ before and after), side notes, and tables. Use them where they help, not to fill
   ref, chain, gate).
 - **A step past *Ends at* is marked `optional`**, and *If it goes wrong* holds only real failures; a
   caution goes under *Why*.
-- **Numbers in captions are checked by a person** on the rendered PDF. The build checks labels and
-  structure, not counts.
+- **Numbers come from the fixture, never the keyboard.** Write `{{lt.FtGoJO.planes}}`, `.channels`,
+  or `.<gate>.count` / `.pct`: `pixi run booklet-fixture` measures them on the copy through the app,
+  the capture checks a shot's `expect` against the same number, and the build prints it. A count
+  typed by hand ("26 z-planes") fails the build. Anything else numeric a person checks on the PDF.
 
 ## Acquisition first
 

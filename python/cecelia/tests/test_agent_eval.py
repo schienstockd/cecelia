@@ -337,6 +337,18 @@ class TestAppProject(unittest.TestCase):
             self.assertEqual(pathlib.Path(moved["projectDir"]).parent, other)
             self.assertTrue((other / moved["projectUid"] / "0" / moved["images"][0]["imageUid"] / "raw.ome.zarr").is_dir())
             self.assertEqual(sorted(p.name for p in projects.iterdir()), before)
+            # `results`: segmentation and cell table come along, registered; gates never do
+            src = projects / "SRC" / "1" / "imgA"
+            (src / "labels" / "cells.zarr").mkdir(parents=True)
+            (src / "gating").mkdir()
+            ccid = json.loads((src / "ccid.json").read_text(encoding="utf-8"))
+            ccid["labels"] = {"cells": ["cells.zarr"]}
+            (src / "ccid.json").write_text(json.dumps(ccid), encoding="utf-8")
+            full = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other, results=True)
+            img = other / full["projectUid"] / "1" / full["images"][0]["imageUid"]
+            self.assertTrue((img / "labels" / "cells.zarr").is_dir())
+            self.assertFalse((img / "gating").exists())
+            self.assertEqual(json.loads((img / "ccid.json").read_text(encoding="utf-8"))["labels"], {"cells": ["cells.zarr"]})
         legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
         self.assertEqual(app_project.copy_images(legacy),
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])

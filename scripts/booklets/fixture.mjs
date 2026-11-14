@@ -12,7 +12,11 @@
 // - Kiwi: a project's `kiwi` question is asked once, on `default` (the terminal's Claude login: one
 //   turn of that account's quota), and the reply saved to the Blackboard. A copy that already has a
 //   reply (`kiwi/turns.json`) is not asked again.
-// - The record — fixture key → the copy's uids — goes to <config-dir>/booklet-fixtures.json, which
+// - Facts: the numbers a caption may cite (`{{project.image.fact}}`, spec.ts → FACT_TOKEN) are read
+//   off the copy through the app — planes and channels from the image's geometry, each gate's count
+//   and % of parent from the population manager's stats — and recorded with the uids, so a caption
+//   and the screenshot beside it cite one measurement, never a typed number.
+// - The record — fixture key → the copy's uids, and the facts — goes to <config-dir>/booklet-fixtures.json, which
 //   capture.mjs reads to resolve a shot's `project` and `image`.
 //
 // Refuses 8080/5173, and refuses a projects dir outside --config-dir: a copy must never land among the
@@ -57,17 +61,86 @@ function copyProject(src, spec, into, owners, scratch) {
   const images = Object.keys(spec.images)
   const out = execFileSync('python', [join(repo, 'scripts', 'agent_eval', 'app_project.py'),
     '--projects-dir', src, '--source-project', spec.source, ...images.flatMap(i => ['--image', i]),
-    '--name', spec.name, '--into', into, '--out', scratch], { encoding: 'utf-8' })
+    '--name', spec.name, '--into', into, '--out', scratch, ...(spec.results ? ['--with-results'] : [])], { encoding: 'utf-8' })
   const info = JSON.parse(out.trim().split('\n').pop())
-  const map = {}
-  for (const im of info.images) {
-    map[im.sourceImageUid] = im.imageUid
-    const ccid = join(info.projectDir, '1', im.imageUid, 'ccid.json')
-    writeJson(ccid, { ...readJson(ccid), name: spec.images[im.sourceImageUid] })
+  const copy = { uid: info.projectUid, images: Object.fromEntries(info.images.map(im => [im.sourceImageUid, im.imageUid])) }
+  applyNames(into, copy, spec, owners)
+  return copy
+}
+
+/** The spec's display names and the fixture owners, on a copy — re-applied on every run, so renaming
+ *  an image in the spec needs no fresh copy (and keeps its saved Kiwi reply). */
+function applyNames(into, copy, spec, owners) {
+  for (const [src, uid] of Object.entries(copy.images)) {
+    const ccid = join(into, copy.uid, '1', uid, 'ccid.json')
+    writeJson(ccid, { ...readJson(ccid), name: spec.images[src] })
   }
-  const pj = join(info.projectDir, 'project.json')
-  writeJson(pj, { ...readJson(pj), owners })
-  return { uid: info.projectUid, images: map }
+  const pj = join(into, copy.uid, 'project.json')
+  writeJson(pj, { ...readJson(pj), name: spec.name, owners })
+}
+
+/** "2.8k" → 2800: plotmeta's tick labels are raw values, abbreviated. */
+const tickValue = s => { const m = String(s).trim().match(/^(-?[\d.]+)\s*([kM]?)$/); return m ? Number(m[1]) * (m[2] === 'k' ? 1e3 : m[2] === 'M' ? 1e6 : 1) : NaN }
+
+/** A raw value's position on a plotted axis, between the two ticks around it (geometric between
+ *  positive ticks: logicle is log-like there). The plot's own ticks, so no transform is re-derived. */
+function axisPos(raw, ticks, extent, end) {
+  if (raw === null) return extent[end === 'min' ? 0 : 1]
+  const t = ticks.map(k => ({ pos: k.pos, v: tickValue(k.label) })).filter(k => Number.isFinite(k.v)).sort((a, b) => a.v - b.v)
+  for (let i = 0; i < t.length - 1; i++) {
+    const a = t[i], b = t[i + 1]
+    if (raw < a.v || raw > b.v) continue
+    const f = a.v > 0 ? Math.log(raw / a.v) / Math.log(b.v / a.v) : (raw - a.v) / (b.v - a.v)
+    return a.pos + f * (b.pos - a.pos)
+  }
+  throw new Error(`value ${raw} is outside the axis ticks ${t.map(k => k.v).join(', ')}`)
+}
+
+/** Recreate gate `g` as a person's box gate (the population manager's own route); false when a
+ *  population of that name exists already. Channels are found by their names, as the plot lists them. */
+async function addGate(api, projectUid, imageUid, g) {
+  const q = `projectUid=${projectUid}&imageUid=${imageUid}&valueName=cells&popType=flow`
+  const tree = (await api(`/api/gating/popmap?${q}`)).body.tree
+  // the root's populations (docs/API.md's `{name,gate,filter,children}` is each node below it)
+  if ((tree?.populations ?? []).some(c => c.name === g.name)) return false
+  const ch = (await api(`/api/gating/channels?${q}`)).body
+  const col = name => {
+    const i = (ch.channelNames ?? []).indexOf(name)
+    if (i < 0 || !ch.channels?.[i]) throw new Error(`no gateable column for channel "${name}" (has ${(ch.channelNames ?? []).join(', ')})`)
+    return ch.channels[i]
+  }
+  const x = col(g.x), y = col(g.y)
+  const m = (await api(`/api/gating/plotmeta?${q}&x=${x}&y=${y}&pop=root&xt=logicle&yt=logicle`)).body
+  if (!m.xTicks) throw new Error(`plotmeta for ${g.x} × ${g.y}: ${JSON.stringify(m).slice(0, 160)}`)
+  const gate = { kind: 'rectangle', x_channel: x, y_channel: y, x_transform: m.xSpec, y_transform: m.ySpec,
+    x_min: axisPos(g.xRange[0], m.xTicks, m.xExtent, 'min'), x_max: axisPos(g.xRange[1], m.xTicks, m.xExtent, 'max'),
+    y_min: axisPos(g.yRange[0], m.yTicks, m.yExtent, 'min'), y_max: axisPos(g.yRange[1], m.yTicks, m.yExtent, 'max') }
+  const r = await api('/api/gating/pop/add', { projectUid, imageUid, valueName: 'cells', popType: 'flow', name: g.name, parent: 'root', gate })
+  if (!r.ok) throw new Error(`gate ${g.name}: ${r.body.error ?? JSON.stringify(r.body).slice(0, 160)}`)
+  return true
+}
+
+/** The numbers a caption may cite, as the app shows them: planes and channels of each copied image
+ *  (its active version's geometry), and each gate's count and % of parent (the population manager's
+ *  stats, printed as it prints them: count as is, % to one decimal). Keyed `project.image.fact`. */
+async function measure(api, fixture, rec) {
+  const facts = {}
+  for (const [key, spec] of Object.entries(fixture.projects ?? {})) {
+    const copy = rec.projects[key]
+    for (const src of Object.keys(spec.images)) {
+      const g = await api(`/api/images/geometry?projectUid=${copy.uid}&imageUid=${copy.images[src]}`)
+      if (!g.ok) throw new Error(`geometry of ${key}/${src}: ${g.body.error ?? 'failed'}`)
+      Object.assign(facts, { [`${key}.${src}.planes`]: g.body.sizeZ, [`${key}.${src}.channels`]: g.body.sizeC })
+    }
+    for (const gate of spec.gates ?? []) {
+      const q = `projectUid=${copy.uid}&imageUid=${copy.images[gate.image]}&valueName=cells&popType=flow&pop=${encodeURIComponent(`/${gate.name}`)}`
+      const st = await api(`/api/gating/stats?${q}`)
+      if (!st.ok) throw new Error(`stats of gate ${gate.name}: ${st.body.error ?? 'failed'}`)
+      Object.assign(facts, { [`${key}.${gate.image}.${gate.name}.count`]: st.body.count,
+                             [`${key}.${gate.image}.${gate.name}.pct`]: Number(st.body.pctParent).toFixed(1) })
+    }
+  }
+  return facts
 }
 
 /** Ask Kiwi `question` about `imageUid` in project `uid` as the active profile, and save the reply to
@@ -132,11 +205,28 @@ async function main() {
       const rec = record[b.id] ?? { projects: {} }
       for (const [key, spec] of Object.entries(b.fixture.projects ?? {})) {
         const have = rec.projects[key]
-        if (have && existsSync(join(into, have.uid))) { console.log(`· ${b.id}: project ${key} already copied (${have.uid})`); continue }
+        if (have && existsSync(join(into, have.uid))) {
+          applyNames(into, have, spec, owners)
+          console.log(`· ${b.id}: project ${key} already copied (${have.uid}); names re-applied`)
+          continue
+        }
         rec.projects[key] = copyProject(resolve(a.sourceProjects), spec, into, owners, join(a.configDir, '.fixture-copy.json'))
         console.log(`✓ ${b.id}: project ${key} → ${rec.projects[key].uid}`)
       }
       record[b.id] = rec
+      for (const [key, spec] of Object.entries(b.fixture.projects ?? {})) {
+        const copy = rec.projects[key]
+        for (const [src, names] of Object.entries(spec.channels ?? {})) {
+          const r = await api('/api/images/channelnames', { projectUid: copy.uid, imageUids: [copy.images[src]], channelNames: names })
+          if (!r.ok) throw new Error(`channel names on ${key}/${src}: ${r.body.error ?? 'failed'}`)
+        }
+        for (const g of spec.gates ?? []) {
+          const made = await addGate(api, copy.uid, copy.images[g.image], g)
+          console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.name}${made ? '' : ' already there'}`)
+        }
+      }
+      rec.facts = await measure(api, b.fixture, rec)
+      console.log(`✓ ${b.id}: facts ${Object.entries(rec.facts).map(([k, v]) => `${k}=${v}`).join(', ')}`)
       for (const [key, spec] of Object.entries(b.fixture.projects ?? {})) {
         if (!spec.kiwi) continue
         const copy = rec.projects[key]
