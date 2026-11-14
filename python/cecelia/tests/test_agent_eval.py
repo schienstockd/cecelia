@@ -328,6 +328,38 @@ class TestAppProject(unittest.TestCase):
                 self.assertTrue((root / "0" / im["imageUid"] / "raw.ome.zarr").is_dir())
             self.assertEqual(info["knowledge"], [])
             self.assertFalse((root / "blackboard").exists())
+            # `into`: the copy lands in another projects dir (an isolated instance's); the source dir
+            # gains nothing
+            other = pathlib.Path(d) / "other"
+            other.mkdir()
+            before = sorted(p.name for p in projects.iterdir())
+            moved = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other)
+            self.assertEqual(pathlib.Path(moved["projectDir"]).parent, other)
+            self.assertTrue((other / moved["projectUid"] / "0" / moved["images"][0]["imageUid"] / "raw.ome.zarr").is_dir())
+            self.assertEqual(sorted(p.name for p in projects.iterdir()), before)
+            # `results`: segmentation and cell table come along, registered; gates never do
+            src = projects / "SRC" / "1" / "imgA"
+            (src / "labels" / "cells.zarr").mkdir(parents=True)
+            (src / "gating").mkdir()
+            ccid = json.loads((src / "ccid.json").read_text(encoding="utf-8"))
+            ccid["labels"] = {"cells": ["cells.zarr"]}
+            (src / "ccid.json").write_text(json.dumps(ccid), encoding="utf-8")
+            # a pooled clustering run names its images; the copy is renamed in it, the others dropped
+            (src / "labelProps").mkdir()
+            (src / "labelProps" / "cells__tracks.clustfeatures.json").write_text(json.dumps(
+                {"clusters.movement": {"partOf": ["imgB", "imgA"], "features": ["speed"]}}), encoding="utf-8")
+            (src / "labelProps" / "cells.hmmfit.json").write_text(json.dumps(
+                {"movement": {"partOf": ["imgA", "imgC"]}}), encoding="utf-8")
+            full = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other, results=True)
+            img = other / full["projectUid"] / "1" / full["images"][0]["imageUid"]
+            self.assertTrue((img / "labels" / "cells.zarr").is_dir())
+            self.assertFalse((img / "gating").exists())
+            self.assertEqual(json.loads((img / "ccid.json").read_text(encoding="utf-8"))["labels"], {"cells": ["cells.zarr"]})
+            side = json.loads((img / "labelProps" / "cells__tracks.clustfeatures.json").read_text(encoding="utf-8"))
+            self.assertEqual(side["clusters.movement"], {"partOf": [full["images"][0]["imageUid"]], "features": ["speed"]})
+            hmm = json.loads((img / "labelProps" / "cells.hmmfit.json").read_text(encoding="utf-8"))
+            self.assertEqual(hmm["movement"]["partOf"], [full["images"][0]["imageUid"]])
+            self.assertIn("imgA", (src / "labelProps" / "cells__tracks.clustfeatures.json").read_text(encoding="utf-8"))
         legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
         self.assertEqual(app_project.copy_images(legacy),
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])

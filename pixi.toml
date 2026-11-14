@@ -334,9 +334,14 @@ ui-copy = "node scripts/ui_copy_inventory.mjs"
 # CECELIA_PORT_SLOT — never a working one; it refuses 8080/5173. Usage in the script header.
 gui-capture = "node scripts/gui_capture.mjs"
 
-# Build the user booklets (user-docs/booklets/: specs, STYLE.md) into PDFs under booklets-out/. Fails
-# on a frame rule (checkBooklets). `-- --only <id>` builds one; `-- --html` also writes the HTML.
-booklets = "node scripts/booklets/build.mjs"
+# Screenshots for the user docs (user-docs/shots/: one shot set per page), from an ISOLATED running
+# instance (own CECELIA_DEV_DIR and CECELIA_PORT_SLOT; refuses 8080/5173). doc-fixture copies the lab
+# images and creates the profiles the shots use; doc-shots captures (fails a shot whose anchor is gone,
+# whose cited label changed or that shows a stale time); doc-images composes each capture into
+# user-docs/images/<id>.png (crop + pointer). Usage in the scripts' headers (scripts/docshots/).
+doc-fixture = "node scripts/docshots/fixture.mjs"
+doc-shots = "node scripts/docshots/capture.mjs"
+doc-images = "node scripts/docshots/compose.mjs"
 
 # Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
 # frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails

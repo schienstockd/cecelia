@@ -53,7 +53,7 @@ export const KIWI_MODE: Mode = {
     'What sets this cluster apart?',         // get_cluster_summary, get_measure_summary
     'Have I seen this before?',              // get_recent_captures, search_blackboard
   ],
-  start: 'Open Kiwi in the sidebar, or Share a frame',
+  start: 'Ask Kiwi at top right, or Share a frame',
   note: 'It points at the evidence; you decide',
 }
 export const TERMINAL_MODE: Mode = {

@@ -44,7 +44,7 @@ async function turnOn() {
     <ul class="ai-list cc-fs-sm">
       <li v-for="r in rows.filter(r => r.gain)" :key="r.id"><strong>{{ r.label }}</strong> — {{ r.gain }}</li>
     </ul>
-    <div class="ai-head cc-eyebrow cc-fs-2xs">{{ AI_OPT_IN_COPY.risksHead }}</div>
+    <div class="ai-head cc-eyebrow cc-fs-2xs" data-guide="aiOptIn.risks">{{ AI_OPT_IN_COPY.risksHead }}</div>
     <ul class="ai-list cc-fs-sm">
       <li v-for="line in AI_OPT_IN_COPY.risks" :key="line">{{ line }}</li>
     </ul>
@@ -56,7 +56,7 @@ async function turnOn() {
     <InlineNote v-if="error" class="cc-fs-sm" severity="warn" :short="error" />
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="closeAiOptIn">Cancel</button>
-      <button class="cc-btn cc-btn-primary" :disabled="busy" data-guide="ai.optIn.turnOn" @click="turnOn">
+      <button class="cc-btn cc-btn-primary" data-guide="aiOptIn.turnOn" :disabled="busy" @click="turnOn">
         <i v-if="busy" class="pi pi-spin pi-spinner" /> {{ AI_OPT_IN_COPY.confirm }}
       </button>
     </template>

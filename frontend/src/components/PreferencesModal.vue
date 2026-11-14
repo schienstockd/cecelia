@@ -480,7 +480,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
       <!-- The AI switch for this profile (utils/aiSwitch.ts). ON goes through the opt-in dialog;
            OFF is immediate. Locked when peanut turned AI off for the workstation. -->
       <CcToggle :model-value="observer.ai.enabled" :disabled="observer.ai.setBy === 'workstation'"
-                data-guide="prefs.aiSwitch" label="AI features"
+                label="AI features" data-guide="prefs.aiFeatures"
                 v-tooltip.bottom="observer.ai.setBy === 'workstation' ? AI_OFF_COPY.workstation
                                   : 'Kiwi, claim review and Claude in the terminal'"
                 @update:model-value="onAiToggle" />

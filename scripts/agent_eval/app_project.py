@@ -85,11 +85,34 @@ def copy_knowledge(src_root: pathlib.Path, root: pathlib.Path) -> list[dict]:
     return copied
 
 
+# With `results`: what segmenting and measuring left on the image, copied as is (the label stores, the
+# cell table, the cached metadata, QC) and kept registered. Never gates: those are user work, and a
+# doc-shots fixture recreates the ones it shows.
+_RESULT_DIRS = ("labels", "labelProps", "data", "qc")
+
+
+def _rename_part_of(props_dir: pathlib.Path, renamed: dict) -> None:
+    """A clustering, motif or region run's sidecar (`*features.json`), or an HMM fit's (`*.hmmfit.json`),
+    names the images it pooled (`partOf`) by uid: on a copy, the copied ones by their new uids and the rest left out, or the app
+    reads the copy as outside its own run."""
+    sidecars = [*props_dir.glob("*features.json"), *props_dir.glob("*.hmmfit.json")] if props_dir.is_dir() else []
+    for f in sorted(sidecars):
+        with open(f, encoding="utf-8") as fh:
+            side = json.load(fh)
+        for entry in side.values():
+            if isinstance(entry, dict) and isinstance(entry.get("partOf"), list):
+                entry["partOf"] = [renamed[u] for u in entry["partOf"] if u in renamed]
+        write_json_atomic(f, side, indent=4)
+
+
 def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str], name: str,
-          knowledge: bool = False) -> dict:
+          knowledge: bool = False, into: pathlib.Path | None = None, results: bool = False) -> dict:
     """Copy `image_uids` (in order) into one set of a new project. `images` maps each copy to its
     source image, which is how a run's record names images after the copy is deleted. `knowledge`
-    lists the lab-knowledge entries carried over (always present; empty without `knowledge`)."""
+    lists the lab-knowledge entries carried over (always present; empty without `knowledge`). `into`
+    is the projects dir the copy lands in (default: the source's) — an isolated instance's, for the
+    user docs' screenshots (scripts/docshots/capture.mjs)."""
+    into = into or projects_dir
     src_root = projects_dir / source_project
     srcs = []
     for image_uid in image_uids:
@@ -99,21 +122,32 @@ def build(projects_dir: pathlib.Path, source_project: str, image_uids: list[str]
         if not filename:
             raise SystemExit(f"{source_project}/{image_uid} has no `default` image version")
         srcs.append((image_uid, src, filename))
-    taken = {p.name for p in projects_dir.iterdir()}
+    taken = {p.name for p in into.iterdir()}
     proj_uid = new_uid(taken)
     taken.add(proj_uid)
     set_uid = new_uid(taken)
     taken.add(set_uid)
-    root = projects_dir / proj_uid
+    root = into / proj_uid
     images = []
     for image_uid, src, filename in srcs:
         img_uid = new_uid(taken)
         taken.add(img_uid)
         shutil.copytree(src_root / "0" / image_uid / filename, root / "0" / img_uid / filename)
         (root / "1" / img_uid).mkdir(parents=True)
-        write_json_atomic(root / "1" / img_uid / "ccid.json", raw_ccid(src, img_uid, filename), indent=4)
+        ccid = raw_ccid(src, img_uid, filename)
+        if results:
+            for d in _RESULT_DIRS:
+                if (src_root / "1" / image_uid / d).is_dir():
+                    shutil.copytree(src_root / "1" / image_uid / d, root / "1" / img_uid / d)
+            ccid["labels"] = src.get("labels") or {}
+            ccid["label_props"] = src.get("label_props") or {}
+        write_json_atomic(root / "1" / img_uid / "ccid.json", ccid, indent=4)
         images.append({"imageUid": img_uid, "imageName": src.get("name", img_uid),
                        "sourceImageUid": image_uid})
+    if results:
+        renamed = {im["sourceImageUid"]: im["imageUid"] for im in images}
+        for im in images:
+            _rename_part_of(root / "1" / im["imageUid"] / "labelProps", renamed)
     (root / "1" / set_uid).mkdir(parents=True)
     write_json_atomic(root / "1" / set_uid / "ccid.json",
                       {"uid": set_uid, "class": "CciaSet", "name": "images",
@@ -143,9 +177,12 @@ def main(argv=None) -> int:
     ap.add_argument("--image", required=True, action="append", help="repeat for each run image")
     ap.add_argument("--name", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--into", help="projects dir the copy lands in (default: --projects-dir)")
+    ap.add_argument("--with-results", action="store_true", help="also copy segmentation, cell table and QC")
     ap.add_argument("--knowledge", action="store_true", help="carry the source's lab-knowledge entries")
     a = ap.parse_args(argv)
-    info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name, a.knowledge)
+    info = build(pathlib.Path(a.projects_dir).expanduser(), a.source_project, a.image, a.name, a.knowledge,
+                 pathlib.Path(a.into).expanduser() if a.into else None, a.with_results)
     write_json_atomic(a.out, info, indent=2)
     print(json.dumps(info))
     return 0

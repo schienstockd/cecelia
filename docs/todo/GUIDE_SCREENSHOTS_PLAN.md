@@ -3,7 +3,17 @@
 **Status:** **parked** (2026-11-13) — trial runs T0–T4, two screenshot passes and three draft booklets
 (intravital, confocal, PhenoCycler) done locally (below); no pipeline code yet, tutorials not committed. Brief: [`docs/archive/GUIDE_SCREENSHOTS_PROMPT.md`](../archive/GUIDE_SCREENSHOTS_PROMPT.md);
 read its banner first, because six of the brief's premises had moved by the time it was archived.
-Review of the three drafts: [`docs/archive/BOOKLET_RESERVATIONS.md`](../archive/BOOKLET_RESERVATIONS.md) (banner first). The booklet series built on this plan: [`BOOKLETS_PLAN.md`](BOOKLETS_PLAN.md).
+Review of the three drafts: [`docs/archive/BOOKLET_RESERVATIONS.md`](../archive/BOOKLET_RESERVATIONS.md) (banner first). The booklet series built on this plan, since ended (no PDFs): [`docs/archive/BOOKLETS_PLAN.md`](../archive/BOOKLETS_PLAN.md).
+
+**Capture engine — BUILT** (for the booklets, 2026-11-14; re-homed for the user docs when they ended). A
+shot is declared, not scripted: `user-docs/shots/` (`spec.ts` `Shot` / `Fixture` / `ShotSet`, one set per
+user-docs page, `README.md` for how to write one). `pixi run doc-fixture` copies lab images into an isolated
+instance (with segmentation and cell tables when asked), recreates gates through the app, makes profiles,
+saves one Kiwi reply and measures the numbers a page may cite; `pixi run doc-shots` captures (fresh context
+per shot, 2×, the guides' `data-guide` anchors; viewer shots headed with WebGPU, their state read back) and
+fails on a missing anchor, a changed label or number, or a stale time; `pixi run doc-images` crops and draws
+the pointer into `user-docs/images/`. First user: `user-docs/using-ai.md`. Its next uses (the in-app guides
+here, slides) are open.
 Related: [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md) (the layout these shots follow),
 [`GUIDE_SYSTEM_PLAN.md`](GUIDE_SYSTEM_PLAN.md), [`WORKFLOW_RECIPES_PLAN.md`](WORKFLOW_RECIPES_PLAN.md),
 [`FIGURES_PLAN.md`](FIGURES_PLAN.md).

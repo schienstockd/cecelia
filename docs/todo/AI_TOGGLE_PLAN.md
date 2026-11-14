@@ -135,8 +135,8 @@ Each phase is a standalone PR. Sizes, risks and tests per slice: audit §9.
 - **P4b · A guide to turn it on** — **built 2026-11-14:** `turn-on-ai` (`lib/guides/singleTopicGuides.ts`) walks
   avatar menu → Preferences → Kiwi → AI features → the opt-in dialog → Kiwi's Account row. Listed only while
   AI is off (`AI_OFF_ONLY_GUIDES`, the mirror of `AI_ONLY_GUIDES`): before it, the AI guide was hidden from
-  exactly the person who needed the way in. Replaces the B-series-era plan of a C1 PDF as the only
-  walkthrough; C1 stays as the policy sheet.
+  exactly the person who needed the way in. The written version, with what is sent to Anthropic, is
+  `user-docs/using-ai.md` (C1, a user-docs page since #2240).
 - **P5 · User docs:** **Built** (`user-docs/parts/bottom.md` → *Working with Claude*). what AI does in Cecelia, what it sends, and what keeps working with AI off.
 
 P0, P1 and P2 fit the hardening phase. P3 waits on the open calls.
