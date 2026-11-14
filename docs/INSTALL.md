@@ -377,6 +377,10 @@ ssh -L 8080:localhost:<api_port> <vm>
 # then, in a laptop browser — the sign-in link, once per browser (Cecelia only answers its own user):
 open "http://localhost:8080/api/auth?token=$(ssh <vm> cat .cecelia/api-token)"
 ```
+Both files live in the VM's config dir, `~/.cecelia` for an install. A VM that runs Cecelia with
+`CECELIA_DEV_DIR` set (exported, or in a clone's `.env`) writes them under that dir instead: read
+them from there. The launcher only looks in `~/.cecelia` and, finding no lock, warns and keeps the
+profile's port.
 
 **Viewer.** The WebGPU browser viewer runs over the same tunnel — the headless VM does no rendering
 of its own; everything paints on the laptop.

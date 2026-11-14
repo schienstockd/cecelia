@@ -61,11 +61,16 @@ _port_open() {
 # (8080 + 10 x N), and 8080 is slot 0: another user's Cecelia. So ask the VM which port this
 # user's backend took, from the single-instance lock it writes (app/src/single_instance.jl:
 # `api_port` in <config_dir>/cecelia.lock, ~/.cecelia for an installed app), and tunnel there.
-# No lock (Cecelia not started yet) keeps the profile's port.
+# No lock keeps the profile's port, and says so: either Cecelia isn't running yet, or the VM runs it
+# with a moved config dir (CECELIA_DEV_DIR, exported or in a clone's .env), whose lock this fixed
+# path can't see, so the tunnel may reach another user's slot.
 REMOTE_LOCK=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new "$CONN_USER@$HOST" \
   'cat "$HOME/.cecelia/cecelia.lock" 2>/dev/null' 2>/dev/null || true)
 LOCK_PORT=$(printf '%s' "$REMOTE_LOCK" | sed -n 's/.*"api_port"[[:space:]]*:[[:space:]]*"\{0,1\}\([0-9][0-9]*\).*/\1/p' | head -n1)
-if [ -n "$LOCK_PORT" ] && [ "$LOCK_PORT" != "$REMOTE_PORT" ]; then
+if [ -z "$LOCK_PORT" ]; then
+  printf '[cecelia] no ~/.cecelia/cecelia.lock on the VM (Cecelia not started, or it runs with CECELIA_DEV_DIR); tunnelling to the profile port %s\n' \
+    "$REMOTE_PORT" >&2
+elif [ "$LOCK_PORT" != "$REMOTE_PORT" ]; then
   printf '[cecelia] your Cecelia on the VM is on port %s (profile says %s); tunnelling to %s\n' \
     "$LOCK_PORT" "$REMOTE_PORT" "$LOCK_PORT"
   REMOTE_PORT="$LOCK_PORT"
