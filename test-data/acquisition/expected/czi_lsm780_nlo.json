@@ -1,0 +1,104 @@
+{
+ "autoHV": null,
+ "brightZ": {
+  "enabled": false,
+  "points": []
+ },
+ "camera": null,
+ "channels": [
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": null,
+   "gain": 1.0,
+   "hv": 780.0,
+   "laser": "Chameleon",
+   "name": "NDD R1",
+   "offset": 2.0,
+   "order": 1
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": null,
+   "gain": 1.0,
+   "hv": 640.0,
+   "laser": "Chameleon",
+   "name": "NDD R2",
+   "offset": 1.0,
+   "order": 2
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": null,
+   "gain": 1.0,
+   "hv": 520.0,
+   "laser": "Chameleon",
+   "name": "NDD R3",
+   "offset": 1.0,
+   "order": 3
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": null,
+   "gain": 1.0,
+   "hv": 100.0,
+   "laser": "Chameleon",
+   "name": "T PMT",
+   "offset": 0.0,
+   "order": 4
+  }
+ ],
+ "lasers": [
+  {
+   "name": "Chameleon",
+   "transmissionPct": 2.0,
+   "wavelengthNm": 775.0
+  }
+ ],
+ "microscopeBody": null,
+ "modes": [
+  "tiled"
+ ],
+ "objective": {
+  "immersion": "water",
+  "magnification": 63.0,
+  "na": 1.1500000000000001,
+  "name": "LD C-Apochromat 63x/1.15 W Korr M27",
+  "refractiveIndex": 1.333
+ },
+ "pinholeUm": null,
+ "readerVersion": 2,
+ "scanner": {
+  "integration": {
+   "average": null,
+   "count": 4,
+   "type": "Average"
+  },
+  "pixelDwellUs": 0.9848,
+  "type": null,
+  "zoom": 1.0
+ },
+ "softwareVersion": "13.0.1.518",
+ "source": "czi",
+ "system": "LSM 780, AxioObserver",
+ "technology": "two-photon",
+ "zStack": {
+  "count": 120.0,
+  "stepUm": 0.37
+ }
+}

@@ -1,0 +1,129 @@
+{
+ "autoHV": null,
+ "brightZ": {
+  "enabled": false,
+  "points": []
+ },
+ "camera": null,
+ "channels": [
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": "Alexa Fluor 647",
+   "gain": 1.0,
+   "hv": 800.0,
+   "laser": "HeNe633",
+   "name": "Ch2-T1",
+   "offset": 3.0,
+   "order": 1
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": "Alexa Fluor 555",
+   "gain": 1.0,
+   "hv": 580.0,
+   "laser": "DPSS 561-10",
+   "name": "ChS2-T2",
+   "offset": 0.533935546875,
+   "order": 2
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": "Alexa Fluor 488",
+   "gain": 1.0,
+   "hv": 680.0,
+   "laser": "Argon",
+   "name": "ChS1-T3",
+   "offset": 0.2373046875,
+   "order": 3
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": "DAPI",
+   "gain": 1.0,
+   "hv": 660.0,
+   "laser": "Diode 405-30",
+   "name": "Ch1-T4",
+   "offset": 0.0,
+   "order": 4
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": null,
+   "bitDepth": 8,
+   "detector": null,
+   "detectorMode": null,
+   "dyePreset": null,
+   "gain": 1.0,
+   "hv": 190.0,
+   "laser": "Diode 405-30",
+   "name": "T PMT-T4",
+   "offset": 0.0,
+   "order": 5
+  }
+ ],
+ "lasers": [
+  {
+   "name": "HeNe633",
+   "transmissionPct": 10.0,
+   "wavelengthNm": 633.0
+  },
+  {
+   "name": "DPSS 561-10",
+   "transmissionPct": 0.2,
+   "wavelengthNm": 561.0
+  },
+  {
+   "name": "Argon",
+   "transmissionPct": 0.2,
+   "wavelengthNm": 488.0
+  },
+  {
+   "name": "Diode 405-30",
+   "transmissionPct": 2.0,
+   "wavelengthNm": 405.0
+  }
+ ],
+ "microscopeBody": null,
+ "modes": [
+  "tiled"
+ ],
+ "objective": {
+  "immersion": "air",
+  "magnification": 20.0,
+  "na": 0.8,
+  "name": "Plan-Apochromat 20x/0.8 M27",
+  "refractiveIndex": 1.0
+ },
+ "pinholeUm": null,
+ "readerVersion": 2,
+ "scanner": {
+  "integration": {
+   "average": null,
+   "count": 1,
+   "type": "None"
+  },
+  "pixelDwellUs": 1.5758,
+  "type": null,
+  "zoom": 1.0
+ },
+ "softwareVersion": "13.0.1.518",
+ "source": "czi",
+ "system": "LSM 780, AxioObserver",
+ "technology": "confocal"
+}

@@ -1,0 +1,146 @@
+{
+ "acquiredAt": "2024-04-23T23:48:19+00:00",
+ "autoHV": null,
+ "channels": [
+  {
+   "bitDepth": 8,
+   "detector": "PMT 2",
+   "dyePreset": "dTomato",
+   "emissionFilter": "561-617 nm",
+   "gain": null,
+   "hv": 721.198596169986,
+   "laser": "OPSL 552",
+   "laserLines": [
+    {
+     "pct": 10.0,
+     "wavelengthNm": 552
+    }
+   ],
+   "name": "dTomato",
+   "offset": -0.0266666666666708,
+   "order": 1
+  },
+  {
+   "bitDepth": 8,
+   "detector": "PMT 2",
+   "dyePreset": "EGFP",
+   "emissionFilter": "496-580 nm",
+   "gain": null,
+   "hv": 672.961013199054,
+   "laser": "OPSL 488",
+   "laserLines": [
+    {
+     "pct": 17.9,
+     "wavelengthNm": 488
+    }
+   ],
+   "name": "EGFP",
+   "offset": -0.0266666666666708,
+   "order": 2
+  },
+  {
+   "bitDepth": 8,
+   "detector": "PMT 2",
+   "dyePreset": "ALEXA 647",
+   "emissionFilter": "655-690 nm",
+   "gain": null,
+   "hv": 704.394598306249,
+   "laser": "Diode 638",
+   "laserLines": [
+    {
+     "pct": 13.51,
+     "wavelengthNm": 638
+    }
+   ],
+   "name": "ALEXA 647",
+   "offset": -0.0133333333333354,
+   "order": 3
+  },
+  {
+   "bitDepth": 8,
+   "detector": "PMT 2",
+   "dyePreset": "DAPI",
+   "emissionFilter": "426-489 nm",
+   "gain": null,
+   "hv": 966.296635385672,
+   "laser": "Diode 405 + OPSL 552",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 405
+    },
+    {
+     "pct": 1.5,
+     "wavelengthNm": 552
+    }
+   ],
+   "name": "DAPI",
+   "offset": 0.0533333333333275,
+   "order": 4
+  }
+ ],
+ "dichroics": [
+  {
+   "name": "DD 488/552",
+   "slot": "excitation beam splitter"
+  }
+ ],
+ "imageName": "WT",
+ "lasers": [
+  {
+   "name": "OPSL 552",
+   "transmissionPct": 10.0,
+   "wavelengthNm": 552
+  },
+  {
+   "name": "OPSL 488",
+   "transmissionPct": 17.9,
+   "wavelengthNm": 488
+  },
+  {
+   "name": "Diode 638",
+   "transmissionPct": 13.51,
+   "wavelengthNm": 638
+  },
+  {
+   "name": "Diode 405",
+   "transmissionPct": 2.0,
+   "wavelengthNm": 405
+  },
+  {
+   "name": "OPSL 552",
+   "transmissionPct": 1.5,
+   "wavelengthNm": 552
+  }
+ ],
+ "microscopeBody": "DMI6000B-CS",
+ "objective": {
+  "immersion": "oil",
+  "magnification": 40.0,
+  "na": 1.3,
+  "name": "HC PL APO CS2 40x/1.30 OIL"
+ },
+ "pinholeAiry": 1.0,
+ "pinholeUm": 65.27,
+ "readerVersion": 2,
+ "scanner": {
+  "integration": {
+   "average": null,
+   "count": 1,
+   "type": "None"
+  },
+  "lineHz": 400.0,
+  "pixelDwellUs": 0.6,
+  "type": "unidirectional",
+  "zoom": 1.0
+ },
+ "sequential": true,
+ "softwareVersion": "LAS X 3.5.7.23225",
+ "source": "lif",
+ "system": "TCS SP8",
+ "technology": "confocal",
+ "zStack": {
+  "count": 27,
+  "stepUm": 0.5016
+ }
+}

@@ -1,0 +1,114 @@
+{
+ "autoHV": null,
+ "brightZ": null,
+ "camera": null,
+ "channels": [
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": "FastAiryScanSheppardSum",
+   "bitDepth": 16,
+   "detector": "Airyscan",
+   "detectorMode": "Integration",
+   "dyePreset": "Alexa Fluor 647",
+   "gain": 1.0,
+   "hv": 700.0,
+   "laser": "639 nm",
+   "name": "AF647-T1",
+   "offset": 0.0,
+   "order": 1
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": "FastAiryScanSheppardSum",
+   "bitDepth": 16,
+   "detector": "Airyscan",
+   "detectorMode": "Integration",
+   "dyePreset": "Alexa Fluor 546",
+   "gain": 1.0,
+   "hv": 700.0,
+   "laser": "561 nm",
+   "name": "AF546-T2",
+   "offset": 0.0,
+   "order": 2
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": "FastAiryScanSheppardSum",
+   "bitDepth": 16,
+   "detector": "Airyscan",
+   "detectorMode": "Integration",
+   "dyePreset": "Alexa Fluor 488",
+   "gain": 1.0,
+   "hv": 725.0,
+   "laser": "488 nm",
+   "name": "AF488-T3",
+   "offset": 0.0,
+   "order": 3
+  },
+  {
+   "acquisitionMode": "LaserScanningConfocalMicroscopy",
+   "airyscan": "FastAiryScanSheppardSum",
+   "bitDepth": 16,
+   "detector": "Airyscan",
+   "detectorMode": "Integration",
+   "dyePreset": "Alexa Fluor 405",
+   "gain": 1.0,
+   "hv": 650.0,
+   "laser": "405 nm",
+   "name": "AF405-T4",
+   "offset": 0.0,
+   "order": 4
+  }
+ ],
+ "lasers": [
+  {
+   "name": "639 nm",
+   "transmissionPct": 2.0,
+   "wavelengthNm": 639.0
+  },
+  {
+   "name": "561 nm",
+   "transmissionPct": 1.0,
+   "wavelengthNm": 561.0
+  },
+  {
+   "name": "488 nm",
+   "transmissionPct": 5.0,
+   "wavelengthNm": 488.0
+  },
+  {
+   "name": "405 nm",
+   "transmissionPct": 2.0,
+   "wavelengthNm": 405.0
+  }
+ ],
+ "microscopeBody": "Axio Observer.Z1 / 7",
+ "modes": [],
+ "objective": {
+  "immersion": "oil",
+  "magnification": 63.0,
+  "na": 1.4,
+  "name": "Plan-Apochromat 63x/1.40 Oil DIC M27",
+  "refractiveIndex": 1.518
+ },
+ "pinholeUm": null,
+ "readerVersion": 2,
+ "scanner": {
+  "integration": {
+   "average": null,
+   "count": 1,
+   "type": "None"
+  },
+  "pixelDwellUs": 0.33,
+  "type": null,
+  "zoom": 1.2
+ },
+ "softwareVersion": "3.7.97.07000",
+ "source": "czi",
+ "system": "LSM 980",
+ "technology": "airyscan",
+ "zStack": {
+  "count": 50.0,
+  "stepUm": 0.13
+ }
+}

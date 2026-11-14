@@ -1,6 +1,6 @@
 # Test value — do the tests fail when the result is wrong?
 
-**Status:** P1 done (2026-11-13, `stats.jl` pilot); P2 next. Supersedes the three archived briefs
+**Status:** P1 + P2 done (2026-11-13: `stats.jl`; Python readers + floor); P3 next. Supersedes the three archived briefs
 (`docs/archive/TEST_VALUE_AUDIT_PROMPT.md`, `TEST_VALUE_AUDIT_PROMPT_2.md`,
 `TEST_VALUE_PILOT_GATING_PROMPT.md`).
 
@@ -61,6 +61,36 @@ into the loaded package and runs the test files that touch the code. 94 mutants.
 - **Fail-on-old-code is not possible here:** the four `result_review_stats_*` repros landed with
   their fixes in one squash commit (#2053), on code that did not exist before it.
 
+### P2: Python acquisition readers + floor code (2026-11-13)
+
+`mutmut` 3.8.1 on `{czi,oir,lif,qptiff}_meta.py` and `intensity_utils.py` (5266 mutants, ~4 min wall
+per run, against the 38 test files that import them). Line coverage was **95%** and the score **67%**:
+the lines ran, but many output fields and every threshold boundary went unchecked.
+
+| | czi | oir | lif | qptiff | intensity | All |
+|---|---|---|---|---|---|---|
+| Before | 61% | 55% | 58% | 84% | 80% | **67%** |
+| After | 89.5% | 88.5% | 78.8% | 89.6% | 88.2% | **86.6%** |
+
+- **Unchecked fields** (key renames and broken XML lookups passed): pixel dwell, HV, gain, bit depth,
+  transmission, exposure, illumination, among them inputs to `acq_check.jl` and the crop's z step.
+  Now `test_acquisition_full_records.py` pins each fixture's whole record
+  (`test-data/acquisition/expected/`, 16 records; each value traced to its source element, see
+  `test-data/README.md`).
+- **Floor and noise boundaries**: `>=` vs `>` on every `FLOOR_*` threshold, the two-photon window
+  running off the histogram, the ten-bins-below window of `is_saturated`, `background_method`
+  ignored by `noise_stats`. Now `test_floor_boundaries.py` and
+  `test_noise_range_saturation_contract.py`, expected sides taken from the constants' comments.
+- **Confirmed against the whole Python suite and the Julia acquisition tests** before the new tests:
+  the lif `pixelDwellUs` key rename and the second-photon-peak window exit both passed everything.
+  A third pick (czi z step × 1000001) was equivalent: `round(…, 4)` absorbs it.
+- **Left:** lif (253 survivors) is mostly branches no lif fixture reaches: timelapse axes, line/frame
+  averaging, binning from the camera node. Needs a real `.lif` with a time series and averaging, not
+  a hand-made one. The rest are equivalent under rounding, message text, or `astype(None)` on int input.
+- **Tool gotchas:** run `mutmut` from `python/` (module names come from the file path), with
+  `PYTHONPATH=<copy>/python/mutants` and the `mutants/` dir present before Python starts (otherwise
+  the editable install in `.pixi` wins), and `app` / `test-data` linked beside it.
+
 ## Decisions (2026-11-13)
 
 1. **Mutation is the check.** The static scan is done and found nothing to act on. It is not re-run
@@ -85,11 +115,8 @@ into the loaded package and runs the test files that touch the code. 94 mutants.
 ## Phases
 
 - **P1 — `stats.jl` pilot. DONE.** The tool, the 94-mutant run, the new tests, and this plan.
-- **P2 — Python: acquisition metadata readers + photon floor.** This is where most silent bugs
-  surfaced: 16 of the 44 `RESULT-REVIEW:` repros are `test_czi_meta_*`, `test_oir_meta_*`,
-  `test_qptiff_meta_*`, `test_lif_meta_*` and `test_floor_*`. Modules: `python/cecelia/utils/
-  {czi,oir,qptiff,lif}_meta.py` (~1230 lines) and the floor code in `intensity_utils.py`. Tool: `mutmut`. Map each module to its `test_*` files, then same triage and
-  same rule for expected values. Here a reference is a real vendor file under `test-data/acquisition/`.
+- **P2 — Python: acquisition readers + photon floor. DONE** (results above). Open: a real `.lif`
+  time series with averaging, for the lif branches no fixture reaches.
 - **P3 — Julia result areas, sampled.** In order of past silent bugs: acquisition checks
   (`acq_check`, `_fill_source_time_increment!`, `_uniform_interval`), tracking events (`_event_preceded`),
   gating last. Sample at most ~150 mutants per area with a fixed seed. Checkpoint after each area:
@@ -108,3 +135,7 @@ into the loaded package and runs the test files that touch the code. 94 mutants.
   that leans on a helper defined elsewhere in `suite.jl` has to be extracted. That was the case for
   `run_stats` inside `task_spec_ratchets.jl`.
 - Run the confirmation (whole-suite) runs through `pixi`, so the Python side has its environment.
+- Python: `mutmut` 3.8.1 (`[mutmut]` in a `setup.cfg` beside `cecelia/`, with `paths_to_mutate`,
+  `tests_dir` listing the mapped test files, `also_copy = cecelia`). Not in `pixi.toml`; install it into
+  a worktree's own env (`uv pip install --python .pixi/envs/default/bin/python mutmut pytest`) and run
+  it in a copy of the repo (P2 gotchas above).
