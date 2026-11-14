@@ -142,6 +142,13 @@ describe('buildTurnSave', () => {
     })
     expect(buildTurnSave(t, cb, NOW).content).toContain('Kiwi abstained')
   })
+  it('heads a review turn by what was reviewed; the app prompt is its own section', () => {
+    const prompt = 'Plan: “Compare movement of OTI and gBT”\n- OTI — AF'
+    const out = buildTurnSave(turn({ prompt, acqReview: { entryId: 'bb-1', setUid: 'S', round: 1 } }), cb, NOW)
+    expect(out.title).toBe('Acquisition check review — “Compare movement of OTI and gBT”')
+    expect(out.content).toContain('## Question\nAcquisition check review — “Compare movement of OTI and gBT”\n\n'
+                                  + '## What Kiwi was asked\n' + prompt)
+  })
 })
 
 describe('buildClaimSave', () => {

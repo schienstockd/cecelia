@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { taskPageLabel, refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
          turnMeta, searchRefs, viewerRefFor, kindLabel, claimText, plainError, attachmentRows, claimRows,
-         TASK_PAGES, taskLanding, mentionTargets, type KiwiTurn } from './kiwiTurn'
+         TASK_PAGES, taskLanding, mentionTargets, turnHeading, type KiwiTurn } from './kiwiTurn'
 
 // The built-in task specs, read raw (Vite glob — this tsconfig has no node types for `fs`).
 const TASK_SPECS = import.meta.glob('../../../app/src/tasks/**/*.json',
@@ -148,6 +148,22 @@ describe('turns', () => {
     expect(turnMeta(T({ reply: { ...reply, seconds: 120.6, usage: { input: 18, output: 10468 } } })))
       .toBe('2m 01s · 1 look · re-asked · sonnet · 10.5k tokens')
     expect(turnMeta(T({ model: '' }))).toBe('')
+  })
+})
+
+describe('turnHeading', () => {
+  it('shows a user question as typed', () => {
+    expect(turnHeading(T({ prompt: 'why?\nand how?' }))).toEqual({ title: 'why?\nand how?', asked: '' })
+    expect(turnHeading(T({ prompt: '' })).title).toBe('(no question — just the attachments)')
+  })
+  it('heads a review turn by what was reviewed and keeps the app prompt folded', () => {
+    const prompt = 'Plan: “Compare movement of OTI and gBT”\nObjects (segmented or tracked):\n- OTI — AF'
+    const acq = T({ prompt, acqReview: { entryId: 'bb-1', setUid: 'lfGUDg', round: 2 } })
+    expect(turnHeading(acq)).toEqual({ title: 'Acquisition check review · round 2 — “Compare movement of OTI and gBT”',
+                                       asked: prompt })
+    const claim = T({ prompt: 'Claim: “T cells move faster than B cells”\nSet: XcPcu8', claimReview: { entryId: 'bb-2', round: 1 } })
+    expect(turnHeading(claim).title).toBe('Claim review — “T cells move faster than B cells”')
+    expect(turnHeading(T({ prompt: 'odd', claimReview: { entryId: 'bb-2', round: 1 } })).title).toBe('Claim review')
   })
 })
 
