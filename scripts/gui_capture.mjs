@@ -21,16 +21,11 @@
 // with `[dirs] projects` in that config's custom.toml pointing at a copy of test-data/projects.
 // The script refuses slot 0's ports (8080 / 5173) unless --allow-default-ports is passed.
 //
-// Browser: playwright-core (frontend devDependency) with a system Chromium — no browser download.
-// Set CECELIA_CHROMIUM to pick the binary (the same variable scripts/agent_eval/board_render.py reads).
+// Browser: scripts/lib/chromium.mjs (playwright-core + a system Chromium; CECELIA_CHROMIUM picks it).
 
-import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const { chromium } = createRequire(join(repo, 'frontend', 'package.json'))('playwright-core')
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { chromium, findChromium, repo } from './lib/chromium.mjs'
 
 // ── args ───────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -53,14 +48,6 @@ function routesFromMain() {
   const src = readFileSync(join(repo, 'frontend', 'src', 'main.ts'), 'utf8')
   return [...src.matchAll(/\{\s*path:\s*'([^']+)',\s*component:/g)]
     .map(m => m[1]).filter(p => !p.includes(':') && !SKIP.has(p))
-}
-
-function findChromium() {
-  const c = [process.env.CECELIA_CHROMIUM, '/usr/bin/chromium-browser', '/usr/bin/chromium', '/snap/bin/chromium',
-    '/usr/bin/google-chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean)
-  const hit = c.find(p => existsSync(p))
-  if (!hit) throw new Error('no Chromium found; set CECELIA_CHROMIUM')
-  return hit
 }
 
 // ── in-page helpers (run in the browser) ───────────────────────────────────────────────────────

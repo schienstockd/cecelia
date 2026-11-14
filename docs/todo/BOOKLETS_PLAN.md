@@ -1,6 +1,6 @@
 # User booklets — plan
 
-**Status:** **DRAFT** (2026-11-14) — nothing built; D1–D5 locked. Picks up after the three throwaway drafts in
+**Status:** **P1 built** (2026-11-14); D1–D5 locked. Picks up after the three throwaway drafts in
 [`GUIDE_SCREENSHOTS_PLAN.md`](GUIDE_SCREENSHOTS_PLAN.md) and their review
 [`../archive/BOOKLET_RESERVATIONS.md`](../archive/BOOKLET_RESERVATIONS.md) (banner first). #2216 (viewer
 rebuild) merged, so captures can start from `origin/main`. Output repo: `schienstockd/cecelia-booklets`
@@ -108,9 +108,17 @@ check step, experimental features marked as such, and no internal names. Plus th
 
 - **P0 (app bug, before B2):** fix the PhenoCycler channel grid (`acquisitionChannelTable.ts:23`, `chName`
   indexes the stacked name list by a per-cycle `order`). Small, separate PR.
-- **P1 skeleton:** style guide, spec schema, compose template and the `ai-box` module. Built with **C1** (no
-  screenshots needed) to settle the frame and print look. **Needs eyes.**
+- **P1 skeleton — BUILT** (2026-11-14, branch `docs/booklets-p1`): `user-docs/booklets/` (`spec.ts` with the
+  frame rules, `index.ts`, `booklet.css`, `STYLE.md`), `scripts/booklets/build.mjs` (`pixi run booklets`),
+  `scripts/lib/chromium.mjs` (shared with `gui_capture.mjs`), CI check `frontend/src/utils/booklets.test.ts`, and
+  **C1** (two A4 pages; the app's own AI text imported, not retyped). The Ask AI box is part of the template. **Needs eyes** on the print look.
 - **P2 capture:** manifest mode in `gui_capture.mjs`, rect recording, the build checks, and fixture scripts.
+  **C1's shots** (from a review of the P1 PDF): step 1 the **Turn on AI features?** dialog; step 2 the Account row
+  before (**Not logged in**) and after, with a **fixture account** so no real name or email shows; step 3 the
+  **Attached** list; step 4 one reply with a ref and what clicking it shows; step 5 a tagged Blackboard entry
+  (plus a ✦ gate if it fits); page 1 a sidebar crop showing Kiwi. The greyed workstation switch is optional
+  (hard to stage). **AI output varies between runs**, so a shot of a reply is taken from a **saved** Blackboard
+  entry on a fixed question, never a live turn; the spec records which entry.
 - **P3 first pathway:** **B1** end to end, including the `import`, `metadata`, `channels`, `qc` and `viewer` modules.
   **Needs eyes.**
 - **P4:** **A1** (needs a flawed image for each failure) and **C2** (trace the real connect flow first:
