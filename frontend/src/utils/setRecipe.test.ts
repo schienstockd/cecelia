@@ -141,6 +141,14 @@ describe('recipeProgress — the Guides dialog and Welcome read one rule', () =>
       }
     }
   })
+  // Only task pages log a run: Fix metadata, Gate, Build plots and Run a chain never tick. A set that has
+  // been segmented must move on to gating, not fall back to the never-ticking metadata step.
+  it('moves past steps whose page cannot log a run', () => {
+    const r = writtenRecipe('few-marker-tissue')!
+    expect(recipeProgress(r, new Set(['/manage-images'])).next?.route).toBe('/metadata')
+    expect(recipeProgress(r, new Set(['/manage-images', '/segment'])).next?.route).toBe('/gate')
+    expect(recipeProgress(r, new Set(['/manage-images', '/segment', '/spatial'])).next?.route).toBe('/analysis')
+  })
   it('starts every written recipe on Import', () => {
     for (const r of WRITTEN_RECIPES) expect(recipeProgress(r, new Set()).next?.route, r.id).toBe('/manage-images')
   })

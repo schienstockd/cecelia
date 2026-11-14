@@ -2694,8 +2694,8 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   landing page bounced on a cold boot. No page is privileged as "the start". It is one step at a
   time: with no project open (or after its "← Projects" button) it lists recent projects, with a
   spinner naming the project while it loads; with one open, only the active set's recipe (picked
-  there, stored per set) and one Start / Continue button to the first recipe step not yet run on the
-  set (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
+  there, stored per set) and one Start / Continue button to the step after the furthest one that has run
+  on the set (`recipeProgress`; `GUI_CLARITY_PLAN.md` Decisions 13, 16).
 - **A set's recipe lights the sidebar and names each page's next step.** `utils/setRecipe.ts`
   (`resolveSetRecipe`, `suggestRecipe`, `nextStepFor`, `litRoutes`), saved through
   `composables/useSetRecipe.ts` (`POST /api/sets/recipe`). Pages on a confirmed recipe stay bright and

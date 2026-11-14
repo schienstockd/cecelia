@@ -125,9 +125,12 @@ export interface RecipeProgress {
 
 /** A recipe walked against what has run on a set — the ONE rule for "where am I" that Welcome's
  *  Continue and the Guides dialog's next step both read, so they can never disagree.
- *  Next: the first required step whose page has not run yet, so a set whose images are already imported
- *  starts past Import. When every step has run, the last one (where the work was); with nothing run,
- *  the first. Optional steps are never next — their why-line is a condition only the user can judge. */
+ *  Next: the required step after the FURTHEST one whose page has run, so a set whose images are imported
+ *  starts past Import. Furthest, not first-unrun: only task pages log a run (`taskLanding`), so steps on
+ *  /metadata, /gate, /analysis or /chain never tick, and "first unrun" would send a set that has been
+ *  segmented and tracked back to Fix metadata forever. When the last step has run, the last one (where
+ *  the work was); with nothing run, the first. Optional steps are never next — their why-line is a
+ *  condition only the user can judge. */
 export function recipeProgress(recipe: WrittenRecipe, ranPages: ReadonlySet<string>): RecipeProgress {
   let n = 0
   const rows = recipe.steps.map((step): StepProgress => {
@@ -135,7 +138,9 @@ export function recipeProgress(recipe: WrittenRecipe, ranPages: ReadonlySet<stri
     return { step, route, ran: !!route && ranPages.has(route), n: step.optional ? null : ++n }
   })
   const candidates = rows.filter(r => r.n !== null && r.route)
-  const next = candidates.find(r => !r.ran) ?? candidates[candidates.length - 1] ?? null
+  let furthest = -1
+  candidates.forEach((r, i) => { if (r.ran) furthest = i })
+  const next = candidates[Math.min(furthest + 1, candidates.length - 1)] ?? null
   return { rows, next, required: n }
 }
 

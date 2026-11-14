@@ -70,7 +70,7 @@ const changing = ref(false)
 async function pick(id: string) { await save(id); changing.value = false }
 const recipeRows = computed(() => recipeChoiceRows(suggestion.value))
 const RECIPE_COLUMNS: SelectionColumn[] = RECIPE_CHOICE_COLUMNS
-// Pick the set up where it is: the first recipe step whose page has not run on it yet.
+// Pick the set up where it is: the step after the furthest one that has run on it (recipeProgress).
 const start = computed(() => {
   const r = own.value ?? suggestion.value?.recipe
   return r && set.value ? resumeStepOf(r, ranPagesOf(set.value.images)) : null

@@ -431,7 +431,9 @@ It reads the set's stored recipe (GUI_CLARITY_PLAN D13/D16), which the dialog us
   the next step as a card (why-line, Start guide / Open), a tick line, every step behind **All steps**.
 - **Next and ticks are one rule with Welcome:** `recipeProgress` (Welcome's `resumeStepOf` now reads it). A
   tick is a successful run on the set (`ranPagesOf`), not a finished guide, so work done without the
-  guide counts. Optional steps are never next; under All steps they sit in their own group with their
+  guide counts. Next is the required step after the FURTHEST one that has run: only task pages log a run,
+  so Fix metadata, Gate, Build plots and Run a chain never tick, and the old "first unrun step" rule sent
+  every segmented set back to Fix metadata (Welcome's Continue had the same bug). Optional steps are never next; under All steps they sit in their own group with their
   why-line always shown, since it is the condition.
 - **Selecting a recipe saves it on the set** (the same `POST /api/sets/recipe` as Welcome and the set-row
   picker). With no set active there is no suggestion and the selection is walked in place, saved nowhere.
@@ -444,8 +446,9 @@ It reads the set's stored recipe (GUI_CLARITY_PLAN D13/D16), which the dialog us
   maturity). The AI help toggle moved to the first view's footer; with it on, the next-step card shows the
   step's `assist`. Maturity in the first view: the same tier dot
   as Browse's guide rows (`chipDot`, every tier that has one, `tierTip` on hover).
-- **Not built:** the showcase strip (outcome image, needs, time, PDF) under the recipe line, which waits
-  for the B-series booklets' real shots (BOOKLETS_PLAN D6).
+- **Dropped:** the showcase strip, a per-recipe outcome image (BOOKLETS_PLAN D8, 2026-11-14). The choose
+  view's "Is this you?" column answers the choice, and an outcome image per recipe would cost fixture
+  curation for little gain.
 
 ## Constraints the build has to satisfy
 
