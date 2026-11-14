@@ -61,6 +61,9 @@ export interface KiwiTurn {
   error?: string
   /** the turn this one follows up (same engine session) */
   followUp?: string
+  /** set when the app asked, not the user: the acquisition check's / claim's review turn */
+  acqReview?: { entryId: string; setUid: string; round: number }
+  claimReview?: { entryId: string; round: number }
 }
 
 // ── Identity + labels ──────────────────────────────────────────────────────────────────────────────
@@ -265,6 +268,19 @@ export function upsertTurn(turns: KiwiTurn[], t: KiwiTurn): KiwiTurn[] {
 /** A step as the user reads it: "get_populations" → "get populations". */
 export function stepLabel(step: string): string {
   return step.replace(/_/g, ' ')
+}
+
+/** How a turn's question reads in the feed. A review turn's prompt is the app's own instructions to
+ *  the model (plan or claim, every movie, the rule findings, the reply format), so it is headed by
+ *  what was reviewed and the full prompt stays one click away (`asked`). A user's question is shown
+ *  as typed. */
+export function turnHeading(t: KiwiTurn): { title: string; asked: string } {
+  const review = t.acqReview ? { what: 'Acquisition check review', label: 'Plan', round: t.acqReview.round }
+    : t.claimReview ? { what: 'Claim review', label: 'Claim', round: t.claimReview.round } : null
+  if (!review) return { title: t.prompt || '(no question — just the attachments)', asked: '' }
+  const m = new RegExp(`^${review.label}:\\s*“([^”]*)”`).exec(t.prompt)
+  const round = review.round > 1 ? ` · round ${review.round}` : ''
+  return { title: `${review.what}${round}${m ? ` — “${m[1]}”` : ''}`, asked: t.prompt }
 }
 
 /** One muted line under a finished turn: time, tool calls, a re-ask, the model and what it wrote.

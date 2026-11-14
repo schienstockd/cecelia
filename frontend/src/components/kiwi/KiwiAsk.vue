@@ -28,7 +28,7 @@ import { useKiwiPoint } from '../../composables/useKiwiPoint'
 import { TASK_STATUS } from '../../lib/taskStatus'
 import { parseRailTime, taskElapsed } from '../../utils/taskElapsed'
 import { searchRefs, stepLabel, turnMeta, attachmentRows, claimRows,
-         type AttachmentRow, type ClaimRow, type KiwiClaim, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
+         turnHeading, type AttachmentRow, type ClaimRow, type KiwiClaim, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
 import { buildTurnSave, buildClaimSave } from '../../utils/kiwiTurnSave'
 import { createBlackboardEntry, type BlackboardEntrySummary } from '../../utils/blackboardApi'
 import { buildChatPrompt } from '../../lib/chatHandoff'
@@ -148,7 +148,17 @@ const runStep = computed(() => {
 const runElapsed = computed(() => taskElapsed(parseRailTime(kiwi.running?.startedAt), undefined, now.value) ?? '')
 const runSteps = computed(() => (kiwi.running?.steps ?? []).map(stepLabel).join('\n') || 'No steps yet')
 
-const promptOf = (id?: string) => kiwi.turns.find(t => t.turnId === id)?.prompt ?? ''
+const promptOf = (id?: string) => {
+  const t = kiwi.turns.find(x => x.turnId === id)
+  return t ? turnHeading(t).title : ''
+}
+// a review turn's app-written prompt, unfolded per turn
+const askedOpen = ref(new Set<string>())
+function toggleAsked(id: string) {
+  const next = new Set(askedOpen.value)
+  if (!next.delete(id)) next.add(id)
+  askedOpen.value = next
+}
 const canFollow = (t: KiwiTurn) => t.status !== 'running' && !!t.reply?.sessionId
 
 // ── typed search: attach a set / image / task by name ──
@@ -211,7 +221,7 @@ function pick(c: RefCandidate) {
     </TeleportPopover>
 
     <div v-if="kiwi.followUpTurn" class="cc-row cc-row-tight">
-      <InlineNote icon="pi-reply" :short="`Following up: ${kiwi.followUpTurn.prompt || 'the attachments'}`"
+      <InlineNote icon="pi-reply" :short="`Following up: ${kiwi.followUpTurn.prompt ? turnHeading(kiwi.followUpTurn).title : 'the attachments'}`"
                   detail="Kiwi continues that conversation and can cite what it already looked at" />
       <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="kiwi.followUp = ''"
               v-tooltip.bottom="'Ask fresh instead'">
@@ -255,7 +265,15 @@ function pick(c: RefCandidate) {
       <div v-if="t.followUp" class="cc-muted cc-fs-2xs">
         <i class="pi pi-reply" /> {{ promptOf(t.followUp) || 'an earlier reply' }}
       </div>
-      <div class="kiwi-q cc-fs-xs">{{ t.prompt || '(no question — just the attachments)' }}</div>
+      <div class="kiwi-q cc-fs-xs">{{ turnHeading(t).title }}</div>
+      <!-- a review turn's prompt is the app's, not the user's: kept, but folded and with its lines -->
+      <template v-if="turnHeading(t).asked">
+        <button class="kiwi-asked-toggle cc-section-toggle cc-fs-2xs" @click="toggleAsked(t.turnId)">
+          <i :class="['pi', askedOpen.has(t.turnId) ? 'pi-chevron-down' : 'pi-chevron-right']" />
+          What Kiwi was asked
+        </button>
+        <div v-if="askedOpen.has(t.turnId)" class="kiwi-asked-text cc-fs-2xs">{{ turnHeading(t).asked }}</div>
+      </template>
       <div v-if="t.refs.length" class="cc-row cc-row-tight">
         <KiwiRefChip v-for="(r, i) in t.refs" :key="i" :kiwi-ref="r.ref" :result="r.result" />
       </div>
@@ -345,7 +363,10 @@ function pick(c: RefCandidate) {
 .kiwi-search-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kiwi-turn { display: flex; flex-direction: column; gap: 0.3rem; padding-top: 0.4rem;
              border-top: 1px solid var(--cc-border); }
-.kiwi-q { font-weight: 600; }
+.kiwi-q { font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kiwi-asked-toggle { padding: 0; }
+.kiwi-asked-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 16rem; overflow-y: auto;
+                   padding: 0.3rem 0.4rem; border-left: 2px solid var(--cc-border); }
 .kiwi-refs { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; min-width: 0; }
 .kiwi-claim-interpretation { font-style: italic; }
 /* table cells don't wrap (SelectionTable); a claim is a sentence and must */

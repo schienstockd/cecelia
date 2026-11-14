@@ -18,7 +18,7 @@
 
 import type { KiwiRef } from './kiwiRef'
 import type { KiwiTurn, KiwiClaim, KiwiClaimRef } from './kiwiTurn'
-import { refKey, refLabel } from './kiwiTurn'
+import { refKey, refLabel, turnHeading } from './kiwiTurn'
 
 /** One entry in the `kiwiRefs` sidecar. Keyed by `refKey(ref)`. `snapshot` present only for the
  *  fragile kinds; absent for the stable kinds (resolve-or-"gone"). */
@@ -138,6 +138,15 @@ function claimBullet(c: KiwiClaim, resolved: (r: KiwiRef) => string): string {
   return `- **${KIND_LABEL[c.kind]}** — ${text}${tail}`
 }
 
+/** The question section: what was typed, or for a review turn its heading with the app's prompt as
+ *  its own section — the same split the feed shows (`turnHeading`). */
+function questionMarkdown(t: KiwiTurn): string {
+  const q = (t.prompt || '').trim()
+  if (!q) return '## Question\n_(attachments only — no question text)_'
+  const h = turnHeading(t)
+  return h.asked ? `## Question\n${h.title}\n\n## What Kiwi was asked\n${q}` : `## Question\n${q}`
+}
+
 /** Build the entry.md body for a whole-turn save. Header → optional follow-up note → question →
  *  Kiwi's own note line → claims. Keep the markdown structured and small; a reader who opens the
  *  raw file in an editor can follow it. */
@@ -145,8 +154,7 @@ function turnMarkdown(t: KiwiTurn, resolved: (r: KiwiRef) => string): string {
   const parts: string[] = []
   parts.push(`# Kiwi turn — ${t.startedAt}`)
   if (t.followUp) parts.push(`_Follow-up to ${t.followUp}._`)
-  const q = (t.prompt || '').trim()
-  parts.push(`## Question\n${q || '_(attachments only — no question text)_'}`)
+  parts.push(questionMarkdown(t))
   if (t.refs.length) {
     const list = t.refs.map(r => `- \`${resolved(r.ref)}\``).join('\n')
     parts.push(`## Attachments\n${list}`)
@@ -167,8 +175,7 @@ function turnMarkdown(t: KiwiTurn, resolved: (r: KiwiRef) => string): string {
 function claimMarkdown(t: KiwiTurn, claim: KiwiClaim, resolved: (r: KiwiRef) => string): string {
   const parts: string[] = []
   parts.push(`# Kiwi claim — ${t.startedAt}`)
-  const q = (t.prompt || '').trim()
-  parts.push(`## Question\n${q || '_(attachments only — no question text)_'}`)
+  parts.push(questionMarkdown(t))
   parts.push(`## Claim\n${claimBullet(claim, resolved)}`)
   return parts.join('\n\n') + '\n'
 }
@@ -201,7 +208,7 @@ export function buildTurnSave(
   const attachments = extractCaptureIds([...turn.refs.map(x => x.ref), ...claimRefs.map(x => x.ref)])
   const resolved = labelResolver(attachments)
   const content = turnMarkdown(turn, resolved)
-  const title = shortTitle(turn.prompt, 'Kiwi turn')
+  const title = shortTitle(turn.prompt ? turnHeading(turn).title : '', 'Kiwi turn')
   return { title, content, attachments, kiwiRefs }
 }
 
