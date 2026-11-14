@@ -112,22 +112,17 @@ check step, experimental features marked as such, and no internal names. Plus th
   frame rules, `index.ts`, `booklet.css`, `STYLE.md`), `scripts/booklets/build.mjs` (`pixi run booklets`),
   `scripts/lib/chromium.mjs` (shared with `gui_capture.mjs`), CI check `frontend/src/utils/booklets.test.ts`, and
   **C1** (two A4 pages; the app's own AI text imported, not retyped). The Ask AI box is part of the template. **Needs eyes** on the print look.
-- **P2 capture — pipeline BUILT, not yet run against an instance** (2026-11-14, branch `docs/booklets-p2`):
-  shots declared per booklet (`Shot` in `spec.ts`), `scripts/booklets/capture.mjs` (`pixi run booklet-shots`) on
-  shared page helpers `scripts/lib/app_page.mjs` (also used by `gui_capture.mjs` now — a separate entry
-  point rather than a mode of the census script, with one shared runner library), crop + pointer composed by
-  the build (`figure.ts`), checks: missing anchor, cited label, stale time in the crop, crop too wide.
-  New anchors `header.preferences`, `prefs.kiwi`, `prefs.aiFeatures`, `aiOptIn.risks`, `aiOptIn.turnOn`.
-  First shot: C1 step 1, **captured** on an isolated slot-5 instance (2026-11-14). That capture found two
-  app bugs (the AI opt-in dialog opened BEHIND Preferences; the AI features switch showed on while the dialog
-  asked) — fixed on `fix/ai-optin-on-top`. **Open:** a run on an isolated instance (the maintainer starts it), fixture
-  scripts for B-series projects (with P3), the viewer (headed Chromium with the ANGLE flags).
-  **C1's shots** (from a review of the P1 PDF): step 1 the **Turn on AI features?** dialog; step 2 the Account row
-  before (**Not logged in**) and after, with a **fixture account** so no real name or email shows; step 3 the
-  **Attached** list; step 4 one reply with a ref and what clicking it shows; step 5 a tagged Blackboard entry
-  (plus a ✦ gate if it fits); page 1 a sidebar crop showing Kiwi. The greyed workstation switch is optional
-  (hard to stage). **AI output varies between runs**, so a shot of a reply is taken from a **saved** Blackboard
-  entry on a fixed question, never a live turn; the spec records which entry.
+- **P2 capture — BUILT** (2026-11-14, #2236): shots declared per booklet (`Shot` in `spec.ts`),
+  `scripts/booklets/capture.mjs` (`pixi run booklet-shots`) on shared page helpers `scripts/lib/app_page.mjs`
+  (also used by `gui_capture.mjs`); crop + pointer composed by the build (`figure.ts`; the pointer's wording
+  and side come from the spec at build time). Checks: missing anchor, cited label, stale time in the crop,
+  crop too wide, spec changed since capture. Fixtures (`Booklet.fixture`, `pixi run booklet-fixture`): lab
+  images copied raw into the isolated instance, profiles with AI on/off, one Kiwi question asked once on
+  `default` and saved, so shots never show a live turn. **C1 has all five shots.** Capturing step 1 found
+  two app bugs (opt-in dialog behind Preferences; the switch showing on while asking), fixed in #2235.
+  **Open:** the viewer (headed Chromium with the ANGLE flags, with P3); the logged-in Account row and a
+  tagged entry with a ✦ gate (both left out: a real account would show, and the tag would change the
+  fixture on every run).
 - **P3 first pathway:** **B1** end to end, including the `import`, `metadata`, `channels`, `qc` and `viewer` modules.
   **Needs eyes.**
 - **P4:** **A1** (needs a flawed image for each failure) and **C2** (trace the real connect flow first:
