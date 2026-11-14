@@ -9,74 +9,130 @@
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": "Alexa Fluor 647",
+   "emissionFilter": "638-755 nm",
    "gain": 1.0,
    "hv": 800.0,
    "laser": "HeNe633",
+   "laserLines": [
+    {
+     "pct": 10.0,
+     "wavelengthNm": 633.0
+    }
+   ],
    "name": "Ch2-T1",
    "offset": 3.0,
-   "order": 1
+   "order": 1,
+   "pinholeAiry": 0.71,
+   "pinholeUm": null,
+   "track": 1
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": "Alexa Fluor 555",
+   "emissionFilter": "562-660 nm",
    "gain": 1.0,
    "hv": 580.0,
    "laser": "DPSS 561-10",
+   "laserLines": [
+    {
+     "pct": 0.2,
+     "wavelengthNm": 561.0
+    }
+   ],
    "name": "ChS2-T2",
    "offset": 0.533935546875,
-   "order": 2
+   "order": 2,
+   "pinholeAiry": 0.99,
+   "pinholeUm": null,
+   "track": 2
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": "Alexa Fluor 488",
+   "emissionFilter": "490-562 nm",
    "gain": 1.0,
    "hv": 680.0,
    "laser": "Argon",
+   "laserLines": [
+    {
+     "pct": 0.2,
+     "wavelengthNm": 488.0
+    }
+   ],
    "name": "ChS1-T3",
    "offset": 0.2373046875,
-   "order": 3
+   "order": 3,
+   "pinholeAiry": 0.99,
+   "pinholeUm": null,
+   "track": 3
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": "DAPI",
+   "emissionFilter": "410-513 nm",
    "gain": 1.0,
    "hv": 660.0,
    "laser": "Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "Ch1-T4",
    "offset": 0.0,
-   "order": 4
+   "order": 4,
+   "pinholeAiry": 1.01,
+   "pinholeUm": null,
+   "track": 4
   },
   {
    "acquisitionMode": "LaserScanningConfocalMicroscopy",
    "airyscan": null,
+   "beamSplitters": [],
    "bitDepth": 8,
    "detector": null,
    "detectorMode": null,
    "dyePreset": null,
+   "emissionFilter": null,
    "gain": 1.0,
    "hv": 190.0,
    "laser": "Diode 405-30",
+   "laserLines": [
+    {
+     "pct": 2.0,
+     "wavelengthNm": 405.0
+    }
+   ],
    "name": "T PMT-T4",
    "offset": 0.0,
-   "order": 5
+   "order": 5,
+   "pinholeAiry": null,
+   "pinholeUm": null,
+   "track": 4
   }
  ],
+ "dichroics": [],
  "lasers": [
   {
    "name": "HeNe633",
@@ -110,8 +166,9 @@
   "name": "Plan-Apochromat 20x/0.8 M27",
   "refractiveIndex": 1.0
  },
+ "pinholeAiry": null,
  "pinholeUm": null,
- "readerVersion": 2,
+ "readerVersion": 3,
  "scanner": {
   "integration": {
    "average": null,

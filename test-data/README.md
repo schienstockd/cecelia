@@ -108,7 +108,7 @@ blue): `Information` and `Scaling` only, serial numbers blanked, re-serialised b
 user field reads "LSM User". Its laser `Attenuation` values (1.9, 2.6, 0.95) come with no
 `Transmission`: the case where 1 − attenuation gave a negative laser power (`test_czi_meta_card_fields.py`).
 
-`expected/<case>.json` (16 files, 80 KB): each reader's whole record for each fixture above (a `.lif`
+`expected/<case>.json` (16 files, 96 KB): each reader's whole record for each fixture above (a `.lif`
 per image, `_s<series>`; the qptiff pages through a written TIFF), pinned by
 `test_acquisition_full_records.py`. Each was checked against its source document, not taken on trust
 from the reader. Every value was searched for in the document (exact string, or a number at a unit
