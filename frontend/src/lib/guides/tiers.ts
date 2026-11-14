@@ -25,8 +25,8 @@ export const TIER_TIP: Record<Tier, string> = {
 /** The badge's hover line: "Beta: checked by hand on real data — spot-check results". */
 export const tierTip = (t: Tier): string => `${TIER_LABEL[t]}: ${TIER_TIP[t].toLowerCase()}`
 
-/** The tier's marker: one `.cc-dot` tone per tier (`.cc-tier-*` in style.css), read through the map's
- *  legend (`utils/guideMap.ts` → `TIER_LEGEND`). Exempt (no scientific result) carries none. */
+/** The tier's marker: one `.cc-dot` tone per tier (`.cc-tier-*` in style.css), read through the
+ *  Feature maturity dialog's legend (`utils/guideMap.ts` → `TIER_LEGEND`). Exempt (no scientific result) carries none. */
 export const TIER_DOT: Partial<Record<Tier, string>> = {
   comingSoon: 'cc-tier-comingSoon', experimental: 'cc-tier-experimental', beta: 'cc-tier-beta', tested: 'cc-tier-tested',
 }

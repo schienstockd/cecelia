@@ -8,6 +8,7 @@
 import { ref } from 'vue'
 import TeleportPopover from './TeleportPopover.vue'
 import { openGuides } from '../lib/guideOpen'
+import { openMaturity } from '../lib/maturityOpen'
 import { openIconLegend } from '../lib/iconLegendOpen'
 import { openColorLegend } from '../lib/colorLegendOpen'
 import { openWhatsNew } from '../lib/whatsNew'
@@ -38,7 +39,10 @@ function pick(fn: () => void) { open.value = false; fn() }
       <slot name="learn" :close="() => { open = false }" />
       <template v-if="!windowed">
       <button class="cc-actions-item" role="menuitem" @click="pick(openGuides)">
-        <i class="pi pi-compass" /> Guides and the map
+        <i class="pi pi-compass" /> Guides
+      </button>
+      <button class="cc-actions-item" role="menuitem" @click="pick(openMaturity)">
+        <i class="pi pi-verified" /> Feature maturity
       </button>
       <button class="cc-actions-item" role="menuitem" @click="pick(openIconLegend)">
         <i class="pi pi-key" /> What the icons mean

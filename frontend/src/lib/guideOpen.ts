@@ -7,8 +7,8 @@
 // runtime, and `GuideBubble` would import the dialog's state to close it.
 //
 // Entry points: Help ▾ → Guides (HelpMenu.vue), the "Show me" button on a What's New tip card
-// (`WhatNewCard`), the bubble's "More guides" when a guide finishes, and a page's or task's maturity
-// link (`openMaturityRow`, which also opens that feature's row on the map).
+// (`WhatNewCard`) and the bubble's "More guides" when a guide finishes. Maturity links open their own
+// dialog (`lib/maturityOpen.ts`).
 
 import { ref } from 'vue'
 
@@ -16,12 +16,3 @@ export const isGuidesOpen = ref(false)
 
 export function openGuides() { isGuidesOpen.value = true }
 export function closeGuides() { isGuidesOpen.value = false }
-
-/** The Maturity row to open and scroll to when the dialog mounts — a page's or task's maturity link
- *  (`MaturityMap.vue` consumes it once). Row ids are `utils/maturity.ts`' (`guide:…`, `task:…`). */
-export const maturityFocus = ref<string | null>(null)
-
-export function openMaturityRow(rowId: string) {
-  maturityFocus.value = rowId
-  openGuides()
-}

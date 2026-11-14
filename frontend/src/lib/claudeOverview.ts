@@ -1,4 +1,4 @@
-// Content model for Kiwi's `?` dialog (ClaudeOverviewDialog) and the Guides map's AI help: the two
+// Content model for Kiwi's `?` dialog (ClaudeOverviewDialog): the two
 // modes, Kiwi and Claude Code. Kept as data (not inline template) so it's testable and edited in one
 // place. The per-tool "What each can use" list is lib/claudeTools.ts.
 //

@@ -9,7 +9,7 @@
   e.g. "0.2.1"). Wrap in a v-tooltip on the host for anything longer than that.
 
   `tier` makes it the feature-maturity badge (docs/todo/FEATURE_MATURITY_PLAN.md): "Coming soon" is the
-  bottom of the same scale, so one badge says all of it. With a tier it is the map's tier dot plus the
+  bottom of the same scale, so one badge says all of it. With a tier it is the tier dot (`chipDot`) plus the
   tier's word, no pill (`lib/guides/tiers.ts` → `chipDot`); `exempt` renders
   nothing (no scientific result, no badge). Where pages and tasks show it: `MaturityIndicator.vue`.
   `dot` drops the word — how pages and functions show it (`MaturityIndicator.vue`); the host's tooltip
@@ -60,6 +60,6 @@ const text = computed(() => props.tier ? TIER_LABEL[props.tier] : props.label)
   white-space: nowrap;
   letter-spacing: 0.01em;
 }
-/* the map's dot + the tier's word, no pill: small enough for a header or a picker row */
+/* the tier dot + the tier's word, no pill: small enough for a header or a picker row */
 .cc-tier-badge { white-space: nowrap; line-height: 1; }
 </style>

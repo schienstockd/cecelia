@@ -1129,8 +1129,8 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
 
 ## Guides — bubble walkthroughs (Help ▾ → Guides)
 
-The in-app answer to "can you send me a screencast": **Help ▾ → Guides and the map** in the header opens
-`GuidesDialog.vue`, and starting a guide puts a bubble beside the real control, on the user's own data.
+The in-app answer to "can you send me a screencast": **Help ▾ → Guides** in the header opens
+`GuidesDialog.vue` (on the active set's next step, `GuideNextStep.vue`; every guide behind "Browse all guides"), and starting a guide puts a bubble beside the real control, on the user's own data.
 Design + locked decisions: `docs/todo/GUIDE_SYSTEM_PLAN.md`.
 
 **The one rule: a guide POINTS AND OBSERVES.** It never clicks, selects, navigates or runs anything.
@@ -1248,8 +1248,9 @@ be a real matching pair, and teaching the bare half of a composite must be decla
 
 The guides are indexed on ONE axis: *where in the pipeline am I* (the picker's Start / Data /
 Populations / … groups, mirroring the sidebar). A **recipe** is the other axis — *which pipeline is
-mine*: an ordered list of existing guides with a one-line reason attached to each, rendered as the
-first section of `GuidesDialog`. Catalogue: `lib/guides/recipes.ts`. Design:
+mine*: an ordered list of existing guides with a one-line reason attached to each. `GuidesDialog` opens on
+the active set's recipe and its next step (`GuideNextStep.vue`); the recipe chips, map and accordion are
+behind "Browse all guides". Catalogue: `lib/guides/recipes.ts`. Design:
 `docs/todo/WORKFLOW_RECIPES_PLAN.md`.
 
 **The reasons are the product.** `segmentGuide` cannot say "too dim for cellpose? segment by motion" — it
@@ -1281,7 +1282,7 @@ the user-facing wording and is a copy decision, not a rename of the type.
 a task name pasted into a recipe would be counted as a guide's. A recipe names guides; the guides name
 tasks. Pinned from the recipes side too, in `guides.test.ts`.
 
-### Maturity — how far to trust each feature (on the map)
+### Maturity — how far to trust each feature (Help ▾ → Feature maturity)
 
 A guide teaches one feature, so it carries that feature's **maturity record** (`GuideDef.maturity`,
 type `Maturity` in `lib/guides/types.ts`): a tier, what it was tested on, who checked it by hand or where
@@ -1297,11 +1298,11 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
 - **One badge:** `ComingSoonBadge` with a `tier` prop renders the tier dot + its word (no pill); its
   words and dot are `lib/guides/tiers.ts` (`TIER_LABEL`, `TIER_TIP` — what the user should do — on
   hover, `chipDot`). Without `tier` it is still the "Coming soon" pill. Never a second badge.
-- **Where it shows:** each page button on the map carries a `.cc-dot`, one tone per tier (Experimental
-  warn, Beta info, Tested ok, Coming soon idle; exempt none — `chipDot`), read
-  through the legend line under the grid (`TIER_LEGEND`). Each
-  guide row in the picker, and the map's **Maturity** section (`components/MaturityMap.vue`): every non-exempt feature by
-  group, guides first, unguided ones marked "no guide", expandable to the record. "Share your data"
+- **Where it shows:** a `.cc-dot`, one tone per tier (Experimental warn, Beta info, Tested ok, Coming
+  soon idle; exempt none — `chipDot`), on every guide row and recipe step in the Guides dialog. The
+  **Feature maturity** dialog (`components/MaturityDialog.vue`: the legend, `TIER_LEGEND`, then
+  `components/MaturityMap.vue`) lists every non-exempt feature by group, guides first, unguided ones
+  marked "no guide", expandable to the record. "Share your data"
   opens the call-for-datasets modal at its ask. `user-docs/README.md` has a Maturity column.
 - **Enforced by `utils/maturity.test.ts`** (logic in `utils/maturity.ts`): every sidebar page and every
   task JSON under `app/src/tasks/` is tiered exactly once — by a guide (its page, the funs it runs,
@@ -1312,9 +1313,9 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
 - **On the pages (P2):** the sidebar's row for the open page carries its maturity (`components/MaturityIndicator.vue`,
   one mount for every page — pages have no shared header of their own); other rows show the dot only
   for Experimental pages (`AppSidebar.vue`, GUI_LAYOUT_PLAN M2). Every tiered page shows its
-  tier's dot alone (`ComingSoonBadge … dot`, the map's colours; the tooltip names it) — Beta included,
-  so an unmarked page never reads as "fine". It opens the Guides dialog on that feature's Maturity row (`lib/guideOpen.ts` →
-  `openMaturityRow`; `MaturityMap` opens the section and the row, then scrolls to it). Exempt pages and
+  tier's dot alone (`ComingSoonBadge … dot`, `chipDot`'s colours; the tooltip names it) — Beta included,
+  so an unmarked page never reads as "fine". It opens the Feature maturity dialog on that feature's row (`lib/maturityOpen.ts` →
+  `openMaturityRow`; `MaturityMap` opens the row, then scrolls to it). Exempt pages and
   non-sidebar routes show nothing. In the task picker (`TaskRunner`) an Experimental task's option reads
   `… · Experimental` (a native `<option>` holds text only) and the picked one gets the SAME
   `MaturityIndicator` as the page's sidebar row — its dot plus the bug — so a function and a page look alike.
@@ -1369,7 +1370,7 @@ nothing for anyone who already had the console open.
 ### The header's Help menu and outward links
 
 One worded **Help ▾** (`components/HelpMenu.vue`) holds what used to be six header icons, in two groups:
-**Learn** (Guides and the map, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
+**Learn** (Guides, Feature maturity, the icon key, the colour key, What's new) and **Get help** (GitHub issues,
 the Zulip chat, Call for datasets). The links are `<a target="_blank">` items in the shared
 `.cc-actions-menu`. The rest of the header: the project crumb on the left, then, right-aligned, the **jump search** (`JumpSearch.vue`, Ctrl K:
 pages, task functions, images), the viewer chip, the lab-log button, **Ask Kiwi** and the avatar
@@ -2693,8 +2694,8 @@ their order, with `selectAll` for all/none and `ConfirmDeleteButton` for delete.
   landing page bounced on a cold boot. No page is privileged as "the start". It is one step at a
   time: with no project open (or after its "← Projects" button) it lists recent projects, with a
   spinner naming the project while it loads; with one open, only the active set's recipe (picked
-  there, stored per set) and one Start / Continue button to the first recipe step not yet run on the
-  set (`GUI_CLARITY_PLAN.md` Decisions 13, 16).
+  there, stored per set) and one Start / Continue button to the step after the furthest one that has run
+  on the set (`recipeProgress`; `GUI_CLARITY_PLAN.md` Decisions 13, 16).
 - **A set's recipe lights the sidebar and names each page's next step.** `utils/setRecipe.ts`
   (`resolveSetRecipe`, `suggestRecipe`, `nextStepFor`, `litRoutes`), saved through
   `composables/useSetRecipe.ts` (`POST /api/sets/recipe`). Pages on a confirmed recipe stay bright and

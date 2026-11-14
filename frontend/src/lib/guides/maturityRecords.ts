@@ -7,7 +7,7 @@
 // them. Rows proposed there for Tested are seeded as Beta with REVIEW as their first `next` item — the
 // tier moves when the maintainer accepts the fails-if lines, not before.
 //
-// Copy budget (rendered in the map's expanded row): testedOn ≤ 70, failsIf / next ≤ 110, needs ≤ 90.
+// Copy budget (rendered in the Feature maturity dialog's expanded row): testedOn ≤ 70, failsIf / next ≤ 110, needs ≤ 90.
 
 import type { Maturity, NextItem } from './types'
 

@@ -102,7 +102,7 @@ export const REPORT_PARAMS_MAX = 2000
 
 /**
  * A prefilled bug report for one feature — the "Something wrong?" link on a page's maturity badge and
- * on the map's Maturity rows (docs/todo/FEATURE_MATURITY_PLAN.md → *Something wrong?*).
+ * on the Feature maturity dialog's rows (docs/todo/FEATURE_MATURITY_PLAN.md → *Something wrong?*).
  *
  * Goes to the bug FORM, filling its fields by id (`what-happened`, `version`, `os`). Task settings go in
  * only when passed: GitHub is public, and settings carry file paths and project names, so the caller

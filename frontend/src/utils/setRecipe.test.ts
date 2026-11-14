@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resumeStepOf, ranPagesOf, litRoutes, suggestRecipe, resolveSetRecipe, nextStepFor, nextSourceLine, writtenRecipe, WRITTEN_RECIPES } from './setRecipe'
+import { resumeStepOf, ranPagesOf, litRoutes, suggestRecipe, resolveSetRecipe, nextStepFor, nextSourceLine, writtenRecipe, WRITTEN_RECIPES, recipeProgress, guideStartView, recipeChoiceRows } from './setRecipe'
 import { RECIPES } from '../lib/guides/recipes'
 
 const imgs = (n: number, sizeT: number, sizeC: number) => Array.from({ length: n }, () => ({ sizeT, sizeC }))
@@ -104,5 +104,92 @@ describe('resumeStepOf — where Welcome starts a set', () => {
       { fun: 'segment.cellpose', status: 'failed', at: '2026-11-11T10:00:00' },
     ] }])
     expect([...pages]).toEqual(['/manage-images'])
+  })
+})
+
+describe('recipeProgress — the Guides dialog and Welcome read one rule', () => {
+  it('numbers the required steps only, and counts them', () => {
+    for (const r of WRITTEN_RECIPES) {
+      const p = recipeProgress(r, new Set())
+      const req = r.steps.filter(s => !s.optional).length
+      expect(p.required, r.id).toBe(req)
+      expect(p.rows.filter(x => x.n !== null).map(x => x.n), r.id).toEqual(Array.from({ length: req }, (_, i) => i + 1))
+      expect(p.rows.filter(x => x.step.optional).every(x => x.n === null), r.id).toBe(true)
+    }
+  })
+  it('ticks a step whose page ran on the set, whether or not its guide was used', () => {
+    const r = writtenRecipe('few-marker-tissue')!
+    const p = recipeProgress(r, new Set(['/manage-images']))
+    expect(p.rows.filter(x => x.ran).every(x => x.route === '/manage-images')).toBe(true)
+    expect(p.rows[0].ran).toBe(true)
+  })
+  it('never makes an optional step the next one', () => {
+    for (const r of WRITTEN_RECIPES) {
+      const all = new Set<string>()
+      for (const row of recipeProgress(r, new Set()).rows) {
+        expect(recipeProgress(r, all).next?.step.optional, r.id).toBeFalsy()
+        if (row.route) all.add(row.route)
+      }
+    }
+  })
+  it('names the same page as resumeStepOf, for every recipe and every prefix of ran pages', () => {
+    for (const r of WRITTEN_RECIPES) {
+      const ran = new Set<string>()
+      for (const row of recipeProgress(r, new Set()).rows) {
+        expect(recipeProgress(r, ran).next?.route, r.id).toBe(resumeStepOf(r, ran)?.route)
+        if (row.route) ran.add(row.route)
+      }
+    }
+  })
+  // Only task pages log a run: Fix metadata, Gate, Build plots and Run a chain never tick. A set that has
+  // been segmented must move on to gating, not fall back to the never-ticking metadata step.
+  it('moves past steps whose page cannot log a run', () => {
+    const r = writtenRecipe('few-marker-tissue')!
+    expect(recipeProgress(r, new Set(['/manage-images'])).next?.route).toBe('/metadata')
+    expect(recipeProgress(r, new Set(['/manage-images', '/segment'])).next?.route).toBe('/gate')
+    expect(recipeProgress(r, new Set(['/manage-images', '/segment', '/spatial'])).next?.route).toBe('/analysis')
+  })
+  it('starts every written recipe on Import', () => {
+    for (const r of WRITTEN_RECIPES) expect(recipeProgress(r, new Set()).next?.route, r.id).toBe('/manage-images')
+  })
+})
+
+describe('guideStartView — what the Guides dialog opens on', () => {
+  const few = { recipe: 'few-marker-tissue', images: imgs(2, 1, 4) }
+  it('asks for images first when the project has none', () => {
+    expect(guideStartView({ projectImages: 0, set: few, picked: null, changing: false }).kind).toBe('import')
+    expect(guideStartView({ projectImages: 0, set: null, picked: null, changing: false }).kind).toBe('import')
+  })
+  it('walks the set\'s stored recipe', () => {
+    const v = guideStartView({ projectImages: 2, set: few, picked: null, changing: false })
+    expect(v).toMatchObject({ kind: 'recipe', saved: true })
+    expect(v.kind === 'recipe' && v.recipe.id).toBe('few-marker-tissue')
+  })
+  it('asks, with the suggestion, when the set has no recipe — and saves the answer', () => {
+    const v = guideStartView({ projectImages: 2, set: { images: imgs(2, 1, 40) }, picked: null, changing: false })
+    expect(v).toMatchObject({ kind: 'choose', saves: true })
+    expect(v.kind === 'choose' && v.suggestion?.recipe.id).toBe('multiplex-tissue')
+  })
+  it('asks again on Change, even with a stored recipe', () => {
+    expect(guideStartView({ projectImages: 2, set: few, picked: null, changing: true }).kind).toBe('choose')
+  })
+  it('with no active set: no suggestion, nothing saved, the selection walked in place', () => {
+    expect(guideStartView({ projectImages: 2, set: null, picked: null, changing: false }))
+      .toEqual({ kind: 'choose', suggestion: null, saves: false })
+    expect(guideStartView({ projectImages: 2, set: null, picked: 'in-vitro-migration', changing: false }))
+      .toMatchObject({ kind: 'recipe', saved: false })
+  })
+})
+
+describe('recipeChoiceRows — the recipe question, Welcome and Guides alike', () => {
+  it('lists every written recipe with its recognition line', () => {
+    const rows = recipeChoiceRows(null)
+    expect(rows.map(r => r.id)).toEqual(WRITTEN_RECIPES.map(r => r.id))
+    expect(rows.every(r => r.when.length > 0 && !r.title.includes('suggested'))).toBe(true)
+  })
+  it('names the suggestion and its reason on its own row only', () => {
+    const rows = recipeChoiceRows(suggestRecipe({ images: imgs(2, 1, 40) }))
+    expect(rows.filter(r => r.title.includes('suggested')).map(r => r.id)).toEqual(['multiplex-tissue'])
+    expect(rows.find(r => r.id === 'multiplex-tissue')!.title).toBe('Multiplex tissue · suggested (40 channels)')
   })
 })

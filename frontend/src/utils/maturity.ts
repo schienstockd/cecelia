@@ -1,4 +1,4 @@
-// Feature maturity as data — pure, so the checks run here and `MaturityMap.vue` / `GuideMap.vue` only
+// Feature maturity as data — pure, so the checks run here and `MaturityMap.vue` and the tier dots only
 // render it (docs/todo/FEATURE_MATURITY_PLAN.md). Joins three sources and restates none: the guides'
 // records (`lib/guides/maturityRecords.ts`), the unguided list (`lib/guides/unguided.ts`), and the
 // Coming soon flags that already exist (task JSON `comingSoon`, nav `soon`).
@@ -139,7 +139,7 @@ export function taskOptionSuffix(t: TaskSpecLite, tasks: TaskSpecLite[] = []): s
   return m?.tier === 'experimental' ? ` · ${TIER_LABEL.experimental}` : ''
 }
 
-// ── The map's maturity rows ────────────────────────────────────────────────────────────────────────
+// ── The Feature maturity dialog's rows ────────────────────────────────────────────────────────────────────────
 
 export interface MaturityRow {
   id: string
