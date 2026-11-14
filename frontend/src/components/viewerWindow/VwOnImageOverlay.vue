@@ -21,7 +21,8 @@ import { useTrackValueNames } from '../../composables/useTrackValueNames'
 import { segRows, segRowActive, flipMaskVisibility, flipTracks, mismatchTip, shortLevelsTip } from '../../utils/viewer/segRows'
 import { useSettingsStore } from '../../stores/settings'
 import { useStoredSectionOpen } from '../../utils/sectionOpen'
-import { CELL_POP_TYPES } from '../../utils/overlayAutoShow'
+import { onImageSwitches } from '../../utils/overlayAutoShow'
+import type { PresentPopTypes } from '../../utils/viewerOverlays'
 import { popTypeInfo } from '../../plots/popTypeRegistry'
 import { BRANCH_TYPE_NAMES, branchTypeColour } from '../../utils/viewerOverlays'
 import { livePreviews, previewShown, togglePreview } from '../../composables/useLivePreview'
@@ -46,6 +47,8 @@ const props = defineProps<{
   version: string
   /** more than one timepoint: a still image has no tracks, so every track switch is hidden */
   timecourse: boolean
+  /** the pop types this image has pops of — a switch shows only for those; null = not known yet */
+  present: PresentPopTypes | null
 }>()
 const settings = useSettingsStore()
 const viewerStore = useViewerStore()
@@ -54,6 +57,7 @@ const open = useStoredSectionOpen('cc.vw.onImage', true)
 const label = (popType: string) => popTypeInfo(popType)?.label ?? popType
 const popOn = (popType: string) => !!props.setUid && settings.getPopVisible(props.setUid, popType)
 const setPop = (popType: string, v: boolean) => { if (props.setUid) settings.setPopVisible(props.setUid, popType, v) }
+const switches = computed(() => onImageSwitches(props.present))
 const ribbonsOn = computed(() => !!props.setUid && settings.getShowGatedTracks(props.setUid))
 const setRibbons = (v: boolean) => { if (props.setUid) settings.setShowGatedTracks(props.setUid, v) }
 
@@ -107,9 +111,9 @@ const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(prop
 const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
   ...props.branchNames.filter(vn => branchVis.value[vn]).map(vn => `${vn} skeleton`),
-  ...CELL_POP_TYPES.filter(popOn).map(label),
-  ...(props.timecourse && ribbonsOn.value ? ['cell-track ribbons'] : []),
-  ...(props.timecourse && popOn('trackclust') ? ['track-cluster ribbons'] : []),
+  ...switches.value.popTypes.filter(popOn).map(label),
+  ...(props.timecourse && switches.value.cellTrackRibbons && ribbonsOn.value ? ['cell-track ribbons'] : []),
+  ...(props.timecourse && switches.value.trackClusterRibbons && popOn('trackclust') ? ['track-cluster ribbons'] : []),
   ...(colourBy.value ? [`by ${colourBy.value}`] : []),
 ].join(' · ') || 'nothing')
 </script>
@@ -171,15 +175,15 @@ const summary = computed(() => [
             <span class="vw-onimg-swatch" :style="{ background: branchTypeColour(t) }" />{{ name }}</span>
         </div>
       </div>
-      <div class="vw-onimg-group">
+      <div v-if="switches.popTypes.length" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Population types drawn as points'">Populations</div>
-        <CcToggle v-for="pt in CELL_POP_TYPES" :key="pt" class="cc-fs-2xs" :label="label(pt)"
+        <CcToggle v-for="pt in switches.popTypes" :key="pt" class="cc-fs-2xs" :label="label(pt)"
                   :model-value="popOn(pt)" @update:model-value="v => setPop(pt, v)" />
       </div>
-      <div v-if="timecourse" class="vw-onimg-group">
+      <div v-if="timecourse && (switches.cellTrackRibbons || switches.trackClusterRibbons)" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Ribbons along the tracks of shown populations'">Tracks</div>
-        <CcToggle class="cc-fs-2xs" label="Cell-track ribbons" :model-value="ribbonsOn" @update:model-value="setRibbons" />
-        <CcToggle class="cc-fs-2xs" label="Track-cluster ribbons" :model-value="popOn('trackclust')"
+        <CcToggle v-if="switches.cellTrackRibbons" class="cc-fs-2xs" label="Cell-track ribbons" :model-value="ribbonsOn" @update:model-value="setRibbons" />
+        <CcToggle v-if="switches.trackClusterRibbons" class="cc-fs-2xs" label="Track-cluster ribbons" :model-value="popOn('trackclust')"
                   @update:model-value="v => setPop('trackclust', v)" />
       </div>
       <div v-if="colourCols.length" class="vw-onimg-group">

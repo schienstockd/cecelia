@@ -316,6 +316,29 @@ function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_
     borrowed
 end
 
+"""
+    stored_pop_map(img, value_name, pop_type) -> Union{PopulationMap,Nothing}
+
+The map holding `value_name`'s stored `pop_type` populations, or `nothing` when it can have none. A
+gate-drawn map (flow/track/region…) is per segmentation, so no sidecar file means no pops — the cheap
+`isfile` skip. A CLUSTER pop_type often has no sidecar of its own: cluster pops are global to a run and
+`load_pop_map` lends them to every co-clustered sibling (`_borrow_cluster_pop_map`), so it is always
+loaded — skipping on the file hid exactly those borrowers. The one walk every "which pops does this
+image have" reader shares (`has_stored_pops`, the observer's population enumerator).
+"""
+function stored_pop_map(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)
+    (_is_cluster_pop_type(pop_type) || isfile(gating_path(img._dir, value_name; pop_type = pop_type))) ||
+        return nothing
+    load_pop_map(img; value_name = value_name, pop_type = pop_type)
+end
+
+"""True when `value_name` has at least one stored (non-transient) `pop_type` population. Membership is
+not evaluated — an authored pop that matches no cell still counts: the type exists on this image."""
+function has_stored_pops(img::CciaImage, value_name::AbstractString, pop_type::AbstractString)::Bool
+    m = stored_pop_map(img, value_name, pop_type)
+    m !== nothing && any(path -> !pop_at(m, path).transient, pop_paths(m))
+end
+
 # Old-R `popDT(popType="clust", pops=c("A","B","C"))` returned those cluster pops across ALL
 # segmentations used in the clustering run — pooled, tagged by value_name. Cluster pops are GLOBAL to a
 # run (one shared `clusters.{suffix}` column across its segments), NOT per-segmentation like gates. So a

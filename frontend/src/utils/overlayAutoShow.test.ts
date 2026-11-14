@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildAutoShowPlan, createClaimRegistry, type AutoShowInput,
   liveLabelPreviews, shouldRefreshPreview, PREVIEW_REFRESH_MIN_MS, type TaskListEntry,
+  onImageSwitches,
 } from './overlayAutoShow'
 
 const base: AutoShowInput = {
@@ -202,5 +203,29 @@ describe('shouldRefreshPreview', () => {
   it('coalesces ticks inside the interval and allows one at the boundary', () => {
     expect(shouldRefreshPreview(1_000, 1_000 + PREVIEW_REFRESH_MIN_MS - 1)).toBe(false)
     expect(shouldRefreshPreview(1_000, 1_000 + PREVIEW_REFRESH_MIN_MS)).toBe(true)
+  })
+})
+
+describe('onImageSwitches', () => {
+  it('shows every switch until the image has answered', () => {
+    expect(onImageSwitches(null)).toEqual({ popTypes: ['flow', 'clust', 'region'],
+                                            cellTrackRibbons: true, trackClusterRibbons: true })
+  })
+  it('shows only the pop types the image has, in display order', () => {
+    expect(onImageSwitches({ popTypes: ['region', 'track', 'flow'], tracked: false }).popTypes)
+      .toEqual(['flow', 'region'])
+  })
+  it('hides everything on an image with no pops', () => {
+    expect(onImageSwitches({ popTypes: [], tracked: true }))
+      .toEqual({ popTypes: [], cellTrackRibbons: false, trackClusterRibbons: false })
+  })
+  it('cell-track ribbons need a shown cell pop type and a tracked segmentation', () => {
+    expect(onImageSwitches({ popTypes: ['flow'], tracked: false }).cellTrackRibbons).toBe(false)
+    expect(onImageSwitches({ popTypes: ['track'], tracked: true }).cellTrackRibbons).toBe(false)
+    expect(onImageSwitches({ popTypes: ['flow'], tracked: true }).cellTrackRibbons).toBe(true)
+  })
+  it('track-cluster ribbons follow trackclust pops', () => {
+    expect(onImageSwitches({ popTypes: ['trackclust'], tracked: true }))
+      .toEqual({ popTypes: [], cellTrackRibbons: false, trackClusterRibbons: true })
   })
 })

@@ -304,6 +304,19 @@ end
     mc = load_pop_map(img; value_name="C", pop_type="trackclust")
     @test isempty(mc.pops)
 
+    # `has_stored_pops` (the viewer's "which pop types does this image have"): a borrower counts — the
+    # isfile skip would have hidden T — a non-member does not, and a gate type with no sidecar is false
+    @test has_stored_pops(img, "B", "trackclust") && has_stored_pops(img, "T", "trackclust")
+    @test !has_stored_pops(img, "C", "trackclust")
+    @test stored_pop_map(img, "B", "flow") === nothing && !has_stored_pops(img, "B", "flow")
+    fm = PopulationMap(pop_type="flow", value_name="C")
+    add_pop!(fm, "Sel"; transient=true)
+    save_pop_map!(fm, td)
+    @test stored_pop_map(img, "C", "flow") !== nothing && !has_stored_pops(img, "C", "flow")  # transient only
+    add_pop!(fm, "CD8")
+    save_pop_map!(fm, td)
+    @test has_stored_pops(img, "C", "flow")
+
     # BARE cluster-pop ref expands across ALL co-clustered segmentations (R popDT parity)
     @test Set(Cecelia._expand_cluster_pops(img, ["/Directed"], "trackclust", "B")) ==
           Set(["B/Directed", "T/Directed"])
