@@ -118,6 +118,22 @@ function note_task_started!(task_id::AbstractString, at::DateTime = Dates.now(UT
 end
 
 """
+    note_relayed_start!(task_id, at) -> DateTime
+
+`note_task_started!` for a `running` frame RELAYED from the process that ran the task (the detached
+runner), with the start that process stamped. First-write-wins cannot hold here: this process has no
+`TaskRecord`, so no registration calls `forget_task_start!` when a restart reuses the id. The producer's
+start is first-write-wins on its side, so a repeat of the same run carries the same value. A different
+value means a new run under the id, and it replaces the old note rather than reading it back.
+"""
+function note_relayed_start!(task_id::AbstractString, at::DateTime)::DateTime
+    isempty(task_id) && return at
+    noted = task_started_at(task_id)
+    isnothing(noted) || noted == at || forget_task_start!(task_id)
+    note_task_started!(task_id, at)
+end
+
+"""
     task_started_at(task_id) -> Union{DateTime,Nothing}
 
 When the task began running, or `nothing` if it hasn't started, was never noted, or has already been
@@ -168,7 +184,8 @@ One row per task id: a repeat lands on top of the existing entry rather than bes
 real — a cancel is announced twice (immediately from `on_status_change`, then again as the final status),
 and `task:restart` reuses the task id for a genuinely new run whose outcome must supersede the old one.
 A repeat of the same terminal status keeps the start the first one banked; a frame arriving while another
-run is queued/running under the id leaves that run's start alone (and banks "" for its own).
+run is queued/running under the id leaves that run's start alone (and banks "" for its own). A relayed
+frame (`started_at` passed) likewise leaves alone a start on record that is not its own.
 """
 function record_task_outcome!(task_id::AbstractString, status;
                               image_uid::AbstractString = "",
@@ -184,6 +201,13 @@ function record_task_outcome!(task_id::AbstractString, status;
     # is queued/running: reading the start would bank the restart's start as the old run's, and
     # forgetting it would leave the restart's own outcome with none.
     own_start = !_live_run_under(task_id)
+    # A relayed frame (`started_at` passed) has no `TaskRecord` here, so the guard above is always open
+    # for it. Its own start is on the frame: a start on record that differs from it was noted by a later
+    # run under the id (a restart's relayed `running` frame), and is that run's to keep.
+    if own_start && !isnothing(started_at)
+        noted = task_started_at(task_id)
+        own_start = isnothing(noted) || iso_utc(noted) == started_at
+    end
     # A PASSED start — even "" — is the producing process's word (a relay of the runner's frame): banked
     # as is. This process has no `TaskRecord` for a relayed run, so neither guard below can see a restart
     # there; re-deriving would hand a restart that never ran the superseded run's start. `nothing` = derive.

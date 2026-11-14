@@ -42,7 +42,8 @@ ws_hpc(_ws, task_id, stage, job)       = _broadcast_task((; type="task:hpc", tas
 # They exist because re-deriving a relayed task's times is the elapsed-timer bug one process boundary
 # out: a task the runner has been running for twenty minutes would be stamped as starting when the
 # relay first saw it, and a restarted API server would restart every timer on reconnect. Seeding
-# `note_task_started!` with the runner's value is safe because it is first-write-wins.
+# through `note_relayed_start!`: a different start from the runner is a restart reusing the id, which
+# replaces the note (first-write-wins would hand the restart the old run's start).
 """
     _wstr(data, key, default = "") -> String
 
@@ -137,7 +138,7 @@ function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", po
     # lets `record_task_outcome!` derive it from this process's own note.
     if string(status) == "running"
         seed = isnothing(started_at) ? nothing : parse_iso_utc(started_at)
-        isnothing(seed) ? note_task_started!(task_id) : note_task_started!(task_id, seed)
+        isnothing(seed) ? note_task_started!(task_id) : note_relayed_start!(task_id, seed)
     end
     row = record_task_outcome!(task_id, status;
                                image_uid=uid, image_uids=image_uids, fun=fun, pool=pool,

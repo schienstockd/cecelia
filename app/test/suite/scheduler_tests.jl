@@ -507,6 +507,42 @@ end
     end
 end
 
+# The superseded-run case from the API server's side: the runner's restart under the same id was relayed
+# (`running`, its start noted here) before the OLD run's late terminal frame. No `TaskRecord` here, so
+# `_live_run_under` cannot see the restart — the old frame must still leave the restart's start alone.
+@testset "A relayed late frame of a superseded run keeps the restart's start" begin
+    id      = "rr$(rand(1000:9999))"
+    old_at  = iso_utc(DateTime(2026, 1, 1, 10))
+    new_at  = DateTime(2026, 1, 1, 11)
+    try
+        note_task_started!(id, new_at)                            # the restart's relayed `running` frame
+        row = record_task_outcome!(id, "done"; started_at = old_at)   # the old run's late frame
+        @test row.started_at == old_at                            # banked with the old run's own start…
+        @test task_started_at(id) == new_at                       # …and the restart's start is kept
+        @test record_task_outcome!(id, "done"; started_at = iso_utc(new_at)).started_at == iso_utc(new_at)
+        @test isnothing(task_started_at(id))                      # the restart's own frame banks it
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+    end
+end
+
+# The same restart when the API server ALSO saw the old run's `running` frame: first-write-wins would
+# hand the restart's relayed `running` the old start, and the old late frame would then bank and drop it.
+@testset "A relayed restart's running frame replaces the old run's start" begin
+    id     = "rs$(rand(1000:9999))"
+    old_at = DateTime(2026, 1, 1, 10)
+    new_at = DateTime(2026, 1, 1, 11)
+    try
+        @test note_relayed_start!(id, old_at) == old_at           # the old run's relayed `running`
+        @test note_relayed_start!(id, old_at) == old_at           # a repeat of it keeps it
+        @test note_relayed_start!(id, new_at) == new_at           # the restart's relayed `running`
+        @test record_task_outcome!(id, "done"; started_at = iso_utc(old_at)).started_at == iso_utc(old_at)
+        @test task_started_at(id) == new_at                       # the old late frame left it alone
+    finally
+        forget_task_start!(id); filter!(r -> r.id != id, Cecelia._OUTCOMES)
+    end
+end
+
 # ── The scheduler stamps a task's own timing ───────────────────────────────
 # `list_tasks()` is what a client polls to answer "how long has this been going?". Without these
 # fields it can only be answered from when the client first SAW the row, so a console or a browser
