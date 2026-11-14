@@ -118,11 +118,16 @@ describe('funCategory / funModuleLabel', () => {
     expect(funCategory('segment.cellpose')).toBe('segment')
     expect(funCategory('')).toBe('')
   })
-  it('prettifies the module label', () => {
+  it('names the sidebar page, not the internal module key', () => {
     expect(funModuleLabel('cleanupImages.smooth')).toBe('Cleanup')
-    expect(funModuleLabel('importImages.omezarr')).toBe('Import')
+    expect(funModuleLabel('importImages.omezarr')).toBe('Manage images')
     expect(funModuleLabel('segment.cellpose')).toBe('Segment')
-    expect(funModuleLabel('clustPops.cluster')).toBe('Clust Pops')
-    expect(funModuleLabel('spatialAnalysis.cellNeighbours')).toBe('Spatial Analysis')
+    expect(funModuleLabel('clustPops.cluster')).toBe('Cluster cells')
+    expect(funModuleLabel('opticalFlow.trainSupportDenoise')).toBe('Model training')
+  })
+  it('names a custom module as its custom page does', () => {
+    expect(funModuleLabel('myLabTools.thing')).toBe('My Lab Tools')
+    expect(funModuleLabel('myImages.thing')).toBe('My Images')
+    expect(funModuleLabel('')).toBe('')
   })
 })

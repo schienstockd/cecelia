@@ -4,6 +4,8 @@
 // display and the "processed with" filter from it rather than persisting a separate mutable status
 // attribute (which would drift out of sync). Entries arrive oldest→newest.
 
+import { taskPageLabel } from './kiwiTurn'
+
 // One run-log entry. `status`/`params` are absent on legacy entries (readers treat a missing status
 // as "done" — see runStatus). `at` is a local `yyyy-mm-ddTHH:MM:SS` timestamp, chosen so that
 // lexicographic order == chronological order (matches the backend sort in api/src/routes.jl).
@@ -112,11 +114,10 @@ export function funCategory(fun: string): string {
   return (fun ?? '').split('.')[0] ?? ''
 }
 
-// A human module-page label for a fun_name's category — mirrors AppSidebar's prettifyCategory and the
-// tasks store's category→module derivation ('cleanupImages' → 'Cleanup', 'clustPops' → 'Clust Pops').
-// Generic (title-cased, de-camel-cased); not guaranteed to equal the exact nav label for every page.
+// A fun_name's page as the sidebar names it ('opticalFlow.trainSupportDenoise' → 'Model training'),
+// via taskPageLabel so a pill never shows an internal module key. Custom modules get their custom
+// page's name ('myLabTools' → 'My Lab Tools').
 export function funModuleLabel(fun: string): string {
-  const cat = funCategory(fun).replace(/Images$/, '').replace(/Tasks$/, '')
-  const spaced = cat.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim()
-  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : ''
+  const cat = funCategory(fun)
+  return cat ? taskPageLabel(cat).label : ''
 }
