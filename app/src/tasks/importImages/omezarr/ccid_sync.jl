@@ -24,7 +24,7 @@ const _OME_DERIVED_META_KEYS = (
 )
 
 # Replaced even by a fill-only resync: what THIS read found, not a value a human set. `acquisition`
-# reaches a resync's `zarr_meta` only when it was (re-)read from the source (`_resync_acquisition_settings!`).
+# reaches a resync's `zarr_meta` only when re-read from the source or repaired (`_resync_acquisition_settings!`).
 const _STATUS_META_KEYS = ("acquisitionMissing", "acquisition")
 
 """
