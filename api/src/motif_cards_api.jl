@@ -272,13 +272,10 @@ function api_motif_cards(body_bytes::Vector{UInt8})
         return 404, JSON3.write((; error = "no motif classes assigned in $(vn) — motif discovery ran but assigned nothing",
                                     availableValueNames = available_vns))
 
-    # Colours: the canonical categorical-colour helper. `load_pop_map` (live pop map for this vn) may
-    # define user-filtered pops on motif.class one day; today it doesn't, so every class falls
-    # through to `default_palette = POPULATION_PALETTE`. Parity with any future pop-manager overrides is
-    # automatic — one rule, one source of truth (`clustering_colour.jl`). Resolved BEFORE the cache
-    # check: the colour is baked into the trace, so it's part of the stamp.
-    pop_map = load_pop_map(img._dir, String(vn); pop_type = "live")
-    colours_by_class = colour_by_palette(pop_map, "motif.class", class_names)
+    # Colours: THE category rule (`category_colours`) — each class its palette slot, as a plot or the
+    # viewer colours `motif.class`. Resolved BEFORE the cache check: the colour is baked into the
+    # trace, so it's part of the stamp.
+    colours_by_class = category_colours(class_names)
 
     # Cache check — the stamp is everything the cards depend on (behaviour_cards.jl).
     sidecar = _motif_cards_sidecar(img._dir, String(vn))

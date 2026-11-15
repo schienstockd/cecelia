@@ -256,9 +256,8 @@ end
 # ── Colour-by / colour-overrides — per-vertex colouring by an obs column ──────────
 #
 # Viewer colours points / track ribbons by a chosen obs column: categorical values
-# (String, Bool, Integer) go through `colour_by_palette` (`category_colours`: the
-# population palette by sorted position, a value a user pop filters for takes the
-# pop's colour and keeps its slot); continuous columns (Float) go through a viridis-ish heat ramp
+# (String, Bool, Integer) go through `category_colours` (the population palette by
+# sorted position — a population never repaints a value); continuous columns (Float) go through a viridis-ish heat ramp
 # normalised over the frame's df range. `colour_overrides` is a
 # `{value_string → hex}` map that wins per-value.
 #
@@ -274,12 +273,6 @@ end
 # in the same colours. NOTE the target is "pop", not "solid": after the two
 # modes diverged, "solid" paints a uniform palette[0] and would discard the
 # colour_by result.
-
-# The levels user populations claim on `cb_col`, gathered exactly as the viewer's `levelClaims`
-# (`_colour_overrides_for` over every segmentation × `COLOUR_BY_POP_TYPES`), so a movie colours a
-# category as the viewer does in every path — pop points, whole segmentation, masks.
-_cb_claims(img, cb_col) = cb_col === nothing ? Dict{String,String}() :
-    _colour_overrides_for(img, cb_col, COLOUR_BY_POP_TYPES)
 
 _prep_overrides(colour_overrides) = colour_overrides === nothing ? nothing :
     Dict{String,RGB{N0f8}}(String(k) => hex_to_rgb(String(v)) for (k, v) in colour_overrides)
@@ -344,13 +337,11 @@ end
 
 # Given a df that has the `colour_by` column present, return a per-row resolver
 # `(default_col::RGB, i::Int) -> RGB`. `nothing` means colourBy is disabled OR the
-# column is absent — the caller falls back to the pop's own colour. `claims` (`_cb_claims`) are
-# the levels user populations claim, coloured by `category_colours` exactly as the viewer's
-# `categoryColours` does. `scale` (`_cb_scale`) is the
+# column is absent — the caller falls back to the pop's own colour. Levels are coloured by
+# `category_colours` exactly as the viewer's `categoryColours` does. `scale` (`_cb_scale`) is the
 # one shared over every segmentation drawn; `nothing` = this table's own.
 function _cb_prepare(df, cb_col::Union{Nothing,String},
-                     cb_overrides::Union{Nothing,Dict{String,RGB{N0f8}}},
-                     claims::AbstractDict; scale = nothing)
+                     cb_overrides::Union{Nothing,Dict{String,RGB{N0f8}}}; scale = nothing)
     cb_col === nothing && return nothing
     sym = Symbol(cb_col)
     sym in propertynames(df) || return nothing
@@ -378,7 +369,7 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
         end
     else
         uniq = scale.levels
-        hexes = category_colours(uniq, claims)
+        hexes = category_colours(uniq)
         palette = Dict{Any,RGB{N0f8}}(k => hex_to_rgb(String(v)) for (k, v) in hexes)
         return (default, i) -> begin
             v = col[i]
@@ -516,7 +507,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             df = as_df(lp)
             has_z = "centroid_z" in names(df)
             default_col = hex_to_rgb(String(all_tracks_colour))
-            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, _cb_claims(img, cb_col); scale = cb_scale)
+            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
             @inbounds for i in 1:size(df, 1)
                 px = df[i, :centroid_x]; py = df[i, :centroid_y]
                 (px isa Real && py isa Real) || continue
@@ -560,7 +551,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
         @inbounds for i in 1:n
             row_of[Int(df[i, :label])] = i
         end
-        cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, _cb_claims(img, cb_col); scale = cb_scale)
+        cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
         for p in pops
             show = Bool(get(p, :show, true))
             pon = point_on(String(p.path), show)
@@ -641,7 +632,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                 has_z = col_exists("centroid_z")
                 # `pop_df(include_obs=true)` already surfaced every obs column — colour_by is
                 # already present in the df, no extra select_cols round-trip needed.
-                cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, _cb_claims(img, cb_col); scale = cb_scale)
+                cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb; scale = cb_scale)
                 @inbounds for i in 1:size(df, 1)
                     (col_exists("centroid_x") && col_exists("centroid_y")) || break
                     px = df[i, :centroid_x]; py = df[i, :centroid_y]
@@ -1305,7 +1296,7 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
             nothing
         end
         if df !== nothing
-            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, _cb_claims(img, cb_col);
+            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb;
                                      scale = _cb_scale(img, [vn], cb_col))
             if cb_resolve !== nothing
                 @inbounds for i in 1:size(df, 1)

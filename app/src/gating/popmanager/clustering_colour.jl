@@ -202,31 +202,9 @@ _val_eq(a, b) = a == b || string(a) == string(b) ||
 _val_key(v) = v isa Real ? (isinteger(v) ? string(Int(v)) : string(v)) : string(v)
 
 """
-    pop_colour_overrides(m, column) -> Dict{String,String}
-
-The `{value => hex}` a user population imposes on `column`: for each pop whose `filter_measure == column`,
-its `filter_values` → the pop's `colour`, keyed by the value's canonical STRING form (survives JSON to
-the napari bridge). This is the "use the population's colour where one exists" half of the colour-choice
-rule — the bridge fills the remaining present values with defaults and returns the full legend. First
-pop in insertion order wins a shared value.
-"""
-function pop_colour_overrides(m::PopulationMap, column::AbstractString)::Dict{String,String}
-    col = String(column); out = Dict{String,String}()
-    for path in m.order
-        p = m.pops[path]
-        (p.filter_measure === nothing || String(p.filter_measure) != col) && continue
-        for fv in _as_value_vec(p.filter_values)
-            k = _val_key(fv)
-            haskey(out, k) || (out[k] = p.colour)
-        end
-    end
-    out
-end
-
-"""
     pop_label_overrides(m, column) -> Dict{String,String}
 
-The `{value => population name}` companion to [`pop_colour_overrides`](@ref): for each pop whose
+The `{value => population name}` a user population gives `column`: for each pop whose
 `filter_measure == column`, its `filter_values` → the pop's `name`, keyed by the value's canonical
 STRING form. Lets a colour-by legend read the **population name** (e.g. "migratory") instead of the raw
 category value (e.g. "2") wherever a population defines that value. First pop in insertion order wins.
@@ -254,36 +232,19 @@ The order categories take everywhere — legends, palette slots, the viewer, the
 category_sort_key(v) = v isa Real && isfinite(Float64(v)) ? (0, Float64(v), "") : (1, 0.0, string(v))
 
 """
-    category_colours(values, claims; palette=POPULATION_PALETTE) -> Dict{Any,String}
+    category_colours(values; palette=POPULATION_PALETTE) -> Dict{Any,String}
 
-THE category colour rule, pure: a value a population CLAIMS (`claims`, keyed by `_val_key` — 2.0 and
-2 are "2") takes that population's colour; every other value takes the palette slot of its position
-among ALL the distinct values in `category_sort_key` order. Claimed values keep their slot, so turning
-a population on or off never repaints the other categories. Mirrored by `categoryColours` in
+THE category colour rule, pure: every value takes the palette slot of its position among ALL the
+distinct values in `category_sort_key` order. A population on a value never repaints it — a cluster
+keeps its own colour, so a population and a cluster that happen to share a colour are never mistaken
+for one another, and turning a population on or off never repaints a category. General across
+clusters, HMM states and any categorical measure. Mirrored by `categoryColours` in
 frontend/src/plots/categoryColours.ts; both are checked against share/category_colour_cases.json.
 """
-function category_colours(values, claims::AbstractDict{<:AbstractString,<:AbstractString};
-                          palette::AbstractVector{<:AbstractString}=POPULATION_PALETTE)::Dict{Any,String}
-    out = Dict{Any,String}()
-    for (i, v) in enumerate(sort!(unique(collect(values)); by = category_sort_key))
-        # the wire key first (true → "1"), then the text — a filter value stored as "true" still claims
-        out[v] = get(claims, _val_key(v), get(claims, string(v), palette[(i - 1) % length(palette) + 1]))
-    end
-    out
+function category_colours(values; palette::AbstractVector{<:AbstractString}=POPULATION_PALETTE)::Dict{Any,String}
+    vals = sort!(unique(collect(values)); by = category_sort_key)
+    Dict{Any,String}(v => palette[(i - 1) % length(palette) + 1] for (i, v) in enumerate(vals))
 end
-
-"""
-    colour_by_palette(m, column, values; default_palette=POPULATION_PALETTE) -> Dict{Any,String}
-
-Canonical colour choice for colouring by a categorical `column`: [`category_colours`](@ref) with the
-claims of `m`'s user populations that filter on `column` ([`pop_colour_overrides`](@ref) — first pop in
-insertion order wins a shared value). General across clusters (a cluster pop is just a filter on
-`clusters.{suffix}`), HMM states and any categorical measure, so tracks/points, legends and movies all
-colour a category identically. Pure.
-"""
-colour_by_palette(m::PopulationMap, column::AbstractString, values;
-                  default_palette::Vector{String}=POPULATION_PALETTE)::Dict{Any,String} =
-    category_colours(values, pop_colour_overrides(m, column); palette = default_palette)
 
 function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::PopTypeArg="flow",
                       backfill_save::Bool=true)

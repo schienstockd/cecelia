@@ -301,11 +301,10 @@ function api_hmm_state_cards(body_bytes::Vector{UInt8})
                                     valueName           = String(vn),
                                     hmmCol              = String(hmm_col)))
 
-    # Colours: fall through `colour_by_palette` on `pop_map` for this vn, keyed by the hmm column
-    # name (so any future user override on HMM states lines up with the frequency-plot palette).
-    # Resolved BEFORE the cache check: the colour is baked into the trace, so it's in the stamp.
-    pop_map = load_pop_map(img._dir, String(vn); pop_type = "live")
-    colours_by_state = colour_by_palette(pop_map, String(hmm_col), state_names)
+    # Colours: THE category rule (`category_colours`) — each state its palette slot, as the frequency
+    # plot and the viewer colour it. Resolved BEFORE the cache check: the colour is baked into the
+    # trace, so it's in the stamp.
+    colours_by_state = category_colours(state_names)
 
     # Cache check — the stamp is everything the cards depend on (behaviour_cards.jl). The sidecar
     # path already carries (vn, hmm_col).

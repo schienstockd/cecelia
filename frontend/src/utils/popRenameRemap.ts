@@ -14,6 +14,8 @@
 // Add is not represented — a new pop isn't in the highlight set until the user clicks the eye,
 // so nothing to remap. That gate is deliberate (user confirmed 2026-09-29).
 
+import { watch } from 'vue'
+
 export interface PopIdent { key: string; uid: string }
 
 export function makePopPathRemap(
@@ -45,4 +47,19 @@ export function remapPopKeys(
     if (next !== null) out.push(next)
   }
   return out
+}
+
+/** Call `apply(remap)` whenever the pop tree's paths change (a rename, a delete, a reparent), with
+ *  the remap from the previous tree to the new one, so every path-keyed highlight follows the pop. */
+export function watchPopRenames(
+  flat: () => readonly { path: string; uid: string }[],
+  apply: (remap: (key: string) => string | null) => void,
+): void {
+  const idents = (): PopIdent[] => flat().map(p => ({ key: p.path, uid: p.uid }))
+  let prev = idents()
+  watch(() => flat().map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
+    const next = idents()
+    apply(makePopPathRemap(prev, next))
+    prev = next
+  })
 }

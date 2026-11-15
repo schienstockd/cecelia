@@ -2,7 +2,7 @@
 # Five sections covering: region composition column naming (one namer, Julia → Python),
 # compound filter populations (Decision 15 — AND-ed conditions), FilterFun enum +
 # FilterCondition boundary coercion + JSON round-trip, recompute! — a missing filter/gate
-# column degrades to empty (no crash), and colour_by_palette (pop colour else default).
+# column degrades to empty (no crash), and the category colour rule + population labels.
 # Extracted from suite.jl to keep it small enough to merge without EOF conflicts on every
 # append. The extracted file loads inside this file's aggregating testset scope, so any
 # helpers defined earlier in suite.jl are still in scope (lexical include).
@@ -167,48 +167,20 @@ end
     # cannot drift apart on which colour a category takes
     cases = JSON3.read(read(joinpath(@__DIR__, "..", "..", "..", "share", "category_colour_cases.json"), String))
     for c in cases.cases
-        claims = Dict{String,String}(String(k) => String(v) for (k, v) in pairs(c.claims))
-        got = category_colours(collect(c.values), claims)
+        got = category_colours(collect(c.values))
         for e in c.expect
-            v, want = e[1], e[2]
-            hex = haskey(want, :hex) ? String(want.hex) : POPULATION_PALETTE[want.slot % length(POPULATION_PALETTE) + 1]
-            @test got[v] == hex
+            @test got[e[1]] == POPULATION_PALETTE[e[2].slot % length(POPULATION_PALETTE) + 1]
         end
     end
 end
 
-@testset "colour_by_palette — pop colour else default" begin
-    # a value a user pop FILTERS for on the column → that pop's colour; the rest → POPULATION_PALETTE by
-    # sorted position. Generalises "use the population's colour where one exists" (a cluster pop is
-    # just a filter on clusters.{suffix}).
+@testset "pop_label_overrides — a population names its values, never recolours them" begin
     m = PopulationMap(pop_type="clust", value_name="B")
     add_pop!(m, "directed";   filter_measure="clusters.mov", filter_fun="in", filter_values=[2],       colour="#ff1493")
     add_pop!(m, "crawling";   filter_measure="clusters.mov", filter_fun="in", filter_values=[0, 3, 4], colour="#ffd700")
     add_pop!(m, "unrelated";  filter_measure="clusters.other", filter_fun="in", filter_values=[1],     colour="#000001")
-
-    pal = colour_by_palette(m, "clusters.mov", [0, 1, 2, 3, 4])
-    @test pal[2] == "#ff1493"                 # user pop colour
-    @test pal[0] == "#ffd700" && pal[3] == "#ffd700" && pal[4] == "#ffd700"
-    @test pal[1] == POPULATION_PALETTE[2]              # uncovered value 1 keeps its slot (2nd of 0..4)
-    # a pop filtering a DIFFERENT column never leaks its colour in
-    @test pal[1] != "#000001"
-
-    # numeric tolerance: a filter value stored as 2.0 still matches integer column value 2
-    m3 = PopulationMap(pop_type="clust", value_name="B")
-    add_pop!(m3, "d"; filter_measure="clusters.mov", filter_fun="in", filter_values=[2.0], colour="#abcdef")
-    @test colour_by_palette(m3, "clusters.mov", [2])[2] == "#abcdef"
-
-    # no matching pop → all default, by sorted position (stable)
-    empty = PopulationMap(pop_type="clust", value_name="B")
-    p2 = colour_by_palette(empty, "clusters.mov", [5, 3, 3, 1])
-    @test p2[1] == POPULATION_PALETTE[1] && p2[3] == POPULATION_PALETTE[2] && p2[5] == POPULATION_PALETTE[3]
-
-    # pop_colour_overrides: string-keyed {value => hex} for the wire (2.0/2 → "2"); only pops on
-    # the column contribute; no default fill (the bridge does that).
-    ov = pop_colour_overrides(m, "clusters.mov")
-    @test ov == Dict("2" => "#ff1493", "0" => "#ffd700", "3" => "#ffd700", "4" => "#ffd700")
-    @test pop_colour_overrides(m3, "clusters.mov") == Dict("2" => "#abcdef")   # 2.0 → "2"
-    @test isempty(pop_colour_overrides(m, "clusters.absent"))
+    # a cluster a population is defined on keeps its own slot colour (2 is the 3rd of 0..4)
+    @test category_colours([0, 1, 2, 3, 4])[2] == POPULATION_PALETTE[3]
 
     # pop_label_overrides: same keying, value → the POP NAME (so the legend reads "directed", not "2")
     lbl = pop_label_overrides(m, "clusters.mov")
