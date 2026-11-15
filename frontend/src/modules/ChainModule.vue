@@ -696,13 +696,14 @@ function addStartNode() {
 }
 
 // Empty the canvas and wait for the unmount — the only way a full clear is done (see clearCanvas).
+// Every path to an empty canvas (load, new chain, the last chain deleted) also starts a fresh undo
+// history — except an undo/redo restoring through it.
 function clearWhiteboard() {
-  // every path to an empty canvas (load, new chain, the last chain deleted) starts a fresh history —
-  // except an undo/redo restoring through it
-  if (!restoring) { undo.clear(); undoTick.value++ }
-  return clearCanvas({
+  const done = clearCanvas({
     nodeIds: nodes.value.map(n => n.id), edgeIds: edges.value.map(e => e.id), removeNodes, removeEdges,
   }, nextTick)
+  if (!restoring) { undo.clear(); undoTick.value++ }
+  return done
 }
 
 async function applyTemplate(
