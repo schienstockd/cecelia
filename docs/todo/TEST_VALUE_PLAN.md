@@ -1,6 +1,6 @@
 # Test value — do the tests fail when the result is wrong?
 
-**Status:** P1–P3 done (2026-11-13/14: `stats.jl`; Python readers + floor; Julia result areas); P4 next. Supersedes the three archived briefs
+**Status:** P1–P3 done (2026-11-13/14: `stats.jl`; Python readers + floor; Julia result areas); P4(b) timed 2026-11-15, wiring undecided; P4(a) open. Supersedes the three archived briefs
 (`docs/archive/TEST_VALUE_AUDIT_PROMPT.md`, `TEST_VALUE_AUDIT_PROMPT_2.md`,
 `TEST_VALUE_PILOT_GATING_PROMPT.md`).
 
@@ -118,6 +118,54 @@ the lines ran, but many output fields and every threshold boundary went unchecke
 - **Not in P3:** `reader.jl` beyond `_uniform_interval` (bf2raw series-dir pick, NGFF readers: 40 of
   92 mutants survive in the whole file). Gating was last in the order and not run.
 
+### P4(b): changed-lines mutation, timed (2026-11-15)
+
+`scripts/mutate_changed.py <merge>^1` in a detached checkout of each of the last 5 merged PRs that
+touched a Julia or Python result path. Every mutant on a changed line ran, against the test files that
+name a changed function.
+
+| PR | Files mutated | Mutants | Killed | Survived | Wall |
+|---|---|---|---|---|---|
+| #2244 pop types on the image | `clustering_colour.jl` | 4 | 4 | 0 | 364 s |
+| #2232 registered channel order | `register_plan.jl`, `acquisition.jl` | 21 | 16 | 5 | 47 s |
+| #2230 skeleton colours | `title_card.py` | 81 | 69 | 12 | 27 s |
+| #2226 store axis order | `data_path.py`, `dim_utils.py` | 36 | 29 | 5 (+2 timeout) | 207 s |
+| #2225 acquisition card | `register_plan.jl`, `czi_meta.py`, `lif_meta.py` | 220 | 158 | 62 | 76 s |
+
+- **Time: median 76 s, max 6 min** (inside the pixi env, every test running), so the 1–2 min
+  estimate holds for 3 of 5. The cost is the number of mapped test files, not the mutants:
+  `clustering_colour.jl` maps to 15 suite files (including the golden pipeline, ~80 s per mutant),
+  `dim_utils.py` to 38. Julia pays ~10–15 s of package load per changed file.
+- **Survivors need triage, so the guard can report but not block.** The 5 `data_path.py` survivors are
+  all equivalent: `stack_axis_indices` only falls back to the OME guess when the store's NGFF axes are
+  unusable, and then `calc_image_dimensions(axes=…)` falls back too. #2225 left 62 on the czi reader
+  in one PR.
+- **What made the first runs wrong** (fixed in the tools, each found on these PRs):
+  - Run outside the pixi env, every test that starts Python failed unmutated (`No module named
+    'pandas'`): 14 assertions in 4 suite files, which first looked order-dependent. The first harness
+    dropped such a file whole, and one was the only test of #2244's change: 0% looked like a gap. Now
+    `mutate_changed.py` refuses to run outside the env; inside it none of the 5 PRs has a test that
+    fails unmutated (all 4 files pass alone: 859, 22, 70, 142 tests). Should one appear, it is set
+    aside per assertion, not per file (`--known-failures`; Python deselects the single test).
+  - A mutant was loaded from a temp file, so `@__DIR__` in `acquisition.jl` pointed at `/tmp`: every
+    mutant, the unmutated one too, was a build error. Now it is loaded under the source's own name.
+  - mutmut's default timeout (15 × the test time) made two hung `dim_utils` mutants cost 7 of 9
+    minutes; at 3 × the same run takes 3.
+- **Survivors triaged by hand: 9 of 15 were real gaps.** 10 of #2225's 62, drawn with a fixed
+  seed: 9 were output fields no test read (detection band, pinhole µm and Airy rounding, the in-visible
+  and secondary beam splitters, the dichroic `slot`/`name` keys). P2's full-record tests (#2218,
+  merged the day after #2225) kill all 9 now; the tenth (`''` → `'XXXX'` with no range recorded)
+  is equivalent. Plus #2226's 5, all equivalent. The rate swings by PR, so the guard reports
+  and does not block.
+- **Test mapping is by name.** 7 of the 19 changed functions in the 5 PRs are named by no test, all
+  private helpers (`_band`, `_channels`, `_splitters`, `_confocal_settings`…) that the tests reach
+  through their public caller: #2225's `_band` mutants were killed through `parse_settings`. The
+  report lists them, and the changed lines it did not look at, so a clean report is not read as
+  "all caught".
+- **Not mutated:** `api/src/*.jl` (not in module Cecelia; `viewer_api.jl` changed in 3 of the 5) and the
+  task runners `app/src/tasks/**/*_run.py` (loaded by path, not as `cecelia.*`; 25 changed in #2226).
+  The frontend result paths are out of scope (decision 2).
+
 ## Decisions (2026-11-13)
 
 1. **Mutation is the check.** The static scan is done and found nothing to act on. It is not re-run
@@ -150,18 +198,27 @@ the lines ran, but many output fields and every threshold boundary went unchecke
 - **P4 — the per-PR guard (mechanical, no LLM).**
   (a) A test added with a fix must fail on the base commit. This is CLAUDE.md's "watch it fail" rule,
   made a check.
-  (b) Mutate only the changed lines of a result-path file and run only its mapped tests. Estimated at
-  1–2 min for a typical diff `[unverified]`. Time it on the last 5 merged PRs that touched a result
-  path before wiring it into recital.
+  (b) Mutate only the changed lines of a result-path file and run only its mapped tests. **Timed**
+  (results above): median 76 s, max 6 min over 5 PRs. Not wired into recital yet: it can only
+  report (survivors need triage), and where it reports (a recital tail, a PR comment, on demand) is
+  the maintainer's call.
 
 ## Tooling
 
-- `scripts/julia_mutate.jl SRC OUT.tsv TEST.jl… [--timeout s] [--list] [--sample N --seed S]`. Mutant 0 is the unmutated
+- `scripts/mutate_changed.py BASE [--dry-run] [--keep]` (P4(b)): run in the checkout of the change;
+  mutates the changed lines of its Julia and Python result files against the tests that name the
+  changed functions. `--dry-run` only maps; `--keep` keeps the mutmut copy for `mutmut show`.
+  Build errors and timeouts are their own counts, never kills.
+- `scripts/julia_mutate.jl SRC OUT.tsv TEST.jl… [--timeout s] [--list] [--sample N --seed S]
+  [--lines 12-30,45] [--known-failures]`. Mutant 0 is the unmutated
   file and must survive. A test file must run standalone after the `runtests.jl` preamble: a testset
   that leans on a helper defined elsewhere in `suite.jl` has to be extracted. That was the case for
   `run_stats` inside `task_spec_ratchets.jl`.
 - Run the confirmation (whole-suite) runs through `pixi`, so the Python side has its environment.
-- Python: `mutmut` 3.8.1 (`[mutmut]` in a `setup.cfg` beside `cecelia/`, with `paths_to_mutate`,
-  `tests_dir` listing the mapped test files, `also_copy = cecelia`). Not in `pixi.toml`; install it into
-  a worktree's own env (`uv pip install --python .pixi/envs/default/bin/python mutmut pytest`) and run
-  it in a copy of the repo (P2 gotchas above).
+- Python: `mutmut` 3.8.1 (`[mutmut]` in a `setup.cfg` beside `cecelia/`, with `source_paths`,
+  `pytest_add_cli_args_test_selection` listing the mapped test files, `also_copy = cecelia`,
+  `timeout_multiplier = 3`, and `pytest_add_cli_args` = `--deselect <id>` per test that fails with
+  nothing mutated, since mutmut stops on one). `mutate_changed.py` writes exactly this; copy it from
+  there for a manual run. Not in `pixi.toml`; install it into a worktree's own env
+  (`uv pip install --python .pixi/envs/default/bin/python mutmut pytest`) and run it in a copy of the
+  repo (P2 gotchas above).
