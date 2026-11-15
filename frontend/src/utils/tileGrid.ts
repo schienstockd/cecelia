@@ -58,6 +58,24 @@ const cellH = (H: number, rows: number, gap: number) => (H - gap * (rows + 1)) /
  * standard fit-N-squares-in-a-rectangle answer, so a wide workspace lays them out in a row and a
  * tall one in a column instead of forcing both into ceil(sqrt(n)).
  */
+/**
+ * The standard fit-N-squares-in-a-rectangle search: try every column count 1..n and keep the one whose
+ * square side is largest. `side(cols, rows)` is the caller's geometry (its gaps, padding, chrome) — the
+ * ONE loop shared by Tile's square mode and the board's gate montage (`plots/montage.ts → fitGridCols`).
+ * Strict `>` keeps the fewer columns on a tie, so a count that only adds empty columns never wins.
+ */
+export function largestSquareCols(
+  n: number, side: (cols: number, rows: number) => number,
+): { cols: number; rows: number; side: number } {
+  let best = { cols: 1, rows: Math.max(1, n), side: -Infinity }
+  for (let cols = 1; cols <= Math.max(1, n); cols++) {
+    const rows = Math.ceil(n / cols)
+    const s = side(cols, rows)
+    if (s > best.side) best = { cols, rows, side: s }
+  }
+  return best
+}
+
 /** How many cells of width `w` fit across `W` — the column count once the floor is in charge. */
 const colsAcross = (W: number, w: number, gap: number) =>
   Math.max(1, Math.floor((W - gap) / (w + gap)))
@@ -84,12 +102,7 @@ export function tileGrid(
       const side = Math.max(MIN_TILE_H, Math.floor(Math.min(cellW(W, pinned, gap), cellH(H, rows, gap))))
       return finish(pinned, rows, side, side, gap)
     }
-    let best = { cols: 1, rows: count, side: -Infinity }
-    for (let cols = 1; cols <= count; cols++) {
-      const rows = Math.ceil(count / cols)
-      const side = Math.min(cellW(W, cols, gap), cellH(H, rows, gap))
-      if (side > best.side) best = { cols, rows, side }
-    }
+    const best = largestSquareCols(count, (cols, rows) => Math.min(cellW(W, cols, gap), cellH(H, rows, gap)))
     const side = Math.floor(best.side)
     // ONE floor for both edges — a square cell clamped per-axis would stop being square. Below it,
     // stop trying to fit the height: take the columns from the width and let the rows flow down.

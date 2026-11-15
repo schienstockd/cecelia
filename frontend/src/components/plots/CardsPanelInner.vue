@@ -24,6 +24,8 @@ import type { Frame, FrameCell } from '../../plots/frame'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { PAPER } from '../../plots/fixedColours'
+import { fitGridCols, type GridFit } from '../../plots/montage'
+import { useBoxSize } from '../../composables/usePlotResize'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]
@@ -217,12 +219,19 @@ function timeLabelFor(c: Card): string | undefined {
   return `${m}:${String(rem).padStart(2, '0')}`
 }
 
-// Board slots must not scroll — same rule as the gating-strategy tile: pick a column count that
-// fits N cards into the slot without wrapping past it, and let grid rows share the available height.
+// Board slots must not scroll — same rule as the gating-strategy tile: the column count is the one
+// that gives each card's (letterboxed, ~square) image the largest square in THIS slot, so three cards
+// in a wide, short panel sit in a row rather than a 2 × 2 with an empty corner. Grid rows share the
+// height. The card's chrome is its borders + the footer (name row + up to 6 stat rows).
+const gridBox = useBoxSize(useTemplateRef<HTMLElement>('gridRef'))
+const cardFit = computed<GridFit>(() => {
+  const rows = Math.min(6, Math.max(0, ...cards.value.map(c => c.stats.length)))
+  return { gap: 8, pad: 0, chromeW: 6, chromeH: 6 + 12 + 20 + rows * 17 }   // .cc-card 1px + frame 2px borders
+})
 const gridStyle = computed(() => {
   const n = cards.value.length
   if (!n) return {}
-  const cols = Math.max(1, Math.ceil(Math.sqrt(n)))
+  const cols = fitGridCols(n, gridBox.value.w, gridBox.value.h, cardFit.value)
   return {
     gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
     gridAutoRows: 'minmax(0, 1fr)',
@@ -315,7 +324,7 @@ useVisualPanel(
     <p v-else-if="needShownPops && !(shownPops && shownPops.length)" class="cc-muted">{{ family.emptyNoShownPops }}</p>
     <p v-else-if="!cards.length && !loading" class="cc-muted">No cards yet.</p>
 
-    <div v-else class="ccv-grid" :style="gridStyle">
+    <div v-else ref="gridRef" class="ccv-grid" :style="gridStyle">
       <div v-for="c in cards" :key="c.path" class="cc-card ccv-card"
            :class="{ 'ccv-card--claude': claudeCardPaths.has(c.path) }">
         <div class="ccv-frame" :style="{ borderColor: c.colour }">
