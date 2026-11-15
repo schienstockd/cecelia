@@ -325,6 +325,18 @@ export function findParamByKey(params: ParamDef[] | undefined, key: string): Par
   return undefined
 }
 
+/** The key of the form's SEGMENTATION picker — a `valueNameSelection` over label sets. Not just any
+ *  `valueNameSelection`: spatial tasks' `graphSuffix` lists neighbour graphs (`spatialGraphs`), and an
+ *  image-version picker (`filepaths`) names an image — neither is a segmentation. */
+export function segmentationKey(params: ParamDef[] | undefined): string | undefined {
+  for (const p of params ?? []) {
+    if (p.type === 'valueNameSelection' && (p.field === 'labelPropsNames' || p.field === 'labels')) return p.key
+    const nested = segmentationKey(p.params)
+    if (nested) return nested
+  }
+  return undefined
+}
+
 /** The segmentation a measure/population picker is scoped to, given the whole form. */
 export function scopeValueName(
   params: ParamDef[] | undefined,
@@ -339,12 +351,37 @@ export function scopeValueName(
     const idx = first.indexOf('/')
     if (idx > 0) return first.slice(0, idx)
   }
-  // 2. an explicit sibling segmentation picker
-  const vnKey = siblingKeyOfType(params, 'valueNameSelection')
+  // 2. an explicit sibling segmentation picker (not a graph or image-version picker)
+  const vnKey = segmentationKey(params)
   const vn = vnKey ? values?.[vnKey] : undefined
   if (typeof vn === 'string' && vn) return vn
   // 3. the image's first label set — a guess, and the reason 1 and 2 are tried by type first
   return labelKeys[0] ?? 'default'
+}
+
+/** A multi-select population picker's value as its list of segmentation-prefixed refs. A run saved
+ *  while the picker took ONE value holds a string — `"NONE"` (the whole segmentation) or a bare path
+ *  (`"/qc/OTI"`, on the form's segmentation `vn`) — which reads as the chip it means, so the form shows
+ *  what the run would do and the first click adds to it rather than dropping it. A bare path inside a
+ *  list (a hand-edited or agent-authored chain) is on `vn` too, as the backend's `_split_pop_ref` reads it. */
+export function popRefList(value: unknown, vn: string): string[] {
+  const one = (v: string) => (v.startsWith('/') ? `${vn}${v}` : v)
+  if (Array.isArray(value)) return value.map(v => one(String(v)))
+  if (typeof value !== 'string' || value === '' || value === 'NONE') return []
+  return [one(value)]
+}
+
+/** The chips a population picker shows as selected. With a Segmentation param beside it (tracking),
+ *  a bare path or an old single-picker string is on THAT segmentation (`popRefList`), as the backend
+ *  reads it against `valueName`. Without one (HMM, clustering), a bare path's segmentation is the
+ *  image's active one, which the form doesn't know — so a list is shown as stored, unchanged. */
+export function popChipValues(params: ParamDef[] | undefined, values: ParamValues | undefined,
+                              value: unknown): string[] {
+  const segKey = segmentationKey(params)
+  const vn = segKey ? values?.[segKey] : undefined
+  if (typeof vn === 'string' && vn) return popRefList(value, vn)
+  if (Array.isArray(value)) return value.map(String)
+  return typeof value === 'string' && value !== '' && value !== 'NONE' ? [value] : []
 }
 
 /** The SET of segmentations behind a picker's currently selected pops — deduped, first-seen order.

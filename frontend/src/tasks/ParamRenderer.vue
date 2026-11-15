@@ -20,7 +20,7 @@ import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { autoValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, scopeValueNames, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
+         scopeValueName, scopeValueNames, siblingKeyOfType, popChipValues, segmentationKey, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
 import { openViewerWindow } from '../utils/viewerWindow'
@@ -388,7 +388,7 @@ const popOptionsShown = computed(() => singlePopOptions(popOptions.value, props.
   scopeValueName(props.context?.params, props.context?.values, Object.keys(props.context?.images?.[0]?.labels ?? {})),
   val.value === 'NONE' ? null : val.value))
 const popMultiGroupsShown = computed(() => prospectivePopGroups(popMultiGroups.value,
-  props.context?.extraPops ?? [], props.param.accepts, val.value))
+  props.context?.extraPops ?? [], props.param.accepts, chipArr()))   // a legacy one-string value as its chip
 
 // reload when the image or the chosen segmentation changes
 watch(() => [props.context?.images?.[0]?.uid,
@@ -399,7 +399,11 @@ watch(() => [props.context?.images?.[0]?.uid,
 // Multi-select chip lists (pops / measure cols / channels) all edit the same flat string[] `val`.
 // A GROUPED list edits only its own slice, so on update merge the group's new selection back with the
 // other groups' selections, reconstructed in the full option order so the array stays stable.
-function chipArr(): string[] { return Array.isArray(val.value) ? (val.value as string[]) : [] }
+function chipArr(): string[] {
+  if (props.param.type === 'popSelection')   // an old single-picker value reads as its chip
+    return popChipValues(props.context?.params, props.context?.values, val.value)
+  return Array.isArray(val.value) ? (val.value as string[]) : []
+}
 function chipGroupSel(groupValues: string[]): string[] { const cur = chipArr(); return groupValues.filter(v => cur.includes(v)) }
 function chipGroupUpdate(allValues: string[], groupValues: string[], next: string[]) {
   const keep = new Set([...chipArr().filter(v => !groupValues.includes(v)), ...next])
@@ -489,7 +493,7 @@ async function loadCols() {
 // them `pops`), and hardcoding `values.pops` here meant the picker never re-fired when the pops it
 // actually depends on changed.
 const popKey = computed(() => siblingKeyOfType(props.context?.params, 'popSelection'))
-const vnKey = computed(() => siblingKeyOfType(props.context?.params, 'valueNameSelection'))
+const vnKey = computed(() => segmentationKey(props.context?.params))   // as scopeValueName reads it
 watch(() => [props.context?.images?.[0]?.uid,
              props.context?.images?.[0]?.channelNames?.join('|'),
              vnKey.value ? props.context?.values?.[vnKey.value] : undefined,

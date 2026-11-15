@@ -81,11 +81,7 @@ Base.@kwdef struct MotifDiscoveryParams
     resolutionLocked::Bool = false
 end
 
-function _motif_pops(params)::Vector{String}
-    raw  = get(params, "pops", String[])
-    pops = raw isa AbstractString ? String[raw] : String[string(x) for x in raw]
-    filter(p -> !isempty(p) && p != "NONE", pops)
-end
+_motif_pops(params)::Vector{String} = _str_list(params, "pops")
 
 function parse_motif_discovery_params(d::AbstractDict)::MotifDiscoveryParams
     MotifDiscoveryParams(;

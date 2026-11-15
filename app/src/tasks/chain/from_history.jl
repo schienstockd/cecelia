@@ -149,12 +149,17 @@ function _history_products(params::Dict{String,Any}, lv)
     sets = _history_pop_sets(params, lv)
     for (k, l) in lv
         v = get(params, k, nothing)
-        v isa AbstractString || continue
-        for c in l.columns, ls in (isempty(sets) ? [""] : sets)
-            push!(cols, (ls, replace(c, "{}" => v)))
+        # a picker's value: one string, or a multi-select's list (tracking several pops in one run)
+        vs = v isa AbstractString ? String[v] :
+             v isa AbstractVector ? String[string(x) for x in v if x isa AbstractString && !isempty(x)] : nothing
+        vs === nothing && continue
+        for x in vs, c in l.columns, ls in (isempty(sets) ? [""] : sets)
+            push!(cols, (ls, replace(c, "{}" => x)))
         end
-        if !isempty(l.yields)
-            ls, path = _whole_pop(v) ? (own, "") : _split_pop_ref(v, own)
+        isempty(l.yields) && continue
+        # an empty list — like "NONE" or the all-cells root — is the whole segmentation
+        for x in (isempty(vs) ? ["NONE"] : vs)
+            ls, path = _whole_pop(x) ? (own, "") : _split_pop_ref(x, own)
             push!(pops, (ls, rstrip(path, '/'), l.yields))
         end
     end

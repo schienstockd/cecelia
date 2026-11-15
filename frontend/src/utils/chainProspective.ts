@@ -7,6 +7,7 @@
 import type { ParamDef, ParamValues } from '../tasks/types'
 import type { PopGroupDef, PopOption } from './popGroups'
 import { isTrackPopType } from './measureGroups'
+import { popRefList } from '../tasks/paramValues'
 
 /** A population an upstream node will make: `kind` is the picker family that lists it. */
 export interface ProspectivePop { valueName: string; path: string; kind: 'live' | 'track' }
@@ -39,9 +40,15 @@ export function prospectivePops(nodes: readonly { fn: string; params?: ParamValu
     }
     walkParams(defOf(n.fn)?.params, p => {
       if (!p.producesPop) return
-      const v = String(params[p.key] ?? p.default ?? '')
-      const base = WHOLE.has(v) ? '' : v.replace(/\/+$/, '')
-      out.push({ valueName: vn, path: `${base}/${p.producesPop}`, kind: 'track' })
+      // one value (a run saved by the single picker: "NONE", "/qc/OTI") or the multi picker's list of
+      // segmentation-prefixed refs ("Tcells/qc/OTI", all-cells "Tcells/"); nothing picked = whole
+      const refs = popRefList(params[p.key] ?? p.default ?? '', vn).filter(v => v !== '')
+      for (const ref of refs.length ? refs : [`${vn}/`]) {
+        const slash = ref.indexOf('/')
+        const [rvn, path] = slash < 0 ? [vn, ref] : [ref.slice(0, slash), ref.slice(slash)]
+        const base = WHOLE.has(path) ? '' : path.replace(/\/+$/, '')
+        out.push({ valueName: rvn, path: `${base}/${p.producesPop}`, kind: 'track' })
+      }
     })
   }
   const seen = new Set<string>()

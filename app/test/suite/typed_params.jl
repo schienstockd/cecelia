@@ -281,7 +281,7 @@ end
             "lambdaBranch"   => 100,
             "thetaDist"      => 7.5))
         @test p.valueName == "corrected"
-        @test p.popsToTrack == "T/tracked"
+        @test p.popsToTrack == ["T/tracked"]         # a saved single-select string reads as a list
         @test p.maxSearchRadius === 30
         @test p.maxLost === 5
         @test p.trackBranching === true
@@ -291,10 +291,30 @@ end
         @test p.thetaDist === 7.5
     end
     let p = Cecelia.parse_bayesian_tracking_params(Dict{String,Any}())
-        @test p.popsToTrack == "NONE"                # default = track whole segmentation
+        @test p.popsToTrack == String[]              # default = track whole segmentation
         @test p.maxSearchRadius === 20
         @test p.noiseInital === 300                  # historical spelling preserved
         @test p.thetaDist === 5.0
+    end
+
+    # popsToTrack: the canonical picker's prefixed refs, and what older saved runs/chains hold
+    # ("NONE" or one unprefixed path). "NONE"/"" are the whole segmentation, so they drop out.
+    let parse(v) = Cecelia.parse_bayesian_tracking_params(Dict{String,Any}(
+                        "valueName" => "Tcells", "popsToTrack" => v)).popsToTrack
+        @test parse("NONE") == String[]
+        @test parse(Any[]) == String[]
+        @test parse("/qc/OTI") == ["/qc/OTI"]
+        @test parse(Any["Tcells/qc/OTI", "Tcells/qc/non-OTI/gBT", "", "Tcells/qc/OTI"]) ==
+              ["Tcells/qc/OTI", "Tcells/qc/non-OTI/gBT"]
+    end
+    # …split against the run's segmentation: paths, `String[]` = whole segmentation, or an error
+    let t(refs) = Cecelia._tracking_targets(String.(refs), "Tcells")
+        @test t(String[]) == String[]
+        @test t(["/qc/OTI"]) == ["/qc/OTI"]                       # unprefixed (old saved run)
+        @test t(["Tcells/qc/OTI", "Tcells/qc/gBT"]) == ["/qc/OTI", "/qc/gBT"]
+        @test t(["Tcells/"]) == String[]                          # the all-cells root
+        @test occursin("on segmentation 'Other'", t(["Other/qc"]))
+        @test occursin("overlaps every other pick", t(["Tcells/", "Tcells/qc"]))
     end
 
     # TrackCorrect — the parser delegates `trackOps` to `parse_track_ops` (the same helper that

@@ -3,7 +3,7 @@ import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName, autoValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
-  showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType,
+  showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType, popRefList, segmentationKey,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
   paramAppliesToImages, resolveParamTip, findParamByKey, clampParamsToSpec } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
@@ -514,11 +514,20 @@ describe('scopeValueName', () => {
   })
 
   it('falls back to a sibling valueNameSelection, then to the first label set', () => {
-    const def = [{ key: 'seg', type: 'valueNameSelection' },
+    const def = [{ key: 'seg', type: 'valueNameSelection', field: 'labelPropsNames' },
                  { key: 'cols', type: 'labelPropsColsSelection' }] as unknown as ParamDef[]
     expect(scopeValueName(def, { seg: 'C' }, ['A', 'B'])).toBe('C')
     expect(scopeValueName(def, {}, ['A', 'B'])).toBe('A')
     expect(scopeValueName(def, {}, [])).toBe('default')
+  })
+
+  it('a neighbour-graph or image picker is not the segmentation', () => {
+    const graph = [{ key: 'graphSuffix', type: 'valueNameSelection', field: 'spatialGraphs' },
+                   { key: 'pops', type: 'popSelection', multiple: true }] as unknown as ParamDef[]
+    expect(scopeValueName(graph, { graphSuffix: 'cellsGraph', pops: [] }, ['A', 'B'])).toBe('A')
+    const image = [{ key: 'valueName', type: 'valueNameSelection' }] as unknown as ParamDef[]
+    expect(segmentationKey(image)).toBeUndefined()
+    expect(segmentationKey([{ key: 'v', type: 'valueNameSelection', field: 'labels' }] as unknown as ParamDef[])).toBe('v')
   })
 
   it('a root-relative population carries no segmentation prefix', () => {
@@ -526,7 +535,7 @@ describe('scopeValueName', () => {
   })
 
   it('finds a sibling nested in a section — sub-values are stored flat', () => {
-    const def = [{ key: 'adv', type: 'section', params: [{ key: 'seg', type: 'valueNameSelection' }] }
+    const def = [{ key: 'adv', type: 'section', params: [{ key: 'seg', type: 'valueNameSelection', field: 'labels' }] }
                 ] as unknown as ParamDef[]
     expect(siblingKeyOfType(def, 'valueNameSelection')).toBe('seg')
     expect(scopeValueName(def, { seg: 'C' }, ['A'])).toBe('C')
@@ -978,5 +987,23 @@ describe('stored numbers are clamped to the CURRENT spec range', () => {
     expect(clampParamsToSpec(def, node)).toEqual(
       { cellDiameter: 60, extra: 500, adv: { iters: 10 }, iters: 10, models: { a: { size: 1 } } })
     expect(node.cellDiameter).toBe(99)   // input not mutated
+  })
+})
+
+describe('popRefList — a multi pop picker reads a value saved by the single picker', () => {
+  it('keeps a list of prefixed refs as it is', () => {
+    expect(popRefList(['Tcells/qc/OTI', 'Tcells/'], 'Tcells')).toEqual(['Tcells/qc/OTI', 'Tcells/'])
+  })
+  it('prefixes a bare path inside a list too', () => {
+    expect(popRefList(['/qc/OTI', 'Bcells/qc'], 'Tcells')).toEqual(['Tcells/qc/OTI', 'Bcells/qc'])
+  })
+  it('reads "NONE" and empty as nothing picked (the whole segmentation)', () => {
+    expect(popRefList('NONE', 'Tcells')).toEqual([])
+    expect(popRefList('', 'Tcells')).toEqual([])
+    expect(popRefList(undefined, 'Tcells')).toEqual([])
+  })
+  it('prefixes a bare path with the form\'s segmentation', () => {
+    expect(popRefList('/qc/OTI', 'Tcells')).toEqual(['Tcells/qc/OTI'])
+    expect(popRefList('Bcells/qc', 'Tcells')).toEqual(['Bcells/qc'])
   })
 })

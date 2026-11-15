@@ -5,7 +5,7 @@
   "purpose": "Link segmented cells across frames into tracks",
   "useWhen": [
     "Time-lapse with cells segmented on every frame",
-    "Track only a gated population, e.g. with debris gated out"
+    "Track only gated populations, e.g. with debris gated out, each on its own"
   ],
   "notWhen": [
     "Tracks without speed or angle: use Bayesian track + measures",
@@ -31,12 +31,14 @@
     },
     {
       "key": "popsToTrack",
-      "label": "Population",
+      "label": "Populations",
       "type": "popSelection",
       "accepts": ["live"],
       "producesPop": "_tracked",
-      "default": "NONE",
-      "tip": "Track the whole segmentation (NONE) or only the cells of a gated flow population"
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Each tracked on its own; none picked tracks the whole segmentation"
     },
     {
       "key": "maxSearchRadius",

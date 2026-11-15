@@ -56,6 +56,18 @@ def _pops_tracked(vn: str, pop: str) -> list[list[str]]:
     return [[f"{vn}/{path}/_tracked"], [f"{vn}/{path}"]]
 
 
+def _pops_tracked_all(vn: str, pops: list[str]) -> list[list[str]]:
+    """`_pops_tracked` over several tracked pops: candidate i lists every pop's i-th candidate. A pop
+    is a picker ref — segmentation-prefixed (`"T/qc"`, all-cells `"T/"`) or, in older runs, a bare path."""
+    def split(ref: str) -> tuple[str, str]:
+        if ref == "root" or ref.startswith("/"):
+            return vn, ref
+        pvn, _, path = ref.partition("/")
+        return pvn, path or "root"
+    per_pop = [_pops_tracked(*split(pop)) for pop in pops]
+    return [sum((c[i] for c in per_pop), []) for i in range(2)]
+
+
 def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
     """[(label, candidate plot lists)] — the expander picks the first candidate the project accepts."""
     p = (units[0].get("params") or {}) if units else {}
@@ -68,11 +80,14 @@ def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
              "title": "Cells per frame"},
             {"plot": "segmentation_qc", "chart": "boxplot", "measure": "area", "pops": pops, "title": "Cell area"}]])]
     if stage == "track":
-        vn, pop = p.get("valueName") or "default", p.get("popsToTrack") or "root"
+        vn, raw = p.get("valueName") or "default", p.get("popsToTrack")
+        # a list since tracking takes several pops (empty = whole segmentation); a string ("NONE" or
+        # one path) in runs recorded before that
+        tracked = [s for s in ([raw] if isinstance(raw, str) else (raw or [])) if s and s != "NONE"] or ["root"]
         return [("Tracks", [[
             {"plot": "track_measures", "chart": "boxplot", "measure": "live.track.speed", "pops": c},
             {"plot": "track_measures", "chart": "boxplot", "measure": "live.track.straightness", "pops": c},
-            {"plot": "trackPaths", "pops": c}] for c in _pops_tracked(vn, pop)])]
+            {"plot": "trackPaths", "pops": c}] for c in _pops_tracked_all(vn, tracked)])]
     if stage == "hmm":
         col = p.get("colName") or "default"
         raw = (p.get("pops") or ["default/"])[0]

@@ -200,8 +200,11 @@ Concrete scenario (the maintainer, `fXgbTl`, 2026-09-01):
 
 ## Non-goals
 
-- **No new tracking task.** One `bayesian_tracking` invocation still tracks one pop or the whole
-  segmentation, as today. The user runs it multiple times.
+- **No new tracking task.** One `bayesian_tracking` invocation tracks the whole segmentation or
+  one or more pops. (2026-11-15: the picker became the canonical multi-select (prefixed refs, pops of the
+  Segmentation only), and the
+  handler runs btrack once per picked pop — the same as running the task once per pop, each under
+  its own `track_source`. Overlapping picks are refused up front.)
 - **No run-level provenance.** `track_source` is *pop-level* (which pop authored a row's
   `track_id`), not *run-level* (which invocation). Two runs of pop X still identify as `X`, and
   the second replaces the first — that is the point. If a downstream feature ever needs

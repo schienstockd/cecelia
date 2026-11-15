@@ -401,6 +401,7 @@ include("tasks/gate/manual_gate.jl")
 include("tasks/segment/import_labels.jl")
 include("tasks/segment/correct.jl")     # manual label correction — pairs with `label_correction.jl`
 include("tasks/segment/carry_over.jl")  # obs carry-over across measureLabels in the correction composite
+include("tasks/tracking/bayesian_tracking_steps.jl")
 include("tasks/tracking/bayesian_tracking.jl")
 include("tasks/tracking/track_measures.jl")
 include("tasks/tracking/correct.jl")
