@@ -6,7 +6,8 @@
 # run or label set made FROM a shown label set is a different result, so it only counts when shown; a
 # step run on populations counts when one of them is a shown population or above/below one (tracking
 # `/qc/cells` is what a `/qc/cells/_tracked` plot drew; tracking `/qc/frags` is not). Then everything
-# upstream of a seed, wired as the chain wires (`_reads_output`). Each row says which: `made` what is
+# upstream of a seed, wired as the chain wires (`_reads_made`: named outputs, derived populations,
+# declared columns). Each row says which: `made` what is
 # shown, or only `ran on` the shown cells (see `_history_scope`). Imports stay: every image starts
 # there. A gated population has no run of its own — its label set's steps are the answer.
 
@@ -71,8 +72,9 @@ end
 """
 `groups` index → relation, for the lineage of the `shown` label sets + `runs` (see the section
 comment): `"made"` = wrote what is shown, or fed a step that did; `"ran on"` = ran on the shown cells
-(and its own inputs). No task declares the measures it writes, so which "ran on" step a given plot
-reads is not knowable here — the column says the weaker thing instead of guessing. Also returns
+(and its own inputs). Only some tasks declare the columns they write (`producesColumns`), so which
+"ran on" step a given plot reads is not knowable here — the column says the weaker thing instead of
+guessing; the upstream walk does follow a declared column (clustering → the HMM it read). Also returns
 what is shown that no step wrote, as `(what, task prefix)`.
 """
 function _history_scope(groups, leaves_of, shown::Dict{String,Vector{String}}, runs)
@@ -80,11 +82,13 @@ function _history_scope(groups, leaves_of, shown::Dict{String,Vector{String}}, r
         lr = argmax(r -> r.at, collect(values(by_img)))
         out, ns = _history_output(fn, lr.params, leaves_of(fn))
         lv = something(leaves_of(fn), Dict{String,_HistoryLeaf}())
+        columns, pops = _history_products(lr.params, lv)
         # by current key (`formerKeys`), as `chain_from_history`'s steps are: the leaf lookups below use it
-        (; fn, params = _history_current_params(lr.params, lv), at = lr.at, out, ns, lv)
+        (; fn, params = _history_current_params(lr.params, lv), at = lr.at, out, ns, lv,
+           output = out, output_ns = ns, columns, pops)
     end
     # the chain's edge rule, except that the raw `default` version counts: the table keeps the import
-    reads(b, a) = a != b && !isempty(a.out) && a.at <= b.at && _reads_output(b.params, b.lv, a.out, a.ns)
+    reads(b, a) = a != b && a.at <= b.at && _reads_made(b.params, b.lv, a)
     made(s) = startswith(s.fn, "importImages.") ||
               (s.ns == "labels" && haskey(shown, s.out)) ||
               any(r -> s.ns == r[1] && s.out == r[2] && startswith(s.fn, r[3]), runs)

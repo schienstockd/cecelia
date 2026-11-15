@@ -1,7 +1,8 @@
 # ── Chain from history (tasks/chain/from_history.jl) ──────────────────────
 # Fixtures are REAL run-log rows (test-data/run-logs/), copied from two dev projects' histories:
 # zolIMa (MERTK; UMq4v3 = the one image run end to end, x4E5HU = drift/denoise trial and error) and
-# 4kS67f (B vs T; two images whose spatial steps ran as one set-scope run).
+# 4kS67f (B vs T; two images whose spatial steps ran as one set-scope run) and RFtn9f (T cells; TKufLV
+# = segment → gate → tracking ×3 → an HMM sweep → track clustering on one of the sweep's versions).
 
 function _history_project(logs::Pair{String,String}...)
     proj = create_project!(name = "history-$(rand(1000:9999))")
@@ -34,7 +35,8 @@ _hedge(r, from, to) = any(e -> e["from"] == from && e["to"] == to, r["template"]
     @test gate["params"]["requiredPops"] == "/qc/cells, /qc/frags"
     @test gate["params"]["copyFrom"] == uids["u"]
     @test _hedge(r, seg["id"], "gate.Bcells")
-    @test all(t -> _hedge(r, "gate.Bcells", t["id"]) && _hedge(r, seg["id"], t["id"]), trk)
+    # tracking reads the segmentation through the gate: segment → gate → tracking, no shortcut edge
+    @test all(t -> _hedge(r, "gate.Bcells", t["id"]) && !_hedge(r, seg["id"], t["id"]), trk)
     # training: the model exists, so it is reused, not retrained
     @test r["reusedModels"] == [Dict{String,Any}("fn" => "opticalFlow.train", "model" => "flow.small")]
     @test isempty(_hnode(r, "opticalFlow.train"))
@@ -47,6 +49,65 @@ _hedge(r, from, to) = any(e -> e["from"] == from && e["to"] == to, r["template"]
     # the template only fails validation on the model, which this test install's vault lacks
     @test !r["valid"] && occursin("flow.small.pt", r["error"])
     rm(proj.root; recursive = true)
+end
+
+@testset "Chain from history — RFtn9f TKufLV: tracking → HMM → clustering, the sweep version it read" begin
+    proj, uids = _history_project("t" => "RFtn9f_TKufLV")
+    r = chain_from_history(proj, [uids["t"]])
+    seg = only(_hnode(r, "segment.cellposeMeasure"))
+    trk = _hnode(r, "tracking.bayesian_track_measures")
+    @test sort([t["params"]["popsToTrack"] for t in trk]) == ["/qc/OTI", "/qc/non-OTI/P14", "/qc/non-OTI/gBT"]
+    # the HMM sweep (movement_2 … movement_6) is one version per column name, not one step where the
+    # newest wins: clustering read movement_3, so movement_3 is the HMM step the chain runs
+    hmm_finals = [f for f in r["finalOutputs"] if f["fn"] == "behaviour.hmm"]
+    @test sort([f["detail"] for f in hmm_finals]) == ["movement_2", "movement_4", "movement_5", "movement_6"]
+    @test all(f -> !f["multi"] && f["siblingRead"], hmm_finals)
+    @test length(unique(f["inputsKey"] for f in hmm_finals)) == 1   # one sweep: the dialog's one pick
+    clu = only(f for f in r["finalOutputs"] if f["fn"] == "clustTracks.cluster")
+    @test !clu["siblingRead"]
+    r = chain_from_history(proj, [uids["t"]]; keep = [clu["id"]])
+    hmm = only(_hnode(r, "behaviour.hmm"))
+    @test hmm["params"]["colName"] == "movement_3"
+    clust = only(_hnode(r, "clustTracks.cluster"))
+    # wiring follows the work: segment → gate → each tracking → HMM (reads `Tcells/qc/…/_tracked`) →
+    # clustering (reads `live.cell.hmm.state.movement_3`); no shortcut from the segmentation
+    @test _hedge(r, seg["id"], "gate.Tcells")
+    @test all(t -> _hedge(r, "gate.Tcells", t["id"]) && _hedge(r, t["id"], hmm["id"]), trk)
+    @test _hedge(r, hmm["id"], clust["id"])
+    @test !any(e -> e["from"] == seg["id"] && e["to"] != "gate.Tcells", r["template"]["edges"])
+    @test length(r["template"]["edges"]) == 1 + 1 + 3 + 3 + 1   # drift→seg, seg→gate, gate→trk, trk→hmm, hmm→clust
+    rm(proj.root; recursive = true)
+end
+
+@testset "Chain from history — one HMM column name on two label sets is two steps" begin
+    # a later HMM on Bcells reuses the name movement_3: both runs' columns are on disk, in different
+    # label sets, so both replay — and clustering on Tcells stays wired to the Tcells one
+    proj, uids = _history_project("t" => "RFtn9f_TKufLV")
+    img = init_object(proj.uid, uids["t"])
+    log = read_run_log(img)
+    hmm = deepcopy(last(e for e in log if e["fun"] == "behaviour.hmm" && e["params"]["colName"] == "movement_3"))
+    hmm["params"]["pops"] = ["Bcells/_tracked"]
+    hmm["at"] = "2026-11-15T15:30:00"
+    push!(log, hmm)
+    write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+    r = chain_from_history(proj, [uids["t"]])
+    clu = only(f for f in r["finalOutputs"] if f["fn"] == "clustTracks.cluster")
+    bc = only(f for f in r["finalOutputs"] if f["fn"] == "behaviour.hmm" && f["detail"] == "movement_3")
+    r = chain_from_history(proj, [uids["t"]]; keep = [clu["id"], bc["id"]])
+    hmms = _hnode(r, "behaviour.hmm")
+    @test length(hmms) == 2
+    t_hmm = only(h for h in hmms if any(startswith("Tcells/"), h["params"]["pops"]))
+    clust = only(_hnode(r, "clustTracks.cluster"))
+    @test _hedge(r, t_hmm["id"], clust["id"]) && !_hedge(r, bc["id"], clust["id"])
+    rm(proj.root; recursive = true)
+end
+
+@testset "producesColumns spells the HMM columns the readers use" begin
+    for (f, prefix) in (("hmm_states", Cecelia._HMM_STATE_PREFIX), ("hmm_transitions", Cecelia._HMM_TRANS_PREFIX))
+        spec = JSON3.read(read(joinpath(pkgdir(Cecelia), "src", "tasks", "behaviour", f * ".json"), String))
+        col = only(p for p in spec.params if get(p, :key, "") == "colName")
+        @test col.producesColumns == [prefix * "{}"]
+    end
 end
 
 @testset "Chain from history — zolIMa x4E5HU: trial and error resolves to what is on disk" begin
@@ -198,7 +259,7 @@ end
 
 @testset "Chain from history — a renamed input picker keys one step, not two" begin
     lv = Dict{String,Cecelia._HistoryLeaf}(
-        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["oldInput"]))
+        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["oldInput"], columns = String[], yields = ""))
     old = Cecelia._history_inputs(Dict{String,Any}("oldInput" => "denoised"), lv)
     new = Cecelia._history_inputs(Dict{String,Any}("inputName" => "denoised"), lv)
     @test old == new == "inputName=\"denoised\""
@@ -207,7 +268,7 @@ end
           Dict{String,Any}("inputName" => "b")
     # two former spellings saved: the first listed wins, as `_stored_key` says — not Dict order
     lv2 = Dict{String,Cecelia._HistoryLeaf}(
-        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["older", "old"]))
+        "inputName" => (; type = "valueNameSelection", ns = "", writes = false, accepts = String[], former = ["older", "old"], columns = String[], yields = ""))
     for p in (Dict{String,Any}("old" => "b", "older" => "a"), Dict{String,Any}("older" => "a", "old" => "b"))
         @test Cecelia._history_current_params(p, lv2) == Dict{String,Any}("inputName" => "a")
     end

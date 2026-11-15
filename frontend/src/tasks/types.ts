@@ -80,6 +80,11 @@ export interface ParamDef {
   // param when its own key is absent — in the form (`buildParamValues`) and in a run
   // (`_apply_spec_defaults`), so old funParams and chains keep their value. See docs/MODULES.md.
   formerKeys?: string[]
+  // What a task makes without naming it, read by chain-from-history's wiring (docs/MODULES.md):
+  // a population picker's derived pop (`"_tracked"` → `<label set><pop>/_tracked`) and the cell-table
+  // columns a name param writes (`{}` = its value).
+  producesPop?: string
+  producesColumns?: string[]
   showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
                         | { endsWith?: string | string[]; notEndsWith?: string | string[];
                             minItems?: number; equals?: string }>

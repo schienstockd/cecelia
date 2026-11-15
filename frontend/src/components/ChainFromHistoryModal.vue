@@ -160,7 +160,7 @@ function open() {
       <template v-if="suggestion">
         <label class="cc-eyebrow" v-tooltip.top="'Which version of each step to repeat'">Steps</label>
         <div class="cfh-steps">
-          <div v-for="g in steps" :key="g.fn" class="cfh-step">
+          <div v-for="g in steps" :key="g.key" class="cfh-step">
             <span class="cfh-step-label">{{ g.label }}</span>
             <!-- one version: keep it or not -->
             <label v-if="g.versions.length === 1" class="cc-row-group cfh-version"

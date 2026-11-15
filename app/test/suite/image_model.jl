@@ -499,7 +499,7 @@ end
     # (it used to come back "" — a correct name in no namespace)
     hl = Dict{String,Cecelia._HistoryLeaf}("renamedSuffix" =>
         (; type = "valueNameInput", ns = "clusters", writes = true, accepts = String[],
-           former = ["valueNameSuffix"]))
+           former = ["valueNameSuffix"], columns = String[], yields = ""))
     @test Cecelia._history_output("clustPops.cluster", Dict{String,Any}("valueNameSuffix" => "immune"), hl) ==
           ("immune", "clusters")
     # and the leaves carry the spec's `formerKeys`
