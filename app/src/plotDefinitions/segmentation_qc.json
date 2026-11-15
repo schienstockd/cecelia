@@ -1,6 +1,7 @@
 {
   "id": "segmentation_qc",
   "label": "Segmentation QC",
+  "answers": "Did segmentation work — cell counts and shape measures (area, …) per image and over time?",
   "module": "segment",
   "family": "summary",
   "defaultOn": ["segment"],

@@ -324,6 +324,17 @@ class GetGuideTest(unittest.TestCase):
         self.assertIn("request-a-feature", guidance.BRIEFING_GUIDANCE)
         self.assertIn("feature_request.yml", server.get_guide("request-a-feature")["text"])
 
+    def test_how_to_plot_is_one_lookup(self):
+        # "how do I plot X?" — the catalogue entry names each plot's question, page and spec id, and the
+        # briefing sends Claude there
+        rows = {g["id"]: g for g in server.get_guide()["guides"]}
+        self.assertEqual("plots", rows["which-plot"]["kind"])
+        text = server.get_guide("which-plot")["text"]
+        self.assertIn("## Behaviour (`/behaviour`)", text)
+        self.assertIn("`track_cluster_frequency`", text)
+        self.assertIn("Board key `trackPaths`", text)
+        self.assertIn('get_guide("which-plot")', guidance.BRIEFING_GUIDANCE)
+
     def test_one_guide_carries_its_function(self):
         out = server.get_guide("segment-by-motion")
         self.assertIn("segment.coastalMeasure", out["text"])

@@ -419,3 +419,15 @@ end
     end
     @test n >= 1          # the field is in use (a floor, not a census)
 end
+
+# "How do I plot X?" is answered by matching the question to a plot — in the app's guide text an agent
+# reads (get_guide("which-plot"), built by frontend/src/lib/guides/plotCatalogue.ts from these specs).
+# A spec without the question it answers is a plot no one is pointed to.
+@testset "every plot spec says which question it answers" begin
+    root = joinpath(dirname(dirname(pathof(Cecelia))), "src", "plotDefinitions")
+    for f in filter(endswith(".json"), readdir(root))
+        spec = JSON3.read(read(joinpath(root, f), String), Dict{String,Any})
+        a = get(spec, "answers", nothing)
+        @test a isa AbstractString && endswith(strip(a), "?") && length(a) <= 200
+    end
+end

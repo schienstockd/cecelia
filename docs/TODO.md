@@ -43,13 +43,15 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
-### Training run-sheet: confirm the lymphoid fixture's channel names, and the claim step
+### Training run-sheet: a processed-set fixture, and the channel names
 
-`user-docs/shots/training.ts` names FtGoJO's six channels B220-PB, XCR1-Venus, LCMV-AF594, P14-CTDR,
-CD3e-AF700, AF (the order an earlier draft used); the source carries no names, so the order needs
-checking against the scope file before the gate shot's axis labels are trusted. Step 6 of
-`user-docs/training.md` (check the claim) has no screenshot: on the fixture the claim button did not
-appear on a Population summary plot — find out whether that plot should offer a claim, then capture it.
+`user-docs/shots/training.ts` captures from one segmented image (FtGoJO), so the run-sheet can't show
+what needs several: step 1's table with several rows, step 2's verdict (needs a saved plan), step 5's
+plot across images and step 6's claim check (the ✓ shows only on a summary plot across a set of
+processed images). Move the fixture to a set of 2–3 segmented, gated images — lfGUDg, being processed
+(several cell types, not conditions) — and capture those steps, plus a closer mask shot with one good
+and one bad spot that the maintainer picks. Until then, FtGoJO's channel names (B220-PB, XCR1-Venus, …,
+the order an earlier draft used) need checking against the file: its name lists XCR1 before B220.
 
 ### Label correction leaves a segmentation's halo / nuc stores on the old ids
 

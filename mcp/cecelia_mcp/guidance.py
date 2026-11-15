@@ -104,7 +104,9 @@ built: get_analysis_boards. How the images are annotated: get_image_attributes. 
 quotes actually lives (which project, which set): find_object — one call, never a sweep over projects. The notebook/REPL \
 data-access surface: get_repl_api, and the notebooks themselves: list_notebooks, get_notebook — so \
 you can read one the user is stuck in and walk them through the fix. How the app teaches a \
-workflow — the in-app guides and whole-pipeline recipes the user follows: get_guide.{catalogue}
+workflow — the in-app guides and whole-pipeline recipes the user follows: get_guide.{catalogue} \
+"How do I plot X?": get_guide("which-plot") — match X to a plot's question, then name its page and \
+the steps; build it on a board with add_analysis_board only when they ask.
 
 WHEN AN IMAGE LOOKS OFF AND THE QUESTION IS THE ACQUISITION ("darker with depth", "noisy", "why does \
 it clip"). get_image_info has what the microscope was ASKED to do (`acquisition`: power, Bright Z, \

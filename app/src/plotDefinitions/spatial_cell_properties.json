@@ -1,6 +1,7 @@
 {
   "id": "spatial_cell_properties",
   "label": "Spatial cell measures",
+  "answers": "Per cell: distance to / contact with another population, aggregation, region composition — compared between populations or treatments?",
   "module": "spatialAnalysis",
   "family": "summary",
   "defaultOn": ["spatialAnalysis"],

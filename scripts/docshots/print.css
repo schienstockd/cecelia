@@ -38,3 +38,6 @@ td { vertical-align: top; border-bottom: .2mm solid var(--cc-surface-2); padding
 /* a composed screenshot at the width it was composed for, never wider than the column */
 img { max-width: 100%; height: auto; display: block; margin: 1mm 0 3mm; border: .3mm solid var(--cc-border); border-radius: 1.5mm; break-inside: avoid; }
 p:has(> img) { break-inside: avoid; }
+
+/* a section or step, printed whole when it fits (pdf.mjs wraps them) */
+section { break-inside: avoid; }

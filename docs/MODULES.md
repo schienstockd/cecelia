@@ -738,6 +738,12 @@ unambiguous mistake, caught before the task does its work rather than after.
 ```
 
 **`channelSelection`** — channel picker populated from image metadata. `multiple: true` for multi-channel.
+The chips are the channels **every** selected image has (`sharedChannels`); a stored name outside
+that list is neither shown nor sent — the Task Runner drops it from the run's and the preview's params,
+not the form (until the picker is edited: a click commits what is on show)
+(`pruneChannelSelections` in `frontend/src/tasks/paramValues.ts`; `channelRoles` keys too). A picker
+whose every channel is missing is not sent empty — several tasks read `[]` as "all channels" — the
+Run button is refused with "<label>: none on these images" instead.
 The submitted value is a list of channel **names**; the handler resolves them with
 `channel_indices(get(params, "channels", nothing), channel_names(img; value_name = value_name), …)`
 — 0-based, errors by name. Both helpers are mandatory (`app/CLAUDE.md` → *Channel names → indices*) and a
