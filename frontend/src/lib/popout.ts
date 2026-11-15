@@ -133,3 +133,68 @@ export function isPopoutWindow(
   const path = hash.replace(/^#/, '').split('?')[0]
   return (POPOUT_ROUTES as readonly string[]).includes(path)
 }
+
+// ── Side by side: the viewer on the right half of the screen ────────────────────────────────────────
+// A page may move and resize a window that `window.open` made (one tab, no toolbar), never a tab — so
+// the viewer popout can place ITSELF on the right half, and the main window is snapped by the user
+// (Super+← / Win+←); below 1100 px it folds its menu and panel to fit (utils/narrowLayout.ts).
+// docs/todo/GUI_LAYOUT_PLAN.md → *Narrow windows*.
+//
+// Order matters, measured on GNOME under XWayland: the window manager clamps a move
+// that would push the window off-screen. Going to the half: move, then grow. Coming back: shrink
+// first, then move — moving the big window first left it where it was. The resize lands
+// asynchronously (one read 600 ms later still saw the old size), so nothing here reads the geometry
+// back to decide anything: the state is "a placement was saved", not "the window looks snapped".
+
+export interface WinRect { x: number; y: number; w: number; h: number }
+/** `screen`, with Chrome's non-standard origin of the available area (the dock / top bar). */
+export type ScreenArea = { availLeft?: number; availTop?: number; availWidth: number; availHeight: number }
+
+/** The right half of the screen's available area — the odd pixel goes to the right half. */
+export function rightHalf(s: ScreenArea): WinRect {
+  const half = Math.floor(s.availWidth / 2)
+  return { x: (s.availLeft ?? 0) + half, y: s.availTop ?? 0, w: s.availWidth - half, h: s.availHeight }
+}
+
+/** Where the window was before it went to the half. Session storage: per window, and it survives
+ *  the viewer's hard reload on an image switch, so the second click still finds its way back. */
+const SIDE_BY_SIDE_KEY = 'cc.vw.sideBySide'
+
+/** Delay between the shrink and the move on the way back (the resize lands asynchronously). */
+export const RESTORE_MOVE_DELAY_MS = 300
+
+type PlaceableWindow = Pick<Window, 'moveTo' | 'resizeTo' | 'screenX' | 'screenY' | 'outerWidth' | 'outerHeight'>
+type KeyStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+
+function safeStore(): KeyStore | null {
+  try { return sessionStorage } catch { return null }
+}
+
+/** The placement saved before going side by side, or `null` when the window is not side by side. */
+export function savedPlacement(store: KeyStore | null = safeStore()): WinRect | null {
+  try {
+    const r = JSON.parse(store?.getItem(SIDE_BY_SIDE_KEY) ?? 'null') as WinRect | null
+    return r && [r.x, r.y, r.w, r.h].every(Number.isFinite) ? r : null
+  } catch { return null }
+}
+
+/** Put the window on the right half, or back where it was. Returns the new state (true = side by
+ *  side). Call it from a click; a window the browser will not move just stays put. */
+export function toggleSideBySide(
+  win: PlaceableWindow = window, area: ScreenArea = screen as ScreenArea,
+  store: KeyStore | null = safeStore(),
+): boolean {
+  const back = savedPlacement(store)
+  if (back) {
+    try { store?.removeItem(SIDE_BY_SIDE_KEY) } catch { /* the window still goes back */ }
+    win.resizeTo(back.w, back.h)
+    setTimeout(() => win.moveTo(back.x, back.y), RESTORE_MOVE_DELAY_MS)
+    return false
+  }
+  const was: WinRect = { x: win.screenX, y: win.screenY, w: win.outerWidth, h: win.outerHeight }
+  try { store?.setItem(SIDE_BY_SIDE_KEY, JSON.stringify(was)) } catch { /* no way back, still placed */ }
+  const to = rightHalf(area)
+  win.moveTo(to.x, to.y)
+  win.resizeTo(to.w, to.h)
+  return true
+}

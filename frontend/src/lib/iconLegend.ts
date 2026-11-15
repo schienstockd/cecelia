@@ -194,6 +194,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-equals', lucide: 'equal', means: 'Stacked in a column' },
       { icon: 'pi-window-maximize', lucide: 'maximize-2', means: 'Fill the window' },
       { icon: 'pi-window-minimize', lucide: 'minimize-2', means: 'Back to its own size' },
+      { icon: 'pi-side-by-side', lucide: 'panel-right', means: 'Put this window on the right half of the screen, beside the main window' },
       { icon: 'pi-directions', lucide: 'navigation', means: 'Direction of movement' },
       { icon: 'pi-locate', lucide: 'locate', means: 'Open it at its source — the image and the view it came from' },
     ],

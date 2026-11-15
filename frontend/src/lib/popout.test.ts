@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { POPOUT_ROUTES, POPOUT_WINDOW_NAMES, popoutUrl, popoutRouteOfWindow, isPopoutWindow, nameMainWindow, mainWindowUrl, MAIN_WINDOW_NAME } from './popout'
+import { describe, it, expect, vi } from 'vitest'
+import { POPOUT_ROUTES, POPOUT_WINDOW_NAMES, popoutUrl, popoutRouteOfWindow, isPopoutWindow, nameMainWindow, mainWindowUrl, MAIN_WINDOW_NAME,
+  rightHalf, toggleSideBySide, savedPlacement, RESTORE_MOVE_DELAY_MS } from './popout'
 
 const BASE = { origin: 'http://localhost:8080', pathname: '/' }
 // The suite runs in node, with no `window` — so every call passes the window name it is asking about.
@@ -65,5 +66,54 @@ describe('the way back to the main window', () => {
     expect(mainWindowUrl({ closed: false, location: { href: 'http://h/#/segment' } }, 'http://h', '/')).toBe('http://h/#/segment')
     expect(mainWindowUrl({ closed: true, location: { href: 'http://h/#/segment' } }, 'http://h', '/')).toBe('http://h/#/')
     expect(mainWindowUrl(null, 'http://h', '/app/')).toBe('http://h/app/#/')
+  })
+})
+
+describe('side by side', () => {
+  const area = { availLeft: 38, availTop: 32, availWidth: 1882, availHeight: 1048 }   // a GNOME screen
+  function fakeWin() {
+    const calls: string[] = []
+    return { calls, win: {
+      screenX: 80, screenY: 80, outerWidth: 500, outerHeight: 432,
+      moveTo: (x: number, y: number) => { calls.push(`move ${x},${y}`) },
+      resizeTo: (w: number, h: number) => { calls.push(`resize ${w}x${h}`) },
+    } }
+  }
+  function memStore() {
+    const m = new Map<string, string>()
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) },
+             removeItem: (k: string) => { m.delete(k) } }
+  }
+
+  it('takes the right half of the available area, the odd pixel to the right', () => {
+    expect(rightHalf(area)).toEqual({ x: 979, y: 32, w: 941, h: 1048 })
+    expect(rightHalf({ availWidth: 1366, availHeight: 768 })).toEqual({ x: 683, y: 0, w: 683, h: 768 })
+  })
+
+  it('goes to the half moving first, then growing', () => {
+    const { calls, win } = fakeWin(); const store = memStore()
+    expect(toggleSideBySide(win, area, store)).toBe(true)
+    expect(calls).toEqual(['move 979,32', 'resize 941x1048'])
+    expect(savedPlacement(store)).toEqual({ x: 80, y: 80, w: 500, h: 432 })
+  })
+
+  it('comes back shrinking first, then moving — a big window moved first is clamped by the WM', () => {
+    vi.useFakeTimers()
+    try {
+      const { calls, win } = fakeWin(); const store = memStore()
+      toggleSideBySide(win, area, store)
+      calls.length = 0
+      expect(toggleSideBySide(win, area, store)).toBe(false)
+      expect(calls).toEqual(['resize 500x432'])
+      vi.advanceTimersByTime(RESTORE_MOVE_DELAY_MS)
+      expect(calls).toEqual(['resize 500x432', 'move 80,80'])
+      expect(savedPlacement(store)).toBeNull()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('reads a damaged saved placement as not side by side', () => {
+    const store = memStore(); store.setItem('cc.vw.sideBySide', '{"x":1}')
+    expect(savedPlacement(store)).toBeNull()
+    expect(savedPlacement(null)).toBeNull()
   })
 })
