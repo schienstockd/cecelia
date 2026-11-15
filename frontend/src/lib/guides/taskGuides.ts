@@ -203,7 +203,7 @@ export const segmentGuide = moduleTaskGuide({
       text: 'These plots flag the usual failures — too few cells, implausible sizes, edge artefacts.',
       bullets: [
         'One population per segmentation, so two runs plot side by side.',
-        'A weird size distribution almost always means the diameter was off.',
+        'An odd size distribution often means the diameter was off: preview another.',
       ],
     },
     ...viewerCheck('mask', 'viewer.toggleLabels', [

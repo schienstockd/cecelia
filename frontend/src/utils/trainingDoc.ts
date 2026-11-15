@@ -21,6 +21,10 @@ function guide(id: string): string {
   if (!g) throw new Error(`training page names guide ${id}, which does not exist`)
   return `guide **${g.title}**`
 }
+/** The maturity badge of a guide's feature, as the guide picker shows it. */
+function badge(id: string): string {
+  return TIER_LABEL[guideById(id)!.maturity.tier]
+}
 const stage = (v: 'test' | 'final') => ACQ_STAGES.find(s => s.value === v)!.label
 
 /** A blank the facility fills in; a page with one is a draft. */
@@ -29,6 +33,7 @@ const FACILITY = (what: string) => `_[${what}: to be filled in by the facility]_
 export const SESSION_3_STEPS: DocStep[] = [
   {
     title: 'Check the data',
+    badge: badge('fix-metadata'),
     shot: 'tr-checks',
     do: `Open **Manage images**. Compare each image’s **Ch**, **Z** and **Scale** with the scope software. Fix anything wrong with the ${guide('fix-metadata')}.`,
     see: 'One row per image. Every image of the set has the same pixel size and the same channel names, matching the scope.',
@@ -36,6 +41,7 @@ export const SESSION_3_STEPS: DocStep[] = [
   },
   {
     title: 'Check the acquisition',
+    badge: badge('acquisition-check'),
     shot: 'tr-acq-check',
     do: `Follow the ${guide('acquisition-check')}. Set the plan, with **${stage('final')}** picked.`,
     see: `The verdict under **${verdictHeading('final')}**. The trainee can say what it means for their analysis.`,
@@ -43,31 +49,34 @@ export const SESSION_3_STEPS: DocStep[] = [
   },
   {
     title: 'Segment',
+    badge: badge('segment-an-image'),
     shot: 'tr-mask',
     do: `Follow the ${guide('segment-an-image')}. Preview on a small region first, then run it and open the image in the viewer with the mask on.`,
     see: 'One outline per cell, on the cell’s edge, with clumps split into single cells.',
-    ifWrong: 'A strange size distribution in the QC plots almost always means the cell diameter was wrong. Preview again with another diameter: seconds, not minutes.',
-    note: `Have the trainee look at the mask _on the image_, not just at the QC plots. A few wrong cells: the ${guide('correct-a-mask')} fixes them as a new version; the original stays.`,
+    ifWrong: 'An odd size distribution in the QC plots often means the cell diameter was off. Preview again with another diameter: seconds, not minutes.',
+    note: `Have the trainee look at the mask _on the image_, not just at the QC plots. A few wrong cells: note them in the log below. Correcting masks by hand is ${badge('correct-a-mask')}; leave it out of training.`,
   },
   {
     title: 'Gate populations',
+    badge: badge('gate-populations'),
     shot: 'tr-gate',
     do: `Follow the ${guide('gate-populations')} on one image, then copy the gates to the rest of the set.`,
     see: 'A named population per cell type, each with its cell count and its share of its parent.',
     ifWrong: 'Open the population in the viewer: do the gated cells sit where that cell type should be?',
   },
   {
-    title: 'Plot one comparison',
-    do: `Follow the ${guide('build-plots')}. Group the plot by the trainee’s experimental attribute (treatment, mouse).`,
-    see: 'One plot that answers the trainee’s question.',
+    title: 'Plot a measure',
+    badge: badge('build-plots'),
+    do: `Follow the ${guide('build-plots')}. Plot one measure of the gated populations, e.g. each population’s share of its parent.`,
+    see: 'One value per image and population. With a set, group it by the experimental attribute (treatment, mouse).',
     ifWrong: 'No groups to compare by: the attributes are set on the **Metadata** page (step 1).',
   },
   {
-    title: 'Check the claim',
-    do: 'Before writing a result down, state it from the plot: the ✓ button in a summary plot’s footer takes one sentence and the replicate (e.g. Mouse).',
+    title: 'Check the claim (needs a set)',
+    do: 'Show where it lives. With a set, a summary plot’s footer has a ✓ button: it takes the result as one sentence and the replicate (e.g. Mouse).',
     see: 'The checks, without AI: are the images there, was everything processed the same way, how many replicates, are the units calibrated. Each line is a fact, or a problem with what to do.',
-    ifWrong: 'The button is greyed out: a claim needs a plot across a set, with a measure.',
-    note: 'Nothing is blocked: the checks inform, they don’t decide. The trainee should be able to say what each problem means for their result.',
+    ifWrong: 'No ✓ button: the plot is not across a set. The check needs a set of processed images, a few per condition.',
+    note: 'Trainees usually bring one or two images, which is enough for steps 1–5 but not for a claim. Say so: this is how they check a result once they have a set with conditions, all processed the same way. Nothing is blocked: the checks inform, they don’t decide.',
   },
 ]
 
@@ -84,7 +93,7 @@ export function renderTraining(widths: Record<string, number>): string {
       for: 'microscopy staff who train facility users. No Cecelia experience needed.',
       get: 'a path for sessions 2 and 3: what to open, what to check on the trainee’s own images, and when to stop.',
       need: 'a Cecelia workstation, and the trainee’s session-2 images imported the day before session 3.',
-      ends: 'the trainee imports, checks, segments, gates and plots one comparison on their own, with the guides.',
+      ends: 'the trainee imports, checks, segments, gates and plots a measure on their own, with the guides, and knows how to check a claim once they have a set.',
     }),
     '## Before you start',
     '',
@@ -115,6 +124,8 @@ export function renderTraining(widths: Record<string, number>): string {
     `| 3. Fix metadata | ${guide('fix-metadata')}. | Pixel size and Z step match the scope software; channels have real names. |`,
     `| 4. Check it | ${guide('acquisition-check')}, with **${stage('test')}** picked. | The trainee can say what the verdict under **${verdictHeading('test')}** asks them to change, and why. |`,
     '| 5. Back to the scope | Change what the check named, then acquire the rest. | — |',
+    '',
+    'One or two images are enough for this session and for session 3. Comparing conditions and checking a claim (session 3, step 6) needs more: a set with a few images per condition, acquired with the same settings.',
     '',
     '**Settings to take back.** Click the image’s name in the Acquisition check to open its metadata, then **Acquisition → Settings card**: a printable card of that image’s settings. It shows only when Cecelia can tell from the file which kind of microscope took it.',
     '',
