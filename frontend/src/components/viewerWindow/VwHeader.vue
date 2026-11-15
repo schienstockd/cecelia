@@ -22,7 +22,7 @@ import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
 import type { KiwiRef } from '../../utils/kiwiRef'
 import { NAV_GROUPS, navItemFor } from '../../lib/navGroups'
-import { focusMainWindow, isSideBySide, toggleSideBySide } from '../../lib/popout'
+import { focusMainWindow, isSideBySide, toggleSideBySide, PLACE_MOVE_DELAY_MS, PLACE_SETTLE_MS } from '../../lib/popout'
 import { useWindowListener } from '../../composables/useKeepAlive'
 
 const props = defineProps<{
@@ -87,9 +87,18 @@ const back = focusMainWindow
 const placeable = (() => { try { return !!window.opener } catch { return false } })()
 // Read from where the window IS, not only what was saved: a window dragged away by hand is no longer
 // side by side. Browsers fire no event for a move, so it is re-read on hover, focus and resize.
+// While a placement is in flight (size first, the move 300 ms later, a settle pass) the window is
+// between places: a `resize` read then would say "not side by side". Hold the clicked state until it
+// has settled, then read once.
 const sideBySide = ref(placeable && isSideBySide())
-function readSide() { if (placeable) sideBySide.value = isSideBySide() }
-function toggleSide() { sideBySide.value = toggleSideBySide() }
+let placingUntil = 0
+function readSide() { if (placeable && Date.now() >= placingUntil) sideBySide.value = isSideBySide() }
+function toggleSide() {
+  sideBySide.value = toggleSideBySide()
+  const settled = PLACE_SETTLE_MS + 2 * PLACE_MOVE_DELAY_MS
+  placingUntil = Date.now() + settled
+  setTimeout(readSide, settled)
+}
 useWindowListener('focus', readSide)
 useWindowListener('resize', readSide)
 

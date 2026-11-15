@@ -140,15 +140,19 @@ export function isPopoutWindow(
 // (Super+← / Win+←); below 1100 px it folds its menu and panel to fit (utils/narrowLayout.ts).
 // docs/todo/GUI_LAYOUT_PLAN.md → *Narrow windows*.
 //
-// Order matters, measured on GNOME under XWayland: the window manager clamps a move
-// that would push the window off-screen. Going to the half: move, then grow. Coming back: shrink
-// first, then move — moving the big window first left it where it was. The resize lands
-// asynchronously (one read 600 ms later still saw the old size), so the toggle never waits on a
-// read-back after placing. Whether the window IS side by side is read at the click, though: a saved
-// placement alone said "snapped" after the user dragged the window away by hand, and the next click
-// then sent it "back" instead of to the half. `isSideBySide` = a placement is saved AND the window
-// still sits on the right half (within the title bar's offset — GNOME reports the content 37 px below
-// the target and that much shorter).
+// Order matters, measured on GNOME under XWayland: the window manager clamps a move that would push
+// the window off-screen. So both ways go SIZE FIRST, then move: the target size always fits the
+// screen, so the move that follows can never be clamped. Move-first landed a 1200 px wide viewer at
+// x = 720 (clamped short of the half) and took three clicks to arrive; on the way back it left the
+// big window where it was. The resize lands asynchronously (a read 600 ms later still saw the old
+// size), so the move waits `PLACE_MOVE_DELAY_MS`, and one settle pass `PLACE_SETTLE_MS` later
+// places it again if it is not there yet.
+//
+// Whether the window IS side by side is read at the click: a saved placement alone said "snapped"
+// after the user dragged the window away by hand, and the next click sent it "back" instead of to
+// the half. `isSideBySide` = a placement is saved AND the window still sits on the right half
+// (within the title bar's offset — GNOME reports the content 37 px below the target, that much
+// shorter).
 
 export interface WinRect { x: number; y: number; w: number; h: number }
 /** `screen`, with Chrome's non-standard origin of the available area (the dock / top bar). */
@@ -164,8 +168,10 @@ export function rightHalf(s: ScreenArea): WinRect {
  *  the viewer's hard reload on an image switch, so the second click still finds its way back. */
 const SIDE_BY_SIDE_KEY = 'cc.vw.sideBySide'
 
-/** Delay between the shrink and the move on the way back (the resize lands asynchronously). */
-export const RESTORE_MOVE_DELAY_MS = 300
+/** Delay between the resize and the move (the resize lands asynchronously). */
+export const PLACE_MOVE_DELAY_MS = 300
+/** When the one settle pass checks the window landed, and places it again if not. */
+export const PLACE_SETTLE_MS = 1000
 
 type PlaceableWindow = Pick<Window, 'moveTo' | 'resizeTo' | 'screenX' | 'screenY' | 'outerWidth' | 'outerHeight'>
 type KeyStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -201,6 +207,16 @@ export function isSideBySide(
   return savedPlacement(store) !== null && isAtPlacement(win, rightHalf(area))
 }
 
+/** Size first, then move (never clamped: the size fits), then one settle pass. */
+function place(win: PlaceableWindow, to: WinRect): void {
+  const go = () => {
+    win.resizeTo(to.w, to.h)
+    setTimeout(() => win.moveTo(to.x, to.y), PLACE_MOVE_DELAY_MS)
+  }
+  go()
+  setTimeout(() => { if (!isAtPlacement(win, to)) go() }, PLACE_SETTLE_MS)
+}
+
 /** Put the window on the right half, or back where it was. Returns the new state (true = side by
  *  side). Call it from a click; a window the browser will not move just stays put. A window moved
  *  away by hand goes to the half again, and where it was moved to becomes the way back. */
@@ -211,14 +227,11 @@ export function toggleSideBySide(
   const back = isSideBySide(win, area, store) ? savedPlacement(store) : null
   if (back) {
     try { store?.removeItem(SIDE_BY_SIDE_KEY) } catch { /* the window still goes back */ }
-    win.resizeTo(back.w, back.h)
-    setTimeout(() => win.moveTo(back.x, back.y), RESTORE_MOVE_DELAY_MS)
+    place(win, back)
     return false
   }
   const was: WinRect = { x: win.screenX, y: win.screenY, w: win.outerWidth, h: win.outerHeight }
   try { store?.setItem(SIDE_BY_SIDE_KEY, JSON.stringify(was)) } catch { /* no way back, still placed */ }
-  const to = rightHalf(area)
-  win.moveTo(to.x, to.y)
-  win.resizeTo(to.w, to.h)
+  place(win, rightHalf(area))
   return true
 }

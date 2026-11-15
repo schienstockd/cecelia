@@ -157,7 +157,7 @@ that would have to survive page switches). What broke at half width:
 | Viewer right column | the overview / 3D axes top right on their own, smaller (80 px tall); How it looks under them, as tall as its content (`CollapsibleSection fill="content"`), shrinking and scrolling only when it reaches the playback bar (or the scale bar once the image is ≥ 1200 px wide). The cache maps left the image: they are in the Debug section, off by default (`cc.vw.tilemap` / `cc.vw.brickmap`) |
 | Viewer image | minimum width 480 → 320 px |
 | Gate toolbar | wraps instead of running off the edge |
-| Viewer header | **Side by side**: the viewer places itself on the right half of the screen and back (`lib/popout.ts::toggleSideBySide`). Only the popup can be placed by a page; the main window is snapped left by the user. Order measured on GNOME: move then grow; back: shrink, then move. "Side by side" is read from where the window is (`isSideBySide`), so a hand-dragged window is placed again, not sent back |
+| Viewer header | **Side by side**: the viewer places itself on the right half of the screen and back (`lib/popout.ts::toggleSideBySide`). Only the popup can be placed by a page; the main window is snapped left by the user. Both ways size first, then move (GNOME clamps an off-screen move: move-first took a wide viewer three clicks), plus one settle pass. "Side by side" is read from where the window is (`isSideBySide`), so a hand-dragged window is placed again, not sent back |
 
 Guides that reveal the functions panel (`c.rightPanelCollapsed`) read the SHOWN fold, so on a narrow
 window they point at the handle. Needs the maintainer's eyes on a real GPU: the box over a real image,
