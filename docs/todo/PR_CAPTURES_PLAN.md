@@ -1,6 +1,6 @@
 # GUI captures on PRs, without growing the repo or the package
 
-**Status:** P1 built (2026-11-15): the checks, the template line, overview shots as JPEG, `docs/todo` images out of the stable tarball (P3's packaging half). P2 (contact sheet) and the no-rewrite compare open. Brief: [`../archive/pr_gui_captures_brief.md`](../archive/pr_gui_captures_brief.md).
+**Status:** built (2026-11-15): P1 checks, P2 contact sheet (`pixi run doc-sheet`), P3 packaging; the no-rewrite compare dropped (captures are now deterministic, so an identical capture makes no new blob). Open questions answered below.
 
 A PR that changes what a user sees should show it, and the images that show it should not end up in git
 history or in the installed app. The screenshot engine already exists (`user-docs/shots/`,
@@ -27,17 +27,16 @@ captures go and the checks that keep committed images small.
 - **CI cannot capture.** The fixtures are lab projects on the developer's machine (4kS67f, 4rNbMp), and
   viewer shots need a headed Chromium with WebGPU on a display.
 
-## Decisions to lock
+## Decisions (locked 2026-11-15)
 
 1. **Review captures stay local.** The agent captures on its isolated instance and builds a per-PR
-   contact sheet (the "needs your eyes" sheet), written to the scratchpad or `~/Downloads/TMP`, never
-   to git. The maintainer drags an image into the PR only when one is worth keeping in public. Release
-   assets and a screenshots branch are both permanent and public, so neither is used.
+   contact sheet (the "needs your eyes" sheet) in `docshots-out/sheet/`, git-ignored, never in git and
+   never attached to a PR: the fixtures are lab data. Release assets and a screenshots branch are both
+   permanent and public, so neither is used.
 2. **The PR names its shots; nothing maps a diff to a control.** A PR that changes visible UI lists the
    shot ids it changed (or ad-hoc `data-guide` anchors). The sheet captures those.
-3. **"Before" only when it changes something that was already there.** The sheet captures main and the
-   branch for a shot that already existed or a control that changed. A new control needs "after" only.
-   Before/after for every change doubles the capture time.
+3. **"Before" is the committed image.** The sheet compares the branch's images with the ref's, so only
+   the branch is captured; a new shot has no before.
 4. **Only images a page shows are committed**, under `user-docs/images/`, within the size limits below.
 5. **No WebP.** Pictures of the image are already JPEG q80 at the width they are shown; the UI shots are
    small PNGs.
@@ -66,12 +65,26 @@ to the recital.
 - **P1** (built) checks: size limit and stray images (`python/cecelia/tests/test_repo_images_convention.py`),
   orphans (`frontend/src/utils/docShots.test.ts`); the template line; whole-window `overview` shots as JPEG
   (the README hero went from 942 kB to 244 kB across both schemes).
-- **P2** the contact sheet: `pixi run doc-sheet -- --shots <ids> [--before main]`, captures on the
-  isolated instance, writes one HTML or PNG sheet per PR outside the repo.
-- **P3** packaging: `docs/todo` images out of the stable tarball (built, in P1); no-rewrite in compose (open).
+- **P2** (built) the contact sheet: `pixi run doc-sheet [-- --ref origin/main] [--after DIR] [--all]`
+  (`scripts/docshots/sheet.mjs`). Before is the image at the ref (git), after the working file; it lists
+  every new, changed or removed image and writes `docshots-out/sheet/index.html` and `sheet.png`
+  (git-ignored). A review capture that is not a docs image is composed outside the repo and the sheet
+  pointed at it (`--after`). "Before" is the committed image, so nothing is captured twice.
+- **P3** packaging: `docs/todo` images out of the stable tarball (built, in P1); no-rewrite in compose (dropped, see *Answered*).
 
-## Open
+## Answered (2026-11-15)
 
-- **Fixture data rights.** The lab images are already public in the README. Whether they may also appear
-  in PR attachments is the maintainer's call.
-- **Re-capture determinism.** Not measured; P3's pixel compare covers it either way.
+- **Fixture data rights: no.** Fixture images never go into a PR body or comment. The contact sheet
+  stays on the developer's machine; images a page shows stay in `user-docs/images/` (the README's and
+  the docs' are already public).
+- **Re-capture determinism: yes, after two fixes.** Measured by capturing the same shots twice:
+  - the Gate page (headless) came out byte-identical;
+  - the viewer window (headed, WebGPU) differed in 0.17% of its pixels: not the image, but its channel
+    histograms and the loaded-range strip, still filling in as data streamed, and in one run the focus
+    ring of the last toggle clicked. `capture.mjs` now screenshots until two in a row are identical
+    (up to 10 s, failing the shot otherwise) and blurs the focused control first. Two more runs per
+    scheme were then byte-identical.
+  - compose was already byte-identical from the same captures.
+
+  So the planned no-rewrite compare in compose is dropped: an unchanged capture writes the same bytes,
+  and git stores nothing new.

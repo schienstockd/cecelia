@@ -29,7 +29,12 @@ pixi run doc-shots   -- --base <url> --config-dir <dir>
 pixi run doc-images
 npx vitest run src/utils/usingAiDoc.test.ts -u      # in frontend/: the pages pick up the new widths
 npx vitest run src/utils/readmeShots.test.ts -u     #   and the README its captions' facts
+pixi run doc-sheet                                  # before/after of every changed image, local only
 ```
+
+A capture is taken once its pixels stop changing (the viewer's histograms fill in as data streams), with
+no focus ring, so capturing an unchanged page writes the same bytes. The contact sheet
+(`docshots-out/sheet/`) is for review on this machine: the fixtures are lab data, never attached to a PR.
 
 **Colour schemes.** A set names its `themes`; every shot is captured in each, the scheme set on the app
 and read back off the page before the screenshot. Compose refuses a capture in another scheme, and the
