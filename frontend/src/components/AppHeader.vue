@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useSettingsStore } from '../stores/settings'
+import { useLayoutFoldStore } from '../stores/layoutFold'
 import { useAppControlStore } from '../stores/appControl'
 import { openWhatsNew } from '../lib/whatsNew'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
@@ -14,6 +15,7 @@ import { unseenBadgeColour, labLogLauncherTip } from '../utils/labLog'
 import { useViewerLauncher } from '../composables/useViewerLauncher'
 
 const settings = useSettingsStore()
+const fold = useLayoutFoldStore()   // the SHOWN fold: narrow windows fold by default
 const viewer = useViewerLauncher()
 const appCtl = useAppControlStore()
 const observer = useObserverStore()
@@ -38,9 +40,9 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 <template>
   <header class="app-header">
     <button class="nav-toggle cc-btn cc-btn-bare cc-btn-icon cc-btn-lg" data-guide="header.navToggle"
-      @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
-      v-tooltip.bottom="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'"
-      :aria-label="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'">
+      @click="fold.sidebarFolded = !fold.sidebarFolded"
+      v-tooltip.bottom="fold.sidebarFolded ? 'Show menu' : 'Hide menu'"
+      :aria-label="fold.sidebarFolded ? 'Show menu' : 'Hide menu'">
       <i class="pi pi-bars" />
     </button>
     <!-- The wordmark goes to Welcome; What's new + tips moved into Help ▾ (GUI_LAYOUT_PLAN). -->

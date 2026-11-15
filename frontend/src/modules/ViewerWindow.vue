@@ -140,7 +140,7 @@ import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import RoiSection from '../components/RoiSection.vue'
 import type { RoiSpot } from '../utils/rois'
-import CollapsiblePanel from '../components/CollapsiblePanel.vue'
+import VwLookBox from '../components/viewerWindow/VwLookBox.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import VwHeader from '../components/viewerWindow/VwHeader.vue'
 import ComingSoonBadge from '../components/ComingSoonBadge.vue'
@@ -3734,6 +3734,10 @@ const gizmoShown = ref(profileStorage.getItem('cc.vw.gizmo') !== 'false')
 watch(gizmoShown, v => profileStorage.setItem('cc.vw.gizmo', String(v)))
 /** The Debug section, switched on from ⚙ (GUI_LAYOUT_PLAN V3) — a developer's panel, off by default. */
 const debugShown = ref(profileStorage.getItem('cc.vw.debug') === 'true')
+/** Where the floating boxes start: On the image (top left) and How it looks (top right) sit level,
+ *  both under the timestamp when it is drawn. */
+const overlayClearTop = computed(() => spec.timestamp && shownT.value >= 0 ? spec.timestampPx + 8 : 0)
+const overlayTop = computed(() => `calc(0.75rem + ${overlayClearTop.value}px)`)
 watch(debugShown, v => profileStorage.setItem('cc.vw.debug', String(v)))
 /** Fit-relative zoom for the gizmo readout — 1.0 at Reset view, >1 zoomed in. `fitDist` is set on
  *  every allocate + refit, and Reset writes `cam.dist = fitDist`, so this reads a clean 1× at rest
@@ -3747,15 +3751,13 @@ const advancedTrigger = ref<HTMLElement | null>(null)
 /** Auto-contrast tuning popover — anchor + open state. Same pattern as `advancedOpen`; not
  *  persisted because a popover that reopens on reload is a distinct bug from a slider whose value
  *  should survive. */
-/** Tile-cache mini map, same persist-in-localStorage pattern as `overviewShown`. Default ON — the
- *  user asked for it — but collapsible because tile-heavy views make it visually busy and someone
- *  who never scrubs won't want it. */
-const tilesMapShown = ref(profileStorage.getItem('cc.vw.tilemap') !== 'false')
+/** Tile-cache map, drawn in the Debug section. Off by default: a renderer diagnostic, not something
+ *  to look at while looking at the image (GUI_LAYOUT_PLAN → Narrow windows). */
+const tilesMapShown = ref(profileStorage.getItem('cc.vw.tilemap') === 'true')
 watch(tilesMapShown, v => profileStorage.setItem('cc.vw.tilemap', String(v)))
-/** Brick-atlas residency mini map — spatial analog of the tile map for `?bricks=1`. Default ON so
- *  the volume path has the same at-a-glance diagnostic the plane path does; the atlas is 3D, so
- *  the map draws one nBx × nBy grid per Z slice. */
-const bricksMapShown = ref(profileStorage.getItem('cc.vw.brickmap') !== 'false')
+/** Brick-atlas residency map — the tile map's peer for the brick renderer, in the Debug section, off
+ *  by default; the atlas is 3D, so the map draws one nBx × nBy grid per Z slice. */
+const bricksMapShown = ref(profileStorage.getItem('cc.vw.brickmap') === 'true')
 watch(bricksMapShown, v => profileStorage.setItem('cc.vw.brickmap', String(v)))
 /** Snapshot of the brick atlas — refreshed on the same tick that syncs the time strip. Kept as a
  *  plain array + Set so cell painting is O(nBx × nBy × nBz) at the CURRENT boundT + level. */
@@ -6248,223 +6250,19 @@ onUnmounted(() => {
           <i class="pi pi-chevron-down" />
         </button>
       </div>
-      <!-- Top-right corner column: the navigation widget (overview in 2D, axes in 3D) and, under it,
-           the cache map toggled from the Advanced popover. A column so neither has to know the
-           other's height; the map stays off the overview because the overview is for navigating. -->
-      <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="spec.timestamp && shownT >= 0 ? spec.timestampPx + 8 : 0"
+      <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="overlayClearTop"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :branch-names="meta.branchNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes" />
-      <div class="vw-corner-tr">
-        <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
-             a small image still benefits from a corner reference while zoomed in.
-             Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
-             takes all the pointer events (click/drag to reposition). -->
-        <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
-             :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
-          <canvas ref="overviewCanvas" class="vw-overview-tissue" />
-          <svg class="vw-overview-svg"
-               :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
-               preserveAspectRatio="none"
-               @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
-               @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
-            <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
-            <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
-                  :width="Math.max(2, overviewRect.w * overviewSize.w)"
-                  :height="Math.max(2, overviewRect.h * overviewSize.h)"
-                  class="vw-overview-vp" />
-          </svg>
-        </div>
-        <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
-             (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
-             projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
-             mip shader, so it cannot drift off the volume behind it. -->
-        <AxesGizmo v-if="gizmoShown && mode === 'volume'"
-                   :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
-        <div v-if="tileMapGrid && tilesMapShown" class="vw-tilemap vw-cachemap"
-             v-tooltip.bottom="'Tile cache — blue is loaded, amber is fetching'"
-             :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
-                       gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
-                       width: overviewSize.w + 'px', height: overviewSize.h + 'px' }">
-          <span v-for="c in tileMapCellsView" :key="c.key"
-                class="vw-tilemap-cell" :class="'is-' + c.state" />
-        </div>
-        <div v-if="brickMapGrid && bricksMapShown" class="vw-brickmapgrid vw-cachemap"
-             v-tooltip.bottom="'Brick cache — blue is loaded, amber is fetching'"
-             :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)`,
-                       width: Math.min(overviewSize.w, overviewSize.h * brickMapSlices.gridCols * brickMapSlices.displayNBx
-                         / (Math.ceil(brickMapSlices.slices.length / brickMapSlices.gridCols) * brickMapSlices.displayNBy)) + 'px' }">
-          <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
-            <div class="vw-tilemap vw-brickmap-slice"
-                 :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
-                           gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
-                           aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
-              <span v-for="c in s.cells" :key="c.key"
-                    class="vw-tilemap-cell" :class="'is-' + c.state" />
-            </div>
-            <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
-                 plane mode `nBz === 1` so a single "z0" label just added a row of vertical
-                 space under the grid with nothing to compare it against. -->
-            <span v-if="brickMapSlices.slices.length > 1"
-                  class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- The controls sidebar is a CollapsiblePanel — one handle folds it away, the strip on its
-         left edge drags to resize, and the width persists per `storage-key`. Same primitive the
-         module pages use for their right panel, so the affordances are one shared thing rather
-         than a viewer-only fourth. The COLLAPSE flag is a viewer-window own field
-         (`viewerWindowSideCollapsed`), not the app-wide `rightPanelCollapsed` — the viewer's
-         controls and the module page's task list hold different things, and sharing meant every
-         collapse fold both. -->
-    <CollapsiblePanel storage-key="viewerWindowSide" label="viewer controls"
-                      :default-width="290" :min="240" :max="480"
-                      collapsed-key="viewerWindowSideCollapsed">
-      <div class="vw-side">
-      <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
-        <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
-        <!-- Table with a column per mode: same gesture does different things in pan vs select
-. The current row's active-mode column is highlighted so a user
-             can read "what does drag do RIGHT NOW" in one glance. -->
-        <table class="vw-keys">
-          <thead>
-            <tr class="cc-muted cc-fs-3xs">
-              <th></th>
-              <th :class="{ 'vw-keys-active': !selectModeActive }">Pan</th>
-              <th :class="{ 'vw-keys-active': selectModeActive }">Select</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="s in SHORTCUTS" :key="s.keys">
-              <td><kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd></td>
-              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': !selectModeActive }">{{ s.pan }}</td>
-              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': selectModeActive }">{{ s.select }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </TeleportPopover>
-      <!-- Advanced viewer popover — Renderer + brick Quality tier. Trigger is the sidebar's
-           gear (`advancedTrigger` above). Renderer flip persists in `settings.viewerBricksMode`
-           and forces a full reallocate via the existing watcher (short canvas flash). Quality
-           tier writes `settings.viewerBrickTier` and rides through `effectiveMaxIntersect` +
-           watcher — no reallocate, applies within a few scheduler ticks. Tier hidden when the
-           effective renderer is Flat (`?brickThr=` overriding is still visible in the label).
-           URL `?bricks=` / `?brickThr=` win over both controls; the tier chip shows disabled
-           with the URL value in its tooltip in that case, so the user isn't quietly ignored. -->
-      <TeleportPopover v-model="advancedOpen" :anchor="advancedTrigger" placement="bottom-end">
-        <div class="cc-eyebrow cc-fs-2xs">Advanced viewer</div>
-        <div class="vw-adv-body">
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col" v-tooltip.right="'Save contrast, colours, T and Z as you change them'">Remember</span>
-            <CcToggle v-model="settings.viewerAutoSaveLayerProps" aria-label="Save contrast, colours, T and Z as you change them" />
-          </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Pixels</span>
-            <button class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs" :disabled="!imageUid"
-                    v-tooltip.right="'Use if the image looks stale after a task re-ran'"
-                    @click="imageUid && publishViewerCacheClear({ imageUid, force: true })">
-              <i class="pi pi-sync" /> Re-read from disk
-            </button>
-          </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Auto picks based on movie size vs cache'">Renderer</span>
-            <ChipSelect
-              :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
-              variant="segmented" aria-label="Renderer"
-              @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
-            />
-          </div>
-          <div class="cc-fs-3xs vw-adv-using cc-sev-ok">{{ effectiveRendererLabel }}</div>
-          <!-- Cache size — one budget for both renderers. Flat uses it as its timepoint-cache
-               ceiling; brick uses it as its atlas ceiling. Auto = 1500 MB, the pre-setting default.
-               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip.
-               Placed BEFORE Quality so the popover height doesn't reflow when Flat hides Quality. -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="cacheMBFromUrl
-                    ? `?cacheMB=${cacheMBUrl} overrides the setting`
-                    : 'VRAM the viewer may hold — bigger = smoother scrub'">Cache</span>
-            <!-- S4: 8 cache chips (Auto + 7 sizes) wrap into a 3-cell grid so the popover
-                 stays narrow — 3 rows × 3 columns (last row has 2). Same segmented visual. -->
-            <ChipSelect
-              :options="CACHE_MB_OPTIONS" :model-value="cacheMBAsString"
-              variant="grid" :columns="3" aria-label="Viewer cache size"
-              :disabled="cacheMBFromUrl"
-              @update:model-value="v => (settings.viewerCacheMB = v === 'auto' ? -1 : Number(v))"
-            />
-          </div>
-          <div class="cc-fs-3xs vw-adv-using" :class="`cc-sev-${cacheSeverity}`">{{ effectiveCacheMBLabel }}</div>
-          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="brickKnobThrFromUrl
-                    ? `?brickThr=${brickKnobThr} overrides the tier`
-                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
-            <ChipSelect
-              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
-              variant="segmented" aria-label="Brick quality tier"
-              :disabled="brickKnobThrFromUrl"
-              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
-            />
-          </div>
-          <div v-if="bricksEnabled && tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
-            No effect on this image
-          </div>
-          <!-- 3D projection: Ortho (default) matches the offline movie renderer's parallel-ray MIP
-               and reads head-on; Persp adds foreshortening. Hidden in 2D because the plane view is
-               always orthographic (perspective would foreshorten a flat plane). Imaris analogue. -->
-          <div v-if="mode === 'volume'" class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Projection</span>
-            <ChipSelect
-              :options="PROJECTIONS" :model-value="settings.viewerVolumeProjection"
-              variant="segmented" aria-label="3D projection"
-              @update:model-value="v => (settings.viewerVolumeProjection = v as 'ortho' | 'persp')"
-            />
-          </div>
-          <!-- Cache maps: diagnostics for the renderer above, drawn under the View row. -->
-          <div v-if="tileMapGrid || brickMapGrid" class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Maps</span>
-            <button v-if="tileMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': tilesMapShown }]"
-                    @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
-                    v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
-              <i class="pi pi-tiles" />
-            </button>
-            <button v-if="brickMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': bricksMapShown }]"
-                    @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
-                    v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
-              <i class="pi pi-bricks" />
-            </button>
-          </div>
-          <!-- The corner overlay (overview in 2D, XYZ axes in 3D) and the Debug section are set-once
-               switches, so they live here and the panel's top row stays one line (GUI_LAYOUT_PLAN V3). -->
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">Corner</span>
-            <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
-                    @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
-                    v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
-              <i class="pi pi-overview" />
-            </button>
-            <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
-                    @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
-                    v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
-              <i class="pi pi-axes" />
-            </button>
-          </div>
-          <div class="cc-row cc-row-tight">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Render knobs, live perf and diagnostics, as a section in the panel'">Debug</span>
-            <CcToggle v-model="debugShown" aria-label="Show the Debug section" />
-          </div>
-        </div>
-      </TeleportPopover>
-      <!-- Which VERSION is on screen: the header's provenance chip (VwHeader). Its pick goes through
-           `settings.setImageVersion`; the watch on that calls `changeVersion`. -->
-
-
-      <template v-if="meta">
+      <!-- Top-right column: How it looks at the top, level with On the image (`overlayTop`), and the
+           navigation widget (overview in 2D, axes in 3D) at the bottom. A column so neither has to
+           know the other's height: the box shrinks and scrolls, the widget keeps its size. -->
+      <div class="vw-corner-tr" :style="{ top: overlayTop }">
+      <!-- How it looks (VwLookBox): the controls that were the docked sidebar, floating so the image
+           keeps the whole window (GUI_LAYOUT_PLAN → Narrow windows). -->
+      <VwLookBox v-if="meta">
+        <template #controls>
         <!-- The panel's top row (GUI_LAYOUT_PLAN V3, mock frame 4): what a click does, 2D / 3D, reset
              view and the advanced settings. -->
         <!-- two non-wrapping groups: a narrow panel breaks the row between them, never inside one -->
@@ -6501,6 +6299,8 @@ onUnmounted(() => {
           </button>
           </div>
         </div>
+        </template>
+        <div class="vw-side">
         <div v-if="editMode" class="cc-empty vw-edit-slot">
           Correction tools go here
           <span class="cc-muted cc-fs-xs">They are being redesigned; the cockpit still opens from Correct labels.</span>
@@ -6746,6 +6546,53 @@ onUnmounted(() => {
             </template>
           </div>
 
+          <!-- ── Cache maps: which tiles / bricks the renderer holds (blue) or is fetching (amber). A
+               renderer diagnostic, so it lives here, off by default, not on the image. -->
+          <template v-if="tileMapGrid || brickMapGrid">
+            <div class="cc-eyebrow cc-fs-2xs vw-debug-head">Cache map</div>
+            <div v-if="tileMapGrid || brickMapGrid" class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Show</span>
+              <button v-if="tileMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': tilesMapShown }]"
+                      @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
+                      v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
+                <i class="pi pi-tiles" />
+              </button>
+              <button v-if="brickMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': bricksMapShown }]"
+                      @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
+                      v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
+                <i class="pi pi-bricks" />
+              </button>
+            </div>
+            <div v-if="tileMapGrid && tilesMapShown" class="vw-tilemap vw-cachemap"
+             
+                 :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
+                           gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
+                           width: overviewSize.w + 'px', height: overviewSize.h + 'px' }">
+              <span v-for="c in tileMapCellsView" :key="c.key"
+                    class="vw-tilemap-cell" :class="'is-' + c.state" />
+            </div>
+            <div v-if="brickMapGrid && bricksMapShown" class="vw-brickmapgrid vw-cachemap"
+             
+                 :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)`,
+                           width: Math.min(overviewSize.w, overviewSize.h * brickMapSlices.gridCols * brickMapSlices.displayNBx
+                             / (Math.ceil(brickMapSlices.slices.length / brickMapSlices.gridCols) * brickMapSlices.displayNBy)) + 'px' }">
+              <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
+                <div class="vw-tilemap vw-brickmap-slice"
+                     :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                               gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                               aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
+                  <span v-for="c in s.cells" :key="c.key"
+                        class="vw-tilemap-cell" :class="'is-' + c.state" />
+                </div>
+                <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
+                     plane mode `nBz === 1` so a single "z0" label just added a row of vertical
+                     space under the grid with nothing to compare it against. -->
+                <span v-if="brickMapSlices.slices.length > 1"
+                      class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
+              </div>
+            </div>
+          </template>
+
           <!-- ── Save / Reset — always visible. Save downloads the current perf arrays plus the
                shader/bricks/image/knobs snapshot; when Bench is off that's the 200-frame rolling
                window, when Bench is on it's the full session. Reset clears the arrays either way. -->
@@ -6757,7 +6604,6 @@ onUnmounted(() => {
           </div>
         </CollapsibleSection>
         </template>
-      </template>
       <!-- the panel's foot: the shortcuts reference (also in Help ▾ in the header) -->
       <div class="vw-side-foot">
         <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-dense" @click="keysOpen = !keysOpen"
@@ -6765,8 +6611,161 @@ onUnmounted(() => {
           Shortcuts <i class="pi pi-question-circle" />
         </button>
       </div>
+        </div>
+      </VwLookBox>
+        <div class="vw-corner-nav">
+        <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
+             a small image still benefits from a corner reference while zoomed in.
+             Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
+             takes all the pointer events (click/drag to reposition). -->
+        <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
+             :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
+          <canvas ref="overviewCanvas" class="vw-overview-tissue" />
+          <svg class="vw-overview-svg"
+               :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
+               preserveAspectRatio="none"
+               @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
+               @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
+            <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
+            <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
+                  :width="Math.max(2, overviewRect.w * overviewSize.w)"
+                  :height="Math.max(2, overviewRect.h * overviewSize.h)"
+                  class="vw-overview-vp" />
+          </svg>
+        </div>
+        <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
+             (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
+             projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
+             mip shader, so it cannot drift off the volume behind it. -->
+        <AxesGizmo v-if="gizmoShown && mode === 'volume'"
+                   :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
+        </div>
       </div>
-    </CollapsiblePanel>
+    </div>
+
+    <!-- teleported: their anchors are in How it looks and the header -->
+      <TeleportPopover v-model="keysOpen" :anchor="keysBtn" placement="bottom-end">
+        <div class="cc-eyebrow cc-fs-2xs">Shortcuts</div>
+        <!-- Table with a column per mode: same gesture does different things in pan vs select
+. The current row's active-mode column is highlighted so a user
+             can read "what does drag do RIGHT NOW" in one glance. -->
+        <table class="vw-keys">
+          <thead>
+            <tr class="cc-muted cc-fs-3xs">
+              <th></th>
+              <th :class="{ 'vw-keys-active': !selectModeActive }">Pan</th>
+              <th :class="{ 'vw-keys-active': selectModeActive }">Select</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in SHORTCUTS" :key="s.keys">
+              <td><kbd class="cc-fs-3xs vw-kbd">{{ s.keys }}</kbd></td>
+              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': !selectModeActive }">{{ s.pan }}</td>
+              <td class="cc-muted cc-fs-2xs" :class="{ 'vw-keys-active': selectModeActive }">{{ s.select }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </TeleportPopover>
+      <!-- Advanced viewer popover — Renderer + brick Quality tier. Trigger is the sidebar's
+           gear (`advancedTrigger` above). Renderer flip persists in `settings.viewerBricksMode`
+           and forces a full reallocate via the existing watcher (short canvas flash). Quality
+           tier writes `settings.viewerBrickTier` and rides through `effectiveMaxIntersect` +
+           watcher — no reallocate, applies within a few scheduler ticks. Tier hidden when the
+           effective renderer is Flat (`?brickThr=` overriding is still visible in the label).
+           URL `?bricks=` / `?brickThr=` win over both controls; the tier chip shows disabled
+           with the URL value in its tooltip in that case, so the user isn't quietly ignored. -->
+      <TeleportPopover v-model="advancedOpen" :anchor="advancedTrigger" placement="bottom-end">
+        <div class="cc-eyebrow cc-fs-2xs">Advanced viewer</div>
+        <div class="vw-adv-body">
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col" v-tooltip.right="'Save contrast, colours, T and Z as you change them'">Remember</span>
+            <CcToggle v-model="settings.viewerAutoSaveLayerProps" aria-label="Save contrast, colours, T and Z as you change them" />
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Pixels</span>
+            <button class="cc-btn cc-btn-ghost cc-btn-dense cc-fs-2xs" :disabled="!imageUid"
+                    v-tooltip.right="'Use if the image looks stale after a task re-ran'"
+                    @click="imageUid && publishViewerCacheClear({ imageUid, force: true })">
+              <i class="pi pi-sync" /> Re-read from disk
+            </button>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Auto picks based on movie size vs cache'">Renderer</span>
+            <ChipSelect
+              :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
+              variant="segmented" aria-label="Renderer"
+              @update:model-value="v => (settings.viewerBricksMode = v as 'auto' | 'brick' | 'flat')"
+            />
+          </div>
+          <div class="cc-fs-3xs vw-adv-using cc-sev-ok">{{ effectiveRendererLabel }}</div>
+          <!-- Cache size — one budget for both renderers. Flat uses it as its timepoint-cache
+               ceiling; brick uses it as its atlas ceiling. Auto = 1500 MB, the pre-setting default.
+               `?cacheMB=N` in the URL disables the chip and shows the override in its tooltip.
+               Placed BEFORE Quality so the popover height doesn't reflow when Flat hides Quality. -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="cacheMBFromUrl
+                    ? `?cacheMB=${cacheMBUrl} overrides the setting`
+                    : 'VRAM the viewer may hold — bigger = smoother scrub'">Cache</span>
+            <!-- S4: 8 cache chips (Auto + 7 sizes) wrap into a 3-cell grid so the popover
+                 stays narrow — 3 rows × 3 columns (last row has 2). Same segmented visual. -->
+            <ChipSelect
+              :options="CACHE_MB_OPTIONS" :model-value="cacheMBAsString"
+              variant="grid" :columns="3" aria-label="Viewer cache size"
+              :disabled="cacheMBFromUrl"
+              @update:model-value="v => (settings.viewerCacheMB = v === 'auto' ? -1 : Number(v))"
+            />
+          </div>
+          <div class="cc-fs-3xs vw-adv-using" :class="`cc-sev-${cacheSeverity}`">{{ effectiveCacheMBLabel }}</div>
+          <div class="cc-row cc-row-tight" v-if="bricksEnabled">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="brickKnobThrFromUrl
+                    ? `?brickThr=${brickKnobThr} overrides the tier`
+                    : 'Caps bricks per view — limits detail at wide zoom'">Quality</span>
+            <ChipSelect
+              :options="BRICK_TIERS" :model-value="settings.viewerBrickTier"
+              variant="segmented" aria-label="Brick quality tier"
+              :disabled="brickKnobThrFromUrl"
+              @update:model-value="v => (settings.viewerBrickTier = v as 'quick' | 'balanced' | 'detailed')"
+            />
+          </div>
+          <div v-if="bricksEnabled && tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
+            No effect on this image
+          </div>
+          <!-- 3D projection: Ortho (default) matches the offline movie renderer's parallel-ray MIP
+               and reads head-on; Persp adds foreshortening. Hidden in 2D because the plane view is
+               always orthographic (perspective would foreshorten a flat plane). Imaris analogue. -->
+          <div v-if="mode === 'volume'" class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Projection</span>
+            <ChipSelect
+              :options="PROJECTIONS" :model-value="settings.viewerVolumeProjection"
+              variant="segmented" aria-label="3D projection"
+              @update:model-value="v => (settings.viewerVolumeProjection = v as 'ortho' | 'persp')"
+            />
+          </div>
+          <!-- The corner overlay (overview in 2D, XYZ axes in 3D) and the Debug section are set-once
+               switches, so they live here and the panel's top row stays one line (GUI_LAYOUT_PLAN V3). -->
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Corner</span>
+            <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
+                    @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
+                    v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
+              <i class="pi pi-overview" />
+            </button>
+            <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
+                    @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
+                    v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
+              <i class="pi pi-axes" />
+            </button>
+          </div>
+          <div class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                  v-tooltip.right="'Render knobs, live perf and diagnostics, as a section in the panel'">Debug</span>
+            <CcToggle v-model="debugShown" aria-label="Show the Debug section" />
+          </div>
+        </div>
+      </TeleportPopover>
   </div>
   <!-- The console row (GUI_LAYOUT_PLAN V2): what the viewer is doing — loading, level, renderer, GPU —
        off the image. Errors that break the view stay on the image. -->
@@ -6812,7 +6811,10 @@ onUnmounted(() => {
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
 /* Minimum viewer size (napari keeps one too): below it the window scrolls rather than squeezing the
    canvas to a sliver under the Share toolbar. `.vw` scrolls because `#app` clips its overflow. */
-.vw-canvas-wrap { position: relative; flex: 1; min-width: 480px; min-height: 320px; }
+.vw-canvas-wrap {
+  position: relative; flex: 1; min-width: 320px; min-height: 320px;
+  container-type: inline-size;   /* the corner column's bottom bound reads the image's width */
+}
 /* Bottom-left status chip: white-on-black so it stays legible against a bright tile composite. Same
    role as the centred `cc-empty-overlay` but out of the way of what the user is trying to look at.
    Error variant uses the canonical severity colour + icon (`lib/severity.ts` → `fail`), and re-enables
@@ -6843,11 +6845,17 @@ onUnmounted(() => {
    translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
    navigation, not a select. */
 .vw-corner-tr {
-  position: absolute; top: 0.75rem; right: 0.75rem;
+  /* `top` is bound (`overlayTop`), level with On the image. How it looks shrinks and scrolls; the
+     overview sits at the column's foot. Narrow image: the foot clears the centred playback bar it
+     would sit beside; wide enough that the bar ends left of the column: only the scale bar. */
+  position: absolute; top: 0.75rem; right: 0.75rem; bottom: 9.5rem;
   display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;
   pointer-events: none;
 }
-.vw-corner-tr > * { pointer-events: auto; }
+@container (min-width: 1200px) { .vw-corner-tr { bottom: 4rem; } }
+.vw-corner-nav { margin-top: auto; flex: none; display: flex; pointer-events: none; }
+/* only the widgets take clicks; the column's empty space passes them to the image */
+.vw-corner-nav > *, .vw-corner-tr > :not(.vw-corner-nav) { pointer-events: auto; }
 .vw-overview-wrap {
   position: relative;
   background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
@@ -6950,9 +6958,8 @@ onUnmounted(() => {
   display: flex; justify-content: flex-end;
 }
 .vw-side {
-  /* Fills the CollapsiblePanel slot; width and left border come from the panel. Padding + overflow
-     stay here — the panel deliberately owns no padding so its consumers pad their own root. */
-  flex: 1; min-width: 0; padding: 0.6rem;
+  /* The sections' column inside How it looks (VwLookBox), which pads and bounds it. */
+  flex: 1 1 auto; min-width: 0; min-height: 0;
   /* x:hidden, y:auto — leaving x at the default `visible` lets the RangeSlider's thumb overhang
      and any tight row visually escape past the sidebar's right edge. Only
      the vertical axis needs to scroll. */
@@ -7030,10 +7037,8 @@ onUnmounted(() => {
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
 .vw-brickmap-slice { min-width: 0; width: 100%; }
 .vw-brickmap-zlabel { line-height: 1; }
-/* Cache map in the corner column: same dark panel and same box as the overview — the tile map covers
-   the same image extent, so it takes the overview's exact size; the brick grid (all its slices) fits
-   inside that box by its own aspect. `flex: none` so `.vw-tilemap`'s `flex: 1` cannot stretch it
-   down the column. */
+/* Cache map in the Debug section: the tile map takes the overview's size (same image extent); the
+   brick grid fits that box by its own aspect. `flex: none` so `.vw-tilemap`'s `flex: 1` cannot stretch it. */
 .vw-cachemap {
   flex: none;
   background: var(--cc-hud-bg); border: 1px solid var(--cc-border);

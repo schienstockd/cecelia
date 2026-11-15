@@ -569,8 +569,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
   <div class="gating-plots">
     <div v-if="!props.imageUid" class="cc-empty-inline cc-empty-pane">Select one image above to gate</div>
     <template v-else>
-      <div class="gp-bar">
-        <label>segmentation
+      <div class="cc-row cc-row-loose gp-bar">
+        <label class="cc-row-group">segmentation
           <select data-guide="gate.segmentation" v-model="pageVn" v-tooltip.bottom="'Which segmentation to gate on'"
                   @change="load()">
             <option v-for="v in g.valueNames" :key="v" :value="v">{{ v }}</option>
@@ -623,10 +623,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
-        <!-- Shown only on an EMPTY canvas. `.gp-bar` is a nowrap flex row, so a text node at the end
-             of it is the one item with nothing to push against: it collapsed to a ~40px column and
-             wrapped over six lines, which is what set the bar's height. It is also orientation a user
-             needs exactly once (docs/UI.md → UI copy), so the fix and the right behaviour agree. -->
+        <!-- Shown only on an EMPTY canvas: orientation a user needs exactly once (docs/UI.md → UI
+             copy). `white-space: nowrap`, so on a full bar it wraps to its own line as one piece. -->
         <span v-if="!panels.length" class="gp-hint cc-muted cc-fs-xs">drag plots by their title · resize from the corner</span>
         <!-- P3b labels-version pin badge (docs/todo/VN_VERSIONING_PLAN.md → P3b) — only when the
              user has picked "Use pinned vN" on the drift banner below. Sits in the bar so the mode
@@ -745,7 +743,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 <style scoped>
 /* fill all available height so the plot workspace isn't capped */
 .gating-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.gp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
+/* a `.cc-row`, so it wraps: on a narrow window (half a laptop screen) the tools ran off the right edge */
+.gp-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .gp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .gp-bar select { min-width: 9rem; }   /* visual styling from the global form base */
 .gp-hint { opacity: 0.7; white-space: nowrap; }

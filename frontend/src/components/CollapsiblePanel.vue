@@ -21,6 +21,7 @@
 // shared width would be wrong for all of them.
 import { computed } from 'vue'
 import { useSettingsStore } from '../stores/settings'
+import { useLayoutFoldStore } from '../stores/layoutFold'
 import { usePanelResize } from '../composables/usePanelResize'
 
 /** Settings-store keys the panel is allowed to bind its collapse flag to. The default
@@ -58,14 +59,21 @@ const left = props.side === 'left'
 const chevron = computed(() => (collapsed.value !== left) ? 'pi-angle-double-left' : 'pi-angle-double-right')
 
 // One accessor so the template stays a single expression regardless of which flag it is bound to.
+// The app-wide `rightPanelCollapsed` goes through `layoutFold`: on a narrow window it folds by
+// default and, opened, slides over the page (`overlay`) rather than squeezing it.
+const fold = useLayoutFoldStore()
 const collapsed = computed<boolean>({
-  get: () => settings[props.collapsedKey],
-  set: v => { settings[props.collapsedKey] = v },
+  get: () => props.collapsedKey === 'rightPanelCollapsed' ? fold.rightPanelFolded : settings[props.collapsedKey],
+  set: v => {
+    if (props.collapsedKey === 'rightPanelCollapsed') fold.rightPanelFolded = v
+    else settings[props.collapsedKey] = v
+  },
 })
+const overlay = computed(() => props.collapsedKey === 'rightPanelCollapsed' && fold.narrow && !collapsed.value)
 </script>
 
 <template>
-  <div class="cc-panel" :class="{ collapsed, 'cc-panel-left': left }"
+  <div class="cc-panel" :class="{ collapsed, 'cc-panel-left': left, 'cc-panel-over': overlay }"
        :style="collapsed ? undefined : widthStyle">
     <!-- drag the inner edge to resize (persisted per panel) -->
     <div v-if="!collapsed" class="cc-panel-resizer" @mousedown="onResizeStart"
@@ -98,6 +106,13 @@ const collapsed = computed<boolean>({
 }
 /* Full-height strip down the panel's edge, NOT an icon button: it has no height of its own and
    stretches as a flex child. .cc-btn-icon's fixed square collapsed it to a chip at the top. */
+.cc-panel-over {
+  /* narrow window, open: over the page from the right edge; the page keeps its width. The handle
+     strip stays at the panel's edge, so the same click folds it back. */
+  position: absolute; top: 0; bottom: 0; right: 0; z-index: 40;
+  max-width: calc(100% - 2rem);
+  background: var(--cc-surface-1); box-shadow: -4px 0 16px var(--cc-shadow);
+}
 .cc-panel-handle {
   flex-shrink: 0;
   width: 1.1rem;

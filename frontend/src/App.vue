@@ -285,11 +285,13 @@ const bare = computed(() => popout || route.meta.bare === true)
   flex: 1;
   display: flex;
   overflow: hidden;
+  position: relative;   /* anchors the menu when it opens over the page on a narrow window */
 }
 
 .cc-main {
   flex: 1;
   overflow-y: auto;
+  position: relative;   /* anchors a functions panel opened over the page on a narrow window */
   background: var(--cc-bg);
 }
 

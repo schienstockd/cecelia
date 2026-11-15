@@ -2020,14 +2020,15 @@ under perspective a flat plane foreshortens towards the edges, which is wrong fo
 on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
 range (↶ resets it to the whole stack); the **±** button at the end of the Z row swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
-**Sidebar layout:** one top row (GUI_LAYOUT_PLAN V3): **View / Select / Edit** as three icon-only segments
+**How it looks** (`VwLookBox.vue`) holds what was the docked sidebar, floating top right level with *On the image* and folding like it (WHAT is drawn there, HOW it looks here; GUI_LAYOUT_PLAN → *Narrow windows*). Its top row stays visible folded; the sections fold. **Controls:** one top row (GUI_LAYOUT_PLAN V3): **View / Select / Edit** as three icon-only segments
 (hand / pointer / pencil, the name leads each tooltip — worded chips wrapped 2D/3D onto a second row on a
 narrow panel) (what a click does —
 Select is the same knob as the pop manager's pointer button, same glyph; **Edit** is the reserved slot for the redesigned
 correction tools: a Coming soon banner under the header, an empty panel, nothing edits, not persisted), **2D / 3D**, reset view ⟳ and **⚙**. ⚙ holds renderer, cache,
-quality, 3D projection, the cache-map toggles, the **corner** overlay (overview in 2D, XYZ axes in 3D)
-and the **Debug** switch, which shows the Debug section (off by default, `cc.vw.debug`). The maps draw
-in the canvas's top-right column, under the overview/axes and the same size, never on the overview.
+quality, 3D projection, the **corner** overlay (overview in 2D, XYZ axes in 3D)
+and the **Debug** switch, which shows the Debug section (off by default, `cc.vw.debug`). The overview / axes
+sit at the foot of the right column, under How it looks. The cache maps (tile / brick residency) are
+in the Debug section, off by default — a renderer diagnostic, not on the image.
 **Shortcuts** sits at the panel's foot (and in the header's Help ▾).
 **Playback bar** (V2, `VwPlaybackBar` + `VwTimeControls`): time, z and level float on the image,
 bottom centre, just above the strip where the scale bar and the status chips sit. Two rows on one grid
