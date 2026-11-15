@@ -50,7 +50,7 @@ function setCols(v: number) { emit('update:cols', v) }
 <template>
   <!-- no group tip: the buttons carry their own, and a container tip fires on top of them -->
   <div class="cc-btn-group">
-    <button class="cc-btn cc-btn-bare cc-btn-icon" type="button" v-tooltip.bottom="'Tile in a grid'"
+    <button class="cc-btn cc-btn-bare cc-btn-icon" type="button" v-tooltip.bottom="'Tile in a grid'" aria-label="Tile in a grid" data-guide="canvas.tile"
             @click="emit('tile')"><i class="pi pi-th-large" /></button>
     <!-- Tile options: Columns knob. The trigger is a small chevron next to Tile so it never intercepts
          a Tile click; the popover is teleported so the toolbar's clipping cannot cut it off. -->

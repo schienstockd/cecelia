@@ -78,7 +78,7 @@ Either can come first — Continue in terminal hands a Kiwi reply over via the B
 
 **If it goes wrong:** If the page does not hand you back to Cecelia, copy the code it shows into **Paste the code from the sign-in page**.
 
-<img src="images/ai-login.png" width="375" alt="Log in to Claude">
+<img src="images/ai-login.png" width="374" alt="Log in to Claude">
 
 ### 3. Point at it
 
@@ -88,7 +88,7 @@ Either can come first — Continue in terminal hands a Kiwi reply over via the B
 
 **If it goes wrong:** No **@** buttons and no **Add to Kiwi** anywhere: AI is still off for this profile (step 1).
 
-<img src="images/ai-attach.png" width="375" alt="Point at it">
+<img src="images/ai-attach.png" width="374" alt="Point at it">
 
 > [!NOTE]
 > To ask about something in the viewer instead, use the **Share** row in Kiwi: draw on the pop-out viewer and share the frame.
@@ -101,7 +101,7 @@ Either can come first — Continue in terminal hands a Kiwi reply over via the B
 
 **If it goes wrong:** Kiwi answers **Can’t say from what I looked at.**: attach what the question is about and ask again. A claim number in red cites something Kiwi didn’t read; hover it for why, and don’t rely on that claim.
 
-<img src="images/ai-reply.png" width="395" alt="Ask Kiwi">
+<img src="images/ai-reply.png" width="394" alt="Ask Kiwi">
 
 ### 5. Keep it (optional)
 
