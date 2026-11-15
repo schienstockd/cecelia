@@ -20,7 +20,7 @@ import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { autoValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, scopeValueNames, siblingKeyOfType, popChipValues, segmentationKey, groupOrderKeys, newEntryDefaults } from './paramValues'
+         scopeValueName, scopeValueNames, siblingKeyOfType, popChipValues, segmentationKey, groupOrderKeys, newEntryDefaults, sharedChannels } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
 import { openViewerWindow } from '../utils/viewerWindow'
@@ -219,13 +219,7 @@ function setVersionPin(v: string) {
 }
 
 // channelSelection: intersection of channel names across selected images
-const availableChannels = computed(() => {
-  const images = props.context?.images ?? []
-  if (images.length === 0) return []
-  const nameLists = images.map(img => img.channelNames ?? [])
-  if (nameLists[0].length === 0) return []
-  return nameLists[0].filter(n => nameLists.every(ns => ns.includes(n)))
-})
+const availableChannels = computed(() => sharedChannels(props.context?.images))
 
 // imagePicker — a task param whose value is a spatial selection on ONE image (v1: `box3d` for crop).
 // Drawn ON THE VIEWER: Draw opens the viewer window on image[0] at the version the task will read
@@ -737,11 +731,17 @@ function onRoleUpdate(channel: string, role: string) {
   val.value = setChannelRole(val.value, channel, role, roleChannels.value)
 }
 
+// Only the channels on show: a stored name the selected images lack is never drawn, so it must not
+// count in the All badge or survive a click either. TaskRunner prunes the same names before a run.
+function channelArr(): string[] {
+  const shown = new Set(availableChannels.value)
+  return chipArr().filter(c => shown.has(c))
+}
 // channelSelection stores an array even when single (`multiple === false`) — so route through a handler
 // that keeps only the newly-added value in the single case, preserving the old replace-on-click behaviour.
 function onChannelUpdate(next: string[]) {
   if (props.param.multiple === false) {
-    const added = next.find(v => !chipArr().includes(v))
+    const added = next.find(v => !channelArr().includes(v))
     val.value = added ? [added] : []
   } else {
     val.value = next
@@ -1007,7 +1007,7 @@ function onChannelUpdate(next: string[]) {
         No channels — select images first.
       </div>
       <ChipSelect v-else multiple select-all :options="channelOptions"
-        :model-value="chipArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
+        :model-value="channelArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
     </div>
 
     <!-- channelRoles: one row per channel of the selected images, a segmented role choice each. -->

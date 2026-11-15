@@ -16,6 +16,7 @@
 import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 import { imageAxes, type Axis } from '../utils/taskGating'
+import { asRoleMap } from '../utils/channelRoles'
 
 /** A param's saved value: its own key, else the first former key (a renamed param) holding one. */
 export function savedValueFor(p: ParamDef, saved: ParamValues): unknown {
@@ -773,4 +774,80 @@ export function groupOrderKeys(
   const keys = Object.keys(group ?? {}).sort((a, b) => Number(a) - Number(b))
   if (!Array.isArray(order)) return keys
   return order.map(String).filter(k => keys.includes(k))
+}
+
+// ── channelSelection: only the channels the selected images share ─────────────────────────────────
+//
+// The chips list the channels EVERY selected image has. A stored selection can still hold names from
+// other images: the form keeps one value per task, so channels picked on one panel of a mixed set
+// (or restored from a draft or a chain) stay in the value after the selection moves to images that
+// lack them. They were not drawn, but they were sent, and the run died on the first name the image
+// did not have. `sharedChannels` is the chip list; `pruneChannelSelections` cuts the run's values to
+// it, so what is sent is what is shown.
+//
+// A selection whose EVERY name is hidden is not cut to `[]`: several tasks read an empty channel list
+// as "all channels" (smooth, OME-TIFF export), so emptying it would turn a refused run into one over
+// every channel. It is left as is and reported in `emptied`, for the form to refuse the run instead.
+
+/** Channel names every image carries, in the first image's order. `[]` when unknown. */
+export function sharedChannels(images: readonly CciaImage[] | undefined): string[] {
+  if (!images?.length) return []
+  const lists = images.map(img => img.channelNames ?? [])
+  return lists[0].filter(n => lists.every(ns => ns.includes(n)))
+}
+
+function pruneEntry(params: readonly ParamDef[] | undefined, vals: ParamValues, keep: Set<string>,
+                    flatSections: boolean, emptied: string[]): ParamValues {
+  let out = vals
+  const set = (k: string, v: unknown) => { out = out === vals ? { ...vals } : out; out[k] = v }
+  for (const p of params ?? []) {
+    const v = vals[p.key]
+    if (p.type === 'channelSelection' && Array.isArray(v)) {
+      if (!showIfSatisfied(p.showIf, vals)) continue   // not on the form: not the user's to fix here
+      const kept = (v as unknown[]).filter(n => keep.has(String(n)))
+      if (kept.length === v.length) continue
+      if (kept.length === 0) { if (!emptied.includes(p.label)) emptied.push(p.label) }
+      else set(p.key, kept)
+    } else if (p.type === 'channelRoles') {
+      // `{ channel: role }` — the same rule on its keys (see utils/channelRoles.ts)
+      if (!showIfSatisfied(p.showIf, vals)) continue
+      const roles = Object.entries(asRoleMap(v))
+      const kept = roles.filter(([c]) => keep.has(c))
+      const stored = v && typeof v === 'object' ? Object.keys(v).length : 0
+      if (roles.length && !kept.length) { if (!emptied.includes(p.label)) emptied.push(p.label) }
+      else if (kept.length !== stored) set(p.key, Object.fromEntries(kept))
+    } else if (p.type === 'section') {
+      // the form nests a section under its key; a group entry stores its children flat
+      if (flatSections) {
+        out = pruneEntry(p.params, out, keep, true, emptied)
+      } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const next = pruneEntry(p.params, v as ParamValues, keep, true, emptied)
+        if (next !== v) set(p.key, next)
+      }
+    } else if (p.type === 'group' && v && typeof v === 'object' && !Array.isArray(v)) {
+      let changed = false
+      const entries: Record<string, unknown> = {}
+      for (const [k, e] of Object.entries(v as Record<string, unknown>)) {
+        const next = e && typeof e === 'object' ? pruneEntry(p.params, e as ParamValues, keep, true, emptied) : e
+        if (next !== e) changed = true
+        entries[k] = next
+      }
+      if (changed) set(p.key, entries)
+    }
+  }
+  return out
+}
+
+/**
+ * `vals` with every channelSelection and channelRoles (top level, sections, group entries) cut to
+ * `available`, plus
+ * the labels of those whose every channel is missing (left uncut — see above). `values` is `vals`
+ * itself when nothing changes; everything is left alone when `available` is empty (no images
+ * selected, or channel names not loaded) — an unknown list is not "no channels".
+ */
+export function pruneChannelSelections(params: readonly ParamDef[] | undefined, vals: ParamValues,
+                                       available: readonly string[]): { values: ParamValues; emptied: string[] } {
+  const emptied: string[] = []
+  if (!available.length) return { values: vals, emptied }
+  return { values: pruneEntry(params, vals, new Set(available), false, emptied), emptied }
 }
