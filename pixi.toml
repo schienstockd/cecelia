@@ -344,6 +344,9 @@ doc-shots = "node scripts/docshots/capture.mjs"
 doc-images = "node scripts/docshots/compose.mjs"
 # a PR's screenshots before and after, on one local page (docshots-out/sheet/): never attached to a PR
 doc-sheet = "node scripts/docshots/sheet.mjs"
+# Print the generated user-docs pages (using-ai, training) as stamped A4 PDFs into docshots-out/pdf/
+# (git-ignored), from the committed markdown and images. Usage in scripts/docshots/pdf.mjs.
+doc-pdf = "node scripts/docshots/pdf.mjs"
 
 # Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
 # frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails

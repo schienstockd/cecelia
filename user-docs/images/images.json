@@ -8,5 +8,10 @@
  "app-checks.dark": 260,
  "app-outlines": 576,
  "app-tracks": 576,
- "readme-gate": 852
+ "readme-gate": 852,
+ "tr-acq-check": 880,
+ "tr-checks": 880,
+ "tr-gate": 612,
+ "tr-guides": 134,
+ "tr-mask": 600
 }

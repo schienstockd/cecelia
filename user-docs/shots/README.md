@@ -27,6 +27,7 @@ Against an **isolated** instance (own `CECELIA_DEV_DIR` and `CECELIA_PORT_SLOT`;
 pixi run doc-fixture -- --base <url> --config-dir <dir> --source-projects <lab projects dir>
 pixi run doc-shots   -- --base <url> --config-dir <dir>
 pixi run doc-images
+pixi run doc-pdf                                    # optional: stamped A4 PDFs of the pages → docshots-out/pdf/
 npx vitest run src/utils/usingAiDoc.test.ts -u      # in frontend/: the pages pick up the new widths
 npx vitest run src/utils/readmeShots.test.ts -u     #   and the README its captions' facts
 pixi run doc-sheet                                  # before/after of every changed image, local only
