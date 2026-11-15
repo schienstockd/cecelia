@@ -18,7 +18,7 @@ import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
-import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
+import { autoValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
          scopeValueName, scopeValueNames, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
@@ -27,6 +27,7 @@ import { openViewerWindow } from '../utils/viewerWindow'
 import { cropPickFromValue } from '../utils/viewer/cropPick'
 import { profileStorage } from '../utils/profileStorage'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
+import { singlePopOptions, prospectivePopGroups, type ProspectivePop } from '../utils/chainProspective'
 import { measureGroups, isTrackPopType } from '../utils/measureGroups'
 import { channelLabel } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
@@ -56,6 +57,10 @@ export interface ParamContext {
   extraValueNames?: string[] // valueNameSelection: value_names not (yet) on disk — e.g. the output
                              // of an upstream whiteboard node ("driftCorrected") that only exists once
                              // the chain runs. Merged into the option list so it can be selected.
+  extraPops?: ProspectivePop[] // popSelection: populations upstream chain steps will make (a gate
+                               // step's gates, tracking's `/_tracked`) — offered beside the image's
+  keepChosenNames?: boolean    // valueNameSelection: never replace a chosen name (the chain editor —
+                               // the node's name is the plan; see `autoValueName`)
 }
 
 const props = defineProps<{
@@ -159,22 +164,20 @@ const availableValueNames = computed(() => valueNameOptions(
   // injected spec options, which is how `models` gets its list without an image to read from
   [...globalNameOptions.value, ...(props.context?.extraValueNames ?? [])]))
 
-// When images change, auto-select an appropriate value name.
-// For filepath fields: prefer the active value name.
-// For other fields (e.g. labels): just pick the first available option.
-watch(() => props.context?.images, (images) => {
-  if (props.param.type !== 'valueNameSelection') return
-  if (!images || images.length === 0) return
-  // Keep an already-valid selection — notably an edge-propagated chain value like
-  // "driftCorrected" — rather than resetting it to the active/first name on every image change.
-  // `isChosenValueName` excludes the spec's OWN default: it is what the form started with, not a
-  // pick, and since every task JSON declares `"default": "default"` this guard used to fire on
-  // first render everywhere and the prefer-the-active-version line below never ran at all.
-  if (isChosenValueName(props.modelValue, props.param.default)
-      && availableValueNames.value.includes(props.modelValue as string)) return
-  emit('update:modelValue', preferredValueName(
-    availableValueNames.value, props.param.field, images[0].activeValueName))
-}, { immediate: true })
+// When images change, auto-select an appropriate value name (`autoValueName`: the active version for
+// image versions, the first option otherwise; a chosen name is kept while valid or while nothing is
+// offered). Keyed on the image uids and the option list, not the `images` array: the chain editor
+// rebuilds that array on every param write, so watching it by reference re-fired after each emit.
+watch(() => [(props.context?.images ?? []).map(i => i.uid).join(','), availableValueNames.value.join('\u0000')],
+  () => {
+    if (props.param.type !== 'valueNameSelection') return
+    const images = props.context?.images
+    if (!images || images.length === 0) return
+    const pick = autoValueName(props.modelValue, props.param.default, availableValueNames.value,
+                               props.param.field, images[0].activeValueName,
+                               props.context?.keepChosenNames === true)
+    if (pick !== null) emit('update:modelValue', pick)
+  }, { immediate: true })
 
 // ── P6 — Inner-version chip strip (docs/todo/VN_VERSIONING_PLAN.md → P6) ─────────
 // The `valueNameSelection` widget offers a value_name; this chip strip offers the *inner* version
@@ -300,7 +303,7 @@ const popOptions = ref<{ label: string; value: string }[]>([{ label: 'NONE (whol
 // grouped chip list (Decision 14): [{ title: "Cells · Gated", opts: [...] }]. Legacy/ungrouped
 // callers get a single untitled group. `popMultiOptions` is the flat union, for the count guard.
 const popMultiGroups = ref<PopGroupDef[]>([])
-const popMultiOptions = computed(() => popMultiGroups.value.flatMap(g => g.opts))
+const popMultiOptions = computed(() => popMultiGroupsShown.value.flatMap(g => g.opts))
 
 const popAcross = computed(() => props.param.type === 'popSelection'
   && (props.param.multiple === true || props.param.acrossSegmentations === true))
@@ -379,6 +382,13 @@ async function loadPops() {
   if (!img || !projectUid) return
   popOptions.value.push(...(await fetchPopPaths(img, projectUid, valueName, popType)).map(p => ({ label: p, value: p })))
 }
+// The image's populations + what upstream chain steps will make + the saved value(s) — so a chain
+// run on images not gated yet still shows (and keeps) the population it was built with.
+const popOptionsShown = computed(() => singlePopOptions(popOptions.value, props.context?.extraPops ?? [],
+  scopeValueName(props.context?.params, props.context?.values, Object.keys(props.context?.images?.[0]?.labels ?? {})),
+  val.value === 'NONE' ? null : val.value))
+const popMultiGroupsShown = computed(() => prospectivePopGroups(popMultiGroups.value,
+  props.context?.extraPops ?? [], props.param.accepts, val.value))
 
 // reload when the image or the chosen segmentation changes
 watch(() => [props.context?.images?.[0]?.uid,
@@ -941,7 +951,7 @@ function onChannelUpdate(next: string[]) {
       <div v-if="popMultiOptions.length === 0" class="channel-empty cc-muted">
         No populations — select an image first.
       </div>
-      <div v-for="grp in popMultiGroups" v-else :key="grp.title" class="col-group">
+      <div v-for="grp in popMultiGroupsShown" v-else :key="grp.title" class="col-group">
         <div v-if="grp.title" class="col-group-title cc-eyebrow cc-fs-2xs">{{ grp.title }}</div>
         <ChipSelect multiple select-all :options="grp.opts"
           :model-value="chipGroupSel(grp.opts.map(o => o.value))"
@@ -956,7 +966,7 @@ function onChannelUpdate(next: string[]) {
       @change="val = ($event.target as HTMLSelectElement).value"
       v-tooltip.bottom="shownTip"
     >
-      <option v-for="opt in popOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+      <option v-for="opt in popOptionsShown" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
     </select>
 
     <!-- labelPropsColsSelection: grouped (Tracking / Object) multi-select chip lists -->
