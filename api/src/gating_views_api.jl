@@ -69,7 +69,8 @@ end
 # there are — so a caller can pick a real one without another round trip.
 function _missing_column_hint(img, vn, wanted; labels_version = nothing)::String
     lp() = label_props(img; value_name = vn, version = labels_version)
-    cell = _has_label_props(img) ? vcat(col_names(lp(); data_type = :vars), col_names(lp(); data_type = :obs)) : String[]
+    _has_label_props(img) || return "this image has no cell table yet (not segmented)"
+    cell = vcat(col_names(lp(); data_type = :vars), col_names(lp(); data_type = :obs))
     track = track_table_cols(img, vn)
     missing = [c for c in wanted if !(c in cell)]
     isempty(missing) && return "the columns have no finite values"
