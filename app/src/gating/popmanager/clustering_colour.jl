@@ -199,6 +199,12 @@ _as_value_vec(x) = x === nothing ? Any[] : (x isa AbstractVector ? collect(x) : 
 _val_eq(a, b) = a == b || string(a) == string(b) ||
     (a isa Real && b isa Real && Float64(a) == Float64(b))
 
+# Does `p` CLAIM its `filter_values` — i.e. select exactly those values? Only an `in`/`eq` filter does
+# (`nothing` = a legacy cluster pop, stored before the fun was recorded, which was always `in`). A
+# `neq 3` or `gt 2` population holds everything EXCEPT/ABOVE its values, so naming value 3 after it
+# would label exactly the objects it excludes.
+_claims_values(p) = p.filter_fun === nothing || p.filter_fun === FILTER_IN || p.filter_fun === FILTER_EQ
+
 # canonical string key for a category value on the wire (2.0 and 2 → "2") so Julia overrides and the
 # bridge's column values match regardless of Int/Float encoding.
 _val_key(v) = v isa Real ? (isinteger(v) ? string(Int(v)) : string(v)) : string(v)
@@ -215,7 +221,7 @@ function pop_label_overrides(m::PopulationMap, column::AbstractString)::Dict{Str
     col = String(column); out = Dict{String,String}()
     for path in m.order
         p = m.pops[path]
-        (p.filter_measure === nothing || String(p.filter_measure) != col) && continue
+        (p.filter_measure === nothing || String(p.filter_measure) != col || !_claims_values(p)) && continue
         for fv in _as_value_vec(p.filter_values)
             k = _val_key(fv)
             haskey(out, k) || (out[k] = p.name)

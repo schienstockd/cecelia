@@ -643,6 +643,120 @@ end
     end
 end
 
+# ── a track-cluster frequency reads the cluster NAMES (track_cluster_frequency.json) ─────────────
+# "What fraction of each gated population's tracks is Directed?" — the IDs a cluster population claims
+# pool under its name and colour; an ID nobody named keeps its number; no names → the raw IDs.
+@testset "track-cluster frequency pools named clusters" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "track-cluster frequency (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        for f in (h5, trk); cp(f, joinpath(td, "labelProps", basename(f))); end
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        ids = track_props(img; value_name="B")[!, "clusters.movement"]
+        n(k) = count(v -> !ismissing(v) && isfinite(v) && Int(v) == k, ids)
+        req() = plot_summary_data(img, "live", ["B/_tracked"], "frequency"; granularity=:track,
+                                  measure="clusters.movement")
+        raw = req()
+        @test raw["categories"] == ["0", "1", "2"] && !haskey(raw, "categoryMembers")
+        tc = PopulationMap(pop_type="trackclust", value_name="B")
+        add_pop!(tc, "Directed"; filter_measure="clusters.movement", filter_fun="in",
+                 filter_values=[0, 2], colour="#c061cb")
+        save_pop_map!(tc, img)
+        r = req()
+        @test r["categories"] == ["1", "Directed"]
+        @test r["series"][1]["counts"] == [n(1), n(0) + n(2)]       # IDs 0 and 2 pooled
+        @test sum(r["series"][1]["counts"]) == sum(raw["series"][1]["counts"])
+        # a non-cluster categorical measure is untouched
+        @test Cecelia._cluster_category_names([img], [""], ["B"], "track_state", :track) === nothing
+
+        # the same measure on a BOXPLOT is the per-image composition: one series per (pop, category),
+        # each point an image's fraction — named, pooled, and still reported categorical
+        b = plot_summary_data(img, "live", ["B/_tracked"], "boxplot"; granularity=:track,
+                              measure="clusters.movement", raw_points=true, composition=true)
+        # without the opt-in the same request is an ordinary box of the raw codes
+        @test plot_summary_data(img, "live", ["B/_tracked"], "boxplot"; granularity=:track,
+                                measure="clusters.movement")["groupBy"] === nothing
+        @test b["measureType"] == "categorical" && b["groupBy"] == "clusters.movement"
+        @test [s["group"] for s in b["series"]] == ["1", "Directed"]
+        tot = n(0) + n(1) + n(2)
+        @test b["series"][2]["median"] ≈ (n(0) + n(2)) / tot && b["series"][1]["n"] == 1
+        @test !haskey(b, "categoryClaims")                          # a population lends its name, not its colour
+        @test r["categoryMembers"] == Dict("|B" => Dict("Directed" => ["0", "2"]))
+
+        # PER IMAGE names: a second image clustered in another run, with no names of its own, keeps its
+        # raw IDs — image 1's "0 = Directed" must not relabel image 2's unrelated ID 0
+        td2 = mktempdir(); mkpath(joinpath(td2, "labelProps"))
+        for f in (h5, trk); cp(f, joinpath(td2, "labelProps", basename(f))); end
+        img2 = CciaImage(uid="KDIeE2", dir=td2)
+        img2.label_props["B"] = "B.h5ad"; img2.label_props["_active"] = "B"
+        m = plot_summary_data([img, img2], ["KDIeEm", "KDIeE2"], "live", ["B/_tracked"], "frequency";
+                              scope=:per_image, granularity=:track, measure="clusters.movement")
+        cats = m["categories"]
+        @test Set(cats) == Set(["0", "1", "2", "Directed"])
+        s2 = only(s for s in m["series"] if s["uID"] == "KDIeE2")
+        @test s2["counts"][findfirst(==("Directed"), cats)] == 0
+        @test s2["counts"][findfirst(==("0"), cats)] == n(0)
+        @test !haskey(m["categoryMembers"], "KDIeE2|B")
+
+        # …but an image of the SAME run (clustfeatures `partOf`) without its own copy of the names
+        # reads the run's — else its Directed tracks would count as a false 0
+        part = Dict("clusters.movement" => Dict("features" => String[], "partOf" => ["KDIeEm", "KDIeE2"]))
+        for d in (td, td2)
+            write(joinpath(d, "labelProps", "B__tracks.clustfeatures.json"), JSON3.write(part))
+        end
+        m2 = plot_summary_data([img, img2], ["KDIeEm", "KDIeE2"], "live", ["B/_tracked"], "frequency";
+                               scope=:per_image, granularity=:track, measure="clusters.movement")
+        @test Set(m2["categories"]) == Set(["1", "Directed"])
+        @test m2["categoryMembers"]["KDIeE2|B"] == Dict("Directed" => ["0", "2"])
+        # PER ID: image 2 now names ID 1 itself but not 0/2 — those still read the run's "Directed"
+        t2 = PopulationMap(pop_type="trackclust", value_name="B")
+        add_pop!(t2, "Slow"; filter_measure="clusters.movement", filter_fun="in", filter_values=[1], colour="#111111")
+        save_pop_map!(t2, img2)
+        m3 = plot_summary_data([img, img2], ["KDIeEm", "KDIeE2"], "live", ["B/_tracked"], "frequency";
+                               scope=:per_image, granularity=:track, measure="clusters.movement")
+        @test m3["categoryMembers"]["KDIeE2|B"] == Dict("Directed" => ["0", "2"], "Slow" => ["1"])
+        # …and image 1, which never named ID 1, reads the run's "Slow" for it
+        @test m3["categoryMembers"]["KDIeEm|B"] == Dict("Directed" => ["0", "2"], "Slow" => ["1"])
+        # an image's OWN name is never widened by the run's: image 2 calls ID 1 "Directed" itself
+        t3 = PopulationMap(pop_type="trackclust", value_name="B")
+        add_pop!(t3, "Directed"; filter_measure="clusters.movement", filter_fun="in", filter_values=[1], colour="#222222")
+        save_pop_map!(t3, img2)
+        m4 = plot_summary_data([img, img2], ["KDIeEm", "KDIeE2"], "live", ["B/_tracked"], "frequency";
+                               scope=:per_image, granularity=:track, measure="clusters.movement")
+        @test m4["categoryMembers"]["KDIeE2|B"] == Dict("Directed" => ["1"])
+    end
+end
+
+# ── the per-image composition frame: images are the points, an absent category is a 0 ─────────────
+@testset "composition frame — per-image fractions, complete cases" begin
+    df = DataFrame("value_name" => fill("T", 7), "pop" => ["OTI", "OTI", "OTI", "OTI", "OTI", "gBT", "gBT"],
+                   "uID" => ["m1", "m1", "m1", "m2", "m2", "m1", "m1"],
+                   "clusters.movement" => Union{Missing,String}["Directed", "Confined", "Directed",
+                                                                "Confined", missing, "Confined", "Confined"])
+    f = Cecelia._composition_frame(df, "clusters.movement")
+    at(p, u, k) = only(f.proportion[(f.pop .== p) .& (f.uID .== u) .& (f[!, "clusters.movement"] .== k)])
+    @test at("OTI", "m1", "Directed") ≈ 2 / 3 && at("OTI", "m1", "Confined") ≈ 1 / 3
+    @test at("OTI", "m2", "Directed") == 0.0          # absent in m2 → a 0, not a missing point
+    @test at("OTI", "m2", "Confined") == 1.0          # the missing row has no category → no denominator
+    @test at("gBT", "m1", "Directed") == 0.0
+    @test nrow(f) == 6                                 # 3 (pop, image) units × 2 categories
+    # grouped by an image attribute: one series per (attribute, pop, category), images as points
+    r = Cecelia._summary_agg(df, "points"; measure="clusters.movement", granularity=:track,
+                             nbins=30, normalize=:none, by_image=true, composition=true,
+                             attr_map=Dict("m1" => "WT", "m2" => "WT"))
+    oti_dir = only(s for s in r["series"] if s["pop"] == "OTI" && s["group"] == "Directed")
+    @test sort(oti_dir["points"]) ≈ [0.0, 2 / 3]       # both mice, one point each
+    # "pool populations": each image's fraction of the POOLED tracks, not each pop's side by side
+    c = Cecelia._summary_agg(df, "points"; measure="clusters.movement", granularity=:track,
+                             nbins=30, normalize=:none, by_image=false, composition=true, collapse_series=true)
+    dir = only(s for s in c["series"] if s["group"] == "Directed")
+    @test sort(dir["points"]) ≈ [0.0, 2 / 5]            # m1: 2 of 5 pooled tracks; m2: 0 of 1
+end
+
 # ── the state-signature heatmap follows its HMM run (docs/todo/HMM_FIT_QUALITY_PLAN.md) ─────────
 # Rows = the measures the run was FITTED on, then the requested extras; the response carries the fit.
 # A run with no fit record (fitted before it existed) keeps exactly the requested rows.

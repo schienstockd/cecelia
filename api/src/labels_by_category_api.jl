@@ -48,6 +48,14 @@ propertynames_str(df) = String.(propertynames(df))
 function _labels_by_category_for(img, value_name::AbstractString, pop_type::AbstractString,
                                  pop::AbstractString, measure::AbstractString,
                                  category::AbstractString)::Vector{Int}
+    _labels_by_category_for(img, value_name, pop_type, pop, measure, [category])
+end
+# Any of several categories — a NAMED cluster category pools raw IDs (Directed = 3 + 4; the frequency
+# response's `categoryMembers`), and the cells carry the codes, not the name.
+function _labels_by_category_for(img, value_name::AbstractString, pop_type::AbstractString,
+                                 pop::AbstractString, measure::AbstractString,
+                                 categories::AbstractVector{<:AbstractString})::Vector{Int}
+    want = Set{String}(String.(categories))
     # one segmentation's ids — a cluster pop's run-wide expansion would pool other segmentations' labels
     df = pop_df(img, pop_type, [pop];
                 value_name = value_name,
@@ -64,7 +72,7 @@ function _labels_by_category_for(img, value_name::AbstractString, pop_type::Abst
     for i in 1:n
         v = col[i]
         (ismissing(v) || (v isa Real && !isfinite(v))) && continue
-        _catkey_local(v) == category || continue
+        _catkey_local(v) in want || continue
         lid = lcol[i]
         (ismissing(lid) || lid <= 0) && continue
         push!(ids, Int(lid))
@@ -101,6 +109,9 @@ function api_labels_by_category(body_bytes::Vector{UInt8})
     pop_type  = string(get(body, "popType", "live"))
     measure   = string(get(body, "measure", ""))
     category  = string(get(body, "category", ""))
+    # optional `categories`: the raw IDs a NAMED category pools — matched instead of `category`
+    cats_v    = get(body, "categories", nothing)
+    cats      = cats_v isa AbstractVector && !isempty(cats_v) ? String[string(c) for c in cats_v] : String[category]
     isempty(proj)       && return _gerr(400, "projectUid required")
     isempty(image_uid)  && return _gerr(400, "imageUid required")
     isempty(value_name) && return _gerr(400, "valueName required")
@@ -116,7 +127,7 @@ function api_labels_by_category(body_bytes::Vector{UInt8})
 
     img, err = _gating_image(proj, image_uid)
     err === nothing || return err
-    ids = sort!(_labels_by_category_for(img, value_name, pop_type, pop, measure, category))
+    ids = sort!(_labels_by_category_for(img, value_name, pop_type, pop, measure, cats))
     total = length(ids)
     truncated = total > limit
     truncated && (ids = ids[1:limit])

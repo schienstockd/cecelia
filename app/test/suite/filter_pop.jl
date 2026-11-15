@@ -186,4 +186,9 @@ end
     lbl = pop_label_overrides(m, "clusters.mov")
     @test lbl == Dict("2" => "directed", "0" => "crawling", "3" => "crawling", "4" => "crawling")
     @test isempty(pop_label_overrides(m, "clusters.absent"))
+    # only a SELECTING filter claims: "not 3" holds everything but 3, so 3 must not read its name
+    mx = PopulationMap(pop_type="trackclust", value_name="B")
+    add_pop!(mx, "motile"; filter_measure="clusters.mov", filter_fun="neq", filter_values=[3], colour="#123456")
+    add_pop!(mx, "fast"; filter_measure="clusters.mov", filter_fun="eq", filter_values=[1], colour="#654321")
+    @test pop_label_overrides(mx, "clusters.mov") == Dict("1" => "fast")
 end
