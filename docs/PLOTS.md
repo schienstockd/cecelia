@@ -5,9 +5,12 @@
 Every plot — on a **module page** or the **`/analysis` board** — is hosted the same way. Do **not**
 build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
 
-1. A `app/src/plotDefinitions/<id>.json` registry entry (`{ id, label, module, family: "summary",
+1. A `app/src/plotDefinitions/<id>.json` registry entry (`{ id, label, answers, module, family: "summary",
    chartTypes, dataSource: { popType, granularity, measure, measureOptions }, scopeModes,
-   whiteboardCompatible }`), served by `GET /api/plots/definitions`.
+   whiteboardCompatible }`), served by `GET /api/plots/definitions`. `answers` is the question the plot
+   answers, in the user's words — required (as on `INTERACTIVE_VIEWS` and `CLUSTER_PANELS` entries):
+   it is what an agent matches "how do I plot X?" against in `get_guide("which-plot")`
+   (`frontend/src/lib/guides/plotCatalogue.ts`, rendered into `mcp/cecelia_mcp/guides.json`).
 2. Rendered by `SummaryCanvas` → `SummaryPanel` → `PlotChart` (Observable Plot). Data comes from the
    single `POST /api/plot_data` aggregator (`plot_summary_data`). `whiteboardCompatible: true` makes
    the same definition available on the whiteboard too.
