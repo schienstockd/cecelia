@@ -21,7 +21,7 @@ import type { CapabilityAsk } from '../callForDatasets'
 
 export interface GuideTextEntry {
   id: string
-  kind: 'guide' | 'recipe' | 'dataset-call' | 'request'
+  kind: 'guide' | 'recipe' | 'dataset-call' | 'request' | 'plots'
   title: string
   summary: string
   text: string

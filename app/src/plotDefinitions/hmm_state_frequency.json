@@ -1,6 +1,7 @@
 {
   "id": "hmm_state_frequency",
   "label": "HMM state frequency",
+  "answers": "What fraction of each population's cells sits in each HMM state (or track generation / state)?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["frequency", "stacked", "stacked100"],

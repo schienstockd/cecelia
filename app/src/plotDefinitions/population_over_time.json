@@ -1,6 +1,7 @@
 {
   "id": "population_over_time",
   "label": "Populations over time",
+  "answers": "How does each population's size (count or proportion) change over the movie's frames?",
   "modules": {
     "phenotype": ["flow", "clust"],
     "behaviourAnalysis": ["flow", "live", "track", "trackclust"]

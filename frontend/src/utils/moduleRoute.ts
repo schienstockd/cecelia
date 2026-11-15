@@ -11,6 +11,8 @@ export function moduleRouteFor(module: string): string | null {
   switch (module) {
     case 'behaviourAnalysis': return '/behaviour'
     case 'phenotype':         return '/phenotype'
+    case 'spatialAnalysis':   return '/spatial'
+    case 'segment':           return '/segment'
     case 'clustTracks':       return '/clust-tracks'
     case 'clustPops':         return '/clust-cells'
     case 'analysis':          return '/analysis'

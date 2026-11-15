@@ -8,6 +8,9 @@ describe('moduleRouteFor', () => {
     expect(moduleRouteFor('clustTracks')).toBe('/clust-tracks')
     expect(moduleRouteFor('clustPops')).toBe('/clust-cells')
     expect(moduleRouteFor('analysis')).toBe('/analysis')
+    // every Explore/QC page with a summary canvas (lib/guides/plotCatalogue.ts names plot pages by it)
+    expect(moduleRouteFor('spatialAnalysis')).toBe('/spatial')
+    expect(moduleRouteFor('segment')).toBe('/segment')
   })
   it('returns null for anything unrecognised — reshow silently degrades', () => {
     expect(moduleRouteFor('nope')).toBeNull()

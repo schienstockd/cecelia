@@ -1,15 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import { guideCatalogue } from './guideText'
+import { plotCatalogueEntry, specPages, type PlotSpecText } from './plotCatalogue'
 import { GUIDES, RECIPES, isWanted } from './index'
 import { CALL_FOR_DATASETS, datasetAskUrl } from '../callForDatasets'
 import { FEATURE_REQUEST_URL } from '../links'
 
+// the registry plot specs, as the backend serves them (app/src/plotDefinitions) — handed to the
+// catalogue here so the app bundle never imports across the tree
+const SPECS = Object.values(import.meta.glob<PlotSpecText>('../../../../app/src/plotDefinitions/*.json',
+                                                           { eager: true, import: 'default' }))
+
 describe('guide text for the MCP', () => {
-  const cat = guideCatalogue()
+  const cat = [...guideCatalogue(), plotCatalogueEntry(SPECS)]
 
   it('carries every guide, every written recipe and every dataset call, ids unique', () => {
     const written = RECIPES.filter(r => !isWanted(r)).length
-    expect(cat).toHaveLength(GUIDES.length + written + CALL_FOR_DATASETS.length + 1)   // + request-a-feature
+    expect(cat).toHaveLength(GUIDES.length + written + CALL_FOR_DATASETS.length + 2)   // + request-a-feature, which-plot
     expect(new Set(cat.map(e => e.id)).size).toBe(cat.length)
   })
 
@@ -32,6 +38,19 @@ describe('guide text for the MCP', () => {
   it('a recipe inlines its guides in order', () => {
     const t = cat.find(e => e.id === 'intravital-timelapse')!.text
     expect(t.indexOf('# Train a flow model')).toBeLessThan(t.indexOf('# Segment a movie by motion'))
+  })
+
+  // "How do I plot X?" — every spec found, on a page the catalogue can name, saying what it answers
+  it('the plot catalogue lists every spec on a named page with its question', () => {
+    expect(SPECS.length).toBeGreaterThan(10)
+    const text = cat.find(e => e.id === 'which-plot')!.text
+    for (const s of SPECS) {
+      expect(s.answers, s.id).toMatch(/\?$/)
+      expect(specPages(s).every(p => !p.startsWith('?')), `${s.id}: module missing from moduleRouteFor`).toBe(true)
+      expect(text).toContain(`\`${s.id}\``)
+    }
+    // the composition plot of track clusters per gated population is findable by its question
+    expect(text).toMatch(/## Behaviour[^#]*\*\*Track cluster frequency\*\* — [^\n]*behaviour make-up/)
   })
 
   // The committed copy the MCP serves. Stale ⇒ re-run with `-u` and commit mcp/cecelia_mcp/guides.json.
