@@ -28,7 +28,7 @@ const view = computed(() => acqCheckView(result.value))
 </script>
 
 <template>
-  <CheckButton label="Acquisition" :state="view.state" :count="view.count" :tip="view.tip"
+  <CheckButton data-guide="checks.acquisition" label="Acquisition" :state="view.state" :count="view.count" :tip="view.tip"
                :disabled="!projectMeta.current" @click="open = true" />
   <AcqCheckDialog v-if="open && projectMeta.current" :project-uid="projectMeta.current.uid" :set-uid="setUid"
                   :set-name="setName" @changed="r => result = r" @close="open = false" />

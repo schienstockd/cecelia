@@ -44,6 +44,18 @@ export const GUIDE_MATURITY = {
     datasetAsk: 'vendor-calibration',
     covers: ['importImages.remove', 'editImages.copyImage'],
   },
+  // The Measure button runs this hidden task, which the guide does not await.
+  'acquisition-check': {
+    tier: 'experimental', testedOn: 'One intravital 2-photon set (16 movies, two label designs)',
+    covers: ['importImages.measureSignal'],
+    evidence: [
+      { path: 'app/test/suite/acq_check.jl', test: 'acq_check — with a plan: designs, photons, balance, shared structure',
+        failsIf: 'laser settings differing within a label design are not flagged' },
+      { path: 'api/test/suite/acq_check_routes.jl', test: 'API: acquisition check',
+        failsIf: 'reading the check writes anything, or a changed plan is not a new round' },
+    ],
+    next: [REVIEW, todo('Thresholds set on more than two stand-in sets')],
+  },
   'fix-metadata': {
     tier: 'beta',
     testedOn: `${IV2P}; synthetic stores`,
