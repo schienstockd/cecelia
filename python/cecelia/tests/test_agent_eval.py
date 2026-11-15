@@ -360,6 +360,24 @@ class TestAppProject(unittest.TestCase):
             hmm = json.loads((img / "labelProps" / "cells.hmmfit.json").read_text(encoding="utf-8"))
             self.assertEqual(hmm["movement"]["partOf"], [full["images"][0]["imageUid"]])
             self.assertIn("imgA", (src / "labelProps" / "cells__tracks.clustfeatures.json").read_text(encoding="utf-8"))
+            self.assertEqual(json.loads((img / "ccid.json").read_text(encoding="utf-8"))["filepath"],
+                             {"default": "raw.ome.zarr", "_active": "default"})
+            # results made on a drift-corrected version (another canvas) come with that version, active;
+            # a copy without results stays raw
+            (projects / "SRC" / "0" / "imgA" / "dc.ome.zarr").mkdir()
+            ccid = json.loads((src / "ccid.json").read_text(encoding="utf-8"))
+            ccid["filepath"] = {"default": "raw.ome.zarr", "driftCorrected": "dc.ome.zarr", "_active": "driftCorrected"}
+            (src / "ccid.json").write_text(json.dumps(ccid), encoding="utf-8")
+            dc = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other, results=True)
+            uid = dc["images"][0]["imageUid"]
+            self.assertEqual(json.loads((other / dc["projectUid"] / "1" / uid / "ccid.json").read_text(encoding="utf-8"))["filepath"],
+                             {"default": "raw.ome.zarr", "driftCorrected": "dc.ome.zarr", "_active": "driftCorrected"})
+            self.assertTrue((other / dc["projectUid"] / "0" / uid / "dc.ome.zarr").is_dir())
+            raw = app_project.build(projects, "SRC", ["imgA"], "Booklet", into=other)
+            uid = raw["images"][0]["imageUid"]
+            self.assertEqual(json.loads((other / raw["projectUid"] / "1" / uid / "ccid.json").read_text(encoding="utf-8"))["filepath"],
+                             {"default": "raw.ome.zarr", "_active": "default"})
+            self.assertFalse((other / raw["projectUid"] / "0" / uid / "dc.ome.zarr").exists())
         legacy = {"imageUid": "c1", "imageName": "n", "source": {"projectUid": "SRC", "imageUid": "imgA"}}
         self.assertEqual(app_project.copy_images(legacy),
                          [{"imageUid": "c1", "imageName": "n", "sourceImageUid": "imgA"}])

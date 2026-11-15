@@ -3,6 +3,7 @@
   tips. Content is driven by `frontend/src/lib/whatsNew.ts`; layout follows the ClaudeOverviewDialog
   card pattern.
 
+  `shot.id` is a real screenshot (lib/docShots.ts) in the user's colour scheme and wins over the sketch.
   `sketchAnimation.id` resolves against feijoa's `sketches` catalogue; unknown ids fall through to
   the grey "coming soon" placeholder. `statsAnnotation` is a typed slot still awaiting content
   (STATS_ANNOTATIONS_PLAN.md).
@@ -14,6 +15,7 @@ import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_NEW_ISSUE_URL
 import { useSettingsStore } from '../stores/settings'
 import { useGuideStore } from '../stores/guide'
 import { guideById } from '../lib/guides'
+import { docShotUrl } from '../lib/docShots'
 import CcToggle from './CcToggle.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 
@@ -51,8 +53,13 @@ function showMe() {
   closeWhatsNew()
 }
 
+const settings = useSettingsStore()
+// The card's screenshot in the scheme the user has; none (or not composed) → the sketch as before.
+const shotUrl = computed(() => (props.card.shot ? docShotUrl(props.card.shot.id, settings.colourScheme) : null))
+
 // Resolve `sketchAnimation.id` → feijoa's catalogue; unknown id (or none) → null → placeholder.
 const sketch = computed<SketchDefinition | null>(() => {
+  if (shotUrl.value) return null
   const id = props.card.sketchAnimation?.id
   if (!id) return null
   return sketches[id] ?? null
@@ -60,7 +67,6 @@ const sketch = computed<SketchDefinition | null>(() => {
 
 // The "show tips on launch" opt-out is a store toggle bound to a checkbox on every tip card.
 // Bound as `!tipsOnLaunch` so the checkbox reads "Don't show tips on launch" (opt-out language).
-const settings = useSettingsStore()
 const tipsOptOut = computed({
   get: () => !settings.tipsOnLaunch,
   set: (v: boolean) => { settings.tipsOnLaunch = !v },
@@ -77,11 +83,14 @@ const tipsOptOut = computed({
 
     <div v-if="dateLabel" class="wn-date cc-muted cc-fs-2xs">{{ dateLabel }}</div>
 
-    <!-- sketchAnimation — feijoa SketchCanvas when the id resolves; grey box otherwise. -->
-    <div v-if="sketch" class="wn-sketch wn-sketch-render">
+    <!-- The card's picture: its screenshot of real data (a tip's fills the same 2:1 frame as a sketch,
+         so the card keeps its height while the user pages tips), else its feijoa sketch. One frame,
+         so the edge-click nav is written once. -->
+    <div v-if="shotUrl || sketch" :class="shotUrl ? ['wn-shot', { 'wn-shot-tip': isTip }] : 'wn-sketch wn-sketch-render'">
+      <img v-if="shotUrl" :src="shotUrl" :alt="card.title" />
       <!-- Explicit 100% h/w — SketchCanvas defaults to `height: auto` (inline), which would win
            over the container's aspect-ratio and overflow the card. -->
-      <SketchCanvas :definition="sketch" width="100%" height="100%" />
+      <SketchCanvas v-else-if="sketch" :definition="sketch" width="100%" height="100%" />
       <template v-if="navigable">
         <button type="button" class="wn-nav wn-nav-prev" aria-label="Previous tip" v-tooltip.right="'Previous tip'" @click.stop="emit('nav-prev')">
           <i class="pi pi-chevron-left" />
@@ -168,6 +177,13 @@ const tipsOptOut = computed({
   overflow: hidden;
 }
 .wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: 100%; display: block; }
+
+/* A screenshot: its own size up to the card's width (a feature), or filling the tip's 2:1 frame (the
+   in-app shots are cropped to it). */
+.wn-shot { margin-top: var(--cc-space-md); position: relative; border-radius: var(--cc-radius-md); overflow: hidden; }
+.wn-shot img { display: block; max-width: 100%; height: auto; }
+.wn-shot-tip { aspect-ratio: 2 / 1; }
+.wn-shot-tip img { width: 100%; height: 100%; object-fit: cover; }
 
 /* Edge-click nav — invisible zones on the sketch's left/right edges; chevron fades in on hover. */
 .wn-nav {
