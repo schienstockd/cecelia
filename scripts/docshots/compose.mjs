@@ -25,7 +25,7 @@ import { chromium, findChromium, repo } from '../lib/chromium.mjs'
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, imageFile, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, imageFile, isPicture, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { figureGeometry } = await import(pathToFileURL(join(dir, 'figure.ts')).href)
 
 function parseArgs(argv) {
@@ -104,9 +104,9 @@ try {
     // the boxes are the capture's. A different target or crop does need one.
     if (spec.point?.anchor !== m.point?.anchor || spec.crop.join() !== m.crop.join()) stale.push(stem)
     else if (spec.point) m.point = spec.point
-    const g = figureGeometry(m, { column: spec.width ?? set.column, aspect: spec.aspect, pad: spec.viewer ? -(spec.inset ?? 0) : undefined })
-    // a viewer shot is a picture of the image, with no app text to read at the app's size
-    if (!g.legible && !spec.viewer) tooWide.push(`${stem} (${Math.round(g.w)} px wide → text at ${Math.round(100 * g.k)}%)`)
+    const g = figureGeometry(m, { column: spec.width ?? set.column, aspect: spec.aspect, pad: isPicture(spec) ? -(spec.inset ?? 0) : undefined })
+    // a picture of the image has no app text to read at the app's size; an overview is not meant to be read
+    if (!g.legible && !isPicture(spec) && !spec.overview) tooWide.push(`${stem} (${Math.round(g.w)} px wide → text at ${Math.round(100 * g.k)}%)`)
     await page.setContent(figureHtml(m, png, g, theme), { waitUntil: 'load' })
     await page.locator('#f').screenshot(file.endsWith('.jpg') ? { path: join(a.out, file), type: 'jpeg', quality: 80 } : { path: join(a.out, file) })
     widths[stem] = Math.floor(g.w * g.k)   // whole px: a fractional edge would show the page behind

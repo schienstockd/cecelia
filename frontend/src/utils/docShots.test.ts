@@ -93,14 +93,26 @@ describe('doc shots: colour schemes', () => {
       ['an app set is captured in every colour scheme, so the app shows its user\'s and never mixes them'])
   })
 
-  // A picture of the image has no app chrome, so one file serves every scheme; it may not crop to more.
-  it('captures a picture once and keeps it to the canvas', () => {
+  // A picture of the image (the canvas alone) has no app chrome, so one file serves every scheme; the
+  // whole viewer window has chrome, so it is a screenshot like any other, one per scheme.
+  it('captures a picture once; a viewer window in every scheme', () => {
     const pic = shot({ viewer: {}, crop: ['css:canvas'] })
+    const win = shot({ viewer: {}, crop: ['css:body'] })
     const s = set({ themes: ['dark', 'light'] })
     expect(shotThemes(s, pic)).toEqual(['dark'])
-    expect([imageFile(pic, 'dark'), imageFile(shot(), 'light'), imageFile(shot(), 'dark')]).toEqual(['s1.jpg', 's1.png', 's1.dark.png'])
-    expect(checkShotSets([set({ shots: [shot({ viewer: {}, crop: ['css:canvas', 'task.run'] })] })]).map(i => i.problem))
-      .toEqual(['shot "s1" is a picture of the image: it crops to css:canvas alone and points at nothing, so no app chrome (which has a scheme) is in it'])
+    expect(shotThemes(s, win)).toEqual(['dark', 'light'])
+    expect([imageFile(pic, 'dark'), imageFile(win, 'dark'), imageFile(shot(), 'light'), imageFile(shot(), 'dark')])
+      .toEqual(['s1.jpg', 's1.dark.png', 's1.png', 's1.dark.png'])
+    expect(checkShotSets([set({ shots: [shot({ viewer: {}, crop: ['css:canvas'], point: { anchor: 'css:canvas', label: 'x' } })] })]).map(i => i.problem))
+      .toEqual(['shot "s1" is a picture of the image: it points at nothing, so no app chrome (which has a scheme) is in it'])
+  })
+
+  // The README's hero is two shots, one figure: `beside` names another shot of the set.
+  it('a shot sits beside another of its set', () => {
+    const problems = (shots: Shot[]) => checkShotSets([set({ shots })]).map(i => i.problem)
+    expect(problems([shot(), shot({ id: 's2', beside: 's1' })])).toEqual([])
+    expect(problems([shot({ beside: 'nope' })])).toEqual(['shot "s1" sits beside "nope", which is not another shot of its set (or itself sits beside one)'])
+    expect(problems([shot({ beside: 's1' })])).toEqual(['shot "s1" sits beside "s1", which is not another shot of its set (or itself sits beside one)'])
   })
 
   // The check that fails a set whose images disagree on scheme: every shot has an image in each of

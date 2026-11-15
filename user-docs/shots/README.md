@@ -37,7 +37,16 @@ test fails when a shot is missing an image in one, so one page never mixes schem
 both is a `<picture>` GitHub shows in the reader's scheme; an `app` set needs every scheme, so the app
 shows its user's. The pointer is drawn in the image's scheme. A **picture of the image** (a viewer shot,
 cropped to the canvas alone) has no app chrome, so it is captured once and composed as one JPEG
-(`<id>.jpg`): the same pixels in both schemes, and a 2× microscopy PNG is megabytes.
+(`<id>.jpg`): the same pixels in both schemes, and a 2× microscopy PNG is megabytes. A viewer shot
+cropped to more (`css:body`, the whole viewer window) keeps the viewer's chrome, so it is captured in
+every scheme like any other screenshot.
+
+**Side by side.** A shot with `beside: <id>` sits to the right of that shot of its set, the two one
+figure under the first one's caption: the README's hero is the Gate page (`windowWidth` 1440) beside the
+viewer window (980) on the same image, each shown at the same scale. `overview` marks a whole window
+shown small, whose text is not meant to be read, so compose does not refuse it as too wide. `stable`
+lists text that reads like a time but is a fact of the image (a duration, a frame interval), which the
+check for stale times then passes over.
 
 **Slots.** `column` (set) and `width` (shot) are the width an image is shown at; `aspect` trims a crop to
 its slot's shape (a tip's 2:1 frame); `inset` pulls a picture in from chrome over the canvas' edge.

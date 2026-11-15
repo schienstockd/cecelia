@@ -8,8 +8,11 @@
  "app-checks.dark": 260,
  "app-outlines": 576,
  "app-tracks": 576,
+ "readme-gate": 500,
+ "readme-gate.dark": 500,
  "readme-outlines": 560,
- "readme-tracks": 880,
+ "readme-viewer": 340,
+ "readme-viewer.dark": 340,
  "readme-when": 248,
  "readme-when.dark": 248
 }

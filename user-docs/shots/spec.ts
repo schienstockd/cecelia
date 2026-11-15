@@ -42,6 +42,8 @@ export type Action =
   /** Unfold a fold toggle (`aria-expanded`): clicked only when folded, as a fold's state persists per
    *  profile and a plain click would close one the last shot left open. */
   | { open: Anchor }
+  /** Pick an option of a `<select>` by its label (a page's segmentation). */
+  | { select: Anchor; option: string }
 
 /** One screenshot, taken by scripts/docshots/capture.mjs from an ISOLATED instance and composed into a
  *  page's image by scripts/docshots/compose.mjs (crop + pointer drawn on top, so the look can change
@@ -73,6 +75,14 @@ export interface Shot {
   /** A picture's crop pulled in this many CSS px on every side: chrome the canvas runs under (the
    *  viewer's status bar) or the image's own edge. */
   inset?: number
+  /** The whole window shown small, beside another (a README's overview of the app): its text is not
+   *  meant to be read at that size, so compose does not refuse it as too wide. */
+  overview?: boolean
+  /** Shown to the right of shot `beside` of its set, the two as one figure under that shot's caption
+   *  (the app's page and the viewer window on the same image). */
+  beside?: string
+  /** Window width in CSS px when narrower than the default 1440 (the viewer window beside the app). */
+  windowWidth?: number
   /** Window height in CSS px when the target is taller than the default 900 (a gate plot). */
   height?: number
   /** What the user does first. A shot shows the state BEFORE the action it illustrates, unless the result is the point. */
@@ -84,6 +94,9 @@ export interface Shot {
   crop: Anchor[]
   /** Text blanked before capture: names, ids, times. */
   masks?: Anchor[]
+  /** Text the crop shows that reads like a time but is a fact of the image (its duration, its frame
+   *  interval), so the check for times that go stale between captures passes over it. Facts allowed. */
+  stable?: string[]
   /** The app's labels the page cites: the capture fails when an anchor's text lacks one. `text` may be a
    *  fixture fact (`{{project.image.fact}}`), so a number on the page is the number in the pixels. */
   expect?: { anchor: Anchor; text: string }[]
@@ -154,8 +167,9 @@ export const shotFile = (id: string, theme: ColourScheme): string => (theme === 
 
 /** A picture of the image: a viewer shot, cropped to the canvas. Its pixels are the image's, the same in
  *  every scheme, so it is captured once (the set's first scheme) and composed as one JPEG
- *  (`<id>.jpg`): a lossless 2× microscopy picture is megabytes. */
-export const isPicture = (x: Shot): boolean => !!x.viewer
+ *  (`<id>.jpg`): a lossless 2× microscopy picture is megabytes. A viewer shot cropped to more (the whole
+ *  viewer window) keeps its chrome, so it is a screenshot like any other: one per scheme. */
+export const isPicture = (x: Shot): boolean => !!x.viewer && x.crop.join() === 'css:canvas'
 export const shotThemes = (set: ShotSet, x: Shot): ColourScheme[] => (isPicture(x) ? set.themes.slice(0, 1) : set.themes)
 /** The composed image a page or the app shows, in one scheme (a picture's one file serves every scheme). */
 export const imageFile = (x: Shot, theme: ColourScheme): string => (isPicture(x) ? `${x.id}.jpg` : shotFile(x.id, theme))
@@ -181,8 +195,10 @@ export function checkShotSets(sets: ShotSet[]): ShotIssue[] {
       if (shotIds.has(x.id)) bad(`shot id "${x.id}" is used twice`)
       shotIds.add(x.id)
       if (x.crop.length === 0) bad(`shot "${x.id}" has nothing to crop to`)
-      if (x.viewer && (x.crop.join() !== 'css:canvas' || x.point))
-        bad(`shot "${x.id}" is a picture of the image: it crops to css:canvas alone and points at nothing, so no app chrome (which has a scheme) is in it`)
+      if (isPicture(x) && x.point)
+        bad(`shot "${x.id}" is a picture of the image: it points at nothing, so no app chrome (which has a scheme) is in it`)
+      if (x.beside && !set.shots.some(o => o.id === x.beside && o !== x && !o.beside))
+        bad(`shot "${x.id}" sits beside "${x.beside}", which is not another shot of its set (or itself sits beside one)`)
       if (x.profile && x.profile !== 'default' && !fx.profiles?.some(p => p.name === x.profile))
         bad(`shot "${x.id}" runs as profile "${x.profile}", which the fixture does not create`)
       if (x.project && !fx.projects?.[x.project]) bad(`shot "${x.id}" opens project "${x.project}", which the fixture does not copy`)
@@ -221,7 +237,7 @@ export function shotAnchors(x: Shot): Anchor[] {
   const out: Anchor[] = [...x.crop, ...(x.masks ?? []), ...(x.expect ?? []).map(e => e.anchor)]
   if (x.point) out.push(x.point.anchor)
   for (const a of x.actions ?? []) {
-    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : 'open' in a ? a.open : null
+    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : 'open' in a ? a.open : 'select' in a ? a.select : null
     if (t && !t.startsWith('text:')) out.push(t)
   }
   return out

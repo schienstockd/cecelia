@@ -45,7 +45,7 @@ import { closeDialogs, land, openProject, refuseSlotZero, selectProfile, settle,
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, fillFacts, FIXTURE_RECORD, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, fillFacts, FIXTURE_RECORD, isPicture, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { isScreenshotChrome, SCREENSHOT_KEEP } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'viewerScreenshot.ts')).href)
 const { anchorSelector } = await import(pathToFileURL(join(repo, 'frontend', 'src', 'utils', 'guideAnchor.ts')).href)
 
@@ -238,6 +238,7 @@ async function runAction(page, act) {
   else if ('fill' in act) await loc(page, act.fill).fill(act.text, { timeout: 10000 })
   else if ('hover' in act) await loc(page, act.hover).hover({ timeout: 10000 })
   else if ('press' in act) await page.keyboard.press(act.press)
+  else if ('select' in act) await loc(page, act.select).selectOption({ label: act.option }, { timeout: 10000 })
   else if ('waitFor' in act) await loc(page, act.waitFor).waitFor({ state: 'visible', timeout: 15000 })
   else if ('open' in act) {
     const t = loc(page, act.open)
@@ -252,7 +253,7 @@ async function runAction(page, act) {
 }
 
 async function capture(browser, a, shot, fixture, out, b, theme) {
-  const vp = { ...VIEWPORT, height: shot.height ?? VIEWPORT.height }
+  const vp = { width: shot.windowWidth ?? VIEWPORT.width, height: shot.height ?? VIEWPORT.height }
   const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: SCALE })
   const page = await ctx.newPage()
   const errors = []
@@ -297,13 +298,15 @@ async function capture(browser, a, shot, fixture, out, b, theme) {
         const c = el.cloneNode(true); c.querySelectorAll('.doc-mask').forEach(x => x.remove())
         return el.classList.contains('doc-mask') ? '' : c.innerText ?? c.textContent ?? ''
       }).catch(() => '')
-      const hit = text.match(VOLATILE)
+      const shown = (shot.stable ?? []).reduce((t, x) => t.split(fillFacts(x, fixture?.facts ?? {}).text).join(' '), text)
+      const hit = shown.match(VOLATILE)
       if (hit) problems.push(`${an} shows "${hit[0]}", which changes between captures: mask it or crop it out`)
     }
-    // a viewer shot is the image as Save PNG has it: the canvas wrap's chrome (playback bar, minimap, the
-    // On the image panel) hidden by the app's own rule (utils/viewerScreenshot.ts → isScreenshotChrome)
-    // (the function itself, sent into the page, so the two can never disagree)
-    if (shot.viewer) await page.evaluate(([src, keep]) => {
+    // a picture of the image is the image as Save PNG has it: the canvas wrap's chrome (playback bar,
+    // minimap, the On the image panel) hidden by the app's own rule (utils/viewerScreenshot.ts →
+    // isScreenshotChrome; the function itself, sent into the page, so the two can never disagree). A
+    // shot of the whole viewer window keeps it: the chrome is what it shows.
+    if (isPicture(shot)) await page.evaluate(([src, keep]) => {
       const chrome = (0, eval)(`(() => { const SCREENSHOT_KEEP = ${JSON.stringify(keep)}; return (${src}) })()`)
       const c = document.querySelector('canvas'), host = c?.parentElement
       for (const el of host?.children ?? []) if (chrome(el, host, c)) el.style.visibility = 'hidden'
