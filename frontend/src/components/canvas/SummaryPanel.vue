@@ -1381,13 +1381,14 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
         </div>
       </div>
       <!-- Notices about THIS render, in the chrome so they can't be clipped by the plot area:
-           a setting the renderer had to substitute, and series the chosen measure has no values for. -->
-      <PlotNotice v-if="statsNote" class="sp-foot-note" :text="statsNote.text" :tip="statsNote.tip" />
-      <PlotNotice v-if="overrideText" class="sp-foot-note" :text="overrideText" :tip="overrideTip" />
-      <PlotNotice v-else-if="facetNote" class="sp-foot-note" :text="facetNote.text" :tip="facetNote.tip" />
-      <PlotNotice v-else-if="emptyNote" class="sp-foot-note" tone="muted" :text="emptyNote"
+           a setting the renderer had to substitute, and series the chosen measure has no values for.
+           Icon-only, text on hover: a wrapped sentence here made the footer row grow. -->
+      <PlotNotice v-if="statsNote" class="sp-foot-note" icon-only :text="statsNote.text" :tip="statsNote.tip" />
+      <PlotNotice v-if="overrideText" class="sp-foot-note" icon-only :text="overrideText" :tip="overrideTip" />
+      <PlotNotice v-else-if="facetNote" class="sp-foot-note" icon-only :text="facetNote.text" :tip="facetNote.tip" />
+      <PlotNotice v-else-if="emptyNote" class="sp-foot-note" icon-only tone="muted" :text="emptyNote"
                   tip="This measure has no values for those series" />
-      <PlotNotice v-else-if="fitNote" class="sp-foot-note" :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
+      <PlotNotice v-else-if="fitNote" class="sp-foot-note" icon-only :tone="fitNote.tone" :text="fitNote.text" :tip="fitNote.tip" />
       <!-- a claim stated from this plot, and what the record checks found (claim recital) -->
       <ClaimStrip v-if="setUid && !isPrecomputed" :project-uid="projectUid" :set-uid="setUid" :series="ownSeries"
                   :measure="hasMeasure ? measure : ''" :ui="ui" />
