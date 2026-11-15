@@ -115,6 +115,12 @@ class FunctionsAndRangesTest(unittest.TestCase):
     def test_line_ranges(self):
         self.assertEqual(mc.ranges({3, 4, 5, 9, 11, 12}), "3-5,9,11-12")
 
+    def test_at_names_lines_without_a_diff(self):
+        self.assertEqual(mc.at_lines(["python/cecelia/x.py:3-5,9", "app/src/a.jl:2"]),
+                         {"python/cecelia/x.py": {3, 4, 5, 9}, "app/src/a.jl": {2}})
+        with self.assertRaises(ValueError):
+            mc.at_lines(["python/cecelia/x.py"])
+
 
 if __name__ == "__main__":
     unittest.main()

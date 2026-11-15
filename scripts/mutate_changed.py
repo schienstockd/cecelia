@@ -4,11 +4,13 @@ against only the tests that name the changed functions. TEST_VALUE_PLAN.md → P
 
     python scripts/mutate_changed.py BASE [--out DIR] [--timeout 120] [--sample N] [--dry-run] [--keep]
     python scripts/mutate_changed.py --staged [--sample N] [--budget S] [--json FILE]   # recital's call
+    python scripts/mutate_changed.py --at FILE:LO-HI [...]   # these lines as they are now (the weekly judge)
 
 Run in a checkout of the change itself (its HEAD is what gets mutated); BASE is the commit it is
 compared to (for a merged PR, `<merge>^1`). `--staged` takes the staged diff instead and mutates the
 files on disk; a file with unstaged edits on top is skipped (what is on disk is not what is committed).
-`--budget` starts no Julia mutant and no file after that many seconds; `--json` writes the rows. Result files are the `result-paths` globs of
+`--at` mutates the given lines of HEAD's files, no diff: the weekly judge's re-check of a function an
+`untested` finding named (`scripts/judge/bugs.py`). `--budget` starts no Julia mutant and no file after that many seconds; `--json` writes the rows. Result files are the `result-paths` globs of
 `docs/ai-assist/RESULT_REVIEW.md`, as recital reads them (`is_result_path`). Per file:
 
 - Julia (`app/src/**.jl`, included into module Cecelia): `scripts/julia_mutate.jl --lines <changed>
@@ -52,6 +54,19 @@ def changed_lines(base: str | None) -> dict[str, set[int]]:
     out = subprocess.check_output(["git", "diff", "-U0", "--no-color", "--diff-filter=AM", *rev],
                                   cwd=ROOT, text=True, encoding="utf-8", errors="replace")
     return {f.path: {ln.lineno for ln in f.added} for f in parse_diff(out)}
+
+
+def at_lines(specs: list[str]) -> dict[str, set[int]]:
+    """`--at FILE:LO-HI[,N…]` → file → those line numbers."""
+    out: dict[str, set[int]] = {}
+    for spec in specs:
+        rel, _, rng = spec.rpartition(":")
+        if not rel or not re.fullmatch(r"\d+(-\d+)?(,\d+(-\d+)?)*", rng):
+            raise ValueError(f"--at wants FILE:LO-HI, got {spec!r}")
+        for part in rng.split(","):
+            lo, _, hi = part.partition("-")
+            out.setdefault(rel, set()).update(range(int(lo), int(hi or lo) + 1))
+    return out
 
 
 def unstaged_files() -> set[str]:
@@ -364,6 +379,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("base", nargs="?", help="the commit the change is compared to (or --staged)")
     ap.add_argument("--staged", action="store_true", help="mutate the staged change (recital)")
+    ap.add_argument("--at", action="append", default=[], metavar="FILE:LO-HI",
+                    help="mutate these lines of HEAD's file, no diff (repeatable)")
     ap.add_argument("--budget", type=float, default=None, help="seconds: no file or Julia mutant starts after")
     ap.add_argument("--json", default=None, help="write the rows here")
     ap.add_argument("--out", default=None, help="where the per-file TSVs go (default: a temp dir)")
@@ -372,8 +389,8 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true", help="Python: keep the mutmut copy (path in the report)")
     ap.add_argument("--dry-run", action="store_true", help="map the changed functions to tests; mutate nothing")
     a = ap.parse_args()
-    if (a.base is None) == (not a.staged):
-        ap.error("give BASE or --staged")
+    if sum((a.base is not None, a.staged, bool(a.at))) != 1:
+        ap.error("give one of BASE, --staged or --at")
     if "PIXI_PROJECT_ROOT" not in os.environ:
         # tests that start Python (run_py, the task runners) fail outside the env, and a test that
         # fails unmutated is set aside: the mutants it would have killed then read as survivors
@@ -382,8 +399,11 @@ def main() -> int:
     outdir = Path(a.out or tempfile.mkdtemp(prefix="mutate_changed_")).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
     globs = repo_result_paths(ROOT)
-    changed = changed_lines(None if a.staged else a.base)
-    touched = set(changed)
+    try:
+        changed = at_lines(a.at) if a.at else changed_lines(None if a.staged else a.base)
+    except ValueError as e:
+        ap.error(str(e))
+    touched = set() if a.at else set(changed)   # `--at` is no change: no test file "touched" it
     dirty = unstaged_files() if a.staged else set()
     rows = []
     t0 = time.time()

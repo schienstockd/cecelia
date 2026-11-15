@@ -193,7 +193,7 @@ def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch:
               "", "Confirm each bug here first. One that isn't real: change nothing for it and report it "
               "`not_real` with why. Fix the real ones, including every sibling call site with the same shape; "
               "add a test per fix that fails without it (for a duplicate, make sure the helper's tests cover "
-              "what the copy did), and run the matching tests. One you can't finish (it needs a decision this "
+              "what the copy did; for a test gap, the test is the fix: see its bug), and run the matching tests. One you can't finish (it needs a decision this "
               "brief doesn't settle, or a fix you can't test): undo your changes for it and report it `left` "
               "with why, rather than guess."]
     if any((b.get("verify") or {}).get("verdict") == "guard" for b in bugs):

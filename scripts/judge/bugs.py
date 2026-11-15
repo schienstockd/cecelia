@@ -29,6 +29,16 @@ convention markers (`wrong home`: comment placement) and the convention advisori
 `rules.py`'s input only. The first pass that sweeps a source (`run.swept` on the record says which
 it did) takes that source's findings from the start of the log, so the backlog is judged once.
 
+A test value finding marked `untested` (recital's *Test value* check: mutants on a changed result
+function survived its tests) is swept too, as `kind: "untested"`, whatever its tag: a `fixed_pre_commit`
+whose new test doesn't kill the mutants, and a `false_positive` that claims they change nothing, are
+both claims the sweep checks. First, no Claude call: the function is mutated again as it is at the
+pinned SHA, against today's tests (`rerun`, `mutate_changed.py --at`; at most `RERUNS` a pass, carried
+ones first). Every mutant killed: `gone`. Some survive: the judge sees them and asks whether one
+changes a result a caller would see (`live_bug`), or none does (`not_a_bug`: equivalent mutants).
+Not rerun (over the cap, or the rerun failed): `unjudged`, or still `open` if it was. `passes on
+base` findings aren't swept: once merged there is no base to run them on.
+
 Before the judge, free checks: findings on frozen paths (an earlier run record) are
 dropped; the judge sees the whole function a finding sits in, found at the finding's own commit
 (`enclosing.py`), so a moved line still shows the right code; with no function, the line itself
@@ -85,6 +95,7 @@ from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.log import RESOLVED_EVENTS, latest_resolutions_by_slug  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, merged_pr_heads, merged_prs_since, parse_diff  # noqa: E402
 from cecelia.effectiveness.recital import _slug  # noqa: E402
+from cecelia.effectiveness import test_value as _tv  # noqa: E402
 
 
 def _load_sibling(name: str):
@@ -130,7 +141,7 @@ _PR_IN_SUBJECT = re.compile(r"\(#(\d+)\)\s*$")
 _MERGE_PR = re.compile(r"^Merge pull request #(\d+)\b")
 #: What the sweep reads, recorded on each pass (`run.swept`): a source the previous pass didn't
 #: sweep is read from the start of the log.
-SOURCES = ("fanout", "convention", "result")
+SOURCES = ("fanout", "convention", "result", "test_value")
 _FANOUT_EVENTS = ("fanout_audit_finding", "fanout_audit_advisory")
 #: Result review: every `reproduced` finding, and the `inferred` advisories (`display` is listed only).
 _RESULT_FINDING, _RESULT_ADVISORY = "result_review_finding", "result_review_advisory"
@@ -138,6 +149,12 @@ _RESULT_SWEPT_ADVISORY = "inferred"
 #: A committed repro changed under a `false_positive` tag (the commit hook's gate 4): always the owner's.
 _RESULT_TEST_EDITED = "result_review_test_edited"
 _CONVENTION_EVENT = "convention_check_finding"
+#: Recital's *Test value* findings: only `untested` is swept (`passes on base` has no base after merge).
+_TEST_VALUE_EVENT, UNTESTED_MARKER = "test_value_finding", "untested"
+#: Functions mutated again per pass (`rerun`): each is minutes of mutation. Carried ones go first.
+RERUNS = 8
+#: Survivors quoted to the judge per untested bug.
+QUOTED_SURVIVORS = 5
 #: The convention marker swept as a duplicate; the rest are rules-only.
 DUPLICATE_MARKER = "should reuse"
 #: A `path/file.ext:123` the duplicate's finding names: the canonical it should have reused.
@@ -179,6 +196,12 @@ Decide for each one:
 - not_a_bug: the code matches the finding, but the finding is wrong or describes intended behaviour.
 A finding may show the committing agent's outcome tag and reason ("tagged false_positive: ...").
 That is the agent's claim, not evidence: check it against the code like the finding itself.
+An UNTESTED one is different too: its function was just mutated again on the current main, and the
+SURVIVING mutants below each changed the code without any test failing. It is about the tests, not a
+defect. Decide:
+- live_bug: at least one surviving mutant changes a value a caller or the user would see, so a test
+  that checks that value (from a definition, not this code's output) is missing.
+- not_a_bug: every surviving mutant is equivalent: it changes nothing a caller can observe.
 A DUPLICATE is different: a reviewer said the new code copies a helper the codebase already has
 (the canonical it names, shown under CANONICAL when found). It doesn't have to misbehave. Decide:
 - live_bug: the copy is still here and does the canonical's job, so it should use the canonical.
@@ -229,6 +252,8 @@ def swept(row: dict) -> bool:
     unless it is `display`."""
     if row.get("event") == _CONVENTION_EVENT:
         return (row.get("payload") or {}).get("marker") == DUPLICATE_MARKER
+    if row.get("event") == _TEST_VALUE_EVENT:
+        return (row.get("payload") or {}).get("marker") == UNTESTED_MARKER
     if row.get("event") == _RESULT_ADVISORY:
         return (row.get("payload") or {}).get("marker") == _RESULT_SWEPT_ADVISORY
     return row.get("event") in (*_FANOUT_EVENTS, _RESULT_FINDING)
@@ -250,7 +275,7 @@ def tag(resolved: dict[str | None, dict[str, dict]], row: dict) -> dict:
 
 
 def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None,
-               result_since: str | None = None) -> list[dict]:
+               result_since: str | None = None, test_value_since: str | None = None) -> list[dict]:
     """Fanout findings logged since `since` that nobody fixed, `should reuse` convention findings
     since `convention_since` (default `since`) that nobody fixed, and agent-run errors, one per key,
     oldest first. An agent-run error keeps its first row and counts the rows (`runs`).
@@ -261,12 +286,14 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     events = list(events)
     convention_since = since if convention_since is None else convention_since
     result_since = since if result_since is None else result_since
+    test_value_since = since if test_value_since is None else test_value_since
     resolved = branch_resolutions(events)
     out: dict[str, dict] = {}
     for r in events:
         ev = r.get("event")
         floor = (convention_since if ev == _CONVENTION_EVENT
-                 else result_since if ev in (_RESULT_FINDING, _RESULT_ADVISORY, _RESULT_TEST_EDITED) else since)
+                 else result_since if ev in (_RESULT_FINDING, _RESULT_ADVISORY, _RESULT_TEST_EDITED)
+                 else test_value_since if ev == _TEST_VALUE_EVENT else since)
         if r.get("ts", "") < floor:
             continue
         if r.get("event") == AGENT_RUN_EVENT and (r.get("payload") or {}).get("key"):
@@ -286,10 +313,11 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
         if not swept(r):
             continue
         key, t = _key(r), tag(resolved, r)
-        if t.get("outcome") in _HANDLED:
+        if t.get("outcome") in _HANDLED and ev != _TEST_VALUE_EVENT:   # an untested one: the rerun checks the fix
             continue
         p = r["payload"]
-        out[key] = {"key": key, **({"kind": "duplicate"} if r["event"] == _CONVENTION_EVENT else {}),
+        kind = {_CONVENTION_EVENT: "duplicate", _TEST_VALUE_EVENT: "untested"}.get(ev)
+        out[key] = {"key": key, **({"kind": kind} if kind else {}),
                     "marker": p.get("marker"), "file": p.get("file"), "line": p.get("line"),
                     "desc": p.get("desc", ""), "branch": r.get("branch"), "commit": r.get("commit"),
                     "logged": r.get("ts"), "outcome": t.get("outcome"),
@@ -418,6 +446,28 @@ def canonical(b: dict, sha: str, repo: pathlib.Path) -> str | None:
             at = _carry(int(line), path, b.get("commit"), sha, text, repo)
             return f"{path}:{at}\n" + _enc.window(text.splitlines(), at - CANONICAL_LINES, at + CANONICAL_LINES)
     return None
+
+
+def default_rerun(file: str, lo: int, hi: int, *, root: pathlib.Path, env: dict | None = None) -> dict:
+    """`mutate_changed.py --at file:lo-hi` in checkout `root`, in its own pixi env: the row for `file`.
+    The weekly pass gives its worktree at the pinned SHA, and `env` without its own pixi activation.
+    Same sample and budget as recital's check (`test_value.run_mutate_changed`)."""
+    rows = _tv.run_mutate_changed(root, ["--at", f"{file}:{lo}-{hi}"],
+                                  python=("pixi", "run", "--manifest-path", str(root / "pixi.toml"), "python"),
+                                  env=env, timeout=_tv.BUDGET_S * 3).get("files") or []
+    return next((r for r in rows if r.get("file") == file), {"file": file, "note": "not mutated"})
+
+
+def rerun_verdict(row: dict, symbol: str) -> tuple[str, str, str]:
+    """A rerun's row → (`gone` | `survived` | `failed`, why, the survivors quoted)."""
+    res = row.get("results") or []
+    killed, survived = res.count("killed"), [d for d in row.get("survivor_detail") or []]
+    if not killed and not survived:
+        return "failed", f"the rerun mutated nothing: {row.get('note') or 'no result'}", ""
+    if not survived:
+        return "gone", f"every mutant of `{symbol}` is killed now ({killed} of {len(res)})", ""
+    return ("survived", f"{len(survived)} of {len(res)} mutants of `{symbol}` survive",
+            _tv.quote_survivors(survived, QUOTED_SURVIVORS))
 
 
 def _merged_by(commit: str, sha: str, repo: pathlib.Path) -> int | None:
@@ -657,13 +707,14 @@ def _unpark(fired: list[tuple[dict, str]], date: str) -> list[dict]:
 
 def _prompt(batch: _t.Sequence[dict]) -> str:
     return _BRIEF + "\n\n".join(
-        f"{'DUPLICATE' if b.get('kind') == 'duplicate' else 'FINDING'} {b['key']} "
+        f"{({'duplicate': 'DUPLICATE', 'untested': 'UNTESTED'}).get(b.get('kind'), 'FINDING')} {b['key']} "
         f"({b['marker']}, {_record.bug_location(b)}, branch {b.get('branch') or '?'}):\n"
         f"{b['desc']}\n"
         + (f"(tagged {b['outcome']}" + (f": {b['reason']}" if b.get("reason") else "") + ")\n"
            if b.get("outcome") else "")
         + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
         + _record.landed_hint(b)
+        + (f"SURVIVING at main ({b['rerun']['why']}): {b['rerun']['survivors']}\n" if b.get("rerun") else "")
         + f"CODE:\n{b['code']}"
         + (f"\nCANONICAL {b['canonical']}" if b.get("canonical") else "") for b in batch)
 
@@ -680,7 +731,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
           merged_prs: _t.Callable[[str], list[dict]] | None = None,
           pr_heads: _t.Callable[[str], list[dict] | None] | None = None,
           repo: pathlib.Path = _REPO, meter: dict | None = None,
-          failures: dict | None = None) -> tuple[list[dict], float]:
+          failures: dict | None = None,
+          rerun: _t.Callable[[str, int, int], dict] | None = None) -> tuple[list[dict], float]:
     """This pass's `bugs` list and the judge's cost.
 
     Carried: the previous record's `open` / `unjudged` / `unmerged` bugs; an agent-run error seen
@@ -695,6 +747,9 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     for free, every landed fix goes back, and only up to
     `PARKED_RECHECK` of the rest a pass go back to verify. A failed judge call is said in
     `failures["sweep"]` and ends the sweep; a `judge.RateLimited` propagates.
+
+    `rerun(file, lo, hi)`: mutate those lines at `sha` (`default_rerun` in the pinned worktree); without
+    one, an untested bug isn't judged this pass (`unjudged`, or still `open`).
 
     `pr_heads(branch)`: the merged PRs from a branch (default `gh`, asked only for a branch whose change
     ancestry doesn't place in `sha`), so a squash-merged branch lands. When it can't answer, those
@@ -731,7 +786,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     # a source the previous pass didn't sweep starts at the log's beginning: its backlog, judged once
     swept = (previous or {}).get("run", {}).get("swept") or ("fanout",)
     found = candidates(events, since=since, convention_since=since if "convention" in swept else "",
-                       result_since=since if "result" in swept else "")
+                       result_since=since if "result" in swept else "",
+                       test_value_since=since if "test_value" in swept else "")
     for c in found:
         if c.get("kind") == "agent_run" and c["key"] in carried:   # hit again: same bug, more runs
             _hit_again(carried[c["key"]], c)
@@ -741,6 +797,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     waits: dict[tuple, list[dict]] = {}   # unmerged: not at `sha` yet, so merged by branch + file:line
     unpark: list[tuple[dict, str]] = []   # parked bugs whose re-check fired, and why
     heads = PrHeads(pr_heads or (lambda br: merged_pr_heads(br, cwd=str(repo))))
+    reruns, mutated = RERUNS, {}   # one rerun per function, however many findings name it
+    # carried ones first: a rerun slot goes to the work list before the new findings
     for b in [*(b for b in carried.values() if b.get("kind") != "stranded"), *fresh]:
         if b.get("was") in MUTED:
             bugs.append({**_strip(b), "status": b["was"], "muted": True,
@@ -787,6 +845,30 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             if b.get("carried") or where["symbol"]:   # a missing file on a new finding: nothing to say
                 bugs.append({**_strip(b), "status": "gone", "why": where["gone"]})
             continue
+        if b.get("kind") == "untested":
+            span = where["symbol"] and _enc.find(git_output("show", f"{sha}:{b['file']}", cwd=str(repo)) or "",
+                                                 where["symbol"], b["file"])
+            if not span or rerun is None or reruns <= 0 and (b["file"], span) not in mutated:
+                why = ("no function to mutate again" if not span else
+                       "not mutated again (no checkout at the pinned SHA)" if rerun is None else
+                       f"waiting for a mutation rerun ({RERUNS} a pass)")
+                bugs.append(_not_judged(b, date, why))
+                continue
+            if (b["file"], span) not in mutated:
+                reruns -= 1
+                try:
+                    mutated[b["file"], span] = rerun_verdict(rerun(b["file"], *span), where["symbol"])
+                except Exception as e:   # noqa: BLE001 — a broken rerun is one bug unjudged, not a failed pass
+                    mutated[b["file"], span] = ("failed", f"the rerun failed: {type(e).__name__}: {e}"[:300], "")
+            state, said, quoted = mutated[b["file"], span]
+            if state == "failed":
+                bugs.append(_not_judged(b, date, said))
+                continue
+            if state == "gone":
+                if b.get("carried"):   # a new one already killed: fixed before it was ever listed
+                    bugs.append({**_strip(b), "status": "gone", "why": said})
+                continue
+            b = {**b, "rerun": {"sha": sha, "why": said, "survivors": quoted}}
         g = (b.get("file"), b["key"] if b.get("file") == _record.NO_FILE else where["symbol"] or f"line {b.get('line')}",
              # never merged: its run count and a `wont_fix` are carried by its own key
              b["key"] if b.get("kind") == "agent_run" else b.get("kind"))   # a duplicate joins duplicates

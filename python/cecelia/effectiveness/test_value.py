@@ -12,7 +12,9 @@ its code is wrong (`docs/todo/TEST_VALUE_PLAN.md` → P4). Two findings, both ou
 
 Both are claims to check, not verdicts: a refactor's tests pass on base by design, and a mutant can be
 equivalent (it changes nothing a caller can see). The tag says which; the reason is the record the
-two-week review reads (TEST_VALUE_PLAN.md → P4). Not swept by the weekly judge.
+two-week review reads (TEST_VALUE_PLAN.md → P4). The weekly judge sweeps every `untested` one, tagged
+`fixed_pre_commit` or not: it mutates the function again at main and judges the survivors
+(`scripts/judge/bugs.py`). `passes on base` isn't swept: after the merge there is no base.
 
 `run_test_value_check` is what recital calls; it runs in a thread beside the reviewers. The
 subprocess seams (`on_base`, `mutate`) are injectable, so tests never start Julia or mutmut.
@@ -112,18 +114,23 @@ def _head_text(root: pathlib.Path, path: str) -> str:
     return git_output("show", f"HEAD:{path}", cwd=str(root)) or ""
 
 
+#: The trees a Python on-base run takes from HEAD; the rest of the checkout is linked in.
+_BASE_TREES = ("python", "app", "scripts")
+
+
 def python_on_base(root: pathlib.Path, tests: dict[str, list[str]], staged: _t.Callable[[str], str]) -> bool:
-    """True when at least one of `tests` fails (or cannot import) on HEAD's code. HEAD's `python/` and
-    `app/` are exported; the staged test files go on top; the rest of the checkout is linked in, since
-    tests find fixtures three levels above their file."""
+    """True when at least one of `tests` fails (or cannot import) on HEAD's code. HEAD's `python/`,
+    `app/` and `scripts/` are exported (tests load `scripts/` modules by path, so a linked one would be
+    the change's); the staged test files go on top; the rest of the checkout is linked in, since tests
+    find fixtures three levels above their file."""
     with tempfile.TemporaryDirectory(prefix="test_value_base_") as tmp:
         dest = pathlib.Path(tmp)
-        tar = subprocess.run(["git", "archive", "--format=tar", "HEAD", "python", "app"], cwd=root,
+        tar = subprocess.run(["git", "archive", "--format=tar", "HEAD", *_BASE_TREES], cwd=root,
                              capture_output=True, check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(tar)) as t:
             t.extractall(dest, filter="data")
         for d in root.iterdir():
-            if d.name not in ("python", "app", ".git", ".pixi") and not (dest / d.name).exists():
+            if d.name not in (*_BASE_TREES, ".git", ".pixi") and not (dest / d.name).exists():
                 (dest / d.name).symlink_to(d)
         for path in tests:
             (dest / path).write_text(staged(path), encoding="utf-8")
@@ -162,16 +169,31 @@ def default_on_base(root: pathlib.Path, added: Added, sources: _t.Sequence[str],
     return out
 
 
-def default_mutate(root: pathlib.Path) -> dict:
-    """`mutate_changed.py --staged`'s rows."""
+def run_mutate_changed(root: pathlib.Path, mode: _t.Sequence[str], *, python: _t.Sequence[str] = (sys.executable,),
+                       env: dict | None = None, timeout: float | None = None) -> dict:
+    """`mutate_changed.py <mode>`'s rows (`{"total_secs", "files"}`), run in checkout `root` by `python`
+    (default this interpreter; the weekly judge gives the pinned worktree's `pixi run … python`).
+    `SAMPLE` mutants a file, `BUDGET_S` in all."""
     with tempfile.TemporaryDirectory(prefix="test_value_mut_") as tmp:
         js = pathlib.Path(tmp) / "rows.json"
-        p = subprocess.run([sys.executable, str(root / "scripts/mutate_changed.py"), "--staged",
+        p = subprocess.run([*python, str(root / "scripts/mutate_changed.py"), *mode,
                             "--sample", str(SAMPLE), "--budget", str(BUDGET_S), "--json", str(js), "--out", tmp],
-                           cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+                           cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           env=env, timeout=timeout)
         if not js.is_file():
             raise RuntimeError((p.stderr or p.stdout).strip()[-300:] or "mutate_changed.py wrote nothing")
         return json.loads(js.read_text(encoding="utf-8"))
+
+
+def default_mutate(root: pathlib.Path) -> dict:
+    """`mutate_changed.py --staged`'s rows."""
+    return run_mutate_changed(root, ["--staged"])
+
+
+def quote_survivors(svs: _t.Sequence[dict], n: int = QUOTED) -> str:
+    """The first `n` survivors as ``line N `orig` → `new` `` (`survivor_detail` rows), `(+k more)` after."""
+    quoted = "; ".join(f"line {d['line']} `{d['orig']}` → `{d['new']}`" for d in svs[:n])
+    return quoted + (f" (+{len(svs) - n} more)" if len(svs) > n else "")
 
 
 # ---------------------------------------------------------------- the section
@@ -201,11 +223,9 @@ def mutation_bullets(rows: _t.Sequence[dict]) -> list[str]:
             by_fn.setdefault(d["fn"], []).append(d)
         tried = len(r.get("results") or [])
         for fn, svs in by_fn.items():
-            quoted = "; ".join(f"line {d['line']} `{d['orig']}` → `{d['new']}`" for d in svs[:QUOTED])
-            more = f" (+{len(svs) - QUOTED} more)" if len(svs) > QUOTED else ""
             out.append(_bullet(r["file"], svs[0]["def"],
                                f"`{fn}`: {len(svs)} of {tried} mutants on this change's lines survive the tests "
-                               f"that name it or a caller in its file: {quoted}{more}. Add a test whose expected value comes from a "
+                               f"that name it or a caller in its file: {quote_survivors(svs)}. Add a test whose expected value comes from a "
                                "definition (a spec, a reference, the vendor file), never from this code's own "
                                "output; or `false_positive: <why the mutant changes nothing a caller sees>`.",
                                UNTESTED))

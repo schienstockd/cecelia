@@ -80,8 +80,9 @@ class _WeeklyFixture(_Fixture):
 
         self.fail_steps: dict = {}   # step → error its judge "failed" with
 
-        def sweep(events, *, date, sha, previous, judge=None, merged_prs=None, meter=None, failures=None):
-            self.swept.update(previous=previous, sha=sha)
+        def sweep(events, *, date, sha, previous, judge=None, merged_prs=None, meter=None, failures=None,
+                  rerun=None):
+            self.swept.update(previous=previous, sha=sha, rerun=rerun)
             if isinstance(self.fail_steps.get("sweep"), BaseException):
                 raise self.fail_steps["sweep"]
             if self.fail_steps.get("sweep"):
@@ -115,6 +116,18 @@ class _WeeklyFixture(_Fixture):
 
 
 class WeeklyTest(_WeeklyFixture):
+    def test_a_live_pass_mutates_untested_functions_in_its_pinned_worktree(self):
+        self.run_pass()
+        self.assertIsNone(self.swept["rerun"])   # no worktree at the pinned SHA: nothing to mutate in
+        wt = pathlib.Path(self.tmp) / "wt"
+        self.w.weekly(ref="HEAD", live=True, worktree=wt, date="2026-10-05")
+        calls = []
+        with mock.patch.object(self.w._bugs, "default_rerun", lambda *a, **kw: calls.append((a, kw)) or {}):
+            self.swept["rerun"]("m.py", 3, 5)
+        (args, kw), = calls
+        self.assertEqual((args, kw["root"]), (("m.py", 3, 5), wt))
+        self.assertFalse(any(k.startswith("PIXI_") for k in kw["env"]))   # the worktree's own env, not ours
+
     def test_a_pass_makes_a_valid_record_with_its_spend_summed(self):
         record = self.run_pass()
         self.assertEqual(self.rec.validate(record), [])
@@ -123,7 +136,7 @@ class WeeklyTest(_WeeklyFixture):
         self.assertEqual(record["queue"], [{"kind": "bug", "ref": "B2"}])
         self.assertEqual(record["proposals"][0]["kind"], "tighten")
         self.assertEqual((record["run"]["rules_window_days"], record["run"]["min_sessions"]), (30, 3))
-        self.assertEqual(record["run"]["swept"], ["fanout", "convention", "result"])   # the next pass reads it
+        self.assertEqual(record["run"]["swept"], ["fanout", "convention", "result", "test_value"])   # the next pass reads it
 
     def test_tokens_are_kept_per_step_and_summed(self):
         tok = self.run_pass()["run"]["spend"]["tokens"]

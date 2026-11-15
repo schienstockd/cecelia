@@ -352,8 +352,10 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
             out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first hit "
                     f"{(b.get('logged') or b['first_seen'])[:10]}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
         else:
-            out += [f"**{'Duplicate' if b.get('kind') == 'duplicate' else 'Finding'}** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
+            out += [f"**{({'duplicate': 'Duplicate', 'untested': 'Test gap'}).get(b.get('kind'), 'Finding')}** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
                     f"first seen {b['first_seen']}): {b['desc']}", ""]
+            if b.get("rerun"):
+                out += [f"**Mutated again** at {b['rerun']['sha'][:8]}: {b['rerun']['why']}: {b['rerun']['survivors']}", ""]
         out += [f"**Also raised** (`{a['key']}`, branch `{a.get('branch') or '?'}`): {a['desc']}"
                 for a in b.get("also", [])]
         out += [""] if b.get("also") else []

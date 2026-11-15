@@ -87,7 +87,7 @@ class _Repo(unittest.TestCase):
     def judge(self, verdict="live_bug", only=None):
         def fn(prompt):
             self.prompts.append(prompt)
-            keys = re.findall(r"^(?:FINDING|DUPLICATE) (\S+) ", prompt, re.M)
+            keys = re.findall(r"^(?:FINDING|DUPLICATE|UNTESTED) (\S+) ", prompt, re.M)
             return {"items": [{"key": k, "verdict": verdict, "why": "w"} for k in keys
                               if only is None or k in only]}, 0.1
         return fn
@@ -190,6 +190,92 @@ class CandidatesTest(_Repo):
                          [("conv-00000001", "duplicate"), ("conv-00000003", "duplicate")])
         backlog = self.b.candidates(events, since="2026-09-28", convention_since="")
         self.assertEqual([c["key"] for c in backlog], ["conv-00000005", "conv-00000001", "conv-00000003"])
+
+
+def _untested(slug, file="m.py", line=3, marker="untested", **kw):
+    return _row("test_value_finding", {"slug": slug, "file": file, "line": line, "marker": marker,
+                                       "desc": f"`f`: 2 of 4 mutants survive {slug}"}, **kw)
+
+
+_M_PY = "import os\n\ndef f(a):\n    b = a + 1\n    return b * 2\n\n\ndef g(x):\n    return x - 1\n"
+_SWEPT_TV = {"run": {"ts": "2026-09-28", "swept": ["fanout", "convention", "result", "test_value"]}, "bugs": []}
+
+
+class UntestedTest(_Repo):
+    """Recital's `untested` findings: mutated again at the pinned SHA, then judged (TEST_VALUE_PLAN P4)."""
+
+    def setUp(self):
+        super().setUp()
+        self.sha = self.commit("m.py", _M_PY)
+        self.reruns: list[tuple] = []
+
+    def rerun(self, survivors=(), killed=2, fail=None):
+        def fn(file, lo, hi):
+            self.reruns.append((file, lo, hi))
+            if fail:
+                raise fail
+            return {"file": file, "results": ["killed"] * killed + ["survived"] * len(survivors),
+                    "survivor_detail": [{"fn": "f", "def": 3, "line": 4, "orig": o, "new": n} for o, n in survivors]}
+        return fn
+
+    def test_every_untested_finding_is_swept_whatever_its_tag(self):
+        events = [_untested("tv-00000001"),
+                  _untested("tv-00000002", line=8), _row("test_value_finding_resolved",
+                                                         {"slug": "tv-00000002", "outcome": "fixed_pre_commit"}),
+                  _untested("tv-00000003", marker="passes on base"),   # no base after the merge
+                  _untested("tv-00000004", ts="2026-09-01T00:00:00Z")]
+        found = self.b.candidates(events, since="2026-09-28")
+        self.assertEqual([(c["key"], c.get("kind"), c.get("outcome")) for c in found],
+                         [("tv-00000001", "untested", None), ("tv-00000002", "untested", "fixed_pre_commit")])
+        backlog = self.b.candidates(events, since="2026-09-28", test_value_since="")
+        self.assertEqual([c["key"] for c in backlog], ["tv-00000004", "tv-00000001", "tv-00000002"])
+
+    def test_survivors_at_main_go_to_the_judge_beside_the_function(self):
+        bugs, _ = self.sweep([_untested("tv-00000001")], previous=_SWEPT_TV,
+                             rerun=self.rerun(survivors=[("a + 1", "a - 1")]))
+        self.assertEqual(self.reruns, [("m.py", 3, 5)])   # the whole function, as it is at the pinned SHA
+        self.assertIn("UNTESTED tv-00000001 (untested, m.py:3", self.prompts[0])
+        self.assertIn("SURVIVING at main (1 of 3 mutants of `f` survive): line 4 `a + 1` → `a - 1`\n",
+                      self.prompts[0])
+        self.assertEqual((bugs[0]["kind"], bugs[0]["status"]), ("untested", "open"))
+        self.assertEqual(bugs[0]["rerun"]["sha"], self.sha)
+
+    def test_all_killed_is_gone_without_a_judge_call_and_unlisted_when_new(self):
+        bugs, _ = self.sweep([_untested("tv-00000001")], previous=_SWEPT_TV, rerun=self.rerun())
+        self.assertEqual((bugs, self.prompts), ([], []))
+        carried = {**_SWEPT_TV, "bugs": [{"key": "tv-00000001", "kind": "untested", "status": "open", "file": "m.py",
+                                          "line": 3, "marker": "untested", "desc": "d", "commit": "c" * 40,
+                                          "first_seen": "2026-09-28"}]}
+        bugs, _ = self.sweep([], previous=carried, rerun=self.rerun())
+        self.assertEqual([(b["status"], b["why"]) for b in bugs], [("gone", "every mutant of `f` is killed now (2 of 2)")])
+        self.assertEqual(self.prompts, [])
+
+    def test_a_fixed_pre_commit_whose_test_kills_nothing_comes_back(self):
+        events = [_untested("tv-00000001"), _row("test_value_finding_resolved",
+                                                 {"slug": "tv-00000001", "outcome": "fixed_pre_commit"})]
+        bugs, _ = self.sweep(events, previous=_SWEPT_TV, rerun=self.rerun(survivors=[("* 2", "* 3")]))
+        self.assertIn("(tagged fixed_pre_commit)", self.prompts[0])
+        self.assertEqual(bugs[0]["status"], "open")
+
+    def test_no_rerun_a_failed_one_or_over_the_cap_waits_unjudged(self):
+        events = [_untested("tv-00000001"), _untested("tv-00000002", line=9)]
+        bugs, _ = self.sweep(events, previous=_SWEPT_TV)   # no checkout at the pinned SHA
+        self.assertEqual({b["status"] for b in bugs}, {"unjudged"})
+        self.assertIn("no checkout at the pinned SHA", bugs[0]["why"])
+        bugs, _ = self.sweep(events[:1], previous=_SWEPT_TV, rerun=self.rerun(fail=RuntimeError("pixi gone")))
+        self.assertEqual((bugs[0]["status"], bugs[0]["why"]), ("unjudged", "the rerun failed: RuntimeError: pixi gone"))
+        self.reruns.clear()
+        with mock.patch.object(self.b, "RERUNS", 1):
+            bugs, _ = self.sweep(events, previous=_SWEPT_TV, rerun=self.rerun(survivors=[("x", "y")]))
+        self.assertEqual(len(self.reruns), 1)
+        self.assertEqual({b["key"]: b["status"] for b in bugs}, {"tv-00000001": "open", "tv-00000002": "unjudged"})
+        self.assertEqual(bugs[1]["why"], "waiting for a mutation rerun (1 a pass)")
+
+    def test_two_findings_on_one_function_are_mutated_once(self):
+        events = [_untested("tv-00000001"), _untested("tv-00000002", line=4, branch="other")]
+        bugs, _ = self.sweep(events, previous=_SWEPT_TV, rerun=self.rerun(survivors=[("x", "y")]))
+        self.assertEqual(len(self.reruns), 1)
+        self.assertEqual([b.get("sources") for b in bugs], [["tv-00000001", "tv-00000002"]])
 
 
 class SweepTest(_Repo):
