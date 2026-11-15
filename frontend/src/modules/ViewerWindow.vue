@@ -59,7 +59,7 @@ import { createBrickVolumeRenderer, type BrickSource } from '../lib/webgpu/brick
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
-  tileGridDims, tileMaskSourceId,
+  tileGridDims, tileMaskSourceId, retryWhenMaskMoved,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -2459,7 +2459,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
   // The channels are already on the GPU: fetch the mask alone. `vn`/`src` are read once so a picker
   // change mid-flight cannot install this response under another segmentation's name.
   const maskOnly = r.hasTimepoint(tp)
-  const job = (maskOnly ? (async () => {
+  // A job outlived by its mask (a preview landing mid-fetch) leaves this frame without the current one,
+  // and a caller handed it as `running` waits on it too — so the frame is pumped again when it settles.
+  const jobSrc = maskSourceId.value
+  const job = retryWhenMaskMoved((maskOnly ? (async () => {
     const vn = maskName.value, src = maskSourceId.value
     const got = await fetchMaskSlab(tp, vn, m, ac.signal)
     await r.uploadLabel?.(tp, got?.buf ?? null, src)
@@ -2555,7 +2558,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     if (inflight.get(tp) === job) inflight.delete(tp)
     if (aborts.get(tp) === ac) aborts.delete(tp)
     syncCacheState()
-  })
+  }), jobSrc, () => maskSourceId.value, () => schedulePump(t.value))
 
   inflight.set(tp, job)
   syncCacheState()
@@ -2884,8 +2887,13 @@ const tileLabelAborts = new Map<string, AbortController>()
 const tileLabelFailed = new Set<string>()
 
 /** Fetch one resident tile's mask and hand it to the renderer's mask atlas. Same geometry as the
- *  tile's image fetch; the dtype is the mask's own, widened to u32 like the flat path's. */
-async function fetchTileLabel(key: TileKey): Promise<boolean> {
+ *  tile's image fetch; the dtype is the mask's own, widened to u32 like the flat path's. A fetch the
+ *  mask moved on from meanwhile is dropped, and the pump runs again to ask for the current one. */
+function fetchTileLabel(key: TileKey): Promise<boolean> {
+  return retryWhenMaskMoved(fetchTileLabelOnce(key), tileMaskSource.value,
+    () => tileMaskSource.value, scheduleTilePump)
+}
+async function fetchTileLabelOnce(key: TileKey): Promise<boolean> {
   const tr = tileRenderer.value, m = meta.value
   const source = tileMaskSource.value, vn = maskName.value
   if (!tr || !m || !source || !tr.needsLabel(key)) return false

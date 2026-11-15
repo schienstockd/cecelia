@@ -80,6 +80,18 @@ export function sameMaskLayer(slotSource: string, current: string): boolean {
   return a === b
 }
 
+/**
+ * Run a mask fetch started for the mask source `started`, and call `again` once it settles if the mask
+ * on screen has moved on meanwhile (`current()`, a `tileMaskSourceId`). Such a fetch is dropped (its
+ * bytes are another mask's), and nothing else asks for the current mask's bytes for that frame or
+ * tile until the view moves — so a first preview landing during a fetch drew no mask until a scrub.
+ */
+export function retryWhenMaskMoved<T>(
+  job: Promise<T>, started: string, current: () => string, again: () => void,
+): Promise<T> {
+  return job.finally(() => { if (current() !== started) again() })
+}
+
 /** Viewport in level-0 (native) pixel coordinates — the client thinks in L0, the slab route thinks in
  *  level-local. The conversion lives in `tileFetchRect`. */
 export interface ViewportL0 {

@@ -472,6 +472,28 @@ class PreviewStoreLevelsTest(unittest.TestCase):
             np.testing.assert_array_equal(np.asarray(levels[lv][:]), full[:, ::s, ::s],
                                           err_msg=f'level {lv}')
 
+    def test_previous_preview_stays_readable_while_the_next_writes(self):
+        # The viewer may still be fetching the last preview's mask; a missing store is a 409 it does
+        # not retry, so the old store must sit at the path until the new one is promoted over it.
+        full_shape = (1, 21, 26)
+        bounds = {'Y': (0, 4), 'X': (0, 4)}
+        block = np.ones((1, 4, 4), dtype=np.uint32)
+        path = self.worker._stage_labels_store(
+            block, ['T', 'Y', 'X'], full_shape, bounds, self.dir, 'vn', im_path=self.im_path)
+        real_write = self.worker._write_region_levels
+        seen = []
+
+        def write(*a, **kw):
+            seen.append(os.path.isdir(path))
+            return real_write(*a, **kw)
+
+        with mock.patch.object(self.worker, '_write_region_levels', write):
+            self.worker._stage_labels_store(
+                block * 2, ['T', 'Y', 'X'], full_shape, bounds, self.dir, 'vn', im_path=self.im_path)
+        self.assertEqual(seen, [True])
+        levels, _ = zarr_utils.open_as_zarr(path, as_dask=False)
+        self.assertEqual(int(np.asarray(levels[0][:]).max()), 2)
+
 
 class PreviewWorkerTokenTest(unittest.TestCase):
     """The handshake needs the API token: the worker runs compute over the paths it is sent, with the
