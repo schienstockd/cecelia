@@ -450,3 +450,28 @@ end
     end
   end
 end
+
+# An image with no cell table — not segmented yet, or segmenting while the open gate plot polls —
+# answers an EMPTY plot on every gate-plot read, not a 500 per request ("No labelProps …").
+@testset "API: gate plot reads on an image with no cell table" begin
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-plot-unsegmented")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        save!(img)
+        q = "projectUid=$(proj.uid)&imageUid=$(img.uid)&valueName=Tcells&popType=flow" *
+            "&x=mean_intensity_0&y=mean_intensity_1&pop=root&xt=logicle&yt=logicle&autoLinear=1"
+        st, body = api_gating_plotmeta(HTTP.Request("GET", "/api/gating/plotmeta?" * q))
+        @test st == 200 && JSON3.read(body).n == 0
+        st, body = api_gating_plotdata(HTTP.Request("GET", "/api/gating/plotdata?" * q))
+        @test st == 200 && isempty(body)
+        @test api_gating_density(HTTP.Request("GET", "/api/gating/density?" * q))[1] == 200
+        # the summary is a reasoning read: it says WHY there is nothing, rather than an empty n = 0
+        st, body = api_gating_summary(HTTP.Request("GET", "/api/gating/summary?" * q))
+        @test st == 400 && occursin("not segmented", String(body))
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
+    end
+end

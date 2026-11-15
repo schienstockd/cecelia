@@ -272,10 +272,14 @@ _xy_pair(v) = (isempty(v[1]) || isempty(v[2])) ? (Float64[], Float64[]) : (v[1],
 # Any number of plot columns (x/y, the colour-by z, the point labels) from ONE aligned read —
 # `pop_plot_cols` (docs/POPULATION.md → *The gate-plot read*): membership, gate units, per-column
 # empty for a column the table lacks, empty for an unknown/vanished pop. Only the pick selection is
-# added here.
-_plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing) =
+# added here. An image with no cell table yet (not segmented, or a segmentation still running while
+# the gate plot polls) reads as every column empty — the same answer as a column the table lacks —
+# rather than letting `label_props` throw a 500 on every plot request.
+function _plot_cols_raw(img, vn, pop_type, cols, pop; labels_version::Union{String,Nothing}=nothing)
+    _has_label_props(img) || return [Float64[] for _ in cols]
     pop_plot_cols(img, pop_type, pop, cols; value_name = vn, labels_version = labels_version,
                   map_hook = _pick_hook(img, pop_type))
+end
 
 # transformed Float32 vectors for plotdata/density/plotmeta
 function _plot_xy(img, vn, pop_type, x, y, pop, xt, yt; labels_version=nothing)
