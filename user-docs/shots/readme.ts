@@ -1,15 +1,15 @@
 // The screenshots at the top of the repository's README.md (the block between its `docshots` markers,
 // written by frontend/src/utils/readmeShots.ts): the app, its data and its viewer side by side on one
-// image, then "What it looks like". Lab data only, captions from the fixture's facts. Both schemes: GitHub shows the reader's.
+// image. Lab data only, captions from the fixture's facts. Both schemes: GitHub shows the reader's.
 
 import type { ShotSet } from './spec.ts'
-import { LYMPHOID_SECTION, SPLEEN_TIMELAPSE } from './fixtures.ts'
+import { SPLEEN_TIMELAPSE } from './fixtures.ts'
 
 export const README_SHOTS: ShotSet = {
   id: 'readme',
   page: '../README.md',
   themes: ['light', 'dark'],
-  fixture: { projects: { spleen: SPLEEN_TIMELAPSE, lymphoid: LYMPHOID_SECTION } },
+  fixture: { projects: { spleen: SPLEEN_TIMELAPSE } },
   shots: [
     {
       // The hero, after Fig. 1c of the Cecelia paper: the whole app, its data and its viewer side by side
@@ -39,27 +39,6 @@ export const README_SHOTS: ShotSet = {
       beside: 'readme-gate',
       windowWidth: 980,
       width: 340,
-    },
-    {
-      id: 'readme-outlines',
-      project: 'lymphoid',
-      image: 'FtGoJO',
-      viewer: { plane: 13, zoom: 5, at: [0.4, 0.75] },
-      crop: ['css:canvas'],
-      width: 560,
-      caption: '{{lymphoid.FtGoJO.name}}: every cell outlined, on one of its {{lymphoid.FtGoJO.planes}} planes.',
-    },
-    {
-      // A step says what it is for and when it fits, before you run it.
-      id: 'readme-when',
-      project: 'lymphoid',
-      image: 'FtGoJO',
-      scope: 'segment',
-      route: '/segment',
-      actions: [{ open: 'task.whenToggle' }],
-      crop: ['task.fun', 'task.about'],
-      expect: [{ anchor: 'task.about', text: 'Use when' }],
-      caption: 'Each step says what it is for, when to use it and when not.',
     },
   ],
 }
