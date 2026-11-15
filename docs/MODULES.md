@@ -580,6 +580,16 @@ QC and re-run treat each run as any other.
   has no single value to vary, so cellpose/coastal's per-model knobs are not sweepable yet.
 - Values must be valid as typed (inside `[min, max]`, whole for `int`); names already on a selected
   image (from the output's `namespace`) are refused before anything is sent.
+- `sequential: true` — the runs write into ONE shared file (columns added to the image's label-props
+  table: HMM states, Detect aggregates, the three clusterings), so two at once would lose one's columns. The form then sends
+  each run when the previous one has finished (`utils/sweepSequence.ts`); a cancelled run stops the
+  rest, a failed one does not. Required when `output` is a plain `text` param: with no `namespace` the
+  backend's duplicate-run guard sees one name for every run and refuses all but the first
+  (`docs/SCHEDULER.md` → *duplicate runs are refused*). Enforced by the sweep ratchet in
+  `app/test/suite/task_spec_ratchets.jl`; the label-props writers are listed in
+  `python/cecelia/tests/test_sweep_label_props_sequential.py` (add a new one there). The runs go to the
+  images selected at Run, however long they take. The sequence lives in the tab: a reload drops runs not
+  yet sent.
 - A composite serves its first step's block (`api/src/routes.jl`), so `behaviour.hmm` sweeps through
   `behaviour.hmm_states`. Pinned by the "a sweep block names params the spec has" ratchet.
 

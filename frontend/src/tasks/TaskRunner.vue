@@ -69,6 +69,7 @@ import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFun
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
 import { isLiveStatus } from '../lib/taskStatus'
 import { expandSweep, parseSweepState, sweepStateKey, sweepableParams, type SweepState } from '../utils/paramSweep'
+import { pinSweepTarget, runSweepInSequence, type SweepTarget } from '../utils/sweepSequence'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -196,6 +197,7 @@ const sweepSummary = computed(() => {
   return `${names.length} runs: ${names.length > 4 ? `${names.slice(0, 3).join(', ')} … ${names.at(-1)}` : names.join(', ')}`
 })
 const sweepOnGpu = computed(() => taskDef.value?.resource_pool === 'gpu')
+const sweepSequential = computed(() => !!taskDef.value?.sweep?.sequential)
 
 function setTarget(v: string | string[]) {
   saveRunChoice({ ...runChoice.value, target: v === 'hpc' ? 'hpc' : 'local' })
@@ -758,12 +760,20 @@ function run() {
   // the next edit replaces it as before.
   drafts.set(currentDraftKey.value, paramValues.value)
 
-  for (const ps of paramSets) dispatch(def, ps)
+  // pinned NOW: a sequential sweep sends its later runs minutes from now, after the selection may have moved
+  const at = pinSweepTarget({
+    uids: props.selectedUids, names: props.selectedNames, projectUid: projectUid.value, setUid: setUid.value,
+    pool: selectedPool.value, onHpc: onHpc.value, hpcFields: hpcRunFields(def, runChoice.value),
+  })
+  // runs that write into one shared file go one after another; the rest go out together
+  if (sweepPlan.value && def.sweep?.sequential) runSweepInSequence(paramSets.map(ps => () => dispatch(def, ps, at)))
+  else for (const ps of paramSets) dispatch(def, ps, at)
 }
 
-function dispatch(def: TaskDef, params: ParamValues) {
+// Sends one run (one task per image, or one for a set-scope task) and answers the task ids it created.
+function dispatch(def: TaskDef, params: ParamValues, at: SweepTarget): string[] {
   log.info(
-    `Submitting "${def.label}" for ${props.selectedUids.length} image(s)`,
+    `Submitting "${def.label}" for ${at.uids.length} image(s)`,
     { source: props.module, detail: JSON.stringify(params, null, 2) }
   )
 
@@ -771,27 +781,29 @@ function dispatch(def: TaskDef, params: ParamValues) {
   // (the fit/compute spans the set). Send a single task:run carrying the full imageUids vector,
   // with the first image as the representative for status/labelling.
   if (def.scope === 'set') {
-    const uids = props.selectedUids
+    const uids = at.uids
     const rep  = uids[0]
-    const repName = props.selectedNames[0] ?? rep
+    const repName = at.names[0] ?? rep
     const label = uids.length > 1 ? `${def.label} (${uids.length} images)` : def.label
     const t = taskStore.add({
       module: props.module, label, imageUid: rep, imageName: repName,
       status: 'queued', taskName: def.task, funName: def.fun_name,
-      params: params as Record<string, unknown>, projectUid: projectUid.value,
-      pool: selectedPool.value,
+      params: params as Record<string, unknown>, projectUid: at.projectUid,
+      pool: at.pool,
     })
     ws.send({
       type: 'task:run', taskId: t.id, funName: def.fun_name, params,
-      imageUid: rep, imageUids: uids, projectUid: projectUid.value,
-      setUid: setUid.value, poolName: selectedPool.value,
+      imageUid: rep, imageUids: uids, projectUid: at.projectUid,
+      setUid: at.setUid, poolName: at.pool,
     })
-    return
+    return [t.id]
   }
 
-  for (let i = 0; i < props.selectedUids.length; i++) {
-    const uid  = props.selectedUids[i]
-    const name = props.selectedNames[i] ?? uid
+  const ids: string[] = []
+
+  for (let i = 0; i < at.uids.length; i++) {
+    const uid  = at.uids[i]
+    const name = at.names[i] ?? uid
 
     const t = taskStore.add({
       module:     props.module,
@@ -802,10 +814,10 @@ function dispatch(def: TaskDef, params: ParamValues) {
       taskName:   def.task,
       funName:    def.fun_name,
       params:     params as Record<string, unknown>,
-      projectUid: projectUid.value,
+      projectUid: at.projectUid,
       // what was ASKED for, shown while it waits; the first `task:status` replaces it with the pool
       // the scheduler actually queued it in (an unconfigured name falls back to cpu)
-      pool:       onHpc.value ? 'hpc' : selectedPool.value,
+      pool:       at.onHpc ? 'hpc' : at.pool,
     })
 
     ws.send({
@@ -814,13 +826,15 @@ function dispatch(def: TaskDef, params: ParamValues) {
       funName:    def.fun_name,
       params:     params,
       imageUid:   uid,
-      projectUid: projectUid.value,
-      setUid:     setUid.value,
-      poolName:   selectedPool.value,
-      ...hpcRunFields(def, runChoice.value),
+      projectUid: at.projectUid,
+      setUid:     at.setUid,
+      poolName:   at.pool,
+      ...at.hpcFields,
     })
+    ids.push(t.id)
     // Status is driven by the backend: 'running' if a slot was free, 'queued' otherwise.
   }
+  return ids
 }
 
 const runLabel = computed(() => {
@@ -1101,6 +1115,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
             <p v-else-if="sweepSummary" class="cc-muted cc-fs-xs">{{ sweepSummary }}</p>
             <p v-if="sweepPlan?.replaces && !sweepPlan.error" class="cc-muted cc-fs-xs">Replaces runs of the same name</p>
             <p v-if="sweepOnGpu" class="cc-muted-warn cc-fs-xs">GPU: runs one after another</p>
+            <p v-else-if="sweepSequential" class="cc-muted cc-fs-xs">Runs one after another</p>
           </div>
         </template>
       </div>

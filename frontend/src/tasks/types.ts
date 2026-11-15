@@ -177,8 +177,9 @@ export interface TaskDef {
   scope?: string          // "image" (default) | "set" — set-scope runs once over all selected images
   // Parameter sweep opt-in (docs/todo/PARAM_SWEEP_PLAN.md, utils/paramSweep.ts): `output` is the param
   // naming the output (so N runs coexist), `params` the knobs offered. A composite inherits its first
-  // step's block (definitions route). Absent = no sweep control.
-  sweep?: { output: string; params: string[] }
+  // step's block (definitions route). Absent = no sweep control. `sequential`: the runs write into one
+  // shared file (label-props columns), so they are sent one after another (utils/sweepSequence.ts).
+  sweep?: { output: string; params: string[]; sequential?: boolean }
   // A MANUAL chain step (docs/SCHEDULER.md → Manual steps): the task prepares, then a chain run parks at
   // this node until the user continues it. `prompt` is shown while it waits; `open` is where to go to do
   // the work. Absent on every ordinary task.

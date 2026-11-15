@@ -14,7 +14,7 @@
   "category": "Spatial analysis",
   "env": ["local"],
   "resource_pool": "cpu",
-  "sweep": { "output": "valueNameSuffix", "params": ["resolution", "numClusters"] },
+  "sweep": { "output": "valueNameSuffix", "params": ["resolution", "numClusters"], "sequential": true },
   "scope": "set",
   "params": [
     {
