@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
-  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey, reconcileTrackclustEyes, popTypeSwitch,
+  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey, reconcileTrackclustEyes, popTypeSwitch, trackclustRibbonRows,
   type EyePop, type PopEyes, type ListedPop,
 } from './popEyes'
 
@@ -197,5 +197,32 @@ describe('popTypeSwitch', () => {
   it('has none for track-grained gating types', () => {
     expect(popTypeSwitch('track')).toBeNull()
     expect(popTypeSwitch('live')).toBeNull()
+  })
+})
+
+describe('trackclustRibbonRows', () => {
+  const tc = (path: string, show: boolean, labels: number[]) =>
+    ({ path, name: path.slice(1), colour: '#123456', show, labels })
+  const payloads = new Map([
+    ['T', { pops: [tc('/meander', true, [1, 2, 3]), tc('/directed', true, [4])] }],
+    ['B', { pops: [tc('/confined', false, [5, 6])] }],
+  ])
+
+  it('lists every cluster pop of every segmentation, sorted, with its cell count', () => {
+    const rows = trackclustRibbonRows(payloads, new Map())
+    expect(rows.map(r => `${r.vn}${r.path}:${r.count}`)).toEqual(['B/confined:2', 'T/directed:1', 'T/meander:3'])
+    expect(rows.every(r => r.popType === 'trackclust' && !r.clusterHeld)).toBe(true)
+    expect(rows[0].key).toBe('B::trackclust::/confined')
+  })
+
+  it('reads drawn from the ribbon eye, else the manager show', () => {
+    const eyes = new Map([['T', { [eyeKey('trackclust', '/meander')]: false }]])
+    const drawn = Object.fromEntries(trackclustRibbonRows(payloads, eyes).map(r => [r.path, r.drawn]))
+    expect(drawn).toEqual({ '/confined': false, '/directed': true, '/meander': false })
+  })
+
+  it('an empty pop is not drawn', () => {
+    const rows = trackclustRibbonRows(new Map([['T', { pops: [tc('/none', true, [])] }]]), new Map())
+    expect(rows[0].drawn).toBe(false)
   })
 })
