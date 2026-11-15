@@ -406,6 +406,37 @@ function _population_metric_frame(df::DataFrame; normalize::Symbol=:none,
     DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, String(col) => vals)
 end
 
+# COMPOSITION per image: a CATEGORICAL measure on a distribution chart (box/violin/strip/bar) — each
+# image becomes one point per (population, category) whose value is the FRACTION of that population's
+# objects in that image in that category ("what fraction of the OTI tracks is Directed, per mouse?").
+# The population summary's per-image idea with a category axis added. COMPLETE CASES, as there: within a
+# segmentation, every category seen anywhere gets a row for every (population, image) that has objects,
+# so an image with no Directed tracks is a 0, not a missing dot (which would bias the box upward). A
+# (population, image) with no categorised object has no denominator and gives no rows. The category
+# lands in the `cat` column, for `_series_groups` to split by.
+function _composition_frame(df::DataFrame, cat::AbstractString; col::AbstractString="proportion")::DataFrame
+    has_uid = :uID in propertynames(df); has_vn = :value_name in propertynames(df)
+    vn  = has_vn  ? String.(df.value_name) : fill("", nrow(df))
+    uid = has_uid ? String.(df.uID) : fill("", nrow(df))
+    pop = String.(df.pop)
+    cnt = Dict{NTuple{4,String},Int}(); tot = Dict{NTuple{3,String},Int}()
+    units = NTuple{3,String}[]; levels = Dict{String,Vector{String}}()   # segmentation → categories
+    for (i, v) in enumerate(df[!, cat])
+        (ismissing(v) || (v isa Real && !isfinite(v))) && continue
+        k = _catkey(v); u = (vn[i], pop[i], uid[i])
+        haskey(tot, u) || push!(units, u)
+        tot[u] = get(tot, u, 0) + 1
+        cnt[(u..., k)] = get(cnt, (u..., k), 0) + 1
+        lv = get!(levels, vn[i], String[]); k in lv || push!(lv, k)
+    end
+    vns = String[]; pops = String[]; uids = String[]; ks = String[]; vals = Float64[]
+    for u in units, k in _sort_cats(levels[u[1]])
+        push!(vns, u[1]); push!(pops, u[2]); push!(uids, u[3]); push!(ks, k)
+        push!(vals, get(cnt, (u..., k), 0) / tot[u])
+    end
+    DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, String(cat) => ks, String(col) => vals)
+end
+
 # IMAGE as the statistical unit: collapse each image to ONE datapoint per series — the MEAN (or MEDIAN,
 # per `agg`) of `measure` within each (value_name, pop, uID[, group-level]) group. Feeding these
 # per-image summaries to the distribution builders (boxplot/strip/bar) makes each IMAGE a data point
@@ -535,7 +566,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       var_cols::Set{String}=Set{String}(),
                       group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
                       raw_points::Bool=false, max_points::Int=1500, raw::Bool=false,
-                      stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
+                      stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
                       matrix_mode::Union{AbstractString,Nothing}=nothing,
                       measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                       category::Union{AbstractString,Nothing}=nothing,
@@ -561,7 +592,27 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # "proportion" measure — a per-image count that happens to be all-0/1 is not a boolean MEASURE, and
     # offering "% positive" on it would be nonsense.
     asked_for_measure = measure !== nothing
-    if measure === nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar")
+    # COMPOSITION (`composition=true`, request field `composition`): a categorical measure on a
+    # distribution chart becomes its per-image category fractions (`_composition_frame`) split by
+    # category — the per-image, by-attribute, statistically-tested twin of the 100%-stacked bar. OPT-IN,
+    # never inferred from the column: the integer-level sniff calls plenty of real measures categorical
+    # (a test frame's 1/2/3 values, a 0/1 flag), and those must keep their ordinary boxes. The panel sets
+    # it for a categorical measure on these charts (plot.ts COMPOSITION_CHARTS).
+    composed = composition && measure !== nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar") &&
+               String(measure) in names(df) && !(String(measure) in var_cols) &&
+               _is_categorical_col(df[!, String(measure)], String(measure))
+    if composed
+        group_by = String(measure)
+        # "pool populations": the fractions are of the POOLED objects per image — boxes of the separate
+        # populations' fractions side by side would read between-population difference as image spread
+        if collapse_series
+            df = copy(df); df[!, :pop] = fill("", nrow(df))
+            :value_name in propertynames(df) && (df[!, :value_name] = fill("", nrow(df)))
+        end
+        df = _composition_frame(df, group_by; col="proportion")
+        measure = "proportion"; normalize = :none
+        by_image = attr_map !== nothing          # as the population summary: images are the points
+    elseif measure === nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar")
         # friendly axis label (also the df column name so the builders read it) — count vs proportion
         metric_label = normalize in (:fraction, :total) ? "proportion" : "count"
         df = _population_metric_frame(df; normalize=normalize, col=metric_label)
@@ -587,7 +638,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     sgroups(d) = _series_groups(d; by_image=by_image, group_col=gb, collapse=collapse_series, attr_map=attr_map)
     # every per-series response reports whether the measure is BOOLEAN, so the panel can offer the
     # "% positive" chart without a second probe (it learns the measure TYPE the same way).
-    mbool = asked_for_measure && measure !== nothing && String(measure) in names(df) &&
+    mbool = !composed && asked_for_measure && measure !== nothing && String(measure) in names(df) &&
             _is_boolean_measure(df[!, String(measure)])
     withgb(r) = (r["groupBy"] = (gb === nothing ? nothing : gb); r["measureBoolean"] = mbool; r)
     # detected measure type (numeric vs categorical) so the panel can offer only the applicable
@@ -601,7 +652,9 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # count and you cannot select anything else". A synthetic metric is quantitative BY CONSTRUCTION —
     # `asked_for_measure` is exactly "the user named this column", so it is the right gate, and it
     # covers `proportion` and any future synthetic metric without another name to remember.
-    mtype = !asked_for_measure ? "numeric" :
+    # a composition stays CATEGORICAL — the measure the user picked is the category, its fractions are
+    # ours — so the panel keeps offering the same chart list whichever of them is showing
+    mtype = composed ? "categorical" : !asked_for_measure ? "numeric" :
             (measure !== nothing && String(measure) in names(df)) ?
             (String(measure) in var_cols ? "numeric" :                        # var = quantitative, always
              _is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
@@ -985,6 +1038,124 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
     end
 end
 
+# ── Named clusters on a frequency chart ──────────────────────────────────────────────
+# A frequency chart over a cluster column (`clusters.{suffix}`, `regions.{suffix}`) counts cluster IDs.
+# Where the user has NAMED clusters — a cluster population selecting IDs of that column (Directed = IDs
+# 3 and 4) — the chart reads the name, and the IDs sharing a name pool into ONE category: "what fraction
+# of the OTI tracks are Directed?" is the question; five raw IDs answer a different one. An ID no
+# population claims keeps its number. The names come from the viewer colour-by legend's resolver
+# (`pop_label_overrides`); the legend reads only the image's own maps, so on a run member without its
+# own copy the plot (run fallback below) can name what the legend numbers. Colour stays the category's
+# own palette slot — a population lends its name, never its colour.
+#
+# PER RUN, never across runs: a row reads its own (image, segmentation)'s cluster populations, falling
+# back to the names any image of the SAME clustering run gave (cluster pops are run-global, but each
+# image's sidecar only holds them where the user mirrored them — a member image without its own copy
+# must not lose the names and read its Directed tracks as a false 0). Two images from DIFFERENT runs
+# never share: one run's "ID 3 = Directed" says nothing about another run's ID 3. The run is the
+# clustfeatures `partOf` set (the images clustered together); a run that recorded none is its own image.
+# `keys` parallels `imgs` — the `uID` a multi-image frame carries, or "" for a single-image frame.
+#
+# `nothing` when `measure` is not a cluster column or nothing names it; else `(own, run, run_of,
+# `own[(key, vn)]` and `run[run id]` are `{id key → name}`, `run_of[(key, vn)]` the run id. Names
+# only — a category keeps its own palette slot; a population lends its NAME, never its colour.
+function _cluster_category_names(imgs, keys, value_names, measure, granularity::Symbol)
+    measure === nothing && return nothing
+    m = String(measure)
+    # the cluster pop type whose family prefix the column carries, at the plot's grain (the one prefix
+    # decision is `_cluster_measure_prefix`, never spelled here)
+    pt = findfirst(t -> startswith(m, _cluster_measure_prefix(t)) && is_track_grained(t) == (granularity === :track),
+                   collect(CLUSTER_POP_TYPES))
+    pt === nothing && return nothing
+    pt = CLUSTER_POP_TYPES[pt]
+    family = _cluster_measure_family(pt); suffix = m[ncodeunits(family)+2:end]
+    own = Dict{Tuple{String,String},Dict{String,String}}(); run = Dict{String,Dict{String,String}}()
+    run_of = Dict{Tuple{String,String},String}()
+    # sorted by image key, so a name two images of one run disagree on resolves the same way whatever
+    # order the images were selected in (first by key wins)
+    for (img, key) in sort!(collect(zip(imgs, keys)); by = t -> String(t[2])),
+        vn in unique(resolve_value_name(img, v) for v in value_names)
+        props = granularity === :track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
+        entry = isfile(props) ? _clustfeatures_entry(props, suffix; family=family) : nothing
+        # the SEGMENTATION is part of the run: two segmentations clustered separately share image uids
+        # but not clusters (segmentations clustered TOGETHER already share names on one image through
+        # `load_pop_map`'s co-clustered borrow)
+        rid = vn * "@" * join(sort!(unique!(vcat(_clustfeatures_part_of(entry, img.uid), [String(img.uid)]))), ",")
+        run_of[(String(key), vn)] = rid
+        pm = load_pop_map(img; value_name=vn, pop_type=pt, backfill_save=false)   # a plot read never writes
+        names_ = pop_label_overrides(pm, m)
+        isempty(names_) && continue
+        own[(String(key), vn)] = names_
+        shared = get!(run, rid, Dict{String,String}())
+        for (k, nm) in names_; haskey(shared, k) || (shared[k] = nm); end
+    end
+    isempty(own) ? nothing : (own = own, run = run, run_of = run_of)
+end
+
+# The name a row of (key, vn) reads for cluster ID `k`: its own population's, else its run's, else
+# `nothing`. PER ID: an image holding only SOME of the run's names (one population mirrored across the
+# set, a later one not) must still read the others from the run, not count them as a false 0. But never
+# a run name the image DEFINES itself: if this image's "Directed" is ID 1, the run's "Directed = 3, 4"
+# must not widen it.
+function _row_cluster_name(named, key, vn, k)
+    mine = get(named.own, (key, vn), nothing)
+    nm = mine === nothing ? nothing : get(mine, k, nothing)
+    nm === nothing || return nm
+    shared = get(named.run, get(named.run_of, (key, vn), ""), nothing)
+    nm = shared === nothing ? nothing : get(shared, k, nothing)
+    (nm === nothing || (mine !== nothing && nm in values(mine))) ? nothing : nm
+end
+
+# The charts that read a categorical measure's levels: the frequency family, and the per-image
+# composition (`_composition_frame`) behind box/violin/strip/bar.
+const _CATEGORY_LEVEL_CHARTS = ("frequency", "boxplot", "violin", "strip", "points", "bar")
+
+"""
+    _named_cluster_frame(df, imgs, keys, value_names, measure, granularity, chart_type) -> (df, named)
+
+Rewrite a cluster column to the names the user gave its IDs (see `_cluster_category_names`), each row
+by its own run's names, so every chart that reads the levels — frequency and the per-image composition —
+pools the IDs that share a name (Directed = 3 + 4); an unnamed ID keeps its number. Returns a COPY (a
+`pop_df` frame may be cached) and the claims, plus `members` — per `"{key}|{vn}"`, name → the ID keys
+pooled under it there — so a linked-brush chip resolves against the TARGET image's own names; or
+`(df, nothing)` untouched when the chart doesn't read levels or nothing names them.
+"""
+function _named_cluster_frame(df::DataFrame, imgs, keys, value_names, measure, granularity::Symbol,
+                              chart_type::AbstractString)
+    chart_type in _CATEGORY_LEVEL_CHARTS || return (df, nothing)
+    m = measure === nothing ? "" : String(measure)
+    (nrow(df) == 0 || !(m in names(df))) && return (df, nothing)
+    named = _cluster_category_names(imgs, keys, value_names, m, granularity)
+    named === nothing && return (df, nothing)
+    has_uid = :uID in propertynames(df); has_vn = :value_name in propertynames(df)
+    fallback_vn = resolve_value_name(first(imgs), isempty(value_names) ? nothing : first(value_names))
+    members = Dict{String,Dict{String,Set{String}}}()
+    col = Vector{Union{Missing,String}}(undef, nrow(df))
+    for (i, v) in enumerate(df[!, m])
+        (ismissing(v) || (v isa Real && !isfinite(v))) && (col[i] = missing; continue)
+        k = _val_key(v)
+        key = has_uid ? String(df.uID[i]) : ""; vn = has_vn ? String(df.value_name[i]) : fallback_vn
+        nm = _row_cluster_name(named, key, vn, k)
+        if nm === nothing
+            col[i] = _catkey(v)
+        else
+            col[i] = nm
+            push!(get!(get!(members, "$key|$vn", Dict{String,Set{String}}()), nm, Set{String}()), k)
+        end
+    end
+    out = copy(df); out[!, m] = col
+    (out, (members = members,))
+end
+
+# `categoryMembers` on the response (`"{uID}|{value_name}"` → name → the IDs pooled under it there; uID
+# "" on a single-image plot) lets a linked-brush chip select a named category's rows in its target image.
+function _attach_cluster_names!(result::Dict{String,Any}, named)
+    named === nothing && return result
+    result["categoryMembers"] = Dict{String,Dict{String,Vector{String}}}(
+        at => Dict(nm => sort!(collect(ids)) for (nm, ids) in per) for (at, per) in named.members)
+    result
+end
+
 """
     plot_summary_data(img, pop_type, pops, chart_type; value_name=nothing, granularity=:cell,
                       measure=nothing, nbins=30, normalize=:none) -> Dict
@@ -1093,7 +1264,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -1114,13 +1285,15 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                          pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
         pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
+    df, named = _named_cluster_frame(df, [img], [""], [eff_vn], measure, granularity, chart_type)
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, eff_vn),
-                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
+                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                 stats_enabled=stats_enabled, stats_test=stats_test), fit)
+                 stats_enabled=stats_enabled, stats_test=stats_test), fit) |>
+        r -> _attach_cluster_names!(r, named)
 end
 
 # A heatmap reads intensity columns RAW (`mean_intensity_N`, the names the frontend sends and labels
@@ -1155,7 +1328,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -1185,18 +1358,19 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
                                 pop_cols=cols, raw_channel_names=true) :
         pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity, pop_cols=cols)
+    df, named = _named_cluster_frame(df, imgs, uids, [eff_vn], measure, granularity, chart_type)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn),
                           collapse_series=collapse_series,
-                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
+                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                           attr_map=attr_map,
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     _attach_hmm_fit!(result, fit)
-    result
+    _attach_cluster_names!(result, named)
 end
 
 # ── Multiple SEGMENTATIONS on one plot ────────────────────────────────────────────
@@ -1282,7 +1456,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -1305,13 +1479,15 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
                raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
+    df, named = _named_cluster_frame(df, [img], [""], first.(targets), measure, granularity, chart_type)
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
-                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
+                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                 stats_enabled=stats_enabled, stats_test=stats_test), fit)
+                 stats_enabled=stats_enabled, stats_test=stats_test), fit) |>
+        r -> _attach_cluster_names!(r, named)
 end
 
 # multiple images AND multiple segmentations. `scope=:per_image` → one series per image per
@@ -1322,7 +1498,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean, composition::Bool=false,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -1353,17 +1529,18 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                                 pop_cols=pcols, raw_channel_names=true, expand_cluster_pops=false) :
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
                expand_cluster_pops=false))
+    df, named = _named_cluster_frame(df, imgs, uids, first.(targets), measure, granularity, chart_type)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by,
                           var_cols=_var_measure_set(imgs, isempty(targets) ? nothing : first(targets)[1]),
                           collapse_series=collapse_series,
-                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
+                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                           attr_map=attr_map,
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     _attach_hmm_fit!(result, fit)
-    result
+    _attach_cluster_names!(result, named)
 end

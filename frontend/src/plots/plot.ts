@@ -23,25 +23,40 @@ import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
 import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
+import { categoryColours } from './categoryColours'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured
 // on these (see facetOverride in plots/autoOverride.ts)
 const NON_FACETING_CHARTS = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100', 'heatmap'])
 /**
- * Charts whose series have NO position label — every series is composited into one frame (histogram,
- * stacked) or sits in a facet with its x axis hidden (grouped frequency) — so the fill colour plus the
- * legend is the only way to tell series apart. Under the 'standard' palette two series of one population
- * share its colour; on these charts that has to be resolved to distinct hues (a box/bar chart labels each
- * series on its axis and keeps the population colour).
+ * Charts whose series have NO position label — every series is composited into one frame (histogram)
+ * or sits in a facet with its x axis hidden (grouped frequency) — so the fill colour plus the legend is
+ * the only way to tell series apart. Under the 'standard' palette two series of one population share its
+ * colour; on these charts that has to be resolved to distinct hues (a box/bar chart labels each series
+ * on its axis and keeps the population colour). The stacked charts are not here: each series is its own
+ * bar on the axis, and their colour is the CATEGORY (see STACKED_CHARTS).
  */
-export const COLOUR_IS_IDENTITY = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100'])
+export const COLOUR_IS_IDENTITY = new Set<string>(['histogram', 'frequency'])
+/**
+ * The composition charts — one bar per series, split into its categories (docs/PLOTS.md → Categorical:
+ * "what fraction of each pop is in state 1/2/3"). Their fill is the category, so their colour scale and
+ * legend are the categories', not the series'.
+ */
+export const STACKED_CHARTS = new Set<string>(['stacked', 'stacked100'])
 /** True when two series keys of a colour scale share one colour. */
 export function coloursCollide(color: { domain: string[]; range: string[] }): boolean {
   return new Set(color.range).size < color.domain.length
 }
 export const NUMERIC_CHARTS: ChartType[] = ['histogram', 'boxplot', 'violin', 'bar', 'strip']
 export const CATEGORICAL_CHARTS: ChartType[] = ['frequency', 'stacked', 'stacked100']
+/**
+ * A categorical measure on a distribution chart is its per-image COMPOSITION: one box per
+ * (population, category), each point an image's fraction in that category (plot_data.jl
+ * `_composition_frame`) — the by-image, by-attribute, tested twin of the 100%-stacked bar. Offered only
+ * where a spec opts in (`dataSource.composition`, track_cluster_frequency.json) — never inferred.
+ */
+export const COMPOSITION_CHARTS: ChartType[] = ['boxplot', 'strip', 'violin', 'bar']
 // A 0/1 measure is numeric, but its useful readout is the FRACTION positive — "% of B cells in contact
 // with a T cell", "% of T cells clustered". Offered only when the server reports the measure boolean
 // (`measureBoolean`), i.e. from the DATA, so no column-name list has to be kept in sync.
@@ -586,13 +601,19 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   const identityColouring = o.palette === 'standard' && COLOUR_IS_IDENTITY.has(o.chartType) && coloursCollide(color)
   // palette override (R adjustColors): assign palette/user/distinct colours by series order;
   // 'standard' keeps the population-manager colours from colorOf (consistent across images).
-  if (o.palette === 'user') {
+  if (groupColouring) {
+    // split by a category: a LEVEL keeps one colour across populations (Directed is Directed in every
+    // box) — its palette slot by the category rule. Position already says which population.
+    const grpOf = new Map(r.series.map(s => [keyOf(s), s.group ?? '']))
+    const cmap = categoryColours([...new Set(grpOf.values())], POPULATION_PALETTE)
+    color = { ...color, range: color.domain.map(k => cmap.get(grpOf.get(k) ?? '') ?? NEUTRAL) }
+  } else if (o.palette === 'user') {
     // user list, cycled by series order; an EMPTY list → everything grey (not the population colours)
     const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
     color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : NEUTRAL) }
-  } else if (groupColouring || identityColouring || (o.palette && o.palette !== 'standard')) {
+  } else if (identityColouring || (o.palette && o.palette !== 'standard')) {
     const pal = o.palette === 'distinct' ? distinctColors(color.domain.length)
-      : (groupColouring || identityColouring) ? categoricalColours(color.domain.length)
+      : identityColouring ? categoricalColours(color.domain.length)
       : (PALETTES[o.palette] ?? [])
     if (pal.length) color = { ...color, range: color.domain.map((_, i) => pal[i % pal.length]) }
   }
@@ -699,7 +720,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   opts.style = { ...(opts.style as object ?? {}), fontSize: `${o.fontSize || 11}px`, color: fg, background: bg }
 
   // legend reflects the DISTINCT colours drawn (deduped) — PlotChart reads `_legend` for the overlay.
-  const legend = dedupLegend(color)
+  // A stacked chart's fill is the CATEGORY, so its legend is the category scale the builder set.
+  const legend = STACKED_CHARTS.has(o.chartType) ? (opts.color as { domain: string[]; range: string[] })
+    : dedupLegend(color)
   ;(opts as Record<string, unknown>)._legend = legend
   const legendN = legend.domain.length
 
@@ -1367,20 +1390,37 @@ function frequency(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
       ],
     }
   }
+  // stacked / 100%-stacked: ONE BAR PER SERIES, split into its categories — the composition of each
+  // population ("what fraction of the OTI tracks is Directed?"). It used to be the transpose (a bar per
+  // category split by population), which answers "which population makes up cluster 3?" — a different
+  // question, and not the one docs/PLOTS.md names. The fill is the category, in its palette slot by the
+  // category rule.
+  const cats = r.categories ?? []
+  const cmap = stackedCategoryColours(cats, o)
+  const { labels } = seriesIndex(r, keyOf)
   return {
-    ...THEME, color,
-    // `type: 'band'` is not cosmetic: categories that LOOK numeric ("1"/"2"/"3" — every HMM state
-    // column is an integer code) make Plot infer an ordinal scale from strings-that-are-numbers and
-    // emit its own ⚠️ glyph into the SVG ("Please check the console"), which lands in the BROWSER
-    // console, not ours. Saying band explicitly is the documented way to state the intent.
-    x: { label: r.measure, type: 'band' },
+    ...THEME,
+    color: { domain: cats, range: cats.map(c => cmap.get(c) ?? NEUTRAL) },
+    // `type: 'band'` is not cosmetic: series keys that LOOK numeric make Plot infer an ordinal scale
+    // from strings-that-are-numbers and emit its own ⚠️ glyph into the SVG ("Please check the
+    // console"). Saying band explicitly is the documented way to state the intent.
+    x: { label: null, type: 'band', domain: labels },
     y: { label: yLabel, grid: false },
     marks: [
-      Plot.barY(rows, { x: 'category', y: 'value', fill: 'series',
+      Plot.barY(rows, { x: 'series', y: 'value', fill: 'category',
                         ...(mode === 'stack100' ? { offset: 'normalize' } : {}), tip: true }),
       Plot.ruleY(mode === 'stack100' ? [0, 1] : [0], { stroke: 'currentColor' }),
     ],
   }
+}
+
+/** A stacked chart's category colours: the category rule (palette slot by sorted category) under the
+ *  'standard' palette, otherwise the chosen palette by category order. */
+export function stackedCategoryColours(cats: string[],
+                                       o: Pick<BuildOpts, 'palette' | 'userColors'>): Map<string, string> {
+  const pal = !o.palette || o.palette === 'standard' ? null : paletteRange(o, cats.length)
+  if (!pal) return categoryColours(cats, POPULATION_PALETTE)
+  return new Map(cats.map((c, i) => [c, pal[i]]))
 }
 
 // ── numeric: bar (mean ± chosen error) ────────────────────────────────────────────

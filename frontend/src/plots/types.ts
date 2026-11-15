@@ -63,6 +63,9 @@ export interface PlotSpec {
     // `…cell.is.aggregate`, `spatial.comp.<basis>.<suffix>`). Complements `measuresFromData`, which
     // discovers from the VAR columns (morphology). See plots/obsMeasures.ts.
     obsMeasurePatterns?: { match: string; label?: string }[]
+    // a categorical measure on box/beeswarm/violin/bar plots its per-image category fractions (plot.ts
+    // COMPOSITION_CHARTS → request `composition`); opt-in, never inferred from the column
+    composition?: boolean
     // optional categorical columns the user may split a measure by (the generic groupBy sub-axis,
     // e.g. an HMM state); '' / absent → no split. Reusable for any categorical obs column.
     groupByOptions?: string[]
@@ -202,6 +205,9 @@ export interface PlotDataResponse {
   groupBy?: string | null  // categorical column the series were sub-split by (null when none)
   binEdges?: number[]      // histogram
   categories?: string[]    // frequency
+  // frequency over a NAMED cluster column (plot_data.jl `_attach_cluster_names!`): per `"{uID}|{valueName}"` (uID "" on a single-image plot), name → the raw cluster IDs pooled
+  // under it there, so a linked-brush chip selects its cells by the TARGET image's own names
+  categoryMembers?: Record<string, Record<string, string[]>>
   series: PlotSeries[]
   // matrix/heatmap (chartType "matrix"): a pooled grid — xLabels × yLabels with flat `cells`.
   matrixMode?: 'profile' | 'crosstab' | 'interaction'

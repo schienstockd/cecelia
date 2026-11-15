@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPlotOptions, coloursCollide, defaultNormalize, COLOUR_IS_IDENTITY } from './plot'
+import { buildPlotOptions, coloursCollide, defaultNormalize, chartsForMeasure, COLOUR_IS_IDENTITY, POPULATION_PALETTE } from './plot'
 import { overlaySvgBody, figureParts } from './export'
 import type { PlotDataResponse } from './types'
 
@@ -44,9 +44,61 @@ describe('series that only colour can tell apart', () => {
   })
 
   it('names the charts where colour is the only identity', () => {
-    expect([...COLOUR_IS_IDENTITY].sort()).toEqual(['frequency', 'histogram', 'stacked', 'stacked100'])
+    expect([...COLOUR_IS_IDENTITY].sort()).toEqual(['frequency', 'histogram'])
     expect(coloursCollide({ domain: ['a', 'b'], range: ['#1', '#1'] })).toBe(true)
     expect(coloursCollide({ domain: ['a', 'b'], range: ['#1', '#2'] })).toBe(false)
+  })
+})
+
+// "What fraction of each gated population's tracks is Directed?" — the composition chart is one bar
+// PER POPULATION split into categories; it was drawn transposed (a bar per category split by population).
+describe('stacked charts — one bar per series, filled by category', () => {
+  const named: PlotDataResponse = {
+    chartType: 'frequency', measure: 'clusters.movement', granularity: 'track',
+    categories: ['Meandering', 'Confined', 'Directed', '5'],
+    series: ['OTI', 'gBT'].map(pop => ({ pop, value_name: 'Tcells', counts: [7, 1, 2, 1], values: [7, 1, 2, 1] })),
+  }
+  const bar = (b: { marks: { mark: string; opts: Record<string, unknown> }[] }) => b.marks.find(m => m.mark === 'barY')!
+  it.each(['stacked', 'stacked100'])('%s: x is the series, fill the category', chartType => {
+    const b = build(named, { chartType, byImage: false })
+    expect(bar(b).opts).toMatchObject({ x: 'series', fill: 'category' })
+    expect(b.x.domain).toHaveLength(2)
+    // the legend names the categories, each in its own palette slot by sorted position (a population
+    // lends its name, never its colour): "5" < Confined < Directed < Meandering
+    expect(b._legend.domain).toEqual(named.categories)
+    expect(b._legend.range).toEqual([3, 1, 2, 0].map(i => POPULATION_PALETTE[i]))
+  })
+  it('100%-stacked normalises each bar; stacked keeps the counts', () => {
+    expect(bar(build(named, { chartType: 'stacked100' })).opts.offset).toBe('normalize')
+    expect(bar(build(named, { chartType: 'stacked' })).opts.offset).toBeUndefined()
+  })
+  it('a chosen palette colours the categories by order', () => {
+    const b = build(named, { chartType: 'stacked', palette: 'user', userColors: '#111111,#222222' })
+    expect(b._legend.range).toEqual(['#111111', '#222222', '#111111', '#222222'])
+  })
+})
+
+// The per-image composition (a categorical measure on a box/beeswarm): one box per (population,
+// category). A category keeps ONE colour across populations — its palette slot — so "Directed" reads
+// the same in the OTI and the gBT box.
+describe('composition boxes are coloured by category', () => {
+  const comp: PlotDataResponse = {
+    chartType: 'boxplot', measure: 'proportion', measureType: 'categorical', granularity: 'track',
+    groupBy: 'clusters.movement',
+    series: ['OTI', 'gBT'].flatMap(pop => ['Confined', 'Directed'].map(group => ({
+      pop, value_name: 'Tcells', group, q1: 0.1, median: 0.2, q3: 0.3, lower: 0, upper: 0.4, mean: 0.2, n: 3 }))),
+  }
+  it('each level in its own slot, the same across populations', () => {
+    const b = build(comp, { chartType: 'boxplot', byImage: false })
+    const byKey = new Map<string, string>(b.color.domain.map((k: string, i: number) => [k, b.color.range[i]]))
+    const of = (pop: string, grp: string) => [...byKey].find(([k]) => k.includes(pop) && k.includes(grp))![1]
+    expect(of('OTI', 'Confined')).toBe(POPULATION_PALETTE[0])
+    expect(of('gBT', 'Confined')).toBe(POPULATION_PALETTE[0])
+    expect(of('OTI', 'Directed')).toBe(POPULATION_PALETTE[1])
+    expect(of('gBT', 'Directed')).toBe(POPULATION_PALETTE[1])
+  })
+  it('a categorical measure alone does not offer them — the spec opts in', () => {
+    expect(chartsForMeasure('categorical')).not.toContain('boxplot')
   })
 })
 

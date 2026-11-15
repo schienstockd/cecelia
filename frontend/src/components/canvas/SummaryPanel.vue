@@ -20,7 +20,7 @@ import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { debouncedLatest } from '../../utils/debouncedLatest'
 import { plotAxisSuffix, seriesAreGrouped } from '../../utils/csvName'
-import { backendChart, defaultNormalize, chartsForMeasure, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
+import { backendChart, defaultNormalize, chartsForMeasure, COMPOSITION_CHARTS, plotDataToCsv, type CsvImageMeta, plotStatsToCsv, DEFAULT_VIS, emptySeriesLabels, heatmapControls, type VisProps, type BuildOpts, facetMode } from '../../plots/plot'
 import { zipTextFiles } from '../../utils/zip'
 import { frameSecondsByImage, sharedFrameSeconds } from '../../utils/timeAxis'
 import { centroidLabel } from '../../utils/gatingAxes'
@@ -109,7 +109,9 @@ const temporalCols = ref<string[]>([])   // obsm temporal col(s) (e.g. "t") — 
 // current image's columns, so it never requests the previous image's measure (see fetchData guard).
 // keyed on EVERY selected segmentation (see distinctValueNames) — ticking a second one must reload,
 // because its obs carry measures the first one doesn't have.
-const colsKey = () => `${props.imageUid ?? ''}|${distinctValueNames(ownSeries.value).join(',')}`
+// …and on the GRAIN: a track-grained plot reads the per-track table, whose columns (motility, the
+// track-cluster `clusters.*` runs) are not the cell table's — switching family must reload them.
+const colsKey = () => `${props.imageUid ?? ''}|${distinctValueNames(ownSeries.value).join(',')}|${granularity.value}`
 const colsFor = ref('')
 const colsReady = computed(() => colsFor.value === colsKey())
 const measureOpts = computed<string[]>(() => {
@@ -225,8 +227,13 @@ const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorM
 const statUnit = computed<'individual' | 'image'>({ get: () => props.ui.statUnit ?? 'individual', set: v => (props.ui.statUnit = v) })
 // how each image is collapsed to its one point when statUnit==='image' (mean = average; median = robust)
 const imageAgg = computed<'mean' | 'median'>({ get: () => props.ui.imageAgg ?? 'mean', set: v => (props.ui.imageAgg = v) })
+// a categorical measure on a box/strip/violin/bar IS per image already (one point per image per category,
+// split by that category — plot.ts COMPOSITION_CHARTS), so neither the summary level nor a second
+// "Split by" applies; the backend ignores both there.
+const composition = computed(() => !!props.spec.dataSource.composition
+  && COMPOSITION_CHARTS.includes(chartType.value))
 const canStatUnit = computed(() => crossImage.value && hasMeasure.value && !imageMetric.value
-  && ['boxplot', 'violin', 'strip', 'bar'].includes(chartType.value))
+  && !composition.value && ['boxplot', 'violin', 'strip', 'bar'].includes(chartType.value))
 // NB an earlier version of this persisted the summary level EXPLICITLY from a `watchEffect` here, so
 // that no reader had to resolve `?? 'individual'`. REVERTED 2026-08-08: the effect both read and wrote
 // `props.ui`, which is a store-owned reactive object that every OTHER panel on the board also writes
@@ -249,9 +256,16 @@ async function loadObsCols() {
     // one request per segmentation, unioned — see distinctValueNames / mergeColumnSets. Concurrent:
     // these are small metadata reads and the panel already defers its fetch until they all land.
     const parts = await Promise.all(vns.map(async vn => {
-      const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}`
+      // `popType=track` asks for the per-track table's columns — the frame a track-grained plot reads
+      // (any track family reads the same table, so `track` stands for live/track/trackclust here).
+      const grain = granularity.value === 'track' ? '&popType=track' : ''
+      const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}${grain}`
       const res = await fetch(`/api/gating/channels?${q}`)
-      return res.ok ? (await res.json() as Partial<ColumnSets>) : {}
+      if (!res.ok) return {}
+      const d = await res.json() as Partial<ColumnSets> & { trackObsColumns?: string[] }
+      // the track table's obs replace the cell obs — never fall back to the cell ones (a cell
+      // `clusters.*` run would then pose as a track-cluster measure)
+      return grain ? { ...d, obsColumns: d.trackObsColumns ?? [] } : d
     }))
     if (colsKey() !== key) return          // image/segmentation switched mid-load — discard the stale response
     const merged = mergeColumnSets(parts)
@@ -266,7 +280,7 @@ async function loadObsCols() {
     colsFor.value = key
   }
 }
-watch([() => props.imageUid, () => distinctValueNames(ownSeries.value).join(',')], loadObsCols, { immediate: true })
+watch([() => props.imageUid, () => distinctValueNames(ownSeries.value).join(','), () => granularity.value], loadObsCols, { immediate: true })
 const groupByOpts = computed<string[]>(() => {
   // temporal cols live in obsm (not obs) but ARE groupable (the per-timepoint QC/consistency view),
   // so they count as "present" for spec hints alongside the discovered categorical obs columns.
@@ -372,7 +386,7 @@ const categorySel = computed<string>({ get: () => matrixCategory.value, set: v =
 // fixed-position impl — folded into the one component so there's a single popover everywhere.)
 const optsOpen = ref(false)
 const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
-const hasOpts = computed(() => groupByOpts.value.length > 0
+const hasOpts = computed(() => (groupByOpts.value.length > 0 && !composition.value)
   || chartType.value === 'heatmap' || chartType.value === 'elbow'
   || canStatUnit.value
   || (['histogram', 'bar', 'frequency', 'count'] as ChartType[]).includes(chartType.value))
@@ -458,6 +472,8 @@ const validCharts = computed<ChartType[]>(() => {
   // `measureBoolean` adds `% positive` for a 0/1 measure — offered from the DATA, so the spec need only
   // list `percent` once and it appears exactly on the measures where it means something.
   const ok = new Set(chartsForMeasure(mt, result.value?.measureBoolean))
+  // a composition spec plots a categorical measure per image on the distribution charts too
+  if (mt === 'categorical' && props.spec.dataSource.composition) COMPOSITION_CHARTS.forEach(c => ok.add(c))
   // heatmap (pooled grid) and count (row count) are measure-independent — always keep them.
   const v = props.spec.chartTypes.filter(c => ok.has(c) || c === 'heatmap' || c === 'count')
   return v.length ? v : props.spec.chartTypes
@@ -596,6 +612,7 @@ async function fetchData(isCurrent: () => boolean) {
         rawPoints: be.rawPoints ?? false,
         ...(groupBy.value ? { groupBy: groupBy.value } : {}),
         ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
+        ...(composition.value ? { composition: true } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
         ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
         ...(vis.value.statsEnabled && canCompareGroups.value
@@ -831,6 +848,7 @@ async function fetchRawCsv(): Promise<string | null> {
       normalize: normalize.value,
       ...(groupBy.value ? { groupBy: groupBy.value } : {}),
       ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
+      ...(composition.value ? { composition: true } : {}),
       ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
     }
     applyImageSelector(body)
@@ -1069,6 +1087,13 @@ async function onLinkedBrushCategory(cat: string) {
   if (!targetUid || !measure.value || linkedBrushBusy.value) return
   const s0 = ownSeries.value[0]
   if (!s0) return
+  // a NAMED cluster category ("Directed") pools raw IDs; the cells carry the codes. Resolve the chip
+  // against the TARGET image's own names: its IDs for a name, and nothing for a raw ID that image
+  // names otherwise (its tracks are counted under the name, not under the number).
+  const at = result.value?.categoryMembers
+  const mem = at?.[`${targetUid}|${s0.valueName}`] ?? at?.[`|${s0.valueName}`]
+  const cats = mem?.[cat] ?? (mem && Object.values(mem).some(ids => ids.includes(cat)) ? [] : [cat])
+  if (!cats.length) { linkedBrushSource.clear(); mirrorPickHighlight([]); linkedBrushActiveCategory.value = null; return }
   linkedBrushBusy.value = true
   try {
     const res = await fetch('/api/labels/by_category', {
@@ -1082,6 +1107,7 @@ async function onLinkedBrushCategory(cat: string) {
         popType: s0.popType,
         measure: measure.value,
         category: cat,
+        categories: cats,
       }),
     })
     if (!res.ok) { linkedBrushBusy.value = false; return }
@@ -1251,7 +1277,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
         <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-end">
         <div class="sp-pop" @click.stop>
           <!-- generic split-by (sub-axis) for the per-series charts; the heatmap uses Category below -->
-          <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row cc-muted"
+          <label v-if="chartType !== 'heatmap' && !composition && groupByOpts.length" class="sp-pop-row cc-muted"
                  v-tooltip.top="'Split the measure by a categorical column (e.g. HMM state)'">
             <span>Split by</span>
             <select v-model="groupBy">

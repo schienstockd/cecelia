@@ -1,0 +1,22 @@
+{
+  "id": "track_cluster_frequency",
+  "label": "Track cluster frequency",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["stacked100", "stacked", "frequency", "boxplot", "strip", "violin", "bar"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "live",  "granularity": "track" },
+      { "popType": "track", "granularity": "track" }
+    ],
+    "composition": true,
+    "obsMeasurePatterns": [
+      { "match": "clusters.", "label": "Track clusters" }
+    ]
+  },
+  "scopeModes": ["per_image", "summarised", "by_attr"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}
