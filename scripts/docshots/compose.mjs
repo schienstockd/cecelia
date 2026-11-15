@@ -25,7 +25,7 @@ import { chromium, findChromium, repo } from '../lib/chromium.mjs'
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, imageFile, isPicture, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, imageFile, isPicture, setImages, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { figureGeometry } = await import(pathToFileURL(join(dir, 'figure.ts')).href)
 
 function parseArgs(argv) {
@@ -77,7 +77,9 @@ if (issues.length) {
   for (const i of issues) console.error(`✗ ${i.set}: ${i.problem}`)
   process.exit(1)
 }
-const shots = SHOT_SETS.flatMap(s => s.shots.filter(x => !a.only || a.only === x.id || a.only === s.id)
+// a shot and the one it sits beside are one image: picking either composes both (the hero first)
+const picked = (s, x) => !a.only || a.only === s.id || [x.id, x.beside, ...s.shots.filter(o => o.beside === x.id).map(o => o.id)].includes(a.only)
+const shots = SHOT_SETS.flatMap(s => s.shots.filter(x => picked(s, x))
   .flatMap(x => shotThemes(s, x).map(theme => [x, theme, s])))
 if (a.only && shots.length === 0) throw new Error(`no shot or set "${a.only}"`)
 mkdirSync(a.out, { recursive: true })
@@ -89,6 +91,10 @@ for (const s of SHOT_SETS) {
   if (existsSync(f)) facts[s.id] = JSON.parse(readFileSync(f, 'utf-8'))
 }
 const missing = [], stale = [], tooWide = [], wrongScheme = []
+const halves = {}
+// the gap between a pair is the page's own colour (GitHub's README background), so it reads as two windows
+const PAGE = { light: '#ffffff', dark: '#0d1117' }
+const PAIR_GAP = 12
 
 const browser = await chromium.launch({ executablePath: findChromium(), headless: true })
 try {
@@ -108,16 +114,36 @@ try {
     // a picture of the image has no app text to read at the app's size; an overview is not meant to be read
     if (!g.legible && !isPicture(spec) && !spec.overview) tooWide.push(`${stem} (${Math.round(g.w)} px wide → text at ${Math.round(100 * g.k)}%)`)
     await page.setContent(figureHtml(m, png, g, theme), { waitUntil: 'load' })
-    await page.locator('#f').screenshot(file.endsWith('.jpg') ? { path: join(a.out, file), type: 'jpeg', quality: 80 } : { path: join(a.out, file) })
-    widths[stem] = Math.floor(g.w * g.k)   // whole px: a fractional edge would show the page behind
-    console.log(`✓ ${stem} → ${join(a.out, file)}`)
+    // a shot beside another is drawn into that one's image below, so its own figure is an intermediate
+    const dest = join(spec.beside ? a.shots : a.out, file)
+    await page.locator('#f').screenshot(file.endsWith('.jpg') ? { path: dest, type: 'jpeg', quality: 80 } : { path: dest })
+    const w = Math.floor(g.w * g.k)   // whole px: a fractional edge would show the page behind
+    if (spec.beside) halves[`${spec.id}:${theme}`] = { file: dest, w }
+    else widths[stem] = w
+    console.log(`✓ ${stem} → ${dest}`)
+  }
+  // one image per pair: the hero, then what sits beside it, a page-coloured gap between
+  for (const [spec, theme, set] of shots) {
+    if (!spec.beside) continue
+    const half = halves[`${spec.id}:${theme}`]
+    const hero = set.shots.find(o => o.id === spec.beside), file = imageFile(hero, theme), stem = file.replace(/\.(png|jpg)$/, '')
+    const heroW = widths[stem]
+    if (!half || !heroW || !existsSync(join(a.out, file))) { missing.push(`${stem} + ${spec.id}`); continue }
+    const uri = f => `data:image/${f.endsWith('.jpg') ? 'jpeg' : 'png'};base64,${readFileSync(f).toString('base64')}`
+    await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:${PAGE[theme]}}</style></head><body>
+      <div id="f" style="display:inline-flex;gap:${PAIR_GAP}px;align-items:flex-start;background:${PAGE[theme]}">
+      <img src="${uri(join(a.out, file))}" style="width:${heroW}px"><img src="${uri(half.file)}" style="width:${half.w}px"></div></body></html>`, { waitUntil: 'load' })
+    const out = join(a.out, file)
+    await page.locator('#f').screenshot(file.endsWith('.jpg') ? { path: out, type: 'jpeg', quality: 80 } : { path: out })
+    widths[stem] = heroW + PAIR_GAP + half.w
+    console.log(`✓ ${stem} + ${spec.id} → ${out}`)
   }
 } finally {
   await browser.close()
 }
 // what every shot of every set composes to: a width for anything else is a removed shot's, and an image
 // file nothing composes is one to delete
-const expected = new Set(SHOT_SETS.flatMap(s => s.shots.flatMap(x => shotThemes(s, x).map(t => imageFile(x, t)))))
+const expected = new Set(SHOT_SETS.flatMap(setImages))
 for (const k of Object.keys(widths)) if (![...expected].some(f => f.replace(/\.(png|jpg)$/, '') === k)) delete widths[k]
 const orphans = readdirSync(a.out).filter(f => /\.(png|jpg)$/.test(f) && !expected.has(f))
 if (orphans.length) console.warn(`! no shot composes these, delete them: ${orphans.join(', ')}`)
