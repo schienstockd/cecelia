@@ -126,24 +126,27 @@ name a changed function.
 
 | PR | Files mutated | Mutants | Killed | Survived | Wall |
 |---|---|---|---|---|---|
-| #2244 pop types on the image | `clustering_colour.jl` | 4 | 4 | 0 | 198 s |
-| #2232 registered channel order | `register_plan.jl`, `acquisition.jl` | 21 | 16 | 5 | 46 s |
-| #2230 skeleton colours | `title_card.py` | 81 | 69 | 12 | 26 s |
-| #2226 store axis order | `data_path.py`, `dim_utils.py` | 36 | 29 | 5 (+2 timeout) | 188 s |
-| #2225 acquisition card | `register_plan.jl`, `czi_meta.py`, `lif_meta.py` | 220 | 158 | 62 | 55 s |
+| #2244 pop types on the image | `clustering_colour.jl` | 4 | 4 | 0 | 364 s |
+| #2232 registered channel order | `register_plan.jl`, `acquisition.jl` | 21 | 16 | 5 | 47 s |
+| #2230 skeleton colours | `title_card.py` | 81 | 69 | 12 | 27 s |
+| #2226 store axis order | `data_path.py`, `dim_utils.py` | 36 | 29 | 5 (+2 timeout) | 207 s |
+| #2225 acquisition card | `register_plan.jl`, `czi_meta.py`, `lif_meta.py` | 220 | 158 | 62 | 76 s |
 
-- **Time: median 55 s, max 3.3 min**, so the 1–2 min estimate holds for 3 of 5. The cost is the number
-  of mapped test files, not the mutants: `clustering_colour.jl` maps to 15 suite files (~11 s per
-  mutant), `dim_utils.py` to 38. Julia pays ~10–15 s of package load per changed file.
+- **Time: median 76 s, max 6 min** (inside the pixi env, every test running), so the 1–2 min
+  estimate holds for 3 of 5. The cost is the number of mapped test files, not the mutants:
+  `clustering_colour.jl` maps to 15 suite files (including the golden pipeline, ~80 s per mutant),
+  `dim_utils.py` to 38. Julia pays ~10–15 s of package load per changed file.
 - **Survivors need triage, so the guard can report but not block.** The 5 `data_path.py` survivors are
   all equivalent: `stack_axis_indices` only falls back to the OME guess when the store's NGFF axes are
   unusable, and then `calc_image_dimensions(axes=…)` falls back too. #2225 left 62 on the czi reader
   in one PR.
 - **What made the first runs wrong** (fixed in the tools, each found on these PRs):
-  - A test that fails when run outside `suite.jl`'s order (one `@test` in `pop_df_multi_share.jl`) had
-    its whole file dropped, and that file was the only one covering #2244's change: 0% looked like a
-    gap. Now the unmutated run's failures are the baseline and a mutant is killed only by a new one
-    (`--known-failures`); Python deselects the single failing test.
+  - Run outside the pixi env, every test that starts Python failed unmutated (`No module named
+    'pandas'`): 14 assertions in 4 suite files, which first looked order-dependent. The first harness
+    dropped such a file whole, and one was the only test of #2244's change: 0% looked like a gap. Now
+    `mutate_changed.py` refuses to run outside the env; inside it none of the 5 PRs has a test that
+    fails unmutated (all 4 files pass alone: 859, 22, 70, 142 tests). Should one appear, it is set
+    aside per assertion, not per file (`--known-failures`; Python deselects the single test).
   - A mutant was loaded from a temp file, so `@__DIR__` in `acquisition.jl` pointed at `/tmp`: every
     mutant, the unmutated one too, was a build error. Now it is loaded under the source's own name.
   - mutmut's default timeout (15 × the test time) made two hung `dim_utils` mutants cost 7 of 9
@@ -196,7 +199,7 @@ name a changed function.
   (a) A test added with a fix must fail on the base commit. This is CLAUDE.md's "watch it fail" rule,
   made a check.
   (b) Mutate only the changed lines of a result-path file and run only its mapped tests. **Timed**
-  (results above): median 55 s, max 3.3 min over 5 PRs. Not wired into recital yet: it can only
+  (results above): median 76 s, max 6 min over 5 PRs. Not wired into recital yet: it can only
   report (survivors need triage), and where it reports (a recital tail, a PR comment, on demand) is
   the maintainer's call.
 

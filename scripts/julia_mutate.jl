@@ -12,9 +12,10 @@
 # Skips comments, string literals and docstrings. Rows: id, line, op, original, mutated, result, secs.
 # --sample N runs N mutants drawn with a fixed --seed (default 1), so a rerun draws the same ones.
 # --lines keeps only mutants on those lines of SRC (a diff's changed lines; ids stay those of --list).
-# --known-failures takes what fails on the unmutated SRC (an order-dependent check that needs a file
-# suite.jl ran earlier) as the baseline: a mutant is killed only by a failure outside it. Listed on
-# stderr and in OUT.tsv.known. Without it, any failure on the unmutated SRC stops the run.
+# --known-failures takes what fails on the unmutated SRC as the baseline, per assertion: a mutant is
+# killed only by a failure outside it. Listed on stderr and in OUT.tsv.known. Without it, any failure
+# on the unmutated SRC stops the run. Run inside the pixi env: outside it every test that starts
+# Python fails unmutated.
 # The suite preamble is the active project's test/runtests.jl, so a copy of this script works on any
 # checkout: `julia --project=<checkout>/app /elsewhere/julia_mutate.jl …`.
 
@@ -83,8 +84,7 @@ function worker(srcpath, out, tests, ids, known_failures)
         finally Test.pop_testset() end
         union!(bad, fails(ts))
     end
-    # what already fails unmutated (an order-dependent check that needs a file suite.jl ran earlier):
-    # a mutant is killed only by a failure outside this set
+    # what already fails unmutated: a mutant is killed only by a failure outside this set
     known = Set{String}()
     if known_failures && first(ids) != 0 && isfile(out * ".known")   # a restarted worker
         known = Set(readlines(out * ".known"))
@@ -147,6 +147,9 @@ function main(args)
         [0; sort(Random.shuffle(Random.MersenneTwister(parse(Int, opt("--seed", "1"))), pool)[1:n_sample])] :
         [0; pool]
     kf = "--known-failures" in args ? ["--known-failures"] : String[]
+    # outside the env every test that starts Python fails unmutated; set aside, its kills would vanish
+    !isempty(kf) && !haskey(ENV, "PIXI_PROJECT_ROOT") &&
+        error("--known-failures needs the pixi env (`pixi run julia --project=app …`)")
     isfile(out) && (done = maximum(parse(Int, split(l, '\t')[1]) for l in readlines(out); init = -1) + 1)
     while any(>=(done), ids)
         todo = join(filter(>=(done), ids), ',')

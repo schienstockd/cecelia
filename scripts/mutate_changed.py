@@ -222,7 +222,7 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
                 (copy / "python" / d.name).symlink_to(d)
         env = os.environ | {"PYTHONPATH": str(copy / "python/mutants")}
         py = sys.executable   # the env mutmut is installed in
-        row["known"] = []   # tests that fail with nothing mutated (they lean on the real checkout's layout)
+        row["known"] = []   # tests that fail with nothing mutated, set aside one by one
         row["phases"] = []
         while True:
             t1 = time.time()
@@ -282,6 +282,11 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true", help="Python: keep the mutmut copy (path in the report)")
     ap.add_argument("--dry-run", action="store_true", help="map the changed functions to tests; mutate nothing")
     a = ap.parse_args()
+    if "PIXI_PROJECT_ROOT" not in os.environ:
+        # tests that start Python (run_py, the task runners) fail outside the env, and a test that
+        # fails unmutated is set aside: the mutants it would have killed then read as survivors
+        sys.exit("mutate_changed: run it inside the pixi env (`pixi run python scripts/mutate_changed.py …`;"
+                 " for another checkout, `pixi run --manifest-path <this>/pixi.toml -- bash -c 'cd <it> && …'`)")
     outdir = Path(a.out or tempfile.mkdtemp(prefix="mutate_changed_")).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
     globs = repo_result_paths(ROOT)
