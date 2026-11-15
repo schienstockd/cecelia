@@ -145,6 +145,8 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-eye-slash', lucide: 'eye-off', means: 'Hidden' },
       { icon: 'pi-dot-circle', lucide: 'circle-dot', means: 'One at a time — showing one hides the others' },
       { icon: 'pi-repeat', lucide: 'repeat', means: 'Loop playback' },
+      { icon: 'pi-end-stop', lucide: 'arrow-right-to-line', means: 'Stop when the movie ends' },
+      { icon: 'pi-list-end', lucide: 'list-end', means: 'Play the next movie when this one ends' },
       { icon: 'pi-overview', lucide: 'picture-in-picture-2', means: 'Overview minimap in the corner' },
       { icon: 'pi-axes', lucide: 'axis-3d', means: 'XYZ axes in the corner' },
       { icon: 'pi-tiles', lucide: 'grid-2x2', means: 'Tile cache map' },
