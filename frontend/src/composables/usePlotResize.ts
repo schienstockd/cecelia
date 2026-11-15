@@ -23,7 +23,7 @@
 // A caller that needs to draw for another reason (new data, a mode switch) calls `redraw()`, which
 // ignores the size guard.
 
-import { onBeforeUnmount, onMounted, type Ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { rafCoalesce } from '../utils/rafCoalesce'
 
 export interface PlotResize {
@@ -92,4 +92,22 @@ export function observeBoxChanges(el: HTMLElement, onChange: () => void): Resize
   })
   ro.observe(el)
   return ro
+}
+
+/**
+ * The client box of an element as reactive state — for a LAYOUT decision (how many columns fit), not a
+ * paint. Follows the element through a `v-if`/`v-else` remount, and reports 0 × 0 until measured. Only
+ * safe on an element whose own box doesn't depend on what the caller does with the size (a grid that
+ * fills its slot): otherwise it is the observer loop `usePlotResize` exists to break.
+ */
+export function useBoxSize(el: Readonly<Ref<HTMLElement | null>>): Ref<{ w: number; h: number }> {
+  const box = ref({ w: 0, h: 0 })
+  let ro: ResizeObserver | null = null
+  watch(el, e => {
+    ro?.disconnect(); ro = null
+    if (!e || typeof ResizeObserver === 'undefined') return
+    ro = observeBoxChanges(e, () => { box.value = { w: e.clientWidth, h: e.clientHeight } })
+  }, { immediate: true, flush: 'post' })
+  onBeforeUnmount(() => { ro?.disconnect(); ro = null })
+  return box
 }

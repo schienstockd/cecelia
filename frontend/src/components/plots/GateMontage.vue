@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, useTemplateRef } from 'vue'
+import { useBoxSize } from '../../composables/usePlotResize'
 import { isImageYAxis } from '../../utils/gatingAxes'
 import type { GateSpec, TransformSpec } from '../../stores/gating'
 import { elementToImageURL, loadImg, svgDoc, svgText, rowsToCsv } from '../../plots/export'
@@ -23,7 +24,7 @@ import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
   type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate, type ColourBy,
-  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate,
+  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate, fitGridCols,
 } from '../../plots/montage'
 import { splitXYL, splitXYZL } from '../../plots/valueColour'
 import { DOT_R } from '../../plots/density'
@@ -377,9 +378,13 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 // ── WRAP: fixed N × M grid that FILLS the slot (no scroll) ───────────────────────────────────────────
 // Ports the old R plotFlowGating model (R/flowHelpers.R:.flowPlotGatedRaster + ggpubr::ggarrange nrow/
 // ncol) — the whole figure sizes to the render surface, so PDF export is just a picture of the DOM.
-// `auto-fill` scrolls at small slots; a decided N × M can't. Auto-shape ≈ square: nCol = ceil(√count),
-// nRow = ceil(count / nCol). Matrix (cols != null) and single set their template inline / by class.
-const nCol = computed(() => Math.max(1, Math.ceil(Math.sqrt(Math.max(1, props.defs.length)))))
+// `auto-fill` scrolls at small slots; a decided N × M can't. The shape FITS the slot: nCol is the column
+// count whose square tile is largest for the grid's measured box (fitGridCols), so three tiles in a wide
+// short panel sit in one row rather than a 2 × 2 with an empty corner. nRow = ceil(count / nCol). Matrix
+// (cols != null) and single set their template inline / by class.
+// the grid fills its slot (flex: 1), so re-templating it never changes its own box — no observer loop
+const gridBox = useBoxSize(useTemplateRef<HTMLElement>('gridRef'))
+const nCol = computed(() => fitGridCols(props.defs.length, gridBox.value.w, gridBox.value.h))
 const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value)))
 </script>
 
@@ -389,7 +394,7 @@ const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value
     <div v-if="showLegend" class="gm-legend">
       <ColourBarLegend ref="legendRef" :extent="valueRamp!.extent" :ticks="valueRamp!.ticks" :label="legendLabel" />
     </div>
-    <div class="gm-grid" :class="{ single, matrix: cols != null }" :style="gridStyle">
+    <div ref="gridRef" class="gm-grid" :class="{ single, matrix: cols != null }" :style="gridStyle">
       <div v-if="err" class="gm-msg cc-muted cc-fs-md">{{ err }}</div>
       <div v-else-if="!defs.length" class="gm-msg cc-muted cc-fs-md"><slot name="empty">Nothing to show.</slot></div>
       <template v-for="d in defs" :key="d.key">
@@ -453,14 +458,17 @@ const nRow = computed(() => Math.max(1, Math.ceil(props.defs.length / nCol.value
    space of the cell (below the .gm-title). MATRIX: keeps its own outer-square via aspect-ratio here. */
 .gm-plot { flex: 1; width: 100%; min-height: 0; }
 .gm-grid.matrix .gm-plot { flex: none; aspect-ratio: 1; }
-/* WRAP fill-mode: turn OFF GateScatterCell's default "dots square" rule so plot-capture stretches
-   to fill the tile and panel-plot uses the tile's aspect (not aspect-ratio:1 — that made plot-capture
+/* WRAP: plot-capture FILLS the tile (GateScatterCell's default width-square made plot-capture
    content-driven and its x-axis label at bottom:-15 spilled past .gm-cell's overflow:hidden and got
    clipped). Matrix / single opt out via the selector. */
 .gm-grid:not(.matrix):not(.single) :deep(.plot-capture.gm-plot) {
-  flex: 1; min-height: 0; align-items: stretch; }
+  flex: 1; min-height: 0; align-items: center; justify-content: center; }
+/* …but the DOTS stay square: centre a square sized to the tile's smaller side (the cell is the size
+   container; 54px = title strip + the compact capture's top/bottom padding — WRAP_FIT.chromeH in
+   plots/montage.ts). The column count is already chosen to make that square as big as it can be. */
+.gm-grid:not(.matrix):not(.single) .gm-cell { container-type: size; }
 .gm-grid:not(.matrix):not(.single) :deep(.plot-capture.gm-plot .panel-plot) {
-  flex: 1; aspect-ratio: auto; width: 100%; min-height: 0; }
+  flex: none; aspect-ratio: 1; min-height: 0; width: min(100%, calc(100cqh - 54px)); }
 /* single tile (board gating-strategy): FILL the slot. The plot-capture fills the cell and CENTRES a
    square sized to the cell's SMALLER dimension (like the UMAP square) — the old rule made a
    width-square anchored to the TOP with big blank space below, and the full 84px y-name padding left

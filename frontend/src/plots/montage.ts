@@ -1,4 +1,5 @@
 import type { GateSpec, TransformSpec } from '../stores/gating'
+import { largestSquareCols } from '../utils/tileGrid'
 
 // ── Gate MONTAGE model ────────────────────────────────────────────────────────────────────────────
 // A montage is a grid of read-only gate scatters. Each tile renders ONE parent population's cells as a
@@ -122,4 +123,21 @@ export function canonicalOrient(d: Pick<PanelDef, 'parentPath' | 'xChan' | 'yCha
   const ta = swap ? d.yt : d.xt
   const tb = swap ? d.xt : d.yt
   return { a, b, ta, tb, swap, groupKey: `${d.parentPath}|${a}${axisQ('x', ta)}|${b}${axisQ('y', tb)}` }
+}
+
+// ── WRAP layout: how many columns fit the slot best ──────────────────────────────────────────────────
+// Each tile's dots are a square, so the best grid is the one whose square is LARGEST. For each column
+// count, the square is the smaller of the tile's width and height once the tile's own chrome (title
+// strip + axis-name padding) is taken off. Three tiles in a wide, short panel → one row of three, not a
+// 2 × 2 with an empty corner; the same three in a tall, narrow panel → one column.
+export interface GridFit { gap: number; pad: number; chromeW: number; chromeH: number }
+// .gm-grid gap/padding, compact .plot-capture padding + cell border, and the title strip — see GateMontage
+export const WRAP_FIT: GridFit = { gap: 8, pad: 6, chromeW: 40, chromeH: 54 }
+export function fitGridCols(n: number, w: number, h: number, fit: GridFit = WRAP_FIT): number {
+  if (n <= 1) return 1
+  // not measured yet (first paint, hidden page): fall back to the near-square shape
+  if (!(w > 0 && h > 0)) return Math.ceil(Math.sqrt(n))
+  return largestSquareCols(n, (c, r) => Math.min(
+    (w - 2 * fit.pad - (c - 1) * fit.gap) / c - fit.chromeW,
+    (h - 2 * fit.pad - (r - 1) * fit.gap) / r - fit.chromeH)).cols
 }
