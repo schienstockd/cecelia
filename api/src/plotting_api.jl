@@ -244,6 +244,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
     raw       = _wbool(body, "raw", false)          # export mode: per-datapoint rows, not summaries
     stat_unit = Symbol(string(get(body, "statUnit", "individual")))   # individual cell/track, or per-image agg
     image_agg = Symbol(string(get(body, "imageAgg", "mean")))         # per-image collapse: mean | median
+    composition = _wbool(body, "composition", false)  # categorical measure → per-image category fractions
     gb_v      = get(body, "groupBy", nothing)
     group_by  = (gb_v === nothing || isempty(string(gb_v))) ? nothing : string(gb_v)
     collapse  = _wbool(body, "collapseSeries", false)   # pool pops/images → series by groupBy only
@@ -374,7 +375,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   [string(p) for p in get(body, "pops", String[])], chart;
                                   scope = scope, value_name = isempty(vn_req) ? nothing : vn_req,
                                   granularity = gran, measure = measure, nbins = nbins,
-                                  normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
+                                  normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map, cluster_suffix = cluster_suffix,
@@ -382,7 +383,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                 plot_summary_data(first.(pairs), last.(pairs), pop_type, targets, chart;
                                   scope = scope, granularity = gran, measure = measure,
                                   nbins = nbins, normalize = normalize, group_by = group_by,
-                                  collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
+                                  collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map,
@@ -403,14 +404,14 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               # plot_data.jl (_cluster_pop_vn) pick the run's value_name from `suffix`.
                               value_name = isempty(vn_req) ? nothing : _resolve_vn(img, vn_req), granularity = gran,
                               measure = measure, nbins = nbins, normalize = normalize,
-                              group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
+                              group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                               cluster_suffix = cluster_suffix,
                               stats_enabled = stats_enabled, stats_test = stats_test) :
             plot_summary_data(img, pop_type, targets, chart;
                               granularity = gran, measure = measure, nbins = nbins,
-                              normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
+                              normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                               stats_suffix = something(cluster_suffix, ""),

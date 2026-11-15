@@ -645,6 +645,24 @@ export function isChosenValueName(value: unknown, specDefault: unknown): boolean
 }
 
 /**
+ * What the value-name picker should switch to when the image selection changes, or `null` to leave
+ * it. A chosen name stays while the images offer it, and while they offer NOTHING (every image of a
+ * set ticked, only the exemplar segmented: an empty intersection). `keepChosen` keeps it always — a
+ * chain node's name is the plan for images that may not have it yet, so replacing its `Tcells` with
+ * the `default` every image shares silently rewires the node; a missing input is the pre-flight's to
+ * report. Returns `null` when the pick is what is already stored: the caller emits, the form
+ * re-renders, and an emit of the same value on every render is an update loop.
+ */
+export function autoValueName(current: unknown, specDefault: unknown, available: string[],
+                              field: string | undefined, activeValueName?: string | null,
+                              keepChosen = false): string | null {
+  if (isChosenValueName(current, specDefault)
+      && (keepChosen || available.length === 0 || available.includes(current as string))) return null
+  const pick = preferredValueName(available, field, activeValueName)
+  return pick === current ? null : pick
+}
+
+/**
  * Starting values for a NEW entry of a repeatable group — the sub-params' own defaults, overlaid
  * with the spec's `entryDefaults` for that position.
  *

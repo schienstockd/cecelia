@@ -643,6 +643,9 @@ function api_gating_channels(req::HTTP.Request)
         ) : Dict{String,Any}()
         return 200, JSON3.write((;
             columns = motility,                                  # whole-track motility (directly gateable)
+            # per-track obs (clusters.{run}, track_state, …) — the categorical measures a track-grained
+            # PLOT discovers. Own key, not `obsColumns`: the gating pickers read that as cell obs.
+            trackObsColumns = tobs,
             trackedValueNames = tracked,                          # the ones a track view may default to
             cellMeasures = cellmeas,                             # cell vars → per-track numeric aggregates
             cellObsMeasures = cellobs,                           # cell obs → per-track aggregates (HMM, …)

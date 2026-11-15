@@ -685,6 +685,33 @@ docs/TODO.md.)
 - **100%-stacked (proportion)** — full-height bar per group, segments = category proportions
   (composition: "what fraction of each pop is in state 1/2/3").
 
+  Both stacked charts put the **series on the x axis** and **fill by category**, so their colour scale
+  and legend are the categories' (`STACKED_CHARTS` in `plot.ts`), coloured by the category rule
+  (`categoryColours`). They were drawn transposed until 2026-11 (a bar per category split by series).
+- **Named clusters.** A frequency over a cluster column (`clusters.{suffix}` / `regions.{suffix}`) reads
+  the NAMES the user's cluster populations give those IDs: IDs one population claims pool under its
+  name (Directed = clusters 3 + 4), an unclaimed ID keeps its number, and the response carries
+  `categoryMembers` (per image|segmentation, name → its IDs, which a linked-brush chip sends to
+  `/api/labels/by_category` as `categories`). A category keeps its own palette slot — the population
+  lends its name, never its colour. Only an `in`/`eq` cluster population claims its values (a `neq 3`
+  pop holds everything but 3). Each row is named by its own image's and segmentation's populations,
+  falling back per ID to its clustering run's (`partOf`) — two runs' ID 3 are not the same cluster.
+  `_named_cluster_frame` in `plot_data.jl` rewrites the frame before aggregation, using the same claims as the viewer's colour-by legend
+  (`pop_label_overrides`).
+- **Composition per image** — OPT-IN per spec (`dataSource.composition: true` → request field
+  `composition`; never inferred, since the integer-level sniff calls real measures categorical): a
+  categorical measure on **box / beeswarm / violin / bar** (`COMPOSITION_CHARTS`): one series per (population, category), each point ONE IMAGE's fraction of
+  that population in that category (`_composition_frame`). Complete cases as in the population summary:
+  an image with none of a category is a 0, not a missing point. Compare-by-attribute and the group tests
+  apply as for any distribution chart; the Split-by and summary-level controls are hidden (the category
+  IS the split, the image IS the unit). Boxes split by a category keep one colour per level across
+  populations (its palette slot), not a hue per box.
+- **Track cluster frequency** (`track_cluster_frequency.json`, Behaviour page) — the behaviour make-up
+  of each gated tracked population (100%-stacked, or per image as box/beeswarm, by attribute):
+  Tracked / Tracked (gated) at track grain, the measure discovered
+  from the per-track table's `clusters.*` columns. A track-grained panel discovers its columns from the
+  track table (`/api/gating/channels?popType=track` → `trackObsColumns`), not the cell table.
+
 ## 5. What this fixes (current oddities)
 
 - **"points on the boxplot seem the same"** — boxplot drew no raw points, only the mean diamond.

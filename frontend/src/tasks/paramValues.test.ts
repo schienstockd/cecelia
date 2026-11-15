@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildParamValues, flattenParams, missingParamKeys,
-  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName,
+  preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName, autoValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
@@ -271,6 +271,24 @@ describe('buildParamValues — repeatable group entries', () => {
     const flat = flattenParams(AF_DEF, buildParamValues(AF_DEF, saved))
     expect(flat.afCombinations).toEqual(saved.afCombinations)
     expect(missingParamKeys(AF_DEF, flat)).toEqual([])
+  })
+})
+
+describe('autoValueName', () => {
+  it('keeps a chosen label set when the ticked images offer none (a chain run on a set)', () => {
+    expect(autoValueName('Tcells', 'default', [], 'labelPropsNames')).toBeNull()
+  })
+  it('keeps a chosen name that is offered, replaces one that is not', () => {
+    expect(autoValueName('Tcells', 'default', ['Tcells', 'B'], 'labelPropsNames')).toBeNull()
+    expect(autoValueName('X', 'default', ['Tcells'], 'labelPropsNames')).toBe('Tcells')
+  })
+  it('returns null for a pick equal to what is stored — an emit would loop', () => {
+    expect(autoValueName('default', 'default', [], 'labelPropsNames')).toBeNull()
+    expect(autoValueName('default', 'default', ['default'], undefined, 'default')).toBeNull()
+  })
+  it('moves an unchosen version to the active one', () => {
+    expect(autoValueName('default', 'default', ['default', 'driftCorrected'], undefined, 'driftCorrected'))
+      .toBe('driftCorrected')
   })
 })
 
