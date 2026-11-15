@@ -55,10 +55,7 @@ function _pop_own_defn(p::Population)::Dict{String,Any}
                 [Dict{String,Any}("measure" => c.measure, "fun" => string(c.fun), "values" => c.values)
                  for c in p.filter_conditions])
     end
-    p.boolean_op === nothing ||
-        (d["boolean"] = Dict{String,Any}("op" => string(p.boolean_op),
-                                         "pops" => something(p.boolean_pops, String[]),
-                                         "not" => something(p.boolean_not, String[])))
+    p.boolean_op === nothing || (d["boolean"] = boolean_spec(p))
     p.is_track && (d["is_track"] = true)
     p.explicit_labels === nothing || (d["labels"] = sort(p.explicit_labels))
     d

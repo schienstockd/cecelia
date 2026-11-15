@@ -58,6 +58,7 @@ export const MAP: Record<string, MapEntry> = {
 export const CLAUDE_MAKES: Record<string, string | null> = {
   add_analysis_board: '/analysis',
   add_gate: '/gate',
+  add_boolean_pop: '/gate',
   create_blackboard_entry: '/blackboard',
   create_notebook: '/notebooks',
   create_chain: '/chain',

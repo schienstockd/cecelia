@@ -87,6 +87,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/claim/state"),  # a Blackboard entry: create, or revise (snapshots first)
             ("POST", "/api/figures/delete-own"),  # removes only a figure Claude made (403 on the user's)
             ("POST", "/api/figures/render"),  # renders a NEW figure; replace only Claude's own (403 otherwise)
+            ("POST", "/api/gating/pop/add-boolean"),  # create-only: ONE new combined pop, never edits one
             ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
             ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
             ("POST", "/api/gating/pop/set-own-gate"),  # moves only what Claude drew (403 on the user's)
@@ -757,6 +758,22 @@ class ClientTest(unittest.TestCase):
                             colour="#ff0000")
         body = json.loads(u.call_args[0][0].data)
         self.assertEqual((body["parent"], body["gate"]["kind"], body["colour"]), ("root", "polygon", "#ff0000"))
+
+    def test_add_boolean_pop_posts_the_stored_boolean_terms(self):
+        # "qc but not OTI": the terms go out as the sidecar spells them — `not`, not the Python-side
+        # `not_pops` — and an omitted list is an empty one, never null.
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_boolean_pop("P", "I", "B", "non-OTI", not_pops=["/qc/OTI"], parent="/qc", dry_run=True)
+        req = u.call_args[0][0]
+        self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/add-boolean"))
+        self.assertEqual(json.loads(req.data), {
+            "projectUid": "P", "imageUid": "I", "valueName": "B", "parent": "/qc", "name": "non-OTI",
+            "op": "and", "pops": [], "not": ["/qc/OTI"], "dryRun": True, "colour": "#22c55e"})
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_boolean_pop("P", "I", "B", "either", op="or", pops=["/GFP+", "/TOM+"])
+        body = json.loads(u.call_args[0][0].data)
+        self.assertEqual((body["parent"], body["op"], body["pops"], body["not"]),
+                         ("root", "or", ["/GFP+", "/TOM+"], []))
 
     def test_add_gate_conflict_and_missing_parent_surface_as_api_errors(self):
         for status, msg in ((409, "A population \"/qc/dim\" already exists"),

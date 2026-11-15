@@ -275,3 +275,106 @@ end
     end
   end
 end
+
+# `POST /api/gating/pop/add-boolean` — add-gate's twin for a combination ("qc but not OTI"). The new pop's
+# cells are exactly parent ∖ the excluded gate (no cell lost at a polygon's edge, none double-counted),
+# it follows that gate when the user moves it, it carries the same stamp so delete-own treats it as
+# Claude's, and every refusal happens before anything is written.
+@testset "API: add-boolean is ADD-ONLY — one stamped combination, exact complement" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        ids = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B")
+        rect(x0, x1) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                                        "x_min" => x0, "x_max" => x1, "y_min" => 0.0, "y_max" => 1e9)
+        claude = ["X-Cecelia-Client" => "claude", "X-Cecelia-Session" => "s1"]
+        function call(route, obj; hdrs = claude)
+            r = handle_http(HTTP.Request("POST", route, hdrs), Vector{UInt8}(JSON3.write(merge(ids, obj))))
+            (r[1], JSON3.read(r[2]))
+        end
+        stats(pop) = JSON3.read(api_gating_stats(HTTP.Request("GET",
+            "/x?projectUid=testpr&imageUid=KDIeEm&valueName=B&pop=$pop"))[2])
+        img = Cecelia.init_object("testpr", "KDIeEm")
+        sidecar() = read(gating_path(img._dir, "B"), String)
+        # the user's tree: qc, and a gate inside it
+        @test _post(api_gating_pop_add, merge(ids, Dict("popType" => "flow", "name" => "qc", "gate" => rect(0.0, 1e6))))[1] == 200
+        mid = stats("/qc")
+        @test _post(api_gating_pop_add, merge(ids, Dict("popType" => "flow", "name" => "OTI", "parent" => "/qc",
+                                                         "gate" => rect(0.0, 300.0))))[1] == 200
+        oti = stats("/qc/OTI")
+        @test 0 < oti.count < mid.count
+
+        # dry run: the numbers, nothing written
+        snap = sidecar()
+        st, dry = call("/api/gating/pop/add-boolean", Dict("parent" => "/qc", "name" => "non-OTI",
+                                                           "not" => ["/qc/OTI"], "dryRun" => true))
+        @test st == 200 && dry.dryRun == true && dry.path == "/qc/non-OTI" && sidecar() == snap
+        st, r = call("/api/gating/pop/add-boolean", Dict("parent" => "/qc", "name" => "non-OTI", "not" => ["/qc/OTI"]))
+        @test st == 200 && r.dryRun == false && (r.count, r.parentCount) == (dry.count, dry.parentCount)
+        # the exact complement: every qc cell is in OTI or non-OTI, never both
+        @test r.parentCount == mid.count && r.count + oti.count == mid.count && r.outside == oti.count
+        @test r.gate === nothing && String(r.boolean.op) == "and" && isempty(r.boolean.pops) &&
+              collect(r.boolean.not) == ["/qc/OTI"]
+        @test String(r.createdBy.via) == "claude"
+        # stored as the GUI stores a combination, plus the stamp — and get_populations shows it
+        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        p = pop_at(m, "/qc/non-OTI")
+        @test p.boolean_op == BOOL_AND && p.boolean_not == ["/qc/OTI"] && p.created_by["via"] == "claude"
+        summ = Cecelia._pop_summary(p)
+        @test summ.boolean == boolean_spec(p) && summ.gate === nothing && summ.filter === nothing
+        @test pop_at(m, "/qc/OTI").created_by === nothing          # the user's gate untouched
+
+        # it follows the gate it excludes: the user widens OTI, non-OTI shrinks to match
+        @test _post(api_gating_pop_set_gate, merge(ids, Dict("path" => "/qc/OTI", "gate" => rect(0.0, 600.0))))[1] == 200
+        @test stats("/qc/non-OTI").count == mid.count - stats("/qc/OTI").count
+
+        # OR of two terms, and a child gated under the combination (the copied tree's order)
+        st, o = call("/api/gating/pop/add-boolean", Dict("name" => "either", "op" => "or", "pops" => ["/qc/OTI", "/qc/non-OTI"]))
+        @test st == 200 && o.count == mid.count
+        @test call("/api/gating/pop/add-gate", Dict("parent" => "/qc/non-OTI", "name" => "sub", "gate" => rect(0.0, 1e6)))[1] == 200
+
+        # moving a gate moves every combination that reads it — wherever it sits, not just under it — so
+        # set-own-gate refuses when one of those was read by a task, or is the user's
+        @test call("/api/gating/pop/add-gate", Dict("name" => "cg", "gate" => rect(0.0, 500.0)))[1] == 200
+        @test call("/api/gating/pop/add-boolean", Dict("name" => "notcg", "not" => ["/cg"]))[1] == 200
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/cg", "gate" => rect(0.0, 400.0), "dryRun" => true))[1] == 200
+        append_run_log!(img, "clustPops.cluster", "B", "done", Dict("popsToCluster" => ["B/notcg"]))
+        st, e = call("/api/gating/pop/set-own-gate", Dict("path" => "/cg", "gate" => rect(0.0, 400.0), "dryRun" => true))
+        @test st == 403 && e.code == "used_by_runs" && collect(e.populations) == ["/notcg"]
+        @test _post(api_gating_pop_add, merge(ids, Dict("popType" => "flow", "name" => "usernot",
+                    "boolean" => Dict("op" => "and", "pops" => String[], "not" => ["/cg"]))))[1] == 200
+        st, e = call("/api/gating/pop/set-own-gate", Dict("path" => "/cg", "gate" => rect(0.0, 400.0), "dryRun" => true))
+        @test st == 403 && e.code == "not_claude_made" && collect(e.populations) == ["/usernot"]
+
+        # ── refusals: nothing written ──
+        snap = sidecar()
+        refuse(obj) =(res = call("/api/gating/pop/add-boolean", obj); (res[1], get(res[2], :code, nothing)))
+        @test refuse(Dict("parent" => "/qc", "name" => "non-OTI", "not" => ["/qc/OTI"]))[2] == "pop_exists"
+        @test refuse(Dict("parent" => "/nope", "name" => "x", "not" => ["/qc/OTI"]))[1] == 404
+        @test refuse(Dict("parent" => "/qc", "name" => "x", "not" => ["/qc/nope"]))[1] == 404
+        @test refuse(Dict("parent" => "/qc", "name" => "x"))[1] == 422                     # no term at all
+        @test refuse(Dict("parent" => "/qc", "name" => "x", "op" => "xor", "pops" => ["/qc/OTI"]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "x", "not" => "/qc/OTI"))[1] == 422  # a list, not a string
+        @test refuse(Dict("parent" => "/qc", "name" => "a/b", "not" => ["/qc/OTI"]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "_x", "not" => ["/qc/OTI"]))[1] == 422
+        @test refuse(Dict("parent" => "root", "name" => "loop", "pops" => ["/loop"]))[1] == 422   # itself
+        # not a gate: set-own-gate refuses it (delete and add again instead)
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/qc/non-OTI", "gate" => rect(0.0, 1.0)))[1] == 422
+        # delete-own: refused while `either` combines it, then — `either` gone — the subtree goes whole
+        st, e = call("/api/gating/pop/delete-own", Dict("path" => "/qc/non-OTI"))
+        @test st == 409 && e.code == "boolean_dependents" && occursin("/either", String(e.error))
+        @test sidecar() == snap
+        @test call("/api/gating/pop/delete-own", Dict("path" => "/either"))[1] == 200
+        st, d = call("/api/gating/pop/delete-own", Dict("path" => "/qc/non-OTI"))
+        @test st == 200 && collect(d.deleted) == ["/qc/non-OTI", "/qc/non-OTI/sub"]
+        @test has_pop(load_pop_map(img; value_name = "B", pop_type = "flow"), "/qc/OTI")
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

@@ -83,8 +83,9 @@ revise_notebook           → new version of an EXISTING notebook: snapshots it 
 set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
 create_chain              → author a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-validated. INERT until the user presses Run — there is no tool to launch it.
 add_gate                  → ADD one proposed gate (new population under an existing one), stamped as Claude's (409 on a taken name, 404 on a missing parent). `dry_run` = the counts, nothing written. One stored-shape `gate` dict in gate_plot's transformed space.
-set_gate / delete_gate    → move / remove a gate CLAUDE drew — the server refuses (403) anything at or under the path the user drew. `dry_run` too.
-                            The gating toolset (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats + these three) is ONE definition, `mcp/cecelia_mcp/gating_views.py`, registered by the autonomous server too.
+add_boolean_pop           → ADD one proposed COMBINED population — `op` and/or over `pops`, minus `not_pops`, ∩ parent ("qc but not OTI"), stamped like add_gate. Same 404 / 409 / 422 + `dry_run`. get_populations shows an existing one as `boolean: {op, pops, not}`.
+set_gate / delete_gate    → move / remove a gate CLAUDE drew — the server refuses (403) anything at or under the path the user drew (set_gate: or a combination built on it). `dry_run` too. delete_gate also removes Claude's combinations; set_gate refuses one (422, not a gate).
+                            The gating toolset (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats + these four) is ONE definition, `mcp/cecelia_mcp/gating_views.py`, registered by the autonomous server too.
 add_figure                → ADD one figure (a still / strip / z-strip) from a SPEC — rendered by the app from the raw image in the house style, kept on Movies & figures, stamped as Claude's. Never overwrites. `dry_run` = the preview picture, nothing kept.
 set_figure / delete_figure → re-make / remove a figure CLAUDE made — the server refuses (403) the user's, and Claude's once the user re-made it. `dry_run` too. list_figures = the figures, their saved specs and which are Claude's.
                             The figure toolset is ONE definition, `mcp/cecelia_mcp/figure_tools.py`, registered by the autonomous server too (docs/todo/FIGURES_PLAN.md).
@@ -345,8 +346,9 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   See `docs/todo/MCP_BOARD_AUTHORING_PLAN.md` and `docs/ANALYSIS.md`.
 - **Gating** — `add_gate` ADDS one proposed gate under an existing population (`POST
   /api/gating/pop/add-gate`): stored like a GUI gate plus `createdBy`, shown with ✦ in the population
-  manager, undoable, one click to delete. `set_gate` / `delete_gate` change only what Claude drew
-  (`set-own-gate` / `delete-own`, 403 on anything the user drew, edited or gated under a proposal,
+  manager, undoable, one click to delete. `add_boolean_pop` does the same for a combination of existing
+  populations (`/api/gating/pop/add-boolean`) — "X but not Y" is never a drawn gate. `set_gate` / `delete_gate` change only what Claude drew
+  (`set-own-gate` / `delete-own`, 403 on anything the user drew, edited, gated under a proposal or combined it into,
   or that a task has read); never
   rename/move. To judge a cut on the cells, not the plot: `gate_examples` (crops just inside and
   just outside a gate, written or proposed) and `gate_cells_view` (`pops` in their colours, a
@@ -362,8 +364,8 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   `POST /api/boards/add` (create-only + validated — ADDS one Analysis board; cannot modify, rename,
   reorder or delete one, and is deliberately NOT the browser's whole-document board autosave, which
   would let a single request replace every board in the project) and the gating writes (`POST
-  /api/gating/pop/add-gate`, create-only + validated; `set-own-gate` / `delete-own`, which the server
-  refuses for any population the user drew or gated under; the general `/api/gating/pop/*` routes are
+  /api/gating/pop/add-gate` and `add-boolean`, create-only + validated; `set-own-gate` / `delete-own`,
+  which the server refuses for any population of the user's the change would reach; the general `/api/gating/pop/*` routes are
   not on the list). None touch cell data, images, the user's gates, QC, or notebook content; the
   invariant test asserts the exact set. No task-run, h5ad, or config write, and no edit of a gate
   the user drew.

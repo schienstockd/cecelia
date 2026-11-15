@@ -128,7 +128,7 @@ export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP
 export parse_pop_type
 export pop_parent, pop_name, pop_path, is_root
 export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
-export boolean_dependents, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse_bool_membership
+export boolean_dependents, boolean_spec, pops_depending_on, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse_bool_membership
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,
        parse_filter_fun, FilterCondition
 export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, tracked_pop_parents

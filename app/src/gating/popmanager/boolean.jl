@@ -42,6 +42,17 @@ function _normalise_boolean(op, pops, nots; self::Union{AbstractString,Nothing}=
     (_BOOL_MEMBERSHIP_PARSE[raw], ps, ns)
 end
 
+"""
+    boolean_spec(p) -> Dict | nothing
+
+A population's combination in its stored shape — `{"op": "and"|"or", "pops": [...], "not": [...]}` —
+or `nothing` when it isn't a boolean pop. The one spelling the sidecar, the definition hash, the
+observer's `get_populations` and Claude's `add-boolean` reply all use.
+"""
+boolean_spec(p) = p.boolean_op === nothing ? nothing :
+    Dict{String,Any}("op" => string(p.boolean_op), "pops" => something(p.boolean_pops, String[]),
+                     "not" => something(p.boolean_not, String[]))
+
 """Populations `path` needs before its own membership can be derived: its parent, plus (boolean) the
 populations it combines. The edge set `topo_order` sorts over."""
 function _pop_deps(m::PopulationMap, path::AbstractString)::Vector{String}
@@ -84,6 +95,17 @@ function boolean_dependents(m::PopulationMap, targets)::Vector{Pair{String,Vecto
     end
     out
 end
+
+"""
+    pops_depending_on(m, path) -> Vector{String}
+
+Every population whose membership depends on `path`, directly or through any chain of parent and
+boolean-term edges: its descendants, every combination referencing it or one of those, and everything
+under each, in map order. `boolean_dependents` is the one-hop question ("what would deleting this
+orphan"); this is "whose cells change when this one's do" (Claude's set-own-gate asks it).
+"""
+pops_depending_on(m::PopulationMap, path::AbstractString)::Vector{String} =
+    [q for q in m.order if q != path && boolean_cycle(m, path, _pop_deps(m, q))]
 
 """
 Paths in dependency order: every population after the ones its membership needs (its parent, and for

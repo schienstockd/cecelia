@@ -81,7 +81,7 @@ export const CAPABILITIES: Capability[] = [
 
   { group: 'builds', label: 'A chain from what you ran — you run it', tools: ['suggest_chain', 'create_chain'], kiwi: false, terminal: true },
   { group: 'builds', label: 'An analysis board', tools: ['add_analysis_board'], kiwi: false, terminal: true },
-  { group: 'builds', label: 'A gate as a new population — marked ✦, undoable; moves only its own', tools: ['add_gate', 'set_gate', 'delete_gate'], kiwi: false, terminal: true },
+  { group: 'builds', label: 'A gate or an X-but-not-Y combination — marked ✦; changes only its own', tools: ['add_gate', 'add_boolean_pop', 'set_gate', 'delete_gate'], kiwi: false, terminal: true },
   { group: 'builds', label: 'A Pluto notebook, or a new version of one',
     tools: ['create_notebook', 'revise_notebook', 'set_notebook_description'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Blackboard entries it writes, revises and tags good/bad',

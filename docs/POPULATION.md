@@ -173,12 +173,15 @@ Which segmentation run a gate was drawn on is not recorded on the gate; the run 
 when a label set was overwritten.
 
 **`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
-server → `POST /api/gating/pop/add-gate`) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
+server → `POST /api/gating/pop/add-gate`, or `add_boolean_pop` → `POST /api/gating/pop/add-boolean` for a
+combination) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
 `Population.created_by` round-trips it, and the manager marks the row with ✦ (`claudeProposal`,
 `utils/authorStamp.ts`). A GUI-drawn gate has no key, so a person's sidecar keeps its shape. Claude's
 routes change only what it drew: `set-own-gate` / `delete-own` refuse (403 `not_claude_made`) unless the
 population AND everything under it carries a Claude stamp — once the user gates under a proposal, that
-subtree is theirs. Editing a proposal (its gate, filter, colour, name or parent — not show/hide), or copying it to
+subtree is theirs. `set-own-gate` also checks every combination built on the gate (wherever it sits) and
+what is under it, for both the stamp and `used_by_runs`, since moving the gate moves their cells;
+`delete-own` refuses outright (409) while anything combines what it would remove. Editing a proposal (its gate, filter, colour, name or parent — not show/hide), or copying it to
 other images, records `updatedBy` = that request's `author_stamp()` (`stamp_edit!`; only on stamped
 populations, so a GUI gate keeps its shape). A person's edit makes it theirs: `createdBy` stays,
 the ✦ tooltip adds "edited by …", and Claude's routes refuse it. Claude moving its own gate stamps
