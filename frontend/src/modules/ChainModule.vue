@@ -47,6 +47,10 @@ import { isExcluded, includedUids, excludedReason } from '../utils/inclusion'
 import type { CciaImage } from '../stores/project'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS, clearCanvas } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
+import { createUndoStack } from '../utils/undoStack'
+import { prospectivePops } from '../utils/chainProspective'
+import { isTypingTarget } from '../utils/typingTarget'
+import { useWindowListener } from '../composables/useKeepAlive'
 import { withChainProducedModels } from '../utils/chainModelOptions'
 import { waitingByNode, continueFrame } from '../utils/chainManual'
 import { groupByImage, type PreflightProblem } from '../utils/chainPreflight'
@@ -95,7 +99,7 @@ const {
   nodes, edges,
   addNodes, addEdges, removeNodes, removeEdges,
   findNode, updateNode, toObject,
-  onConnect, onEdgeDoubleClick, getSelectedNodes,
+  onConnect, onEdgeDoubleClick, onNodeDragStart, onSelectionDragStart, getSelectedNodes, getSelectedEdges,
   screenToFlowCoordinate, setCenter, fitView, onNodesInitialized,
 } = useVueFlow({ id: 'chain-whiteboard' })
 
@@ -687,14 +691,19 @@ const hasStartNode = computed(() => nodes.value.some(n => n.id === START_ID))
 // Add the start dot once, near the top-left; the user drags it and links it to the first task(s).
 function addStartNode() {
   if (hasStartNode.value) return
+  recordEdit()
   addNodes([{ id: START_ID, type: 'start', position: DEFAULT_START_POS, data: {} }])
 }
 
 // Empty the canvas and wait for the unmount — the only way a full clear is done (see clearCanvas).
+// Every path to an empty canvas (load, new chain, the last chain deleted) also starts a fresh undo
+// history — except an undo/redo restoring through it.
 function clearWhiteboard() {
-  return clearCanvas({
+  const done = clearCanvas({
     nodeIds: nodes.value.map(n => n.id), edgeIds: edges.value.map(e => e.id), removeNodes, removeEdges,
   }, nextTick)
+  if (!restoring) { undo.clear(); undoTick.value++ }
+  return done
 }
 
 async function applyTemplate(
@@ -763,6 +772,55 @@ async function applyTemplate(
   addNodes(newNodes)
   addEdges(newEdges)
 }
+
+// ── Undo / redo ─────────────────────────────────────────────────────────────
+// The whiteboard's nodes + edges live only in Vue Flow until Save, so a deleted node was gone unless
+// the user reloaded from disk (losing every other edit). Every structural edit, param change and node
+// drag pushes a snapshot of the canvas first; typing in one param is one step (`coalesce`). Emptying
+// the canvas (`clearWhiteboard`) clears the history. Restore goes through the same clear + add path
+// as a load.
+type WbSnap = { nodes: Node[]; edges: Edge[] }
+const undo = createUndoStack<WbSnap>()
+const undoTick = ref(0)                  // the stack is plain; this makes the buttons' disabled state react
+const canUndo = computed(() => (undoTick.value, undo.canUndo))
+const canRedo = computed(() => (undoTick.value, undo.canRedo))
+let restoring = false
+function snapshot(): WbSnap {
+  return JSON.parse(JSON.stringify({
+    nodes: nodes.value.map(n => ({ id: n.id, type: n.type, position: { ...n.position }, data: n.data })),
+    edges: edges.value.map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle,
+                                   targetHandle: e.targetHandle, style: e.style })),
+  }))
+}
+function recordEdit(coalesce?: string) {
+  if (restoring) return
+  undo.push(snapshot(), coalesce)
+  undoTick.value++
+}
+async function restore(snap: WbSnap | null) {
+  if (!snap) return
+  restoring = true
+  try {
+    const keep = selectedNodeId.value
+    selectedNodeId.value = null
+    await clearWhiteboard()
+    addNodes(snap.nodes)
+    addEdges(snap.edges)
+    if (keep && snap.nodes.some(n => n.id === keep)) selectedNodeId.value = keep
+  } finally { restoring = false; undoTick.value++ }
+}
+onNodeDragStart(() => recordEdit())
+onSelectionDragStart(() => recordEdit())      // a box-selected group dragged by its rectangle
+const undoEdit = () => restore(undo.undo(snapshot()))
+const redoEdit = () => restore(undo.redo(snapshot()))
+// Ctrl/⌘+Z, Ctrl/⌘+Shift+Z (and Ctrl+Y) — on the window, so it works with focus on the canvas; not
+// while typing (a param field has its own text undo). useWindowListener: only while the page is shown.
+useWindowListener('keydown', (e: KeyboardEvent) => {
+  if (activeTab.value !== 'edit' || isTypingTarget(e) || !(e.ctrlKey || e.metaKey)) return
+  const k = e.key.toLowerCase()
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); if (undo.canUndo) void undoEdit() }
+  else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); if (undo.canRedo) void redoEdit() }
+})
 
 // Frame each loaded chain once Vue Flow has MEASURED its nodes — fitting before that frames nothing.
 // An authored chain's dot sits one column left of the first task, off the left edge of the default
@@ -1028,6 +1086,7 @@ function onCanvasDrop(event: DragEvent) {
   const def = dragDef
   dragDef = null
   const id = `${def.fun_name}.${Date.now()}`
+  recordEdit()
   // Scope defaults from the task spec: a set-scope task (behaviour.hmm, clustTracks.cluster)
   // drops in as a picnic node. The user can still change it in the config panel.
   const scope = def.scope ?? 'image'
@@ -1109,6 +1168,7 @@ function propagateValueName(sourceId: string, targetId: string) {
 
 onConnect((params) => {
   const fromStart = params.source === START_ID
+  recordEdit()
   addEdges([{
     ...params,
     id: `${params.source}->${params.target}`,
@@ -1121,6 +1181,7 @@ onConnect((params) => {
 
 // Double-click an edge to remove it.
 onEdgeDoubleClick(({ edge }) => {
+  recordEdit()
   removeEdges([edge.id])
 })
 
@@ -1136,15 +1197,17 @@ const selectedNode = computed(() => {
 // The models an UPSTREAM node of `id` will have trained by the time that node runs — stems, as
 // `opticalFlow.train`'s `modelName` holds them. Ancestors only: a model trained later, or on a branch
 // that has not joined yet, is not available here and offering it would wire a run that cannot work.
-function upstreamModelStems(id: string): string[] {
+function upstreamNodes(id: string): Node[] {
   const ups = ancestorsOf(
     nodes.value.filter(n => !isStartId(n.id)).map(n => ({ id: n.id })),
     edges.value.filter(e => !touchesStart(e)).map(e => ({ from: e.source, to: e.target })),
     id,
   )
+  return nodes.value.filter(n => ups.has(n.id))
+}
+function upstreamModelStems(id: string): string[] {
   const out: string[] = []
-  for (const n of nodes.value) {
-    if (!ups.has(n.id)) continue
+  for (const n of upstreamNodes(id)) {
     const out_ = taskOutput(taskDefFor(n.data.fn), n.data.params)
     if (out_?.namespace === 'models') out.push(out_.name)
   }
@@ -1174,6 +1237,7 @@ function updateSelectedNodeData(patch: Record<string, unknown>) {
   if (!selectedNodeId.value) return
   const node = findNode(selectedNodeId.value)
   if (!node) return
+  recordEdit(`${node.id}:data:${Object.keys(patch).sort().join(',')}`)
   const newData = { ...node.data, ...patch }
   updateNode(selectedNodeId.value, { data: newData })
   // Sync visual type when scope changes
@@ -1186,19 +1250,27 @@ function updateParam(key: string, value: unknown) {
   if (!selectedNodeId.value) return
   const node = findNode(selectedNodeId.value)
   if (!node) return
+  // a write of what is already stored changes nothing — no history step, and no new `data` object
+  // for the panel to re-render on
+  if (JSON.stringify(node.data.params?.[key]) === JSON.stringify(value)) return
+  recordEdit(`${node.id}:${key}`)
   updateNode(selectedNodeId.value, {
     data: { ...node.data, params: { ...node.data.params, [key]: value } },
   })
 }
 
+// Delete / Backspace on the canvas: the selected node (with its edges) and any selected edges. Vue
+// Flow's own delete key is off (`:delete-key-code="null"`) so every delete goes through here and
+// leaves an undo step.
 function deleteSelectedNode() {
-  if (!selectedNodeId.value) return
-  // Remove edges connected to this node
-  const toRemove = edges.value
-    .filter(e => e.source === selectedNodeId.value || e.target === selectedNodeId.value)
-    .map(e => e.id)
-  removeEdges(toRemove)
-  removeNodes([selectedNodeId.value])
+  const nodeId = selectedNodeId.value
+  const selEdges = getSelectedEdges.value.map(e => e.id)
+  if (!nodeId && !selEdges.length) return
+  recordEdit()
+  const toRemove = new Set(selEdges)
+  if (nodeId) for (const e of edges.value) if (e.source === nodeId || e.target === nodeId) toRemove.add(e.id)
+  removeEdges([...toRemove])
+  if (nodeId) removeNodes([nodeId])
   selectedNodeId.value = null
 }
 
@@ -1220,14 +1292,14 @@ const paramContext = computed(() => {
   const imgs = runSelectedUids.value.length
     ? runImages.value.filter(i => runSelectedUids.value.includes(i.uid))
     : runImages.value
-  // Value_names produced by nodes feeding the selected node — offered in its valueNameSelection
-  // dropdowns even though they don't exist on the image until the chain runs.
-  const extraValueNames = selectedNodeId.value
-    ? edges.value
-        .filter(e => e.target === selectedNodeId.value)
-        .map(e => { const s = findNode(e.source); return s ? nodeOutputValueName(s)?.name : null })
-        .filter((n): n is string => !!n)
-    : []
+  // Value_names and populations produced by ANY ancestor of the selected node — offered in its
+  // pickers even though they don't exist on the images until the chain runs. Ancestors, not only the
+  // direct parents: tracking sits behind a gate step, and the label set it tracks is the
+  // segmentation's, two edges back. Without it a set whose other images aren't segmented offered no
+  // `Tcells` at all.
+  const ups = selectedNodeId.value ? upstreamNodes(selectedNodeId.value) : []
+  const extraValueNames = ups.map(n => nodeOutputValueName(n)?.name).filter((n): n is string => !!n)
+  const extraPops = prospectivePops(ups.map(n => ({ fn: n.data.fn, params: n.data.params })), taskDefFor)
   // `values` — the node's own params. Without them a `showIf` condition can never be satisfied here,
   // so a conditional param would be permanently hidden in the chain editor while showing correctly in
   // the task runner: the same spec, two behaviours, no error. (TaskRunner has always passed them.)
@@ -1235,7 +1307,7 @@ const paramContext = computed(() => {
   // and `labelPropsColsSelection` (4 specs) param rendered EMPTY in the chain editor while working in
   // the task runner: same spec, two behaviours, no error. `params` lets a widget find its sibling by
   // type rather than by a hardcoded key. `funName` — the task a backend advisory is asked about.
-  return { images: imgs, extraValueNames, values: selectedNode.value?.data.params,
+  return { images: imgs, extraValueNames, extraPops, keepChosenNames: true, values: selectedNode.value?.data.params,
            projectUid: projectMeta.current?.uid ?? '', params: selectedTaskDef.value?.params,
            funName: selectedTaskDef.value?.fun_name }
 })
@@ -1394,6 +1466,7 @@ function applyAutoLayout(variant: LayoutVariant) {
   // The start dot isn't a task node and has no place in the DAG; keep it where the user put it.
   const taskNodes = nodes.value.filter(n => !isStartId(n.id))
   if (!taskNodes.length) return
+  recordEdit()
   const pos = layoutDag(
     taskNodes.map(n => ({ id: n.id })),
     edges.value.filter(e => !touchesStart({ source: e.source, target: e.target }))
@@ -1699,6 +1772,22 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
           </button>
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :disabled="!canUndo"
+            @click="undoEdit"
+            v-tooltip.right="'Undo (Ctrl+Z)'"
+          >
+            <i class="pi pi-undo" />
+          </button>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense wb-redo"
+            :disabled="!canRedo"
+            @click="redoEdit"
+            v-tooltip.right="'Redo (Ctrl+Shift+Z)'"
+          >
+            <i class="pi pi-undo" />
+          </button>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
             @click="reloadFromDisk"
             v-tooltip.right="'Reload chains from disk — discards unsaved edits'"
@@ -1808,6 +1897,7 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
     >
       <VueFlow
         id="chain-whiteboard"
+        :delete-key-code="null"
         :node-types="nodeTypes"
         :default-viewport="{ zoom: 0.85, x: 60, y: 60 }"
         :min-zoom="0.2"
@@ -2178,6 +2268,7 @@ const gridColour = computed(() => (schemeSettings.colourScheme, tokenColour('--c
 .wb-btn { transition: background 0.1s, color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .wb-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); border-color: var(--cc-accent); }
 .wb-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.wb-redo i { transform: scaleX(-1); }   /* PrimeIcons has no redo glyph — the undo arrow, mirrored (as the gating panel) */
 
 .new-chain-form {
   display: flex;
