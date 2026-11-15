@@ -11,6 +11,7 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
 _spec = importlib.util.spec_from_file_location("mutate_changed", _REPO / "scripts" / "mutate_changed.py")
@@ -81,6 +82,22 @@ class FunctionsAndRangesTest(unittest.TestCase):
                            encoding="utf-8")
             self.assertEqual(mc.jl_names(src, {4}), {"f!"})
             self.assertEqual(mc.jl_names(src, {1, 7}), {"K", "g"})
+
+    def test_tests_found_by_name_and_the_names_no_test_has(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(mc, "ROOT", pathlib.Path(d)):
+            t = pathlib.Path(d, "python/cecelia/tests")
+            t.mkdir(parents=True)
+            (t / "test_a.py").write_text("from cecelia.utils import czi_meta\nczi_meta.parse_settings(x)\n",
+                                         encoding="utf-8")
+            (t / "test_b.py").write_text("parse_settings(x)  # another module's\n", encoding="utf-8")
+            (t / "test_c.py").write_text("from cecelia.utils import czi_meta\nczi_meta.Reader().read()\n",
+                                         encoding="utf-8")
+            hits, unnamed = mc.py_tests("cecelia.utils.czi_meta", ["x_parse_settings", "x__band", "xǁReaderǁread"], set())
+            self.assertEqual([h.name for h in hits], ["test_a.py", "test_c.py"])
+            self.assertEqual(unnamed, ["x__band"])
+            # a test file the change itself touched is run whatever it names
+            hits, _ = mc.py_tests("cecelia.utils.czi_meta", ["x__band"], {"python/cecelia/tests/test_b.py"})
+            self.assertEqual([h.name for h in hits], ["test_b.py"])
 
     def test_line_ranges(self):
         self.assertEqual(mc.ranges({3, 4, 5, 9, 11, 12}), "3-5,9,11-12")

@@ -148,6 +148,17 @@ name a changed function.
     mutant, the unmutated one too, was a build error. Now it is loaded under the source's own name.
   - mutmut's default timeout (15 × the test time) made two hung `dim_utils` mutants cost 7 of 9
     minutes; at 3 × the same run takes 3.
+- **Survivors triaged by hand: 9 of 15 were real gaps.** 10 of #2225's 62, drawn with a fixed
+  seed: 9 were output fields no test read (detection band, pinhole µm and Airy rounding, the in-visible
+  and secondary beam splitters, the dichroic `slot`/`name` keys). P2's full-record tests (#2218,
+  merged the day after #2225) kill all 9 now; the tenth (`''` → `'XXXX'` with no range recorded)
+  is equivalent. Plus #2226's 5, all equivalent. The rate swings by PR, so the guard reports
+  and does not block.
+- **Test mapping is by name.** 7 of the 19 changed functions in the 5 PRs are named by no test, all
+  private helpers (`_band`, `_channels`, `_splitters`, `_confocal_settings`…) that the tests reach
+  through their public caller: #2225's `_band` mutants were killed through `parse_settings`. The
+  report lists them, and the changed lines it did not look at, so a clean report is not read as
+  "all caught".
 - **Not mutated:** `api/src/*.jl` (not in module Cecelia; `viewer_api.jl` changed in 3 of the 5) and the
   task runners `app/src/tasks/**/*_run.py` (loaded by path, not as `cecelia.*`; 25 changed in #2226).
   The frontend result paths are out of scope (decision 2).
@@ -191,8 +202,10 @@ name a changed function.
 
 ## Tooling
 
-- `scripts/mutate_changed.py BASE` (P4(b)): run in the checkout of the change; mutates the changed
-  lines of its Julia and Python result files against the tests that name the changed functions.
+- `scripts/mutate_changed.py BASE [--dry-run] [--keep]` (P4(b)): run in the checkout of the change;
+  mutates the changed lines of its Julia and Python result files against the tests that name the
+  changed functions. `--dry-run` only maps; `--keep` keeps the mutmut copy for `mutmut show`.
+  Build errors and timeouts are their own counts, never kills.
 - `scripts/julia_mutate.jl SRC OUT.tsv TEST.jl… [--timeout s] [--list] [--sample N --seed S]
   [--lines 12-30,45] [--known-failures]`. Mutant 0 is the unmutated
   file and must survive. A test file must run standalone after the `runtests.jl` preamble: a testset

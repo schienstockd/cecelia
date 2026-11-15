@@ -2,7 +2,7 @@
 """Mutation-test only what a change touched: the changed lines of its Julia and Python result files,
 against only the tests that name the changed functions. TEST_VALUE_PLAN.md → P4(b).
 
-    python scripts/mutate_changed.py BASE [--out DIR] [--timeout 120] [--sample N]
+    python scripts/mutate_changed.py BASE [--out DIR] [--timeout 120] [--sample N] [--dry-run] [--keep]
 
 Run in a checkout of the change itself (its HEAD is what gets mutated); BASE is the commit it is
 compared to (for a merged PR, `<merge>^1`). Result files are the `result-paths` globs of
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import difflib
 import json
 import os
@@ -81,24 +82,32 @@ def jl_names(path: Path, lines: set[int]) -> set[str]:
     return names
 
 
-def jl_tests(names: set[str], touched: set[str]) -> list[Path]:
+def jl_tests(names: set[str], touched: set[str]) -> tuple[list[Path], list[str]]:
+    """The suite files that name a changed definition or that the change touched, and the changed
+    definitions no suite file names (a test may still reach them through a caller: not looked at)."""
     suite = ROOT / "app/test/suite"
-    hits = []
+    hits, named = [], set()
     for f in sorted(suite.glob("*.jl")):
         rel = str(f.relative_to(ROOT))
         txt = f.read_text(encoding="utf-8", errors="replace")
-        if rel in touched or any(re.search(rf"(?<![\w!]){re.escape(n)}(?![\w!])", txt) for n in names):
+        here = {n for n in names if re.search(rf"(?<![\w!]){re.escape(n)}(?![\w!])", txt)}
+        named |= here
+        if rel in touched or here:
             hits.append(f)
-    return hits
+    return hits, sorted(names - named)
 
 
-def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeout: int, sample: int) -> dict:
+def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeout: int, sample: int,
+              dry: bool = False) -> dict:
     src = ROOT / rel
     names = jl_names(src, lines)
-    tests = jl_tests(names, touched)
-    row = {"file": rel, "lang": "jl", "names": sorted(names), "tests": [t.name for t in tests]}
+    tests, unnamed = jl_tests(names, touched)
+    row = {"file": rel, "lang": "jl", "lines": len(lines), "names": sorted(names), "unnamed": unnamed,
+           "tests": [t.name for t in tests]}
     if not tests:
         return row | {"note": "no test names a changed function"}
+    if dry:
+        return row
     listed = subprocess.run(["julia", f"--project={ROOT / 'app'}", str(HERE / "julia_mutate.jl"), str(src), "-", "--list"],
                             cwd=ROOT, capture_output=True, text=True).stdout.splitlines()
     if not any(int(ln.split("\t")[1]) in lines for ln in listed if ln.count("\t") >= 4):
@@ -167,32 +176,42 @@ def py_changed_mutants(mutfile: Path, defline: dict[str, int], lines: set[int]) 
     return out
 
 
-def py_tests(module: str, keys: set[str], touched: set[str]) -> list[Path]:
-    names = {k.split("ǁ")[-1] if "ǁ" in k else k[2:] for k in keys}
-    names |= {k.split("ǁ")[1] for k in keys if "ǁ" in k}
+def py_tests(module: str, keys, touched: set[str]) -> tuple[list[Path], list[str]]:
+    """The test files that import the module and name a changed function (or its class), or that
+    the change touched; and the changed functions no test file names."""
     short = module.rsplit(".", 1)[-1]
-    hits = []
+    words = {k: {k.split("ǁ")[2], k.split("ǁ")[1]} if "ǁ" in k else {k[2:]} for k in keys}
+    hits, named = [], set()
     for f in sorted((ROOT / "python/cecelia/tests").glob("test_*.py")):
         rel = str(f.relative_to(ROOT))
         txt = f.read_text(encoding="utf-8", errors="replace")
-        if rel in touched or (re.search(rf"\b{short}\b", txt) and any(re.search(rf"\b{n}\b", txt) for n in names)):
+        here = {k for k, ws in words.items() if any(re.search(rf"\b{w}\b", txt) for w in ws)} \
+            if re.search(rf"\b{short}\b", txt) else set()
+        named |= here
+        if rel in touched or here:
             hits.append(f)
-    return hits
+    return hits, sorted(set(words) - named)
 
 
-def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path) -> dict:
+def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: bool = False,
+               keep: bool = False) -> dict:
     module = rel[len("python/"):-3].replace("/", ".")
     keys = py_funcs(ROOT / rel, lines)
-    row = {"file": rel, "lang": "py", "names": sorted(keys)}
+    row = {"file": rel, "lang": "py", "lines": len(lines), "names": sorted(keys)}
     if not keys:
         return row | {"note": "no changed function (module-level lines only)"}
-    tests = py_tests(module, keys, touched)
+    tests, row["unnamed"] = py_tests(module, keys, touched)
     row["tests"] = [t.name for t in tests]
     if not tests:
         return row | {"note": "no test names a changed function"}
+    if dry:
+        return row
     t0 = time.time()
-    with tempfile.TemporaryDirectory(prefix="mutate_changed_", dir=outdir) as tmp:
+    with (contextlib.nullcontext(tempfile.mkdtemp(prefix="mutate_changed_", dir=outdir)) if keep else
+          tempfile.TemporaryDirectory(prefix="mutate_changed_", dir=outdir)) as tmp:
         copy = Path(tmp)
+        if keep:
+            row["copy"] = str(copy / "python")   # `mutmut show <name>` there
         shutil.copytree(ROOT / "python", copy / "python",
                         ignore=shutil.ignore_patterns("__pycache__", "mutants", "*.egg-info", ".pytest_cache"))
         # tests find the repo three levels above their file: the copy's root, and inside mutmut's
@@ -260,6 +279,8 @@ def main() -> int:
     ap.add_argument("--out", default=None, help="where the per-file TSVs go (default: a temp dir)")
     ap.add_argument("--timeout", type=int, default=120)
     ap.add_argument("--sample", type=int, default=0, help="Julia: at most N mutants per file")
+    ap.add_argument("--keep", action="store_true", help="Python: keep the mutmut copy (path in the report)")
+    ap.add_argument("--dry-run", action="store_true", help="map the changed functions to tests; mutate nothing")
     a = ap.parse_args()
     outdir = Path(a.out or tempfile.mkdtemp(prefix="mutate_changed_")).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
@@ -272,11 +293,11 @@ def main() -> int:
         if not lines or not is_result_path(rel, globs):
             continue
         if rel.startswith("app/src/") and rel.endswith(".jl"):
-            rows.append(run_julia(rel, lines, touched, outdir, a.timeout, a.sample))
+            rows.append(run_julia(rel, lines, touched, outdir, a.timeout, a.sample, a.dry_run))
         elif rel.startswith("python/cecelia/") and rel.endswith(".py"):
-            rows.append(run_python(rel, lines, touched, outdir))
+            rows.append(run_python(rel, lines, touched, outdir, a.dry_run, a.keep))
         else:
-            rows.append({"file": rel, "note": "not mutated (not in module Cecelia or python/cecelia)"})
+            rows.append({"file": rel, "lines": len(lines), "note": "not mutated (not in module Cecelia or python/cecelia)"})
     total = round(time.time() - t0)
     for r in rows:
         res = r.get("results", [])
@@ -287,6 +308,8 @@ def main() -> int:
               + (f"  ({other})" if other else ""))
         if r.get("names"):
             print(f"  changed: {', '.join(r['names'])}")
+        if r.get("unnamed"):
+            print(f"  named by no test: {', '.join(r['unnamed'])}")
         if r.get("tests") is not None:
             print(f"  tests: {', '.join(r['tests']) or '-'}")
         if r.get("phases"):
@@ -295,8 +318,20 @@ def main() -> int:
             print(f"  fail unmutated (ignored): {', '.join(r['known'])}")
         if r.get("note"):
             print(f"  note: {r['note']}")
+        if r.get("copy"):
+            print(f"  kept: {r['copy']}")
         for sv in r.get("survivors", []):
             print(f"  survived  {sv}")
+    # changed result lines nothing looked at: a clean report above says nothing about them
+    unseen = [r for r in rows if "results" not in r and r.get("note") != "no mutant on a changed line"
+              and not (a.dry_run and r.get("tests"))]
+    if unseen:
+        print(f"NOT LOOKED AT: {sum(r['lines'] for r in unseen)} changed lines in {len(unseen)} result files: "
+              + ", ".join(f"{r['file']} ({r['lines']})" for r in unseen))
+    names = [n for r in rows for n in r.get("names", [])]
+    unnamed = [n for r in rows for n in r.get("unnamed", [])]
+    if names:
+        print(f"changed functions named by no test: {len(unnamed)} of {len(names)}")
     print(f"total {total} s")
     (outdir / "summary.json").write_text(json.dumps({"total_secs": total, "files": rows}, indent=1), encoding="utf-8")
     return 0
