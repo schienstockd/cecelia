@@ -8,7 +8,7 @@ import { RECIPES, isWanted, recipeById, type WrittenRecipe, type RecipeStep } fr
 import { NAV_GROUPS, navLabelFor } from '../lib/navGroups'
 import { stepRoute, recipeRoutes } from './guideMap'
 import { taskLanding } from './kiwiTurn'
-import { funsRunAcross, type RunLogEntry } from './runLog'
+import { funsRun, type RunLogEntry } from './runLog'
 
 /** The shape of a set this needs — a structural subset of `CciaSet`, so tests need no store. */
 export interface RecipeSetLike {
@@ -99,14 +99,26 @@ export function litRoutes(set: RecipeSetLike | null | undefined): Set<string> | 
   return r ? new Set(recipeRoutes(r)) : null
 }
 
-/** The pages a set's images have had a successful run on (`taskLanding`, the one fun → page rule). */
-export function ranPagesOf(images: readonly { runLog?: RunLogEntry[] | null }[]): Set<string> {
+/** The pages one image has had a successful run on (`taskLanding`, the one fun → page rule). */
+function pagesRunOn(runLog: RunLogEntry[] | null | undefined): Set<string> {
   const out = new Set<string>()
-  for (const fun of funsRunAcross(images.map(i => i.runLog))) {
+  for (const fun of funsRun(runLog)) {
     const p = taskLanding(fun)?.path
     if (p) out.add(p)
   }
   return out
+}
+
+/** The pages a set's images have had a successful run on — on any one of them. */
+export function ranPagesOf(images: readonly { runLog?: RunLogEntry[] | null }[]): Set<string> {
+  return new Set(images.flatMap(i => [...pagesRunOn(i.runLog)]))
+}
+
+/** The pages that have run on SOME of a set's images but not all: the phase still in progress. */
+export function partialPagesOf(images: readonly { runLog?: RunLogEntry[] | null }[]): Set<string> {
+  const counts = new Map<string, number>()
+  for (const i of images) for (const p of pagesRunOn(i.runLog)) counts.set(p, (counts.get(p) ?? 0) + 1)
+  return new Set([...counts].filter(([, n]) => n < images.length).map(([p]) => p))
 }
 
 /** One recipe step against a set: has its page run, and its place among the required steps. */
@@ -114,6 +126,7 @@ export interface StepProgress {
   step: RecipeStep
   route: string | null
   ran: boolean          // its page has a successful run on the set (`ranPagesOf`): ticked
+  partial: boolean      // ...on some of its images only (`partialPagesOf`): still in progress
   n: number | null      // 1-based among the REQUIRED steps; null for an optional one
 }
 
@@ -125,28 +138,37 @@ export interface RecipeProgress {
 
 /** A recipe walked against what has run on a set — the ONE rule for "where am I" that Welcome's
  *  Continue and the Guides dialog's next step both read, so they can never disagree.
- *  Next: the required step after the FURTHEST one whose page has run, so a set whose images are imported
- *  starts past Import. Furthest, not first-unrun: only task pages log a run (`taskLanding`), so steps on
- *  /metadata, /gate, /analysis or /chain never tick, and "first unrun" would send a set that has been
- *  segmented and tracked back to Fix metadata forever. When the last step has run, the last one (where
- *  the work was); with nothing run, the first. Optional steps are never next — their why-line is a
- *  condition only the user can judge. */
-export function recipeProgress(recipe: WrittenRecipe, ranPages: ReadonlySet<string>): RecipeProgress {
+ *  Next: the earliest required step that has run on only SOME of the set's images — one movie taken all
+ *  the way through must not send the other fifteen to the end of the recipe; the set is still in that
+ *  phase. With no step part-done, the required step after the FURTHEST one whose page has run, so a set
+ *  whose images are imported starts past Import. Furthest, not first-unrun: only task pages log a run
+ *  (`taskLanding`), so steps on /metadata, /gate, /analysis or /chain never tick, and "first unrun"
+ *  would send a set that has been segmented and tracked back to Fix metadata forever. When the last
+ *  step has run, the last one (where the work was); with nothing run, the first. Optional steps are
+ *  never next — their why-line is a condition only the user can judge. */
+export function recipeProgress(
+  recipe: WrittenRecipe, ranPages: ReadonlySet<string>, partialPages: ReadonlySet<string> = new Set(),
+): RecipeProgress {
   let n = 0
   const rows = recipe.steps.map((step): StepProgress => {
     const route = stepRoute(step)
-    return { step, route, ran: !!route && ranPages.has(route), n: step.optional ? null : ++n }
+    return {
+      step, route, ran: !!route && ranPages.has(route), partial: !!route && partialPages.has(route),
+      n: step.optional ? null : ++n,
+    }
   })
   const candidates = rows.filter(r => r.n !== null && r.route)
   let furthest = -1
   candidates.forEach((r, i) => { if (r.ran) furthest = i })
-  const next = candidates[Math.min(furthest + 1, candidates.length - 1)] ?? null
+  const next = candidates.find(r => r.partial) ?? candidates[Math.min(furthest + 1, candidates.length - 1)] ?? null
   return { rows, next, required: n }
 }
 
 /** Where to pick a set up, as a page (Welcome's Continue): `recipeProgress`'s next step. */
-export function resumeStepOf(recipe: WrittenRecipe, ranPages: ReadonlySet<string>): NextStep | null {
-  const s = recipeProgress(recipe, ranPages).next
+export function resumeStepOf(
+  recipe: WrittenRecipe, ranPages: ReadonlySet<string>, partialPages: ReadonlySet<string> = new Set(),
+): NextStep | null {
+  const s = recipeProgress(recipe, ranPages, partialPages).next
   if (!s?.route) return null
   return { route: s.route, label: navLabelFor(NAV_GROUPS, s.route), why: s.step.why }
 }

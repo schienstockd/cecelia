@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resumeStepOf, ranPagesOf, litRoutes, suggestRecipe, resolveSetRecipe, nextStepFor, nextSourceLine, writtenRecipe, WRITTEN_RECIPES, recipeProgress, guideStartView, recipeChoiceRows } from './setRecipe'
+import { resumeStepOf, ranPagesOf, partialPagesOf, litRoutes, suggestRecipe, resolveSetRecipe, nextStepFor, nextSourceLine, writtenRecipe, WRITTEN_RECIPES, recipeProgress, guideStartView, recipeChoiceRows } from './setRecipe'
 import { RECIPES } from '../lib/guides/recipes'
 
 const imgs = (n: number, sizeT: number, sizeC: number) => Array.from({ length: n }, () => ({ sizeT, sizeC }))
@@ -151,6 +151,37 @@ describe('recipeProgress — the Guides dialog and Welcome read one rule', () =>
   })
   it('starts every written recipe on Import', () => {
     for (const r of WRITTEN_RECIPES) expect(recipeProgress(r, new Set()).next?.route, r.id).toBe('/manage-images')
+  })
+})
+
+// One movie taken all the way through while the rest of the set is still being segmented: the set is
+// in the Segment phase, not at the end of the recipe.
+describe('a step part-done across the set is where it picks up', () => {
+  const r = writtenRecipe('intravital-timelapse')!
+  const log = (...funs: string[]) => funs.map(fun => ({ fun, at: '2026-11-15T12:00:00' }))
+  const base = ['importImages.omezarr', 'cleanupImages.driftCorrect']
+  const images = [
+    { runLog: log(...base, 'segment.cellposeMeasure', 'tracking.bayesian_track_measures', 'behaviour.hmm', 'clustTracks.cluster') },
+    ...Array.from({ length: 5 }, () => ({ runLog: log(...base, 'segment.cellposeMeasure') })),
+    ...Array.from({ length: 10 }, () => ({ runLog: log(...base) })),
+  ]
+  it('names the pages run on some images but not all', () => {
+    const partial = partialPagesOf(images)
+    expect(partial.has('/segment')).toBe(true)
+    expect(partial.has('/manage-images')).toBe(false)
+  })
+  it('continues at Segment, not after the furthest step one image reached', () => {
+    expect(resumeStepOf(r, ranPagesOf(images))?.route).toBe('/chain')
+    expect(resumeStepOf(r, ranPagesOf(images), partialPagesOf(images))?.route).toBe('/segment')
+  })
+  it('moves on once every image has run the step', () => {
+    const done = images.map(() => ({ runLog: log(...base, 'segment.cellposeMeasure') }))
+    expect(partialPagesOf(done).size).toBe(0)
+    expect(resumeStepOf(r, ranPagesOf(done), partialPagesOf(done))?.route).not.toBe('/segment')
+  })
+  it('a failed run leaves its image still to do', () => {
+    const failed = [...images.slice(0, 6), { runLog: [...log(...base), { fun: 'segment.cellposeMeasure', status: 'failed', at: '2026-11-15T13:00:00' }] }]
+    expect(partialPagesOf(failed).has('/segment')).toBe(true)
   })
 })
 

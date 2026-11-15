@@ -14,7 +14,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSetRecipe } from '../composables/useSetRecipe'
-import { resumeStepOf, ranPagesOf, recipeChoiceRows, RECIPE_CHOICE_COLUMNS } from '../utils/setRecipe'
+import { resumeStepOf, ranPagesOf, partialPagesOf, recipeChoiceRows, RECIPE_CHOICE_COLUMNS } from '../utils/setRecipe'
 import { formatWhen } from '../utils/formatWhen'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import ProjectPanel from '../components/ProjectPanel.vue'
@@ -70,10 +70,11 @@ const changing = ref(false)
 async function pick(id: string) { await save(id); changing.value = false }
 const recipeRows = computed(() => recipeChoiceRows(suggestion.value))
 const RECIPE_COLUMNS: SelectionColumn[] = RECIPE_CHOICE_COLUMNS
-// Pick the set up where it is: the step after the furthest one that has run on it (recipeProgress).
+// Pick the set up where it is: the step most of its images are still on (recipeProgress).
 const start = computed(() => {
   const r = own.value ?? suggestion.value?.recipe
-  return r && set.value ? resumeStepOf(r, ranPagesOf(set.value.images)) : null
+  const imgs = set.value?.images
+  return r && imgs ? resumeStepOf(r, ranPagesOf(imgs), partialPagesOf(imgs)) : null
 })
 </script>
 
