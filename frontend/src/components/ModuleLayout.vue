@@ -403,7 +403,7 @@ const visibleUids = computed<string[]>(() =>
         </div>
         <!-- Result line: the last run on this page and its outcome, then the page's own actions
              (#actions — Correct labels / tracks, Import's copy/move/remove …). -->
-        <div v-if="activeSet && (result || $slots.actions)" class="result-row">
+        <div v-if="activeSet && (result || $slots.actions)" class="result-row cc-row cc-row-loose">
           <span v-if="result && resultStyle" class="result-line" data-guide="layout.resultLine">
             <i :class="['pi', resultStyle.icon]" :style="{ color: resultStyle.color }" />
             {{ taskDefs.labelFor(result.fun) }} {{ resultVerb(result) }}
@@ -571,9 +571,10 @@ const visibleUids = computed<string[]>(() =>
 /* the set row's ⋯ menu shows the set ID beside its copy item */
 .set-uid { font-family: var(--cc-mono); margin-left: auto; }
 
-/* Result line: the last run here and its outcome, then the page's own actions */
+/* Result line: the last run here and its outcome, then the page's own actions. It wraps (`.cc-row`): in
+   a narrow panel the result line takes its own line and the buttons drop below it, whole. */
 .result-row {
-  display: flex; align-items: center; gap: var(--cc-space-md); flex-shrink: 0;
+  flex-shrink: 0;
   padding: var(--cc-bar-pad); border-bottom: 1px solid var(--cc-border); background: var(--cc-bg);
 }
 .image-panel.no-right > .result-row { padding-right: var(--cc-space-lg); }
