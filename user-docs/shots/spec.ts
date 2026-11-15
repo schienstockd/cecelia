@@ -171,8 +171,11 @@ export const shotFile = (id: string, theme: ColourScheme): string => (theme === 
  *  viewer window) keeps its chrome, so it is a screenshot like any other: one per scheme. */
 export const isPicture = (x: Shot): boolean => !!x.viewer && x.crop.join() === 'css:canvas'
 export const shotThemes = (set: ShotSet, x: Shot): ColourScheme[] => (isPicture(x) ? set.themes.slice(0, 1) : set.themes)
-/** The composed image a page or the app shows, in one scheme (a picture's one file serves every scheme). */
-export const imageFile = (x: Shot, theme: ColourScheme): string => (isPicture(x) ? `${x.id}.jpg` : shotFile(x.id, theme))
+/** The composed image a page or the app shows, in one scheme (a picture's one file serves every scheme).
+ *  A picture of the image and a whole-window `overview` are JPEG: both are mostly image pixels, and an
+ *  overview's text is not meant to be read; a UI screenshot is a PNG, its text sharp. */
+export const imageFile = (x: Shot, theme: ColourScheme): string =>
+  isPicture(x) ? `${x.id}.jpg` : x.overview ? shotFile(x.id, theme).replace(/\.png$/, '.jpg') : shotFile(x.id, theme)
 
 export interface ShotIssue { set: string; problem: string }
 

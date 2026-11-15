@@ -123,6 +123,13 @@ describe('doc shots: colour schemes', () => {
     expect(missing).toEqual([])
   })
 
+  // and the converse: an image no shot composes is a removed shot's, still in the repo (and in every
+  // clone's history); compose.mjs only warns about it
+  it('every image in user-docs/images is one a shot composes', () => {
+    const composed = new Set(SHOT_SETS.flatMap(s => s.shots.flatMap(x => shotThemes(s, x).map(t => imageFile(x, t)))))
+    expect(IMAGES.filter(f => !composed.has(f))).toEqual([])
+  })
+
   it('the app names only in-app shots', () => {
     const ids = new Set(IN_APP_SHOTS.shots.map(s => s.id))
     const named = [...TIPS.map(t => t.shot?.id), ...FEATURE_CARDS.map(f => f.shot.id)].filter((x): x is string => !!x)

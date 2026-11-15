@@ -44,7 +44,12 @@ every scheme like any other screenshot.
 **Side by side.** A shot with `beside: <id>` sits to the right of that shot of its set, the two one
 figure under the first one's caption: the README's hero is the Gate page (`windowWidth` 1440) beside the
 viewer window (980) on the same image, each shown at the same scale. `overview` marks a whole window
-shown small, whose text is not meant to be read, so compose does not refuse it as too wide. `stable`
+shown small, whose text is not meant to be read, so compose does not refuse it as too wide and writes it
+as JPEG (`<id>.jpg`, `<id>.dark.jpg`).
+
+**Limits.** `test_repo_images_convention.py` fails an image in `user-docs/images/` over 350 kB, the folder
+over 2 MB, and an image committed anywhere else (review captures stay on your machine); `docShots.test.ts`
+fails an image no shot composes. `stable`
 lists text that reads like a time but is a fact of the image (a duration, a frame interval), which the
 check for stale times then passes over.
 

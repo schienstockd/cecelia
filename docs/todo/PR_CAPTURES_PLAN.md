@@ -1,6 +1,6 @@
 # GUI captures on PRs, without growing the repo or the package
 
-**Status:** planning (2026-11-15). Nothing built. Brief: [`../archive/pr_gui_captures_brief.md`](../archive/pr_gui_captures_brief.md).
+**Status:** P1 built (2026-11-15): the checks, the template line, overview shots as JPEG, `docs/todo` images out of the stable tarball (P3's packaging half). P2 (contact sheet) and the no-rewrite compare open. Brief: [`../archive/pr_gui_captures_brief.md`](../archive/pr_gui_captures_brief.md).
 
 A PR that changes what a user sees should show it, and the images that show it should not end up in git
 history or in the installed app. The screenshot engine already exists (`user-docs/shots/`,
@@ -46,10 +46,10 @@ captures go and the checks that keep committed images small.
 
 | Check | Where | Fails on |
 |---|---|---|
-| Size limit, `user-docs/images/` | vitest, next to `docShots.test.ts` | a file over 350 kB, or more than 2 MB in total; names the files |
-| No orphans | vitest | an image file no shot composes, or a page citing an image that is missing. Turns compose's current warning into a failure |
-| Stray binaries | `test_doc_*_convention.py` style | a committed image outside `user-docs/images/`, `frontend/public/icons/`, `frontend/src/assets/`; the existing `docs/todo` images listed by name |
-| Package | `release.yml` | `docs/todo/**` images taken out of the tarball's `docs` path (or the stray-binary list moves them out of `docs/`) |
+| Size limit, `user-docs/images/` | `test_repo_images_convention.py` (vitest cannot read file sizes under vue-tsc) | a file over 350 kB, or more than 2 MB in total; names the files |
+| No orphans | `docShots.test.ts` | an image file no shot composes, or a page citing an image that is missing. Turns compose's current warning into a failure |
+| Stray images | `test_repo_images_convention.py` | a committed image outside `user-docs/images/`, `frontend/public/icons/`, `frontend/src/assets/`; the existing `docs/todo` images listed by name |
+| Package | `release.yml` | (not a failure) `docs/todo` PNG/JPEG left out of the tarball with `--exclude` |
 | No rewrite when unchanged | `compose.mjs` | (not a failure) skip writing a file whose pixels match the committed one |
 
 ## PR template line
@@ -63,10 +63,12 @@ to the recital.
 
 ## Phases
 
-- **P1** checks: size limit, orphans, stray binaries; the template line.
+- **P1** (built) checks: size limit and stray images (`python/cecelia/tests/test_repo_images_convention.py`),
+  orphans (`frontend/src/utils/docShots.test.ts`); the template line; whole-window `overview` shots as JPEG
+  (the README hero went from 942 kB to 244 kB across both schemes).
 - **P2** the contact sheet: `pixi run doc-sheet -- --shots <ids> [--before main]`, captures on the
   isolated instance, writes one HTML or PNG sheet per PR outside the repo.
-- **P3** packaging: `docs/todo` images out of the stable tarball; no-rewrite in compose.
+- **P3** packaging: `docs/todo` images out of the stable tarball (built, in P1); no-rewrite in compose (open).
 
 ## Open
 
