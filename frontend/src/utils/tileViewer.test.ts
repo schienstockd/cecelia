@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
-  tileSlotShape, tileMaskSourceId, sameMaskLayer,
+  tileSlotShape, tileMaskSourceId, sameMaskLayer, retryWhenMaskMoved,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -342,5 +342,32 @@ describe('tileMaskSourceId', () => {
     expect(tileMaskSourceId({ ...base, files: ['halo', 'nuc'] })).toBe('cells+halo+nuc|labels|0')
     expect(tileMaskSourceId({ ...base, store: 'preview', storeId: 1, files: ['halo'] }))
       .toBe(tileMaskSourceId({ ...base, store: 'preview', storeId: 1 }))
+  })
+})
+
+describe('retryWhenMaskMoved', () => {
+  const a = tileMaskSourceId({ vn: 'cp', hidden: false, store: 'preview', storeId: 1 })
+  const b = tileMaskSourceId({ vn: 'cp', hidden: false, store: 'preview', storeId: 2 })
+
+  it('asks again when a preview landed while the fetch ran', async () => {
+    let now = a, again = 0
+    const job = retryWhenMaskMoved(new Promise<boolean>(res => setTimeout(() => res(false))), a,
+      () => now, () => { again++ })
+    now = b
+    expect(await job).toBe(false)
+    expect(again).toBe(1)
+  })
+
+  it('leaves a fetch for the mask still on screen alone', async () => {
+    let again = 0
+    expect(await retryWhenMaskMoved(Promise.resolve(true), a, () => a, () => { again++ })).toBe(true)
+    expect(again).toBe(0)
+  })
+
+  it('asks again after a failed fetch too, and still rejects', async () => {
+    let again = 0
+    await expect(retryWhenMaskMoved(Promise.reject(new Error('409')), a, () => b, () => { again++ }))
+      .rejects.toThrow('409')
+    expect(again).toBe(1)
   })
 })

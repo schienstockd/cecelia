@@ -714,8 +714,8 @@ def _layer_disk(kind, name, value_name, path, axes, full_shape, source=None):
 
 def _sweep_preview_labels(task_dir):
     """Best-effort delete of every `*__preview.ome.zarr` (and its staging siblings) under
-    `{task_dir}/labels/`. Called from the `cleanup` message, from the start of every request, and
-    from atexit."""
+    `{task_dir}/labels/`. Called from the `cleanup` message and from atexit — never per request,
+    since a viewer may still be reading the last preview."""
     if not task_dir:
         return
     labels_dir = os.path.join(task_dir, 'labels')
@@ -817,9 +817,9 @@ def _stage_labels_store(block, axes, full_shape, bounds, task_dir, value_name, i
     reads at, so `/api/viewer/slab?labels=<vn>&preview=1` rides the same reader with no offset
     fiddling on either side (`try_serve_slab` just retargets the path).
 
-    The staging + promote lifecycle comes from `zarr_utils.staged_store`, and any leftover preview
-    store at the same path is wiped up-front — a killed request from a previous parameter change
-    would otherwise sit as `.partial` debris until this worker exits.
+    The staging + promote lifecycle comes from `zarr_utils.staged_store`: it clears a killed request's
+    `.partial` debris and replaces the previous preview at the same path only once the new one is
+    complete.
 
     Returns the promoted absolute path.
     """
@@ -829,10 +829,8 @@ def _stage_labels_store(block, axes, full_shape, bounds, task_dir, value_name, i
 
     final_path = os.path.join(labels_dir, f'{value_name}{_PREVIEW_LABEL_SUFFIX}')
 
-    # Start-of-request cleanup: an earlier preview may have promoted at this exact path.
-    if os.path.exists(final_path):
-        shutil.rmtree(final_path, ignore_errors=True)
-
+    # No up-front delete of the previous store: `promote_store` swaps it out in two renames, so a
+    # viewer still reading the last preview never finds the path missing (a 409 it would not retry).
     with zarr_utils.staged_store(final_path) as staging:
         _write_region_levels(staging, block, axes, full_shape, bounds, im_path, 'labels')
 
@@ -862,10 +860,8 @@ def _stage_af_image_store(block, axes, full_shape, bounds, task_dir, value_name,
     final_path = os.path.join(
         task_dir, f'{value_name}{_PREVIEW_AF_STEM}{int(channel_index)}{_PREVIEW_AF_SUFFIX}')
 
-    # Start-of-request cleanup: an earlier preview may have promoted at this exact path.
-    if os.path.exists(final_path):
-        shutil.rmtree(final_path, ignore_errors=True)
-
+    # No up-front delete of the previous store: `promote_store` swaps it out in two renames, so a
+    # viewer still reading the last preview never finds the path missing (a 409 it would not retry).
     with zarr_utils.staged_store(final_path) as staging:
         _write_region_levels(staging, block, axes, full_shape, bounds, im_path, 'image')
 
