@@ -212,10 +212,13 @@ function board_summaries(proj::CciaProject)
     p = boards_doc_path(proj)
     doc = read_boards_doc(p)          # ONE parser, and it reads both document shapes — analysis_boards.jl
     doc.present || return Any[]
-    # A file that EXISTS but yields no tabs is "I cannot read this", not "there are no boards" — the
+    # A file that EXISTS but cannot be read is "I cannot read this", not "there are no boards" — the
     # difference is exactly what hid the `_board_tabs` bug (it read `b.tabs` as the array, which the
     # frontend never writes, and returned empty in silence). Say so rather than degrading quietly.
-    (doc.readable && !isempty(doc.tabs)) ||
+    # NOT an empty tab list on its own: the autosave writes `{tabs: [], layouts: {}}` the first time a
+    # project with no boards is opened, so that is the ordinary "no boards yet" and warned on every
+    # observer read (2026-11-15). Layouts with no tabs to hang them on is the misread signature.
+    (doc.readable && (!isempty(doc.tabs) || isempty(doc.layouts))) ||
         @warn "Analysis boards file has no readable tabs; reporting none" path = p
     layouts = doc.layouts
     out = Any[]

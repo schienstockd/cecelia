@@ -2376,6 +2376,16 @@ end
         # writes, and reported none on every real project for as long as it existed).
         write(bf, JSON3.write([1, 2, 3]))          # valid JSON, not a document
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
+
+        # ...but the document the autosave writes for a project with NO boards yet (copied from a real
+        # one) is not unreadable and must stay quiet — it warned on every observer read. Tabs missing
+        # while layouts exist is still the misread signature, and still warns.
+        write(bf, JSON3.write(Dict("version" => 1, "tabs" => [], "activeId" => 0, "nextId" => 0,
+                                   "layouts" => Dict())))
+        @test (@test_logs board_summaries(proj)) == Any[]
+        write(bf, JSON3.write(Dict("version" => 1, "tabs" => [],
+                                   "layouts" => Dict("tab:1" => Dict("contents" => [])))))
+        @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
     end
 
     @testset "analysis lineage (Slice A synthesizer)" begin
