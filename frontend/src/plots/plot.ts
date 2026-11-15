@@ -21,7 +21,7 @@ import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElb
 import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
-import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx } from './axisLabelFit'
+import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, FACET_PADDING_INNER } from './axisLabelFit'
 import { plotTheme, PLOT_INK_DARK } from './overlays'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
@@ -84,7 +84,7 @@ import palettesJson from './palettes.json'
 import { PAPER, PAPER_INK, NEUTRAL, WHITE } from './fixedColours'
 export const PALETTES: Record<string, string[]> = palettesJson.palettes
 /** THE default colours for new populations (gates, cluster / filter / boolean pops) and for unnamed
- *  categories — colour-blind safe to 8 (utils/cvd.test.ts), the Julia `POPULATION_PALETTE`. */
+ *  categories — 12, colour-blind safe to 8 (utils/cvd.test.ts), the Julia `POPULATION_PALETTE`. */
 export const POPULATION_PALETTE: readonly string[] = PALETTES.population
 
 /** `n` categorical colours: the population palette while it lasts, generated hues past it. */
@@ -647,14 +647,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
       if (hi > lo) measDomain = [lo, hi]
     } else {
       const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative ? 0 : Math.min(0, ext.min))
-      // Reserve the band the stats annotations occupy. They sit ABOVE the data in DATA coordinates, so
-      // a domain derived from the data alone leaves them on (or past) the frame — which is what clipped
-      // the compact letters. `+ band` puts the topmost annotation inside the domain and one more
-      // STATS_HEADROOM gives its text room; the pixel margin below covers the glyph's own offset.
-      const band = statsBandFraction(r, o)
-      const statsTop = band > 0 ? ext.max + (ext.max - ext.min) * (band + STATS_HEADROOM) : -Infinity
-      const hi = Number.isFinite(uMax) ? uMax
-        : Math.max(ext.max + (ext.max - lo) * 0.05, statsTop)
+      // the stats annotations' band is reserved at the end, once the margins (hence the axis length in
+      // pixels) are final — see reserveStatsBand
+      const hi = Number.isFinite(uMax) ? uMax : ext.max + (ext.max - lo) * 0.05
       if (hi > lo) measDomain = [lo, hi]
     }
   } else if (hasUser && ext) {
@@ -696,15 +691,6 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
     opts.marginLeft = yLabelMargin(posLabels, o.fontSize || 11)
     if (!facetSingle(o)) fitAxisLabels(opts, posAxis, posLabels, Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
   }
-  // …and PIXEL room for the stats annotation text, which is offset beyond its data coordinate (dx: 8
-  // when rotated, dy: -6 otherwise). The domain padding above puts the mark inside the plot; without
-  // this the glyph still overhangs the frame and gets clipped. On the measure axis's far side: right
-  // for a rotated (horizontal) chart, top otherwise.
-  if (isDist && statsBandFraction(r, o) > 0) {
-    if (o.rotate) opts.marginRight = Math.max(Number(opts.marginRight ?? 12), 42)
-    else opts.marginTop = Math.max(Number(opts.marginTop ?? 12), 26)
-  }
-
   // NB: the title is drawn by PlotChart as an overlay (NOT `opts.title`) — Plot's title forces an
   // HTML <figure> wrapper that re-clips the bottom axis and inherits the app's text colour.
   // dark theme: flip the ground + ink. All builder ink is `currentColor`, so setting style.color
@@ -723,6 +709,24 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // grouped frequency facets by CATEGORY whatever the facet mode; the others by `fkey`
   fitFacetHeaders(opts, o.chartType === 'frequency' ? (r.categories ?? [])
     : faceted(o) && !NON_FACETING_CHARTS.has(o.chartType) ? facetLabels(r, o, keyOf) : [], o)
+
+  // Reserve the stats annotations' pixel band above the data, now that the margins — and so the measure
+  // axis's length in pixels — are final. An explicit user maximum is honoured as given.
+  const band = isDist ? statsBandPx(r, o) : 0
+  if (band > 0 && ext && measDomain && !Number.isFinite(uMax)) {
+    const num = (k: string, d: number) => Number(opts![k] ?? d)
+    let axisPx = o.rotate
+      ? (o.plotWidth || 400) - num('marginLeft', THEME.marginLeft) - num('marginRight', THEME.marginRight)
+      : (o.plotHeight || 300) - num('marginTop', THEME.marginTop) - num('marginBottom', THEME.marginBottom)
+    // side-by-side facets split the width, so a rotated chart's measure axis is one panel: a band
+    // `step` wide less Plot's inner facet padding (the same band arithmetic as facetHeaderMaxPx)
+    if (o.rotate && faceted(o)) {
+      const n = Math.max(1, facetLabels(r, o, keyOf).length)
+      axisPx = axisPx / Math.max(1, n - FACET_PADDING_INNER) * (n > 1 ? 1 - FACET_PADDING_INNER : 1)
+    }
+    const dom = reserveStatsBand(measDomain, ext.max, band, axisPx, !!o.logScale)
+    opts[measAxis] = { ...(opts[measAxis] as object), domain: dom }
+  }
   return opts
 }
 
@@ -1063,10 +1067,15 @@ function seriesIndex(r: PlotDataResponse, keyOf: (s: PlotSeries) => string, face
 // used (grp || sid || uid) and produce a stack of horizontal-rule + text marks.
 // Rotated (horizontal) charts are not yet supported — brackets skip in that mode.
 
+// The annotations are anchored at the data maximum and laid out in PIXELS from there. They used to be
+// spaced in data units (5% of the extent per row), which is only as tall as the panel makes it: on a
+// small canvas card a row came out ~10 px apart, less than the 12 px label, so every p-value sat on the
+// bracket above it. Text is a fixed pixel size, so its spacing must be too.
 const STATS_TEXT_SIZE = 12
-const STATS_HEADROOM = 0.05    // first bracket sits at extent.max + 5% of extent
-const STATS_STACK_GAP = 0.05   // stacked brackets step by 5% of extent
-const STATS_TEXT_DY   = -6     // text just above the bracket line
+const STATS_GAP_PX    = 8      // data maximum → first bracket line
+const STATS_TEXT_PAD  = 3      // bracket line → bottom of its label
+const STATS_ROW_PX    = STATS_TEXT_SIZE + STATS_TEXT_PAD + 4   // one stacked row: label + pad + air
+const STATS_TOP_PX    = STATS_TEXT_SIZE + STATS_TEXT_PAD + 3   // above the last line: its label
 
 /**
  * Server-side stats labels for a full series set — mirrors `_stats_labels` in plot_data.jl.
@@ -1109,31 +1118,52 @@ function formatPValue(p: number): string {
 }
 
 /**
- * How far ABOVE the data the stats annotations reach, as a fraction of the DATA extent — 0 when none
- * are drawn. Mirrors the placement in `statsMarks` below: a Compact Letter Display is ONE row at
- * `STATS_HEADROOM`; a bracket stack is one row per shown pair, stepping by `STATS_STACK_GAP`.
+ * How far beyond the data maximum the stats annotations reach, in PIXELS along the measure axis — 0
+ * when none are drawn. Mirrors the placement in `statsBracketMarks`: a Compact Letter Display is ONE
+ * row; a bracket stack is one `STATS_ROW_PX` row per shown pair, plus the top label.
  *
- * This exists because the annotations are positioned in DATA coordinates but the measure-axis domain
- * was computed from the data alone (+5%). The letter therefore landed exactly on the frame and its
- * `dx: 8` pixel offset pushed the glyph outside the plot, where it was clipped — "squished to the edge
- * of the box". Reserving room needs both this (domain) and a pixel margin for the glyph itself.
+ * The measure-axis domain reserves exactly this many pixels above the data (`reserveStatsBand`), so the
+ * annotations sit inside the frame at any panel size — on the canvas card and in the export alike.
  *
- * Deliberately counts pairs WITHOUT the position filter `statsMarks` applies (a pair whose group is
- * absent from the series is dropped there): over-reserving leaves a little empty headroom, while
+ * Deliberately counts pairs WITHOUT the position filter `statsBracketMarks` applies (a pair whose group
+ * is absent from the series is dropped there): over-reserving leaves a little empty headroom, while
  * under-reserving clips the annotation, so the generous side is the right error.
  */
-export function statsBandFraction(
+export function statsBandPx(
   r: { comparisons?: ComparisonsResult },
-  o: { statsEnabled?: boolean; statsUseLetters?: boolean; statsShowNs?: boolean },
+  o: { statsEnabled?: boolean; statsUseLetters?: boolean; statsShowNs?: boolean; rotate?: boolean },
 ): number {
   if (!o.statsEnabled) return 0
   const cmp = r.comparisons
   if (!cmp) return 0
   if (o.statsUseLetters && cmp.letters && cmp.letters.some(l => (l ?? '').length > 0)) {
-    return STATS_HEADROOM
+    // rotated, the letters run ALONG the measure axis (horizontal text right of the data), so their
+    // width is what has to fit; upright, it is one line of text
+    const along = o.rotate ? Math.max(...cmp.letters.map(l => textWidth(l ?? '', STATS_TEXT_SIZE))) : STATS_TEXT_SIZE
+    return STATS_GAP_PX + along + STATS_TEXT_PAD
   }
   const rows = pairsFor(cmp).filter(p => o.statsShowNs || p.significance !== 'ns').length
-  return rows > 0 ? STATS_HEADROOM + (rows - 1) * STATS_STACK_GAP : 0
+  return rows > 0 ? STATS_GAP_PX + (rows - 1) * STATS_ROW_PX + STATS_TOP_PX : 0
+}
+
+/**
+ * Grow the measure-axis domain so `band` pixels above the data maximum fall inside the frame. Solved in
+ * the axis's own space (log10 for a log axis), so the reservation is exact either way: with `a` the data
+ * maximum, `b` the domain floor and `L` the axis length in pixels, the top must satisfy
+ * (top − a)·L = band·(top − b). Never shrinks the domain, and leaves an explicit user maximum alone.
+ */
+export function reserveStatsBand(domain: number[], dataMax: number, band: number, axisPx: number,
+                                 log: boolean): number[] {
+  if (!(band > 0) || !(axisPx > 0) || domain.length !== 2) return domain
+  const t = log ? Math.log10 : (v: number) => v
+  const inv = log ? (v: number) => 10 ** v : (v: number) => v
+  const [lo, hi] = domain
+  if (log && !(lo > 0 && dataMax > 0)) return domain
+  // a tiny panel cannot give the band all it asks for — cap it so the data keeps most of the axis
+  const px = Math.min(band, axisPx * 0.6)
+  const a = t(dataMax), b = t(lo)
+  const top = (a * axisPx - px * b) / (axisPx - px)
+  return top > t(hi) ? [lo, inv(top)] : domain
 }
 
 /**
@@ -1207,8 +1237,7 @@ function statsBracketMarks(
   // `cmp.letters[N]` — a set of 2-group brackets simply drops through to the bracket branch below
   // when letters are empty (the omnibus already IS the answer for 2 groups).
   if (opts.useLetters && cmp.letters && cmp.letters.some(l => l.length > 0)) {
-    const ext = Math.max(1e-9, extent.max - extent.min)
-    const m = extent.max + ext * STATS_HEADROOM
+    const m = extent.max
     const marks: unknown[] = []
     cmp.groups.forEach((label, k) => {
       const pos = posByLabel.get(label)
@@ -1216,12 +1245,12 @@ function statsBracketMarks(
       if (pos === undefined || letter === '') return
       if (o.rotate) {
         marks.push(Plot.text([{ x: m, y: pos, label: letter }],
-                             { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: 8,
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'start', dx: STATS_GAP_PX,
                                fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
       } else {
         marks.push(Plot.text([{ x: pos, y: m, label: letter }],
-                             { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', dy: STATS_TEXT_DY,
-                               fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
+                             { x: 'x', y: 'y', text: 'label', textAnchor: 'middle', lineAnchor: 'bottom',
+                               dy: -STATS_GAP_PX, fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
       }
     })
     return marks
@@ -1236,27 +1265,27 @@ function statsBracketMarks(
       Math.abs(posByLabel.get(b.a)! - posByLabel.get(b.b)!))
   if (shown.length === 0) return []
 
-  const ext = Math.max(1e-9, extent.max - extent.min)
-  const start = extent.max + ext * STATS_HEADROOM
-  const step  = ext * STATS_STACK_GAP
+  // every row is anchored at the data maximum and pushed out by a PIXEL offset (see STATS_ROW_PX)
+  const m = extent.max
   const marks: unknown[] = []
   shown.forEach((p, i) => {
     const [lo, hi] = [posByLabel.get(p.a)!, posByLabel.get(p.b)!]
     const [p1, p2] = lo < hi ? [lo, hi] : [hi, lo]
-    const m = start + i * step        // measure-axis coordinate for this row of the stack
+    const off = STATS_GAP_PX + i * STATS_ROW_PX   // this row's line, in px beyond the data maximum
     const label = opts.useStars ? p.significance : formatPValue(p.pAdj)
     if (o.rotate) {
-      // rotated (horizontal chart): pos=Y, meas=X → bracket is a VERTICAL rule at x=m spanning y=[p1,p2]
-      marks.push(Plot.ruleX([m], { y1: p1, y2: p2, stroke: ink, strokeWidth: 1 }))
+      // rotated (horizontal chart): pos=Y, meas=X → bracket is a VERTICAL rule spanning y=[p1,p2]. A
+      // -90° label's glyph tops face -x, so a TOP line-anchor puts it just beyond (right of) its line.
+      marks.push(Plot.ruleX([m], { y1: p1, y2: p2, dx: off, stroke: ink, strokeWidth: 1 }))
       marks.push(Plot.text([{ x: m, y: (p1 + p2) / 2, label }],
                            { x: 'x', y: 'y', text: 'label',
-                             textAnchor: 'middle', dx: 6, dy: 0,
+                             textAnchor: 'middle', lineAnchor: 'top', dx: off + STATS_TEXT_PAD,
                              fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink, rotate: -90 }))
     } else {
-      marks.push(Plot.ruleY([m], { x1: p1, x2: p2, stroke: ink, strokeWidth: 1 }))
+      marks.push(Plot.ruleY([m], { x1: p1, x2: p2, dy: -off, stroke: ink, strokeWidth: 1 }))
       marks.push(Plot.text([{ x: (p1 + p2) / 2, y: m, label }],
                            { x: 'x', y: 'y', text: 'label',
-                             textAnchor: 'middle', dy: STATS_TEXT_DY,
+                             textAnchor: 'middle', lineAnchor: 'bottom', dy: -(off + STATS_TEXT_PAD),
                              fontSize: STATS_TEXT_SIZE, fontWeight: 700, fill: ink }))
     }
   })

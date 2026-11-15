@@ -1,6 +1,6 @@
 // The screenshots at the top of the repository's README.md (the block between its `docshots` markers,
 // written by frontend/src/utils/readmeShots.ts): the app, its data and its viewer side by side on one
-// image. Lab data only, captions from the fixture's facts. Both schemes: GitHub shows the reader's.
+// image. Lab data only, captions from the fixture's facts.
 
 import type { ShotSet } from './spec.ts'
 import { SPLEEN_TIMELAPSE } from './fixtures.ts'
@@ -8,7 +8,9 @@ import { SPLEEN_TIMELAPSE } from './fixtures.ts'
 export const README_SHOTS: ShotSet = {
   id: 'readme',
   page: '../README.md',
-  themes: ['light', 'dark'],
+  // light only: a <picture> follows the reader's OS scheme, not GitHub's theme, so a dark image showed
+  // on a light GitHub page
+  themes: ['light'],
   fixture: { projects: { spleen: SPLEEN_TIMELAPSE } },
   shots: [
     {

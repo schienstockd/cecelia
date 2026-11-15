@@ -29,6 +29,13 @@
   "spleen.k3Tx90.interval": 30,
   "spleen.k3Tx90.B.tracks": 23
  },
+ "training": {
+  "lt.FtGoJO.planes": 26,
+  "lt.FtGoJO.channels": 6,
+  "lt.FtGoJO.timepoints": 1,
+  "lt.FtGoJO.P14.count": 1244,
+  "lt.FtGoJO.P14.pct": "2.5"
+ },
  "using-ai": {
   "ln.FtGoJO.planes": 26,
   "ln.FtGoJO.channels": 6,

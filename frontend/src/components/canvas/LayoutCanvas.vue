@@ -21,6 +21,7 @@ import { computed, watch, ref, provide, nextTick, useTemplateRef, onBeforeUnmoun
 import { awaitIdle, anyBusy } from '../../utils/awaitIdle'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import CanvasZoomControl from './CanvasZoomControl.vue'
+import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
 import { plotHostToImageURL } from '../../plots/export'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
@@ -365,15 +366,14 @@ const clustPopType = computed<'clust' | 'trackclust'>({
 const clustSuffix = computed<string>({
   get: () => (entry.value.shared.clustSuffix as string) ?? 'default',
   set: v => (entry.value.shared.clustSuffix = v) })
+// the board's own gating store (its cluster slots' pop tree + read-only manager)
+const clustG = provideGatingStore(clustPopType.value)
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
         featureOptions: clustFeatureOptions, labelMap: clustNameMap,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
-        clusterClaims: clustClaims,
         clusterAxes: clustAxes } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
-                      popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot,
-                      // the board's own gating store (its cluster slots' pop tree + read-only manager)
-                      g: provideGatingStore(clustPopType.value) })
+                      popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot, g: clustG })
 
 // cluster HIGHLIGHT — global (shared, one run per board) or per-slot (local), same scope as summary
 const clustHl = computed<string[]>({ get: () => (entry.value.shared.clustHl as string[]) ?? [], set: v => (entry.value.shared.clustHl = v) })
@@ -390,6 +390,14 @@ const activeIsPrecomputed = computed(() => {
   if (!c || c.kind !== 'summary') return false
   const spec = specById.value[c.ref]
   return !!spec && isPrecomputedSpec(spec)
+})
+// a renamed cluster pop stays highlighted under its new path (global + each slot's own), as on the
+// cluster page — else the UMAP drops it until its eye is toggled again. Skipped while the tree is
+// transiently empty (load / run switch), which would read as "every pop deleted".
+watchPopRenames(() => clustG.flat, remap => {
+  if (!clustG.flat.length) return
+  clustHl.value = remapPopKeys(clustHl.value, remap)
+  for (const c of entry.value.contents) if (isClusterSlot(c) && Array.isArray(st(c!).hl)) st(c!).hl = remapPopKeys(clustHlOf(c!), remap)
 })
 function toggleClustHl(path: string) {
   if (scope.value === 'global') clustHl.value = toggle(clustHl.value, path)
@@ -418,7 +426,7 @@ function ctxFor(c: SlotContent, i: number) {
   if (isClusterSlot(c)) return {
     projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
     popType: clustPopType.value, suffix: clustSuffix.value,
-    shownPops: shownPopsFor(panelClustHl(c)), clusterClaims: clustClaims.value, vis: panelVis(c),
+    shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
     axes: clustAxes.value[clustSuffix.value] ?? null, nameMap: clustNameMap.value,
   }
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }

@@ -27,6 +27,7 @@ Against an **isolated** instance (own `CECELIA_DEV_DIR` and `CECELIA_PORT_SLOT`;
 pixi run doc-fixture -- --base <url> --config-dir <dir> --source-projects <lab projects dir>
 pixi run doc-shots   -- --base <url> --config-dir <dir>
 pixi run doc-images
+pixi run doc-pdf                                    # optional: stamped A4 PDFs of the pages → docshots-out/pdf/
 npx vitest run src/utils/usingAiDoc.test.ts -u      # in frontend/: the pages pick up the new widths
 npx vitest run src/utils/readmeShots.test.ts -u     #   and the README its captions' facts
 pixi run doc-sheet                                  # before/after of every changed image, local only
@@ -38,16 +39,18 @@ no focus ring, so capturing an unchanged page writes the same bytes. The contact
 
 **Colour schemes.** A set names its `themes`; every shot is captured in each, the scheme set on the app
 and read back off the page before the screenshot. Compose refuses a capture in another scheme, and the
-test fails when a shot is missing an image in one, so one page never mixes schemes. A README set with
-both is a `<picture>` GitHub shows in the reader's scheme; an `app` set needs every scheme, so the app
+test fails when a shot is missing an image in one, so one page never mixes schemes. The README set is
+light only: a `<picture>` follows the reader's OS scheme, not the GitHub theme they picked, so a dark
+image showed on a light GitHub page. An `app` set needs every scheme, so the app
 shows its user's. The pointer is drawn in the image's scheme. A **picture of the image** (a viewer shot,
 cropped to the canvas alone) has no app chrome, so it is captured once and composed as one JPEG
 (`<id>.jpg`): the same pixels in both schemes, and a 2× microscopy PNG is megabytes. A viewer shot
 cropped to more (`css:body`, the whole viewer window) keeps the viewer's chrome, so it is captured in
 every scheme like any other screenshot.
 
-**Side by side.** A shot with `beside: <id>` sits to the right of that shot of its set, the two one
-figure under the first one's caption: the README's hero is the Gate page (`windowWidth` 1440) beside the
+**Side by side.** A shot with `beside: <id>` is drawn to the right of that shot of its set, into its
+image (a gap in the page's colour between), one figure under the first one's caption; two inline images
+wrapped under each other on a narrow page, one image scales as one: the README's hero is the Gate page (`windowWidth` 1440) beside the
 viewer window (980) on the same image, each shown at the same scale. `overview` marks a whole window
 shown small, whose text is not meant to be read, so compose does not refuse it as too wide and writes it
 as JPEG (`<id>.jpg`, `<id>.dark.jpg`).

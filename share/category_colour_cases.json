@@ -1,5 +1,5 @@
 {
-  "_meta": "Cases for THE category colour rule — Julia `category_colours` (app/src/gating/popmanager/clustering_colour.jl) and TypeScript `categoryColours` (frontend/src/plots/categoryColours.ts) must both give `expect` for `values` + `claims`. `slot` = index into the population palette (repeats past its length); `hex` = a claiming population's colour. Checked by app/test/suite/filter_pop.jl and frontend/src/plots/categoryColours.test.ts.",
+  "_meta": "Cases for THE category colour rule \u2014 Julia `category_colours` (app/src/gating/popmanager/clustering_colour.jl) and TypeScript `categoryColours` (frontend/src/plots/categoryColours.ts) must both give `expect` for `values`. `slot` = index into the population palette (repeats past its length). A population on a value never changes its colour \u2014 a cluster keeps its own slot. Checked by app/test/suite/filter_pop.jl and frontend/src/plots/categoryColours.test.ts.",
   "cases": [
     {
       "name": "sorted position, duplicates once",
@@ -9,7 +9,6 @@
         3,
         1
       ],
-      "claims": {},
       "expect": [
         [
           1,
@@ -39,7 +38,6 @@
         1,
         9
       ],
-      "claims": {},
       "expect": [
         [
           1,
@@ -68,51 +66,6 @@
       ]
     },
     {
-      "name": "a claimed value takes the pop colour and keeps its slot",
-      "values": [
-        0,
-        1,
-        2,
-        3,
-        4
-      ],
-      "claims": {
-        "2": "#ff1493"
-      },
-      "expect": [
-        [
-          0,
-          {
-            "slot": 0
-          }
-        ],
-        [
-          1,
-          {
-            "slot": 1
-          }
-        ],
-        [
-          2,
-          {
-            "hex": "#ff1493"
-          }
-        ],
-        [
-          3,
-          {
-            "slot": 3
-          }
-        ],
-        [
-          4,
-          {
-            "slot": 4
-          }
-        ]
-      ]
-    },
-    {
       "name": "past the palette it repeats",
       "values": [
         0,
@@ -126,24 +79,27 @@
         8,
         9,
         10,
-        11
+        11,
+        12,
+        13,
+        14,
+        15
       ],
-      "claims": {},
       "expect": [
         [
-          7,
+          11,
           {
-            "slot": 7
+            "slot": 11
           }
         ],
         [
-          8,
+          12,
           {
             "slot": 0
           }
         ],
         [
-          11,
+          15,
           {
             "slot": 3
           }
@@ -151,19 +107,16 @@
       ]
     },
     {
-      "name": "a whole-number float is claimed by its integer key",
+      "name": "whole-number floats sort as numbers",
       "values": [
-        2.0,
-        3.0
+        3.0,
+        2.0
       ],
-      "claims": {
-        "2": "#abcdef"
-      },
       "expect": [
         [
           2.0,
           {
-            "hex": "#abcdef"
+            "slot": 0
           }
         ],
         [
@@ -181,9 +134,6 @@
         "a",
         "c"
       ],
-      "claims": {
-        "c": "#123456"
-      },
       "expect": [
         [
           "a",
@@ -200,20 +150,17 @@
         [
           "c",
           {
-            "hex": "#123456"
+            "slot": 2
           }
         ]
       ]
     },
     {
-      "name": "a Bool sorts as 0/1 and is claimed by its wire key or its text",
+      "name": "a Bool sorts as 0/1",
       "values": [
         true,
         false
       ],
-      "claims": {
-        "1": "#00aa00"
-      },
       "expect": [
         [
           false,
@@ -224,31 +171,7 @@
         [
           true,
           {
-            "hex": "#00aa00"
-          }
-        ]
-      ]
-    },
-    {
-      "name": "a filter stored as text still claims a Bool",
-      "values": [
-        true,
-        false
-      ],
-      "claims": {
-        "true": "#aa0000"
-      },
-      "expect": [
-        [
-          false,
-          {
-            "slot": 0
-          }
-        ],
-        [
-          true,
-          {
-            "hex": "#aa0000"
+            "slot": 1
           }
         ]
       ]

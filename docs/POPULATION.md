@@ -37,25 +37,20 @@ All types share: a population tree (name, colour, path, parent, show), a `pop_df
 accessor returning a filtered `DataFrame` regardless of type, and membership that is
 **derived**, never duplicated into the H5AD.
 
-### Colouring by a categorical measure — `colour_by_palette`
+### Colouring by a categorical measure — `category_colours`
 
-The one colour-choice rule for colouring anything (napari tracks/labels, legends, movies) by a
-categorical column: **a value that a user population *filters for* on that column takes that
-population's colour; every other value gets an Okabe–Ito default** (by sorted position).
-`colour_by_palette(m, column, values)` returns the full `{value→hex}`; `pop_colour_overrides(m, column)`
-returns just the population-imposed `{value(str)→hex}` for the wire (the legacy bridge fills the
-defaults and returns the legend). This generalises "use the population's colour where one exists" —
-a `clust`/`trackclust` pop is just a filter on `clusters.{suffix}`, so clusters, HMM states and any
-categorical measure resolve identically, and a track pop and its source cell pop share a colour when
-both filter the same value. **The rule** (`category_colours`, pure): a claimed value takes its pop's
-colour; every other value takes the palette slot of its position among ALL the values, sorted numbers-
-first (`category_sort_key`: cluster 10 after 9). A claimed value keeps its slot, so turning a pop on or
-off never repaints the other clusters. The price of stable slots: a pop's colour can equal an
-unclaimed cluster's slot colour (pops draw from the same 8 colours) — pick a different swatch.
-The movie gathers claims exactly as the viewer's `levelClaims` (`_cb_claims`). The frontend twin is `plots/categoryColours.ts`
-(`categoryColours`) — the viewer's colour-by and the UMAP use it with the claims the server sends
-(`levelClaims`) or the run's cluster pops; both sides are checked against
-`share/category_colour_cases.json`. `POPULATION_PALETTE` equals `population` in `frontend/src/plots/palettes.json` (colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
+The one colour-choice rule for colouring anything (viewer points/tracks/masks, the UMAP, legends,
+movies, behaviour cards) by a categorical column (`category_colours`, pure): **every value takes the
+palette slot of its position among ALL the values**, sorted numbers-first (`category_sort_key`:
+cluster 10 after 9). **A population never repaints a value** — a cluster keeps its cluster colour
+even when a population is defined on it, so a population's colour and a cluster's colour are never
+mistaken for one another, and turning a pop on or off never repaints a cluster (maintainer decision
+2026-11-15, reverting #2196's "a claimed cluster takes its population's colour"). A population
+contributes only its **name** to a colour-by legend (`pop_label_overrides`). Clusters, HMM states,
+regions and any categorical measure resolve identically. The frontend twin is
+`plots/categoryColours.ts` (`categoryColours`) — the viewer's colour-by and the UMAP use it; both
+sides are checked against `share/category_colour_cases.json`. `POPULATION_PALETTE` equals
+`population` in `frontend/src/plots/palettes.json` (12 colours, colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
 
 ## Language boundaries (per `ARCHITECTURE.md`)
 

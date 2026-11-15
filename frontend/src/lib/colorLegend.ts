@@ -231,7 +231,7 @@ export const COLOR_LEGEND: ColorFamily[] = [
     title: 'Series palettes',
     note: 'Both renderers read palettes.json — one edit, both sides.',
     entries: [
-      { token: 'palette:population', means: 'New populations\' colours — colour-blind safe up to 8',
+      { token: 'palette:population', means: 'New populations\' colours — 12 colours, colour-blind safe up to 8',
         swatch: paletteSwatch('population') },
       { token: 'palette:cecelia',    means: 'The published-figure palette — yellow, steel-blue, berry, grey and kin',
         swatch: paletteSwatch('cecelia') },

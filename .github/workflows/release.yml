@@ -37,6 +37,16 @@ jobs:
           npm ci
           npm run build
 
+      # The generated user-docs pages (user-docs/using-ai.md, user-docs/training.md) as stamped A4 PDFs, attached
+      # to the release so a facility can read and print them without installing anything. Built from the
+      # committed markdown and images (no capture here); `npm ci` above brought playwright-core and marked,
+      # and the runner's Chrome prints. Never committed. scripts/docshots/pdf.mjs.
+      - name: Print user-docs PDFs
+        run: |
+          node scripts/docshots/pdf.mjs --out out/docs
+          mv out/docs/training.pdf out/docs/cecelia-training-run-sheet.pdf
+          mv out/docs/using-ai.pdf out/docs/cecelia-using-ai.pdf
+
       # bioformats2raw (~190 MB) is NOT bundled — install.sh/install.ps1 fetch the latest release
       # into <install>/bioformats2raw at install time (keeps the bundle ~6 MB). See docs/SHIPPING.md.
       - name: Package portable bundle
@@ -105,6 +115,8 @@ jobs:
             install.ps1
             uninstall.sh
             uninstall.ps1
+            out/docs/cecelia-training-run-sheet.pdf
+            out/docs/cecelia-using-ai.pdf
           # The CHANGELOG section is the body (see the step above). `generate_release_notes` would
           # APPEND the PR list underneath it, which is the thing being removed.
           body_path: RELEASE_NOTES.md

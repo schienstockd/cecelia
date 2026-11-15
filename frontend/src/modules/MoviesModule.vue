@@ -405,19 +405,19 @@ const channelCells = computed(() => {
   return out
 })
 // Word-labelled, so the group tooltip is the coverage — per-option tips on top of it would say the
-// same thing twice and render over the chips (docs/UI.md → Tooltips, pinned by uiCopy.test.ts). Same
-// for `END_MODES` below.
+// same thing twice and render over the chips (docs/UI.md → Tooltips, pinned by uiCopy.test.ts).
 const CHANNEL_MODES: ChipOption[] = [
   { value: 'image', label: 'image' },
   { value: 'movie', label: 'in movie' },
 ]
 
 // What happens when a movie ends — ONE control, because the three are mutually exclusive outcomes of
-// the same moment (`utils/movies.ts` → MovieEndMode).
+// the same moment (`utils/movies.ts` → MovieEndMode). Icon-only so the row fits a narrow list panel;
+// each chip carries its own tip since there is no word to read.
 const END_MODES: ChipOption[] = [
-  { value: 'stop', label: 'Stop' },
-  { value: 'loop', label: 'Loop' },
-  { value: 'next', label: 'Next' },
+  { value: 'stop', label: '', icon: 'pi pi-end-stop', tip: 'At the end: stop' },
+  { value: 'loop', label: '', icon: 'pi pi-repeat', tip: 'At the end: play it again' },
+  { value: 'next', label: '', icon: 'pi pi-list-end', tip: 'At the end: play the next one in the list' },
 ]
 
 // ── Managing the collection (docs/todo/MOVIE_MANAGEMENT_PLAN.md) ──────────────
@@ -661,25 +661,24 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                         v-tooltip.bottom="'Play a movie automatically when you select it'" />
               <!-- a <div>, not a <label>: a label has to point at one control, and this is a
                    segmented group of buttons -->
-              <div class="mov-ctl cc-muted"
-                   v-tooltip.bottom="'At the end: stop, repeat it, or play the next movie in the list'">
+              <div class="mov-ctl cc-muted">
                 <span class="cc-eyebrow cc-fs-2xs">At end</span>
                 <ChipSelect variant="segmented" :options="END_MODES" v-model="settings.moviesEndMode"
                             aria-label="When a movie ends" />
               </div>
-              <button class="cc-btn cc-btn-ghost cc-btn-micro mov-refresh" :disabled="loading" @click="refresh"
-                      v-tooltip.left="'Re-scan the project\'s movies and figures'">
-                <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro mov-refresh" :disabled="loading" @click="refresh"
+                      aria-label="Refresh" v-tooltip.left="'Re-scan the project\'s movies and figures'">
+                <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" />
               </button>
-              <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="styleDialog = true"
-                      v-tooltip.left="'How this project\'s figures look'">
-                <i class="pi pi-print" /> Figure style
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" @click="styleDialog = true"
+                      aria-label="Figure style" v-tooltip.left="'Figure style — how this project\'s figures look'">
+                <i class="pi pi-print" />
               </button>
               <!-- always there, disabled on a movie: appearing only on a figure re-wrapped the row -->
-              <button class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="!currentIsFigure"
-                      :class="{ 'cc-btn-on': editingFigure }" @click="editingFigure = !editingFigure"
+              <button class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro" :disabled="!currentIsFigure"
+                      :class="{ 'cc-btn-on': editingFigure }" @click="editingFigure = !editingFigure" aria-label="Edit figure"
                       v-tooltip.left="currentIsFigure ? 'Change this figure and re-make it' : 'Edit a figure: select one'">
-                <i class="pi pi-pencil" /> Edit
+                <i class="pi pi-pencil" />
               </button>
             </div>
           </div>

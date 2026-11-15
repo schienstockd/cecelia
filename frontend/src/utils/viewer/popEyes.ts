@@ -14,6 +14,7 @@
 import { makePopPathRemap, type PopIdent } from '../popRenameRemap'
 import { soloVisibility } from './channelSolo'
 import { SPEC_POP_TYPES } from '../overlayAutoShow'
+import type { OverlayPop } from '../viewerOverlays'
 
 /** Which eye: a pop's points or its cell-track ribbon. Each is its own stored bag. */
 export type EyeLayer = 'points' | 'ribbons'
@@ -184,4 +185,36 @@ export function offPaths(eyes: Readonly<PopEyes>): string[] {
  */
 export function popTypeSwitch(popType: string): string | null {
   return (SPEC_POP_TYPES as readonly string[]).includes(popType) ? popType : null
+}
+
+/** A row of the viewer's Tracks section (`VwTracksSection`): a pop that can draw as a ribbon layer. */
+export interface TrackPopRow {
+  key: string; vn: string; popType: string; path: string; show: boolean
+  name: string; colour: string; count: number
+  /** its ribbon layer is on */
+  drawn: boolean
+  /** track clusters are drawing its segmentation, so its own toggle is held */
+  clusterHeld: boolean
+}
+
+/**
+ * The Tracks section's rows for the track-cluster pops — one per pop of every segmentation whose
+ * `popType=trackclust` payload was fetched (the ribbons draw from the same map), so each cluster
+ * pop gets the same eye as a gated pop. `drawn` is its ribbon eye (`popEyeOn`, as the ribbons) and
+ * that it holds cells; `count` is its cell count, as the gated rows. Sorted by segmentation, then path.
+ */
+export function trackclustRibbonRows(
+  payloads: ReadonlyMap<string, { pops?: readonly Pick<OverlayPop, 'path' | 'name' | 'colour' | 'show' | 'labels'>[] }>,
+  ribbonEyes: ReadonlyMap<string, Readonly<PopEyes>>,
+): TrackPopRow[] {
+  const rows: TrackPopRow[] = []
+  for (const [vn, payload] of payloads) {
+    for (const p of payload.pops ?? []) {
+      const count = p.labels?.length ?? 0
+      rows.push({ key: `${vn}::${eyeKey('trackclust', p.path)}`, vn, popType: 'trackclust', path: p.path, show: p.show,
+                  name: p.name, colour: p.colour, count, clusterHeld: false,
+                  drawn: count > 0 && popEyeOn(ribbonEyes, vn, 'trackclust', p.path, p.show) })
+    }
+  }
+  return rows.sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path))
 }

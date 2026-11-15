@@ -605,13 +605,20 @@ end
   end
 end
 
-@testset "API: overlay legend — a region population colours its regions column" begin
+@testset "API: overlay legend — a swatch is the value's own slot, matched by wire key or text" begin
+    P = POPULATION_PALETTE
+    @test _legend_slots([0, 1, 2, 10], ["2", "10"]) == Dict("2" => P[3], "10" => P[4])
+    @test _legend_slots([2.0, 3.0], ["2"]) == Dict("2" => P[1])                    # 2.0 is "2"
+    @test _legend_slots([true, false], ["1", "true"]) == Dict("1" => P[2], "true" => P[2])
+    @test isempty(_legend_slots([0, 1], ["7"]))                                   # not held → no swatch
+end
+
+@testset "API: overlay legend — a region population names its region, the region keeps its colour" begin
   if !api_have_fixture(api_fixture("testpr"))
     @test_skip "testpr fixture missing"
   else
-    # The renderer colours a region overlay by `regions.{suffix}` from the region pops' own colours;
-    # the legend gathered pop colours from every pop type but `region`, so the key under that picture
-    # showed no region colours at all. Its types now come from the registry's cluster/gating types.
+    # The legend gathers pop NAMES from every pop type the registry lists, `region` included (it once
+    # missed region pops). Colours are the category's own slot, never the population's.
     dir = mktempdir()
     cp(api_fixture("testpr"), joinpath(dir, "testpr"))
     old = Cecelia.cecelia_conf()["dirs"]["projects"]
@@ -622,8 +629,17 @@ end
         add_pop!(m, "niche"; filter_measure = "regions.r1", filter_fun = "in", filter_values = [1],
                  colour = "#123456")
         save_pop_map!(m, img)
+        # region pops are gathered for the legend's names …
+        @test _pop_labels_for(img, "regions.r1", COLOUR_BY_POP_TYPES) == Dict("1" => "niche")
+        # … but never lend it their colour: a row's swatch is the value's own slot among the column's
+        # levels (what the viewer and the movie draw), and this fixture holds no regions.r1 column,
+        # so there is no swatch to show
         items = overlay_legend_content(img, "regions.r1", nothing, nothing).colourBy["items"]
-        @test any(it -> it["value"] == "1" && it["colour"] == "#123456" && it["label"] == "niche", items)
+        @test !any(it -> it["colour"] == "#123456", items)
+        @test isempty(items)
+        # a user recolour still shows, with the population's name
+        rec = overlay_legend_content(img, "regions.r1", nothing, Dict("1" => "#abcdef")).colourBy["items"]
+        @test rec == [Dict{String,Any}("value" => "1", "colour" => "#abcdef", "label" => "niche")]
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end

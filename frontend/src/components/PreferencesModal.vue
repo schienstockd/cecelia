@@ -429,8 +429,8 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
       <select class="pref-input" v-model="settings.moviesEndMode"
               v-tooltip.bottom="'What happens when a movie ends'">
         <option value="stop">Stop</option>
-        <option value="repeat">Repeat</option>
-        <option value="next">Play next</option>
+        <option value="loop">Play it again</option>
+        <option value="next">Play the next one</option>
       </select>
 
       <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Movie list</div>

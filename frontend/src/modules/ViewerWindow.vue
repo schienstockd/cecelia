@@ -38,7 +38,7 @@ import { useLivePreview } from '../composables/useLivePreview'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
-         eyeKey, flipPopEye, offPaths, reconcileTrackclustEyes,
+         eyeKey, flipPopEye, offPaths, reconcileTrackclustEyes, trackclustRibbonRows,
          eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
 import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
@@ -1258,6 +1258,12 @@ const trackDrawablePops = computed(() =>
                  colour: p.colour, count: p.labels.length,
                  drawn: popRibbonDrawn(l, p), clusterHeld: trackclustHolds(l.vn) })))
     .sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path)))
+/** The track-cluster pops' ribbon rows — listed while the "Track-cluster ribbons" switch is on (the
+ *  ribbons draw from the same payloads), each with its own eye as the gated pops have. */
+const trackclustRows = computed(() =>
+  spec.popVisible.trackclust ? trackclustRibbonRows(trackclustPayloads.value, ribbonEyes.value) : [])
+/** Every row of the Tracks section: the gated pops, then the track-cluster pops. */
+const trackRibbonRows = computed(() => [...trackDrawablePops.value, ...trackclustRows.value])
 /** The population layers with something to list, for the Populations section — a segmentation
  *  header above each group when more than one segmentation draws. */
 const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0))
@@ -1877,7 +1883,7 @@ const frame = usePlotResize(canvas, () => {
  */
 function rebuildOverlays() {
   // categories (a cluster column) default to the population palette, the one the UMAP and Julia's
-  // `colour_by_palette` default to
+  // `category_colours` default to
   points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })),
                                  meta.value, POPULATION_PALETTE)
   pointCount.value = points.count
@@ -2143,7 +2149,8 @@ function setPopEye(l: PopLayer, pop: OverlayPop, visible: boolean) {
 // turns the ribbons on with only that pop shown, rather than releasing every pop whose eye was on.
 function toggleTrackPop(pop: { vn: string; popType: string; path: string; show: boolean }) {
   const su = setUid.value
-  if (su && !settings.getShowGatedTracks(su)) {
+  // a track-cluster row: its switch is on (it is listed only then), so its eye is all there is
+  if (su && pop.popType !== 'trackclust' && !settings.getShowGatedTracks(su)) {
     const listed = trackDrawablePops.value
     storeRibbonEyes(soloPopEyes(ribbonEyes.value, listed, listed.findIndex(p =>
       p.vn === pop.vn && p.popType === pop.popType && p.path === pop.path)))
@@ -6380,7 +6387,7 @@ onUnmounted(() => {
                               @set-all="setAllPops" @pop-eye="setPopEye" @redraw="frame.redraw()" />
 
         <!-- a still image has no tracks -->
-        <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackDrawablePops" v-model:color-mode="trackColorMode"
+        <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" v-model:color-mode="trackColorMode"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"
                          @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />

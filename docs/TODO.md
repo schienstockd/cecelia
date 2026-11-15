@@ -43,6 +43,14 @@ domain-specific expected value, or a decision an agent shouldn't make alone. Gre
 
 ## Next up
 
+### Training run-sheet: confirm the lymphoid fixture's channel names, and the claim step
+
+`user-docs/shots/training.ts` names FtGoJO's six channels B220-PB, XCR1-Venus, LCMV-AF594, P14-CTDR,
+CD3e-AF700, AF (the order an earlier draft used); the source carries no names, so the order needs
+checking against the scope file before the gate shot's axis labels are trusted. Step 6 of
+`user-docs/training.md` (check the claim) has no screenshot: on the fixture the claim button did not
+appear on a Population summary plot — find out whether that plot should offer a claim, then capture it.
+
 ### Label correction leaves a segmentation's halo / nuc stores on the old ids
 
 `segment.correctLabels` rewrites only the base `<vn>.zarr` (`correct.jl` → "Only the PRIMARY … gets

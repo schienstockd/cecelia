@@ -4,7 +4,7 @@
 // figure geometry (figure.ts) that compose.mjs draws.
 import { describe, expect, it } from 'vitest'
 import { SHOT_SETS } from '../../../user-docs/shots/index.ts'
-import { checkShotSets, fillFacts, guideIds, imageFile, shotAnchors, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
+import { checkShotSets, fillFacts, guideIds, imageFile, setImages, shotAnchors, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
 import { IN_APP_SHOTS } from '../../../user-docs/shots/in-app.ts'
 import { TIPS } from '../lib/tips'
 import { FEATURE_CARDS, featureFor } from '../lib/whatsNew'
@@ -107,6 +107,12 @@ describe('doc shots: colour schemes', () => {
       .toEqual(['shot "s1" is a picture of the image: it points at nothing, so no app chrome (which has a scheme) is in it'])
   })
 
+  // A pair is one image: the shot beside another has no file of its own.
+  it('a shot beside another is drawn into its image', () => {
+    expect(setImages(set({ themes: ['light', 'dark'], shots: [shot(), shot({ id: 's2', beside: 's1' })] })))
+      .toEqual(['s1.png', 's1.dark.png'])
+  })
+
   // The README's hero is two shots, one figure: `beside` names another shot of the set.
   it('a shot sits beside another of its set', () => {
     const problems = (shots: Shot[]) => checkShotSets([set({ shots })]).map(i => i.problem)
@@ -118,15 +124,14 @@ describe('doc shots: colour schemes', () => {
   // The check that fails a set whose images disagree on scheme: every shot has an image in each of
   // its set's schemes (compose.mjs refuses a capture in the wrong one).
   it('every shot of every set is composed in each of its schemes', () => {
-    const missing = SHOT_SETS.flatMap(s => s.shots.flatMap(x => shotThemes(s, x).map(t => imageFile(x, t))))
-      .filter(f => !IMAGES.includes(f))
+    const missing = SHOT_SETS.flatMap(setImages).filter(f => !IMAGES.includes(f))
     expect(missing).toEqual([])
   })
 
   // and the converse: an image no shot composes is a removed shot's, still in the repo (and in every
   // clone's history); compose.mjs only warns about it
   it('every image in user-docs/images is one a shot composes', () => {
-    const composed = new Set(SHOT_SETS.flatMap(s => s.shots.flatMap(x => shotThemes(s, x).map(t => imageFile(x, t)))))
+    const composed = new Set(SHOT_SETS.flatMap(setImages))
     expect(IMAGES.filter(f => !composed.has(f))).toEqual([])
   })
 

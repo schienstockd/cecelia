@@ -1,6 +1,6 @@
 <!--
   The viewer window's Tracks section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): one ribbon
-  row per gated population with tracks, colour mode (track / speed / source / population) with its
+  row per gated population with tracks and per track-cluster pop, colour mode (track / speed / source / population) with its
   legend, z reach and tail. Which segmentations draw is ticked under "On the image" (`VwOnImageOverlay`); the
   window owns the ribbon state, this renders it and reports the user's changes.
 -->
@@ -11,16 +11,7 @@ import ColourPicker from '../ColourPicker.vue'
 import { PALETTES } from '../../plots/plot'
 import { useSettingsStore } from '../../stores/settings'
 import type { TrackColorMode } from '../../utils/viewerOverlays'
-
-/** a gated population that can draw as a ribbon layer */
-export interface TrackPopRow {
-  key: string; vn: string; popType: string; path: string; show: boolean
-  name: string; colour: string; count: number
-  /** its ribbon layer is on */
-  drawn: boolean
-  /** track clusters are drawing its segmentation, so its own toggle is held */
-  clusterHeld: boolean
-}
+import type { TrackPopRow } from '../../utils/viewer/popEyes'
 
 defineProps<{
   /** ribbon segments drawn */

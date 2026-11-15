@@ -374,7 +374,7 @@ end
 
 # Gather a {value(str) => X} map for colouring by `column`, pooling every user population (across
 # segmentations, in the given pop_types) that FILTERS on `column` via `getter` (a `PopulationMap →
-# Dict` — `pop_colour_overrides` for hex, `pop_label_overrides` for the pop name). First pop (by
+# Dict`, e.g. `pop_label_overrides` for the pop name). First pop (by
 # segmentation/type order) wins a shared value. Empty when `column` is blank / a special key.
 function _gather_pop_overrides(img, column::AbstractString, pop_types, getter)::Dict{String,String}
     out = Dict{String,String}()
@@ -394,16 +394,12 @@ function _gather_pop_overrides(img, column::AbstractString, pop_types, getter)::
     out
 end
 
-# {value(str) => hex} — the population colour a value takes on `column`.
-_colour_overrides_for(img, column::AbstractString, pop_types) =
-    _gather_pop_overrides(img, column, pop_types, pop_colour_overrides)
 # {value(str) => population name} — so the colour-by legend reads the pop name where one defines a value.
 _pop_labels_for(img, column::AbstractString, pop_types) =
     _gather_pop_overrides(img, column, pop_types, pop_label_overrides)
 
 # Merge the client's user colour overrides ({value(str) => hex}, from recolouring a legend swatch) on
-# TOP of the pop-derived overrides — the user's explicit choice wins (categories with no population have
-# no colour defined anywhere, so this is the only source; for pop-backed values it's a display override).
+# TOP of the slot colours — the user's explicit choice wins.
 function _apply_user_overrides!(overrides::Dict{String,String}, user)::Dict{String,String}
     (user === nothing || !(user isa AbstractDict)) && return overrides
     for (k, v) in pairs(user)
@@ -416,17 +412,44 @@ end
 # CANONICAL legend content for an image's overlays — one source of truth for the overlay-legend route
 # (analysis-board strip) and the title card. Given a `column` (colour-by measure), an `overlay_pops`
 # list ({valueName, popType, path} or nothing) and user recolours, returns:
-#  • colourBy:    {column, items:[{value, colour(pop hex), label(pop name)}]} for each value on `column`
+#  • colourBy:    {column, items:[{value, colour, label(pop name)}]} for each value on `column` a
+#    population names or the user recoloured. The colour is the value's OWN slot (`category_colours`
+#    over the column's levels on `value_names` — a movie's dot segmentations — else on every
+#    segmentation, as the viewer pools every loaded segmentation's levels), never the population's: a cluster keeps its cluster colour.
 #  • populations: [{name, colour}] for each requested point/track pop (deduped by name); `colour` is
 #    `nothing` (no swatch) for tracks coloured by track id / speed.
 # POP-TYPES-OK: priority order (first pop wins a shared value); every type that can filter a
 # cell or track colour column — branch pops filter the branch table, never a colour-by column
 const COLOUR_BY_POP_TYPES = ("trackclust", "track", "clust", "region", "flow")
 
-function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides)
-    pt_all  = COLOUR_BY_POP_TYPES
-    colours = _apply_user_overrides!(_colour_overrides_for(img, column, pt_all), user_overrides)
-    labels  = _pop_labels_for(img, column, pt_all)
+# {value(str) => hex} for `wanted` values of `column`: each value's slot among the column's levels
+# pooled over the segmentations drawn (`drawn()`, asked only when there is a value to colour;
+# `_cb_scale`, as the viewer's
+# `pooledColourScale` and the movie pool them) — by `category_colours`. A value is matched by its
+# wire key (true → "1") or its text (a filter stored as "true"). A value the column does not hold (or
+# a continuous column) has no swatch to show and is left out.
+function _legend_slot_colours(img, column::AbstractString, wanted, drawn::Function)::Dict{String,String}
+    isempty(wanted) && return Dict{String,String}()
+    scale = _cb_scale(img, drawn(), column)
+    (scale === nothing || scale.continuous) && return Dict{String,String}()
+    _legend_slots(scale.levels, wanted)
+end
+
+# The pure half of `_legend_slot_colours`: `wanted` string keys → their slot colour among `levels`.
+function _legend_slots(levels, wanted)::Dict{String,String}
+    slots = Dict{String,String}()
+    for (v, hex) in category_colours(levels)
+        slots[Cecelia._val_key(v)] = hex
+        get!(slots, string(v), hex)
+    end
+    Dict{String,String}(k => slots[k] for k in wanted if haskey(slots, k))
+end
+
+function overlay_legend_content(img, column::AbstractString, overlay_pops, user_overrides;
+                                value_names = nothing)
+    labels  = _pop_labels_for(img, column, COLOUR_BY_POP_TYPES)
+    drawn() = something(value_names, _overlay_segmentations(img))
+    colours = _apply_user_overrides!(_legend_slot_colours(img, column, keys(labels), drawn), user_overrides)
     cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
            for k in sort(collect(keys(colours)); by = k -> category_sort_key(something(tryparse(Float64, k), k)))]
 
@@ -537,7 +560,12 @@ function _title_card_content(img, config)
     # Colour-by — value → pop colour + name for the colour-by measure.
     column = String(get(config, :colourBy, ""))
     if !isempty(column)
-        legend = overlay_legend_content(img, column, nothing, get(config, :colourOverrides, nothing))
+        # swatches from the levels of the segmentations this movie draws dots from — a look's every
+        # segmentation, else the one pop segmentation (`viewer_overlay_closure`'s layers)
+        dots = Bool(get(config, :popAllSegmentations, false)) ? _overlay_segmentations(img) :
+               filter(!isempty, [String(_config_pop_segmentation(config))])
+        legend = overlay_legend_content(img, column, nothing, get(config, :colourOverrides, nothing);
+                                        value_names = isempty(dots) ? nothing : dots)
         items  = [Dict{String,Any}("label" => it["label"], "colour" => it["colour"]) for it in legend.colourBy["items"]]
         isempty(items) || push!(sections, Dict{String,Any}("heading" => "Colour by", "items" => items))
     end

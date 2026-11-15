@@ -109,8 +109,6 @@ export interface OverlayPayload {
   valueLevels?: (number | string)[] | null
   /** `[lo, hi]`, for `numeric`. */
   valueRange?: [number, number] | null
-  /** Levels a user population claims, `{value → pop hex}` — drawn in the pop's colour (`categoryColours`). */
-  levelClaims?: Record<string, string> | null
   values: (number | string | null)[] | null
   valueName?: string
   popType?: string
@@ -972,9 +970,9 @@ export function colourByValue(
   const s = scale ?? pooledColourScale([payload])
 
   if (s?.kind === 'categorical') {
-    // THE category rule (plots/categoryColours.ts): a claimed level takes its population's colour, the
-    // rest their palette slot by sorted position — what the movie draws (`category_colours`)
-    const colours = categoryColours(s.levels, s.claims ?? {}, palette.length ? palette : [WHITE])
+    // THE category rule (plots/categoryColours.ts): every level its palette slot by sorted position —
+    // what the movie draws (`category_colours`)
+    const colours = categoryColours(s.levels, palette.length ? palette : [WHITE])
     const rgb = new Map([...colours].map(([k, hex]) => [k, hexToUnit(hex)]))
     return (r: number) => {
       const v = vals[r]
@@ -997,16 +995,14 @@ export interface ColourScale {
   kind: 'categorical' | 'numeric'
   levels: (number | string)[]
   range: [number, number] | null
-  /** Categorical: levels a population claims, `{value → hex}` (first payload wins a shared level). */
-  claims?: Record<string, string>
 }
 
 /**
  * One colour-by scale over several payloads — the populations of several segmentations draw at once,
  * and each payload's levels / range are its own table's. Coloured per payload, cluster 2 or a speed
  * of 5 µm/min would be one colour on one segmentation and another beside it. Levels are the union,
- * in the shared category order (`compareCategories` = Julia `category_sort_key`), with every payload's
- * population claims; the range spans every payload's. The kind is the
+ * in the shared category order (`compareCategories` = Julia `category_sort_key`); the range spans
+ * every payload's. The kind is the
  * first coloured payload's — the server decides it per table, and one column name is one kind.
  */
 export function pooledColourScale(payloads: readonly (OverlayPayload | null | undefined)[]): ColourScale | null {
@@ -1018,9 +1014,7 @@ export function pooledColourScale(payloads: readonly (OverlayPayload | null | un
   if (kind === 'categorical') {
     const seen = new Map<string, number | string>()
     for (const p of same) for (const v of p.valueLevels ?? []) if (!seen.has(categoryKey(v))) seen.set(categoryKey(v), v)
-    const claims: Record<string, string> = {}
-    for (const p of same) for (const [k, hex] of Object.entries(p.levelClaims ?? {})) claims[k] ??= hex
-    return { kind, levels: [...seen.values()].sort(compareCategories), range: null, claims }
+    return { kind, levels: [...seen.values()].sort(compareCategories), range: null }
   }
   const rs = same.map(p => p.valueRange).filter((r): r is [number, number] => !!r)
   return { kind, levels: [], range: rs.length ? [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))] : null }

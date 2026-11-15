@@ -1,0 +1,40 @@
+/* Print styles for the user-docs PDFs (scripts/docshots/pdf.mjs), revived from the booklets' print
+   sheet. Colours are the app's LIGHT scheme tokens (frontend/src/style.css → [data-theme="light"]), a
+   frozen copy because a print sheet can't follow the theme switch, so a printout looks like the screen
+   it describes. A4, one column, nothing below 8.5 pt. */
+:root {
+  --cc-bg: #f4f2ef; --cc-surface-1: #fbfaf8; --cc-surface-2: #ebe8e4; --cc-text: #1d1b19; --cc-text-dim: #635d57;
+  --cc-border: #d6d0c9; --cc-accent: #6a4bd0; --cc-accent-tint: #e8e2fa; --cc-warn: #8f5d02; --warn-tint: #fbefd5;
+}
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font: 10pt/1.42 system-ui, 'Segoe UI', Roboto, sans-serif; color: var(--cc-text); background: #fff; }
+h1 { font-size: 20pt; line-height: 1.15; margin: 0 0 1mm; padding-bottom: 3mm; border-bottom: .6mm solid var(--cc-accent); }
+h1 + p em { color: var(--cc-text-dim); font-size: 11pt; font-style: normal; }
+h2 { font-size: 13pt; margin: 6mm 0 2mm; break-after: avoid; }
+h3 { font-size: 11pt; margin: 5mm 0 1.5mm; break-after: avoid; display: flex; align-items: center; gap: 2.5mm; }
+h3 .n { display: inline-flex; width: 6.5mm; height: 6.5mm; border-radius: 50%; background: var(--cc-accent); color: #fff;
+  font-size: 10pt; align-items: center; justify-content: center; flex: none; }
+p { margin: 0 0 2mm; }
+ul { margin: 0 0 2mm; padding-left: 4.5mm; }
+li { margin: 0 0 .8mm; }
+a { color: var(--cc-accent); text-decoration: none; }
+code { font: 9pt ui-monospace, 'DejaVu Sans Mono', monospace; background: var(--cc-surface-2); padding: 0 1mm; border-radius: 1mm; }
+/* an app label, as the screen shows it */
+b.ui { font-weight: 600; background: var(--cc-accent-tint); color: #3b2894; padding: 0 1mm; border-radius: 1mm; }
+/* the page's For / You get / You need / Ends at block */
+h1 + p + ul { list-style: none; padding: 3.5mm 4mm; background: var(--cc-bg); border-radius: 2mm; margin: 2mm 0 5mm;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 6mm; }
+h1 + p + ul li { margin: 0; }
+
+table { width: 100%; border-collapse: collapse; margin: 0 0 3mm; font-size: 9.5pt; break-inside: avoid; }
+th { text-align: left; font-size: 8.5pt; color: var(--cc-text-dim); font-weight: 600; border-bottom: .3mm solid var(--cc-border); padding: 1mm 2mm 1mm 0; }
+td { vertical-align: top; border-bottom: .2mm solid var(--cc-surface-2); padding: 1.3mm 2mm 1.3mm 0; height: 6mm; }
+
+.note { border-left: 1.2mm solid var(--cc-accent); background: var(--cc-accent-tint); padding: 2mm 3mm; border-radius: 0 1.5mm 1.5mm 0; margin: 0 0 3.5mm; break-inside: avoid; }
+.note.warning { border-left-color: var(--cc-warn); background: var(--warn-tint); }
+.note p { margin: 0; }
+
+/* a composed screenshot at the width it was composed for, never wider than the column */
+img { max-width: 100%; height: auto; display: block; margin: 1mm 0 3mm; border: .3mm solid var(--cc-border); border-radius: 1.5mm; break-inside: avoid; }
+p:has(> img) { break-inside: avoid; }

@@ -258,7 +258,7 @@ include(joinpath(@__DIR__, "suite", "pop_type_registry.jl"))
 # Five sections covering region composition column naming, compound filter populations
 # (Decision 15 AND-ed conditions), FilterFun + FilterCondition boundary coercion + JSON
 # round-trip, recompute! degrades to empty on missing filter/gate column, and
-# colour_by_palette (pop colour else default). Extracted from this file to keep it small
+# the category colour rule + population labels. Extracted from this file to keep it small
 # enough to merge without EOF conflicts on every append. The extracted file loads inside
 # this file's aggregating testset scope, so any helpers defined earlier in suite.jl are
 # still in scope for the extracted fragments (Julia includes are lexical).

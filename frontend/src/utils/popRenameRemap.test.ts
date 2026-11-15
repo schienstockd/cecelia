@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { makePopPathRemap, remapPopKeys, type PopIdent } from './popRenameRemap'
+import { nextTick, reactive } from 'vue'
+import { makePopPathRemap, remapPopKeys, watchPopRenames, type PopIdent } from './popRenameRemap'
 
 const P = (key: string, uid: string): PopIdent => ({ key, uid })
 
@@ -76,5 +77,19 @@ describe('remapPopKeys', () => {
     const items = [P('/A', 'u1'), P('/B', 'u2')]
     const remap = makePopPathRemap(items, items)
     expect(remapPopKeys(['/A', '/B'], remap)).toEqual(['/A', '/B'])
+  })
+})
+
+describe('watchPopRenames', () => {
+  it('hands a rename to the caller, so a highlight follows the pop to its new path', async () => {
+    const g = reactive({ flat: [{ path: '/a', uid: 'u1' }, { path: '/b', uid: 'u2' }] })
+    let hl = ['/a', '/b']
+    watchPopRenames(() => g.flat, remap => { hl = remapPopKeys(hl, remap) })
+    g.flat = [{ path: '/renamed', uid: 'u1' }, { path: '/b', uid: 'u2' }]
+    await nextTick()
+    expect(hl).toEqual(['/renamed', '/b'])
+    g.flat = [{ path: '/b', uid: 'u2' }]   // a delete drops it
+    await nextTick()
+    expect(hl).toEqual(['/b'])
   })
 })

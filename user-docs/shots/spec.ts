@@ -78,8 +78,8 @@ export interface Shot {
   /** The whole window shown small, beside another (a README's overview of the app): its text is not
    *  meant to be read at that size, so compose does not refuse it as too wide. */
   overview?: boolean
-  /** Shown to the right of shot `beside` of its set, the two as one figure under that shot's caption
-   *  (the app's page and the viewer window on the same image). */
+  /** Drawn to the right of shot `beside` of its set, into that shot's image: one figure under its
+   *  caption (the app's page and the viewer window on the same image). `width`s are the two halves'. */
   beside?: string
   /** Window width in CSS px when narrower than the default 1440 (the viewer window beside the app). */
   windowWidth?: number
@@ -151,8 +151,8 @@ export interface ShotSet {
   page: string
   /** The colour schemes every shot is captured in: set on the app before each capture and read back,
    *  never inherited from the instance. One image never mixes schemes with another on a page. The
-   *  first is the page's default; a README set with both shows the reader's (`<picture>`), and an
-   *  `app` set needs every scheme, so the app shows the one its user has. */
+   *  first is the page's default. A README page uses one (a `<picture>` follows the reader's OS scheme,
+   *  not GitHub's theme); an `app` set needs every scheme, so the app shows the one its user has. */
   themes: ColourScheme[]
   /** The width its images are shown at, CSS px: a crop wider is scaled down to it (default the GitHub
    *  page column, figure.ts → COLUMN_PX). */
@@ -176,6 +176,12 @@ export const shotThemes = (set: ShotSet, x: Shot): ColourScheme[] => (isPicture(
  *  overview's text is not meant to be read; a UI screenshot is a PNG, its text sharp. */
 export const imageFile = (x: Shot, theme: ColourScheme): string =>
   isPicture(x) ? `${x.id}.jpg` : x.overview ? shotFile(x.id, theme).replace(/\.png$/, '.jpg') : shotFile(x.id, theme)
+
+/** The image files a set puts in user-docs/images/. A shot that sits `beside` another has none of its
+ *  own: compose draws it into that shot's image, so the two are one figure that scales as one (two
+ *  inline images wrap under each other on a narrow page). */
+export const setImages = (set: ShotSet): string[] =>
+  set.shots.filter(x => !x.beside).flatMap(x => shotThemes(set, x).map(t => imageFile(x, t)))
 
 export interface ShotIssue { set: string; problem: string }
 
