@@ -7,6 +7,10 @@
 
   Back: raises the main window, named by the page it is on (lib/popout.ts → focusMainWindow — Chrome
   ignores `opener.focus()`, so the main window is targeted by its name).
+
+  Side by side: puts this window on the right half of the screen and, clicked again, back where it was
+  (lib/popout.ts → toggleSideBySide). Only a window the app opened can be placed — the button is shown
+  when there is an opener; the main window is snapped to the left half by the user.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -18,7 +22,8 @@ import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
 import type { KiwiRef } from '../../utils/kiwiRef'
 import { NAV_GROUPS, navItemFor } from '../../lib/navGroups'
-import { focusMainWindow } from '../../lib/popout'
+import { focusMainWindow, isSideBySide, toggleSideBySide, PLACE_MOVE_DELAY_MS, PLACE_SETTLE_MS } from '../../lib/popout'
+import { useWindowListener } from '../../composables/useKeepAlive'
 
 const props = defineProps<{
   imageName: string
@@ -78,6 +83,25 @@ function readOpener() {
 readOpener()
 const back = focusMainWindow
 
+// A tab opened by hand cannot be moved by its page; a popout the app opened can.
+const placeable = (() => { try { return !!window.opener } catch { return false } })()
+// Read from where the window IS, not only what was saved: a window dragged away by hand is no longer
+// side by side. Browsers fire no event for a move, so it is re-read on hover, focus and resize.
+// While a placement is in flight (size first, the move 300 ms later, a settle pass) the window is
+// between places: a `resize` read then would say "not side by side". Hold the clicked state until it
+// has settled, then read once.
+const sideBySide = ref(placeable && isSideBySide())
+let placingUntil = 0
+function readSide() { if (placeable && Date.now() >= placingUntil) sideBySide.value = isSideBySide() }
+function toggleSide() {
+  sideBySide.value = toggleSideBySide()
+  const settled = PLACE_SETTLE_MS + 2 * PLACE_MOVE_DELAY_MS
+  placingUntil = Date.now() + settled
+  setTimeout(readSide, settled)
+}
+useWindowListener('focus', readSide)
+useWindowListener('resize', readSide)
+
 const prov = computed(() => [
   props.valueName ? `Image: ${props.valueName}` : '',
   props.labels ? `Labels: ${props.labels}${props.labelsState ? ` · ${props.labelsState}` : ''}` : '',
@@ -89,6 +113,14 @@ const prov = computed(() => [
     <button type="button" class="cc-btn cc-btn-ghost cc-btn-dense vwh-back" data-guide="viewer.back" @pointerenter="readOpener" @click="back"
             v-tooltip.bottom="'Back to the main window'">
       <i class="pi pi-arrow-left" /> {{ openerPage || 'Main window' }}
+    </button>
+    <button v-if="placeable" type="button" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="viewer.sideBySide"
+            :class="{ 'cc-btn-on cc-btn-on-tint': sideBySide }" :aria-pressed="sideBySide"
+            :aria-label="sideBySide ? 'Put the viewer back where it was' : 'Viewer on the right half of the screen'"
+            v-tooltip.bottom="sideBySide ? 'Put the viewer back where it was'
+              : 'Right half of the screen — snap the main window left (Super+←)'"
+            @pointerenter="readSide" @click="toggleSide">
+      <i class="pi pi-side-by-side" />
     </button>
     <span class="vwh-name" :title="imageName">{{ imageName }}</span>
     <button v-if="prov && versions.length > 1" ref="versionBtn" type="button" class="vwh-prov cc-fs-xs"
