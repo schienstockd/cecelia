@@ -16,7 +16,7 @@
 -->
 <script setup lang="ts">
 import { toggleSelected } from '../../utils/selection'
-import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
+import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch } from 'vue'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
@@ -97,7 +97,7 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
   suffixes, labelMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
-  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterClaims, clusterAxes,
+  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
   popType: computed(() => props.popType), suffix, g,
@@ -161,17 +161,12 @@ function duplicatePanel(s: ClusterPanelState) {
 // for a rename, drops a delete, and falls back to path-presence for the first mount and for
 // synthetic pops (no uid). Add is not represented: a fresh pop is not in `highlighted` until
 // the user clicks the eye (deliberate gate, docs/todo/POP_SYNC_PLAN.md).
-const _asIdents = (): PopIdent[] => g.flat.map(p => ({ key: p.path, uid: p.uid }))
-let _prevFlat: PopIdent[] = _asIdents()
-watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
-  const next = _asIdents()
-  const remap = makePopPathRemap(_prevFlat, next)
+watchPopRenames(() => g.flat, remap => {
   highlighted.value = remapPopKeys(highlighted.value, remap)
   for (const p of panels.value) if (p.state.hl) p.state.hl = remapPopKeys(p.state.hl, remap)
   // Carry a rename through the staged bag too — a pending pop must not vanish because of a rename
   // mid-edit. `remapStaged` uses the SAME remap and mirrors `remapPopKeys` semantics.
   remapStaged(remap)
-  _prevFlat = next
 })
 
 // plot types in the "+ Plot" picker, discovered from the SAME two registries the Analysis board uses
@@ -219,7 +214,6 @@ function clusterPanelProps(p: CanvasItem<ClusterPanelState>) {
 const ctxFor = (s: ClusterPanelState) => ({
   projectUid: projectUid.value, imageUids: validUids.value, setUid: setUid.value,
   popType: props.popType, suffix: suffix.value, shownPops: shownPopsFor(panelHL(s)),
-  clusterClaims: clusterClaims.value,
   vis: panelVis(s),   // canvas styling (dark-theme etc.) — interactive views read it if they theme
   axes: clusterAxes.value[suffix.value] ?? null,   // the run's diffusion axis names (cluster map layout)
   nameMap: labelMap.value,

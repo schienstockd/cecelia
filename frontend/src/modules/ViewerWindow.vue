@@ -1883,7 +1883,7 @@ const frame = usePlotResize(canvas, () => {
  */
 function rebuildOverlays() {
   // categories (a cluster column) default to the population palette, the one the UMAP and Julia's
-  // `colour_by_palette` default to
+  // `category_colours` default to
   points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })),
                                  meta.value, POPULATION_PALETTE)
   pointCount.value = points.count

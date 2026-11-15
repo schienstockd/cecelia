@@ -18,7 +18,7 @@ import { DOT_R } from '../../plots/density'
 import type { RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { addBypassingStaging } from '../../utils/manualApplyStaging'
-import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
+import { remapPopKeys, watchPopRenames } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch, onMounted } from 'vue'
 import { useViewerStore, type TrackHighlight, type PickHighlight } from '../../stores/viewer'
@@ -466,10 +466,7 @@ watch(() => g.transientPaths, (paths) => {
 // a highlight; a delete drops it, and a fresh mount falls back to path-presence. Without this a
 // stale highlight keeps showPops true, so the base plot stays dimmed/flat with no overlay to load
 // (grey) instead of reverting to pseudocolour/contour.
-let _prevFlatGate: PopIdent[] = g.flat.map(p => ({ key: p.path, uid: p.uid }))
-watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
-  const next: PopIdent[] = g.flat.map(p => ({ key: p.path, uid: p.uid }))
-  const remap = makePopPathRemap(_prevFlatGate, next)
+watchPopRenames(() => g.flat, remap => {
   gHL.value = remapPopKeys(gHL.value, remap)
   for (const p of panels.value) {
     p.state.hl = remapPopKeys(p.state.hl, remap)
@@ -481,7 +478,6 @@ watch(() => g.flat.map(p => `${p.uid}\t${p.path}`).join('\n'), () => {
   // Carry a rename through the staged bag too — a pending pop must not vanish because of a rename
   // mid-edit.
   remapStaged(remap)
-  _prevFlatGate = next
 })
 // Live pushes (`gating:popmap`) and the WS-reconnect resync — which drops a transient viewer
 // selection a backend restart wiped, so the prune watch above clears its dangling highlight — are
