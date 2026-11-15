@@ -22,7 +22,8 @@ import HelpMenu from '../HelpMenu.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
 import type { KiwiRef } from '../../utils/kiwiRef'
 import { NAV_GROUPS, navItemFor } from '../../lib/navGroups'
-import { focusMainWindow, savedPlacement, toggleSideBySide } from '../../lib/popout'
+import { focusMainWindow, isSideBySide, toggleSideBySide } from '../../lib/popout'
+import { useWindowListener } from '../../composables/useKeepAlive'
 
 const props = defineProps<{
   imageName: string
@@ -84,8 +85,13 @@ const back = focusMainWindow
 
 // A tab opened by hand cannot be moved by its page; a popout the app opened can.
 const placeable = (() => { try { return !!window.opener } catch { return false } })()
-const sideBySide = ref(savedPlacement() !== null)
+// Read from where the window IS, not only what was saved: a window dragged away by hand is no longer
+// side by side. Browsers fire no event for a move, so it is re-read on hover, focus and resize.
+const sideBySide = ref(placeable && isSideBySide())
+function readSide() { if (placeable) sideBySide.value = isSideBySide() }
 function toggleSide() { sideBySide.value = toggleSideBySide() }
+useWindowListener('focus', readSide)
+useWindowListener('resize', readSide)
 
 const prov = computed(() => [
   props.valueName ? `Image: ${props.valueName}` : '',
@@ -104,7 +110,7 @@ const prov = computed(() => [
             :aria-label="sideBySide ? 'Put the viewer back where it was' : 'Viewer on the right half of the screen'"
             v-tooltip.bottom="sideBySide ? 'Put the viewer back where it was'
               : 'Right half of the screen — snap the main window left (Super+←)'"
-            @click="toggleSide">
+            @pointerenter="readSide" @click="toggleSide">
       <i class="pi pi-side-by-side" />
     </button>
     <span class="vwh-name" :title="imageName">{{ imageName }}</span>

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { POPOUT_ROUTES, POPOUT_WINDOW_NAMES, popoutUrl, popoutRouteOfWindow, isPopoutWindow, nameMainWindow, mainWindowUrl, MAIN_WINDOW_NAME,
-  rightHalf, toggleSideBySide, savedPlacement, RESTORE_MOVE_DELAY_MS } from './popout'
+  rightHalf, toggleSideBySide, savedPlacement, isSideBySide, RESTORE_MOVE_DELAY_MS } from './popout'
 
 const BASE = { origin: 'http://localhost:8080', pathname: '/' }
 // The suite runs in node, with no `window` — so every call passes the window name it is asking about.
@@ -101,7 +101,7 @@ describe('side by side', () => {
     vi.useFakeTimers()
     try {
       const { calls, win } = fakeWin(); const store = memStore()
-      toggleSideBySide(win, area, store)
+      toggleSideBySide(win, area, store); landOnHalf(win)
       calls.length = 0
       expect(toggleSideBySide(win, area, store)).toBe(false)
       expect(calls).toEqual(['resize 500x432'])
@@ -109,6 +109,28 @@ describe('side by side', () => {
       expect(calls).toEqual(['resize 500x432', 'move 80,80'])
       expect(savedPlacement(store)).toBeNull()
     } finally { vi.useRealTimers() }
+  })
+
+  // where the window manager actually puts it: the content 37 px under the target, that much shorter
+  function landOnHalf(win: { screenX: number; screenY: number; outerWidth: number; outerHeight: number }) {
+    Object.assign(win, { screenX: 979, screenY: 69, outerWidth: 941, outerHeight: 1011 })
+  }
+
+  it('counts a window on the half as side by side, title-bar offset and all', () => {
+    const { win } = fakeWin(); const store = memStore()
+    toggleSideBySide(win, area, store); landOnHalf(win)
+    expect(isSideBySide(win, area, store)).toBe(true)
+  })
+
+  it('a window dragged away by hand is not side by side — the next click places it again', () => {
+    const { calls, win } = fakeWin(); const store = memStore()
+    toggleSideBySide(win, area, store); landOnHalf(win)
+    Object.assign(win, { screenX: 300, screenY: 200 })                 // the user drags it
+    expect(isSideBySide(win, area, store)).toBe(false)
+    calls.length = 0
+    expect(toggleSideBySide(win, area, store)).toBe(true)
+    expect(calls).toEqual(['move 979,32', 'resize 941x1048'])
+    expect(savedPlacement(store)).toEqual({ x: 300, y: 200, w: 941, h: 1011 })   // the new way back
   })
 
   it('reads a damaged saved placement as not side by side', () => {

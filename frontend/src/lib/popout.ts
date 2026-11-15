@@ -143,8 +143,12 @@ export function isPopoutWindow(
 // Order matters, measured on GNOME under XWayland: the window manager clamps a move
 // that would push the window off-screen. Going to the half: move, then grow. Coming back: shrink
 // first, then move — moving the big window first left it where it was. The resize lands
-// asynchronously (one read 600 ms later still saw the old size), so nothing here reads the geometry
-// back to decide anything: the state is "a placement was saved", not "the window looks snapped".
+// asynchronously (one read 600 ms later still saw the old size), so the toggle never waits on a
+// read-back after placing. Whether the window IS side by side is read at the click, though: a saved
+// placement alone said "snapped" after the user dragged the window away by hand, and the next click
+// then sent it "back" instead of to the half. `isSideBySide` = a placement is saved AND the window
+// still sits on the right half (within the title bar's offset — GNOME reports the content 37 px below
+// the target and that much shorter).
 
 export interface WinRect { x: number; y: number; w: number; h: number }
 /** `screen`, with Chrome's non-standard origin of the available area (the dock / top bar). */
@@ -178,13 +182,33 @@ export function savedPlacement(store: KeyStore | null = safeStore()): WinRect | 
   } catch { return null }
 }
 
+/** How far the window may sit from the half and still count as on it: a title bar's worth down and
+ *  shorter, a little sideways for a frame — a hand drag moves it further. */
+export const PLACEMENT_SLACK = { x: 40, y: 80 } as const
+
+/** Is `win` on `to`, give or take the window frame? */
+export function isAtPlacement(win: PlaceableWindow, to: WinRect): boolean {
+  return Math.abs(win.screenX - to.x) <= PLACEMENT_SLACK.x && Math.abs(win.outerWidth - to.w) <= PLACEMENT_SLACK.x
+    && Math.abs(win.screenY - to.y) <= PLACEMENT_SLACK.y && Math.abs(win.outerHeight - to.h) <= PLACEMENT_SLACK.y
+}
+
+/** Side by side right now: a way back is saved AND the window is still on the right half. Moved or
+ *  resized by hand since, it is not — the next click places it again. */
+export function isSideBySide(
+  win: PlaceableWindow = window, area: ScreenArea = screen as ScreenArea,
+  store: KeyStore | null = safeStore(),
+): boolean {
+  return savedPlacement(store) !== null && isAtPlacement(win, rightHalf(area))
+}
+
 /** Put the window on the right half, or back where it was. Returns the new state (true = side by
- *  side). Call it from a click; a window the browser will not move just stays put. */
+ *  side). Call it from a click; a window the browser will not move just stays put. A window moved
+ *  away by hand goes to the half again, and where it was moved to becomes the way back. */
 export function toggleSideBySide(
   win: PlaceableWindow = window, area: ScreenArea = screen as ScreenArea,
   store: KeyStore | null = safeStore(),
 ): boolean {
-  const back = savedPlacement(store)
+  const back = isSideBySide(win, area, store) ? savedPlacement(store) : null
   if (back) {
     try { store?.removeItem(SIDE_BY_SIDE_KEY) } catch { /* the window still goes back */ }
     win.resizeTo(back.w, back.h)
