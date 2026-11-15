@@ -57,12 +57,13 @@ class ChangedMutantsTest(unittest.TestCase):
         return mc.py_changed_mutants(self.mutfile, {"x__store_axis_order": 24}, set(lines))
 
     def test_a_mutant_on_a_changed_line_is_picked(self):
-        self.assertEqual(self.pick({27}), ["x__store_axis_order__mutmut_3"])
+        self.assertEqual(self.pick({27}), {"x__store_axis_order__mutmut_3": {
+            "line": 27, "orig": "if not axes or len(axes) != ndim:", "new": "if not axes or len(axes) == ndim:"}})
 
     def test_a_mutant_off_the_changed_lines_is_not(self):
         # the lines around it; 25 (the docstring) is where the blank lines mutmut wrote before the
         # mutant's `def` would land if the two copies were lined up from the top
-        self.assertEqual(self.pick({21, 22, 23, 25, 26, 28, 30}), [])
+        self.assertEqual(self.pick({21, 22, 23, 25, 26, 28, 30}), {})
 
 
 class FunctionsAndRangesTest(unittest.TestCase):
@@ -98,6 +99,18 @@ class FunctionsAndRangesTest(unittest.TestCase):
             # a test file the change itself touched is run whatever it names
             hits, _ = mc.py_tests("cecelia.utils.czi_meta", ["x__band"], {"python/cecelia/tests/test_b.py"})
             self.assertEqual([h.name for h in hits], ["test_b.py"])
+
+    def test_a_private_helper_maps_through_its_callers_in_the_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = pathlib.Path(d) / "m.py"
+            src.write_text("def _band(ch):\n    return 1\n\ndef _channels(x):\n    return _band(x)\n\n"
+                           "def parse_settings(x):\n    return _channels(x)\n\ndef other():\n    return 2\n",
+                           encoding="utf-8")
+            self.assertEqual(mc.py_with_callers(src, {"x__band"}), {"x__band", "x__channels", "x_parse_settings"})
+            jl = pathlib.Path(d) / "m.jl"
+            jl.write_text("_band(ch) = ch + 1\n\nfunction parse(x)\n    _band(x)  # _unused\nend\n\nother() = 2\n",
+                          encoding="utf-8")
+            self.assertEqual(mc.with_callers({"_band"}, mc.jl_refs(jl)), {"_band", "parse"})
 
     def test_line_ranges(self):
         self.assertEqual(mc.ranges({3, 4, 5, 9, 11, 12}), "3-5,9,11-12")

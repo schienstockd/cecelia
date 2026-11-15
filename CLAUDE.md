@@ -346,6 +346,7 @@ blocks a message with no stamp, or one stamped for a different change.
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
 - **Maintainability lint** (mechanical) catches a task file pushed past 200 lines, incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments, and a `RESULT-REVIEW:` marker outside a file header or with an unparseable slug — `docs/MAINTAINABILITY.md`.
 - **Changelog check** (mechanical) catches a changed task default with no `CHANGELOG.md` line on the branch: a default changes results on re-run, so it belongs under *Read this first* (`docs/RELEASING.md`).
+- **Test value** (mechanical, runs beside the reviewers) catches **tests that can't fail**: `**passes on base**` — the change edits code and adds tests, and none of them fails on the code before it (watch it fail); `**untested**` — on a result path, mutants of the changed lines survive the tests that name the function (one finding per function, ≤ 20 mutants a file). Both need a `[tv-…: outcome]` tag: add a test whose expected value comes from a definition, never from the code's own output — or `false_positive: <refactor / why the mutant changes nothing a caller sees>`. `docs/todo/TEST_VALUE_PLAN.md` → P4.
 
 _Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
@@ -364,6 +365,8 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
   `python/cecelia/effectiveness/maintainability_lint.py`.
 - `_Changelog check: run_` (or `_run — N default change(s), `CHANGELOG.md` updated_` /
   `_skipped — no default changed_`) — mechanical. See `python/cecelia/effectiveness/changelog_check.py`.
+- `_Test value: run_` (or `_run — nothing flagged_` / `_skipped — no added tests with a source change,
+  no result path_`) — mechanical. See `python/cecelia/effectiveness/test_value.py`.
 
 Missing any of the tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift

@@ -21,9 +21,14 @@ import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness.log import FINDING_EVENTS  # noqa: E402
+from cecelia.effectiveness.log import FINDING_EVENTS as _ALL_FINDING_EVENTS  # noqa: E402
 from cecelia.effectiveness.palette import load_hex  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
+
+
+#: The findings that flow into the weekly judge. A test-value finding (a test that can't fail) never
+#: does: its tags are read by the TEST_VALUE_PLAN.md P4 review, so it is not in this chart.
+FINDING_EVENTS = _ALL_FINDING_EVENTS - {"test_value_finding"}
 
 
 def _load_sibling(name: str):

@@ -1,6 +1,6 @@
 # Test value — do the tests fail when the result is wrong?
 
-**Status:** P1–P3 done (2026-11-13/14: `stats.jl`; Python readers + floor; Julia result areas); P4(b) timed 2026-11-15, wiring undecided; P4(a) open. Supersedes the three archived briefs
+**Status:** P1–P4 done (2026-11-13/15). P4 runs in every recital as the *Test value* check; review its tags on 2026-11-29 (below). Supersedes the three archived briefs
 (`docs/archive/TEST_VALUE_AUDIT_PROMPT.md`, `TEST_VALUE_AUDIT_PROMPT_2.md`,
 `TEST_VALUE_PILOT_GATING_PROMPT.md`).
 
@@ -195,13 +195,23 @@ name a changed function.
 - **P3 — Julia result areas, sampled. DONE** (results above): acquisition checks, source timing,
   tracking events, each to ≥ 85% with the survivors triaged. Open: gating, and `reader.jl`'s
   series-dir and NGFF readers, if evidence points there.
-- **P4 — the per-PR guard (mechanical, no LLM).**
-  (a) A test added with a fix must fail on the base commit. This is CLAUDE.md's "watch it fail" rule,
-  made a check.
-  (b) Mutate only the changed lines of a result-path file and run only its mapped tests. **Timed**
-  (results above): median 76 s, max 6 min over 5 PRs. Not wired into recital yet: it can only
-  report (survivors need triage), and where it reports (a recital tail, a PR comment, on demand) is
-  the maintainer's call.
+- **P4 — the per-PR guard (mechanical, no LLM). DONE (2026-11-15):** recital's *Test value* check
+  (`python/cecelia/effectiveness/test_value.py`), run in a thread beside the reviewers. Both findings
+  are outcome-tagged (`tv-` slugs): the hook asks for a tag, accepts any outcome.
+  (a) `passes on base`: the change edits `app/src` / `python/cecelia` code and adds tests, and none of
+  them fails on `HEAD`'s code. CLAUDE.md's "watch it fail" rule, made a check. Python runs the added
+  test methods in an export of `HEAD`; Julia (`scripts/julia_on_base.jl`) deletes the changed files'
+  methods in the loaded package and includes their `HEAD` text (no second package build; a const or
+  struct the change added stays defined). #2232's test fails on its base (7 assertions, 34 s).
+  (b) `untested`: on a result path, `mutate_changed.py --staged --sample 20 --budget 480`; one finding
+  per function with survivors, the definition rule in its text. Timed (results above): median 76 s,
+  max 6 min over 5 PRs unsampled. Tests are matched by name through the function's same-file callers
+  (`_band` → `parse_settings`): by its own name only, #2218's full-record tests were missed.
+  **Review on 2026-11-29:** read the `test_value_finding_resolved` rows (`pixi run audit-rollup`,
+  *Test value*). Mostly `false_positive` with reasons that hold → drop `untested` or narrow it; tests
+  added under `fixed_pre_commit` that pin the code's own output → tighten the text. The weekly judge
+  does not re-check these tags: its question (does the defect still misbehave) doesn't fit a
+  surviving mutant, so this review is the check.
 
 ## Tooling
 

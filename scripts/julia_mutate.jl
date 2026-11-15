@@ -2,6 +2,7 @@
 #
 #   julia --project=app scripts/julia_mutate.jl SRC OUT.tsv TEST.jl... [--timeout 120] [--list]
 #                                               [--sample N --seed S] [--lines 12-30,45] [--known-failures]
+#                                               [--deadline UNIX_SECONDS]
 #
 # Applies ONE mutation per mutant to SRC (a file `include`d into module Cecelia), re-includes it into
 # the loaded package (no restart), runs the TEST files in a throwaway testset and records
@@ -16,6 +17,7 @@
 # killed only by a failure outside it. Listed on stderr and in OUT.tsv.known. Without it, any failure
 # on the unmutated SRC stops the run. Run inside the pixi env: outside it every test that starts
 # Python fails unmutated.
+# --deadline: no mutant starts after that time (the ones not run are simply missing from OUT.tsv).
 # The suite preamble is the active project's test/runtests.jl, so a copy of this script works on any
 # checkout: `julia --project=<checkout>/app /elsewhere/julia_mutate.jl …`.
 
@@ -89,7 +91,9 @@ function worker(srcpath, out, tests, ids, known_failures)
     if known_failures && first(ids) != 0 && isfile(out * ".known")   # a restarted worker
         known = Set(readlines(out * ".known"))
     end
+    deadline = parse(Float64, get(ENV, "JULIA_MUTATE_DEADLINE", "Inf"))
     for id in ids
+        id > 0 && time() > deadline && exit(4)   # out of time: the caller reports what ran
         t0 = time(); lines = copy(src)
         id > 0 && (lines[ms[id].line] = ms[id].new)
         # under SRC's own name, so its `@__DIR__` / `@__FILE__` still point where they should
@@ -133,6 +137,7 @@ function main(args)
         foreach(((i, m),) -> println(join((i, m.line, m.op, m.orig, strip(m.new)), '\t')), enumerate(ms)); return
     end
     timeout = parse(Float64, opt("--timeout", "120")); done = 0
+    (dl = opt("--deadline", nothing)) === nothing || (ENV["JULIA_MUTATE_DEADLINE"] = dl)   # the worker reads it
     n_sample = parse(Int, opt("--sample", "0"))
     pool = collect(1:length(ms))
     if (spec = opt("--lines", nothing)) !== nothing
@@ -164,6 +169,7 @@ function main(args)
             time() - last > (seen == 0 ? 10timeout : timeout) && (kill_tree(p); break)
         end
         wait(p); p.exitcode == 3 && error("the unmutated run did not survive — see $out")
+        p.exitcode == 4 && break   # --deadline reached
         n = isfile(out) ? maximum(parse(Int, split(l, '\t')[1]) for l in readlines(out); init = -1) + 1 : 0
         if n == done   # no progress: the next mutant hung or crashed the worker
             done = ids[findfirst(>=(done), ids)]
