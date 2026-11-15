@@ -45,7 +45,7 @@ const colourOptions = computed<{ value: MaskColour; label: string; tip: string }
 <template>
   <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
                       accordion="cc.vw.section" section="seg"
-                      fill>
+                      fill="content">
     <!-- No picker: WHICH segmentation is shown is picked in "On the image" (VwOnImageOverlay,
          docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md). The row below just SHOWS what's on and offers
          opacity, contour and colour for it.

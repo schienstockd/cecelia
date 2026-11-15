@@ -22,7 +22,7 @@ import { ref, computed, watch, nextTick, onScopeDispose } from 'vue'
 import { useAppControlStore } from './appControl'
 import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
-import { useSettingsStore } from './settings'
+import { useLayoutFoldStore } from './layoutFold'
 import { useTaskStore } from './tasks'
 import { useCustomModulesStore } from './customModules'
 import { useViewProfilesStore } from './viewProfiles'
@@ -48,7 +48,7 @@ export const useGuideStore = defineStore('guide', () => {
   const appCtl = useAppControlStore()
   const project = useProjectStore()
   const meta = useProjectMetaStore()
-  const settings = useSettingsStore()
+  const fold = useLayoutFoldStore()
   const tasks = useTaskStore()
 
   const active = ref<GuideDef | null>(null)
@@ -108,7 +108,7 @@ export const useGuideStore = defineStore('guide', () => {
       images: set?.images ?? [],
       viewerImageUid: viewerOpen ? project.openImageUid : null,
       selection: (module: string) => (set ? project.getImageSelection(module, set.uid) : []),
-      rightPanelCollapsed: settings.rightPanelCollapsed,
+      rightPanelCollapsed: fold.rightPanelFolded,   // the SHOWN fold (narrow windows fold)
       viewerOpen,
       anchorValue: readAnchorValue,
       anchorExists: (id: string) => resolveAnchor(id) !== null,

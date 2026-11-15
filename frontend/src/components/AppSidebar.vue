@@ -2,7 +2,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProjectMetaStore } from '../stores/projectMeta'
-import { useSettingsStore } from '../stores/settings'
+import { useLayoutFoldStore } from '../stores/layoutFold'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore } from '../stores/viewProfiles'
@@ -19,7 +19,7 @@ import { useProjectStore } from '../stores/project'
 import { litRoutes } from '../utils/setRecipe'
 
 const projectMeta = useProjectMetaStore()
-const settings = useSettingsStore()
+const fold = useLayoutFoldStore()
 const appCtl = useAppControlStore()
 const customModules = useCustomModulesStore()
 const viewProfiles = useViewProfilesStore()
@@ -66,6 +66,8 @@ watch(() => {
 // its group, else the accordion keeps showing the old one and the menu reads as if nothing changed.
 // Only on a route CHANGE, so a group the user closes on the page they're on stays closed.
 const route = useRoute()
+// on a narrow window the open menu covers the page: a pick has done its job, so it folds again
+watch(() => route.fullPath, () => { if (fold.narrow) fold.sidebarFolded = true })
 watch(() => route.path, p => {
   const g = navGroupFor(allGroups.value, p)
   if (g && !isOpen(g)) openGroup.value = g
@@ -103,7 +105,8 @@ function isNavDisabled(item: NavItem): boolean {
 </script>
 
 <template>
-  <nav class="sidebar" v-show="!settings.sidebarCollapsed">
+  <!-- narrow window: the menu opens OVER the page, and a pick folds it again (utils/narrowLayout.ts) -->
+  <nav class="sidebar" :class="{ 'sidebar-over': fold.narrow }" v-show="!fold.sidebarFolded">
 
     <!-- ── Navigation groups ───────────────────────────────────────────────
          ONLY this region scrolls (flex:1 + overflow); the footer below stays pinned. The project moved
@@ -162,6 +165,11 @@ function isNavDisabled(item: NavItem): boolean {
 </template>
 
 <style scoped>
+.sidebar-over {
+  /* narrow window (stores/layoutFold.ts): over the page, not beside it — `.cc-content` anchors it */
+  position: absolute; top: 0; bottom: 0; left: 0; z-index: 40;
+  box-shadow: 4px 0 16px var(--cc-shadow);
+}
 .sidebar {
   width: var(--cc-sidebar-w);
   flex-shrink: 0;

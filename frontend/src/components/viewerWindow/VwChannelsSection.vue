@@ -80,7 +80,7 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
 <template>
 <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                       accordion="cc.vw.section" section="channels"
-                      fill>
+                      fill="content">
     <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
          colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
          state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than

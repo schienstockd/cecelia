@@ -126,7 +126,7 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
   <div class="flow-plots">
     <div v-if="!imageUids.length" class="cc-empty-inline cc-empty-pane">Select an image above to inspect a flow model</div>
     <template v-else>
-      <div class="fp-bar">
+      <div class="cc-row cc-row-loose fp-bar">
         <select class="fp-add" v-tooltip.bottom="'Add a plot'"
                 @change="addKind(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
           <option value="" disabled selected>+ Plot…</option>
@@ -175,10 +175,10 @@ watch(ckey, () => { if (panels.value.length === 0) addKind('flowMetrics') }, { i
 
 <style scoped>
 .flow-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.fp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px;
-          font-size: var(--cc-fs-sm); flex-shrink: 0; }
+/* a `.cc-row`, so it wraps on a narrow window instead of running off the right edge (as Gate's) */
+.fp-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .fp-add { padding: 4px 8px; }
-.fp-hint { opacity: 0.7; }
+.fp-hint { opacity: 0.7; white-space: nowrap; }
 .fp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* scaled workspace (offsetParent for the panels); size + transform set inline by useCanvasWorkspace */
 /* the measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace

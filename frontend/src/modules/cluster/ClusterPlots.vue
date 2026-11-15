@@ -309,8 +309,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
   <div class="cluster-plots">
     <div v-if="!imageUids.length" class="cc-empty-inline cc-empty-pane">Select clustered images above to explore clusters</div>
     <template v-else>
-      <div class="cp-bar">
-        <label>clustering
+      <div class="cc-row cc-row-loose cp-bar">
+        <label class="cc-row-group">clustering
           <select v-model="suffix" v-tooltip.bottom="'Which clustering run (clusters.&lt;suffix&gt;) to show'">
             <option v-if="!suffixes.length" :value="suffix">{{ suffix }}</option>
             <option v-for="s in suffixes" :key="s" :value="s">{{ s }}</option>
@@ -433,10 +433,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
 
 <style scoped>
 .cluster-plots { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
-.cp-bar { display: flex; align-items: center; gap: 14px; padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
+/* a `.cc-row`, so it wraps on a narrow window instead of running off the right edge (as Gate's) */
+.cp-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .cp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .cp-bar select { min-width: 7rem; }
-.cp-hint { opacity: 0.7; }
+.cp-hint { opacity: 0.7; white-space: nowrap; }
 .cp-members { display: flex; align-items: flex-start; gap: 6px; margin: 0 4px 6px; padding: 6px 9px;
   font-size: var(--cc-fs-xs); }
 .cp-members .pi { margin-top: 1px; }

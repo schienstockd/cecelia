@@ -1,6 +1,6 @@
 # GUI layout — build the final mocks for both windows
 
-**Status:** built, awaiting the maintainer's look on a real GPU (2026-11-12). Every slice merged (#2142–#2163, V2 landing inside #2163); the playback bar was then tightened to two rows with a fold (#2183) and made to fit its content (#2192). M7's "to review" count was dropped by the maintainer (2026-11-13). Open: V0 left the Debug section and the render core in the window. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
+**Status:** built, awaiting the maintainer's look on a real GPU (2026-11-12); narrow windows (Decision 11) built 2026-11-15, awaiting review. Every slice merged (#2142–#2163, V2 landing inside #2163); the playback bar was then tightened to two rows with a fold (#2183) and made to fit its content (#2192). M7's "to review" count was dropped by the maintainer (2026-11-13). Open: V0 left the Debug section and the render core in the window. Follows [`GUI_CLARITY_PLAN.md`](GUI_CLARITY_PLAN.md): its 12
 slices landed the colour tokens, Next, recipes, the checks cluster and Run wording, but most of the
 mocked *layout* did not land (the helper icons were never consolidated, the launchers still sit in the
 sidebar, the viewer kept its single sidebar). This plan builds the layout.
@@ -34,6 +34,9 @@ an isolated instance sits next to its mock frame and matches, not when the code 
    them once, when first seen empty; a removed default stays removed.
 10. Supersedes `GUI_CLARITY_PLAN` Decision 17's "the mocks are not fixed": the final mocks are the
    layout spec. The journey bar stays parked.
+11. **Narrow windows fold the main window's menu and functions panel; the viewer's sidebar floats**
+   (maintainer, 2026-11-15). For a laptop, or the app on one half of a screen with the viewer on the
+   other — see § Narrow windows. Supersedes mock frame 4's docked viewer sidebar.
 
 ## Today → new home
 
@@ -131,6 +134,33 @@ tables above as a checklist, and a before/after screenshot beside its mock frame
 | V5 | Edit slot: alpha line + banner, empty panel | 5 | S | the cockpit still opens from "Correct labels" |
 
 Order: M1, M2 (largest visible win, low risk) → M3–M5 → M8 → V0 → V1, V3, V4, V5 → M7 → M6 and V2 last.
+
+## Narrow windows
+
+**Why.** An audit (2026-11-15) put the main window and the viewer side by side on half of common
+laptop screens (640–768 CSS px: 1080p at 150 %, 1366×768, 1440×900, 1080p at 125 %). A *docked*
+viewer was rejected: width is what runs out, and a dock splits the same pixels while undoing the
+viewer-in-its-own-window design (window-level keys, cross-window share / guide bridges, a renderer
+that would have to survive page switches). What broke at half width:
+
+- main window: menu (190 px) + functions panel (~260 px) left the page a ~220 px column;
+- viewer: the image's 480 px minimum plus the 267 px sidebar exceeded the window, so the sidebar was
+  cut off — 17–24 controls (channels, 2D/3D) unreachable;
+- Gate: the plot toolbar ran off the right edge (7–16 controls) at every half width, even 960 px.
+
+**What was built.**
+
+| Where | Change |
+|---|---|
+| Main window, below 1100 px (`utils/narrowLayout.ts`, `stores/layoutFold.ts`) | menu and functions panel start folded. The saved choice is never written: a click while narrow is a session override, dropped when the window widens. Opened while narrow, each slides OVER the page (menu from the left, refolds after a pick; panel from the right, its handle folds it back) |
+| Viewer (`components/viewerWindow/VwLookBox.vue`) | the docked sidebar becomes **How it looks**, a floating box top right, level with On the image (both start under the overview or the timestamp, whichever reaches lower), folding like **On the image** — that box picks WHAT is drawn, this one sets HOW it looks. Its top row (what a click does, 2D/3D, reset, ⚙) stays visible when folded. Left edge resizes; fold and width keep the old keys (`viewerWindowSideCollapsed`, `viewerWindowSide`) |
+| Viewer right column | the overview / 3D axes top right on their own, smaller (80 px tall); How it looks under them, as tall as its content (`CollapsibleSection fill="content"`), shrinking and scrolling only when it reaches the playback bar (or the scale bar once the image is ≥ 1200 px wide). The cache maps left the image: they are in the Debug section, off by default (`cc.vw.tilemap` / `cc.vw.brickmap`) |
+| Viewer image | minimum width 480 → 320 px |
+| Gate toolbar | wraps instead of running off the edge |
+
+Guides that reveal the functions panel (`c.rightPanelCollapsed`) read the SHOWN fold, so on a narrow
+window they point at the handle. Needs the maintainer's eyes on a real GPU: the box over a real image,
+and lasso / drawing next to it.
 
 ## Will it break anything
 

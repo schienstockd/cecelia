@@ -456,8 +456,8 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
     <template #layout>
       <!-- Only what no live control already sets. The sidebar (☰), the task panel (its chevron) and
            the floating panels (the header launchers) persist through those controls. -->
-      <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Collapse viewer-window controls"
-                v-tooltip.bottom="'Hide the viewer pop-out sidebar (independent of the module page)'" />
+      <CcToggle v-model="settings.viewerWindowSideCollapsed" label="Fold How it looks in the viewer"
+                v-tooltip.bottom="'The viewer box with channels, contrast and colours'" />
 
       <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.6rem">Correction cockpit mode</div>
       <select class="pref-input" v-model="settings.correctionCockpitMode"
