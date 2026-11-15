@@ -8,12 +8,13 @@
 // `utils/readmeShots.test.ts` fails when the README's block is stale.
 
 import { README_SHOTS } from '../../../user-docs/shots/readme.ts'
-import { fillFacts, imageFile, shotThemes, type Shot } from '../../../user-docs/shots/spec.ts'
+import { fillFacts, type Shot } from '../../../user-docs/shots/spec.ts'
+import { docImage } from './docPage'
+import { svgEsc as esc } from '../plots/export'
 
 export const README_START = '<!-- docshots:start'
 export const README_END = '<!-- docshots:end -->'
 
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
 /** A shot's caption with the fixture's facts filled in; throws on a fact the fixture did not measure. */
 function caption(x: Shot, facts: Record<string, number | string>): string {
@@ -22,15 +23,8 @@ function caption(x: Shot, facts: Record<string, number | string>): string {
   return c.text
 }
 
-function image(x: Shot, widths: Record<string, number>, alt: string): string {
-  const themes = shotThemes(README_SHOTS, x)
-  const file = (t: (typeof themes)[number]) => `user-docs/images/${imageFile(x, t)}`
-  const w = widths[imageFile(x, themes[0]).replace(/\.(png|jpg)$/, '')]
-  if (!w) throw new Error(`readme shot ${x.id} is not composed (pixi run doc-images)`)
-  const img = `<img src="${file(themes[0])}" width="${w}" alt="${esc(alt)}">`
-  const dark = themes.includes('dark') && themes[0] !== 'dark' ? file('dark') : null
-  return dark ? `<picture><source media="(prefers-color-scheme: dark)" srcset="${dark}">${img}</picture>` : img
-}
+const image = (x: Shot, widths: Record<string, number>, alt: string): string =>
+  docImage(README_SHOTS, x, alt, widths, { base: 'user-docs/images/', strict: true })
 
 export function renderReadmeShots(facts: Record<string, number | string>, widths: Record<string, number>): string {
   const [hero, ...others] = README_SHOTS.shots
