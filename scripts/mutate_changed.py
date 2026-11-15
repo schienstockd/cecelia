@@ -88,7 +88,7 @@ def jl_tests(names: set[str], touched: set[str]) -> tuple[list[Path], list[str]]
     suite = ROOT / "app/test/suite"
     hits, named = [], set()
     for f in sorted(suite.glob("*.jl")):
-        rel = str(f.relative_to(ROOT))
+        rel = f.relative_to(ROOT).as_posix()   # git paths use / on every OS
         txt = f.read_text(encoding="utf-8", errors="replace")
         here = {n for n in names if re.search(rf"(?<![\w!]){re.escape(n)}(?![\w!])", txt)}
         named |= here
@@ -183,7 +183,7 @@ def py_tests(module: str, keys, touched: set[str]) -> tuple[list[Path], list[str
     words = {k: {k.split("ǁ")[2], k.split("ǁ")[1]} if "ǁ" in k else {k[2:]} for k in keys}
     hits, named = [], set()
     for f in sorted((ROOT / "python/cecelia/tests").glob("test_*.py")):
-        rel = str(f.relative_to(ROOT))
+        rel = f.relative_to(ROOT).as_posix()   # git paths use / on every OS
         txt = f.read_text(encoding="utf-8", errors="replace")
         here = {k for k, ws in words.items() if any(re.search(rf"\b{w}\b", txt) for w in ws)} \
             if re.search(rf"\b{short}\b", txt) else set()
