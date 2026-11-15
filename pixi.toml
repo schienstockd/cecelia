@@ -342,6 +342,8 @@ gui-capture = "node scripts/gui_capture.mjs"
 doc-fixture = "node scripts/docshots/fixture.mjs"
 doc-shots = "node scripts/docshots/capture.mjs"
 doc-images = "node scripts/docshots/compose.mjs"
+# a PR's screenshots before and after, on one local page (docshots-out/sheet/): never attached to a PR
+doc-sheet = "node scripts/docshots/sheet.mjs"
 
 # Rebuild frontend/src/icons.css (the vendored Lucide glyphs) from the `lucide` names in
 # frontend/src/lib/iconLegend.ts. Run after adding or changing a glyph; iconLegend.test.ts fails

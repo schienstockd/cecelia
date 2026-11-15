@@ -452,6 +452,8 @@ end
             i += 1
         end
         filter!(t -> !(t in ("tar", "-czf", "out/cecelia.tar.gz")), toks)
+        # tar options (`--exclude=…`, which keeps docs/todo images out) are not paths
+        filter!(t -> !startswith(t, "-"), toks)
         @test !isempty(toks)
 
         # tar carries a directory whole, so a token covers itself and everything under it.

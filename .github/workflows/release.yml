@@ -59,7 +59,11 @@ jobs:
           # documented for installs (README, docs/INSTALL.md), and dies at start without it.
           # frontend/src/lib/figureStyle.json: the figure house style — render_figure.py opens it at
           # import (every figure render) and figures.jl `figure_style_schema` serves the style editor.
+          # docs/todo images (audit screenshots of lab projects, layout mocks) are review evidence for
+          # plans, never read at run time: left out. Unquoted on purpose: scripts/bundle_check.sh
+          # word-splits this list, and no file is named "--exclude=…", so the glob stays literal.
           tar -czf out/cecelia.tar.gz \
+            --exclude=docs/todo/*.png --exclude=docs/todo/*.jpg \
             api app pluto preview mcp python scripts app.py pixi.toml pixi.lock VERSION \
             frontend/dist frontend/src/lib/kiwiRef.schema.json frontend/src/plots/palettes.json \
             frontend/src/lib/figureStyle.json frontend/src/lib/webgpu/shaders notebooks share \

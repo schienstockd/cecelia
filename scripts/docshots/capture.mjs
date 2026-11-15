@@ -312,12 +312,23 @@ async function capture(browser, a, shot, fixture, out, b, theme) {
       for (const el of host?.children ?? []) if (chrome(el, host, c)) el.style.visibility = 'hidden'
     }, [isScreenshotChrome.toString(), SCREENSHOT_KEEP])
     await page.mouse.move(vp.width - 2, vp.height - 2)   // park the mouse: no stray hover
+    await page.evaluate(() => document.activeElement?.blur?.())   // nor the focus ring of the last control clicked
     await page.waitForTimeout(200)
     // the scheme the pixels are in, read off the page (utils/colourScheme.ts: dark is no attribute)
     const shown = await page.evaluate(() => document.documentElement.dataset.theme ?? 'dark')
     if (shown !== theme) throw new Error(`the page is in the ${shown} scheme, not ${theme}`)
     const file = shotFile(shot.id, theme)
-    await page.screenshot({ path: join(out, file) })
+    // the pixels once they stop changing: the viewer's histograms and loaded-range strip fill in as data
+    // streams, and a capture taken mid-way differs on the next run (a new image in git for nothing)
+    let shot_ = await page.screenshot(), still = false
+    for (let i = 0; i < 20 && !still; i++) {
+      await page.waitForTimeout(500)
+      const next = await page.screenshot()
+      still = next.equals(shot_)
+      shot_ = next
+    }
+    if (!still) problems.push('the page kept changing for 10 s: an animation or a spinner is in the crop')
+    writeFileSync(join(out, file), shot_)
     writeFileSync(join(out, file.replace(/\.png$/, '.json')), JSON.stringify({
       id: shot.id, viewport: vp, scale: SCALE, boxes, point: shot.point ?? null, crop: shot.crop, theme,
       commit: commit(), capturedAt: new Date().toISOString(), pageErrors: errors,
@@ -349,8 +360,14 @@ async function main() {
     ? await chromium.launch({ executablePath: findChromium(), headless: false, args: VIEWER_ARGS }) : null
   let failed = 0
   // the fixture's numbers, beside the shots they were checked against: compose and the page generators read these
-  for (const b of new Set(shots.map(([bk]) => bk)))
-    if (record[b.id]?.facts) writeFileSync(join(out, `${b.id}.facts.json`), JSON.stringify(record[b.id].facts, null, 1))
+  for (const b of new Set(shots.map(([bk]) => bk))) {
+    if (!record[b.id]?.facts) continue
+    // only the projects the set names now: the record may hold a project the set has since dropped
+    const keep = Object.keys(b.fixture.projects ?? {})
+    const facts = Object.fromEntries(Object.entries(record[b.id].facts).filter(([k]) => keep.includes(k.split('.')[0])))
+    record[b.id] = { ...record[b.id], facts }   // and the shots' label checks see the same facts
+    writeFileSync(join(out, `${b.id}.facts.json`), JSON.stringify(facts, null, 1))
+  }
   try {
     for (const [b, s] of shots) for (const theme of shotThemes(b, s)) {
       const problems = await capture(s.viewer ? headed : browser, a, s, record[b.id], out, b, theme)
