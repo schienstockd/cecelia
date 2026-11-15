@@ -21,6 +21,7 @@ import {
   clusterCellsGuide, clusterTracksGuide, behaviourStatesGuide,
   preprocessImagesGuide, clusterRegionsGuide, spatialAnalysisGuide,
 } from './taskGuides'
+import { acquisitionCheckGuide } from './acquisitionCheck'
 import { gatePopulationsGuide } from './gatePopulations'
 import { notebooksGuide } from './notebooks'
 import { plotsGuide } from './plots'
@@ -41,6 +42,7 @@ export const GUIDES: GuideDef[] = [
   // Data — get images in and ready
   importImagesGuide,
   fixMetadataGuide,
+  acquisitionCheckGuide,
   preprocessImagesGuide,
   driftCorrectGuide,
   afCorrectGuide,

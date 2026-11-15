@@ -150,7 +150,7 @@ const metaImage = computed(() => {
     <div v-if="loading" class="cc-empty-inline"><i class="pi pi-spin pi-spinner" /> Checking…</div>
     <div v-else-if="!result" class="cc-empty-inline">Couldn’t run the check.</div>
     <div v-else class="acq">
-      <div class="plan cc-row">
+      <div class="plan cc-row" data-guide="acqCheck.plan">
         <template v-if="!editing">
           <span class="cc-muted cc-fs-xs">Plan</span>
           <q v-if="plan">{{ plan.text || planSentence(plan) }}</q>
@@ -171,7 +171,7 @@ const metaImage = computed(() => {
         <CcToggle v-model="settings.showImageNames" label="Show names" :aria-label="`Show ${item} names`"
                   v-tooltip.top="`${Item} names instead of image IDs`" />
       </div>
-      <ul class="findings">
+      <ul class="findings" data-guide="acqCheck.setFindings">
         <li v-for="(f, i) in setFindings" :key="i">
           <InlineNote :short="f.short" :severity="findingSeverity(f)" :lines="findingLines(f, result.stage, settings.showImageNames)">
             <button v-if="f.code === 'acq.not_measured' && unmeasured.length" class="cc-btn cc-btn-dense cc-fs-xs"
@@ -185,7 +185,7 @@ const metaImage = computed(() => {
         <li v-if="!setFindings.length" class="cc-muted">Nothing across the set.</li>
       </ul>
 
-      <div class="cc-eyebrow cc-fs-2xs cc-row review-head">
+      <div class="cc-eyebrow cc-fs-2xs cc-row review-head" data-guide="acqCheck.review">
         <span>Review</span>
         <span class="cc-muted" v-tooltip.top="`Kiwi’s model reads the plan, the ${items} and acquisition knowledge — not your notes`">
           · {{ settings.kiwiModel }}, about a minute</span>
@@ -207,11 +207,11 @@ const metaImage = computed(() => {
 
       <template v-if="plan">
         <div class="cc-eyebrow cc-fs-2xs">{{ verdictHeading(result.stage) }}</div>
-        <p class="verdict">{{ result.verdict }}</p>
+        <p class="verdict" data-guide="acqCheck.verdict">{{ result.verdict }}</p>
         <p v-if="result.modelStep" class="verdict cc-fs-xs"><span class="cc-muted">Model adds:</span> {{ reviewText(result.modelStep) }}</p>
       </template>
 
-      <div class="cc-eyebrow cc-fs-2xs">Per {{ item }}</div>
+      <div class="cc-eyebrow cc-fs-2xs" data-guide="acqCheck.perImage">Per {{ item }}</div>
       <div v-for="g in groups" :key="g.design ?? ''" class="group">
         <div class="cc-muted cc-fs-xs group-label">{{ g.label }}</div>
         <SelectionTable :columns="columns" :rows="g.rows.map(display)" id-key="uid" selection-mode="none"

@@ -83,6 +83,11 @@ const CHAIN_STEP: RecipeGuideStep = {
   why: 'Settled on a few images? Wire the same steps into a chain and run it over the whole set.',
   assist: { where: 'terminal', text: 'Builds the chain from the steps you ran, for you to review and run' },
 }
+const ACQ_CHECK: RecipeGuideStep = {
+  guide: 'acquisition-check', optional: true,
+  why: 'Test images? What to change at the scope before imaging the rest. Final data? What to watch.',
+  assist: { where: 'kiwi', text: 'Reviews your plan against the images and adds one next step' },
+}
 const SEGMENT_QC = { where: 'kiwi' as const, text: 'Share a frame with a bad mask; it points at suspect cells and names the knob' }
 const READOUT = { where: 'kiwi' as const, text: 'Turns the numbers into sentences, each citing what it rests on' }
 const BOARD = { where: 'terminal' as const, text: 'Adds a board comparing your groups; it never edits yours' }
@@ -96,6 +101,7 @@ export const RECIPES: RecipeDef[] = [
     icon: 'pi-th-large',
     steps: [
       { guide: 'import-images', why: 'One image per acquisition; group them into sets by mouse or condition.' },
+      ACQ_CHECK,
       { guide: 'fix-metadata', why: 'Pixel size sets every distance and volume; channel names are what you gate on.' },
       {
         guide: 'af-correct', optional: true,
@@ -128,6 +134,7 @@ export const RECIPES: RecipeDef[] = [
     icon: 'pi-objects-column',
     steps: [
       { guide: 'import-images', why: 'One image per section; a cohort of sections becomes a set.' },
+      ACQ_CHECK,
       { guide: 'fix-metadata', why: 'With dozens of channels, the names are what clustering and heatmaps show.' },
       {
         guide: 'segment-an-image',
@@ -162,6 +169,7 @@ export const RECIPES: RecipeDef[] = [
     icon: 'pi-video',
     steps: [
       { guide: 'import-images', why: 'One movie per acquisition; group them into sets by mouse or condition.' },
+      ACQ_CHECK,
       {
         guide: 'drift-correct',
         why: 'Tissue drift would read as movement in every track — remove it before any analysis.',
@@ -234,6 +242,7 @@ export const RECIPES: RecipeDef[] = [
     icon: 'pi-share-alt',
     steps: [
       { guide: 'import-images', why: 'One movie per acquisition; group them into sets by condition.' },
+      ACQ_CHECK,
       { guide: 'drift-correct', why: 'Tissue drift would read as movement in every track — remove it first.' },
       { guide: 'af-correct', optional: true, why: 'Only if one channel\'s signal shows in another.' },
       {
@@ -266,6 +275,7 @@ export const RECIPES: RecipeDef[] = [
     icon: 'pi-arrows-alt',
     steps: [
       { guide: 'import-images', why: 'One movie per well or position; a treatment becomes a set.' },
+      ACQ_CHECK,
       { guide: 'fix-metadata', why: 'Pixel size and frame interval set every speed.' },
       { guide: 'segment-an-image', why: 'Cellpose on the nuclear stain finds the cells.', assist: SEGMENT_QC },
       { guide: 'gate-populations', why: 'Gate out debris and fragments before tracking, then track the gate.' },
