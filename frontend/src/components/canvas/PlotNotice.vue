@@ -19,6 +19,9 @@
   host), `banner` is a full-width tinted bar above the plot for something you should see before you
   wait for it. Tone is `warn` (amber, with the triangle) or `muted` (an observation, no icon).
 
+  `iconOnly` shrinks a chip to its icon, with the text moved into the tooltip — for a footer row that
+  must not grow taller when a notice appears (SummaryPanel's chrome row, which a long note wrapped).
+
   The tooltip is where the ACTION goes — the text says what, the tip says what to do about it — the
   same split `overrideTooltip` uses. Keep both to the house budget (docs/ui/COPY.md).
 -->
@@ -28,14 +31,18 @@ withDefaults(defineProps<{
   tip?: string
   tone?: 'warn' | 'muted'
   variant?: 'chip' | 'banner'
-}>(), { tone: 'warn', variant: 'chip', tip: '' })
+  iconOnly?: boolean
+}>(), { tone: 'warn', variant: 'chip', tip: '', iconOnly: false })
 </script>
 
 <template>
   <div class="pn" :class="[`pn-${variant}`, tone === 'warn' ? 'pn-warn' : 'cc-muted']"
-       v-tooltip.top="tip || undefined">
+       :aria-label="iconOnly ? text : undefined"
+       v-tooltip.top="iconOnly ? (tip ? `${text} — ${tip}` : text) : (tip || undefined)">
+    <!-- icon-only needs an icon whatever the tone, or a muted note would be an empty box -->
     <i v-if="tone === 'warn'" class="pi pi-exclamation-triangle" />
-    <span>{{ text }}</span>
+    <i v-else-if="iconOnly" class="pi pi-info-circle" />
+    <span v-if="!iconOnly">{{ text }}</span>
   </div>
 </template>
 
