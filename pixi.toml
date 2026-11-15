@@ -157,6 +157,13 @@ skan = ">=0.13.1, <0.14"
 # name+dims list without a preview until an equivalent light reader lands. See probe_series_run.py.
 # PyPI-only (not on conda-forge), so it lands here, not in [dependencies].
 readlif = ">=0.6.5, <0.7"
+# The recital's test value check (docs/todo/TEST_VALUE_PLAN.md → P4): mutmut mutates the lines a change
+# touched and pytest runs the tests that name them (pytest drives the unittest suites as-is). Dev
+# tooling, in the default env because every worktree's recital runs it. Exactly 3.8.1:
+# scripts/mutate_changed.py reads the `.spans` file this version writes. mutmut needs `fork`, so on
+# Windows the check skips the Python side and says so.
+mutmut = "==3.8.1"
+pytest = ">=8"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared

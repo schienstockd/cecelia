@@ -3,9 +3,12 @@
 against only the tests that name the changed functions. TEST_VALUE_PLAN.md → P4(b).
 
     python scripts/mutate_changed.py BASE [--out DIR] [--timeout 120] [--sample N] [--dry-run] [--keep]
+    python scripts/mutate_changed.py --staged [--sample N] [--budget S] [--json FILE]   # recital's call
 
 Run in a checkout of the change itself (its HEAD is what gets mutated); BASE is the commit it is
-compared to (for a merged PR, `<merge>^1`). Result files are the `result-paths` globs of
+compared to (for a merged PR, `<merge>^1`). `--staged` takes the staged diff instead and mutates the
+files on disk; a file with unstaged edits on top is skipped (what is on disk is not what is committed).
+`--budget` starts no Julia mutant and no file after that many seconds; `--json` writes the rows. Result files are the `result-paths` globs of
 `docs/ai-assist/RESULT_REVIEW.md`, as recital reads them (`is_result_path`). Per file:
 
 - Julia (`app/src/**.jl`, included into module Cecelia): `scripts/julia_mutate.jl --lines <changed>
@@ -25,6 +28,7 @@ import contextlib
 import difflib
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -41,11 +45,20 @@ ROOT = repo_root().resolve()
 HERE = Path(__file__).resolve().parent
 
 
-def changed_lines(base: str) -> dict[str, set[int]]:
-    """Each changed file → the HEAD line numbers its diff adds or rewrites (deleted files dropped)."""
-    out = subprocess.check_output(["git", "diff", "-U0", "--no-color", "--diff-filter=AM", base, "HEAD"],
+def changed_lines(base: str | None) -> dict[str, set[int]]:
+    """Each changed file → the line numbers its diff adds or rewrites (deleted files dropped): BASE
+    against HEAD, or (`base=None`) the staged diff."""
+    rev = ["--staged"] if base is None else [base, "HEAD"]
+    out = subprocess.check_output(["git", "diff", "-U0", "--no-color", "--diff-filter=AM", *rev],
                                   cwd=ROOT, text=True, encoding="utf-8", errors="replace")
     return {f.path: {ln.lineno for ln in f.added} for f in parse_diff(out)}
+
+
+def unstaged_files() -> set[str]:
+    """Files whose working copy differs from the index."""
+    out = subprocess.run(["git", "diff", "--name-only"], cwd=ROOT, capture_output=True, text=True,
+                         encoding="utf-8", errors="replace").stdout
+    return {ln.strip() for ln in out.splitlines() if ln.strip()}
 
 
 def ranges(lines: set[int]) -> str:
@@ -66,20 +79,44 @@ _JL_DEF = re.compile(r"^(?:function\s+|macro\s+)?(?:[A-Z]\w*\.)?([A-Za-z_]\w*!?)
                      r"^(?:const|struct|mutable struct|abstract type)\s+([A-Za-z_]\w*)")
 
 
-def jl_names(path: Path, lines: set[int]) -> set[str]:
-    """The top-level definitions (column 0) enclosing the changed lines."""
-    src = path.read_text(encoding="utf-8").splitlines()
-    names, owner = set(), {}
+def jl_owners(path: Path) -> tuple[dict[int, str], dict[str, int]]:
+    """Each line → the top-level definition (column 0) it sits in, and each definition → its first line."""
+    owner, first = {}, {}
     cur = None
-    for i, ln in enumerate(src, 1):
+    for i, ln in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         m = _JL_DEF.match(ln)
         if m:
             cur = m.group(1) or m.group(2)
+            first.setdefault(cur, i)
         owner[i] = cur
-    for i in lines:
+    return owner, first
+
+
+def jl_names(path: Path, lines: set[int]) -> set[str]:
+    """The top-level definitions (column 0) enclosing the changed lines."""
+    owner, _ = jl_owners(path)
+    return {owner[i] for i in lines if owner.get(i)}
+
+
+def with_callers(names: set[str], refs: dict[str, set[str]]) -> set[str]:
+    """`names` plus every definition in the same file that calls one of them, repeated until nothing
+    is added: a private helper is tested through its public caller (`_band` → `parse_settings`)."""
+    out, grew = set(names), True
+    while grew:
+        more = {d for d, used in refs.items() if d not in out and used & out}
+        out |= more
+        grew = bool(more)
+    return out
+
+
+def jl_refs(path: Path) -> dict[str, set[str]]:
+    """Each top-level definition → the identifiers its lines use."""
+    owner, _ = jl_owners(path)
+    refs: dict[str, set[str]] = {}
+    for i, ln in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if owner.get(i):
-            names.add(owner[i])
-    return names
+            refs.setdefault(owner[i], set()).update(re.findall(r"[A-Za-z_]\w*!?", ln.split("#", 1)[0]))
+    return refs
 
 
 def jl_tests(names: set[str], touched: set[str]) -> tuple[list[Path], list[str]]:
@@ -98,10 +135,11 @@ def jl_tests(names: set[str], touched: set[str]) -> tuple[list[Path], list[str]]
 
 
 def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeout: int, sample: int,
-              dry: bool = False) -> dict:
+              dry: bool = False, deadline: float | None = None) -> dict:
     src = ROOT / rel
     names = jl_names(src, lines)
-    tests, unnamed = jl_tests(names, touched)
+    tests, unnamed = jl_tests(with_callers(names, jl_refs(src)), touched)
+    unnamed = sorted(set(unnamed) & names)
     row = {"file": rel, "lang": "jl", "lines": len(lines), "names": sorted(names), "unnamed": unnamed,
            "tests": [t.name for t in tests]}
     if not tests:
@@ -118,6 +156,8 @@ def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeou
            *map(str, tests), "--lines", ranges(lines), "--known-failures", "--timeout", str(timeout)]
     if sample:
         cmd += ["--sample", str(sample)]
+    if deadline is not None:
+        cmd += ["--deadline", str(deadline)]
     t0 = time.time()
     p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     row["secs"] = round(time.time() - t0)
@@ -132,6 +172,9 @@ def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeou
     muts = [r for r in rows if r[0] != "0"]
     row["results"] = [r[5] for r in muts]
     row["survivors"] = [f"{r[1]}: {r[2]}  {r[4]}" for r in muts if r[5] == "survived"]
+    owner, first = jl_owners(src)
+    row["survivor_detail"] = [{"fn": owner.get(int(r[1])) or "?", "def": first.get(owner.get(int(r[1])), int(r[1])),
+                               "line": int(r[1]), "orig": r[3], "new": r[4]} for r in muts if r[5] == "survived"]
     return row
 
 
@@ -153,26 +196,59 @@ def py_funcs(path: Path, lines: set[int]) -> dict[str, int]:
     return keys
 
 
-def py_changed_mutants(mutfile: Path, defline: dict[str, int], lines: set[int]) -> list[str]:
-    """The mutants (`<key>__mutmut_<n>`) whose edit is on a changed line. mutmut writes each mutant
-    as a whole copy of its function and records where each copy sits (`<file>.spans`); the line that
-    differs from the `__mutmut_orig` copy, counted from the `def`, is the source line it mutates."""
+def py_changed_mutants(mutfile: Path, defline: dict[str, int], lines: set[int]) -> dict[str, dict]:
+    """The mutants (`<key>__mutmut_<n>`) whose edit is on a changed line → `{line, orig, new}` (the
+    first edited line). mutmut writes each mutant as a whole copy of its function and records where
+    each copy sits (`<file>.spans`); the line that differs from the `__mutmut_orig` copy, counted from
+    the `def`, is the source line it mutates."""
     spans = json.loads(Path(str(mutfile) + ".spans").read_text(encoding="utf-8"))["spans"]
     text = mutfile.read_text(encoding="utf-8").splitlines()
     body = lambda a, b: text[a - 1:b]
     # each copy from the line after its own `def` (a copy can start with blank lines the other lacks)
     after_def = lambda ls: ls[next(i for i, ln in enumerate(ls) if re.match(r"\s*(async\s+)?def ", ln)) + 1:]
-    out = []
+    out = {}
     for key, def_ln in defline.items():
         orig = after_def(body(*spans[f"{key}__mutmut_orig"]))
         for name, (a, b) in spans.items():
             if not re.fullmatch(rf"{re.escape(key)}__mutmut_\d+", name):
                 continue
-            sm = difflib.SequenceMatcher(None, orig, after_def(body(a, b)), autojunk=False)
-            hit = {def_ln + 1 + i for tag, i1, i2, _, _ in sm.get_opcodes() if tag != "equal"
-                   for i in range(i1, max(i2, i1 + 1))}
+            mut = after_def(body(a, b))
+            ops = [o for o in difflib.SequenceMatcher(None, orig, mut, autojunk=False).get_opcodes() if o[0] != "equal"]
+            hit = {def_ln + 1 + i for _, i1, i2, _, _ in ops for i in range(i1, max(i2, i1 + 1))}
             if hit & lines:
-                out.append(name)
+                _, i1, i2, j1, j2 = ops[0]
+                out[name] = {"line": min(hit & lines), "orig": " ".join(x.strip() for x in orig[i1:i2]),
+                             "new": " ".join(x.strip() for x in mut[j1:j2])}
+    return out
+
+
+def py_refs(path: Path) -> dict[str, set[str]]:
+    """Each top-level function / method, by mutmut key, → the names its body uses."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    out = {}
+    for node in tree.body:
+        fns = [(node, None)] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else []
+        if isinstance(node, ast.ClassDef):
+            fns = [(n, node.name) for n in node.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        for fn, cls in fns:
+            used = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+            used |= {n.attr for n in ast.walk(fn) if isinstance(n, ast.Attribute)}
+            out[f"xǁ{cls}ǁ{fn.name}" if cls else f"x_{fn.name}"] = used
+    return out
+
+
+def _py_name(key: str) -> str:
+    return key.split("ǁ")[2] if "ǁ" in key else key[2:]
+
+
+def py_with_callers(path: Path, keys) -> set[str]:
+    """The keys plus their same-file callers, transitively (`with_callers` over mutmut keys)."""
+    refs = py_refs(path)
+    out, grew = set(keys), True
+    while grew:
+        more = {c for c, used in refs.items() if c not in out and any(_py_name(k) in used for k in out)}
+        out |= more
+        grew = bool(more)
     return out
 
 
@@ -194,13 +270,14 @@ def py_tests(module: str, keys, touched: set[str]) -> tuple[list[Path], list[str
 
 
 def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: bool = False,
-               keep: bool = False) -> dict:
+               keep: bool = False, sample: int = 0) -> dict:
     module = rel[len("python/"):-3].replace("/", ".")
     keys = py_funcs(ROOT / rel, lines)
     row = {"file": rel, "lang": "py", "lines": len(lines), "names": sorted(keys)}
     if not keys:
         return row | {"note": "no changed function (module-level lines only)"}
-    tests, row["unnamed"] = py_tests(module, keys, touched)
+    tests, unnamed = py_tests(module, py_with_callers(ROOT / rel, keys), touched)
+    row["unnamed"] = sorted(set(unnamed) & set(keys))
     row["tests"] = [t.name for t in tests]
     if not tests:
         return row | {"note": "no test names a changed function"}
@@ -247,7 +324,10 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
                 break
             row["known"] += bad
         mutfile = copy / "python/mutants" / rel[len("python/"):]
-        pats = [f"{module}.{n}" for n in py_changed_mutants(mutfile, keys, lines)] if mutfile.is_file() else []
+        picked = py_changed_mutants(mutfile, keys, lines) if mutfile.is_file() else {}
+        if sample and len(picked) > sample:   # a fixed draw, so a rerun picks the same ones
+            picked = {n: picked[n] for n in sorted(random.Random(1).sample(sorted(picked), sample))}
+        pats = [f"{module}.{n}" for n in picked]
         if pats:
             t1 = time.time()
             p = subprocess.run([str(py), "-m", "mutmut", "run", *pats], cwd=copy / "python", env=env,
@@ -268,6 +348,13 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
     if not any(s in ("killed", "survived") for _, s in res):
         return row | {"note": "no mutant ran: " + (p.stdout + p.stderr).strip()[-600:]}
     row["survivors"] = [n.split(".")[-1] for n, s in res if s == "survived"]
+    row["survivor_detail"] = []
+    for n, s in res:
+        if s == "survived":
+            short = n.split(".")[-1]
+            key = short.rsplit("__mutmut_", 1)[0]
+            row["survivor_detail"].append({"fn": key.split("ǁ")[-1] if "ǁ" in key else key[2:], "def": keys[key],
+                                           **picked[short]})
     return row
 
 
@@ -275,13 +362,18 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("base")
+    ap.add_argument("base", nargs="?", help="the commit the change is compared to (or --staged)")
+    ap.add_argument("--staged", action="store_true", help="mutate the staged change (recital)")
+    ap.add_argument("--budget", type=float, default=None, help="seconds: no file or Julia mutant starts after")
+    ap.add_argument("--json", default=None, help="write the rows here")
     ap.add_argument("--out", default=None, help="where the per-file TSVs go (default: a temp dir)")
     ap.add_argument("--timeout", type=int, default=120)
-    ap.add_argument("--sample", type=int, default=0, help="Julia: at most N mutants per file")
+    ap.add_argument("--sample", type=int, default=0, help="at most N mutants per file (a fixed draw)")
     ap.add_argument("--keep", action="store_true", help="Python: keep the mutmut copy (path in the report)")
     ap.add_argument("--dry-run", action="store_true", help="map the changed functions to tests; mutate nothing")
     a = ap.parse_args()
+    if (a.base is None) == (not a.staged):
+        ap.error("give BASE or --staged")
     if "PIXI_PROJECT_ROOT" not in os.environ:
         # tests that start Python (run_py, the task runners) fail outside the env, and a test that
         # fails unmutated is set aside: the mutants it would have killed then read as survivors
@@ -290,17 +382,27 @@ def main() -> int:
     outdir = Path(a.out or tempfile.mkdtemp(prefix="mutate_changed_")).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
     globs = repo_result_paths(ROOT)
-    changed = changed_lines(a.base)
+    changed = changed_lines(None if a.staged else a.base)
     touched = set(changed)
+    dirty = unstaged_files() if a.staged else set()
     rows = []
     t0 = time.time()
+    deadline = t0 + a.budget if a.budget else None
     for rel, lines in sorted(changed.items()):
         if not lines or not is_result_path(rel, globs):
             continue
-        if rel.startswith("app/src/") and rel.endswith(".jl"):
-            rows.append(run_julia(rel, lines, touched, outdir, a.timeout, a.sample, a.dry_run))
-        elif rel.startswith("python/cecelia/") and rel.endswith(".py"):
-            rows.append(run_python(rel, lines, touched, outdir, a.dry_run, a.keep))
+        is_jl = rel.startswith("app/src/") and rel.endswith(".jl")
+        is_py = rel.startswith("python/cecelia/") and rel.endswith(".py")
+        if (is_jl or is_py) and rel in dirty:
+            rows.append({"file": rel, "lines": len(lines), "note": "unstaged edits on top of the staged change"})
+        elif (is_jl or is_py) and deadline is not None and time.time() > deadline:
+            rows.append({"file": rel, "lines": len(lines), "note": "time budget spent before this file"})
+        elif is_py and sys.platform == "win32" and not a.dry_run:
+            rows.append({"file": rel, "lines": len(lines), "note": "mutmut does not run on Windows"})
+        elif is_jl:
+            rows.append(run_julia(rel, lines, touched, outdir, a.timeout, a.sample, a.dry_run, deadline))
+        elif is_py:
+            rows.append(run_python(rel, lines, touched, outdir, a.dry_run, a.keep, a.sample))
         else:
             rows.append({"file": rel, "lines": len(lines), "note": "not mutated (not in module Cecelia or python/cecelia)"})
     total = round(time.time() - t0)
@@ -314,7 +416,7 @@ def main() -> int:
         if r.get("names"):
             print(f"  changed: {', '.join(r['names'])}")
         if r.get("unnamed"):
-            print(f"  named by no test: {', '.join(r['unnamed'])}")
+            print(f"  named by no test, nor any caller in its file: {', '.join(r['unnamed'])}")
         if r.get("tests") is not None:
             print(f"  tests: {', '.join(r['tests']) or '-'}")
         if r.get("phases"):
@@ -338,7 +440,10 @@ def main() -> int:
     if names:
         print(f"changed functions named by no test: {len(unnamed)} of {len(names)}")
     print(f"total {total} s")
-    (outdir / "summary.json").write_text(json.dumps({"total_secs": total, "files": rows}, indent=1), encoding="utf-8")
+    summary = json.dumps({"total_secs": total, "files": rows}, indent=1)
+    (outdir / "summary.json").write_text(summary, encoding="utf-8")
+    if a.json:
+        Path(a.json).write_text(summary, encoding="utf-8")
     return 0
 
 

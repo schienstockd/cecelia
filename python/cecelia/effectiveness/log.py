@@ -68,6 +68,14 @@ EVENT_TYPES = frozenset({
     #: a `false_positive` tag (the commit hook's gate 4). Payload: `slug`, `file`, `reason`. The bug
     #: sweep sends it to the owner, whichever branch the finding came from.
     "result_review_test_edited",
+    #: Test value check — mechanical recital step (`test_value.py`, TEST_VALUE_PLAN.md → P4): the
+    #: change's added tests run on the code before it (`passes on base`), and mutants on its changed
+    #: result lines (`untested`). `_run` payload: `on_base` ({"py"|"jl": failed}), `mutated` (per file:
+    #: results, survived, note), `findings`, `duration_s`, `errors`. `_finding` = one bullet (outcome
+    #: tag required). Not swept by the weekly judge; its tags are the record the P4 review reads.
+    "test_value_run",
+    "test_value_finding",
+    "test_value_finding_resolved",
     "ratchet_hit",
     "human_override",
     "retrospective_miss",
@@ -121,7 +129,7 @@ EVENT_TYPES = frozenset({
 
 #: A finding slug as recital's `_slug` writes it — the one grammar recital, the commit hook and the
 #: maintainability lint's repro-marker check match on.
-SLUG_PATTERN = r"(?:fanout|conv|result)-[0-9a-f]{8}"
+SLUG_PATTERN = r"(?:fanout|conv|result|tv)-[0-9a-f]{8}"
 
 #: The comment a committed result-review repro carries (`docs/ai-assist/RESULT_REVIEW.md`). The commit
 #: hook guards a file by it; the maintainability lint flags a marker this won't match.
@@ -283,9 +291,10 @@ def read_events(log_path: pathlib.Path | None = None) -> _t.Iterator[dict]:
 
 
 #: Per-finding rows the recital writes, and the rows the commit hook writes when a slug is tagged.
-FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding", "result_review_finding"})
+FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding", "result_review_finding",
+                            "test_value_finding"})
 RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved",
-                             "result_review_finding_resolved"})
+                             "result_review_finding_resolved", "test_value_finding_resolved"})
 
 
 def latest_resolutions_by_slug(events: _t.Iterable[dict],

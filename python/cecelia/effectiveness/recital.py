@@ -31,6 +31,7 @@ Not built here (deferred to later phases of FINDINGS_EMISSION_PLAN.md):
 """
 from __future__ import annotations
 
+import concurrent.futures
 import fnmatch
 import hashlib
 import json
@@ -44,6 +45,7 @@ import time
 import typing as _t
 
 from .inventory_coverage import run_inventory_check
+from .test_value import TITLE as _TEST_VALUE_TITLE, run_test_value_check
 from .changelog_check import run_changelog_check
 from .maintainability_lint import run_maintainability_lint
 from .log import SLUG_PATTERN, append_event  # SLUG_PATTERN re-exported: the commit hook imports it here
@@ -96,6 +98,7 @@ MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("confirmed",),
     "convention": ("should reuse", "wrong home"),
     "result": ("reproduced",),
+    "test_value": ("passes on base", "untested"),   # mechanical: test_value.py
 }
 
 #: Advisory markers — no outcome tag required and no `_finding` row, but still a finding the
@@ -104,12 +107,14 @@ ADVISORY_MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("plausible",),
     "convention": ("potential duplicate",),
     "result": ("inferred", "display"),
+    "test_value": (),
 }
 
 #: Advisory markers that still get a printed slug, so the author MAY tag one fixed. The weekly bug
 #: sweep re-checks every untagged `plausible` note (the same slug is its key); about half are fixed
 #: at commit, and a `[slug: fixed_pre_commit]` lets it skip those. Optional: the hook never asks.
-TAGGABLE_ADVISORY: dict[str, tuple[str, ...]] = {"fanout": ("plausible",), "convention": (), "result": ("inferred",)}
+TAGGABLE_ADVISORY: dict[str, tuple[str, ...]] = {"fanout": ("plausible",), "convention": (), "result": ("inferred",),
+                                                 "test_value": ()}
 
 _OPTIONAL_TAG_NOTE = ("_{Marker} notes need no tag. If you fixed one, tag it `[<slug>: fixed_pre_commit]` "
                       "so the weekly judge doesn't re-check it._")
@@ -177,7 +182,7 @@ def _slug(mechanism: str, file: str, line: int, marker: str, desc: str = "") -> 
     if line == 0:
         key += f"|{desc}"
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
-    prefix = {"fanout": "fanout", "convention": "conv"}.get(mechanism, mechanism)
+    prefix = {"fanout": "fanout", "convention": "conv", "test_value": "tv"}.get(mechanism, mechanism)
     return f"{prefix}-{digest}"
 
 
@@ -795,6 +800,7 @@ def run_recital(
     claim: str | None = None,
     staged_tree: str | None = None,
     rounds_dir: pathlib.Path | None = None,
+    test_value_check: _t.Callable[[], str] | None = None,
 ) -> str:
     """Spawn the reviewers, emit `_run` events, return the formatted recital body. `claim` is what
     the result review is told the change is for (marked unverified).
@@ -803,6 +809,9 @@ def run_recital(
       change (branch @ parent SHA) reuses each reviewer's last section when the tree is unchanged,
       else reviews only the change since then. None (a diff from stdin) = every round is a full one.
     - `rounds_dir`: where the rounds are kept; default `<git dir>/recital-rounds` (tests pass one).
+    - `test_value_check`: the test value section's producer (`test_value.run_test_value_check`), run in
+      a thread beside the reviewers. Default: the real one, unless `claude_runner` is injected (a test),
+      where it is skipped unless given.
 
     - `diff`: the staged diff string (from `git diff --staged`).
     - `claude_runner`: optional; injected in tests to bypass real subprocess. Signature:
@@ -828,6 +837,16 @@ def run_recital(
         rounds_dir = gd / ROUNDS_DIR if gd else None
     rounds = Rounds(rounds_dir, f"{branch or '?'}@{commit or '?'}", staged_tree) \
         if staged_tree and rounds_dir else None
+
+    # Mechanical but slow (Julia, mutmut): started first so it runs while the reviewers do.
+    if test_value_check is None and claude_runner is None:
+        test_value_check = lambda: run_test_value_check(diff, result_globs=repo_result_paths(),   # noqa: E731
+                                                        pr=pr, commit=commit, branch=branch)
+    test_value = None
+    if test_value_check is not None:
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        test_value = pool.submit(test_value_check)
+        pool.shutdown(wait=False)
 
     fanout_section = _run_reviewer(
         event_name="fanout_audit_run",
@@ -864,6 +883,14 @@ def run_recital(
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
     lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
     changelog_section = run_changelog_check(diff, pr=pr, commit=commit, branch=branch)
+    if test_value is None:
+        test_value_section = f"_{_TEST_VALUE_TITLE}: skipped — not run_"
+    else:
+        try:
+            test_value_section = test_value.result()
+        except Exception as e:   # a broken check must not cost the commit its recital
+            test_value_section = (f"_{_TEST_VALUE_TITLE} (evidence):_\n\n> **{ERROR_MARKER}** — {type(e).__name__}: {e}"
+                                  f"\n\n_{_TEST_VALUE_TITLE}: {ERRORED_TAIL}_")
 
     return (f"{fanout_section}\n\n{convention_section}\n\n{result_section}\n\n{inventory_section}\n\n{lint_section}\n\n{changelog_section}"
-            f"\n\n{recital_stamp(branch, commit)}")
+            f"\n\n{test_value_section}\n\n{recital_stamp(branch, commit)}")
