@@ -26,6 +26,10 @@
                          a height-bounded flex column. Overrides `maxHeight`. Kiwi's cockpit and the viewer
                          side panel use it — one open section, using all the room the others are not — and
                          so does ModuleLayout's maximised plots section (no accordion, same fill).
+                         `fill="content"`: for a parent sized by its content up to a bound (the viewer's
+                         floating How it looks box) — open, the section is as tall as its content, and only
+                         when the parent hits its bound does it shrink and scroll inside. Plain `fill`
+                         would size it to nothing there: its basis is 0 and the parent has no height.
 -->
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
@@ -45,7 +49,7 @@ const props = withDefaults(defineProps<{
   open?:        boolean | null
   accordion?:   string
   section?:     string
-  fill?:        boolean
+  fill?:        boolean | 'content'
 }>(), {
   defaultOpen: null,
   maxHeight:   '320px',
@@ -88,7 +92,7 @@ const open = computed({
 </script>
 
 <template>
-  <div :class="['collapsible-section', { 'cs-fill': fill && open }]">
+  <div :class="['collapsible-section', { 'cs-fill': fill && open, 'cs-fill-content': fill === 'content' && open }]">
     <button class="cs-toggle cc-section-toggle" @click="open = !open"
       v-tooltip.right="tip || (open ? `Collapse ${label}` : `Expand ${label}`)">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
@@ -132,6 +136,8 @@ const open = computed({
    scrolls can raise it so a short panel does not squeeze the open section down to its header. */
 .collapsible-section.cs-fill { flex: 1 1 0; min-height: 0; overflow: hidden; }
 .collapsible-section.cs-fill > .cs-body { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+.collapsible-section.cs-fill.cs-fill-content,
+.collapsible-section.cs-fill.cs-fill-content > .cs-body { flex: 0 1 auto; }
 
 .cs-body {
   overflow-y: auto;

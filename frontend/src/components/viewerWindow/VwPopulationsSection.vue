@@ -54,7 +54,7 @@ const settings = useSettingsStore()
 <template>
   <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
                       accordion="cc.vw.section" section="pops"
-                      fill>
+                      fill="content">
     <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
          and no populations, and an empty group would read as a broken feature rather than as an
          image that has not been through segmentation yet.

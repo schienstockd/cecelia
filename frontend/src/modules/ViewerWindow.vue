@@ -44,7 +44,7 @@ import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/chan
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { drawSpecOf, type DrawSpecSource, type ViewerDrawSpec } from '../utils/viewer/drawSpec'
-import { usePlotResize } from '../composables/usePlotResize'
+import { usePlotResize, observeBoxChanges } from '../composables/usePlotResize'
 import { useVwPlayback } from '../composables/useVwPlayback'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -3735,8 +3735,21 @@ watch(gizmoShown, v => profileStorage.setItem('cc.vw.gizmo', String(v)))
 /** The Debug section, switched on from ⚙ (GUI_LAYOUT_PLAN V3) — a developer's panel, off by default. */
 const debugShown = ref(profileStorage.getItem('cc.vw.debug') === 'true')
 /** Where the floating boxes start: On the image (top left) and How it looks (top right) sit level,
- *  both under the timestamp when it is drawn. */
-const overlayClearTop = computed(() => spec.timestamp && shownT.value >= 0 ? spec.timestampPx + 8 : 0)
+ *  under the timestamp (left) or the overview / axes (right), whichever reaches lower. The widget's
+ *  height is measured: the overview's follows the image aspect, the axes carry a readout row. */
+const navEl = ref<HTMLElement | null>(null)
+const navH = ref(0)
+let navRo: ResizeObserver | null = null
+watch(navEl, el => {
+  navRo?.disconnect(); navRo = null; navH.value = 0
+  if (!el) return
+  navH.value = el.offsetHeight
+  navRo = observeBoxChanges(el, () => { navH.value = el.offsetHeight })
+})
+onUnmounted(() => navRo?.disconnect())
+const overlayClearTop = computed(() => Math.max(
+  spec.timestamp && shownT.value >= 0 ? spec.timestampPx + 8 : 0,
+  navH.value > 0 ? navH.value + 8 : 0))
 const overlayTop = computed(() => `calc(0.75rem + ${overlayClearTop.value}px)`)
 watch(debugShown, v => profileStorage.setItem('cc.vw.debug', String(v)))
 /** Fit-relative zoom for the gizmo readout — 1.0 at Reset view, >1 zoomed in. `fitDist` is set on
@@ -4070,14 +4083,14 @@ const overviewRect = computed(() => {
   }
 })
 /** Fixed height in CSS px; the width follows the image aspect so the fractional rect maps 1:1. */
-const OVERVIEW_H = 110
+const OVERVIEW_H = 80
 const overviewSize = computed(() => {
   const m = meta.value
   if (!m) return { w: 0, h: 0 }
   const vx = m.voxelUm[0] || 1
   const vy = m.voxelUm[1] || 1
   const asp = (m.nX * vx) / Math.max(m.nY * vy, 1)
-  return { w: Math.min(220, Math.round(OVERVIEW_H * asp)), h: OVERVIEW_H }
+  return { w: Math.min(160, Math.round(OVERVIEW_H * asp)), h: OVERVIEW_H }
 })
 /**
  * Tissue thumbnail behind the minimap rect. Fetched ONCE per image version — the deepest pyramid level's
@@ -6255,9 +6268,37 @@ onUnmounted(() => {
                         :branch-names="meta.branchNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes" />
-      <!-- Top-right column: How it looks at the top, level with On the image (`overlayTop`), and the
-           navigation widget (overview in 2D, axes in 3D) at the bottom. A column so neither has to
-           know the other's height: the box shrinks and scrolls, the widget keeps its size. -->
+      <!-- The navigation widget (overview in 2D, axes in 3D), top right on its own; its height is
+           measured (`navH`) so both floating boxes start under it, level with each other. -->
+      <div ref="navEl" class="vw-corner-nav">
+        <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
+             a small image still benefits from a corner reference while zoomed in.
+             Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
+             takes all the pointer events (click/drag to reposition). -->
+        <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
+             :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
+          <canvas ref="overviewCanvas" class="vw-overview-tissue" />
+          <svg class="vw-overview-svg"
+               :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
+               preserveAspectRatio="none"
+               @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
+               @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
+            <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
+            <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
+                  :width="Math.max(2, overviewRect.w * overviewSize.w)"
+                  :height="Math.max(2, overviewRect.h * overviewSize.h)"
+                  class="vw-overview-vp" />
+          </svg>
+        </div>
+        <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
+             (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
+             projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
+             mip shader, so it cannot drift off the volume behind it. -->
+        <AxesGizmo v-if="gizmoShown && mode === 'volume'"
+                   :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
+      </div>
+      <!-- Right column: How it looks, level with On the image (`overlayTop`); it grows to its content
+           and scrolls only when the column runs out. -->
       <div class="vw-corner-tr" :style="{ top: overlayTop }">
       <!-- How it looks (VwLookBox): the controls that were the docked sidebar, floating so the image
            keeps the whole window (GUI_LAYOUT_PLAN → Narrow windows). -->
@@ -6346,13 +6387,13 @@ onUnmounted(() => {
 
         <CollapsibleSection label="ROIs" tip="Regions found by Find ROIs, for review"
                             accordion="cc.vw.section" section="rois"
-                            fill>
+                            fill="content">
           <RoiSection v-if="openSection === 'rois'" ref="roiSection" :project-uid="projectUid" :image-uid="imageUid"
                       @focus="roiSpot = $event" />
         </CollapsibleSection>
         <CollapsibleSection v-if="debugShown" label="Debug" tip="Render knobs, live perf and diagnostics"
                             accordion="cc.vw.section" section="debug"
-                            fill>
+                            fill="content">
           <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
                measure. Steps + Keep for volume mode, then three toggles. Eyebrow matches the
                readouts below so the whole panel reads as one column of labelled sub-blocks. -->
@@ -6613,33 +6654,6 @@ onUnmounted(() => {
       </div>
         </div>
       </VwLookBox>
-        <div class="vw-corner-nav">
-        <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
-             a small image still benefits from a corner reference while zoomed in.
-             Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
-             takes all the pointer events (click/drag to reposition). -->
-        <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
-             :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
-          <canvas ref="overviewCanvas" class="vw-overview-tissue" />
-          <svg class="vw-overview-svg"
-               :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
-               preserveAspectRatio="none"
-               @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
-               @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
-            <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
-            <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
-                  :width="Math.max(2, overviewRect.w * overviewSize.w)"
-                  :height="Math.max(2, overviewRect.h * overviewSize.h)"
-                  class="vw-overview-vp" />
-          </svg>
-        </div>
-        <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
-             (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
-             projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
-             mip shader, so it cannot drift off the volume behind it. -->
-        <AxesGizmo v-if="gizmoShown && mode === 'volume'"
-                   :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
-        </div>
       </div>
     </div>
 
@@ -6844,18 +6858,21 @@ onUnmounted(() => {
 /* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
    translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
    navigation, not a select. */
+.vw-corner-nav {
+  position: absolute; top: 0.75rem; right: 0.75rem;
+  display: flex; pointer-events: none;
+}
 .vw-corner-tr {
-  /* `top` is bound (`overlayTop`), level with On the image. How it looks shrinks and scrolls; the
-     overview sits at the column's foot. Narrow image: the foot clears the centred playback bar it
-     would sit beside; wide enough that the bar ends left of the column: only the scale bar. */
+  /* `top` is bound (`overlayTop`), level with On the image. How it looks may grow down to here and
+     then scrolls. Narrow image: clear the centred playback bar it would sit beside; wide enough
+     that the bar ends left of the column: only the scale bar. */
   position: absolute; top: 0.75rem; right: 0.75rem; bottom: 9.5rem;
-  display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;
+  display: flex; flex-direction: column; align-items: flex-end;
   pointer-events: none;
 }
 @container (min-width: 1200px) { .vw-corner-tr { bottom: 4rem; } }
-.vw-corner-nav { margin-top: auto; flex: none; display: flex; pointer-events: none; }
-/* only the widgets take clicks; the column's empty space passes them to the image */
-.vw-corner-nav > *, .vw-corner-tr > :not(.vw-corner-nav) { pointer-events: auto; }
+/* only the widgets take clicks; the empty space passes them to the image */
+.vw-corner-nav > *, .vw-corner-tr > * { pointer-events: auto; }
 .vw-overview-wrap {
   position: relative;
   background: var(--cc-hud-bg); border: 1px solid var(--cc-border);
@@ -6982,10 +6999,9 @@ onUnmounted(() => {
    didn't actually take. */
 .vw-side > * { flex-shrink: 0; flex-grow: 0; }
 .vw-side > .vw-grow, .vw-side > .rs { flex-grow: 0; }
-/* Accordion fill (`CollapsibleSection fill`, the Kiwi cockpit's rule): the open section takes the
-   height the others leave and scrolls inside. `.vw-side` scrolls itself, so on a short panel the open
-   section keeps a usable floor instead of shrinking to its header. */
-.vw-side > .collapsible-section.cs-fill { min-height: 12rem; }
+/* The sections are `fill="content"`: the open one is as tall as its content and shrinks (scrolling
+   inside) only when How it looks reaches its bound — no floor, so a short section never pads out. */
+
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
   /* RangeSlider now self-contains its thumbs, but keep the belt on: any content that outgrows the
      card (a stray-wide readout, a wrapping row) is clipped rather than poking past the card border

@@ -18,7 +18,7 @@ const settings = useSettingsStore()
 <template>
   <CollapsibleSection label="Annotations" tip="Overlays on the view — not in captures"
                       accordion="cc.vw.section" section="ann"
-                      fill>
+                      fill="content">
     <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
          in front of you, and a separate row for each would double the group's height. -->
     <div class="cc-row cc-row-tight">
