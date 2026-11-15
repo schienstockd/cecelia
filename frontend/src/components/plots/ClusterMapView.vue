@@ -118,7 +118,7 @@ const legendInk = computed(() => plotTheme(dark.value).ink)
 const legendBg = computed(() => (dark.value ? 'transparent' : PAPER))
 
 // default cluster colours = the population palette by sorted cluster id — the palette Julia's
-// `colour_by_palette` defaults to for tracks and movies. Colour-blind safe to 8; past that it repeats
+// `colour_by_palette` defaults to for tracks and movies. 12 colours, colour-blind safe to 8; past 12 it repeats
 // and the cluster label chips carry identity. The pop-manager palette knob still overrides via
 // paletteRange.
 const PALETTE = POPULATION_PALETTE

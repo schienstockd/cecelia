@@ -187,10 +187,12 @@ end
 # ── Categorical colour-by palette (the ONE colour-choice rule) ─────────────────────
 # The population palette — the default categorical colours. Equal to `population` in
 # frontend/src/plots/palettes.json (pinned by frontend/src/utils/cvd.test.ts), so a category reads the
-# same colour everywhere. Every pair is >= dE 8 under protan-/deuteranopia and >= 15 for normal vision,
-# and each colour is >= 3:1 on the dark plot ground, a white export and a black image; ordered so each
-# prefix is as spread as it can be. Past 8 it repeats — the legend carries identity there.
-const POPULATION_PALETTE = ["#235EFA", "#FB5888", "#637510", "#B729C4", "#C98510", "#9285E6", "#2CA1AB", "#A0576F"]
+# same colour everywhere. Each colour is >= 3:1 on the dark plot ground, a white export and a black
+# image. Among the first 8 every pair is >= dE 8 under protan-/deuteranopia and >= 15 for normal vision;
+# the last 4 hold >= 6 / >= 13 against all (the most 12 can get inside that luminance band — a pop's
+# name is the second cue). Ordered so each prefix is as spread as it can be. Past 12 it repeats.
+const POPULATION_PALETTE = ["#235EFA", "#FB5888", "#637510", "#B729C4", "#C98510", "#9285E6", "#2CA1AB", "#A0576F",
+                            "#E10500", "#0AAA55", "#FF32D7", "#19739B"]
 
 _as_value_vec(x) = x === nothing ? Any[] : (x isa AbstractVector ? collect(x) : Any[x])
 # tolerant value equality: exact, string-wise, or numeric (a filter value stored as 2.0 == column 2)

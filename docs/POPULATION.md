@@ -51,11 +51,11 @@ both filter the same value. **The rule** (`category_colours`, pure): a claimed v
 colour; every other value takes the palette slot of its position among ALL the values, sorted numbers-
 first (`category_sort_key`: cluster 10 after 9). A claimed value keeps its slot, so turning a pop on or
 off never repaints the other clusters. The price of stable slots: a pop's colour can equal an
-unclaimed cluster's slot colour (pops draw from the same 8 colours) — pick a different swatch.
+unclaimed cluster's slot colour (pops draw from the same 12 colours) — pick a different swatch.
 The movie gathers claims exactly as the viewer's `levelClaims` (`_cb_claims`). The frontend twin is `plots/categoryColours.ts`
 (`categoryColours`) — the viewer's colour-by and the UMAP use it with the claims the server sends
 (`levelClaims`) or the run's cluster pops; both sides are checked against
-`share/category_colour_cases.json`. `POPULATION_PALETTE` equals `population` in `frontend/src/plots/palettes.json` (colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
+`share/category_colour_cases.json`. `POPULATION_PALETTE` equals `population` in `frontend/src/plots/palettes.json` (12 colours, colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
 
 ## Language boundaries (per `ARCHITECTURE.md`)
 

@@ -84,7 +84,7 @@ import palettesJson from './palettes.json'
 import { PAPER, PAPER_INK, NEUTRAL, WHITE } from './fixedColours'
 export const PALETTES: Record<string, string[]> = palettesJson.palettes
 /** THE default colours for new populations (gates, cluster / filter / boolean pops) and for unnamed
- *  categories — colour-blind safe to 8 (utils/cvd.test.ts), the Julia `POPULATION_PALETTE`. */
+ *  categories — 12, colour-blind safe to 8 (utils/cvd.test.ts), the Julia `POPULATION_PALETTE`. */
 export const POPULATION_PALETTE: readonly string[] = PALETTES.population
 
 /** `n` categorical colours: the population palette while it lasts, generated hues past it. */
