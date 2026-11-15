@@ -12,7 +12,7 @@
   "group": "HMM",
   "env": ["local"],
   "resource_pool": "cpu",
-  "sweep": { "output": "colName", "params": ["numStates", "noiseFilterMeasurements", "postFiltering"] },
+  "sweep": { "output": "colName", "params": ["numStates", "noiseFilterMeasurements", "postFiltering"], "sequential": true },
   "scope": "set",
   "requires": { "axes": ["T"] },
   "params": [

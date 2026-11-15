@@ -50,7 +50,7 @@ contributes only its **name** to a colour-by legend (`pop_label_overrides`). Clu
 regions and any categorical measure resolve identically. The frontend twin is
 `plots/categoryColours.ts` (`categoryColours`) — the viewer's colour-by and the UMAP use it; both
 sides are checked against `share/category_colour_cases.json`. `POPULATION_PALETTE` equals
-`population` in `frontend/src/plots/palettes.json` (colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
+`population` in `frontend/src/plots/palettes.json` (12 colours, colour-blind safe to 8; pinned by `utils/cvd.test.ts`).
 
 ## Language boundaries (per `ARCHITECTURE.md`)
 

@@ -16,7 +16,7 @@
   "group": "Aggregates",
   "env": ["local"],
   "resource_pool": "cpu",
-  "sweep": { "output": "aggregateName", "params": ["clustDiameter", "minCells"] },
+  "sweep": { "output": "aggregateName", "params": ["clustDiameter", "minCells"], "sequential": true },
   "requires": { "scale": ["xy"] },
   "params": [
     {

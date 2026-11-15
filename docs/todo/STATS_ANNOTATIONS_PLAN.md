@@ -110,11 +110,13 @@ sketch engine ([`SKETCH_ENGINE_PLAN.md`](SKETCH_ENGINE_PLAN.md)).
      coordinates, but the domain was derived from the data alone (+5 % headroom) — so the topmost
      annotation landed on the frame and its pixel offset (`dx: 8` rotated, `dy: -6` upright) pushed the
      glyph outside the plot, where it was clipped. Compact letters showed it worst: one row at exactly
-     the 5 % headroom, i.e. exactly on the edge. `statsBandFraction` (in `plots/plot.ts`, unit-tested)
-     reports how far the annotations reach — one row for a CLD, one per shown pair for a bracket stack —
-     and `buildPlotOptions` reserves it in BOTH the domain and a pixel margin (`marginRight` when
-     rotated, `marginTop` otherwise). Over-reserve rather than under-reserve: spare headroom is
-     cosmetic, a clipped annotation is a wrong figure.
+     the 5 % headroom, i.e. exactly on the edge. Rows were also spaced 5 % of the extent apart, which
+     on a small canvas card is less than the label's height, so each p-value overlapped the bracket
+     above. Now rows are anchored at the data maximum and offset in PIXELS; `statsBandPx` (in
+     `plots/plot.ts`, unit-tested) reports how far they reach — one row for a CLD, one per shown pair
+     for a bracket stack — and `buildPlotOptions` grows the domain so exactly that many pixels fit
+     above the data (`reserveStatsBand`, once the margins are final). Over-reserve rather than
+     under-reserve: spare headroom is cosmetic, a clipped annotation is a wrong figure.
   4. **Text**: sans-serif **bold ~14 pt**, black, centred above the bracket on a single line.
      **Numeric-p default** (`p = 0.003`) — GP style, three-significant-figure format;
      `p < 0.001` when the value rounds below that. Journals want p-values; stars without a legend

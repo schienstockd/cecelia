@@ -790,6 +790,13 @@ end
         out = String(something(spec_get(sw, "output"), ""))
         @test (haskey(top, out) && String(spec_get(top[out], "type")) in ("text", "valueNameInput")) ||
               "$f: sweep.output '$out' is not a name param" == ""
+        # A plain-text output has no namespace, so `task_params_name` is "" for every run and the
+        # duplicate-run guard refuses all but the first ("Already running on this image"): the runs
+        # must go one after another (`sequential`, frontend `utils/sweepSequence.ts`).
+        seq = spec_get(sw, "sequential")
+        @test seq === nothing || seq isa Bool || "$f: sweep.sequential is not true/false" == ""
+        plain = haskey(top, out) && isempty(String(something(spec_get(top[out], "namespace"), "")))
+        @test !plain || seq === true || "$f: sweep.output '$out' has no namespace — set sweep.sequential" == ""
         ps = something(spec_get(sw, "params"), String[])
         @test !isempty(ps) || "$f: sweep.params is empty" == ""
         for k in ps

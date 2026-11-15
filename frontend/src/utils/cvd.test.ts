@@ -92,10 +92,20 @@ const JULIA = Object.values(import.meta.glob('/../app/src/gating/popmanager/clus
 
 describe('the population palette', () => {
   const p = POPULATION_PALETTE
-  it('keeps every pair apart under colour blindness and normal vision', () => {
-    const bad = pairs([...p]).flatMap(([a, b]) => {
+  it('has 12 colours', () => expect(p.length).toBe(12))
+  it('keeps every pair of the first 8 apart under colour blindness and normal vision', () => {
+    const bad = pairs(p.slice(0, 8)).flatMap(([a, b]) => {
       const cvd = cvdSeparation(a, b), normal = deltaE(a, b)
       return cvd < CVD_TARGET || normal < NORMAL_FLOOR ? [`${a} ↔ ${b}: cvd ${cvd.toFixed(1)}, normal ${normal.toFixed(1)}`] : []
+    })
+    expect(bad).toEqual([])
+  })
+  // 12 colours that are all ≥ 3:1 on black AND white can't clear 8 / 15 pairwise (a search over the whole
+  // band tops out at ~6.3 / ~13.5); a pop always carries its name, so the last 4 sit at the labelled floor.
+  it('keeps all 12 above the labelled floor (cvd ≥ 6, normal ≥ 13)', () => {
+    const bad = pairs([...p]).flatMap(([a, b]) => {
+      const cvd = cvdSeparation(a, b), normal = deltaE(a, b)
+      return cvd < CVD_FLOOR || normal < 13 ? [`${a} ↔ ${b}: cvd ${cvd.toFixed(1)}, normal ${normal.toFixed(1)}`] : []
     })
     expect(bad).toEqual([])
   })

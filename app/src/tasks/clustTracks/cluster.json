@@ -14,7 +14,7 @@
   "category": "Clustering",
   "env": ["local"],
   "resource_pool": "cpu",
-  "sweep": { "output": "valueNameSuffix", "params": ["resolution", "minTracklength"] },
+  "sweep": { "output": "valueNameSuffix", "params": ["resolution", "minTracklength"], "sequential": true },
   "scope": "set",
   "params": [
     {
