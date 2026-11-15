@@ -57,6 +57,17 @@ describe('groupSteps + defaultKeep', () => {
   it('keeps the newest of alternatives, and every version of a fork', () => {
     expect(defaultKeep(groups).sort()).toEqual(['r2', 't1', 't2'])
   })
+  it('leaves out a sweep whose other version a later step read', () => {
+    const sweep = [2, 4, 6].map(n => ({ ...fin(`h${n}`, 'hmm', `2026-11-15T14:2${n}`, false, `movement_${n}`),
+                                        siblingRead: true }))
+    expect(defaultKeep(groupSteps([...sweep, fin('c', 'clust', '2026-11-15T14:32')]))).toEqual(['c'])
+  })
+  it('still keeps a version of that task the later step did not move past', () => {
+    const sweep = [2, 4].map(n => ({ ...fin(`h${n}`, 'hmm', `2026-11-15T14:2${n}`, false, `movement_${n}`),
+                                     siblingRead: true }))
+    const other = fin('hB', 'hmm', '2026-11-15T14:20', false, 'bcells')
+    expect(defaultKeep(groupSteps([...sweep, other]))).toEqual(['hB'])
+  })
 })
 
 describe('groupLeftOut', () => {

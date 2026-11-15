@@ -12,6 +12,9 @@ export interface HistoryFinal {
   detail: string    // what tells this version from its siblings ('' = the only one)
   multi: boolean    // several versions can run side by side (segmentation, per-population tracking)
   at: string        // its latest run, ISO
+  siblingRead?: boolean  // another version on the same inputs feeds a later step — a try the exemplars moved past
+  inputs?: string        // the populations it read, for the label
+  inputsKey?: string     // what it read — the backend's identity for "same inputs": alternatives share it
 }
 export interface HistoryConflict { nodeId: string; param: string; values: Record<string, unknown> }
 export interface HistorySuggestion {
@@ -65,24 +68,37 @@ export function applyChoices(tpl: ChainTemplate, choices: Record<string, Record<
 }
 
 /** One step of the dialog: a task, and the versions of it the exemplars ran, newest first. */
-export interface StepGroup { fn: string; label: string; multi: boolean; versions: HistoryFinal[] }
+export interface StepGroup { key: string; fn: string; label: string; multi: boolean; versions: HistoryFinal[] }
 
+/**
+ * A fork (segmentation, tracking per population) is one group per task. Alternatives are one group per
+ * task AND inputs: an HMM sweep on the T cell tracks is one pick, an HMM on the B cell tracks another —
+ * the second is not an alternative to the first. Such a group's label names its populations.
+ */
 export function groupSteps(finals: readonly HistoryFinal[], labelOf: (fn: string) => string = f => f): StepGroup[] {
   const by = new Map<string, HistoryFinal[]>()
-  for (const f of finals) (by.get(f.fn) ?? by.set(f.fn, []).get(f.fn)!).push(f)
-  return [...by.entries()].map(([fn, vs]) => ({
-    fn, label: labelOf(fn), multi: vs.every(v => v.multi),
-    versions: [...vs].sort((a, b) => b.at.localeCompare(a.at)),
-  }))
+  const keyOf = (f: HistoryFinal) => f.multi ? f.fn : `${f.fn}\u0000${f.inputsKey ?? f.inputs ?? ''}`
+  for (const f of finals) (by.get(keyOf(f)) ?? by.set(keyOf(f), []).get(keyOf(f))!).push(f)
+  const perFn = new Map<string, number>()
+  for (const vs of by.values()) perFn.set(vs[0].fn, (perFn.get(vs[0].fn) ?? 0) + 1)
+  return [...by.entries()].map(([key, vs]) => {
+    const fn = vs[0].fn
+    const on = (perFn.get(fn) ?? 0) > 1 && vs[0].inputs ? ` · ${vs[0].inputs}` : ''
+    return { key, fn, label: labelOf(fn) + on, multi: vs.every(v => v.multi),
+             versions: [...vs].sort((a, b) => b.at.localeCompare(a.at)) }
+  })
 }
 
 /**
  * What to keep when the user has not chosen yet: every version of a step that forks (both
  * segmentations, tracking per population), and only the NEWEST of a step whose versions are
- * alternatives — the latest is the one the user ended on.
+ * alternatives — the latest is the one the user ended on. Never a version whose sibling on the same
+ * inputs a later step read (`siblingRead`): an HMM sweep where clustering used movement_3 leaves
+ * movement_2/4/5/6 out, while an HMM on other populations still counts.
  */
 export function defaultKeep(groups: readonly StepGroup[]): string[] {
-  return groups.flatMap(g => g.multi ? g.versions.map(v => v.id) : g.versions.slice(0, 1).map(v => v.id))
+  return groups.flatMap(g => g.multi ? g.versions.map(v => v.id)
+    : g.versions.filter(v => !v.siblingRead).slice(0, 1).map(v => v.id))
 }
 
 /** Left-out runs folded per reason: which tasks, on how many images. */

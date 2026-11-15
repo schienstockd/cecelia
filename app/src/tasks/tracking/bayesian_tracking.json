@@ -34,6 +34,7 @@
       "label": "Population",
       "type": "popSelection",
       "accepts": ["live"],
+      "producesPop": "_tracked",
       "default": "NONE",
       "tip": "Track the whole segmentation (NONE) or only the cells of a gated flow population"
     },

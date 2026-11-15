@@ -1690,6 +1690,13 @@ working untouched; there is no migration.
   outcome and which every params-era run also logged (one with no log entry means the log was lost) —
   then from what the measures QC banked (`motionDims`, `windowMinutes`), and otherwise refuses before deleting
   anything (`_track_measures_rebuild_params`).
+- **What a task makes without naming it: `producesPop` and `producesColumns`.** Tracking derives the
+  population `<label set><popsToTrack>/_tracked` (`"producesPop": "_tracked"` on `popsToTrack`); HMM
+  writes `live.cell.hmm.state.<colName>` (`"producesColumns": ["live.cell.hmm.state.{}"]` on `colName`,
+  `{}` = the param's value). Neither is an output name, so neither changes banking or the run log's
+  output identity; chain-from-history reads them to wire a reader of `…/_tracked` to its tracking and a
+  column reader (Cluster tracks' `clusterMeasures`) to its HMM, and keys an HMM sweep one version per
+  `colName` (`app/src/tasks/chain/from_history.jl`).
 - **The name comes from the spec, not from a key.** `Cecelia.task_output_name(fun, params)` reads the
   `namespace` declaration, because six different keys can carry it. It is the Julia twin of
   `utils/taskOutput.taskOutput`, pinned against the same specs by *task_output_name agrees with the

@@ -1,0 +1,1162 @@
+[
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-09T14:26:49",
+        "pool": "io",
+        "taskId": "pB1ncZ",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "maxWorkers": "auto",
+            "ngffVersion": "0.4",
+            "chunkSize": "auto",
+            "jvmHeapGiB": "auto",
+            "stageLocal": true,
+            "pyramidLevels": 2,
+            "shardSize": "auto",
+            "shardDepth": "1",
+            "keepPartialTimepoint": false
+        },
+        "finishedAt": "2026-11-09T14:39:11",
+        "fun": "importImages.omezarr"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T12:49:21",
+        "pool": "cpu",
+        "taskId": "AvycPt",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "default",
+        "params": {
+            "driftMaxLag": 3,
+            "driftMaxAngle": 5,
+            "driftPerPlane": false,
+            "driftChannel": [
+                "gBT-uGFP"
+            ],
+            "driftSmoothSigma": 6,
+            "driftZSmoothness": 0,
+            "driftNormalisation": "none",
+            "driftEstimator": "multiLag"
+        },
+        "finishedAt": "2026-11-15T12:51:04",
+        "fun": "cleanupImages.driftCorrect",
+        "inputs": [
+            {
+                "name": "default",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T13:01:22",
+        "pool": "cpu",
+        "taskId": "3j9IXE",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "driftCorrected",
+        "params": {
+            "bilateralPolish": 0.6,
+            "bilateralColor": 10,
+            "spatialMethod": "bilateral_vst",
+            "bilateralReach": 1,
+            "channels": [
+                "P14-ubiTom",
+                "gBT-uGFP",
+                "OTI-CTV"
+            ],
+            "temporalFrames": 1,
+            "farnebackMaxShiftPx": 8,
+            "spatialSigma": 1,
+            "temporalStat": "median",
+            "restoreDynamicRange": true
+        },
+        "finishedAt": "2026-11-15T13:02:41",
+        "fun": "cleanupImages.smooth",
+        "inputs": [
+            {
+                "name": "driftCorrected",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T13:17:21",
+        "pool": "gpu",
+        "taskId": "bqAJmL",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "cancelled",
+        "valueName": "driftCorrected",
+        "params": {
+            "overwrite": false,
+            "labelErosion": 0,
+            "models": {
+                "0": {
+                    "cellprobThreshold": -2.5,
+                    "model": "cpsam_v2",
+                    "matchAs": "base",
+                    "normalise": 99.9,
+                    "augment": false,
+                    "cellChannels": [
+                        "gBT-uGFP",
+                        "P14-ubiTom",
+                        "OTI-CTV"
+                    ],
+                    "stitchThreshold": 0.2,
+                    "gaussianFilter": 0,
+                    "flowThreshold": 1,
+                    "medianFilter": 0,
+                    "cellDiameter": 10,
+                    "nucChannels": [],
+                    "threshold": 0,
+                    "invert": false
+                }
+            },
+            "haloWholeCell": false,
+            "intensityValueName": "driftCorrected",
+            "matchThreshold": 0.3,
+            "minCellSize": 0,
+            "cellSizeMax": 0,
+            "removeUnmatched": false,
+            "normaliseToWhole": true,
+            "labelOverlap": 0.25,
+            "gaussianFilter": 0,
+            "extendedMeasures": true,
+            "overlap": "auto",
+            "labelExpansion": 0,
+            "outputValueName": "Tcells",
+            "intensityMeasure": "mean",
+            "clearDepth": false,
+            "clearTouchingBorder": false,
+            "blockSize": "auto",
+            "haloSize": 0,
+            "labelSmoothing": 0
+        },
+        "finishedAt": "2026-11-15T13:18:32",
+        "fun": "segment.cellposeMeasure",
+        "inputs": [
+            {
+                "name": "driftCorrected",
+                "param": "intensityValueName",
+                "version": "v1"
+            },
+            {
+                "name": "driftCorrected",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T13:19:09",
+        "pool": "cpu",
+        "taskId": "lcXYZU",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "cancelled",
+        "valueName": "driftCorrected",
+        "params": {
+            "bilateralPolish": 0.6,
+            "bilateralColor": 10,
+            "spatialMethod": "bilateral_vst",
+            "bilateralReach": 1,
+            "channels": [
+                "P14-ubiTom",
+                "gBT-uGFP",
+                "OTI-CTV"
+            ],
+            "temporalFrames": 1,
+            "farnebackMaxShiftPx": 8,
+            "spatialSigma": 1,
+            "temporalStat": "gated",
+            "restoreDynamicRange": true
+        },
+        "finishedAt": "2026-11-15T13:19:30",
+        "fun": "cleanupImages.smooth",
+        "inputs": [
+            {
+                "name": "driftCorrected",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T13:20:27",
+        "pool": "cpu",
+        "taskId": "gGr7kn",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "driftCorrected",
+        "params": {
+            "bilateralPolish": 0.6,
+            "bilateralColor": 10,
+            "spatialMethod": "bilateral_vst",
+            "bilateralReach": 1,
+            "channels": [
+                "P14-ubiTom",
+                "gBT-uGFP",
+                "OTI-CTV"
+            ],
+            "temporalFrames": 1,
+            "farnebackMaxShiftPx": 8,
+            "spatialSigma": 1,
+            "temporalStat": "gated",
+            "restoreDynamicRange": true
+        },
+        "finishedAt": "2026-11-15T13:21:46",
+        "fun": "cleanupImages.smooth",
+        "inputs": [
+            {
+                "name": "driftCorrected",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T13:25:23",
+        "env": {
+            "blockSize": 512,
+            "device": "cuda",
+            "cellpose": "4.2.1.1",
+            "overlap": 31
+        },
+        "pool": "gpu",
+        "taskId": "xuTaCr",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "driftCorrected",
+        "params": {
+            "overwrite": false,
+            "labelErosion": 0,
+            "models": {
+                "0": {
+                    "cellprobThreshold": -2,
+                    "model": "cpsam_v2",
+                    "matchAs": "base",
+                    "normalise": 99.9,
+                    "augment": false,
+                    "cellChannels": [
+                        "gBT-uGFP",
+                        "P14-ubiTom",
+                        "OTI-CTV"
+                    ],
+                    "stitchThreshold": 0.2,
+                    "gaussianFilter": 0,
+                    "flowThreshold": 1,
+                    "medianFilter": 0,
+                    "cellDiameter": 10,
+                    "nucChannels": [],
+                    "threshold": 0,
+                    "invert": false
+                }
+            },
+            "haloWholeCell": false,
+            "intensityValueName": "driftCorrected",
+            "matchThreshold": 0.3,
+            "minCellSize": 0,
+            "cellSizeMax": 0,
+            "removeUnmatched": false,
+            "normaliseToWhole": true,
+            "labelOverlap": 0.25,
+            "gaussianFilter": 0,
+            "extendedMeasures": true,
+            "overlap": "auto",
+            "labelExpansion": 0,
+            "outputValueName": "Tcells",
+            "intensityMeasure": "mean",
+            "clearDepth": false,
+            "clearTouchingBorder": false,
+            "blockSize": "auto",
+            "haloSize": 0,
+            "labelSmoothing": 0
+        },
+        "finishedAt": "2026-11-15T13:52:49",
+        "fun": "segment.cellposeMeasure",
+        "inputs": [
+            {
+                "name": "driftCorrected",
+                "param": "intensityValueName",
+                "version": "v1"
+            },
+            {
+                "name": "driftCorrected",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            }
+        ],
+        "at": "2026-11-15T14:15:35",
+        "pool": "cpu",
+        "taskId": "ZxDU2Z",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "Tcells",
+        "params": {
+            "lambdaBranch": 50,
+            "segmentationMissRate": 0.1,
+            "lambdaDist": 5,
+            "forceRecompute": true,
+            "thetaTime": 5,
+            "thetaDist": 5,
+            "lambdaTime": 5,
+            "accuracy": 0.8,
+            "windowMinutes": 0,
+            "noiseInital": 300,
+            "lambdaLink": 5,
+            "distThresh": 10,
+            "maxLost": 1,
+            "trackBranching": false,
+            "timeThresh": 5,
+            "probToAssign": 0.8,
+            "minTimepoints": 5,
+            "noiseProcessing": 100,
+            "noiseMeasurements": 100,
+            "dims": "auto",
+            "popsToTrack": "/qc/OTI",
+            "maxSearchRadius": 4
+        },
+        "finishedAt": "2026-11-15T14:15:57",
+        "fun": "tracking.bayesian_track_measures",
+        "inputs": [
+            {
+                "name": "Tcells",
+                "param": "valueName",
+                "ns": "labels",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            }
+        ],
+        "at": "2026-11-15T14:18:14",
+        "pool": "cpu",
+        "taskId": "Ldcdhf",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "finishedAt": "2026-11-15T14:18:17",
+        "valueName": "Tcells",
+        "params": {
+            "lambdaBranch": 50,
+            "segmentationMissRate": 0.1,
+            "lambdaDist": 5,
+            "forceRecompute": true,
+            "thetaTime": 5,
+            "thetaDist": 5,
+            "lambdaTime": 5,
+            "accuracy": 0.8,
+            "windowMinutes": 0,
+            "noiseInital": 300,
+            "lambdaLink": 5,
+            "distThresh": 10,
+            "maxLost": 1,
+            "trackBranching": false,
+            "timeThresh": 5,
+            "probToAssign": 0.8,
+            "minTimepoints": 5,
+            "noiseProcessing": 100,
+            "noiseMeasurements": 100,
+            "dims": "auto",
+            "popsToTrack": "/qc/OTI",
+            "maxSearchRadius": 10
+        },
+        "replaces": {
+            "name": "Tcells",
+            "fun": "tracking.bayesian_track_measures",
+            "ns": "labels",
+            "at": "2026-11-15T14:15:35",
+            "taskId": "ZxDU2Z"
+        },
+        "fun": "tracking.bayesian_track_measures",
+        "inputs": [
+            {
+                "name": "Tcells",
+                "param": "valueName",
+                "ns": "labels",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            }
+        ],
+        "at": "2026-11-15T14:18:51",
+        "pool": "cpu",
+        "taskId": "mapeuD",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "finishedAt": "2026-11-15T14:18:54",
+        "valueName": "Tcells",
+        "params": {
+            "lambdaBranch": 50,
+            "segmentationMissRate": 0.1,
+            "lambdaDist": 5,
+            "forceRecompute": true,
+            "thetaTime": 5,
+            "thetaDist": 5,
+            "lambdaTime": 5,
+            "accuracy": 0.8,
+            "windowMinutes": 0,
+            "noiseInital": 300,
+            "lambdaLink": 5,
+            "distThresh": 10,
+            "maxLost": 1,
+            "trackBranching": false,
+            "timeThresh": 5,
+            "probToAssign": 0.8,
+            "minTimepoints": 5,
+            "noiseProcessing": 100,
+            "noiseMeasurements": 100,
+            "dims": "auto",
+            "popsToTrack": "/qc/non-OTI/gBT",
+            "maxSearchRadius": 10
+        },
+        "replaces": {
+            "name": "Tcells",
+            "fun": "tracking.bayesian_track_measures",
+            "ns": "labels",
+            "at": "2026-11-15T14:18:14",
+            "taskId": "Ldcdhf"
+        },
+        "fun": "tracking.bayesian_track_measures",
+        "inputs": [
+            {
+                "name": "Tcells",
+                "param": "valueName",
+                "ns": "labels",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:18:54",
+        "pool": "cpu",
+        "taskId": "rCQPDq",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "finishedAt": "2026-11-15T14:18:57",
+        "valueName": "Tcells",
+        "params": {
+            "lambdaBranch": 50,
+            "segmentationMissRate": 0.1,
+            "lambdaDist": 5,
+            "forceRecompute": true,
+            "thetaTime": 5,
+            "thetaDist": 5,
+            "lambdaTime": 5,
+            "accuracy": 0.8,
+            "windowMinutes": 0,
+            "noiseInital": 300,
+            "lambdaLink": 5,
+            "distThresh": 10,
+            "maxLost": 1,
+            "trackBranching": false,
+            "timeThresh": 5,
+            "probToAssign": 0.8,
+            "minTimepoints": 5,
+            "noiseProcessing": 100,
+            "noiseMeasurements": 100,
+            "dims": "auto",
+            "popsToTrack": "/qc/non-OTI/P14",
+            "maxSearchRadius": 10
+        },
+        "replaces": {
+            "name": "Tcells",
+            "fun": "tracking.bayesian_track_measures",
+            "ns": "labels",
+            "at": "2026-11-15T14:18:51",
+            "taskId": "mapeuD"
+        },
+        "fun": "tracking.bayesian_track_measures",
+        "inputs": [
+            {
+                "name": "Tcells",
+                "param": "valueName",
+                "ns": "labels",
+                "version": "v1"
+            }
+        ]
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:24:40",
+        "pool": "cpu",
+        "taskId": "9RRkYW",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_6",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 6
+        },
+        "finishedAt": "2026-11-15T14:24:52",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:26:40",
+        "pool": "cpu",
+        "taskId": "k0AI4D",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_2",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 2
+        },
+        "finishedAt": "2026-11-15T14:26:41",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:27:23",
+        "pool": "cpu",
+        "taskId": "yfNZWJ",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_2",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 2
+        },
+        "finishedAt": "2026-11-15T14:27:25",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:27:30",
+        "pool": "cpu",
+        "taskId": "L3rb9J",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_3",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 3
+        },
+        "finishedAt": "2026-11-15T14:27:31",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:27:36",
+        "pool": "cpu",
+        "taskId": "OJQmzn",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_4",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 4
+        },
+        "finishedAt": "2026-11-15T14:27:37",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:27:45",
+        "pool": "cpu",
+        "taskId": "lydvwK",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_5",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 5
+        },
+        "finishedAt": "2026-11-15T14:27:47",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:27:53",
+        "pool": "cpu",
+        "taskId": "2OHefF",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "postFiltering": 0,
+            "includeSelfTransitions": true,
+            "includeStart": false,
+            "scaleMeasurements": [],
+            "noiseFilterMeasurements": 0,
+            "modelMeasurements": [
+                "live.cell.speed",
+                "live.cell.angle"
+            ],
+            "colName": "movement_6",
+            "normaliseTo": "none",
+            "pops": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "normaliseMeasurements": [],
+            "postIterations": 1,
+            "numStates": 6
+        },
+        "finishedAt": "2026-11-15T14:27:54",
+        "fun": "behaviour.hmm"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:30:35",
+        "env": {
+            "device": "cpu",
+            "seed": 0
+        },
+        "pool": "cpu",
+        "taskId": "zgiBx8",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "",
+        "params": {
+            "maxFraction": 0,
+            "popsToCluster": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "reversePath": false,
+            "normaliseAxis": "channels",
+            "minTracklength": 5,
+            "transformation": "NONE",
+            "clusterMeasures": [
+                "live.track.speed",
+                "live.track.duration",
+                "live.track.trackLength",
+                "live.track.displacement",
+                "live.track.straightness",
+                "live.track.displacementRatio",
+                "live.track.outreachRatio",
+                "live.track.meanTurningAngle",
+                "live.track.asphericity",
+                "live.cell.hmm.state.movement_2",
+                "live.cell.hmm.transitions.movement_2"
+            ],
+            "logBase": 0,
+            "valueNameSuffix": "movement",
+            "resolution": 0.35,
+            "pagaThreshold": 0.1,
+            "normalisePercentileBottom": 0,
+            "createUmap": true,
+            "normaliseToMedian": false,
+            "normalisePercentile": 99.8,
+            "usePaga": false
+        },
+        "finishedAt": "2026-11-15T14:30:57",
+        "fun": "clustTracks.cluster"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "gates": [
+            {
+                "hash": "416e73ba5bef5be6",
+                "valueName": "Tcells",
+                "path": "/qc/OTI"
+            },
+            {
+                "hash": "ceed53f1b9bd856f",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/gBT"
+            },
+            {
+                "hash": "be0beb5fb5b708a9",
+                "valueName": "Tcells",
+                "path": "/qc/non-OTI/P14"
+            }
+        ],
+        "at": "2026-11-15T14:32:53",
+        "env": {
+            "device": "cpu",
+            "seed": 0
+        },
+        "pool": "cpu",
+        "taskId": "VpF1hG",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "finishedAt": "2026-11-15T14:33:05",
+        "valueName": "",
+        "params": {
+            "maxFraction": 0,
+            "popsToCluster": [
+                "Tcells/qc/OTI/_tracked",
+                "Tcells/qc/non-OTI/gBT/_tracked",
+                "Tcells/qc/non-OTI/P14/_tracked"
+            ],
+            "reversePath": false,
+            "normaliseAxis": "channels",
+            "minTracklength": 5,
+            "transformation": "NONE",
+            "clusterMeasures": [
+                "live.track.speed",
+                "live.track.duration",
+                "live.track.trackLength",
+                "live.track.displacement",
+                "live.track.straightness",
+                "live.track.displacementRatio",
+                "live.track.outreachRatio",
+                "live.track.meanTurningAngle",
+                "live.track.asphericity",
+                "live.cell.hmm.state.movement_3",
+                "live.cell.hmm.transitions.movement_3"
+            ],
+            "logBase": 0,
+            "valueNameSuffix": "movement",
+            "resolution": 0.35,
+            "pagaThreshold": 0.1,
+            "normalisePercentileBottom": 0,
+            "createUmap": true,
+            "normaliseToMedian": false,
+            "normalisePercentile": 99.8,
+            "usePaga": false
+        },
+        "replaces": {
+            "name": "movement",
+            "fun": "clustTracks.cluster",
+            "ns": "clusters",
+            "at": "2026-11-15T14:30:35",
+            "taskId": "zgiBx8"
+        },
+        "fun": "clustTracks.cluster"
+    },
+    {
+        "ceceliaVersion": "0.2.12",
+        "at": "2026-11-15T14:56:40",
+        "pool": "cpu",
+        "taskId": "tmjBan",
+        "by": "default",
+        "format": 1,
+        "author": {
+            "profile": "default",
+            "via": "app"
+        },
+        "status": "done",
+        "valueName": "driftCorrected",
+        "params": {
+            "channelRoles": {},
+            "exclusive": true,
+            "backgroundMethod": "otsu",
+            "afCombinations": {
+                "1": {
+                    "channelRoles": {
+                        "P14-ubiTom": "competing",
+                        "OTI-CTV": "competing"
+                    },
+                    "exclusive": true,
+                    "targetChannel": [
+                        "gBT-uGFP"
+                    ]
+                },
+                "0": {
+                    "channelRoles": {
+                        "gBT-uGFP": "competing",
+                        "OTI-CTV": "competing"
+                    },
+                    "exclusive": true,
+                    "targetChannel": [
+                        "P14-ubiTom"
+                    ]
+                },
+                "2": {
+                    "channelRoles": {
+                        "gBT-uGFP": "competing",
+                        "P14-ubiTom": "competing"
+                    },
+                    "exclusive": true,
+                    "targetChannel": [
+                        "OTI-CTV"
+                    ]
+                }
+            },
+            "targetChannel": []
+        },
+        "finishedAt": "2026-11-15T14:59:34",
+        "fun": "cleanupImages.afCorrect",
+        "inputs": [
+            {
+                "name": "driftCorrected",
+                "param": "valueName",
+                "version": "v1"
+            }
+        ]
+    }
+]

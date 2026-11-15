@@ -12,7 +12,10 @@
 #   3. group     by identity (B4): task + output name; a task with no output name is keyed by what it
 #                reads. Latest done run wins per image — exact for an output that overwrites
 #   4. merge     across exemplars into one node; params that differ become CONFLICTS (B7), never a guess
-#   5. wire      A → B when a param of B names A's output IN A's NAMESPACE (B5)
+#   5. wire      A → B when a param of B names A's output IN A's NAMESPACE (B5), reads a population
+#                A derives (`producesPop`: tracking's `…/_tracked`) or a column A writes
+#                (`producesColumns`: HMM's `live.cell.hmm.state.<colName>`); then drop the edges
+#                another path already implies (segment → gate → tracking needs no segment → tracking)
 #   6. keep      the chosen final outputs (default: all) and everything upstream of them (B3)
 #   7. models    a training step whose model exists is dropped; its consumers keep using the model (B9)
 #   8. gates     a population read downstream that no step produces → a `gate.manual_gate` step (B6)
@@ -28,7 +31,16 @@ struct HistoryStep
     image_uids::Vector{String}    # exemplars it ran on
     output::String                # the name it writes ("" = none)
     output_ns::String             # that name's namespace: "labels", "models", … ("" = an image version)
+    columns::Vector{Tuple{String,String}}       # (label set, column) it writes (`producesColumns`)
+    pops::Vector{Tuple{String,String,String}}   # (label set, population, marker) it derives (`producesPop`)
 end
+
+HistoryStep(id, fn, params, at, image_uids, output, output_ns) =
+    HistoryStep(id, fn, params, at, image_uids, output, output_ns, Tuple{String,String}[],
+                Tuple{String,String,String}[])
+
+# A population picker value that means the whole segmentation, not a gated population.
+_whole_pop(v::AbstractString) = is_root(v) || v == "NONE"
 
 # ── spec reading ──
 
@@ -36,8 +48,10 @@ end
 # namespace for a name the task WRITES (`namespace`), the field it READS from (`field`: labels,
 # spatialGraphs, …; image versions are ""), or "models" for a model picker (`optionsFrom` a vault).
 # `former` = the param's `formerKeys` (a renamed param), which a run saved before the rename still uses.
+# `columns` = the param's `producesColumns` templates (`{}` = its value), `yields` its `producesPop`
+# marker: what a task writes that no namespace names, so a reader can still be wired to it.
 const _HistoryLeaf = @NamedTuple{type::String, ns::String, writes::Bool, accepts::Vector{String},
-                                 former::Vector{String}}
+                                 former::Vector{String}, columns::Vector{String}, yields::String}
 
 # a label set is named the same whether a picker lists its labels or its measurements
 _field_ns(field) = (f = string(something(field, ""));
@@ -56,10 +70,16 @@ function _spec_leaf_params!(out::Dict{String,_HistoryLeaf}, spec)
         # a composite's steps share keys: measureLabels READS `outputValueName`, the label set its segment
         # step WROTE under that key; track_measures re-reads `valueName`, which the tracking step already
         # took as its input. The first step to declare a key says what it is, unless a later one writes it.
-        (haskey(out, k) && isempty(ns_w)) && continue
+        # Columns add up: HMM's states step and its transitions step both write under `colName`.
+        cols = String[string(c) for c in something(get(p, "producesColumns", nothing), [])]
+        if haskey(out, k) && isempty(ns_w)
+            isempty(cols) || (out[k] = merge(out[k], (; columns = unique!(vcat(out[k].columns, cols)))))
+            continue
+        end
         out[k] = (; type = t, ns, writes = !isempty(ns_w),
                     accepts = String[string(a) for a in something(get(p, "accepts", nothing), [])],
-                    former = String[string(f) for f in something(get(p, "formerKeys", nothing), [])])
+                    former = String[string(f) for f in something(get(p, "formerKeys", nothing), [])],
+                    columns = cols, yields = string(something(get(p, "producesPop", nothing), "")))
     end
     isnothing(spec) || walk(get(spec, "params", []))
     out
@@ -103,6 +123,42 @@ function _history_output(fn::String, params::Dict{String,Any}, leaves)::Tuple{St
         string(get(params, kk, "")) == name && return (name, l.ns)
     end
     (name, "")
+end
+
+# The label sets a run's population pickers name (`Tcells/qc/OTI/_tracked` → `Tcells`).
+function _history_pop_sets(params::AbstractDict, lv)::Vector{String}
+    own = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    sets = String[]
+    for (k, s) in _keyed_strings(params)
+        l = get(lv, k, nothing)
+        (l !== nothing && l.type == "popSelection" && !_whole_pop(s)) || continue
+        push!(sets, first(_split_pop_ref(s, own)))
+    end
+    sort!(unique!(sets))
+end
+
+# The cell-table columns a run writes (`producesColumns`, `{}` = the param's value) — into each label
+# set its population pickers name ("" = none named) — and the populations it derives (`producesPop`:
+# tracking `/qc/OTI` on `Tcells` → (`Tcells`, `/qc/OTI`, `_tracked`); the whole segmentation → path
+# ""). Neither is an output name, so neither goes through `_history_output`.
+function _history_products(params::Dict{String,Any}, lv)
+    params = _history_current_params(params, lv)
+    cols = Tuple{String,String}[]
+    pops = Tuple{String,String,String}[]
+    own = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    sets = _history_pop_sets(params, lv)
+    for (k, l) in lv
+        v = get(params, k, nothing)
+        v isa AbstractString || continue
+        for c in l.columns, ls in (isempty(sets) ? [""] : sets)
+            push!(cols, (ls, replace(c, "{}" => v)))
+        end
+        if !isempty(l.yields)
+            ls, path = _whole_pop(v) ? (own, "") : _split_pop_ref(v, own)
+            push!(pops, (ls, rstrip(path, '/'), l.yields))
+        end
+    end
+    sort!(unique!(cols)), unique!(pops)
 end
 
 # What a run READS, for keying a task that names no output: its input names and populations.
@@ -151,6 +207,57 @@ function _reads_output(b_params, b_leaves, out::String, ns::String)::Bool
         end
     end
     false
+end
+
+# Does a run with `b_params` read what step `a` made — anything with `output`, `output_ns`, `columns`
+# and `pops` fields? Its named output (`_reads_output`), a column `a` wrote into a label set `b` reads
+# (a column picker holds the full name; `b`'s label sets are its population pickers'), or a population
+# `a` derives: a picker naming `Tcells/qc/OTI/_tracked` (or anything under it, or under a sub-gate of
+# `/qc/OTI`) reads the tracking that ran on `/qc/OTI` of `Tcells`. THE edge rule — the chain's and the
+# board scope's (`_history_scope`).
+function _reads_made(b_params, b_leaves, a)::Bool
+    (!isempty(a.output) && _reads_output(b_params, b_leaves, a.output, a.output_ns)) && return true
+    (isempty(a.columns) && isempty(a.pops)) && return false
+    own = string(get(b_params, "valueName", VERSIONED_DEFAULT_VAL))
+    b_sets = isempty(a.columns) ? String[] : _history_pop_sets(b_params, b_leaves)
+    for (k, s) in _keyed_strings(b_params)
+        l = get(b_leaves, k, nothing)
+        (l === nothing || l.writes) && continue
+        any(c -> c[2] == s && (isempty(c[1]) || isempty(b_sets) || c[1] in b_sets), a.columns) && return true
+        l.type == "popSelection" || continue
+        ls, path = _split_pop_ref(s, own)
+        segs = split(path, '/'; keepempty = false)
+        for (als, apath, marker) in a.pops
+            als == ls || continue
+            i = findfirst(==(marker), segs)
+            i === nothing && continue
+            base = "/" * join(segs[1:i-1], "/")
+            (isempty(apath) || base == apath || startswith(base, apath * "/")) && return true
+        end
+    end
+    false
+end
+
+# Drop an edge another path already implies: segment → gate → tracking needs no segment → tracking.
+# The chain runs the same either way; the canvas then shows the order the work happened in.
+function _transitive_reduce(edges::Set{Tuple{String,String}})::Set{Tuple{String,String}}
+    succ = Dict{String,Vector{String}}()
+    for (f, t) in edges
+        push!(get!(Vector{String}, succ, f), t)
+    end
+    function reaches(from, to, skip)
+        seen = Set{String}()
+        stack = [n for n in get(succ, from, String[]) if n != skip]
+        while !isempty(stack)
+            n = pop!(stack)
+            n == to && return true
+            n in seen && continue
+            push!(seen, n)
+            append!(stack, get(succ, n, String[]))
+        end
+        false
+    end
+    Set(e for e in edges if !reaches(e[1], e[2], e[2]))
 end
 
 # ── collection ──
@@ -203,7 +310,12 @@ function _history_latest(rows, leaves_of)
         isempty(why) || push!(skipped, (r, why))
         r.legacy && continue
         out, _ = _history_output(r.fn, r.params, lv)
-        key = isempty(out) ? "in:" * _history_inputs(r.params, lv) : "out:" * out
+        # a task that writes columns, not a named output, is one step per column name: an HMM sweep
+        # (movement_2 … movement_6) is five versions, not one where the newest wins
+        cols, _ = isempty(out) ? _history_products(r.params, lv) : (Tuple{String,String}[], nothing)
+        key = !isempty(out) ? "out:" * out :
+              !isempty(cols) ? "cols:" * join(("$ls:$c" for (ls, c) in cols), "&") :
+              "in:" * _history_inputs(r.params, lv)
         get!(Dict{String,Any}, isempty(why) ? latest : held, (r.fn, key))[r.uid] = r
     end
     latest, held, skipped
@@ -219,10 +331,14 @@ their models. Returns, all plain JSON:
 
 - `template`    — `{name, nodes: [{id, fn, scope, params}], edges: [{from, to}], startTargets}` —
                   the start dot on the chain's roots
-- `finalOutputs`— `[{id, fn, output, detail, multi, at, imageUids, kept}]`: what the user may tick.
-                  `detail` tells one version of a step from another (its output name, else the
-                  populations it read); `multi` = keeping several versions is a real fork (it writes
-                  a label set, or runs per population), else the versions are alternatives — keep one
+- `finalOutputs`— `[{id, fn, output, detail, multi, at, imageUids, kept, siblingRead, inputs, inputsKey}]`: what the user
+                  may tick. `detail` tells one version of a step from another (its output name, else
+                  its column name, else the populations it read); `multi` = keeping several versions
+                  is a real fork (it writes a label set, or runs per population), else the versions
+                  are alternatives — keep one; `siblingRead` = another version of this task feeds a
+                  later step, so this one was a try the exemplars moved past; `inputs` = the
+                  populations it read (display), `inputsKey` = what it read (`_history_inputs`, the
+                  same identity `siblingRead` uses) — alternatives are versions on the same inputs
 - `conflicts`   — `[{nodeId, param, values: {uid => value}}]`: exemplars disagree; the template holds
                   the latest value until the user picks
 - `notReplayed` — `[{fn, imageUid, why}]`; `reusedModels` — `[{fn, model}]`; `gateSteps` — node ids
@@ -248,8 +364,9 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         # by current key: a run saved before a param's rename (`formerKeys`) is the same param — the
         # template node too, so a conflict's `param` names a key the node holds
         lv = leaves_of(fn)
+        cols, pops = _history_products(last.params, lv)
         push!(steps, HistoryStep(id, fn, deepcopy(_history_current_params(last.params, lv)), last.at,
-                                 sort!(collect(keys(by_img))), out, ns))
+                                 sort!(collect(keys(by_img))), out, ns, cols, pops))
         length(by_img) > 1 || continue
         cur = Dict(u => _history_current_params(r.params, lv) for (u, r) in by_img)
         for k in sort!(unique(vcat((collect(keys(p)) for p in values(cur))...)))
@@ -259,15 +376,20 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         end
     end
 
-    # wiring: B reads A's output (A ran first; "default" is the raw image, never a step's output)
+    # wiring: B reads what A made (A ran first; "default" is the raw image, never a step's output)
     edges = Set{Tuple{String,String}}()
     for a in steps, b in steps
-        (a === b || isempty(a.output) || a.output == VERSIONED_DEFAULT_VAL || a.at > b.at) && continue
-        _reads_output(b.params, leaves_of(b.fn), a.output, a.output_ns) && push!(edges, (a.id, b.id))
+        (a === b || a.at > b.at || a.output == VERSIONED_DEFAULT_VAL) && continue
+        _reads_made(b.params, leaves_of(b.fn), a) && push!(edges, (a.id, b.id))
     end
 
-    # final outputs = steps nothing else reads; keep those asked for and everything upstream
+    # final outputs = steps nothing else reads; keep those asked for and everything upstream. A final
+    # whose task ran on the SAME inputs in a version something did read (`siblingRead`) is a sweep the
+    # exemplars moved past: cluster read HMM movement_3, so movement_2/4/5/6 on those tracks are left
+    # out by default — an HMM on other populations is not a sibling
     finals = [s for s in steps if !any(e -> e[1] == s.id, edges)]
+    sibling(s) = (s.fn, _history_inputs(s.params, leaves_of(s.fn)))
+    read_sweeps = Set(sibling(s) for s in steps if any(e -> e[1] == s.id, edges))
     kept_finals = Set(isnothing(keep) ? [s.id for s in finals] : String.(keep))
     keep_ids = Set{String}()
     stack = [s.id for s in finals if s.id in kept_finals]
@@ -310,6 +432,7 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         end
     end
     append!(kept, gate_steps)
+    edges = _transitive_reduce(edges)
 
     # the canonical node constructor (spec-inherited scope, default barrier policy + pool) and the
     # canonical serialiser, so the suggestion is exactly what the whiteboard would save
@@ -329,7 +452,10 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
         "finalOutputs" => [Dict{String,Any}("id" => s.id, "fn" => s.fn, "output" => s.output,
                                             "detail" => _history_detail(s, leaves_of(s.fn)),
                                             "multi" => _history_forks(s, leaves_of(s.fn)), "at" => s.at,
-                                            "imageUids" => s.image_uids, "kept" => s.id in kept_finals)
+                                            "imageUids" => s.image_uids, "kept" => s.id in kept_finals,
+                                            "siblingRead" => sibling(s) in read_sweeps,
+                                            "inputs" => _history_pops_read(s.params, leaves_of(s.fn)),
+                                            "inputsKey" => last(sibling(s)))
                            for s in finals],
         "conflicts"    => [c for c in conflicts if c["nodeId"] in keep_ids],
         "notReplayed"  => not_replayed,
@@ -355,7 +481,7 @@ function gated_pop_refs(params::AbstractDict, lv; all_pickers::Bool = false)::Ve
         l = get(lv, k, nothing)
         (l !== nothing && l.type == "popSelection" &&
          (all_pickers || isempty(l.accepts) || "live" in l.accepts)) || continue
-        str in ("", "NONE", "root", "/") && continue
+        _whole_pop(str) && continue
         ls, path = _split_pop_ref(str, own)
         segs = String[]
         produced = false
@@ -391,8 +517,16 @@ end
 # populations — tracking `/qc/frags` vs `/qc/cells`), else "" (one version only).
 function _history_detail(s::HistoryStep, lv)::String
     isempty(s.output) || return s.output
+    for (k, l) in lv     # an HMM version is told apart by its `colName`, not its long column names
+        isempty(l.columns) || return string(get(s.params, k, ""))
+    end
+    _history_pops_read(s.params, lv)
+end
+
+# The populations a run's pickers name, in key order — `/qc/frags`, or HMM's three `…/_tracked`.
+function _history_pops_read(params::AbstractDict, lv)::String
     vals = String[]
-    for (k, v) in sort!(collect(s.params); by = first)
+    for (k, v) in sort!(collect(params); by = first)
         l = get(lv, k, nothing)
         (l !== nothing && l.type == "popSelection") && append!(vals, [x for (_, x) in _keyed_strings(Dict(k => v))])
     end
@@ -404,5 +538,5 @@ end
 # alternatives — two region clusterings, two stats runs — and the user keeps one.
 _history_forks(s::HistoryStep, lv)::Bool =
     s.output_ns == "labels" ||
-    (isempty(s.output) && any(l -> l.type == "popSelection" && !l.writes, values(lv)) &&
+    (isempty(s.output) && isempty(s.columns) && any(l -> l.type == "popSelection" && !l.writes, values(lv)) &&
      !isempty(_history_detail(s, lv)))

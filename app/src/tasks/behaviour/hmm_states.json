@@ -33,6 +33,7 @@
       "label": "Name",
       "type": "text",
       "default": "default",
+      "producesColumns": ["live.cell.hmm.state.{}"],
       "tip": "Suffix for the output column: live.cell.hmm.state.<name>"
     },
     {
