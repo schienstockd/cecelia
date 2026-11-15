@@ -50,6 +50,9 @@ Two halves, and only one of them is generic:
 8. **Cost shown before launch**: the run names and "Run 4× on 8 images" on the button; at most 20
    runs. GPU tasks (flow training) say "GPU: runs one after another" instead of a confirm dialog — the
    pool (limit 1) serialises them; the warning is the cost, the user is already pressing Run.
+   Tasks whose runs share one file (HMM states, Detect aggregates, the clusterings add columns to label props) declare
+   `sweep.sequential` and the form sends each run when the previous finishes ("Runs one after
+   another") — before that, every HMM run after the first was refused as already running.
 9. **Opt in only tasks whose runs truly coexist** — the audit below, not the param types. Tasks whose
    output target is fixed (cleanup, tracking, motifs, contacts, aggregates) stay out until their output
    is nameable; that is a per-task change, listed as a blocker, not something the launcher works around.
