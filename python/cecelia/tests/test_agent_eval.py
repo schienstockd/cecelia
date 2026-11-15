@@ -620,6 +620,13 @@ class TestStageBoards(unittest.TestCase):
         self.assertEqual(specs["Segmentation QC"]["candidates"][0][0]["pops"], ["T/labels"])
         self.assertEqual(specs["Tracks"]["candidates"][0][0]["pops"], ["T/qc/_tracked"])
         self.assertEqual(specs["Tracks"]["candidates"][1][0]["pops"], ["T/qc"])     # the fallback
+        # tracking several pops in one run: every tracked pop on the one board
+        p = stage_boards._plots("track", [{"params": {"valueName": "T", "popsToTrack": ["T/qc/a", "T/qc/b"]}}])
+        self.assertEqual(p[0][1][0][0]["pops"], ["T/qc/a/_tracked", "T/qc/b/_tracked"])
+        self.assertEqual(p[0][1][1][0]["pops"], ["T/qc/a", "T/qc/b"])
+        for whole in ([], "NONE", ["T/"]):
+            p = stage_boards._plots("track", [{"params": {"valueName": "T", "popsToTrack": whole}}])
+            self.assertEqual(p[0][1][0][0]["pops"], ["T/_tracked"])
         self.assertEqual([p["plot"] for p in specs["HMM"]["candidates"][0]],
                          ["hmm_state_frequency", "state_signature", "transition_matrix", "hmmStateCards"])
         self.assertEqual({p["suffix"] for p in specs["Clusters"]["candidates"][0]}, {"mv"})

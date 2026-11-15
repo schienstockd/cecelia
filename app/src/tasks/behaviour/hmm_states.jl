@@ -56,11 +56,7 @@ _hmm_pop_value_names(pops, default_vn::AbstractString) =
     collect(keys(_group_pops_by_value_name(pops, default_vn)))
 
 # Coerce the pops param (array from the multi-select; tolerate a bare string) and drop placeholders.
-function _hmm_pops(params)::Vector{String}
-    raw  = get(params, "pops", String[])
-    pops = raw isa AbstractString ? String[raw] : String[string(x) for x in raw]
-    filter(p -> !isempty(p) && p != "NONE", pops)
-end
+_hmm_pops(params)::Vector{String} = _str_list(params, "pops")
 
 # ── fit record: `{props}.hmmfit.json`, keyed by colName ─────────────────────────────────────────
 # What one run was fitted on and how well it fit (docs/todo/HMM_FIT_QUALITY_PLAN.md). Written into

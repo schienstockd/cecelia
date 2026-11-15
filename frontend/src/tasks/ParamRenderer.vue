@@ -20,7 +20,7 @@ import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { autoValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, scopeValueNames, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
+         scopeValueName, scopeValueNames, siblingKeyOfType, popRefList, groupOrderKeys, newEntryDefaults } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
 import { openViewerWindow } from '../utils/viewerWindow'
@@ -399,7 +399,14 @@ watch(() => [props.context?.images?.[0]?.uid,
 // Multi-select chip lists (pops / measure cols / channels) all edit the same flat string[] `val`.
 // A GROUPED list edits only its own slice, so on update merge the group's new selection back with the
 // other groups' selections, reconstructed in the full option order so the array stays stable.
-function chipArr(): string[] { return Array.isArray(val.value) ? (val.value as string[]) : [] }
+function chipArr(): string[] {
+  if (Array.isArray(val.value)) return val.value as string[]
+  // a pop picker's value saved when it took one string ("NONE" / "/qc/OTI") reads as its chip
+  return props.param.type === 'popSelection'
+    ? popRefList(val.value, scopeValueName(props.context?.params, props.context?.values,
+                                           Object.keys(props.context?.images?.[0]?.labels ?? {})))
+    : []
+}
 function chipGroupSel(groupValues: string[]): string[] { const cur = chipArr(); return groupValues.filter(v => cur.includes(v)) }
 function chipGroupUpdate(allValues: string[], groupValues: string[], next: string[]) {
   const keep = new Set([...chipArr().filter(v => !groupValues.includes(v)), ...next])

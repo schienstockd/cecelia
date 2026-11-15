@@ -347,6 +347,16 @@ export function scopeValueName(
   return labelKeys[0] ?? 'default'
 }
 
+/** A multi-select population picker's value as its list of segmentation-prefixed refs. A run saved
+ *  while the picker took ONE value holds a string — `"NONE"` (the whole segmentation) or a bare path
+ *  (`"/qc/OTI"`, on the form's segmentation `vn`) — which reads as the chip it means, so the form shows
+ *  what the run would do and the first click adds to it rather than dropping it. */
+export function popRefList(value: unknown, vn: string): string[] {
+  if (Array.isArray(value)) return value.map(String)
+  if (typeof value !== 'string' || value === '' || value === 'NONE') return []
+  return [value.startsWith('/') ? `${vn}${value}` : value]
+}
+
 /** The SET of segmentations behind a picker's currently selected pops — deduped, first-seen order.
  *  Used by `labelPropsColsSelection` to intersect columns across VNs (contract B: a track cluster
  *  can only be built on features present on every selected pop's VN). Empty when nothing is

@@ -79,6 +79,41 @@ end
     rm(proj.root; recursive = true)
 end
 
+@testset "Chain from history — tracking derives `_tracked` for each picked pop" begin
+    # what the spec declares: `popsToTrack` `producesPop: "_tracked"`, and a picker value that is empty,
+    # "NONE" or the root names the whole segmentation (path "") — one product per picked pop
+    lv = Cecelia._history_leaves("tracking.bayesian_track_measures")
+    pops(v) = sort(Cecelia._history_products(Dict{String,Any}("valueName" => "Tcells", "popsToTrack" => v), lv)[2])
+    whole = [("Tcells", "", "_tracked")]
+    @test pops(Any["Tcells/qc/OTI", "", "Tcells/qc/gBT"]) ==
+          [("Tcells", "/qc/OTI", "_tracked"), ("Tcells", "/qc/gBT", "_tracked")]
+    @test pops(Any["Tcells/qc/OTI"]) == [("Tcells", "/qc/OTI", "_tracked")]
+    @test pops("/qc/OTI") == [("Tcells", "/qc/OTI", "_tracked")]          # a run saved before the list
+    @test pops(Any[]) == whole && pops("NONE") == whole && pops(Any["Tcells/"]) == whole
+end
+
+@testset "Chain from history — one tracking run on several pops still feeds the HMM" begin
+    # the three per-pop tracking runs of TKufLV as ONE run with the multi-select picker's list
+    # (prefixed refs): it derives each pop's `_tracked`, so the HMM reading them hangs off it
+    proj, uids = _history_project("t" => "RFtn9f_TKufLV")
+    img = init_object(proj.uid, uids["t"])
+    log = read_run_log(img)
+    is_trk(e) = e["fun"] == "tracking.bayesian_track_measures"
+    trks = [e for e in log if is_trk(e)]
+    one = deepcopy(last(trks))
+    one["params"]["popsToTrack"] = sort(unique(["Tcells" * string(t["params"]["popsToTrack"]) for t in trks]))
+    log = [[e for e in log if !is_trk(e)]; one]
+    write(Cecelia.run_log_path(img._dir), JSON3.write(log))
+    r = chain_from_history(proj, [uids["t"]])
+    clu = only(f for f in r["finalOutputs"] if f["fn"] == "clustTracks.cluster")
+    r = chain_from_history(proj, [uids["t"]]; keep = [clu["id"]])
+    trk = only(_hnode(r, "tracking.bayesian_track_measures"))
+    @test length(trk["params"]["popsToTrack"]) == 3
+    hmm = only(_hnode(r, "behaviour.hmm"))
+    @test _hedge(r, "gate.Tcells", trk["id"]) && _hedge(r, trk["id"], hmm["id"])
+    rm(proj.root; recursive = true)
+end
+
 @testset "Chain from history — one HMM column name on two label sets is two steps" begin
     # a later HMM on Bcells reuses the name movement_3: both runs' columns are on disk, in different
     # label sets, so both replay — and clustering on Tcells stays wired to the Tcells one

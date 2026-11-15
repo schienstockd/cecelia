@@ -3,7 +3,7 @@ import {
   buildParamValues, flattenParams, missingParamKeys,
   preferredValueName, isKnownValueNameField, VALUE_NAME_FIELDS, isChosenValueName, autoValueName,
   resolveInitialParams, valueNameOptions, imageNamesForField,
-  showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType,
+  showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType, popRefList,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
   paramAppliesToImages, resolveParamTip, findParamByKey, clampParamsToSpec } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
@@ -978,5 +978,20 @@ describe('stored numbers are clamped to the CURRENT spec range', () => {
     expect(clampParamsToSpec(def, node)).toEqual(
       { cellDiameter: 60, extra: 500, adv: { iters: 10 }, iters: 10, models: { a: { size: 1 } } })
     expect(node.cellDiameter).toBe(99)   // input not mutated
+  })
+})
+
+describe('popRefList — a multi pop picker reads a value saved by the single picker', () => {
+  it('keeps a list as it is', () => {
+    expect(popRefList(['Tcells/qc/OTI', 'Tcells/'], 'Tcells')).toEqual(['Tcells/qc/OTI', 'Tcells/'])
+  })
+  it('reads "NONE" and empty as nothing picked (the whole segmentation)', () => {
+    expect(popRefList('NONE', 'Tcells')).toEqual([])
+    expect(popRefList('', 'Tcells')).toEqual([])
+    expect(popRefList(undefined, 'Tcells')).toEqual([])
+  })
+  it('prefixes a bare path with the form\'s segmentation', () => {
+    expect(popRefList('/qc/OTI', 'Tcells')).toEqual(['Tcells/qc/OTI'])
+    expect(popRefList('Bcells/qc', 'Tcells')).toEqual(['Bcells/qc'])
   })
 })

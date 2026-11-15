@@ -184,6 +184,13 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Ran at resolution {resolution} → {numClasses} class(es)",
         long  = "Median confidence {medianConfidence}, boundary fraction {boundaryFraction} — lock the resolution before comparing across attribute groups."),
 
+    # tracking (bayesian_tracking `_tracking_qc!`)
+    "tracking.no_tracks" => (
+        short = "No tracks formed",
+        long  = "btrack linked no cells into tracks — check segmentation continuity and the tracking parameters, then re-run."),
+    "tracking.no_tracks_pops" => (
+        short = "No tracks formed for {pops}",
+        long  = "btrack linked no cells of {pops} into tracks — check their gate, segmentation continuity and the tracking parameters, then re-run."),
     # tracking (track_measures_qc_findings)
     "tracking.motion_dims_uncertain" => (
         short = "Motion dimensionality uncertain ({dims}D)",

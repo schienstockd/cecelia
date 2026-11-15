@@ -904,7 +904,10 @@ end
                      "snr", "base", "typical",
                      # the set's noun, "movie(s)" only when every member is a time-lapse, else
                      # "image(s)" — acq_check.jl, every acq.* finding
-                     "item", "items"])
+                     "item", "items",
+                     # tracking several pops in one run (bayesian_tracking `_tracking_qc!`) — the
+                     # picked pops that formed no tracks, see tracking.no_tracks_pops
+                     "pops"])
         unknown = [m.captures[1] for (_, v) in Cecelia.QC_TEXT
                    for m in eachmatch(r"\{(\w+)\}", v.short * " " * v.long)
                    if !(m.captures[1] in KNOWN)]

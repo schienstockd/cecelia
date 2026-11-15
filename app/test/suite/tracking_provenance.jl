@@ -69,6 +69,13 @@ end
         qc = Cecelia.read_qc(img, "tracking.bayesian_tracking", "B")
         @test qc["metrics"]["nTracks"] == 0
         @test any(f -> f["code"] == "tracking.no_tracks", qc["findings"])
+        # one run on two pops where one formed nothing: the counts are the other's, the finding names it
+        Cecelia._tracking_qc!(img, "B", props, ["popA", "popC"]; names = Dict("popC" => "/qc/c"))
+        qc = Cecelia.read_qc(img, "tracking.bayesian_tracking", "B")
+        @test qc["metrics"]["nTracks"] == nA
+        @test any(f -> f["code"] == "tracking.no_tracks" && occursin("/qc/c", f["short"]), qc["findings"])
+        Cecelia._tracking_qc!(img, "B", props, ["popA", "popB"])
+        @test isempty(Cecelia.read_qc(img, "tracking.bayesian_tracking", "B")["findings"])
     end
 end
 
@@ -118,5 +125,73 @@ end
         @test after.track_source[i] == "popA"
         # every other cell keeps its source
         @test count(==("popA"), skipmissing(after.track_source)) == count(==(1.0), tt.track_id) + 1
+    end
+end
+
+@testset "one run tracks several populations, each under its own track_source" begin
+    have_fixture(fixture_path("testpr")) || return @test_skip "testpr fixture missing"
+    dir = mktempdir(); cp(fixture_path("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir   # in memory only — never set_projects_dir
+        img = init_object("testpr", "KDIeEm")
+        props = img_label_props_path(img, "B")
+        # two halves of the field (disjoint), and a pop overlapping the first
+        xs  = (label_props(props) |> select_cols(["centroid_x"]) |> as_df).centroid_x
+        mid = sort(xs)[length(xs) ÷ 2]
+        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        add_pop!(m, "left";  filter_measure = "centroid_x", filter_fun = "lt",  filter_values = mid)
+        add_pop!(m, "right"; filter_measure = "centroid_x", filter_fun = "gte", filter_values = mid)
+        add_pop!(m, "all";   filter_measure = "centroid_x", filter_fun = "gte", filter_values = -1.0)
+        add_pop!(m, "none";  filter_measure = "centroid_x", filter_fun = "lt",  filter_values = -1.0)
+        save_pop_map!(m, img)
+        run(pops; logs = String[]) = (Cecelia._run_task(Cecelia.BayesianTracking(), img,
+            Dict{String,Any}("valueName" => "B", "minTimepoints" => 2, "popsToTrack" => pops);
+            on_log = l -> push!(logs, l)), logs)
+
+        # overlapping picks are refused before anything is written
+        res, logs = run(Any["B/left", "B/all"])
+        @test res === nothing
+        @test any(l -> occursin("'/left' and '/all' share", l), logs)
+
+        # …and so is an empty pick (its earlier tracks would survive a "successful" run)
+        res, logs = run(Any["B/left", "B/none"])
+        @test res === nothing
+        @test any(l -> occursin("Empty population(s), nothing to track: /none", l), logs)
+
+        res, logs = run(Any["B/left", "B/right"])
+        @test res !== nothing || error(join(logs, "\n"))
+        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        uid_l, uid_r = pop_uid(m, "/left"), pop_uid(m, "/right")
+        src = label_track_sources(img, "B")
+        @test uid_l in values(src) && uid_r in values(src)
+        # no track spans the two pops: every track_id belongs to exactly one source
+        df = label_props(props) |> select_cols(["track_id"]) |> as_df
+        owner = Dict{Int,Set{String}}()
+        for (lbl, t) in zip(df.label, df.track_id)
+            (t isa Real && isfinite(t) && t > 0) || continue
+            push!(get!(owner, Int(t), Set{String}()), something(get(src, Int(lbl), nothing), ""))
+        end
+        @test !isempty(owner) && all(s -> length(s) == 1, values(owner))
+        # QC counts both pops' tracks
+        n_mine = count(s -> only(s) in (uid_l, uid_r), values(owner))
+        @test n_mine > 0
+        @test Cecelia.read_qc(img, "tracking.bayesian_tracking", "B")["metrics"]["nTracks"] == n_mine
+
+        # run 2 failing after run 1 wrote back: run 1 renumbered every track id, so the per-track table
+        # from before must still go. `/rt` is a slice of `/right`, whose tracks own those cells — the
+        # write-back refuses them, so run 2 fails.
+        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        add_pop!(m, "rt"; filter_measure = "centroid_x", filter_fun = "gte", filter_values = sort(xs)[3 * length(xs) ÷ 4])
+        save_pop_map!(m, img)
+        @test Cecelia._run_task(Cecelia.TrackMeasures(), img,
+            Dict{String,Any}("valueName" => "B"); on_log = _ -> nothing) !== nothing
+        trk = img_track_props_path(img, "B"); @test isfile(trk)
+        res, logs = run(Any["B/left", "B/rt"])
+        @test res === nothing
+        @test any(l -> occursin("Stopped at run 2 of 2", l), logs)
+        @test !isfile(trk)
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end
 end
