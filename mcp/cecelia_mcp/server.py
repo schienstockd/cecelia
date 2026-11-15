@@ -652,18 +652,21 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
 @_tool
 def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """Population DEFINITIONS per image — the detail behind lineage's `gatedPops`. Use this to know what
-    a population actually MEANS: its gate geometry or filter rule, and where it sits in the tree. Scope
+    a population actually MEANS: its gate geometry, filter rule or combination, and where it sits in the tree. Scope
     with `image_uid` / `set_uid`, or omit both for the whole project.
 
     Per image `populations` is a flat list; each: `{path, name, parent, popType, valueName, colour,
-    isTrack, gate, filter}`.
-      - `path`/`parent` give the tree (a pop's cells are its gate/filter ∩ its parent).
+    isTrack, gate, filter, boolean}`.
+      - `path`/`parent` give the tree (a pop's cells are its gate/filter/combination ∩ its parent).
       - `popType`: flow/track = gate-drawn; clust/trackclust/region = cluster pops; branch = filters on
         skeleton branches (e.g. `branch-type`).
       - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
         …geometry}` — the drawn gate on two channels. null for filter pops.
       - `filter` (clust/trackclust/region/branch): `{measure, fun, values}` — e.g. a cluster pop is
         `{measure: "clusters.movement", fun: "in", values: [3]}`, which also ties it to that clustering run.
+      - `boolean` (a combined pop — gate and filter both null): `{op: and|or, pops: [paths], not: [paths]}`
+        = the `pops` combined with `op`, minus every `not`, ∩ parent ("qc except OTI" = parent /qc,
+        pops [], not [/qc/OTI]). Reproduce one with add_boolean_pop, never by drawing a gate.
     `truncated: true` means the list was capped (many pops); the definitions are cheap sidecar reads.
 
     Definitions only — membership COUNTS (n cells/tracks per pop) are not here (they need computing gates
@@ -672,7 +675,7 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 
 
 # The gating toolset — gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats, add_gate,
-# set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
+# add_boolean_pop, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
 # Writes change only what Claude drew (the server checks `createdBy`).
 globals().update(register_gating_tools(_tool, _client))
 

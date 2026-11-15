@@ -592,6 +592,11 @@ end
     # who would be left dangling by a delete — what the API refuses on (rename/move can't orphan)
     @test boolean_dependents(m, ["/tom+"]) == ["/either" => ["/tom+"]]
     @test isempty(boolean_dependents(m, ["/qc"]))
+    # whose cells change with /tom+'s: the combination, the one combining THAT, and the child under it —
+    # transitive over term and parent edges, where boolean_dependents stops at one hop
+    @test pops_depending_on(m, "/tom+") == ["/either", "/second", "/either/child"]
+    @test pops_depending_on(m, "/either") == ["/second", "/either/child"]
+    @test isempty(pops_depending_on(m, "/qc"))   # /GFP+ moved out from under it above
     # a dangling reference (only reachable by hand-editing a sidecar) degrades to an empty pop,
     # never a crash — the same rule as a missing column
     m.pops["/either"].boolean_pops = ["/gone"]

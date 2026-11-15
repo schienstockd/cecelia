@@ -590,6 +590,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/preview/run" => (req, body_bytes) -> (api_preview_run(body_bytes)),
     "/api/gating/pop/add" => (req, body_bytes) -> (api_gating_pop_add(body_bytes)),
     "/api/gating/pop/add-gate" => (req, body_bytes) -> (api_gating_pop_add_gate(body_bytes)),
+    "/api/gating/pop/add-boolean" => (req, body_bytes) -> (api_gating_pop_add_boolean(body_bytes)),
     "/api/gating/pop/set-gate" => (req, body_bytes) -> (api_gating_pop_set_gate(body_bytes)),
     "/api/gating/pop/set-own-gate" => (req, body_bytes) -> (api_gating_pop_set_own_gate(body_bytes)),
     "/api/gating/pop/delete-own" => (req, body_bytes) -> (api_gating_pop_delete_own(body_bytes)),

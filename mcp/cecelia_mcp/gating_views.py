@@ -7,8 +7,8 @@ supplies only its own guard — the observer none beyond its allow-list, the aut
 lock, its output-name prefix and the measured-segmentation check (`_gating_guard`). `GATING_ROUTES` is
 the routes the toolset needs, which both allow-lists include, so the two servers cannot drift apart.
 
-Writes go ONLY through the Claude-scoped routes — `/api/gating/pop/add-gate`, `set-own-gate`,
-`delete-own` — which change nothing the user drew (the server checks every population's `createdBy`).
+Writes go ONLY through the Claude-scoped routes — `/api/gating/pop/add-gate`, `add-boolean`,
+`set-own-gate`, `delete-own` — which change nothing the user drew (the server checks every population's `createdBy`).
 The general `/api/gating/pop/*` routes (add / set-gate / delete / rename / move) stay GUI-only.
 """
 from __future__ import annotations
@@ -106,10 +106,28 @@ Place it from gate_histogram's `grid` / gate_plot on `parent` with the SAME tran
 shows the cells the cut decides. The reply carries the stored `path`, `count` (inside) and `outside`
 over `parentCount`, and the `gate` as stored. Tell the user it is a proposal, with the numbers."""
 
+ADD_BOOLEAN_POP_DOC = """ADD one COMBINED population — a set operation over populations that already exist, instead
+of a drawn shape. The way to say "everything in qc except OTI" (`parent="/qc"`, `not_pops=["/qc/OTI"]`), "GFP+
+or TOM+" (`op="or"`, `pops=[…]`) or "TOM+ and GFP+ but not CD169+" (`op="and"`, `pops=[…]`, `not_pops=[…]`).
+Never fake one with add_gate — a polygon with the other gate cut out of it misses cells past its edges
+and stops following the gate it excludes when the user moves it.
+
+Membership = the `pops` combined with `op` ("and" | "or"), minus every `not_pops` one, ∩ `parent` —
+so `pops=[]` means "the parent's cells". Each term is a full population path (get_populations); terms
+may sit anywhere in the tree, but never under the new population itself. get_populations shows an
+existing combination as `boolean: {op, pops, not}` — pass them as op / pops / not_pops to reproduce it
+(its terms by path: on another image, check get_populations there that the same paths exist).
+
+Like add_gate: a PROPOSAL marked as yours (✦), only when the user asked or agreed; 404 if `parent` or a
+term does not exist, 409 on a taken name, 422 on a bad name / operator / a combination that would
+depend on itself. `dry_run=True` gives the counts and writes nothing. delete_gate removes it; set_gate
+cannot change it (not a gate) — delete and add again. The reply is add_gate's, with `gate: null` and
+the stored `boolean`. Tell the user it is a proposal, with the numbers."""
+
 SET_GATE_DOC = """MOVE a gate YOU drew (✦) — same `gate` shape as add_gate; `path` the population.
-403 `not_claude_made` when it, or anything gated under it, is the user's — including one of yours they
-have since edited; 403 `used_by_runs` when a task (clustering, tracking, …) read it or anything under
-it, naming the tasks — only they change those (propose a new gate instead). `dry_run=True` answers with the new counts and writes nothing. The
+403 `not_claude_made` when it, anything gated under it, or a combination built on it is the user's —
+including one of yours they have since edited; 403 `used_by_runs` when a task (clustering, tracking, …)
+read it, anything under it, or a combination built on it, naming the tasks — only they change those (propose a new gate instead). `dry_run=True` answers with the new counts and writes nothing. The
 reply is add_gate's."""
 
 DELETE_GATE_DOC = """REMOVE a gate YOU drew (✦), with everything under it — every one of those must be yours
@@ -122,6 +140,7 @@ EXAMPLES_ROUTE = "/api/gating/examples"
 SUMMARY_ROUTE = "/api/gating/summary"
 STATS_ROUTE = "/api/gating/stats"
 ADD_ROUTE = "/api/gating/pop/add-gate"
+ADD_BOOLEAN_ROUTE = "/api/gating/pop/add-boolean"
 SET_ROUTE = "/api/gating/pop/set-own-gate"
 DELETE_ROUTE = "/api/gating/pop/delete-own"
 
@@ -129,7 +148,8 @@ DELETE_ROUTE = "/api/gating/pop/delete-own"
 # the Claude-scoped writes (create-only, and change/remove only what Claude drew).
 GATING_READ_ROUTES = frozenset({("GET", PLOT_ROUTE), ("GET", CELLS_ROUTE), ("GET", SUMMARY_ROUTE),
                                 ("GET", STATS_ROUTE), ("GET", EXAMPLES_ROUTE)})
-GATING_WRITE_ROUTES = frozenset({("POST", ADD_ROUTE), ("POST", SET_ROUTE), ("POST", DELETE_ROUTE)})
+GATING_WRITE_ROUTES = frozenset({("POST", ADD_ROUTE), ("POST", ADD_BOOLEAN_ROUTE), ("POST", SET_ROUTE),
+                                 ("POST", DELETE_ROUTE)})
 GATING_ROUTES = GATING_READ_ROUTES | GATING_WRITE_ROUTES
 
 
@@ -265,6 +285,19 @@ class GatingClient:
             body["colour"] = colour
         return self._request("POST", ADD_ROUTE, body=body)
 
+    def add_boolean_pop(self, project_uid: str, image_uid: str, value_name: str, name: str,
+                        op: str = "and", pops: list[str] | None = None, not_pops: list[str] | None = None,
+                        parent: str = "root", colour: str = "#22c55e", dry_run: bool = False) -> dict:
+        # Create-only, like add_gate: ONE combined population over existing ones; the server checks the
+        # terms exist and cannot loop. `not_pops` goes out as `not` (a Python keyword on this side).
+        self._gating_guard(project_uid, image_uid, value_name, True)
+        body = {**self._ids(project_uid, image_uid, value_name), "parent": parent or "root", "name": name,
+                "op": op or "and", "pops": list(pops or []), "not": list(not_pops or []),
+                "dryRun": bool(dry_run)}
+        if colour:
+            body["colour"] = colour
+        return self._request("POST", ADD_BOOLEAN_ROUTE, body=body)
+
     def set_gate(self, project_uid: str, image_uid: str, value_name: str, path: str, gate: dict,
                  dry_run: bool = False) -> dict:
         self._gating_guard(project_uid, image_uid, value_name, True)
@@ -328,6 +361,14 @@ def register_gating_tools(tool, client: GatingClient) -> dict:
         return client.add_gate(project_uid, image_uid, value_name, name, gate, parent, colour, dry_run)
 
     @tool
+    @with_doc(ADD_BOOLEAN_POP_DOC)
+    def add_boolean_pop(project_uid: str, image_uid: str, value_name: str, name: str, op: str = "and",
+                        pops: list[str] | None = None, not_pops: list[str] | None = None,
+                        parent: str = "root", colour: str = "#22c55e", dry_run: bool = False) -> dict:
+        return client.add_boolean_pop(project_uid, image_uid, value_name, name, op, pops, not_pops, parent,
+                                      colour, dry_run)
+
+    @tool
     @with_doc(SET_GATE_DOC)
     def set_gate(project_uid: str, image_uid: str, value_name: str, path: str, gate: dict,
                  dry_run: bool = False) -> dict:
@@ -340,4 +381,4 @@ def register_gating_tools(tool, client: GatingClient) -> dict:
         return client.delete_gate(project_uid, image_uid, value_name, path, dry_run)
 
     return {f.__name__: f for f in (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats,
-                                    add_gate, set_gate, delete_gate)}
+                                    add_gate, add_boolean_pop, set_gate, delete_gate)}

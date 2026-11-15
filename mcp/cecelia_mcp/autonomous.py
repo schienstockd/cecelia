@@ -54,7 +54,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/channels"),    # gateable columns of a segmentation (`_gating_guard`)
 }) | gv.GATING_ROUTES | ft.FIGURE_ROUTES   # figures (figure_tools.py) — writes are Claude's own only
                                         # the gating toolset's, the observer's too: its writes change
-                                        # only what Claude drew (add-gate / set-own-gate / delete-own)
+                                        # only what Claude drew (add-gate / add-boolean / set-own-gate / delete-own)
 
 # Allowed ONLY in no-GUI mode (`no_gui_enabled()`): getting data in, which the GUI's import wizard
 # does there. Each is additive — a new project, a new set, new pending images.

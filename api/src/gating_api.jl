@@ -1316,28 +1316,77 @@ end
 # `createdBy` = `author_stamp()`), the open manager refreshes, and the user's Undo removes it.
 function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
     img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
-    name = strip(_wstr(body, "name"))
-    isempty(name) && return _gerr(422, "name required")
-    occursin('/', name) && return _gerr(422, "A population name cannot contain \"/\" — give the name only, and the parent separately")
-    is_reserved_pop_name(name) && return _gerr(422,
-        "Names beginning with \"$DERIVED_POP_PREFIX\" are reserved for derived populations — choose another name")
-    parent = let p = strip(_wstr(body, "parent", ROOT)); is_root(p) ? ROOT : String(p) end
-    colour = _wstr(body, "colour", "#22c55e")
-    occursin(r"^#[0-9a-fA-F]{6}$", colour) || return _gerr(422, "colour must be a hex colour like \"#22c55e\"")
+    name, parent, colour, path, err = _claude_new_pop(body); err === nothing || return err
     gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
     gerr === nothing || return _gerr(422, gerr)
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        refusal = _claude_place_refusal(m, img, vn, parent, path, name); refusal === nothing || return refusal
+        add_pop!(m, name; parent = parent, gate = gate, colour = colour, show = true, created_by = author_stamp())
+        _claude_gate_reply(m, img, body, vn, path)
+    end
+end
+
+# The name / parent / colour of a NEW population Claude proposes (add-gate, add-boolean) →
+# (name, parent, colour, path, nothing), or four `nothing`s and the 422. Checked before the map is even loaded.
+function _claude_new_pop(body)
+    name = String(strip(_wstr(body, "name")))
+    isempty(name) && return (nothing, nothing, nothing, nothing, _gerr(422, "name required"))
+    occursin('/', name) && return (nothing, nothing, nothing, nothing, _gerr(422,
+        "A population name cannot contain \"/\" — give the name only, and the parent separately"))
+    is_reserved_pop_name(name) && return (nothing, nothing, nothing, nothing, _gerr(422,
+        "Names beginning with \"$DERIVED_POP_PREFIX\" are reserved for derived populations — choose another name"))
+    parent = let p = strip(_wstr(body, "parent", ROOT)); is_root(p) ? ROOT : String(p) end
+    colour = _wstr(body, "colour", "#22c55e")
+    occursin(r"^#[0-9a-fA-F]{6}$", colour) || return (nothing, nothing, nothing, nothing, _gerr(422, "colour must be a hex colour like \"#22c55e\""))
+    (name, parent, colour, pop_path(parent, name), nothing)
+end
+
+# Where a new population would land, on the map in hand: 404 no such parent, 409 the path is taken
+# here or by another pop type (`pop_name_conflict`) — an existing population is never replaced.
+function _claude_place_refusal(m::PopulationMap, img, vn, parent, path, name)
+    (is_root(parent) || has_pop(m, parent)) || return _pop_not_found(m, parent)
+    has_pop(m, path) && return 409, JSON3.write((; error = "A population \"$path\" already exists — " *
+        "choose another name; an existing population is never replaced", code = "pop_exists"))
+    conflict = pop_name_conflict(img, vn, path; pop_type = "flow")
+    conflict === nothing || return 409, JSON3.write((; error = "A $conflict population named \"$name\" " *
+        "already exists in this segmentation — names must be unique across population types. Choose another name.",
+        code = "pop_name_conflict"))
+    nothing
+end
+
+# ── POST /api/gating/pop/add-boolean — ONE proposed combined population (observer `add_boolean_pop`) ──
+# { projectUid, imageUid, valueName, parent?, name, op, pops?, not?, colour?, dryRun? } → add-gate's reply
+# with `gate: null` and the stored `boolean: {op, pops, not}`.
+#
+# add-gate's twin for the third membership kind (POPULATION.md → Boolean populations): "qc but not OTI"
+# is `parent=/qc, op=and, not=[/qc/OTI]`, not a polygon with a hole cut in it. Same validation order and
+# statuses as add-gate — 404 parent / segmentation / a term that isn't there, 409 a taken path, 422 a
+# bad name, operator, or a combination that would depend on itself — all before anything is written,
+# and the same `createdBy` stamp, so set-own-gate (422: not a gate) and delete-own treat it as Claude's.
+function api_gating_pop_add_boolean(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    name, parent, colour, path, err = _claude_new_pop(body); err === nothing || return err
+    terms(k) = (v = get(body, k, nothing); v === nothing ? String[] :
+                v isa AbstractVector ? String[String(x) for x in v] : nothing)
+    inc, exc = terms("pops"), terms("not")
+    (inc === nothing || exc === nothing) && return _gerr(422, "pops and not are lists of population paths")
+    op, inc, exc = try
+        Cecelia._normalise_boolean(_wstr(body, "op", "and"), inc, exc; self = path)
+    catch e
+        return _gerr(422, replace(sprint(showerror, e), r"^boolean pop: " => ""))
+    end
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
         (is_root(parent) || has_pop(m, parent)) || return _pop_not_found(m, parent)
-        path = pop_path(parent, name)
-        has_pop(m, path) && return 409, JSON3.write((; error = "A population \"$path\" already exists — " *
-            "choose another name; an existing population is never replaced", code = "pop_exists"))
-        conflict = pop_name_conflict(img, vn, path; pop_type = "flow")
-        conflict === nothing || return 409, JSON3.write((; error = "A $conflict population named \"$name\" " *
-            "already exists in this segmentation — names must be unique across population types. Choose another name.",
-            code = "pop_name_conflict"))
-        stamp = author_stamp()
-        add_pop!(m, String(name); parent = parent, gate = gate, colour = colour, show = true, created_by = stamp)
+        for r in [inc; exc]
+            has_pop(m, r) || return _pop_not_found(m, r)
+        end
+        refusal = _claude_place_refusal(m, img, vn, parent, path, name); refusal === nothing || return refusal
+        Cecelia.boolean_cycle(m, path, [inc; exc]) && return _gerr(422,
+            "That combination would depend on itself — a population cannot combine one of its own descendants")
+        add_pop!(m, name; parent = parent, colour = colour, show = true, created_by = author_stamp(),
+                 boolean_op = op, boolean_pops = inc, boolean_not = exc)
         _claude_gate_reply(m, img, body, vn, path)
     end
 end
@@ -1391,6 +1440,21 @@ function _own_subtree(m::PopulationMap, path::AbstractString)
                               code = "not_claude_made", populations = theirs))))
 end
 
+# Moving a gate also moves every combination that reads it, wherever it sits ("not G" beside G), and
+# everything under those: the populations OUTSIDE `sub` whose membership depends on `path` through a
+# boolean term. They must be Claude's too, else the 403 naming the user's — the same rule as a child.
+# (delete-own needs none of this: it refuses outright while anything combines what it would remove.)
+function _own_combinations(m::PopulationMap, path::AbstractString, sub::AbstractVector)
+    inside = Set(sub)
+    combos = [q for q in pops_depending_on(m, path) if !(q in inside)]
+    theirs = [q for q in combos if !claude_made(m.pops[q])]
+    isempty(theirs) && return (combos, nothing)
+    (combos, (403, JSON3.write((; error = "the user's population$(length(theirs) > 1 ? "s" : "") " *
+        join(("\"$q\"" for q in theirs), ", ") * " combine$(length(theirs) > 1 ? "" : "s") \"$path\" — " *
+        "moving it would change their cells; only the user changes it. Propose a new gate instead (add_gate).",
+        code = "not_claude_made", populations = theirs))))
+end
+
 # None of `sub` may be a population a task has read (`run_pop_reads`), else the 403 naming them and
 # the tasks. A clustering, tracking or spatial run on a gate is a snapshot of its cells: moving the gate
 # under it would leave that result describing cells the gate no longer holds.
@@ -1422,7 +1486,8 @@ function _claude_gate_reply(m::PopulationMap, img::CciaImage, body, vn, path::Ab
                         parent = is_root(p.parent) ? "root" : p.parent,
                         count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
                         pctParent = round(s.pct_parent; digits = 2),
-                        gate = p.gate === nothing ? nothing : gate_spec(p.gate), colour = p.colour,
+                        gate = p.gate === nothing ? nothing : gate_spec(p.gate), boolean = boolean_spec(p),
+                        colour = p.colour,
                         createdBy = p.created_by, updatedBy = p.updated_by))
 end
 
@@ -1438,7 +1503,8 @@ function api_gating_pop_set_own_gate(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = "flow")
         has_pop(m, path) || return _pop_not_found(m, path)
         sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
-        refusal = _unread_subtree(img, vn, sub); refusal === nothing || return refusal
+        combos, refusal = _own_combinations(m, path, sub); refusal === nothing || return refusal
+        refusal = _unread_subtree(img, vn, [sub; combos]); refusal === nothing || return refusal
         m.pops[String(path)].gate === nothing && return _gerr(422, "\"$path\" is not a gate")
         set_gate!(m, String(path), gate)
         stamp_edit!(m, path)

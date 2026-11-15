@@ -23,9 +23,7 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
             (d["filter"]["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => string(c.fun),
                                                            "values" => c.values) for c in p.filter_conditions])
     end
-    p.boolean_op === nothing ||
-        (d["boolean"] = Dict{String,Any}("op" => string(p.boolean_op), "pops" => p.boolean_pops,
-                                         "not" => p.boolean_not))
+    p.boolean_op === nothing || (d["boolean"] = boolean_spec(p))
     p.is_track && (d["is_track"] = true)
     p.transient && (d["transient"] = true)
     # authorship (a Claude-proposed gate) — only when set, so a GUI-drawn tree keeps its exact shape
