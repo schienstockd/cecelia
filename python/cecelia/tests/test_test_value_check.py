@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -84,6 +85,31 @@ class BulletsTest(unittest.TestCase):
         self.assertIn("`api/src/viewer_api.jl`", note)
         self.assertNotIn("a.jl", note)
         self.assertNotIn("b.py", note)
+
+
+class PythonOnBaseTest(unittest.TestCase):
+    def test_a_scripts_module_a_test_loads_by_path_is_heads_not_the_changes(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=root,   # noqa: E731
+                                            check=True, capture_output=True)
+            git("init", "-q")
+            (root / "scripts").mkdir()
+            (root / "scripts/m.py").write_text("X = 1\n", encoding="utf-8")
+            (root / "python/pkg/tests").mkdir(parents=True)
+            (root / "app").mkdir()
+            for f in ("python/pkg/__init__.py", "python/pkg/tests/__init__.py", "app/x.jl"):
+                (root / f).write_text("", encoding="utf-8")
+            git("add", ".")
+            git("commit", "-q", "-m", "base")
+            (root / "scripts/m.py").write_text("X = 2\n", encoding="utf-8")   # the change
+            test = ("import pathlib, runpy, unittest\n"
+                    "class T(unittest.TestCase):\n"
+                    "    def test_x(self):\n"
+                    "        m = runpy.run_path(str(pathlib.Path(__file__).resolve().parents[3] / 'scripts/m.py'))\n"
+                    "        self.assertEqual(m['X'], 2)\n")
+            path = "python/pkg/tests/test_m.py"
+            self.assertTrue(tv.python_on_base(root, {path: ["pkg.tests.test_m.T.test_x"]}, lambda p: test))
 
 
 class RunCheckTest(unittest.TestCase):

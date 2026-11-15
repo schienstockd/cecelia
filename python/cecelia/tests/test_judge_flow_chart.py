@@ -90,7 +90,8 @@ class FlowTest(unittest.TestCase):
         d = self.f.aggregate(events, [record])
         into = d["into_check"]
         self.assertEqual(into, {"notes": 6, "rules_only": 1, "not_listed": 1, "since_pass": 1, "merged": 1,
-                                "tagged_later": 1, "last_pass": "2026-10-05", "agent_run": 1, "stranded": 0})
+                                "tagged_later": 1, "last_pass": "2026-10-05", "agent_run": 1, "stranded": 0,
+                                "untested": 0})
         self.assertEqual(into["notes"], d["recital"]["not_fixed"] + d["recital"]["plausible"])
         ledger = self.f._ledger(into, sum(d["check"].values()))
         total = sum({"": 1, "+": 1, "−": -1}[sign] * n for sign, n, _ in ledger if sign != "=")
@@ -126,6 +127,18 @@ class FlowTest(unittest.TestCase):
         self.assertEqual((into["not_listed"], into["merged"], into["stranded"]), (0, 1, 1))
         ledger = self.f._ledger(into, sum(d["check"].values()))
         self.assertEqual(sum({"": 1, "+": 1, "−": -1}[sign] * n for sign, n, _ in ledger if sign != "="), ledger[-1][1])
+
+    def test_a_test_gap_is_its_own_line_and_the_ledger_still_adds_up(self):
+        tv = _row("test_value_finding", {"slug": "tv-00000001", "file": "m.py", "line": 3, "marker": "untested",
+                                         "desc": "d"})
+        record = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": [
+            {"key": "fanout-00000001", "status": "open"}, {"key": "tv-00000001", "kind": "untested", "status": "open"}]}
+        d = self.f.aggregate([_finding("fanout-00000001"), tv], [record])
+        into = d["into_check"]
+        self.assertEqual((into["notes"], into["tagged_later"], into["untested"]), (1, 0, 1))   # not in Recital
+        ledger = self.f._ledger(into, sum(d["check"].values()))
+        self.assertEqual(sum({"": 1, "+": 1, "−": -1}[sign] * n for sign, n, _ in ledger if sign != "="), ledger[-1][1])
+        self.assertIn("test gaps", self.f.render_svg(d))
 
     def test_a_finding_from_before_slugs_counts_by_its_inline_outcome(self):
         old = [_row("fanout_audit_finding", {"file": "a.py", "line": 1, "outcome": "fixed_pre_commit"}),

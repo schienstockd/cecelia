@@ -72,7 +72,8 @@ EVENT_TYPES = frozenset({
     #: change's added tests run on the code before it (`passes on base`), and mutants on its changed
     #: result lines (`untested`). `_run` payload: `on_base` ({"py"|"jl": failed}), `mutated` (per file:
     #: results, survived, note), `findings`, `duration_s`, `errors`. `_finding` = one bullet (outcome
-    #: tag required). Not swept by the weekly judge; its tags are the record the P4 review reads.
+    #: tag required). The weekly judge sweeps the `untested` ones (`scripts/judge/bugs.py`: mutated
+    #: again at main); `passes on base` is read only by the P4 review.
     "test_value_run",
     "test_value_finding",
     "test_value_finding_resolved",

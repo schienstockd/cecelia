@@ -209,9 +209,13 @@ name a changed function.
   (`_band` → `parse_settings`): by its own name only, #2218's full-record tests were missed.
   **Review on 2026-11-29:** read the `test_value_finding_resolved` rows (`pixi run audit-rollup`,
   *Test value*). Mostly `false_positive` with reasons that hold → drop `untested` or narrow it; tests
-  added under `fixed_pre_commit` that pin the code's own output → tighten the text. The weekly judge
-  does not re-check these tags: its question (does the defect still misbehave) doesn't fit a
-  surviving mutant, so this review is the check.
+  added under `fixed_pre_commit` that pin the code's own output → tighten the text.
+  **The weekly judge keeps watch (2026-11-16):** every `untested` finding, whatever its tag, is swept
+  as `kind: "untested"`. The pass mutates the function again in its worktree at the pinned SHA
+  (`mutate_changed.py --at`, ≤ 8 functions a pass): all killed → `gone`; survivors → the judge asks
+  whether one changes a value a caller sees (`live_bug`) or all are equivalent (`not_a_bug`), and
+  verify traces the callers. So a `fixed_pre_commit` whose test doesn't kill the mutants, or a
+  `false_positive` that is wrong, comes back as a `test-gap` issue. `passes on base` stays rollup-only.
 
 ## Tooling
 

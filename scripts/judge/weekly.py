@@ -369,10 +369,13 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     ts = _now()
     date = date or ts[:10]
     state["stage"] = "pin"
+    rerun = None   # an untested bug's function is mutated again in the pinned worktree
     if live:
         sha = state["sha"] = pin(ref)
         state["stage"] = "worktree"
-        prepare_worktree(worktree or default_worktree(), sha)
+        wt = worktree or default_worktree()
+        prepare_worktree(wt, sha)
+        rerun = lambda file, lo, hi: _bugs.default_rerun(file, lo, hi, root=wt, env=clean_env())   # noqa: E731
     else:
         sha = state["sha"] = git_output("rev-parse", "--verify", f"{ref}^{{commit}}", cwd=str(_REPO))
         if not sha:
@@ -400,7 +403,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     sweep_tokens: dict = {}
     failed: dict = {}   # step → why its judge didn't run; a usage limit raises instead
     bugs, sweep_usd = _bugs.sweep(events, date=date, sha=sha, previous=previous, judge=bug_judge,
-                                  merged_prs=merged_prs, meter=sweep_tokens, failures=failed)
+                                  merged_prs=merged_prs, meter=sweep_tokens, failures=failed, rerun=rerun)
     state["stage"] = "verify"
     bugs, verified = _verify.verify(bugs, date=date, sha=sha, agent=verifier)
     state["stage"] = "rules"
