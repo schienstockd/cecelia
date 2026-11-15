@@ -11,7 +11,7 @@
     recipe   the next step as a card (title, why-line, Start guide / Open), a tick line for what has run
              on the set, and every step behind "All steps"
 
-  Ticks are "a successful run on this set" (`ranPagesOf`), not "finished the guide": a step done without
+  Ticks are "a successful run on every image of the set" (`ranPagesOf`, `partialPagesOf`), not "finished the guide": a step done without
   its guide still counts. Every guide by sidebar group is one click away behind "Browse all guides"
   (`@browse`). The AI help toggle (`settings.guidesShowClaude`, shown only while AI is on) adds each step's
   `assist` line — what Kiwi or Claude Code adds there.
@@ -33,7 +33,7 @@ import { closeGuides } from '../lib/guideOpen'
 import { tierTip } from '../lib/guides/tiers'
 import { chipDot, tierLabel } from '../utils/guideMap'
 import { recipeRequestUrl } from '../lib/links'
-import { guideStartView, recipeProgress, ranPagesOf, recipeChoiceRows, RECIPE_CHOICE_COLUMNS, type StepProgress } from '../utils/setRecipe'
+import { guideStartView, recipeProgress, ranPagesOf, partialPagesOf, recipeChoiceRows, RECIPE_CHOICE_COLUMNS, type StepProgress } from '../utils/setRecipe'
 
 const emit = defineEmits<{ (e: 'browse'): void }>()
 
@@ -54,11 +54,12 @@ const view = computed(() => guideStartView({
 }))
 
 const progress = computed(() => view.value.kind === 'recipe'
-  ? recipeProgress(view.value.recipe, set.value ? ranPagesOf(set.value.images) : new Set())
+  ? recipeProgress(view.value.recipe,
+      set.value ? ranPagesOf(set.value.images) : new Set(), set.value ? partialPagesOf(set.value.images) : new Set())
   : null)
 const required = computed(() => progress.value?.rows.filter(r => r.n !== null) ?? [])
 const optional = computed(() => progress.value?.rows.filter(r => r.n === null) ?? [])
-const ranRows = computed(() => required.value.filter(r => r.ran && r !== progress.value?.next))
+const ranRows = computed(() => required.value.filter(r => r.ran && !r.partial && r !== progress.value?.next))
 
 const importGuide = guideById('import-images') ?? null
 const showAi = computed(() => settings.guidesShowClaude && observer.ai.enabled)
@@ -130,7 +131,7 @@ async function choose(id: string) {
 
       <div v-if="progress.next" class="gn-next cc-card cc-card-2">
         <span class="cc-eyebrow cc-fs-2xs">
-          {{ progress.next.ran ? 'Last step' : 'Next' }} · step {{ progress.next.n }} of {{ progress.required }}
+          {{ progress.next.ran && !progress.next.partial ? 'Last step' : 'Next' }} · step {{ progress.next.n }} of {{ progress.required }}
         </span>
         <span class="gn-title cc-row cc-row-tight">
           {{ titleOf(progress.next) }}
@@ -170,7 +171,7 @@ async function choose(id: string) {
               </span>
               <span v-if="r === progress.next" class="gn-why cc-muted cc-fs-xs">{{ r.step.why }}</span>
             </span>
-            <i v-if="r.ran" class="pi pi-check gn-done" aria-label="Has run on this set" />
+            <i v-if="r.ran && !r.partial" class="pi pi-check gn-done" aria-label="Has run on this set" />
             <button v-else :class="['cc-btn cc-btn-dense cc-fs-xs', r === progress.next ? 'cc-btn-primary' : 'cc-btn-ghost']"
                     @click="startRow(r)">{{ defOf(r) ? 'Start' : 'Open' }}</button>
           </li>
