@@ -26,6 +26,23 @@ describe('prospectivePops', () => {
   })
 })
 
+describe('prospectivePops — tracking several pops in one run', () => {
+  const run = (popsToTrack: unknown) => prospectivePops(
+    [{ fn: 'tracking.bayesian_track_measures', params: { valueName: 'Tcells', popsToTrack } as never }], fn => defs[fn])
+  it('derives `_tracked` for each picked ref, on the ref’s own label set', () => {
+    expect(run(['Tcells/qc/OTI', 'Tcells/qc/non-OTI/gBT'])).toEqual([
+      { valueName: 'Tcells', path: '/qc/OTI/_tracked', kind: 'track' },
+      { valueName: 'Tcells', path: '/qc/non-OTI/gBT/_tracked', kind: 'track' },
+    ])
+  })
+  it('reads nothing picked, "NONE" and the all-cells root as the whole segmentation', () => {
+    const whole = [{ valueName: 'Tcells', path: '/_tracked', kind: 'track' }]
+    expect(run([])).toEqual(whole)
+    expect(run('NONE')).toEqual(whole)
+    expect(run(['Tcells/'])).toEqual(whole)
+  })
+})
+
 describe('singlePopOptions', () => {
   const none = [{ label: 'NONE (whole segmentation)', value: 'NONE' }]
   const extra = prospectivePops(nodes, fn => defs[fn])
