@@ -173,8 +173,8 @@ Which segmentation run a gate was drawn on is not recorded on the gate; the run 
 when a label set was overwritten.
 
 **`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
-server → `POST /api/gating/pop/add-gate`, or `add_boolean_pop` → `POST /api/gating/pop/add-boolean` for a
-combination) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
+server → `POST /api/gating/pop/add-gate`, `add_boolean_pop` → `POST /api/gating/pop/add-boolean` for a
+combination, or `add_filter_pop` → `POST /api/gating/pop/add-filter` for a filter population) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
 `Population.created_by` round-trips it, and the manager marks the row with ✦ (`claudeProposal`,
 `utils/authorStamp.ts`). A GUI-drawn gate has no key, so a person's sidecar keeps its shape. Claude's
 routes change only what it drew: `set-own-gate` / `delete-own` refuse (403 `not_claude_made`) unless the

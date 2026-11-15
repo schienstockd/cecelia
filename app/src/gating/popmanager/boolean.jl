@@ -153,3 +153,22 @@ function _normalise_conditions(conds)
     isempty(out) ? nothing : out
 end
 
+"""
+    filter_spec(p) -> Dict | nothing
+
+A population's filter in its stored shape — `{"measure", "fun", "values", "default_all"}` plus
+`"conditions": [{measure, fun, values}, …]` when compound — or `nothing` when it isn't a filter pop. The
+one spelling the sidecar, the observer's `get_populations` and Claude's `add-filter` reply use. (The
+definition hash keeps its own copy in `_pop_own_defn`: its key set is frozen so stored hashes stay valid.)
+"""
+function filter_spec(p)
+    p.filter_measure === nothing && p.filter_conditions === nothing && return nothing
+    d = Dict{String,Any}("measure" => p.filter_measure,
+                         "fun"     => p.filter_fun === nothing ? nothing : string(p.filter_fun),
+                         "values"  => p.filter_values, "default_all" => p.filter_default_all)
+    p.filter_conditions === nothing ||
+        (d["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => string(c.fun), "values" => c.values)
+                            for c in p.filter_conditions])
+    d
+end
+
