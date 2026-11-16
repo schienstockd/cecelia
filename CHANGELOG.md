@@ -13,77 +13,82 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+## [0.2.13] — 2026-11-17
+
 ### Read this first
 
-- **Drift correction keeps stage bumps.** A jump between two frames used to be smoothed away,
-  leaving movies out of register. Re-run it on movies flagged *Frames did not register*.
-- **The app opens in light colours.** A profile that already picked a scheme keeps it; switch from
-  the avatar menu.
-- **A paused time-lapse gets no frame interval.** Irregular per-plane timestamps used to record
-  their median, making speeds across the pause wrong. Re-import flags it instead; set the interval.
-- **AI is off until you turn it on** in Preferences → Kiwi; a dialog first says what goes to
-  Anthropic. peanut can turn it off workstation-wide.
-- **Import drops an incomplete last timepoint**, left partly black when a recording stopped
-  mid-volume. Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it.
-- **New images are named like movies:** `<image>_crop`, `_bin2`, `_copy` …, then `_001` when taken.
-- **Crop is drawn on the viewer**, optionally square, with a name and a target set.
-- **Aggregate runs have names.** Columns gain `#<name>` (`flow.cell.is.aggregate#default`), and the
-  population is `_aggregated_<name>`. Plots and gates on older aggregate columns need re-picking after a re-run.
-- **Recordings follow the viewer's scale bar, timestamp and 3D Steps.** Pick a Render quality to override Steps.
-- **Two Claude tools are renamed:** `get_available_plots` → `get_plot_catalogue`, `list_plots` →
-  `list_open_plots`. A Claude Code permission rule naming the old ones needs the new names.
-- **Softer population colours.** New populations and uncoloured clusters / states use a calmer
-  12-colour palette; colours already saved on a population stay.
-- **Skeletons draw as lines coloured by branch type**, in the viewer and every recording. Re-run
-  branching on older skeletons to see them.
-- **Plots show populations in the order you pick them**, not alphabetically. Drag *plot order* in
-  the population picker to change it.
+These change results when old work is re-run:
 
-### Fixed
+- **Drift correction keeps stage bumps**, which it smoothed away. Re-run it on movies flagged *Frames did not register* (#2303).
+- **Coastal embedding blur** defaults to 0.5 µm; it read 1.5 µm, a pixel value taken as microns, and shrank cells.
+- **Cellpose 3 in 3D** stitches planes with `stitch_planes`; it no longer merges unrelated cells. Re-run 3D segmentations (#2001).
+- **Axis order** comes from the store's NGFF axes. Where it disagreed with the OME-XML, re-run projection, drift, stack-align and AF correction (#2226).
+- **`vn/root` is the root population**; it resolved to 0 cells. Boards and plots using it change (#1914).
+- **Stored units are converted.** Intervals in ms or minutes and pixel sizes in nm or mm were read as s or µm. Re-run measures (#1906).
+- **A paused time-lapse gets no frame interval**; it recorded the median, making speeds across the pause wrong. Set the interval (#2061).
+- **Import drops an incomplete last timepoint.** Tick *Keep incomplete last timepoint* to keep it; re-import older images to drop it (#1948).
+- **Aggregate runs have names.** Columns gain `#<name>`, the population is `_aggregated_<name>`; re-pick plots and gates after a re-run (#2067).
+- **Registered stacks** showed cycle 1's markers on every cycle; *Refresh metadata* repairs them (#2232).
+- **Calibration fixes reach the OME-XML**, not just the zarr scale. Resync older images (#1952).
 
-- **3D recordings and animations draw the segmentation** the viewer shows. They drew none.
-- **Batch movies colour the mask by track clusters**, as the viewer does, and *Fill from view*
-  keeps the viewer's populations. The mask picker shows with one version too.
-- **The mask can be coloured by the colour-by measure** in the viewer (*Colour → Colour by*), and
-  movies follow. It replaces the batch page's *labels* chip.
-- **Detect aggregates creates its population again.** The *aggregated* population was never added
-  for a run started from the app.
-- **Imaris frame interval.** Imaris files whose timestamps carry nine decimal places (converted from
-  Zeiss `.lsm`) were read as having no timing; their measured interval is now used.
-- **Tracking remembers settings per segmentation.** B no longer shows, or rebuilds deleted tracks
-  with, the settings of whichever population ran last.
-- **Copying gates matches channels by name, as the R version did.** Before, an image with another
-  channel order gated whichever marker sat at that position.
-- **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
-  lacking a channel is refused.
-- **HMM states can model intensity channels** (it failed with *missing column(s)*). Measure pickers
-  store channel names, so every image reads the same marker. Saved picks convert on open.
-- **The copy dialog now names images it did not copy to**, with the reason, and notes where it
-  matched channels by name.
-- **Stored units are now converted.** Intervals in ms or minutes, and pixel sizes in nm or mm, were
-  read as seconds or µm. Re-run measures on such images.
-- **Metadata QC flags a unit it can't convert**, instead of assuming seconds or µm.
-- **Cohort QC flags a set whose tracks mix 2D and 3D.** Auto picks per image, so one set's speeds
-  could be measured both ways.
-- **Calibration fixes now reach the OME-XML.** Metadata edits, the import's z-spacing and interval
-  fixes, and resync only updated the zarr scale. Resync older images to update them.
+And these change what you see:
+
+- **The app opens in light colours.** A profile that already picked a scheme keeps it (#2281).
+- **AI is off until you turn it on** in Preferences → Kiwi, after a dialog on what goes to Anthropic (#2022).
+- **Softer population colours,** 12 of them; clusters keep their own palette. Colours already saved on a population stay (#2257, #2261, #2291).
+- **Plots show populations in the order you pick them**, not alphabetically; drag *plot order* to change it (#2292).
+- **Blank or repeated channel names are filled in** (`CH<n>`, `_2`) at import and on read (#2299).
+- **Two Claude tools are renamed:** `get_plot_catalogue`, `list_open_plots`. Update Claude Code permission rules naming the old ones (#2302).
+- **Drift is no longer estimated** at import or in the acquisition check (#2138, #2149).
+- **Skeletons draw as lines coloured by branch type.** Re-run branching on older skeletons (#2223, #2230).
+
+### Changed — a new layout
+
+- **Header:** Help and avatar menus, lab log, Ask Kiwi and the Viewer chip replace six icons; Ctrl K jumps to a page, task or image (#2139, #2144, #2176).
+- **Sidebar:** text rows, groups open, maturity on each page row; the project name sits in the header (#2140).
+- **Viewer panel removed.** The Viewer chip raises the viewer; its controls live in the viewer window's header, Share menu and side panel (#2150, #2160, #2161, #2220).
+- **Each set keeps a recipe.** Welcome lists recent projects and resumes the step most images are on; pages show the next step (#2099, #2145, #2266).
+- **Module pages:** a set row with a ⋯ menu, a last-run line, and either settings or the task list, never both (#2141, #2142, #2215).
+- **Settings** is a two-pane modal shared with Preferences (#2194).
+- **Narrow windows** fold the main window; *Side by side* puts the viewer on the right half (#2249, #2252).
+- **Checks:** Acquisition, QC and Cohort sit behind one button; stale outputs show on the QC dot (#2097, #2098).
+- **Crop is drawn on the viewer**, optionally square, with a target set. New images are named `_crop`, `_bin2`, `_copy`, then `_001` (#2045).
+- **Recordings follow the viewer's** scale bar, timestamp and 3D Steps; pick a Render quality to override (#2230).
 
 ### Added
 
-- **Track ribbons by HMM state:** Tracks → *Colour by* → *colour by* colours each step by the cell's Colour by.
-- **Register staining cycles** (*Edit → Register images*), now on: slide scans register on their
-  pyramid into one image with one DAPI; QC flags a misaligned cycle or lost tissue.
-- **AF correction skips channels the scanner already AF-subtracted** (PhenoCycler), and says so.
-- **Slide scans: import measures the signal on the tissue**, not the glass; the data path shows how much is tissue.
-- **Record ROIs.** Movie section → *ROIs*: a movie or figure per ROI ticked in the ROI list, *pad* frames either side; *make* movies, + sheet, or the sheet only.
-- **Find ROIs merges one spot.** *Grouping → Merge same spot* joins groups at one place a few frames apart into one ROI before ranking.
-- **Import from Immunemap.** *Import from… → Immunemap*: paste an experiment link, split its groups
-  into attributes (time is filled in), then run *Import from Immunemap*.
-- **Named aggregate runs** sit side by side and restore their settings. New: *Max cells*, *Exclude*,
-  an *isolated* population, and *Over time* (link events; was a population there first?).
-- **Find ROIs: Group by.** Pick an id column (an aggregate event, a track): each id becomes one ROI.
-- **Imaris acquisition settings.** `.ims` files now show the microscope, objective, excitation and
-  emission filters in *Acquisition metadata*.
+- **Multiplex slide scans:** Akoya qptiff reader, a tissue mask, and *Register staining cycles* into one image; AF correction skips scanner-subtracted channels (#2159, #2180, #2198) (Experimental).
+- **Track several populations in one run** (#2270) (Experimental).
+- **Parameter sweeps** from the task form (#1939, #2260) (Experimental).
+- **Spatial pattern:** is a population randomly placed, compared between groups (#1937) (Experimental).
+- **Populations over time** plot, and **Track cluster frequency** per gated population (#2047, #2273) (Experimental).
+- **Named aggregate runs** with *Max cells*, *Exclude*, an *isolated* population and *Over time* (#2067) (Experimental).
+- **Find ROIs** groups by an id column and merges one spot; **Record ROIs** makes a movie or figure per ROI (#2067, #2068, #2074) (Experimental).
+- **Import from Immunemap:** an experiment becomes a set, its groups attributes (#2046) (Experimental).
+- **Acquisition settings** for .ims, .lif, .oir, .czi and qptiff, a printable settings card, and a light-path diagram (#1941, #1943, #2046, #2151, #2225) (Experimental).
+- **Set-level acquisition check**, with bands from the set or shot noise, and a pre-run checkpoint under *When to use* (#2075, #2088, #2100) (Experimental).
+- **Image rating:** not rated, good, use with care, with a *Scored* filter (#2219) (Experimental).
+- **Parameters (CSV)** for a board or a chain; chains replay a past run (#1910, #1917, #2043) (Experimental).
+- **Ridge segmentation** with segment and measure (#2154) (Experimental).
+- **Claude can propose** combined, filter and cluster populations; it never edits yours (#2271, #2277, #2294, #2297) (Experimental).
+- **Claude can look at and adjust** the open viewer and any open plot (#2289, #2298) (Experimental).
+- **Track ribbons and the mask coloured by a measure** such as HMM state, in the viewer and movies (#2293) (Experimental).
+
+### Fixed
+
+- **Channels are matched by name** when copying gates, clustering, heatmaps and HMM states; images lacking a channel are skipped with a reason (#1901, #2285).
+- **Detect aggregates** creates its population again (#2067).
+- **Tracking remembers settings per segmentation** (#1977).
+- **Re-tracking** keeps track measures, clusters and corrections on the right tracks; viewer picks refuse another version's mask (#2128).
+- **Imaris** frame intervals with nine-decimal timestamps are read (#2046, #2064).
+- **Crops and bins** keep their acquisition settings (#2078, #2080).
+- **Refresh metadata** no longer errors on every click (#1954).
+- **Movies page** plays a re-recorded movie, not the cached one (#2127).
+- **3D recordings and batch movies** draw the viewer's segmentation and its track-cluster colours (#2292).
+- **Viewer playback** no longer stalls brick loading on z changes (#2021, #2029, #2035).
+- **HPC** no longer submits a task twice after a timeout (#2006).
+- **Project export** leaves out the Claude pairing token (#2032).
+- **Cohort QC** flags a set whose tracks mix 2D and 3D (#1958).
 
 ## [0.2.12] — 2026-11-02
 
@@ -1479,7 +1484,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.12...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.13...HEAD
+[0.2.13]: https://github.com/schienstockd/cecelia/compare/v0.2.12...v0.2.13
 [0.2.12]: https://github.com/schienstockd/cecelia/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/schienstockd/cecelia/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/schienstockd/cecelia/compare/v0.2.9...v0.2.10
