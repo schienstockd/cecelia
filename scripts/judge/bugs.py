@@ -485,6 +485,8 @@ def rerun_verdict(row: dict, symbol: str) -> tuple[str, str, str]:
     killed, survived = res.count("killed"), [d for d in row.get("survivor_detail") or []]
     if not killed and not survived:
         return "failed", f"the rerun mutated nothing: {row.get('note') or 'no result'}", ""
+    if not survived and row.get("partial"):   # a cut-short run proves nothing about the mutants it never ran
+        return "failed", f"the rerun was cut short: {row['partial']}", ""
     if not survived:
         return "gone", f"every mutant of `{symbol}` is killed now ({killed} of {len(res)})", ""
     return ("survived", f"{len(survived)} of {len(res)} mutants of `{symbol}` survive",
