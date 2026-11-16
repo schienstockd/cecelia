@@ -20,7 +20,7 @@ stack. Per-tag notes are also on the
 These change results when old work is re-run:
 
 - **Drift correction keeps stage bumps**, which it smoothed away. Re-run it on movies flagged *Frames did not register* (#2303).
-- **Coastal embedding blur** defaults to 0.5 µm; it read 1.5 µm, a pixel value taken as microns, and shrank cells.
+- **Coastal embedding blur** defaults to 0.5 µm; it read 1.5 µm, a pixel value taken as microns, and shrank cells (#2287).
 - **Cellpose 3 in 3D** stitches planes with `stitch_planes`; it no longer merges unrelated cells. Re-run 3D segmentations (#2001).
 - **Axis order** comes from the store's NGFF axes. Where it disagreed with the OME-XML, re-run projection, drift, stack-align and AF correction (#2226).
 - **`vn/root` is the root population**; it resolved to 0 cells. Boards and plots using it change (#1914).
