@@ -12,8 +12,8 @@ version, never a "-v2" copy), ``POST /api/chains/create`` (create-only + server-
 writes a chain TEMPLATE the user then runs themselves), and ``POST /api/observer/labarchives/set``
 (REPLACES the ELN context sidecar — a cache of an external system of record, so a rewrite loses
 nothing), and the gating toolset's Claude-scoped writes (``gating_views.GATING_WRITE_ROUTES``:
-``/api/gating/pop/add-gate`` creates ONE stamped gate and ``add-boolean`` ONE stamped combination of
-existing populations, 409 on a taken name; ``set-own-gate`` /
+``/api/gating/pop/add-gate`` creates ONE stamped gate, ``add-boolean`` ONE stamped combination of
+existing populations and ``add-filter`` ONE stamped filter population, 409 on a taken name; ``set-own-gate`` /
 ``delete-own`` change only populations Claude drew — the server refuses, 403, anything of the user's the
 change would reach (the exact rule: docs/API.md → route index); the general ``/api/gating/pop/*`` routes stay off the list). All are recoverable /
 non-destructive to project & analysis data: no allow-listed route can touch cell data, images, the
@@ -150,8 +150,8 @@ ALLOWED_ROUTES = frozenset(
     }
 ) | ft.FIGURE_ROUTES | gv.GATING_ROUTES   # figures (figure_tools.py: render + delete-own, Claude's own only)
                        # + the gating toolset (gating_views.py), shared with the autonomous server. Its
-                       # four writes are Claude-scoped: add-gate / add-boolean create ONE stamped gate /
-                       # combination (409 on a taken name, 404/422 before anything is written); set-own-gate / delete-own
+                       # five writes are Claude-scoped: add-gate / add-boolean / add-filter create ONE stamped gate /
+                       # combination / filter pop (409 on a taken name, 404/422 before anything is written); set-own-gate / delete-own
                        # change only populations Claude drew — every one the change reaches (the
                        # subtree; for a move, also combinations built on it) must carry a Claude
                        # `createdBy`, else 403. NOT /api/gating/pop/add, set-gate,

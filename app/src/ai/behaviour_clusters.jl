@@ -71,13 +71,14 @@ end
 # = clustTracks) into `out`. The run's feature list is the SAME for a suffix across every image, so it's
 # recorded ONCE into `feats` (returned as a top-level `featuresByRun` map) rather than repeated on every
 # entry — that repetition was the bulk of a set-scoped payload.
-function _collect_cluster_cols!(out, feats::AbstractDict, vn::AbstractString, props::AbstractString, gran::Symbol)
+function _collect_cluster_cols!(out, feats::AbstractDict, vn::AbstractString, props::AbstractString, gran::Symbol;
+                                chans_of = nothing, own_uid = nothing)
     df = _read_obs(props); df === nothing && return
     for c in names(df)
         startswith(c, "clusters.") || continue
         d = _category_distribution(df[!, c]); d.n == 0 && continue
         suffix = c[ncodeunits("clusters.")+1:end]
-        haskey(feats, suffix) || (f = _clustfeatures_features(props, suffix); isempty(f) || (feats[suffix] = f))
+        haskey(feats, suffix) || (f = _clustfeatures_features(props, suffix; chans_of = chans_of, own_uid = own_uid); isempty(f) || (feats[suffix] = f))
         push!(out, (; valueName = vn, suffix = suffix, granularity = string(gran),
                      nClusters = d.nDistinct, n = d.n,
                      largestFrac = isempty(d.top) ? 0.0 : d.top[1].fraction, sizes = d.top))
@@ -88,8 +89,9 @@ end
 function _cluster_image(img::CciaImage, feats::AbstractDict)
     out = Any[]
     for vn in sort(img_value_names(img))
-        _collect_cluster_cols!(out, feats, vn, img_label_props_path(img, vn), :cell)
-        _collect_cluster_cols!(out, feats, vn, img_track_props_path(img, vn), :track)
+        chans_of = run_channel_names(img, vn)      # legacy raw features → channel names
+        _collect_cluster_cols!(out, feats, vn, img_label_props_path(img, vn), :cell; chans_of, own_uid = img.uid)
+        _collect_cluster_cols!(out, feats, vn, img_track_props_path(img, vn), :track; chans_of, own_uid = img.uid)
     end
     (; _observer_image_header(img)..., clusters = out)
 end
@@ -152,7 +154,8 @@ function _cluster_profiles(proj::CciaProject, scope_imgs)
         for (gran, path) in ((:cell, img_label_props_path(img, vn)), (:track, img_track_props_path(img, vn)))
             isfile(path) || continue
             for sfx in sort!(collect(_clustfeatures_suffixes(path)))
-                feats = _clustfeatures_features(path, sfx); isempty(feats) && continue
+                feats = _clustfeatures_features(path, sfx; chans_of = run_channel_names(img, vn), own_uid = img.uid)
+                isempty(feats) && continue
                 part = sort!(_clustfeatures_part_of(_clustfeatures_entry(path, sfx), img.uid))
                 key = (sfx, gran, part)
                 haskey(runs, key) || (runs[key] = feats; push!(order, key))

@@ -732,6 +732,18 @@ const _PLUGIN_INSTALLED = """
   "installPath": "/cfg/plugins/cache/cecelia-local/cecelia/1.0.0", "version": "1.0.0",
   "installedAt": "2026-10-28T23:45:11.874Z", "lastUpdated": "2026-10-28T23:45:11.874Z"}]}}"""
 
+# With no CLI, setup and login both refuse with where to GET Claude Code — never a command that itself
+# needs `claude`, which is what a user without it was once handed.
+@testset "no Claude CLI → refusals point at the install page" begin
+    gone = Cecelia.ClaudeAgent("cecelia-definitely-no-such-binary-42", "")
+    @test !Cecelia.agent_available(gone)
+    ok, msg = Cecelia.install_observer_plugin(gone, "/nowhere", Dict{String,Any}(); have = nothing)
+    @test !ok && msg == Cecelia.CLAUDE_NOT_INSTALLED
+    @test occursin("https://code.claude.com/docs/en/setup", msg)
+    @test Cecelia.agent_not_installed(gone) == Cecelia.CLAUDE_NOT_INSTALLED   # Kiwi's refusal too
+    @test Cecelia.agent_not_installed(_FakeAgent(Cecelia.AgentResult[], String[])) == "No _FakeAgent CLI found — install it"
+end
+
 @testset "Observer plugin — detection, state, CLI, and the manifest agrees with the code" begin
     mktempdir() do tmp
         sp, ip = joinpath(tmp, "settings.json"), joinpath(tmp, "installed.json")

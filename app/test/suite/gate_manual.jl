@@ -147,34 +147,136 @@ function _swapped_pair(f)
     f(mk("uX", ["CD4", "CD8", "GFP", "TOM"]), mk("uY", ["CD8", "CD4", "GFP", "TOM"]))
 end
 
-@testset "clustPops — each segment reads its own column for the first segment's channels" begin
+@testset "channel columns — one resolver: a name ↔ this image's column" begin
+    canon(cols, chans; kw...) = Cecelia.canonical_channel_columns(cols, chans; kw...)
+    resolve(cols, vars, chans) = Cecelia.resolve_channel_columns(cols, vars, chans)
+    vars  = ["mean_intensity_0", "mean_intensity_1", "nuc_mean_intensity_0", "nuc_mean_intensity_1", "area"]
+    chans = ["CD4", "CD8"]
+    # raw → name: plain, prefixed, per-track aggregate; everything else as-is
+    @test canon(["mean_intensity_1", "nuc_mean_intensity_0", "mean_intensity_0.mean", "area", "live.cell.speed"], chans) ==
+          ["CD8", "nuc_CD4", "CD4.mean", "area", "live.cell.speed"]
+    @test canon(["CD4"], chans) == ["CD4"]                                   # already a name
+    # nothing to name it by — no names, past the names, a duplicated name, a name a real column carries
+    @test canon(["mean_intensity_0"], nothing) == ["mean_intensity_0"]
+    @test canon(["mean_intensity_5"], chans) == ["mean_intensity_5"]
+    @test canon(["mean_intensity_0"], ["CD4", "cd4"]) == ["mean_intensity_0"]
+    @test canon(["mean_intensity_0"], ["Area", "CD8"]; shadow = ["area"]) == ["mean_intensity_0"]
+    # name → this image's column: any case, prefixed, aggregates; a real column wins; unknowns pass
+    r = resolve(["cd8", "nuc_CD4", "CD4.mean", "area", "live.cell.speed", "mean_intensity_1"], vars, chans)
+    @test r.cols == ["mean_intensity_1", "nuc_mean_intensity_0", "mean_intensity_0.mean", "area",
+                     "live.cell.speed", "mean_intensity_1"]
+    @test isempty(r.problems)
+    @test resolve(["CD4"], vars, ["CD8", "CD4"]).cols == ["mean_intensity_1"]   # another image's order
+    # a dotted channel name is a NAME, not an aggregate of `CD45`
+    @test resolve(["CD45.2", "CD45.2.mean"], vars, ["CD45.1", "CD45.2"]).cols ==
+          ["mean_intensity_1", "mean_intensity_1.mean"]
+    @test canon(["mean_intensity_1.mean"], ["CD45.1", "CD45.2"]) == ["CD45.2.mean"]
+    # a name on two channels is ambiguous — never the last one
+    a = resolve(["CD4"], vars, ["CD4", "cd4"])
+    @test a.cols == ["CD4"] && only(a.problems).why === :ambiguous
+    # round trip on one image
+    for c in vars
+        @test resolve(canon([c], chans), vars, chans).cols == [c]
+    end
+end
+
+@testset "the reader resolves a channel name per image, any case; a name on two channels throws" begin
+    _swapped_pair() do x, y
+        rx = label_props(x; value_name = "B") |> lp -> select_cols(lp, ["mean_intensity_1"]) |> as_df
+        ry = label_props(y; value_name = "B") |> lp -> select_cols(lp, ["cd4"]) |> as_df
+        @test isequal(ry[!, "cd4"], rx[!, "mean_intensity_1"])       # uY's CD4 sits at index 1
+        _set_names!(y, ["CD4", "cd4", "GFP", "TOM"])
+        @test_throws ArgumentError label_props(y; value_name = "B") |> lp -> select_cols(lp, ["CD4"]) |> as_df
+    end
+end
+
+@testset "clustPops — features by channel name, each segment reading its own column" begin
     _swapped_pair() do x, y
         df = DataFrame(uID = ["uX", "uX", "uY"], value_name = fill("B", 3), label = [1, 2, 1])
         byuid = Dict("uX" => x, "uY" => y)
-        segs = Cecelia._cluster_segments(df, byuid, ["mean_intensity_0", "area"]; on_log = _ -> nothing)
-        @test !haskey(segs[1], "featureCols")                            # the reference reads as picked
+        # a legacy raw pick is named against the first segment
+        segs, names = Cecelia._cluster_segments(df, byuid, ["mean_intensity_0", "area"]; on_log = _ -> nothing)
+        @test names == ["CD4", "area"]
+        @test segs[1]["featureCols"] == ["mean_intensity_0", "area"]
         @test segs[2]["featureCols"] == ["mean_intensity_1", "area"]     # uY's CD4
+        # a pick by name, any case, resolves the same
+        @test last(Cecelia._cluster_segments(df, byuid, ["cd4"]; on_log = _ -> nothing)) == ["cd4"]
+        @test first(Cecelia._cluster_segments(df, byuid, ["cd4"]; on_log = _ -> nothing))[2]["featureCols"] == ["mean_intensity_1"]
         _set_names!(y, ["CD8", "GFP", "TOM", "x"])
         log = String[]
         @test Cecelia._cluster_segments(df, byuid, ["mean_intensity_0"]; on_log = l -> push!(log, l)) === nothing
-        @test occursin("uY/B: CD4 (mean_intensity_0) not on this image", only(log))
+        @test occursin("uY/B: CD4 not on this image", only(log))
     end
 end
 
 @testset "clustTracks — per-track aggregates pool by channel name" begin
     _swapped_pair() do x, y
         imgs = [x, y]; uids = ["uX", "uY"]; pops = ["B/_tracked"]
-        mot = Set(col_names(label_props(img_track_props_path(x, "B")); data_type = :vars))
-        df0 = pop_df_multi(imgs, uids, pops; granularity = :track, cell_measures = ["mean_intensity_0"], pop_cols = String[])
-        df = Cecelia._match_track_channels(df0, imgs, uids, pops, ["mean_intensity_0"], mot; on_log = _ -> nothing)
+        ch = Cecelia.pooled_channel_columns(imgs, pops, ["mean_intensity_0"])
+        @test isempty(ch.problems) && only(ch.cols) == ["CD4"]
+        df  = pop_df_multi(imgs, uids, pops; granularity = :track, cell_measures = only(ch.cols), pop_cols = String[])
+        raw = pop_df_multi(imgs, uids, pops; granularity = :track, cell_measures = ["mean_intensity_1"],
+                           pop_cols = String[], raw_channel_names = true)
         # same tables under both uids: uY's CD4 aggregate is uX's mean_intensity_1 aggregate, track by track
         xs = sort(df[df.uID .== "uX", :], :label); ys = sort(df[df.uID .== "uY", :], :label)
+        xr = sort(raw[raw.uID .== "uX", :], :label)
         @test nrow(xs) == nrow(ys) > 0
-        @test isequal(ys[!, "mean_intensity_0.mean"], xs[!, "mean_intensity_1.mean"])
-        @test isequal(ys[!, "mean_intensity_0.sd"],   xs[!, "mean_intensity_1.sd"])
-        @test isequal(xs[!, "mean_intensity_0.mean"], sort(df0[df0.uID .== "uX", :], :label)[!, "mean_intensity_0.mean"])
-        @test !isequal(xs[!, "mean_intensity_0.mean"], xs[!, "mean_intensity_1.mean"])   # the swap is visible
+        @test isequal(ys[!, "CD4.mean"], xr[!, "mean_intensity_1.mean"])
+        @test isequal(ys[!, "CD4.sd"],   xr[!, "mean_intensity_1.sd"])
+        @test !isequal(xs[!, "CD4.mean"], ys[!, "CD4.mean"])          # the swap is visible
         _set_names!(y, ["CD8", "GFP", "TOM", "x"])
-        @test Cecelia._match_track_channels(df0, imgs, uids, pops, ["mean_intensity_0"], mot; on_log = _ -> nothing) === nothing
+        @test occursin("uY/B: CD4 not on this image",
+                       only(Cecelia.pooled_channel_columns(imgs, pops, ["CD4"]).problems))
     end
+end
+
+@testset "behaviour.hmm_states — an intensity measure pools by channel name (user report, 0.2.12)" begin
+    # Reported: "hmm_fit_states: DataFrame is missing column(s) [mean_intensity_1, mean_intensity_2]" —
+    # the picker stored raw columns, the reader returned them under channel names.
+    _swapped_pair() do x, y
+        params = Dict{String,Any}("pops" => ["B/_tracked"], "colName" => "chan", "numStates" => 2,
+                                  "modelMeasurements" => ["mean_intensity_0"])     # a legacy raw pick
+        log = String[]
+        out = Cecelia._run_task(Cecelia.HmmStates(), [x, y], params; on_log = l -> push!(log, l))
+        @test out !== nothing
+        @test !any(l -> occursin("[ERROR]", l), log)
+        rec = Cecelia.hmm_fit_entry(img_label_props_path(x, "B"), "chan")
+        @test rec["modelMeasurements"] == ["CD4"]                       # recorded by name
+        # an image without the channel is refused by name, not pooled with a missing column
+        _set_names!(y, ["CD8", "GFP", "TOM", "x"])
+        log2 = String[]
+        @test Cecelia._run_task(Cecelia.HmmStates(), [x, y], params; on_log = l -> push!(log2, l)) === nothing
+        @test any(l -> occursin("uY/B: CD4 not on this image", l), log2)
+    end
+end
+
+@testset "run_channel_names — a run's images by uid, read from the sibling's ccid.json" begin
+    proj = mktempdir(); x_dir = joinpath(proj, "1", "uX"); mkpath(x_dir)
+    x = _set_names!(CciaImage(uid = "uX", dir = x_dir), ["CD4", "CD8"])
+    sib(uid, names) = (d = joinpath(proj, "1", uid); mkpath(d);
+        write(joinpath(d, "ccid.json"), JSON3.write(Dict("uID" => uid,
+              "imChannelNames" => Dict("default" => names, "_active" => "default")))))
+    sib("uY", ["CD8", "CD4"]); sib("uE", String[])
+    of = Cecelia.run_channel_names(x, "B")
+    @test of("uX") == ["CD4", "CD8"]                      # the image itself
+    @test of("uY") == ["CD8", "CD4"]                      # a sibling, from its own ccid.json
+    @test of("uE") === nothing                            # no names registered → nothing to name by
+    @test of("uZ") === nothing                            # no such image
+end
+
+@testset "_clustfeatures_axes — a track run's axis features named like its features" begin
+    props = joinpath(mktempdir(), "B__tracks.h5ad")
+    @test Cecelia._clustfeatures_axes(props, "m") === nothing                       # no run recorded
+    Cecelia._write_clust_features!(props, "plain", ["live.track.speed"], ["uX"])
+    @test Cecelia._clustfeatures_axes(props, "plain") === nothing                   # a run without axes
+    axes = Dict{String,Any}("axes" => [Dict{String,Any}("name" => "DC1", "top" => [
+               Dict{String,Any}("feature" => "mean_intensity_1.mean", "rho" => 0.9),
+               Dict{String,Any}("feature" => "live.track.speed", "rho" => -0.4)])],
+           "root" => Dict{String,Any}("end" => "low", "cluster" => nothing))
+    Cecelia._write_clust_features!(props, "m", ["mean_intensity_1.mean"], ["uX"]; behaviour_axes = axes)
+    feats(a) = [t["feature"] for t in a["axes"][1]["top"]]
+    @test feats(Cecelia._clustfeatures_axes(props, "m")) == ["mean_intensity_1.mean", "live.track.speed"]
+    named = Cecelia._clustfeatures_axes(props, "m"; chans_of = u -> u == "uX" ? ["CD4", "CD8"] : nothing)
+    @test feats(named) == ["CD8.mean", "live.track.speed"]
+    @test named["root"]["end"] == "low"
 end

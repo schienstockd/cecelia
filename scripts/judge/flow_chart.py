@@ -26,8 +26,8 @@ from cecelia.effectiveness.palette import load_hex  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
 
 
-#: The findings that flow into the weekly judge. A test-value finding (a test that can't fail) never
-#: does: its tags are read by the TEST_VALUE_PLAN.md P4 review, so it is not in this chart.
+#: The reviewer findings in the Recital column. A test-value finding (a test that can't fail) isn't
+#: one: its `untested` ones reach the bug check mutated again at main, a line of their own below.
 FINDING_EVENTS = _ALL_FINDING_EVENTS - {"test_value_finding"}
 
 
@@ -144,7 +144,7 @@ def _into_check(unfixed: dict[str, dict], bugs: _t.Iterable[dict], last_pass: st
     """How the Recital's unfixed notes become the bug check's bugs, line by line: the step a reader
     can't see from the two column totals. `unfixed`: those notes by the sweep's key; `bugs`: every
     bug at its newest record; `last_pass`: the newest pass's `run.ts`. The lines add up:
-    `notes - rules_only - not_listed - since_pass - merged + tagged_later + agent_run + stranded`
+    `notes - rules_only - not_listed - since_pass - merged + tagged_later + agent_run + stranded + untested`
     is the bug check's total."""
     bugs = list(bugs)
     eligible = {k for k, e in unfixed.items() if _bugs.swept(e)}
@@ -153,7 +153,7 @@ def _into_check(unfixed: dict[str, dict], bugs: _t.Iterable[dict], last_pass: st
     for b in bugs:
         # findings waiting on stranded commits reached that bug: merged into it, like one function's notes
         reached |= {w["key"] for w in b.get("waiting", [])} & eligible
-        if b.get("kind") in ("agent_run", "stranded"):
+        if b.get("kind") in ("agent_run", "stranded", "untested"):
             continue
         mine = set(b.get("sources") or [b["key"]]) & eligible
         reached |= mine
@@ -165,7 +165,8 @@ def _into_check(unfixed: dict[str, dict], bugs: _t.Iterable[dict], last_pass: st
             "not_listed": len(unseen) - since, "since_pass": since, "merged": len(reached) - from_notes,
             "tagged_later": tagged_later, "last_pass": last_pass[:10] or None,
             "agent_run": sum(b.get("kind") == "agent_run" for b in bugs),
-            "stranded": sum(b.get("kind") == "stranded" for b in bugs)}
+            "stranded": sum(b.get("kind") == "stranded" for b in bugs),
+            "untested": sum(b.get("kind") == "untested" for b in bugs)}
 
 
 def _fmt_day(day: str) -> str:
@@ -283,5 +284,6 @@ def _ledger(into: dict, bugs: int) -> list[tuple[str, int, str]]:
              ("+", into["tagged_later"], "tagged fixed only after the judge had listed them"),
              ("+", into["agent_run"], "errors hit by unattended agent runs"),
              ("+", into["stranded"], "commits made on a PR's branch after it merged"),
+             ("+", into["untested"], "test gaps: changed functions whose mutants survive the tests"),
              ("=", bugs, "bugs in the bug check")]
     return [ln for ln in lines if ln[1] or ln[0] in ("", "=")]

@@ -15,7 +15,7 @@ import { useLogStore } from '../stores/log'
 import { useDataRefresh } from './useDataRefresh'
 import { useImageMetaRefresh } from './useImageMetaRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
-import { channelLabel } from '../utils/channelNames'
+import { channelColumnName } from '../utils/channelNames'
 import { clusterFeatureOptions } from '../utils/clusterHeatmapFeatures'
 import { clusterStoreBinding, sameClusterStoreBinding } from '../utils/clusterStoreBinding'
 
@@ -41,7 +41,9 @@ export function useClusterContext(opts: {
   // clusterFeatures sidecar; fall back to markers/motility if a run predates feature tracking.
   const clusterFeatures = ref<Record<string, string[]>>({})
   const featureFallback = ref<string[]>([])
-  const nameMap = ref<Record<string, string>>({})     // raw channel column → display name
+  // the image's channel names — a heatmap pick saved as raw columns migrates to names with them
+  // (features themselves arrive as channel names: docs/todo/CHANNEL_NAMES_PLAN.md)
+  const channelNames = ref<string[]>([])
   const featureLabels = ref<Record<string, Record<string, string>>>({})  // per-suffix: column → label
   const clusterIds = ref<Record<string, number[]>>({})     // per-suffix tickable cluster universe
   const clusterMembers = ref<Record<string, string[]>>({}) // per-suffix uids the run clustered together
@@ -77,14 +79,15 @@ export function useClusterContext(opts: {
       clusterMembers.value = d.clusterMembers ?? {}
       clusterAxes.value = d.clusterAxes ?? {}
       resolvedVn.value = d.valueName ?? 'default'
-      featureFallback.value = popType.value === 'trackclust' ? (d.columns ?? []) : (d.channels ?? [])
       const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
-      // channel column → display name, PLUS the run's own recorded column → label map. Region runs
-      // cluster on composition columns (`spatial.comp.B_qc__tracked.immune`) whose meaning is a
-      // population name ("B/qc/_tracked"), so the heatmap rows need that relabelling; cluster runs
-      // record no labels and are unaffected.
+      channelNames.value = names
+      // a run that predates feature tracking falls back to the markers (by channel name) / motility
+      featureFallback.value = popType.value === 'trackclust' ? (d.columns ?? [])
+        : chans.map(c => channelColumnName(c, names, d.columns ?? []))
+      // the run's own recorded column → label map. Region runs cluster on composition columns
+      // (`spatial.comp.B_qc__tracked.immune`) whose meaning is a population name ("B/qc/_tracked"), so
+      // the heatmap rows need that relabelling; cluster runs record none — their features are names.
       featureLabels.value = d.clusterFeatureLabels ?? {}
-      nameMap.value = Object.fromEntries(chans.map(c => [c, channelLabel(c, names)]))
       const obs: string[] = d.cellObsMeasures ?? []
       hmmStateCols.value = obs.filter(c => c.startsWith('live.cell.hmm.state.'))
       hmmTransitionCols.value = obs.filter(c => c.startsWith('live.cell.hmm.transitions.'))
@@ -143,16 +146,15 @@ export function useClusterContext(opts: {
   // with the heatmap still requesting the previous run's columns — "I re-ran it and nothing changed".
   // Same primitive, same global autoRefreshOnTask toggle, so cluster/region pages behave like the rest.
   useDataRefresh(() => imageUids.value, loadFeatures)
-  // a channel rename → `nameMap` (the heatmap/UMAP row labels) is a copy of the names; refetch it
+  // a channel rename renames the features (the server names them) — refetch
   useImageMetaRefresh(() => imageUids.value, loadFeatures)
 
-  // the label map a plot should use for the CURRENT run: channel display names, overlaid with this
-  // run's own column→label map. Hosts pass this as `nameMap` so one lookup relabels both.
-  const labelMap = computed<Record<string, string>>(() =>
-    ({ ...nameMap.value, ...(featureLabels.value[suffix.value] ?? {}) }))
+  // the label map a plot should use for the CURRENT run: the run's own column→label map (region runs).
+  // Hosts pass this as `nameMap`.
+  const labelMap = computed<Record<string, string>>(() => featureLabels.value[suffix.value] ?? {})
 
   return {
-    suffixes, clusterFeatures, featureFallback, nameMap, featureLabels, labelMap,
+    suffixes, clusterFeatures, featureFallback, channelNames, featureLabels, labelMap,
     clusterIds, clusterMembers, clusterAxes, resolvedVn,
     hmmStateCols, hmmTransitionCols, allFeatures, featureOptions,
     runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor,

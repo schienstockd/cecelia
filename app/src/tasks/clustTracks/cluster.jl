@@ -80,6 +80,14 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     isempty(p.clusterMeasures) &&
         (on_log("[ERROR] clustTracks: select feature columns (motility / HMM / aggregates) to cluster on"); return nothing)
 
+    # intensity bases by channel NAME (a legacy raw pick named against the first segment): each image
+    # aggregates its own column and the matrix pools `CD4.mean`, one marker per column whatever the
+    # channel order — docs/todo/CHANNEL_NAMES_PLAN.md
+    ch = pooled_channel_columns(imgs, p.popsToCluster, p.clusterMeasures)
+    isempty(ch.problems) ||
+        (on_log("[ERROR] clustTracks: channels don't match across images — $(join(ch.problems, "; "))"); return nothing)
+    p = parse_clust_tracks_params(merge(params, Dict{String,Any}("clusterMeasures" => only(ch.cols))))
+
     on_log("[INFO] clustTracks: $(length(imgs)) image(s), pops=$(p.popsToCluster), " *
            "features=$(p.clusterMeasures), suffix=$(p.valueNameSuffix)")
     on_progress(1, 4)
@@ -104,8 +112,6 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     df = pop_df_multi(imgs, uids, p.popsToCluster;
                 granularity = :track, cell_measures = cell_measures, pop_cols = String[])
     nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(p.popsToCluster)"); return nothing)
-    df = _match_track_channels(df, imgs, uids, p.popsToCluster, cell_measures, mot_set; on_log = on_log)
-    df === nothing && return nothing
     on_progress(2, 4)
 
     # min track length: drop short tracks (num_cells = per-track cell count from track_props)

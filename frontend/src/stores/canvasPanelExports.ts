@@ -11,7 +11,7 @@
 // will silently skip it. Cheaper than teaching every panel to say "I can't export."
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref, onScopeDispose } from 'vue'
+import { ref, onActivated, onDeactivated, onScopeDispose } from 'vue'
 
 /** A registered panel's export contract. Returns a PNG data URL or `null` on failure (a plot that
  *  hasn't rendered yet, or a raster the browser refused). Async because the underlying path goes
@@ -38,7 +38,9 @@ export const useCanvasPanelExportsStore = defineStore('canvasPanelExports', () =
   return { exporters, register, unregister, get }
 })
 
-/** Lifecycle-safe registration helper — the caller unregisters automatically on unmount. */
+/** Lifecycle-safe registration helper — registered while the caller is mounted AND visible. Under
+ *  App.vue's `<KeepAlive>` a hidden page stays mounted, so with a shared key the last-mounted page would
+ *  otherwise own the entry and Share would export the hidden page's panel. */
 export function usePanelExport(key: () => string, exporter: PanelExporter): void {
   const store = useCanvasPanelExportsStore()
   // Register under the current key; re-register when the key changes (a persistKey rebind).
@@ -47,6 +49,8 @@ export function usePanelExport(key: () => string, exporter: PanelExporter): void
   // The key is expected to be stable for the lifetime of the panel (panel id + canvas key don't
   // change under a mounted CanvasPanel), so a watch is overkill; refresh only if the caller opts
   // to re-invoke this composable, and clean the previous entry.
+  onActivated(() => store.register(lastKey, exporter))
+  onDeactivated(() => store.unregister(lastKey, exporter))
   onScopeDispose(() => store.unregister(lastKey, exporter))
   // Return void — the caller doesn't need the store. Kept as a bare function on purpose.
   void lastKey

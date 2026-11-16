@@ -13,16 +13,8 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
     # up front rather than buried after the tree ornaments.
     d = Dict{String,Any}("name" => p.name, "uid" => p.uid, "colour" => p.colour, "show" => p.show)
     p.gate !== nothing && (d["gate"] = gate_spec(p.gate))
-    if p.filter_measure !== nothing
-        d["filter"] = Dict{String,Any}("measure" => p.filter_measure,
-                                       "fun"     => p.filter_fun === nothing ? nothing : string(p.filter_fun),
-                                       "values"  => p.filter_values,
-                                       "default_all" => p.filter_default_all)
-        # compound filter (Decision 15): emit the AND-ed conditions so a multi-condition pop round-trips.
-        p.filter_conditions === nothing ||
-            (d["filter"]["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => string(c.fun),
-                                                           "values" => c.values) for c in p.filter_conditions])
-    end
+    # compound filter (Decision 15): `filter_spec` emits the AND-ed conditions so a multi-condition pop round-trips.
+    p.filter_measure === nothing || (d["filter"] = filter_spec(p))
     p.boolean_op === nothing || (d["boolean"] = boolean_spec(p))
     p.is_track && (d["is_track"] = true)
     p.transient && (d["transient"] = true)

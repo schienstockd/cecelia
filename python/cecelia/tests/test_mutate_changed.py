@@ -95,6 +95,7 @@ class FunctionsAndRangesTest(unittest.TestCase):
                                          encoding="utf-8")
             hits, unnamed = mc.py_tests("cecelia.utils.czi_meta", ["x_parse_settings", "x__band", "xǁReaderǁread"], set())
             self.assertEqual([h.name for h in hits], ["test_a.py", "test_c.py"])
+            self.assertEqual(mc.test_paths(hits), ["python/cecelia/tests/test_a.py", "python/cecelia/tests/test_c.py"])
             self.assertEqual(unnamed, ["x__band"])
             # a test file the change itself touched is run whatever it names
             hits, _ = mc.py_tests("cecelia.utils.czi_meta", ["x__band"], {"python/cecelia/tests/test_b.py"})
@@ -114,6 +115,12 @@ class FunctionsAndRangesTest(unittest.TestCase):
 
     def test_line_ranges(self):
         self.assertEqual(mc.ranges({3, 4, 5, 9, 11, 12}), "3-5,9,11-12")
+
+    def test_at_names_lines_without_a_diff(self):
+        self.assertEqual(mc.at_lines(["python/cecelia/x.py:3-5,9", "app/src/a.jl:2"]),
+                         {"python/cecelia/x.py": {3, 4, 5, 9}, "app/src/a.jl": {2}})
+        with self.assertRaises(ValueError):
+            mc.at_lines(["python/cecelia/x.py"])
 
 
 if __name__ == "__main__":

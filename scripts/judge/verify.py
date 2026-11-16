@@ -103,7 +103,12 @@ or the tool / surface the note names, and say `fix` when it still lacks what the
 a reviewer said new code copies a helper the codebase already has (the finding names it). Check that the
 copy is still here and whether the named helper really covers it: `fix` when the copy should call the
 helper instead, `decide` when they differ in a way only intent settles, `fixed` when the copy is gone or
-already uses it, `dismiss` when the two differ on purpose. `guard` doesn't apply to a duplicate. Read the actual code: the flagged function, its callers and producers, and anything the
+already uses it, `dismiss` when the two differ on purpose. `guard` doesn't apply to a duplicate. A BUG
+marked `untested` is about the tests, not a defect: its function's mutants were run again on this code
+and the ones listed survived every test. Trace what each changes for the callers: `fix` when one changes
+a value a caller or the user sees (a test checking that value, from a definition, is missing), `dismiss`
+when every one is equivalent (nothing observable changes), `guard` when the mutated path is reachable
+from no caller today. Read the actual code: the flagged function, its callers and producers, and anything the
 bug's reasoning depends on. Trace it; don't infer. Read only: don't edit, build or run the app.
 `git log` / `git show` / `grep` are fine.
 
@@ -184,6 +189,8 @@ def prompt_for(group: _t.Sequence[dict]) -> str:
         + f"{b['desc']}\n"
         + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
         + _record.landed_hint(b)
+        + (f"Mutated again at {b['rerun']['sha'][:8]}: {b['rerun']['why']}: {b['rerun']['survivors']}\n"
+           if b.get("rerun") else "")
         + f"Excerpt check said: {b.get('why') or '—'}" for b in group)
 
 

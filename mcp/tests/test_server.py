@@ -45,6 +45,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
             "add_gate",                     # ONE proposed gate, additive only (POST /api/gating/pop/add-gate)
             "add_boolean_pop",              # ONE proposed combination of existing pops (POST .../add-boolean)
+            "add_filter_pop",               # ONE proposed filter pop, AND-ed rules (POST .../add-filter)
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)

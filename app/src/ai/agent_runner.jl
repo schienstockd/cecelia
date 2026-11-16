@@ -8,11 +8,12 @@
 #
 # ── The engine contract (docs/todo/KIWI_ASSISTANT_PLAN.md → *The engine seam*) ─────────────────────
 #
-# Every backend implements these four; everything else in this file is Claude-specific plumbing.
+# Every backend implements these four (`agent_not_installed` has a default); everything else in this file is Claude-specific plumbing.
 #
 #   agent_available(a)     → Bool       is the engine usable here (drives the UI gate). The default
 #                                       below finds a CLI (`agent_bin_path`); a non-CLI engine overrides it
 #   agent_label(a)         → String     display name for the UI, so components never hard-code one
+#   agent_not_installed(a) → String     the refusal when it isn't usable — says where to get it if known
 #   agent_capabilities(a)  → NamedTuple (; native_schema, native_mcp, resumable)
 #   _run_agent_once(a, prompt, mcp_config_path; opts...) → AgentResult   one spawn, no retries
 #
@@ -29,6 +30,7 @@ using Base64: base64encode
 abstract type AgentBackend end
 
 agent_label(a::AgentBackend)::String = string(nameof(typeof(a)))
+agent_not_installed(a::AgentBackend)::String = "No $(agent_label(a)) CLI found — install it"
 agent_capabilities(::AgentBackend) = (; native_schema = false, native_mcp = false, resumable = false)
 _run_agent_once(a::AgentBackend, args...; kw...) =
     error("$(typeof(a)) does not implement _run_agent_once — see the engine contract in agent_runner.jl")
@@ -59,6 +61,9 @@ ClaudeAgent(; bin::AbstractString = observer_agent_bin(), model::AbstractString 
     ClaudeAgent(String(bin), String(model))
 
 agent_label(::ClaudeAgent)::String = "Claude"
+# What every "no CLI" refusal says: where to get it, since nothing that needs `claude` can help.
+const CLAUDE_NOT_INSTALLED = "Claude Code is not installed — see https://code.claude.com/docs/en/setup"
+agent_not_installed(::ClaudeAgent)::String = CLAUDE_NOT_INSTALLED
 # `--json-schema` validates + re-prompts inside the CLI; `--mcp-config`; `--resume <session_id>`.
 agent_capabilities(::ClaudeAgent) = (; native_schema = true, native_mcp = true, resumable = true)
 
@@ -956,7 +961,7 @@ function run_agent_turn(a::AgentBackend, prompt::AbstractString, mcp_config_path
                         on_progress::Function = _ -> nothing,
                         json_schema::AbstractString = "", cmd_opts...)::AgentResult
     agent_available(a) ||
-        return AgentResult(false, "", 0, 0, "", "assistant CLI not found: $(agent_label(a)) ($(_agent_bin(a)))")
+        return AgentResult(false, "", 0, 0, "", "$(agent_not_installed(a)) ($(_agent_bin(a)))")
     once(sid) = _run_agent_once(a, prompt, mcp_config_path; system_prompt, session_id = sid,
                                 timeout_s, on_process, on_progress, json_schema, cmd_opts...)
     res = once(String(session_id))

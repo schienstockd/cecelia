@@ -223,8 +223,8 @@ describe('Claude login per profile', () => {
   })
 
   it('logoutClaude surfaces the server error', async () => {
-    fetchMock.mockResolvedValue(res(500, { ok: false, error: 'No assistant CLI found.' }))
-    expect(await logoutClaude('alice')).toEqual({ ok: false, error: 'No assistant CLI found.' })
+    fetchMock.mockResolvedValue(res(500, { ok: false, error: 'Claude Code is not installed — see https://code.claude.com/docs/en/setup' }))
+    expect(await logoutClaude('alice')).toEqual({ ok: false, error: 'Claude Code is not installed — see https://code.claude.com/docs/en/setup' })
     fetchMock.mockResolvedValue(res(200, { ok: true, name: 'alice' }))
     expect(await logoutClaude('alice')).toEqual({ ok: true })
   })
@@ -257,8 +257,8 @@ describe('Logging in from Cecelia (P9)', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles/login',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'alice' }) }))
     expect(r.state).toBe('waiting')
-    fetchMock.mockResolvedValue(res(500, { ok: false, error: 'No assistant CLI found.' }))
-    expect(await startClaudeLogin('alice')).toMatchObject({ state: 'failed', error: 'No assistant CLI found.' })
+    fetchMock.mockResolvedValue(res(500, { ok: false, error: 'Claude Code is not installed — see https://code.claude.com/docs/en/setup' }))
+    expect(await startClaudeLogin('alice')).toMatchObject({ state: 'failed', error: 'Claude Code is not installed — see https://code.claude.com/docs/en/setup' })
   })
 
   it('fetchClaudeLoginRun: a dropped poll is `none` + error, not a failed login', async () => {
@@ -290,7 +290,7 @@ describe('Logging in from Cecelia (P9)', () => {
 describe('claudeLogoutError', () => {
   it('only a failure that leaves a live login is an error', () => {
     expect(claudeLogoutError({ ok: true }, true)).toBe('')
-    expect(claudeLogoutError({ ok: false, error: 'No assistant CLI found.' }, false)).toBe('')
+    expect(claudeLogoutError({ ok: false, error: 'Claude Code is not installed — see https://code.claude.com/docs/en/setup' }, false)).toBe('')
     expect(claudeLogoutError({ ok: false, error: 'timed out' }, true)).toBe('timed out')
     expect(claudeLogoutError({ ok: false }, true)).toBe('Claude log out failed')
   })

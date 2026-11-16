@@ -44,7 +44,8 @@ images. When `partOf` is a single-image run the call works without it (skipping 
 
 Returns `(df, pool)` where `df` is stacked feature columns + `_uid` + `_value_name` + `_track_id` +
 `clusters.{suffix}` (cluster code). The order of rows follows the pool's iteration order (image ×
-value_name, first-appearance). Missing feature columns on a sibling degrade to `NaN` for those rows.
+value_name, first-appearance). Features are read like clustering read them (`track_props`: motility ⊕
+on-read aggregates); one a sibling still lacks degrades to `NaN` for those rows.
 """
 function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
                                     suffix::AbstractString;
@@ -53,7 +54,7 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
     entry = _clustfeatures_entry(img_track_props_path(img, value_name), String(suffix); family=family)
     entry === nothing && error("clustering_features_pooled: no clustfeatures entry for suffix '$suffix' " *
                                "under value_name '$value_name'")
-    feats = String[string(x) for x in get(entry, "features", get(entry, :features, String[]))]
+    feats = _card_features(img, value_name, suffix, family)
     isempty(feats) && error("clustering_features_pooled: clustfeatures entry has no features (suffix=$suffix)")
     part_of = _clustfeatures_part_of(entry, img.uid)   # legacy sidecars without partOf → single-image run
 
@@ -71,14 +72,16 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
         end
         for vn in co_clustered_value_names(sib_img, String(suffix); granularity=:track, family=family)
             push!(pool, (uid = uid, value_name = vn))
-            path = img_track_props_path(sib_img, vn)
-            isfile(path) || continue
-            wanted = String[cluster_col; feats]
-            lp = label_props(path) |> select_cols(wanted)
-            frame = as_df(lp; include_x = true, include_obs = true)
-            # `label` on a __tracks table IS the track_id (obs._index). Rename for the medoid picker.
-            "label" in names(frame) || error("clustering_features_pooled: no label column at $path")
-            rename!(frame, :label => :_track_id)
+            isfile(img_track_props_path(sib_img, vn)) || continue
+            # the SAME per-track features clustering pooled: motility from `__tracks.h5ad` ⊕ the on-read
+            # aggregates (`CD4.mean`, HMM-state frequencies) that table never holds — `track_props`,
+            # each image resolving channel names to its own columns
+            frame = track_props(sib_img; value_name = vn,
+                                cell_measures = track_aggregate_measures(sib_img, vn, feats))
+            "track_id" in names(frame) ||
+                error("clustering_features_pooled: no tracks for $(uid)/$(vn)")
+            select!(frame, intersect(String["track_id"; cluster_col; feats], names(frame)))
+            rename!(frame, :track_id => :_track_id)
             # Tag origin, and fill missing features with NaN so vcat aligns.
             frame[!, :_uid] .= uid
             frame[!, :_value_name] .= vn
@@ -94,6 +97,12 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
     df = reduce((a, b) -> vcat(a, b; cols = :union), frames)
     (df, pool)
 end
+
+# The run's features as the frame columns `clustering_features_pooled` reads — intensities by channel
+# name, a run recorded before that named against its first image (docs/todo/CHANNEL_NAMES_PLAN.md).
+_card_features(img::CciaImage, value_name::AbstractString, suffix::AbstractString, family::AbstractString) =
+    _clustfeatures_features(img_track_props_path(img, value_name), String(suffix); family = family,
+                            chans_of = run_channel_names(img, String(value_name)), own_uid = img.uid)
 
 """
     medoid_track(df, cluster_id; features, cluster_col, seed=0, example_frac=0.25)
@@ -232,8 +241,7 @@ function cell_cards_metadata(img::CciaImage, value_name::AbstractString,
                              family::AbstractString="clusters")
     df, pool = clustering_features_pooled(img, value_name, suffix;
                                           proj_uid=proj_uid, family=family)
-    entry = _clustfeatures_entry(img_track_props_path(img, value_name), String(suffix); family=family)
-    feats = String[string(x) for x in get(entry, "features", get(entry, :features, String[]))]
+    feats = _card_features(img, value_name, suffix, family)
     cluster_col = "$(family).$(suffix)"
 
     # Resolve the pop map ONCE — we need each pop's colour + name + count.

@@ -2511,8 +2511,8 @@ end
               cd3.gate["x_channel"] == "c1" && cd3.gate["y_channel"] == "c2"
         dir = pops[findfirst(p -> p.name == "Directed", pops)]
         @test dir.popType == "trackclust" && dir.gate === nothing
-        @test dir.filter.measure == "clusters.movement" && dir.filter.fun == "in" &&
-              collect(dir.filter.values) == [3]
+        @test dir.filter["measure"] == "clusters.movement" && dir.filter["fun"] == "in" &&
+              collect(dir.filter["values"]) == [3]
         # cell-vs-track comes from the pop_type, not the stored `is_track` flag — no GUI/MCP writer sets
         # it, so a real trackclust pop carries `is_track=false` (this map's, too) and was reported as
         # cells, and the measure summary profiled it as phenotype instead of motility
@@ -2540,7 +2540,7 @@ end
         shared = populations_summary(proj).images[1].populations
         bdir = shared[findall(p -> p.name == "Directed" && p.valueName == "B", shared)]
         @test length(bdir) == 1 && bdir[1].popType == "trackclust"
-        @test bdir[1].filter.measure == "clusters.movement"        # the SAME run, not a new definition
+        @test bdir[1].filter["measure"] == "clusters.movement"        # the SAME run, not a new definition
         # a segment that is NOT in the run borrows nothing (no clustfeatures sidecar → no pops)
         img.label_props["C"] = "C.h5ad"
         cpops = populations_summary(proj).images[1].populations
