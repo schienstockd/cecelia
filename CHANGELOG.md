@@ -36,8 +36,8 @@ stack. Per-tag notes are also on the
 ### Fixed
 
 - **3D recordings and animations draw the segmentation** the viewer shows. They drew none.
-- **Batch movies colour the mask by track clusters**, as the viewer does, and keep the viewer's
-  populations and eyes from *Fill from view*. The mask picker shows with one image version too.
+- **Batch movies colour the mask by track clusters**, as the viewer does, and *Fill from view*
+  keeps the viewer's populations. The mask picker shows with one version too.
 - **The mask can be coloured by the colour-by measure** in the viewer (*Colour → Colour by*), and
   movies follow. It replaces the batch page's *labels* chip.
 - **Detect aggregates creates its population again.** The *aggregated* population was never added
