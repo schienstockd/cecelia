@@ -463,10 +463,20 @@ end
     pal = CECELIA_TRACK_PALETTE; n = length(pal)
     c = RGB{N0f8}(0, 0, 0)
     # a tracker gap is not drawn across, as in the viewer
-    hist = Dict((7, c, "") => [(0, 0.0, 0.0, 0.0), (1, 1.0, 0.0, 0.0), (3, 2.0, 0.0, 0.0), (4, 4.0, 0.0, 0.0)])
+    hist = Dict((7, "") => [(0, 0.0, 0.0, 0.0, c), (1, 1.0, 0.0, 0.0, c), (3, 2.0, 0.0, 0.0, c), (4, 4.0, 0.0, 0.0, c)])
     hops = _hops_of(hist)
     @test sort([h[1] for h in hops]) == [1, 4]
     @test isempty(_hops_of(hist; group = "/other"))
+    # cell: a track whose colour-by value changes (HMM 1 → 2 → 3) stays ONE track — every hop drawn,
+    # each in its ARRIVING cell's colour, as the viewer's 'cell' mode
+    s1, s2, s3 = RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 1, 0), RGB{N0f8}(0, 0, 1)
+    hmm = Dict((5, "") => [(0, 0.0, 0.0, 0.0, s1), (1, 1.0, 0.0, 0.0, s1), (2, 2.0, 0.0, 0.0, s2), (3, 3.0, 0.0, 0.0, s3)])
+    hh = _hops_of(hmm)
+    @test length(hh) == 3
+    cs = _colour_hops([(; hops = hh, solid = nothing, pop = nothing)], "cell")
+    @test [cs[t].colour[1] for t in 1:3] == [s1, s2, s3]
+    # ... and a source read without a colour-by takes its pop colour, not the grey it was read in
+    @test only(_colour_hops([(; hops = hh, solid = nothing, pop = s2, cb = false)], "cell")[1].colour) == s2
     # by track: the track's own id, whatever source it is in
     one = (; hops, solid = nothing, pop = nothing)
     empty = (; hops = _Hop[], solid = nothing, pop = nothing)

@@ -153,7 +153,7 @@ function _load_palettes()
         @warn "palettes.json missing — falling back to frozen literals. Restore \
                frontend/src/plots/palettes.json to keep browser + Julia in sync." path = _PALETTES_JSON_PATH
         return (palette = collect(_CECELIA_TRACK_PALETTE_FALLBACK),
-                modes    = ["track", "speed", "solid", "pop"],
+                modes    = ["track", "speed", "solid", "pop", "cell"],
                 heat     = collect(_HEAT_STOPS_FALLBACK),
                 branch   = RGB{N0f8}[])
     end
@@ -452,7 +452,8 @@ end
 # author is wrong the same way — which is the drift guarantee.
 #
 # `_overlay_parts` is the read: points (coloured) and the raw track histories, keyed
-# `(track id, cell colour, group)` — the group is the pop path a ribbon belongs to (`""` for whole
+# `(track id, group)`, each entry carrying its cell's colour — so a track whose colour-by value
+# changes (an HMM state switch) stays ONE history, hop for hop — the group is the pop path a ribbon belongs to (`""` for whole
 # segmentation tracks), so a caller can make each pop its own ribbon source, as the viewer does.
 # A pop's points are read when `point_on(path, show)`, its tracks when `track_on(path, show)` — the
 # manager's `show` by default; a viewer look passes its point / ribbon eyes (`look_eye_on`).
@@ -482,7 +483,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
     pts_by_t   = Dict{Int,NamedTuple{(:x, :y, :z, :colour),
                         Tuple{Vector{Float64},Vector{Float64},
                               Vector{Float64},Vector{RGB{N0f8}}}}}()
-    track_hist = Dict{Tuple{Int,RGB{N0f8},String},Vector{Tuple{Int,Float64,Float64,Float64}}}()
+    track_hist = Dict{Tuple{Int,String},Vector{Tuple{Int,Float64,Float64,Float64,RGB{N0f8}}}}()
     _push_point!(t, xyz, colour) = begin
         bag = get!(pts_by_t, t) do
             (; x = Float64[], y = Float64[], z = Float64[], colour = RGB{N0f8}[])
@@ -491,8 +492,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
         push!(bag.colour, colour)
     end
     _push_track!(kid, colour, t, xyz, group::AbstractString = "") = begin
-        hist = get!(track_hist, (kid, colour, String(group)), Tuple{Int,Float64,Float64,Float64}[])
-        push!(hist, (t, xyz[1], xyz[2], xyz[3]))
+        hist = get!(track_hist, (kid, String(group)), Tuple{Int,Float64,Float64,Float64,RGB{N0f8}}[])
+        push!(hist, (t, xyz[1], xyz[2], xyz[3], colour))
     end
     _z_of(df, i, has_z) = has_z ?
         (df[i, :centroid_z] isa Real ? Float64(df[i, :centroid_z]) : 0.0) : 0.0
@@ -673,17 +674,18 @@ const _SegBag = NamedTuple{(:x0, :y0, :z0, :x1, :y1, :z1, :colour),
     _hops_of(track_hist; group = nothing) -> Vector{_Hop}
 
 A track history's hops — one per pair of CONSECUTIVE frames: a tracker gap is not drawn across, as in
-the viewer (`buildMultiTrackBuffer`). `group` keeps one pop's ribbon (`nothing` = all).
+the viewer (`buildMultiTrackBuffer`). `group` keeps one pop's ribbon (`nothing` = all). A hop carries
+its ARRIVING cell's colour (the viewer's `'cell'` mode reads the end row too).
 """
 function _hops_of(track_hist; group::Union{Nothing,AbstractString} = nothing)
     out = _Hop[]
-    for ((kid, col, g), hist) in track_hist
+    for ((kid, g), hist) in track_hist
         (group === nothing || g == group) || continue
         length(hist) >= 2 || continue
         sort!(hist; by = first)
         for k in 1:(length(hist) - 1)
             t0, x0, y0, z0 = hist[k]
-            t1, x1, y1, z1 = hist[k + 1]
+            t1, x1, y1, z1, col = hist[k + 1]
             t1 - t0 == 1 || continue
             push!(out, (t1, kid, x0, y0, z0, x1, y1, z1, col))
         end
@@ -702,7 +704,9 @@ order; source `i`'s fallback colour is the palette's `i`-th, as there.
     the range of EVERY source's hops, so one speed is one colour across the frame;
   * "solid" — the source's colour (`solid`: its Tracks-legend colour), else the palette's `i`-th;
   * "pop"   — the source's population colour (`pop`), else the palette's `i`-th;
-  * "cell"  — each hop's arriving-cell colour (a colour-by column), the legacy author's tracks.
+  * "cell"  — each hop's arriving-cell colour (a colour-by column: HMM states along a track); a
+    source read without a colour-by (`cb = false`: per-segmentation tracks, track clusters) takes
+    its "pop" colour, as the viewer's source without values does.
 """
 function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
     pal = CECELIA_TRACK_PALETTE; n = length(pal)
@@ -723,7 +727,7 @@ function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
             colour = mode == "speed" ? (span > 0 ? _heat_ramp((len(h) - lo) / span) : grey) :
                      mode == "solid" ? solid :
                      mode == "pop"   ? popc :
-                     mode == "cell"  ? h[9] :
+                     mode == "cell"  ? (get(s, :cb, true) ? h[9] : popc) :
                      pal[mod(abs(h[2]), n) + 1]
             bag = get!(segs, h[1]) do
                 (; x0 = Float64[], y0 = Float64[], z0 = Float64[],
@@ -932,7 +936,7 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         # its "pop" colour the palette's; the unnamed batch source draws "pop" in its grey
         solid = isempty(src) ? nothing : rgb(isempty(col) ? get(plan.track_colours, svn, nothing) : col)
         push!(seg_srcs, (; hops = _hops_of(parts.track_hist), solid,
-                           pop = isempty(src) ? rgb(col) : nothing))
+                           pop = isempty(src) ? rgb(col) : nothing, cb = false))
     end
 
     # Pop layers: dots (coloured by colour-by) + one cell-track ribbon source per pop.
@@ -961,7 +965,7 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
             isempty(hops) && continue
             key = _track_pop_key(lvn, lpt, L.path)
             push!(gated_srcs, (; hops, solid = rgb(get(plan.track_colours, key, String(L.colour))),
-                                 pop = rgb(String(L.colour))))
+                                 pop = rgb(String(L.colour)), cb = cb_scale !== nothing))
         end
     end
 
@@ -976,7 +980,7 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
             isempty(hops) && continue
             key = "$(tvn)::trackclust::$(L.path)"
             push!(tc_srcs, (; hops, solid = rgb(get(plan.track_colours, key, String(L.colour))),
-                              pop = rgb(String(L.colour))))
+                              pop = rgb(String(L.colour)), cb = false))
         end
     end
 

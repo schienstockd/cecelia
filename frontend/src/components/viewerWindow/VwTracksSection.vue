@@ -1,6 +1,7 @@
 <!--
   The viewer window's Tracks section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): one ribbon
-  row per gated population with tracks and per track-cluster pop, colour mode (track / speed / source / population) with its
+  row per gated population with tracks and per track-cluster pop, colour mode (track / speed / source / population /
+  colour-by — each hop in its cell's Colour by colour, e.g. HMM states) with its
   legend, z reach and tail. Which segmentations draw is ticked under "On the image" (`VwOnImageOverlay`); the
   window owns the ribbon state, this renders it and reports the user's changes.
 -->
@@ -26,6 +27,8 @@ defineProps<{
   sources: { vn: string; hex: string; count: number }[]
   singlePlane: boolean
   hasZ: boolean
+  /** the points' Colour by column — what the `cell` mode paints hops by; null when none is picked */
+  colourBy?: string | null
 }>()
 const emit = defineEmits<{
   togglePop: [pop: TrackPopRow]
@@ -67,7 +70,12 @@ const settings = useSettingsStore()
           <option value="speed">speed</option>
           <option value="solid">source</option>
           <option value="pop">population</option>
+          <option value="cell">colour by</option>
         </select>
+      </div>
+      <!-- Colour-by mode: hops take the points' Colour by colours (legend under Populations). -->
+      <div v-if="colorMode === 'cell'" class="cc-muted cc-fs-3xs">
+        {{ colourBy ? 'Each step in its cell\'s ' + colourBy + ' colour' : 'Pick a Colour by under Populations' }}
       </div>
       <!-- Numeric ramp for speed mode — same shape as the point colour-by legend, so the reading
            stays consistent across overlay kinds. µm per frame (Δt = 1 hop). -->

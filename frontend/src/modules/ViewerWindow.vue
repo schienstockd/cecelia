@@ -2021,7 +2021,9 @@ function rebuildOverlays() {
       { source: 'viewer' })
   }
   if (sources.length) {
-    const result = buildMultiTrackBuffer(sources, meta.value, PALETTES.cecelia, trackColorMode.value)
+    // 'cell': ribbons on the points' colour-by scale + palette, so a hop and its dot agree
+    const result = buildMultiTrackBuffer(sources, meta.value, PALETTES.cecelia, trackColorMode.value,
+                                         { scale: colourLegend.value, palette: POPULATION_PALETTE })
     segments = result.segments
     trackSources.value = result.sources
     trackSpeedRange.value = result.speedRange
@@ -6396,6 +6398,7 @@ onUnmounted(() => {
 
         <!-- a still image has no tracks -->
         <VwTracksSection v-if="nT > 1" :seg-count="segCount" :pops="trackRibbonRows" v-model:color-mode="trackColorMode"
+                         :colour-by="colourBy"
                          :speed-range="trackSpeedRange" :ramp-style="rampStyle" :sources="trackSources"
                          :single-plane="singlePlane" :has-z="meta!.nZ > 1"
                          @toggle-pop="toggleTrackPop" @source-colour="setTrackSourceColour" @redraw="frame.redraw()" />

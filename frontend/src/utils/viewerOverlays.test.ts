@@ -7,7 +7,7 @@ import {
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
   isTrackDrawable,
-  POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
+  POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
 import { WHITE } from '../plots/fixedColours'
@@ -391,7 +391,7 @@ describe('buildMultiTrackBuffer — the colour each source is drawn in', () => {
   const PAL = ['#ff0000', '#00ff00', '#0000ff']
   const srcs = [{ vn: 'flowTom', payload: payload(), colour: '#ff8800' },
                 { vn: 'cpSAM', payload: payload(), popColour: '#123456' }]
-  const drawn = (mode: 'track' | 'speed' | 'solid' | 'pop') =>
+  const drawn = (mode: TrackColorMode) =>
     buildMultiTrackBuffer(srcs, meta(), PAL, mode).sources.map(s => [s.vn, s.drawn])
   it('solid: the override, else the palette cycle', () => {
     expect(drawn('solid')).toEqual([['flowTom', '#ff8800'], ['cpSAM', '#00ff00']])
@@ -402,6 +402,46 @@ describe('buildMultiTrackBuffer — the colour each source is drawn in', () => {
   it('track / speed: no one colour', () => {
     expect(drawn('track')).toEqual([['flowTom', null], ['cpSAM', null]])
     expect(drawn('speed')).toEqual([['flowTom', null], ['cpSAM', null]])
+  })
+  it("cell: no colour-by values → the pop colour it draws in; with values, no one colour", () => {
+    expect(drawn('cell')).toEqual(drawn('pop'))
+    const cb = { ...payload(), colourBy: 'c', valueKind: 'numeric' as const, valueRange: [0, 1] as [number, number],
+                 values: [0, 1, 0, 1] }
+    expect(buildMultiTrackBuffer([{ vn: 'T', payload: cb }], meta(), PAL, 'cell').sources.map(s => s.drawn))
+      .toEqual([null])
+  })
+})
+
+describe("buildMultiTrackBuffer — 'cell': each hop in its arriving cell's colour-by colour", () => {
+  // One track over four frames whose HMM state goes 1 → 1 → 2 → 3: the paper's HMM-state ribbons.
+  const hmm = (): OverlayPayload => ({
+    ...payload(),
+    nCells: 4,
+    cells: { label: [1, 2, 3, 4], t: [0, 1, 2, 3], x: [0, 1, 2, 3], y: [0, 0, 0, 0], z: [0, 0, 0, 0],
+             track: [5, 5, 5, 5] },
+    colourBy: 'live.cell.hmm.state.movement_3', valueKind: 'categorical', valueLevels: [1, 2, 3],
+    values: [1, 1, 2, 3],
+  })
+  const PAL = ['#ff0000', '#00ff00', '#0000ff']
+  const scale = pooledColourScale([hmm()])
+  const rgbs = (buf: ReturnType<typeof buildMultiTrackBuffer>) =>
+    Array.from({ length: buf.segments.count },
+               (_, i) => Array.from(buf.segments.data.slice(i * SEG_STRIDE + 6, i * SEG_STRIDE + 9)))
+
+  it('changes colour where the state changes, and matches the dots', () => {
+    const buf = buildMultiTrackBuffer([{ vn: 'T', payload: hmm() }], meta({ nT: 4 }), PAL, 'cell',
+                                      { scale, palette: PAL })
+    const dot = colourByValue(hmm(), PAL, scale)!
+    // hops end at frames 1, 2, 3 → the cells in states 1, 2, 3
+    expect(rgbs(buf)).toEqual([dot(1), dot(2), dot(3)].map(c => Array.from(new Float32Array(c))))
+    expect(new Set(rgbs(buf).map(c => c.join())).size).toBe(3)
+  })
+
+  it('a source with no colour-by values takes its population colour', () => {
+    const plain = { ...hmm(), colourBy: null, values: null }
+    const buf = buildMultiTrackBuffer([{ vn: 'T', payload: plain, popColour: '#00ff00' }], meta({ nT: 4 }),
+                                      PAL, 'cell', { scale: null, palette: PAL })
+    expect(new Set(rgbs(buf).map(c => c.join()))).toEqual(new Set([[0, 1, 0].join()]))
   })
 })
 

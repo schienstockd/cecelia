@@ -133,7 +133,7 @@ export interface BatchMovieCfg {
   maskPopTypes?: string[]
   colourLabels?: boolean
   tailWidth?: number
-  // Track tail length in frames, and how ribbons are coloured ('track' | 'speed' | 'solid' | 'pop').
+  // Track tail length in frames, and how ribbons are coloured ('track' | 'speed' | 'solid' | 'pop' | 'cell').
   // Absent = the recorder's defaults (30, 'track'); the viewer's own values arrive via `viewerLook`.
   tailLength?: number
   trackColourMode?: string

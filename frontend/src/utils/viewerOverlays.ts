@@ -583,12 +583,12 @@ export function buildTrackBuffer(
 }
 
 /** How track ribbons are coloured. Set per set in the viewer (settings.getTrackColorMode). The
- *  three names live in `palettes.json` — same file the Julia offline renderer reads, so a mode
+ *  names live in `palettes.json` — same file the Julia offline renderer reads, so a mode
  *  the browser knows is a mode the movie renderer accepts. The union type is authored explicitly
  *  because a JSON import comes in as `string[]`; the parity test in `palettes.test.ts` asserts the
  *  array matches the union so a JSON edit that adds/removes/renames a mode still fails a test
  *  rather than silently mismatching the type. */
-export type TrackColorMode = 'track' | 'speed' | 'solid' | 'pop'
+export type TrackColorMode = 'track' | 'speed' | 'solid' | 'pop' | 'cell'
 export const TRACK_COLOR_MODES: readonly TrackColorMode[] =
   palettesJson.trackColorModes as readonly TrackColorMode[]
 
@@ -619,6 +619,10 @@ const EMPTY_MULTI: MultiTrackResult = { segments: EMPTY_SEG, sources: [], speedR
  *   Tracks section), so ribbons match the population's visual identity across the app. Ignores
  *   the Solid legend's ColourPicker override — that override is a per-source recolour and doesn't
  *   belong here. Sources without a pop colour (per-vn track eyes) fall back to the palette cycle.
+ * - `'cell'`: each hop takes its ARRIVING cell's colour-by colour (the points' Colour by — an HMM
+ *   state, a cluster, a measure), so a ribbon changes colour where the cell's state changes. Same scale as the points (`scale`, the
+ *   pooled one), so a ribbon and its dot agree. A source with no colour-by values (per-vn tracks,
+ *   track clusters, or no Colour by picked) falls back to its `'pop'` colour.
  *
  * IDs are namespaced per payload (`payload_index * 1e7 + track_id`) so a cell in payload A's track
  * 1 never links to a cell in payload B's track 1 — a naive concat would draw a phantom segment.
@@ -631,6 +635,8 @@ export function buildMultiTrackBuffer(
     vn: string; payload: OverlayPayload; colour?: string; popColour?: string
   }[],
   meta: ViewerMeta | null, palette: readonly string[], mode: TrackColorMode = 'track',
+  /** `'cell'` only: the points' colour-by scale and categorical palette, so ribbons match the dots */
+  cell: { scale: ColourScale | null; palette: readonly string[] } | null = null,
 ): MultiTrackResult {
   if (!payloads.length || !meta) return EMPTY_MULTI
   const vz = meta.voxelUm[2] || 1
@@ -640,7 +646,7 @@ export function buildMultiTrackBuffer(
   // Per-payload row grouping: (namespaced track id) → row indices. Group first so the O(N log N)
   // per-track sort stays inside a track. Rows are stored as flat records so the segment build below
   // is one linear pass over all payloads, not one per vn.
-  interface Row { t: number; x: number; y: number; z: number; id: number; raw: number; source: number }
+  interface Row { t: number; x: number; y: number; z: number; id: number; raw: number; source: number; row: number }
   const rows: Row[] = []
   const perSource = payloads.map(() => 0)
   for (let i = 0; i < payloads.length; i++) {
@@ -650,7 +656,7 @@ export function buildMultiTrackBuffer(
     for (let j = 0; j < n; j++) {
       const raw = ctr[j]; if (raw <= 0) continue
       rows.push({ t: ct[j], x: cx[j], y: cy[j], z: cz.length ? cz[j] : 0,
-                  id: raw + (i + 1) * OFFSET, raw, source: i })
+                  id: raw + (i + 1) * OFFSET, raw, source: i, row: j })
     }
   }
   if (!rows.length) return EMPTY_MULTI
@@ -709,6 +715,14 @@ export function buildMultiTrackBuffer(
   // whatever order the sources come in, and the movie (`_build_overlay_state`) can use the same rule.
   const trackRgb = (id: number): [number, number, number] =>
     hexToUnit(palette.length ? palette[Math.abs(Math.round(id)) % palette.length] : WHITE)
+  // Per-source colour-by lookup (`'cell'` only) — null where the source carries no values.
+  const byValue = mode === 'cell'
+    ? payloads.map(p => colourByValue(p.payload, cell?.palette ?? palette, cell?.scale ?? null))
+    : []
+  const cellRgb = (b: Row): [number, number, number] => {
+    const f = byValue[b.source]
+    return f ? f(b.row) : popRgb(b.source)
+  }
   const speedRgb = (speedSq: number): [number, number, number] => {
     if (!speedRange || speedSpan <= 0) return [0.9, 0.9, 0.9]
     const s = Math.sqrt(speedSq)
@@ -723,6 +737,7 @@ export function buildMultiTrackBuffer(
     const rgb = mode === 'speed' ? speedRgb(s.speedSq)
               : mode === 'solid' ? solidRgb(s.source)
               : mode === 'pop' ? popRgb(s.source)
+              : mode === 'cell' ? cellRgb(b)
               : trackRgb(a.raw)
     const o = n * SEG_STRIDE
     data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
@@ -755,8 +770,10 @@ export function buildMultiTrackBuffer(
     count: perSource[i],
     // The ONE colour this source's tails ARE drawn in — what a captured legend may name. Null when
     // coloured by track or speed: no single swatch is true then.
+    // ('cell' is one colour only for a source with no colour-by values — it draws its pop colour)
     drawn: mode === 'solid' ? (p.colour ?? (palette.length ? palette[i % palette.length] : WHITE))
-         : mode === 'pop' ? (p.popColour ?? (palette.length ? palette[i % palette.length] : WHITE))
+         : mode === 'pop' || (mode === 'cell' && !byValue[i])
+           ? (p.popColour ?? (palette.length ? palette[i % palette.length] : WHITE))
          : null,
   })).filter(s => s.count > 0)
 
