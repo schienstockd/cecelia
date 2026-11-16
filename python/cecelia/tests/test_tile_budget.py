@@ -82,8 +82,37 @@ class OverlapAndOomTest(unittest.TestCase):
         self.assertIn('4096 px', msg)
         self.assertIn('2048 px', msg)
         self.assertIn('GPU memory', msg)
+        self.assertIn('close viewer tabs', msg)
         self.assertIsNotNone(tb.out_of_memory_message(MemoryError(), 1024))
         self.assertIsNone(tb.out_of_memory_message(ValueError('bad channel'), 1024))
+
+    def test_viewer_named_only_when_gpu_memory_is_the_limit(self):
+        class OutOfMemoryError(RuntimeError):
+            pass
+        floor = tb.out_of_memory_message(OutOfMemoryError('CUDA out of memory'), tb.MIN_AUTO_BLOCK)
+        self.assertIn('Close viewer tabs', floor)
+        ram = tb.out_of_memory_message(MemoryError(), 1024)
+        self.assertEqual(ram, 'Ran out of memory at 1024 px tiles. '
+                              'Set Tile size to 512 px (Image tiling) and run again.')
+        self.assertEqual(tb.out_of_memory_message(MemoryError(), tb.MIN_AUTO_BLOCK),
+                         f'Ran out of memory even at {tb.MIN_AUTO_BLOCK} px tiles. '
+                         'Free memory and run again.')
+
+        cost = tb.TileCost(ram_per_px=1000.0, vram_per_px=1000.0)
+        _, by_vram = tb.auto_block_size(cost, 20000, 20000, 0, free_ram=1000 * GB, free_vram=1 * GB)
+        self.assertIn('limited by free gpu memory', by_vram)
+        self.assertIn('close viewer tabs', by_vram)
+        _, by_ram = tb.auto_block_size(cost, 20000, 20000, 0, free_ram=1 * GB, free_vram=1000 * GB)
+        self.assertEqual(by_ram, '768 px tiles (limited by free ram)')
+
+    def test_gpu_oom_raised_as_plain_runtime_error_is_gpu(self):
+        # Message heads copied from torch: CUDA from the 2.6.0 wheel's libc10_cuda, MPS from
+        # aten/src/ATen/mps/MPSAllocator.mm at v2.6.0 (raised via TORCH_CHECK, a RuntimeError).
+        for text in ('CUDA out of memory. Tried to allocate 2.00 GiB',
+                     'MPS backend out of memory (MPS allocated: 17.00 GB, other allocations: 1.00 GB)'):
+            msg = tb.out_of_memory_message(RuntimeError(text), tb.MIN_AUTO_BLOCK)
+            self.assertEqual(msg, f'Ran out of GPU memory even at {tb.MIN_AUTO_BLOCK} px tiles. '
+                                  'Close viewer tabs to free GPU memory and run again.')
 
 
 SIZES = (1, 1, 1, 64, 48)          # T,Z,C,Y,X

@@ -27,6 +27,11 @@ AUTO = 'auto'
 RAM_SHARE = 0.7
 VRAM_SHARE = 0.8
 
+# What the GPU-memory lines tell the user to do. The browser viewer's textures are the GPU memory a
+# user can free without stopping Cecelia; the run already plans around them, so this is only said
+# when GPU memory is what limited or stopped the run.
+CLOSE_VIEWER_HINT = 'close viewer tabs to free GPU memory'
+
 # Auto never picks a tile smaller than this, nor rounds to a finer step. Below it the overlap is a
 # large share of every tile and the per-tile overhead dominates.
 MIN_AUTO_BLOCK = 256
@@ -83,7 +88,8 @@ def auto_block_size(cost, height, width, overlap, held_bytes=0, free_ram=None, f
     if side >= frame:
         return frame, f'whole frame ({frame} px fits in {what.lower()})'
     block = max(MIN_AUTO_BLOCK, side // AUTO_BLOCK_STEP * AUTO_BLOCK_STEP)
-    return block, f'{block} px tiles (limited by free {what.lower()})'
+    hint = f'; {CLOSE_VIEWER_HINT} for larger tiles' if what == 'GPU memory' else ''
+    return block, f'{block} px tiles (limited by free {what.lower()}{hint})'
 
 
 def auto_overlap(object_size_px, fallback=64):
@@ -109,9 +115,15 @@ def out_of_memory_message(exc, block_size):
     if not (isinstance(exc, MemoryError) or name in ('OutOfMemoryError', 'CUDAOutOfMemoryError')
             or 'out of memory' in str(exc).lower()):
         return None
-    where = 'GPU memory' if ('cuda' in str(exc).lower() or 'OutOfMemory' in name) else 'memory'
+    # torch raises CUDA OOM as `OutOfMemoryError`, but MPS OOM as a plain RuntimeError
+    # (`TORCH_CHECK(false, "MPS backend out of memory …")`, aten/src/ATen/mps/MPSAllocator.mm).
+    text = str(exc).lower()
+    gpu = 'OutOfMemory' in name or 'cuda' in text or 'mps backend' in text
+    where = 'GPU memory' if gpu else 'memory'
     if block_size and block_size > MIN_AUTO_BLOCK:
         smaller = max(MIN_AUTO_BLOCK, block_size // 2)
+        alt = f', or {CLOSE_VIEWER_HINT},' if gpu else ''
         return (f'Ran out of {where} at {block_size} px tiles. '
-                f'Set Tile size to {smaller} px (Image tiling) and run again.')
-    return f'Ran out of {where} even at {block_size} px tiles. Free {where} and run again.'
+                f'Set Tile size to {smaller} px (Image tiling){alt} and run again.')
+    free = CLOSE_VIEWER_HINT[0].upper() + CLOSE_VIEWER_HINT[1:] if gpu else 'Free memory'
+    return f'Ran out of {where} even at {block_size} px tiles. {free} and run again.'
