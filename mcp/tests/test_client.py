@@ -107,7 +107,11 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
             ("POST", "/api/viewer/navigate"),
+            ("POST", "/api/viewer/screenshot"),  # asks the viewer for its picture; nothing changes
             ("POST", "/api/viewer/seek"),
+            # changes the open viewer's contrast / channels / 3D / camera, which the viewer saves as
+            # that image's display settings — no data, gates or pixels; the user resets it by hand
+            ("POST", "/api/viewer/view"),
         ])
 
     def test_every_route_the_client_calls_is_on_the_allow_list(self):

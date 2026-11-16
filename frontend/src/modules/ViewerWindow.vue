@@ -42,6 +42,8 @@ import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, solo
          eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
 import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
+import { mergeViewState, fitLongSide } from '../utils/viewer/viewerRequest'
+import { awaitIdle } from '../utils/awaitIdle'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { drawSpecOf, type DrawSpecSource, type ViewerDrawSpec } from '../utils/viewer/drawSpec'
 import { usePlotResize, observeBoxChanges } from '../composables/usePlotResize'
@@ -4959,20 +4961,22 @@ watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
 // so they should coalesce identically. Shape lives in `utils/viewer/viewState.ts` so a bug in the
 // arithmetic is a unit-test failure rather than a rendered-mp4 discovery. Emits `null` when meta /
 // canvas aren't ready — same guard as the region sink.
-const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
-  if (!isCurrent()) return
+/** The view on screen now, at timepoint `atT` (the slider's `t`, or `shownT` — the frame drawn), or
+ *  null before meta and canvas are ready. One builder for the store, Share and the MCP. */
+function liveViewState(atT: number = t.value): ViewerViewState | null {
   const m = meta.value
   const c = canvas.value
-  if (!m || !c) { viewerStore.setViewState(null); return }
-  const canvasW = Math.max(1, c.clientWidth)
-  const canvasH = Math.max(1, c.clientHeight)
-  const vs = buildViewState({
-    cam: cam.value, meta: m, t: t.value, zPlane: zPlane.value, zLoaded: zLoaded.value,
+  if (!m || !c) return null
+  return buildViewState({
+    cam: cam.value, meta: m, t: atT, zPlane: zPlane.value, zLoaded: zLoaded.value,
     ndisplay: mode.value === 'plane' ? 2 : 3,
-    canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
+    canvasW: Math.max(1, c.clientWidth), canvasH: Math.max(1, c.clientHeight), viewHalfAngle: VIEW_HALF_ANGLE,
     perspective: settings.viewerVolumeProjection === 'persp',
   })
-  viewerStore.setViewState(vs)
+}
+const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
+  if (!isCurrent()) return
+  viewerStore.setViewState(liveViewState())
 }, { wait: 100 })
 
 // Watch the SAME signals as the region sink, PLUS the per-channel contrast/visibility, because
@@ -5827,14 +5831,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     // zoom-to-source uses. Blackboard + Kiwi push this into the pending-viewState channel; the
     // popup applies it through the SAME apply path a keyframe restore uses. Backend accepts the
     // field via `envelope.viewStateSnapshot` (captures_api.jl) and returns it on read.
-    const canvasW = Math.max(1, el.clientWidth)
-    const canvasH = Math.max(1, el.clientHeight)
-    const viewStateSnapshot = meta.value ? buildViewState({
-      cam: cam.value, meta: meta.value, t: shownT.value, zPlane: zPlane.value, zLoaded: zLoaded.value,
-      ndisplay: mode.value === 'plane' ? 2 : 3,
-      canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
-      perspective: settings.viewerVolumeProjection === 'persp',
-    }) : null
+    const viewStateSnapshot = liveViewState(shownT.value)
     // Snapshot the CURRENT landscape into the capture envelope, so `get_capture(id)` returns
     // pixels + marks + view state + landscape in one call. The live in-memory landscape bag is
     // ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
@@ -5923,8 +5920,63 @@ async function onLandscapeRequest(data: Record<string, unknown>) {
   }).catch(() => { /* the server's wait times out into "no_viewer" */ })
 }
 
+// MCP `get_viewer_screenshot` / `set_viewer_view` (api/src/viewer_request.jl): the window showing this
+// image answers. A screenshot is Save image's composite; a view is merged onto the live one and
+// applied through the keyframe restore (`pendingViewState`), then answered with the view it landed on.
+/** Resolves once a frame is on the canvas (`shownT`), no timepoint is loading (`busy`) and two frames
+ *  have drawn, or after `ms`. */
+async function renderIdle(ms = 20000) {
+  await awaitIdle(() => busy.value || shownT.value < 0, { timeoutMs: ms })
+  for (let i = 0; i < 2; i++) await new Promise(r => requestAnimationFrame(() => r(null)))
+}
+async function onViewerRequest(data: Record<string, unknown>) {
+  if (String(data.imageUid ?? '') !== imageUid || String(data.projectUid ?? '') !== projectUid) return
+  const requestId = String(data.requestId ?? '')
+  if (!requestId || !meta.value || !canvas.value) return
+  const args = (data.args ?? {}) as Record<string, unknown>
+  let result: Record<string, unknown>
+  try {
+    if (data.kind === 'screenshot') {
+      await renderIdle()
+      // never a silent black picture: no frame on the canvas is an answer of its own
+      if (shownT.value < 0) throw new Error(`no frame drawn at t ${t.value} (${mode.value === 'volume' ? '3D' : '2D'}) — still loading, or stuck`)
+      const shot = await viewerScreenshot()
+      const img = await loadImg(shot.png)
+      if (!img) throw new Error('screenshot decode failed')
+      const size = fitLongSide(img.naturalWidth, img.naturalHeight, Number(args.maxSide) || undefined)
+      let png = shot.png
+      if (size.width !== img.naturalWidth) {
+        const out = document.createElement('canvas')
+        out.width = size.width; out.height = size.height
+        out.getContext('2d')?.drawImage(img, 0, 0, size.width, size.height)
+        png = out.toDataURL('image/png')
+      }
+      result = { png, ...size, view: liveViewState(shownT.value) }
+    } else if (data.kind === 'view') {
+      const live = liveViewState()
+      if (!live) throw new Error('viewer not ready')
+      const { view, unknown } = mergeViewState(live, args.view)
+      viewerStore.setPendingViewState({ viewState: view, imageUid })
+      const id = viewerStore.pendingViewState?.updateId
+      // applied = the restore watcher consumed it; then let the frame it asked for land
+      await awaitIdle(() => viewerStore.pendingViewState?.updateId === id, { timeoutMs: 20000, settleMs: 0 })
+      await renderIdle()
+      result = { view: liveViewState(), ...(unknown.length ? { unknownLayers: unknown } : {}) }
+    } else {
+      result = { error: `unknown request ${String(data.kind)}` }
+    }
+  } catch (e) {
+    result = { error: e instanceof Error ? e.message : String(e) }
+  }
+  fetch('/api/viewer/reply', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requestId, result }),
+  }).catch(() => { /* the server's wait times out into "no_viewer" */ })
+}
+
 onMounted(() => {
   ws.on('viewer:landscape-request', onLandscapeRequest)
+  ws.on('viewer:request', onViewerRequest)
   // Channel renamed elsewhere (image table, metadata panel) while we're open: refetch meta and take
   // only the names — contrast / LUT / visibility are the user's live view and stay as they are.
   stopImageMetaWatch = onViewerImageMeta(async (ev) => {
@@ -5976,6 +6028,7 @@ onUnmounted(() => {
   cacheClears.cancel()
   stopImageMetaWatch?.(); stopImageMetaWatch = null
   ws.off('viewer:landscape-request', onLandscapeRequest)
+  ws.off('viewer:request', onViewerRequest)
   stopPlay()
   pump.cancel()
   zPump.cancel()

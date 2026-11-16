@@ -99,24 +99,34 @@ function axisPos(raw, ticks, extent, end) {
 /** The source image's own population `g.name` (top level), as its gating file stores it. */
 function sourcePop(srcImageDir, g) {
   const file = join(srcImageDir, 'gating', `${g.segmentation ?? 'cells'}${g.popType && g.popType !== 'flow' ? `__${g.popType}` : ''}.json`)
-  const pop = (readJson(file).populations ?? []).find(p => p.name === g.name)
-  if (!pop) throw new Error(`source ${file} has no population "${g.name}"`)
+  // under its `parent` path (the source's own tree), at the root when none
+  let pops = readJson(file).populations ?? []
+  for (const step of (g.parent ?? '').split('/').filter(Boolean)) pops = pops.find(p => p.name === step)?.children ?? []
+  const pop = pops.find(p => p.name === g.name)
+  if (!pop) throw new Error(`source ${file} has no population "${g.parent ?? ''}/${g.name}"`)
   return pop
 }
 
+/** A fixture gate's population path on the copy (`/qc/OTI`). */
+const gatePath = g => `${g.parent ?? ''}/${g.name}`
+
 /** Recreate gate `g` as a person's gate (the population manager's own route); false when a population
  *  of that name exists already. A box is placed by its channels' names, as the plot lists them; a
- *  `fromSource` one takes the source population's gate or filter as stored. */
+ *  `fromSource` one takes the source population's gate, filter or combination as stored. A `parent`
+ *  path puts it under a gate listed before it. */
 async function addGate(api, projectUid, imageUid, g, srcImageDir) {
   const valueName = g.segmentation ?? 'cells', popType = g.popType ?? 'flow'
   const q = `projectUid=${projectUid}&imageUid=${imageUid}&valueName=${valueName}&popType=${popType}`
   const tree = (await api(`/api/gating/popmap?${q}`)).body.tree
-  // the root's populations (docs/API.md's `{name,gate,filter,children}` is each node below it)
-  if ((tree?.populations ?? []).some(c => c.name === g.name)) return false
+  // the parent's populations (docs/API.md's `{name,gate,filter,children}` is each node below the root's)
+  let level = tree?.populations ?? []
+  for (const step of (g.parent ?? '').split('/').filter(Boolean)) level = level.find(c => c.name === step)?.children ?? []
+  if (level.some(c => c.name === g.name)) return false
+  const parent = g.parent ?? 'root'
   if (g.fromSource) {
     const pop = sourcePop(srcImageDir, g)
-    const r = await api('/api/gating/pop/add', { projectUid, imageUid, valueName, popType, name: g.name, parent: 'root',
-      colour: pop.colour, ...(pop.gate ? { gate: pop.gate } : { filter: pop.filter }) })
+    const r = await api('/api/gating/pop/add', { projectUid, imageUid, valueName, popType, name: g.name, parent,
+      colour: pop.colour, show: pop.show ?? true, ...(pop.gate ? { gate: pop.gate } : pop.boolean ? { boolean: pop.boolean } : { filter: pop.filter }) })
     if (!r.ok) throw new Error(`gate ${valueName}/${g.name}: ${r.body.error ?? JSON.stringify(r.body).slice(0, 160)}`)
     return true
   }
@@ -132,7 +142,7 @@ async function addGate(api, projectUid, imageUid, g, srcImageDir) {
   const gate = { kind: 'rectangle', x_channel: x, y_channel: y, x_transform: m.xSpec, y_transform: m.ySpec,
     x_min: axisPos(g.xRange[0], m.xTicks, m.xExtent, 'min'), x_max: axisPos(g.xRange[1], m.xTicks, m.xExtent, 'max'),
     y_min: axisPos(g.yRange[0], m.yTicks, m.yExtent, 'min'), y_max: axisPos(g.yRange[1], m.yTicks, m.yExtent, 'max') }
-  const r = await api('/api/gating/pop/add', { projectUid, imageUid, valueName: 'cells', popType: 'flow', name: g.name, parent: 'root', gate })
+  const r = await api('/api/gating/pop/add', { projectUid, imageUid, valueName, popType, name: g.name, parent, gate })
   if (!r.ok) throw new Error(`gate ${g.name}: ${r.body.error ?? JSON.stringify(r.body).slice(0, 160)}`)
   return true
 }
@@ -159,7 +169,7 @@ async function measure(api, fixture, rec) {
     const tracked = new Set()
     for (const gate of spec.gates ?? []) {
       const vn = gate.segmentation ?? 'cells'
-      const q = `projectUid=${copy.uid}&imageUid=${copy.images[gate.image]}&valueName=${vn}&popType=${gate.popType ?? 'flow'}&pop=${encodeURIComponent(`/${gate.name}`)}`
+      const q = `projectUid=${copy.uid}&imageUid=${copy.images[gate.image]}&valueName=${vn}&popType=${gate.popType ?? 'flow'}&pop=${encodeURIComponent(gatePath(gate))}`
       const st = await api(`/api/gating/stats?${q}`)
       if (!st.ok) throw new Error(`stats of gate ${vn}/${gate.name}: ${st.body.error ?? 'failed'}`)
       Object.assign(facts, { [`${key}.${gate.image}.${gateKey(gate)}.count`]: st.body.count,
@@ -259,7 +269,7 @@ async function main() {
         for (const g of spec.gates ?? []) {
           const srcDir = join(resolve(a.sourceProjects), spec.source, '1', g.image)
           const made = await addGate(api, copy.uid, copy.images[g.image], g, srcDir)
-          console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.segmentation ?? 'cells'}/${g.name}${made ? '' : ' already there'}`)
+          console.log(`${made ? '✓' : '·'} ${b.id}: project ${key}: gate ${g.segmentation ?? 'cells'}${gatePath(g)}${made ? '' : ' already there'}`)
         }
       }
       rec.facts = await measure(api, b.fixture, rec)
