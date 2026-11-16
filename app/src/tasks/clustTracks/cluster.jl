@@ -193,9 +193,10 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     # record the feature list + the clustered-together uIDs (partOf) + the behaviour axes per
     # segment's sidecar (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decision 4)
     axes = isfile(axes_out_path) ? JSON3.read(read(axes_out_path, String), Dict{String,Any}) : nothing
+    at = string(Dates.now())                  # one stamp for the whole run
     for seg in segments
         _write_clust_features!(seg["propsPath"], p.valueNameSuffix, present_cols, uids;
-                               behaviour_axes = axes)
+                               behaviour_axes = axes, at = at)
     end
     # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = p.valueNameSuffix, on_log = on_log)

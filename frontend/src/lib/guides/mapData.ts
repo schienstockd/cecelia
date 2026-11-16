@@ -28,7 +28,8 @@ export const MAP: Record<string, MapEntry> = {
   '/gate':           { what: 'Draw gates on cell measures, like flow cytometry', pairedWith: '/phenotype', guide: 'gate-populations',
                       claude: 'Claude Code proposes a gate; keep or delete it' },
   '/track':          { what: 'Link cells over time; gate tracks', pairedWith: '/behaviour', guide: 'track-cells' },
-  '/clust-cells':    { what: 'Group cells by phenotype across a set', pairedWith: '/phenotype', guide: 'cluster-cells' },
+  '/clust-cells':    { what: 'Group cells by phenotype across a set', pairedWith: '/phenotype', guide: 'cluster-cells',
+                      claude: 'Claude Code groups clusters into populations; keep or delete' },
   '/clust-tracks':   { what: 'Group tracks by behaviour', pairedWith: '/behaviour', guide: 'cluster-tracks' },
   '/regions':        { what: 'Find tissue neighbourhoods', pairedWith: '/spatial', guide: 'cluster-regions' },
   // Explore — summarise those populations
@@ -60,6 +61,7 @@ export const CLAUDE_MAKES: Record<string, string | null> = {
   add_gate: '/gate',
   add_boolean_pop: '/gate',
   add_filter_pop: '/gate',
+  add_cluster_pops: '/clust-cells',   // also track runs (/clust-tracks) — one page per tool here
   create_blackboard_entry: '/blackboard',
   create_notebook: '/notebooks',
   create_chain: '/chain',

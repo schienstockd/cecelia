@@ -80,7 +80,7 @@ on real data, spot-check results; *Tested* — a test fails when the result is w
 |---|---|---|---|---|---|
 | Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations | Beta | Claude Code proposes a gate; keep or delete it |
 | Track | Link cells over time; gate tracks | Behaviour | Track cells | Beta |  |
-| Cluster cells | Group cells by phenotype across a set | Phenotype | Cluster cells into phenotypes | Beta |  |
+| Cluster cells | Group cells by phenotype across a set | Phenotype | Cluster cells into phenotypes | Beta | Claude Code groups clusters into populations; keep or delete |
 | Cluster tracks | Group tracks by behaviour | Behaviour | Cluster tracks into behaviours | Beta |  |
 | Cluster regions | Find tissue neighbourhoods | Spatial | Cluster spatial regions | Experimental |  |
 

@@ -38,7 +38,7 @@ import { useWindowListener } from '../../composables/useKeepAlive'
 // palette. Only `DOT_R` is still needed, for the gate colour-by legend main added.
 import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
 import { DOT_R } from '../../plots/density'
-import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
+import { clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale } from '../../utils/clusterMeasure'
 import { eyeKey, offPaths, popEyeOn, popTypeSwitch } from '../../utils/viewer/popEyes'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
@@ -63,6 +63,7 @@ const props = withDefaults(defineProps<{
   popType?: string                 // 'flow' (default) | 'track' | 'clust' | 'trackclust'
   clusterIds?: number[]            // cluster mode: the tickable cluster IDs for the active suffix
   suffix?: string                  // cluster mode: which clusters.{suffix} new pops filter on
+  runAt?: string                   // cluster mode: when that run ran — a pop picked on an older one is stale
   // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
@@ -130,6 +131,9 @@ const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
 const isLit = (p: FlatPop) => props.highlighted.includes(p.path)
 const fmtPct = (v?: number) => v == null ? '' : `${v.toFixed(1)}%`
 const missingReason = (path: string) => missingColumnsReason(g.missingColumns[path], g.colLabel)
+// a cluster pop picked on an earlier run under this name — the ids may now be other groups
+const runStale = (p: FlatPop) => clusterMode.value && clusterPopStale(p.runAt, props.runAt)
+const RUN_STALE_TIP = 'Clustering re-run since — check its clusters, then click'
 
 // Per-pop visibility. The viewer draws by its own per-pop eyes (`utils/viewer/popEyes.ts`) — `show`
 // only seeds a pop it has never seen — so the button reads the eye and writes it (points + ribbons,
@@ -621,6 +625,11 @@ function moveTo(target: string) {
           <i v-if="missingReason(p.path)" class="pi pm-missing-col" :class="SEVERITY.warn.icon"
              :style="{ color: SEVERITY.warn.color }" v-tooltip.left="missingReason(p.path)"
              :aria-label="missingReason(p.path)" />
+          <button v-if="runStale(p) && !readonly" type="button" class="pm-icon cc-btn cc-btn-bare cc-btn-icon"
+                  v-tooltip.left="RUN_STALE_TIP" :aria-label="RUN_STALE_TIP" @click.stop="g.confirmClusterRun(p.path)">
+            <i class="pi pm-missing-col" :class="SEVERITY.warn.icon" :style="{ color: SEVERITY.warn.color }" /></button>
+          <i v-else-if="runStale(p)" class="pi pm-missing-col" :class="SEVERITY.warn.icon"
+             :style="{ color: SEVERITY.warn.color }" v-tooltip.left="'Clustering re-run since — check its clusters'" />
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
             {{ g.stats[p.path]?.count ?? '–' }}
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>

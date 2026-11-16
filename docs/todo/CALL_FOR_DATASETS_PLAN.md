@@ -129,7 +129,8 @@ can't act on the dataset, it doesn't belong here.
   guides first; offer a matching `dataset-call` link; anything else goes to the feature-request
   form. Claude hands over the link and never files an issue; no project data in it (public repo).
 - Third entry, `cluster-grouping-highplex`: Claude-proposed cluster groupings (✦ cluster
-  populations), waiting on a multiplex dataset with 10+ clusters — see
+  populations). Built 2026-11-16 (`add_cluster_pops`), so it moved from a build ask to a TEST ask: a
+  multiplex dataset with 10+ clusters checks whether the groupings hold up — see
   [`CLUSTER_POP_PROPOSALS_PLAN.md`](CLUSTER_POP_PROPOSALS_PLAN.md).
 
 ## What could go wrong

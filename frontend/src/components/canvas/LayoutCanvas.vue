@@ -368,7 +368,7 @@ const clustSuffix = computed<string>({
   set: v => (entry.value.shared.clustSuffix = v) })
 // the board's own gating store (its cluster slots' pop tree + read-only manager)
 const clustG = provideGatingStore(clustPopType.value)
-const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
+const { suffixes: clustSuffixes, clusterIds: clustClusterIds, clusterRunAt: clustRunAt, validUids: clustValidUids,
         featureOptions: clustFeatureOptions, labelMap: clustNameMap, channelNames: clustChannelNames,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
         clusterAxes: clustAxes } =
@@ -910,7 +910,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
-                             :suffix="clustSuffix" :vis="activeVis" :reloadable="true"
+                             :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :reloadable="true"
                              @update:scope="scope = $event" @update:vis="setVis"
                              @toggle-highlight="toggleClustHl" @reload="reload" />
           <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"

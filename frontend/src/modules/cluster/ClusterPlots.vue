@@ -96,7 +96,7 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 // run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
-  suffixes, labelMap, channelNames, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
+  suffixes, labelMap, channelNames, clusterIds, clusterRunAt, featureOptions, hmmStateCols, hmmTransitionCols,
   runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
@@ -411,6 +411,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
+                             :run-at="clusterRunAt[suffix]"
                              :vis="activeVis"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"

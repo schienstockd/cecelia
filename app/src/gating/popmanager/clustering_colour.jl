@@ -88,6 +88,20 @@ function _clustfeatures_entry(props_path::AbstractString, suffix::AbstractString
     nothing
 end
 
+"""
+    cluster_run_at(props_path, suffix; family="clusters") -> String | nothing
+
+When run `suffix` was clustered (its clustfeatures entry's `at`), or `nothing` for a run written before
+the stamp existed. A cluster population keeps the `at` it was picked against (`Population.run_at`); a
+different one now means the run was re-run under the same name, so its cluster ids may mean other groups.
+"""
+function cluster_run_at(props_path::AbstractString, suffix::AbstractString;
+                        family::AbstractString = "clusters")::Union{String,Nothing}
+    e = _clustfeatures_entry(props_path, suffix; family = family)
+    v = e === nothing ? nothing : get(e, "at", get(e, :at, nothing))
+    v === nothing ? nothing : String(v)
+end
+
 # One run's `partOf` — the image uids clustered together — from a `_clustfeatures_entry`. A legacy entry
 # records none: with `own_uid` that reads as a single-image run on that image, without it as `String[]`.
 function _clustfeatures_part_of(entry, own_uid::Union{AbstractString,Nothing}=nothing)::Vector{String}
@@ -208,14 +222,72 @@ end
 # any caller that needs the bare family name. Derived, never re-decided.
 _cluster_measure_family(pop_type)::String = chopsuffix(_cluster_measure_prefix(pop_type), ".")
 
+# The run a cluster population belongs to — the suffix of its `filter_measure` ("{prefix}{suffix}") — or
+# `nothing` for a population that is not one (a gate, a filter on another column).
+function cluster_pop_suffix(p::Population)::Union{String,Nothing}
+    _is_cluster_pop_type(p.pop_type) || return nothing
+    prefix, fm = _cluster_measure_prefix(p.pop_type), p.filter_measure
+    (fm === nothing || !startswith(String(fm), prefix)) && return nothing
+    String(fm)[ncodeunits(prefix)+1:end]
+end
+
+# The table a cluster pop type's runs are recorded on: the per-track table for track-grained types
+# (trackclust), else the cell table — its `.clustfeatures.json` holds the run entries.
+cluster_props_path(img::CciaImage, value_name::AbstractString, pop_type) =
+    is_track_grained(pop_type) ? img_track_props_path(img, value_name) : img_label_props_path(img, value_name)
+
+"""
+    stamp_cluster_run!(p, img, value_name) -> Bool
+
+Record on cluster population `p` the `at` of the run its cluster ids are picked against (`cluster_run_at`),
+on `img`'s `value_name`. Called wherever the ids are chosen — a new cluster pop, a tick in the manager, a
+Claude proposal — so a later re-run under the same name shows the population as stale. `false` (and
+nothing changed) when `p` is not a cluster population.
+"""
+function stamp_cluster_run!(p::Population, img::CciaImage, value_name::AbstractString)::Bool
+    sfx = cluster_pop_suffix(p)
+    sfx === nothing && return false
+    p.run_at = cluster_run_at(cluster_props_path(img, value_name, p.pop_type), sfx;
+                              family = _cluster_measure_family(p.pop_type))
+    true
+end
+
+"""
+    cluster_id_owners(m, suffix; except=nothing) -> Dict{Int,String}
+
+Which population of run `suffix` holds each cluster id on map `m`. A cluster id belongs to at most one
+population of a run (the manager's tick moves it); the routes that write cluster ids refuse one another
+population holds. `except` leaves out one path, the population being edited.
+"""
+function cluster_id_owners(m::PopulationMap, suffix::AbstractString;
+                           except::Union{AbstractString,Nothing} = nothing)::Dict{Int,String}
+    out = Dict{Int,String}()
+    for path in m.order
+        (except !== nothing && path == except) && continue
+        p = m.pops[path]
+        cluster_pop_suffix(p) == suffix || continue
+        for v in _as_value_vec(p.filter_values)
+            id = as_cluster_id(v)
+            id === nothing || get!(out, id, path)
+        end
+    end
+    out
+end
+
+# A cluster id as written into a filter — 3, 3.0 or "3" — as the Int it names, or `nothing`.
+as_cluster_id(::Bool) = nothing
+as_cluster_id(v::Integer) = Int(v)
+as_cluster_id(v::Real) = (isfinite(v) && isinteger(v)) ? Int(v) : nothing
+as_cluster_id(v::AbstractString) = (x = tryparse(Float64, strip(v)); x === nothing ? nothing : as_cluster_id(x))
+as_cluster_id(::Any) = nothing
+
 # Suffixes a cluster pop map's filters reference (each pop's `filter_measure` = "{prefix}{suffix}").
 function _referenced_cluster_suffixes(m::PopulationMap)::Set{String}
-    prefix = _cluster_measure_prefix(m.pop_type)
     out = Set{String}()
     for p in values(m.pops)
-        fm = p.filter_measure
-        (fm === nothing || !startswith(String(fm), prefix)) && continue
-        push!(out, String(fm)[ncodeunits(prefix)+1:end])
+        sfx = cluster_pop_suffix(p)
+        sfx === nothing && continue
+        push!(out, sfx)
     end
     out
 end
@@ -229,8 +301,7 @@ end
 # borrowing vn materialises its own real sidecar: plain copy semantics).
 function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
                                  pop_type::PopTypeArg)::Union{PopulationMap,Nothing}
-    granularity = string(pop_type) == "trackclust" ? :track : :cell
-    p = granularity === :track ? img_track_props_path(img, value_name) : img_label_props_path(img, value_name)
+    p = cluster_props_path(img, value_name, pop_type)
     my_suffixes = _clustfeatures_suffixes(p; family=_cluster_measure_family(pop_type))
     isempty(my_suffixes) && return nothing              # this vn wasn't clustered → nothing to share
     for vn in versioned_keys(img.label_props)

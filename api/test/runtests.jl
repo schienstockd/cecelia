@@ -163,6 +163,8 @@ include(joinpath(@__DIR__, "suite", "canvas_stores_and_plots.jl"))
 include(joinpath(@__DIR__, "suite", "gating_views.jl"))
 # ── The observer's add_gate — POST /api/gating/pop/add-gate (one proposed gate, additive only) ───
 include(joinpath(@__DIR__, "suite", "gating_add_gate.jl"))
+# ── The observer's add_cluster_pops — POST /api/gating/pop/add-cluster-pops (a grouping of a run) ───
+include(joinpath(@__DIR__, "suite", "gating_add_cluster_pops.jl"))
 # ── Project-ops testsets (lab log, chain, rename, delete, object find) ──
 # Six testsets covering the mutation/discovery API a project owner reaches for: lab log,
 # chain create (create-only + validated) + rename, set rename, project delete, delete-label-set

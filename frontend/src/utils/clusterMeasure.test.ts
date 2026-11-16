@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clusterMeasurePrefix, clusterMeasure, isClusterPopType, isGatingPopType } from './clusterMeasure'
+import { clusterMeasurePrefix, clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale } from './clusterMeasure'
 
 describe('clusterMeasure', () => {
   it('is behaviour-preserving for the existing cluster pop types', () => {
@@ -35,5 +35,13 @@ describe('isGatingPopType', () => {
   it('partitions the pop types — nothing is both hand-drawn and cluster-style', () => {
     for (const pt of ['flow', 'track', 'clust', 'trackclust', 'region', 'live'])
       expect(isGatingPopType(pt) && isClusterPopType(pt)).toBe(false)
+  })
+
+  it('marks a cluster population stale only when both run stamps exist and differ', () => {
+    expect(clusterPopStale('2026-11-16T10:00:00', '2026-11-17T09:30:00')).toBe(true)   // re-run since
+    expect(clusterPopStale('2026-11-16T10:00:00', '2026-11-16T10:00:00')).toBe(false)  // the same run
+    expect(clusterPopStale(undefined, '2026-11-17T09:30:00')).toBe(false)              // picked before stamps
+    expect(clusterPopStale('2026-11-16T10:00:00', undefined)).toBe(false)              // a run before stamps
+    expect(clusterPopStale(null, null)).toBe(false)
   })
 })

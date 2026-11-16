@@ -665,7 +665,8 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
       - `filter` (clust/trackclust/region/branch, and flow filter pops): `{measure, fun, values, default_all}`
         plus `conditions: [{measure, fun, values}, …]` when several rules are AND-ed (then `measure`/`fun`/
         `values` repeat only the first) — e.g. a cluster pop is `{measure: "clusters.movement", fun: "in",
-        values: [3]}`, which also ties it to that clustering run. Reproduce a flow one with add_filter_pop.
+        values: [3]}`, which also ties it to that clustering run. Reproduce a flow one with add_filter_pop, a
+        cluster one (clust/trackclust/region) with add_cluster_pops.
       - `boolean` (a combined pop — gate and filter both null): `{op: and|or, pops: [paths], not: [paths]}`
         = the `pops` combined with `op`, minus every `not`, ∩ parent ("qc except OTI" = parent /qc,
         pops [], not [/qc/OTI]). Reproduce one with add_boolean_pop, never by drawing a gate.
@@ -677,7 +678,7 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 
 
 # The gating toolset — gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats, add_gate,
-# add_boolean_pop, add_filter_pop, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
+# add_boolean_pop, add_filter_pop, add_cluster_pops, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
 # Writes change only what Claude drew (the server checks `createdBy`).
 globals().update(register_gating_tools(_tool, _client))
 

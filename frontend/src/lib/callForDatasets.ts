@@ -133,24 +133,23 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
     planPath: 'docs/audit/simpleitk-opportunities.md',
   },
   {
-    kind: 'build',
+    // built: Claude writes the grouping (add_cluster_pops). Still asked as a TEST — only a dataset with
+    // many clusters, and someone's own grouping of it, shows whether the proposals hold up.
+    kind: 'test',
     id: 'cluster-grouping-highplex',
     title: 'Group many clusters with Claude',
-    oneLiner: 'Claude proposes groups; you accept or rename',
+    oneLiner: 'Claude proposes groups; check them against yours',
     need: 'A 10+ marker image that clusters into 10+ groups, and your own grouping if you have one.',
     fig: 'clusters',
     blurb:
-      "Clustering a high-plex panel often gives tens of clusters, and it is hard to see which belong " +
-      "together. Claude can already read each cluster's marker profile and suggest groupings in chat; " +
-      "the next step is letting it write a proposed population (marked ✦) with the marker evidence " +
-      "beside it, for you to accept, rename or delete. We haven't built it because our own data " +
-      "clusters into a handful of groups, and a dataset with many is what tells us whether the " +
-      "proposals hold up.",
+      "Claude groups a run's clusters into proposed populations (marked ✦) from each cluster's marker " +
+      "profile, for you to keep, rename or delete. Our own data gives a handful of clusters, so only " +
+      "a dataset with tens of them, and your own grouping of it, shows whether the proposals hold up.",
     sceneryHint:
       'A multiplex image (roughly 10+ markers) whose cell clustering gives 10+ clusters — and, if you ' +
       'have it, how you would group and name them yourself, so the proposals can be checked against it.',
     issueTitle: 'Call for dataset: grouping many clusters (high-plex)',
-    labels: ['call-for-datasets', 'area:clustering'],
+    labels: ['call-for-datasets', 'test-data', 'area:clustering'],
     planPath: 'docs/todo/CLUSTER_POP_PROPOSALS_PLAN.md',
   },
 

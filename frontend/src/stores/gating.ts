@@ -54,6 +54,7 @@ export interface PopNode {
   membership_sig?: string          // explicit-label pops (viewer selection): hash of label set
   createdBy?: unknown              // `author_stamp()` — present on a gate Claude proposed (utils/authorStamp)
   updatedBy?: unknown              // who last edited a proposal — a person's edit makes it theirs
+  runAt?: string                   // cluster pops: the run its clusters were picked on (`clusterPopStale`)
   children: PopNode[]
 }
 export interface PopTree { value_name: string; pop_type: string; populations: PopNode[] }
@@ -67,6 +68,7 @@ export interface FlatPop {
   boolean?: BooleanSpec  // a combination of OTHER populations (Decision 16)
   createdBy?: unknown    // who drew it, when Claude did (`claudeProposal`)
   updatedBy?: unknown    // who last edited it, on a proposal
+  runAt?: string         // cluster pops: the run its clusters were picked on
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -76,7 +78,7 @@ function flatten(tree: PopTree): FlatPop[] {
       const path = popPath(parent, n.name)
       out.push({ path, name: n.name, uid: n.uid ?? '', parent, colour: n.colour, show: n.show,
                  depth, gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean,
-                 createdBy: n.createdBy, updatedBy: n.updatedBy })
+                 createdBy: n.createdBy, updatedBy: n.updatedBy, runAt: n.runAt })
       walk(n.children ?? [], path, depth + 1)
     }
   }
@@ -238,11 +240,17 @@ export function createGatingStore(initialPopType: string) {
       // body is image-independent (filter on clusters.{suffix}), so paths stay in sync. Await these
       // BEFORE applying the tree, so anything that reloads off the tree (e.g. the set-pooled heatmap)
       // sees every image's write already persisted, not a half-written set.
+      // A refusal there (e.g. 409 `cluster_taken` on an image whose populations differ) is reported, not
+      // swallowed: the run's images would otherwise disagree without a word.
       if (mirrorUids.value.length) await Promise.all(mirrorUids.value.map(uid =>
         fetch(path, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectUid: projectUid(), imageUid: uid,
                                  valueName: valueName.value, popType: popType.value, ...body }),
+        }).then(async r => {
+          if (r.ok) return
+          const e = await r.json().catch(() => ({})) as { error?: string }
+          log.error(`Gating (image ${uid}): ${e.error ?? `HTTP ${r.status}`}`, { source: 'gating' })
         }).catch(() => undefined)))
       if (data.tree) setTree(data.tree, data.missingColumns)
       _setHistory(data)
@@ -385,6 +393,8 @@ export function createGatingStore(initialPopType: string) {
   // its own gate ∩ its parent's, so lifting `/qc/B` out to root re-derives it against all cells.
   const movePop    = (path: string, parent: string)  => _post('/api/gating/pop/move', { path, parent })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
+  // the user has checked a stale cluster population's clusters against the run as it is now (the stale icon)
+  const confirmClusterRun = (path: string) => _post('/api/gating/pop/update', { path, runChecked: true })
   const updatePop  = (path: string,
                       patch: { colour?: string; show?: boolean; filter?: Record<string, unknown> }) =>
     _post('/api/gating/pop/update', { path, ...patch })
@@ -519,7 +529,7 @@ export function createGatingStore(initialPopType: string) {
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,
-    renamePop, updatePop, applyBroadcast,
+    renamePop, updatePop, confirmClusterRun, applyBroadcast,
     canUndo, canRedo, undo, redo,
     refreshPops, refreshOverlays, clearSelection, pingViewer, holdViewerPings,
     pingViewerAfterApply: _pingViewerAfterApply,

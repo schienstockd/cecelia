@@ -19,6 +19,7 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                   # `author_stamp()` of the request that drew it — see `Population.created_by`
                   created_by::Union{AbstractDict,Nothing}=nothing,
                   updated_by::Union{AbstractDict,Nothing}=nothing,
+                  run_at::Union{AbstractString,Nothing}=nothing,   # see `Population.run_at`
                   reserved_ok::Bool=false, validate_refs::Bool=true)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
     # injection (reserved_ok=true) may create them, so a hand-drawn gate can't shadow one.
@@ -53,7 +54,8 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                               filter_fun === nothing ? nothing : _coerce_filter_fun(filter_fun),
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
                               explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient,
-                              _stamp_dict(created_by), _stamp_dict(updated_by))
+                              _stamp_dict(created_by), _stamp_dict(updated_by),
+                              run_at === nothing ? nothing : String(run_at))
     m.uid_index[resolved_uid] = path
     push!(m.order, path)
     _invalidate!(m)

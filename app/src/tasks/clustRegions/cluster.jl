@@ -170,9 +170,10 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     feat_cols = other_written ? vcat(comp_cols, other_col) : comp_cols
     labels = Dict{String,String}(comp_cols[i] => basis[i] for i in eachindex(basis))
     other_written && (labels[other_col] = OTHER_BASIS_NAME)
+    at = string(Dates.now())                  # one stamp for the whole run
     for seg in segments
         _write_clust_features!(seg["propsPath"], p.valueNameSuffix, feat_cols, uids;
-                               family = "regions", labels = labels)
+                               family = "regions", labels = labels, at = at)
     end
     graph_findings = _region_graph_findings(qc_out_path, p.graphSuffix)
     isempty(graph_findings) ||

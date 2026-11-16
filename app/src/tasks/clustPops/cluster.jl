@@ -92,13 +92,15 @@ end
 # relabelled via the channels endpoint's nameMap. `behaviour_axes` (track runs only) is the metadata
 # `clustering_utils.behaviour_axes` returns — axis names + path root — stored as `behaviourAxes`
 # (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decision 4). Untyped until a Julia reader needs it.
+# `at` = when the run ran, one value for all its segments — a cluster pop's staleness (`cluster_run_at`).
 function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
                                 features::Vector{String}, part_of::Vector{String};
                                 family::AbstractString = "clusters",
                                 labels::AbstractDict = Dict{String,String}(),
-                                behaviour_axes::Union{Nothing,AbstractDict} = nothing)
+                                behaviour_axes::Union{Nothing,AbstractDict} = nothing,
+                                at::AbstractString = string(Dates.now()))
     entry = Dict{String,Any}("features" => features, "partOf" => part_of,
-                             "family" => String(family), "labels" => Dict{String,Any}(labels))
+                             "family" => String(family), "labels" => Dict{String,Any}(labels), "at" => String(at))
     behaviour_axes === nothing || (entry["behaviourAxes"] = behaviour_axes)
     put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
 end
@@ -183,8 +185,9 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
+    at = string(Dates.now())                  # one stamp for the whole run
     for seg in segments
-        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, features, uids)
+        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, features, uids; at = at)
     end
     # bank per-image cluster QC (cell counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", suffix = p.valueNameSuffix, on_log = on_log)
