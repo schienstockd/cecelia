@@ -4,8 +4,8 @@
   `:style="{ left: '…px', top: '…px' }"` (or percentages) — the style falls through onto the root
   span via Vue 3's default attribute inheritance and stacks on top of the base positioning here.
 
-  Same colour family as CVS freeform marks (`--cc-warn`) so a viewer point-out and a plot point-out
-  look like the same idiom. `pointer-events: none` on the root so a marker never eats a click on
+  Same amber as CVS freeform marks so a viewer point-out and a plot point-out look like the same
+  idiom — `--cc-warn` here (a plot's ground follows the scheme), `--cc-hud-warn` there (pixels). `pointer-events: none` on the root so a marker never eats a click on
   the underlying plot (gate drawing, brush selection, panel drag).
 -->
 <script setup lang="ts">
