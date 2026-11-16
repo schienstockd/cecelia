@@ -41,6 +41,7 @@ from pathlib import Path
 
 from cecelia.effectiveness.git_context import parse_diff, repo_root
 from cecelia.effectiveness.recital import is_result_path, repo_result_paths
+from cecelia.effectiveness.test_value import cache_get, cache_put, content_key
 
 # the checkout being mutated is the one this runs in (a copy of the script works on any checkout)
 ROOT = repo_root().resolve()
@@ -154,8 +155,15 @@ def jl_tests(names: set[str], touched: set[str]) -> tuple[list[Path], list[str]]
     return hits, sorted(names - named)
 
 
+def file_key(rel: str, lines: set[int], tests: list[Path], sample: int) -> str:
+    """A file's cache key (`--cache`): its text, its changed lines, the sample, and each mapped test's text."""
+    return content_key(ROOT, "mutate", rel, (ROOT / rel).read_text(encoding="utf-8", errors="replace"),
+                       ranges(lines), str(sample),
+                       *(f"{p}\n{(ROOT / p).read_text(encoding='utf-8', errors='replace')}" for p in test_paths(tests)))
+
+
 def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeout: int, sample: int,
-              dry: bool = False, deadline: float | None = None) -> dict:
+              dry: bool = False, deadline: float | None = None, cache: Path | None = None) -> dict:
     src = ROOT / rel
     names = jl_names(src, lines)
     tests, unnamed = jl_tests(with_callers(names, jl_refs(src)), touched)
@@ -166,10 +174,15 @@ def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeou
         return row | {"note": "no test names a changed function"}
     if dry:
         return row
+    key = file_key(rel, lines, tests, sample)
+    if (hit := cache_get(cache, key)) is not None:
+        return hit | {"cached": True}
     listed = subprocess.run(["julia", f"--project={ROOT / 'app'}", str(HERE / "julia_mutate.jl"), str(src), "-", "--list"],
                             cwd=ROOT, capture_output=True, text=True).stdout.splitlines()
-    if not any(int(ln.split("\t")[1]) in lines for ln in listed if ln.count("\t") >= 4):
-        return row | {"note": "no mutant on a changed line", "results": []}
+    on_lines = sum(int(ln.split("\t")[1]) in lines for ln in listed if ln.count("\t") >= 4)
+    if not on_lines:   # a whole answer too: each round would otherwise pay a package load for it
+        cache_put(cache, key, row := row | {"note": "no mutant on a changed line", "results": []})
+        return row
     out = outdir / (rel.replace("/", "__") + ".tsv")
     out.unlink(missing_ok=True)
     cmd = ["julia", f"--project={ROOT / 'app'}", str(HERE / "julia_mutate.jl"), str(src), str(out),
@@ -195,6 +208,10 @@ def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeou
     owner, first = jl_owners(src)
     row["survivor_detail"] = [{"fn": owner.get(int(r[1])) or "?", "def": first.get(owner.get(int(r[1])), int(r[1])),
                                "line": int(r[1]), "orig": r[3], "new": r[4]} for r in muts if r[5] == "survived"]
+    want = min(sample, on_lines) if sample else on_lines
+    if len(muts) < want:   # the time budget cut it: said, and cached as it is, so an unchanged file
+        row["partial"] = f"{len(muts)} of {want} mutants run before the time budget"   # isn't retried each round
+    cache_put(cache, key, row)
     return row
 
 
@@ -290,7 +307,7 @@ def py_tests(module: str, keys, touched: set[str]) -> tuple[list[Path], list[str
 
 
 def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: bool = False,
-               keep: bool = False, sample: int = 0) -> dict:
+               keep: bool = False, sample: int = 0, cache: Path | None = None) -> dict:
     module = rel[len("python/"):-3].replace("/", ".")
     keys = py_funcs(ROOT / rel, lines)
     row = {"file": rel, "lang": "py", "lines": len(lines), "names": sorted(keys)}
@@ -304,6 +321,9 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
         return row | {"note": "no test names a changed function"}
     if dry:
         return row
+    ckey = file_key(rel, lines, tests, sample)
+    if (hit := cache_get(cache, ckey)) is not None:
+        return hit | {"cached": True}
     t0 = time.time()
     with (contextlib.nullcontext(tempfile.mkdtemp(prefix="mutate_changed_", dir=outdir)) if keep else
           tempfile.TemporaryDirectory(prefix="mutate_changed_", dir=outdir)) as tmp:
@@ -376,6 +396,7 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
             key = short.rsplit("__mutmut_", 1)[0]
             row["survivor_detail"].append({"fn": key.split("ǁ")[-1] if "ǁ" in key else key[2:], "def": keys[key],
                                            **picked[short]})
+    cache_put(cache, ckey, row)
     return row
 
 
@@ -393,6 +414,7 @@ def main() -> int:
     ap.add_argument("--timeout", type=int, default=120)
     ap.add_argument("--sample", type=int, default=0, help="at most N mutants per file (a fixed draw)")
     ap.add_argument("--keep", action="store_true", help="Python: keep the mutmut copy (path in the report)")
+    ap.add_argument("--cache", default=None, help="reuse and store per-file results here, keyed by content")
     ap.add_argument("--dry-run", action="store_true", help="map the changed functions to tests; mutate nothing")
     a = ap.parse_args()
     if sum((a.base is not None, a.staged, bool(a.at))) != 1:
@@ -402,6 +424,7 @@ def main() -> int:
         # fails unmutated is set aside: the mutants it would have killed then read as survivors
         sys.exit("mutate_changed: run it inside the pixi env (`pixi run python scripts/mutate_changed.py …`;"
                  " for another checkout, `pixi run --manifest-path <this>/pixi.toml -- bash -c 'cd <it> && …'`)")
+    cache = Path(a.cache) if a.cache else None
     outdir = Path(a.out or tempfile.mkdtemp(prefix="mutate_changed_")).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
     globs = repo_result_paths(ROOT)
@@ -426,9 +449,9 @@ def main() -> int:
         elif is_py and sys.platform == "win32" and not a.dry_run:
             rows.append({"file": rel, "lines": len(lines), "note": "mutmut does not run on Windows"})
         elif is_jl:
-            rows.append(run_julia(rel, lines, touched, outdir, a.timeout, a.sample, a.dry_run, deadline))
+            rows.append(run_julia(rel, lines, touched, outdir, a.timeout, a.sample, a.dry_run, deadline, cache))
         elif is_py:
-            rows.append(run_python(rel, lines, touched, outdir, a.dry_run, a.keep, a.sample))
+            rows.append(run_python(rel, lines, touched, outdir, a.dry_run, a.keep, a.sample, cache))
         else:
             rows.append({"file": rel, "lines": len(lines), "note": "not mutated (not in module Cecelia or python/cecelia)"})
     total = round(time.time() - t0)

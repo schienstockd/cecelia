@@ -113,6 +113,46 @@ class FunctionsAndRangesTest(unittest.TestCase):
                           encoding="utf-8")
             self.assertEqual(mc.with_callers({"_band"}, mc.jl_refs(jl)), {"_band", "parse"})
 
+    def test_a_file_whose_text_and_tests_are_unchanged_is_reused_not_mutated(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(mc, "ROOT", pathlib.Path(d)):
+            root = pathlib.Path(d)
+            (root / "app/src").mkdir(parents=True)
+            (root / "app/test/suite").mkdir(parents=True)
+            (root / "app/src/a.jl").write_text("function f(x)\n    x + 1\nend\n", encoding="utf-8")
+            test = root / "app/test/suite/a.jl"
+            test.write_text("@test f(1) == 2\n", encoding="utf-8")
+            cache = root / "cache"
+            key = mc.file_key("app/src/a.jl", {2}, [test], 20)
+            mc.cache_put(cache, key, {"file": "app/src/a.jl", "results": ["killed"]})
+            with mock.patch.object(mc.subprocess, "run", side_effect=AssertionError("mutated")):
+                row = mc.run_julia("app/src/a.jl", {2}, set(), root, 120, 20, cache=cache)
+            self.assertEqual(row, {"file": "app/src/a.jl", "results": ["killed"], "cached": True})
+            test.write_text("@test f(1) == 2\n@test f(2) == 3\n", encoding="utf-8")   # a test added: a miss
+            self.assertNotEqual(mc.file_key("app/src/a.jl", {2}, [test], 20), key)
+            self.assertNotEqual(mc.file_key("app/src/a.jl", {1, 2}, [test], 20), mc.file_key("app/src/a.jl", {2}, [test], 20))
+
+    def test_a_file_the_budget_cut_short_is_said_partial_and_still_reused(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(mc, "ROOT", pathlib.Path(d)):
+            root = pathlib.Path(d)
+            (root / "app/src").mkdir(parents=True)
+            (root / "app/test/suite").mkdir(parents=True)
+            (root / "app/src/a.jl").write_text("function f(x)\n    x + 1\nend\n", encoding="utf-8")
+            (root / "app/test/suite/a.jl").write_text("@test f(1) == 2\n", encoding="utf-8")
+            cache = root / "cache"
+
+            def julia(cmd, **_):   # three mutants on line 2, but the deadline lets one run
+                if "--list" in cmd:
+                    return mock.Mock(stdout="".join(f"{i}\t2\t+\t+\t-\n" for i in (1, 2, 3)), stderr="")
+                pathlib.Path(cmd[4]).write_text("0\t0\t\t\t\tsurvived\n1\t2\tf\t+\t-\tkilled\n", encoding="utf-8")
+                return mock.Mock(stdout="", stderr="")
+            with mock.patch.object(mc.subprocess, "run", side_effect=julia):
+                row = mc.run_julia("app/src/a.jl", {2}, set(), root, 120, 20, cache=cache)
+            self.assertEqual(row["partial"], "1 of 3 mutants run before the time budget")
+            with mock.patch.object(mc.subprocess, "run", side_effect=AssertionError("mutated again")):
+                again = mc.run_julia("app/src/a.jl", {2}, set(), root, 120, 20, cache=cache)
+            self.assertTrue(again["cached"])
+            self.assertEqual(again["partial"], row["partial"])
+
     def test_line_ranges(self):
         self.assertEqual(mc.ranges({3, 4, 5, 9, 11, 12}), "3-5,9,11-12")
 
