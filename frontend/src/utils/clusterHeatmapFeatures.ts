@@ -1,3 +1,4 @@
+import { channelColumnName } from './channelNames'
 // Which heatmap features (rows) a cluster heatmap offers and requests. Extracted from
 // useClusterContext / ClusterHeatmapPanel so the run-switch rules are unit-testable (docs/DEV.md).
 //
@@ -30,11 +31,15 @@ export function clusterFeatureOptions(i: {
  *  - an explicit empty pick → stays empty (the user unticked everything);
  *  - a pick sharing NOTHING with the options → it came from another run → every option;
  *  - otherwise → the pick minus the columns this run doesn't have (a re-run changed its basis).
+ * A raw intensity column in the pick (`mean_intensity_0`, saved before features were channel names) is
+ * first named with `channelNames` (`channelColumnName`).
  */
-export function reconcileHeatmapFeatures(picked: string[] | undefined, opts: string[]): string[] {
+export function reconcileHeatmapFeatures(picked: string[] | undefined, opts: string[],
+                                         channelNames: string[] = []): string[] {
   if (picked === undefined) return [...opts]
   if (!picked.length) return []
-  const keep = picked.filter(f => opts.includes(f))
+  // a pick saved before features were channel names holds raw columns — name them first
+  const keep = [...new Set(picked.map(f => channelColumnName(f, channelNames)))].filter(f => opts.includes(f))
   return keep.length ? keep : [...opts]
 }
 

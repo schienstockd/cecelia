@@ -465,8 +465,12 @@ _cluster_suffixes(obscols, pop_type = "clust") =
 # optional column → display-label map (region composition columns are machine names). Reads go through
 # the package's shared sidecar reader, which owns the family-qualified + legacy key layouts — the API
 # never indexes that JSON itself.
-_clust_features(props_path::AbstractString, suffixes, family) = Dict{String,Any}(
-    s => Cecelia._clustfeatures_features(props_path, s; family = family) for s in suffixes)
+# Features by channel NAME — a run recorded before docs/todo/CHANNEL_NAMES_PLAN.md is named against its
+# first image (`chans_of` = `run_channel_names`), so the frontend shows them as they come.
+_clust_features(props_path::AbstractString, suffixes, family; chans_of = nothing, own_uid = nothing) =
+    Dict{String,Any}(s => Cecelia._clustfeatures_features(props_path, s; family = family,
+                                                          chans_of = chans_of, own_uid = own_uid)
+                     for s in suffixes)
 # JSON3 hands back Symbol OR String keys depending on how the object was parsed, so every field read
 # goes through this. NEVER wrap it in `something(..., nothing)`: `something()` with all-nothing
 # arguments THROWS `ArgumentError("No value arguments present")`, which is exactly how
@@ -502,10 +506,10 @@ end
 # per-suffix behaviour axes (track runs: axis names + path root, written by clustTracks as
 # `behaviourAxes`). Suffixes without them are absent, so the cluster map offers its diffusion layout only
 # for runs that have one.
-function _clust_axes(props_path::AbstractString, suffixes, family)
+function _clust_axes(props_path::AbstractString, suffixes, family; chans_of = nothing, own_uid = nothing)
     out = Dict{String,Any}()
     for s in suffixes
-        a = _entry_field(Cecelia._clustfeatures_entry(props_path, s; family = family), "behaviourAxes")
+        a = Cecelia._clustfeatures_axes(props_path, s; family = family, chans_of = chans_of, own_uid = own_uid)
         a isa AbstractDict && (out[s] = a)
     end
     out
@@ -653,10 +657,11 @@ function api_gating_channels(req::HTTP.Request)
             channelNamesPerVn = chansPerVn,                       # multi-VN advisor input (empty in single-VN mode)
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
             clusterSuffixes = tsfx,
-            clusterFeatures = _clust_features(tpath, tsfx, tfam),
+            clusterFeatures = _clust_features(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
             clusterMembers  = _clust_members(tpath, tsfx, tfam),  # uIDs clustered together (partOf)
             clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
-            clusterAxes     = _clust_axes(tpath, tsfx, tfam),     # diffusion axis names (track runs)
+            clusterAxes     = _clust_axes(tpath, tsfx, tfam; chans_of = Cecelia.run_channel_names(img, scope_vn),
+                                          own_uid = img.uid),     # diffusion axis names (track runs)
             clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, scope_vn,
                                 tsfx, _clust_members(tpath, tsfx, tfam), true, pt) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
@@ -720,7 +725,7 @@ function api_gating_channels(req::HTTP.Request)
         spatialColumns = centroid_columns(lp; order = [:x, :y, :z]),   # centroid_x/_y[/_z], present axes
         temporalColumns = temporal_columns(lp),          # ["centroid_t"] — groupable + a gateable time axis
         clusterSuffixes = csfx,         # clust runs (`clusters.*`) / region runs (`regions.*`) in the cell table
-        clusterFeatures = _clust_features(cpath, csfx, cfam),
+        clusterFeatures = _clust_features(cpath, csfx, cfam; chans_of = Cecelia.run_channel_names(img, scope_vn), own_uid = img.uid),
         clusterMembers  = cmem,         # uIDs clustered together (partOf)
         clusterFeatureLabels = _clust_feature_labels(cpath, csfx, cfam),
         clusterIds      = _cluster_ids(get(q, "projectUid", ""), cpath, scope_vn, csfx, cmem, false, cpt),

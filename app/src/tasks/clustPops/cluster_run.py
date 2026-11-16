@@ -10,10 +10,10 @@ script just reads the columns it is told, clusters, and writes back.
 
 Invoked by `app/src/tasks/clustPops/cluster.jl` via a params JSON. Params:
   suffix                output column suffix → clusters.{suffix} / X_umap.{suffix}
-  segments              [{uID, valueName, propsPath, labels|null, featureCols?}] — one per (image,
+  segments              [{uID, valueName, propsPath, labels|null, featureCols}] — one per (image,
                         segmentation); `featureCols` = that segment's OWN columns, parallel to the top-level
-                        list, when its channel order differs (Julia matched the channels by name)
-  featureCols           var columns to cluster on (channels + object measures), as named on the first segment
+                        list (Julia resolved each channel name to this segment's column)
+  featureCols           the features to cluster on (channel names + object measures) — the AnnData var names
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
 """
@@ -45,9 +45,8 @@ def run(params):
     for seg in segments:
         path   = seg["propsPath"]
         labels = seg.get("labels", None)
-        # a segment whose channels are in another order reads its own columns for the same channels,
-        # renamed to the pooled names — so the AnnData var names stay the first segment's
-        own_cols = seg.get("featureCols") or feature_cols
+        # each segment reads its OWN columns (Julia resolved the channel names), named by channel
+        own_cols = seg["featureCols"]
         view = LabelPropsView(path).view_cols(own_cols)
         if labels is not None:
             view = view.filter_by_label(labels)
@@ -57,13 +56,10 @@ def run(params):
         if df.shape[0] == 0:
             log.log(f"> {seg['uID']}/{seg['valueName']}: no cells, skipped")
             continue
-        # keep only the requested feature columns that are present (+ label); tag the segment
-        cols = [c for c in feature_cols if c in df.columns]
+        # Julia checked every channel exists; a column still missing would cluster on made-up values
         missing = [c for c in feature_cols if c not in df.columns]
         if missing:
-            log.log(f"[WARN] {seg['uID']}/{seg['valueName']}: missing columns {missing} (filled 0)")
-            for c in missing:
-                df[c] = 0.0
+            raise ValueError(f"{seg['uID']}/{seg['valueName']}: missing feature columns {missing}")
         df = df[["label"] + feature_cols].copy()
         df["uID"]       = seg["uID"]
         df["valueName"] = seg["valueName"]

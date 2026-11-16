@@ -369,7 +369,7 @@ const clustSuffix = computed<string>({
 // the board's own gating store (its cluster slots' pop tree + read-only manager)
 const clustG = provideGatingStore(clustPopType.value)
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
-        featureOptions: clustFeatureOptions, labelMap: clustNameMap,
+        featureOptions: clustFeatureOptions, labelMap: clustNameMap, channelNames: clustChannelNames,
         hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
         clusterAxes: clustAxes } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
@@ -448,6 +448,7 @@ function ctxFor(c: SlotContent, i: number) {
 function clusterPanelProps(i: number) {
   const c = entry.value.contents[i]!
   const ctx = { featureOptions: clustFeatureOptions.value, nameMap: clustNameMap.value,
+                channelNames: clustChannelNames.value,
                 hmmStateCols: clustHmmStateCols.value, hmmTransitionCols: clustHmmTransitionCols.value }
   return {
     index: i, active: i === entry.value.activeIndex, arrange: null, docked: true,

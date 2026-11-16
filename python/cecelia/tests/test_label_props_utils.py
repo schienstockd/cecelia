@@ -87,6 +87,13 @@ class ChannelNameSelectionTest(unittest.TestCase):
         raw = LabelPropsView(self.path).view_cols(["mean_intensity_1"]).as_df()
         np.testing.assert_array_equal(df["CD8"].to_numpy(), raw["mean_intensity_1"].to_numpy())
 
+    def test_channel_name_any_case_and_ambiguous_refused(self):
+        # same rules as the Julia resolver (docs/todo/CHANNEL_NAMES_PLAN.md)
+        df = LabelPropsView(self.path, channel_names=self.chans).view_cols(["cd8"]).as_df()
+        np.testing.assert_array_equal(df["cd8"].to_numpy(), [2., 5.])
+        with self.assertRaisesRegex(ValueError, "more than one channel"):
+            LabelPropsView(self.path, channel_names=["CD4", "cd4", "B220"]).view_cols(["CD4"]).as_df()
+
     def test_raw_names_still_work(self):                          # gates/clustering pass raw — unchanged
         df = LabelPropsView(self.path).view_cols(["mean_intensity_2"]).as_df()
         self.assertIn("mean_intensity_2", df.columns)

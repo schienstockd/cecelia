@@ -5,8 +5,8 @@
   CanvasPanel like any plot. Non-interactive — contrast ClusterMapView (a WebGL interactive view).
 
   Features default to exactly the columns the clustering run used (the {props}.clustfeatures sidecar,
-  surfaced as `featureOptions`), pickable in the controls. Channel measures are selected/aggregated by
-  RAW name (mean_intensity_N) but displayed via `nameMap` (raw → channel display name).
+  surfaced as `featureOptions`), pickable in the controls. Channel measures are selected, requested and
+  shown by CHANNEL NAME (docs/todo/CHANNEL_NAMES_PLAN.md); `nameMap` relabels a region run's columns.
 -->
 <script setup lang="ts">
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
@@ -37,6 +37,7 @@ const props = defineProps<{
   projectUid: string; setUid: string | null; imageUids: string[]
   popType: 'clust' | 'trackclust' | 'region'; suffix: string
   featureOptions: string[]; nameMap: Record<string, string>
+  channelNames?: string[]        // a pick saved as raw columns migrates to channel names with these
   // populations shown in the manager: when present, columns become these pops (per-population
   // profile) instead of the raw cluster IDs. Empty → per-cluster. `clusterIds` is carried only so
   // the reload watch fires when the cluster→pop assignment changes (membership changes, same path).
@@ -147,7 +148,7 @@ onMounted(load)
 // cells/tracks switch) — rules in utils/clusterHeatmapFeatures. `[]` options = not loaded yet: wait.
 watch(() => props.featureOptions, opts => {
   if (!opts.length) return
-  const next = reconcileHeatmapFeatures(props.state.features, opts)
+  const next = reconcileHeatmapFeatures(props.state.features, opts, props.channelNames ?? [])
   const cur = props.state.features
   if (cur === undefined || next.join('\n') !== cur.join('\n')) props.state.features = next
 }, { immediate: true })

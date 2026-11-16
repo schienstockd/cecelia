@@ -48,3 +48,9 @@ describe('heatmapRequestFeatures', () => {
     expect(heatmapRequestFeatures(CELL, [])).toEqual([])
   })
 })
+
+describe('reconcileHeatmapFeatures — a pick saved as raw columns', () => {
+  it('is named before it is reconciled, so the user\'s choice survives', () => {
+    expect(reconcileHeatmapFeatures(['mean_intensity_1'], ['CD4', 'CD8', 'area'], ['CD4', 'CD8'])).toEqual(['CD8'])
+  })
+})

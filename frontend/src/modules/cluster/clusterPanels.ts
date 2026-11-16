@@ -18,6 +18,7 @@ import CellCardsView from '../../components/plots/CellCardsView.vue'
 export interface ClusterCtx {
   featureOptions: string[]
   nameMap: Record<string, string>
+  channelNames: string[]
   hmmStateCols: string[]
   hmmTransitionCols: string[]
 }
@@ -42,7 +43,7 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
     label: 'Cluster heatmap',
     answers: 'What defines each cluster — its feature profile (heatmap)?',
     component: ClusterHeatmapPanel, analysisBoard: true, rail: CLUSTER_RAIL,
-    props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap }),
+    props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap, channelNames: ctx.channelNames }),
   },
   hmmStates: {
     label: 'HMM states',

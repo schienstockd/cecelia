@@ -43,6 +43,8 @@ stack. Per-tag notes are also on the
   channel order gated whichever marker sat at that position.
 - **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
   lacking a channel is refused.
+- **HMM states can model intensity channels** (it failed with *missing column(s)*). Measure pickers
+  store channel names, so every image reads the same marker. Saved picks convert on open.
 - **The copy dialog now names images it did not copy to**, with the reason, and notes where it
   matched channels by name.
 - **Stored units are now converted.** Intervals in ms or minutes, and pixel sizes in nm or mm, were

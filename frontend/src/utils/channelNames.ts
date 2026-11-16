@@ -71,3 +71,39 @@ export function channelLabel(col: string, names: string[]): string {
   if (!m || !name) return col
   return m[1] ? `${m[1]}_${name}` : name
 }
+
+/**
+ * What a param or stored list holds for a column: an intensity column (or per-track aggregate
+ * `mean_intensity_0.mean`) as its CHANNEL NAME (`CD4`, `nuc_CD4`, `CD4.mean`), anything else unchanged —
+ * mirrors Julia `canonical_channel_columns` (app/src/label_props.jl; docs/todo/CHANNEL_NAMES_PLAN.md).
+ * Each image resolves the name to its own column, so a pick means the same marker on every image.
+ * Stays raw when there is nothing to name it by, when the name sits on two channels (the index is the
+ * only identity), or when a real column in `shadow` already carries that name (a channel called `area`).
+ */
+export function channelColumnName(col: string, names: string[], shadow: Iterable<string> = []): string {
+  // a per-track aggregate is one of track_props' numeric suffixes (`_TRACK_NUM_AGG_SUFFIXES`)
+  const m = col.match(/^((?:[a-z]+_)?(?:mean|median)_intensity_)(\d+)((?:\.(?:mean|median|sum|qUp|qLow|sd))?)$/)
+  if (!m) return col
+  const name = names[parseInt(m[2], 10)]
+  if (!name) return col
+  const lc = name.toLowerCase()
+  if (names.filter(n => n.toLowerCase() === lc).length > 1) return col
+  const base = channelLabel(m[1] + m[2], names)
+  for (const s of shadow) if (s.toLowerCase() === base.toLowerCase()) return col
+  return base + m[3]
+}
+
+/**
+ * A stored column selection with every legacy raw intensity column replaced by what the picker now
+ * stores for it (`rename`: raw → name, from `channelColumnName`). `null` when nothing changes, so a
+ * caller only re-emits a selection that actually migrated.
+ */
+export function migrateColumnSelection(cur: string[], rename: Record<string, string>): string[] | null {
+  let changed = false
+  const out = cur.map(c => {
+    const n = rename[c]
+    if (n !== undefined && n !== c) { changed = true; return n }
+    return c
+  })
+  return changed ? [...new Set(out)] : null
+}
