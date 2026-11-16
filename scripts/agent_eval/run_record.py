@@ -54,7 +54,9 @@ from cecelia.effectiveness import claude_cli  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
 STEPS = ("cleanup", "segment", "measure", "gate", "track", "behaviour", "report")
-GATE_TOOLS = {"add_gate", "set_gate", "delete_gate"}
+# every gating write — one population tree on one label set, each with a `dry_run` preview
+GATE_TOOLS = {"add_gate", "set_gate", "delete_gate", "add_boolean_pop", "add_filter_pop", "add_cluster_pops",
+              "set_cluster_pops"}
 FIGURE_TOOLS = {"add_figure", "set_figure", "delete_figure"}
 REPORT_TOOLS = {"add_analysis_board", "append_lab_log", "create_blackboard_entry", "revise_blackboard_entry",
                 "create_notebook", "revise_notebook"} | FIGURE_TOOLS
@@ -163,10 +165,15 @@ def units_of(items: list[dict], i: int, chains: dict, all_images: list[str]) -> 
                  "did": f"`{fn}` {_short(params, 400)}", "params": params, "outcome": got}]
     if name in GATE_TOOLS:
         img, vn = inp.get("image_uid", ""), inp.get("value_name", "")
-        pop = inp.get("path") or f"{(inp.get('parent') or 'root').rstrip('/').removeprefix('root')}/{inp.get('name')}"
+        pop = inp.get("path") or (f"{(inp.get('parent') or 'root').rstrip('/').removeprefix('root')}/{inp.get('name')}"
+                                  if inp.get("name") else "")
         gate = inp.get("gate") or {}
+        groups = ", ".join(str(g.get("name") or g.get("path")) for g in inp.get("groups") or [])
         did = {"add_gate": f"add `{pop}` on {vn}", "set_gate": f"move `{pop}` on {vn}",
-               "delete_gate": f"delete `{pop}` on {vn}"}[name]
+               "delete_gate": f"delete `{pop}` on {vn}",
+               "add_boolean_pop": f"combine into `{pop}` on {vn}", "add_filter_pop": f"filter into `{pop}` on {vn}",
+               "add_cluster_pops": f"group run {inp.get('run')} clusters into {groups} on {vn}",
+               "set_cluster_pops": f"regroup run {inp.get('run')} clusters: {groups} on {vn}"}[name]
         if gate:
             did += f": {_gate_text(gate)}"
         return [{"step": "gate", "fn": name, "target": vn, "images": [img], "did": did, "pop": pop,
@@ -405,10 +412,11 @@ def pictures(api: str | None, run: dict, dec: dict) -> dict:
         if s["step"] == "gate" and api:
             img = copy_of.get(s["images"][0]) if s["images"] else None
             for u in s["units"]:
-                if img and u["fn"] != "delete_gate":
+                # one flow population per unit; a cluster grouping names several, none by `pop`
+                if img and u["fn"] not in ("delete_gate", "add_cluster_pops", "set_cluster_pops"):
                     u["stats"] = pop_stats(api, run["projectUid"], img, u["target"], u["pop"])
             u = s["units"][-1]
-            if not got and img and u["fn"] != "delete_gate":
+            if not got and img and u["fn"] in ("add_gate", "set_gate"):   # only these carry gate geometry
                 png = gate_picture(api, run["projectUid"], img, u)
                 if png:
                     g = u["gate"]

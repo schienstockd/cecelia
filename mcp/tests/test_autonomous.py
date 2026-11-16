@@ -201,6 +201,14 @@ class NoGuiTools(unittest.TestCase):
         for t in creation | {"importImages.omezarr"}:
             self.assertIn(t, text)
 
+    def test_its_own_tools_are_the_listed_ones(self):
+        # tools.json `autonomous` = this server's own tools (all of them with no GUI); the rest it
+        # registers are the observer's gating + figure toolsets, listed once under `observer`.
+        from cecelia_mcp import tool_kinds
+        names, _ = self._tool_names("1")
+        self.assertEqual(sorted(tool_kinds.AUTONOMOUS), sorted(names - set(tool_kinds.OBSERVER)))
+        self.assertIn("add_gate", names & set(tool_kinds.OBSERVER))
+
 
 class RunChainStoredName(unittest.TestCase):
     def test_runs_under_the_name_the_server_stored(self):

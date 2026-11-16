@@ -37,13 +37,11 @@ from cecelia.effectiveness.claude_sessions import calling_session, claude_home, 
 from cecelia.effectiveness.state import state_dir  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 from cecelia.utils.loopback import default_base_url  # noqa: E402
+from cecelia_mcp.tool_kinds import TOOL_KINDS  # noqa: E402 — the one list of tools and their kinds (run_record puts mcp/ on the path)
 
-
-POINT_TOOLS = {"mark_cells", "mark_tracks", "mark_tile", "mark_freeform", "mark_plot", "point_at_ui",
-               "select_on_plot", "seek_viewer", "open_analysis_board_plot"}
-# a run's actions (cecelia-autonomous) plus the observer's other additive writes
-WRITE_TOOLS = run_record.ACTIONS | {"set_blackboard_status", "set_blackboard_outcome", "set_blackboard_section_outcome",
-                                    "set_notebook_description", "create_chain", "set_labarchives_context"}
+# marks and navigation on the user's screen; and every call that changes the project (mcp/cecelia_mcp/tools.json)
+POINT_TOOLS = {n for n, k in TOOL_KINDS.items() if k in ("point", "drive")}
+WRITE_TOOLS = {n for n, k in TOOL_KINDS.items() if k in ("add", "edit", "run")}
 
 
 def _wrote(call: dict) -> bool:

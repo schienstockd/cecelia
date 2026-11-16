@@ -30,7 +30,7 @@ on edit via its own routes, and `lastOpenedAt` is stamped on open. Restored on o
 `boards`. **Backend restart** is needed the first time these routes are active (`api/` is not
 Revise-tracked; see `CLAUDE.md`).
 
-**Claude can ADD a board.** The MCP observer's `add_analysis_board` (write 6/6) posts a semantic spec
+**Claude can ADD a board.** The MCP observer's `add_analysis_board` posts a semantic spec
 — which plots, which populations, in what order — to `POST /api/boards/add`, and the server expands it
 into a `LayoutEntry` and validates it against the project (`app/src/analysis_board_spec.jl`). Add-only:
 it cannot modify, rename, reorder or delete a board, so an authored board lands beside the user's own

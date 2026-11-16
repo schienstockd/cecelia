@@ -19,6 +19,7 @@ from cecelia_mcp.client import ApiError, DisallowedRoute
 from cecelia_mcp.gating_views import register_gating_tools
 from cecelia_mcp.figure_tools import register_figure_tools
 from cecelia_mcp.no_gui import no_gui_enabled
+from cecelia_mcp.tool_kinds import annotations_for
 
 INSTRUCTIONS = (
     "Runs analysis in ONE Cecelia project (the locked one) without a human at the keyboard. Use it "
@@ -51,7 +52,7 @@ def _tool(fn):
             return fn(*args, **kwargs)
         except (ApiError, DisallowedRoute, LockViolation) as e:
             raise ToolError(str(e)) from e
-    return mcp.tool()(wrapped)
+    return mcp.tool(annotations=annotations_for(fn.__name__))(wrapped)   # its kind, from tools.json
 
 
 @_tool

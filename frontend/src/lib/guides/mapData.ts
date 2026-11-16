@@ -45,16 +45,17 @@ export const MAP: Record<string, MapEntry> = {
                       claude: 'Claude Code writes a notebook for you' },
   '/animation':      { what: 'Keyframe a fly-through of one image into a movie', guide: 'build-an-animation' },
   '/batch-movies':   { what: 'One movie setup, one timelapse movie per image', guide: 'record-a-movie' },
-  '/movies':         { what: 'Play the movies this project has rendered' },
+  '/movies':         { what: 'Play the movies this project has rendered',
+                      claude: 'Claude Code makes a figure of a cell for you' },
   // Pipeline — run many images
   '/tasks':          { what: 'Everything running or finished; history of past runs' },
   '/chain':          { what: 'Wire the steps you settled on into a chain; run it over a set', guide: 'run-a-chain',
                       claude: 'Claude Code designs the chain; you run it' },
 }
 
-// Every observer tool that creates something (`create_*` / `add_*` / `append_*` in
-// mcp/cecelia_mcp/server.py) → the sidebar page it lands on, or null for one that lands off the sidebar.
-// `utils/guideMap.test.ts` reads server.py: a new create tool fails it until it's classified here, and
+// Every observer tool that creates something (kind `add` in mcp/cecelia_mcp/tools.json) → the sidebar
+// page it lands on, or null for one that lands off the sidebar.
+// `utils/guideMap.test.ts` reads tools.json: a new add tool fails it until it's classified here, and
 // these pages and the `claude` lines above must agree — so the ✦ can't drift from what Claude can do.
 export const CLAUDE_MAKES: Record<string, string | null> = {
   add_analysis_board: '/analysis',
@@ -65,6 +66,8 @@ export const CLAUDE_MAKES: Record<string, string | null> = {
   create_blackboard_entry: '/blackboard',
   create_notebook: '/notebooks',
   create_chain: '/chain',
+  add_figure: '/movies',             // figures share the movie list
+  state_claim: '/blackboard',        // a claim is a Blackboard entry with its checks as sections
   append_lab_log: null,   // the lab log is a panel, not a sidebar page
 }
 

@@ -228,7 +228,7 @@ The observer session becomes more valuable over time, not immediately. Early in 
 | `append_lab_log` (write) | **NEW** `POST /api/lablog/append` (`LAB-LOG.md` step 4), lock-guarded, append-only | **new** |
 
 - Adding each new route = write `api_*(req)` + one `elseif` in `handle_http`'s GET/POST block (`api/src/server.jl:168-391`) + **server restart** (api/ is not Revise-tracked). Response shape: `(status, JSON3.write((; …)))` (`docs/API.md:36-47`).
-- **No-mutation guarantee**: the MCP server only ever calls the read routes above + `POST /api/lablog/append`. It never touches task submission, gate CRUD, or inclusion routes. *(Superseded since: the additive writes listed under *Durable boundaries* — incl. one create-only gate route, `add-gate` — joined; edit/delete stay off.)* Enforce by allow-listing the exact routes in the MCP adapter (Phase 1).
+- **No-mutation guarantee**: the MCP server only ever calls the read routes above + `POST /api/lablog/append`. It never touches task submission, gate CRUD, or inclusion routes. *(Superseded since: the additive writes listed under *Durable boundaries* — incl. one create-only gate route, `add-gate` — joined, and the gate and figure routes that change or delete refuse anything Claude did not make.)* Enforce by allow-listing the exact routes in the MCP adapter (Phase 1).
 
 ### 3. Read-only enforcement
 

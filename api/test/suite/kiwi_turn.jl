@@ -36,22 +36,14 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     # the tool allow-list is read-only: no write, mark or pairing tool
     @test !any(t -> occursin(r"append|create|revise|set_|mark_|point_at|register|delete", t), KIWI_READ_TOOLS)
     @test all(t -> startswith(t, "mcp__" * OBSERVER_MCP_NAME * "__"), _kiwi_allowed_tools())
-    # every observer tool is decided: allowed or excluded with a reason — a new tool fails here
-    server = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "server.py"), String)
-    tools = Set(m.captures[1] for m in eachmatch(r"@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(", server))   # `_tool` / `_tool_if` / `_gui_tool` = server.py's registrars, then any stacked decorators (`@with_doc`)
-    @test length(tools) == count(r"^@_(?:gui_)?tool"m, server)   # every registration seen — the pattern once missed two @with_doc tools
-    # …plus the gating toolset server.py registers from gating_views.py (`register_gating_tools`)
-    gv = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "gating_views.py"), String)
-    gating = Set(m.captures[1] for m in eachmatch(r"\n    @tool\s*\n(?:    @[^\n]*\n)*    def ([a-z_]+)\(", gv))
-    @test length(gating) == count(r"^    @tool$"m, gv) && "add_gate" in gating
-    @test occursin("register_gating_tools(_tool, _client)", server)
-    # …and the figure toolset from figure_tools.py (`register_figure_tools`), the same way
-    ft = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "figure_tools.py"), String)
-    figures = Set(m.captures[1] for m in eachmatch(r"\n    @tool\s*\n(?:    @[^\n]*\n)*    def ([a-z_]+)\(", ft))
-    @test length(figures) == count(r"^    @tool$"m, ft) && "add_figure" in figures
-    @test occursin("register_figure_tools(_tool, _client)", server)
-    tools = union(tools, gating, figures)
-    @test length(tools) > 40
+    # every observer tool is decided: allowed or excluded with a reason — a new tool fails here. The tools
+    # are mcp/cecelia_mcp/tools.json's `observer` list: the server registers exactly those
+    # (mcp/tests/test_server.py → ToolListTest), each with its kind.
+    kinds = JSON3.read(read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "tools.json"), String)).observer
+    tools = Set(String(k) for k in keys(kinds))
+    @test length(tools) > 40 && "add_figure" in tools
+    # …and Kiwi reads: every tool on its allow-list is a `read`
+    @test all(t -> kinds[Symbol(t)] == "read", KIWI_READ_TOOLS)
     @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
     @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))
 

@@ -1,31 +1,24 @@
 import { describe, it, expect } from 'vitest'
-import { AI_SURFACES, CAPABILITIES, HIDDEN_TOOLS, TOOL_GROUPS, aiDialogRows, capabilityGroups } from './claudeTools'
+import { AI_SURFACES, CAPABILITIES, HIDDEN_TOOLS, TOOL_GROUPS, aiDialogRows, capabilityGroups, type ToolGroupKey } from './claudeTools'
 import { isTooLong } from '../utils/uiCopy'
 
 // The two allow-lists, read from source with Vite's raw glob (this tsconfig has no node types — see
-// tasks/taskRunnerDrafts.test.ts). The observer's tools are what server.py registers; Kiwi's are
-// KIWI_READ_TOOLS in kiwi_turn.jl.
+// tasks/taskRunnerDrafts.test.ts). The observer's tools are tools.json's `observer` list — the server
+// registers exactly those (mcp/tests/test_server.py → ToolListTest); Kiwi's are KIWI_READ_TOOLS in kiwi_turn.jl.
 const raw = (g: Record<string, string>) => Object.values(g)[0] ?? ''
-const SERVER = raw(import.meta.glob('../../../mcp/cecelia_mcp/server.py', { query: '?raw', import: 'default', eager: true }))
-// …plus the gating toolset server.py registers from gating_views.py (`register_gating_tools`)
-const GATING = raw(import.meta.glob('../../../mcp/cecelia_mcp/gating_views.py', { query: '?raw', import: 'default', eager: true }))
+const TOOLS_JSON = JSON.parse(raw(import.meta.glob('../../../mcp/cecelia_mcp/tools.json', { query: '?raw', import: 'default', eager: true })) || '{}')
 const KIWI_JL = raw(import.meta.glob('../../../api/src/kiwi_turn.jl', { query: '?raw', import: 'default', eager: true }))
 
-// The same registrar pattern api/test/suite/kiwi_turn.jl uses: `_tool` / `_tool_if(…)` / `_gui_tool`,
-// then any stacked decorators (`@with_doc`), then the def.
-const SERVER_TOOLS = [...SERVER.matchAll(/@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(/g)].map(m => m[1])
-const GATING_TOOLS = [...GATING.matchAll(/\n {4}@tool\s*\n(?: {4}@[^\n]*\n)* {4}def ([a-z_]+)\(/g)].map(m => m[1])
-const REGISTERED = new Set([...SERVER_TOOLS, ...GATING_TOOLS])
+const OBSERVER_KINDS: Record<string, string> = TOOLS_JSON.observer ?? {}
+const REGISTERED = new Set(Object.keys(OBSERVER_KINDS))
 const KIWI_BLOCK = KIWI_JL.match(/const KIWI_READ_TOOLS = \[([\s\S]*?)\n\]/)?.[1] ?? ''
 const KIWI_TOOLS = new Set([...KIWI_BLOCK.replace(/#[^\n]*/g, '').matchAll(/"([a-z_]+)"/g)].map(m => m[1]))
 
 describe('claudeTools — pinned to the real allow-lists', () => {
   it('found both sources', () => {
     // A glob or pattern that matched nothing would make every check below vacuously pass.
-    expect(SERVER_TOOLS.length).toBe((SERVER.match(/^@_(?:gui_)?tool/gm) ?? []).length)
-    expect(GATING_TOOLS.length).toBe((GATING.match(/^ {4}@tool$/gm) ?? []).length)
-    expect(SERVER).toContain('register_gating_tools(_tool, _client)')
     expect(REGISTERED.size).toBeGreaterThan(40)
+    expect(REGISTERED.has('add_figure')).toBe(true)   // the figure toolset, which the old source parse missed
     expect(KIWI_TOOLS.size).toBeGreaterThan(20)
   })
 
@@ -43,6 +36,15 @@ describe('claudeTools — pinned to the real allow-lists', () => {
       expect(allKiwi || noneKiwi, `${c.label}: mixes Kiwi and terminal-only tools — split it`).toBe(true)
       expect(c.kiwi, c.label).toBe(allKiwi)
       expect(c.terminal, c.label).toBe(true)    // every observer tool reaches a terminal session
+    }
+  })
+
+  it('puts only reads in the reading groups, and every add or edit under Builds', () => {
+    const reading: ToolGroupKey[] = ['project', 'runs', 'results', 'record']
+    for (const c of CAPABILITIES) for (const t of c.tools) {
+      const kind = OBSERVER_KINDS[t]
+      if (reading.includes(c.group)) expect(kind, `${t} in ${c.group}`).toBe('read')
+      if (kind === 'add') expect(c.group, t).toBe('builds')
     }
   })
 

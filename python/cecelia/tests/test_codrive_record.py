@@ -203,6 +203,29 @@ class WroteTest(unittest.TestCase):
         self.assertTrue(cr._wrote(call("create_chain", name="c")))
         self.assertFalse(cr._wrote(call("gate_examples", pop="/p")))
 
+    def test_every_population_tool_is_a_gate_write(self):
+        # the combination / filter / cluster-grouping tools write like add_gate, and preview like it
+        call = lambda tool, **inp: {"name": tool, "input": inp}   # noqa: E731
+        for tool in ("add_boolean_pop", "add_filter_pop", "add_cluster_pops", "set_cluster_pops"):
+            self.assertTrue(cr._wrote(call(tool, name="p")), tool)
+            self.assertFalse(cr._wrote(call(tool, name="p", dry_run=True)), tool)
+        # a saved viewer / plot setting is a write; a mark or a seek is pointing
+        self.assertTrue(cr._wrote(call("set_viewer_view", view={})))
+        self.assertIn("seek_viewer", cr.POINT_TOOLS)
+        self.assertNotIn("set_viewer_view", cr.POINT_TOOLS)
+
+    def test_a_population_tool_is_recorded_as_a_gate_step(self):
+        items = [{"name": "add_boolean_pop", "input": {"image_uid": "i1", "value_name": "default", "name": "qcNotOTI",
+                                                       "pops": ["/qc"], "not_pops": ["/OTI"]}, "result": "{}"}]
+        unit, = cr.run_record.units_of(items, 0, {}, ["i1"])
+        self.assertEqual(("gate", "/qcNotOTI"), (unit["step"], unit["pop"]))
+        self.assertEqual("combine into `/qcNotOTI` on default", unit["did"])
+        items = [{"name": "add_cluster_pops", "input": {"image_uid": "i1", "value_name": "default", "run": "clust",
+                                                        "groups": [{"name": "T", "clusters": [1, 2]}]}, "result": "{}"}]
+        unit, = cr.run_record.units_of(items, 0, {}, ["i1"])
+        self.assertEqual(("gate", ""), (unit["step"], unit["pop"]))   # several populations — none named by `pop`
+        self.assertIn("clust clusters into T", unit["did"])
+
 
 if __name__ == "__main__":
     unittest.main()

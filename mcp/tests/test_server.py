@@ -421,6 +421,38 @@ class ToolErrorSurfacingTest(unittest.TestCase):
         self.assertIn("project_uid", tools["get_project_info"].input_schema["properties"])
 
 
+class ToolListTest(unittest.TestCase):
+    """tools.json is the one list of tools: the observer registers exactly its `observer` names, and each
+    tool's MCP hints say what its kind says — read-only for reads, destructive only for edit/run."""
+
+    def setUp(self):
+        from cecelia_mcp import tool_kinds
+        self.kinds = tool_kinds
+        self.tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
+
+    def test_observer_registers_exactly_the_listed_tools(self):
+        # Default arms (a GUI, discovery on) register every observer tool; a gated arm only drops some.
+        self.assertEqual(sorted(self.kinds.OBSERVER), sorted(self.tools))
+
+    def test_every_kind_is_defined(self):
+        self.assertEqual(set(), set(self.kinds.TOOL_KINDS.values()) - set(self.kinds.KINDS))
+        self.assertFalse(set(self.kinds.OBSERVER) & set(self.kinds.AUTONOMOUS))   # one entry per name
+
+    def test_hints_follow_the_kind(self):
+        for name, tool in self.tools.items():
+            kind, a = self.kinds.OBSERVER[name], tool.annotations
+            self.assertIsNotNone(a, name)
+            self.assertEqual(kind == "read", a.read_only_hint, name)
+            if kind != "read":
+                self.assertEqual(kind in ("edit", "run"), a.destructive_hint, name)
+
+    def test_an_unlisted_tool_cannot_register(self):
+        def not_in_the_list() -> dict:
+            return {}
+        with self.assertRaisesRegex(KeyError, "tools.json"):
+            server._tool(not_in_the_list)
+
+
 class GuidanceTest(unittest.TestCase):
     """The guidance is the server's own prompt — it must stay in step with the tools and stay small.
 
@@ -448,6 +480,21 @@ class GuidanceTest(unittest.TestCase):
         # …and the exemption list cannot silently grow to cover a real tool: every name on it must
         # still exist, so a rename shows up here instead of quietly widening the hole.
         self.assertTrue(self.UNMENTIONED <= self.names)
+
+    # Words in the prose that look like a tool name but are not one (fields, ids, internal helpers).
+    NOT_TOOLS = {"set_uid"}
+
+    def test_every_tool_the_guidance_names_exists(self):
+        # The reverse of the check above: a tool that was renamed or split leaves its old name in the
+        # prose, and the model goes looking for it (get_spatial_stats survived its split this way).
+        import re
+        from cecelia_mcp import tool_kinds
+        descriptions = " ".join(t.description or "" for t in asyncio.run(server.mcp.list_tools()))
+        verbs = {n.split("_")[0] for n in tool_kinds.TOOL_KINDS}
+        pattern = r"\b(?:" + "|".join(sorted(verbs)) + r")_[a-z_]+\b"
+        named = set(re.findall(pattern, self.text + " " + descriptions))
+        unknown = sorted(named - set(tool_kinds.TOOL_KINDS) - self.NOT_TOOLS)
+        self.assertEqual([], unknown, f"names in the guidance or tool docs that are not tools: {unknown}")
 
     def test_instructions_get_the_assistant_to_the_briefing(self):
         # The one job of the always-in-context half: resolve the project, then pull the briefing. Both
