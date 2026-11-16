@@ -298,7 +298,7 @@ under the same suffix renumbers the clusters; the run's `at` moves on (`clusterR
 does NOT clear it — the population's other ids are still the old run's numbers — only clicking the
 warning once its clusters are checked does (`pop/update` `runChecked: true`, a user edit). A population
 with no stamp yet is stamped on its first edit; a population or run from before the stamp is never
-shown stale. Claude's `add-cluster-pops` and `delete-own` reach only images whose entry for the run lists
+shown stale. Claude's `add-cluster-pops`, `set-cluster-pops` and `delete-own` reach only images whose entry for the run lists
 the anchor image and carries the same `at` (`_same_cluster_run`) — an image re-clustered alone under the
 same name is skipped.
 
@@ -308,7 +308,11 @@ the root-level cluster population the manager's ticks write, stamped `createdBy`
 run (`partOf`, the cluster page's set-wide replay done server-side). All or nothing: every image's map
 is checked (names, `cluster_taken`, ids the run lacks, a cluster in two groups) before any is written.
 The reply carries per-group counts summed over the run and the clusters still `unassigned`.
-`delete-own` with the cluster `popType` removes one from every image of its run.
+`delete-own` with the cluster `popType` removes one from every image of its run, and `set-cluster-pops`
+(`set_cluster_pops`) changes Claude's own — each group's whole new cluster list, name or colour, the
+grouping checked as it will be after the request (so a cluster moves between two of Claude's populations
+in one call), set-wide and all or nothing, under set-own-gate's ownership rules. Re-picking the clusters
+re-stamps the run, as the stale icon's click does.
 
 **Cluster plots resolve value_name from the RUN, not the active segmentation.** The UMAP endpoint
 (`api_plots_cluster_map`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and

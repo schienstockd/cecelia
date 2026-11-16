@@ -297,6 +297,9 @@ class GatingWrites(unittest.TestCase):
                                pop_type="trackclust")
             self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/add-cluster-pops"))
             self.assertEqual(req.call_args.kwargs["body"]["popType"], "trackclust")
+            c.set_cluster_pops("copy01", "img", "T", "movement", [{"path": "/fast", "clusters": [0]}],
+                               pop_type="trackclust")
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/set-cluster-pops"))
             c.set_gate("copy01", "img", "T", "/pos", {"kind": "rectangle"})
             self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/set-own-gate"))
             self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
@@ -380,10 +383,10 @@ class GatingPicturesShared(unittest.TestCase):
         def gating(mod):
             return {t.name: (t.description, t.input_schema) for t in asyncio.run(mod.mcp.list_tools())
                     if t.name in {"gate_histogram", "gate_plot", "gate_cells_view", "gate_examples",
-                                  "gate_stats", "add_gate", "add_boolean_pop", "add_filter_pop", "add_cluster_pops", "set_gate",
+                                  "gate_stats", "add_gate", "add_boolean_pop", "add_filter_pop", "add_cluster_pops", "set_cluster_pops", "set_gate",
                                   "delete_gate"}}
         obs, auto = gating(server), gating(autonomous_server)
-        self.assertEqual(len(obs), 11)
+        self.assertEqual(len(obs), 12)
         self.assertEqual(obs, auto)
         self.assertTrue(gv.GATING_ROUTES <= ALLOWED_ROUTES)
         self.assertTrue(gv.GATING_ROUTES <= au.AUTONOMOUS_ROUTES)

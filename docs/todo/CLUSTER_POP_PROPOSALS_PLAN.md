@@ -1,6 +1,7 @@
 # Plan — Claude-proposed cluster populations
 
-Status: **write built** (2026-11-16) — `add_cluster_pops` → `POST /api/gating/pop/add-cluster-pops`. Was
+Status: **write built** (2026-11-16) — `add_cluster_pops` → `POST /api/gating/pop/add-cluster-pops`; edit built
+2026-11-17 (`set_cluster_pops` → `set-cluster-pops`). Was
 parked on a dataset (2026-10-31); the maintainer un-parked the write because grouping clusters is what
 cluster populations are for, and the write itself can be checked on our data. Whether Claude's groupings
 hold up on tens of clusters still needs one: the Call for Datasets entry `cluster-grouping-highplex`
@@ -26,7 +27,9 @@ Cluster populations already exist (`clust` / `trackclust` / `region`: stored fil
    on the server (the run's `partOf` images × co-clustered value_names), only cluster ids no other
    pop in the run holds, `dryRun`. `pop/add` stays off the MCP allow-lists (it takes any pop type).
 3. **Ownership is the gate rule.** `createdBy` / `updatedBy` as for gates: a user's edit makes it
-   theirs (built with the gate fix, `stamp_edit!`). No `set-own-cluster-pop`: change = delete + propose.
+   theirs (built with the gate fix, `stamp_edit!`). ~~No `set-own-cluster-pop`: change = delete + propose.~~
+   Overturned 2026-11-17 by the maintainer — Claude gets the same capabilities for clustering as for gating:
+   `set-cluster-pops` regroups / renames / recolours Claude's own, under set-own-gate's ownership rules.
 4. **Confirmed by the maintainer 2026-11-16, built:** names drawn from the top-|z| features until the user
    renames (guidance); a re-run on the same suffix with named pops warns (stale icon, the run stamp)
    rather than blocks; cluster-id exclusivity enforced server-side for GUI ticks too.

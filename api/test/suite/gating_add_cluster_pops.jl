@@ -193,8 +193,132 @@ end
         img = Cecelia.init_object("testpr", "KDIeEm")
         p = load_pop_map(img; value_name = "B", pop_type = "trackclust").pops["/fast"]
         @test p.filter_measure == "clusters.movement" && p.run_at === nothing
+        # set-cluster-pops on the track run: regroup + rename Claude's population, counted in tracks
+        st, body = handle_http(HTTP.Request("POST", "/api/gating/pop/set-cluster-pops", ["X-Cecelia-Client" => "claude"]),
+            Vector{UInt8}(JSON3.write(merge(base, Dict{String,Any}("run" => "movement",
+                "groups" => [Dict("path" => "/fast", "clusters" => universe[1:1], "name" => "quick")])))))
+        @test st == 200
+        r = JSON3.read(body)
+        @test String(r.populations[1].path) == "/quick" && 0 < r.populations[1].count < r.total
+        m = load_pop_map(img; value_name = "B", pop_type = "trackclust")
+        @test !haskey(m.pops, "/fast") && Int.(m.pops["/quick"].filter_values) == universe[1:1]
+        @test Int(universe[2]) in Int.(r.unassigned)
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
+# `POST /api/gating/pop/set-cluster-pops` — the observer's `set_cluster_pops`: Claude regroups, renames and
+# recolours the cluster populations IT made, on every image of the run, under set-own-gate's ownership rules.
+@testset "API: set-cluster-pops regroups Claude's own cluster populations — set-wide, all or nothing" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    tgt = joinpath(proj, "1", "TgtImg")
+    cp(joinpath(proj, "1", "KDIeEm"), tgt)
+    rm(joinpath(tgt, "gating"); recursive = true, force = true)
+    ccid = joinpath(tgt, "ccid.json")
+    write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEm\"" => "\"uid\": \"TgtImg\""))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        a, b = Cecelia.init_object("testpr", "KDIeEm"), Cecelia.init_object("testpr", "TgtImg")
+        for im in (a, b)
+            p = img_label_props_path(im, "B")
+            labs = (label_props(p) |> select_cols(["label"]) |> as_df)[!, "label"]
+            label_props(p) |> add_obs(Cecelia.DataFrames.DataFrame("label" => labs,
+                "clusters.immune" => Float64[mod(l, 5) for l in labs])) |> save!
+        end
+        record_run!(at) = for im in (a, b)
+            Cecelia._write_clust_features!(img_label_props_path(im, "B"), "immune", String["mean_intensity_0"],
+                                           ["KDIeEm", "TgtImg"]; at = at)
+        end
+        at1, at2 = "2026-11-16T10:00:00.000", "2026-11-17T09:30:00.000"
+        record_run!(at1)
+        ids = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B",
+                               "popType" => "clust", "run" => "immune")
+        claude(route, obj) = handle_http(HTTP.Request("POST", route, ["X-Cecelia-Client" => "claude"]),
+                                         Vector{UInt8}(JSON3.write(merge(ids, obj))))
+        add(groups) = claude("/api/gating/pop/add-cluster-pops", Dict{String,Any}("groups" => groups))
+        set(groups, extra = Dict{String,Any}()) =
+            claude("/api/gating/pop/set-cluster-pops", merge(Dict{String,Any}("groups" => groups), extra))
+        gui(f, obj) = _post(f, merge(Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                                      "valueName" => "B", "popType" => "clust"), obj))
+        clustmap(im) = load_pop_map(im; value_name = "B", pop_type = "clust")
+        ids_of(im, path) = sort(Int.(clustmap(im).pops[path].filter_values))
+
+        ch = JSON3.read(api_gating_channels(HTTP.Request("GET",
+            "/x?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=clust"))[2])
+        universe = sort!(Int.(collect(ch.clusterIds[:immune])))
+        c1, c2, c3, c4 = universe[1:4]
+        col = label_props(img_label_props_path(a, "B")) |> select_cols(["clusters.immune"]) |> as_df
+        n_in(cs) = count(x -> isfinite(x) && Int(round(x)) in cs, col[!, "clusters.immune"])
+        @test add([Dict("name" => "T", "clusters" => [c1, c2]), Dict("name" => "B cells", "clusters" => [c3])])[1] == 200
+
+        # moving c2 from T to B cells is ONE call: the grouping is checked as it will be after it.
+        # Dry first — the counts, nothing written
+        move = [Dict("path" => "/T", "clusters" => [c1]), Dict("path" => "/B cells", "clusters" => [c3, c2])]
+        st, body = set(move, Dict{String,Any}("dryRun" => true))
+        r = JSON3.read(body)
+        @test st == 200 && r.dryRun
+        @test r.populations[1].count == 2 * n_in((c1,)) && r.populations[2].count == 2 * n_in((c2, c3))
+        @test Int.(r.populations[2].clusters) == [c2, c3]
+        @test sort(Int.(r.unassigned)) == setdiff(universe, [c1, c2, c3])
+        @test ids_of(a, "/T") == [c1, c2] && ids_of(b, "/T") == [c1, c2]
+        st, body = set(move)
+        @test st == 200
+        for im in (a, b)
+            @test ids_of(im, "/T") == [c1] && ids_of(im, "/B cells") == [c2, c3]
+            p = clustmap(im).pops["/T"]
+            @test p.updated_by["via"] == "claude" && claude_made(p)
+        end
+
+        # rename + recolour: the path moves on every image; a rename alone leaves the run stamp
+        record_run!(at2)
+        st, body = set([Dict("path" => "/T", "name" => "T cells", "colour" => "#112233")])
+        @test st == 200 && String(JSON3.read(body).populations[1].path) == "/T cells"
+        for im in (a, b)
+            m = clustmap(im)
+            @test !haskey(m.pops, "/T") && m.pops["/T cells"].colour == "#112233" && m.pops["/T cells"].run_at == at1
+        end
+        # re-picking the clusters is checking them against the run as it is now: the stamp moves
+        @test set([Dict("path" => "/T cells", "clusters" => [c1])])[1] == 200
+        @test clustmap(a).pops["/T cells"].run_at == at2 && clustmap(b).pops["/T cells"].run_at == at2
+
+        # refusals — each before anything is written, on either image
+        before = (clustmap(a).pops["/T cells"].filter_values, clustmap(b).pops["/B cells"].filter_values)
+        @test gui(api_gating_pop_add, Dict("name" => "Mine", "filter" => Dict("measure" => "clusters.immune",
+                  "fun" => "in", "values" => [c4])))[1] == 200                 # the user's population, on a only
+        st, body = set([Dict("path" => "/T cells", "clusters" => [c1, c4])])
+        @test st == 409 && JSON3.read(body).code == "cluster_taken"           # the user's cluster
+        st, body = set([Dict("path" => "/Mine", "clusters" => [c4, c1])])
+        @test st == 403 && JSON3.read(body).code == "not_claude_made"         # the user's population
+        @test set([Dict("path" => "/T cells", "name" => "B cells")])[1] == 409          # name taken
+        @test set([Dict("path" => "/T cells", "clusters" => [9999])])[1] == 422         # not in the run
+        @test set([Dict("path" => "/T cells", "clusters" => [c1]),
+                   Dict("path" => "/T cells", "colour" => "#000000")])[1] == 422        # one path twice
+        @test set([Dict("path" => "/T cells", "clusters" => [c2]),
+                   Dict("path" => "/B cells", "clusters" => [c2])])[1] == 422           # one cluster, two groups
+        @test set([Dict("path" => "/T cells")])[1] == 422                               # changes nothing
+        # a population renamed but not regrouped keeps its clusters — another may not take one
+        st, body = set([Dict("path" => "/T cells", "name" => "T2"), Dict("path" => "/B cells", "clusters" => [c1, c2, c3])])
+        @test st == 409 && JSON3.read(body).code == "cluster_taken"
+        @test set([Dict("path" => "/nope", "clusters" => [c1])])[1] == 404
+        @test set([Dict("path" => "/T cells", "clusters" => [c1])], Dict{String,Any}("run" => "nope"))[1] == 404
+        @test (clustmap(a).pops["/T cells"].filter_values, clustmap(b).pops["/B cells"].filter_values) == before
+
+        # the user's edit makes Claude's population theirs
+        @test gui(api_gating_pop_update, Dict("path" => "/B cells", "colour" => "#abcdef"))[1] == 200
+        st, body = set([Dict("path" => "/B cells", "clusters" => [c3])])
+        @test st == 403 && JSON3.read(body).code == "not_claude_made"
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
     end
   end
 end
