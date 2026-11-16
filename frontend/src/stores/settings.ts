@@ -608,7 +608,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // per-hop distance), 'solid' (one palette colour per source vn, so multiple track sources are
     // visually separable), 'pop' (the parent gated population's own swatch — ignores the Solid
     // legend override). Per-set: mirrors `colourBy` above.
-    trackColorMode?: 'track' | 'speed' | 'solid' | 'pop'
+    trackColorMode?: 'track' | 'speed' | 'solid' | 'pop' | 'cell'
     // Per-source hex overrides for the SOLID track colour mode: {[vn]: '#rrggbb'}. Absent = the
     // default from the palette. "can we make that the source color can be
     // changed. same color picker as for the channels just with the cecelia palette".
@@ -678,9 +678,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const setPointSize = (setUid: string, v: number) => _patchSet(setUid, { pointSize: v })
   const getPointBorder = (setUid: string): number => _setPrefs.value[setUid]?.pointBorder ?? 3   // 3 px reads best on a busy MIP; 0 disables the outline
   const setPointBorder = (setUid: string, v: number) => _patchSet(setUid, { pointBorder: v })
-  const getTrackColorMode = (setUid: string): 'track' | 'speed' | 'solid' | 'pop' =>
+  const getTrackColorMode = (setUid: string): 'track' | 'speed' | 'solid' | 'pop' | 'cell' =>
     _setPrefs.value[setUid]?.trackColorMode ?? 'track'                                        // default: cycle palette by track id
-  const setTrackColorMode = (setUid: string, mode: 'track' | 'speed' | 'solid' | 'pop') =>
+  const setTrackColorMode = (setUid: string, mode: 'track' | 'speed' | 'solid' | 'pop' | 'cell') =>
     _patchSet(setUid, { trackColorMode: mode })
   const getTrackSourceColours = (setUid: string): Record<string, string> =>
     _setPrefs.value[setUid]?.trackSourceColour ?? {}

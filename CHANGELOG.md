@@ -64,6 +64,7 @@ stack. Per-tag notes are also on the
 
 ### Added
 
+- **Track ribbons by HMM state:** Tracks → *Colour by* → *colour by* colours each step by the cell's Colour by.
 - **Register staining cycles** (*Edit → Register images*), now on: slide scans register on their
   pyramid into one image with one DAPI; QC flags a misaligned cycle or lost tissue.
 - **AF correction skips channels the scanner already AF-subtracted** (PhenoCycler), and says so.

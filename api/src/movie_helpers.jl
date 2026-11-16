@@ -493,7 +493,8 @@ end
 # drawn source ("tracks" for the overlays' own segmentation). A segmentation drawing track clusters is
 # left out — its plain tracks stand down (`viewer_overlay_closure`). A swatch only when one colour IS
 # what the tails are (`_colour_hops`): "solid" is the source's colour (else the palette's by position),
-# "pop" the palette's by position (the unnamed batch source: its grey); by track or speed, none.
+# "pop" the palette's by position (the unnamed batch source: its grey) — and "cell" too, where a
+# per-segmentation source has no colour-by and draws its "pop" colour; by track or speed, none.
 function _track_source_items(config, img = nothing)::Vector{Dict{String,Any}}
     ov = _overlays_raw_from_config(config, false)
     ov === nothing && return Dict{String,Any}[]
@@ -512,7 +513,7 @@ function _track_source_items(config, img = nothing)::Vector{Dict{String,Any}}
         i += 1
         own = rgb_to_hex(CECELIA_TRACK_PALETTE[mod(i - 1, length(CECELIA_TRACK_PALETTE)) + 1])
         swatch = mode == "solid" ? (isempty(vn) ? own : !isempty(col) ? col : get(colours, vn, own)) :
-                 mode == "pop"   ? (isempty(vn) ? col : own) : nothing
+                 mode in ("pop", "cell") ? (isempty(vn) ? col : own) : nothing
         push!(items, Dict{String,Any}("label" => isempty(vn) ? "tracks" : "$(vn) tracks", "colour" => swatch))
     end
     items
@@ -539,10 +540,12 @@ function _title_card_content(img, config)
     # Populations (incl. track pops) — the shown pops through the canonical legend helper → {name, colour}
     # rows. ONE section, matching the strip / single-record card (overlay_legend_content dedups by name).
     # A ribbon-only row's swatch is the pop's colour only when the tails ARE that colour ("pop" mode,
-    # `_build_overlay_state`); by track id, speed or one solid colour, no pop swatch is true.
+    # `_build_overlay_state`) — or "cell" with no Colour by, which draws the pop colour; by track id,
+    # speed, one solid colour or a colour-by, no pop swatch is true.
     plist = _config_overlay_pops(img, config)
     ov    = _overlays_raw_from_config(config, false)
-    pop_coloured = ov !== nothing && ov["trackColorMode"] == "pop"
+    pop_coloured = ov !== nothing && (ov["trackColorMode"] == "pop" ||
+                                      (ov["trackColorMode"] == "cell" && isempty(String(get(config, :colourBy, "")))))
     items = Dict{String,Any}[]
     seen  = Set{String}()
     for ribbon in (false, true)

@@ -272,6 +272,8 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: noSwatch },
       { token: 'track-mode:pop', means: "The parent gated population's own colour — ribbons match the pop's swatch",
         swatch: noSwatch },
+      { token: 'track-mode:cell', means: "Each step in its cell's Colour by colour — HMM states along a track",
+        swatch: noSwatch },
     ],
   },
 ]

@@ -48,7 +48,7 @@ const PREVIEW_HEAT = ['#1d4ed8', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444']
  *  — its pop, or its source in the whole-seg branch). */
 function tailColour(mode: string | undefined, trackId: number, solid: string, own: string): string {
   if (mode === 'solid') return solid
-  if (mode === 'pop') return own
+  if (mode === 'pop' || mode === 'cell') return own
   if (mode === 'speed') return PREVIEW_HEAT[trackId % PREVIEW_HEAT.length]!
   return PREVIEW_PALETTE[trackId % PREVIEW_PALETTE.length]!
 }
@@ -132,7 +132,7 @@ export interface OverlayPreviewConfig {
    *  (schematic — the scene is fixed at two pseudo-segs regardless of how many real ones exist).
    *  Absent → single-source grey (`ALL_TRACKS_GREY`); empty → every source hidden, no tails. */
   trackSources?: Array<{ valueName: string; colour: string }>
-  /** How tails are coloured — `'track'` (default) | `'speed'` | `'solid'` | `'pop'`. */
+  /** How tails are coloured — `'track'` (default) | `'speed'` | `'solid'` | `'pop'` | `'cell'`. */
   trackColourMode?: string
 }
 

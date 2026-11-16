@@ -625,7 +625,7 @@ end
 #   - `pointSizePx`   : dot radius — in the DRAWN frame, or in image px when `overlaySizeUnit` = "image"
 #   - `segmentWidthPx`: ribbon width (same unit)
 #   - `popPaths`      : Vector{String} of pop paths to keep (nothing = all visible)
-#   - `trackColorMode`: "track" | "speed" | "solid"
+#   - `trackColorMode`: "track" | "speed" | "solid" | "pop" | "cell" (`palettes.json`)
 # The same keys and the same gate as the 2D rail's `_resolve_movie_overlays_mask`. Older animation
 # configs said `showTracks` / `showGatedTracks` / `popsFilter`; those still read as before.
 _ov_str(cfg, k, dflt) = begin
