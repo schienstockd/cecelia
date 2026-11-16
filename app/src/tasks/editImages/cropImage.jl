@@ -119,7 +119,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     ok || return nothing
 
     # register the written zarr + carry the source channel names onto the NEW image's ccid.json
-    ch_names = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
+    ch_names = inherited_channel_names(raw)
     commit_state!(new_img) do raw2
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
         isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)

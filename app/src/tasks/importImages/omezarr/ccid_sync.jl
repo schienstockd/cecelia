@@ -46,8 +46,8 @@ Deliberate renaming stays the API's job (`set_channel_names!`).
 
 Returns `:set` (fresh names written) or `:kept` (existing names preserved).
 """
-function _merge_channel_names!(raw::Dict{String,Any}, fresh)::Symbol
-    fresh_names = collect(String, fresh)
+function _merge_channel_names!(raw::Dict{String,Any}, fresh; meta = nothing)::Symbol
+    fresh_names = unique_channel_names(fresh; fallback = acquisition_channel_names(meta))  # never blank/repeated
     stored      = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
     if stored isa AbstractVector && !isempty(stored) && length(stored) == length(fresh_names)
         return :kept
@@ -90,7 +90,7 @@ function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
             haskey(zarr_meta, "acquisition") && delete!(m, "acquisitionMissing")
             for (k, v) in zarr_meta
                 if k == "channel_names"
-                    overwrite && (ch_action = _merge_channel_names!(raw, v))
+                    overwrite && (ch_action = _merge_channel_names!(raw, v; meta = merge(m, zarr_meta)))
                 elseif overwrite || !haskey(m, k) || k in _STATUS_META_KEYS
                     m[k] = v
                 end

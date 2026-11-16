@@ -309,9 +309,9 @@ function read_ome_metadata(zarr_path::String)::Dict{String,Any}
         omero    = get(zattrs, :omero, nothing)
         channels = isnothing(omero) ? [] : get(omero, :channels, [])
         if !isempty(channels)
-            result["channel_names"] = [
-                string(get(ch, :label, "Ch$(i-1)")) for (i, ch) in enumerate(channels)
-            ]
+            # raw: a label can be present but blank (a .lif with unnamed channels). The import names
+            # those from the acquisition settings (`_merge_channel_names!` → `unique_channel_names`).
+            result["channel_names"] = [string(get(ch, :label, "")) for ch in channels]
         end
 
         # physical pixel sizes from the level-0 `scale` coordinate transform (OME-NGFF).

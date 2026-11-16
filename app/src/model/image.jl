@@ -495,8 +495,69 @@ function set_channel_names!(img::CciaImage, names::Vector{String};
             error("Expected $size_c channel names (SizeC), got $(length(names))")
         end
     end
-    versioned_set!(img.im_channel_names, names, value_name)
+    versioned_set!(img.im_channel_names,
+                   unique_channel_names(names; fallback = acquisition_channel_names(img.meta)), value_name)
     img
+end
+
+"""
+    unique_channel_names(names; fallback = String[]) -> Vector{String}
+
+Every channel a name, and no two the same. Channels are looked up BY NAME everywhere — the viewer's
+per-channel contrast/colour in a view state, gating columns, task params — so a blank or repeated
+name makes two channels one.
+
+A blank takes the image's own name for that channel when it has one (`fallback`, by channel —
+`acquisition_channel_names`), else `CH<n>`, 1-based: bioformats2raw's own label, so an unnamed
+channel lines up with the same channel of a store labelled that way rather than with the next one
+(the name resolver compares case-insensitively — a 0-based `Ch1` would be another image's `CH1`,
+a different channel). A repeat, compared case-insensitively for the same reason, gets `_2`, `_3`, …
+Real names are placed first and the first holder of each keeps it, so a filled-in blank never takes a
+name a later channel already has — a lookup that resolved before still resolves to the same channel.
+"""
+function unique_channel_names(names::AbstractVector;
+                              fallback::AbstractVector = String[])::Vector{String}
+    clean(x) = String(strip(string(something(x, ""))))
+    given = [clean(n) for n in names]
+    out = fill("", length(given)); taken = Set{String}()
+    claim!(i, base) = begin
+        name = base; k = 2
+        while lowercase(name) in taken
+            name = "$(base)_$k"; k += 1
+        end
+        out[i] = name; push!(taken, lowercase(name))
+    end
+    for (i, n) in enumerate(given)          # real names first: their holders keep them
+        isempty(n) || claim!(i, n)
+    end
+    for (i, n) in enumerate(given)          # then the blanks, around them
+        isempty(n) || continue
+        fb = i <= length(fallback) ? clean(fallback[i]) : ""
+        claim!(i, isempty(fb) ? "CH$i" : fb)
+    end
+    out
+end
+
+"""
+    acquisition_channel_names(meta) -> Vector{String}
+
+The channel names the source file's acquisition settings give (`meta["acquisition"]["channels"]`,
+placed by their 1-based `order`), `""` where it names none. What `unique_channel_names` falls back
+to for a channel the store left unlabelled — a .lif's Blue/Green/Red when its OME labels are blank.
+"""
+function acquisition_channel_names(meta)::Vector{String}
+    _g(d, k) = d isa AbstractDict ? get(d, k, get(d, Symbol(k), nothing)) : nothing
+    chs = _g(_g(meta, "acquisition"), "channels")
+    chs isa AbstractVector || return String[]
+    out = String[]
+    for c in chs
+        o = _g(c, "order"); nm = _g(c, "name")
+        (o isa Real && o >= 1 && nm isa AbstractString) || continue
+        i = Int(o)
+        length(out) < i && append!(out, fill("", i - length(out)))
+        out[i] = String(nm)
+    end
+    out
 end
 
 """
@@ -506,17 +567,19 @@ often stored only under a base version (e.g. `default`) while labelProps use oth
 """
 function channel_names(img::CciaImage; value_name=nothing)::Union{Vector{String},Nothing}
     isempty(img.im_channel_names) && return nothing
-    _versioned_channel_names(img.im_channel_names, value_name)
+    _versioned_channel_names(img.im_channel_names, value_name; meta = img.meta)
 end
 
 # The one lookup behind both `channel_names` (a loaded image) and `ccid_channel_names` (a raw
 # ccid.json dict): the version's own names, else the active version's (`nothing` → active). Two
 # copies of this rule once disagreed — the raw one had no fallback — so a handler could report
 # "(none registered)" for a channel the picker was listing.
-function _versioned_channel_names(d::AbstractDict, value_name)::Union{Vector{String},Nothing}
+# Names stored before `unique_channel_names` was the rule (blank / repeated) are repaired here, on read,
+# from the image's `meta` — so every reader sees what an import today would have written.
+function _versioned_channel_names(d::AbstractDict, value_name; meta = nothing)::Union{Vector{String},Nothing}
     v = versioned_get(d, value_name)
     isnothing(v) && !isnothing(value_name) && (v = versioned_get(d, nothing))
-    v isa AbstractVector ? collect(String, v) : nothing
+    v isa AbstractVector ? unique_channel_names(v; fallback = acquisition_channel_names(meta)) : nothing
 end
 
 # ── Channel name → 0-based index ──────────────────────────────────────────────
@@ -600,9 +663,24 @@ renamed channels). Empty, not `nothing`, when none are registered.
 function ccid_channel_names(raw::AbstractDict,
                             value_name = VERSIONED_DEFAULT_VAL)::Vector{String}
     d = get(raw, "imChannelNames", get(raw, :imChannelNames, nothing))   # JSON3 may give Symbol keys
-    d isa AbstractVector && return collect(String, d)                    # legacy: unversioned list
+    meta = get(raw, "meta", get(raw, :meta, nothing))
+    d isa AbstractVector &&                                               # legacy: unversioned list
+        return unique_channel_names(d; fallback = acquisition_channel_names(meta))
     d isa AbstractDict || return String[]
-    something(_versioned_channel_names(d, value_name), String[])
+    something(_versioned_channel_names(d, value_name; meta = meta), String[])
+end
+
+"""
+    inherited_channel_names(raw) -> Union{Vector{String},Nothing}
+
+The names an image derived from `raw` (a projection, resample, crop, bin) is given: the source's names
+as READ (`ccid_channel_names`, repaired from its acquisition settings), not as stored — a derived image
+need not carry those settings over, so stored blanks would read as `CH<n>` on it while its source reads
+them as `Blue`, and a pick on one would not resolve on the other. `nothing` when the source has none.
+"""
+function inherited_channel_names(raw::AbstractDict)::Union{Vector{String},Nothing}
+    n = ccid_channel_names(raw)
+    isempty(n) ? nothing : n
 end
 
 # ── State file — the object owns its own path ─────────────────────────────────

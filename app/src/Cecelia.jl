@@ -100,8 +100,8 @@ export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
 export attr_value_counts, image_attr_groups
 export capture_context!, record_stats_event!, CONTEXT_AUTHOR
-export set_channel_names!, channel_names
-export channel_index, channel_indices, ccid_channel_names
+export set_channel_names!, channel_names, unique_channel_names, acquisition_channel_names
+export channel_index, channel_indices, ccid_channel_names, inherited_channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
 export with_transaction, commit_state!

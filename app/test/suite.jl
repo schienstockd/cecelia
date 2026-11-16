@@ -211,6 +211,8 @@ include(joinpath(@__DIR__, "suite", "channel_names_dotted.jl"))   # a dotted cha
 include(joinpath(@__DIR__, "suite", "structure_qc.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_stats_floor.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_stats_ties.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_channel_fallback_case.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_channel_fallback_steal.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_stats_floor_pair.jl"))
 include(joinpath(@__DIR__, "suite", "result_review_stats_smallest_pairs.jl"))
 include(joinpath(@__DIR__, "suite", "stats_letters_and_ladder.jl"))
