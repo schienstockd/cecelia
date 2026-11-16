@@ -1,5 +1,6 @@
-// The app's colour scheme — which value set the `--cc-*` colour tokens take. Dark is the default and
-// needs no attribute; any other scheme is `data-theme="<id>"` on <html>, matched by a
+// The app's colour scheme — which value set the `--cc-*` colour tokens take. Light is the default (a
+// profile that never picked one gets it). style.css is dark-first, so dark is the attribute's absence;
+// any other scheme is `data-theme="<id>"` on <html>, matched by a
 // `:root[data-theme="<id>"]` block in style.css that overrides the scheme-following tokens.
 // Chosen from the avatar menu (one-click switch) or Preferences → Interface, kept per profile (stores/settings.ts), applied before the first
 // paint by main.ts so a light-scheme user never sees a dark flash. docs/UI.md → *Colour schemes*.
@@ -14,9 +15,12 @@ export const COLOUR_SCHEMES: ReadonlyArray<{ value: ColourScheme, label: string 
 /** The localStorage key — read by main.ts before the store exists, written by the settings store. */
 export const COLOUR_SCHEME_KEY = 'cc.colourScheme'
 
-/** A stored value as a scheme; anything unknown (absent, a removed scheme) is dark. */
+/** The scheme a profile that never picked one gets. */
+export const DEFAULT_COLOUR_SCHEME: ColourScheme = 'light'
+
+/** A stored value as a scheme; anything unknown (absent, a removed scheme) is the default. */
 export function parseColourScheme(v: unknown): ColourScheme {
-  return COLOUR_SCHEMES.some(s => s.value === v) ? v as ColourScheme : 'dark'
+  return COLOUR_SCHEMES.some(s => s.value === v) ? v as ColourScheme : DEFAULT_COLOUR_SCHEME
 }
 
 /** Point the tokens at `scheme`. Dark is the attribute's absence, so a missing attribute is never wrong. */
