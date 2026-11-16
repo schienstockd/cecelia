@@ -543,7 +543,8 @@ component changes. That holds because **component CSS contains no colour literal
   green, blue, cyan — a light scheme darkens each). `--cc-tint-*` are `color-mix()`es of
   `--cc-danger` / `--cc-warn` / `--cc-sev-ok` / `--cc-dot-info`, so they follow for free.
 - **Fixed** — a scheme leaves them alone, because what is underneath is not the page: `--cc-hud-*`
-  (chips, halos and marks over microscopy pixels and plot canvases, which are dark in any scheme),
+  (chips, halos and marks over microscopy pixels and plot canvases, which are dark in any scheme —
+  severity on a chip is `--cc-hud-fail` / `--cc-hud-warn`, never `--cc-sev-*`, which darken in light),
   `--cc-media-bg`, `--cc-on-solid` / `--cc-on-bright` (ink on a filled control — the fill decides),
   `--cc-paper*` (an exported or printed figure is white), `--cc-swatch-edge`, `--cc-claude-mark`.
 

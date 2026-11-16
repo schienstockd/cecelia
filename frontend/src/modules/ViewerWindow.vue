@@ -6854,7 +6854,7 @@ onUnmounted(() => {
 }
 /* the error and warning chips carry a button, so they take clicks */
 .vw-status-chip-error { pointer-events: auto; }
-.vw-status-chip-warn { color: var(--cc-sev-warn); pointer-events: auto; }
+.vw-status-chip-warn { color: var(--cc-hud-warn); pointer-events: auto; }
 .vw-status-chip-btn { margin-left: 0.35rem; color: var(--cc-hud-text); }
 /* The one-at-a-time stepper borrows the chip's look, top-centre. The light border keeps it visible on a
    black frame, where the chip's dark fill alone disappears. */

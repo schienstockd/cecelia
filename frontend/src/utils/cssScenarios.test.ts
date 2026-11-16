@@ -410,6 +410,24 @@ describe('colour literals', () => {
   })
 })
 
+describe('HUD chips', () => {
+  // A HUD chip is fixed dark (--cc-hud-bg) in every scheme, so its ink must be fixed too: --cc-sev-*
+  // darken in light mode (#941328) and the viewer's error chip went unreadable on black. Severity on a
+  // chip reads --cc-hud-fail / --cc-hud-warn.
+  it('never colour with a scheme-following severity token', () => {
+    const hits: string[] = []
+    for (const [path, text] of Object.entries(RAW)) {
+      const css = path.endsWith('.vue')
+        ? [...text.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n')
+        : path.endsWith('.css') ? text : ''
+      for (const [, sel, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        if (/hud-chip|status-chip/.test(sel) && /--cc-sev-/.test(body)) hits.push(`${path}: ${sel.trim()}`)
+      }
+    }
+    expect(hits).toEqual([])
+  })
+})
+
 describe('colour literals in script code', () => {
   // Canvas and SVG drawn from script can't read CSS, so the guard above can't see them. Chrome there
   // reads the scheme (`tokenColour`, an inline `var(--cc-*)`, `plotTheme`); a colour that is rightly

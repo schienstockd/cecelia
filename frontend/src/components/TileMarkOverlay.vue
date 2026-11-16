@@ -6,7 +6,7 @@
   a pointer must show without the user first finding the grid switch.
 
   Viewport coords are the grid's contract, not image coords: a pan or zoom after the mark moves what
-  the tile covers, exactly as it re-labels the grid. Amber (`--cc-warn`) like Claude's marks on a
+  the tile covers, exactly as it re-labels the grid. Amber (`--cc-hud-warn`) like Claude's marks on a
   capture (`CaptureViewSurface.vue`). TTL-only; the store prunes it (`viewer.ts::pushTileMark`).
 -->
 <script setup lang="ts">
@@ -51,14 +51,14 @@ const boxes = computed(() => props.marks.flatMap(m => {
   width: 100%; height: 100%;
 }
 .cc-tile-mark {
-  fill: color-mix(in srgb, var(--cc-warn) 8%, transparent);
-  stroke: var(--cc-warn);
+  fill: color-mix(in srgb, var(--cc-hud-warn) 8%, transparent);
+  stroke: var(--cc-hud-warn);
   stroke-width: 2;
 }
 .cc-tile-mark-label {
   position: absolute;
   margin: 2px 0 0 4px;
-  color: var(--cc-warn);
+  color: var(--cc-hud-warn);
   font-weight: 600;
   /* halo as on the grid labels, so the text reads over any frame */
   text-shadow:

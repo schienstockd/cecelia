@@ -331,10 +331,10 @@ function dismissAllClaudeMarks() {
 
 .cvs-shape { fill: none; stroke-width: 2px; vector-effect: non-scaling-stroke; }
 /* User marks: stroke set inline per mark (palette colour). Legacy CSS defaults stay for Claude
-   marks (fixed amber via `--cc-warn`); user's colourless poly tint retired 2026-09 with the
+   marks (fixed amber via `--cc-hud-warn`); user's colourless poly tint retired 2026-09 with the
    palette so the outline colour reads unambiguously. */
-.cvs-claude-shape { stroke: var(--cc-warn); }
-.cvs-poly-claude { fill: color-mix(in srgb, var(--cc-warn) 8%, transparent); }
+.cvs-claude-shape { stroke: var(--cc-hud-warn); }
+.cvs-poly-claude { fill: color-mix(in srgb, var(--cc-hud-warn) 8%, transparent); }
 
 /* Chip: same style family as `.vw-status-chip` (the existing viewer toast) so it reads as
  * "viewer chrome", not modal chrome. */

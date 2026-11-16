@@ -137,6 +137,8 @@
   --cc-hud-halo:      rgba(0, 0, 0, 0.85);     /* the outline/text-shadow that keeps white text legible on pixels */
   --cc-hud-text:      #fff;
   --cc-hud-text-dim:  #938d86;
+  --cc-hud-fail:      #f64a3c;                 /* severity on a HUD chip: the dark-scheme reds/ambers, */
+  --cc-hud-warn:      #ef9d14;                 /* since --cc-sev-* darken in light and vanish on the black chip */
   --cc-hud-wash:      rgba(255, 255, 255, 0.08);   /* a drafted region's fill over an image */
   --cc-swatch-edge:   rgba(128, 128, 128, 0.4);    /* hairline round a colour swatch — mid-grey, reads on any ground */
   /* on a solid fill: the fill picks the ink, not the scheme */
@@ -1171,7 +1173,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cu
   font-size: var(--cc-fs-xs); pointer-events: auto;
   display: inline-flex; align-items: center; gap: 0.35rem;
 }
-.cc-hud-chip-error { color: var(--cc-sev-fail); }
+.cc-hud-chip-error { color: var(--cc-hud-fail); }
 .cc-hud-chip > .pi { font-size: 1em; }
 .cc-hud-chip-dismiss { margin-left: 0.15rem; color: var(--cc-hud-text); opacity: 0.8; }
 .cc-btn.cc-hud-chip-dismiss:hover:not(:disabled) { opacity: 1; color: var(--cc-hud-text); }
