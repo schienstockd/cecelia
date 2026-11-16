@@ -77,7 +77,7 @@ function _missing_column_hint(img, vn, wanted; labels_version = nothing)::String
     notes = String[]
     for c in missing
         if c in track
-            push!(notes, "`$c` is a per-track column (the track table); this plot reads the cell table")
+            push!(notes, "`$c` is a per-track column (the track table); gating reads the cell table")
         else
             near = filter(k -> occursin(lowercase(c), lowercase(k)), cell)
             push!(notes, "`$c` is not a column" * (isempty(near) ? "" : " (near: $(join(first(near, 5), ", ")))"))

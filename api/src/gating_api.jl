@@ -1394,6 +1394,72 @@ function api_gating_pop_add_boolean(body_bytes::Vector{UInt8})
     end
 end
 
+# ── POST /api/gating/pop/add-filter — ONE proposed filter population (observer `add_filter_pop`) ──
+# { projectUid, imageUid, valueName, parent?, name, conditions:[{measure, fun, values}, …], colour?, dryRun? }
+# → add-gate's reply with `gate: null` and the stored `filter` (`filter_spec`).
+#
+# add-gate's twin for the second membership kind (POPULATION.md → User-defined filter populations): "area
+# > 50 and track speed > 5" or "cluster 3 or 7 of the movement run" is AND-ed column rules, not a box drawn
+# around the cut. Same validation order and statuses as add-gate — 404 parent / segmentation, 409 a taken
+# path, 422 a bad name, operator, value or a column the cells don't have — all before anything is written,
+# and the same `createdBy` stamp, so set-own-gate (422: not a gate) and delete-own treat it as Claude's.
+function api_gating_pop_add_filter(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    name, parent, colour, path, err = _claude_new_pop(body); err === nothing || return err
+    conds, cerr = _proposed_conditions(get(body, "conditions", nothing), img, vn)
+    cerr === nothing || return _gerr(422, cerr)
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        refusal = _claude_place_refusal(m, img, vn, parent, path, name); refusal === nothing || return refusal
+        add_pop!(m, name; parent = parent, colour = colour, show = true, created_by = author_stamp(),
+                 filter_conditions = conds)
+        _claude_gate_reply(m, img, body, vn, path)
+    end
+end
+
+# The AND-ed conditions of a proposed filter pop → (Vector{FilterCondition}, nothing) or (nothing, the 422
+# text). `in` takes a non-empty list; every other operator ONE value, a number for gt/gte/lt/lte. A string
+# that parses as a number becomes that number, as the manager's form does (`parseFilterValues`): "3" against
+# a numeric cluster column would otherwise never be equal, so `neq` would keep every cell. Each
+# column must be one membership reads (`pop_membership_cols`): a misspelt one would otherwise store and
+# then evaluate to an empty population with only a server-log warning.
+function _proposed_conditions(spec, img, vn)
+    (spec isa AbstractVector && !isempty(spec)) ||
+        return (nothing, "conditions required: [{measure, fun, values}, …] — AND-ed, at least one")
+    scalar(v) = (v isa Real && !(v isa Bool) && isfinite(v)) || (v isa AbstractString && !isempty(v))
+    num(v) = v isa AbstractString ? something(tryparse(Float64, strip(v)), String(v)) : v
+    funs = join(sort!(collect(values(Cecelia._FILTER_FUN_STR))), ", ")
+    out = FilterCondition[]
+    for (i, c) in enumerate(spec)
+        c isa AbstractDict || return (nothing, "condition $i must be {measure, fun, values}")
+        g(k) = get(c, k, nothing)
+        ms = g("measure")
+        (ms isa AbstractString && !isempty(ms)) || return (nothing, "condition $i: measure required")
+        fun = try
+            Cecelia.parse_filter_fun(string(something(g("fun"), "")))
+        catch
+            return (nothing, "condition $i: fun must be one of $funs")
+        end
+        v = g("values")
+        if fun === FILTER_IN
+            (v isa AbstractVector && !isempty(v) && all(scalar, v)) ||
+                return (nothing, "condition $i: \"in\" takes a non-empty list of values, e.g. [3, 7]")
+            v = Any[num(x) for x in v]
+        else
+            v isa AbstractVector && length(v) == 1 && (v = v[1])
+            scalar(v) || return (nothing, "condition $i: \"$fun\" takes one value, not a list")
+            v = num(v)
+            fun in (FILTER_EQ, FILTER_NEQ) || v isa Real ||
+                return (nothing, "condition $i: \"$fun\" compares with a number")
+        end
+        push!(out, FilterCondition(String(ms), fun, v))
+    end
+    wanted = unique(String[c.measure for c in out])
+    missing_cols = setdiff(wanted, pop_membership_cols(img, vn, "flow", wanted))
+    isempty(missing_cols) || return (nothing, _missing_column_hint(img, vn, Tuple(missing_cols)))
+    (out, nothing)
+end
+
 # ── Claude's own gates — the MCP servers' whole write surface into gating ─────────────────────────
 # Both servers (the observer and the autonomous one) draw through /pop/add-gate (above) and change what
 # they drew through these two; neither is allowed /pop/add, /pop/set-gate or /pop/delete, which act on
@@ -1490,6 +1556,7 @@ function _claude_gate_reply(m::PopulationMap, img::CciaImage, body, vn, path::Ab
                         count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
                         pctParent = round(s.pct_parent; digits = 2),
                         gate = p.gate === nothing ? nothing : gate_spec(p.gate), boolean = boolean_spec(p),
+                        filter = filter_spec(p),
                         colour = p.colour,
                         createdBy = p.created_by, updatedBy = p.updated_by))
 end
