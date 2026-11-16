@@ -41,6 +41,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
 
             "list_plots",                   # bidir PR #8 — live plot registry discovery
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
+            "get_viewer_screenshot", "set_viewer_view",   # look at / adjust the open viewer
             "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
             "add_gate",                     # ONE proposed gate, additive only (POST /api/gating/pop/add-gate)
             "add_boolean_pop",              # ONE proposed combination of existing pops (POST .../add-boolean)
@@ -1102,6 +1103,7 @@ class NoGuiSurfaceTest(unittest.TestCase):
 
     GUI_ONLY = {"mark_tracks", "mark_cells", "select_on_plot", "point_at_ui", "mark_freeform", "list_plots",
                 "mark_plot", "open_analysis_board_plot", "seek_viewer", "mark_tile", "get_landscape",
+                "get_viewer_screenshot", "set_viewer_view",
                 "get_recent_captures", "get_capture", "get_capture_landscape_tiles", "register_push_target",
                 "poll_observations", "set_observer_active", "get_observer_stats"}
 

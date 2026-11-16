@@ -2234,6 +2234,49 @@ def seek_viewer(project_uid: str, image_uid: str,
 
 
 @_gui_tool
+def get_viewer_screenshot(project_uid: str, image_uid: str, max_side: int = 1600) -> list:
+    """LOOK at the user's open viewer: the picture its Share ▾ → Save image makes (the image with
+    its overlays, scale bar and timestamp; no controls), plus the `view` it shows as JSON.
+
+    `view` = `{camera: {center, zoom, angles, perspective}, dims: {ndisplay: 2|3, current_step:
+    [t, z]}, layers: {<channel>: {visible, contrast_limits: [lo, hi], colormap}}, canvas}` — the
+    same shape `set_viewer_view` takes, so read it, change a field, send it back.
+
+    `max_side` caps the picture's long side in px (never upscales). Waits for the frame to finish
+    loading. Nothing changes. `{reason: "no_viewer"}` ⇒ no viewer of that image is open: ask the
+    user to open it. `{error: "no frame drawn …"}` ⇒ the viewer shows nothing yet (3D still loading,
+    or stuck): tell the user, don't retry in a loop. Use it to check what a change looks like, not to
+    guess from numbers.
+    """
+    r = _client.get_viewer_screenshot(project_uid, image_uid, max_side)
+    url = r.get("png") or ""
+    if not url:
+        return [{k: v for k, v in r.items() if k != "png"}]
+    meta = {k: v for k, v in r.items() if k != "png"}
+    return [Image(data=base64.b64decode(url.split(",", 1)[1]), format="png"), meta]
+
+
+@_gui_tool
+def set_viewer_view(project_uid: str, image_uid: str, view: dict) -> dict:
+    """CHANGE the user's open viewer live: contrast, which channels show, 2D/3D, timepoint, camera.
+
+    `view` is PARTIAL — only the fields you name change, the rest stay as the user has them:
+      • `{"layers": {"GFP": {"contrast_limits": [120, 2400]}}}` — one channel's contrast (raw values)
+      • `{"layers": {"CTV": {"visible": false}}}` — hide a channel
+      • `{"dims": {"ndisplay": 3}}` — 3D; `{"dims": {"current_step": [40]}}` — timepoint 40, same z
+      • `{"camera": {"zoom": 2, "angles": [30, 0, 0]}}` — zoom / tilt (3D angles in degrees)
+    Channel names and current values come from `get_viewer_screenshot`'s `view`; take one first.
+
+    Applied through the same restore a keyframe uses, and SAVED as that image's viewer settings
+    like a change the user makes by hand — so change only what they asked for. Overlays (outlines,
+    tracks, populations) are not part of a view. Returns `{view}` as it landed (`unknownLayers`
+    lists names that matched no channel); `{reason: "no_viewer"}` ⇒ none open. Then
+    `get_viewer_screenshot` to see the result.
+    """
+    return _client.set_viewer_view(project_uid, image_uid, view)
+
+
+@_gui_tool
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when

@@ -52,44 +52,8 @@ _landscape_alive(l::Landscape, now::Float64 = _now_epoch()) = (now - l.createdAt
 
 _landscape_key(l::Landscape) = (l.projectUid, l.imageUid, l.valueName, l.t, l.z)
 
-# On-demand requests in flight: requestId → the viewer's answer (`nothing` until it lands). Only ids
-# registered here are accepted, so a late answer after the wait gave up is dropped, not leaked.
-const _LANDSCAPE_REQUESTS = Dict{String,Union{Nothing,Landscape}}()
-const _LANDSCAPE_REQ_SEQ = Threads.Atomic{Int}(0)
-# Long enough for a 4K canvas readback + the backend compute on a heavy image (both measured in
-# the 0.2–2 s range); short enough that "no viewer open" answers inside one tool call.
-const _LANDSCAPE_REQUEST_TIMEOUT_S = 8.0
-
-function _open_landscape_request!()::String
-    rid = string("lr-", time_ns(), "-", Threads.atomic_add!(_LANDSCAPE_REQ_SEQ, 1))
-    lock(_LANDSCAPE_LOCK) do; _LANDSCAPE_REQUESTS[rid] = nothing; end
-    rid
-end
-
-# The viewer's answer to `rid`. False when nobody is waiting for it (timed out, or a stray id).
-function _deliver_landscape_request!(rid::AbstractString, l::Landscape)::Bool
-    lock(_LANDSCAPE_LOCK) do
-        haskey(_LANDSCAPE_REQUESTS, rid) || return false
-        _LANDSCAPE_REQUESTS[rid] === nothing || return false     # first viewer to answer wins
-        _LANDSCAPE_REQUESTS[rid] = l
-        true
-    end
-end
-
-# Wait for `rid`'s answer, then forget the request either way.
-function _await_landscape_request(rid::AbstractString, timeout_s::Real; poll_s::Real = 0.05)
-    deadline = time() + timeout_s
-    try
-        while true
-            l = lock(_LANDSCAPE_LOCK) do; get(_LANDSCAPE_REQUESTS, rid, nothing); end
-            l === nothing || return l
-            time() >= deadline && return nothing
-            sleep(poll_s)
-        end
-    finally
-        lock(_LANDSCAPE_LOCK) do; delete!(_LANDSCAPE_REQUESTS, rid); end
-    end
-end
+# On-demand requests ride the shared viewer-request registry (`viewer_request.jl`).
+const _LANDSCAPE_REQUEST_TIMEOUT_S = 8.0   # canvas readback + backend compute, 0.2–2 s measured
 
 _landscape_reply(l::Landscape) = begin
     out = copy(l.payload)
@@ -142,7 +106,7 @@ function api_viewer_landscape_publish(body_bytes::Vector{UInt8})
         _LANDSCAPE_BY_KEY[_landscape_key(l)] = l
     end
     rid = _wstr(body, :requestId)
-    isempty(rid) || _deliver_landscape_request!(rid, l)
+    isempty(rid) || _deliver_viewer_request!(rid, l)
     200, JSON3.write((; ok = true))
 end
 
@@ -166,10 +130,10 @@ function api_viewer_landscape_request(body_bytes::Vector{UInt8})
     isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
     image_uid = _wstr(body, :imageUid)
     isempty(image_uid) && return 400, JSON3.write((; error = "imageUid required"))
-    rid = _open_landscape_request!()
+    rid = _open_viewer_request!("lr")
     broadcast_ws(Dict{String,Any}("type" => "viewer:landscape-request", "projectUid" => project_uid,
                                   "imageUid" => image_uid, "requestId" => rid))
-    l = _await_landscape_request(rid, _LANDSCAPE_REQUEST_TIMEOUT_S)
+    l = _await_viewer_request(rid, _LANDSCAPE_REQUEST_TIMEOUT_S)
     l === nothing && return 200, JSON3.write((; landscape = nothing, reason = "no_viewer"))
     200, JSON3.write((; landscape = _landscape_reply(l)))
 end

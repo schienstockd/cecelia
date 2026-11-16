@@ -67,6 +67,7 @@ include("rois_api.jl")       # ROI list + reviews (ROI_TRIAGE_PLAN)
 include("figures_api.jl")    # still figures in {proj}/figures/, one registry with the movies (FIGURES_PLAN)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
 include("blackboard_run_review.jl") # agent run records: per-section verdicts (AGENT_RUN_REVIEW_PLAN P2)
+include("viewer_request.jl") # ask the open viewer — request/answer over WS (screenshot, view, landscape)
 include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
 include("push_api.jl")       # bidirectional context — Part 5 push pairing (BIDIR_PUSH_PLAN PR #1)
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
@@ -577,6 +578,10 @@ const _POST_ROUTES = Dict{String, Function}(
     # `/request` and gets the viewer's answer back. Never Claude-authored.
     "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
     "/api/viewer/landscape/request" => (req, body_bytes) -> (api_viewer_landscape_request(body_bytes)),
+    # ask the open viewer: MCP get_viewer_screenshot / set_viewer_view; `/reply` is the browser's answer
+    "/api/viewer/screenshot"     => (req, body_bytes) -> (api_viewer_screenshot(body_bytes)),
+    "/api/viewer/view"           => (req, body_bytes) -> (api_viewer_view(body_bytes)),
+    "/api/viewer/reply"          => (req, body_bytes) -> (api_viewer_reply(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),

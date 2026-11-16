@@ -139,6 +139,9 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/seek"),           # RUBBER_DUCK_FIT_PLAN P2: imperative "look at frame (t, z)" — no mark, no capture; reuses pendingViewState.focus
         ("POST", "/api/viewer/navigate"),       # RUBBER_DUCK_FIT_PLAN P2B: navigate main window to a route (+ optional board tab); MCP resolves ambiguity before calling
         ("POST", "/api/viewer/landscape/request"),  # ASK the open viewer for its landscape now (WS `viewer:landscape-request`); nothing on disk changes
+        ("POST", "/api/viewer/screenshot"),  # ASK the open viewer for its Save-image picture now; nothing changes
+        ("POST", "/api/viewer/view"),        # change the open viewer's contrast / channels / 3D / camera (its answer: the view it landed on)
+        # NB: /api/viewer/reply is the BROWSER's answer to either — never on this surface.
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
         # + auth token to the project so PR #2's Julia writer can push a capture-arrived
         # notification directly. Auto-called by middleware on any tool with a project_uid so a
@@ -686,6 +689,19 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         # plays no part. `{landscape: null, reason: "no_viewer"}` when no viewer of it is open.
         return self._request("POST", "/api/viewer/landscape/request",
                              body={"projectUid": project_uid, "imageUid": image_uid})
+
+    def get_viewer_screenshot(self, project_uid: str, image_uid: str, max_side: int | None = None):
+        # The open viewer's Save-image composite + the view it shows; `{png: null, reason:
+        # "no_viewer"}` when no viewer of it answered (≤ 15 s).
+        body: dict = {"projectUid": project_uid, "imageUid": image_uid}
+        if max_side: body["maxSide"] = int(max_side)
+        return self._request("POST", "/api/viewer/screenshot", body=body)
+
+    def set_viewer_view(self, project_uid: str, image_uid: str, view: dict):
+        # A partial view state the viewer merges onto its own and applies; answers with the view
+        # it landed on, or `{view: null, reason: "no_viewer"}` (≤ 30 s: a 3D switch reallocates).
+        return self._request("POST", "/api/viewer/view",
+                             body={"projectUid": project_uid, "imageUid": image_uid, "view": view})
 
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(
