@@ -17,7 +17,7 @@ describe('README.md screenshots', () => {
 
   it('captions carry the fixture numbers, and a missing one fails', () => {
     const block = renderReadmeShots(facts, widths)
-    expect(block).toContain(`both on ${facts['spleen.k3Tx90.name']}.`)
+    expect(block).toContain(`its ${facts['tcells.TKufLV.Tcells.tracks']} tracks drawn in 3D.`)
     expect(() => renderReadmeShots({}, widths)).toThrow(/no measured/)
   })
 

@@ -22,3 +22,17 @@ export const SPLEEN_TIMELAPSE: FixtureProject = {
 export const LYMPHOID_SECTION: FixtureProject = {
   source: '4rNbMp', images: { FtGoJO: 'Lymphoid tissue, LCMV' }, name: 'Lymphoid tissue', results: true,
 }
+
+/** A two-photon time-lapse of three T cell subsets (source project "T cells"; channels AF, P14-ubiTom,
+ *  gBT-uGFP, OTI-CTV), segmented and tracked as `Tcells`. The source's gates are recreated in its own tree:
+ *  `qc`, then OTI under it, and gBT and P14 under the cells that are not OTI. */
+export const TCELL_TIMELAPSE: FixtureProject = {
+  source: 'RFtn9f', images: { TKufLV: 'T cell subsets, two-photon time-lapse' }, name: 'T cell subsets', results: true,
+  gates: [
+    { image: 'TKufLV', segmentation: 'Tcells', name: 'qc', fromSource: true },
+    { image: 'TKufLV', segmentation: 'Tcells', name: 'OTI', parent: '/qc', fromSource: true },
+    { image: 'TKufLV', segmentation: 'Tcells', name: 'non-OTI', parent: '/qc', fromSource: true },
+    { image: 'TKufLV', segmentation: 'Tcells', name: 'gBT', parent: '/qc/non-OTI', fromSource: true },
+    { image: 'TKufLV', segmentation: 'Tcells', name: 'P14', parent: '/qc/non-OTI', fromSource: true },
+  ],
+}
