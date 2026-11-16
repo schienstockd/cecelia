@@ -468,12 +468,14 @@ on names (`match_channel_columns` in `label_props.jl`, `rename_pop_columns` in `
 case-insensitive; the reply's `remapped[uid]` lists each `(from, to, channel)` and the dialog notes
 "channels matched by name"). Only a target lacking a gated channel, or holding its name on two channels,
 is skipped. Images without registered names are copied as-is. With "Also copy plot layout", each
-copied gate plot's axes are remapped the same way (`renamePanelColumns`, `utils/gatingCopyWarnings.ts`). The same matching
-(`match_segment_channel_columns`, the first segment the reference) lets a set-wide `clustPops` run read
-each segment's own columns (renamed to the first segment's in `cluster_run.py`), `clustTracks` rebase
-per-track aggregates (`mean_intensity_1.mean` → `mean_intensity_0.mean`; `_match_track_channels` + `rebase_track_aggregates!`, `track_props.jl`), and
-a heatmap (matrix chart) across images, which reads intensity columns raw, read each image's own column
-(`_pop_df_by_channel_name`, `plot_data.jl`); each refuses only an image lacking the channel. The dialog lists
+copied gate plot's axes are remapped the same way (`renamePanelColumns`, `utils/gatingCopyWarnings.ts`). Everything
+else names channels by NAME, so it needs no re-indexing: task params, stored feature lists and heatmap rows
+hold `CD4` / `CD4.mean`, and each image's reader resolves the name to its own column
+(`resolve_channel_columns`, `label_props.jl`). Set-wide tasks (`clustPops`, `clustTracks`, `hmm_states`) and
+multi-image heatmaps check every segmentation first (`pooled_channel_columns` /
+`resolve_segment_channel_columns`; `_named_plot_cols`, `plot_data.jl`) and refuse only an image lacking the
+channel or holding its name twice. A legacy raw pick is named against the first segmentation —
+`docs/todo/CHANNEL_NAMES_PLAN.md`. The dialog lists
 every refused target with its reason (`copySkippedLines` in `utils/gatingCopyWarnings.ts`). A target that HAS the segmentation but lacks a column a
 gate or filter reads — typically `clusters.<run>` from a clustering run it wasn't in — is still copied,
 but the reply's `warnings` names, per target, each absent column and the populations it leaves empty

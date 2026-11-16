@@ -57,19 +57,35 @@ class ClusterPopsRunnerChannelNameTest(unittest.TestCase):
                            obs=pd.DataFrame(index=['1', '2']))
             y.var_names = ['mean_intensity_0', 'mean_intensity_1', 'area']
             y.write_h5ad(swapped)
+            # Julia names the features by channel and resolves each segment's own columns
+            # (docs/todo/CHANNEL_NAMES_PLAN.md); the runner reads those and keeps the names
             mod.run({
-                'suffix': 't', 'featureCols': ['mean_intensity_0', 'area'],
+                'suffix': 't', 'featureCols': ['CD4', 'area'],
                 'segments': [
-                    {'uID': 'X', 'valueName': 'B', 'propsPath': ref, 'labels': None},
+                    {'uID': 'X', 'valueName': 'B', 'propsPath': ref, 'labels': None,
+                     'featureCols': ['mean_intensity_0', 'area']},
                     {'uID': 'Y', 'valueName': 'B', 'propsPath': swapped, 'labels': None,
                      'featureCols': ['mean_intensity_1', 'area']}],
                 'createUmap': False})
             a = seen['adata']
-            self.assertEqual(list(a.var_names), ['mean_intensity_0', 'area'])
-            cd4 = a[:, 'mean_intensity_0'].X.ravel()
+            self.assertEqual(list(a.var_names), ['CD4', 'area'])
+            cd4 = a[:, 'CD4'].X.ravel()
             # every pooled CD4 value is a CD4 value: X's column 0, then Y's column 1 (not Y's CD8 30/40)
             np.testing.assert_array_equal(cd4, [1.0, 2.0, 3.0, 4.0])
             np.testing.assert_array_equal(a.obs['uID'].to_numpy(), ['X', 'X', 'Y', 'Y'])
+
+    def test_a_missing_feature_column_is_an_error_not_zeros(self):
+        mod = _load_runner()
+        cu = mod.clustering_utils
+        with mock.patch.object(cu, 'find_populations', lambda adata, **_: None), \
+             mock.patch.object(cu, 'split_back_and_write', lambda *a, **k: {'nClusters': 0, 'perSegment': []}), \
+             tempfile.TemporaryDirectory() as td:
+            ref = os.path.join(td, 'X.h5ad')
+            _props(ref, cd4=[1.0, 2.0], cd8=[10.0, 20.0])
+            with self.assertRaisesRegex(ValueError, r"X/B: missing feature columns \['volume'\]"):
+                mod.run({'suffix': 't', 'featureCols': ['volume'], 'createUmap': False,
+                         'segments': [{'uID': 'X', 'valueName': 'B', 'propsPath': ref, 'labels': None,
+                                       'featureCols': ['volume']}]})
 
 
 if __name__ == '__main__':

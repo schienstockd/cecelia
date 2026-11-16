@@ -41,6 +41,10 @@ stack. Per-tag notes are also on the
   channel order gated whichever marker sat at that position.
 - **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
   lacking a channel is refused.
+- **HMM states can model intensity channels.** Picking a channel failed with *DataFrame is missing
+  column(s) [mean_intensity_…]*. Every measure picker now stores the channel name, so HMM states,
+  clustering, Find ROIs and heatmaps read the same marker on every image, whatever its channel order.
+  Saved picks convert when the form opens.
 - **The copy dialog now names images it did not copy to**, with the reason, and notes where it
   matched channels by name.
 - **Stored units are now converted.** Intervals in ms or minutes, and pixel sizes in nm or mm, were

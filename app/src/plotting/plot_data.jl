@@ -1276,6 +1276,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
     eff_vn = _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
     fit = _hmm_profile_fit([img], [eff_vn], chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
+    chart_type == "matrix" && (measures = _named_plot_cols([img], eff_vn, measures))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
@@ -1296,30 +1297,25 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
         r -> _attach_cluster_names!(r, named)
 end
 
-# A heatmap reads intensity columns RAW (`mean_intensity_N`, the names the frontend sends and labels
-# from the first image), named by channel INDEX. Across images, each image reads its own column for the
-# same channel NAME (`match_segment_channel_columns`, the first image the reference) and renames it to
-# the first image's, so one row averages one marker even where channel order differs. A channel an
-# image lacks, or holds twice, throws (the API turns it into a message on the plot). Otherwise the
-# set-level `pop_df`, image by image.
-function _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name, pop_cols, kwargs...)
-    (pop_cols === nothing || length(imgs) < 2) &&
-        return pop_df(imgs, uids, pop_type, pops; value_name=value_name, pop_cols=pop_cols, kwargs...)
-    cols = String.(collect(pop_cols))
-    own = match_segment_channel_columns([(img, value_name) for img in imgs], cols)
-    isempty(own.problems) ||
-        throw(ArgumentError("channels don't match across images — " * join(own.problems, "; ")))
-    frames = DataFrame[]
-    for (img, uid, mine) in zip(imgs, uids, own.cols)
-        d = pop_df(img, pop_type, pops; value_name=value_name, pop_cols=mine, kwargs...)
-        nrow(d) == 0 && continue
-        back = Dict(o => c for (o, c) in zip(mine, cols) if o != c && o in names(d))
-        isempty(back) || rename!(d, back)
-        d[!, :uID] = fill(String(uid), nrow(d))
-        push!(frames, d)
-    end
-    isempty(frames) ? DataFrame() : reduce((a, b) -> vcat(a, b; cols=:union), frames)
+# A heatmap names intensity rows by channel NAME (docs/todo/CHANNEL_NAMES_PLAN.md): a legacy raw request
+# (`mean_intensity_N`, a saved panel) is named against the first image, and each image's reader resolves
+# the name to its own column — so one row averages one marker even where channel order differs. A channel
+# an image lacks, or holds twice, throws (the API turns it into a message on the plot). The matrix
+# functions name their `measures` once up front (row keys = names), and every multi-image read checks
+# its own segmentation again (a co-clustered run reads several).
+function _named_plot_cols(imgs, value_name, cols)
+    (cols === nothing || isempty(imgs)) && return cols
+    r = resolve_segment_channel_columns([(img, resolve_value_name(img, value_name)) for img in imgs], cols)
+    isempty(r.problems) ||
+        throw(ArgumentError("channels don't match across images — " * join(r.problems, "; ")))
+    r.names
 end
+
+# `raw_channel_names`: a named column comes back under its name either way; one that has to stay raw
+# (no names on the first image, a duplicated name, a name a real column carries) must not be renamed
+_pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name, pop_cols, kwargs...) =
+    pop_df(imgs, uids, pop_type, pops; value_name=value_name, raw_channel_names=true,
+           pop_cols=_named_plot_cols(imgs, value_name, pop_cols), kwargs...)
 
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
                            pop_type::PopTypeArg, pops, chart_type::AbstractString;
@@ -1344,6 +1340,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
              _cluster_pop_vn(first(imgs), pop_type, value_name, cluster_suffix, granularity)
     fit = _hmm_profile_fit(imgs, [eff_vn], chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
+    chart_type == "matrix" && (measures = _named_plot_cols(imgs, eff_vn, measures))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
@@ -1353,10 +1350,10 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity,
                                                     family=_cluster_measure_family(pop_type)),
             vn -> _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
-                         pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
+                         pop_cols=cols, expand_cluster_pops=false)) :
         chart_type == "matrix" ?
         _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
-                                pop_cols=cols, raw_channel_names=true) :
+                                pop_cols=cols) :
         pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity, pop_cols=cols)
     df, named = _named_cluster_frame(df, imgs, uids, [eff_vn], measure, granularity, chart_type)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
@@ -1472,13 +1469,14 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     chart_type == "elbow" && return hmm_fit_curve_data([img])
     fit = _hmm_profile_fit([img], unique(first.(targets)), chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
+    chart_type == "matrix" && !isempty(targets) && (measures = _named_plot_cols([img], first(targets)[1], measures))
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     # expand_cluster_pops=false: each target IS a (segmentation, population) pair the user ticked in
     # the picker, so a bare cluster/region path must resolve under THAT segmentation only. With the
     # run-wide expansion on, ticking 3 region pops under `B` also plotted `T`'s (see pop_df).
     df = _targets_frame(targets, (vn, pops) ->
-        pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
-               raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
+        pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
+               pop_cols=pcols, raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
     df, named = _named_cluster_frame(df, [img], [""], first.(targets), measure, granularity, chart_type)
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
@@ -1522,11 +1520,12 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     end
     fit = _hmm_profile_fit(imgs, unique(first.(targets)), chart_type, matrix_mode, category)
     measures = _hmm_profile_rows(measures, fit)
+    chart_type == "matrix" && !isempty(targets) && (measures = _named_plot_cols(imgs, first(targets)[1], measures))
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     # see the single-image form above — a picked (segmentation, population) pair is explicit
     df = _targets_frame(targets, (vn, pops) -> chart_type == "matrix" ?
         _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
-                                pop_cols=pcols, raw_channel_names=true, expand_cluster_pops=false) :
+                                pop_cols=pcols, expand_cluster_pops=false) :
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
                expand_cluster_pops=false))
     df, named = _named_cluster_frame(df, imgs, uids, first.(targets), measure, granularity, chart_type)

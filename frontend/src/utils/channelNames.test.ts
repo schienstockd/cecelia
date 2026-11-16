@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseChannelNameList, channelNamesAsText, referenceCandidates,
-         splitByChannelCount, skippedChannelCountMsg, channelLabel, type ChannelSubject } from './channelNames'
+         splitByChannelCount, skippedChannelCountMsg, channelLabel, channelColumnName,
+         migrateColumnSelection, type ChannelSubject } from './channelNames'
 
 const img = (uid: string, sizeC?: number | null, channelNames?: string[]): ChannelSubject =>
   ({ uid, name: `img-${uid}`, sizeC, channelNames })
@@ -81,5 +82,39 @@ describe('channelLabel', () => {
     expect(channelLabel('area', names)).toBe('area')
     expect(channelLabel('median_intensity_7', names)).toBe('median_intensity_7')
     expect(channelLabel('mean_intensity_1', ['DAPI', ''])).toBe('mean_intensity_1')
+  })
+})
+
+// mirrors Julia `canonical_channel_columns` — docs/todo/CHANNEL_NAMES_PLAN.md
+describe('channelColumnName', () => {
+  const names = ['CD4', 'CD8']
+  it('names an intensity column, prefixed or a per-track aggregate, by its channel', () => {
+    expect(channelColumnName('mean_intensity_1', names)).toBe('CD8')
+    expect(channelColumnName('nuc_mean_intensity_0', names)).toBe('nuc_CD4')
+    expect(channelColumnName('mean_intensity_0.mean', names)).toBe('CD4.mean')
+    expect(channelColumnName('mean_intensity_1.mean', ['CD45.1', 'CD45.2'])).toBe('CD45.2.mean')
+    // only track_props' numeric suffixes are aggregates — a dotted tail is not
+    expect(channelColumnName('mean_intensity_0.2', names)).toBe('mean_intensity_0.2')
+  })
+  it('leaves everything else as it is', () => {
+    expect(channelColumnName('area', names)).toBe('area')
+    expect(channelColumnName('live.cell.speed', names)).toBe('live.cell.speed')
+    expect(channelColumnName('CD4', names)).toBe('CD4')
+  })
+  it('stays raw when there is no single name to give', () => {
+    expect(channelColumnName('mean_intensity_0', [])).toBe('mean_intensity_0')
+    expect(channelColumnName('mean_intensity_5', names)).toBe('mean_intensity_5')
+    expect(channelColumnName('mean_intensity_0', ['CD4', 'cd4'])).toBe('mean_intensity_0')
+    expect(channelColumnName('mean_intensity_0', ['Area', 'CD8'], ['area'])).toBe('mean_intensity_0')
+  })
+})
+
+describe('migrateColumnSelection', () => {
+  const rename = { mean_intensity_0: 'CD4', area: 'area' }
+  it('renames a saved raw pick, keeping order and dropping a duplicate', () => {
+    expect(migrateColumnSelection(['area', 'mean_intensity_0', 'CD4'], rename)).toEqual(['area', 'CD4'])
+  })
+  it('returns null when nothing changes, so the form does not re-emit', () => {
+    expect(migrateColumnSelection(['CD4', 'area', 'live.cell.speed'], rename)).toBeNull()
   })
 })

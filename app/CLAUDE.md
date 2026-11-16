@@ -66,6 +66,18 @@ channels = channel_indices(get(params, "channels", nothing), names; what = "chan
 Enforced by the `channelSelection params resolve through channel_indices` testset: a task whose
 resolved spec declares one and whose handler never calls `channel_indices` fails the suite.
 
+**Measure columns follow the same rule: a channel is identified by its NAME.** A `labelPropsColsSelection`
+param, a stored feature list (clustfeatures, behaviour axes, hmmfit) and a plot's matrix rows hold
+intensity columns as channel names (`CD4`, `nuc_CD4`, `CD4.mean`); the h5ad stores them by index
+(`mean_intensity_1`), and each image resolves the name to its own column. One resolver pair in
+`label_props.jl` — `canonical_channel_columns` (raw → name, for legacy params/sidecars) and
+`resolve_channel_columns` (name → this image's column; case-insensitive, a name on two channels is
+`:ambiguous`) — used by `as_df` and everything above it. A set-level task calls
+`pooled_channel_columns(imgs, pops, cols…)` (or `resolve_segment_channel_columns` when a Python runner
+needs each segment's raw columns) and errors on its `problems`; never re-index raw columns by hand.
+Gates are the exception: they store raw columns of one image, and a copy goes through
+`match_channel_columns`. `docs/todo/CHANNEL_NAMES_PLAN.md`.
+
 
 ## Spawning Python — always go through `run_py`
 

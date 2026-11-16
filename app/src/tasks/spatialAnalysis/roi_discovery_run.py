@@ -66,9 +66,11 @@ def run(params):
 
     view = LabelPropsView(params["propsPath"]).view_centroid_cols().filter_by_label(members)
     extra = rank_by + ([group_by] if group_by and group_by not in rank_by else [])
+    # Julia resolved each channel name to this image's column; read that, keep the name
+    read_cols = params.get("readCols") or {}
     if extra:
-        view = view.view_cols(extra)
-    df = view.as_df()
+        view = view.view_cols([read_cols.get(c, c) for c in extra])
+    df = view.as_df().rename(columns={read_cols[c]: c for c in extra if read_cols.get(c, c) != c})
     for col in ("centroid_t", "centroid_z"):
         if col not in df.columns:
             df[col] = 0.0

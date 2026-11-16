@@ -96,13 +96,75 @@ function _clustfeatures_part_of(entry, own_uid::Union{AbstractString,Nothing}=no
     (isempty(part) && own_uid !== nothing) ? [String(own_uid)] : part
 end
 
+"""
+    run_channel_names(img, value_name) -> Function
+
+`uid -> channel names` of segmentation `value_name` on `img` or a sibling image of its project (read
+from the sibling's ccid.json, cached; `nothing` when unreadable) — the `chans_of` a run's sidecar
+readers name legacy raw features with (`_clustfeatures_features`, `_clustfeatures_axes`).
+"""
+function run_channel_names(img::CciaImage, value_name::AbstractString)
+    cache = Dict{String,Union{Vector{String},Nothing}}()
+    uid -> get!(cache, String(uid)) do
+        String(uid) == img.uid && return channel_names(img; value_name = value_name)
+        f = state_file(joinpath(dirname(img._dir), String(uid)))
+        isfile(f) || return nothing
+        n = try ccid_channel_names(read_ccid_raw(f), value_name) catch; nothing end
+        (n === nothing || isempty(n)) ? nothing : n
+    end
+end
+
+"""
+    _clustfeatures_axes(props_path, suffix; family, chans_of, own_uid) -> AbstractDict | nothing
+
+A track run's `behaviourAxes` (axis names + top features), with each `top[].feature` named like
+`_clustfeatures_features` names the run's features.
+"""
+function _clustfeatures_axes(props_path::AbstractString, suffix::AbstractString;
+                             family::AbstractString = "clusters",
+                             chans_of::Union{Function,Nothing} = nothing,
+                             own_uid::Union{AbstractString,Nothing} = nothing)
+    e = _clustfeatures_entry(props_path, suffix; family = family)
+    e === nothing && return nothing
+    a = get(e, "behaviourAxes", get(e, :behaviourAxes, nothing))
+    a isa AbstractDict || return nothing
+    part = _clustfeatures_part_of(e, own_uid)
+    (chans_of === nothing || isempty(part)) && return a
+    chans = chans_of(first(part))
+    out = Dict{String,Any}(String(k) => v for (k, v) in a)
+    axes = get(out, "axes", nothing)
+    axes isa AbstractVector || return out
+    out["axes"] = map(axes) do ax
+        ax isa AbstractDict || return ax
+        d = Dict{String,Any}(String(k) => v for (k, v) in ax)
+        top = get(d, "top", nothing)
+        top isa AbstractVector && (d["top"] = map(top) do t
+            t isa AbstractDict || return t
+            tt = Dict{String,Any}(String(k) => v for (k, v) in t)
+            haskey(tt, "feature") && (tt["feature"] = only(canonical_channel_columns([string(tt["feature"])], chans)))
+            tt
+        end)
+        d
+    end
+    out
+end
+
 # One run's recorded feature columns (the heatmap's row universe), `String[]` when unrecorded.
+# Intensities by channel NAME (docs/todo/CHANNEL_NAMES_PLAN.md): a run recorded before that stored the
+# raw columns of its first segment — the one the features were picked on — so `chans_of(uid)` (the
+# channel names of an image of the run, or `nothing`) names them against the run's first image
+# (`partOf[1]`, else `own_uid`). Without `chans_of` the features come back as stored.
 function _clustfeatures_features(props_path::AbstractString, suffix::AbstractString;
-                                 family::AbstractString = "clusters")::Vector{String}
+                                 family::AbstractString = "clusters",
+                                 chans_of::Union{Function,Nothing} = nothing,
+                                 own_uid::Union{AbstractString,Nothing} = nothing)::Vector{String}
     e = _clustfeatures_entry(props_path, suffix; family=family)
     e === nothing && return String[]
     f = get(e, "features", get(e, :features, nothing))
-    f isa AbstractVector ? String[string(x) for x in f] : String[]
+    feats = f isa AbstractVector ? String[string(x) for x in f] : String[]
+    chans_of === nothing && return feats
+    part = _clustfeatures_part_of(e, own_uid)
+    isempty(part) ? feats : canonical_channel_columns(feats, chans_of(first(part)))
 end
 
 """

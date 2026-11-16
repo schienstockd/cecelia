@@ -29,7 +29,7 @@ import { profileStorage } from '../utils/profileStorage'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { singlePopOptions, prospectivePopGroups, type ProspectivePop } from '../utils/chainProspective'
 import { measureGroups, isTrackPopType } from '../utils/measureGroups'
-import { channelLabel } from '../utils/channelNames'
+import { channelLabel, channelColumnName, migrateColumnSelection } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import ChipInput from '../components/ChipInput.vue'
@@ -475,8 +475,18 @@ async function loadCols() {
             && (props.param.allObs || c.startsWith('live.'))) }
       : { columns: vars, channels: d.channels,
           obsColumns: obs.filter(c => props.param.allObs || c.startsWith('live.')) })
+    // the stored value of an intensity column is its CHANNEL NAME (each image resolves it to its own
+    // column — docs/todo/CHANNEL_NAMES_PLAN.md); a selection saved as raw columns migrates on load
+    const shadow = [...vars, ...obs, ...(d.cellMeasures ?? []), ...(d.cellObsMeasures ?? [])]
+    const rename: Record<string, string> = {}
     colGroups.value = groups.map(grp => ({
-      title: grp.title, opts: grp.cols.map(c => ({ label: channelLabel(c, chans), value: c })) }))
+      title: grp.title, opts: grp.cols.map(c => {
+        const value = channelColumnName(c, chans, shadow.filter(x => x !== c))
+        rename[c] = value
+        return { label: channelLabel(c, chans), value }
+      }) }))
+    const migrated = migrateColumnSelection(chipArr(), rename)
+    if (migrated) emit('update:modelValue', migrated)
   } catch { /* no columns available yet */ }
 }
 

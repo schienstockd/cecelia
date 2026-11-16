@@ -56,6 +56,30 @@ const _MOVEMENT_CODES = Dict("/Scanning" => [0], "/Directed" => [1], "/Meanderin
     end
 end
 
+@testset "cell cards read a track run's on-read aggregates, by channel name" begin
+    # A track run clustered on an intensity aggregate — which `__tracks.h5ad` never holds (it is computed
+    # on read). The cards used to read the features from that table, so every such column came back NaN
+    # and the medoid ignored it. The legacy sidecar records the raw column; the cards name it.
+    pair = _kdieem_distinct_pair()
+    if pair === nothing
+        @test_skip "cell-cards fixture missing (see test-data/README.md)"
+    else
+        img = pair.img
+        img.im_channel_names = Dict{String,Any}("default" => ["CD4", "CD8", "GFP", "TOM"], "_active" => "default")
+        sc = joinpath(img._dir, "labelProps", "B__tracks.clustfeatures.json")
+        d = JSON3.read(read(sc, String), Dict{String,Any})
+        d["clusters.movement"]["features"] = ["live.track.speed", "mean_intensity_0.mean"]
+        write(sc, JSON3.write(d))
+        df, _ = clustering_features_pooled(img, "B", "movement")
+        @test "CD4.mean" in names(df)
+        b = sort(df[df._value_name .== "B", :], :_track_id)
+        truth = sort(Cecelia.track_props(img; value_name = "B", cell_measures = ["mean_intensity_0"]), :track_id)
+        truth = truth[in(Set(b._track_id)).(truth.track_id), :]
+        @test nrow(b) > 0 && all(isfinite, b[!, "CD4.mean"])
+        @test b[!, "CD4.mean"] ≈ truth[!, "mean_intensity_0.mean"]
+    end
+end
+
 @testset "AI measure summaries stay on their segmentation (distinct B/T)" begin
     pair = _kdieem_distinct_pair()
     if pair === nothing

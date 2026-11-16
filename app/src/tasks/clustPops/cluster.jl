@@ -11,11 +11,11 @@
 #     engine, and writes `clusters.{suffix}` (integer-code obs) + `obsm['X_umap.{suffix}']` back per
 #     segmentation. So all structural anndata writes stay in Python; membership stays in Julia.
 #
-# Features are picked as var COLUMN names (intensities `mean_intensity_N` + morphology), via
-# `labelPropsColsSelection` like behaviour.hmm, on the FIRST segment. Intensity columns are named by
-# channel index, so each other segment reads its own column for the same channel NAME
-# (`match_segment_channel_columns`; images may order channels differently) and the runner renames it
-# back, so the pooled features keep the first segment's names.
+# Features are picked via `labelPropsColsSelection` like behaviour.hmm: intensities by channel NAME
+# (a legacy raw pick is named against the first segment), resolved to each segment's own column
+# (`resolve_segment_channel_columns`; images may order channels differently). The runner reads each
+# segment's columns and names them by channel, so the pooled features — and the stored feature list —
+# are channel names. docs/todo/CHANNEL_NAMES_PLAN.md
 # See docs/todo/CLUSTERING_PLAN.md.
 
 using DataFrames: nrow, groupby, DataFrame
@@ -103,9 +103,9 @@ function _write_clust_features!(props_path::AbstractString, suffix::AbstractStri
     put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
 end
 
-# One segment per (uID, value_name) of the pooled membership frame: its labelProps path + member labels,
-# plus — where its channel order differs from the first segment's — its own `featureCols` for the same
-# channel names (see header). `nothing` (logged) when none resolve or a segment lacks a channel.
+# One segment per (uID, value_name) of the pooled membership frame: its labelProps path, member labels
+# and its own `featureCols` for the selected features. Returns `(segments, names)` — `names` the features
+# as channel names — or `nothing` (logged) when none resolve or a segment lacks a channel.
 function _cluster_segments(df, img_by_uid, measures; on_log)
     segments = Vector{Dict{String,Any}}()
     for g in groupby(df, [:uID, :value_name])
@@ -117,16 +117,15 @@ function _cluster_segments(df, img_by_uid, measures; on_log)
             "labels" => Int.(g.label)))
     end
     isempty(segments) && (on_log("[ERROR] clustPops: no segments resolved"); return nothing)
-    own = match_segment_channel_columns([(img_by_uid[g["uID"]], g["valueName"]) for g in segments], measures)
+    own = resolve_segment_channel_columns([(img_by_uid[g["uID"]], g["valueName"]) for g in segments], measures)
     isempty(own.problems) ||
         (on_log("[ERROR] clustPops: channels don't match across images — $(join(own.problems, "; "))"); return nothing)
     for (seg, cols) in zip(segments, own.cols)
-        cols == measures && continue
+        miss = setdiff(cols, selectable_cols(label_props(seg["propsPath"]), cols))
+        isempty(miss) || (on_log("[ERROR] clustPops: $(seg["uID"])/$(seg["valueName"]) has no $(join(miss, ", "))"); return nothing)
         seg["featureCols"] = cols
-        on_log("[INFO] $(seg["uID"])/$(seg["valueName"]): channels matched by name — " *
-               join(("$a → $b" for (a, b) in zip(measures, cols) if a != b), ", "))
     end
-    segments
+    (segments, own.names)
 end
 
 function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any};
@@ -153,14 +152,15 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     on_progress(2, 4)
 
     img_by_uid = Dict(img.uid => img for img in imgs)
-    segments = _cluster_segments(df, img_by_uid, p.clusterMeasures; on_log = on_log)
-    segments === nothing && return nothing
+    resolved = _cluster_segments(df, img_by_uid, p.clusterMeasures; on_log = on_log)
+    resolved === nothing && return nothing
+    segments, features = resolved
     on_log("[INFO] $(length(segments)) segment(s), $(nrow(df)) cells, $(length(p.clusterMeasures)) features")
 
     # ── hand off to the Python engine runner ──
     task_params = Dict{String,Any}(
         "suffix" => p.valueNameSuffix, "segments" => segments,
-        "featureCols" => p.clusterMeasures,
+        "featureCols" => features,
         "resolution" => p.resolution,
         "normaliseAxis" => p.normaliseAxis,
         "normaliseToMedian" => p.normaliseToMedian,
@@ -184,7 +184,7 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
     # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments
-        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, p.clusterMeasures, uids)
+        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, features, uids)
     end
     # bank per-image cluster QC (cell counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", suffix = p.valueNameSuffix, on_log = on_log)

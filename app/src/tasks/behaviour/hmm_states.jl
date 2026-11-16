@@ -51,6 +51,8 @@ function parse_hmm_states_params(d::AbstractDict)::HmmStatesParams
         scaleMeasurements       = String[string(x) for x in get(d, "scaleMeasurements", String[])])
 end
 
+const _HMM_MEASURE_KEYS = ("modelMeasurements", "normaliseMeasurements", "scaleMeasurements")
+
 # value_names referenced by the (value-name-prefixed) pops, e.g. "A/tracked" → "A".
 _hmm_pop_value_names(pops, default_vn::AbstractString) =
     collect(keys(_group_pops_by_value_name(pops, default_vn)))
@@ -108,6 +110,10 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
     isempty(p.pops) && (on_log("[ERROR] HMM states: select at least one population/segmentation"); return nothing)
     isempty(p.modelMeasurements) && (on_log("[ERROR] HMM states: no modelMeasurements selected"); return nothing)
 
+    # intensity measures by channel NAME, resolved per image (docs/todo/CHANNEL_NAMES_PLAN.md)
+    ch = pooled_channel_columns(imgs, p.pops, p.modelMeasurements, p.normaliseMeasurements, p.scaleMeasurements)
+    isempty(ch.problems) || (on_log("[ERROR] HMM states: channels don't match — $(join(ch.problems, "; "))"); return nothing)
+    p = parse_hmm_states_params(merge(params, Dict{String,Any}(zip(_HMM_MEASURE_KEYS, ch.cols))))
     normalise = (p.normaliseTo == "none" || isempty(p.normaliseMeasurements)) ? Dict{String,String}() :
                 Dict(m => p.normaliseTo for m in p.normaliseMeasurements)
 
@@ -124,7 +130,7 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
     # Mixed-type read: `_tracked` sets resolve as `live`, per-track gates / track clusters expand to
     # their member cells (carrying `pop_cols`), so every pop the picker `accepts` resolves. No
     # value_name kwarg: each prefixed pop resolves its own segmentation (cross-segmentation pool).
-    df = pop_df_multi(imgs, uids, p.pops; pop_cols=pop_cols, granularity=:cell)
+    df = pop_df_multi(imgs, uids, p.pops; pop_cols=pop_cols, granularity=:cell, raw_channel_names=true)
     nrow(df) == 0 && (on_log("[ERROR] No cells for pops=$(p.pops)"); return nothing)
     on_progress(2, 4)
 
