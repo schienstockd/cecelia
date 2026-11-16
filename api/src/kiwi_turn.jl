@@ -50,7 +50,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "set_blackboard_section_outcome" => "write", "create_chain" => "write", "state_claim" => "write",
     "suggest_chain" => "drafts a chain for create_chain — Kiwi builds no chains",
     "create_notebook" => "write", "revise_notebook" => "write", "set_notebook_description" => "write",
-    "add_analysis_board" => "write", "add_gate" => "write", "add_boolean_pop" => "write", "add_filter_pop" => "write", "add_cluster_pops" => "write", "set_gate" => "write", "delete_gate" => "write",
+    "add_analysis_board" => "write", "add_gate" => "write", "add_boolean_pop" => "write", "add_filter_pop" => "write", "add_cluster_pops" => "write", "set_cluster_pops" => "write", "set_gate" => "write", "delete_gate" => "write",
     "add_figure" => "write", "set_figure" => "write", "delete_figure" => "write", "open_analysis_board_plot" => "drives the user's UI",
     "seek_viewer" => "drives the user's UI", "set_viewer_view" => "drives the user's UI", "set_plot_view" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
     "mark_cells" => "point-out", "mark_tracks" => "point-out", "mark_plot" => "point-out",

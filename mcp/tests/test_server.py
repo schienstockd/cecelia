@@ -48,6 +48,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "add_boolean_pop",              # ONE proposed combination of existing pops (POST .../add-boolean)
             "add_filter_pop",               # ONE proposed filter pop, AND-ed rules (POST .../add-filter)
             "add_cluster_pops",             # a run's clusters grouped into pops, set-wide (POST .../add-cluster-pops)
+            "set_cluster_pops",             # regroup Claude's own cluster pops, set-wide (POST .../set-cluster-pops)
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)

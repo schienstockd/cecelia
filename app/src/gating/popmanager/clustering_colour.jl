@@ -257,13 +257,13 @@ end
 
 Which population of run `suffix` holds each cluster id on map `m`. A cluster id belongs to at most one
 population of a run (the manager's tick moves it); the routes that write cluster ids refuse one another
-population holds. `except` leaves out one path, the population being edited.
+population holds. `except` leaves out the population(s) being edited: one path, or a collection of them.
 """
-function cluster_id_owners(m::PopulationMap, suffix::AbstractString;
-                           except::Union{AbstractString,Nothing} = nothing)::Dict{Int,String}
+function cluster_id_owners(m::PopulationMap, suffix::AbstractString; except = nothing)::Dict{Int,String}
     out = Dict{Int,String}()
+    skip(path) = except === nothing ? false : except isa AbstractString ? path == except : path in except
     for path in m.order
-        (except !== nothing && path == except) && continue
+        skip(path) && continue
         p = m.pops[path]
         cluster_pop_suffix(p) == suffix || continue
         for v in _as_value_vec(p.filter_values)

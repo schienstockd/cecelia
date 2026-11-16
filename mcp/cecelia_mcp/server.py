@@ -678,7 +678,7 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 
 
 # The gating toolset — gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats, add_gate,
-# add_boolean_pop, add_filter_pop, add_cluster_pops, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
+# add_boolean_pop, add_filter_pop, add_cluster_pops, set_cluster_pops, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
 # Writes change only what Claude drew (the server checks `createdBy`).
 globals().update(register_gating_tools(_tool, _client))
 

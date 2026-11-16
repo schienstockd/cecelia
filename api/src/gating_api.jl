@@ -1502,20 +1502,8 @@ end
 # clusters no population holds after this, so a partial grouping says what is left.
 function api_gating_pop_add_cluster_pops(body_bytes::Vector{UInt8})
     img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
-    proj = _wstr(body, "projectUid")
-    pt = _wstr(body, "popType", "clust")
-    Cecelia._is_cluster_pop_type(pt) ||
-        return _gerr(422, "popType must be a cluster type: $(join(CLUSTER_POP_TYPES, ", "))")
-    run = String(strip(_wstr(body, "run")))
-    isempty(run) && return _gerr(422, "run required — the clustering run's name (`{run}` in clusters.{run})")
-    fam = Cecelia._cluster_measure_family(pt)
-    ppath = cluster_props_path(img, vn, pt)
-    runs = sort!(collect(Cecelia._clustfeatures_suffixes(ppath; family = fam)))
-    run in runs || return _gerr(404, "No $pt run \"$run\" on $vn" *
-        (isempty(runs) ? " — it has not been clustered" : " — it has: " * join(runs, ", ")))
-    targets, skipped = _cluster_run_images(proj, img, vn, pt, run)
-    universe = Set{Int}(get(_cluster_ids(proj, ppath, vn, [run], Dict{String,Any}(run => [u for (u, _) in targets]),
-                                         is_track_grained(pt), pt), run, Int[]))
+    rq, err = _cluster_run_request(body, img, vn); err === nothing || return err
+    (; pt, run, targets, skipped, universe) = rq
     groups, gerr = _proposed_cluster_groups(get(body, "groups", nothing), run, universe)
     gerr === nothing || return gerr
     measure = Cecelia._cluster_measure_prefix(pt) * run
@@ -1527,38 +1515,22 @@ function api_gating_pop_add_cluster_pops(body_bytes::Vector{UInt8})
         for (u, ti, m) in maps
             held = cluster_id_owners(m, run)
             for gr in groups
-                has_pop(m, gr.path) && return 409, JSON3.write((; code = "pop_exists", image = u,
-                    error = "A population \"$(gr.path)\" already exists — choose another name; an existing population is never replaced"))
-                conflict = pop_name_conflict(ti, vn, gr.path; pop_type = pt)
-                conflict === nothing || return 409, JSON3.write((; code = "pop_name_conflict", image = u,
-                    error = "A $conflict population named \"$(gr.name)\" already exists in this segmentation — " *
-                            "names must be unique across population types. Choose another name."))
-                taken = Dict(string(id) => held[id] for id in gr.clusters if haskey(held, id))
-                isempty(taken) || return 409, JSON3.write((; code = "cluster_taken", image = u, clusters = taken,
-                    error = _cluster_taken_text(taken) * " Leave it out, or ask the user to move it."))
+                refusal = _cluster_name_refusal(m, ti, vn, pt, gr.path, u); refusal === nothing || return refusal
+                refusal = _cluster_taken_refusal(held, gr.clusters, u); refusal === nothing || return refusal
             end
         end
         n0 = count(p -> cluster_pop_suffix(p) == run, values(maps[1][3].pops))
         colours = [gr.colour === nothing ? POPULATION_PALETTE[mod1(n0 + i, length(POPULATION_PALETTE))] : gr.colour
                    for (i, gr) in enumerate(groups)]
-        counts = zeros(Int, length(groups)); total = 0
         for (u, ti, m) in maps
             for (gr, colour) in zip(groups, colours)
                 add_pop!(m, gr.name; colour = colour, show = true, created_by = stamp,
                          filter_measure = measure, filter_fun = "in", filter_values = gr.clusters)
                 stamp_cluster_run!(m.pops[gr.path], ti, vn)
             end
-            if !dry
-                saved = _persist_and_broadcast!(m, ti, merge(body, Dict{String,Any}("imageUid" => u)), vn, pt)
-                saved isa Tuple && return saved
-            end
-            recompute!(m, pop_membership_fetch(ti, vn, pt))
-            for (i, gr) in enumerate(groups)
-                s = pop_stats(m, gr.path)
-                counts[i] += s.count
-                i == 1 && (total += s.parent_count)
-            end
         end
+        saved = _save_cluster_maps!(maps, body, vn, pt); saved === nothing || return saved
+        counts, total = _cluster_pop_counts!(maps, [gr.path for gr in groups], vn, pt)
         held = keys(cluster_id_owners(maps[1][3], run))
         200, JSON3.write((; ok = true, dryRun = dry, popType = pt, run, valueName = vn,
             images = [u for (u, _, _) in maps], skipped,
@@ -1567,6 +1539,161 @@ function api_gating_pop_add_cluster_pops(body_bytes::Vector{UInt8})
             total, unassigned = sort!(collect(setdiff(universe, held))),
             runAt = maps[1][3].pops[groups[1].path].run_at, createdBy = stamp))
     end
+end
+
+# The run a cluster-pops request names, resolved on `img`'s `vn` → ((; pt, run, targets, skipped, universe),
+# nothing) or (nothing, the refusal): 422 a pop type that is not a cluster one or no run, 404 a run `vn`
+# does not have. `targets` / `skipped` = `_cluster_run_images`; `universe` = the run's cluster ids.
+function _cluster_run_request(body, img::CciaImage, vn::AbstractString)
+    proj = _wstr(body, "projectUid")
+    pt = _wstr(body, "popType", "clust")
+    Cecelia._is_cluster_pop_type(pt) ||
+        return (nothing, _gerr(422, "popType must be a cluster type: $(join(CLUSTER_POP_TYPES, ", "))"))
+    run = String(strip(_wstr(body, "run")))
+    isempty(run) && return (nothing, _gerr(422, "run required — the clustering run's name (`{run}` in clusters.{run})"))
+    fam = Cecelia._cluster_measure_family(pt)
+    ppath = cluster_props_path(img, vn, pt)
+    runs = sort!(collect(Cecelia._clustfeatures_suffixes(ppath; family = fam)))
+    run in runs || return (nothing, _gerr(404, "No $pt run \"$run\" on $vn" *
+        (isempty(runs) ? " — it has not been clustered" : " — it has: " * join(runs, ", "))))
+    targets, skipped = _cluster_run_images(proj, img, vn, pt, run)
+    universe = Set{Int}(get(_cluster_ids(proj, ppath, vn, [run], Dict{String,Any}(run => [u for (u, _) in targets]),
+                                         is_track_grained(pt), pt), run, Int[]))
+    ((; pt, run, targets, skipped, universe), nothing)
+end
+
+# Write each (uid, image, map) of a run — unless the request is a `dryRun` — → nothing, or the refusal
+# `_persist_and_broadcast!` gave.
+function _save_cluster_maps!(maps, body, vn, pt)
+    _wbool(body, "dryRun", false) && return nothing
+    for (u, ti, m) in maps
+        saved = _persist_and_broadcast!(m, ti, merge(body, Dict{String,Any}("imageUid" => u)), vn, pt)
+        saved isa Tuple && return saved
+    end
+    nothing
+end
+
+# Each of `paths`' count summed over the run's maps, and the run's total (cells or tracks), after one
+# recompute per map — the numbers a cluster-pops reply gives, written or dry.
+function _cluster_pop_counts!(maps, paths::AbstractVector, vn, pt)
+    counts = zeros(Int, length(paths)); total = 0
+    for (_, ti, m) in maps
+        recompute!(m, pop_membership_fetch(ti, vn, pt))
+        for (i, path) in enumerate(paths)
+            s = pop_stats(m, path)
+            counts[i] += s.count
+            i == 1 && (total += s.parent_count)
+        end
+    end
+    (counts, total)
+end
+
+# ── POST /api/gating/pop/set-cluster-pops — change Claude's own grouping of a run (observer `set_cluster_pops`) ──
+# { projectUid, imageUid, valueName, popType, run, groups:[{path, clusters?, name?, colour?}, …], dryRun? }
+# → add-cluster-pops' reply, `populations` at their (new) paths, plus `updatedBy`.
+#
+# set-own-gate's twin for cluster populations: each group names a population of the run Claude made
+# (`path`) and what changes — its WHOLE cluster list (re-picked against the run as it is now, so the run
+# stamp moves and a stale warning clears), its name, its colour. The grouping is checked as it will be
+# AFTER the call, so moving a cluster between two of Claude's populations is one call. On every image of the
+# run, before anything is written: 404 a path the map lacks, 422 one that is not a population of this run
+# / two groups on one path or one new name / a bad name, colour or id / a group that changes nothing,
+# 403 `not_claude_made` / `used_by_runs` (set-own-gate's rules), 409 a taken name or a cluster another
+# population holds (`cluster_taken` — ids the population already had are not re-checked).
+function api_gating_pop_set_cluster_pops(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    rq, err = _cluster_run_request(body, img, vn); err === nothing || return err
+    (; pt, run, targets, skipped, universe) = rq
+    edits, eerr = _cluster_pop_edits(get(body, "groups", nothing), run, universe)
+    eerr === nothing || return eerr
+    # only a population whose clusters this call replaces gives its old ones up; one renamed or recoloured
+    # keeps them, so they stay held
+    regrouped = Set(e.path for e in edits if e.clusters !== nothing)
+    _with_popmap_lock() do
+        maps = [(u, ti, load_pop_map(ti; value_name = vn, pop_type = pt)) for (u, ti) in targets]
+        for (u, ti, m) in maps
+            for e in edits
+                has_pop(m, e.path) || return _pop_not_found(m, e.path)
+                cluster_pop_suffix(m.pops[e.path]) == run ||
+                    return _gerr(422, "\"$(e.path)\" is not a population of $pt run \"$run\"")
+                sub, refusal = _own_subtree(m, e.path); refusal === nothing || return refusal
+                combos, refusal = _own_combinations(m, e.path, sub); refusal === nothing || return refusal
+                refusal = _unread_subtree(ti, vn, [sub; combos]); refusal === nothing || return refusal
+                e.name === nothing && continue
+                newpath = pop_path(m.pops[e.path].parent, e.name)
+                newpath == e.path && continue
+                refusal = _cluster_name_refusal(m, ti, vn, pt, newpath, u); refusal === nothing || return refusal
+            end
+            held = cluster_id_owners(m, run; except = regrouped)
+            for e in edits
+                e.clusters === nothing && continue
+                refusal = _cluster_taken_refusal(held, e.clusters, u; had = _cluster_ids_of(m.pops[e.path]))
+                refusal === nothing || return refusal
+            end
+        end
+        paths = String[]
+        for (u, ti, m) in maps
+            empty!(paths)
+            for e in edits
+                p = m.pops[e.path]
+                if e.clusters !== nothing
+                    p.filter_values = e.clusters
+                    stamp_cluster_run!(p, ti, vn)        # the whole list re-picked on the run as it is now
+                end
+                e.colour === nothing || (p.colour = e.colour)
+                stamp_edit!(m, e.path)
+                push!(paths, e.name === nothing ? e.path : rename_pop!(m, e.path, e.name))
+            end
+            Cecelia._invalidate!(m)
+        end
+        saved = _save_cluster_maps!(maps, body, vn, pt); saved === nothing || return saved
+        counts, total = _cluster_pop_counts!(maps, paths, vn, pt)
+        m1 = maps[1][3]
+        pops = [m1.pops[q] for q in paths]
+        200, JSON3.write((; ok = true, dryRun = _wbool(body, "dryRun", false), popType = pt, run, valueName = vn,
+            images = [u for (u, _, _) in maps], skipped,
+            populations = [(; path = q, name = pop_name(q), runAt = p.run_at, colour = p.colour, count = n,
+                              clusters = sort!(collect(_cluster_ids_of(p))))
+                           for (q, p, n) in zip(paths, pops, counts)],
+            total, unassigned = sort!(collect(setdiff(universe, keys(cluster_id_owners(m1, run))))),
+            updatedBy = pops[1].updated_by))
+    end
+end
+
+# The `groups` of a set-cluster-pops request → (edits, nothing) or (nothing, the 422). Each: the `path` of
+# a population of the run, and any of `clusters` (the whole new list — ids the run has), `name`, `colour`.
+function _cluster_pop_edits(spec, run, universe::Set{Int})
+    (spec isa AbstractVector && !isempty(spec)) || return (nothing, _gerr(422,
+        "groups required: [{path, clusters?, name?, colour?}, …] — one per population to change"))
+    out = NamedTuple{(:path, :clusters, :name, :colour),
+                     Tuple{String,Union{Vector{Int},Nothing},Union{String,Nothing},Union{String,Nothing}}}[]
+    owner = Dict{Int,String}()
+    for (i, g) in enumerate(spec)
+        g isa AbstractDict || return (nothing, _gerr(422, "group $i must be {path, clusters?, name?, colour?}"))
+        raw_path = strip(string(something(get(g, "path", nothing), "")))
+        isempty(raw_path) && return (nothing, _gerr(422, "group $i: path required — the population to change"))
+        path = startswith(raw_path, "/") ? String(raw_path) : "/" * raw_path
+        any(o -> o.path == path, out) && return (nothing, _gerr(422, "two groups change \"$path\""))
+        name = nothing
+        if get(g, "name", nothing) !== nothing
+            name, _, _, _, err = _claude_new_pop(Dict{String,Any}("name" => g["name"]))
+            err === nothing || return (nothing, err)
+            any(o -> o.name == name, out) && return (nothing, _gerr(422, "two groups are renamed \"$name\""))
+        end
+        colour = get(g, "colour", nothing)
+        colour === nothing || _is_hex_colour(colour) ||
+            return (nothing, _gerr(422, "group \"$path\": colour must be a hex colour like \"#22c55e\""))
+        ids = nothing
+        raw = get(g, "clusters", nothing)
+        if raw !== nothing
+            ids, err = _group_cluster_ids(raw, path, run, universe, owner,
+                                          " — to empty a population, delete it"); err === nothing || return (nothing, err)
+        end
+        (ids === nothing && name === nothing && colour === nothing) && return (nothing, _gerr(422,
+            "group \"$path\" changes nothing — give clusters, name or colour"))
+        push!(out, (; path, clusters = ids, name, colour = colour === nothing ? nothing : String(colour)))
+    end
+    (out, nothing)
 end
 
 # The images a cluster population of run `run` lives on — the run's `partOf` (the anchor first), each with
@@ -1605,7 +1732,6 @@ end
 function _proposed_cluster_groups(spec, run, universe::Set{Int})
     (spec isa AbstractVector && !isempty(spec)) || return (nothing, _gerr(422,
         "groups required: [{name, clusters: [ids]}, …] — one per population"))
-    known = join(sort!(collect(universe)), ", ")
     out = NamedTuple{(:name, :path, :clusters, :colour),Tuple{String,String,Vector{Int},Union{String,Nothing}}}[]
     owner = Dict{Int,String}()
     for (i, g) in enumerate(spec)
@@ -1616,23 +1742,8 @@ function _proposed_cluster_groups(spec, run, universe::Set{Int})
         colour = get(g, "colour", nothing)
         colour === nothing || _is_hex_colour(colour) ||
             return (nothing, _gerr(422, "group \"$name\": colour must be a hex colour like \"#22c55e\""))
-        raw = get(g, "clusters", nothing)
-        (raw isa AbstractVector && !isempty(raw)) || return (nothing, _gerr(422,
-            "group \"$name\": clusters is a non-empty list of cluster ids, e.g. [3, 7]"))
-        ids = Int[]
-        for v in raw
-            id = as_cluster_id(v)
-            id === nothing && return (nothing, _gerr(422, "group \"$name\": $(repr(v)) is not a cluster id"))
-            push!(ids, id)
-        end
-        ids = sort!(unique(ids))
-        unknown = setdiff(ids, universe)
-        isempty(unknown) || return (nothing, _gerr(422, "group \"$name\": run \"$run\" has no cluster " *
-            join(unknown, ", ") * (isempty(universe) ? "" : " — its clusters are $known")))
-        twice = [id for id in ids if haskey(owner, id)]
-        isempty(twice) || return (nothing, _gerr(422, "cluster $(join(twice, ", ")) is in both " *
-            "\"$(owner[twice[1]])\" and \"$name\" — a cluster belongs to one population"))
-        for id in ids; owner[id] = name; end
+        ids, err = _group_cluster_ids(get(g, "clusters", nothing), name, run, universe, owner, ", e.g. [3, 7]")
+        err === nothing || return (nothing, err)
         push!(out, (; name, path, clusters = ids, colour = colour === nothing ? nothing : String(colour)))
     end
     (out, nothing)
@@ -1644,16 +1755,61 @@ end
 # rather than silently double-counting its cells. Ids the population already held are not re-checked, so a
 # legacy overlap never blocks an unrelated edit.
 function _cluster_ids_taken(m::PopulationMap, path::AbstractString, new_values, old_values = nothing)
-    p = m.pops[String(path)]
-    sfx = cluster_pop_suffix(p)
+    sfx = cluster_pop_suffix(m.pops[String(path)])
     sfx === nothing && return nothing
-    had = Set{Int}(filter(!isnothing, map(as_cluster_id, Cecelia._as_value_vec(old_values))))
-    held = cluster_id_owners(m, sfx; except = String(path))
-    taken = Dict(string(id) => held[id] for id in filter(!isnothing, map(as_cluster_id, Cecelia._as_value_vec(new_values)))
-                 if !(id in had) && haskey(held, id))
+    _cluster_taken_refusal(cluster_id_owners(m, sfx; except = String(path)), _value_cluster_ids(new_values);
+                           had = _value_cluster_ids(old_values), hint = " Take it out of there first.")
+end
+
+# The cluster ids in a filter's values (3, 3.0, "3" alike; anything else dropped) / a population's filter.
+_value_cluster_ids(values) = Set{Int}(filter(!isnothing, map(as_cluster_id, Cecelia._as_value_vec(values))))
+_cluster_ids_of(p) = _value_cluster_ids(p.filter_values)
+
+# The 409 `cluster_taken` for the ids of `ids` that another population holds (`held`, `cluster_id_owners`)
+# — ids in `had`, the population's own before this write, are not re-checked — or `nothing`. `image` names
+# the image of a set-wide write it was found on.
+function _cluster_taken_refusal(held::AbstractDict, ids; had = Set{Int}(), image = nothing,
+                                hint = " Leave it out, or ask the user to move it.")
+    taken = Dict(string(id) => held[id] for id in ids if !(id in had) && haskey(held, id))
     isempty(taken) && return nothing
-    409, JSON3.write((; code = "cluster_taken", clusters = taken,
-        error = _cluster_taken_text(taken) * " Take it out of there first."))
+    error = _cluster_taken_text(taken) * hint
+    409, JSON3.write(image === nothing ? (; code = "cluster_taken", clusters = taken, error) :
+                                         (; code = "cluster_taken", clusters = taken, image, error))
+end
+_cluster_taken_refusal(held, ids, image; kw...) = _cluster_taken_refusal(held, ids; image, kw...)
+
+# A cluster population's new path `path` on image `u`'s map → nothing, or the 409: taken on this map
+# (`pop_exists`) or by another pop type of the segmentation (`pop_name_conflict`).
+function _cluster_name_refusal(m::PopulationMap, img::CciaImage, vn, pt, path::AbstractString, u)
+    has_pop(m, path) && return 409, JSON3.write((; code = "pop_exists", image = u,
+        error = "A population \"$path\" already exists — choose another name; an existing population is never replaced"))
+    conflict = pop_name_conflict(img, vn, path; pop_type = pt)
+    conflict === nothing || return 409, JSON3.write((; code = "pop_name_conflict", image = u,
+        error = "A $conflict population named \"$(pop_name(path))\" already exists in this segmentation — " *
+                "names must be unique across population types. Choose another name."))
+    nothing
+end
+
+# One group's `clusters` → (sorted unique ids, nothing) or (nothing, the 422): a non-empty list of ids the run
+# has, none already in another group of the request (`owner`: id ⇒ group label, filled in here).
+function _group_cluster_ids(raw, label, run, universe::Set{Int}, owner::Dict{Int,String}, empty_hint)
+    (raw isa AbstractVector && !isempty(raw)) || return (nothing, _gerr(422,
+        "group \"$label\": clusters is a non-empty list of cluster ids$empty_hint"))
+    ids = Int[]
+    for v in raw
+        id = as_cluster_id(v)
+        id === nothing && return (nothing, _gerr(422, "group \"$label\": $(repr(v)) is not a cluster id"))
+        push!(ids, id)
+    end
+    ids = sort!(unique(ids))
+    unknown = setdiff(ids, universe)
+    isempty(unknown) || return (nothing, _gerr(422, "group \"$label\": run \"$run\" has no cluster " *
+        join(unknown, ", ") * (isempty(universe) ? "" : " — its clusters are $(join(sort!(collect(universe)), ", "))")))
+    twice = [id for id in ids if haskey(owner, id)]
+    isempty(twice) || return (nothing, _gerr(422, "cluster $(join(twice, ", ")) is in both " *
+        "\"$(owner[twice[1]])\" and \"$label\" — a cluster belongs to one population"))
+    for id in ids; owner[id] = String(label); end
+    (ids, nothing)
 end
 
 # "Clusters 3, 7 already belong to /A — a cluster belongs to one population of a run." — `taken` id ⇒ holder.
