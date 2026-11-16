@@ -8,7 +8,7 @@ lock, its output-name prefix and the measured-segmentation check (`_gating_guard
 the routes the toolset needs, which both allow-lists include, so the two servers cannot drift apart.
 
 Writes go ONLY through the Claude-scoped routes — `/api/gating/pop/add-gate`, `add-boolean`,
-`add-filter`, `add-cluster-pops`, `set-own-gate`, `delete-own` — which change nothing the user drew (the server checks every population's `createdBy`).
+`add-filter`, `add-cluster-pops`, `set-cluster-pops`, `set-own-gate`, `delete-own` — which change nothing the user drew (the server checks every population's `createdBy`).
 The general `/api/gating/pop/*` routes (add / set-gate / delete / rename / move) stay GUI-only.
 """
 from __future__ import annotations
@@ -168,8 +168,22 @@ already in a population, 409 on a taken name, 422 on an id the run lacks or one 
 population's `count` (cells or tracks, summed over the run's images), `total`, and `unassigned` — the
 run's clusters no population holds yet. `dry_run=True` gives the same numbers and writes nothing; pass
 a partial grouping and read `unassigned` for what is left. Marked as yours (✦), only when the user asked
-or agreed. delete_gate with `pop_type` removes one (from every image of the run); to change one,
-delete it and propose again. Tell the user it is a proposal, with the numbers."""
+or agreed. set_cluster_pops changes yours; delete_gate with `pop_type` removes one (from every image of
+the run). Tell the user it is a proposal, with the numbers."""
+
+SET_CLUSTER_POPS_DOC = """REGROUP cluster populations YOU made (✦) — add_cluster_pops' edit, as set_gate is add_gate's:
+`groups` = `[{path, clusters?, name?, colour?}, …]`, one per population to change. `clusters` is its WHOLE new
+list (not a diff), `name` renames it, `colour` recolours it. "Move cluster 4 from fast to slow" is one call
+with both: `[{"path": "/fast", "clusters": [1, 2]}, {"path": "/slow", "clusters": [3, 4]}]`. The grouping is
+checked as it will be after the call, so swaps between your populations go through. `run` / `pop_type` as
+in add_cluster_pops; written to every image of the run, all or nothing.
+
+403 `not_claude_made` when a population is the user's, including one of yours they have since edited;
+403 `used_by_runs` when a task read it. 409 `cluster_taken` when a cluster you add is held by a population
+you are not changing (409 on a taken name). 422 on an id the run lacks, a cluster in two groups, or a path
+that is not a population of this run. Re-picking `clusters` re-stamps the run (clears a stale warning).
+The reply is add_cluster_pops' (each population's new `path`, `count`, `unassigned`). `dry_run=True`
+writes nothing. Only when the user asked or agreed; say what changed, with the numbers."""
 
 DELETE_GATE_DOC = """REMOVE a population YOU made (✦), with everything under it — every one of those must be yours
 too, else 403 `not_claude_made` naming the user's; 403 `used_by_runs` when a task read one of them;
@@ -186,6 +200,7 @@ ADD_ROUTE = "/api/gating/pop/add-gate"
 ADD_BOOLEAN_ROUTE = "/api/gating/pop/add-boolean"
 ADD_FILTER_ROUTE = "/api/gating/pop/add-filter"
 ADD_CLUSTER_ROUTE = "/api/gating/pop/add-cluster-pops"
+SET_CLUSTER_ROUTE = "/api/gating/pop/set-cluster-pops"
 SET_ROUTE = "/api/gating/pop/set-own-gate"
 DELETE_ROUTE = "/api/gating/pop/delete-own"
 
@@ -194,7 +209,7 @@ DELETE_ROUTE = "/api/gating/pop/delete-own"
 GATING_READ_ROUTES = frozenset({("GET", PLOT_ROUTE), ("GET", CELLS_ROUTE), ("GET", SUMMARY_ROUTE),
                                 ("GET", STATS_ROUTE), ("GET", EXAMPLES_ROUTE)})
 GATING_WRITE_ROUTES = frozenset({("POST", ADD_ROUTE), ("POST", ADD_BOOLEAN_ROUTE), ("POST", ADD_FILTER_ROUTE),
-                                 ("POST", ADD_CLUSTER_ROUTE),
+                                 ("POST", ADD_CLUSTER_ROUTE), ("POST", SET_CLUSTER_ROUTE),
                                  ("POST", SET_ROUTE),
                                  ("POST", DELETE_ROUTE)})
 GATING_ROUTES = GATING_READ_ROUTES | GATING_WRITE_ROUTES
@@ -372,6 +387,14 @@ class GatingClient:
                 "run": run, "groups": list(groups or []), "dryRun": bool(dry_run)}
         return self._request("POST", ADD_CLUSTER_ROUTE, body=body)
 
+    def set_cluster_pops(self, project_uid: str, image_uid: str, value_name: str, run: str,
+                         groups: list[dict], pop_type: str = "clust", dry_run: bool = False) -> dict:
+        # Only populations Claude made: the server checks each one's stamps, on every image of the run.
+        self._gating_guard(project_uid, image_uid, value_name, True)
+        body = {**self._ids(project_uid, image_uid, value_name), "popType": pop_type or "clust",
+                "run": run, "groups": list(groups or []), "dryRun": bool(dry_run)}
+        return self._request("POST", SET_CLUSTER_ROUTE, body=body)
+
     def delete_gate(self, project_uid: str, image_uid: str, value_name: str, path: str,
                     dry_run: bool = False, pop_type: str = "flow") -> dict:
         self._gating_guard(project_uid, image_uid, value_name, True)
@@ -461,6 +484,12 @@ def register_gating_tools(tool, client: GatingClient) -> dict:
                          pop_type: str = "clust", dry_run: bool = False) -> dict:
         return client.add_cluster_pops(project_uid, image_uid, value_name, run, groups, pop_type, dry_run)
 
+    @tool
+    @with_doc(SET_CLUSTER_POPS_DOC)
+    def set_cluster_pops(project_uid: str, image_uid: str, value_name: str, run: str, groups: list[dict],
+                         pop_type: str = "clust", dry_run: bool = False) -> dict:
+        return client.set_cluster_pops(project_uid, image_uid, value_name, run, groups, pop_type, dry_run)
+
     return {f.__name__: f for f in (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats,
-                                    add_gate, add_boolean_pop, add_filter_pop, add_cluster_pops, set_gate,
+                                    add_gate, add_boolean_pop, add_filter_pop, add_cluster_pops, set_cluster_pops, set_gate,
                                     delete_gate)}

@@ -92,6 +92,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/gating/pop/add-filter"),   # create-only: ONE new filter pop, never edits one
             ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
             ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
+            ("POST", "/api/gating/pop/set-cluster-pops"),  # regroups only Claude's cluster pops (403 on the user's)
             ("POST", "/api/gating/pop/set-own-gate"),  # moves only what Claude drew (403 on the user's)
             ("POST", "/api/lablog/append"),
             ("POST", "/api/notebooks/describe"),
@@ -789,6 +790,13 @@ class ClientTest(unittest.TestCase):
             self.assertEqual(json.loads(req.data), {
                 "projectUid": "P", "imageUid": "I", "valueName": "B", "popType": "trackclust",
                 "run": "movement", "groups": groups, "dryRun": True})
+            self.c.set_cluster_pops("P", "I", "B", "movement", [{"path": "/fast", "clusters": [0]}],
+                                    pop_type="trackclust")
+            req = u.call_args[0][0]
+            self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/set-cluster-pops"))
+            self.assertEqual(json.loads(req.data), {
+                "projectUid": "P", "imageUid": "I", "valueName": "B", "popType": "trackclust",
+                "run": "movement", "groups": [{"path": "/fast", "clusters": [0]}], "dryRun": False})
             self.c.delete_gate("P", "I", "B", "/fast", pop_type="trackclust")
             self.assertEqual(json.loads(u.call_args[0][0].data)["popType"], "trackclust")
             self.c.delete_gate("P", "I", "B", "/gate")
