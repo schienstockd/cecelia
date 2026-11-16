@@ -25,7 +25,8 @@ import { preferencesPane, type PreferencesPane } from '../lib/preferencesOpen'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useMcpConnections } from '../composables/useMcpConnections'
 import { useObserverStore } from '../stores/observer'
-import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
+import { pluginCardAction, terminalSetupTooltip } from '../utils/observerSetup'
+import { CLAUDE_SETUP_GUIDE } from '../utils/mcpConnections'
 import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import { dotClass } from '../utils/statusDot'
 import { fetchSharedWorkstation } from '../utils/sharedWorkstation'
@@ -202,7 +203,8 @@ function onProfileCreated(_name: string) {
 // in Settings → System (docs/todo/SETTINGS_SCOPE_PLAN.md). Kiwi's Terminal row offers the same
 // Set up / Fix; this is the place that also shows which checkout is registered and the fallback.
 const observer = useObserverStore()
-const { observerRow, observerInstallShort } = useMcpConnections()
+const { observerRow, observerInstallShort, rechecking: cliRechecking, recheck: recheckCli } = useMcpConnections()
+const pluginAction = computed(() => pluginCardAction(observer.available, observer.terminalState))
 const { isCopied: observerCmdCopied, copy: copyCmdFlash } = useCopyFlash()
 const observerFallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
 const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
@@ -517,17 +519,25 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
           </span>
           <span v-if="observerInstallShort" class="pk-install cc-muted cc-fs-xs"
                 v-tooltip.top="observerRow.installPath">{{ observerInstallShort }}</span>
-          <button v-if="observerRow.tone === 'warn'" class="cc-btn cc-btn-ghost cc-fs-xs"
+          <!-- no CLI: setup runs `claude`, so the only useful step is installing it, then re-checking -->
+          <template v-if="pluginAction === 'install-cli'">
+            <a :href="CLAUDE_SETUP_GUIDE" target="_blank" rel="noopener" class="cc-fs-xs"
+               v-tooltip.top="'Needed before the plugin can be set up'">Install Claude Code ↗</a>
+            <button class="cc-btn cc-btn-bare cc-btn-icon" :disabled="cliRechecking"
+                    @click="recheckCli" v-tooltip.left="'Re-check'">
+              <i :class="['pi', cliRechecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
+            </button>
+          </template>
+          <button v-else-if="pluginAction" class="cc-btn cc-btn-ghost cc-fs-xs"
                   :disabled="observer.registering" @click="observer.registerMcp()"
                   v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
             <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
             {{ observer.registering ? CLAUDE_TERMINAL.busy
-               : terminalCta(observer.available, observer.terminalState) === 'resync'
-                 ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
+               : pluginAction === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
           </button>
         </div>
-        <!-- one-click setup FAILED: the resolved command to run by hand, next to the row it fixes -->
-        <div v-if="observer.registerError" class="pk-note cc-row cc-row-tight">
+        <!-- one-click setup FAILED with the CLI present: the resolved command to run by hand -->
+        <div v-if="observer.registerError && pluginAction !== 'install-cli'" class="pk-note cc-row cc-row-tight">
           <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
           <template v-if="observerFallbackCommand">
             <code class="cc-fs-2xs">{{ observerFallbackCommand }}</code>
