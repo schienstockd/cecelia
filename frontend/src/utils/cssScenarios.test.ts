@@ -425,7 +425,6 @@ describe('colour literals in script code', () => {
     'utils/taskModule.ts':                   'module identity colours',
     'utils/landscape.ts':                    'landscape swatches, pinned to the server',
     'lib/colorLegend.ts':                    'the legend\'s ramp swatches',
-    'modules/batchmovies/overlayPreview.ts': 'the schematic preview palette',
   }
 
   it('finds quoted colours in scripts, not in templates, comments or COLOUR-OK lines', () => {
