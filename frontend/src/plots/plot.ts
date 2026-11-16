@@ -1039,7 +1039,7 @@ function buildHmmElbow(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Rec
   if (!rows.length) return null
   const { ink: fg, ground: bg } = plotTheme(!!o.darkTheme)
   const domain = [...new Set(rows.map(p => p.curve))]
-  const color = { domain, range: distinctColors(domain.length) }
+  const color = { domain, range: categoricalColours(domain.length) }
   const ks = [...new Set(rows.map(p => p.k))].sort((a, b) => a - b)
   const opts: Record<string, unknown> = {
     // `nice` puts a tick on the top edge, where the y label sits — leave the label its own row
