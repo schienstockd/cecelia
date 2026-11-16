@@ -264,7 +264,9 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   no segmented object to name and no capture in hand. Pairs with `get_landscape(...)`: read the \
   landscape's tiles, then point at the tile that matters. Coarser than mark_cells / \
   mark_tracks — use when a REGION is the answer, not an object.
-- `list_plots(project_uid)` — enumerate plot panels currently on the user's screen; call BEFORE \
+- `list_plots(project_uid)` — enumerate plot panels open in the user's browser, including pages \
+  they have navigated away from (the app keeps those mounted; `route` names each one's page, and a \
+  mark on a page they aren't on stays unseen until they go back); call BEFORE \
   `mark_plot` to resolve "the UMAP" / "that heatmap" to a live `plot_id` instead of guessing. \
   Each entry carries a `content` bag of panel-specific discriminators (e.g. `content.measure` on \
   summary panels) — use it to pick the right one when several share a family. For NUMERIC \
@@ -387,8 +389,8 @@ message; the address (project, image, t, z, extent) is in the returned envelope 
 have to ask "which image". Nothing else about a push message is special — it counts as the \
 user pointing you at something, not as a permission to act.
 
-POINTING AT SOMETHING NOT YET ON SCREEN. `mark_*` and `list_plots` both work only on what the \
-user is currently looking at. When the target ISN'T on screen, two navigation tools cover the \
+POINTING AT SOMETHING NOT YET ON SCREEN. `mark_*` only shows on what the user is currently \
+looking at, and `list_plots` only knows plots on pages they have opened. When the target ISN'T on screen, two navigation tools cover the \
 two shapes of "look over here":
 
 - `seek_viewer(project_uid, image_uid, t?, z?)` — move the viewer to a specific frame. \

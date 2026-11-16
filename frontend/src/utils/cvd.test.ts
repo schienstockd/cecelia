@@ -90,6 +90,9 @@ it('every accepted exception still fails somewhere (else drop it)', () => {
 const JULIA = Object.values(import.meta.glob('/../app/src/gating/popmanager/clustering_colour.jl',
   { query: '?raw', import: 'default', eager: true }))[0] as string | undefined
 
+const CONSOLE = Object.values(import.meta.glob('/../share/console_palette.json',
+  { query: '?raw', import: 'default', eager: true }))[0] as string | undefined
+
 describe('the population palette', () => {
   const p = POPULATION_PALETTE
   it('has 12 colours', () => expect(p.length).toBe(12))
@@ -100,8 +103,7 @@ describe('the population palette', () => {
     })
     expect(bad).toEqual([])
   })
-  // 12 colours that are all ≥ 3:1 on black AND white can't clear 8 / 15 pairwise (a search over the whole
-  // band tops out at ~6.3 / ~13.5); a pop always carries its name, so the last 4 sit at the labelled floor.
+  // The last 4 sit at the labelled floor: a pop always carries its name.
   it('keeps all 12 above the labelled floor (cvd ≥ 6, normal ≥ 13)', () => {
     const bad = pairs([...p]).flatMap(([a, b]) => {
       const cvd = cvdSeparation(a, b), normal = deltaE(a, b)
@@ -109,10 +111,31 @@ describe('the population palette', () => {
     })
     expect(bad).toEqual([])
   })
-  it('shows on the dark plot ground, a white export and a black image (≥ 3:1)', () => {
-    const bad = p.flatMap(c => [PLOT_GROUND_DARK, '#ffffff', '#000000']
+  it('shows on the dark plot ground and a black image (≥ 3:1)', () => {
+    const bad = p.flatMap(c => [PLOT_GROUND_DARK, '#000000']
       .filter(g => contrastRatio(c, g) < 3).map(g => `${c} on ${g}`))
     expect(bad).toEqual([])
+  })
+  // 3:1 on white AND black leaves only a narrow luminance band, and 12 well-separated colours in it are
+  // all high-chroma (the previous palette — users found it garish). Paul Tol's bright scheme, made for
+  // white paper, bottoms out at 1.8:1 (#66CCEE); this palette holds 2:1.
+  it('shows on a white export (≥ 2:1)', () => {
+    expect(p.filter(c => contrastRatio(c, '#ffffff') < 2)).toEqual([])
+  })
+  // Tritanopia is rare, but a blue-yellow pair that merges there has no excuse when the search can avoid it.
+  it('keeps the first 8 apart under tritanopia (ΔE ≥ 8) and all 12 above the floor (≥ 6)', () => {
+    const bad = pairs([...p]).flatMap(([a, b]) => {
+      const t = deltaE(a, b, 'tritan'), first8 = p.indexOf(a) < 8 && p.indexOf(b) < 8
+      return t < (first8 ? CVD_TARGET : CVD_FLOOR) ? [`${a} ↔ ${b}: tritan ${t.toFixed(1)}`] : []
+    })
+    expect(bad).toEqual([])
+  })
+  it('opens with the agents-pane hues (Tol bright, the badges in share/console_palette.json)', () => {
+    expect(CONSOLE, 'console_palette.json not found').toBeTruthy()
+    const badges: string[] = JSON.parse(CONSOLE!).badges
+    // a near match, not equality: the badges are tuned for a terminal, the palette for the grounds above
+    const far = badges.slice(0, 6).flatMap((b, i) => deltaE(b, p[i]) > 8 ? [`${b} vs ${p[i]}: ${deltaE(b, p[i]).toFixed(1)}`] : [])
+    expect(far).toEqual([])
   })
   it('is the list Julia colours categories with', () => {
     expect(JULIA, 'clustering_colour.jl not found').toBeTruthy()

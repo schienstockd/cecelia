@@ -17,6 +17,8 @@
 
 import type { SceneAidRender, SceneAidPoint, SceneAidRibbon } from '../../lib/sceneAid'
 import { OVERLAY_GREY } from '../../utils/viewerOverlays'
+import { POPULATION_PALETTE, PALETTES } from '../../plots/plot'
+import { BLUE_HEAT_ANCHORS } from '../../plots/flowColors'
 
 /** A stable, tiny PRNG — same as `smoothVis.ts`. `Math.random` would make the scene
  *  non-reproducible and a test would pin nothing. */
@@ -30,17 +32,19 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-/** Fake pop palette. Kept SEPARATE from the app palette — the schematic shows STRUCTURE (that
- *  four pops will draw in four colours), not identity (which pop got which hex). Matching the real
- *  palette here would make the preview a second legend to keep in step with Settings. */
-export const PREVIEW_PALETTE = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#5eead4', '#f472b6']
+/** The schematic's pops: the first six of the app's population palette, so the preview looks like the
+ *  movie. It still shows STRUCTURE (six pops draw in six colours), not which real pop got which hex. */
+export const PREVIEW_PALETTE: readonly string[] = POPULATION_PALETTE.slice(0, 6)
+
+/** "track" tails cycle the per-track palette the overlay author cycles (`CECELIA_TRACK_PALETTE`). */
+const PREVIEW_TRACK_PALETTE: readonly string[] = PALETTES.cecelia
 
 /** Grey stand-in for `all_tracks_colour` in the overlay author (`#9ca3af`) — a whole-seg preview
  *  reads the same neutral tone the movie would. */
 export const ALL_TRACKS_GREY = OVERLAY_GREY
 
-/** Stand-in heat ramp (cool → hot) for "speed" tails — structure, not the real `heatRamp`. */
-const PREVIEW_HEAT = ['#1d4ed8', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444']
+/** "speed" tails: the real `heatRamp` anchors (the scene has no speeds, so they cycle by track). */
+const PREVIEW_HEAT = BLUE_HEAT_ANCHORS
 
 /** A tail's colour under the track colour mode, as the overlay author picks it
  *  (`_build_overlay_state`): "track" cycles the palette by track, "speed" the heat ramp (the scene has
@@ -48,9 +52,9 @@ const PREVIEW_HEAT = ['#1d4ed8', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444']
  *  — its pop, or its source in the whole-seg branch). */
 function tailColour(mode: string | undefined, trackId: number, solid: string, own: string): string {
   if (mode === 'solid') return solid
-  if (mode === 'pop') return own
+  if (mode === 'pop' || mode === 'cell') return own
   if (mode === 'speed') return PREVIEW_HEAT[trackId % PREVIEW_HEAT.length]!
-  return PREVIEW_PALETTE[trackId % PREVIEW_PALETTE.length]!
+  return PREVIEW_TRACK_PALETTE[trackId % PREVIEW_TRACK_PALETTE.length]!
 }
 
 const N_POPS = 6
@@ -132,7 +136,7 @@ export interface OverlayPreviewConfig {
    *  (schematic — the scene is fixed at two pseudo-segs regardless of how many real ones exist).
    *  Absent → single-source grey (`ALL_TRACKS_GREY`); empty → every source hidden, no tails. */
   trackSources?: Array<{ valueName: string; colour: string }>
-  /** How tails are coloured — `'track'` (default) | `'speed'` | `'solid'` | `'pop'`. */
+  /** How tails are coloured — `'track'` (default) | `'speed'` | `'solid'` | `'pop'` | `'cell'`. */
   trackColourMode?: string
 }
 

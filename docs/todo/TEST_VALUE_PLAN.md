@@ -207,6 +207,16 @@ name a changed function.
   per function with survivors, the definition rule in its text. Timed (results above): median 76 s,
   max 6 min over 5 PRs unsampled. Tests are matched by name through the function's same-file callers
   (`_band` → `parse_settings`): by its own name only, #2218's full-record tests were missed.
+  **First use (2026-11-15/16, 38 runs):** the one `untested` finding (`_history_products`, #2270) was
+  fixed with a spec-derived test, all mutants killed on the next round; the Julia on-base verdicts of
+  #2270/#2273/#2277 were real failures on the added lines. But with Julia result code the check took
+  8–10 min against the reviewers' 1–3, every round, on unchanged code. Since then: results are cached
+  per worktree (`<git dir>/test-value-cache/`) on the content they read — on-base on HEAD + the staged
+  source and test text, mutation per file on its text, changed lines and mapped tests — so a round
+  over unchanged code reuses them; old code that won't load is *not judged* (said in the section), no
+  longer a silent "failed"; `app/src/Cecelia.jl` is never swapped (it re-includes the package).
+  A file the time budget cut short is cached as it is and said (*Partly mutated*), so the next round
+  reaches the files after it: replaying #2270 took 618 s, then 293 s, then 1 s.
   **Review on 2026-11-29:** read the `test_value_finding_resolved` rows (`pixi run audit-rollup`,
   *Test value*). Mostly `false_positive` with reasons that hold → drop `untested` or narrow it; tests
   added under `fixed_pre_commit` that pin the code's own output → tighten the text.

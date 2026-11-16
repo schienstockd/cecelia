@@ -289,6 +289,12 @@ class UntestedTest(_Repo):
         self.assertEqual(len(self.reruns), 1)
         self.assertEqual(bugs[0]["status"], "gone")
 
+    def test_a_rerun_the_budget_cut_short_with_none_surviving_closes_nothing(self):
+        row = {"results": ["killed"], "survivor_detail": [], "partial": "1 of 6 mutants run before the time budget"}
+        self.assertEqual(self.b.rerun_verdict(row, "f")[:2],
+                         ("failed", "the rerun was cut short: 1 of 6 mutants run before the time budget"))
+        self.assertEqual(self.b.rerun_verdict({**row, "partial": None}, "f")[0], "gone")
+
     def test_two_findings_on_one_function_are_mutated_once(self):
         events = [_untested("tv-00000001"), _untested("tv-00000002", line=4, branch="other")]
         bugs, _ = self.sweep(events, previous=_SWEPT_TV, rerun=self.rerun(survivors=[("x", "y")]))

@@ -28,6 +28,8 @@ stack. Per-tag notes are also on the
 - **Aggregate runs have names.** Columns gain `#<name>` (`flow.cell.is.aggregate#default`), and the
   population is `_aggregated_<name>`. Plots and gates on older aggregate columns need re-picking after a re-run.
 - **Recordings follow the viewer's scale bar, timestamp and 3D Steps.** Pick a Render quality to override Steps.
+- **Softer population colours.** New populations and uncoloured clusters / states use a calmer
+  12-colour palette; colours already saved on a population stay.
 - **Skeletons draw as lines coloured by branch type**, in the viewer and every recording. Re-run
   branching on older skeletons to see them.
 - **Plots show populations in the order you pick them**, not alphabetically. Drag *plot order* in
@@ -64,6 +66,7 @@ stack. Per-tag notes are also on the
 
 ### Added
 
+- **Track ribbons by HMM state:** Tracks → *Colour by* → *colour by* colours each step by the cell's Colour by.
 - **Register staining cycles** (*Edit → Register images*), now on: slide scans register on their
   pyramid into one image with one DAPI; QC flags a misaligned cycle or lost tissue.
 - **AF correction skips channels the scanner already AF-subtracted** (PhenoCycler), and says so.

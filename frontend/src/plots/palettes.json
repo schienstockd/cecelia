@@ -1,7 +1,7 @@
 {
   "palettes": {
-    "population": ["#235EFA", "#FB5888", "#637510", "#B729C4", "#C98510", "#9285E6", "#2CA1AB", "#A0576F",
-                   "#E10500", "#0AAA55", "#FF32D7", "#19739B"],
+    "population": ["#1271C5", "#F36E9F", "#547606", "#94C56F", "#45C1FB", "#AD4194", "#BC844A", "#A37EF3",
+                   "#D1AFB2", "#3AA085", "#FFA21E", "#826463"],
     "cecelia": ["#EBD441", "#4682B4", "#AA1F5E", "#B3BCC2", "#2F4F4F", "#5FB0B7",
                 "#C77DA6", "#D98E32", "#3E6D8E", "#8E4585", "#7A8B99", "#C1553E"],
     "okabe-ito": ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#000000"],
@@ -9,7 +9,7 @@
     "tol-muted": ["#88CCEE", "#44AA99", "#117733", "#332288", "#DDCC77", "#999933", "#CC6677", "#882255", "#AA4499"],
     "tol-light": ["#77AADD", "#EE8866", "#EEDD88", "#FFAABB", "#99DDFF", "#44BB99", "#BBCC33", "#AAAA00"]
   },
-  "trackColorModes": ["track", "speed", "solid", "pop"],
+  "trackColorModes": ["track", "speed", "solid", "pop", "cell"],
   "heatRamp": ["#0B1A4D", "#1793FF", "#04FA00", "#FFA805", "#FF3856"],
   "branchTypeColours": ["#E69F00", "#56B4E9", "#009E73", "#CC79A7"],
   "branchTypeNames": ["endpoint-to-endpoint", "endpoint-to-junction", "junction-to-junction", "isolated-cycle"]

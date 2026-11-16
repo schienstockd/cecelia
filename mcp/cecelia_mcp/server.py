@@ -2114,7 +2114,11 @@ def list_plots(project_uid: str) -> list[dict]:
     `get_spatial_stats` — and correlate its output back to each `plot_id` via `content`, rather
     than reading numbers out of a shared frame.
 
-    Empty list if the user has no browser open on this project, or has no plot panels on screen
+    Includes panels on pages the user has navigated away from: the app keeps visited pages
+    mounted, so `route` is how you tell which page a panel is on. A `mark_plot` on another page
+    stays unseen until the user returns there.
+
+    Empty list if the user has no browser open on this project, or has no plot panels open
     (the analysis / cluster / gate pages are where they live — module pages without a plot bag
     return nothing). Session-only, no persistence; a browser reload re-populates on mount.
     """
