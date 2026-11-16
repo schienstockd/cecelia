@@ -678,6 +678,46 @@ end
     rm(proj.root; recursive=true)
 end
 
+# Channels are looked up BY NAME (view states, gating, task params), so a blank or repeated name makes
+# two channels one. Names are made unique where written AND where read (images already on disk).
+@testset "Channel names are never blank or repeated" begin
+    @test unique_channel_names(["", "", ""]) == ["CH1", "CH2", "CH3"]
+    @test unique_channel_names(["CD4", " ", "cd4", "CD4"]) == ["CD4", "CH2", "cd4", "CD4_2"]  # case: the resolver's call
+    @test unique_channel_names(["ch2", ""]) == ["ch2", "CH2_2"]     # a fallback avoids a real name in any case
+    @test unique_channel_names(["CH2", ""]) == ["CH2", "CH2_2"]     # a fallback never steals a real name
+    @test unique_channel_names(["DAPI", "GFP"]) == ["DAPI", "GFP"]  # good names untouched
+    # a blank takes the image's own name for that channel first (a .lif's acquisition settings)
+    @test unique_channel_names(["", "", "SHG"]; fallback = ["Blue", ""]) == ["Blue", "CH2", "SHG"]
+
+    # the acquisition settings place names by their 1-based `order`, not list position
+    meta = Dict{String,Any}("acquisition" => Dict{String,Any}("channels" => [
+        Dict{String,Any}("name" => "Red", "order" => 3), Dict{String,Any}("name" => "Blue", "order" => 1)]))
+    @test acquisition_channel_names(meta) == ["Blue", "", "Red"]
+    @test acquisition_channel_names(nothing) == String[]
+    # the import writes them: a store with blank labels lands named, not blank
+    r0 = Dict{String,Any}()
+    @test Cecelia._merge_channel_names!(r0, ["", "", ""]; meta = meta) === :set
+    @test collect(String, versioned_get_field(r0, "imChannelNames", VERSIONED_DEFAULT_VAL)) == ["Blue", "CH2", "Red"]
+
+    proj = create_project!(name="cn-uniq-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    set_channel_names!(img, ["GFP", "GFP"]; check_length=false)     # a rename repeating a name
+    @test channel_names(img) == ["GFP", "GFP_2"]
+    # an image imported before the rule: blank names straight on disk, repaired on read from its meta
+    raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}("default" => ["", "", ""], "_active" => "default"))
+    @test ccid_channel_names(raw) == ["CH1", "CH2", "CH3"]
+    raw["meta"] = meta
+    @test ccid_channel_names(raw) == ["Blue", "CH2", "Red"]
+    # a derived image (projection, crop, …) is given the names as READ, so it matches its source even
+    # without the source's acquisition settings
+    @test inherited_channel_names(raw) == ["Blue", "CH2", "Red"]
+    @test inherited_channel_names(Dict{String,Any}()) === nothing
+    img.meta = merge(img.meta, meta)
+    versioned_set!(img.im_channel_names, ["", "", ""], "default")   # as stored on disk, bypassing the setter
+    @test channel_names(img) == ["Blue", "CH2", "Red"]
+    rm(proj.root; recursive=true)
+end
+
 # read_ccid_raw is the one ccid.json read+Symbol-key-normalize helper (used by the api layer).
 # versioned_get is the single active-value accessor for both String→String path dicts and the
 # Any/JSON3 raw dicts (replaced the removed image.jl `active`).
