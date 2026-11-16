@@ -578,9 +578,12 @@ const _POST_ROUTES = Dict{String, Function}(
     # `/request` and gets the viewer's answer back. Never Claude-authored.
     "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
     "/api/viewer/landscape/request" => (req, body_bytes) -> (api_viewer_landscape_request(body_bytes)),
-    # ask the open viewer: MCP get_viewer_screenshot / set_viewer_view; `/reply` is the browser's answer
+    # ask the open viewer / a plot panel: MCP get_viewer_screenshot / set_viewer_view / get_plot_image / set_plot_view;
+    # `/reply` is the browser's answer
     "/api/viewer/screenshot"     => (req, body_bytes) -> (api_viewer_screenshot(body_bytes)),
     "/api/viewer/view"           => (req, body_bytes) -> (api_viewer_view(body_bytes)),
+    "/api/viewer/plots/image"    => (req, body_bytes) -> (api_viewer_plot_image(body_bytes)),   # MCP get_plot_image
+    "/api/viewer/plots/view"     => (req, body_bytes) -> (api_viewer_plot_view(body_bytes)),    # MCP set_plot_view
     "/api/viewer/reply"          => (req, body_bytes) -> (api_viewer_reply(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),

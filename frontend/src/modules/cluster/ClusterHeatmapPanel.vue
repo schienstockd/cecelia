@@ -185,6 +185,7 @@ useVisualPanel(
       nCols: (heatmap.value as (PlotDataResponse & { xLabels?: string[] }) | null)?.xLabels?.length ?? 0,
     },
   }),
+  exportImage,
 )
 
 // BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='heatmap'`,

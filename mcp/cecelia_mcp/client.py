@@ -140,6 +140,8 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/navigate"),       # RUBBER_DUCK_FIT_PLAN P2B: navigate main window to a route (+ optional board tab); MCP resolves ambiguity before calling
         ("POST", "/api/viewer/landscape/request"),  # ASK the open viewer for its landscape now (WS `viewer:landscape-request`); nothing on disk changes
         ("POST", "/api/viewer/screenshot"),  # ASK the open viewer for its Save-image picture now; nothing changes
+        ("POST", "/api/viewer/plots/image"), # ASK an open plot panel for its export picture now; nothing changes
+        ("POST", "/api/viewer/plots/view"),  # change an open plot's settings (colouring, chart …) like its own controls (its answer: the settings after)
         ("POST", "/api/viewer/view"),        # change the open viewer's contrast / channels / 3D / camera (its answer: the view it landed on)
         # NB: /api/viewer/reply is the BROWSER's answer to either — never on this surface.
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
@@ -696,6 +698,19 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         body: dict = {"projectUid": project_uid, "imageUid": image_uid}
         if max_side: body["maxSide"] = int(max_side)
         return self._request("POST", "/api/viewer/screenshot", body=body)
+
+    def get_plot_image(self, project_uid: str, plot_id: str, max_side: int | None = None):
+        # An open plot panel's export picture; `{reason: "not_open" | "not_on_screen"}`
+        # when no panel of that id is registered / none on screen answered (≤ 25 s).
+        body: dict = {"projectUid": project_uid, "plotId": plot_id}
+        if max_side: body["maxSide"] = int(max_side)
+        return self._request("POST", "/api/viewer/plots/image", body=body)
+
+    def set_plot_view(self, project_uid: str, plot_id: str, settings: dict):
+        # A partial change of an open plot's declared settings; answers with the settings after
+        # (`rejected` names the refused ones), or `{reason: "not_open" | "not_on_screen"}` (≤ 25 s).
+        return self._request("POST", "/api/viewer/plots/view",
+                             body={"projectUid": project_uid, "plotId": plot_id, "settings": settings})
 
     def set_viewer_view(self, project_uid: str, image_uid: str, view: dict):
         # A partial view state the viewer merges onto its own and applies; answers with the view

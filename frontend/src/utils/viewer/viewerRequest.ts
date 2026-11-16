@@ -5,6 +5,7 @@
 // here; ViewerWindow wires them to its live state.
 
 import type { ViewerViewState, ViewerLayerState } from './viewState'
+import { postJson } from '../blackboardApi'
 
 /** A partial view state as Claude sends it: any subset of camera / dims / layers, a layer naming a
  *  channel with any of its fields. */
@@ -46,4 +47,10 @@ export function fitLongSide(w: number, h: number, maxSide?: number): { width: nu
   if (!maxSide || maxSide <= 0 || long <= maxSide) return { width: w, height: h }
   const s = maxSide / long
   return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) }
+}
+
+/** Answer a browser ask (`viewer:request` / `plot:request`) on `/api/viewer/reply`. Fire-and-forget: a
+ *  failed post leaves the server's wait to time out into its "nobody answered" reason. */
+export function replyToRequest(requestId: string, result: Record<string, unknown>): void {
+  void postJson('/api/viewer/reply', { requestId, result })
 }

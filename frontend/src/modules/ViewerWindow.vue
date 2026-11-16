@@ -42,7 +42,7 @@ import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, solo
          eyeTurnedOn, type PopEyes, type ListedPop, type TrackclustEyePop } from '../utils/viewer/popEyes'
 import { toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
-import { mergeViewState, fitLongSide } from '../utils/viewer/viewerRequest'
+import { mergeViewState, replyToRequest } from '../utils/viewer/viewerRequest'
 import { awaitIdle } from '../utils/awaitIdle'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { drawSpecOf, type DrawSpecSource, type ViewerDrawSpec } from '../utils/viewer/drawSpec'
@@ -127,7 +127,7 @@ import LandscapeOverlay from '../components/LandscapeOverlay.vue'
 import TileMarkOverlay from '../components/TileMarkOverlay.vue'
 import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
-import { plotHostToImageURL, loadImg, downloadDataUrl } from '../plots/export'
+import { plotHostToImageURL, loadImg, downloadDataUrl, fitPngLongSide } from '../plots/export'
 import { screenshotFilename, isScreenshotChrome } from '../utils/viewerScreenshot'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
@@ -5972,17 +5972,8 @@ async function onViewerRequest(data: Record<string, unknown>) {
       // never a silent black picture: no frame on the canvas is an answer of its own
       if (shownT.value < 0) throw new Error(`no frame drawn at t ${t.value} (${mode.value === 'volume' ? '3D' : '2D'}) — still loading, or stuck`)
       const shot = await viewerScreenshot()
-      const img = await loadImg(shot.png)
-      if (!img) throw new Error('screenshot decode failed')
-      const size = fitLongSide(img.naturalWidth, img.naturalHeight, Number(args.maxSide) || undefined)
-      let png = shot.png
-      if (size.width !== img.naturalWidth) {
-        const out = document.createElement('canvas')
-        out.width = size.width; out.height = size.height
-        out.getContext('2d')?.drawImage(img, 0, 0, size.width, size.height)
-        png = out.toDataURL('image/png')
-      }
-      result = { png, ...size, view: liveViewState(shownT.value) }
+      const fit = await fitPngLongSide(shot.png, Number(args.maxSide) || undefined)
+      result = { ...fit, view: liveViewState(shownT.value) }
     } else if (data.kind === 'view') {
       const live = liveViewState()
       if (!live) throw new Error('viewer not ready')
@@ -5999,10 +5990,7 @@ async function onViewerRequest(data: Record<string, unknown>) {
   } catch (e) {
     result = { error: e instanceof Error ? e.message : String(e) }
   }
-  fetch('/api/viewer/reply', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId, result }),
-  }).catch(() => { /* the server's wait times out into "no_viewer" */ })
+  replyToRequest(requestId, result)
 }
 
 onMounted(() => {

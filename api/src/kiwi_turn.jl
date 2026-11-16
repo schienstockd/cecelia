@@ -28,7 +28,7 @@ const KIWI_READ_TOOLS = [
     "get_spatial_patterns",   # one population clustered or random among the tissue's cells
     "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "list_plots", "get_available_plots", "get_analysis_boards",
-    "get_landscape", "get_viewer_screenshot", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
+    "get_landscape", "get_viewer_screenshot", "get_plot_image", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
     "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
@@ -52,7 +52,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "create_notebook" => "write", "revise_notebook" => "write", "set_notebook_description" => "write",
     "add_analysis_board" => "write", "add_gate" => "write", "add_boolean_pop" => "write", "add_filter_pop" => "write", "add_cluster_pops" => "write", "set_gate" => "write", "delete_gate" => "write",
     "add_figure" => "write", "set_figure" => "write", "delete_figure" => "write", "open_analysis_board_plot" => "drives the user's UI",
-    "seek_viewer" => "drives the user's UI", "set_viewer_view" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
+    "seek_viewer" => "drives the user's UI", "set_viewer_view" => "drives the user's UI", "set_plot_view" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
     "mark_cells" => "point-out", "mark_tracks" => "point-out", "mark_plot" => "point-out",
     "mark_tile" => "point-out", "mark_freeform" => "point-out", "select_on_plot" => "point-out",
 )

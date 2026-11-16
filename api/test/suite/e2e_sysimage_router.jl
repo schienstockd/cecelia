@@ -419,6 +419,7 @@ end
         "/api/viewer/landscape/compute",   # bidir landscape complementary compute — per-channel per-tile stats
         "/api/viewer/landscape/request",   # MCP get_landscape — ask the open viewer for one now
         "/api/viewer/screenshot", "/api/viewer/view",   # MCP — ask the open viewer for its picture / to change its view
+        "/api/viewer/plots/image", "/api/viewer/plots/view",   # MCP — ask a plot panel for its picture / to change its settings
         "/api/viewer/reply",         # the viewer's answer to either (browser only)
         "/api/viewer/capture",   # bidir share-in write (POST); GET at same path is the read handler
 
@@ -507,7 +508,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 126 && length(POST_ROUTES) == 198
+    @test length(GET_ROUTES) == 126 && length(POST_ROUTES) == 200
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
