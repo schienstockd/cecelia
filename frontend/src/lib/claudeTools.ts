@@ -68,7 +68,7 @@ export const CAPABILITIES: Capability[] = [
     tools: ['get_analysis_boards', 'get_available_plots', 'list_plots', 'get_chains', 'list_notebooks', 'get_notebook'], kiwi: true, terminal: true },
 
   { group: 'record', label: 'Frames you shared, and the viewer right now',
-    tools: ['get_recent_captures', 'get_capture', 'get_capture_landscape_tiles', 'get_landscape'], kiwi: true, terminal: true },
+    tools: ['get_recent_captures', 'get_capture', 'get_capture_landscape_tiles', 'get_landscape', 'get_viewer_screenshot'], kiwi: true, terminal: true },
   { group: 'record', label: 'Your Blackboard', tools: ['list_blackboard_entries', 'read_blackboard_entry', 'search_blackboard'], kiwi: true, terminal: true },
   { group: 'record', label: 'The lab log', tools: ['read_lab_log'], kiwi: true, terminal: true },
   // the repeat-failure digest rides on the session briefing (RUBBER_DUCK_FIT_PLAN D1) — both see it
@@ -78,6 +78,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'viewer', label: 'Mark a spot on a plot or a shared frame', tools: ['mark_plot', 'mark_freeform', 'select_on_plot'], kiwi: false, terminal: true },
   { group: 'viewer', label: 'Jump to a frame, open a plot, point at a control',
     tools: ['seek_viewer', 'open_analysis_board_plot', 'point_at_ui'], kiwi: false, terminal: true },
+  { group: 'viewer', label: 'Change contrast, channels and 3D on the viewer', tools: ['set_viewer_view'], kiwi: false, terminal: true },
 
   { group: 'builds', label: 'A chain from what you ran — you run it', tools: ['suggest_chain', 'create_chain'], kiwi: false, terminal: true },
   { group: 'builds', label: 'An analysis board', tools: ['add_analysis_board'], kiwi: false, terminal: true },

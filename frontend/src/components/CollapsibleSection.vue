@@ -16,6 +16,9 @@
                          (`utils/singleOpen.ts` — one registry per app instance, never two refs per key).
                          Takes precedence over `open` and `storageKey`.
     section     string   This section's id within its accordion (what is persisted; default: `label`).
+    sticky      bool     The toggle bar pins to the top of the enclosing scroll box while the body scrolls past
+                         under it, so a long section can be collapsed without scrolling back up (ModuleLayout's
+                         Images section). Needs `maxHeight="none"` (the outer box is the one that scrolls).
   Slot `after-label`: a status mark after the heading (e.g. a warning icon), visible while closed.
     open        bool|null CONTROLLED mode, outside an accordion: pass it (with @update:open, or v-model:open)
                          and the parent owns open/closed. Omit it — it is `null` — and the section manages
@@ -50,6 +53,7 @@ const props = withDefaults(defineProps<{
   accordion?:   string
   section?:     string
   fill?:        boolean | 'content'
+  sticky?:      boolean
 }>(), {
   defaultOpen: null,
   maxHeight:   '320px',
@@ -92,7 +96,7 @@ const open = computed({
 </script>
 
 <template>
-  <div :class="['collapsible-section', { 'cs-fill': fill && open, 'cs-fill-content': fill === 'content' && open }]">
+  <div :class="['collapsible-section', { 'cs-fill': fill && open, 'cs-fill-content': fill === 'content' && open, 'cs-sticky': sticky }]">
     <button class="cs-toggle cc-section-toggle" @click="open = !open"
       v-tooltip.right="tip || (open ? `Collapse ${label}` : `Expand ${label}`)">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
@@ -126,6 +130,8 @@ const open = computed({
   font-size: var(--cc-fs-xs);
 }
 .cs-toggle:hover { background: var(--cc-surface-2); }
+/* `sticky`: above the body's own pinned cells (SelectionTable's frozen columns / header go up to z 4) */
+.cs-sticky > .cs-toggle { position: sticky; top: calc(-1 * var(--cc-scroll-pad-top)); z-index: 5; }
 
 /* the heading IS the eyebrow scenario — colour/weight/tracking/case/size all come from .cc-eyebrow,
    which this component previously hand-rolled (and at a size the scale had no step for) */

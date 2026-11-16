@@ -905,6 +905,7 @@ Every module page uses this same slot, so the plot canvas collapses identically 
 - `defaultOpen` — whether open on mount (default: `true`)
 - `maxHeight` — CSS `max-height` for the body (default: `'320px'`; pass `'none'` to allow full growth). With `'none'` the body is `overflow-y: visible` (not a scroll container) so a `position: sticky` descendant sticks to the outer page scroll instead of a box that never scrolls.
 - `storageKey` — when set, the open/closed state persists in localStorage under this key (the `#plots` wrapper uses this so a collapsed canvas stays collapsed across navigation)
+- `sticky` — the toggle bar pins to the top of the enclosing scroll box while the body scrolls under it, so a long section collapses without scrolling back up. Needs `maxHeight="none"`. ModuleLayout's "Images" section sets it.
 
 ### Two-half side panels — `usePaneExpand` + `PaneExpandBar`
 

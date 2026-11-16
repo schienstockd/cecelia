@@ -42,6 +42,8 @@ export type Action =
   /** Unfold a fold toggle (`aria-expanded`): clicked only when folded, as a fold's state persists per
    *  profile and a plain click would close one the last shot left open. */
   | { open: Anchor }
+  /** Switch a pressed toggle button off (`cc-btn-on`): clicked only when on, for the same reason. */
+  | { unpress: Anchor }
   /** Pick an option of a `<select>` by its label (a page's segmentation). */
   | { select: Anchor; option: string }
 
@@ -66,7 +68,17 @@ export interface Shot {
    *  outlined (default `cells`); `tracks` = the segmentations whose tracks are drawn; `time` = the
    *  timepoint (0-based) of a time-lapse; `tail` = how many frames of each track are drawn behind it. */
   viewer?: { plane?: number; outlines?: boolean; gated?: boolean; zoom?: number; at?: [number, number]; channels?: string[];
-             mask?: string; tracks?: string[]; time?: number; tail?: number }
+             mask?: string; tracks?: string[]; time?: number; tail?: number
+             /** The 3D view, square on: the whole stack, no plane. */
+             volume?: boolean
+             /** Each shown channel's floor raised by this fraction of its Auto window (a 3D view's background). */
+             lift?: number
+             /** Auto's top percentile (the channel panel's Auto range: 99 Tight, 99.8, 99.99 Wide). */
+             top?: 99 | 99.8 | 99.99
+             /** Both boxes over the image (On the image, How it looks) folded: the picture clear. */
+             folded?: boolean
+             /** The gated populations' cell-track ribbons (On the image → Cell-track ribbons). */
+             ribbons?: boolean }
   /** The shape its slot needs, width / height (a What's new card's picture is 2): the crop is trimmed
    *  about its centre to it. */
   aspect?: number
@@ -135,9 +147,10 @@ export interface Fixture {
 
 /** A gate the fixture recreates on a copy, on segmentation `segmentation` (default `cells`). Either a
  *  box in RAW channel values on logicle axes (`null` = the axis' own end), or `fromSource`: the source
- *  image's own population of that name, its gate or filter as stored, from `gating/<seg>.json` (or
- *  `<seg>__<popType>.json`). Recreated, never copied as a file: a copy carries no one's authorship. */
-export type FixtureGate = { image: string; name: string; segmentation?: string } & (
+ *  image's own population of that name, its gate, filter or combination as stored, from
+ *  `gating/<seg>.json` (or `<seg>__<popType>.json`). `parent` (a path, `/qc`) puts it under a gate listed
+ *  before it. Recreated, never copied as a file: a copy carries no one's authorship. */
+export type FixtureGate = { image: string; name: string; segmentation?: string; parent?: string } & (
   | { x: string; y: string; xRange: [number | null, number | null]; yRange: [number | null, number | null]; fromSource?: never }
   | { fromSource: true; popType?: 'flow' | 'trackclust' }
 )
@@ -208,6 +221,7 @@ export function checkShotSets(sets: ShotSet[]): ShotIssue[] {
         bad(`shot "${x.id}" is a picture of the image: it points at nothing, so no app chrome (which has a scheme) is in it`)
       if (x.beside && !set.shots.some(o => o.id === x.beside && o !== x && !o.beside))
         bad(`shot "${x.id}" sits beside "${x.beside}", which is not another shot of its set (or itself sits beside one)`)
+      if (x.viewer?.volume && x.viewer.plane !== undefined) bad(`shot "${x.id}" is in 3D, which has no plane to pick`)
       if (x.profile && x.profile !== 'default' && !fx.profiles?.some(p => p.name === x.profile))
         bad(`shot "${x.id}" runs as profile "${x.profile}", which the fixture does not create`)
       if (x.project && !fx.projects?.[x.project]) bad(`shot "${x.id}" opens project "${x.project}", which the fixture does not copy`)
@@ -246,7 +260,7 @@ export function shotAnchors(x: Shot): Anchor[] {
   const out: Anchor[] = [...x.crop, ...(x.masks ?? []), ...(x.expect ?? []).map(e => e.anchor)]
   if (x.point) out.push(x.point.anchor)
   for (const a of x.actions ?? []) {
-    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : 'open' in a ? a.open : 'select' in a ? a.select : null
+    const t = 'click' in a ? a.click : 'fill' in a ? a.fill : 'hover' in a ? a.hover : 'waitFor' in a ? a.waitFor : 'scroll' in a ? a.scroll : 'open' in a ? a.open : 'unpress' in a ? a.unpress : 'select' in a ? a.select : null
     if (t && !t.startsWith('text:')) out.push(t)
   }
   return out

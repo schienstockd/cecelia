@@ -325,19 +325,19 @@ end
 
 @testset "API: on-demand landscape request — the viewer's answer reaches the waiter" begin
     l = Landscape("p", "img", "default", 3, 0, time(), Dict{String,Any}("grid" => Dict("cols" => 8)))
-    rid = _open_landscape_request!()
-    t = @async _await_landscape_request(rid, 5.0; poll_s = 0.01)
+    rid = _open_viewer_request!("lr")
+    t = @async _await_viewer_request(rid, 5.0; poll_s = 0.01)
     sleep(0.05)
-    @test _deliver_landscape_request!(rid, l)
-    @test !_deliver_landscape_request!(rid, l)           # first answer wins
+    @test _deliver_viewer_request!(rid, l)
+    @test !_deliver_viewer_request!(rid, l)           # first answer wins
     got = fetch(t)
     @test got !== nothing && got.t == 3
-    @test !haskey(_LANDSCAPE_REQUESTS, rid)              # forgotten once answered
+    @test !haskey(_VIEWER_REQUESTS, rid)              # forgotten once answered
     # No viewer answers → nothing, and a late answer is dropped rather than parked forever.
-    rid2 = _open_landscape_request!()
-    @test _await_landscape_request(rid2, 0.05; poll_s = 0.01) === nothing
-    @test !_deliver_landscape_request!(rid2, l)
-    @test !haskey(_LANDSCAPE_REQUESTS, rid2)
+    rid2 = _open_viewer_request!("lr")
+    @test _await_viewer_request(rid2, 0.05; poll_s = 0.01) === nothing
+    @test !_deliver_viewer_request!(rid2, l)
+    @test !haskey(_VIEWER_REQUESTS, rid2)
     # The reply carries the address next to the payload.
     r = _landscape_reply(l)
     @test r["t"] == 3 && r["imageUid"] == "img" && r["grid"]["cols"] == 8
