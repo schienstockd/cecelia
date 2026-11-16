@@ -682,7 +682,8 @@ end
 # two channels one. Names are made unique where written AND where read (images already on disk).
 @testset "Channel names are never blank or repeated" begin
     @test unique_channel_names(["", "", ""]) == ["CH1", "CH2", "CH3"]
-    @test unique_channel_names(["CD4", " ", "cd4", "CD4"]) == ["CD4", "CH2", "cd4_2", "CD4_3"]
+    @test unique_channel_names(["CD4", " ", "cd4", "CD4"]) == ["CD4", "CH2", "cd4", "CD4_2"]  # case: the resolver's call
+    @test unique_channel_names(["ch2", ""]) == ["ch2", "CH2_2"]     # a fallback avoids a real name in any case
     @test unique_channel_names(["CH2", ""]) == ["CH2", "CH2_2"]     # a fallback never steals a real name
     @test unique_channel_names(["DAPI", "GFP"]) == ["DAPI", "GFP"]  # good names untouched
     # a blank takes the image's own name for that channel first (a .lif's acquisition settings)

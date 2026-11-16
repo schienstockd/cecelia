@@ -511,7 +511,9 @@ A blank takes the image's own name for that channel when it has one (`fallback`,
 `acquisition_channel_names`), else `CH<n>`, 1-based: bioformats2raw's own label, so an unnamed
 channel lines up with the same channel of a store labelled that way rather than with the next one
 (the name resolver compares case-insensitively — a 0-based `Ch1` would be another image's `CH1`,
-a different channel). A repeat, compared case-insensitively for the same reason, gets `_2`, `_3`, …
+a different channel). A fallback also never lands on a real name in another case. A real name repeated
+EXACTLY gets `_2`, `_3`, … — names differing only in case (`CD4` / `cd4`) are left alone: the resolver
+reports those as ambiguous rather than picking one, and renaming one would pick for it.
 Real names are placed first and the first holder of each keeps it, so a filled-in blank never takes a
 name a later channel already has — a lookup that resolved before still resolves to the same channel.
 """
@@ -519,21 +521,21 @@ function unique_channel_names(names::AbstractVector;
                               fallback::AbstractVector = String[])::Vector{String}
     clean(x) = String(strip(string(something(x, ""))))
     given = [clean(n) for n in names]
-    out = fill("", length(given)); taken = Set{String}()
-    claim!(i, base) = begin
+    out = fill("", length(given)); exact = Set{String}(); folded = Set{String}()
+    claim!(i, base, taken, key) = begin
         name = base; k = 2
-        while lowercase(name) in taken
+        while key(name) in taken
             name = "$(base)_$k"; k += 1
         end
-        out[i] = name; push!(taken, lowercase(name))
+        out[i] = name; push!(exact, name); push!(folded, lowercase(name))
     end
     for (i, n) in enumerate(given)          # real names first: their holders keep them
-        isempty(n) || claim!(i, n)
+        isempty(n) || claim!(i, n, exact, identity)
     end
-    for (i, n) in enumerate(given)          # then the blanks, around them
+    for (i, n) in enumerate(given)          # then the blanks, around them in any case
         isempty(n) || continue
         fb = i <= length(fallback) ? clean(fallback[i]) : ""
-        claim!(i, isempty(fb) ? "CH$i" : fb)
+        claim!(i, isempty(fb) ? "CH$i" : fb, folded, lowercase)
     end
     out
 end
