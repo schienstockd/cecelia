@@ -445,8 +445,9 @@ const visibleUids = computed<string[]>(() =>
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
           <!-- maximised: the table scrolls in its own capped box so the plots keep the viewport -->
+          <!-- sticky: the Images bar stays in view while a long set scrolls, so it collapses from anywhere -->
           <CollapsibleSection label="Images" :max-height="isMaximised ? '35vh' : 'none'"
-            :storage-key="imagesOpenKey">
+            :storage-key="imagesOpenKey" sticky>
             <div v-if="!activeSet" class="no-set cc-empty">
               <i class="pi pi-folder-open" style="font-size:2rem; opacity:0.2" />
               <p>No set selected.</p>
