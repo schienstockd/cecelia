@@ -10,7 +10,7 @@ import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { computed } from 'vue'
-import type { MaskColour } from '../../utils/maskPopTable'
+import { maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
 
 const props = defineProps<{
   /** the mask on screen ('' = none) */
@@ -33,13 +33,7 @@ const props = defineProps<{
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
 
-// Track clusters only on a timecourse — unless already picked, so the stored choice stays visible and switchable.
-const colourOptions = computed<{ value: MaskColour; label: string; tip: string }[]>(() => [
-  { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
-  { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
-  ...(props.timecourse || settings.viewerMaskColour === 'trackclust'
-    ? [{ value: 'trackclust' as const, label: 'Track clusters', tip: 'Each tracked cell by its track cluster' }] : []),
-])
+const colourOptions = computed(() => maskColourOptions(props.timecourse, settings.viewerMaskColour))
 </script>
 
 <template>
@@ -95,7 +89,7 @@ const colourOptions = computed<{ value: MaskColour; label: string; tip: string }
         <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
         <ChipSelect
           :options="colourOptions" :model-value="settings.viewerMaskColour"
-          variant="segmented" aria-label="Colour mask by"
+          variant="segmented" aria-label="Colour mask by" v-tooltip.bottom="'What colours the mask'"
           @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
         />
       </div>

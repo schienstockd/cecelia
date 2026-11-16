@@ -9,6 +9,7 @@ import { viewerColormapForHex, channelsForRender } from './viewerColormap'
 import { LABEL_OPACITY, OVERLAY_Z_TOL } from './viewerLabels'
 import { PALETTES } from '../plots/plot'
 import type { PopEyes } from './viewer/popEyes'
+import { maskColourKeys, type MaskColour } from './maskPopTable'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -104,12 +105,13 @@ export interface BatchMovieCfg {
   // Per segmentation from a viewer look; a bare list = the pops' segmentation.
   hiddenTrackPops?: string[] | Record<string, string[]>
   // A viewer look: its population layers are these cell pop types on EVERY segmentation (the
-  // recorder's `popAllSegmentations`); a batch draws its one `popValueName` / `popType`.
+  // recorder's `popAllSegmentations`). Kept until a batch pop control is touched (`batchPopEdit`) —
+  // then the batch draws its one `popValueName` / `popType`.
   popTypes?: string[]
   popAllSegmentations?: boolean
   // A viewer look: its own eyes on its pops, per segmentation `{ "<popType>::<path>": on }` — points
   // (`popEyes`) and cell-track ribbons (`ribbonEyes`), apart from the pop manager's `show`, which
-  // draws a pop with no eye (`settings.getPopEyes`, #1784). A batch carries none.
+  // draws a pop with no eye (`settings.getPopEyes`, #1784). Sent with `popAllSegmentations` only.
   popEyes?: Record<string, PopEyes>
   ribbonEyes?: Record<string, PopEyes>
   // The viewer's Tracks-legend colours, keyed as its ribbon sources (`vn`, `vn::path`, …).
@@ -125,11 +127,11 @@ export interface BatchMovieCfg {
   timestampPx?: number
   textCanvasPx?: number
   steps?: number
-  // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
-  // with pops on).
+  // Where the mask's colours come from — the viewer's *Colour* (`MaskColour`); the request's mask
+  // keys are derived from it (`maskColourKeys`). Absent (a config saved before it): the three keys
+  // below as stored — `colourLabels` was the batch's old "colour the masks by colour-by" chip.
+  maskColour?: MaskColour
   maskAllCells?: boolean
-  // The pop types the mask is coloured by, when not the points' `popTypes` (a look with the mask on
-  // track clusters: `['trackclust']`).
   maskPopTypes?: string[]
   colourLabels?: boolean
   tailWidth?: number
@@ -208,6 +210,13 @@ export interface BatchMovieRequestConfig {
   steps?: number
   /** the mask paints every cell, as the viewer's does */
   maskAllCells?: boolean
+  /** the pop types the mask is coloured by when not the points' (track clusters) */
+  maskPopTypes?: string[]
+  /** a viewer look's pop layers: these types on every segmentation, with its eyes */
+  popTypes?: string[]
+  popAllSegmentations?: boolean
+  popEyes?: Record<string, PopEyes>
+  ribbonEyes?: Record<string, PopEyes>
   showPopulations: boolean
   popType: string
   popValueName: string
@@ -270,6 +279,25 @@ export function batchTrackSources(cfg: BatchMovieCfg, trackedSegs: string[]): Tr
     ? resolveTrackSources(cfg.trackSources, trackedSegs) : undefined
 }
 
+/** The mask *Colour* a batch config shows: its own, else what a config saved before it drew — the
+ *  old chip's colour-by, a viewer look's track clusters, the pops with pops on, else the palette. */
+export function batchMaskColour(cfg: BatchMovieCfg): MaskColour {
+  if (cfg.maskColour) return cfg.maskColour
+  if (cfg.colourLabels) return 'colourBy'
+  if (cfg.maskPopTypes?.includes('trackclust')) return 'trackclust'
+  return cfg.showPopulations && !cfg.maskAllCells ? 'pops' : 'id'
+}
+
+/** The request's mask keys: `maskColourKeys` of the config's *Colour*. A batch's *Pops* is its one
+ *  pop layer, on whenever the points are (`showPopulations`). */
+export function batchMaskKeys(cfg: BatchMovieCfg): { maskAllCells: boolean; maskPopTypes: string[]; colourLabels: boolean } {
+  return maskColourKeys(batchMaskColour(cfg), !!cfg.showPopulations, cfg.colourBy ?? '')
+}
+
+/** What touching a batch pop control (on / off, type, segmentation, which pops) writes besides its own
+ *  key: a viewer look's every-segmentation layers and eyes give way to the batch's one layer. */
+export const BATCH_POP_EDIT: Partial<BatchMovieCfg> = { popAllSegmentations: false }
+
 export function buildBatchMovieConfig(
   cfg: BatchMovieCfg,
   segNames: string[],
@@ -317,7 +345,15 @@ export function buildBatchMovieConfig(
     ...(cfg.hiddenTrackPops && Object.keys(cfg.hiddenTrackPops).length ? { hiddenTrackPops: cfg.hiddenTrackPops } : {}),
     ...(cfg.trackSourceColours && Object.keys(cfg.trackSourceColours).length
       ? { trackSourceColours: cfg.trackSourceColours } : {}),
-    ...(cfg.maskAllCells ? { maskAllCells: true } : {}),
+    // the mask's colours (`batchMaskKeys`) and, from a viewer look not since edited here, its pop
+    // layers on every segmentation with its eyes
+    ...batchMaskKeys(cfg),
+    ...(cfg.popAllSegmentations ? {
+      popAllSegmentations: true,
+      popTypes: [...(cfg.popTypes ?? [])],
+      ...(cfg.popEyes && Object.keys(cfg.popEyes).length ? { popEyes: cfg.popEyes } : {}),
+      ...(cfg.ribbonEyes && Object.keys(cfg.ribbonEyes).length ? { ribbonEyes: cfg.ribbonEyes } : {}),
+    } : {}),
     ...(cfg.skeletons && Object.keys(cfg.skeletons).length ? { skeletons: { ...cfg.skeletons } } : {}),
     ...(cfg.scaleBarPx ? { scaleBarPx: cfg.scaleBarPx } : {}),
     ...(cfg.timestampPx ? { timestampPx: cfg.timestampPx } : {}),
@@ -340,7 +376,7 @@ export function buildBatchMovieConfig(
     labelOpacity: cfg.labelOpacity ?? LABEL_OPACITY,
     pointZTol: cfg.pointZTol ?? OVERLAY_Z_TOL,
     trackZTol: cfg.trackZTol ?? OVERLAY_Z_TOL,
-    colourLabels: !!cfg.colourLabels,
+    colourLabels: batchMaskKeys(cfg).colourLabels,
     colourOverrides: colourOverrides ?? {},
     titleCard: {
       enabled: tc?.enabled ?? TITLE_CARD_DEFAULT.enabled,

@@ -2,7 +2,7 @@
 // segmentation, fetched under a pop_type ({popType, valueName, pop}). We key it as
 // `popType::valueName + pop`. pop_types/value_names contain no "::" and pop paths always start with
 // "/", so we split on the first "::" (popType) then the first "/" (valueName | pop).
-import type { SeriesTarget } from './types'
+import type { SeriesTarget, SegmentationPops } from './types'
 
 export const tkey = (popType: string, valueName: string, pop: string) => `${popType}::${valueName}${pop}`
 
@@ -36,4 +36,23 @@ export function seriesMemo<K>(): (id: K, keys: readonly string[]) => SeriesTarge
     cache.set(id, { key, targets })
     return targets
   }
+}
+
+/**
+ * The picked series as chips, in pick order — the order the plots draw them in (the server keeps the
+ * targets' order, `_pop_rank` in `app/src/plotting/plot_data.jl`). A key no longer listed (its image
+ * left the selection) keeps a chip under its bare path, so it can still be dragged or dropped.
+ */
+export function pickedOrderChips(
+  selected: readonly string[], groups: readonly SegmentationPops[],
+): { value: string; label: string; swatch?: string; tip: string }[] {
+  const multiSeg = new Set(selected.map(k => parseTkey(k).valueName)).size > 1
+  return selected.map(k => {
+    const t = parseTkey(k)
+    const p = groups.find(g => g.valueName === t.valueName)?.populations
+      .find(q => q.path === t.pop && q.popType === t.popType)
+    const name = p?.name ?? (t.pop.split('/').filter(Boolean).pop() ?? t.pop)
+    return { value: k, label: multiSeg ? `${t.valueName} ${name}` : name,
+             ...(p?.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }
+  })
 }

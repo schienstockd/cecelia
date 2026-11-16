@@ -332,6 +332,13 @@ function toggleTarget(valueName: string, pop: string, pt: string) {
     else gSel.value = next(gSel.value)
   } else if (activeContent.value) st(activeContent.value).sel = next(st(activeContent.value).sel ?? [])
 }
+// the picker's plot-order strip: the same selection, re-ordered (or with a chip clicked off)
+function reorderTargets(keys: string[]) {
+  if (scope.value === 'global') {
+    if (manualApply.value) stagedSel.value = [...keys]
+    else gSel.value = [...keys]
+  } else if (activeContent.value) st(activeContent.value).sel = [...keys]
+}
 // the policy can change under an existing selection when the active SLOT changes — narrow rather than
 // let a single-population plot draw one of several and say nothing
 watch(activeSinglePop, single => {
@@ -919,7 +926,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
                         :manual-apply="manualApply" :has-staged="hasStaged"
                         :staged-change-count="stagedChangeCount" :reloadable="true"
-                        @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis"
+                        @toggle="toggleTarget" @reorder="reorderTargets" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />

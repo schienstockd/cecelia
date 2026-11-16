@@ -11,7 +11,8 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { tkey } from '../../plots/series'
+import { tkey, pickedOrderChips } from '../../plots/series'
+import ChipSelect from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
 import CanvasSidePanel from './CanvasSidePanel.vue'
@@ -53,6 +54,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
+  /** the picked keys in a new order (dragged) or fewer (a chip clicked off) — the plots' order */
+  reorder: [keys: string[]]
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
   'update:manualApply': [boolean]
@@ -65,6 +68,9 @@ const total = computed(() => props.groups.reduce((n, g) => n + g.populations.len
 const isLit = (vn: string, pop: string, pt: string) => props.selected.includes(tkey(pt, vn, pop))
 // hierarchy: indent a pop by its tree depth (a path's "/" count − 1), mirroring the gating manager.
 const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
+// the picked populations in plot order, draggable — only when there is an order to choose
+const orderChips = computed(() => pickedOrderChips(props.selected, props.groups))
+const showOrder = computed(() => !props.selectionUnused && !props.single && props.selected.length > 1)
 </script>
 
 <template>
@@ -82,6 +88,12 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
     </div>
     <div v-else-if="!total" class="pick-empty cc-muted">No populations in the selected segmentations.</div>
     <div v-else-if="single" class="pick-note cc-muted cc-fs-2xs">one at a time</div>
+    <div v-if="showOrder" class="pick-order">
+      <span class="cc-muted cc-fs-2xs" v-tooltip.left="'Drag to set the order on the plots'">plot order</span>
+      <ChipSelect multiple reorderable :options="orderChips" :model-value="selected"
+                  aria-label="Population order on the plots"
+                  @update:model-value="v => emit('reorder', v as string[])" />
+    </div>
     <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pick-group-head">{{ grp.valueName }}</div>
       <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
@@ -107,6 +119,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
    `csp-`). `pick-` is this component's own prefix: it was `pm-` from when the shell was the
    population manager, which made two different components look like one. */
 .pick-note { padding: 2px 12px 4px; }
+.pick-order { display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 6px; border-bottom: 1px solid var(--cc-border); }
 .pick-empty { padding: 12px; }   /* + .cc-muted */
 .pick-group-head {
   padding: 5px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);

@@ -112,6 +112,12 @@
     @test mask_pop_scope(batch, "OTI", "P14", "flow", ["/x"], false).all_cells === true
     @test mask_pop_scope(batch, "OTI", "OTI", "flow", ["/x"], false) ==
           (; all_cells = false, pop_types = nothing, pops_filter = ["/x"], pop_eyes = nothing)
+    # a batch with its mask on track clusters (no `popAllSegmentations`): the mask segmentation's track
+    # clusters, never its one flow layer — the batch's *Colour* matches the viewer's
+    batch_tc = overlay_track_plan(_overlays_raw_from_config(Dict{String,Any}("showPopulations" => true,
+        "popType" => "flow", "maskAllCells" => false, "maskPopTypes" => ["trackclust"]), true))
+    @test mask_pop_scope(batch_tc, "OTI", "P14", "flow", ["/x"], false) ==
+          (; all_cells = false, pops_filter = nothing, pop_types = ["trackclust"], pop_eyes = nothing)
     # a look's point eyes colour its mask as the viewer's (`layerHidden`): the MASK's segmentation's
     look_eyes = overlay_track_plan(_overlays_raw_from_config(Dict{String,Any}("showPopulations" => true,
         "popAllSegmentations" => true, "popTypes" => ["flow"], "popEyes" => Dict("P14" => Dict("flow::/a" => true))), true))
@@ -493,6 +499,13 @@ end
     @test _keyframe_mask(String[]) === nothing
     @test _keyframe_mask(["cpSAM"]) == "cpSAM"
     @test_throws ArgumentError _keyframe_mask(["cpSAM", "flowTom"])
+    # a keyframe request with no top-level mask (the 3D Record, the animation page) draws its look's
+    @test _look_keyframe_mask(JSON3.read("{\"labelValueNames\":[\"cpSAM\"],\"labelContour\":2}")) ==
+          (name = "cpSAM", contour = 2)
+    @test _look_keyframe_mask(Dict{String,Any}("labelValueNames" => ["cpSAM"])) == (name = "cpSAM", contour = 0)
+    @test _look_keyframe_mask(Dict{String,Any}("labelValueNames" => String[])) === nothing
+    @test _look_keyframe_mask(Dict{String,Any}("labelValueNames" => ["a", "b"])) === nothing
+    @test _look_keyframe_mask(nothing) === nothing
 end
 
 @testset "API: movie rail — a recording renders the viewer's colours and framing" begin

@@ -132,6 +132,17 @@ function _keyframe_mask(label_vns)::Union{Nothing,String}
     String(only(label_vns))
 end
 
+# The mask a keyframe request's `look` shows, for a request that names none at the top level (the
+# viewer's 3D Record and the animation page send only the look). One mask, or `nothing`: the look's
+# `labelValueNames` is what `viewerLook` writes from the viewer's mask picker, 0 or 1 long.
+function _look_keyframe_mask(look)::Union{Nothing,@NamedTuple{name::String, contour::Int}}
+    look isa AbstractDict || return nothing
+    raw = _cfg_get(look, "labelValueNames", nothing)
+    (raw isa AbstractVector && length(raw) == 1) || return nothing
+    name = String(only(raw))
+    isempty(name) ? nothing : (name = name, contour = _label_contour(look))
+end
+
 function ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="", pool="",
                    started_at=nothing, finished_at="")
     # `started_at` is passed only by a relay (the runner's stamp, authoritative even when ""); `nothing`
@@ -404,6 +415,9 @@ function handle_movie_record(ws, data)
     # grid's ROWS.
     lvns_raw    = get(data, :labelValueNames, nothing)
     label_vns   = lvns_raw === nothing ? nothing : collect(String, lvns_raw)
+    # A keyframe render (3D Record, the animation page) has no canvas to "leave alone": absent means
+    # the mask the look shows (`_look_keyframe_mask`), else the render drew none.
+    kf_look_mask = lvns_raw === nothing ? _look_keyframe_mask(get(data, :look, nothing)) : nothing
     # skeletons (`segment.branching`) — a separate registry and a separate picker, same three-valued
     # contract; the batch sends neither, so its skeletons stay untouched
     bvns_raw    = get(data, :branchValueNames, nothing)
@@ -439,6 +453,10 @@ function handle_movie_record(ws, data)
         return
     end
     kf_mask = nothing
+    if keyframes !== nothing && kf_look_mask !== nothing
+        label_vns = [kf_look_mask.name]
+        haskey(data, :labelContour) || (contour = kf_look_mask.contour)
+    end
     if keyframes !== nothing
         kf_mask = try
             _keyframe_mask(label_vns)

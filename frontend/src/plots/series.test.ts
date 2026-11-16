@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tkey, parseTkey, seriesMemo } from './series'
+import { tkey, parseTkey, seriesMemo, pickedOrderChips } from './series'
 
 describe('tkey / parseTkey', () => {
   it('round-trips a population on a segmentation', () => {
@@ -54,5 +54,22 @@ describe('seriesMemo', () => {
     const a = memo(0, [])
     expect(memo(0, [])).toBe(a)
     expect(a).toEqual([])
+  })
+})
+
+describe('pickedOrderChips — the plot-order strip', () => {
+  const groups = [{ valueName: 'cpSAM', populations: [
+    { path: '/T', name: 'T cells', colour: '#ff0000', popType: 'flow', uid: 'a' },
+    { path: '/T/CD8', name: 'CD8', colour: '#00ff00', popType: 'flow', uid: 'b' }] }]
+  it('keeps the pick order, names and colours the chips; an unlisted key keeps its last path segment', () => {
+    const chips = pickedOrderChips(['flow::cpSAM/T/CD8', 'flow::cpSAM/T', 'flow::cpSAM/gone/B'], groups)
+    expect(chips.map(c => c.value)).toEqual(['flow::cpSAM/T/CD8', 'flow::cpSAM/T', 'flow::cpSAM/gone/B'])
+    expect(chips.map(c => c.label)).toEqual(['CD8', 'T cells', 'B'])
+    expect(chips[0].swatch).toBe('#00ff00')
+    expect(chips[2].swatch).toBeUndefined()
+  })
+  it('names the segmentation when the picks span more than one', () => {
+    expect(pickedOrderChips(['flow::cpSAM/T', 'flow::flowTom/T'], groups).map(c => c.label))
+      .toEqual(['cpSAM T cells', 'flowTom T'])
   })
 })
