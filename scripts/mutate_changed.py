@@ -76,6 +76,11 @@ def unstaged_files() -> set[str]:
     return {ln.strip() for ln in out.splitlines() if ln.strip()}
 
 
+def test_paths(tests: list[Path]) -> list[str]:
+    """Repo-relative POSIX paths of the test files a row ran (`tests` keeps the bare names)."""
+    return [t.resolve().relative_to(ROOT.resolve()).as_posix() for t in tests]
+
+
 def ranges(lines: set[int]) -> str:
     out, s = [], sorted(lines)
     i = 0
@@ -156,7 +161,7 @@ def run_julia(rel: str, lines: set[int], touched: set[str], outdir: Path, timeou
     tests, unnamed = jl_tests(with_callers(names, jl_refs(src)), touched)
     unnamed = sorted(set(unnamed) & names)
     row = {"file": rel, "lang": "jl", "lines": len(lines), "names": sorted(names), "unnamed": unnamed,
-           "tests": [t.name for t in tests]}
+           "tests": [t.name for t in tests], "test_paths": test_paths(tests)}
     if not tests:
         return row | {"note": "no test names a changed function"}
     if dry:
@@ -294,6 +299,7 @@ def run_python(rel: str, lines: set[int], touched: set[str], outdir: Path, dry: 
     tests, unnamed = py_tests(module, py_with_callers(ROOT / rel, keys), touched)
     row["unnamed"] = sorted(set(unnamed) & set(keys))
     row["tests"] = [t.name for t in tests]
+    row["test_paths"] = test_paths(tests)
     if not tests:
         return row | {"note": "no test names a changed function"}
     if dry:

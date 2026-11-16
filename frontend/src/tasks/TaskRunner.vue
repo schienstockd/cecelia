@@ -965,7 +965,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
       </select>
 
       <!-- what it is for, then when it fits: directly under the picker, above the Kiwi/env row. The
-           fold is a bare inline toggle (.cc-section-toggle, as ParamRenderer's group sections), not
+           fold is a bare inline toggle (.cc-section-toggle, no band), not
            CollapsibleSection: that one carries panel-rail chrome (a surface bar, its own padding) that
            does not sit inside a padded runner section. A check's finding gets its own row under its
            line, so a long line never shares its width with the finding. -->
@@ -1289,7 +1289,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 /* the same indented rule as ParamRenderer's .group-section-body */
 .fn-when-body {
   padding-left: 0.4rem;
-  border-left: 2px solid var(--cc-border);
+  border-left: 2px solid var(--cc-accent-soft);
   margin-left: 0.1rem;
 }
 .fn-lines + .fn-lines { margin-top: 0.3rem; }

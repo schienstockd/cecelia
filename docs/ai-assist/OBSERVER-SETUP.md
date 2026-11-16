@@ -8,7 +8,7 @@ was removed 2026-09-24; asking in the app is Kiwi.)
 ## What you need (once)
 
 1. **Install Claude Code** so `claude` is on your PATH.
-   See <https://docs.anthropic.com/en/docs/claude-code/setup>.
+   See <https://code.claude.com/docs/en/setup>.
 2. **Log in from Kiwi**: the account row → **Log in**. Cecelia runs `claude auth login` for your
    Cecelia profile itself (a private browser window, with a paste-code link as fallback), so each
    profile bills its own account. A login made in a terminal is the terminal's, not your profile's.

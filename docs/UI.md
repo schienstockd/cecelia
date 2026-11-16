@@ -553,8 +553,9 @@ not the app's scheme. JS that must *compute* with a scheme colour (contrast for 
 live with `tokenColour()` (`utils/colour.ts`), so it follows too. A colour that is not the app's to
 theme (a data ramp, a figure ground, an external asset's paper) carries `/* COLOUR-OK: reason */`.
 
-Two schemes ship: **Dark** (the default — no attribute) and **Light** (`:root[data-theme="light"]`
-in `style.css`, its contrast figures in the block's comment). The user switches with one click from the
+Two schemes ship: **Light** (the default — `DEFAULT_COLOUR_SCHEME`; `:root[data-theme="light"]`
+in `style.css`, its contrast figures in the block's comment) and **Dark** (no attribute — `style.css` is
+dark-first). A profile that already stored a scheme keeps it. The user switches with one click from the
 avatar menu (the item names the scheme it goes to) or picks in Preferences → Interface → Appearance; it
 is a per-user choice, so it lives with the profile's preferences, not on the machine-wide Settings page. It is kept per profile (`colourScheme` in `stores/settings.ts`) and put on
 `<html>` by `main.ts` before the first paint (`utils/colourScheme.ts`). The light severity hues are

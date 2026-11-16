@@ -61,7 +61,7 @@ function api_observer_chat(req::HTTP.Request)
     end
     bin = agent_bin_path(observer_agent_bin())
     isnothing(bin) && return 200, JSON3.write((; available = false,
-        error = "Claude Code is not installed — see https://claude.com/claude-code, then run this again."))
+        error = "$(Cecelia.CLAUDE_NOT_INSTALLED), then run this again."))
     cfg  = chat_mcp_config(_observer_mcp_dir(), python_bin_path(), _observer_api_url(); project_uid = uid)
     path = joinpath(ensure_config_dir(), "chat-mcp-$(isempty(uid) ? "new" : uid).json")
     write_json_atomic(path, cfg)
@@ -128,7 +128,7 @@ function api_observer_register(::Vector{UInt8})
     agent = ClaudeAgent()
     if !agent_available(agent)
         return 200, JSON3.write((; ok = false, available = false,
-            error = "No assistant CLI found. Install Claude Code to enable this."))
+            error = Cecelia.CLAUDE_NOT_INSTALLED))
     end
     # `local`-scope leftovers override the plugin's server in the folders they name, so setup is not
     # done until they're gone.

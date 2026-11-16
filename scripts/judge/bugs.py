@@ -33,10 +33,13 @@ A test value finding marked `untested` (recital's *Test value* check: mutants on
 function survived its tests) is swept too, as `kind: "untested"`, whatever its tag: a `fixed_pre_commit`
 whose new test doesn't kill the mutants, and a `false_positive` that claims they change nothing, are
 both claims the sweep checks. First, no Claude call: the function is mutated again as it is at the
-pinned SHA, against today's tests (`rerun`, `mutate_changed.py --at`; at most `RERUNS` a pass, carried
-ones first). Every mutant killed: `gone`. Some survive: the judge sees them and asks whether one
-changes a result a caller would see (`live_bug`), or none does (`not_a_bug`: equivalent mutants).
-Not rerun (over the cap, or the rerun failed): `unjudged`, or still `open` if it was. `passes on
+pinned SHA, against today's tests (`rerun`, `mutate_changed.py --at`). A carried bug is mutated again
+only when its file or a test file that covers it changed since its last rerun (`rerun.watch`);
+otherwise its last survivors stand, free, so the bugs nobody fixes don't take the time every pass.
+Reruns start until `RERUN_BUDGET_S` is spent, carried bugs first. Every mutant killed: `gone`. Some
+survive: the judge sees them and asks whether one changes a result a caller would see (`live_bug`),
+or none does (`not_a_bug`: equivalent mutants). Not rerun (over the budget, or the rerun failed):
+`unjudged`, or still `open` if it was. `passes on
 base` findings aren't swept: once merged there is no base to run them on.
 
 Before the judge, free checks: findings on frozen paths (an earlier run record) are
@@ -86,6 +89,7 @@ import json
 import pathlib
 import re
 import sys
+import time
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
@@ -151,8 +155,10 @@ _RESULT_TEST_EDITED = "result_review_test_edited"
 _CONVENTION_EVENT = "convention_check_finding"
 #: Recital's *Test value* findings: only `untested` is swept (`passes on base` has no base after merge).
 _TEST_VALUE_EVENT, UNTESTED_MARKER = "test_value_finding", "untested"
-#: Functions mutated again per pass (`rerun`): each is minutes of mutation. Carried ones go first.
-RERUNS = 8
+#: Seconds of mutation a pass may start reruns in (`rerun`, ~20 s – 6 min each). Only new bugs and
+#: carried ones whose code or tests changed take any, oldest first, so what waits drains.
+RERUN_BUDGET_S = 3600
+_clock = time.monotonic
 #: Survivors quoted to the judge per untested bug.
 QUOTED_SURVIVORS = 5
 #: The convention marker swept as a duplicate; the rest are rules-only.
@@ -456,6 +462,21 @@ def default_rerun(file: str, lo: int, hi: int, *, root: pathlib.Path, env: dict 
                                   python=("pixi", "run", "--manifest-path", str(root / "pixi.toml"), "python"),
                                   env=env, timeout=_tv.BUDGET_S * 3).get("files") or []
     return next((r for r in rows if r.get("file") == file), {"file": file, "note": "not mutated"})
+
+
+def rerun_watch(row: dict) -> list[str]:
+    """What a rerun's result depends on: its file and the test files it ran (`row["test_paths"]`)."""
+    return [row["file"], *(row.get("test_paths") or [])]
+
+
+def rerun_stale(b: dict, sha: str, repo: pathlib.Path) -> bool:
+    """Whether carried bug `b`'s last rerun is out of date at `sha`: none yet, or a commit since it
+    touched its file or a test it ran."""
+    r = b.get("rerun") or {}
+    if not r.get("sha") or not r.get("watch"):
+        return True
+    log = git_output("log", "--format=%h", f"{r['sha']}..{sha}", "--", *r["watch"], cwd=str(repo))
+    return log is None or bool(log.strip())
 
 
 def rerun_verdict(row: dict, symbol: str) -> tuple[str, str, str]:
@@ -797,7 +818,9 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     waits: dict[tuple, list[dict]] = {}   # unmerged: not at `sha` yet, so merged by branch + file:line
     unpark: list[tuple[dict, str]] = []   # parked bugs whose re-check fired, and why
     heads = PrHeads(pr_heads or (lambda br: merged_pr_heads(br, cwd=str(repo))))
-    reruns, mutated = RERUNS, {}   # one rerun per function, however many findings name it
+    # one rerun per function, however many findings name it: (state, why, survivors, watch)
+    mutated: dict[tuple, tuple] = {}
+    rerun_from = None   # when the first rerun started
     # carried ones first: a rerun slot goes to the work list before the new findings
     for b in [*(b for b in carried.values() if b.get("kind") != "stranded"), *fresh]:
         if b.get("was") in MUTED:
@@ -848,27 +871,32 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         if b.get("kind") == "untested":
             span = where["symbol"] and _enc.find(git_output("show", f"{sha}:{b['file']}", cwd=str(repo)) or "",
                                                  where["symbol"], b["file"])
-            if not span or rerun is None or reruns <= 0 and (b["file"], span) not in mutated:
-                why = ("no function to mutate again" if not span else
-                       "not mutated again (no checkout at the pinned SHA)" if rerun is None else
-                       f"waiting for a mutation rerun ({RERUNS} a pass)")
-                bugs.append(_not_judged(b, date, why))
-                continue
-            if (b["file"], span) not in mutated:
-                reruns -= 1
-                try:
-                    mutated[b["file"], span] = rerun_verdict(rerun(b["file"], *span), where["symbol"])
-                except Exception as e:   # noqa: BLE001 — a broken rerun is one bug unjudged, not a failed pass
-                    mutated[b["file"], span] = ("failed", f"the rerun failed: {type(e).__name__}: {e}"[:300], "")
-            state, said, quoted = mutated[b["file"], span]
-            if state == "failed":
-                bugs.append(_not_judged(b, date, said))
-                continue
-            if state == "gone":
-                if b.get("carried"):   # a new one already killed: fixed before it was ever listed
-                    bugs.append({**_strip(b), "status": "gone", "why": said})
-                continue
-            b = {**b, "rerun": {"sha": sha, "why": said, "survivors": quoted}}
+            if span and b.get("carried") and b.get("rerun") and not rerun_stale(b, sha, repo):
+                pass   # nothing it depends on changed since its last rerun: those survivors stand
+            else:
+                over = rerun_from is not None and _clock() - rerun_from >= RERUN_BUDGET_S
+                if not span or rerun is None or over and (b["file"], span) not in mutated:
+                    why = ("no function to mutate again" if not span else
+                           "not mutated again (no checkout at the pinned SHA)" if rerun is None else
+                           f"waiting for a mutation rerun (the {RERUN_BUDGET_S // 60} min a pass are spent)")
+                    bugs.append(_not_judged(b, date, why))
+                    continue
+                if (b["file"], span) not in mutated:
+                    rerun_from = _clock() if rerun_from is None else rerun_from
+                    try:
+                        row = rerun(b["file"], *span)
+                        mutated[b["file"], span] = (*rerun_verdict(row, where["symbol"]), rerun_watch(row))
+                    except Exception as e:   # noqa: BLE001 — a broken rerun is one bug unjudged, not a failed pass
+                        mutated[b["file"], span] = ("failed", f"the rerun failed: {type(e).__name__}: {e}"[:300], "", [])
+                state, said, quoted, watch = mutated[b["file"], span]
+                if state == "failed":
+                    bugs.append(_not_judged(b, date, said))
+                    continue
+                if state == "gone":
+                    if b.get("carried"):   # a new one already killed: fixed before it was ever listed
+                        bugs.append({**_strip(b), "status": "gone", "why": said})
+                    continue
+                b = {**b, "rerun": {"sha": sha, "why": said, "survivors": quoted, "watch": watch}}
         g = (b.get("file"), b["key"] if b.get("file") == _record.NO_FILE else where["symbol"] or f"line {b.get('line')}",
              # never merged: its run count and a `wont_fix` are carried by its own key
              b["key"] if b.get("kind") == "agent_run" else b.get("kind"))   # a duplicate joins duplicates

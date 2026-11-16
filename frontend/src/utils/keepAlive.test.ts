@@ -35,3 +35,22 @@ describe('key listeners on kept-alive pages', () => {
     expect(stale).toEqual([])
   })
 })
+
+// Kiwi's Share-plots button targets ONE registered canvas (stores/shareTarget.ts). Registering on mount
+// and unregistering only on dispose left the last-MOUNTED kept-alive page as the target: back on an
+// earlier page, Share-plots opened its selection overlay on the hidden page and nothing happened.
+describe('canvas share host on kept-alive pages', () => {
+  it('re-registers on activate and unregisters on deactivate', () => {
+    const src = RAW['/src/stores/shareTarget.ts']
+    const body = src.slice(src.indexOf('export function useCanvasShareHost'))
+    expect(body).toMatch(/onActivated\(\s*\(\)\s*=>\s*store\.registerCanvasHost\(host\)\s*\)/)
+    expect(body).toMatch(/onDeactivated\(\s*\(\)\s*=>\s*store\.unregisterCanvasHost\(host\)\s*\)/)
+  })
+  // Same single-winner shape: two kept-alive canvases share an exporter key (Whiteboard QC + Segment).
+  it('panel exporters re-register on activate and unregister on deactivate', () => {
+    const src = RAW['/src/stores/canvasPanelExports.ts']
+    const body = src.slice(src.indexOf('export function usePanelExport'))
+    expect(body).toMatch(/onActivated\(\s*\(\)\s*=>\s*store\.register\(lastKey, exporter\)\s*\)/)
+    expect(body).toMatch(/onDeactivated\(\s*\(\)\s*=>\s*store\.unregister\(lastKey, exporter\)\s*\)/)
+  })
+})

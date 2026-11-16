@@ -95,6 +95,7 @@ class FunctionsAndRangesTest(unittest.TestCase):
                                          encoding="utf-8")
             hits, unnamed = mc.py_tests("cecelia.utils.czi_meta", ["x_parse_settings", "x__band", "xǁReaderǁread"], set())
             self.assertEqual([h.name for h in hits], ["test_a.py", "test_c.py"])
+            self.assertEqual(mc.test_paths(hits), ["python/cecelia/tests/test_a.py", "python/cecelia/tests/test_c.py"])
             self.assertEqual(unnamed, ["x__band"])
             # a test file the change itself touched is run whatever it names
             hits, _ = mc.py_tests("cecelia.utils.czi_meta", ["x__band"], {"python/cecelia/tests/test_b.py"})

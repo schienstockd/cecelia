@@ -15,6 +15,8 @@ stack. Per-tag notes are also on the
 
 ### Read this first
 
+- **The app opens in light colours.** A profile that already picked a scheme keeps it; switch from
+  the avatar menu.
 - **A paused time-lapse gets no frame interval.** Irregular per-plane timestamps used to record
   their median, making speeds across the pause wrong. Re-import flags it instead; set the interval.
 - **AI is off until you turn it on** in Preferences → Kiwi; a dialog first says what goes to

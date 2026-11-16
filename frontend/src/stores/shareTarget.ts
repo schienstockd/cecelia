@@ -21,7 +21,7 @@
 // disabled state honest. Cheap: `getOpenPopoutWindow` is a Map lookup + `.closed` read.
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { computed, ref, onScopeDispose } from 'vue'
+import { computed, ref, onActivated, onDeactivated, onScopeDispose } from 'vue'
 import { getOpenPopoutWindow } from '../lib/popout'
 
 /** Contract a canvas host registers when it can be shared. */
@@ -105,12 +105,17 @@ export const useShareTargetStore = defineStore('shareTarget', () => {
   }
 })
 
-/** Register a canvas as the share target for as long as the calling component is mounted.
- *  Matches the `onScopeDispose` idiom used elsewhere (see `useCanvasZoom`) — the caller doesn't
- *  have to remember to unregister. */
+/** Register a canvas as the share target for as long as the calling component is mounted AND
+ *  visible. Plot pages live under App.vue's `<KeepAlive>` (composables/useKeepAlive.ts): leaving a
+ *  page hides it without unmounting, so a dispose-only registration left the LAST-MOUNTED page as
+ *  the target — returning to an earlier page made Kiwi's Share-plots open the selection overlay on
+ *  the hidden page, and nothing happened on screen. Hence the activate/deactivate pair. Outside a
+ *  KeepAlive those two hooks never fire and this is the plain mount/dispose lifecycle. */
 export function useCanvasShareHost(host: CanvasShareHost): void {
   const store = useShareTargetStore()
   store.registerCanvasHost(host)
+  onActivated(() => store.registerCanvasHost(host))
+  onDeactivated(() => store.unregisterCanvasHost(host))
   onScopeDispose(() => store.unregisterCanvasHost(host))
 }
 
