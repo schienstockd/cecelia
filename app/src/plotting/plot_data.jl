@@ -51,7 +51,8 @@ end
 function _series_groups(df::DataFrame; by_image::Bool=false,
                         group_col::Union{Nothing,AbstractString}=nothing,
                         collapse::Bool=false,
-                        attr_map::Union{Nothing,AbstractDict}=nothing)
+                        attr_map::Union{Nothing,AbstractDict}=nothing,
+                        pop_order=nothing)
     out = NamedTuple[]
     (nrow(df) == 0 || !(:pop in propertynames(df))) && return out
     has_vn  = :value_name in propertynames(df)
@@ -89,10 +90,12 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
     end
     # Category-sort the series axis so composed multi-attribute keys ("WT.M1", "MerTK.M2", …) group
     # cleanly instead of reading in first-appearance-of-row order. `_sort_cats` on the primary axis
-    # (imgkey — the attribute value when `attr_map` is set, else uID), vn/pop/grp as stable secondaries.
+    # (imgkey — the attribute value when `attr_map` is set, else uID); then the populations in the
+    # order the user picked them (`_pop_rank`), grp last.
     if !isempty(order)
         img_rank = Dict(k => i for (i, k) in enumerate(_sort_cats(unique(String[t[1] for t in order]))))
-        sort!(order, by = t -> (img_rank[t[1]], t[2], t[3], t[4]))
+        prank = _pop_rank(pop_order)
+        sort!(order, by = t -> (img_rank[t[1]], prank(t[2], t[3])..., t[4]))
     end
     for (uid, vn, pop, grp) in order
         mask = trues(nrow(df))
@@ -104,6 +107,23 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
         push!(out, (uid=uid, vn=vn, sid=sid, grp=grp, sub=df[mask, :]))
     end
     out
+end
+
+# A series' place among the populations: its index in `pop_order` — the picked `(value_name, pop)`
+# targets, or bare pop paths — matched on the pair, else on the pop alone; one not picked sorts after
+# every picked one, by name. `nothing` = by name (vn, pop).
+function _pop_rank(pop_order)
+    pair = Dict{Tuple{String,String},Int}(); bare = Dict{String,Int}()
+    for (i, t) in enumerate(something(pop_order, ()))
+        if t isa Tuple || t isa AbstractVector
+            k = (String(t[1]), String(t[2]))
+            haskey(pair, k) || (pair[k] = i)
+            haskey(bare, k[2]) || (bare[k[2]] = i)
+        else
+            haskey(bare, String(t)) || (bare[String(t)] = i)
+        end
+    end
+    (vn, pop) -> (get(pair, (vn, pop), get(bare, pop, typemax(Int))), vn, pop)
 end
 
 # The one temporal column — `label_props` refuses any other name (`_check_centroid_names`).
@@ -573,6 +593,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       separator::AbstractString="_", zscore::Bool=false,
                       matrix_normalize::Symbol=:none,
                       attr_map::Union{Nothing,AbstractDict}=nothing,
+                      pop_order=nothing,
                       stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     # matrix/heatmap pools the whole frame into one grid — handled before the per-series charts below.
     if chart_type == "matrix"
@@ -635,7 +656,8 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # `group` is the optional categorical sub-axis level (e.g. an HMM state) — "" when not grouping.
     base(g) = Dict{String,Any}("pop" => g.sid, "value_name" => g.vn, "uID" => g.uid, "group" => g.grp)
     gb = group_by === nothing ? nothing : String(group_by)
-    sgroups(d) = _series_groups(d; by_image=by_image, group_col=gb, collapse=collapse_series, attr_map=attr_map)
+    sgroups(d) = _series_groups(d; by_image=by_image, group_col=gb, collapse=collapse_series, attr_map=attr_map,
+                                pop_order=pop_order)
     # every per-series response reports whether the measure is BOOLEAN, so the panel can offer the
     # "% positive" chart without a second probe (it learns the measure TYPE the same way).
     mbool = !composed && asked_for_measure && measure !== nothing && String(measure) in names(df) &&
@@ -1289,7 +1311,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
     df, named = _named_cluster_frame(df, [img], [""], [eff_vn], measure, granularity, chart_type)
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
-                 var_cols=_var_measure_set(img, eff_vn),
+                 var_cols=_var_measure_set(img, eff_vn), pop_order=pops,
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
@@ -1358,7 +1380,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     df, named = _named_cluster_frame(df, imgs, uids, [eff_vn], measure, granularity, chart_type)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
-                          group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn),
+                          group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn), pop_order=pops,
                           collapse_series=collapse_series,
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                           matrix_mode=matrix_mode, measures=measures, category=category,
@@ -1481,7 +1503,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
-                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
+                 pop_order=targets, collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                  stats_enabled=stats_enabled, stats_test=stats_test), fit) |>
@@ -1533,7 +1555,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by,
                           var_cols=_var_measure_set(imgs, isempty(targets) ? nothing : first(targets)[1]),
-                          collapse_series=collapse_series,
+                          pop_order=targets, collapse_series=collapse_series,
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,

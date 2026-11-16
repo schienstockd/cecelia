@@ -30,9 +30,16 @@ stack. Per-tag notes are also on the
 - **Recordings follow the viewer's scale bar, timestamp and 3D Steps.** Pick a Render quality to override Steps.
 - **Skeletons draw as lines coloured by branch type**, in the viewer and every recording. Re-run
   branching on older skeletons to see them.
+- **Plots show populations in the order you pick them**, not alphabetically. Drag *plot order* in
+  the population picker to change it.
 
 ### Fixed
 
+- **3D recordings and animations draw the segmentation** the viewer shows. They drew none.
+- **Batch movies colour the mask by track clusters**, as the viewer does, and *Fill from view*
+  keeps the viewer's populations. The mask picker shows with one version too.
+- **The mask can be coloured by the colour-by measure** in the viewer (*Colour → Colour by*), and
+  movies follow. It replaces the batch page's *labels* chip.
 - **Detect aggregates creates its population again.** The *aggregated* population was never added
   for a run started from the app.
 - **Imaris frame interval.** Imaris files whose timestamps carry nine decimal places (converted from

@@ -113,7 +113,7 @@ import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          shownLabelFiles, type MaskStore } from '../utils/viewerLabels'
-import { maskPopTable, trackclustMaskLayer, maskLayerShowsAny, type MaskPopLayer } from '../utils/maskPopTable'
+import { maskPopTable, trackclustMaskLayer, colourByMaskLayer, maskLayerShowsAny, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -1048,6 +1048,8 @@ watch(maskSourceId, () => { if (!starting.value) applyMaskSource() })
 // filled while it is on). Kept with an empty `pops`, so a segmentation without track clusters draws
 // its cells grey, as a movie's mask does (`mask_pop_colours`).
 const maskTrackclust = ref<{ vn: string; payload: OverlayPayload } | null>(null)
+// The shown mask's colour-by payload, for *Colour: Colour by* (`loadMaskColourBy`).
+const maskColourBy = ref<{ vn: string; colourBy: string; payload: OverlayPayload } | null>(null)
 // The mask's *Colour* (`settings.viewerMaskColour`): the shown mask's colour table from the population
 // layers on ITS segmentation (`utils/maskPopTable.ts` — deepest visible pop wins, parents pale, the
 // rest grey) — the cell pop types on, or the segmentation's track clusters (`maskTrackclust`). `null` =
@@ -1058,6 +1060,10 @@ const maskPopLayers = computed<MaskPopLayer[]>(() => {
   if (!vn || maskStoreOf(vn).store) return []
   if (spec.maskColour === 'pops')
     return popLayers.value.filter(l => l.vn === vn).map(l => ({ payload: l.payload, hidden: layerHidden(l) }))
+  if (spec.maskColour === 'colourBy') {
+    const cb = maskColourBy.value
+    return cb?.vn === vn && cb.colourBy === colourBy.value ? [colourByMaskLayer(cb.payload, POPULATION_PALETTE)] : []
+  }
   const tc = maskTrackclust.value
   return spec.maskColour === 'trackclust' && tc?.vn === vn
     ? [trackclustMaskLayer(tc.payload, (path, show) => popEyeOn(popEyes.value, vn, 'trackclust', path, show))] : []
@@ -1104,6 +1110,28 @@ async function loadMaskTrackclust() {
   maskTrackclust.value = payload ? { vn, payload } : null
 }
 watch([() => spec.maskColour, maskName], () => { void loadMaskTrackclust() })
+// The shown mask's colour-by values, for *Colour: Colour by* — every cell of its segmentation with its
+// value of the column (a pop layer of it already carries them; else one fetch). No column, or no cell
+// table: the per-id palette, as the movie's (`movie_mask`). `maskColourBy` is declared beside
+// `maskTrackclust`.
+async function loadMaskColourBy() {
+  const vn = spec.maskColour === 'colourBy' ? maskName.value : ''
+  const cb = colourBy.value
+  if (!vn || !cb || !projectUid || !imageUid) { maskColourBy.value = null; return }
+  const have = popLayers.value.find(l => l.vn === vn && l.payload.colourBy === cb)?.payload
+  let payload: OverlayPayload | null = have ?? null
+  if (!payload) {
+    try {
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'flow', colourBy: cb }),
+                              { cache: 'no-store' })
+      payload = res.ok ? await res.json() as OverlayPayload : null
+    } catch { payload = null }
+  }
+  // a later mask / mode / column change has overtaken this fetch
+  if (spec.maskColour !== 'colourBy' || maskName.value !== vn || colourBy.value !== cb) return
+  maskColourBy.value = payload ? { vn, colourBy: cb, payload } : null
+}
+watch([() => spec.maskColour, maskName, colourBy], () => { void loadMaskColourBy() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -1528,6 +1556,8 @@ const maskColourNote = computed(() => {
   if (mode === 'id') return ''
   if (previewVn.value || liveVn.value) return 'Not for a preview mask'
   if (mode === 'pops') return maskTable.value ? '' : 'No populations shown on this mask'
+  if (mode === 'colourBy')
+    return !colourBy.value ? 'Pick a colour-by in On the image' : maskTable.value ? '' : 'No values on this mask'
   const tc = maskTrackclust.value, vn = maskName.value
   // by the eyes the mask draws by (`maskPopLayers`), not `show`
   return tc?.vn === vn && maskLayerShowsAny(trackclustMaskLayer(tc.payload,
@@ -2263,6 +2293,7 @@ async function loadTracks() {
   rebuildOverlays()
   // after the ribbons' fetch, whose payload it reuses — and on every gating ping, as they refresh
   void loadMaskTrackclust()
+  void loadMaskColourBy()
 }
 
 function pushChannels() {

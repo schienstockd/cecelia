@@ -341,6 +341,11 @@ function togglePop(valueName: string, pop: string, pt: string) {
   if (scope.value === 'global') trackPops.value = next(trackPops.value)
   else if (activePanel.value) activePanel.value.state.popSel = next(panelPopSel(activePanel.value.id))
 }
+// the picker's plot-order strip: the same selection, re-ordered (or with a chip clicked off)
+function reorderPops(keys: string[]) {
+  if (scope.value === 'global') trackPops.value = [...keys]
+  else if (activePanel.value) activePanel.value.state.popSel = [...keys]
+}
 // The policy can change UNDER a selection: this rail follows the active panel, so ticking three
 // populations for a facetting plot and then clicking the timeline leaves three ticked. Narrow instead
 // of drawing one of them and saying nothing — which is the bug `singlePop` exists to prevent.
@@ -716,7 +721,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           <SeriesPicker v-if="showManager && activeIsPopsView" title="Tracks" icon="pi-share-alt"
                         :groups="segPops" :selected="activePopSel" :scope="scope"
                         :single="activeSinglePop"
-                        @toggle="togglePop" @update:scope="scope = $event" />
+                        @toggle="togglePop" @reorder="reorderPops" @update:scope="scope = $event" />
           <PopulationManager v-else-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                              :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                              :dot-size="activeDotSize"

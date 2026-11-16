@@ -17,7 +17,7 @@ import { CELL_POP_TYPES } from '../overlayAutoShow'
 import { readDrawSpec, type LookImage } from './drawSpec'
 import { colourForRender, channelsForRender } from '../viewerColormap'
 import type { PopEyes } from './popEyes'
-import type { MaskColour } from '../maskPopTable'
+import { maskColourKeys, type MaskColour } from '../maskPopTable'
 import { SKELETON_BY_TYPE } from '../viewerOverlays'
 
 export { readGatingCurrent, type LookImage } from './drawSpec'
@@ -103,9 +103,10 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     // the viewer's mask is every cell of its segmentation in the per-id palette — or, with *Colour*
     // on pops and pops shown, coloured by its own segmentation's pops (`maskPopTable`; the movie
     // draws the same rule, `mask_pop_colours`). With no pop type on, the viewer keeps the palette too.
-    // On track clusters it is coloured by them whatever the pop types (`maskPopTypes`).
-    maskAllCells: !(i.maskColour === 'trackclust' || (i.maskColour === 'pops' && popsOn)),
-    ...(i.maskColour === 'trackclust' ? { maskPopTypes: ['trackclust'] } : {}),
+    // On track clusters it is coloured by them whatever the pop types; on *Colour by*, every cell by
+    // the column (`maskColourKeys`, the batch's translation too — a batch reads the choice back off
+    // these keys, `batchMaskColour`).
+    ...maskColourKeys(i.maskColour, popsOn, i.colourBy),
     labelContour: clampContour(i.labelContour),
     show3D: is3D,
     zSlice: z,

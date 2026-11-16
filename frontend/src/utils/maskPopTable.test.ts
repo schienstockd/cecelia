@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  maskPopTable, trackclustMaskLayer, maskLayerShowsAny, isMaskColour, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
+  maskPopTable, trackclustMaskLayer, colourByMaskLayer, maskColourKeys, maskLayerShowsAny, isMaskColour, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
   type LabelTable, type MaskPopLayer,
 } from './maskPopTable'
 import { mix, parseHex } from './colour'
@@ -201,4 +201,36 @@ describe('maskPopTable ↔ mask_pop_colours parity fixture', () => {
       }
     })
   }
+})
+
+describe('the mask on Colour by (`colourByMaskLayer`) — every cell by the column, as the movie (`mask_id_colours`)', () => {
+  const payload = (values: (number | string | null)[], kind: 'categorical' | 'numeric', extra = {}) => ({
+    nCells: values.length, nDropped: 0, axes: [], hasT: false,
+    cells: { label: values.map((_, i) => i + 1) }, pops: [], colourColumns: ['c'], colourBy: 'c',
+    valueKind: kind, values, ...extra })
+  it('a category its palette slot by sorted level; a cell with no value stays grey', () => {
+    const p = payload(['b', 'a', null, 'a'], 'categorical', { valueLevels: ['b', 'a'] })
+    const t = maskPopTable([colourByMaskLayer(p, ['#ff0000', '#00ff00'])])!
+    // levels sort to [a, b]: a → slot 0 (red), b → slot 1 (green)
+    expect(colourOf(t, 2)).toEqual(rgb255('#ff0000'))
+    expect(colourOf(t, 4)).toEqual(rgb255('#ff0000'))
+    expect(colourOf(t, 1)).toEqual(rgb255('#00ff00'))
+    expect(colourOf(t, 3)).toEqual(rgb255(MASK_UNGATED_GREY))
+  })
+  it('a number on the ramp; NaN stays grey; no column = no pops, so the caller keeps the palette', () => {
+    const p = payload([0, 10, Number.NaN], 'numeric', { valueRange: [0, 10] })
+    const t = maskPopTable([colourByMaskLayer(p)])!
+    expect(colourOf(t, 1)).not.toEqual(colourOf(t, 2))
+    expect(colourOf(t, 3)).toEqual(rgb255(MASK_UNGATED_GREY))
+    expect(colourByMaskLayer({ ...p, colourBy: null }).payload.pops).toEqual([])
+  })
+  it('the movie keys of each choice — one translation for the viewer look and a batch', () => {
+    expect(maskColourKeys('id', true, 'c')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
+    expect(maskColourKeys('pops', true, '')).toEqual({ maskAllCells: false, maskPopTypes: [], colourLabels: false })
+    expect(maskColourKeys('pops', false, '')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
+    expect(maskColourKeys('trackclust', false, '')).toEqual({ maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: false })
+    expect(maskColourKeys('colourBy', false, 'c')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: true })
+    expect(maskColourKeys('colourBy', false, '')).toEqual({ maskAllCells: true, maskPopTypes: [], colourLabels: false })
+    expect(isMaskColour('colourBy')).toBe(true)
+  })
 })

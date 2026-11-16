@@ -25,13 +25,14 @@ import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS, distinctChannelOptions } from '../../utils/viewerColormap'
 import { readViewerLook } from '../../utils/viewer/viewerLook'
-import { buildBatchMovieConfig, batchTrackSources, defaultTrackSourceColour, movieFilename, RENDER_QUALITY_DEFAULT, type RenderQuality, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
+import { buildBatchMovieConfig, batchMaskColour, batchMaskKeys, BATCH_POP_EDIT, batchTrackSources, defaultTrackSourceColour, movieFilename, RENDER_QUALITY_DEFAULT, type RenderQuality, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, TITLE_CARD_DEFAULT, clampContour, withCustomColours, type BatchMovieCfg, type TitleCardCfg } from '../../utils/batchMovie'
 import { versionsFromConfig, compareSuffix, compareActionTip,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          segmentationsFromConfig, compareShape,
          type CompareLayout, type CompareContrast } from '../../utils/movieCompare'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
+import { maskColourOptions, type MaskColour } from '../../utils/maskPopTable'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
 import SceneAid from '../../components/SceneAid.vue'
 import { buildOverlayScene, drawsTails, renderOverlayPreview } from './overlayPreview'
@@ -169,14 +170,19 @@ const showTracks   = computed<boolean>({ get: () => !!cfg.value.showTracks,     
 const showTrackclust = computed<boolean>({ get: () => !!cfg.value.showTrackclust,    set: v => patch({ showTrackclust: v }) })
 const showGated    = computed<boolean>({ get: () => !!cfg.value.showGatedTracks,     set: v => patch({ showGatedTracks: v }) })
 const showPops     = computed<boolean>({ get: () => !!cfg.value.showPopulations,     set: v => patch({ showPopulations: v }) })
-const colourLabels = computed<boolean>({ get: () => !!cfg.value.colourLabels,        set: v => patch({ colourLabels: v }) })
-const popType      = computed<string>({ get: () => cfg.value.popType ?? 'flow',      set: v => patch({ popType: v }) })
+// The mask's *Colour*, as the viewer's (`maskColourOptions`) — a config saved before it reads as what it
+// drew (`batchMaskColour`). Track clusters on offer whenever a selected image is a timecourse.
+const maskColour   = computed<MaskColour>({ get: () => batchMaskColour(cfg.value), set: v => patch({ maskColour: v }) })
+const maskColourOpts = computed(() => maskColourOptions(tFrames.value > 1, maskColour.value))
+// A viewer look's pops (every segmentation's, its eyes) until a pop pick here (`BATCH_POP_EDIT`).
+const popsFromView = computed(() => !!cfg.value.popAllSegmentations)
+const popType      = computed<string>({ get: () => cfg.value.popType ?? 'flow',      set: v => patch({ popType: v, ...BATCH_POP_EDIT }) })
 // Which segmentation the pop tree is fetched from. Pop trees are per-segmentation, so a batch that
 // draws mask `flowTom` while filtering `/qc/CD169-` needs to know the pop path was authored on
 // `flowTom`. Empty → first mask column, else the first available segmentation.
 const popValueName = computed<string>({
   get: () => cfg.value.popValueName ?? (compareSegmentations.value[0] ?? segNames.value[0] ?? ''),
-  set: v => patch({ popValueName: v }),
+  set: v => patch({ popValueName: v, ...BATCH_POP_EDIT }),
 })
 const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,         set: v => patch({ tailWidth: v }) })
 // every track kind (plain, cell-track, trackclust) draws its ribbons at `tailWidth`
@@ -225,19 +231,19 @@ const attrOptions = computed<ChipOption[]>(() => {
 // Channels actually shown in the movie (have a colormap), in channel order — what the token expands to.
 const shownChannels = computed(() => channelList.value.filter(c => channels.value[c]))
 
-// Overlay toggles — five independent feature flags surfaced as one multi-select chip row.
+// Overlay toggles — four independent feature flags surfaced as one multi-select chip row. (The mask's
+// colour is its own pick, `maskColour`, beside the mask.)
 const OVERLAY_OPTIONS: ChipOption[] = [
   { value: 'tracks',     label: '', icon: 'pi pi-directions',     tip: 'Tracks — all tracked segmentations' },
   { value: 'trackclust', label: '', icon: 'pi pi-sitemap',        tip: 'Track-cluster populations' },
   { value: 'gated',      label: '', icon: 'pi pi-filter',         tip: 'Cell-track ribbons' },
   { value: 'pops',       label: '', icon: 'pi pi-chart-scatter',  tip: 'Populations (points)' },
-  { value: 'labels',     label: '', icon: 'pi pi-palette',        tip: 'Colour the drawn masks by the colour-by measure' },
 ]
 const overlaysModel = computed<string[]>({
   get: () => [showTracks.value && 'tracks', showTrackclust.value && 'trackclust', showGated.value && 'gated',
-              showPops.value && 'pops', colourLabels.value && 'labels'].filter(Boolean) as string[],
+              showPops.value && 'pops'].filter(Boolean) as string[],
   set: (v) => { showTracks.value = v.includes('tracks'); showTrackclust.value = v.includes('trackclust')
-                showGated.value = v.includes('gated'); showPops.value = v.includes('pops'); colourLabels.value = v.includes('labels') },
+                showGated.value = v.includes('gated'); showPops.value = v.includes('pops') },
 })
 
 // ── colour-by options (obs columns of a representative segmentation) ───────────
@@ -289,7 +295,7 @@ watch(() => [props.selectedUids[0], popValueName.value, popType.value] as const,
 // Selected pop paths — persist under `popsFilter`. Empty = draw ALL pops (backend rule).
 const popsFilter = computed<string[]>({
   get: () => (cfg.value.popsFilter as string[] | undefined) ?? [],
-  set: v => patch({ popsFilter: v }),
+  set: v => patch({ popsFilter: v, ...BATCH_POP_EDIT }),
 })
 // Remap the persisted selection across pop mutations upstream. Uid-aware (docs/todo/POP_SYNC_PLAN.md):
 // a RENAME carries the filter entry to the pop's new path (uid preserved by `rename_pop!`), a DELETE
@@ -346,7 +352,7 @@ const overlayPreview = computed(() => renderOverlayPreview({
   showTracks: cfg.value.showTracks,
   showGatedTracks: cfg.value.showGatedTracks,
   showTrackclust: cfg.value.showTrackclust,
-  colourLabels: cfg.value.colourLabels,
+  colourLabels: batchMaskKeys(cfg.value).colourLabels,
   labelValueNames: cfg.value.labelValueNames,
   showTimestamp: movieTimestamp.value,
   showScaleBar: movieScaleBar.value,
@@ -395,7 +401,8 @@ async function fillFromView(force = false) {
   }
   const cb = setUid.value ? settings.getColourBy(setUid.value) : ''
   if (cb && !cfg.value.colourBy) seed.colourBy = cb
-  patch(seed as Record<string, unknown>)
+  // the look's mask keys say its *Colour* (`batchMaskColour`) — an earlier pick here must not outrank it
+  patch({ ...seed, ...(seed.labelValueNames ? { maskColour: undefined } : {}) } as Record<string, unknown>)
   seeding.value = false
 }
 // auto-seed when the selection changes and nothing's been authored yet
@@ -599,10 +606,14 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
         <!-- popType + segmentation picks share one row; tail + size sliders share a second one. Each
              range is width-capped (`.bm-range`) so a lone tail slider doesn't stretch to eat the row
              (old layout gave `tail` 4× the width of `size` for that reason — both are 1..20). -->
+        <div v-if="showPops && popsFromView" class="bm-inset">
+          <span class="bm-hint cc-muted" v-tooltip.bottom="'Drawn as the viewer shows them until a setting below changes'">populations as in the viewer</span>
+        </div>
         <div v-if="showPops" class="bm-inset">
           <select v-model="popType" class="bm-mini" v-tooltip.bottom="'Which population type to draw as points'">
             <option value="flow">gating</option>
             <option value="clust">clusters</option>
+            <option value="region">regions</option>
           </select>
           <select v-if="segNames.length" v-model="popValueName" class="bm-mini"
                   v-tooltip.bottom="'Segmentation whose pop tree to draw from'">
@@ -659,9 +670,10 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
         </select>
       </section>
 
-      <!-- Image versions — one chip = that version, two or more = a side-by-side comparison -->
-      <section v-if="versionNames.length > 1" class="bm-sec cc-panel-section">
-        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs" v-tooltip.left="'Click to include · drag to order'">Image versions</h3>
+      <!-- Versions and masks — one chip = that version / mask, two or more = a side-by-side comparison.
+           Shown with one version too: the mask picker lives here. -->
+      <section v-if="versionNames.length > 1 || segNames.length" class="bm-sec cc-panel-section">
+        <h3 class="cc-panel-heading cc-eyebrow cc-fs-2xs" v-tooltip.left="'Click to include · drag to order'">Versions and masks</h3>
         <MovieCompareControls :available="versionNames"
                               :available-segmentations="segNames"
                               v-model:versions="compareVersions"
@@ -669,6 +681,11 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
                               v-model:contour="labelContour"
                               v-model:layout="compareLayout"
                               v-model:contrast="compareContrast" />
+        <div v-if="compareSegmentations.length" class="bm-inset">
+          <span class="bm-lbl cc-muted">mask colour</span>
+          <ChipSelect variant="segmented" :options="maskColourOpts" v-model="maskColour" aria-label="Colour mask by"
+                      v-tooltip.bottom="'What colours the mask'" />
+        </div>
       </section>
 
       <!-- Movie — the same controls as the viewer recorder and the animation page -->

@@ -898,6 +898,22 @@ end
     @test isempty(derived_pop_paths("flow"))
 end
 
+@testset "series follow the populations' pick order, images stay category-sorted" begin
+    # rows arrive image-major; the picked order is /T/CD8 before /B — the reverse of by-name
+    df = DataFrame(uID = ["u2", "u2", "u1", "u1"], value_name = fill("cpSAM", 4),
+                   pop = ["/B", "/T/CD8", "/B", "/T/CD8"], m = [1.0, 2.0, 3.0, 4.0])
+    picked = [("cpSAM", "/T/CD8"), ("cpSAM", "/B")]
+    g = Cecelia._series_groups(df; by_image = true, pop_order = picked)
+    @test [(x.uid, x.sid) for x in g] ==
+          [("u1", "cpSAM/T/CD8"), ("u1", "cpSAM/B"), ("u2", "cpSAM/T/CD8"), ("u2", "cpSAM/B")]
+    # bare pop paths (a one-segmentation request) rank the same; nothing picked = by name
+    @test [x.sid for x in Cecelia._series_groups(df; pop_order = ["/T/CD8", "/B"])] == ["cpSAM/T/CD8", "cpSAM/B"]
+    @test [x.sid for x in Cecelia._series_groups(df)] == ["cpSAM/B", "cpSAM/T/CD8"]
+    # a series nobody picked sorts after every picked one
+    @test [x.sid for x in Cecelia._series_groups(df; pop_order = ["/B"])] == ["cpSAM/B", "cpSAM/T/CD8"]
+    @test [x.sid for x in Cecelia._series_groups(df; pop_order = ["/T/CD8"])] == ["cpSAM/T/CD8", "cpSAM/B"]
+end
+
 @testset "heatmap across images pools each channel by name" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")

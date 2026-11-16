@@ -19,18 +19,45 @@
 //  - **Which pop family** is the mask's *Colour* choice (`MaskColour`): the cell pop types on, or the
 //    segmentation's track clusters (each tracked cell in its track's cluster pop). The movie takes the
 //    family as `maskPopTypes` (`mask_pop_scope`).
+//  - **Colour by** paints every cell by the colour-by column (`colourByMaskLayer`), cells with no value
+//    grey — the movie's `colourLabels` over all cells (`mask_id_colours`). `maskColourKeys` is the one
+//    translation of the choice into a movie config, for the viewer's look and a batch alike.
 
 import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
-import { OVERLAY_GREY } from './viewerOverlays'
-import { mix, parseHex } from './colour'
+import { OVERLAY_GREY, colourByValue, type OverlayPayload } from './viewerOverlays'
+import { mix, parseHex, toHex } from './colour'
 import { isInSubtree } from './popName'
 import { WHITE } from '../plots/fixedColours'
 
 /** Where the shown mask's colours come from: the per-id palette, the cell pops on (flow / clust /
- *  region), or the segmentation's track clusters. `settings.viewerMaskColour`. */
-export type MaskColour = 'id' | 'pops' | 'trackclust'
-export const MASK_COLOURS: readonly MaskColour[] = ['id', 'pops', 'trackclust']
+ *  region), the segmentation's track clusters, or the colour-by column. `settings.viewerMaskColour`. */
+export type MaskColour = 'id' | 'pops' | 'trackclust' | 'colourBy'
+export const MASK_COLOURS: readonly MaskColour[] = ['id', 'pops', 'trackclust', 'colourBy']
 export const isMaskColour = (v: unknown): v is MaskColour => MASK_COLOURS.includes(v as MaskColour)
+
+/** The *Colour* choices, as the viewer's Segmentation section and the batch list them. Track clusters
+ *  only on a timecourse — unless `current`, so a stored choice stays visible and switchable. */
+export function maskColourOptions(timecourse: boolean, current: MaskColour):
+  { value: MaskColour; label: string; tip: string }[] {
+  return [
+    { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
+    { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
+    ...(timecourse || current === 'trackclust'
+      ? [{ value: 'trackclust' as const, label: 'Track clusters', tip: 'Each tracked cell by its track cluster' }] : []),
+    { value: 'colourBy', label: 'Colour by', tip: 'Each cell by the colour-by measure' },
+  ]
+}
+
+/** The movie config's mask keys for a *Colour* choice — what `mask_pop_scope` / `movie_mask` read.
+ *  `popsOn`: some cell pop type is drawn (with none, *Pops* keeps the palette, as the viewer does);
+ *  `colourBy`: the column (none = *Colour by* keeps the palette). `maskPopTypes` is always written, so
+ *  a look patched over an older one never inherits its track clusters. */
+export function maskColourKeys(c: MaskColour, popsOn: boolean, colourBy: string):
+  { maskAllCells: boolean; maskPopTypes: string[]; colourLabels: boolean } {
+  if (c === 'trackclust') return { maskAllCells: false, maskPopTypes: ['trackclust'], colourLabels: false }
+  if (c === 'pops' && popsOn) return { maskAllCells: false, maskPopTypes: [], colourLabels: false }
+  return { maskAllCells: true, maskPopTypes: [], colourLabels: c === 'colourBy' && !!colourBy }
+}
 
 /** Texels per row of a label colour table: id at `(id % W, id / W)` (`labColour`). One number for the
  *  viewer and the movie host (`wgpu_host.LABEL_TABLE_W`), from `shaders/constants.json`. */
@@ -74,6 +101,28 @@ export function trackclustMaskLayer(payload: {
   pops: readonly { path: string; colour: string; labels: readonly number[]; show?: boolean }[]
 }, eyeOn: (path: string, show: boolean) => boolean = (_path, show) => show): MaskPopLayer {
   return { payload, hidden: new Set(payload.pops.filter(p => !eyeOn(p.path, p.show !== false)).map(p => p.path)) }
+}
+
+/** The mask's layer when it is coloured by the colour-by column: every cell with a value, in the
+ *  points' colour for it (`colourByValue`), each colour one flat pop so none pales another; a cell
+ *  with no value keeps the table's grey. The scale is this segmentation's own, as the movie's
+ *  (`_cb_scale(img, [vn], …)` in `mask_id_colours`). No column on the payload = no pops. */
+export function colourByMaskLayer(payload: OverlayPayload, palette: readonly string[] = []): MaskPopLayer {
+  const labels = payload.cells.label ?? []
+  const vals = payload.values ?? []
+  const byValue = colourByValue(payload, palette)
+  const groups = new Map<string, number[]>()
+  if (byValue) {
+    for (let i = 0; i < labels.length; i++) {
+      const v = vals[i]
+      if (v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v))) continue
+      const hex = toHex(byValue(i).map(v => v * 255))
+      const g = groups.get(hex)
+      if (g) g.push(labels[i]); else groups.set(hex, [labels[i]])
+    }
+  }
+  return { payload: { cells: payload.cells,
+                      pops: [...groups].map(([colour, ls], k) => ({ path: `/${k}`, colour, labels: ls })) } }
 }
 
 /** Whether a layer draws any pop of its own — one not in `hidden` (the viewer's *No track clusters on

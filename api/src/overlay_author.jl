@@ -1321,7 +1321,8 @@ end
 The pop layers a movie's population mask on `mask_vn` is coloured by — `mask_id_colours`'s
 `all_cells` / `pop_types` / `pops_filter`, picked as the viewer picks its *Colour* mask's. A viewer
 look (`plan.pop_all_segs`): its mask pop types (`plan.mask_pop_types` — track clusters), else its pop
-types, on the mask's OWN segmentation (`maskPopLayers`). A batch: its
+types, on the mask's OWN segmentation (`maskPopLayers`). Mask pop types alone (a batch on track
+clusters) take the same branch. Otherwise a batch: its
 one `(vn, pop_type)` layer, whose paths mean nothing in another segmentation's tree — a mask on
 another one is every cell. `pop_eyes` are the look's point eyes on `mask_vn` (the viewer's mask table
 takes the points' hidden pops, `layerHidden`); `nothing` = the manager's `show`. Both movie resolvers (`_resolve_movie_overlays_mask`,
@@ -1330,7 +1331,8 @@ takes the points' hidden pops, `layerHidden`); `nothing` = the manager's `show`.
 function mask_pop_scope(plan, vn::AbstractString, mask_vn::AbstractString, pop_type,
                         pops_filter, all_cells::Bool)
     look_types = isempty(plan.mask_pop_types) ? plan.pop_types : plan.mask_pop_types
-    plan.pop_all_segs && return (; all_cells, pops_filter = nothing,
+    # mask pop types (track clusters) are the mask segmentation's own, so a batch takes them as a look does
+    (plan.pop_all_segs || !isempty(plan.mask_pop_types)) && return (; all_cells, pops_filter = nothing,
                                    pop_types = isempty(look_types) ? [String(pop_type)] : look_types,
                                    pop_eyes = get(plan.pop_eyes, String(mask_vn), nothing))
     (; all_cells = all_cells || mask_vn != vn, pop_types = nothing, pops_filter, pop_eyes = nothing)
