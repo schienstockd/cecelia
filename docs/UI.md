@@ -585,8 +585,9 @@ palette, an export ground, a mark over the image) is a named constant in one hom
 marks a computed one (a ramp stop). **Plots follow the app scheme** on screen (`usePlotDark()` →
 `plotTheme`); every export — PNG, SVG, board PDF — is light. There is no per-plot dark/light option.
 New populations take `POPULATION_PALETTE` (`plots/plot.ts` = `population` in `palettes.json` = the Julia
-list): 12 colours, each ≥ 3:1 on the dark plot ground, white exports and black images; colour-blind safe to 8,
-the last 4 at the labelled floor (a pop's name is the second cue).
+list): 12 colours, each ≥ 3:1 on the dark plot ground and black images and ≥ 2:1 on white exports (3:1 on
+both ends forces garish high-chroma hues); the first 6 near the agents-pane Tol bright badges. Colour-blind
+safe to 8 — protan, deutan and tritan — the last 4 at the labelled floor (a pop's name is the second cue).
 
 **Few hues, not one per thing.** The palette was cut so the check can hold: one AI colour (`--cc-kiwi`,
 Kiwi and Claude Code alike; Claude's mark *on data* stays the annotation magenta) — except where the two sit side by side

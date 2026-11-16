@@ -249,13 +249,13 @@ end
 # ── Categorical colour-by palette (the ONE colour-choice rule) ─────────────────────
 # The population palette — the default categorical colours. Equal to `population` in
 # frontend/src/plots/palettes.json (pinned by frontend/src/utils/cvd.test.ts), so a category reads the
-# same colour everywhere. The first 6 are Paul Tol's 'bright' hues (the agents-pane badges in
-# share/console_palette.json), the rest chosen around them at the same moderate chroma. Each colour is
-# >= 3:1 on the dark plot ground and a black image, >= 1.8:1 on a white export (Tol bright's own floor).
-# Among the first 8 every pair is >= dE 8 under protan-/deuteranopia and >= 15 for normal vision; the
-# last 4 hold >= 6 / >= 13 against all (a pop's name is the second cue). Past 12 it repeats.
-const POPULATION_PALETTE = ["#2174C7", "#EC7374", "#417D40", "#C2C039", "#63CCF6", "#AC4782", "#8593F9", "#10AE9C",
-                            "#B7820A", "#D37CCE", "#F1ADAB", "#8580A0"]
+# same colour everywhere. The first 6 sit near Paul Tol's 'bright' hues (the agents-pane badges in
+# share/console_palette.json), the rest chosen around them at moderate chroma. Each colour is
+# >= 3:1 on the dark plot ground and a black image, >= 2:1 on a white export.
+# Among the first 8 every pair is >= dE 8 under protan-, deuter- and tritanopia and >= 15 for normal
+# vision; the last 4 hold >= 6 / >= 13 against all (a pop's name is the second cue). Past 12 it repeats.
+const POPULATION_PALETTE = ["#1271C5", "#F36E9F", "#547606", "#94C56F", "#45C1FB", "#AD4194", "#BC844A", "#A37EF3",
+                            "#D1AFB2", "#3AA085", "#FFA21E", "#826463"]
 
 _as_value_vec(x) = x === nothing ? Any[] : (x isa AbstractVector ? collect(x) : Any[x])
 # tolerant value equality: exact, string-wise, or numeric (a filter value stored as 2.0 == column 2)

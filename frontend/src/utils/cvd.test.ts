@@ -118,9 +118,17 @@ describe('the population palette', () => {
   })
   // 3:1 on white AND black leaves only a narrow luminance band, and 12 well-separated colours in it are
   // all high-chroma (the previous palette — users found it garish). Paul Tol's bright scheme, made for
-  // white paper, bottoms out at 1.8:1 (#66CCEE); that is the floor here.
-  it('shows on a white export (≥ 1.8:1, Tol bright\'s own floor)', () => {
-    expect(p.filter(c => contrastRatio(c, '#ffffff') < 1.8)).toEqual([])
+  // white paper, bottoms out at 1.8:1 (#66CCEE); this palette holds 2:1.
+  it('shows on a white export (≥ 2:1)', () => {
+    expect(p.filter(c => contrastRatio(c, '#ffffff') < 2)).toEqual([])
+  })
+  // Tritanopia is rare, but a blue-yellow pair that merges there has no excuse when the search can avoid it.
+  it('keeps the first 8 apart under tritanopia (ΔE ≥ 8) and all 12 above the floor (≥ 6)', () => {
+    const bad = pairs([...p]).flatMap(([a, b]) => {
+      const t = deltaE(a, b, 'tritan'), first8 = p.indexOf(a) < 8 && p.indexOf(b) < 8
+      return t < (first8 ? CVD_TARGET : CVD_FLOOR) ? [`${a} ↔ ${b}: tritan ${t.toFixed(1)}`] : []
+    })
+    expect(bad).toEqual([])
   })
   it('opens with the agents-pane hues (Tol bright, the badges in share/console_palette.json)', () => {
     expect(CONSOLE, 'console_palette.json not found').toBeTruthy()
