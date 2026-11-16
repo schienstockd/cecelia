@@ -5,6 +5,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { effectScope, ref, nextTick } from 'vue'
+
+// `onActivated` only fires under a real <KeepAlive>; capture the hooks so a test can play "the user
+// came back to this page".
+const activated: Array<() => void> = []
+vi.mock('vue', async (orig) => ({
+  ...(await orig<typeof import('vue')>()),
+  onActivated: (fn: () => void) => { activated.push(fn) },
+}))
 import { usePlotRegistry, usePlotRegistryStore } from './plotRegistry'
 import { wsClientId } from '../utils/clientId'
 import { useProjectMetaStore } from './projectMeta'
@@ -221,5 +229,22 @@ describe('usePlotRegistry', () => {
     b.stop()
     await nextTick()
     expect(calls.filter(c => c.url.endsWith('/deregister')).length).toBe(1)
+  })
+
+  it('a shared key is re-sent with the page the user comes back to', async () => {
+    activated.length = 0
+    const key = () => 'summary:segment:S1:1'
+    const a = effectScope(), b = effectScope()
+    a.run(() => usePlotRegistry(key, () => ({ family: 'summary', title: 'Counts', route: '/segment' })))
+    b.run(() => usePlotRegistry(key, () => ({ family: 'summary', title: 'Counts', route: '/whiteboard' })))
+    await nextTick()
+    const registers = () => calls.filter(c => c.url.endsWith('/register')).map(c => bodyOf(c.init).route)
+    expect(registers()).toEqual(['/segment', '/whiteboard'])
+    activated[0]()                                   // back on the Segment page
+    expect(registers().at(-1)).toBe('/segment')
+    const n = registers().length
+    activated[0]()                                   // nothing changed since: deduped, no POST
+    expect(registers().length).toBe(n)
+    a.stop(); b.stop()
   })
 })

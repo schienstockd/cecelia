@@ -16,7 +16,7 @@
 // title).
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref, watch, onScopeDispose } from 'vue'
+import { ref, watch, onActivated, onScopeDispose } from 'vue'
 import { wsClientId } from '../utils/clientId'
 import { useProjectMetaStore } from './projectMeta'
 
@@ -174,6 +174,12 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
   // still triggers (rare but correct).
   doRegister()
   watch([key, meta, () => projectMeta.current?.uid], () => doRegister(), { deep: true })
+  // Kept-alive pages (App.vue) share keys — the Whiteboard QC canvas and the Segment page are both
+  // `summary:segment:<set>` — and the server entry holds whichever page POSTed last. Coming back to a
+  // page re-sends its meta (the dedupe falls through on the other page's `route`), so `list_plots`
+  // and Kiwi's jump-to-plot name the page the user is on. A hidden page stays registered on purpose:
+  // a plot attached to Kiwi must still resolve after the user moves on.
+  onActivated(() => doRegister())
 
   onScopeDispose(() => { if (lastKey) drop(lastKey) })
 }
