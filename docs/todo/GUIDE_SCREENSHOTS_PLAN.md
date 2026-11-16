@@ -32,7 +32,7 @@ up or illustrated: a picture of an interface that differs from the real one is w
 | Headless light plot PNGs | `scripts/agent_eval/board_render.py` → `BoardRenderView.vue` | Analysis-board slots as plot-only light-theme PNGs through the board's PDF export path, from `frontend/dist`, write-guarded |
 | Viewer frames without a browser | offline renderer (`render_view_frame`, `POST /api/viewer/thumbnail`, `wgpu_host`) | Viewer image area rendered headless, golden-pinned to the viewer's shaders |
 | User-shared viewer frames | `api/src/captures_api.jl` | Share button → `<proj>/captures/<id>/frame.png`. A user path, not a capture source for this plan |
-| Colour schemes | `frontend/src/utils/colourScheme.ts`, `data-theme` on `<html>` | Dark (default) and Light, switchable by `localStorage` key `cc.colourScheme` before first paint |
+| Colour schemes | `frontend/src/utils/colourScheme.ts`, `data-theme` on `<html>` | Light (default) and Dark, switchable by `localStorage` key `cc.colourScheme` before first paint |
 | Guide steps | `frontend/src/lib/guides/types.ts` `GuideStep` | Anchor, text, bullets, gates. **No image field yet** |
 | Recipes | `frontend/src/lib/guides/recipes.ts` | Already map the R version's missions; the candidate "one path per image type" source |
 
