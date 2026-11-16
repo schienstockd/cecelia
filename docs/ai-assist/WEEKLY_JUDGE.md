@@ -90,10 +90,12 @@ test whether an agent can actually use the framework.
    **Test gaps** (`kind: "untested"`, key `tv-…`): recital's *Test value* findings marked `untested`
    (mutants of a changed result function survived its tests), whatever their tag: a `fixed_pre_commit`
    is checked as hard as a `false_positive`. Before the judge, the pass mutates the function again in
-   its worktree at the pinned SHA (`mutate_changed.py --at`, at most `RERUNS` = 8 functions a pass,
-   carried ones first). Every mutant killed: `gone`, no call. Survivors: the judge sees them beside
+   its worktree at the pinned SHA (`mutate_changed.py --at`, started within `RERUN_BUDGET_S` = 60 min a
+   pass). A carried one is mutated again only when its file or a test file its last rerun ran changed
+   since (`rerun.watch`); otherwise its survivors stand, free. So a test gap nobody fixes costs nothing
+   each week and the time goes to new ones: the queue drains. Every mutant killed: `gone`, no call. Survivors: the judge sees them beside
    the code and says `live_bug` when one changes a value a caller would see, `not_a_bug` when all
-   are equivalent; verify traces the callers. Not rerun (over the cap, or it failed): `unjudged`, or
+   are equivalent; verify traces the callers. Not rerun (over the budget, or it failed): `unjudged`, or
    still `open`. Issues get the `test-gap` label; the fix brief asks for a test whose expected value
    comes from a definition. `passes on base` findings aren't swept: once merged there is no base.
 

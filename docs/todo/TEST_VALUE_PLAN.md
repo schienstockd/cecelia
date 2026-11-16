@@ -212,7 +212,8 @@ name a changed function.
   added under `fixed_pre_commit` that pin the code's own output → tighten the text.
   **The weekly judge keeps watch (2026-11-16):** every `untested` finding, whatever its tag, is swept
   as `kind: "untested"`. The pass mutates the function again in its worktree at the pinned SHA
-  (`mutate_changed.py --at`, ≤ 8 functions a pass): all killed → `gone`; survivors → the judge asks
+  (`mutate_changed.py --at`; a carried one only when its file or a test it ran changed, so the
+  unfixed ones cost nothing and the queue drains; 60 min of reruns a pass): all killed → `gone`; survivors → the judge asks
   whether one changes a value a caller sees (`live_bug`) or all are equivalent (`not_a_bug`), and
   verify traces the callers. So a `fixed_pre_commit` whose test doesn't kill the mutants, or a
   `false_positive` that is wrong, comes back as a `test-gap` issue. `passes on base` stays rollup-only.

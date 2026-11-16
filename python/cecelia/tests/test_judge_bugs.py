@@ -214,7 +214,8 @@ class UntestedTest(_Repo):
             self.reruns.append((file, lo, hi))
             if fail:
                 raise fail
-            return {"file": file, "results": ["killed"] * killed + ["survived"] * len(survivors),
+            return {"file": file, "test_paths": ["python/cecelia/tests/test_m.py"],
+                    "results": ["killed"] * killed + ["survived"] * len(survivors),
                     "survivor_detail": [{"fn": "f", "def": 3, "line": 4, "orig": o, "new": n} for o, n in survivors]}
         return fn
 
@@ -265,11 +266,28 @@ class UntestedTest(_Repo):
         bugs, _ = self.sweep(events[:1], previous=_SWEPT_TV, rerun=self.rerun(fail=RuntimeError("pixi gone")))
         self.assertEqual((bugs[0]["status"], bugs[0]["why"]), ("unjudged", "the rerun failed: RuntimeError: pixi gone"))
         self.reruns.clear()
-        with mock.patch.object(self.b, "RERUNS", 1):
+        clock = iter([0, self.b.RERUN_BUDGET_S])   # the first rerun starts the budget; the second finds it spent
+        with mock.patch.object(self.b, "_clock", lambda: next(clock)):
             bugs, _ = self.sweep(events, previous=_SWEPT_TV, rerun=self.rerun(survivors=[("x", "y")]))
         self.assertEqual(len(self.reruns), 1)
         self.assertEqual({b["key"]: b["status"] for b in bugs}, {"tv-00000001": "open", "tv-00000002": "unjudged"})
-        self.assertEqual(bugs[1]["why"], "waiting for a mutation rerun (1 a pass)")
+        self.assertEqual(bugs[1]["why"], "waiting for a mutation rerun (the 60 min a pass are spent)")
+
+    def test_a_carried_bug_takes_no_rerun_until_its_code_or_tests_change(self):
+        # the queue drains: a test gap nobody fixed keeps its survivors for free, so new ones get the time
+        bugs, _ = self.sweep([_untested("tv-00000001")], previous=_SWEPT_TV, rerun=self.rerun(survivors=[("x", "y")]))
+        self.assertEqual(bugs[0]["rerun"]["watch"], ["m.py", "python/cecelia/tests/test_m.py"])
+        carried = {**_SWEPT_TV, "bugs": [{**bugs[0], "first_seen": "2026-09-28"}]}
+        self.reruns.clear()
+        self.sha = self.commit("other.py", "x = 1\n")   # touches nothing it depends on
+        bugs, _ = self.sweep([], previous=carried, rerun=self.rerun())
+        self.assertEqual(self.reruns, [])
+        self.assertEqual(bugs[0]["status"], "open")
+        self.assertIn("survive): line 4 `x` → `y`", self.prompts[-1])   # the judge still sees the survivors
+        self.sha = self.commit("python/cecelia/tests/test_m.py", "def test_f(): pass\n")   # a test it ran changed
+        bugs, _ = self.sweep([], previous=carried, rerun=self.rerun())
+        self.assertEqual(len(self.reruns), 1)
+        self.assertEqual(bugs[0]["status"], "gone")
 
     def test_two_findings_on_one_function_are_mutated_once(self):
         events = [_untested("tv-00000001"), _untested("tv-00000002", line=4, branch="other")]
