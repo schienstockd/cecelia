@@ -1190,7 +1190,7 @@ function onChannelUpdate(next: string[]) {
       No entries — click + to add one.
     </div>
 
-    <div v-for="entry in groupEntries" :key="entry.key" class="group-entry cc-card cc-card-2">
+    <div v-for="entry in groupEntries" :key="entry.key" class="group-entry cc-card">
       <div class="group-entry-hdr">
         <span class="group-entry-num">
           {{ param.labelKey && (entry.vals[param.labelKey] as string[])?.[0]
@@ -1415,10 +1415,11 @@ function onChannelUpdate(next: string[]) {
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent-fill); border-color: var(--cc-accent-fill); color: var(--cc-on-solid); }
 .group-empty { font-style: italic; padding: 0.3rem 0; }
-/* Each entry is a card: a raised surface, an accent spine and a tinted header, with a real gap
+/* Each entry is a card: a border, an accent spine and a tinted header, with a real gap
    between cards. With a hairline border and a surface-2 header alone, two entries ran together into
    one long form and the boundary between "pass 1" and "pass 2" was easy to scroll past.
-   + cc-card cc-card-2 (raised surface on the surface-1 side panel, border, radius) — the spine and the gap are this site's. */
+   + cc-card (surface, border, radius) — the spine and the gap are this site's. Base surface, not
+   `-2`: in the light theme surface-2 turned the whole card grey against the panel. */
 .group-entry {
   margin-bottom: 0.7rem;
   border-left: 3px solid var(--cc-accent-soft);
@@ -1466,12 +1467,11 @@ function onChannelUpdate(next: string[]) {
 .group-entry-body .param-row:last-child { border-bottom: none; }
 
 /* + cc-section-toggle (row) + cc-eyebrow (label tier) — the band is this site's own, the same bar
-   as a top-level section so "Advanced" reads as a heading in both places. Inverted to surface-1
-   because the entry card it sits in is already surface-2. */
+   as a top-level section so "Advanced" reads as a heading in both places. */
 .group-section-toggle {
   padding: 0.3rem 0.4rem;
   margin: 0.25rem 0;
-  background: var(--cc-surface-1);
+  background: var(--cc-surface-2);
   border-radius: var(--cc-radius-sm);
 }
 
