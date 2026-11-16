@@ -23,7 +23,8 @@ import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTarget
   hpcRunDestination, hpcRunEnvNote, hpcFieldsFor, hpcSteps, formatResource, hpcMemoryHint, type FrameSize,
   hpcShownStatus, type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
 import type { TaskDef, ParamValues } from './types'
-import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
+import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey,
+         pruneChannelSelections, sharedChannels } from './paramValues'
 import { cachedPyramidRecommendation } from './pyramidPeek'
 import { useSettingsStore } from '../stores/settings'
 import { vaultManifestParams } from '../utils/vaultManifest'
@@ -186,8 +187,19 @@ function setSweep(patch: Partial<SweepState>) {
 const sweepValuesDraft = useFieldDraft(() => sweep.value.values)
 const sweepNamesDraft  = useFieldDraft(() => sweep.value.names)
 const sweepParams = computed(() => sweepableParams(taskDef.value))
+// What a run sends: the form's values with each channel picker cut to the chips on show. A channel the
+// selected images don't all have is not drawn, so it is not sent either — kept from other images, it
+// failed the run on the first image lacking it. Not written back: until the picker is edited, the form
+// keeps the full selection, so moving back to the images that have those channels finds it intact.
+const channelPrune = computed(() => pruneChannelSelections(
+  taskDef.value?.params, paramValues.value, sharedChannels(paramContext.value.images)))
+const runValues = computed(() => channelPrune.value.values)
+// A picker whose every channel is missing would be sent empty, which several tasks read as "all".
+const hiddenChannelsReason = computed(() => channelPrune.value.emptied.length
+  ? `${channelPrune.value.emptied[0]}: none on these images` : '')
+
 const sweepPlan = computed(() => (sweep.value.on && taskDef.value)
-  ? expandSweep(taskDef.value, flattenParams(taskDef.value, paramValues.value), sweep.value,
+  ? expandSweep(taskDef.value, flattenParams(taskDef.value, runValues.value), sweep.value,
                 paramContext.value.images ?? [])
   : null)
 const sweepSummary = computed(() => {
@@ -294,7 +306,7 @@ const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.s
 // wording (`removeUnmatched` read as undefined). A computed, so the identity is stable until the
 // params actually change — the preview re-runs on any change to this, debounced.
 const previewParams = computed<Record<string, unknown> | null>(() =>
-  taskDef.value ? flattenParams(taskDef.value, paramValues.value) as Record<string, unknown> : null)
+  taskDef.value ? flattenParams(taskDef.value, runValues.value) as Record<string, unknown> : null)
 
 // Can this task be previewed? The task DECLARES it (`task_previewable` in app/src/tasks/task.jl,
 // stamped onto the spec by the definitions route), so a new previewable backend lights up by adding one
@@ -307,8 +319,9 @@ const previewParams = computed<Record<string, unknown> | null>(() =>
 // correction (no `models`, it has `afCombinations`) never showed a button at all despite the backend
 // declaring it previewable. Readiness is now a blocker with a MESSAGE (`paramsBlocker`): a control that
 // explains why it cannot run beats one that silently isn't there.
+// Not while a channel picker has none of its channels on the image — the run is refused for it too.
 const canPreview = computed(() =>
-  (taskDef.value?.previewable ?? false) && drivingImageUid.value !== '')
+  (taskDef.value?.previewable ?? false) && drivingImageUid.value !== '' && !hiddenChannelsReason.value)
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
 // Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is
@@ -730,7 +743,7 @@ const missingRequiredReason = computed(() =>
 // run
 const canRun = computed(() =>
   props.selectedUids.length > 0 && !!taskDef.value &&
-  !activeTaskGatingReason.value && !missingRequiredReason.value &&
+  !activeTaskGatingReason.value && !missingRequiredReason.value && !hiddenChannelsReason.value &&
   !(sweepPlan.value && (sweepPlan.value.error || !sweepPlan.value.runs.length))
 )
 
@@ -738,7 +751,7 @@ function run() {
   if (!canRun.value || !taskDef.value) return
 
   const def = taskDef.value
-  const params = flattenParams(def, paramValues.value)
+  const params = flattenParams(def, runValues.value)
   // a sweep is the same Run, once per value — each run's params differ only in the swept param + name
   const paramSets = sweepPlan.value ? sweepPlan.value.runs.map(r => r.params) : [params]
 
@@ -842,6 +855,7 @@ const runLabel = computed(() => {
   if (n === 0) return 'Select images to run'
   if (activeTaskGatingReason.value) return activeTaskGatingReason.value
   if (missingRequiredReason.value) return missingRequiredReason.value
+  if (hiddenChannelsReason.value) return hiddenChannelsReason.value
   if (sweepPlan.value?.error) return sweepPlan.value.error
   const k = sweepPlan.value?.runs.length
   return `Run ${k ? `${k}× ` : ''}on ${n} image${n > 1 ? 's' : ''}`
@@ -951,7 +965,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
       </select>
 
       <!-- what it is for, then when it fits: directly under the picker, above the Kiwi/env row. The
-           fold is a bare inline toggle (.cc-section-toggle, as ParamRenderer's group sections), not
+           fold is a bare inline toggle (.cc-section-toggle, no band), not
            CollapsibleSection: that one carries panel-rail chrome (a surface bar, its own padding) that
            does not sit inside a padded runner section. A check's finding gets its own row under its
            line, so a long line never shares its width with the finding. -->
@@ -1275,7 +1289,7 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 /* the same indented rule as ParamRenderer's .group-section-body */
 .fn-when-body {
   padding-left: 0.4rem;
-  border-left: 2px solid var(--cc-border);
+  border-left: 2px solid var(--cc-accent-soft);
   margin-left: 0.1rem;
 }
 .fn-lines + .fn-lines { margin-top: 0.3rem; }

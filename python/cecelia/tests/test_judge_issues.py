@@ -452,6 +452,12 @@ class BodyTest(_IssuesFixture):
         self.assertEqual(self.i._labels(b), ["judge-bug", "duplication", "fix"])
         self.assertNotIn("duplication", self.i._labels(_bug("B2", verify={"verdict": "fix"})))
 
+    def test_an_untested_bug_is_a_test_gap(self):
+        b = _bug("B1", key="tv-0000beef", kind="untested", marker="untested", verify={"verdict": "fix"})
+        self.assertEqual(self.i.title(b), "[tv-0000beef] fix: untested at a.py:3")
+        self.assertTrue(self.i.body(b, repo=REPO, sha="a" * 40).startswith("**Judge test gap** `tv-0000beef`"))
+        self.assertEqual(self.i._labels(b), ["judge-bug", "test-gap", "fix"])
+
 
 class StatusTest(_IssuesFixture):
     def test_the_status_issue_is_filed_locked_and_pinned_once_and_a_forged_one_ignored(self):

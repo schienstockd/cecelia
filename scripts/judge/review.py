@@ -197,6 +197,11 @@ def repo_slug() -> str | None:
 
 #: Work-list order: what is known live first, then what the owner already decided, then the rest.
 _WORK_ORDER = {"fix": 0, "decide": 1}
+#: What an untested bug's fix is (TEST_VALUE_PLAN.md → the definition rule), in both fix briefs.
+UNTESTED_FIX = ("This is a test gap, not a defect: the code may well be right. The fix is a test that kills the "
+                "surviving mutants, its expected value taken from a definition (a paper, a spec, a hand-worked "
+                "case), never from this code's own output. Check it with `pixi run python scripts/mutate_changed.py "
+                "--at <file>:<lo>-<hi>` over the function's lines. Change the code only if that test shows it is wrong.")
 
 
 def work_items(record: dict) -> list[dict]:
@@ -295,6 +300,10 @@ def _bug_lines(bug: dict) -> list[str]:
     if bug.get("kind") == "duplicate":
         lines += ["", "This is a duplicate, not a defect: the fix is to call the existing helper the finding "
                   "names and delete the copy, at every call site of the copy."]
+    if bug.get("kind") == "untested":
+        if bug.get("rerun"):
+            lines.append(f"Mutated again at {bug['rerun']['sha'][:8]}: {bug['rerun']['why']}: {bug['rerun']['survivors']}")
+        lines += ["", UNTESTED_FIX]
     if bug.get("kind") == "stranded" and bug.get("local"):
         lines += ["", "These commits were made on the local branch after its PR merged and never pushed: "
                   + ", ".join(bug.get("commits", [])) + ". Push them in a new PR if they are still wanted; "
@@ -358,6 +367,7 @@ def fix_brief(record: dict, bug: dict) -> str:
               f"Otherwise {where} Fix it there, including every sibling call site "
               "with the same shape, "
               + ("make sure the helper's tests cover what the copy did, " if bug.get("kind") == "duplicate" else
+                 "add the test, " if bug.get("kind") == "untested" else
                  "add a test that fails without the fix, ")
               + "run the matching tests and recital, "
               f"and name `{bug['key']}` in the commit message. Ask before committing, as usual."]

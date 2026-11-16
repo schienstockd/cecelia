@@ -378,3 +378,104 @@ end
     end
   end
 end
+
+# `POST /api/gating/pop/add-filter` — add-gate's twin for a filter population ("area > a and
+# mean_intensity_0 <= b"). The new pop's cells are exactly the parent's cells meeting every condition — counted
+# here straight off the cell table, not through the engine — it is stored as the GUI's filter form stores
+# one, plus the stamp, get_populations shows every condition, and every refusal happens before anything is written.
+@testset "API: add-filter is ADD-ONLY — one stamped filter pop, every condition AND-ed" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        ids = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B")
+        rect(x0, x1) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                                        "x_min" => x0, "x_max" => x1, "y_min" => 0.0, "y_max" => 1e9)
+        claude = ["X-Cecelia-Client" => "claude", "X-Cecelia-Session" => "s1"]
+        function call(route, obj; hdrs = claude)
+            r = handle_http(HTTP.Request("POST", route, hdrs), Vector{UInt8}(JSON3.write(merge(ids, obj))))
+            (r[1], JSON3.read(r[2]))
+        end
+        img = Cecelia.init_object("testpr", "KDIeEm")
+        sidecar() = read(gating_path(img._dir, "B"), String)
+        # the user's qc gate: mean_intensity_0 in [0, 1e6]
+        @test _post(api_gating_pop_add, merge(ids, Dict("popType" => "flow", "name" => "qc", "gate" => rect(0.0, 1e6))))[1] == 200
+
+        # the expected cells, from the table itself: in qc, area > median and mean_intensity_0 <= its median
+        df = label_props(img; value_name = "B") |> v -> select_cols(v, ["mean_intensity_0", "area"]) |> as_df
+        x, a = df.mean_intensity_0, df.area
+        inqc = (0.0 .<= x .<= 1e6) .& (0.0 .<= a .<= 1e9)
+        mid(v) = sort(v)[cld(length(v), 2)]                    # a midpoint, so both cuts keep cells
+        amed, xmed = mid(a[inqc]), mid(x[inqc])
+        want = count(inqc .& (a .> amed) .& (x .<= xmed))
+        @test 0 < want < count(inqc)
+        conds = [Dict("measure" => "area", "fun" => "gt", "values" => amed),
+                 Dict("measure" => "mean_intensity_0", "fun" => "lte", "values" => [xmed])]   # one value, list-wrapped
+
+        # dry run: the numbers, nothing written
+        snap = sidecar()
+        st, dry = call("/api/gating/pop/add-filter", Dict("parent" => "/qc", "name" => "big-dim",
+                                                          "conditions" => conds, "dryRun" => true))
+        @test st == 200 && dry.dryRun == true && dry.path == "/qc/big-dim" && sidecar() == snap
+        st, r = call("/api/gating/pop/add-filter", Dict("parent" => "/qc", "name" => "big-dim", "conditions" => conds))
+        @test st == 200 && r.dryRun == false && (r.count, r.parentCount) == (dry.count, dry.parentCount)
+        @test r.count == want && r.parentCount == count(inqc) && r.outside == count(inqc) - want
+        @test r.gate === nothing && r.boolean === nothing && String(r.createdBy.via) == "claude"
+        @test [String(c.fun) for c in r.filter.conditions] == ["gt", "lte"]
+        @test r.filter.conditions[2].values isa Real && r.filter.conditions[2].values ≈ xmed   # unwrapped from [xmed]; JSON round-trip
+
+        # stored as the GUI's filter form stores one, plus the stamp — and get_populations shows BOTH conditions
+        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        p = pop_at(m, "/qc/big-dim")
+        @test p.gate === nothing && length(p.filter_conditions) == 2 && p.filter_measure == "area" &&
+              p.created_by["via"] == "claude"
+        summ = Cecelia._pop_summary(p)
+        @test summ.filter == filter_spec(p) && length(summ.filter["conditions"]) == 2 && summ.boolean === nothing
+        @test pop_at(m, "/qc").created_by === nothing          # the user's gate untouched
+
+        # `in` over a column: a list of values, membership by the same table read
+        lab = df.label[inqc][1:3]
+        st, i = call("/api/gating/pop/add-filter", Dict("name" => "picked",
+                     "conditions" => [Dict("measure" => "label", "fun" => "in", "values" => lab)]))
+        @test st == 200 && i.count == 3
+        # a number sent as a string is the number (the form's rule): "not label X" drops exactly one cell
+        st, s = call("/api/gating/pop/add-filter", Dict("name" => "notone",
+                     "conditions" => [Dict("measure" => "label", "fun" => "neq", "values" => string(lab[1]))]))
+        @test st == 200 && s.count == length(df.label) - 1
+        st, s = call("/api/gating/pop/add-filter", Dict("name" => "picked-str",
+                     "conditions" => [Dict("measure" => "label", "fun" => "in", "values" => string.(lab))]))
+        @test st == 200 && s.count == 3
+
+        # ── refusals: nothing written ──
+        snap = sidecar()
+        refuse(obj) = (res = call("/api/gating/pop/add-filter", obj); (res[1], get(res[2], :code, nothing)))
+        one = [Dict("measure" => "area", "fun" => "gt", "values" => 1)]
+        @test refuse(Dict("parent" => "/qc", "name" => "big-dim", "conditions" => one))[2] == "pop_exists"
+        @test refuse(Dict("parent" => "/nope", "name" => "x", "conditions" => one))[1] == 404
+        @test refuse(Dict("parent" => "/qc", "name" => "x"))[1] == 422                                  # no condition
+        @test refuse(Dict("parent" => "/qc", "name" => "x", "conditions" => []))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "x",
+                          "conditions" => [Dict("measure" => "nope_col", "fun" => "gt", "values" => 1)]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "x",
+                          "conditions" => [Dict("measure" => "area", "fun" => "between", "values" => 1)]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "x",
+                          "conditions" => [Dict("measure" => "area", "fun" => "gt", "values" => "big")]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "x",
+                          "conditions" => [Dict("measure" => "area", "fun" => "gt", "values" => [1, 2])]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "x",
+                          "conditions" => [Dict("measure" => "area", "fun" => "in", "values" => [])]))[1] == 422
+        @test refuse(Dict("parent" => "/qc", "name" => "_x", "conditions" => one))[1] == 422
+        # not a gate: set-own-gate refuses it (delete and add again instead)
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/qc/big-dim", "gate" => rect(0.0, 1.0)))[1] == 422
+        @test sidecar() == snap
+        st, d = call("/api/gating/pop/delete-own", Dict("path" => "/qc/big-dim"))
+        @test st == 200 && collect(d.deleted) == ["/qc/big-dim"]
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

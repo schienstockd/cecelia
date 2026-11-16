@@ -18,11 +18,13 @@ import CellCardsView from '../../components/plots/CellCardsView.vue'
 export interface ClusterCtx {
   featureOptions: string[]
   nameMap: Record<string, string>
+  channelNames: string[]
   hmmStateCols: string[]
   hmmTransitionCols: string[]
 }
 export interface ClusterPanelDef {
   label: string
+  answers: string                            // the question it answers (lib/guides/plotCatalogue.ts)
   component: Component
   trackOnly?: boolean                        // trackclust runs only (HMM behaviour plots)
   needsCols?: 'hmmState' | 'hmmTransition'   // only offer when the run has these obs columns
@@ -38,22 +40,30 @@ const CLUSTER_RAIL: RailKind = 'clusterPops'
 
 export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   heatmap: {
-    label: 'Cluster heatmap', component: ClusterHeatmapPanel, analysisBoard: true, rail: CLUSTER_RAIL,
-    props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap }),
+    label: 'Cluster heatmap',
+    answers: 'What defines each cluster — its feature profile (heatmap)?',
+    component: ClusterHeatmapPanel, analysisBoard: true, rail: CLUSTER_RAIL,
+    props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap, channelNames: ctx.channelNames }),
   },
   hmmStates: {
-    label: 'HMM states', component: ClusterHmmStatesPanel, trackOnly: true, needsCols: 'hmmState',
+    label: 'HMM states',
+    answers: 'How do the HMM states split across the track clusters?',
+    component: ClusterHmmStatesPanel, trackOnly: true, needsCols: 'hmmState',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmStateCols }),
   },
   hmmTransitions: {
-    label: 'HMM transitions', component: ClusterHmmTransitionsPanel, trackOnly: true, needsCols: 'hmmTransition',
+    label: 'HMM transitions',
+    answers: 'How do HMM state transitions differ between track clusters?',
+    component: ClusterHmmTransitionsPanel, trackOnly: true, needsCols: 'hmmTransition',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmTransitionCols }),
   },
   // One card per trackclust pop the manager ticks: medoid track's filmstrip (server-rendered via
   // /api/cell_cards, trace baked in by overlay_author's `track_color_mode="pop"`) + a stats footer
   // of the pop's median motility measures. Needs no per-panel `ClusterCtx` beyond the shared bag.
   cellCards: {
-    label: 'Cell cards', component: CellCardsView, trackOnly: true,
+    label: 'Cell cards',
+    answers: 'What does a typical track of each track-cluster population look like?',
+    component: CellCardsView, trackOnly: true,
     analysisBoard: true, rail: CLUSTER_RAIL,
   },
 }

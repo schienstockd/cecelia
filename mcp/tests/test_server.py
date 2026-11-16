@@ -44,6 +44,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
             "add_gate",                     # ONE proposed gate, additive only (POST /api/gating/pop/add-gate)
             "add_boolean_pop",              # ONE proposed combination of existing pops (POST .../add-boolean)
+            "add_filter_pop",               # ONE proposed filter pop, AND-ed rules (POST .../add-filter)
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
@@ -322,6 +323,17 @@ class GetGuideTest(unittest.TestCase):
         self.assertIn("dataset-call", guidance.BRIEFING_GUIDANCE)
         self.assertIn("request-a-feature", guidance.BRIEFING_GUIDANCE)
         self.assertIn("feature_request.yml", server.get_guide("request-a-feature")["text"])
+
+    def test_how_to_plot_is_one_lookup(self):
+        # "how do I plot X?" — the catalogue entry names each plot's question, page and spec id, and the
+        # briefing sends Claude there
+        rows = {g["id"]: g for g in server.get_guide()["guides"]}
+        self.assertEqual("plots", rows["which-plot"]["kind"])
+        text = server.get_guide("which-plot")["text"]
+        self.assertIn("## Behaviour (`/behaviour`)", text)
+        self.assertIn("`track_cluster_frequency`", text)
+        self.assertIn("Board key `trackPaths`", text)
+        self.assertIn('get_guide("which-plot")', guidance.BRIEFING_GUIDANCE)
 
     def test_one_guide_carries_its_function(self):
         out = server.get_guide("segment-by-motion")

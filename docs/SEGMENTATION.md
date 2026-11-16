@@ -343,7 +343,12 @@ and GPU memory is free **when the run starts**. A browser viewer on the same lap
   predicting tiles.
 - **Out of memory.** Auto plans with a margin, but another process can take memory mid-run. The run
   then stops (`predict_or_stop`) with one line: `Ran out of GPU memory at 4096 px tiles. Set Tile
-  size to 2048 px (Image tiling) and run again.`
+  size to 2048 px (Image tiling), or close viewer tabs to free GPU memory, and run again.`
+- **Naming the viewer.** There is no up-front "close the viewer" warning: Auto already plans around
+  the viewer's GPU memory, and the only cost is more seams. The viewer is named only when GPU memory
+  limited the tile (`… (limited by free gpu memory; close viewer tabs to free GPU memory for larger
+  tiles)`) or stopped the run. Without CUDA (Apple MPS) free GPU memory can't be read, so only the
+  out-of-memory line says it.
 
 Cellpose's cost (`CellposeUtils._tile_cost`), measured on `cpsam_v2` on an RTX 2000 Ada (8 GB) and
 33 GB RAM (2026-10-29), per pixel of the padded tile:

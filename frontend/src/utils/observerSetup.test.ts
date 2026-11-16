@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isAuthError, observerSetupReason, terminalCta, terminalSetupTooltip } from './observerSetup'
+import { isAuthError, observerSetupReason, pluginCardAction, terminalCta, terminalSetupTooltip } from './observerSetup'
 
 describe('isAuthError', () => {
   it('flags login/auth-shaped failures', () => {
@@ -70,5 +70,25 @@ describe('terminalSetupTooltip', () => {
       expect(t.length).toBeLessThanOrEqual(80)
       expect(t).not.toMatch(/\./)      // no sentence breaks
     }
+  })
+})
+
+describe('pluginCardAction — what the Cecelia-plugin card in Preferences offers', () => {
+  it('points at the Claude Code install page when the CLI is missing, whatever the config says', () => {
+    // Set up and the --mcp-config fallback both run `claude`; without it they can only fail.
+    for (const st of ['missing', 'stale', 'shadowed', 'current', undefined]) {
+      expect(pluginCardAction(false, st)).toBe('install-cli')
+    }
+  })
+  it('offers Set up when the CLI is there but the plugin is not', () => {
+    expect(pluginCardAction(true, 'missing')).toBe('setup')
+  })
+  it('offers Fix for an out-of-date or overridden entry', () => {
+    expect(pluginCardAction(true, 'stale')).toBe('resync')
+    expect(pluginCardAction(true, 'shadowed')).toBe('resync')
+  })
+  it('offers nothing once connected, or before the config has been read', () => {
+    expect(pluginCardAction(true, 'current')).toBeNull()
+    expect(pluginCardAction(true, undefined)).toBeNull()
   })
 })

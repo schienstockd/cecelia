@@ -127,7 +127,7 @@ function kiwi_start_turn(puid::AbstractString, prompt::AbstractString; refs = An
     (conv !== nothing && conv.profile != "legacy" && !(conv.profile in Cecelia.profile_names(profile))) &&
         return 409, Dict{String,Any}("error" => "that conversation was $(conv.profile)’s — ask it fresh")
     agent = _KIWI_AGENT[](observer_valid_model(model))
-    Cecelia.agent_available(agent) || return 503, Dict{String,Any}("error" => "No $(Cecelia.agent_label(agent)) CLI found — install it to ask Kiwi")
+    Cecelia.agent_available(agent) || return 503, Dict{String,Any}("error" => Cecelia.agent_not_installed(agent))
     rec = Dict{String,Any}(
         "turnId" => "kt-" * gen_uid(), "projectUid" => String(puid), "prompt" => String(prompt),
         "refs" => [Dict{String,Any}("ref" => r, "result" => resolve_kiwi_ref(puid, r)) for r in refs],

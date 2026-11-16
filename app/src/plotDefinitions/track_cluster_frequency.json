@@ -1,6 +1,7 @@
 {
   "id": "track_cluster_frequency",
   "label": "Track cluster frequency",
+  "answers": "What is each gated population's behaviour make-up — the fraction of its tracks in each track cluster (e.g. directed vs confined), per image or by treatment?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["stacked100", "stacked", "frequency", "boxplot", "strip", "violin", "bar"],

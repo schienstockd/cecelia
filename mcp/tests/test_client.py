@@ -88,6 +88,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/figures/delete-own"),  # removes only a figure Claude made (403 on the user's)
             ("POST", "/api/figures/render"),  # renders a NEW figure; replace only Claude's own (403 otherwise)
             ("POST", "/api/gating/pop/add-boolean"),  # create-only: ONE new combined pop, never edits one
+            ("POST", "/api/gating/pop/add-filter"),   # create-only: ONE new filter pop, never edits one
             ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
             ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
             ("POST", "/api/gating/pop/set-own-gate"),  # moves only what Claude drew (403 on the user's)
@@ -758,6 +759,19 @@ class ClientTest(unittest.TestCase):
                             colour="#ff0000")
         body = json.loads(u.call_args[0][0].data)
         self.assertEqual((body["parent"], body["gate"]["kind"], body["colour"]), ("root", "polygon", "#ff0000"))
+
+    def test_add_filter_pop_posts_the_conditions_as_given(self):
+        # "area > 50 and in clusters 3, 7": the AND-ed conditions go out unchanged under `conditions`,
+        # the key /api/gating/pop/add stores them under — the server validates them, not this side.
+        conds = [{"measure": "area", "fun": "gt", "values": 50},
+                 {"measure": "clusters.movement", "fun": "in", "values": [3, 7]}]
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_filter_pop("P", "I", "B", "big", conds, parent="/qc", dry_run=True)
+        req = u.call_args[0][0]
+        self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/add-filter"))
+        self.assertEqual(json.loads(req.data), {
+            "projectUid": "P", "imageUid": "I", "valueName": "B", "parent": "/qc", "name": "big",
+            "conditions": conds, "dryRun": True, "colour": "#22c55e"})
 
     def test_add_boolean_pop_posts_the_stored_boolean_terms(self):
         # "qc but not OTI": the terms go out as the sidecar spells them — `not`, not the Python-side

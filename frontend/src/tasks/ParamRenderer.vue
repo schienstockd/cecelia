@@ -20,7 +20,7 @@ import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { autoValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
-         scopeValueName, scopeValueNames, siblingKeyOfType, popChipValues, segmentationKey, groupOrderKeys, newEntryDefaults } from './paramValues'
+         scopeValueName, scopeValueNames, siblingKeyOfType, popChipValues, segmentationKey, groupOrderKeys, newEntryDefaults, sharedChannels } from './paramValues'
 import { useViewerStore } from '../stores/viewer'
 import { useSettingsStore } from '../stores/settings'
 import { openViewerWindow } from '../utils/viewerWindow'
@@ -29,7 +29,7 @@ import { profileStorage } from '../utils/profileStorage'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { singlePopOptions, prospectivePopGroups, type ProspectivePop } from '../utils/chainProspective'
 import { measureGroups, isTrackPopType } from '../utils/measureGroups'
-import { channelLabel } from '../utils/channelNames'
+import { channelLabel, channelColumnName, migrateColumnSelection } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import ChipInput from '../components/ChipInput.vue'
@@ -219,13 +219,7 @@ function setVersionPin(v: string) {
 }
 
 // channelSelection: intersection of channel names across selected images
-const availableChannels = computed(() => {
-  const images = props.context?.images ?? []
-  if (images.length === 0) return []
-  const nameLists = images.map(img => img.channelNames ?? [])
-  if (nameLists[0].length === 0) return []
-  return nameLists[0].filter(n => nameLists.every(ns => ns.includes(n)))
-})
+const availableChannels = computed(() => sharedChannels(props.context?.images))
 
 // imagePicker — a task param whose value is a spatial selection on ONE image (v1: `box3d` for crop).
 // Drawn ON THE VIEWER: Draw opens the viewer window on image[0] at the version the task will read
@@ -481,8 +475,18 @@ async function loadCols() {
             && (props.param.allObs || c.startsWith('live.'))) }
       : { columns: vars, channels: d.channels,
           obsColumns: obs.filter(c => props.param.allObs || c.startsWith('live.')) })
+    // the stored value of an intensity column is its CHANNEL NAME (each image resolves it to its own
+    // column — docs/todo/CHANNEL_NAMES_PLAN.md); a selection saved as raw columns migrates on load
+    const shadow = [...vars, ...obs, ...(d.cellMeasures ?? []), ...(d.cellObsMeasures ?? [])]
+    const rename: Record<string, string> = {}
     colGroups.value = groups.map(grp => ({
-      title: grp.title, opts: grp.cols.map(c => ({ label: channelLabel(c, chans), value: c })) }))
+      title: grp.title, opts: grp.cols.map(c => {
+        const value = channelColumnName(c, chans, shadow.filter(x => x !== c))
+        rename[c] = value
+        return { label: channelLabel(c, chans), value }
+      }) }))
+    const migrated = migrateColumnSelection(chipArr(), rename)
+    if (migrated) emit('update:modelValue', migrated)
   } catch { /* no columns available yet */ }
 }
 
@@ -737,11 +741,17 @@ function onRoleUpdate(channel: string, role: string) {
   val.value = setChannelRole(val.value, channel, role, roleChannels.value)
 }
 
+// Only the channels on show: a stored name the selected images lack is never drawn, so it must not
+// count in the All badge or survive a click either. TaskRunner prunes the same names before a run.
+function channelArr(): string[] {
+  const shown = new Set(availableChannels.value)
+  return chipArr().filter(c => shown.has(c))
+}
 // channelSelection stores an array even when single (`multiple === false`) — so route through a handler
 // that keeps only the newly-added value in the single case, preserving the old replace-on-click behaviour.
 function onChannelUpdate(next: string[]) {
   if (props.param.multiple === false) {
-    const added = next.find(v => !chipArr().includes(v))
+    const added = next.find(v => !channelArr().includes(v))
     val.value = added ? [added] : []
   } else {
     val.value = next
@@ -1007,7 +1017,7 @@ function onChannelUpdate(next: string[]) {
         No channels — select images first.
       </div>
       <ChipSelect v-else multiple select-all :options="channelOptions"
-        :model-value="chipArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
+        :model-value="channelArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
     </div>
 
     <!-- channelRoles: one row per channel of the selected images, a segmented role choice each. -->
@@ -1190,7 +1200,7 @@ function onChannelUpdate(next: string[]) {
       No entries — click + to add one.
     </div>
 
-    <div v-for="entry in groupEntries" :key="entry.key" class="group-entry">
+    <div v-for="entry in groupEntries" :key="entry.key" class="group-entry cc-card">
       <div class="group-entry-hdr">
         <span class="group-entry-num">
           {{ param.labelKey && (entry.vals[param.labelKey] as string[])?.[0]
@@ -1326,11 +1336,17 @@ function onChannelUpdate(next: string[]) {
 
 /* placeholder */
 /* section */
-.param-section { border-bottom: 1px solid var(--cc-border); }
-/* + cc-section-toggle (row) + cc-eyebrow (label tier). Only the padding and the one-step-larger
-   size are this site's: an advanced-params header sits above body text, not inside dense chrome. */
-.section-toggle { padding: 0.45rem 0; }
-.section-body { padding-left: 0.5rem; border-left: 2px solid var(--cc-border); margin-left: 0.25rem; }
+.param-section { border-bottom: 1px solid var(--cc-border); padding-bottom: 0.25rem; }
+/* + cc-section-toggle (row) + cc-eyebrow (label tier). The band (tinted bar, rounded) is this site's:
+   as a bare uppercase line the header read as one more param label, so a collapsed section went
+   unnoticed between two rows. A bar reads as "a heading you can open". */
+.section-toggle {
+  padding: 0.35rem 0.45rem;
+  margin: 0.35rem 0 0.15rem;
+  background: var(--cc-surface-2);
+  border-radius: var(--cc-radius-sm);
+}
+.section-body { padding-left: 0.5rem; border-left: 2px solid var(--cc-accent-soft); margin-left: 0.25rem; }
 
 .picker-placeholder {
   display: flex;
@@ -1396,7 +1412,7 @@ function onChannelUpdate(next: string[]) {
 /* group */
 .param-group {
   border-bottom: 1px solid var(--cc-border);
-  padding-bottom: 0.25rem;
+  padding-bottom: 0.35rem;
 }
 .group-header {
   display: flex;
@@ -1409,25 +1425,37 @@ function onChannelUpdate(next: string[]) {
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
 .group-add-btn:hover { background: var(--cc-accent-fill); border-color: var(--cc-accent-fill); color: var(--cc-on-solid); }
 .group-empty { font-style: italic; padding: 0.3rem 0; }
+/* Each entry is a card: a border, an accent spine and a tinted header, with a real gap
+   between cards. With a hairline border and a surface-2 header alone, two entries ran together into
+   one long form and the boundary between "pass 1" and "pass 2" was easy to scroll past.
+   + cc-card (surface, border, radius) — the spine and the gap are this site's. Base surface, not
+   `-2`: in the light theme surface-2 turned the whole card grey against the panel. */
 .group-entry {
-  margin-bottom: 0.4rem;
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-sm);
+  margin-bottom: 0.7rem;
+  border-left: 3px solid var(--cc-accent-soft);
   overflow: hidden;
 }
+.group-entry:last-child { margin-bottom: 0.35rem; }
 .group-entry-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.2rem 0.4rem;
-  background: var(--cc-surface-2);
+  padding: 0.25rem 0.4rem;
+  background: var(--cc-accent-tint);
   border-bottom: 1px solid var(--cc-border);
 }
+/* A filled badge, the same shape as the Order chips above (a selected ChipSelect chip, solid
+   accent), so "2" here visibly IS chip "2" there — not the tinted, uppercased `.cc-label-chip`. */
 .group-entry-num {
   font-size: var(--cc-fs-xs);
   font-weight: 700;
   font-family: var(--cc-mono);
-  color: var(--cc-accent);
+  color: var(--cc-on-solid);
+  background: var(--cc-accent-fill);
+  border-radius: var(--cc-radius-pill);
+  min-width: 1.25rem;
+  padding: 0 0.4rem;
+  text-align: center;
 }
 .group-remove-btn {
   display: flex;
@@ -1448,12 +1476,18 @@ function onChannelUpdate(next: string[]) {
 .group-entry-body { padding: 0 0.4rem; }
 .group-entry-body .param-row:last-child { border-bottom: none; }
 
-/* + cc-section-toggle (row) + cc-eyebrow (label tier) — the divider is this site's own */
-.group-section-toggle { padding: 0.3rem 0; border-top: 1px solid var(--cc-border); }
+/* + cc-section-toggle (row) + cc-eyebrow (label tier) — the band is this site's own, the same bar
+   as a top-level section so "Advanced" reads as a heading in both places. */
+.group-section-toggle {
+  padding: 0.3rem 0.4rem;
+  margin: 0.25rem 0;
+  background: var(--cc-surface-2);
+  border-radius: var(--cc-radius-sm);
+}
 
 .group-section-body {
   padding-left: 0.4rem;
-  border-left: 2px solid var(--cc-border);
+  border-left: 2px solid var(--cc-accent-soft);
   margin-left: 0.1rem;
   margin-bottom: 0.2rem;
 }

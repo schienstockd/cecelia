@@ -118,15 +118,17 @@ def _channel_label(varname, chans):
 
 
 def _channel_name_to_raw(var_names, chans):
-    """Inverse: channel display name -> raw var name (built from the var names present, prefixed variants
-    included). Empty when no channel names are set. Mirror of the Julia `_channel_name_to_raw`."""
+    """Inverse: lowercase channel display name -> the raw var names carrying it (built from the var names
+    present, prefixed variants included; more than one = the name sits on two channels). Empty when no
+    channel names are set. Mirror of the Julia `_channel_label_index` (docs/todo/CHANNEL_NAMES_PLAN.md):
+    names compare case-insensitively and an ambiguous name is refused, never last-wins."""
     out = {}
     if not chans:
         return out
     for v in var_names:
         d = _channel_label(v, chans)
         if d != v:
-            out[d] = v
+            out.setdefault(d.lower(), []).append(v)
     return out
 
 
@@ -256,8 +258,12 @@ class LabelPropsView:
                 if c in var_names:                                 # raw name (existing behaviour)
                     out = _channel_label(c, chans) if self._rename_channels else c
                     data[out] = X[:, var_names.index(c)]
-                elif c in chan_to_raw:                             # channel name → raw, keep requested name
-                    data[c] = X[:, var_names.index(chan_to_raw[c])]
+                elif str(c).lower() in chan_to_raw:                # channel name → raw, keep requested name
+                    hit = chan_to_raw[str(c).lower()]
+                    if len(hit) > 1:
+                        raise ValueError(f"channel name {c!r} is on more than one channel ({', '.join(hit)})"
+                                         " — rename one of them")
+                    data[c] = X[:, var_names.index(hit[0])]
             # obs columns (e.g. track_id for live pops) — include those present/requested
             for c in a.obs.columns:
                 if self._cols is None or c in self._cols:

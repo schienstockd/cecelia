@@ -151,7 +151,7 @@ LIVE (spawns the CLI). Bring the plugin to `:current`, then remove the legacy `m
 function install_observer_plugin(a::ClaudeAgent, mcp_dir::AbstractString, options::AbstractDict;
                                  have = read_observer_plugin(), legacy::Bool = false,
                                  timeout_s::Int = 60)
-    agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
+    agent_available(a) || return (false, CLAUDE_NOT_INSTALLED)
     run1(cmd) = _run_claude_cli(cmd; timeout_s)
     dir = observer_marketplace_dir(mcp_dir)
     log = String[]

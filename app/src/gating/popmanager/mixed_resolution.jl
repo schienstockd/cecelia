@@ -155,6 +155,41 @@ function pop_df_multi(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector, p
 end
 
 """
+    pop_segments(imgs, pops) -> Vector{Tuple{CciaImage,String}}
+
+The `(image, value_name)` segmentations a set-level `pops` selection reads — each pop ref's own
+value_name prefix (or the image's active one), only where the image has that segmentation. In `imgs`
+order, so the first is the reference a legacy column selection was picked on.
+"""
+function pop_segments(imgs::AbstractVector{<:CciaImage}, pops)::Vector{Tuple{CciaImage,String}}
+    segs = Tuple{CciaImage,String}[]
+    for img in imgs
+        dvn = resolve_value_name(img, nothing)
+        for vn in unique(first(_split_pop_ref(r, dvn)) for r in pops)
+            img_has_value_name(img, vn) && push!(segs, (img, vn))
+        end
+    end
+    segs
+end
+
+"""
+    pooled_channel_columns(imgs, pops, cols...) -> (; cols, problems)
+
+The measure-column params of a set-level task, ready to read across `imgs`: every intensity column as
+a channel NAME (`resolve_segment_channel_columns` over `pop_segments` — a legacy raw selection is named
+against the first segment), one vector per argument; `problems` = the segments lacking a channel or
+holding its name twice (a task errors on any, rather than pooling a column that is missing on one
+image). Read with `pop_df_multi(…; pop_cols = names)`: each image resolves the names to its own columns
+and returns them under the name (docs/todo/CHANNEL_NAMES_PLAN.md).
+"""
+function pooled_channel_columns(imgs::AbstractVector{<:CciaImage}, pops, cols...)
+    all_ = unique(String.(reduce(vcat, collect.(cols); init = String[])))
+    r = resolve_segment_channel_columns(pop_segments(imgs, pops), all_)
+    as_name = Dict(zip(all_, isempty(r.names) ? all_ : r.names))
+    (; cols = Tuple(String[as_name[String(c)] for c in cs] for cs in cols), r.problems)
+end
+
+"""
     pop_namespace(img, pops; value_name=nothing) -> String
 
 The measure-namespace `pop_type` a per-cell ANNOTATION task writes its output columns under

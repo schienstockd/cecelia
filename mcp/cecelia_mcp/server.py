@@ -662,8 +662,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
         skeleton branches (e.g. `branch-type`).
       - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
         …geometry}` — the drawn gate on two channels. null for filter pops.
-      - `filter` (clust/trackclust/region/branch): `{measure, fun, values}` — e.g. a cluster pop is
-        `{measure: "clusters.movement", fun: "in", values: [3]}`, which also ties it to that clustering run.
+      - `filter` (clust/trackclust/region/branch, and flow filter pops): `{measure, fun, values, default_all}`
+        plus `conditions: [{measure, fun, values}, …]` when several rules are AND-ed (then `measure`/`fun`/
+        `values` repeat only the first) — e.g. a cluster pop is `{measure: "clusters.movement", fun: "in",
+        values: [3]}`, which also ties it to that clustering run. Reproduce a flow one with add_filter_pop.
       - `boolean` (a combined pop — gate and filter both null): `{op: and|or, pops: [paths], not: [paths]}`
         = the `pops` combined with `op`, minus every `not`, ∩ parent ("qc except OTI" = parent /qc,
         pops [], not [/qc/OTI]). Reproduce one with add_boolean_pop, never by drawing a gate.
@@ -675,7 +677,7 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 
 
 # The gating toolset — gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats, add_gate,
-# add_boolean_pop, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
+# add_boolean_pop, add_filter_pop, set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
 # Writes change only what Claude drew (the server checks `createdBy`).
 globals().update(register_gating_tools(_tool, _client))
 
@@ -1443,7 +1445,9 @@ def get_guide(guide_id: str = "") -> dict:
     pipeline for one kind of data (e.g. "intravital-timelapse"), with each step's reason and every
     guide it uses inlined; "guide" is one page or task; "dataset-call" is a capability waiting only for
     a real dataset, to build it or to test a built one — its text says what data would do and gives the issue link;
-    "request" (`request-a-feature`) is the feature-request form for everything else. With `guide_id`: `{id, kind, title, text}`,
+    "request" (`request-a-feature`) is the feature-request form for everything else; "plots"
+    (`which-plot`) is every plot and view with the question it answers, its page, charts and how to make
+    it — the place to answer "how do I plot X?". With `guide_id`: `{id, kind, title, text}`,
     the text as Markdown. Task guides name the function they run (`Runs: segment.coastalMeasure`)
     and the parameters worth setting. The steps are written for the GUI ("pick it from the
     dropdown"); the function name and parameters are what a REPL / run_task caller needs.

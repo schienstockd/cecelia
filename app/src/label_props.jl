@@ -240,22 +240,26 @@ _channel_index(varname::AbstractString) =
 
 # An intensity column, or a per-track aggregate of one (`mean_intensity_0.mean`), split into the
 # column's prefix (`nuc_mean_intensity_`), its channel index and the aggregate suffix (`.mean`, or "").
+# An aggregate is one of `_TRACK_NUM_AGG_SUFFIXES` (track_props.jl) — never any dotted tail.
+_agg_suffix(c::AbstractString) =
+    (i = findfirst(s -> endswith(c, s), _TRACK_NUM_AGG_SUFFIXES); i === nothing ? "" : _TRACK_NUM_AGG_SUFFIXES[i])
 function _split_channel_column(c::AbstractString)
     i = _channel_index(c)
     i === nothing || return (head = replace(c, r"\d+$" => ""), idx = i, tail = "")
-    m = match(r"^(.*?)(\.[^.]+)$", c)
-    (m === nothing || _channel_index(m[1]) === nothing) && return nothing
-    (head = replace(m[1], r"\d+$" => ""), idx = _channel_index(m[1]), tail = String(m[2]))
+    tail = _agg_suffix(c)
+    base = c[1:end-ncodeunits(tail)]
+    (isempty(tail) || _channel_index(base) === nothing) && return nothing
+    (head = replace(base, r"\d+$" => ""), idx = _channel_index(base), tail = tail)
 end
 
 """
     match_channel_columns(cols, ref_names, names) -> (; cols, remapped, problems)
 
-Intensity columns are named by channel INDEX (`mean_intensity_1`), so a column read on one image and
-applied to another — a copied gate, a set-wide clustering, a heatmap across images — has to be
-re-indexed to where the SAME CHANNEL NAME sits on the other image (`docs/POPULATION.md` → *Gating pop
-types & copy across images*). `ref_names` are the channel names of the image `cols` were read on, `names` the
-other image's. Returns:
+Raw intensity columns read on one image (channel names `ref_names`) re-pointed at another image's
+column for the SAME channel name (`names`) — a copied gate (`docs/POPULATION.md` → *Gating pop types &
+copy across images*). Gates are the one place raw columns are stored (they belong to one image), so this
+is `canonical_channel_columns` on the source followed by `resolve_channel_columns` on the target — the
+same rules as every other channel lookup. Returns:
 
 - `cols` — `cols` in order, each intensity column (and per-track aggregate `mean_intensity_0.mean`)
   re-indexed for the other image; every other column unchanged.
@@ -263,9 +267,8 @@ other image's. Returns:
 - `problems` — the `(column, channel, why)` with no right answer: `why = :absent` (the channel is not
   on the other image) or `:ambiguous` (the name is on more than one channel of either image).
 
-Names compare case-insensitively (`mem-TOM` vs `mem-Tom` is one channel). The same name at the same
-index is kept as-is. Either image without registered names, or a column past the reference's names:
-unchanged — there is nothing to match, and refusing would block every image without names.
+Either image without registered names, or a column past the reference's names: unchanged — there is
+nothing to match, and refusing would block every image without names.
 """
 function match_channel_columns(cols, ref_names::Union{Nothing,AbstractVector},
                                names::Union{Nothing,AbstractVector})
@@ -274,19 +277,22 @@ function match_channel_columns(cols, ref_names::Union{Nothing,AbstractVector},
     problems = @NamedTuple{column::String, channel::String, why::Symbol}[]
     (isnothing(ref_names) || isnothing(names) || isempty(ref_names) || isempty(names)) &&
         return (; cols = out, remapped, problems)
-    ref_lc = lowercase.(String.(ref_names)); lc = lowercase.(String.(names))
+    refs = String.(collect(ref_names)); ref_lc = lowercase.(refs)
+    named = canonical_channel_columns(out, refs)
+    # the target's columns for the measures `cols` use (`mean_intensity_`, `nuc_mean_intensity_`, …)
+    heads = unique(sp.head for sp in (_split_channel_column(c) for c in out) if sp !== nothing)
+    r = resolve_channel_columns(named, ["$h$i" for h in heads for i in 0:length(names)-1], names)
+    amb = Set(p.column for p in r.problems)
     for (k, c) in enumerate(out)
         sp = _split_channel_column(c)
-        (sp === nothing || sp.idx + 1 > length(ref_lc)) && continue
-        want = ref_lc[sp.idx + 1]; channel = String(ref_names[sp.idx + 1])
-        (sp.idx + 1 <= length(lc) && lc[sp.idx + 1] == want) && continue    # same channel, same index
-        hits = findall(==(want), lc)
-        if isempty(hits)
-            push!(problems, (column = c, channel = channel, why = :absent))
-        elseif length(hits) > 1 || count(==(want), ref_lc) > 1
+        (sp === nothing || sp.idx + 1 > length(refs)) && continue
+        channel = refs[sp.idx + 1]
+        if count(==(ref_lc[sp.idx + 1]), ref_lc) > 1 || named[k] in amb
             push!(problems, (column = c, channel = channel, why = :ambiguous))
-        else
-            out[k] = "$(sp.head)$(hits[1] - 1)$(sp.tail)"
+        elseif r.cols[k] == named[k]                     # the name resolved to no column there
+            push!(problems, (column = c, channel = channel, why = :absent))
+        elseif r.cols[k] != c
+            out[k] = r.cols[k]
             push!(remapped, (from = c, to = out[k], channel = channel))
         end
     end
@@ -296,31 +302,57 @@ end
 
 """One phrase per unmatched column, for a skip reason or a task error: `CD4 (mean_intensity_0) not on this image`."""
 describe_channel_problems(ps) =
-    join(("$(p.channel) ($(p.column)) " *
+    join(("$(p.channel)$(p.column == p.channel ? "" : " ($(p.column))") " *
           (p.why === :absent ? "not on this image" : "on more than one channel") for p in ps), "; ")
 
 """
-    match_segment_channel_columns(segments, cols) -> (; cols, problems)
+    resolve_segment_channel_columns(segments, cols) -> (; names, cols, problems)
 
-For a run that pools `cols` across `segments` — `(img, value_name)` pairs, the FIRST one the reference
-the columns were picked on — each segment's own columns for the same channels (`match_channel_columns`
-against the reference's names), parallel to `segments`. `problems`: one `"<uID>/<vn>: …"` per segment
-with a channel it lacks or holds twice. Used by `clustPops`, `clustTracks` and multi-image heatmaps
-(`_pop_df_by_channel_name`, `plot_data.jl`).
+For a run that pools `cols` across `segments` — `(img, value_name)` pairs, the FIRST the one a legacy
+raw selection was picked on:
+
+- `names` — `cols` with intensity columns as channel NAMES (`canonical_channel_columns` against the
+  first segment; a selection already by name is unchanged). What a run stores and its output is named by.
+- `cols` — per segment (parallel to `segments`), each name as that segment's own column
+  (`resolve_channel_columns`) — for a reader that wants raw columns (a Python runner).
+- `problems` — one `"<uID>/<vn>: …"` per segment that lacks a channel the first one has, or holds its
+  name twice.
+
+`pop_df` / `pop_df_multi` resolve names per image by themselves; a pooled task calls this for the stored
+names and for the per-segment check (`as_df` drops a column it cannot find, which a pooled read would
+otherwise turn into a silently missing column on one image).
 """
-function match_segment_channel_columns(segments, cols)
+function resolve_segment_channel_columns(segments, cols)
     own = Vector{Vector{String}}(); problems = String[]
-    isempty(segments) && return (; cols = own, problems)
-    names_of((img, vn)) = channel_names(img; value_name = vn)
-    ref = first(segments); ref_names = names_of(ref)
-    for (k, s) in enumerate(segments)
-        r = k == 1 ? (cols = String.(collect(cols)), problems = ()) :
-                     match_channel_columns(cols, ref_names, names_of(s))
-        push!(own, r.cols)
-        isempty(r.problems) || push!(problems, "$(s[1].uid)$(isnothing(s[2]) ? "" : "/$(s[2])"): " *
-                                               describe_channel_problems(r.problems))
+    want = String.(collect(cols))
+    isempty(segments) && return (; names = want, cols = own, problems)
+    # no column can be a channel of the first segment (no raw intensity column, no channel name in it):
+    # nothing to name or check, so skip opening every segment's table (a heatmap of HMM states, …)
+    ref_lc = lowercase.(something(channel_names(first(segments)[1]; value_name = first(segments)[2]), String[]))
+    maybe_chan(c) = _split_channel_column(c) !== nothing || any(n -> occursin(n, lowercase(c)), ref_lc)
+    any(maybe_chan, want) || return (; names = want, cols = [copy(want) for _ in segments], problems)
+    tables = map(segments) do (img, vn)
+        lp = label_props(img; value_name = vn)
+        (vars = isfile(lp.path) ? col_names(lp; data_type = :vars) : String[],
+         obs = isfile(lp.path) ? col_names(lp; data_type = :obs) : String[],
+         chans = channel_names(img; value_name = vn))
     end
-    (; cols = own, problems)
+    ref = first(tables)
+    names = canonical_channel_columns(want, ref.chans; shadow = vcat(ref.vars, ref.obs))
+    ref_raw = resolve_channel_columns(names, ref.vars, ref.chans).cols
+    is_chan = [_split_channel_column(c) !== nothing for c in ref_raw]
+    for ((img, vn), t) in zip(segments, tables)
+        r = resolve_channel_columns(names, t.vars, t.chans)
+        ps = collect(r.problems)
+        for (k, c) in enumerate(r.cols)
+            is_chan[k] && _split_channel_column(c) === nothing &&
+                push!(ps, (column = names[k], channel = names[k], why = :absent))
+        end
+        push!(own, r.cols)
+        isempty(ps) || push!(problems, "$(img.uid)$(isnothing(vn) ? "" : "/$vn"): " *
+                                       describe_channel_problems(unique(ps)))
+    end
+    (; names, cols = own, problems)
 end
 
 # How many image channels a set of intensity columns covers: the highest channel index + 1, NOT the
@@ -337,19 +369,96 @@ function _channel_label(varname::String, chans::Vector{String})
     isnothing(m[:prefix]) ? chans[idx + 1] : "$(m[:prefix])_$(chans[idx + 1])"
 end
 
-# Inverse of `_channel_label`: channel display name → raw var name, so a caller can SELECT an intensity
-# column by its channel name (e.g. "CD4", "nuc_CD4") and the reader resolves it to the raw
-# `{measure}_intensity_{i}` column. Built from the var names actually present (only real columns map),
-# covering the prefixed "channel-type" variants too. This is the ONE place channel-name selection is
-# resolved — every caller inherits it through `as_df`, so no consumer converts names itself.
-function _channel_name_to_raw(var_names::Vector{String}, chans::Vector{String})::Dict{String,String}
-    m = Dict{String,String}()
-    isempty(chans) && return m
-    for v in var_names
-        d = _channel_label(v, chans)
-        d == v || (m[d] = v)   # only intensity columns that actually rename get a channel-name alias
+# ── Channels are identified by NAME (docs/todo/CHANNEL_NAMES_PLAN.md) ───────────────────────────
+#
+# Intensity columns are STORED by channel index (`mean_intensity_1`), but a param, a stored feature list
+# or a plot request names them by channel NAME (`CD4`, `nuc_CD4`, per-track `CD4.mean`), and each image
+# resolves the name to its own column — so images with channels in different orders pool one marker per
+# column, and a name never silently means "whatever sits at index 1 here". These two functions are the
+# ONE resolver pair (Julia; `label_props_utils.py` mirrors the rules for notebooks):
+#
+#   canonical_channel_columns  raw → name, against the image the columns were picked on (legacy params,
+#                              old sidecars, gates being copied)
+#   resolve_channel_columns    name → this image's raw column, with `:absent` / `:ambiguous` problems
+#
+# Rules: names compare case-insensitively (`mem-TOM` / `mem-Tom` is one channel); a name on two channels
+# is ambiguous, never last-wins; a real column of that name (raw var, `area`, obs) wins over a channel
+# alias, and canonicalising never produces a name a real column shadows; anything that is not a channel
+# column passes through untouched.
+
+# lowercase channel label → the raw var columns carrying it (more than one = ambiguous on this image)
+function _channel_label_index(var_names, chans)::Dict{String,Vector{String}}
+    ix = Dict{String,Vector{String}}()
+    (chans === nothing || isempty(chans)) && return ix
+    cs = String.(collect(chans))
+    for v in String.(collect(var_names))
+        d = _channel_label(v, cs)
+        d == v && continue                       # not an intensity column (or past the registered names)
+        push!(get!(ix, lowercase(d), String[]), v)
     end
-    m
+    ix
+end
+
+"""
+    canonical_channel_columns(cols, chans; shadow=()) -> Vector{String}
+
+`cols` with every raw intensity column (`mean_intensity_0`, `nuc_mean_intensity_2`, per-track
+`mean_intensity_0.mean`) replaced by its channel NAME on the image whose channel names are `chans`
+(`CD4`, `nuc_CD4`, `CD4.mean`). Everything else is returned unchanged — including a raw column past the
+registered names, or when `chans` is `nothing`/empty (nothing to name it by; every image then agrees by
+index, as before). A name that a real column in `shadow` already carries (a channel called `area`) stays
+raw, so the result always resolves back to the same column.
+"""
+function canonical_channel_columns(cols, chans; shadow=())::Vector{String}
+    out = String.(collect(cols))
+    (chans === nothing || isempty(chans)) && return out
+    cs = String.(collect(chans))
+    sh = Set(lowercase.(String.(collect(shadow))))
+    lc = lowercase.(cs)
+    for (k, c) in enumerate(out)
+        sp = _split_channel_column(c)
+        (sp === nothing || sp.idx + 1 > length(cs)) && continue
+        count(==(lc[sp.idx + 1]), lc) > 1 && continue           # duplicated name: the index is the only identity
+        name = _channel_label("$(sp.head)$(sp.idx)", cs) * sp.tail
+        base = name[1:end-ncodeunits(sp.tail)]
+        lowercase(base) in sh && continue
+        out[k] = name
+    end
+    out
+end
+
+"""
+    resolve_channel_columns(cols, var_names, chans) -> (; cols, problems)
+
+Each of `cols` as THIS image's column (`var_names`, channel names `chans`): a column the table has is
+kept (a raw name, `area`, …); a channel name — any case, optionally prefixed (`nuc_CD4`) or with a
+per-track aggregate suffix (`CD4.mean`, one of `_TRACK_NUM_AGG_SUFFIXES`) — becomes the raw column it sits on here; anything else passes through
+(an obs column, a track-table column; the read decides whether it exists). `problems` holds
+`(column, channel, why)` with `why = :ambiguous` when the name sits on more than one channel here.
+A name on NO channel here is not a problem at this level — it may be an obs column; callers that know
+it is a channel check with `selectable_cols` (`missing_columns`).
+"""
+function resolve_channel_columns(cols, var_names, chans)
+    vset = Set(String.(collect(var_names)))
+    ix = _channel_label_index(var_names, chans)
+    out = String.(collect(cols))
+    problems = @NamedTuple{column::String, channel::String, why::Symbol}[]
+    for (k, c) in enumerate(out)
+        c in vset && continue
+        hit = get(ix, lowercase(c), nothing); tail = ""
+        if hit === nothing                       # `CD4.mean` → base `CD4` + a known aggregate suffix
+            tail = _agg_suffix(c)
+            isempty(tail) && continue
+            hit = get(ix, lowercase(c[1:end-ncodeunits(tail)]), nothing)
+            hit === nothing && continue
+        end
+        if length(hit) > 1
+            push!(problems, (column = c, channel = c, why = :ambiguous))
+        else
+            out[k] = only(hit) * tail
+        end
+    end
+    (; cols = out, problems)
 end
 
 # Centroids are stored in obsm and labelled explicitly: `centroid_x`/`centroid_y`/`centroid_z` (present
@@ -580,12 +689,13 @@ function _col_index(fid, lp::LabelProps)
     obs_cols = haskey(HDF5.attrs(fid["obs"]), "column-order") ?
                _as_strings(HDF5.read_attribute(fid["obs"], "column-order")) : String[]
     (; var_names, var_idx,
-       chan_to_raw = _channel_name_to_raw(var_names, something(lp.channel_names, String[])),
+       chan_ix = _channel_label_index(var_names, lp.channel_names),
        cent_map, all_centroid_cols = vcat(raw_spatial, raw_temporal), obs_cols)
 end
 
 # would `as_df` return column `c` if selected? (raw var name, channel display name, centroid, obs, label)
-_selectable(ix, c::AbstractString) = c == "label" || haskey(ix.var_idx, c) || haskey(ix.chan_to_raw, c) ||
+_selectable(ix, c::AbstractString) = c == "label" || haskey(ix.var_idx, c) ||
+                                     length(get(ix.chan_ix, lowercase(c), ())) == 1 ||
                                      haskey(ix.cent_map, c) || c in ix.obs_cols
 
 """
@@ -615,16 +725,16 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         n_obs = length(labels_raw)
         labels = _maybe_int.(labels_raw)
         ix = _col_index(fid, lp)
-        (; var_names, var_idx, chan_to_raw, cent_map, all_centroid_cols, obs_cols) = ix
+        (; var_names, var_idx, chan_ix, cent_map, all_centroid_cols, obs_cols) = ix
         n_var = length(var_names)
         chans = something(lp.channel_names, String[])
 
         # ── resolve which columns to read ──
         # var columns are recorded as (raw name to read, output name). A requested channel DISPLAY name
         # (e.g. "CD4"/"nuc_CD4") resolves to its raw `{measure}_intensity_{i}` column and is returned
-        # under the requested name — the ONE central place channel-name selection happens, inherited by
-        # every caller (pop_df/gating/plots/notebooks). Raw names match FIRST, so gate eval and
-        # clustering (which pass raw `{measure}_intensity_{i}`) are unaffected.
+        # under the requested name, by the rules of `resolve_channel_columns` (any case; a name on two
+        # channels throws) — inherited by every caller (pop_df/gating/plots/notebooks). Raw names match
+        # FIRST, so gate eval (which passes raw `{measure}_intensity_{i}`) is unaffected.
         local var_reads::Vector{Tuple{String,String}}, cent_cols::Vector{String}, ocols::Vector{String}
         if isnothing(lp.sel_cols)
             var_reads = include_x ? [(v, lp.rename_channels ? _channel_label(v, chans) : v) for v in var_names] :
@@ -637,8 +747,12 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
             for c in sel
                 if haskey(var_idx, c)                                   # raw name → existing behaviour
                     push!(var_reads, (c, lp.rename_channels ? _channel_label(c, chans) : c))
-                elseif haskey(chan_to_raw, c)                            # channel name → raw, keep the name
-                    push!(var_reads, (chan_to_raw[c], c))
+                elseif haskey(chan_ix, lowercase(c))                     # channel name → raw, keep the name
+                    hit = chan_ix[lowercase(c)]
+                    length(hit) == 1 || throw(ArgumentError(
+                        "channel name \"$c\" is on more than one channel of $(basename(lp.path)) " *
+                        "($(join(hit, ", "))) — rename one of them"))
+                    push!(var_reads, (only(hit), c))
                 end
             end
             cent_cols   = [c for c in sel if haskey(cent_map, c)]

@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { applyColourScheme, parseColourScheme, nextColourScheme, colourSchemeLabel, COLOUR_SCHEMES } from './colourScheme'
+import { DEFAULT_COLOUR_SCHEME, applyColourScheme, parseColourScheme, nextColourScheme, colourSchemeLabel, COLOUR_SCHEMES } from './colourScheme'
 
 describe('colour scheme', () => {
-  it('reads anything unknown as dark', () => {
+  it('reads anything unknown as the default, light', () => {
+    expect(DEFAULT_COLOUR_SCHEME).toBe('light')
     expect(parseColourScheme('light')).toBe('light')
     expect(parseColourScheme('dark')).toBe('dark')
-    expect(parseColourScheme(null)).toBe('dark')
-    expect(parseColourScheme('sepia')).toBe('dark')
+    expect(parseColourScheme(null)).toBe('light')
+    expect(parseColourScheme('sepia')).toBe('light')
   })
 
   it('sets data-theme for light and removes it for dark', () => {

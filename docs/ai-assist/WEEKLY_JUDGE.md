@@ -87,6 +87,18 @@ test whether an agent can actually use the framework.
    records the sources it swept (`run.swept`); a source the previous pass didn't sweep is read from
    the start of the log, so the first pass that sweeps duplicates judges their whole backlog once.
 
+   **Test gaps** (`kind: "untested"`, key `tv-…`): recital's *Test value* findings marked `untested`
+   (mutants of a changed result function survived its tests), whatever their tag: a `fixed_pre_commit`
+   is checked as hard as a `false_positive`. Before the judge, the pass mutates the function again in
+   its worktree at the pinned SHA (`mutate_changed.py --at`, started within `RERUN_BUDGET_S` = 60 min a
+   pass). A carried one is mutated again only when its file or a test file its last rerun ran changed
+   since (`rerun.watch`); otherwise its survivors stand, free. So a test gap nobody fixes costs nothing
+   each week and the time goes to new ones: the queue drains. Every mutant killed: `gone`, no call. Survivors: the judge sees them beside
+   the code and says `live_bug` when one changes a value a caller would see, `not_a_bug` when all
+   are equivalent; verify traces the callers. Not rerun (over the budget, or it failed): `unjudged`, or
+   still `open`. Issues get the `test-gap` label; the fix brief asks for a test whose expected value
+   comes from a definition. `passes on base` findings aren't swept: once merged there is no base.
+
    Errors the autonomous runs hit (`agent_run_finding`, one per error key, counting the runs that hit
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
    above. One without has no code to excerpt: it is `open` straight away and goes to verify. A

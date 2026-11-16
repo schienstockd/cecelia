@@ -17,6 +17,8 @@ export interface DocStep {
   ifWrong: string
   why?: string
   optional?: boolean
+  /** A word after the title, e.g. the maturity badge of the guide the step follows. */
+  badge?: string
   shot?: string
   note?: string
 }
@@ -82,7 +84,7 @@ export function shotOf(set: ShotSet, id: string): Shot {
 /** Numbered steps, each with its shot, starting at `from`. */
 export function docSteps(steps: DocStep[], set: ShotSet, widths: Record<string, number>, from = 1): string[] {
   return steps.flatMap((s, i) => [
-    `### ${from + i}. ${s.title}${s.optional ? ' (optional)' : ''}`,
+    `### ${from + i}. ${s.title}${s.optional ? ' (optional)' : ''}${s.badge ? ` · ${s.badge}` : ''}`,
     '',
     `**Do:** ${s.do}`,
     '',

@@ -183,6 +183,9 @@ function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols,
         # from it; branch_props does not, but folding it costs one stat and disambiguates keys).
         gmtime = _pop_df_mtime(gating_path(img._dir, vn; pop_type=_stored_pop_type(pop_type)))
         s = string(vn, "@", gmtime, "/", _pop_df_mtime(img_label_props_path(img, vn)))
+        # channel names decide which column a NAME reads and what an intensity column is called — a
+        # rename (ccid.json, not the h5ad) must not serve the old column (docs/todo/CHANNEL_NAMES_PLAN.md)
+        s *= "#" * join(something(channel_names(img; value_name = vn), String[]), "\u1f")
         # :track granularity and track-gating both read the companion track table — fold its mtime
         # so a re-run (or a saved track gate) auto-invalidates.
         (granularity === :track || is_track) &&

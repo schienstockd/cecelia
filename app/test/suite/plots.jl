@@ -913,26 +913,40 @@ end
             img
         end
         x, y = mk("uX", ["CD4", "CD8", "GFP", "TOM"]), mk("uY", ["CD8", "CD4", "GFP", "TOM"])
-        # same tables under both uids, channels swapped on uY: the CD4 row (raw name from the first
-        # image, `mean_intensity_0`) must average uX's column 0 with uY's column 1
+        # same tables under both uids, channels swapped on uY: the CD4 row (asked for by a legacy raw
+        # name, `mean_intensity_0`, named against the first image) must average uX's column 0 with uY's
+        # column 1 — and comes back keyed by the channel NAME (docs/todo/CHANNEL_NAMES_PLAN.md)
         raw = pop_df(x, "live", ["B/_tracked"]; pop_cols=["mean_intensity_0", "mean_intensity_1"], raw_channel_names=true)
         want = (sum(raw.mean_intensity_0) + sum(raw.mean_intensity_1)) / (2 * nrow(raw))
         cellv(r, m) = first(c["value"] for c in r["cells"] if c["y"] == m)
         kw = (; matrix_mode="profile", measures=["mean_intensity_0"], category="pop")
         r = plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...)
-        @test cellv(r, "mean_intensity_0") ≈ want
+        @test cellv(r, "CD4") ≈ want
+        @test cellv(plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix";
+                                      kw..., measures=["CD4"]), "CD4") ≈ want      # asked for by name
         # the targets form, likewise
         rt = plot_summary_data([x, y], ["uX", "uY"], "live", [("B", "/_tracked")], "matrix"; kw...)
-        @test cellv(rt, "mean_intensity_0") ≈ want
+        @test cellv(rt, "CD4") ≈ want
         # same order → each image's own column 0, as before
         y.im_channel_names = Dict{String,Any}("default" => ["CD4", "CD8", "GFP", "TOM"], "_active" => "default")
         r0 = plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...)
-        @test cellv(r0, "mean_intensity_0") ≈ sum(raw.mean_intensity_0) / nrow(raw)
+        @test cellv(r0, "CD4") ≈ sum(raw.mean_intensity_0) / nrow(raw)
         # unresolvable: CD4 not on uY → refused, naming it
         y.im_channel_names = Dict{String,Any}("default" => ["CD8", "GFP", "TOM", "x"], "_active" => "default")
         err = try plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...); nothing
               catch e; e end
-        @test err isa ArgumentError && occursin("CD4 (mean_intensity_0) not on this image", err.msg) &&
+        @test err isa ArgumentError && occursin("uY/B: CD4 not on this image", err.msg) &&
               occursin("uY", err.msg)
+        # a column that has to stay RAW is read raw on every image, never renamed on the ones with names:
+        # no names on the first image → pooled by index, both images' cells in the row
+        celln(r, m) = first(c["n"] for c in r["cells"] if c["y"] == m)
+        x.im_channel_names = Dict{String,Any}()
+        y.im_channel_names = Dict{String,Any}("default" => ["CD4", "CD8", "GFP", "TOM"], "_active" => "default")
+        ru = plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...)
+        @test celln(ru, "mean_intensity_0") == 2 * nrow(raw)
+        # a name on two channels (case aside) can't be a name → the single-image row reads the raw column
+        x.im_channel_names = Dict{String,Any}("default" => ["CD4", "cd4", "GFP", "TOM"], "_active" => "default")
+        rd = plot_summary_data(x, "live", ["B/_tracked"], "matrix"; kw...)
+        @test cellv(rd, "mean_intensity_0") ≈ sum(raw.mean_intensity_0) / nrow(raw)
     end
 end

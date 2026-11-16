@@ -84,6 +84,14 @@ function _run_task(::RoiDiscovery, img::CciaImage, params::Dict{String,Any};
     labels = Int.(pop_df_multi(img, p.pops; value_name = vn, granularity = :cell, restrict_to = vn).label)
     isempty(labels) && (on_log("[ERROR] roiDiscovery: no objects in $(p.pops)"); return nothing)
 
+    # measures by channel NAME, read from this image's own columns (docs/todo/CHANNEL_NAMES_PLAN.md)
+    want = filter(!isempty, vcat(p.rankBy, [p.groupBy]))
+    ch = resolve_segment_channel_columns([(img, vn)], want)
+    isempty(ch.problems) || (on_log("[ERROR] roiDiscovery: $(join(ch.problems, "; "))"); return nothing)
+    as_name = Dict(zip(want, ch.names))
+    p = parse_roi_discovery_params(merge(params, Dict{String,Any}(
+        "rankBy" => [as_name[c] for c in p.rankBy], "groupBy" => isempty(p.groupBy) ? String[] : [as_name[p.groupBy]])))
+
     rois_path = img_rois_path(img, p.roisSuffix)
     mkpath(dirname(rois_path))
     qc_out_path = joinpath(task_run_dir(img._dir), "roi_discovery_qc.json")
@@ -96,6 +104,7 @@ function _run_task(::RoiDiscovery, img::CciaImage, params::Dict{String,Any};
         "propsPath" => img_label_props_path(img, vn), "labelsPath" => img_labels_path(img, vn),
         "imPath" => something(img_filepath(img), ""), "roisPath" => rois_path, "qcOutPath" => qc_out_path,
         "suffix" => p.roisSuffix, "valueName" => vn, "labels" => labels, "rankBy" => p.rankBy, "groupBy" => p.groupBy,
+        "readCols" => Dict(zip(ch.names, only(ch.cols))),   # name → this image's column
         "minObjects" => p.minObjects, "maxRois" => p.maxRois, "mergeGap" => p.mergeGap,
         "reviewLabels" => roi_review_labels(p.reviewLabels),
         # the user's params, verbatim, so the ROI set records how it was made (reproducible)

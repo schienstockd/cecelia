@@ -25,7 +25,7 @@ INSTRUCTIONS = (
     "beside cecelia-observer: the observer READS (lineage, measures, task logs, behaviour) and "
     "DESIGNS (create_chain); this server STARTS work (run_task, run_chain), WAITS for it "
     "(wait_for_tasks, wait_for_chain) and GATES (gate_histogram → add_gate dry_run + gate_examples → "
-    "add_gate → gate_cells_view; add_boolean_pop for 'X but not Y' / 'X or Y'). "
+    "add_gate → gate_cells_view; add_boolean_pop for 'X but not Y' / 'X or Y'; add_filter_pop for rules on measures). "
     "Run pipelines as chains (create_chain → run_chain) so the Chains page holds what "
     "ran; run_task is for a single task outside a chain. Everything you do is recorded."
 )

@@ -8,7 +8,7 @@ lock, its output-name prefix and the measured-segmentation check (`_gating_guard
 the routes the toolset needs, which both allow-lists include, so the two servers cannot drift apart.
 
 Writes go ONLY through the Claude-scoped routes — `/api/gating/pop/add-gate`, `add-boolean`,
-`set-own-gate`, `delete-own` — which change nothing the user drew (the server checks every population's `createdBy`).
+`add-filter`, `set-own-gate`, `delete-own` — which change nothing the user drew (the server checks every population's `createdBy`).
 The general `/api/gating/pop/*` routes (add / set-gate / delete / rename / move) stay GUI-only.
 """
 from __future__ import annotations
@@ -124,6 +124,26 @@ depend on itself. `dry_run=True` gives the counts and writes nothing. delete_gat
 cannot change it (not a gate) — delete and add again. The reply is add_gate's, with `gate: null` and
 the stored `boolean`. Tell the user it is a proposal, with the numbers."""
 
+ADD_FILTER_POP_DOC = """ADD one FILTER population — cells picked by RULES on their measures, AND-ed, instead of a
+drawn shape. The way to say "area > 50 and mean_intensity_2 > 300" or "clusters 3 and 7 of the movement
+run" (`{"measure": "clusters.movement", "fun": "in", "values": [3, 7]}`) — any rule on one column, or a
+threshold you would otherwise draw as a box running to the plot's edge.
+
+`conditions` = `[{measure, fun, values}, …]`, every one must hold. `fun`: gt / gte / lt / lte (one number),
+eq / neq (one value), in (a list). `measure` is a cell-table column (gate_plot's channels; a per-track
+column is not one). Thresholds are in the column's raw values — no transform, unlike a gate — except a
+position column (centroid_*), which is in the gates' unit: µm on a calibrated image, as gate_plot and
+gate_histogram show it, not the pixel value in the cell table. A number sent as a string ("3") is taken
+as the number, as the population manager's form does. Membership =
+the conditions ∩ `parent`. get_populations shows an existing one as `filter: {…, conditions}` — pass its
+`conditions` (or the single measure / fun / values as one condition) to reproduce it.
+
+Like add_gate: a PROPOSAL marked as yours (✦), only when the user asked or agreed; 404 if `parent` does not
+exist, 409 on a taken name, 422 on a bad name / operator / value / a column the cells don't have.
+`dry_run=True` gives the counts and writes nothing. delete_gate removes it; set_gate cannot change it
+(not a gate) — delete and add again. The reply is add_gate's, with `gate: null` and the stored `filter`.
+Tell the user it is a proposal, with the numbers."""
+
 SET_GATE_DOC = """MOVE a gate YOU drew (✦) — same `gate` shape as add_gate; `path` the population.
 403 `not_claude_made` when it, anything gated under it, or a combination built on it is the user's —
 including one of yours they have since edited; 403 `used_by_runs` when a task (clustering, tracking, …)
@@ -141,6 +161,7 @@ SUMMARY_ROUTE = "/api/gating/summary"
 STATS_ROUTE = "/api/gating/stats"
 ADD_ROUTE = "/api/gating/pop/add-gate"
 ADD_BOOLEAN_ROUTE = "/api/gating/pop/add-boolean"
+ADD_FILTER_ROUTE = "/api/gating/pop/add-filter"
 SET_ROUTE = "/api/gating/pop/set-own-gate"
 DELETE_ROUTE = "/api/gating/pop/delete-own"
 
@@ -148,7 +169,8 @@ DELETE_ROUTE = "/api/gating/pop/delete-own"
 # the Claude-scoped writes (create-only, and change/remove only what Claude drew).
 GATING_READ_ROUTES = frozenset({("GET", PLOT_ROUTE), ("GET", CELLS_ROUTE), ("GET", SUMMARY_ROUTE),
                                 ("GET", STATS_ROUTE), ("GET", EXAMPLES_ROUTE)})
-GATING_WRITE_ROUTES = frozenset({("POST", ADD_ROUTE), ("POST", ADD_BOOLEAN_ROUTE), ("POST", SET_ROUTE),
+GATING_WRITE_ROUTES = frozenset({("POST", ADD_ROUTE), ("POST", ADD_BOOLEAN_ROUTE), ("POST", ADD_FILTER_ROUTE),
+                                 ("POST", SET_ROUTE),
                                  ("POST", DELETE_ROUTE)})
 GATING_ROUTES = GATING_READ_ROUTES | GATING_WRITE_ROUTES
 
@@ -298,6 +320,18 @@ class GatingClient:
             body["colour"] = colour
         return self._request("POST", ADD_BOOLEAN_ROUTE, body=body)
 
+    def add_filter_pop(self, project_uid: str, image_uid: str, value_name: str, name: str,
+                       conditions: list[dict], parent: str = "root", colour: str = "#22c55e",
+                       dry_run: bool = False) -> dict:
+        # Create-only, like add_gate: ONE filter population, its conditions AND-ed; the server checks the
+        # operators, the values and that every column is one the cells have.
+        self._gating_guard(project_uid, image_uid, value_name, True)
+        body = {**self._ids(project_uid, image_uid, value_name), "parent": parent or "root", "name": name,
+                "conditions": list(conditions or []), "dryRun": bool(dry_run)}
+        if colour:
+            body["colour"] = colour
+        return self._request("POST", ADD_FILTER_ROUTE, body=body)
+
     def set_gate(self, project_uid: str, image_uid: str, value_name: str, path: str, gate: dict,
                  dry_run: bool = False) -> dict:
         self._gating_guard(project_uid, image_uid, value_name, True)
@@ -369,6 +403,12 @@ def register_gating_tools(tool, client: GatingClient) -> dict:
                                       colour, dry_run)
 
     @tool
+    @with_doc(ADD_FILTER_POP_DOC)
+    def add_filter_pop(project_uid: str, image_uid: str, value_name: str, name: str, conditions: list[dict],
+                       parent: str = "root", colour: str = "#22c55e", dry_run: bool = False) -> dict:
+        return client.add_filter_pop(project_uid, image_uid, value_name, name, conditions, parent, colour, dry_run)
+
+    @tool
     @with_doc(SET_GATE_DOC)
     def set_gate(project_uid: str, image_uid: str, value_name: str, path: str, gate: dict,
                  dry_run: bool = False) -> dict:
@@ -381,4 +421,4 @@ def register_gating_tools(tool, client: GatingClient) -> dict:
         return client.delete_gate(project_uid, image_uid, value_name, path, dry_run)
 
     return {f.__name__: f for f in (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats,
-                                    add_gate, add_boolean_pop, set_gate, delete_gate)}
+                                    add_gate, add_boolean_pop, add_filter_pop, set_gate, delete_gate)}

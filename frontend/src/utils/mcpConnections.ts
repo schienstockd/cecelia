@@ -76,7 +76,7 @@ export function observerRowState(state?: string): { tone: Tone; label: string; d
   }
 }
 
-export const CLAUDE_SETUP_GUIDE = 'https://docs.anthropic.com/en/docs/claude-code/setup'
+export const CLAUDE_SETUP_GUIDE = 'https://code.claude.com/docs/en/setup'
 
 /**
  * The Claude Code CLI row. `available` = the backend found it (PATH, or an installer's own dir — see

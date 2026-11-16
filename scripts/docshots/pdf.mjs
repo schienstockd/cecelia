@@ -56,7 +56,9 @@ export function printHtml(md) {
   html = html.replace(/(<(?:p|li|td)>)?<strong>([^<]+)<\/strong>/g, (m, open, text) => open ? m : `<b class="ui">${text}</b>`)
   // "### 3. Segment" → a numbered step heading
   html = html.replace(/<h3>(\d+)\. /g, '<h3><span class="n">$1</span> ')
-  return html
+  // each section and step (a heading up to the next one) prints whole when it fits on a page, so a
+  // heading never strands at a page's foot and a step's screenshot stays with its words
+  return html.split(/(?=<h[23][ >])/).map(b => (/^<h[23][ >]/.test(b) ? `<section>${b}</section>` : b)).join('')
 }
 
 const a = parseArgs(process.argv.slice(2))
