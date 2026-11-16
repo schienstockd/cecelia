@@ -68,7 +68,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplate
 import { usePlotResize } from '../../composables/usePlotResize'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, figureToSvg } from '../../plots/export'
-import { distinctColors } from '../../plots/plot'
+import { categoricalColours } from '../../plots/plot'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
 import { useVaultModel } from '../../composables/useVaultModel'
@@ -244,7 +244,7 @@ const anyStoppedEarly = computed(() =>
 interface DetailCaption { term: string; color: string; text: string }
 const detailCaptions = computed<DetailCaption[]>(() => {
   if (!detailActive.value) return []
-  const colors = distinctColors(shown.value.map(s => s.term).length)
+  const colors = categoricalColours(shown.value.map(s => s.term).length)
   return shown.value.map((s, idx) => {
     const c = convByTerm.value[s.term]
     const stop = stopByTerm.value[s.term]
@@ -311,7 +311,7 @@ async function render() {
   // reads as a flat line. Same colour per term as the classic view; the marks change, not the
   // colour key. Old models (no step trace) never see this branch — the toggle stays hidden.
   if (detailActive.value) {
-    const colors = distinctColors(domain.length)
+    const colors = categoricalColours(domain.length)
     const colorOf = (term: string) => colors[domain.indexOf(term)] || colors[0]
     const marks: unknown[] = []
     // Faint per-batch underlay (honest variance) + bold moving-avg line per term.
@@ -363,7 +363,7 @@ async function render() {
          // Every plotted value, val included — a log axis chosen on the training rows alone would
          // silently drop a val point that touched zero.
          ...(isLog.value ? { type: 'log' as const } : { type: 'linear' as const, zero: true }) },
-    color: { domain, range: distinctColors(domain.length), legend: false },
+    color: { domain, range: categoricalColours(domain.length), legend: false },
     marks: [
       Plot.line(rows.value, { x: 'epoch', y: 'loss', stroke: 'term', strokeWidth: 1.5, tip: true }),
       Plot.line(valRows.value, { x: 'epoch', y: 'loss', stroke: 'term', strokeWidth: 1.5,

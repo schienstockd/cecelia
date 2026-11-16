@@ -100,6 +100,9 @@ export interface PendingShare {
   workspaceOrigin: { x: number; y: number }
 }
 
+/** Toast when none of the selected panels could be rasterised (all exporters missing or null). */
+const SHARE_NOTHING_CAPTURED = 'Couldn’t capture these plots — wait for them to draw, then retry.'
+
 export function useCanvasShare(opts: UseCanvasShareOpts) {
   const geomStore = useCanvasPanelsStore()
   const exportStore = useCanvasPanelExportsStore()
@@ -180,7 +183,9 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
       }))
       const tiles: PanelTile[] = exported.map(e => ({ pngDataUrl: e.pngDataUrl, geom: e.geom }))
       const composite = await composePanelGrid(tiles)
-      if (!composite) { shareBusy.value = false; shareSel.end(); return }
+      // null = no selected panel produced a PNG. Say so: ending the selection with nothing on screen
+      // reads as "Share did nothing".
+      if (!composite) { shareSel.end(); showShareToast('fail', SHARE_NOTHING_CAPTURED); return }
 
       // Composite-relative origin: subtract the union bbox origin so each panel's `position` in
       // the envelope matches where it sits in the shared PNG (not the on-screen workspace).
@@ -198,6 +203,9 @@ export function useCanvasShare(opts: UseCanvasShareOpts) {
 
       pendingShare.value = { composite, panels, workspaceOrigin }
       shareSel.end()
+    } catch (err) {
+      shareSel.end()
+      showShareToast('fail', shareFailMessage(err))
     } finally {
       shareBusy.value = false
     }

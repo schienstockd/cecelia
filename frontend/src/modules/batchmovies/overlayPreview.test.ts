@@ -3,6 +3,7 @@ import {
   buildOverlayScene, derivedOverlayFlags, drawsTails, popsForConfig, renderOverlayPreview,
   ALL_TRACKS_GREY, PREVIEW_PALETTE,
 } from './overlayPreview'
+import { POPULATION_PALETTE } from '../../plots/plot'
 
 // The rules the preview mirrors — locked ALSO in the backend
 // (`api/test/runtests.jl` → "movie rail — offline overlay-config translator"). If either drifts
@@ -226,9 +227,8 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
   })
 
   it('showPops overrides trackSources — pops win (allTracks false, so trackSources ignored)', () => {
-    // Use a colour that CANNOT collide with PREVIEW_PALETTE — the pop palette here happens to
-    // include `#ff6b6b`, and the point is to prove the pops branch runs regardless of what
-    // colour a trackSource entry carries.
+    // Use a colour that CANNOT collide with PREVIEW_PALETTE — the point is to prove the pops
+    // branch runs regardless of what colour a trackSource entry carries.
     const distinctive = '#123456'
     const r = renderOverlayPreview({
       showTracks: true, showPopulations: true,
@@ -272,9 +272,10 @@ describe('popsForConfig — hashes real batch paths to scene indices', () => {
     expect([...a][0]).not.toBe([...b][0])
   })
 
-  it('exports a palette (used by the schematic, kept OUT of the app palette)', () => {
-    // Locked so a future edit that empties the palette fails a test — the schematic depends on it
-    // having distinguishable entries.
+  it('draws its pops in the app population palette, not a hand-rolled one', () => {
+    // the schematic needs distinguishable entries, and they are the ones the movie will use
     expect(PREVIEW_PALETTE.length).toBeGreaterThanOrEqual(4)
+    expect(new Set(PREVIEW_PALETTE).size).toBe(PREVIEW_PALETTE.length)
+    expect([...PREVIEW_PALETTE]).toEqual(POPULATION_PALETTE.slice(0, PREVIEW_PALETTE.length))
   })
 })
