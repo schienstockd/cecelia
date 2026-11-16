@@ -58,6 +58,11 @@ mutable struct Population
     # gate's sidecar keeps its shape. A user's edit of a Claude proposal makes it the user's
     # (`claude_made` in api/src/gating_api.jl); copying one to other images counts as that edit.
     updated_by::Union{Dict{String,Any},Nothing}
+    # A cluster population's run stamp (`runAt`): the clustering run's `at` (`cluster_run_at`) when its
+    # cluster ids were last picked. A re-run on the same suffix renumbers the clusters, so a different
+    # `at` now marks the population stale until someone re-picks. `nothing` = not a cluster pop, or one
+    # picked before runs were stamped (never shown stale).
+    run_at::Union{String,Nothing}
 end
 
 # ── PopulationMap (a tree for one value_name) ────────────────────────────────────

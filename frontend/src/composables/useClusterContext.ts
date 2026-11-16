@@ -47,6 +47,7 @@ export function useClusterContext(opts: {
   const featureLabels = ref<Record<string, Record<string, string>>>({})  // per-suffix: column → label
   const clusterIds = ref<Record<string, number[]>>({})     // per-suffix tickable cluster universe
   const clusterMembers = ref<Record<string, string[]>>({}) // per-suffix uids the run clustered together
+  const clusterRunAt = ref<Record<string, string>>({})     // per-suffix: when the run ran (stale cluster pops)
   const clusterAxes = ref<Record<string, BehaviourAxes>>({}) // per-suffix diffusion axis names (track runs)
   const resolvedVn = ref('default')                    // segmentation value_name the channels resolved to
   const hmmStateCols = ref<string[]>([])               // live.cell.hmm.state.<name>
@@ -77,6 +78,7 @@ export function useClusterContext(opts: {
       clusterFeatures.value = d.clusterFeatures ?? {}
       clusterIds.value = d.clusterIds ?? {}
       clusterMembers.value = d.clusterMembers ?? {}
+      clusterRunAt.value = d.clusterRunAt ?? {}
       clusterAxes.value = d.clusterAxes ?? {}
       resolvedVn.value = d.valueName ?? 'default'
       const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
@@ -155,7 +157,7 @@ export function useClusterContext(opts: {
 
   return {
     suffixes, clusterFeatures, featureFallback, channelNames, featureLabels, labelMap,
-    clusterIds, clusterMembers, clusterAxes, resolvedVn,
+    clusterIds, clusterMembers, clusterRunAt, clusterAxes, resolvedVn,
     hmmStateCols, hmmTransitionCols, allFeatures, featureOptions,
     runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor,
   }

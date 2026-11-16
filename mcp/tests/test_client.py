@@ -88,6 +88,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/figures/delete-own"),  # removes only a figure Claude made (403 on the user's)
             ("POST", "/api/figures/render"),  # renders a NEW figure; replace only Claude's own (403 otherwise)
             ("POST", "/api/gating/pop/add-boolean"),  # create-only: ONE new combined pop, never edits one
+            ("POST", "/api/gating/pop/add-cluster-pops"),  # create-only: a run's grouping, never edits a pop
             ("POST", "/api/gating/pop/add-filter"),   # create-only: ONE new filter pop, never edits one
             ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
             ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
@@ -776,6 +777,22 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(json.loads(req.data), {
             "projectUid": "P", "imageUid": "I", "valueName": "B", "parent": "/qc", "name": "big",
             "conditions": conds, "dryRun": True, "colour": "#22c55e"})
+
+    def test_add_cluster_pops_posts_the_grouping_and_delete_names_its_type(self):
+        # a grouping of one run: every group's clusters go out as given, under the run and pop type the
+        # server writes them for; deleting one names the cluster type, or the server looks in the gates
+        groups = [{"name": "fast", "clusters": [0, 2]}, {"name": "slow", "clusters": [1]}]
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_cluster_pops("P", "I", "B", "movement", groups, pop_type="trackclust", dry_run=True)
+            req = u.call_args[0][0]
+            self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/add-cluster-pops"))
+            self.assertEqual(json.loads(req.data), {
+                "projectUid": "P", "imageUid": "I", "valueName": "B", "popType": "trackclust",
+                "run": "movement", "groups": groups, "dryRun": True})
+            self.c.delete_gate("P", "I", "B", "/fast", pop_type="trackclust")
+            self.assertEqual(json.loads(u.call_args[0][0].data)["popType"], "trackclust")
+            self.c.delete_gate("P", "I", "B", "/gate")
+            self.assertEqual(json.loads(u.call_args[0][0].data)["popType"], "flow")
 
     def test_add_boolean_pop_posts_the_stored_boolean_terms(self):
         # "qc but not OTI": the terms go out as the sidecar spells them — `not`, not the Python-side

@@ -1,7 +1,11 @@
-# Parked plan — Claude-proposed cluster populations
+# Plan — Claude-proposed cluster populations
 
-Status: **parked on a dataset** (2026-10-31). Waiting for a multiplex image that clusters into 10+
-groups — the Call for Datasets entry `cluster-grouping-highplex` (`frontend/src/lib/callForDatasets.ts`).
+Status: **write built** (2026-11-16) — `add_cluster_pops` → `POST /api/gating/pop/add-cluster-pops`. Was
+parked on a dataset (2026-10-31); the maintainer un-parked the write because grouping clusters is what
+cluster populations are for, and the write itself can be checked on our data. Whether Claude's groupings
+hold up on tens of clusters still needs one: the Call for Datasets entry `cluster-grouping-highplex`
+(`frontend/src/lib/callForDatasets.ts`) is now a TEST ask. Remaining: slices 1 and 3. How the built part
+works lives in `docs/POPULATION.md` (*One population per cluster*, *Run stamp*, *Claude groups a run*).
 Audit behind it: [`../archive/CLUSTER_POP_DEFINITION_REPORT.md`](../archive/CLUSTER_POP_DEFINITION_REPORT.md)
 (archived; this plan holds what was decided from it).
 
@@ -15,21 +19,22 @@ Cluster populations already exist (`clust` / `trackclust` / `region`: stored fil
 
 ## Decisions
 
-1. **The write waits for the data.** On our own data no named pool uses a cluster id above 3, so the
-   proposal step cannot be checked yet. Until a 10+-cluster dataset arrives: chat proposals only.
-2. **A sibling route, not `pop/add`.** `POST /api/gating/pop/add-cluster-pop` — create-only, set-wide
+1. ~~**The write waits for the data.**~~ Overturned 2026-11-16 by the maintainer: the write ships; the
+   dataset checks the proposals' quality, not the write.
+2. **A sibling route, not `pop/add`.** Built as `POST /api/gating/pop/add-cluster-pops` — a whole GROUPING per
+   call (`groups: [{name, clusters}]`, several clusters per population), create-only, set-wide
    on the server (the run's `partOf` images × co-clustered value_names), only cluster ids no other
    pop in the run holds, `dryRun`. `pop/add` stays off the MCP allow-lists (it takes any pop type).
 3. **Ownership is the gate rule.** `createdBy` / `updatedBy` as for gates: a user's edit makes it
    theirs (built with the gate fix, `stamp_edit!`). No `set-own-cluster-pop`: change = delete + propose.
-4. **Proposed, not yet confirmed by the maintainer:** names drawn from the top-|z| features until the user
-   renames; a re-run on the same suffix with named pops warns (stale icon) rather than blocks;
-   cluster-id exclusivity enforced server-side for GUI ticks too.
+4. **Confirmed by the maintainer 2026-11-16, built:** names drawn from the top-|z| features until the user
+   renames (guidance); a re-run on the same suffix with named pops warns (stale icon, the run stamp)
+   rather than blocks; cluster-id exclusivity enforced server-side for GUI ticks too.
 
 ## Slices
 
 1. **Reads (buildable now):** region profiles via `_cluster_profile(…; pop_type)`; `popType` on
    `gating/examples` + `cells-image`; per-cluster spread / nearest-cluster on profiles.
-2. **The write (on the dataset):** the route above, `delete-own` taking a pop type, a run fingerprint
-   for staleness, and a cohesion number in the `dryRun` reply.
+2. **The write — BUILT** (2026-11-16): the route above, `delete-own` taking a pop type, the run stamp
+   for staleness. Not built: a cohesion number in the `dryRun` reply.
 3. **Heatmap cluster ordering** for the user.

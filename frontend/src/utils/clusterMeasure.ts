@@ -29,3 +29,11 @@ export function isClusterPopType(popType: string): boolean {
 export function isGatingPopType(popType: string): boolean {
   return !!popTypeInfo(popType)?.gating
 }
+
+// A cluster population picked on an EARLIER run under the same name: its `runAt` (the run it was picked
+// on, Julia `Population.run_at`) differs from the run's own stamp (`clusterRunAt` from /api/gating/channels).
+// A re-run renumbers the clusters, so the ids it holds may now be other groups. Either stamp missing — a
+// population or run from before stamps — is never stale: no evidence it moved.
+export function clusterPopStale(popRunAt: string | null | undefined, runAt: string | null | undefined): boolean {
+  return !!popRunAt && !!runAt && popRunAt !== runAt
+}

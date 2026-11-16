@@ -306,3 +306,29 @@ end
     write(p, "{ not json")                                                        # unreadable → written
     @test Cecelia._region_other_all_zero(p) == false
 end
+
+# A cluster population's run is the suffix of its `{prefix}{run}` filter column — `clusters.` for cell and
+# track clusters, `regions.` for regions (docs/POPULATION.md, the pop-type table). A pop on any other
+# column, or one that is not a cluster type, belongs to no run; and two ids in one run have one holder each.
+@testset "cluster_pop_suffix / cluster_id_owners — a cluster pop's run and who holds each id" begin
+    clust = Cecelia.PopulationMap(; pop_type = "clust", value_name = "B")
+    add_pop!(clust, "T"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [1, 2.0])
+    add_pop!(clust, "B"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = ["3"])
+    add_pop!(clust, "other run"; filter_measure = "clusters.movement", filter_fun = "in", filter_values = [1])
+    add_pop!(clust, "big"; filter_measure = "area", filter_fun = "gt", filter_values = 50)
+    @test cluster_pop_suffix(clust.pops["/T"]) == "immune"
+    @test cluster_pop_suffix(clust.pops["/big"]) === nothing         # a cluster-type map, but not a cluster column
+    region = Cecelia.PopulationMap(; pop_type = "region", value_name = "B")
+    add_pop!(region, "niche"; filter_measure = "regions.tissue", filter_fun = "in", filter_values = [0])
+    add_pop!(region, "wrong family"; filter_measure = "clusters.tissue", filter_fun = "in", filter_values = [0])
+    @test cluster_pop_suffix(region.pops["/niche"]) == "tissue"
+    @test cluster_pop_suffix(region.pops["/wrong family"]) === nothing
+    flow = Cecelia.PopulationMap(; pop_type = "flow", value_name = "B")
+    add_pop!(flow, "c3"; filter_measure = "clusters.immune", filter_fun = "in", filter_values = [3])
+    @test cluster_pop_suffix(flow.pops["/c3"]) === nothing             # a gating filter pop, not a cluster pop
+    # 1, 2.0 and "3" are the ids 1, 2, 3; the other run's 1 is not this run's
+    @test cluster_id_owners(clust, "immune") == Dict(1 => "/T", 2 => "/T", 3 => "/B")
+    @test cluster_id_owners(clust, "immune"; except = "/T") == Dict(3 => "/B")
+    @test cluster_id_owners(clust, "movement") == Dict(1 => "/other run")
+    @test as_cluster_id(true) === nothing && as_cluster_id(2.5) === nothing && as_cluster_id("x") === nothing
+end

@@ -174,7 +174,8 @@ when a label set was overwritten.
 
 **`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
 server → `POST /api/gating/pop/add-gate`, `add_boolean_pop` → `POST /api/gating/pop/add-boolean` for a
-combination, or `add_filter_pop` → `POST /api/gating/pop/add-filter` for a filter population) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
+combination, `add_filter_pop` → `POST /api/gating/pop/add-filter` for a filter population, or
+`add_cluster_pops` → `POST /api/gating/pop/add-cluster-pops` for a run's cluster populations) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
 `Population.created_by` round-trips it, and the manager marks the row with ✦ (`claudeProposal`,
 `utils/authorStamp.ts`). A GUI-drawn gate has no key, so a person's sidecar keeps its shape. Claude's
 routes change only what it drew: `set-own-gate` / `delete-own` refuse (403 `not_claude_made`) unless the
@@ -281,6 +282,33 @@ dropdown), so the population manager shows only the pops for the active suffix
 (`PopulationManager.visiblePops`), new pops are created against the active suffix, and cluster-ID
 assignment is exclusive *within* a run. Switching the run dropdown therefore swaps the visible pop
 set — pops from a different run on the same segmentation are hidden, not shown.
+
+**One population per cluster — enforced by the server.** `pop/add` and `pop/update` refuse (409
+`cluster_taken`, naming the holder) a cluster id another population of the same run already holds
+(`cluster_id_owners`, `_cluster_ids_taken` in `gating_api.jl`). Only ids the edit ADDS are checked, so a
+legacy overlap never blocks an unrelated edit; the manager's tick moves a cluster off its holder first,
+then onto the new population, and passes.
+
+**Run stamp — a population picked on an earlier run is stale.** Every clustering run records when it ran
+(`at` in its `.clustfeatures.json` entry, one value for all of the run's images; `cluster_run_at`). A
+cluster population records the run it was picked on (`runAt` on its node, `Population.run_at`), stamped
+by `stamp_cluster_run!` when it is made (`pop/add`, Claude's `add-cluster-pops`). Re-running clustering
+under the same suffix renumbers the clusters; the run's `at` moves on (`clusterRunAt` on
+`/api/gating/channels`), so the manager marks the population with a warning (`clusterPopStale`). A tick
+does NOT clear it — the population's other ids are still the old run's numbers — only clicking the
+warning once its clusters are checked does (`pop/update` `runChecked: true`, a user edit). A population
+with no stamp yet is stamped on its first edit; a population or run from before the stamp is never
+shown stale. Claude's `add-cluster-pops` and `delete-own` reach only images whose entry for the run lists
+the anchor image and carries the same `at` (`_same_cluster_run`) — an image re-clustered alone under the
+same name is skipped.
+
+**Claude groups a run (`add_cluster_pops`).** `POST /api/gating/pop/add-cluster-pops` takes the whole
+grouping of one run — `groups: [{name, clusters}]`, several clusters per population — and writes each as
+the root-level cluster population the manager's ticks write, stamped `createdBy`, on EVERY image of the
+run (`partOf`, the cluster page's set-wide replay done server-side). All or nothing: every image's map
+is checked (names, `cluster_taken`, ids the run lacks, a cluster in two groups) before any is written.
+The reply carries per-group counts summed over the run and the clusters still `unassigned`.
+`delete-own` with the cluster `popType` removes one from every image of its run.
 
 **Cluster plots resolve value_name from the RUN, not the active segmentation.** The UMAP endpoint
 (`api_plots_cluster_map`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
