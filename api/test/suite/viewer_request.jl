@@ -40,3 +40,56 @@ end
     @test !_deliver_viewer_request!(rid, Dict("png"=>"x"))
     @test !haskey(_VIEWER_REQUESTS, rid)
 end
+
+# MCP get_plot_image / set_plot_view: a `plot:request` to the panel registered under plotId, answered on the same
+# reply route; an unregistered plotId answers "not_open" at once, without a broadcast.
+@testset "API: plot image / view — reach the registered panel, not_open for an unknown plot" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    cap = Channel{String}(64); key = gensym("test-preq")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    try
+        uid = "TESTPREQ"; mkpath(joinpath(tmp, uid))
+        _reset_plots_registry_for_test!()
+        @test _post(api_viewer_plot_image, Dict("projectUid"=>uid))[1] == 400                  # plotId required
+        @test _post(api_viewer_plot_image, Dict("projectUid"=>"NOPE", "plotId"=>"p"))[1] == 404
+        st, body = _post(api_viewer_plot_image, Dict("projectUid"=>uid, "plotId"=>"cluster:9"))
+        @test st == 200 && JSON3.read(body).reason == "not_open"
+        @test _post(api_viewer_plot_view, Dict("projectUid"=>uid, "plotId"=>"cluster:9"))[1] == 400    # settings required
+        st, body = _post(api_viewer_plot_view, Dict("projectUid"=>uid, "plotId"=>"cluster:9", "settings"=>Dict("colourBy"=>"population")))
+        @test st == 200 && JSON3.read(body).reason == "not_open"
+        @test !isready(cap)                                  # nothing broadcast for an unknown plot
+
+        @test _post(api_viewer_plots_register, Dict("clientId"=>"c", "projectUid"=>uid, "plotId"=>"cluster:3",
+                                                    "family"=>"umap", "title"=>"UMAP", "route"=>"/cluster"))[1] == 200
+        panel = @async begin
+            f = JSON3.read(take!(cap))
+            @test f.type == "plot:request" && f.kind == "image" && f.plotId == "cluster:3" && f.projectUid == uid
+            @test f.args.maxSide == 800
+            _post(api_viewer_reply, Dict("requestId"=>String(f.requestId),
+                                         "result"=>Dict("png"=>"data:image/png;base64,AAA", "width"=>800, "height"=>600)))
+        end
+        st, body = _post(api_viewer_plot_image, Dict("projectUid"=>uid, "plotId"=>"cluster:3", "maxSide"=>800))
+        r = JSON3.read(body)
+        @test st == 200 && r.png == "data:image/png;base64,AAA" && r.width == 800
+        @test JSON3.read(fetch(panel)[2]).ok == true
+
+        # set_plot_view: the patch reaches the panel as `args.settings`; its answer comes back verbatim
+        panel = @async begin
+            f = JSON3.read(take!(cap))
+            @test f.type == "plot:request" && f.kind == "view" && f.args.settings.colourBy == "population"
+            _post(api_viewer_reply, Dict("requestId"=>String(f.requestId),
+                                         "result"=>Dict("settings"=>Dict("colourBy"=>Dict("value"=>"population")))))
+        end
+        st, body = _post(api_viewer_plot_view, Dict("projectUid"=>uid, "plotId"=>"cluster:3",
+                                                    "settings"=>Dict("colourBy"=>"population")))
+        @test st == 200 && JSON3.read(body).settings.colourBy.value == "population"
+        @test JSON3.read(fetch(panel)[2]).ok == true
+        @test isempty(_VIEWER_REQUESTS)
+    finally
+        _reset_plots_registry_for_test!()
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end

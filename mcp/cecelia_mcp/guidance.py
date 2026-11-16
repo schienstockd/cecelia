@@ -303,6 +303,12 @@ contrast_limits). `set_viewer_view(image_uid, view)` changes that view live — 
 the fields named — and is saved as the image's viewer settings, so change only what the user \
 asked for. Loop: screenshot → adjust → screenshot; never ask the user to re-run anything for it.
 
+SEEING AND ADJUSTING A PLOT. `get_plot_image(plot_id)` returns an open plot panel's picture (a \
+UMAP, heatmap, summary chart, gate pairs …) as the user has it set up, plus the `settings` it lets \
+you change; `plot_id` from `list_plots`. `set_plot_view(plot_id, settings)` changes them (colour a \
+UMAP by population, switch a chart) and is saved on the plot like the user's own change. Loop: \
+look → adjust → look; never ask the user to switch a setting or Share a plot you can reach.
+
 Nothing gets saved by pointing; if the finding is worth keeping, propose a board or a notebook.
 
 ON BLACKBOARD. You can create / revise a BLACKBOARD entry — Markdown notes (Mermaid diagrams via \

@@ -109,6 +109,10 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/viewer/marks/tracks"),
             ("POST", "/api/viewer/marks/ui"),
             ("POST", "/api/viewer/navigate"),
+            ("POST", "/api/viewer/plots/image"),  # asks a plot panel for its picture; nothing changes
+            # changes a plot's settings (colouring, chart type, measure …) the way its own controls
+            # do, saved as that plot's settings on its board — no data, gates or populations
+            ("POST", "/api/viewer/plots/view"),
             ("POST", "/api/viewer/screenshot"),  # asks the viewer for its picture; nothing changes
             ("POST", "/api/viewer/seek"),
             # changes the open viewer's contrast / channels / 3D / camera, which the viewer saves as

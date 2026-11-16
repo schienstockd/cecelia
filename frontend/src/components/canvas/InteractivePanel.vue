@@ -13,6 +13,8 @@ import CanvasPanel from './CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
 import { useVisualPanel } from '../../composables/useVisualPanel'
+import { plotHostToImageURL } from '../../plots/export'
+import { PAPER } from '../../plots/fixedColours'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -42,9 +44,9 @@ defineExpose({ exportImage, exportSvg })
 // BIDIR PR #8 — register the panel so Claude's `list_plots` can discover it. `family` prefers the
 // view key (`umap`, `gatingStrategy`, `filmstrip` …) since it's what INTERACTIVE_VIEWS keys on and
 // what Claude reads back from the label; `title` is the human label from the same registry so
-// "the UMAP" resolves the same panel the user names. The exporter is NOT wired here — a Share
-// export already goes through the view's own `usePanelExport` where the view opts in; adding a
-// second registration by the same key would just overwrite.
+// "the UMAP" resolves the same panel the user names. The exporter (canvas Share + MCP
+// `get_plot_image`) is the board export's: the view's `exportImage`, else a snapshot of the view —
+// the same fallback `LayoutCanvas.capturePage` uses.
 const _route = useRoute()
 useVisualPanel(
   () => props.persistKey ?? '',
@@ -53,6 +55,9 @@ useVisualPanel(
     title: entry.value?.label ?? props.view,
     route: _route.path,
   }),
+  async () => (await exportImage()) ?? plotHostToImageURL(viewRef.value?.$el ?? null, PAPER),
+  // the settings MCP set_plot_view may change — declared by the view (`plotSettings`), none if it has none
+  { settings: () => viewRef.value?.plotSettings },
 )
 </script>
 

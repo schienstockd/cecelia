@@ -26,7 +26,7 @@ const ACQ_REVIEW_WITHHELD = Dict(
     "list_notebooks" => "the user's notebooks", "get_notebook" => "the user's notebooks",
     "get_analysis_boards" => "the user's plots", "list_plots" => "the user's open plots",
     "list_figures" => "the user's figures and captions", "get_landscape" => "the user's live viewer",
-    "get_viewer_screenshot" => "the user's live viewer",
+    "get_viewer_screenshot" => "the user's live viewer", "get_plot_image" => "the user's open plots",
     "get_populations" => _ACQ_ANALYSIS, "get_measure_summary" => _ACQ_ANALYSIS,
     "get_behaviour_summary" => _ACQ_ANALYSIS, "get_cluster_summary" => _ACQ_ANALYSIS,
     "get_region_clusters" => _ACQ_ANALYSIS, "get_contact_stats" => _ACQ_ANALYSIS,

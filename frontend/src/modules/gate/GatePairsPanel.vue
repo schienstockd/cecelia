@@ -179,6 +179,7 @@ useVisualPanel(
       ...(zChan.value ? { colourBy: zChan.value } : {}),
     },
   }),
+  async () => (await montageRef.value?.exportImage(PAPER, true)) ?? null,
 )
 </script>
 

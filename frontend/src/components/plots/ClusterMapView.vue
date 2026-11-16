@@ -31,6 +31,7 @@ import { paletteRange, POPULATION_PALETTE, type VisProps } from '../../plots/plo
 import { categoryColours } from '../../plots/categoryColours'
 import { fitLabel } from '../../plots/valueColour'
 import { tkey, parseTkey } from '../../plots/series'
+import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
 import SquarePlot from './SquarePlot.vue'
@@ -681,7 +682,20 @@ const umapFrame: Frame = {
     }))
   },
 }
-defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage,
+// what MCP set_plot_view may change — the options popover's own controls, with the values it offers
+const plotSettings: PlotSettings = {
+  colourBy: setting(colourBy, () => ['cluster', 'population', 'attribute']),
+  colourPops: setting(colourPops, async () => {
+    if (!popGroups.value.length) await loadPopGroups()
+    return popGroups.value.flatMap(g => g.populations.map(p => tkey(p.popType, g.valueName, p.path)))
+  }, true),
+  colourAttr: setting(colourAttr, () => attrs.value.map(a => a.name)),
+  facetBy: setting(facetBy, () => ['none', 'attribute', 'population']),
+  facetAttr: setting(facetAttr, () => attrs.value.map(a => a.name)),
+  basis: setting(basis, () => (hasAxes.value ? ['umap', 'diffmap'] : ['umap'])),
+  labels: setting(labels),
+}
+defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage, plotSettings,
                getFrame: (): Frame => umapFrame })
 
 // BIDIR PR #8 — plot registry adopter. Registers under the same plotId (the panel's persistKey

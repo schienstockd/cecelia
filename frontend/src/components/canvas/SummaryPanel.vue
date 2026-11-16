@@ -40,6 +40,7 @@ import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
+import { setting, type PlotSettings } from '../../utils/plotSettings'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { plotSummaryText } from '../../utils/plotSummary'
 import { useRoute } from 'vue-router'
@@ -906,8 +907,20 @@ defineExpose({ getCsv, getStatsCsv, csvName, exportImage, exportSvg,
 // bitmap by panelId. Reuses the same `exportImage` the PDF export uses (plot-only, light theme).
 // Only registers when a persistKey is present — a bare/inline panel without one has no id the
 // selection overlay can address.
+// what MCP set_plot_view may change: the panel's own chart controls, with their values — built per ask,
+// since a measure can appear once the data has one
+const plotSettings = (): PlotSettings => ({
+  chartType: setting(chartType, () => [...props.spec.chartTypes]),
+  ...(hasMeasure.value ? { measure: setting(measure, () => [...measureOpts.value]) } : {}),
+  ...(showPopTypePicker.value ? { popType: setting(popType, () => popTypeOpts.value.map(o => o.popType)) } : {}),
+  statUnit: setting(statUnit, () => ['individual', 'image']),
+  imageAgg: setting(imageAgg, () => ['mean', 'median']),
+  errorMetric: setting(errorMetric, () => ['sd', 'sem', 'ci95']),
+  normalize: setting(normalize),
+  bins: setting(bins),
+})
 if (props.persistKey) {
-  usePanelExport(() => props.persistKey ?? '', () => exportImage())
+  usePanelExport(() => props.persistKey ?? '', () => exportImage(), { settings: plotSettings })
 }
 
 // BIDIR PR #8 — register the panel so Claude's `list_plots` can discover it. Family stays

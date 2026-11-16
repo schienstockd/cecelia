@@ -1,4 +1,5 @@
 import { PAPER, PAPER_INK } from './fixedColours'
+import { fitLongSide } from '../utils/viewer/viewerRequest'
 // Shared plot export helpers — one place for "serialise an SVG to an image URL" and the download
 // plumbing, used by every canvas plot (PlotChart's summary charts + the bespoke cluster HMM panels).
 // Keeping this in one module avoids the divergent re-implementation the codebase warns against: a
@@ -131,6 +132,19 @@ export async function elementToImageURL(el: HTMLElement | null, type: 'png' | 's
 
 export function loadImg(url: string): Promise<HTMLImageElement | null> {
   return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = url })
+}
+
+/** A PNG data URL scaled so its long side is at most `maxSide` (never up), with its size — what an MCP
+ *  "look at it" answer sends (`get_viewer_screenshot`, `get_plot_image`). */
+export async function fitPngLongSide(png: string, maxSide?: number): Promise<{ png: string; width: number; height: number }> {
+  const img = await loadImg(png)
+  if (!img) throw new Error('image decode failed')
+  const size = fitLongSide(img.naturalWidth, img.naturalHeight, maxSide)
+  if (size.width === img.naturalWidth) return { png, ...size }
+  const out = document.createElement('canvas')
+  out.width = size.width; out.height = size.height
+  out.getContext('2d')?.drawImage(img, 0, 0, size.width, size.height)
+  return { png: out.toDataURL('image/png'), ...size }
 }
 
 // Capture a host that contains <canvas> layers (WebGL scatter + canvas2D overlays) PLUS HTML/SVG

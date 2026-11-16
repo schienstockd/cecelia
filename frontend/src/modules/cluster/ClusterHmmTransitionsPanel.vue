@@ -232,6 +232,7 @@ useVisualPanel(
       nStates: nStates.value,
     },
   }),
+  exportImage,
 )
 
 // BIDIR PR #4b point-out consumer. Same shape as ClusterHmmStatesPanel. This panel is faceted

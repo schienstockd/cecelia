@@ -31,7 +31,7 @@ const CLAIM_REVIEW_WITHHELD = Dict(
     "list_notebooks" => "the analyst's notebooks", "get_notebook" => "the analyst's notebooks",
     "get_analysis_boards" => "the analyst's other plots", "list_plots" => "the analyst's open plots",
     "list_figures" => "the analyst's figures and captions", "get_landscape" => "the analyst's live viewer",
-    "get_viewer_screenshot" => "the analyst's live viewer")
+    "get_viewer_screenshot" => "the analyst's live viewer", "get_plot_image" => "the analyst's open plots")
 claim_review_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in CLAIM_REVIEW_TOOLS]
 
 claim_review_system_prompt(project_uid::AbstractString) = """

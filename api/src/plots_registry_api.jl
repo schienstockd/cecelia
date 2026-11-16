@@ -285,6 +285,13 @@ function api_viewer_plots_list(req::HTTP.Request)
     200, JSON3.write((; items = items))
 end
 
+# Whether a panel of `plot_id` is registered for the project — `get_plot_image` answers "not open"
+# at once instead of waiting out a request nobody can answer.
+_plot_registered(project_uid::AbstractString, plot_id::AbstractString)::Bool =
+    lock(_PLOTS_LOCK) do
+        haskey(get(_PLOTS_BY_PROJECT, project_uid, Dict{String,PlotEntry}()), plot_id)
+    end
+
 # ── WS disconnect cleanup ─────────────────────────────────────────────────────
 # The first consumer of `register_ws_disconnect_hook!` (server.jl). When a WS socket goes away,
 # drop every entry whose `clientId` matches the socket's stamped id — leaving entries other tabs

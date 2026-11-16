@@ -2126,6 +2126,45 @@ def list_plots(project_uid: str) -> list[dict]:
 
 
 @_gui_tool
+def get_plot_image(project_uid: str, plot_id: str, max_side: int = 1600) -> list:
+    """LOOK at one of the user's open plots: the picture the panel exports (plot only, light theme —
+    what canvas Share and the board PDF use), as the user has it set up: colouring, populations,
+    axes, facets. `plot_id` comes from `list_plots`. Also returns `settings` — what `set_plot_view`
+    can change on this plot: `{<name>: {value, options?, multi?}}` (`{}` = none).
+
+    `max_side` caps the picture's long side in px (never upscales). Nothing changes.
+    `{reason: "not_open"}` ⇒ no panel of that id is open: `list_plots` again, or
+    `open_analysis_board_plot` and ask the user to look. `{reason: "not_on_screen"}` ⇒ the panel's
+    page is open but hidden behind another: ask the user to switch to it. `{error}` ⇒ the panel has
+    nothing drawn yet (still loading): say so, don't retry in a loop. For numbers, use the data
+    tools (see `list_plots`); this is for what the plot LOOKS like — where groups sit, overlap, split.
+    """
+    r = _client.get_plot_image(project_uid, plot_id, max_side)
+    url = r.get("png") or ""
+    if not url:
+        return [{k: v for k, v in r.items() if k != "png"}]
+    meta = {k: v for k, v in r.items() if k != "png"}
+    return [Image(data=base64.b64decode(url.split(",", 1)[1]), format="png"), meta]
+
+
+@_gui_tool
+def set_plot_view(project_uid: str, plot_id: str, settings: dict) -> dict:
+    """CHANGE how one of the user's open plots is drawn — what its own controls change: a UMAP's
+    colouring (`colourBy`, `colourPops`, `colourAttr`), facets, layout; a summary chart's `chartType`,
+    `measure`, `statUnit` … Each name and value must be one `get_plot_image`'s `settings` lists for
+    this plot (take one first); a multi setting takes the full list, e.g.
+    `{"colourBy": "population", "colourPops": ["trackclust::B/movement/fast", …]}`.
+
+    PARTIAL — only the names given change. SAVED as that plot's settings on its board, like a change
+    the user makes by hand — so change only what they asked for, or what you need to look at and
+    say so. Never touches data, gates or populations. Returns `{settings}` after the change
+    (`rejected` = names refused and why; the others still applied); `{reason: "not_open" |
+    "not_on_screen"}` as `get_plot_image`. Then `get_plot_image` to see the result.
+    """
+    return _client.set_plot_view(project_uid, plot_id, settings)
+
+
+@_gui_tool
 def mark_plot(project_uid: str, family: str, plot_id: str,
               u: float, v: float,
               cell: str = "", label: str = "", ttl_s: int = 300) -> dict:

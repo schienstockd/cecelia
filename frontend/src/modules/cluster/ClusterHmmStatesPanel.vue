@@ -204,6 +204,7 @@ useVisualPanel(
     title: props.suffix ? `HMM states (${props.suffix})` : 'HMM states',
     route: _route.path,
   }),
+  exportImage,
 )
 
 // BIDIR PR #4b point-out consumer. Same axis-rect-relative math as ClusterHeatmapPanel; the host
