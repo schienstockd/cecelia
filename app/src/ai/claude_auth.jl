@@ -87,7 +87,7 @@ refuses rather than end it (plan D21) — every logout path funnels through here
 function claude_auth_logout!(profile_dir::AbstractString; timeout_s::Real = 30)::Tuple{Bool,String}
     isempty(profile_dir) && return (false, CLAUDE_DEFAULT_LOGOUT_REFUSED)
     isnothing(agent_bin_path(observer_agent_bin())) &&
-        return (false, "No assistant CLI found.")
+        return (false, CLAUDE_NOT_INSTALLED)
     ok, output = _run_claude_cli(`$(observer_agent_bin()) auth logout`;
                                  profile_dir = String(profile_dir), timeout_s)
     _forget_claude_auth!(profile_dir)
@@ -259,7 +259,7 @@ first (one login in flight per profile). Returns immediately; poll `claude_login
 """
 function claude_login_start!(profile_dir::AbstractString)::Tuple{Bool,String}
     bin = observer_agent_bin()
-    isnothing(agent_bin_path(bin)) && return (false, "No assistant CLI found.")
+    isnothing(agent_bin_path(bin)) && return (false, CLAUDE_NOT_INSTALLED)
     key = String(profile_dir)
     claude_login_cancel!(key)
     isempty(key) || isdir(key) || mkpath(key)

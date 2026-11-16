@@ -54,3 +54,17 @@ export function terminalSetupTooltip(state?: string): string {
   if (state === 'stale') return 'Your terminal\'s Cecelia plugin is out of date — update it'
   return 'Install the Cecelia plugin in Claude Code to chat in a terminal'
 }
+
+// ── What the Cecelia-plugin card in Preferences → Kiwi offers ────────────────────────────────────
+// Setting up the plugin runs Claude Code's own CLI, so with no CLI there is nothing to set up yet:
+// the card points at the install page instead. Neither Set up nor the `claude --mcp-config` fallback
+// line can work without the CLI — offering them is how a user ended up with a command they couldn't run.
+export type PluginCardAction = 'install-cli' | 'setup' | 'resync' | null
+
+/** `available` = the `claude` CLI was found; `state` = `terminal.state` from /api/observer/status. */
+export function pluginCardAction(available: boolean, state?: string): PluginCardAction {
+  if (observerSetupReason(available, false) === 'missing') return 'install-cli'
+  // Unlike Kiwi's row, the card offers nothing until the config has been read (or once it's current).
+  if (state !== 'missing' && state !== 'stale' && state !== 'shadowed') return null
+  return terminalCta(available, state) === 'resync' ? 'resync' : 'setup'
+}
