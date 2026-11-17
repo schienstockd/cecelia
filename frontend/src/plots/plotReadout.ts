@@ -1,6 +1,7 @@
 import type { ComparisonsResult } from './types'
 import { statsInfoOf, emptyStatsInfo, type StatsInfo } from './statsInfo'
 import type { AutoOverride } from './autoOverride'
+import type { VisControl } from './plotControls'
 
 /**
  * Everything the population picker needs to REPORT about the active plot's last render.
@@ -16,20 +17,27 @@ import type { AutoOverride } from './autoOverride'
 export interface PlotReadout {
   stats: StatsInfo              // which test ran, and why `auto` chose it
   overrides: AutoOverride[]     // settings the renderer had to substitute
+  // the settings this plot reacts to (plots/plotControls.ts); null = not declared → the rail shows all
+  controls: VisControl[] | null
   // the populations (`<value_name><path>`) the plot has data for, when that is narrower than what the
   // picker lists — a per-image metric's run scored only some. `null` = every listed population.
   available: string[] | null
 }
 
-export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [], available: null })
+export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [], controls: null, available: null })
 
 export function readoutOf(
   cmp: ComparisonsResult | undefined | null,
   overrides: AutoOverride[] = [],
+  controls: VisControl[] | null = null,
   available: string[] | null = null,
 ): PlotReadout {
-  return { stats: statsInfoOf(cmp), overrides, available }
+  return { stats: statsInfoOf(cmp), overrides, controls, available }
 }
+
+/** Does the active plot react to this setting? Undeclared (a plot that reports none) → yes. */
+export const offers = (r: PlotReadout | undefined, c: VisControl): boolean =>
+  !r?.controls || r.controls.includes(c)
 
 /** Can the plot draw this population? (`readout.available`; no readout or `null` = yes) */
 export const popAvailable = (r: PlotReadout | undefined, valueName: string, path: string): boolean =>

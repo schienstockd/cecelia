@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readoutOf, emptyReadout, overrideFor, popAvailable } from './plotReadout'
+import { readoutOf, emptyReadout, overrideFor, offers, popAvailable } from './plotReadout'
 import { xRotationOverride, transformOverride } from './autoOverride'
 import type { ComparisonsResult } from './types'
 
@@ -44,16 +44,29 @@ describe('overrideFor', () => {
   })
 })
 
+describe('offers', () => {
+  it('lets a plot that declares its settings hide the rest', () => {
+    const r = readoutOf(null, [], ['legend', 'title'])
+    expect(offers(r, 'legend')).toBe(true)
+    expect(offers(r, 'logScale')).toBe(false)
+  })
+
+  it('shows everything for a plot that declares nothing', () => {
+    expect(offers(emptyReadout(), 'logScale')).toBe(true)
+    expect(offers(undefined, 'pointSize')).toBe(true)
+  })
+})
+
 describe('popAvailable — which picker rows the active plot can draw', () => {
   it('allows every population when the plot does not narrow them', () => {
     expect(popAvailable(undefined, 'B', '/qc')).toBe(true)
     expect(popAvailable(emptyReadout(), 'B', '/qc')).toBe(true)
   })
   it('allows only the populations the run scored, keyed as the run stores them', () => {
-    const r = readoutOf(null, [], ['B/qc', 'T/'])
+    const r = readoutOf(null, [], null, ['B/qc', 'T/'])
     expect(popAvailable(r, 'B', '/qc')).toBe(true)
     expect(popAvailable(r, 'T', '/')).toBe(true)
     expect(popAvailable(r, 'B', '/other')).toBe(false)
-    expect(popAvailable(readoutOf(null, [], []), 'B', '/qc')).toBe(false)   // a run that scored nothing
+    expect(popAvailable(readoutOf(null, [], null, []), 'B', '/qc')).toBe(false)   // a run that scored nothing
   })
 })

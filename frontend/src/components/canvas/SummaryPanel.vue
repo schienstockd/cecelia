@@ -29,6 +29,7 @@ import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
+import { visControlsFor } from '../../plots/plotControls'
 import { statsNotice } from '../../plots/statsInfo'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
@@ -297,8 +298,9 @@ const groupBy = computed<string>({ get: () => props.ui.groupBy ?? props.spec.dat
 // violin, strip). The controls live on the shared PlotOptions panel (pop-manager rail) so a Global
 // scope applies to every plot on the canvas; here we just READ vis.stats* to shape the request body
 // and the render flags. Off by default (see defaultVis).
-const STATS_CHARTS = new Set<ChartType>(['bar', 'boxplot', 'violin', 'strip'])
-const canCompareGroups = computed(() => STATS_CHARTS.has(chartType.value))
+// (a chart grouped by time draws a trend line, which shows no comparison — so none is requested)
+const canCompareGroups = computed(() =>
+  visControlsFor({ chartType: chartType.value, trend: timeSeries.value }).includes('stats'))
 // drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col).
 // Only once the columns have actually loaded (groupByOpts non-empty) — otherwise the transient empty
 // list during an async reload would wipe a valid selection (e.g. per-timepoint `t`) and it'd "cycle".
@@ -674,8 +676,11 @@ const overrideTip = computed(() =>
 // server-side from the group count, so the picker can show neither — report both up and the shared
 // Stats options echo the name under the Test select, with the basis as its tooltip. One object, so a
 // host can't thread the name and forget the reason.
-const readout = computed<PlotReadout>(() => readoutOf(result.value?.comparisons, autoOverrides.value,
-  metricPicksPops.value ? (result.value?.pops ?? []) : null))
+// …and which shared settings this plot reacts to, so the rail offers only those (plots/plotControls.ts)
+const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value }))
+const readout = computed<PlotReadout>(() =>
+  readoutOf(result.value?.comparisons, autoOverrides.value, visControls.value,
+    metricPicksPops.value ? (result.value?.pops ?? []) : null))
 // QC on the comparison drawn here (cells as replicates, too few images): it undermines the p-values on
 // the plot, so it shows on the plot, not only in the options popover (plots/statsInfo.ts).
 const statsNote = computed(() => statsNotice(readout.value.stats, !!vis.value?.statsEnabled))

@@ -59,8 +59,8 @@ cecelia-autonomous server — an unattended run, or one with no GUI: there, its 
 start what you design here.) If \
 these tools cannot reach Cecelia, say so; do not try to install, register or configure anything.
 
-Editing Cecelia itself? A new step is a custom module (docs/CUSTOM_MODULES.md). Never hand-edit its \
-code, ccid.json or stores; updates overwrite edits, so report fixes with the patch."""
+Never hand-edit or work around Cecelia's code, ccid.json or stores; call report_issue on a bug or \
+gap. A new step is a custom module (docs/CUSTOM_MODULES.md)."""
 
 # ── Delivered by get_session_briefing — the working rules ─────────────────────────────────────────
 #
@@ -210,6 +210,11 @@ build them or to test them. When the user's data matches one, say so and give it
 them the feature-request link in get_guide("request-a-feature"). Hand over the link, never file an \
 issue yourself, and keep project names, uids and paths out of what you suggest they write: the \
 repository is public.
+
+WHEN CECELIA IS THE PROBLEM — a tool or task fails in a way that looks like Cecelia's fault, a \
+result cannot be right, or the only way on is to script around these tools or edit Cecelia's files: \
+call report_issue instead (a gap you would route around is kind `missing`). Give the user its draft \
+path and link, and stop unless they ask you to go on (`workaround` records which).
 
 WHEN AN IMAGE LOOKS OFF AND THE QUESTION IS THE ACQUISITION ("darker with depth", "noisy", "why does \
 it clip"). get_image_info has what the microscope was ASKED to do (`acquisition`: power, Bright Z, \

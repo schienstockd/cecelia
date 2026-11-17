@@ -16,12 +16,13 @@ export const IN_APP_SHOTS: ShotSet = {
   fixture: { projects: { spleen: SPLEEN_TIMELAPSE, lymphoid: LYMPHOID_SECTION } },
   shots: [
     {
-      // What's new, #2097: the Checks group in the action bar.
+      // What's new, #2097: the Checks group in the action bar — on a page that checks a cohort, so all
+      // three show (Cohort only appears where the page banks cohort metrics).
       id: 'app-checks',
       project: 'spleen',
-      route: '/manage-images',
+      route: '/segment',
       crop: ['images.checks'],
-      expect: [{ anchor: 'images.checks', text: 'Checks' }, { anchor: 'images.checks', text: 'Acquisition' }],
+      expect: [{ anchor: 'images.checks', text: 'Checks' }, { anchor: 'images.checks', text: 'Acquisition' }, { anchor: 'images.checks', text: 'Cohort' }],
     },
     {
       // Tip: segmentation.

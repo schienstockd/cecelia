@@ -29,6 +29,7 @@ import base64
 import functools
 import json
 import os
+import time
 
 from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
@@ -36,11 +37,13 @@ from mcp.server.mcpserver.exceptions import ToolError
 from cecelia.utils import loopback
 from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
-from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
+from cecelia_mcp.client import ApiError, CeceliaClient
 from cecelia_mcp.discovery import discovery_enabled
 from cecelia_mcp.gating_views import register_gating_tools, with_doc
 from cecelia_mcp.figure_tools import register_figure_tools
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
+from cecelia_mcp import issue_report
+from cecelia_mcp.issue_report import failure_text
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.tool_kinds import annotations_for
@@ -123,19 +126,23 @@ def _fill_discovery_slot(fn) -> None:
 
 
 def _tool(fn):
-    """`@mcp.tool()`, with the client's anticipated failures passed to the model as `ToolError`.
+    """`@mcp.tool()`, with every failure passed to the model as `ToolError`.
 
     mcp 2.x shows the model only `Error executing tool <name>` for any other exception, which would
     hide the client's messages written for it ("cannot reach Cecelia API … Is `pixi run dev`
-    running?", the API's own `{error: …}`, a disallowed route). A genuine crash still stays opaque.
+    running?", the API's own `{error: …}`, a disallowed route). A server error or a crash also says
+    to call report_issue (`issue_report.failure_text`): that is where a session decides whether to
+    work around Cecelia.
     """
     _fill_discovery_slot(fn)
     @functools.wraps(fn)
     def wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except (ApiError, DisallowedRoute) as e:
-            raise ToolError(str(e)) from e
+        except ToolError:
+            raise
+        except Exception as e:
+            raise ToolError(failure_text(e)) from e
     # Its kind (tools.json) as MCP's read-only / destructive hints — and a tool missing there fails here.
     return mcp.tool(annotations=annotations_for(fn.__name__))(wrapped)
 
@@ -425,7 +432,90 @@ def get_task_history(project_uid: str, limit: int = 100) -> dict:
     detector (`poll_observations`) starts empty each run, so it won't have older failures. Cross-check
     `get_task_log` / `get_recent_logs` for the actual error before surfacing."""
     r = _client.get_task_history(project_uid, limit)
-    return {k: r.get(k) for k in ("count", "total", "truncated", "history")}
+    out = {k: r.get(k) for k in ("count", "total", "truncated", "history")}
+    return issue_report.note_failed_runs(
+        out, any((h or {}).get("runStatus") == "failed" for h in out.get("history") or []))
+
+
+# report_issue — the session's exit when Cecelia is the problem (issue_report.py has the why).
+# One server process is one session, so this is the "already reported" memory a stuck loop runs into.
+_REPORTED: dict[str, str] = {}
+_REPORT_LOG_BYTES = 6000
+
+
+def _reports_dir() -> str:
+    """Where drafts go: `<config_dir>/issue-reports/`, beside the user's other Cecelia config."""
+    return os.path.join(loopback.config_dir(), "issue-reports")
+
+
+def _report_context(project_uid: str, image_uid: str, fun: str) -> dict:
+    """What the server attaches to a report: the running version, the platform, and — when the report
+    names a run — that run's params and log tail, plus the names to redact from the public link.
+    Each part is best-effort: a report about an app that will not answer must still be writable."""
+    ctx: dict = {"version": None, "platform": issue_report.pixi_platform(), "params": None,
+                 "log": "", "names": [project_uid, image_uid]}
+    try:
+        ctx["version"] = _client.get_version().get("version")
+    except ApiError:
+        pass
+    if project_uid:
+        try:
+            ctx["names"] += [p.get("name") for p in _client.get_projects().get("projects", [])
+                             if p.get("uid") == project_uid]
+        except ApiError:
+            pass
+    if project_uid and image_uid and fun:
+        try:
+            row = next((h for h in _client.get_task_history(project_uid, 200).get("history") or []
+                        if h.get("imageUid") == image_uid and h.get("fun") == fun), None)
+            if row:
+                ctx["params"] = row.get("params")
+                ctx["names"].append(row.get("imageName"))
+            ctx["log"] = _client.get_task_log(project_uid, image_uid, fun, _REPORT_LOG_BYTES).get("content", "")
+        except ApiError:
+            pass
+    ctx["names"] = [n for n in ctx["names"] if n]
+    return ctx
+
+
+@_tool
+def report_issue(kind: str, title: str, tried: str, observed: str, expected: str, workaround: str,
+                 workaround_note: str = "", project_uid: str = "", image_uid: str = "", fun: str = "",
+                 patch: str = "") -> dict:
+    """Report a Cecelia bug or gap INSTEAD of working around it. Call it when a Cecelia tool or task
+    fails in a way that looks like Cecelia's fault, gives a result that cannot be right, or cannot do
+    what the user needs — before hand-editing Cecelia's code, ccid.json or stores, writing data
+    files yourself, or scripting around these tools.
+
+    `kind`: bug · missing · unclear-docs · unexpected-result. `title`: one line. `tried`: the calls
+    and arguments. `observed` / `expected`: what happened, what should have. `workaround`, what you do
+    next: `stopped` · `proceeding-user-asked` · `proceeding-unasked`, and `workaround_note` says what
+    the workaround is. Pass `project_uid` + `image_uid` + `fun` (e.g. "segment.cellpose") when it is
+    about a run: the run's settings and log tail are attached. `patch`: a diff, only if you have one.
+
+    Saves a full draft on this machine and returns its `draft` path and an `issueUrl`: the public bug
+    form, prefilled, with paths, project and image names redacted. Give the user both. They review
+    and submit it; never submit it yourself. The same report twice in a session is not saved again."""
+    if kind not in issue_report.KINDS:
+        raise ToolError(f"kind must be one of {', '.join(issue_report.KINDS)}")
+    if workaround not in issue_report.WORKAROUNDS:
+        raise ToolError(f"workaround must be one of {', '.join(issue_report.WORKAROUNDS)}")
+    fp = issue_report.fingerprint(kind, tried, observed, expected, fun)
+    if fp in _REPORTED:
+        return {"duplicate": True, "draft": _REPORTED[fp],
+                "next": "Already reported in this session. Do not report it again or work around it: "
+                        "tell the user it is blocked on this report, and stop."}
+    ctx = _report_context(project_uid, image_uid, fun)
+    r = {"id": fp, "at": time.strftime("%Y-%m-%d %H:%M"), "kind": kind, "title": title.strip(),
+         "tried": tried, "observed": observed, "expected": expected, "workaround": workaround,
+         "workaround_note": workaround_note, "fun": fun, "patch": patch,
+         **{k: ctx[k] for k in ("version", "platform", "params", "log")}}
+    draft = issue_report.save_draft(_reports_dir(), r)
+    _REPORTED[fp] = draft
+    nxt = ("Tell the user what broke and give them the draft path and the link; they submit it. "
+           + ("Then carry on with the workaround they asked for." if workaround == "proceeding-user-asked"
+              else "Then stop: do not work around it unless the user asks you to."))
+    return {"id": fp, "draft": draft, "issueUrl": issue_report.issue_url(r, ctx["names"]), "next": nxt}
 
 
 @_tool
