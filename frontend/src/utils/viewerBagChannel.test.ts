@@ -25,6 +25,12 @@ describe('decodeViewerBagEvent', () => {
       .toEqual({ kind: 'branchVis', value: v })
   })
 
+  it('decodes neighbour-graph visibility', () => {
+    const v = { 'img-A': { network: true } }
+    expect(decodeViewerBagEvent('cc.viewerGraphVisibility', JSON.stringify(v)))
+      .toEqual({ kind: 'graphVis', value: v })
+  })
+
   it('decodes per-set prefs', () => {
     const v = { 'set-A': { colourBy: 'HMM_state', show3D: true, pointSize: 8 } }
     expect(decodeViewerBagEvent('cc.viewerSetPrefs', JSON.stringify(v)))

@@ -50,6 +50,7 @@ import { usePlotResize, observeBoxChanges } from '../composables/usePlotResize'
 import { useVwPlayback } from '../composables/useVwPlayback'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
+import { rafCoalesce } from '../utils/rafCoalesce'
 import {
   createVolumeRenderer, WebGpuUnavailable,
   // Kiln brick renderer (KILN_BRICK_PLAN.md P5) — dev-flagged via `?bricks=1`. Same interface
@@ -104,8 +105,8 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
-  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE,
-  type SkeletonPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl,
+  type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
          isTrackDrawable, type TrackColorMode } from '../utils/viewerOverlays'
@@ -866,6 +867,7 @@ const specSource: DrawSpecSource = {
   get labelNames() { return meta.value?.labelNames ?? [] },
   get trackNames() { return cellTableNames() },
   get branchNames() { return meta.value?.branchNames ?? [] },
+  get spatialGraphNames() { return meta.value?.spatialGraphNames ?? [] },
   get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
   get nZ() { return meta.value?.nZ ?? 0 },
   get version() { return meta.value?.valueName ?? valueName.value ?? '' },
@@ -2065,7 +2067,7 @@ function rebuildOverlays() {
     trackSpeedRange.value = null
   }
   // the skeletons ride in the same buffer, after the tracks (`appendSkeletonLines`)
-  segments = appendSkeletonLines(segments, shownSkeletons(), meta.value)
+  segments = appendSkeletonLines(segments, [...shownSkeletons(), ...shownGraphs()], meta.value)
   segCount.value = segments.count
   // Whichever renderer owns the canvas draws them — the volume ones or the 2D tile one.
   if (renderer.value) seedRendererOverlays(renderer.value, points, segments)
@@ -2240,6 +2242,44 @@ async function loadSkeletons(force = false) {
   rebuildOverlays()
 }
 watch(() => skeletonVns.value.join('\n'), () => { void loadSkeletons() })
+
+/** Each shown neighbour graph's edges (`/api/viewer/spatial-graphs`), by run suffix — the skeletons'
+ *  lifecycle: fetched once per graph, dropped when its switch goes off, refetched after a task. */
+const graphPayloads = ref<Map<string, SpatialGraphPayload>>(new Map())
+const graphSuffixes = computed(() => {
+  const vis = spec.graphVisible
+  return (meta.value?.spatialGraphNames ?? []).filter(sfx => vis[sfx])
+})
+const shownGraphs = () => graphSuffixes.value.flatMap(sfx => {
+  const payload = graphPayloads.value.get(sfx)
+  return payload ? [{ payload, colour: spec.graphColour, width: spec.graphWidth }] : []
+})
+async function loadGraphs(force = false) {
+  if (!projectUid || !imageUid) return
+  const want = graphSuffixes.value
+  const next = new Map<string, SpatialGraphPayload>()
+  await Promise.all(want.map(async sfx => {
+    const cached = force ? undefined : graphPayloads.value.get(sfx)
+    if (cached) { next.set(sfx, cached); return }
+    try {
+      const res = await fetch(spatialGraphsUrl({ projectUid, imageUid, suffix: sfx }), { cache: 'no-store' })
+      if (!res.ok) return
+      const payload = await res.json() as SpatialGraphPayload
+      next.set(sfx, payload)
+      // edges it could not draw (across frames, cells gone from their table): say so
+      if (payload.note) overlaysErr.value = `Graph ${sfx}: ${payload.note}`
+    } catch { /* no lines for this one; the rest still draw */ }
+  }))
+  if (want.join('\n') !== graphSuffixes.value.join('\n')) return
+  graphPayloads.value = next
+  rebuildOverlays()
+}
+watch(() => graphSuffixes.value.join('\n'), () => { void loadGraphs() })
+// A new colour or width redraws the lines already fetched — no refetch. The width slider writes on
+// release, and the redraw is coalesced to one per frame, so a burst of picks rebuilds the buffer once.
+const graphRestyle = rafCoalesce(() => { if (graphSuffixes.value.length) rebuildOverlays() })
+watch(() => [spec.graphColour, spec.graphWidth], () => graphRestyle.schedule())
+onUnmounted(() => graphRestyle.cancel())
 
 async function loadTracks() {
   if (!projectUid || !imageUid) return
@@ -5190,6 +5230,7 @@ watch(meta, m => {
     labelNames: m.labelNames ?? [],
     trackNames: cellTableNames(),
     branchNames: m.branchNames ?? [],
+    spatialGraphNames: m.spatialGraphNames ?? [],
   })
 })
 
@@ -5465,6 +5506,8 @@ async function applyCacheClear(job: CacheClearJob): Promise<void> {
     }
     // a branching re-run rewrites the lines under the same name
     void loadSkeletons(true)
+    // a re-run neighbour graph rewrites its edges under the same suffix
+    void loadGraphs(true)
     // A rewritten mask: its new stamp moves `maskSourceId`, whose watcher refetches the mask alone.
     if (reload === 'mask') maskRev.value = job.rev
     return
@@ -6355,6 +6398,7 @@ onUnmounted(() => {
       <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="overlayClearTop"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :branch-names="meta.branchNames ?? []"
+                        :graph-names="meta.spatialGraphNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes" />
       <!-- The navigation widget (overview in 2D, axes in 3D), top right on its own; its height is
@@ -6458,7 +6502,8 @@ onUnmounted(() => {
                                v-model:hidden="maskHidden" :shown-label-count="shownLabelCount"
                                :label-name="labelName" :colour-note="maskColourNote"
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
-                               :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1" @redraw="frame.redraw()" />
+                               :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1"
+                               :graph-shown="graphSuffixes.length > 0" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
                               :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"

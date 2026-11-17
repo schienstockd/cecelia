@@ -272,6 +272,7 @@ end
         "/api/viewer/overlays",
         "/api/viewer/pop-types",
         "/api/viewer/skeletons",
+        "/api/viewer/spatial-graphs",
         "/api/viewer/props",   # GET; the POST at the same path is the autosave, listed below
         "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
         "/api/viewer/capture",    # bidir share-in read one; POST at same path writes (below)
@@ -508,7 +509,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 126 && length(POST_ROUTES) == 201
+    @test length(GET_ROUTES) == 127 && length(POST_ROUTES) == 201
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

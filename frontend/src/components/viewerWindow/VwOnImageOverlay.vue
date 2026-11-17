@@ -5,7 +5,7 @@
   by, a highlight to clear. HOW it looks (eyes per row, size,
   opacity, colour) stays in the right sidebar's sections; a slider or a colour does not belong here.
 
-  The switches write the per-image (label, track, skeleton and label-file visibility) and per-set (`popVisible`,
+  The switches write the per-image (label, track, skeleton, neighbour-graph and label-file visibility) and per-set (`popVisible`,
   `showGatedTracks`) settings that movies and stills read, so they still match (`drawSpec.ts` RECORDED). The window watches
   those settings and refetches; this component owns only the placement, the rows and the fold.
 
@@ -38,6 +38,8 @@ const props = defineProps<{
   trackNames: string[]
   /** skeletons (`segment.branching`) with drawable lines — from the viewer's meta */
   branchNames: string[]
+  /** neighbour graphs (`spatialAnalysis.cellNeighbours`), by run suffix — from the viewer's meta */
+  graphNames: string[]
   /** each segmentation's derived files (halo, nuc), outlined on its mask */
   labelFiles: Record<string, string[]>
   /** masks that do not fit the shown image version (the window publishes it) */
@@ -83,6 +85,11 @@ const branchVis = computed(() => props.imageUid ? settings.getBranchVisibility(p
 function setBranch(vn: string, v: boolean) {
   if (props.imageUid) settings.setBranchVisibility(props.imageUid, { ...branchVis.value, [vn]: v })
 }
+// Neighbour graphs: each edge a line, each graph on or off (`settings.getGraphVisibility`, default off)
+const graphVis = computed(() => props.imageUid ? settings.getGraphVisibility(props.imageUid, props.graphNames) : {})
+function setGraph(sfx: string, v: boolean) {
+  if (props.imageUid) settings.setGraphVisibility(props.imageUid, { ...graphVis.value, [sfx]: v })
+}
 // Which segmentations have tracks (a `track_id` column) — the tracks button is off without them.
 const { trackedNames } = useTrackValueNames(toRef(props, 'projectUid'), toRef(props, 'imageUid'), ref(''))
 const hasTracks = (vn: string) => trackedNames.value.includes(vn) || !!trackVis.value[vn]
@@ -111,6 +118,7 @@ const setColourBy = (c: string) => { if (props.setUid) settings.setColourBy(prop
 const summary = computed(() => [
   ...props.labelNames.filter(vn => labelVis.value[vn]),
   ...props.branchNames.filter(vn => branchVis.value[vn]).map(vn => `${vn} skeleton`),
+  ...props.graphNames.filter(sfx => graphVis.value[sfx]).map(sfx => `${sfx} graph`),
   ...switches.value.popTypes.filter(popOn).map(label),
   ...(props.timecourse && switches.value.cellTrackRibbons && ribbonsOn.value ? ['cell-track ribbons'] : []),
   ...(props.timecourse && switches.value.trackClusterRibbons && popOn('trackclust') ? ['track-cluster ribbons'] : []),
@@ -174,6 +182,11 @@ const summary = computed(() => [
           <span v-for="(name, t) in BRANCH_TYPE_NAMES" :key="name">
             <span class="vw-onimg-swatch" :style="{ background: branchTypeColour(t) }" />{{ name }}</span>
         </div>
+      </div>
+      <div v-if="graphNames.length" class="vw-onimg-group">
+        <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Neighbour graph edges as lines'">Neighbour graphs</div>
+        <CcToggle v-for="sfx in graphNames" :key="sfx" class="cc-fs-2xs" :label="sfx"
+                  :model-value="!!graphVis[sfx]" @update:model-value="v => setGraph(sfx, v)" />
       </div>
       <div v-if="switches.popTypes.length" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Population types drawn as points'">Populations</div>

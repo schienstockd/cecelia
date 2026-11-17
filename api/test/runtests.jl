@@ -301,6 +301,8 @@ include(joinpath(@__DIR__, "suite", "movie_rail_translators.jl"))
 # (VIEWER_PARITY 1+2). Path expression uses API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
 include(joinpath(@__DIR__, "suite", "skeleton_lines.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_graph_lines.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_graph_stale.jl"))   # RESULT-REVIEW result-090b69ae
 
 # ── /api/tasks/validate + /api/cell_cards + _require_ids testsets ─
 # Three testsets: /api/tasks/validate wiring (form-time advisory), /api/cell_cards metadata + sidecar

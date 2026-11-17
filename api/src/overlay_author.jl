@@ -806,6 +806,8 @@ The plan half of an overlays dict (`_overlays_raw_from_config`, either key spell
     *Colour* on track clusters: `["trackclust"]`); empty = `pop_types` (`mask_pop_scope`);
   * `track_colours` — the viewer's Tracks-legend colours, keyed as its sources are (`vn`,
     `vn::path`, `vn::popType::path`, `vn::trackclust::path`);
+  * `skeletons` / `spatial_graphs` — `(name, colour)` lines drawn static: a look's skeletons and
+    neighbour graphs (`plan_draws_lines`);
   * `pop_eyes` / `ribbon_eyes` — a viewer look's point and ribbon eyes (`parse_look_eyes`); empty for
     a batch. A pop with an eye draws by it, whatever its `show`; a ribbon eye outranks
     `hidden_track_pops`, which is path-only.
@@ -840,8 +842,15 @@ function overlay_track_plan(ov)
     skeletons = sk_raw isa AbstractDict ?
         sort!(Tuple{String,String}[(String(k), v isa AbstractString ? String(v) : "") for (k, v) in sk_raw]) :
         Tuple{String,String}[]
+    # the neighbour graphs drawn as lines, `{suffix => colour}` (a look's `spatialGraphs`, `spatial_graph_segments`)
+    sg_raw = g("spatialGraphs", nothing)
+    spatial_graphs = sg_raw isa AbstractDict ?
+        sort!(Tuple{String,String}[(String(k), v isa AbstractString ? String(v) : "") for (k, v) in sg_raw]) :
+        Tuple{String,String}[]
+    gw = g("spatialGraphWidth", nothing)
+    spatial_graph_width = gw isa Real && gw > 0 ? Float64(gw) : SPATIAL_GRAPH_WIDTH
     rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes,
-              ribbon_eyes, skeletons)
+              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -985,12 +994,21 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     end
 
     # Skeletons — static lines, each frame's own (`skeleton_segments`, the viewer's reader too)
-    skels = Tuple{SkeletonSegments,Union{Nothing,RGB{N0f8}}}[]
+    # (lines, colour — nothing = by branch type, end-timepoint lane — `static_line_t1`)
+    skels = Tuple{SkeletonSegments,Union{Nothing,RGB{N0f8}},Float64}[]
     for (svn, col) in get(plan, :skeletons, Tuple{String,String}[])
         s = skeleton_segments(img, svn)
         s === nothing && (@warn "skeleton '$svn' has no drawn lines — re-run branching" image = img.uid; continue)
         length(s) == 0 && continue
-        push!(skels, (s, col == SKELETON_BY_TYPE || isempty(col) ? nothing : rgb(col)))
+        push!(skels, (s, col == SKELETON_BY_TYPE || isempty(col) ? nothing : rgb(col), static_line_t1(nothing)))
+    end
+    # Neighbour graphs — the same static lines, one per edge (`spatial_graph_segments`, the viewer's reader)
+    for (sfx, col) in get(plan, :spatial_graphs, Tuple{String,String}[])
+        gs = spatial_graph_segments(img, sfx)
+        gs === nothing && (@warn "neighbour graph '$sfx' is gone — re-run the graph" image = img.uid; continue)
+        length(gs) == 0 && continue
+        push!(skels, (gs.segs, rgb(isempty(col) ? SPATIAL_GRAPH_COLOUR : col),
+                      static_line_t1(get(plan, :spatial_graph_width, SPATIAL_GRAPH_WIDTH))))
     end
 
     sources = vcat(seg_srcs, gated_srcs, tc_srcs)
@@ -1008,6 +1026,27 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     end
 end
 
+# A neighbour graph's line colour when a look names none — the viewer's `SPATIAL_GRAPH_COLOUR`.
+const SPATIAL_GRAPH_COLOUR = "#ffffff"
+# (its default width, `SPATIAL_GRAPH_WIDTH`, is shared with the viewer through `shader_constants.jl`)
+
+"""
+    static_line_t1(width) -> Float64
+
+A static line's end-timepoint lane (`t1`): -1 draws it unfaded at the tail width (a skeleton); a line
+with its own `width` carries -(1 + width), which `lineWidth` (`shaders/overlay_quads.wgsl`) reads back
+— the viewer's `staticLineTEnd`.
+"""
+static_line_t1(width) = width isa Real && width > 0 ? -(1.0 + width) : -1.0
+
+"""
+    plan_draws_lines(plan) -> Bool
+
+Whether an `overlay_track_plan` draws static lines — skeletons or neighbour graphs — which, like
+tracks, need the overlay closure even with no pops or mask.
+"""
+plan_draws_lines(plan) = !isempty(plan.skeletons) || !isempty(get(plan, :spatial_graphs, ()))
+
 # A look's skeleton colour meaning "by branch type" — the viewer's `SKELETON_BY_TYPE`, and what it
 # always sends: each line takes its branch's skan type colour (`branch_type_colour`).
 const SKELETON_BY_TYPE = "branchType"
@@ -1023,23 +1062,24 @@ branch_type_colour(type::Integer) =
     0 <= type < length(_PALETTES_DATA.branch) ? _PALETTES_DATA.branch[type + 1] : RGB{N0f8}(1, 1, 1)
 
 # One frame's tail segments with the skeletons' lines appended, every segment with its `plane` (the
-# plane it draws on; -1 = every plane, a Z-flattened skeleton). A skeleton line's `t1` is -1: the
-# shader draws it unfaded (`tailAlpha`), as the viewer does (`appendSkeletonLines`).
+# plane it draws on; -1 = every plane, a Z-flattened skeleton). A static line's `t1` is negative: the
+# shader draws it unfaded (`tailAlpha`), as the viewer does (`appendSkeletonLines`) — -1 at the tail
+# width, a graph's -(1 + width) at its own (`static_line_t1`).
 function _with_skeleton_lines(sg, skels, t::Int)
     isempty(skels) && return sg === nothing ? nothing : merge(sg, (; plane = floor.(Float64.(sg.z1))))
     x0 = Float64[]; y0 = Float64[]; z0 = Float64[]; x1 = Float64[]; y1 = Float64[]; z1 = Float64[]
-    cs = RGB{N0f8}[]; t1 = Int[]; tail = Int[]; plane = Float64[]
+    cs = RGB{N0f8}[]; t1 = Float64[]; tail = Int[]; plane = Float64[]
     if sg !== nothing
         append!(x0, sg.x0); append!(y0, sg.y0); append!(z0, sg.z0)
         append!(x1, sg.x1); append!(y1, sg.y1); append!(z1, sg.z1)
         append!(cs, sg.colour); append!(t1, sg.t1); append!(tail, sg.tail)
         append!(plane, floor.(Float64.(sg.z1)))
     end
-    for (s, c) in skels
+    for (s, c, tend) in skels
         idx = skeleton_segments_at(s, t)
         append!(x0, s.x0[idx]); append!(y0, s.y0[idx]); append!(z0, s.z0[idx])
         append!(x1, s.x1[idx]); append!(y1, s.y1[idx]); append!(z1, s.z1[idx])
-        append!(cs, c === nothing ? branch_type_colour.(s.type[idx]) : fill(c, length(idx))); append!(t1, fill(-1, length(idx))); append!(tail, zeros(Int, length(idx)))
+        append!(cs, c === nothing ? branch_type_colour.(s.type[idx]) : fill(c, length(idx))); append!(t1, fill(tend, length(idx))); append!(tail, zeros(Int, length(idx)))
         append!(plane, Float64.(s.plane[idx]))
     end
     (; x0, y0, z0, x1, y1, z1, colour = cs, t1, tail, plane)
