@@ -141,9 +141,12 @@ to every session (`mcp/cecelia_mcp/guidance.py`); this is the long form.
   makes on every write: atomic writes, name collisions, versioning. If a task already does the job, use
   it; importing a label image made elsewhere is **Segment → Import labels** (`segment.importLabels`).
   If none does, that's a custom module or a report.
-- **Fixed a bug locally?** Keep working, but the next update overwrites the patch. Send it to the maintainer as a
-  report with the patch attached ([`USER_REPORTS.md`](../USER_REPORTS.md) is how reports are handled).
-  The cause is verified on `main` before anything ships, and the fix then reaches everyone.
+- **Hit a bug, or a gap you'd have to work around?** The session calls `report_issue` instead of working
+  around it. That saves a full draft on your machine (`<config dir>/issue-reports/`) and gives you a
+  prefilled link to the bug form, with file paths and project and image names taken out. You read it and
+  submit it; nothing is posted for you. A fix the session wrote goes in as the patch: the next update
+  would overwrite it locally, while a report gets the cause verified on `main` and the fix to everyone.
+  The session then stops unless you tell it to go on, and the report records which.
 - **Just looking at your data, or making a figure?** Read it through Cecelia's accessors (`init_object`,
   `pop_df`, `label_props`) or ask for a notebook (Notebooks page). Nothing goes back into the project
   except through a task.

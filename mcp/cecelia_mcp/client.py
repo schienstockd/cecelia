@@ -69,6 +69,7 @@ ALLOWED_ROUTES = frozenset(
                                          # until one matched. Read-only, no lastOpenedAt bump.
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
+        ("GET", "/api/version"),          # the running version, stamped on a report_issue draft
         ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
         ("GET", "/api/plots/definitions"),  # available plot types (chart types, data needs, scope modes)
         ("GET", "/api/plots/attrs"),     # per-set image ATTRIBUTES (name + distinct values) — the axes a
@@ -406,6 +407,10 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         return self._request(
             "GET", "/api/tasks/history", {"projectUid": project_uid, "limit": limit}
         )
+
+    def get_version(self) -> dict:
+        """`{version, installed}` of the running app."""
+        return self._request("GET", "/api/version")
 
     def get_module_params(self, category: str | None = None, fun_name: str | None = None):
         # Task param SPECS (valid ranges/defaults/types), project-independent. Optional `category`

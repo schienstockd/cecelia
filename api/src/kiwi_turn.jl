@@ -45,6 +45,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "get_observer_stats" => "runtime, not project data", "get_recent_logs" => "runtime, not project data",
     "get_repl_api" => "developer API reference, not project data",
     "register_push_target" => "pairing", "set_observer_active" => "write",
+    "report_issue" => "write — a draft file on this machine",
     "append_lab_log" => "write", "create_blackboard_entry" => "write", "revise_blackboard_entry" => "write",
     "set_blackboard_status" => "write", "set_blackboard_outcome" => "write",
     "set_blackboard_section_outcome" => "write", "create_chain" => "write", "state_claim" => "write",

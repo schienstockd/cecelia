@@ -98,6 +98,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'builds', label: 'Your LabArchives context, saved to the project', tools: ['set_labarchives_context'], kiwi: false, terminal: true },
   // Claude Code's own file tools, not an MCP tool — Kiwi runs with none (`--tools ""`)
   { group: 'builds', label: 'A custom module for a missing step', tools: [], kiwi: false, terminal: true },
+  { group: 'builds', label: 'A bug report for you to send, instead of a workaround', tools: ['report_issue'], kiwi: false, terminal: true },
 ]
 
 /** Registered tools a user never needs to know about, with why — still accounted for by the test. */
