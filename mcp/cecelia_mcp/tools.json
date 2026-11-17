@@ -7,6 +7,7 @@
     "point": "draws a short-lived mark on the user's screen; nothing is saved",
     "drive": "moves the user's screen (a frame, a page); nothing is saved",
     "run": "starts work (tasks, chains) — the autonomous server only",
+    "report": "drafts a bug report on this machine for the user to send; never posts it",
     "plumbing": "session bookkeeping (pairing, the observer loop); not a capability"
   },
   "observer": {
@@ -100,6 +101,8 @@
 
     "seek_viewer": "drive",
     "open_analysis_board_plot": "drive",
+
+    "report_issue": "report",
 
     "register_push_target": "plumbing",
     "poll_observations": "plumbing",

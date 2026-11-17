@@ -15,7 +15,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from cecelia_mcp.autonomous import (AutonomousClient, LockViolation, allowed_projects, locked_project,
                                     required_prefix)
 from cecelia_mcp.caller import CallerMCPServer
-from cecelia_mcp.client import ApiError, DisallowedRoute
+from cecelia_mcp.issue_report import failure_text, note_failed_runs
 from cecelia_mcp.gating_views import register_gating_tools
 from cecelia_mcp.figure_tools import register_figure_tools
 from cecelia_mcp.no_gui import no_gui_enabled
@@ -50,8 +50,12 @@ def _tool(fn):
     def wrapped(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
-        except (ApiError, DisallowedRoute, LockViolation) as e:
+        except ToolError:
+            raise
+        except LockViolation as e:
             raise ToolError(str(e)) from e
+        except Exception as e:   # a server error or crash also points at report_issue
+            raise ToolError(failure_text(e)) from e
     return mcp.tool(annotations=annotations_for(fn.__name__))(wrapped)   # its kind, from tools.json
 
 
@@ -106,7 +110,8 @@ def run_task(project_uid: str, fun_name: str, params: dict, image_uids: list[str
     output (a segmentation, an HMM column) is refused unless the name carries the session prefix.
     A name the image already has is refused with a free one to use instead — use it. `overwrite: true`
     is refused unless every output carries the prefix (only this session's own outputs)."""
-    return _client.run_task(project_uid, fun_name, params, image_uids, set_uid)
+    out = _client.run_task(project_uid, fun_name, params, image_uids, set_uid)
+    return note_failed_runs(out, any(t.get("status") == "failed" for t in out.get("tasks") or []))
 
 
 @_tool
@@ -114,7 +119,8 @@ def wait_for_tasks(task_ids: list[str], timeout_s: int = 900) -> dict:
     """Block until every task in `task_ids` reaches a terminal state (done / failed / cancelled /
     interrupted) or `timeout_s` passes (max 1800). Returns `{finished, states: {taskId: status}}`.
     A task's log is the observer's get_task_log(project, image, fun)."""
-    return _client.wait_tasks(task_ids, min(max(timeout_s, 10), 1800))
+    out = _client.wait_tasks(task_ids, min(max(timeout_s, 10), 1800))
+    return note_failed_runs(out, "failed" in (out.get("states") or {}).values())
 
 
 @_tool
@@ -132,7 +138,9 @@ def wait_for_chain(project_uid: str, run_id: str, timeout_s: int = 1800) -> dict
     3600). Returns per-image node statuses — `failed` / `skipped` nodes are where to look; the
     observer's get_task_log has the error. `waiting: true` = parked at a manual step for a person:
     not finished, and nothing here can continue it."""
-    return _client.wait_chain(project_uid, run_id, min(max(timeout_s, 10), 3600))
+    out = _client.wait_chain(project_uid, run_id, min(max(timeout_s, 10), 3600))
+    return note_failed_runs(out, any(s == "failed" for nodes in (out.get("imageStates") or {}).values()
+                                     for s in (nodes or {}).values()))
 
 
 # The gating toolset — the observer's, defined ONCE in gating_views.py. This server's client adds the

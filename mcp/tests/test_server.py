@@ -518,7 +518,7 @@ class GuidanceTest(unittest.TestCase):
         # A session working on Cecelia's files never opens a briefing, so the always-in-context half is
         # the only place that can point it at a custom module instead of a hand edit
         # (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
-        for phrase in ("custom module", "docs/CUSTOM_MODULES.md", "ccid.json", "patch"):
+        for phrase in ("custom module", "docs/CUSTOM_MODULES.md", "ccid.json", "report_issue"):
             self.assertIn(phrase, guidance.SERVER_INSTRUCTIONS)
 
     def test_instructions_stay_short(self):
