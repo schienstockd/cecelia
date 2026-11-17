@@ -127,6 +127,9 @@ include(joinpath(@__DIR__, "suite", "aggregate_runs_boundaries.jl"))
 # ── ROI discovery + reviews (docs/todo/ROI_TRIAGE_PLAN.md) ─────────────
 include(joinpath(@__DIR__, "suite", "rois.jl"))
 include(joinpath(@__DIR__, "suite", "spatial_pattern.jl"))
+include(joinpath(@__DIR__, "suite", "proximity_profile.jl"))
+include(joinpath(@__DIR__, "suite", "proximity_single_population.jl"))
+include(joinpath(@__DIR__, "suite", "proximity_reference_superset.jl"))
 
 # ── Task spec + repeatable-group + param-defaults testsets ─────────────
 # Six sections covering every slider (int/float) can reach its own max and default, a

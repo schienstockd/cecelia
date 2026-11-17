@@ -4,6 +4,17 @@ import type { HmmFitSummary } from '../utils/hmmFitNote'
 import type { HmmFitCurve } from '../utils/hmmElbow'
 import type { QcFinding } from '../lib/qc'
 
+/**
+ * The heatmap's matrix modes. `profile`/`crosstab` aggregate the ticked populations; the RUN-BACKED ones
+ * read a task's sidecar instead — `interaction` (neighbourStats: population × population log-odds) and
+ * `proximity` (proximityProfile: population × distance band, log2 enrichment). A run-backed grid is fixed
+ * by its run, carries a signed effect size (diverging colours pivoted at 0), and needs a run picker.
+ */
+export type MatrixMode = 'profile' | 'crosstab' | 'interaction' | 'proximity'
+export const RUN_MATRIX_MODES: readonly MatrixMode[] = ['interaction', 'proximity']
+export const isRunMatrixMode = (m: string | undefined | null): boolean =>
+  !!m && (RUN_MATRIX_MODES as readonly string[]).includes(m)
+
 export interface PlotParam {
   key: string
   label: string
@@ -76,7 +87,7 @@ export interface PlotSpec {
     // signature; crosstab = a "from_to" categorical → transition matrix). `category` optionally pins
     // the default category column (used if present in the discovered obs columns); otherwise the panel
     // picks a sensible one (an HMM-state column for profile, a transitions column for crosstab).
-    matrix?: { mode?: 'profile' | 'crosstab' | 'interaction'; category?: string }
+    matrix?: { mode?: MatrixMode; category?: string }
     // A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
     // per image, the populations (or interaction pairs) fixed by the run, grouped by image attribute. `source` is a key of the
     // backend's IMAGE_METRIC_SOURCES; `task` names the task that produces it, for the empty state.
@@ -148,6 +159,8 @@ export interface MatrixCell {
   // interaction matrix only: the permutation-test result for this population PAIR. These ride along on
   // the cell so significance needs no second request — see plot_data.jl `_interaction_matrix`.
   zScore?: number; pValue?: number; significance?: string
+  // proximity matrix only: how many images the mean enrichment averages (plot_data.jl `_proximity_matrix`)
+  nImages?: number
 }
 
 // one raw datapoint row (chartType "raw") — the per-cell/track value behind a plot, with the identity
@@ -210,7 +223,7 @@ export interface PlotDataResponse {
   categoryMembers?: Record<string, Record<string, string[]>>
   series: PlotSeries[]
   // matrix/heatmap (chartType "matrix"): a pooled grid — xLabels × yLabels with flat `cells`.
-  matrixMode?: 'profile' | 'crosstab' | 'interaction'
+  matrixMode?: MatrixMode
   xLabels?: string[]
   yLabels?: string[]
   cells?: MatrixCell[]
@@ -226,4 +239,7 @@ export interface PlotDataResponse {
   suffix?: string
   suffixes?: string[]
   pops?: string[]
+  // images whose same-named run measured something else (another structure / populations / bands) and
+  // were left out — proximity plots only (`matching_run_images`, image_metrics.jl)
+  nSkipped?: number
 }

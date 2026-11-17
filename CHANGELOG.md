@@ -13,6 +13,10 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+### Added
+
+- **Proximity profile:** which populations sit near a structure (germinal centre, follicle, aggregate), in distance bands, against the image as a whole. Two Spatial plots and MCP `get_proximity_profiles`.
+
 ### Changed
 
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).

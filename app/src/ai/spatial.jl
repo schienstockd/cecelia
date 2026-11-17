@@ -64,6 +64,27 @@ function _collect_pattern_stats(img::CciaImage)
     out
 end
 
+# proximity-profile sidecars (proximity/{suffix}.json, spatialAnalysis.proximityProfile) → one entry per
+# run with its flat per-(population, band) records, passed through as written. A sidecar that fails to
+# parse is skipped, like the readers above.
+function _collect_proximity_stats(img::CciaImage)
+    out = Any[]
+    for s in img_proximity_suffixes(img)
+        d = try JSON3.read(read(img_proximity_path(img, s), String)) catch; continue end
+        recs = get(d, :records, nothing); recs isa AbstractVector || continue
+        push!(out, (; suffix = s,
+                     structurePops = String[string(x) for x in get(d, :structurePops, [])],
+                     pops = String[string(x) for x in get(d, :pops, [])],
+                     referencePops = String[string(x) for x in get(d, :referencePops, [])],
+                     bands = String[string(x) for x in get(d, :bands, [])],
+                     bandWidth = Float64(something(get(d, :bandWidth, 0.0), 0.0)),
+                     nStructureCells = Int(get(d, :nStructureCells, 0)),
+                     nCounted = Int(get(d, :nCounted, 0)), nReference = Int(get(d, :nReference, 0)),
+                     records = recs))
+    end
+    out
+end
+
 """
     contact_matrix(img; suffix="") -> NamedTuple
 
@@ -100,15 +121,16 @@ function _spatial_image(img::CciaImage)
         _collect_region_cols!(regions, vn, img_label_props_path(img, vn))
     end
     (; _observer_image_header(img)..., regionRuns = regions, contactStats = _collect_contact_stats(img),
-       patternStats = _collect_pattern_stats(img))
+       patternStats = _collect_pattern_stats(img), proximityStats = _collect_proximity_stats(img))
 end
 
 """
     spatial_summary(proj; image_uid="", set_uid="") -> NamedTuple
 
 Per image: region-clustering runs (`regions.{suffix}` — n regions, sizes), pairwise cell-type contact
-statistics (observed/expected/log-odds per population pair, association vs avoidance) and one-population
-spatial-pattern runs (`patternStats`: nearest-neighbour ratio vs random relabelling). Flat + MCP-friendly
+statistics (observed/expected/log-odds per population pair, association vs avoidance), one-population
+spatial-pattern runs (`patternStats`: nearest-neighbour ratio vs random relabelling) and proximity
+profiles (`proximityStats`: each population's share in distance bands around a structure vs the image). Flat + MCP-friendly
 (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 9).
 """
 spatial_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =

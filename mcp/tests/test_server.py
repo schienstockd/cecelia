@@ -26,6 +26,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_module_params", "get_plot_catalogue", "get_analysis_lineage", "get_populations",
             "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
             "get_region_clusters", "get_contact_stats", "get_spatial_patterns",   # split of former get_spatial_stats
+            "get_proximity_profiles",
             "get_chains", "get_cohort_qc", "get_repl_api", "get_session_briefing",
             "get_recent_logs", "read_lab_log", "append_lab_log", "create_notebook",
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
@@ -204,14 +205,17 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "images": [
                 {"imageUid": "IMG1", "regionRuns": [{"valueName": "base", "suffix": "r1"}],
                  "contactStats": [{"suffix": "n1", "pairs": []}],
-                 "patternStats": [{"suffix": "p1", "records": []}]},
-                {"imageUid": "IMG2", "regionRuns": [], "contactStats": [], "patternStats": []},
+                 "patternStats": [{"suffix": "p1", "records": []}],
+                 "proximityStats": [{"suffix": "x1", "records": []}]},
+                {"imageUid": "IMG2", "regionRuns": [], "contactStats": [], "patternStats": [],
+                 "proximityStats": []},
             ],
         }
         try:
             regions = server.get_region_clusters("NRUBxU")
             contacts = server.get_contact_stats("NRUBxU")
             patterns = server.get_spatial_patterns("NRUBxU")
+            proximity = server.get_proximity_profiles("NRUBxU")
         finally:
             server._client.get_spatial_stats = original
         self.assertEqual("NRUBxU", regions["projectUid"])
@@ -228,6 +232,12 @@ class ServerToolRegistrationTest(unittest.TestCase):
             self.assertNotIn("contactStats", im)
         for im in regions["images"]:
             self.assertNotIn("patternStats", im)
+        for im in proximity["images"]:
+            self.assertIn("proximityStats", im)
+            self.assertNotIn("patternStats", im)
+            self.assertNotIn("contactStats", im)
+        for im in patterns["images"] + contacts["images"] + regions["images"]:
+            self.assertNotIn("proximityStats", im)
         # header field (imageUid) preserved
         self.assertEqual("IMG1", regions["images"][0]["imageUid"])
         self.assertEqual("IMG1", contacts["images"][0]["imageUid"])

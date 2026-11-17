@@ -105,6 +105,8 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # spatial pattern: an image whose smallest target is far smaller than its peers' reads noisier,
     # and one where every other image differs from random placement but this one doesn't is worth a look
     "spatialAnalysis.spatialPattern" => ["nTargetMin", "nSignificant"],
+    # proximity profile: a structure far smaller than its peers', or a thin band, reads noisier
+    "spatialAnalysis.proximityProfile" => ["nStructureCells", "minBandCells"],
     "spatialAnalysis.detectAggregates" => ["nCells", "nAggregates", "fracAggregated"],
     "spatialAnalysis.cellContacts"     => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.contactsMeshes"   => ["nCellsA", "nContacts", "fracInContact"],

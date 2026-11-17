@@ -16,6 +16,7 @@
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
+import { isRunMatrixMode } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
 import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElbow'
 import { frameAxisLabel, timeAxisUnit } from '../utils/timeAxis'
@@ -223,9 +224,10 @@ export interface HeatmapControls {
 
 export function heatmapControls(mode: string | undefined): HeatmapControls {
   const m = mode ?? 'profile'
-  // An interaction matrix is PRECOMPUTED (see isPrecomputedSpec): the grid, its axes and its values all
-  // come from the run, so the only thing left to choose is whether the numbers are printed.
-  if (m === 'interaction') {
+  // A run-backed matrix (interaction, proximity) is PRECOMPUTED (see isPrecomputedSpec): the grid, its
+  // axes and its values all come from the run, so the only thing left to choose is whether the numbers
+  // are printed.
+  if (isRunMatrixMode(m)) {
     return { mode: false, category: false, zscore: false, normalize: false, cellValues: true }
   }
   return { mode: true, category: true, zscore: m === 'profile', normalize: m === 'crosstab',
@@ -774,7 +776,8 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // in this row". A signed effect size has to be DIVERGING and pivoted at 0, with a symmetric domain so
   // +0.6 and −0.6 read equally strongly. Rescaling is right for a profile (differently-scaled features
   // per row); it is wrong for anything already on a common, signed scale.
-  const interaction = r.matrixMode === 'interaction'
+  // a run-backed grid (interaction log-odds, proximity log2 enrichment) is a signed effect size
+  const interaction = isRunMatrixMode(r.matrixMode)
   const profile = !interaction && r.matrixMode !== 'crosstab'
   const useMinmax = profile && (o.heatmapScale ?? 'minmax') === 'minmax'
   const diverging = interaction || (profile && !useMinmax)   // log-odds / z-score → diverging RdBu
@@ -816,7 +819,9 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     interaction && c.significance ? `${fmt(c.value)} ${c.significance}` : fmt(c.value)
   const tip = (c: MatrixCell) =>
     `${r.matrixMode === 'crosstab' ? `${c.y} → ${c.x}` : `${c.y} · ${c.x}`}\n${valLabel}: ${fmt(c.value)}` +
-    (c.count != null ? `\nobserved ${fmtCount(c.count)}` : c.n != null ? `\nn ${fmtCount(c.n)}` : '') +
+    (c.count != null ? `\n${r.matrixMode === 'proximity' ? 'cells' : 'observed'} ${fmtCount(c.count)}`
+      : c.n != null ? `\nn ${fmtCount(c.n)}` : '') +
+    (c.nImages != null ? `\nmean of ${c.nImages} image${c.nImages === 1 ? '' : 's'}` : '') +
     // z and p were already on the wire and shown NOWHERE — the permutation test is the reason to
     // trust the effect size, so it belongs next to it
     (c.zScore != null ? `\nz ${fmt(c.zScore)}` : '') +
@@ -1832,6 +1837,11 @@ export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string 
       if (r.matrixMode === 'interaction') {
         return tbl([yH, xH, r.valueLabel ?? 'value', 'observed', 'z', 'p', 'significance'],
                    cells.map(c => [c.y, c.x, c.value, c.count ?? c.n, c.zScore, c.pValue, c.significance]))
+      }
+      // proximity: the mean enrichment, the cells behind it, and how many images it averages
+      if (r.matrixMode === 'proximity') {
+        return tbl(['population', 'band', r.valueLabel ?? 'value', 'cells', 'images'],
+                   cells.map(c => [c.y, c.x, c.value, c.count ?? c.n, c.nImages]))
       }
       return tbl([yH, xH, r.valueLabel ?? 'value', 'n'],
                  cells.map(c => [c.y, c.x, c.value, c.count ?? c.n]))

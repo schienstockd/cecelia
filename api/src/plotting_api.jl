@@ -296,7 +296,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
     # here rejects the only body the panel can send. Route it through the targets form with an empty
     # target list — `plot_summary_data` intercepts on `matrixMode` before touching pop_df.
     # The HMM state-count elbow is the same kind of readout: it reads the runs' fit records.
-    precomputed = (chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction") ||
+    precomputed = (chart == "matrix" && matrix_mode !== nothing && matrix_mode in ("interaction", "proximity")) ||
                   chart == "elbow"
 
     # A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot

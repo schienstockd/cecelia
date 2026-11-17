@@ -1,0 +1,20 @@
+{
+  "id": "spatial_proximity_summary",
+  "label": "Proximity across images",
+  "answers": "Does a population's enrichment near a structure differ between images or treatments?",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["boxplot", "strip", "bar"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+    ],
+    "imageMetric": { "source": "proximityProfile", "task": "Proximity profile" },
+    "measure": "log2Enrichment",
+    "measureOptions": ["log2Enrichment", "fraction", "n"],
+    "measureLabels": { "log2Enrichment": "log2 enrichment", "fraction": "fraction of band", "n": "cells" }
+  },
+  "scopeModes": ["summarised", "by_attr"],
+  "params": []
+}

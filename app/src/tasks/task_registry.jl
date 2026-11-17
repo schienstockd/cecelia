@@ -121,6 +121,10 @@ function _spec_path(::SpatialPattern)
     joinpath(@__DIR__, "spatialAnalysis", "spatialPattern.json")
 end
 
+function _spec_path(::ProximityProfile)
+    joinpath(@__DIR__, "spatialAnalysis", "proximityProfile.json")
+end
+
 function _spec_path(::RoiDiscovery)
     joinpath(@__DIR__, "spatialAnalysis", "roiDiscovery.json")
 end
@@ -287,6 +291,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "spatialAnalysis.roiDiscovery"      => RoiDiscovery(),
         "spatialAnalysis.detectAggregates"  => DetectAggregates(),
         "spatialAnalysis.cellContacts"      => CellContacts(),
+        "spatialAnalysis.proximityProfile"  => ProximityProfile(),
         "spatialAnalysis.contactsMeshes"    => ContactsMeshes(),
         "spatialAnalysis.aggregatesMeshes"  => AggregatesMeshes(),
         "clustRegions.cluster"              => ClustRegions(),
