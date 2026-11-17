@@ -484,6 +484,14 @@ class GuidanceTest(unittest.TestCase):
     # Words in the prose that look like a tool name but are not one (fields, ids, internal helpers).
     NOT_TOOLS = {"set_uid"}
 
+    def test_model_facing_text_cites_no_internal_plan(self):
+        # "Decision 9", "BIDIR_CONTEXT_PLAN", "PR #2" mean nothing to a session using these tools — it
+        # cannot read the plan. The why behind a rule belongs in a code comment; the rule in the prose.
+        import re
+        descriptions = " ".join(t.description or "" for t in asyncio.run(server.mcp.list_tools()))
+        found = sorted(set(re.findall(r"Decision \d+|[A-Z_]+_PLAN\b|PR #\d+", self.text + " " + descriptions)))
+        self.assertEqual([], found, f"plan references in the guidance or tool docs: {found}")
+
     def test_every_tool_the_guidance_names_exists(self):
         # The reverse of the check above: a tool that was renamed or split leaves its old name in the
         # prose, and the model goes looking for it (get_spatial_stats survived its split this way).
