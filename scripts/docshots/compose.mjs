@@ -25,7 +25,7 @@ import { chromium, findChromium, repo } from '../lib/chromium.mjs'
 
 const dir = join(repo, 'user-docs', 'shots')
 const { SHOT_SETS } = await import(pathToFileURL(join(dir, 'index.ts')).href)
-const { checkShotSets, imageFile, isPicture, setImages, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
+const { checkShotSets, imageFile, imageStem, isPicture, setImages, shotFile, shotThemes } = await import(pathToFileURL(join(dir, 'spec.ts')).href)
 const { figureGeometry } = await import(pathToFileURL(join(dir, 'figure.ts')).href)
 
 function parseArgs(argv) {
@@ -100,7 +100,7 @@ const browser = await chromium.launch({ executablePath: findChromium(), headless
 try {
   const page = await browser.newPage({ deviceScaleFactor: 2 })
   for (const [spec, theme, set] of shots) {
-    const capture = shotFile(spec.id, theme), file = imageFile(spec, theme), stem = file.replace(/\.(png|jpg)$/, '')
+    const capture = shotFile(spec.id, theme), file = imageFile(spec, theme), stem = imageStem(file)
     const meta = join(a.shots, capture.replace(/\.png$/, '.json')), png = join(a.shots, capture)
     if (!existsSync(meta) || !existsSync(png)) { missing.push(stem); continue }
     const m = JSON.parse(readFileSync(meta, 'utf-8'))
@@ -126,7 +126,7 @@ try {
   for (const [spec, theme, set] of shots) {
     if (!spec.beside) continue
     const half = halves[`${spec.id}:${theme}`]
-    const hero = set.shots.find(o => o.id === spec.beside), file = imageFile(hero, theme), stem = file.replace(/\.(png|jpg)$/, '')
+    const hero = set.shots.find(o => o.id === spec.beside), file = imageFile(hero, theme), stem = imageStem(file)
     const heroW = widths[stem]
     if (!half || !heroW || !existsSync(join(a.out, file))) { missing.push(`${stem} + ${spec.id}`); continue }
     const uri = f => `data:image/${f.endsWith('.jpg') ? 'jpeg' : 'png'};base64,${readFileSync(f).toString('base64')}`
@@ -144,7 +144,7 @@ try {
 // what every shot of every set composes to: a width for anything else is a removed shot's, and an image
 // file nothing composes is one to delete
 const expected = new Set(SHOT_SETS.flatMap(setImages))
-for (const k of Object.keys(widths)) if (![...expected].some(f => f.replace(/\.(png|jpg)$/, '') === k)) delete widths[k]
+for (const k of Object.keys(widths)) if (![...expected].some(f => imageStem(f) === k)) delete widths[k]
 const orphans = readdirSync(a.out).filter(f => /\.(png|jpg)$/.test(f) && !expected.has(f))
 if (orphans.length) console.warn(`! no shot composes these, delete them: ${orphans.join(', ')}`)
 const sorted = o => JSON.stringify(Object.fromEntries(Object.entries(o).sort()), null, 1) + '\n'
