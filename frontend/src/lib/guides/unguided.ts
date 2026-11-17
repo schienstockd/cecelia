@@ -168,7 +168,13 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
   }) },
   { id: 'copy-gating', title: 'Copy gating to other images', group: 'Populations', maturity: covering(['gate.manual_gate'], {
-    tier: 'beta', testedOn: 'A real measured fixture',
+    tier: 'tested', testedOn: 'A real measured fixture',
+    evidence: [
+      { path: 'app/test/suite/gate_manual.jl', test: 'copy_gating! — a target with another channel order gates the same channel',
+        failsIf: 'a copied gate reads whichever marker sits at the source’s column, or copies onto an image missing a channel' },
+      { path: 'app/test/suite/gate_manual.jl', test: 'match_channel_columns — re-index by channel name',
+        failsIf: 'channel columns are matched by position instead of by name' },
+    ],
     next: [done('Compare channel names when copying gates; refuse or warn on a mismatch')],
     needs: 'Two images of one set with the channel order swapped',
     datasetAsk: 'swapped-channel-set',
