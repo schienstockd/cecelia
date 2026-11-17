@@ -60,7 +60,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/PLOTS.md`](docs/PLOTS.md) | **Adding ANY plot** — registry + `SummaryCanvas`, never a bespoke panel/route. Chart types, encoding model, renderer spec. **70 KB — slice it** |
 | [`docs/ANALYSIS.md`](docs/ANALYSIS.md) | The Analysis board (`/analysis`): tabs, plates, persistence keys, plot-family registries, PDF/CSV export. **42 KB — slice it** |
 | [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) | Notebooks Playground (`/notebooks`): Pluto engine, `CeceliaNb`, registry + snapshots, `/api/notebooks/*` |
-| [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers**. **40 KB — slice it** |
+| [`docs/DEV.md`](docs/DEV.md) | Branches, commits, PRs, tagging, `pixi run dev`, test categories + fixtures, **Windows compatibility helpers**. **55 KB — slice it** |
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |
 | [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins. **40 KB — slice it** |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Release *policy*: when to tag, rc-vs-release-vs-milestone, pre-1.0 versioning, cutting checklist |
@@ -281,6 +281,12 @@ Tests must **not** depend on the dev projects dir — use the committed `test-da
 `test_dev_dir_leakage_convention.py` (no `CECELIA_DEV_DIR` reads, no `cecelia_conf()["dirs"]
 ["projects"]` reads, no hardcoded `~/cecelia*/dev/projects/` paths).
 
+**A test whose assertions depend on a property of the data (µm, still vs movie, markers, regions, 2D)
+asks for it — `fixture_for(:cells, :calibrated, …)` — and gets a fixture that has it, or none. None →
+add a request to `test-data/NEEDS.toml` and let the test skip; never test on a stand-in and note the
+gap in the PR.** A reservation like "not run on <X> data" names the request id. [`docs/DEV.md`](docs/DEV.md)
+→ *Ask for properties, not a path*.
+
 ---
 
 ## Git & commits
@@ -344,7 +350,7 @@ blocks a message with no stamp, or one stamped for a different change.
 - **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework, an untyped shape where an enum/struct exists, and comment content in the wrong home (`**wrong home**`, outcome-tagged like `**should reuse**`).
 - **Result review** catches **silent wrong results** — a change that makes a number, a cell set, a channel or a unit wrong with no error. It runs only when the diff touches a result path (`docs/ai-assist/RESULT_REVIEW.md`), in a copy of the staged tree, and reproduces what it can. A `**reproduced**` finding needs a tag: commit its repro as a test carrying `RESULT-REVIEW: <slug>` and fix the code in place, never the reviewer's test. The hook blocks a commit that changes such a test unless it tags the slug `false_positive`, which goes to the maintainer. `--claim` is what it is told the change is for, marked unverified. Rounds that keep reproducing new made-up inputs against the same function (recital prints `_Repeat probing: …_`) → stop adding branches: `RESULT_REVIEW.md` → *When rounds don't converge*.
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
-- **Maintainability lint** (mechanical) catches a task file pushed past 200 lines, incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments, and a `RESULT-REVIEW:` marker outside a file header or with an unparseable slug — `docs/MAINTAINABILITY.md`.
+- **Maintainability lint** (mechanical) catches a task file pushed past 200 lines, incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments, a `RESULT-REVIEW:` marker outside a file header or with an unparseable slug, and a new test line reaching a fixture by path instead of `fixture_for` — `docs/MAINTAINABILITY.md`.
 - **Changelog check** (mechanical) catches a changed task default with no `CHANGELOG.md` line on the branch: a default changes results on re-run, so it belongs under *Read this first* (`docs/RELEASING.md`).
 - **Test value** (mechanical, runs beside the reviewers) catches **tests that can't fail**: `**passes on base**` — the change edits code and adds tests, and none of them fails on the code before it (watch it fail); `**untested**` — on a result path, mutants of the changed lines survive the tests that name the function (one finding per function, ≤ 20 mutants a file). Both need a `[tv-…: outcome]` tag: add a test whose expected value comes from a definition, never from the code's own output — or `false_positive: <refactor / why the mutant changes nothing a caller sees>`. The weekly judge mutates every `untested` function again on main, whatever the tag, and files the survivors that matter as `test-gap` issues. `docs/todo/TEST_VALUE_PLAN.md` → P4.
 

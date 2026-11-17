@@ -71,6 +71,9 @@ function have_fixture(path::AbstractString)::Bool
     false
 end
 
+# Fixtures by property: fixture_for(:cells, :calibrated; need = …) (shared with api/test/runtests.jl).
+include(joinpath(@__DIR__, "fixture_registry.jl"))
+
 # A second segmentation that DIFFERS from the first (shared with api/test/runtests.jl).
 include(joinpath(@__DIR__, "distinct_segmentations.jl"))
 

@@ -282,7 +282,8 @@ end
             @test length(g.i) == n_edges                       # each edge once
             @test all(g.i .< g.j)
             @test length(Set(zip(g.i, g.j))) == n_edges
-            # a radius graph: no edge longer than the 60 µm the builder pruned at
+            # a radius graph: no edge longer than the builder's 60 µm prune. In pixels, z unscaled: the
+            # fixture is uncalibrated, so this pins the reader, not the builder's µm conversion
             @test all(k -> dist(g.label[g.i[k]], g.label[g.j[k]]) <= 60, eachindex(g.i))
             if per_t
                 # built per frame: `_t` is each cell's frame, and no edge joins two frames

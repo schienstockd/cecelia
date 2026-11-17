@@ -1,0 +1,41 @@
+# Data the tests need and the committed fixtures don't have — the request list.
+#
+# When a test needs a property no fixture in fixtures.toml has, do NOT reach for the nearest fixture
+# and say so in the PR. Write the test against `fixture_for(<properties>...; need = "<id>")`, add the
+# request here, and let the test skip until a fixture arrives. A PR that says "not run on <X> data"
+# names the request id.
+#
+# Open requests are for the maintainer to meet from real projects: a cut is lab data going into git,
+# so it needs their yes. A request with `synthetic = true` an agent meets itself (like CONTMESH). When a fixture that meets a request is registered, the `fixture registry`
+# testset fails until the request is marked met — so this list cannot go stale silently.
+#
+# Fields:
+#   properties  every one in fixtures.toml → [vocabulary]; what the fixture must have
+#   technology  optional; the microscope technology the data must come from
+#   why         the claim the test cannot check without it — one line
+#   waiting     the tests (file → testset) that skip until it is met
+#   budget      what may be committed (tables only? how many cells?) under the 1 MB / 8 MB cap
+#   opened      date
+#   status      "open", or "met: <fixture uid>"
+#   synthetic   true when a synthesised fixture with a known answer meets it — an agent builds that
+#               itself (like CONTMESH) instead of filing it; false when only real data will do
+
+[needs.multiplex-structure-still]
+properties = ["cells", "still", "2d", "calibrated", "marker-names", "structure", "real"]
+technology = "PhenoCycler"
+why = "Proximity profile and the structure readouts are for multiplex slides: their real-data test runs on a 2P movie with µm == pixels."
+waiting = []
+budget = "labelProps table + gating sidecar only, no image store; under the 1 MB per-file cap (a few thousand cells, a subset if needed)"
+opened = "2026-11-18"
+status = "open"
+synthetic = false
+
+[needs.cells-with-image-store]
+properties = ["cells", "movie", "calibrated", "image-store", "label-store", "real"]
+why = "The cell-cards filmstrip and the gating cells-image route only ever run their empty / 404 branch: no fixture has cells AND the pixels they were segmented from."
+waiting = ["api/test/suite/validate_and_cards.jl → API: /api/cell_cards — metadata + sidecar cache (filmstrip asserted empty)",
+           "api/test/suite/gating_views.jl → API: /api/gating/plot-image + cells-image guards (guards only)"]
+budget = "a crop: ≤ 64 × 64 px, ≤ 5 frames, ≤ 4 channels, one resolution level, its label zarr and the cells inside it; ≤ 1 MB per file"
+opened = "2026-11-18"
+status = "open"
+synthetic = false

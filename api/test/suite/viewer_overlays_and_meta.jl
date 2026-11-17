@@ -15,13 +15,13 @@
     # lands the overlay in the corner of the image at 1/3 scale and still LOOKS like data, and a
     # `null` in a coordinate array becomes 0 through `Float32Array.from` — a cell drawn at the origin
     # rather than not drawn.
-    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
-    if !api_have_fixture(h5)
-        @test_skip "labelProps fixture missing"
+    # Calibrated, or "µm, not pixels" below cannot fail: on an uncalibrated table the scale is 1.0.
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy of the project
+    if fx === nothing
+        @test_skip "calibrated cell-table fixture missing"
     else
-        dir = mktempdir()
-        proj = joinpath(dir, "testpr")
-        cp(api_fixture("testpr"), proj)
+        dir = dirname(fx.project)
+        proj = fx.project
         old = Cecelia.cecelia_conf()["dirs"]["projects"]
         try
             Cecelia.cecelia_conf()["dirs"]["projects"] = dir
@@ -60,14 +60,16 @@
             # real calibration the two MUST differ, and by exactly the axis resolution.
             img, _ = _gating_image("testpr", "KDIeEm")
             sizes, _ = img_physical_sizes(img)              # [sz, sy, sx] µm/px
-            lp = label_props(joinpath(proj, "1", "KDIeEm", "labelProps", "B.h5ad"))
+            @test sizes == [2.0, 0.5, 0.5]                 # fixtures.toml → KDIeEm-cal
+            lp = label_props(fixture_table(fx))
             view_centroid_cols(lp; order = [:x, :y, :z])
             raw = as_df(lp)
-            if sizes[3] != 1.0                             # x resolution is a real measurement
-                @test !(Float64(raw[1, :centroid_x]) ≈ Float64(d.cells.x[1]))
-            end
+            @test !(Float64(raw[1, :centroid_x]) ≈ Float64(d.cells.x[1]))   # pixels ≠ µm here
             @test Float64(raw[1, :centroid_x]) * sizes[3] ≈ Float64(d.cells.x[1])
             @test Float64(raw[1, :centroid_y]) * sizes[2] ≈ Float64(d.cells.y[1])
+            if "z" in d.axes                               # z scales by its own size, not x's
+                @test Float64(raw[1, :centroid_z]) * sizes[1] ≈ Float64(d.cells.z[1])
+            end
             # t stays a FRAME index — scaling it would silently redefine every frame-counted
             # parameter, the same choice `scale_centroids!` makes on disk.
             if d.hasT

@@ -15,13 +15,12 @@
     # Same fixture, same wide-open pop as the overlay author's testsets: NATIVE VOXEL coords and a
     # `z` field on both points AND segments — the movie renderer's
     # shader projects them with the raycast's own camera, so they must arrive as positions.
-    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
-    if !api_have_fixture(h5)
-        @test_skip "labelProps fixture missing"
+    # Calibrated (0.5 µm x/y, 2 µm z): on 1 µm/px a µm/voxel mix-up would change nothing.
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy of the project
+    if fx === nothing
+        @test_skip "calibrated cell-table fixture missing"
     else
-        dir = mktempdir()
-        proj = joinpath(dir, "testpr")
-        cp(api_fixture("testpr"), proj)
+        dir = dirname(fx.project)
         old = Cecelia.cecelia_conf()["dirs"]["projects"]
         try
             Cecelia.cecelia_conf()["dirs"]["projects"] = dir
@@ -50,9 +49,14 @@
             # Positions, not pixels: the same centroids the 2D author starts from (native voxels).
             lp = label_props(img; value_name = "B")
             view_centroid_cols(lp; order = [:x, :y, :z])
+            select_cols(lp, ["centroid_t"])
             df = as_df(lp)
             @test minimum(pts0.x) >= minimum(Float64.(df.centroid_x)) - 1e-9
             @test maximum(pts0.x) <= maximum(Float64.(df.centroid_x)) + 1e-9
+            # exactly frame 0's centroids, z included: a µm conversion (x 0.5, z 2.0) would move them
+            at0 = [round(Int, Float64(t)) == 0 for t in df.centroid_t]
+            @test sort(Float64.(pts0.x)) ≈ sort(Float64.(df.centroid_x[at0]))
+            @test sort(Float64.(pts0.z)) ≈ sort(Float64.(df.centroid_z[at0]))
             # Every point paints in the pop's colour — the resolver honoured the gate.
             @test all(c -> c == RGB{N0f8}(0, 1, 0), pts0.colour)
             # No tracks requested → no segments even if the fixture has `track_id`.
