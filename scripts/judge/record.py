@@ -124,9 +124,12 @@ def newly_open(bug: dict, date: str) -> bool:
 
 
 def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Sequence[dict],
-          proposals: _t.Sequence[dict], spend: dict, agent_causes: _t.Sequence[dict] = ()) -> dict:
+          proposals: _t.Sequence[dict], spend: dict, agent_causes: _t.Sequence[dict] = (),
+          fixture_requests: dict | None = None) -> dict:
     """The record for the pass on `date`. `ts` is when the pass started: the next pass's sweep
-    window opens there. `agent_causes`: run reviews' `agent` causes per guide (`run_reviews.py`)."""
+    window opens there. `agent_causes`: run reviews' `agent` causes per guide (`run_reviews.py`).
+    `fixture_requests`: open fixture requests and candidate COUNTS (`fixture_requests.summary`) —
+    the record is published, so never image names."""
     return {
         "schema_version": SCHEMA_VERSION, "kind": "pass", "date": date,
         "run": {"ts": ts, "sha": sha, "spend": spend},
@@ -134,6 +137,7 @@ def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Se
         # what the owner has to answer: only a bug an agent verified as `decide` this pass
         "queue": [{"kind": "bug", "ref": b["id"]} for b in bugs if owner_bug(b, date)],
         **({"agent_causes": list(agent_causes)} if agent_causes else {}),
+        **({"fixture_requests": fixture_requests} if fixture_requests and fixture_requests.get("requests") else {}),
     }
 
 
@@ -413,6 +417,21 @@ _AGENT_CAUSES_HOW_TO = (
     "describe the same mistake, the guide needs the step.")
 
 
+def _render_fixture_requests(record: dict) -> list[str]:
+    fr = record["fixture_requests"]
+    out = ["Data tests need and no committed fixture has (`test-data/NEEDS.toml`). Candidates are listed "
+           "locally only — `pixi run judge-fixtures` — and cut with `pixi run fixture-cut` on your say-so: "
+           "it puts lab data into git.", ""]
+    if not fr.get("configured"):
+        out += ["No source projects configured (`CECELIA_FIXTURE_SOURCE_PROJECTS`), so nothing was matched.", ""]
+    for r in fr["requests"]:
+        how = "synthetic — an agent builds it" if r.get("synthetic") else (
+            f"{r['candidates']} candidate image(s)" if fr.get("configured") else "not matched")
+        confirm = f" · confirm by eye: {', '.join(r['confirm'])}" if r.get("confirm") and r["candidates"] else ""
+        out.append(f"- `{r['id']}` — {how}{confirm}")
+    return out + [""]
+
+
 def _render_agent_causes(record: dict) -> list[str]:
     out = [_AGENT_CAUSES_HOW_TO, ""]
     for g in record.get("agent_causes", []):
@@ -480,6 +499,8 @@ def render_markdown(record: dict) -> str:
            "## Rules", "", *_render_rules(record)]
     if record.get("agent_causes"):
         out += ["", "## Agent causes per guide", "", *_render_agent_causes(record)]
+    if record.get("fixture_requests"):
+        out += ["", "## Fixture requests", "", *_render_fixture_requests(record)]
     return "\n".join(out) + "\n"
 
 
