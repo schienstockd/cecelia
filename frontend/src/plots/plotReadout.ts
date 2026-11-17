@@ -16,16 +16,24 @@ import type { AutoOverride } from './autoOverride'
 export interface PlotReadout {
   stats: StatsInfo              // which test ran, and why `auto` chose it
   overrides: AutoOverride[]     // settings the renderer had to substitute
+  // the populations (`<value_name><path>`) the plot has data for, when that is narrower than what the
+  // picker lists — a per-image metric's run scored only some. `null` = every listed population.
+  available: string[] | null
 }
 
-export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [] })
+export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [], available: null })
 
 export function readoutOf(
   cmp: ComparisonsResult | undefined | null,
   overrides: AutoOverride[] = [],
+  available: string[] | null = null,
 ): PlotReadout {
-  return { stats: statsInfoOf(cmp), overrides }
+  return { stats: statsInfoOf(cmp), overrides, available }
 }
+
+/** Can the plot draw this population? (`readout.available`; no readout or `null` = yes) */
+export const popAvailable = (r: PlotReadout | undefined, valueName: string, path: string): boolean =>
+  !r?.available || r.available.includes(`${valueName}${path}`)
 
 /** The override affecting a named setting, if any — so a control can mark itself. */
 export const overrideFor = (r: PlotReadout | undefined, setting: string): AutoOverride | null =>

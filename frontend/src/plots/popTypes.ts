@@ -41,7 +41,7 @@ export interface PopTypeSpecLike {
     granularity?: 'cell' | 'track'
     popTypes?: PopTypeOption[]
     matrix?: { mode?: string }
-    imageMetric?: { source: string }
+    imageMetric?: { source: string; pickPops?: boolean }
     precomputed?: string     // 'hmmFit' — the HMM state-count elbow, read from the runs' fit records
   }
 }
@@ -57,11 +57,21 @@ export interface PopTypeSpecLike {
  * (`api_plot_data`'s `precomputed`, which must not reject a body with no pops). One question, one
  * answer. A per-image metric (`imageMetric`: a spatial-pattern population's or an interaction pair's
  * number per image, grouped by image attribute) and the HMM state-count elbow (`precomputed: 'hmmFit'`,
- * every recorded HMM run's fit) are fixed by their runs too, not by the ticked populations.
+ * every recorded HMM run's fit) are fixed by their runs too, not by the ticked populations — unless
+ * the metric is keyed by the picker's own populations (`pickPops`, see `imageMetricPicksPops`).
  */
 export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
   spec.dataSource.matrix?.mode === 'interaction' || spec.dataSource.precomputed === 'hmmFit' ||
-  !!spec.dataSource.imageMetric
+  (!!spec.dataSource.imageMetric && !spec.dataSource.imageMetric.pickPops)
+
+/**
+ * A per-image metric whose run is keyed by the same `<value_name><path>` populations the picker lists
+ * (a spatial-pattern run scores each picked population). The picker then chooses which of the run's
+ * populations to plot, and greys out those the run has no result for (`PlotReadout.available`). An
+ * interaction PAIR is not a picker population, so that metric stays precomputed.
+ */
+export const imageMetricPicksPops = (spec: PopTypeSpecLike): boolean =>
+  !!spec.dataSource.imageMetric?.pickPops
 
 // Default display names come from the pop-type registry, so a spec need not repeat them. Deliberately
 // user-facing wording ("Gated", not "flow") — the pop-type ids are an implementation detail.
