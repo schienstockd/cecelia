@@ -38,6 +38,10 @@ projects/testpr/
                               # `movement` run: features=[10 live.track.*], partOf=[KDIeEm],
                               # family="clusters". Pairs with the obs column above so the
                               # cell-cards pipeline can resolve trackclust pops on this fixture.
+    spatialGraph/net.h5ad     # REAL `cellNeighbours` builder output over B.h5ad frames 0–2
+    spatialGraph/pooled.h5ad  # (198 nodes): per timepoint / frames pooled / kNN k=3 (directed).
+    spatialGraph/knn.h5ad     # Regenerate with
+                              # `pixi run python python/cecelia/tests/make_spatial_graph_fixture.py`
     gating/B__trackclust.json # SYNTHETIC trackclust pop map: three pops (Scanning/Directed/
                               # Meandering) each filter `clusters.movement in [0|1|2]`. Also the
                               # track-cluster INPUT to the track tasks (pop_df_multi_share.jl).

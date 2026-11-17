@@ -390,6 +390,8 @@ function api_viewer_meta(req::HTTP.Request)
                             cellTableNames = try _overlay_segmentations(init_object(pu, iu)) catch; String[] end,
                             # the skeletons with a branch table — what `/api/viewer/skeletons` draws
                             branchNames = try img_branch_value_names(init_object(pu, iu)) catch; String[] end,
+                            # the neighbour graphs (`spatialGraph/{suffix}.h5ad`) — what `/api/viewer/spatial-graphs` draws
+                            spatialGraphNames = try img_spatial_graph_suffixes(init_object(pu, iu)) catch; String[] end,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -987,6 +989,46 @@ function api_viewer_skeletons(req::HTTP.Request)
                         x1 = segs.x1 .* ux, y1 = segs.y1 .* uy, z1 = segs.z1 .* uz))
 end
 
+# ── GET /api/viewer/spatial-graphs ────────────────────────────────────────────────
+# ?projectUid=&imageUid=&suffix= → {suffix, flat, nSegments, t, plane, x0, y0, z0, x1, y1, z1,
+#                                   nCrossFrame, nUnplaced, stale, note?}
+#
+# A neighbour graph (`spatialAnalysis.cellNeighbours`) as line segments, one per edge, centroid to
+# centroid (`spatial_graph_segments` — the reader the movie overlay closure uses too). The skeleton
+# route's shape and units: µm, `t` a frame index (-1 = every frame), `plane` computed server side.
+# Edges it cannot draw are counted, never dropped silently: `nCrossFrame` (a graph pooled over time
+# joining two frames) and `nUnplaced` (a cell no longer in its table); `stale` = a mask store newer
+# than the graph, whose labels may name other cells now. `note` says every one that applies.
+function api_viewer_spatial_graphs(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    sfx = get(q, "suffix", "")
+    isempty(sfx) && return 400, JSON3.write((; error = "suffix is required"))
+    g = try
+        spatial_graph_segments(img, sfx)
+    catch e
+        @warn "viewer spatial graph: unreadable" suffix = sfx exception = e
+        return 500, JSON3.write((; error = "could not read the neighbour graph '$sfx': $(sprint(showerror, e))"))
+    end
+    g === nothing && return 404, JSON3.write((; error = "no neighbour graph '$sfx' on this image"))
+    n = length(g)
+    n > SKELETON_MAX_SEGMENTS && return 413, JSON3.write((;
+        error = "$n graph edges is past the limit of $SKELETON_MAX_SEGMENTS"))
+    s = g.segs
+    sz = first(img_physical_sizes(img))
+    ux, uy, uz = (Float32(physical_size_for_axis(sz, a)) for a in (:x, :y, :z))
+    notes = String[]
+    g.n_unplaced > 0 && push!(notes, "$(g.n_unplaced) edges not drawn: cells missing from their table")
+    g.stale && push!(notes, "segmented again since the graph was built; re-run the graph")
+    g.n_cross_frame > 0 && push!(notes, "$(g.n_cross_frame) edges join two frames and are not drawn")
+    note = isempty(notes) ? nothing : join(notes, "; ")
+    200, JSON3.write((; suffix = sfx, flat = false, nSegments = n, t = s.t, plane = s.plane,
+                        x0 = s.x0 .* ux, y0 = s.y0 .* uy, z0 = s.z0 .* uz,
+                        x1 = s.x1 .* ux, y1 = s.y1 .* uy, z1 = s.z1 .* uz,
+                        nCrossFrame = g.n_cross_frame, nUnplaced = g.n_unplaced, stale = g.stale, note))
+end
+
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
 # ?projectUid=&imageUid=&valueName=&popType=flow&colourBy= →
 #   {nCells, axes, hasT, cells: {label, t, x, y, z, track}, pops: [...],
@@ -1550,7 +1592,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # reads the legacy `allTracks` / `includeTracks` / `trackSources` keys of the smoke route.
     plan = overlay_track_plan(ov_raw)
     # cell-track ribbons ride on the pops — without them they are nothing to draw
-    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || !isempty(plan.skeletons)
+    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || plan_draws_lines(plan)
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     style = movie_overlay_style(k -> _ov(ov_raw, Symbol(k), nothing))
@@ -1572,7 +1614,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || !isempty(plan.skeletons) ||
+    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || plan_draws_lines(plan) ||
                                any(x -> !isempty(first(x)), plan.segs))
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)

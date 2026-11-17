@@ -21,7 +21,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   maskColour: 'id',
-  trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {},
+  trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {}, graphVisible: {}, graphColour: '#ffffff', graphWidth: 1,
   scaleBar: true, timestamp: false, scaleBarPx: 24, timestampPx: 18, steps: 384,
   ...over,
 })
@@ -279,5 +279,19 @@ describe('viewerLook — skeletons (DRAW_SPEC_PLAN Phase 3)', () => {
   it('a batch filled from the view sends them', () => {
     const cfg = buildBatchMovieConfig(viewerLook(base({ branchVisible: { SHG: true } })), ['cpSAM'], {})
     expect(cfg.skeletons).toEqual({ SHG: SKELETON_BY_TYPE })
+  })
+})
+
+describe('viewerLook — neighbour graphs', () => {
+  it('records the shown graphs as lines in the picked colour', () => {
+    const l = viewerLook(base({ graphVisible: { net: true, other: false }, graphColour: '#ff00ff' }))
+    expect(l.spatialGraphs).toEqual({ net: '#ff00ff' })
+    expect(l.spatialGraphWidth).toBe(1)
+    expect(viewerLook(base({ graphVisible: { net: false } })).spatialGraphs).toBeUndefined()
+  })
+  it('a batch filled from the view sends them', () => {
+    const cfg = buildBatchMovieConfig(viewerLook(base({ graphVisible: { net: true } })), ['cpSAM'], {})
+    expect(cfg.spatialGraphs).toEqual({ net: '#ffffff' })
+    expect(cfg.spatialGraphWidth).toBe(1)
   })
 })

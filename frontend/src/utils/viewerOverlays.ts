@@ -14,6 +14,7 @@
 import type { ViewerMeta } from './volumeViewer'
 import { BLUE_HEAT_RGB } from '../plots/flowColors'
 import palettesJson from '../plots/palettes.json'
+import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 import { parseOverlays } from './overlayLayers'
 import { channelLegend, type LegendItem } from './viewLegend'
 import { WHITE, OVERLAY_GREY } from '../plots/fixedColours'
@@ -151,6 +152,43 @@ export interface SkeletonPayload {
 export function skeletonsUrl(q: { projectUid: string; imageUid: string; valueName: string }): string {
   return '/api/viewer/skeletons?' + new URLSearchParams(q).toString()
 }
+
+/** `/api/viewer/spatial-graphs` — a neighbour graph's edges as segments, the skeleton payload's shape
+ *  and units (`spatial_graph_segments`). `nCrossFrame` / `nUnplaced`: edges it could not draw. */
+export interface SpatialGraphPayload {
+  suffix: string
+  flat: boolean
+  nSegments: number
+  t: number[]
+  plane: number[]
+  x0: number[]; y0: number[]; z0: number[]
+  x1: number[]; y1: number[]; z1: number[]
+  nCrossFrame: number
+  nUnplaced: number
+  /** a mask was re-segmented after the graph: its labels may name other cells now */
+  stale: boolean
+  note?: string
+}
+
+export function spatialGraphsUrl(q: { projectUid: string; imageUid: string; suffix: string }): string {
+  return '/api/viewer/spatial-graphs?' + new URLSearchParams(q).toString()
+}
+
+/** A neighbour graph's line colour until one is picked — the movie's `SPATIAL_GRAPH_COLOUR` too. */
+export const SPATIAL_GRAPH_COLOUR = WHITE
+/** Its lines' width until one is picked, in the tail width's units (image px in the viewer) — a quarter
+ *  of the default tail: a graph has ~3 lines per cell. `shaders/constants.json`, which the movie reads too. */
+export const SPATIAL_GRAPH_WIDTH: number = SHADER_CONSTANTS.SPATIAL_GRAPH_WIDTH
+
+/** A static line's end-timepoint lane: -1 (drawn unfaded, at the tail width), or -(1 + width) for a
+ *  line with its own width (`lineWidth` in `shaders/overlay_quads.wgsl`; the movie's `static_line_t1`). */
+export const staticLineTEnd = (width?: number): number =>
+  width !== undefined && width > 0 ? -(1 + width) : -1
+
+/** Static lines `appendSkeletonLines` draws: a skeleton (coloured per segment by `type`) or a
+ *  neighbour graph (one colour, no `type`). */
+export type LinePayload = Pick<SkeletonPayload, 'nSegments' | 't' | 'plane' | 'x0' | 'y0' | 'z0' | 'x1' | 'y1' | 'z1'>
+  & { type?: number[] }
 
 /** A skeleton's colour meaning "by branch type" — what the viewer draws and `viewerLook` sends as the
  *  look's `skeletons` colour; the movie reads it the same way (`branch_type_colour`). A hex instead
@@ -822,23 +860,25 @@ export function tailRange(
 }
 
 /**
- * `tracks` with `skeletons` appended as static lines — what one segment buffer and one pipeline draw,
+ * `tracks` with `skeletons` (and neighbour graphs, the same `LinePayload`, each with its own `width`)
+ * appended as static lines — what one segment buffer and one pipeline draw,
  * so a skeleton costs no texture and no cache budget (docs/todo/DRAW_SPEC_PLAN.md Phase 3). Each line
  * is a segment instance with end timepoint -1 (`tailAlpha` draws it unfaded) on the server's plane
  * (`skeleton_segments`: -1 for a Z-flattened skeleton, which `offPlanes` draws on every plane). Lines on every frame come first, then each
  * frame's in frame order, so a frame's lines are two contiguous ranges (`skeletonLineRanges`).
  */
 export function appendSkeletonLines(
-  tracks: SegmentBuffer, skeletons: readonly { payload: SkeletonPayload; colour: string }[],
+  tracks: SegmentBuffer, skeletons: readonly { payload: LinePayload; colour: string; width?: number }[],
   meta: ViewerMeta | null,
 ): SegmentBuffer {
-  const items: { s: SkeletonPayload; i: number; rgb: [number, number, number] }[] = []
+  const items: { s: LinePayload; i: number; rgb: [number, number, number]; tEnd: number }[] = []
   const byType = BRANCH_TYPE_COLOURS.map(hexToUnit)
   const white = hexToUnit(WHITE)
-  for (const { payload, colour } of skeletons) {
+  for (const { payload, colour, width } of skeletons) {
     const one = colour === SKELETON_BY_TYPE ? null : hexToUnit(colour)
+    const tEnd = staticLineTEnd(width)
     for (let i = 0; i < payload.nSegments; i++)
-      items.push({ s: payload, i, rgb: one ?? byType[payload.type?.[i] ?? -1] ?? white })
+      items.push({ s: payload, i, rgb: one ?? byType[payload.type?.[i] ?? -1] ?? white, tEnd })
   }
   if (!items.length || !meta) return tracks
   const nT = Math.max(1, meta.nT)
@@ -847,13 +887,13 @@ export function appendSkeletonLines(
   const data = new Float32Array((start + items.length) * SEG_STRIDE)
   data.set(tracks.data.subarray(0, start * SEG_STRIDE))
   let allCount = 0
-  items.forEach(({ s, i, rgb }, k) => {
+  items.forEach(({ s, i, rgb, tEnd }, k) => {
     const o = (start + k) * SEG_STRIDE
     data[o] = s.x0[i]; data[o + 1] = s.y0[i]; data[o + 2] = s.z0[i]
     data[o + 3] = s.x1[i]; data[o + 4] = s.y1[i]; data[o + 5] = s.z1[i]
     data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
     data[o + 9] = s.plane[i]
-    data[o + 10] = -1
+    data[o + 10] = tEnd
     if (s.t[i] < 0) allCount++
   })
   const firstAt = new Int32Array(nT + 1), endAt = new Int32Array(nT + 1)

@@ -32,6 +32,8 @@
   "showTrackclust",
   "showTracks",
   "skeletons",
+  "spatialGraphWidth",
+  "spatialGraphs",
   "steps",
   "tailLength",
   "tailWidth",

@@ -20,7 +20,7 @@ const spec: ViewerDrawSpec = {
   popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12,
   labelContour: 2, maskColour: 'id', trackColourMode: 'speed', colourBy: '', colourOverrides: {},
-  branchVisible: {}, scaleBar: true, timestamp: true, scaleBarPx: 20, timestampPx: 20, steps: 256,
+  branchVisible: {}, graphVisible: {}, graphColour: '#ffffff', graphWidth: 1, scaleBar: true, timestamp: true, scaleBarPx: 20, timestampPx: 20, steps: 256,
   grid: false, gridDensity: 8, landscape: false, landscapeLabels: false, roiSpotlight: true,
 }
 
@@ -60,6 +60,9 @@ const PROBES: Record<keyof ViewerDrawSpec, [Partial<ViewerDrawSpec>, Partial<Vie
   colourBy: [{}, { colourBy: 'clusters' }],
   colourOverrides: [{ colourBy: 'clusters' }, { colourOverrides: { a: '#00ff00' } }],
   branchVisible: [{}, { branchVisible: { skel: true } }],
+  graphVisible: [{}, { graphVisible: { network: true } }],
+  graphColour: [{ graphVisible: { network: true } }, { graphColour: '#ff0000' }],
+  graphWidth: [{ graphVisible: { network: true } }, { graphWidth: 2 }],
   scaleBar: [{}, { scaleBar: false }],
   timestamp: [{}, { timestamp: false }],
   scaleBarPx: [{}, { scaleBarPx: 30 }],

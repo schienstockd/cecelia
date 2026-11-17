@@ -62,6 +62,11 @@ export interface ViewerLookInput {
   colourOverrides: Record<string, string>
   /** per skeleton segmentation, its eye (`settings.getBranchVisibility`) — the shown ones draw as lines */
   branchVisible: Record<string, boolean>
+  /** per neighbour graph (run suffix), its switch (`settings.getGraphVisibility`) — the shown ones draw as
+   *  lines in `graphColour`, `graphWidth` wide (`settings.viewerGraphColour` / `viewerGraphWidth`) */
+  graphVisible: Record<string, boolean>
+  graphColour: string
+  graphWidth: number
   /** the scale bar / timestamp, on or off (`settings.viewerScaleBar` / `viewerTimestamp`) */
   scaleBar: boolean
   timestamp: boolean
@@ -163,6 +168,12 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   // the shown skeletons, as lines coloured by branch type (`appendSkeletonLines`)
   const skeletons = Object.keys(i.branchVisible).filter(vn => i.branchVisible[vn])
   if (skeletons.length) out.skeletons = Object.fromEntries(skeletons.map(vn => [vn, SKELETON_BY_TYPE]))
+  // the shown neighbour graphs, one colour (`spatial_graph_segments`)
+  const graphs = Object.keys(i.graphVisible).filter(sfx => i.graphVisible[sfx])
+  if (graphs.length) {
+    out.spatialGraphs = Object.fromEntries(graphs.map(sfx => [sfx, i.graphColour]))
+    out.spatialGraphWidth = i.graphWidth
+  }
   if (i.colourBy) {
     out.colourBy = i.colourBy
     if (Object.keys(i.colourOverrides).length) out.colourOverrides = i.colourOverrides

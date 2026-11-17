@@ -22,3 +22,6 @@ const MASK_PARENT_PALE = Float64(SHADER_CONSTANTS.MASK_PARENT_PALE)
 const LABEL_ID_MASK      = UInt32(SHADER_CONSTANTS.LABEL_ID_MASK)
 const LABEL_FILE_IN_BIT  = UInt32(SHADER_CONSTANTS.LABEL_FILE_IN_BIT)
 const LABEL_FILE_OUT_BIT = UInt32(SHADER_CONSTANTS.LABEL_FILE_OUT_BIT)
+#: A neighbour graph's line width when a look names none, in the tail width's units — the viewer's
+#: `SPATIAL_GRAPH_WIDTH` (`static_line_t1`, `lineWidth` in `shaders/overlay_quads.wgsl`).
+const SPATIAL_GRAPH_WIDTH = Float64(SHADER_CONSTANTS.SPATIAL_GRAPH_WIDTH)
