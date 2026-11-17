@@ -37,7 +37,8 @@ end
     @test fx isa RegisteredFixture && fx.uid == "KDIeEm"
     @test isfile(fixture_table(fx))
     @test fixture_for(:calibrated, Symbol("image-store")) isa RegisteredFixture
-    @test fixture_for(:cells; technology = "2P").uid == "KDIeEm"
+    # MAINT-EXEMPT: the registry's own tests name fixtures by uid on purpose
+    @test fixture_for(:cells; technology = "two-photon").uid == "KDIeEm"
     # the calibrated variant: the same real cells, a temp copy whose ccid.json carries a pixel size
     cal = fixture_for(:cells, :movie, :calibrated)
     @test cal.uid == "KDIeEm-cal" && startswith(cal.project, tempdir())

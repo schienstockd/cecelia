@@ -177,6 +177,7 @@ function fixture_facts(fx::RegisteredFixture)::Dict{Symbol,Bool}
     end
     chans = img === nothing ? String[] : something(Cecelia.channel_names(img), String[])
     f[Symbol("marker-names")] = !isempty(chans) && !any(c -> occursin(r"^(ch|c|channel)[ _-]?\d+$"i, c), chans)
+    f[:multiplex] = length(chans) >= 10    # MULTIPLEX_MIN in frontend/src/utils/setRecipe.ts
     # every image under the project that has a cell table / every cell table on this image
     tables = String[]
     for (d, _, files) in walkdir(fx.project), fn in files

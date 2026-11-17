@@ -22,6 +22,7 @@ tracked        = [true,  "track_id in the cell table"]
 track-table    = [true,  "a companion per-track table (<value_name>__tracks.h5ad)"]
 calibrated     = [true,  "PhysicalSizeX and PhysicalSizeY stored and neither is 1.0, so a missing µm conversion shows"]
 marker-names   = [true,  "channel names are markers, not placeholders like ch0"]
+multiplex      = [true,  "10 or more channels, the app's multiplex panel (setRecipe.ts MULTIPLEX_MIN): PhenoCycler, IBEX, CyCIF"]
 image-store    = [true,  "an OME-ZARR image store on disk"]
 label-store    = [true,  "a label zarr on disk"]
 regions        = [true,  "a regions.* column in the cell table"]
@@ -32,13 +33,13 @@ real           = [false, "measured from a real acquisition, not synthesised"]
 
 # One table per fixture. `dir` is relative to test-data/projects and is where ccid.json lives;
 # `image_dir` (optional) is where the image store lives when it is a different set dir.
-# `technology` is the microscope technology, as in the microscope profiles ("2P", "confocal",
-# "PhenoCycler", "IBEX", …), or "synthetic".
+# `technology` is the acquisition technology as the readers report it (`meta.acquisition.technology`:
+# "two-photon", "confocal", "widefield", "airyscan", "brightfield"), or "synthetic".
 
 [fixtures.KDIeEm]
 dir = "testpr/1/KDIeEm"
 value_name = "B"
-technology = "2P"
+technology = "two-photon"
 properties = ["cells", "movie", "3d", "tracked", "track-table", "real"]
 note = "Real intravital two-photon movie, 1377 cells × 20 frames. NOT calibrated: µm == pixels here. Channels are ch0..ch3."
 
@@ -61,12 +62,12 @@ note = "Six synthetic cubes (A / near / far) for the mesh contact route. x/y sca
 
 [fixtures.ZV2img]
 image_dir = "ZARRFMT/0/ZV2img"
-technology = "2P"
+technology = "two-photon"
 properties = ["image-store", "calibrated", "movie", "3d", "real"]
 note = "Real 64×64 crop, zarr v2. 0.5964 µm/px, 3 µm z, 30 s. No cells."
 
 [fixtures.ZV3img]
 image_dir = "ZARRFMT/0/ZV3img"
-technology = "2P"
+technology = "two-photon"
 properties = ["image-store", "calibrated", "movie", "3d", "real"]
 note = "The same crop as ZV2img, zarr v3 sharded. No cells."

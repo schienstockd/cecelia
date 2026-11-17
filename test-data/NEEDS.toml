@@ -11,7 +11,7 @@
 #
 # Fields:
 #   properties  every one in fixtures.toml → [vocabulary]; what the fixture must have
-#   technology  optional; the microscope technology the data must come from
+#   technology  optional; the acquisition technology the data must come from, as the readers report it
 #   why         the claim the test cannot check without it — one line
 #   waiting     the tests (file → testset) that skip until it is met
 #   budget      what may be committed (tables only? how many cells?) under the 1 MB / 8 MB cap
@@ -21,8 +21,7 @@
 #               itself (like CONTMESH) instead of filing it; false when only real data will do
 
 [needs.multiplex-structure-still]
-properties = ["cells", "still", "2d", "calibrated", "marker-names", "structure", "real"]
-technology = "PhenoCycler"
+properties = ["cells", "still", "2d", "calibrated", "marker-names", "multiplex", "structure", "real"]
 why = "Proximity profile and the structure readouts are for multiplex slides: their real-data test runs on a 2P movie with µm == pixels."
 waiting = []
 budget = "labelProps table + gating sidecar only, no image store; under the 1 MB per-file cap (a few thousand cells, a subset if needed)"
