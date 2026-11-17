@@ -30,6 +30,8 @@ import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob
 import { paletteRange, POPULATION_PALETTE, type VisProps } from '../../plots/plot'
 import { categoryColours } from '../../plots/categoryColours'
 import { fitLabel } from '../../plots/valueColour'
+import { placeChips } from '../../plots/chipPlacement'
+import { asinhSpread } from '../../plots/diffmapScale'
 import { tkey, parseTkey } from '../../plots/series'
 import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
@@ -55,7 +57,8 @@ const props = defineProps<{
   // See docs/todo/UMAP_COLOUR_FACET_PLAN.md.
   // basis: the layout — the UMAP (default), or a track run's two named diffusion axes. Offered only
   // when the run recorded `axes` (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md).
-  state: { labels?: boolean; basis?: 'umap' | 'diffmap'
+  // axisScale: diffusion axes only — 'spread' (default, asinh: plots/diffmapScale) or 'linear'.
+  state: { labels?: boolean; basis?: 'umap' | 'diffmap'; axisScale?: 'spread' | 'linear'
            colourBy?: 'cluster' | 'population' | 'attribute'
            colourPops?: string[]; colourAttr?: string
            facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
@@ -80,6 +83,9 @@ const hasAxes = computed(() => !!props.axes?.axes?.length)
 const basis = computed<'umap' | 'diffmap'>({
   get: () => (hasAxes.value && props.state.basis === 'diffmap' ? 'diffmap' : 'umap'),
   set: v => (props.state.basis = v) })
+const axisScale = computed<'spread' | 'linear'>({
+  get: () => (props.state.axisScale === 'linear' ? 'linear' : 'spread'),
+  set: v => (props.state.axisScale = v) })
 const layoutName = computed(() => (basis.value === 'diffmap' ? 'Diffusion axes' : 'UMAP'))
 const xTitle = computed(() => (basis.value === 'diffmap' ? axisTitle(props.axes?.axes[0], 'DC1', props.nameMap) : ''))
 const yTitle = computed(() => (basis.value === 'diffmap' ? axisTitle(props.axes?.axes[1], 'DC2', props.nameMap) : ''))
@@ -124,7 +130,8 @@ const PALETTE = POPULATION_PALETTE
 // faint whole-cloud backdrop behind each facet — dark grey on the dark ground, light grey on the light
 // (export) ground, so it always reads as a subtle "shape" layer rather than competing with the dots.
 const ghostColour = () => (dark.value ? CLUSTER_GHOST.dark : CLUSTER_GHOST.light)
-const points = ref<Float32Array | null>(null)
+const points = ref<Float32Array | null>(null)   // display coordinates (diffmap: asinh-spread, plots/diffmapScale)
+let rawPoints: Float32Array | null = null         // as stored — what the CSV exports
 const categories = ref<Float32Array | null>(null)
 const palette = ref<string[]>([])
 const legend = ref<{ label: string; colour: string; n: number }[]>([])
@@ -147,8 +154,20 @@ function mapPx(x: number, y: number, w: number, h: number): [number, number] {
   const offX = (w - xr * sc) / 2, offY = (h - yr * sc) / 2
   return [offX + (x - xMin) * sc, offY + (yMax - y) * sc]   // y flips (screen down)
 }
-const lx = (x: number) => `${mapPx(x, 0, boxW.value, boxH.value)[0]}px`
-const ly = (y: number) => `${mapPx(0, y, boxW.value, boxH.value)[1]}px`
+// Centroid label chips, placed whole inside a WxH box and clear of each other (plots/chipPlacement) —
+// a chip on a cluster at the edge used to hang off it and clip. The on-screen overlay and the SVG
+// export share this, so the figure matches the panel. The size estimate is the bold label chip's
+// 0.6·font per char + padding/border; on diffusion axes the titles' bands along the left and bottom
+// edges are kept clear too.
+const chipSize = (s: string, fsz: number) => ({ w: s.length * fsz * 0.6 + 10, h: fsz * 1.4 + 2 })
+function placedChips(W: number, H: number, fsz: number): { label: string; x: number; y: number; w: number; h: number }[] {
+  const cs = centroids.value.map(c => { const [x, y] = mapPx(c.x, c.y, W, H); return { label: c.label, x, y, ...chipSize(c.label, fsz) } })
+  const band = fsz * 1.4 + 4
+  const pos = placeChips(cs, W, H, { left: yTitle.value ? band : 0, bottom: xTitle.value ? band : 0 })
+  return cs.map((c, i) => ({ ...c, ...pos[i] }))
+}
+const chipLabels = computed(() => (labels.value && facetBy.value === 'none' && boxW.value > 0
+  ? placedChips(boxW.value, boxH.value, labelFont.value) : []))
 
 // ── faceting: split points into small multiples by an attribute value / population ──────────────────
 // facetBy='attribute' groups by each point's image attribute (facetAttr); 'population' by its popIdx;
@@ -439,7 +458,7 @@ function recolour() {
 
 async function load() {
   err.value = ''
-  if (!props.projectUid || !props.imageUids.length) { points.value = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
+  if (!props.projectUid || !props.imageUids.length) { points.value = null; rawPoints = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
   loading.value = true
   try {
     // wire = flat Float32 [x, y, clusterCode, popIdx, label] per point (20 B via `withLabels=1`). We
@@ -467,7 +486,7 @@ async function load() {
     }
     const n = Math.floor(rec.length / stride)
     if (n === 0) {
-      points.value = null; categories.value = null; legend.value = []; centroids.value = []
+      points.value = null; rawPoints = null; categories.value = null; legend.value = []; centroids.value = []
       err.value = basis.value === 'diffmap'
         ? `No diffusion axes at suffix “${props.suffix}”. Re-run the track clustering.`
         : `No UMAP at suffix “${props.suffix}”. Run clustering with “Calculate UMAP” enabled.`
@@ -476,19 +495,14 @@ async function load() {
     const pts = new Float32Array(n * 2), codes = new Float32Array(n), popIdx = new Float32Array(n)
     const labs = new Float32Array(n)
     const img = new Uint16Array(n)
-    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
     for (let i = 0; i < n; i++) {
       const x = rec[stride * i], y = rec[stride * i + 1]
       pts[2 * i] = x; pts[2 * i + 1] = y
       codes[i] = rec[stride * i + 2]; popIdx[i] = rec[stride * i + 3]
       labs[i] = rec[stride * i + 4]
       img[i] = imgOf[i]
-      if (x < xMin) xMin = x; if (x > xMax) xMax = x
-      if (y < yMin) yMin = y; if (y > yMax) yMax = y
     }
-    const px = (xMax - xMin || 1) * 0.04, py = (yMax - yMin || 1) * 0.04
-    extents.value = { xMin: xMin - px, xMax: xMax + px, yMin: yMin - py, yMax: yMax + py }
-    points.value = pts
+    rawPoints = pts
     codesRef.value = codes
     popIdxRef.value = popIdx
     pointImg.value = img
@@ -496,18 +510,39 @@ async function load() {
     countsMap = new Map<number, number>()
     for (let i = 0; i < n; i++) countsMap.set(codes[i], (countsMap.get(codes[i]) ?? 0) + 1)
     distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
-    // per-cluster centroid sums (recolour turns these into cluster-number or pop-name labels)
-    sumX = new Map<number, number>(); sumY = new Map<number, number>()
-    for (let i = 0; i < n; i++) {
-      const c = codes[i]; if (c < 0) continue
-      sumX.set(c, (sumX.get(c) ?? 0) + pts[2 * i]); sumY.set(c, (sumY.get(c) ?? 0) + pts[2 * i + 1])
-    }
-    recolour()
+    applyDisplay()
   } catch (e) {
     err.value = e instanceof Error ? e.message : String(e)
     log.error(`${layoutName.value}: ${err.value}`, { source: 'cluster' })
   } finally { loading.value = false }
 }
+
+// raw → display coordinates, extents and centroid sums, then recolour. Diffusion axes crowd most
+// tracks into one corner on a linear scale, so by default they are spread for display. Re-run on an
+// axis-scale flip without refetching.
+function applyDisplay() {
+  const pts = rawPoints, codes = codesRef.value
+  if (!pts || !codes) return
+  const n = codes.length
+  const disp = basis.value === 'diffmap' && axisScale.value === 'spread' ? asinhSpread(pts) : pts
+  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
+  for (let i = 0; i < n; i++) {
+    const x = disp[2 * i], y = disp[2 * i + 1]
+    if (x < xMin) xMin = x; if (x > xMax) xMax = x
+    if (y < yMin) yMin = y; if (y > yMax) yMax = y
+  }
+  const px = (xMax - xMin || 1) * 0.04, py = (yMax - yMin || 1) * 0.04
+  extents.value = { xMin: xMin - px, xMax: xMax + px, yMin: yMin - py, yMax: yMax + py }
+  points.value = disp
+  // per-cluster centroid sums (recolour turns these into cluster-number or pop-name labels)
+  sumX = new Map<number, number>(); sumY = new Map<number, number>()
+  for (let i = 0; i < n; i++) {
+    const c = codes[i]; if (c < 0) continue
+    sumX.set(c, (sumX.get(c) ?? 0) + disp[2 * i]); sumY.set(c, (sumY.get(c) ?? 0) + disp[2 * i + 1])
+  }
+  recolour()
+}
+watch(axisScale, applyDisplay)
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix, basis],
   () => { load(); loadPopGroups() })
@@ -568,7 +603,7 @@ function exportAs(kind: string) {
     }
   }
   else if (kind === 'csv') {
-    const pts = points.value, codes = codesRef.value
+    const pts = rawPoints, codes = codesRef.value
     if (!pts || !codes) return
     const rows = Array.from({ length: codes.length }, (_, i) =>
       ({ x: pts[2 * i], y: pts[2 * i + 1], cluster: codes[i] < 0 ? '' : codes[i] }))
@@ -589,7 +624,7 @@ function exportSvg(): string {
   const ghostLight = CLUSTER_GHOST.light
   // ggplot geom_label look: white box + thin dark border + dark text (matches labelStyle, both themes)
   const chip = (px: number, py: number, s: string): string => {
-    const w = s.length * fsz * 0.6 + 8, h = fsz + 6
+    const { w, h } = chipSize(s, fsz)
     return svgRect(px - w / 2, py - h / 2, w, h, { fill: PAPER, stroke: LABEL_EDGE, width: 0.8, rx: 3, opacity: 0.9 }) +
            svgText(px, py + fsz * 0.35, s, { fill: PAPER_INK, size: fsz, anchor: 'middle', weight: 700 })
   }
@@ -603,7 +638,7 @@ function exportSvg(): string {
       body += svgCircles(g.map(i => mapPx(pts[2 * i], pts[2 * i + 1], S, S)),
                          { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
     }
-    if (labels.value) for (const c of centroids.value) { const [px, py] = mapPx(c.x, c.y, S, S); body += chip(px, py, c.label) }
+    if (labels.value) for (const c of placedChips(S, S, fsz)) body += chip(c.x, c.y, c.label)
   } else {
     const n = pts.length / 2
     for (let fi = 0; fi < fs.length; fi++) {
@@ -693,6 +728,7 @@ const plotSettings: PlotSettings = {
   facetBy: setting(facetBy, () => ['none', 'attribute', 'population']),
   facetAttr: setting(facetAttr, () => attrs.value.map(a => a.name)),
   basis: setting(basis, () => (hasAxes.value ? ['umap', 'diffmap'] : ['umap'])),
+  axisScale: setting(axisScale, () => ['spread', 'linear']),
   labels: setting(labels),
 }
 defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage, plotSettings,
@@ -832,6 +868,12 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
               <option value="diffmap">Diffusion axes</option>
             </select>
           </label>
+          <label v-if="basis === 'diffmap'" class="uv-opt cc-muted" v-tooltip.top="'Spread opens up the crowded core'"><span>Axis scale</span>
+            <select v-model="axisScale">
+              <option value="spread">Spread</option>
+              <option value="linear">Linear</option>
+            </select>
+          </label>
           <label class="uv-opt cc-muted" v-tooltip.top="'What the point colours encode'"><span>Colour by</span>
             <select v-model="colourBy">
               <option value="cluster">cluster</option>
@@ -893,8 +935,8 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
           <template v-if="points && points.length">
             <canvas ref="dotsEl" class="uv-canvas" />
             <!-- centroid labels only when NOT faceted (their full-box positions don't map into cells) -->
-            <span v-for="c in centroids" v-show="labels && facetBy === 'none'" :key="c.label" class="uv-label"
-                  :style="{ left: lx(c.x), top: ly(c.y), fontSize: labelFont + 'px', ...labelStyle }">{{ c.label }}</span>
+            <span v-for="c in chipLabels" :key="c.label" class="uv-label"
+                  :style="{ left: c.x + 'px', top: c.y + 'px', fontSize: labelFont + 'px', ...labelStyle }">{{ c.label }}</span>
             <!-- per-facet titles (small multiples) -->
             <span v-for="(t, ti) in facetTitles" :key="'f'+ti" class="uv-facet-title" :class="{ 'is-short': t.full }"
                   v-tooltip.top="t.full"
@@ -969,7 +1011,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
    large enough to sit above the dot (`dotR` is typically ~2 px). */
 .uv-claude-hit { position: absolute; transform: translate(-50%, -50%); pointer-events: auto;
   z-index: 3; }
-.uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700;
+.uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700; white-space: nowrap;
   color: var(--cc-paper-ink); background: color-mix(in srgb, var(--cc-paper) 90%, transparent); border: 1px solid var(--cc-hud-bg-soft); border-radius: var(--cc-radius-xs); padding: 0 4px; line-height: 1.4; z-index: 2; }
 /* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */
 .uv-facet-title { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2;
