@@ -67,6 +67,8 @@ export interface ViewerLookInput {
   graphVisible: Record<string, boolean>
   graphColour: string
   graphWidth: number
+  /** only the edges between cells of the pops drawn (`settings.getGraphPopsOnly`) */
+  graphPopsOnly: boolean
   /** the scale bar / timestamp, on or off (`settings.viewerScaleBar` / `viewerTimestamp`) */
   scaleBar: boolean
   timestamp: boolean
@@ -173,6 +175,7 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   if (graphs.length) {
     out.spatialGraphs = Object.fromEntries(graphs.map(sfx => [sfx, i.graphColour]))
     out.spatialGraphWidth = i.graphWidth
+    if (i.graphPopsOnly) out.spatialGraphPopsOnly = true
   }
   if (i.colourBy) {
     out.colourBy = i.colourBy

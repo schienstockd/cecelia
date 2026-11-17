@@ -304,6 +304,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "skeletons"        => skeletons,
         "spatialGraphs"    => spatial_graphs,
         "spatialGraphWidth" => _cfg_maybe(cfg, "spatialGraphWidth"),
+        "spatialGraphPopsOnly" => _cfg_bool(cfg, "spatialGraphPopsOnly"),
         # The pop layers: a viewer look draws these cell pop types on EVERY segmentation (populations
         # are not a property of the shown segmentation); without them, the one `popType` of `valueName`.
         "popTypes"         => pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[],

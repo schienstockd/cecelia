@@ -106,7 +106,7 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
-  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween,
   type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
@@ -2260,10 +2260,27 @@ const graphSuffixes = computed(() => {
   const vis = spec.graphVisible
   return (meta.value?.spatialGraphNames ?? []).filter(sfx => vis[sfx])
 })
-const shownGraphs = () => graphSuffixes.value.flatMap(sfx => {
-  const payload = graphPayloads.value.get(sfx)
-  return payload ? [{ payload, colour: spec.graphColour, width: spec.graphWidth }] : []
-})
+/** The cells of every pop drawn as a point, by segmentation — `popDrawn`, the eye the points obey. */
+function shownPopCells(): Map<string, Set<number>> {
+  const out = new Map<string, Set<number>>()
+  for (const l of popLayers.value)
+    for (const p of l.payload.pops) {
+      if (!popDrawn(l, p.path)) continue
+      const set = out.get(l.vn) ?? new Set<number>()
+      for (const lab of p.labels) set.add(lab)
+      out.set(l.vn, set)
+    }
+  return out
+}
+const shownGraphs = () => {
+  // "only between shown populations": both cells of an edge in a drawn pop (the movie's `spatial_graph_between`)
+  const cells = spec.graphPopsOnly ? shownPopCells() : null
+  return graphSuffixes.value.flatMap(sfx => {
+    const payload = graphPayloads.value.get(sfx)
+    if (!payload) return []
+    return [{ payload: cells ? graphEdgesBetween(payload, cells) : payload, colour: spec.graphColour, width: spec.graphWidth }]
+  })
+}
 async function loadGraphs(force = false) {
   if (!projectUid || !imageUid) return
   const want = graphSuffixes.value
@@ -2288,7 +2305,7 @@ watch(() => graphSuffixes.value.join('\n'), () => { void loadGraphs() })
 // A new colour or width redraws the lines already fetched — no refetch. The width slider writes on
 // release, and the redraw is coalesced to one per frame, so a burst of picks rebuilds the buffer once.
 const graphRestyle = rafCoalesce(() => { if (graphSuffixes.value.length) rebuildOverlays() })
-watch(() => [spec.graphColour, spec.graphWidth], () => graphRestyle.schedule())
+watch(() => [spec.graphColour, spec.graphWidth, spec.graphPopsOnly], () => graphRestyle.schedule())
 onUnmounted(() => graphRestyle.cancel())
 
 async function loadTracks() {

@@ -849,8 +849,10 @@ function overlay_track_plan(ov)
         Tuple{String,String}[]
     gw = g("spatialGraphWidth", nothing)
     spatial_graph_width = gw isa Real && gw > 0 ? Float64(gw) : SPATIAL_GRAPH_WIDTH
+    # only the edges between cells of the pops drawn (a look's `spatialGraphPopsOnly`)
+    spatial_graph_pops_only = Bool(something(g("spatialGraphPopsOnly", false), false))
     rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes,
-              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width)
+              ribbon_eyes, skeletons, spatial_graphs, spatial_graph_width, spatial_graph_pops_only)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -948,6 +950,8 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
                            pop = isempty(src) ? rgb(col) : nothing, cb = false))
     end
 
+    # the cells of every pop drawn as a point — what a graph's "only between shown populations" keeps
+    shown_cells = Set{Tuple{String,Int}}()
     # Pop layers: dots (coloured by colour-by) + one cell-track ribbon source per pop.
     layers = !show_pops ? Tuple{String,String,Any}[] :
         plan.pop_all_segs ?
@@ -966,6 +970,13 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
                                point_on, track_on = ribbon_on)
         has_t |= parts.hasT
         add_points!(parts.pts_by_t)
+        if get(plan, :spatial_graph_pops_only, false)
+            for L in _overlay_pops(img, lvn, lpt)
+                point_on(String(L.path), Bool(L.show)) || continue
+                lf === nothing || L.path in lf || continue
+                for l in L.labels; push!(shown_cells, (lvn, Int(l))); end
+            end
+        end
         ribbons || continue
         for L in _overlay_pops(img, lvn, lpt)
             ribbon_on(String(L.path), Bool(L.show)) || continue
@@ -1007,7 +1018,9 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
         gs = spatial_graph_segments(img, sfx)
         gs === nothing && (@warn "neighbour graph '$sfx' is gone — re-run the graph" image = img.uid; continue)
         length(gs) == 0 && continue
-        push!(skels, (gs.segs, rgb(isempty(col) ? SPATIAL_GRAPH_COLOUR : col),
+        segs_g = get(plan, :spatial_graph_pops_only, false) ? spatial_graph_between(gs, shown_cells) : gs.segs
+        length(segs_g) == 0 && continue
+        push!(skels, (segs_g, rgb(isempty(col) ? SPATIAL_GRAPH_COLOUR : col),
                       static_line_t1(get(plan, :spatial_graph_width, SPATIAL_GRAPH_WIDTH))))
     end
 

@@ -90,6 +90,8 @@ const graphVis = computed(() => props.imageUid ? settings.getGraphVisibility(pro
 function setGraph(sfx: string, v: boolean) {
   if (props.imageUid) settings.setGraphVisibility(props.imageUid, { ...graphVis.value, [sfx]: v })
 }
+const graphPopsOnly = computed(() => !!props.imageUid && settings.getGraphPopsOnly(props.imageUid))
+const setGraphPopsOnly = (v: boolean) => { if (props.imageUid) settings.setGraphPopsOnly(props.imageUid, v) }
 // Which segmentations have tracks (a `track_id` column) — the tracks button is off without them.
 const { trackedNames } = useTrackValueNames(toRef(props, 'projectUid'), toRef(props, 'imageUid'), ref(''))
 const hasTracks = (vn: string) => trackedNames.value.includes(vn) || !!trackVis.value[vn]
@@ -187,6 +189,9 @@ const summary = computed(() => [
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Neighbour graph edges as lines'">Neighbour graphs</div>
         <CcToggle v-for="sfx in graphNames" :key="sfx" class="cc-fs-2xs" :label="sfx"
                   :model-value="!!graphVis[sfx]" @update:model-value="v => setGraph(sfx, v)" />
+        <CcToggle v-if="graphNames.some(sfx => graphVis[sfx])" class="cc-fs-2xs" label="Only between shown populations"
+                  v-tooltip.bottom="'Edges whose two cells are both in a shown population'"
+                  :model-value="graphPopsOnly" @update:model-value="setGraphPopsOnly" />
       </div>
       <div v-if="switches.popTypes.length" class="vw-onimg-group">
         <div class="cc-eyebrow cc-fs-3xs" v-tooltip.bottom="'Population types drawn as points'">Populations</div>

@@ -113,7 +113,7 @@ export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
 export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df, branch_paths
 export SkeletonSegments, skeleton_segments, skeleton_segments_at
-export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges
+export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform

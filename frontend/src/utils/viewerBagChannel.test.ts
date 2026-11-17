@@ -31,6 +31,12 @@ describe('decodeViewerBagEvent', () => {
       .toEqual({ kind: 'graphVis', value: v })
   })
 
+  it('decodes the graph’s only-shown-populations switch', () => {
+    const v = { 'img-A': true }
+    expect(decodeViewerBagEvent('cc.viewerGraphPopsOnly', JSON.stringify(v)))
+      .toEqual({ kind: 'graphPopsOnly', value: v })
+  })
+
   it('decodes per-set prefs', () => {
     const v = { 'set-A': { colourBy: 'HMM_state', show3D: true, pointSize: 8 } }
     expect(decodeViewerBagEvent('cc.viewerSetPrefs', JSON.stringify(v)))

@@ -991,7 +991,7 @@ end
 
 # ── GET /api/viewer/spatial-graphs ────────────────────────────────────────────────
 # ?projectUid=&imageUid=&suffix= → {suffix, flat, nSegments, t, plane, x0, y0, z0, x1, y1, z1,
-#                                   nCrossFrame, nUnplaced, stale, note?}
+#                                   nCrossFrame, nUnplaced, stale, note?, vns, aVn, aLabel, bVn, bLabel}
 #
 # A neighbour graph (`spatialAnalysis.cellNeighbours`) as line segments, one per edge, centroid to
 # centroid (`spatial_graph_segments` — the reader the movie overlay closure uses too). The skeleton
@@ -1023,10 +1023,15 @@ function api_viewer_spatial_graphs(req::HTTP.Request)
     g.stale && push!(notes, "segmented again since the graph was built; re-run the graph")
     g.n_cross_frame > 0 && push!(notes, "$(g.n_cross_frame) edges join two frames and are not drawn")
     note = isempty(notes) ? nothing : join(notes, "; ")
+    # each segment's two cells, `(vns[aVn + 1], aLabel)` — what "only between shown populations" matches
+    vns = unique(vcat(g.a_vn, g.b_vn))
+    vix = Dict(v => i - 1 for (i, v) in enumerate(vns))
     200, JSON3.write((; suffix = sfx, flat = false, nSegments = n, t = s.t, plane = s.plane,
                         x0 = s.x0 .* ux, y0 = s.y0 .* uy, z0 = s.z0 .* uz,
                         x1 = s.x1 .* ux, y1 = s.y1 .* uy, z1 = s.z1 .* uz,
-                        nCrossFrame = g.n_cross_frame, nUnplaced = g.n_unplaced, stale = g.stale, note))
+                        nCrossFrame = g.n_cross_frame, nUnplaced = g.n_unplaced, stale = g.stale, note,
+                        vns, aVn = [vix[v] for v in g.a_vn], aLabel = g.a_label,
+                        bVn = [vix[v] for v in g.b_vn], bLabel = g.b_label))
 end
 
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────

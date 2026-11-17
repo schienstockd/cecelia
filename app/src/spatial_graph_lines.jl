@@ -85,3 +85,16 @@ function spatial_graph_segments(img::CciaImage, suffix::AbstractString)
     end
     SpatialGraphSegments(segs, a_vn, a_label, b_vn, b_label, cross, unplaced, stale)
 end
+
+"""
+    spatial_graph_between(g, cells) -> SkeletonSegments
+
+`g`'s segments whose two cells are both in `cells` (a set of `(valueName, label)`) — the edges between
+the populations shown, for "only between shown populations". The viewer filters the same way
+(`graphEdgesBetween`), from the same `(valueName, label)` per segment end.
+"""
+function spatial_graph_between(g::SpatialGraphSegments, cells::AbstractSet{Tuple{String,Int}})
+    s = g.segs
+    k = [i for i in 1:length(s) if (g.a_vn[i], g.a_label[i]) in cells && (g.b_vn[i], g.b_label[i]) in cells]
+    SkeletonSegments(s.x0[k], s.y0[k], s.z0[k], s.x1[k], s.y1[k], s.z1[k], s.t[k], s.plane[k], s.type[k], s.flat)
+end
