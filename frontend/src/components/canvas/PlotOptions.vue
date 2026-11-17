@@ -10,7 +10,8 @@
   accordion (`accordion="plotOptions.openSection"`): one open at a time, persisted per profile.
 
   `sections` optionally restricts which sub-sections show (e.g. a plot family with no raw points hides
-  Points). Default = all four.
+  Points). Default = all four. Within them, each ROW shows only when the active plot reacts to it —
+  `readout.controls`, declared per chart kind in plots/plotControls.ts.
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -18,7 +19,8 @@ import { facetMode, type VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
 import InlineNote from '../InlineNote.vue'
-import { emptyReadout, overrideFor, type PlotReadout } from '../../plots/plotReadout'
+import { emptyReadout, offers, overrideFor, type PlotReadout } from '../../plots/plotReadout'
+import type { VisControl } from '../../plots/plotControls'
 import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 
@@ -67,7 +69,18 @@ const labYDraft   = useFieldDraft(() => props.vis.labY)
 const yMinDraft   = useFieldDraft(() => props.vis.yMin)
 const yMaxDraft   = useFieldDraft(() => props.vis.yMax)
 const coloursDraft = useFieldDraft(() => props.vis.userColors)
-const has = (s: SectionKey) => props.sections.includes(s)
+// A row shows only when the active plot reacts to it (`readout.controls`, plots/plotControls.ts) —
+// a control that changes nothing reads as broken. A section left with no rows is not drawn. The hidden
+// value is kept, not reset: under Global scope it still drives the plots that do use it.
+const can = (c: VisControl) => offers(props.readout, c)
+const SECTION_ROWS: Record<SectionKey, VisControl[]> = {
+  layout: ['legend', 'logScale', 'grid', 'rotateXLabel', 'rotate', 'facetBy', 'yRange'],
+  points: ['jitter', 'colorData', 'pointSize', 'pointOpacity'],
+  colours: ['palette'],
+  stats: ['stats'],
+  labels: ['title', 'labX', 'labY', 'fontSize'],
+}
+const has = (s: SectionKey) => props.sections.includes(s) && SECTION_ROWS[s].some(can)
 </script>
 
 <template>
@@ -76,27 +89,27 @@ const has = (s: SectionKey) => props.sections.includes(s)
     <CollapsibleSection v-if="has('layout')" label="Layout" max-height="none"
                         accordion="plotOptions.openSection" section="layout">
       <div class="po-body">
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Show the series key beside the plot'"><span>Legend</span>
+        <div v-if="can('legend')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Show the series key beside the plot'"><span>Legend</span>
           <CcToggle aria-label="Legend" :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Log scale on the measure axis'"><span>Log scale</span>
+        <div v-if="can('logScale')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Log scale on the measure axis'"><span>Log scale</span>
           <CcToggle aria-label="Log scale" :model-value="vis.logScale" @update:model-value="set({ logScale: $event })" /></div>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Draw axis gridlines behind the data'"><span>Gridlines</span>
+        <div v-if="can('grid')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Draw axis gridlines behind the data'"><span>Gridlines</span>
           <CcToggle aria-label="Gridlines" :model-value="vis.grid" @update:model-value="set({ grid: $event })" /></div>
-        <div class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!xLabelOverride }"
+        <div v-if="can('rotateXLabel')" class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!xLabelOverride }"
              v-tooltip.top="overrideTooltip(xLabelOverride, 'Rotate the x tick labels (angle below)')">
           <span>Rotate X labels<i v-if="xLabelOverride" class="pi pi-exclamation-triangle po-warn" /></span>
           <CcToggle aria-label="Rotate X labels" v-model="rotateXShown" /></div>
         <!-- the angle applies whenever labels are rotated, however that came about -->
-        <label v-if="rotateXShown" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'X tick-label angle (degrees)'"><span>X angle</span>
+        <label v-if="can('rotateXLabel') && rotateXShown" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'X tick-label angle (degrees)'"><span>X angle</span>
           <input type="range" min="0" max="90" step="5" :value="vis.rotateXAngle ?? 45"
                  @input="set({ rotateXAngle: parseInt(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.rotateXAngle ?? 45 }}°</span></label>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
+        <div v-if="can('rotate')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
           <CcToggle aria-label="Rotate 90 degrees" :model-value="vis.rotate"
                  @update:model-value="set({ rotate: $event, ...($event ? { facetBy: 'none' } : {}) })" /></div>
         <!-- WHAT a small-multiple panel is one OF. Image = compare the selected images side by side,
              each panel holding that image's segmentations/populations. -->
-        <label class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!facetOverrideNote }"
+        <label v-if="can('facetBy')" class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!facetOverrideNote }"
                v-tooltip.top="overrideTooltip(facetOverrideNote, 'Split into small multiples (mutually exclusive with rotate)')">
           <span>Facet by<i v-if="facetOverrideNote" class="pi pi-exclamation-triangle po-warn" /></span>
           <select class="po-sel" :value="facetShown"
@@ -106,9 +119,9 @@ const has = (s: SectionKey) => props.sections.includes(s)
             <option value="image">Image</option>
             <option value="series">Series</option>
           </select></label>
-        <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y min</span>
+        <label v-if="can('yRange')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y min</span>
           <input class="po-txt" type="text" v-model="yMinDraft" @change="set({ yMin: yMinDraft })" /></label>
-        <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y max</span>
+        <label v-if="can('yRange')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Measure-axis range (blank = auto)'"><span>Y max</span>
           <input class="po-txt" type="text" v-model="yMaxDraft" @change="set({ yMax: yMaxDraft })" /></label>
       </div>
     </CollapsibleSection>
@@ -117,17 +130,17 @@ const has = (s: SectionKey) => props.sections.includes(s)
     <CollapsibleSection v-if="has('points')" label="Points" max-height="none"
                         accordion="plotOptions.openSection" section="points">
       <div class="po-body">
-        <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Data offset (beeswarm / random / none)'"><span>Offset</span>
+        <label v-if="can('jitter')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Data offset (beeswarm / random / none)'"><span>Offset</span>
           <select class="po-sel" :value="vis.jitter" @change="set({ jitter: ($event.target as HTMLSelectElement).value as VisProps['jitter'] })">
             <option value="beeswarm">beeswarm</option><option value="random">random</option><option value="none">none</option>
           </select></label>
-        <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Colour points by series (else grey)'"><span>Colour data</span>
+        <div v-if="can('colorData')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Colour points by series (else grey)'"><span>Colour data</span>
           <CcToggle aria-label="Colour data" :model-value="vis.colorData" @update:model-value="set({ colorData: $event })" /></div>
-        <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Radius of each plotted cell'"><span>Point size</span>
+        <label v-if="can('pointSize')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Radius of each plotted cell'"><span>Point size</span>
           <input type="range" min="0.5" max="8" step="0.5" :value="vis.pointSize"
                  @input="set({ pointSize: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.pointSize }}</span></label>
-        <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Lower it where points overlap heavily'"><span>Point opacity</span>
+        <label v-if="can('pointOpacity')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Lower it where points overlap heavily'"><span>Point opacity</span>
           <input type="range" min="0.05" max="1" step="0.05" :value="vis.pointOpacity"
                  @input="set({ pointOpacity: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.pointOpacity.toFixed(2) }}</span></label>
@@ -187,13 +200,13 @@ const has = (s: SectionKey) => props.sections.includes(s)
     <CollapsibleSection v-if="has('labels')" label="Labels" max-height="none"
                         accordion="plotOptions.openSection" section="labels">
       <div class="po-body">
-        <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'Heading above the plot (blank = none)'"><span>Title</span>
+        <label v-if="can('title')" class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'Heading above the plot (blank = none)'"><span>Title</span>
           <input class="po-txt wide" type="text" v-model="titleDraft" @change="set({ title: titleDraft })" /></label>
-        <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'X axis caption (blank = the measure name)'"><span>X label</span>
+        <label v-if="can('labX')" class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'X axis caption (blank = the measure name)'"><span>X label</span>
           <input class="po-txt wide" type="text" v-model="labXDraft" @change="set({ labX: labXDraft })" /></label>
-        <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'Y axis caption (blank = the measure name)'"><span>Y label</span>
+        <label v-if="can('labY')" class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'Y axis caption (blank = the measure name)'"><span>Y label</span>
           <input class="po-txt wide" type="text" v-model="labYDraft" @change="set({ labY: labYDraft })" /></label>
-        <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Type size for titles, axes and tick labels'"><span>Font size</span>
+        <label v-if="can('fontSize')" class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Type size for titles, axes and tick labels'"><span>Font size</span>
           <input type="range" min="8" max="20" step="1" :value="vis.fontSize"
                  @input="set({ fontSize: Number(($event.target as HTMLInputElement).value) })" />
           <span class="po-val">{{ vis.fontSize }}</span></label>

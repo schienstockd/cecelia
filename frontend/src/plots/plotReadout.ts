@@ -1,6 +1,7 @@
 import type { ComparisonsResult } from './types'
 import { statsInfoOf, emptyStatsInfo, type StatsInfo } from './statsInfo'
 import type { AutoOverride } from './autoOverride'
+import type { VisControl } from './plotControls'
 
 /**
  * Everything the population picker needs to REPORT about the active plot's last render.
@@ -16,16 +17,23 @@ import type { AutoOverride } from './autoOverride'
 export interface PlotReadout {
   stats: StatsInfo              // which test ran, and why `auto` chose it
   overrides: AutoOverride[]     // settings the renderer had to substitute
+  // the settings this plot reacts to (plots/plotControls.ts); null = not declared → the rail shows all
+  controls: VisControl[] | null
 }
 
-export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [] })
+export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [], controls: null })
 
 export function readoutOf(
   cmp: ComparisonsResult | undefined | null,
   overrides: AutoOverride[] = [],
+  controls: VisControl[] | null = null,
 ): PlotReadout {
-  return { stats: statsInfoOf(cmp), overrides }
+  return { stats: statsInfoOf(cmp), overrides, controls }
 }
+
+/** Does the active plot react to this setting? Undeclared (a plot that reports none) → yes. */
+export const offers = (r: PlotReadout | undefined, c: VisControl): boolean =>
+  !r?.controls || r.controls.includes(c)
 
 /** The override affecting a named setting, if any — so a control can mark itself. */
 export const overrideFor = (r: PlotReadout | undefined, setting: string): AutoOverride | null =>
