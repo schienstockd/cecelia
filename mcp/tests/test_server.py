@@ -23,7 +23,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
     def test_expected_read_and_write_tools_registered(self):
         for tool in (
             "get_project_info", "list_images", "find_object", "get_task_history",
-            "get_module_params", "get_available_plots", "get_analysis_lineage", "get_populations",
+            "get_module_params", "get_plot_catalogue", "get_analysis_lineage", "get_populations",
             "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
             "get_region_clusters", "get_contact_stats", "get_spatial_patterns",   # split of former get_spatial_stats
             "get_chains", "get_cohort_qc", "get_repl_api", "get_session_briefing",
@@ -39,7 +39,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "mark_plot",                    # bidir plot point-out (PR #4b)
             "select_on_plot",               # LINKED_BRUSHING follow-up — multi-source track/cell selection
 
-            "list_plots",                   # bidir PR #8 — live plot registry discovery
+            "list_open_plots",                   # bidir PR #8 — live plot registry discovery
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
             "get_viewer_screenshot", "set_viewer_view",   # look at / adjust the open viewer
             "get_plot_image", "set_plot_view",   # look at / adjust an open plot panel
@@ -1160,7 +1160,7 @@ class NoGuiSurfaceTest(unittest.TestCase):
     """No-GUI mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN P2): the tools that read or drive the GUI
     are not registered, and the briefing says what replaces the GUI's half of the rules."""
 
-    GUI_ONLY = {"mark_tracks", "mark_cells", "select_on_plot", "point_at_ui", "mark_freeform", "list_plots",
+    GUI_ONLY = {"mark_tracks", "mark_cells", "select_on_plot", "point_at_ui", "mark_freeform", "list_open_plots",
                 "mark_plot", "open_analysis_board_plot", "seek_viewer", "mark_tile", "get_landscape",
                 "get_viewer_screenshot", "set_viewer_view", "get_plot_image", "set_plot_view",
                 "get_recent_captures", "get_capture", "get_capture_landscape_tiles", "register_push_target",

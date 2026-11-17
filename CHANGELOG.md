@@ -28,6 +28,8 @@ stack. Per-tag notes are also on the
 - **Aggregate runs have names.** Columns gain `#<name>` (`flow.cell.is.aggregate#default`), and the
   population is `_aggregated_<name>`. Plots and gates on older aggregate columns need re-picking after a re-run.
 - **Recordings follow the viewer's scale bar, timestamp and 3D Steps.** Pick a Render quality to override Steps.
+- **Two Claude tools are renamed:** `get_available_plots` → `get_plot_catalogue`, `list_plots` →
+  `list_open_plots`. A Claude Code permission rule naming the old ones needs the new names.
 - **Softer population colours.** New populations and uncoloured clusters / states use a calmer
   12-colour palette; colours already saved on a population stay.
 - **Skeletons draw as lines coloured by branch type**, in the viewer and every recording. Re-run

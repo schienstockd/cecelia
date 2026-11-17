@@ -1,7 +1,7 @@
 // Live plot-panel registry (BIDIR PR #8) — populated by `useVisualPanel(persistKey, meta)` on
 // every mounted plot host (InteractivePanel, SummaryPanel, cluster panels, gate panels, cards).
 // The server's Julia mirror (`api/src/plots_registry_api.jl`) is the source of truth Claude reads
-// through the `list_plots` MCP tool; this store is the FRONTEND side that keeps it in step by
+// through the `list_open_plots` MCP tool; this store is the FRONTEND side that keeps it in step by
 // POSTing register / deregister as panels mount / unmount / rebind their persistKey.
 //
 // Session-only. No persistence. Fire-and-forget POSTs — a failed register is silent so a panel
@@ -176,7 +176,7 @@ export function usePlotRegistry(key: () => string, meta: () => PlotMeta): void {
   watch([key, meta, () => projectMeta.current?.uid], () => doRegister(), { deep: true })
   // Kept-alive pages (App.vue) share keys — the Whiteboard QC canvas and the Segment page are both
   // `summary:segment:<set>` — and the server entry holds whichever page POSTed last. Coming back to a
-  // page re-sends its meta (the dedupe falls through on the other page's `route`), so `list_plots`
+  // page re-sends its meta (the dedupe falls through on the other page's `route`), so `list_open_plots`
   // and Kiwi's jump-to-plot name the page the user is on. A hidden page stays registered on purpose:
   // a plot attached to Kiwi must still resolve after the user moves on.
   onActivated(() => doRegister())

@@ -1,5 +1,5 @@
 # ── Live plot registry (BIDIR PR #8) ──────────────────────────────────────────
-# `docs/todo/BIDIR_CONTEXT_PLAN.md` PR #8. The MCP `list_plots` tool reads this bag to hand
+# `docs/todo/BIDIR_CONTEXT_PLAN.md` PR #8. The MCP `list_open_plots` tool reads this bag to hand
 # Claude the panels currently mounted in the user's browser — so a phrase like "the UMAP" can be
 # resolved to a `plot_id` (persistKey) that `mark_plot` accepts.
 #
@@ -167,7 +167,7 @@ _pr_clean_bbox(v)::Union{Dict{String,Any},Nothing} = begin
     out
 end
 
-# Frontend envelope for `list_plots`. `ts` is float epoch seconds — same shape as marks_api's
+# Frontend envelope for `list_open_plots`. `ts` is float epoch seconds — same shape as marks_api's
 # `createdAt`. `bboxScreen` and `cellKeys` are absent (not empty) when the caller didn't ship
 # them, so a consumer can `haskey` rather than length-check.
 function _plot_ws_payload(e::PlotEntry)::Dict{String,Any}
@@ -270,7 +270,7 @@ end
     GET /api/viewer/plots?projectUid=…
 
 Reply: `{ items: [<entry>, …] }`. Empty list if the project has never had a panel registered.
-Read by the MCP `list_plots` tool. No allow-list on this side — the MCP client's ALLOWED_ROUTES
+Read by the MCP `list_open_plots` tool. No allow-list on this side — the MCP client's ALLOWED_ROUTES
 is where the surface is gated.
 """
 function api_viewer_plots_list(req::HTTP.Request)

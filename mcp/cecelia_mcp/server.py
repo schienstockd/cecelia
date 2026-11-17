@@ -486,7 +486,7 @@ def get_task_catalogue(stage: str = "") -> dict:
 
 
 @_tool
-def get_available_plots(module: str = "") -> list:
+def get_plot_catalogue(module: str = "") -> list:
     """The plot types the analysis board can render — use this to SUGGEST a visualization ("plot the HMM
     state frequencies as a bar chart") or to pick the chart for a notebook.
 
@@ -496,7 +496,7 @@ def get_available_plots(module: str = "") -> list:
     `scopeModes` = per_image / summarised (pooled across a set). Pass `module` to narrow to one module
     page's plots; omit for all. Project-independent; read-only. These are the board's OWN plots — for a
     notebook you reproduce the equivalent with AlgebraOfGraphics (see get_repl_api)."""
-    return _client.get_available_plots(module or None)
+    return _client.get_plot_catalogue(module or None)
 
 
 @_tool
@@ -510,7 +510,7 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
 
     `plots` is a list, in reading order, of:
       {plot, measure?, chart?, pops?, groupBy?, statUnit?, imageAgg?}
-      - `plot`     the plot-spec id from get_available_plots (e.g. "track_measures"). REQUIRED.
+      - `plot`     the plot-spec id from get_plot_catalogue (e.g. "track_measures"). REQUIRED.
       - `chart`    one the spec offers ("boxplot", "violin", …); defaults to its first.
       - `measure`  one the spec carries (e.g. "live.track.speed"); defaults to the spec's own.
       - `pops`     populations as "valueName/pop" — EXACTLY as get_populations and get_analysis_boards
@@ -543,7 +543,7 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
     RESOLVE WHAT IS RESOLVABLE FIRST, like create_chain. get_analysis_boards for what they already
     built (match their measures and populations rather than inventing your own, and don't rebuild a
     board that exists — two boards differing only in `statUnit` are NOT duplicates); get_populations
-    for the exact pop strings; get_available_plots for the spec ids and the charts each offers;
+    for the exact pop strings; get_plot_catalogue for the spec ids and the charts each offers;
     get_measure_summary for whether a measure has the n to be worth plotting; get_image_attributes +
     list_images' `attr` before anything cross-image. Pick the canonical clustering run rather than
     guessing among leftovers, and drop excluded images.
@@ -2097,7 +2097,7 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
 
 
 @_gui_tool
-def list_plots(project_uid: str) -> list[dict]:
+def list_open_plots(project_uid: str) -> list[dict]:
     """Every plot panel currently MOUNTED in the user's browser for this project — call this
     BEFORE `mark_plot` when the user says "the UMAP" / "that heatmap" and you don't already have
     a `plot_id` in hand from a capture envelope.
@@ -2124,22 +2124,22 @@ def list_plots(project_uid: str) -> list[dict]:
     (the analysis / cluster / gate pages are where they live — module pages without a plot bag
     return nothing). Session-only, no persistence; a browser reload re-populates on mount.
     """
-    return _client.list_plots(project_uid)
+    return _client.list_open_plots(project_uid)
 
 
 @_gui_tool
 def get_plot_image(project_uid: str, plot_id: str, max_side: int = 1600) -> list:
     """LOOK at one of the user's open plots: the picture the panel exports (plot only, light theme —
     what canvas Share and the board PDF use), as the user has it set up: colouring, populations,
-    axes, facets. `plot_id` comes from `list_plots`. Also returns `settings` — what `set_plot_view`
+    axes, facets. `plot_id` comes from `list_open_plots`. Also returns `settings` — what `set_plot_view`
     can change on this plot: `{<name>: {value, options?, multi?}}` (`{}` = none).
 
     `max_side` caps the picture's long side in px (never upscales). Nothing changes.
-    `{reason: "not_open"}` ⇒ no panel of that id is open: `list_plots` again, or
+    `{reason: "not_open"}` ⇒ no panel of that id is open: `list_open_plots` again, or
     `open_analysis_board_plot` and ask the user to look. `{reason: "not_on_screen"}` ⇒ the panel's
     page is open but hidden behind another: ask the user to switch to it. `{error}` ⇒ the panel has
     nothing drawn yet (still loading): say so, don't retry in a loop. For numbers, use the data
-    tools (see `list_plots`); this is for what the plot LOOKS like — where groups sit, overlap, split.
+    tools (see `list_open_plots`); this is for what the plot LOOKS like — where groups sit, overlap, split.
     """
     r = _client.get_plot_image(project_uid, plot_id, max_side)
     url = r.get("png") or ""
@@ -2209,7 +2209,7 @@ def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
     and selects the matching tab; the pop-out viewer is untouched.
 
     `plot_spec_id` is the `ref` field from `get_analysis_boards` (equivalently, the plot-spec
-    id from `get_available_plots`, e.g. `"track_measures"`). Optional filters — `measure`
+    id from `get_plot_catalogue`, e.g. `"track_measures"`). Optional filters — `measure`
     (matches the plot's `measure` field, e.g. `"live.track.speed"`) and `pop` (a
     `valueName/pop` string, e.g. `"B/qc/_tracked"`) — narrow the match when the user has
     multiple boards carrying the same plot spec.
@@ -2226,7 +2226,7 @@ def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
     reaches nobody and the tool still returns `{ok: true, board: "..."}` because the
     server can't tell. Only assume the nav landed when the user confirms.
 
-    Distinct from `list_plots`, which reports what's ALREADY on screen. This is for pointing at
+    Distinct from `list_open_plots`, which reports what's ALREADY on screen. This is for pointing at
     something the user hasn't opened.
     """
     boards = _client.get_analysis_boards(project_uid).get("boards", [])

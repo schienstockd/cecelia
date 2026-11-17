@@ -7,7 +7,7 @@
 import { usePlotRegistry, type PlotMeta } from '../stores/plotRegistry'
 import { usePanelExport, type PanelExporter, type PanelExportOpts } from '../stores/canvasPanelExports'
 
-/** Register a plot panel with the live registry (Claude discovers it via `list_plots`), and — if
+/** Register a plot panel with the live registry (Claude discovers it via `list_open_plots`), and — if
  *  the panel supports it — with the PNG export bag (canvas Share compositor grabs it by
  *  persistKey). Empty-key / no-project cases are handled inside `usePlotRegistry`; nothing to
  *  guard here. */

@@ -41,7 +41,7 @@ async function exportImage(): Promise<string | null> { return (await viewRef.val
 async function exportSvg(): Promise<string | null> { return (await viewRef.value?.exportSvg?.()) ?? null }
 defineExpose({ exportImage, exportSvg })
 
-// BIDIR PR #8 — register the panel so Claude's `list_plots` can discover it. `family` prefers the
+// BIDIR PR #8 — register the panel so Claude's `list_open_plots` can discover it. `family` prefers the
 // view key (`umap`, `gatingStrategy`, `filmstrip` …) since it's what INTERACTIVE_VIEWS keys on and
 // what Claude reads back from the label; `title` is the human label from the same registry so
 // "the UMAP" resolves the same panel the user names. The exporter (canvas Share + MCP

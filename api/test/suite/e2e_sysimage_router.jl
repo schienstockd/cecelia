@@ -276,7 +276,7 @@ end
         "/api/viewer/captures",   # bidir share-in list; POST /api/viewer/capture at the same singular path
         "/api/viewer/capture",    # bidir share-in read one; POST at same path writes (below)
         "/api/labels/ids",        # bidir follow-up: enumerate cell/track ids for mark_cells / mark_tracks
-        "/api/viewer/plots",      # bidir PR #8 — live plot registry (list_plots MCP); POSTs at register/deregister below
+        "/api/viewer/plots",      # bidir PR #8 — live plot registry (list_open_plots MCP); POSTs at register/deregister below
         "/api/diagnostics", "/api/diagnostics/packages",
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/summary", "/api/gating/membership",

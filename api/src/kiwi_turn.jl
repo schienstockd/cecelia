@@ -27,7 +27,7 @@ const KIWI_READ_TOOLS = [
     "get_behaviour_summary", "get_cluster_summary", "get_region_clusters", "get_contact_stats",
     "get_spatial_patterns",   # one population clustered or random among the tissue's cells
     "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
-    "get_module_params", "get_chains", "list_plots", "get_available_plots", "get_analysis_boards",
+    "get_module_params", "get_chains", "list_open_plots", "get_plot_catalogue", "get_analysis_boards",
     "get_landscape", "get_viewer_screenshot", "get_plot_image", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
     "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
     "read_lab_log", "list_notebooks", "get_notebook",
@@ -157,7 +157,7 @@ Point at the EVIDENCE — what the user would open to check the claim:
 Never cite a population on one or two images as evidence for a claim about the whole set.
 
 When the look worth taking is a plot nobody has made, point at it: a `proposedPlot` ref is that plot —
-`plot` is a plot-spec id from get_available_plots, `measure` one it offers, `pops` the populations as
+`plot` is a plot-spec id from get_plot_catalogue, `measure` one it offers, `pops` the populations as
 "valueName/pop" exactly as get_populations or get_analysis_boards print them, plus `groupBy`,
 `statUnit` or `compareBy` if they matter. The app checks it can be built; the user clicks it to plot it.
 Use it on the claim that says why the plot is worth a look (typically a question).
@@ -558,8 +558,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     results = [resolve_kiwi_ref(project_uid, r) for r in refs]
     known = Dict{String,Any}(_kiwi_canon(r) => res for (r, res) in zip(refs, results) if res["ok"])
     # a follow-up may cite what the earlier turns of this conversation attached or validly cited — with
-    # the result they had then (a plot open in the first turn may be closed by the follow-up; "can you
-    # reference the plots" got "list_plots shows nothing open", 4kS67f 2026-09-24)
+    # the result they had then (a plot open in the first turn may be closed by the follow-up, and a
+    # plot ref must not then fail as "nothing open")
     for (k, v) in prior_results
         haskey(known, k) || (known[k] = v)
     end
