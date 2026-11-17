@@ -910,6 +910,19 @@ class RepeatRoundTest(unittest.TestCase):
         self.assertIn(f"[{slug}]", body)                                           # still in front of the author
         self.assertEqual(self._runs()[-1].get("round"), "delta")
 
+    def test_a_non_utf8_text_file_still_gets_a_delta_round(self):
+        # Invalid UTF-8, no NUL: git diffs it as text, and the full diff reads it with errors="replace".
+        (self.repo / "b.txt").write_bytes(b"caf\xe9\n")
+        self._git("add", "b.txt")
+        self._round(self._stage("x = 1\n"))
+        (self.repo / "b.txt").write_bytes(b"caf\xe9\nna\xefve\n")
+        self._git("add", "b.txt")
+        self.prompts.clear()
+        self._round(self._git("write-tree"))
+        self.assertEqual(self._runs()[-1].get("round"), "delta")
+        fanout_prompt = next(p for p in self.prompts if "FANOUT_AUDIT.md" in p)
+        self.assertIn("+na\ufffdve", fanout_prompt.split("Change since the earlier round:")[1])
+
     def test_a_new_parent_starts_a_full_round(self):
         tree = self._stage("x = 1\n")
         self._round(tree)
