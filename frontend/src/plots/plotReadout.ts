@@ -19,21 +19,29 @@ export interface PlotReadout {
   overrides: AutoOverride[]     // settings the renderer had to substitute
   // the settings this plot reacts to (plots/plotControls.ts); null = not declared → the rail shows all
   controls: VisControl[] | null
+  // the populations (`<value_name><path>`) the plot has data for, when that is narrower than what the
+  // picker lists — a per-image metric's run scored only some. `null` = every listed population.
+  available: string[] | null
 }
 
-export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [], controls: null })
+export const emptyReadout = (): PlotReadout => ({ stats: emptyStatsInfo(), overrides: [], controls: null, available: null })
 
 export function readoutOf(
   cmp: ComparisonsResult | undefined | null,
   overrides: AutoOverride[] = [],
   controls: VisControl[] | null = null,
+  available: string[] | null = null,
 ): PlotReadout {
-  return { stats: statsInfoOf(cmp), overrides, controls }
+  return { stats: statsInfoOf(cmp), overrides, controls, available }
 }
 
 /** Does the active plot react to this setting? Undeclared (a plot that reports none) → yes. */
 export const offers = (r: PlotReadout | undefined, c: VisControl): boolean =>
   !r?.controls || r.controls.includes(c)
+
+/** Can the plot draw this population? (`readout.available`; no readout or `null` = yes) */
+export const popAvailable = (r: PlotReadout | undefined, valueName: string, path: string): boolean =>
+  !r?.available || r.available.includes(`${valueName}${path}`)
 
 /** The override affecting a named setting, if any — so a control can mark itself. */
 export const overrideFor = (r: PlotReadout | undefined, setting: string): AutoOverride | null =>

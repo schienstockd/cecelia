@@ -328,7 +328,9 @@ function api_plot_data(body_bytes::Vector{UInt8})
             attr_map = isempty(group_attrs) ? nothing : image_attr_groups(first.(pairs), last.(pairs), group_attrs)
             result = image_metric_summary(first.(pairs), last.(pairs), image_metric, chart;
                                           measure = measure, suffix = sfx,
-                                          pop = string(something(get(body, "pop", ""), "")), attr_map = attr_map,
+                                          pop = string(something(get(body, "pop", ""), "")),
+                                          pops = (pv = get(body, "pops", nothing)) === nothing ? nothing : string.(pv),
+                                          attr_map = attr_map,
                                           stats_enabled = stats_enabled, stats_test = stats_test, raw = raw)
             stats_enabled && _record_stats_event(proj, result)
             return 200, JSON3.write(_json_safe(result))
