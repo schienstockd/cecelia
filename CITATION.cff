@@ -17,8 +17,8 @@ authors:
 license: GPL-3.0-or-later
 repository-code: "https://github.com/schienstockd/cecelia"
 url: "https://github.com/schienstockd/cecelia"
-version: 0.2.12
-date-released: 2026-11-02
+version: 0.2.13
+date-released: 2026-11-17
 keywords:
   - microscopy
   - image-analysis

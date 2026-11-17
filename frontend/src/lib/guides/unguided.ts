@@ -10,7 +10,7 @@
 // Seeded from docs/todo/FEATURE_MATURITY_TIERS.md; rows proposed there for Tested are Beta + REVIEW.
 
 import type { Maturity } from './types'
-import { EXEMPT, IV2P, REVIEW, todo } from './maturityRecords'
+import { EXEMPT, IV2P, REVIEW, done, todo } from './maturityRecords'
 
 export interface UnguidedFeature {
   id: string
@@ -169,7 +169,7 @@ export const UNGUIDED: UnguidedFeature[] = [
   }) },
   { id: 'copy-gating', title: 'Copy gating to other images', group: 'Populations', maturity: covering(['gate.manual_gate'], {
     tier: 'beta', testedOn: 'A real measured fixture',
-    next: [todo('Compare channel names when copying gates; refuse or warn on a mismatch')],
+    next: [done('Compare channel names when copying gates; refuse or warn on a mismatch')],
     needs: 'Two images of one set with the channel order swapped',
     datasetAsk: 'swapped-channel-set',
   }) },
