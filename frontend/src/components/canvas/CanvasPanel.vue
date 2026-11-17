@@ -89,7 +89,7 @@ const root = useTemplateRef<HTMLElement>('root')
 const mainEl = useTemplateRef<HTMLElement>('mainEl')   // .panel-main — the plot region kept square by :square
 const store = useCanvasPanelsStore()
 // "Add to Kiwi" only on a panel that is a LIVE registered plot — its `persistKey` is then the plotId
-// `list_plots` and the Kiwi resolver know (stores/plotRegistry.ts). Unregistered panels get no button,
+// `list_open_plots` and the Kiwi resolver know (stores/plotRegistry.ts). Unregistered panels get no button,
 // because a plot ref to them would fail to resolve.
 const plotRegistry = usePlotRegistryStore()
 const isLivePlot = computed(() => !!props.persistKey && !!plotRegistry.getLast(props.persistKey))

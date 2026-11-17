@@ -923,7 +923,7 @@ if (props.persistKey) {
   usePanelExport(() => props.persistKey ?? '', () => exportImage(), { settings: plotSettings })
 }
 
-// BIDIR PR #8 — register the panel so Claude's `list_plots` can discover it. Family stays
+// BIDIR PR #8 — register the panel so Claude's `list_open_plots` can discover it. Family stays
 // `'summary'` (the same string mark_plot's frontend consumer already filters on at :727); title
 // is `spec.label`, the same one CanvasPanel already renders in the panel header. Route pulled
 // from vue-router so a panel on `/gating` reads differently from one on `/analysis`, even though

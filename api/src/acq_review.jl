@@ -24,7 +24,7 @@ const ACQ_REVIEW_WITHHELD = Dict(
     "get_capture_landscape_tiles" => "what the user pointed at", "get_image_notes" => "the user's notes",
     "get_labarchives_context" => "the user's ELN", "read_lab_log" => "session notes, the user's and the assistant's",
     "list_notebooks" => "the user's notebooks", "get_notebook" => "the user's notebooks",
-    "get_analysis_boards" => "the user's plots", "list_plots" => "the user's open plots",
+    "get_analysis_boards" => "the user's plots", "list_open_plots" => "the user's open plots",
     "list_figures" => "the user's figures and captions", "get_landscape" => "the user's live viewer",
     "get_viewer_screenshot" => "the user's live viewer", "get_plot_image" => "the user's open plots",
     "get_populations" => _ACQ_ANALYSIS, "get_measure_summary" => _ACQ_ANALYSIS,
@@ -32,7 +32,7 @@ const ACQ_REVIEW_WITHHELD = Dict(
     "get_region_clusters" => _ACQ_ANALYSIS, "get_contact_stats" => _ACQ_ANALYSIS,
     "get_spatial_patterns" => _ACQ_ANALYSIS, "get_analysis_lineage" => _ACQ_ANALYSIS,
     "check_claim" => _ACQ_ANALYSIS, "get_module_params" => _ACQ_ANALYSIS, "get_chains" => _ACQ_ANALYSIS,
-    "get_object_ids" => _ACQ_ANALYSIS, "get_available_plots" => _ACQ_ANALYSIS,
+    "get_object_ids" => _ACQ_ANALYSIS, "get_plot_catalogue" => _ACQ_ANALYSIS,
     "gate_plot" => _ACQ_ANALYSIS, "gate_cells_view" => _ACQ_ANALYSIS, "gate_histogram" => _ACQ_ANALYSIS,
     "gate_stats" => _ACQ_ANALYSIS, "gate_examples" => _ACQ_ANALYSIS)
 acq_review_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in ACQ_REVIEW_TOOLS]

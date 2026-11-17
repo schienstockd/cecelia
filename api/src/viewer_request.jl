@@ -142,7 +142,7 @@ end
 """
     POST /api/viewer/plots/image
 
-Body: `{ projectUid, plotId, maxSide? }` — `plotId` as `list_plots` lists it.
+Body: `{ projectUid, plotId, maxSide? }` — `plotId` as `list_open_plots` lists it.
 Reply: `{ png: "data:image/png;base64,…", width, height, settings }` — the panel's own export (plot
 only, light theme; what Share and the board PDF use) and the settings `set_plot_view` may change
 (`{<name>: {value, options?, multi?}}`); `{ error }` when the panel has nothing drawn; `{ reason:

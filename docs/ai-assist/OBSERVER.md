@@ -54,7 +54,7 @@ get_image_info            → one image: channels, dims, label props, task histo
 get_task_log              → log content for a specific task run on a specific image
 get_task_history          → recent tasks across all images: function, status, timestamp, and the run's params (tuning trail)
 get_module_params         → task param specs (valid ranges/defaults/types) for parameter suggestions (Phase 2)
-get_available_plots       → plot types the board can render (chart types, data needs, scope) to suggest a viz (Phase 2)
+get_plot_catalogue        → plot types the board can render (chart types, data needs, scope) to suggest a viz (Phase 2)
 get_image_notes           → user-written notes for a specific image
 read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage
@@ -341,7 +341,7 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   **`revise_notebook`** makes a new version of an existing one (`/api/notebooks/revise` — snapshots then
   overwrites; real versioning, not a `-v2` copy). `set_notebook_description` rewords its blurb afterwards
   (`/api/notebooks/describe`, description text only).
-- **`get_available_plots`** — the board's plot types, for viz suggestions; also the spec ids and
+- **`get_plot_catalogue`** — the board's plot types, for viz suggestions; also the spec ids and
   chart types `add_analysis_board` authors against.
 - **`add_analysis_board`** — ADD one board to `/analysis` from a semantic spec (which plots, which
   populations, in what order); the server expands it to the stored layout and refuses a spec the

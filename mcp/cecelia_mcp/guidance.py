@@ -146,7 +146,7 @@ random among the tissue's cells).
 - A population as pictures: gate_histogram / gate_plot (its distribution and gate plot), \
 gate_cells_view / gate_examples (its cells in the image — zoomed, and as example crops), \
 gate_stats (its counts).
-- Boards, plots and figures: get_available_plots (the plot types a board can hold), \
+- Boards, plots and figures: get_plot_catalogue (the plot types a board can hold), \
 get_analysis_boards (the boards the user built), list_figures (figures and their specs).
 - The record: read_lab_log; list_blackboard_entries / read_blackboard_entry / search_blackboard; \
 get_labarchives_context (the experiment as the lab notebook records it); list_notebooks / \
@@ -234,7 +234,7 @@ Point the user to the image's metadata dialog (Acquisition, Acquired data) to se
 
 ON BOARDS. add_analysis_board ADDS one board to the /analysis page — it cannot modify, rename, \
 reorder or delete one, so it lands beside the user's own and costs a click to delete if it is wrong. \
-Give the plots in reading order using the spec ids from get_available_plots and the exact \
+Give the plots in reading order using the spec ids from get_plot_catalogue and the exact \
 "valueName/pop" strings from get_populations. Do NOT set popType — it is derived from the \
 populations. Gating strategy, track plots, HMM/motif cards and the clustering plots (UMAP, heatmap, \
 HMM states/transitions) are VIEW keys with their own fields (see the tool); a clustering view names \
@@ -396,7 +396,7 @@ read get_landscape's tiles first.
 region the segmentation missed, a circle on a shared frame. No capture yet → ask the user to \
 Share one; never make up a captureId.
 - mark_plot — a spot on a plot panel (a peak, a cluster on a UMAP, a heatmap cell). Resolve "the \
-UMAP" to a live `plot_id` with list_plots first, never guess: it lists the panels open in the \
+UMAP" to a live `plot_id` with list_open_plots first, never guess: it lists the panels open in the \
 user's browser, including pages they navigated away from (`route` names the page; a mark there \
 stays unseen until they go back), and each entry's `content` tells panels of one family apart.
 - point_at_ui — a CONTROL, not data: a `data-guide` id (`"layout.plotsSection"`) or \
@@ -407,7 +407,7 @@ get_contact_stats / get_spatial_patterns) and match it to the panel by `content`
 statistics off shared-frame pixels.
 
 POINTING AT SOMETHING NOT YET ON SCREEN. A mark only shows on what the user is looking at, and \
-list_plots only knows plots on pages they have opened. When the target ISN'T on screen, two navigation tools cover the \
+list_open_plots only knows plots on pages they have opened. When the target ISN'T on screen, two navigation tools cover the \
 two shapes of "look over here":
 
 - `seek_viewer(project_uid, image_uid, t?, z?)` — move the viewer to a specific frame. \
@@ -420,7 +420,7 @@ window to an Analysis board that already contains a specific plot. Resolution is
 0 matches → `{ok: false, reason: "no_matching_board"}` (offer to create one \
 with add_analysis_board); 1 match → navigate; >1 → `{ok: false, ambiguous: [...]}` and you ASK the user which one, \
 never pick arbitrarily. `plot_spec_id` is the `ref` field from `get_analysis_boards` (also \
-`get_available_plots`'s spec id).
+`get_plot_catalogue`'s spec id).
 
 Both are best-effort delivery. If no browser is paired the WS frame reaches nobody and the tool \
 still returns success — only assume the nav landed when the user confirms. Do NOT seek or open \
@@ -443,7 +443,7 @@ asked for. Loop: screenshot → adjust → screenshot; never ask the user to re-
 
 SEEING AND ADJUSTING A PLOT. `get_plot_image(plot_id)` returns an open plot panel's picture (a \
 UMAP, heatmap, summary chart, gate pairs …) as the user has it set up, plus the `settings` it lets \
-you change; `plot_id` from `list_plots`. `set_plot_view(plot_id, settings)` changes them (colour a \
+you change; `plot_id` from `list_open_plots`. `set_plot_view(plot_id, settings)` changes them (colour a \
 UMAP by population, switch a chart) and is saved on the plot like the user's own change. Loop: \
 look → adjust → look; never ask the user to switch a setting or Share a plot you can reach.
 

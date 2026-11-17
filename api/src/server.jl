@@ -73,7 +73,7 @@ include("push_api.jl")       # bidirectional context — Part 5 push pairing (BI
 include("push_writer.jl")    # bidirectional context — Part 5 push writer (BIDIR_PUSH_PLAN PR #2)
 include("labels_api.jl")     # bidirectional context — cell/track id enumeration (uses gating_api.jl::_gating_image)
 include("labels_by_category_api.jl")  # linked brushing category-source (cell-scope) (LINKED_BRUSHING_PLAN.md P2)
-include("plots_registry_api.jl") # bidirectional context — live plot registry for list_plots MCP (BIDIR PR #8)
+include("plots_registry_api.jl") # bidirectional context — live plot registry for list_open_plots MCP (BIDIR PR #8)
 include("kiwi_refs.jl")      # Kiwi — does a KiwiRef name a real object? (KIWI_ASSISTANT_PLAN Phase 2; needs the captures/blackboard/landscape/plots files above)
 include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn (KIWI_ASSISTANT_PLAN Phase 3)
 include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
@@ -368,7 +368,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/skeletons" => (req, body_bytes) -> (api_viewer_skeletons(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
-    # bidir PR #8 — live plot registry read (MCP `list_plots`); browser populates via the two POSTs.
+    # bidir PR #8 — live plot registry read (MCP `list_open_plots`); browser populates via the two POSTs.
     "/api/viewer/plots" => (req, body_bytes) -> (api_viewer_plots_list(req)),
     "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
@@ -571,7 +571,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/rois/review"           => (req, body_bytes) -> (api_rois_review(body_bytes)),
     "/api/viewer/navigate"       => (req, body_bytes) -> (api_viewer_navigate(body_bytes)),
     # bidir PR #8 — plot registry writes. Frontend authors via `stores/plotRegistry.ts` on panel
-    # mount/unmount; not on the MCP surface (Claude only READS the registry via `list_plots`).
+    # mount/unmount; not on the MCP surface (Claude only READS the registry via `list_open_plots`).
     "/api/viewer/plots/register"   => (req, body_bytes) -> (api_viewer_plots_register(body_bytes)),
     "/api/viewer/plots/deregister" => (req, body_bytes) -> (api_viewer_plots_deregister(body_bytes)),
     # bidir landscape — browser publishes (POST); MCP `get_landscape` ASKS the open viewer via

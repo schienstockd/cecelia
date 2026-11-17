@@ -424,7 +424,7 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         # Every visible task's purpose / useWhen / notWhen by pipeline stage — see discovery.py.
         return task_catalogue(self._request("GET", "/api/tasks/definitions"), stage or "")
 
-    def get_available_plots(self, module: str | None = None):
+    def get_plot_catalogue(self, module: str | None = None):
         # Available plot types (chart types, data needs, scope modes), project-independent. Optional
         # `module` narrows to one module page's plots.
         return self._request("GET", "/api/plots/definitions", {"module": module})
@@ -677,7 +677,7 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
         if z is not None: body["z"] = int(z)
         return self._request("POST", "/api/viewer/seek", body=body)
 
-    def list_plots(self, project_uid: str) -> list[dict]:
+    def list_open_plots(self, project_uid: str) -> list[dict]:
         # BIDIR PR #8 — read the live plot registry for a project. Populated by the frontend's
         # `useVisualPanel` (stores/plotRegistry.ts) on panel mount / unmount, keyed by persistKey.
         # Returns the `items` array directly rather than the `{items: [...]}` envelope — Claude

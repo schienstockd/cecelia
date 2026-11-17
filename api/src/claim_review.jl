@@ -19,7 +19,7 @@ const CLAIM_REVIEW_TOOLS = (
     "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "get_object_ids", "get_task_catalogue", "get_guide",
     "get_acquisition_knowledge", "gate_plot", "gate_cells_view", "gate_histogram", "gate_stats",
-    "gate_examples", "get_available_plots")
+    "gate_examples", "get_plot_catalogue")
 # What the review must not see, and why: where the analyst's own reasoning lives, and their other
 # plots — a review that reads those critiques the plots, not the claim.
 const CLAIM_REVIEW_WITHHELD = Dict(
@@ -29,7 +29,7 @@ const CLAIM_REVIEW_WITHHELD = Dict(
     "get_capture_landscape_tiles" => "what the analyst pointed at", "get_image_notes" => "the analyst's notes",
     "get_labarchives_context" => "the analyst's ELN", "read_lab_log" => "session notes, the analyst's and the assistant's",
     "list_notebooks" => "the analyst's notebooks", "get_notebook" => "the analyst's notebooks",
-    "get_analysis_boards" => "the analyst's other plots", "list_plots" => "the analyst's open plots",
+    "get_analysis_boards" => "the analyst's other plots", "list_open_plots" => "the analyst's open plots",
     "list_figures" => "the analyst's figures and captions", "get_landscape" => "the analyst's live viewer",
     "get_viewer_screenshot" => "the analyst's live viewer", "get_plot_image" => "the analyst's open plots")
 claim_review_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in CLAIM_REVIEW_TOOLS]

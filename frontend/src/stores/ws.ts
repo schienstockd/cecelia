@@ -31,7 +31,7 @@ type MessageHandler = (data: Record<string, unknown>) => void
 const handlers = new Map<string, MessageHandler[]>()
 
 
-// Stable identifier for THIS browser tab / process (BIDIR PR #8 — list_plots registry). Sent on
+// Stable identifier for THIS browser tab / process (BIDIR PR #8 — list_open_plots registry). Sent on
 // every WS reconnect via `viewer:hello`, then threaded into every /api/viewer/plots/{register,
 // deregister} POST so the server can drop THIS tab's registry entries when the socket disconnects
 // without affecting a second tab that registered the same persistKey. Lives in `utils/clientId.ts`

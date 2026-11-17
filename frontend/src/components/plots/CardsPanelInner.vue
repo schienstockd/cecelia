@@ -302,7 +302,7 @@ const cardsFrame: Frame = {
 }
 defineExpose({ exportImage, getFrame: (): Frame => cardsFrame })
 
-// BIDIR PR #8 — plot registry adopter. Uses the family's id + title so `list_plots` returns a
+// BIDIR PR #8 — plot registry adopter. Uses the family's id + title so `list_open_plots` returns a
 // row for a `cell` / `motif` / `hmm_state` card panel the user can name back (e.g. "the motif
 // cards"). Family string kept generic (`'cards'`) since the specific card kind is in the title.
 const _route = useRoute()
