@@ -2,9 +2,11 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that gives Claude **read** access
 to a running Cecelia project — project state, images, task logs, QC, lineage, populations, measures,
-and the lab log — plus a small set of **additive** writes: lab-log entries, Pluto notebooks, and a
-whiteboard chain template. See *The no-mutation guarantee* below for the exact list and why each one
-is recoverable.
+and the lab log — marks and navigation on the user's screen, and **writes taken only when the user
+asks**: things added beside the user's own (populations, boards, figures, chains, notebooks, Blackboard
+notes, lab-log lines), and changes only to what Claude added. Every tool and its kind (read / add /
+edit / point / drive / plumbing) is listed in [`cecelia_mcp/tools.json`](cecelia_mcp/tools.json); see
+*The no-mutation guarantee* below for why each write is recoverable.
 
 Claude can **design** work but never **start** it: there is no `submit_task` and no way to launch a
 chain run. That is the arc in [`docs/ai-assist/OBSERVER.md`](../docs/ai-assist/OBSERVER.md) — Phase 1
@@ -24,6 +26,8 @@ mcp/
   cecelia_mcp/
     client.py    # read-only HTTP client + the ALLOW-LIST (stdlib only; the no-mutation guarantee)
     guidance.py  # what the server TELLS a session about its own toolset (see below)
+    tools.json   # THE list of tools, each with its kind (read/add/edit/point/drive/run/plumbing)
+    tool_kinds.py # loads tools.json; a kind → the tool's MCP annotations
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
     server.py    # MCPServer — wires the client into the read tools + poll_observations + the additive writes
@@ -73,6 +77,10 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 
 ## Tools
 
+The core routes, with what each returns. The complete list, with each tool's kind, is
+[`cecelia_mcp/tools.json`](cecelia_mcp/tools.json) — a server refuses to register a tool missing there, and
+its kind becomes the tool's MCP `readOnlyHint` / `destructiveHint`.
+
 | Tool | Backing route | Returns |
 |---|---|---|
 | `get_project_info(project_uid)` | `GET /api/images` | name, kind, image count, sets, per-status breakdown |
@@ -103,9 +111,9 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |
 | `set_observer_active(active)` | *(in-process)* | the off switch — stop/resume surfacing; counting continues while off |
 | `get_observer_stats()` | *(in-process)* | session throttle/cost state without draining (surfaced count, cap, throttled, token estimate) |
-| `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **write 1/2** — appends a dated `[Claude]` entry, append-only |
-| `create_notebook(project_uid, name, cells, description="")` | `POST /api/notebooks/write` | **write 2/2** — serialises Julia `cells` into a runnable Pluto notebook (env-activation cell prepended, snapshot v1). Create-only (409 on an existing name); the user then edits/owns it in Pluto |
-| `add_analysis_board(project_uid, name, plots, template="", compare_by="")` | `POST /api/boards/add` | **write 6/6** — ADDS one Analysis board (a figure on `/analysis`). Add-only: cannot modify, rename, reorder or delete a board, so it lands beside the user's own and is one click to delete. `compare_by` is what it compares across images — `"per_image"`, `"summarised"`, or an image ATTRIBUTE name (`"Mouse"`, or `"Treatment,Mouse"`); omitting it gives a single-image board, not a cross-image figure. 409 on a duplicate name; server-**validated** against the project (unknown plot id / chart the spec doesn't offer / measure it doesn't carry / population that doesn't exist / a `popType` that cannot reach the named populations / an attribute the project lacks → 422 naming what was available), because a bad `tkey` renders an EMPTY panel with no error. NOT `/api/projects/boards`, the browser's whole-document autosave |
+| `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **write** — appends a dated `[Claude]` entry, append-only |
+| `create_notebook(project_uid, name, cells, description="")` | `POST /api/notebooks/write` | **write** — serialises Julia `cells` into a runnable Pluto notebook (env-activation cell prepended, snapshot v1). Create-only (409 on an existing name); the user then edits/owns it in Pluto |
+| `add_analysis_board(project_uid, name, plots, template="", compare_by="")` | `POST /api/boards/add` | **write** — ADDS one Analysis board (a figure on `/analysis`). Add-only: cannot modify, rename, reorder or delete a board, so it lands beside the user's own and is one click to delete. `compare_by` is what it compares across images — `"per_image"`, `"summarised"`, or an image ATTRIBUTE name (`"Mouse"`, or `"Treatment,Mouse"`); omitting it gives a single-image board, not a cross-image figure. 409 on a duplicate name; server-**validated** against the project (unknown plot id / chart the spec doesn't offer / measure it doesn't carry / population that doesn't exist / a `popType` that cannot reach the named populations / an attribute the project lacks → 422 naming what was available), because a bad `tkey` renders an EMPTY panel with no error. NOT `/api/projects/boards`, the browser's whole-document autosave |
 | `add_gate(project_uid, image_uid, value_name, name, gate, parent="root", colour="#22c55e", dry_run=False)` | `POST /api/gating/pop/add-gate` | **write** — ADDS one gated population (a PROPOSED gate, stamped `createdBy`, ✦ in the manager) under an existing parent. 409 on a taken name, 404 on a missing parent, 422 on a bad column / transform / geometry — before anything is written. `dry_run` = the counts, nothing written |
 | `add_boolean_pop(project_uid, image_uid, value_name, name, op="and", pops=None, not_pops=None, parent="root", colour="#22c55e", dry_run=False)` | `POST /api/gating/pop/add-boolean` | **write** — ADDS one COMBINED population (`pops` and/or-ed, minus `not_pops`, ∩ parent — "qc but not OTI"), stamped like `add_gate`. 404 on a missing parent / term, 409 on a taken name, 422 on a bad name / operator / loop. `dry_run` = the counts |
 | `add_filter_pop(project_uid, image_uid, value_name, name, conditions, parent="root", colour="#22c55e", dry_run=False)` | `POST /api/gating/pop/add-filter` | **write** — ADDS one FILTER population (`conditions` `[{measure, fun, values}]` AND-ed on cell columns (raw values; centroid_* in the gates' unit), ∩ parent), stamped like `add_gate`. 404 on a missing parent, 409 on a taken name, 422 on a bad name / operator / value / column. `dry_run` = the counts |
@@ -113,7 +121,7 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `set_cluster_pops(project_uid, image_uid, value_name, run, groups, pop_type="clust", dry_run=False)` | `POST /api/gating/pop/set-cluster-pops` | **write** — REGROUPS cluster populations CLAUDE made (`groups` `[{path, clusters?, name?, colour?}]`, `clusters` the whole new list), every image of the run; the grouping is checked as it will be after the call. 403 on the user's, 409 `cluster_taken` against a population not being changed, 422 on a bad id / path. `dry_run` = the counts |
 | `set_gate(…, path, gate, dry_run=False)` / `delete_gate(…, path, dry_run=False, pop_type="flow")` | `POST /api/gating/pop/set-own-gate` / `delete-own` | **write** — move / remove a gate CLAUDE drew; 403 `not_claude_made` for anything at or under `path` the user drew — and, for `set_gate`, any combination built on it |
 | `gate_histogram`, `gate_plot`, `gate_cells_view(…, pops?, z?, region?)`, `gate_examples(…, pop \| parent+gate, mode=boundary\|random)`, `gate_stats` | `GET /api/gating/summary`, `plot-image`, `cells-image`, `examples`, `stats` | the distribution, the plot, the cells in the image (zoomed, several pops in their colours), example crops just inside / outside a cut, the counts. The whole gating toolset is ONE definition (`gating_views.py`) registered by both servers |
-| `create_chain(project_uid, name, nodes, edges, start_targets=None)` | `POST /api/chains/create` | **write 5/6** — authors a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-**validated** (unknown task / dangling edge / cycle / out-of-range param → 400 naming the offender). Params may be sparse. **There is no tool to run it** — the user launches it from the whiteboard |
+| `create_chain(project_uid, name, nodes, edges, start_targets=None)` | `POST /api/chains/create` | **write** — authors a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-**validated** (unknown task / dangling edge / cycle / out-of-range param → 400 naming the offender). Params may be sparse. **There is no tool to run it** — the user launches it from the whiteboard |
 
 ## Live observation — the 10-attempts pattern (Slice B)
 
@@ -155,8 +163,9 @@ restorable); `POST /api/blackboard/{status,outcome,section-outcome}` (metadata o
 never replaces a person's); `POST /api/chains/create` and `POST /api/boards/add` (create-only +
 validated); and `POST /api/observer/labarchives/set` (replaces the LabArchives context sidecar).
 The `POST /api/viewer/*` and `/api/push/target` routes write nothing to disk: they draw marks, move
-the viewer, or register where to push. No allow-listed route can edit or delete project data (no
-h5ad, gates, ccid.json, or an existing chain or board). A call to any other
+the viewer, or register where to push. No allow-listed route can edit or delete the user's project data (no
+h5ad, ccid.json, a gate or figure the user made, or an existing chain or board); the gate and figure
+routes that change or delete refuse anything Claude did not make. A call to any other
 route raises `DisallowedRoute` — so if a future tool ever wires in a mutating route, the test suite
 fails loudly rather than a project being silently mutated. `test_client.py` asserts the exact write
 set, and changing that list is the deliberate gate on widening what Claude can do.

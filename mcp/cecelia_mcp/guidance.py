@@ -36,9 +36,9 @@ from cecelia_mcp.no_gui import no_gui_enabled
 # than through these tools: it never opens a briefing, so this is the only place that reaches it
 # (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
 SERVER_INSTRUCTIONS = """\
-Read-only access to a running Cecelia project (immunological image analysis): images, processing \
-state, task logs, QC, populations, measurements, clustering, chains, notebooks and the lab log. The \
-user is typically an immunologist analysing microscopy data, often data someone else acquired.
+Access to a running Cecelia project (immunological image analysis): read its images, processing, \
+QC, populations, measures, clusters, chains and notebooks; point at the user's screen; add to it \
+when asked. The user is typically an immunologist analysing microscopy data, often data someone else acquired.
 
 When the user asks about "my project" / "my data" in Cecelia without naming one, call list_projects \
 — it is ordered most-recently-opened first, so the first entry is the one they are working in. Name \
@@ -53,8 +53,7 @@ this project — the grouping rules for any cross-image comparison, and the disc
 things you can write. Read it and follow it; it is the rest of these instructions, delivered when it \
 is relevant.
 
-Everything here is read-only except a handful of additive actions taken only when the user asks. You \
-can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
+Writes add beside the user's work and change only what you added. You can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
 not a limitation to apologise for. (The exception is a session also given the separate \
 cecelia-autonomous server — an unattended run, or one with no GUI: there, its run_chain / run_task \
 start what you design here.) If \
@@ -129,14 +128,16 @@ measurable stays unknown; never fill it in. Before \
 calling pixel size or z-step a mistake, ask what the images are for: coarse is normal for tracking. \
 Point the user to the image's metadata dialog (Acquisition, Acquired data) to see the same numbers.
 
-WHAT YOU CAN WRITE — additive only, and only when asked: append_lab_log (one short line, tagged \
-[Claude] server-side), create_notebook / revise_notebook (revise snapshots first, so nothing is \
-lost) / set_notebook_description, create_chain, add_analysis_board, add_gate / add_boolean_pop / add_filter_pop / \
-add_cluster_pops (set_gate / set_cluster_pops / delete_gate change only populations YOU made), add_figure (set_figure / delete_figure change only figures \
-YOU made; list_figures shows which), \
-set_labarchives_context, create_blackboard_entry / revise_blackboard_entry (Markdown notes shared \
-across sessions; revise snapshots first). Nothing can change or delete existing analysis data, edit \
-a gate the user drew, or start any work.
+WHAT YOU CAN WRITE — only when asked. Add something new: append_lab_log (one short line, tagged \
+[Claude] server-side), create_notebook, create_chain, add_analysis_board, add_gate / add_boolean_pop / \
+add_filter_pop / add_cluster_pops, add_figure, create_blackboard_entry (Markdown notes shared across \
+sessions), state_claim. Change only what YOU made: set_gate / set_cluster_pops / delete_gate, \
+set_figure / delete_figure (list_figures shows which are yours). Revise a notebook or a note: \
+revise_notebook / set_notebook_description, revise_blackboard_entry — a revise snapshots first, so \
+nothing is lost — and tag one with set_blackboard_status / set_blackboard_outcome / \
+set_blackboard_section_outcome. Saved like the user's own change, so change only what they asked: \
+set_viewer_view, set_plot_view, set_labarchives_context. Nothing can delete the user's analysis \
+data, edit a gate the user drew, or start any work.
 
 WHEN CECELIA CANNOT DO IT YET. Before saying it is missing, look: {lookup} \
 — it may exist under another name, or be a GUI or REPL step rather than a tool here. get_guide's \
@@ -238,8 +239,8 @@ a screenshot as the shared frame. Reach for get_capture_landscape_tiles when the
 `get_capture` came back truncated (a dense 32×32+ grid with many pops), or when you already \
 know which tiles a marked region covers and want just those in full detail.
 
-ON POINTING AT WHAT YOU MEAN. Four ways to point back at the user's screen — pick the one that \
-matches what you're referring to, all ephemeral (5-min default TTL, in-memory only):
+ON POINTING AT WHAT YOU MEAN. The ways to point back at the user's screen — pick the one that \
+matches what you're referring to; every mark is ephemeral (5-min default TTL, in-memory only):
 
 - `mark_tracks(image_uid, value_name, track_ids, focus_id?, label?, ttl_s?)` — trajectories over \
   time. Scope is per (image, vn); track ids are per-vn — `flowTom`'s track 42 is a different cell \
@@ -264,7 +265,7 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   no segmented object to name and no capture in hand. Pairs with `get_landscape(...)`: read the \
   landscape's tiles, then point at the tile that matters. Coarser than mark_cells / \
   mark_tracks — use when a REGION is the answer, not an object.
-- `list_plots(project_uid)` — enumerate plot panels open in the user's browser, including pages \
+- `list_plots(project_uid)` — not a mark: it enumerates the plot panels open in the user's browser, including pages \
   they have navigated away from (the app keeps those mounted; `route` names each one's page, and a \
   mark on a page they aren't on stays unseen until they go back); call BEFORE \
   `mark_plot` to resolve "the UMAP" / "that heatmap" to a live `plot_id` instead of guessing. \
@@ -272,7 +273,7 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   summary panels) — use it to pick the right one when several share a family. For NUMERIC \
   questions about a plot (significance, ranking, values), correlate `content` with the matching \
   data tool (`get_behaviour_summary` / `get_measure_summary` / `get_cluster_summary` / \
-  `get_spatial_stats`); do NOT rely on shared-frame pixels for statistics.
+  `get_region_clusters` / `get_contact_stats` / `get_spatial_patterns`); do NOT rely on shared-frame pixels for statistics.
 - `mark_plot(family, plot_id, u, v, cell?, label?, ttl_s?)` — point at a spot on a PLOT panel (a \
   peak on a histogram, a cluster on a UMAP, a bright cell on a strip, a heatmap cell). `family` is \
   the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `cluster-map` / `heatmap` / \

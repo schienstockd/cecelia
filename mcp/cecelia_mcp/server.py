@@ -43,6 +43,7 @@ from cecelia_mcp.figure_tools import register_figure_tools
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.no_gui import no_gui_enabled
+from cecelia_mcp.tool_kinds import annotations_for
 from cecelia_mcp.monitor import SessionMonitor
 from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
@@ -135,7 +136,8 @@ def _tool(fn):
             return fn(*args, **kwargs)
         except (ApiError, DisallowedRoute) as e:
             raise ToolError(str(e)) from e
-    return mcp.tool()(wrapped)
+    # Its kind (tools.json) as MCP's read-only / destructive hints — and a tool missing there fails here.
+    return mcp.tool(annotations=annotations_for(fn.__name__))(wrapped)
 
 
 def _tool_if(enabled: bool):
@@ -2111,7 +2113,7 @@ def list_plots(project_uid: str) -> list[dict]:
 
     For NUMERIC questions about a plot (which is most significant, ranking, cell counts), call
     the matching data tool — `get_behaviour_summary`, `get_measure_summary`, `get_cluster_summary`,
-    `get_spatial_stats` — and correlate its output back to each `plot_id` via `content`, rather
+    `get_region_clusters` / `get_contact_stats` / `get_spatial_patterns` — and correlate its output back to each `plot_id` via `content`, rather
     than reading numbers out of a shared frame.
 
     Includes panels on pages the user has navigated away from: the app keeps visited pages

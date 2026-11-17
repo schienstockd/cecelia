@@ -1,7 +1,8 @@
 // What Kiwi and a Claude Code session can each USE — the "What each can use" accordion in Kiwi's `?`
 // dialog (ClaudeOverviewDialog). The words are for users, so they are written here, not lifted from the
 // tool docstrings (those are written for the model). What keeps them true is `claudeTools.test.ts`:
-//   - every tool `mcp/cecelia_mcp/server.py` registers is in exactly one capability or in HIDDEN_TOOLS —
+//   - every observer tool in `mcp/cecelia_mcp/tools.json` (the one list — the server refuses to register a
+//     tool missing there) is in exactly one capability or in HIDDEN_TOOLS —
 //     a new tool fails the test until it is worded here;
 //   - a capability's `kiwi` tick matches `KIWI_READ_TOOLS` (api/src/kiwi_turn.jl) for every tool it
 //     lists — so the ticks can't claim more (or less) than Kiwi's allow-list.
@@ -66,6 +67,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'results', label: 'Cell–cell contacts and spatial patterns', tools: ['get_contact_stats', 'get_spatial_patterns'], kiwi: true, terminal: true },
   { group: 'results', label: 'Your boards, plots, chains and notebooks',
     tools: ['get_analysis_boards', 'get_available_plots', 'list_plots', 'get_plot_image', 'get_chains', 'list_notebooks', 'get_notebook'], kiwi: true, terminal: true },
+  { group: 'results', label: 'Your figures and how each was made', tools: ['list_figures'], kiwi: true, terminal: true },
 
   { group: 'record', label: 'Frames you shared, and the viewer right now',
     tools: ['get_recent_captures', 'get_capture', 'get_capture_landscape_tiles', 'get_landscape', 'get_viewer_screenshot'], kiwi: true, terminal: true },
@@ -83,6 +85,7 @@ export const CAPABILITIES: Capability[] = [
 
   { group: 'builds', label: 'A chain from what you ran — you run it', tools: ['suggest_chain', 'create_chain'], kiwi: false, terminal: true },
   { group: 'builds', label: 'An analysis board', tools: ['add_analysis_board'], kiwi: false, terminal: true },
+  { group: 'builds', label: 'A figure of a cell — still or strip; changes only its own', tools: ['add_figure', 'set_figure', 'delete_figure'], kiwi: false, terminal: true },
   { group: 'builds', label: 'A gate, filter or X-but-not-Y population — marked ✦; changes only its own', tools: ['add_gate', 'add_boolean_pop', 'add_filter_pop', 'set_gate', 'delete_gate'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Populations that group a run’s clusters — marked ✦; regroups only its own', tools: ['add_cluster_pops', 'set_cluster_pops'], kiwi: false, terminal: true },
   { group: 'builds', label: 'A Pluto notebook, or a new version of one',

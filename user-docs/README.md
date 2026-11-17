@@ -101,7 +101,7 @@ on real data, spot-check results; *Tested* — a test fails when the result is w
 | Notebooks | Pluto (Julia) notebooks for what the board can’t do |  | Create a notebook | Experimental | Claude Code writes a notebook for you |
 | Animation | Keyframe a fly-through of one image into a movie |  | Build an animation | Beta |  |
 | Batch movies | One movie setup, one timelapse movie per image |  | Record a movie | Beta |  |
-| Movies & figures | Play the movies this project has rendered |  |  |  |  |
+| Movies & figures | Play the movies this project has rendered |  |  |  | Claude Code makes a figure of a cell for you |
 
 ### Pipeline: run many images
 
