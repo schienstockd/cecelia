@@ -10,7 +10,10 @@
     "popTypes": [
       { "popType": "flow", "granularity": "cell", "label": "Gated" },
       { "popType": "clust", "granularity": "cell" },
-      { "popType": "region", "granularity": "cell" }
+      { "popType": "region", "granularity": "cell" },
+      { "popType": "live", "granularity": "cell", "label": "Tracked" },
+      { "popType": "track", "granularity": "cell", "label": "Tracked (gated)" },
+      { "popType": "trackclust", "granularity": "cell", "label": "Track clusters" }
     ],
     "imageMetric": { "source": "spatialPattern", "task": "Spatial pattern", "pickPops": true },
     "measure": "nnRatio",
