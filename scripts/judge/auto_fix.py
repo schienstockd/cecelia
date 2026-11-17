@@ -31,6 +31,8 @@ called `not_real` or `left` is logged in `auto_fix.jsonl` with why, stays in the
 reason on its card, and isn't tried again. A session that fails is logged `failed` and its worktree
 removed, so the next run tries it again, up to `review.AUTO_ATTEMPTS` sessions; a guard, commit or
 push that stops leaves the worktree for the owner, and the bug `left`, so nothing is pushed twice.
+A worktree left like that and untouched for `STRANDED_DAYS` is removed at the start of a run, its
+diff kept as a patch (`expire_stranded`), and its bugs taken afresh.
 """
 from __future__ import annotations
 
@@ -58,7 +60,7 @@ from cecelia.effectiveness.claude_cli import (  # noqa: E402
     synthetic_limit, with_reset)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.attribution import coauthor_line, footer, trailer_lines  # noqa: E402
-from cecelia.effectiveness.claude_sessions import session_stamp  # noqa: E402
+from cecelia.effectiveness.claude_sessions import live_sessions, session_stamp, sessions_in  # noqa: E402
 from cecelia.effectiveness.recital import reviewer_errors  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
@@ -113,6 +115,10 @@ SESSION_USD = 10.0   # each phase's budget
 #: Recital rounds before a diff that keeps changing goes back to the owner. Interactive sessions
 #: re-run it when their diff changed: 2 rounds on 100 of 505 commits, 3 on 38, 4+ on 39 (2026-10-14).
 RECITAL_ROUNDS = 4
+#: Days a stopped fix's worktree may sit untouched (no PR, no commit, no edit) before a run removes it
+#: (`expire_stranded`). Its diff is kept as a patch beside `auto_fix.jsonl`; the bug goes back to the
+#: `--auto` queue, unless its fix touched `PROTECTED` (it would stop there again: it stays the owner's).
+STRANDED_DAYS = 14
 TIMEOUT_SEC = 3 * 3600
 #: A credential in the staged diff: the agent's sandbox can't reach the network, but what it writes
 #: into the worktree, this script pushes. GitHub, Anthropic and SSH-key shapes.
@@ -211,14 +217,21 @@ def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch:
 
 def tags_brief(recital: str, n: int = 1) -> str:
     """Phase 2: the recital of the staged diff; act on it and tag each finding. Round `n` > 1 reviewed
-    the diff as the last round left it."""
+    the diff as the last round left it. On the last round (`RECITAL_ROUNDS`) any change sends the fix
+    back unshipped, so the brief narrows what may still change it: a fanout reviewer finds a new
+    same-shape site each round, and chasing them never settles."""
     again = "" if n == 1 else f" again (round {n}, after your changes for the last one)"
+    last = ("" if n < RECITAL_ROUNDS else
+            "\n\nThis is the last round: if you change the diff now, the fix goes back to the owner unshipped. "
+            "Change it only for a finding that is a bug in the lines you changed. Tag every other finding "
+            "(a same-shape site elsewhere, a follow-up, a nit) `shipped_with_finding: <why>`: the weekly "
+            "judge picks those up from the record.")
     return (f"Your changes are staged and `pixi run recital` reviewed them{again}. Its body:\n\n" + recital + "\n\n"
             "Act on the findings as CLAUDE.md → *Git & commits* says: fix what should be fixed (in the same "
             "worktree, then re-run the matching tests). Then return one `[<slug>: <outcome>]` tag per "
             "outcome-tagged finding (copy each slug verbatim; `fixed_pre_commit`, or "
             "`shipped_with_finding` / `false_positive` / `dropped_no_action` with `: <reason>`). Return an "
-            "empty list if it has none.")
+            "empty list if it has none." + last)
 
 
 def describe_call(name: str, inp: dict, cwd: pathlib.Path | None = None) -> str:
@@ -1245,6 +1258,79 @@ def _without(items: list[dict], by_id: dict, keys: _t.Container[str]) -> list[di
     return out
 
 
+def _in_use(tree: pathlib.Path) -> bool:
+    """A process works in `tree`, or a live Claude Code session worked there recently (an owner's `[f]`
+    session starts at the workspace root, so its cwd alone wouldn't say): `prune-worktrees`' check.
+    Where neither can be read (no /proc), in use: over-protecting is the safe failure."""
+    spec = _importlib_util.spec_from_file_location("_prune_worktrees", _REPO / "scripts" / "prune_worktrees.py")
+    prune = sys.modules.setdefault(spec.name, _importlib_util.module_from_spec(spec))   # its dataclasses look it up
+    if not hasattr(prune, "pids_under"):
+        spec.loader.exec_module(prune)
+    root = os.path.normpath(str(tree))
+    pids, sessions = prune.pids_under(root, prune.scan_processes()), live_sessions()
+    if pids is None or sessions is None:
+        return True
+    return bool(pids or sessions_in(root, sessions))
+
+
+def _last_touched(tree: pathlib.Path, sh: _t.Callable) -> float:
+    """The newest mtime among `tree`'s changed files: an owner who opened it with `[f]` and worked there
+    moved one of them. Not its index: any `git status` (the agents pane's, this run's) rewrites that."""
+    plain = git(pathlib.Path(os.devnull))
+    names = [ln[3:].split(" -> ")[-1] for ln in (sh([*plain, "status", "--porcelain", "--untracked-files=all"],
+                                                    tree).stdout or "").split("\n") if len(ln) > 3]
+    return max(((tree / n).stat().st_mtime for n in names if (tree / n).exists()), default=0.0)
+
+
+def expire_stranded(main: pathlib.Path, *, out: _t.TextIO, sh: _t.Callable = default_sh,
+                    auto_log: pathlib.Path | None = None, now: float | None = None,
+                    days: int = STRANDED_DAYS) -> list[str]:
+    """Remove the worktrees `--auto` stopped in before a PR (stage `staged`) that nobody touched for
+    `days`, and their branches. Before it removes one, its diff goes to `expired/<tree>-<date>.patch`
+    beside `auto_fix.jsonl`. Its bugs are logged `expired`, so the next run takes them afresh, or
+    `left` (no tree) when the fix touched `PROTECTED`: a new session would only stop there again. A
+    worktree that isn't this repo's, has commits of its own, or a process in it, stays. Returns the
+    worktrees removed."""
+    now = time.time() if now is None else now
+    cutoff = now - days * 86400
+    log = auto_log or _rv.auto_path()
+    by_tree: dict[str, list[dict]] = {}
+    for row in _rv.read_auto(log).values():
+        if row.get("tree") and row.get("outcome") == "left" and row.get("stage", "staged") == "staged":
+            by_tree.setdefault(row["tree"], []).append(row)
+    plain = git(pathlib.Path(os.devnull))
+    gone, colour = [], out.isatty()
+    for where, rows in sorted(by_tree.items()):
+        tree = pathlib.Path(where)
+        logged = max(_dt.datetime.fromisoformat(r["ts"].replace("Z", "+00:00")).timestamp() for r in rows)
+        if not tree.is_dir() or logged > cutoff or not _ours(tree, main):
+            continue
+        if (sh([*plain, "rev-list", "--count", "origin/main..HEAD"], tree).stdout or "").strip() not in ("", "0"):
+            continue
+        if _last_touched(tree, sh) > cutoff or _in_use(tree):
+            continue
+        branch = (sh([*plain, "rev-parse", "--abbrev-ref", "HEAD"], tree).stdout or "").strip()
+        changed = [n for n in (sh([*plain, "diff", "--name-only", "HEAD"], tree).stdout or "").split("\n") if n]
+        fenced = [n for n in changed if protected(n)]
+        patch = log.parent / "expired" / f"{tree.name}-{_dt.date.fromtimestamp(now).isoformat()}.patch"
+        patch.parent.mkdir(parents=True, exist_ok=True)
+        patch.write_text(sh([*plain, "diff", "--binary", "HEAD"], tree).stdout or "", encoding="utf-8")
+        agent_sandbox.remove_worktree(main, tree)
+        if branch and branch != "HEAD":
+            sh(["git", "branch", "-D", branch], main)
+        age = int((now - logged) // 86400)
+        for r in rows:
+            why = (f"Its worktree sat untouched {age} days and was removed; the diff is in {patch}. "
+                   + (f"It touched {', '.join(fenced[:3])}, which --auto never pushes: yours to take."
+                      if fenced else "The next --auto run takes it afresh."))
+            _rv.append_auto({"record": r["record"], "ref": r["ref"], "key": r["key"],
+                             "outcome": "left" if fenced else "expired", "reason": why, "pr_url": ""}, log)
+        gone.append(tree.name)
+        print(f"  {_col(GREY, 'expired', use_colour=colour)}  {tree.name} · {age} days untouched"
+              + (" · fenced, stays yours" if fenced else " · back in the --auto queue"), file=out, flush=True)
+    return gone
+
+
 def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys.stdout,
         path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None, older: _t.Sequence[dict] = (),
         main: pathlib.Path | None = None, until: float | None = None, clock: _t.Callable[[], float] = time.time,
@@ -1255,6 +1341,8 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
     `tracker` (not on a dry run) gets the run's progress for the consoles (`auto_run`); this writes its
     start and its normal ends, the caller the ones that raise."""
     main = main or _rv.main_checkout()
+    if not dry_run:   # first: an expired bug is back in the queue this run
+        expire_stranded(main, out=out, sh=kw.get("sh") or default_sh, auto_log=auto_log)
     items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
     colour, width = out.isatty(), _width()

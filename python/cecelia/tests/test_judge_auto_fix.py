@@ -2,6 +2,7 @@
 what it records. The sessions and every git / gh / pixi call are faked: nothing reaches GitHub."""
 from __future__ import annotations
 
+import datetime
 import importlib.util
 import io
 import json
@@ -11,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -949,8 +951,6 @@ class WorkTest(_AutoFixture):
         self.assertEqual(self.af._tail(short), "error: boom")   # already in the tail: not said twice
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ResumeTest(_AutoFixture):
@@ -1053,3 +1053,90 @@ class ResumeTest(_AutoFixture):
         self.work({**_answer(), "bugs": [{"key": "B1", "outcome": "fixed", "reason": "because"}]},
                   {"tags": []})
         self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "fixed")
+
+
+class ExpireTest(_AutoFixture):
+    """`expire_stranded`: a stopped fix's worktree nobody touched for `STRANDED_DAYS` is removed, its
+    diff kept, and its bug back in the `--auto` queue (or the owner's, when the fix is fenced)."""
+    git_tree = ResumeTest.git_tree
+    NOW = time.time()   # the files git_tree writes are new: as old as this, for `age_files=False`
+    OLD = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(NOW - 45 * 86400))
+
+    def stranded(self, ts=OLD, age_files=True):
+        tree = self.git_tree()
+        if age_files:   # the changed file, as old as the row
+            then = self.NOW - 40 * 86400
+            os.utime(tree / "a.py", (then, then))
+        b = self.record["bugs"][0]
+        self.rv.append_auto({"record": self.record["date"], "ref": b["id"], "key": b["key"], "outcome": "left",
+                             "reason": "Stopped before the PR: …", "pr_url": "", "tree": str(tree),
+                             "stage": "staged"}, self.auto)
+        rows = [json.loads(ln) for ln in self.auto.read_text(encoding="utf-8").splitlines()]
+        rows[-1]["ts"] = ts
+        self.auto.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+        return tree
+
+    def expire(self):
+        out = io.StringIO()
+        with mock.patch.object(self.af, "_in_use", return_value=False):
+            gone = self.af.expire_stranded(self.main, out=out, auto_log=self.auto, now=self.NOW)
+        return gone, out.getvalue()
+
+    def test_an_untouched_tree_is_removed_its_diff_kept_and_its_bug_back_in_the_queue(self):
+        tree = self.stranded()
+        self.assertEqual(self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto)), [])   # left: skipped
+        gone, out = self.expire()
+        self.assertEqual(gone, [tree.name])
+        self.assertIn(["remove_worktree", str(tree)], self.calls)
+        patch = self.tmp / "expired" / f"{tree.name}-{datetime.date.fromtimestamp(self.NOW).isoformat()}.patch"
+        self.assertIn("+a = 2", patch.read_text(encoding="utf-8"))
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual(row["outcome"], "expired")
+        self.assertNotIn("tree", row)
+        self.assertIn(str(patch), row["reason"])
+        self.assertIn("back in the --auto queue", out)
+        self.assertEqual([it["ref"] for it in self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto))],
+                         ["B1"])
+
+    def test_a_recent_stop_keeps_the_tree(self):
+        self.stranded(ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(self.NOW - 3 * 86400)))
+        self.assertEqual(self.expire()[0], [])
+        self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "left")
+
+    def test_a_recent_edit_keeps_the_tree(self):   # the owner opened it with [f] and worked there
+        self.stranded(age_files=False)
+        self.assertEqual(self.expire()[0], [])
+        self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "left")
+
+    def test_a_tree_with_a_commit_or_a_process_in_it_stays(self):
+        tree = self.stranded()
+        with mock.patch.object(self.af, "_in_use", return_value=True):
+            self.assertEqual(self.af.expire_stranded(self.main, out=io.StringIO(), auto_log=self.auto, now=self.NOW), [])
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "wip"], cwd=str(tree),
+                       check=True, capture_output=True)
+        self.assertEqual(self.expire()[0], [])
+
+    def test_a_fenced_fix_is_removed_but_stays_the_owners(self):
+        tree = self.stranded()
+        (tree / ".github").mkdir()
+        (tree / ".github" / "ci.yml").write_text("x\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=str(tree), check=True, capture_output=True)
+        then = self.NOW - 40 * 86400
+        os.utime(tree / ".github" / "ci.yml", (then, then))
+        gone, out = self.expire()
+        self.assertEqual(gone, [tree.name])
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual(row["outcome"], "left")
+        self.assertNotIn("tree", row)
+        self.assertIn(".github/ci.yml", row["reason"])
+        self.assertEqual(self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto)), [])
+
+    def test_the_last_recital_round_asks_for_no_more_reach(self):
+        self.assertNotIn("last round", self.af.tags_brief("body", self.af.RECITAL_ROUNDS - 1))
+        last = self.af.tags_brief("body", self.af.RECITAL_ROUNDS)
+        self.assertIn("This is the last round", last)
+        self.assertIn("shipped_with_finding", last)
+
+
+if __name__ == "__main__":
+    unittest.main()
