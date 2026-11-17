@@ -209,7 +209,7 @@ the stamp is `-SAMPLED_SPECS_RULE` instead: a change to how those defaults are c
 the cards, and with no file there is no mtime to say so (a sidecar from before the zero-fill fix in
 `percentile_spec` carried 0.0 and would otherwise keep its washed-out crops forever).
 """
-const SAMPLED_SPECS_RULE = 2      # bump when `percentile_spec` / `_sampled_specs` change their answer
+const SAMPLED_SPECS_RULE = 3      # bump when `percentile_spec` / `_sampled_specs` change their answer
 function cards_specs_mtime(img::CciaImage)::Float64
     zp = img_filepath(img)
     zp === nothing && return 0.0
