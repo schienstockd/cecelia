@@ -304,6 +304,7 @@ include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
 include(joinpath(@__DIR__, "suite", "skeleton_lines.jl"))
 include(joinpath(@__DIR__, "suite", "spatial_graph_lines.jl"))
 include(joinpath(@__DIR__, "suite", "spatial_graph_stale.jl"))   # RESULT-REVIEW result-090b69ae
+include(joinpath(@__DIR__, "suite", "spatial_graph_pops.jl"))
 
 # ── /api/tasks/validate + /api/cell_cards + _require_ids testsets ─
 # Three testsets: /api/tasks/validate wiring (form-time advisory), /api/cell_cards metadata + sidecar

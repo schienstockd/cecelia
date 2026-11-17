@@ -21,7 +21,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   maskColour: 'id',
-  trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {}, graphVisible: {}, graphColour: '#ffffff', graphWidth: 1,
+  trackColourMode: 'speed', colourBy: '', colourOverrides: {}, branchVisible: {}, graphVisible: {}, graphColour: '#ffffff', graphWidth: 1, graphPopsOnly: false,
   scaleBar: true, timestamp: false, scaleBarPx: 24, timestampPx: 18, steps: 384,
   ...over,
 })
@@ -287,11 +287,15 @@ describe('viewerLook — neighbour graphs', () => {
     const l = viewerLook(base({ graphVisible: { net: true, other: false }, graphColour: '#ff00ff' }))
     expect(l.spatialGraphs).toEqual({ net: '#ff00ff' })
     expect(l.spatialGraphWidth).toBe(1)
+    expect(l.spatialGraphPopsOnly).toBeUndefined()
+    expect(viewerLook(base({ graphVisible: { net: true }, graphPopsOnly: true })).spatialGraphPopsOnly).toBe(true)
     expect(viewerLook(base({ graphVisible: { net: false } })).spatialGraphs).toBeUndefined()
   })
   it('a batch filled from the view sends them', () => {
     const cfg = buildBatchMovieConfig(viewerLook(base({ graphVisible: { net: true } })), ['cpSAM'], {})
     expect(cfg.spatialGraphs).toEqual({ net: '#ffffff' })
     expect(cfg.spatialGraphWidth).toBe(1)
+    const cfg2 = buildBatchMovieConfig(viewerLook(base({ graphVisible: { net: true }, graphPopsOnly: true })), ['cpSAM'], {})
+    expect(cfg2.spatialGraphPopsOnly).toBe(true)
   })
 })

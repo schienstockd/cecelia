@@ -167,11 +167,27 @@ export interface SpatialGraphPayload {
   nUnplaced: number
   /** a mask was re-segmented after the graph: its labels may name other cells now */
   stale: boolean
+  /** each segment's two cells: `(vns[aVn[i]], aLabel[i])` and `(vns[bVn[i]], bLabel[i])` */
+  vns: string[]
+  aVn: number[]; aLabel: number[]
+  bVn: number[]; bLabel: number[]
   note?: string
 }
 
 export function spatialGraphsUrl(q: { projectUid: string; imageUid: string; suffix: string }): string {
   return '/api/viewer/spatial-graphs?' + new URLSearchParams(q).toString()
+}
+
+/** `g` with only the edges whose two cells are both in `cells` (segmentation → labels) — "only between
+ *  shown populations". The movie keeps the same edges (`spatial_graph_between`). */
+export function graphEdgesBetween(g: SpatialGraphPayload, cells: ReadonlyMap<string, ReadonlySet<number>>): LinePayload {
+  const inA = g.vns.map(vn => cells.get(vn))
+  const keep: number[] = []
+  for (let i = 0; i < g.nSegments; i++)
+    if (inA[g.aVn[i]]?.has(g.aLabel[i]) && inA[g.bVn[i]]?.has(g.bLabel[i])) keep.push(i)
+  const pick = (a: number[]) => keep.map(i => a[i])
+  return { nSegments: keep.length, t: pick(g.t), plane: pick(g.plane),
+           x0: pick(g.x0), y0: pick(g.y0), z0: pick(g.z0), x1: pick(g.x1), y1: pick(g.y1), z1: pick(g.z1) }
 }
 
 /** A neighbour graph's line colour until one is picked — the movie's `SPATIAL_GRAPH_COLOUR` too. */
