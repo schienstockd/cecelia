@@ -102,29 +102,40 @@ end
 The summary-plot response for a per-image metric: `chart_type` ∈ boxplot | points | bar, each dot one
 image. With `attr_map` (uID → attribute value) the series are attribute groups per population and the
 between-group test compares images; without it, each population pools its images into one series.
-`pop` plots one of the run's populations (the response lists them as `pops`), so the test compares
-attribute groups within that population rather than across populations.
+`pops` plots the picked populations (keys as the run stores them, `"<value_name><path>"`), in that order;
+`pop` plots one (the interaction pairs' dropdown). Neither = all. The response lists every population
+the run holds as `pops`, so the picker can grey out the rest. With `attr_map` and several populations
+the test compares attribute groups WITHIN each population (`_stats_within_pops`), never across them.
 """
 function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
                               source::AbstractString, chart_type::AbstractString;
                               measure::AbstractString, suffix::AbstractString = "",
                               pop::AbstractString = "",
+                              pops::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                               attr_map::Union{Nothing,AbstractDict} = nothing,
                               stats_enabled::Bool = false, stats_test::Symbol = :auto,
                               raw::Bool = false)::Dict{String,Any}
     df, chosen, suffixes = image_metric_frame(imgs, uids, source; suffix = suffix)
-    pops = unique(df.pop)
-    # a population the run lacks (a stale pick) falls back to the first; "" plots them all
-    chosen_pop = isempty(pop) ? "" : (String(pop) in pops ? String(pop) : (isempty(pops) ? "" : first(pops)))
-    isempty(chosen_pop) || (df = df[df.pop .== chosen_pop, :])
+    run_pops = unique(df.pop)
+    picked = pops === nothing ? nothing : String[String(p) for p in pops]
+    chosen_pop = ""
+    if picked !== nothing
+        # the picker's selection: a pop the run lacks has no rows, so it simply draws nothing
+        df = df[in(Set(picked)).(df.pop), :]
+    else
+        # a population the run lacks (a stale pick) falls back to the first; "" plots them all
+        chosen_pop = isempty(pop) ? "" : (String(pop) in run_pops ? String(pop) : (isempty(run_pops) ? "" : first(run_pops)))
+        isempty(chosen_pop) || (df = df[df.pop .== chosen_pop, :])
+    end
     result = _summary_agg(df, chart_type; measure = String(measure), granularity = :cell, nbins = 30,
                           normalize = :none, by_image = attr_map !== nothing, attr_map = attr_map,
-                          raw_points = true, raw = raw,
-                          stats_enabled = stats_enabled, stats_test = stats_test)
+                          raw_points = true, raw = raw, pop_order = picked,
+                          stats_enabled = stats_enabled, stats_test = stats_test,
+                          stats_within_pops = attr_map !== nothing)
     result["imageMetric"] = String(source)
     result["suffix"] = chosen
     result["suffixes"] = suffixes
-    result["pops"] = pops
+    result["pops"] = run_pops
     result["pop"] = chosen_pop
     result["nImages"] = length(unique(df.uID))
     result

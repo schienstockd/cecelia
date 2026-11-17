@@ -152,6 +152,7 @@ include(joinpath(@__DIR__, "suite", "task_form_and_preview.jl"))
 # sRGB encode matches browser canvas gamma, zarr byte order. Extracted so runtests.jl contains
 # only include lines + section-header comments (same pattern as app/test/suite/*.jl).
 include(joinpath(@__DIR__, "suite", "version_and_render.jl"))
+include(joinpath(@__DIR__, "suite", "thumbnails.jl"))
 # ── Module canvas + image stores + plot-spec / plotmeta testsets 
 # Six testsets covering the module-canvas / stores / plot-spec surface: module-canvas
 # persistence, image stores (codec + on-disk size per version), plot-spec per-page popType

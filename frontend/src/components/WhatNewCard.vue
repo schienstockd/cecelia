@@ -15,7 +15,7 @@ import { formatCardDate, renderMarkdown, type WhatNewCard, CECELIA_NEW_ISSUE_URL
 import { useSettingsStore } from '../stores/settings'
 import { useGuideStore } from '../stores/guide'
 import { guideById } from '../lib/guides'
-import { docShotUrl } from '../lib/docShots'
+import { docShot } from '../lib/docShots'
 import CcToggle from './CcToggle.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
 
@@ -55,7 +55,8 @@ function showMe() {
 
 const settings = useSettingsStore()
 // The card's screenshot in the scheme the user has; none (or not composed) → the sketch as before.
-const shotUrl = computed(() => (props.card.shot ? docShotUrl(props.card.shot.id, settings.colourScheme) : null))
+const shot = computed(() => (props.card.shot ? docShot(props.card.shot.id, settings.colourScheme) : null))
+const shotUrl = computed(() => shot.value?.url ?? null)
 
 // Resolve `sketchAnimation.id` → feijoa's catalogue; unknown id (or none) → null → placeholder.
 const sketch = computed<SketchDefinition | null>(() => {
@@ -87,7 +88,7 @@ const tipsOptOut = computed({
          so the card keeps its height while the user pages tips), else its feijoa sketch. One frame,
          so the edge-click nav is written once. -->
     <div v-if="shotUrl || sketch" :class="shotUrl ? ['wn-shot', { 'wn-shot-tip': isTip }] : 'wn-sketch wn-sketch-render'">
-      <img v-if="shotUrl" :src="shotUrl" :alt="card.title" />
+      <img v-if="shotUrl" :src="shotUrl" :width="shot?.width ?? undefined" :alt="card.title" />
       <!-- Explicit 100% h/w — SketchCanvas defaults to `height: auto` (inline), which would win
            over the container's aspect-ratio and overflow the card. -->
       <SketchCanvas v-else-if="sketch" :definition="sketch" width="100%" height="100%" />
@@ -178,8 +179,8 @@ const tipsOptOut = computed({
 }
 .wn-sketch.wn-sketch-render :deep(.feijoa-sketch) { width: 100%; height: 100%; display: block; }
 
-/* A screenshot: its own size up to the card's width (a feature), or filling the tip's 2:1 frame (the
-   in-app shots are cropped to it). */
+/* A screenshot: the app's own size (its composed width, docShot) up to the card's width (a feature),
+   or filling the tip's 2:1 frame (the in-app shots are cropped to it). */
 .wn-shot { margin-top: var(--cc-space-md); position: relative; border-radius: var(--cc-radius-md); overflow: hidden; }
 .wn-shot img { display: block; max-width: 100%; height: auto; }
 .wn-shot-tip { aspect-ratio: 2 / 1; }

@@ -69,12 +69,14 @@ ALLOWED_ROUTES = frozenset(
                                          # until one matched. Read-only, no lastOpenedAt bump.
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
+        ("GET", "/api/version"),          # the running version, stamped on a report_issue draft
         ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
         ("GET", "/api/plots/definitions"),  # available plot types (chart types, data needs, scope modes)
         ("GET", "/api/plots/attrs"),     # per-set image ATTRIBUTES (name + distinct values) — the axes a
                                          # board can compare by; the same route the summary canvas and the
                                          # UMAP colour/facet picker use, not a second attribute surface
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
+        ("GET", "/api/sets/thumbnails"),  # a set's images as one thumbnail montage (read-only render)
         ("GET", "/api/claim/checks"),    # claim recital: record / consistency / convention rules for a claim scope
         ("GET", "/api/claim/open"),      # claim recital: open claim entries re-checked, nothing written (briefing)
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
@@ -407,6 +409,10 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
             "GET", "/api/tasks/history", {"projectUid": project_uid, "limit": limit}
         )
 
+    def get_version(self) -> dict:
+        """`{version, installed}` of the running app."""
+        return self._request("GET", "/api/version")
+
     def get_module_params(self, category: str | None = None, fun_name: str | None = None):
         # Task param SPECS (valid ranges/defaults/types), project-independent. Optional `category`
         # narrows to one module (the part before the dot in a fun_name, e.g. "tracking"); `fun_name`
@@ -437,6 +443,18 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
             {
                 "projectUid": project_uid, "setUid": set_uid, "funName": fun_name,
                 "valueName": value_name, "threshold": threshold,
+            },
+        )
+
+    def get_thumbnails(self, project_uid: str, set_uid: str, value_name: str | None = None,
+                           contrast: str = "shared", size: int | None = None, offset: int = 0):
+        # Every image of a set as one montage PNG (data URL) + a cell per tile (row/col → image).
+        return self._request(
+            "GET",
+            "/api/sets/thumbnails",
+            {
+                "projectUid": project_uid, "setUid": set_uid, "valueName": value_name,
+                "contrast": contrast, "size": size, "offset": offset or None,
             },
         )
 

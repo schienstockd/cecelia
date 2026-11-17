@@ -29,10 +29,11 @@ import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
+import { visControlsFor } from '../../plots/plotControls'
 import { statsNotice } from '../../plots/statsInfo'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
-         filterSeriesToPopType, isPrecomputedSpec } from '../../plots/popTypes'
+         filterSeriesToPopType, isPrecomputedSpec, imageMetricPicksPops } from '../../plots/popTypes'
 import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSets } from '../../plots/obsMeasures'
 import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
@@ -297,8 +298,9 @@ const groupBy = computed<string>({ get: () => props.ui.groupBy ?? props.spec.dat
 // violin, strip). The controls live on the shared PlotOptions panel (pop-manager rail) so a Global
 // scope applies to every plot on the canvas; here we just READ vis.stats* to shape the request body
 // and the render flags. Off by default (see defaultVis).
-const STATS_CHARTS = new Set<ChartType>(['bar', 'boxplot', 'violin', 'strip'])
-const canCompareGroups = computed(() => STATS_CHARTS.has(chartType.value))
+// (a chart grouped by time draws a trend line, which shows no comparison — so none is requested)
+const canCompareGroups = computed(() =>
+  visControlsFor({ chartType: chartType.value, trend: timeSeries.value }).includes('stats'))
 // drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col).
 // Only once the columns have actually loaded (groupByOpts non-empty) — otherwise the transient empty
 // list during an async reload would wipe a valid selection (e.g. per-timepoint `t`) and it'd "cycle".
@@ -335,8 +337,10 @@ const statsSuffix = computed<string>({
 const runOptions = computed<string[]>(() => (result.value as { suffixes?: string[] } | null)?.suffixes ?? [])
 // A PER-IMAGE METRIC (spec `dataSource.imageMetric`): one number per image from a run's sidecars — a
 // spatial-pattern population or an interaction pair — grouped by image attribute (SPATIAL_PATTERN_PLAN
-// Decision 8). One of the run's populations at a time, so the test compares attribute groups.
+// Decision 8). A run keyed by picker populations (`pickPops`, spatial pattern) plots the PICKED ones —
+// the server tests attribute groups within each; otherwise (interaction pairs) one of the run's at a time.
 const imageMetric = computed(() => props.spec.dataSource.imageMetric)
+const metricPicksPops = computed(() => imageMetricPicksPops(props.spec))
 const metricPopOptions = computed<string[]>(() => result.value?.pops ?? [])
 const metricPop = computed<string>({
   get: () => props.ui.metricPop ?? props.ui.statsPair ?? '', set: v => (props.ui.metricPop = v) })
@@ -399,7 +403,9 @@ const crossImage = computed(() => !!props.setUid)
 const result = ref<PlotDataResponse | null>(null)
 // default to the run's first population once the response names them; drop a pick the run lacks
 // (declared after `result`: a watch evaluates its source at setup)
-watch(metricPopOptions, opts => { if (opts.length && !opts.includes(metricPop.value)) metricPop.value = opts[0] })
+watch(metricPopOptions, opts => {
+  if (!metricPicksPops.value && opts.length && !opts.includes(metricPop.value)) metricPop.value = opts[0]
+})
 // The temporal group levels are FRAME INDICES; the x axis should read in real elapsed time. The
 // interval is per IMAGE (OME `timeIncrement`), so this is a uID → seconds-per-frame map — and it is
 // `null` unless EVERY plotted image has one, because an unknown interval must not be drawn as
@@ -495,7 +501,9 @@ function applyImageSelector(body: Record<string, unknown>) {
 /** `isCurrent()` comes from the scheduler: false once a newer fetch has started. */
 async function fetchData(isCurrent: () => boolean) {
   // a precomputed readout has no series — its content is fixed by the runs it reads
-  if (!isPrecomputed.value && !ownSeries.value.length) { result.value = null; return }
+  // (a picker-keyed metric still asks with none picked: the reply names the run's populations, which
+  // is what the picker greys the rest out against)
+  if (!isPrecomputed.value && !ownSeries.value.length && !metricPicksPops.value) { result.value = null; return }
   if (!crossImage.value && !props.imageUid) { result.value = null; return }
   // measuresFromData offers measures built from THIS image's columns, so a fetch fired before the new
   // image's columns have loaded would request the previous image's measure (e.g. 3D-only `euler_number`
@@ -566,7 +574,8 @@ async function fetchData(isCurrent: () => boolean) {
     return
   }
 
-  // a per-image metric: ONE request, no series — the run fixes the populations, each dot is an image
+  // a per-image metric: ONE request, each dot is an image; the populations are the picked ones
+  // (`pickPops`) or the run's
   if (imageMetric.value) {
     try {
       const body = imageMetricBody(imageMetric.value.source)
@@ -667,7 +676,11 @@ const overrideTip = computed(() =>
 // server-side from the group count, so the picker can show neither — report both up and the shared
 // Stats options echo the name under the Test select, with the basis as its tooltip. One object, so a
 // host can't thread the name and forget the reason.
-const readout = computed<PlotReadout>(() => readoutOf(result.value?.comparisons, autoOverrides.value))
+// …and which shared settings this plot reacts to, so the rail offers only those (plots/plotControls.ts)
+const visControls = computed(() => visControlsFor({ chartType: chartType.value, trend: timeSeries.value }))
+const readout = computed<PlotReadout>(() =>
+  readoutOf(result.value?.comparisons, autoOverrides.value, visControls.value,
+    metricPicksPops.value ? (result.value?.pops ?? []) : null))
 // QC on the comparison drawn here (cells as replicates, too few images): it undermines the p-values on
 // the plot, so it shows on the plot, not only in the options popover (plots/statsInfo.ts).
 const statsNote = computed(() => statsNotice(readout.value.stats, !!vis.value?.statsEnabled))
@@ -806,8 +819,10 @@ function imageMetricBody(source: string, raw = false): Record<string, unknown> {
     projectUid: props.projectUid,
     chartType: backendChart(chartType.value).chartType, imageMetric: source, measure: measure.value,
     ...(statsSuffix.value ? { suffix: statsSuffix.value } : {}),
-    // '' until the first response names the run's populations — the server then plots them all
-    ...(metricPop.value ? { pop: metricPop.value } : {}),
+    // the picked populations, in the run's own key (`<value_name><path>`); else '' until the first
+    // response names the run's populations — the server then plots them all
+    ...(metricPicksPops.value ? { pops: ownSeries.value.map(t => `${t.valueName}${t.pop}`) }
+      : metricPop.value ? { pop: metricPop.value } : {}),
     ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
     ...(vis.value.statsEnabled && canCompareGroups.value
           ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
@@ -1263,7 +1278,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
               v-tooltip.bottom="imageMetric ? 'Which run to show' : 'Which interaction run to show'">
         <option v-for="s in runOptions" :key="s" :value="s">{{ s }}</option>
       </select>
-      <select v-if="imageMetric && metricPopOptions.length > 1" v-model="metricPop" class="sp-poptype"
+      <select v-if="imageMetric && !metricPicksPops && metricPopOptions.length > 1" v-model="metricPop" class="sp-poptype"
               v-tooltip.bottom="'Population from the run'">
         <option v-for="o in metricPopOptions" :key="o" :value="o">{{ o }}</option>
       </select>

@@ -99,3 +99,49 @@ end
         foreach(d -> rm(d; recursive = true, force = true), tds)
     end
 end
+
+@testset "per-image metric — picked populations, stats within each population" begin
+    # Six images, three per group. B/qc separates the groups completely, T/qc does not; C/qc is in
+    # the run but not picked, and "X/gone" is picked but not in the run (a pop with no result).
+    uids = ["i$k" for k in 1:6]
+    tds = [mktempdir() for _ in uids]
+    try
+        imgs = [CciaImage(; uid = u, dir = d) for (u, d) in zip(uids, tds)]
+        attr = Dict(u => (k <= 3 ? "PBS" : "DTx") for (k, u) in enumerate(uids))
+        b = Dict(zip(uids, [1.01, 1.02, 1.03, 0.70, 0.71, 0.72]))
+        t = Dict(zip(uids, [0.90, 1.10, 1.00, 1.05, 0.95, 0.99]))
+        for (img, u) in zip(imgs, uids)
+            mkpath(img_pattern_dir(img))
+            recs = [Dict("pop" => "B/qc", "nnRatio" => b[u]), Dict("pop" => "T/qc", "nnRatio" => t[u]),
+                    Dict("pop" => "C/qc", "nnRatio" => 1.0)]
+            write(img_pattern_path(img, "a"), JSON3.write(Dict("records" => recs)))
+        end
+        r = image_metric_summary(imgs, uids, "spatialPattern", "boxplot"; measure = "nnRatio",
+                                 pops = ["T/qc", "B/qc", "X/gone"], attr_map = attr, stats_enabled = true)
+        # every population the run holds is listed — what the picker greys the rest out against
+        @test r["pops"] == ["B/qc", "T/qc", "C/qc"]
+        # the picked pops only, each split by group; a picked pop with no result draws nothing
+        @test Set((s["uID"], s["pop"]) for s in r["series"]) ==
+              Set([("PBS", "B/qc"), ("DTx", "B/qc"), ("PBS", "T/qc"), ("DTx", "T/qc")])
+        # within a group, the populations follow the pick order
+        @test [s["pop"] for s in r["series"] if s["uID"] == "PBS"] == ["T/qc", "B/qc"]
+        cmp = r["comparisons"]
+        # one test per population: every pair compares the SAME population across groups
+        pop_of(l) = last(split(l, " · "))
+        @test length(cmp["comparisonPairs"]) == 2
+        @test all(p -> pop_of(p["a"]) == pop_of(p["b"]) && p["a"] != p["b"], cmp["comparisonPairs"])
+        pb = only(p for p in cmp["comparisonPairs"] if pop_of(p["a"]) == "B/qc")
+        # 3 vs 3 completely separated, exact two-sided Mann-Whitney: 2 of C(6,3)=20 orderings → p = 0.1,
+        # the same as plotting B/qc alone — the other population's family adds no adjustment
+        @test pb["pAdj"] ≈ 2 / 20
+        # no omnibus across populations, no letters that would read as cross-population matches
+        @test isnan(cmp["pValue"]) && all(isempty, cmp["letters"])
+        @test occursin("within each population", cmp["methodNote"])
+        # nothing picked: nothing drawn, the run's populations still listed
+        e = image_metric_summary(imgs, uids, "spatialPattern", "boxplot"; measure = "nnRatio",
+                                 pops = String[], attr_map = attr)
+        @test isempty(e["series"]) && e["pops"] == ["B/qc", "T/qc", "C/qc"]
+    finally
+        foreach(d -> rm(d; recursive = true, force = true), tds)
+    end
+end

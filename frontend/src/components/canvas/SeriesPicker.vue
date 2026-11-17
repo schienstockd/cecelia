@@ -16,7 +16,7 @@ import ChipSelect from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
 import CanvasSidePanel from './CanvasSidePanel.vue'
-import type { PlotReadout } from '../../plots/plotReadout'
+import { popAvailable, type PlotReadout } from '../../plots/plotReadout'
 
 const props = defineProps<{
   groups: SegmentationPops[]          // populations available, grouped by segmentation
@@ -66,6 +66,10 @@ const emit = defineEmits<{
 
 const total = computed(() => props.groups.reduce((n, g) => n + g.populations.length, 0))
 const isLit = (vn: string, pop: string, pt: string) => props.selected.includes(tkey(pt, vn, pop))
+// the active plot has no data for this population (a per-image metric's run did not score it): it can't
+// be added, but a stale pick can still be taken off
+const isOff = (vn: string, pop: string, pt: string) => !popAvailable(props.readout, vn, pop) && !isLit(vn, pop, pt)
+function pick(vn: string, pop: string, pt: string) { if (!isOff(vn, pop, pt)) emit('toggle', vn, pop, pt) }
 // hierarchy: indent a pop by its tree depth (a path's "/" count − 1), mirroring the gating manager.
 const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 // the picked populations in plot order, draggable — only when there is an order to choose
@@ -97,15 +101,16 @@ const showOrder = computed(() => !props.selectionUnused && !props.single && prop
     <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pick-group-head">{{ grp.valueName }}</div>
       <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
-           class="pick-row" :class="{ active: isLit(grp.valueName, p.path, p.popType) }"
+           class="pick-row" :class="{ active: isLit(grp.valueName, p.path, p.popType), off: isOff(grp.valueName, p.path, p.popType) }"
            :style="{ paddingLeft: 12 + depthOf(p.path) * 14 + 'px' }"
-           @click="emit('toggle', grp.valueName, p.path, p.popType)">
+           @click="pick(grp.valueName, p.path, p.popType)">
         <span class="pick-swatch" :style="{ background: p.colour }" />
         <span class="pick-name">{{ p.name }}</span>
         <span v-if="p.popType !== 'live'" class="pick-tag" v-tooltip.left="'Gated on per-track properties'">{{ p.popType }}</span>
         <button class="pick-eye cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: isLit(grp.valueName, p.path, p.popType) }"
-                v-tooltip.left="isLit(grp.valueName, p.path, p.popType) ? 'Remove from plots' : 'Plot this population'"
-                @click.stop="emit('toggle', grp.valueName, p.path, p.popType)">
+                v-tooltip.left="isOff(grp.valueName, p.path, p.popType) ? 'Not in this run'
+                  : isLit(grp.valueName, p.path, p.popType) ? 'Remove from plots' : 'Plot this population'"
+                @click.stop="pick(grp.valueName, p.path, p.popType)">
           <i :class="isLit(grp.valueName, p.path, p.popType) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
         </button>
       </div>
@@ -129,6 +134,8 @@ const showOrder = computed(() => !props.selectionUnused && !props.single && prop
 .pick-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 12px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pick-row:hover { background: var(--cc-surface-2); }
 .pick-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
+.pick-row.off { opacity: 0.35; cursor: not-allowed; }
+.pick-row.off:hover { background: none; }
 .pick-swatch { width: 14px; height: 14px; border-radius: var(--cc-radius-xs); flex-shrink: 0; border: 1px solid var(--cc-swatch-edge); }
 .pick-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pick-tag { font-size: var(--cc-fs-3xs); text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);

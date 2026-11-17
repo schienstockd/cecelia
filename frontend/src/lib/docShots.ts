@@ -5,15 +5,22 @@
 // image (a viewer shot) has one file for every scheme.
 
 import { IN_APP_SHOTS } from '../../../user-docs/shots/in-app.ts'
-import { imageFile } from '../../../user-docs/shots/spec.ts'
+import { imageFile, imageStem } from '../../../user-docs/shots/spec.ts'
 import type { ColourScheme } from '../utils/colourScheme'
 
 const DIR = '../../../user-docs/images/'
 const URLS = import.meta.glob('../../../user-docs/images/app-*.{png,jpg}', { query: '?url', import: 'default', eager: true }) as Record<string, string>
+// file stem → the width it was composed for, in CSS px (compose.mjs): the files are 2× that, for sharp text
+const WIDTHS = (import.meta.glob('../../../user-docs/images/images.json', { import: 'default', eager: true })[DIR + 'images.json'] ?? {}) as Record<string, number>
 
-/** The image of in-app shot `id` in `scheme`; null for an id the set has no shot for, or one not
- *  composed yet (`pixi run doc-images`), so the card falls back to its sketch. */
-export function docShotUrl(id: string, scheme: ColourScheme): string | null {
+export interface DocShot { url: string; width: number | null }
+
+/** The image of in-app shot `id` in `scheme` and the width to show it at (the file is 2× that; drawn at
+ *  its own pixels it shows the app at twice its size); null for an id the set has no shot for, or one
+ *  not composed yet (`pixi run doc-images`), so the card falls back to its sketch. */
+export function docShot(id: string, scheme: ColourScheme): DocShot | null {
   const shot = IN_APP_SHOTS.shots.find(s => s.id === id)
-  return shot ? URLS[DIR + imageFile(shot, scheme)] ?? null : null
+  const file = shot ? imageFile(shot, scheme) : null
+  const url = file ? URLS[DIR + file] : undefined
+  return file && url ? { url, width: WIDTHS[imageStem(file)] ?? null } : null
 }
