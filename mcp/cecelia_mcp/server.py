@@ -1345,19 +1345,19 @@ def get_session_briefing(project_uid: str) -> dict:
         `fun` is the task whose QC banked the finding: check it before believing a number. A probe or
         example module banking a hardcoded threshold looks exactly like a real pipeline finding
         otherwise ("4 images measured 0 cells" once came from a test probe, not segmentation).
-      - `profile`: the project's Blackboard profile entry (Decision 2) —
+      - `profile`: the project's Blackboard profile entry —
         `{content, updatedAt, status}` — full markdown body, capped at 100 KiB. `null` if the
         project has no blackboard yet (it will after the first list_blackboard_entries call, so this
         is usually a fresh-project state). READ IT — this is what the profile exists for; don't
         skip past it.
       - `newProject` (bool): TRUE when the profile hasn't been filled in past its seeded
-        placeholder (Decision 9 — Subject and Goal are the two required sections). When TRUE, don't
+        placeholder (Subject and Goal are the two required sections). When TRUE, don't
         propose anything until you've greeted the user and asked them to describe subject + goal;
         a briefing with no signal to lean on is worse than one that admits it needs signal.
       - `openBlackboardEntries`: up to 8 entries with status="open" — `[{entryId, title,
         updatedAt, attachmentsCount, outcome?, knowledge?}]`. What's currently on the table across
         sessions. `knowledge: true` marks lab knowledge the user wrote down for this project; those
-        come first. Then by outcome tiebreak (Decision 12): `bad`-tagged first, then `good`, then
+        come first. Then by outcome: `bad`-tagged first, then `good`, then
         untagged; newer-first within each group. Reach for `read_blackboard_entry` on any that
         look relevant to what the user is about to ask; if a row carries `outcome.verdict:
         "bad"`, its `outcome.note` is what a prior session learned went wrong — lead with it.
@@ -1374,7 +1374,7 @@ def get_session_briefing(project_uid: str) -> dict:
         before proposing any figure or cross-image comparison, and the rules for the few things you can
         write). Read it before you propose anything; it is written to be followed, not summarised.
 
-    Deliberately DROPPED from the default response (PROJECT_MEMORY_PLAN Decision 5): the 7-day
+    Deliberately DROPPED from the default response: the 7-day
     lab-log slice. The lab-log is a chronological record whose value is post-hoc; the durable
     "what's on the table" signal now comes from open Blackboard entries. `read_lab_log(project_uid)`
     is still available for the chronological view when a specific question needs it.
@@ -1710,7 +1710,7 @@ def create_blackboard_entry(project_uid: str, title: str, content_md: str,
     context fingerprint (channel count, stain classes, pipeline stage) is snapshotted into the
     entry's meta. Set once at create; if the image is unknown or unresolvable, the entry is still
     created — the fingerprint is best-effort, not a gate.
-    `kiwi_refs` — KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decision 9. Optional per-ref sidecar for a saved
+    `kiwi_refs` — optional per-ref sidecar for a saved
     Kiwi turn: a `{refKey: {ref, label, snapshot?, savedAt}}` map keyed by canonical refKey. Only
     the six fragile ref kinds (population/cells/tracks/plot/tile/ui) carry a snapshot; the other
     kinds resolve-or-say-"gone" and don't need one. Almost never used from an MCP client — this is
@@ -1799,7 +1799,7 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
 
     404 if the entry doesn't exist. 400 on: an empty note; a verdict other than good/bad; a note
     over 2 KiB — keep the explanation to a couple of sentences, not a whole write-up (the
-    Blackboard entry body is where the long form goes). PROJECT_MEMORY_PLAN Decision 11.
+    Blackboard entry body is where the long form goes).
     Additive; never deletes."""
     note, fixed = repair_escaped_newlines(note)
     return _noting_repairs(_client.set_blackboard_outcome(project_uid, entry_id, verdict, note),
@@ -1979,7 +1979,7 @@ def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: li
     distinct so the user's eye lands on the one that matters. `label` (optional) rides along in
     the mark envelope so the correction cockpit + gating plots can label the pointer.
 
-    EPHEMERAL: `ttl_s` defaults to 5 min (Decision 18 of `docs/todo/BIDIR_CONTEXT_PLAN.md`).
+    EPHEMERAL: `ttl_s` defaults to 5 min.
     Nothing about a mark is persisted; a process restart on the backend clears them all. This is
     for "point at what I just said", not for saving a state — use `add_analysis_board` /
     `create_notebook` if the finding is worth keeping.
@@ -2058,7 +2058,7 @@ def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300
     resolution scheme the onboarding guides already use. If the anchor doesn't resolve (element
     off-screen, panel collapsed) the pointer waits until it does.
 
-    EPHEMERAL: 5-min default TTL (Decision 18 of `docs/todo/BIDIR_CONTEXT_PLAN.md`).
+    EPHEMERAL: 5-min default TTL.
 
     When to use this vs `mark_tracks` / `mark_cells`: those point at DATA (specific cells or
     trajectories); this points at CONTROLS ("click this button", "look at that section"). Prefer
@@ -2215,10 +2215,9 @@ def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
     multiple boards carrying the same plot spec.
 
     Resolution is deterministic and happens BEFORE any browser call:
-      - 0 matches → `{ok: false, reason: "no_matching_board"}`. Either call
-        `add_analysis_board` to create one (the tool call is visible in your trace — the user's
-        approval-if-possible moment), or ask the user which existing board they meant. Do NOT
-        auto-add without saying what you're adding.
+      - 0 matches → `{ok: false, reason: "no_matching_board"}`. Offer to create
+        one with `add_analysis_board`, or ask the user which existing board they meant — never
+        add one without saying what you're adding.
       - 1 match → dispatch the navigate. Returns `{ok: true, board: "<name>"}`.
       - >1 matches → `{ok: false, ambiguous: [{name, plots: [...]}, ...]}`. Ask the user which
         one; do NOT pick arbitrarily.
@@ -2581,7 +2580,7 @@ def register_push_target(project_uid: str, session_label: str = "") -> dict:
     labels the pairing in the frontend's "paired" chip; defaults to the first 8 chars of the
     session id.
 
-    Once paired, PR #2's Julia writer (when it ships) can push a plain-text capture-arrived
+    Once paired, Cecelia can push a plain-text capture-arrived
     notification directly to this session over its inbox socket, so you learn about a shared
     frame without the user leaving the viewer. This is a NOTIFICATION channel only — pairing
     doesn't grant any new code or execution access.
