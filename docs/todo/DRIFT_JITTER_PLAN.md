@@ -1,7 +1,8 @@
 # Drift-correction trajectory smoothing (jitter fix)
 
 **Status:** built  ·  branch `audit/drift-3d`  ·  landed as `driftSmoothSigma` param on
-`cleanupImages.driftCorrect`, gauss default σ=6 frames.
+`cleanupImages.driftCorrect`, default σ=6 frames. The smoother is now step-aware Savitzky–Golay, not
+a gaussian — see *Superseded* below.
 
 ## Goal
 
@@ -42,6 +43,18 @@ integer-pixel *jumps* — measured 107 across the movie's 181 frames.
    the trustworthiness signal.
 5. **First-frame position is not exactly pinned** after smoothing (`mode='nearest'` gives an edge
    drift < 1 px). Tolerated because it's inside the writer's rounding grid.
+
+### Superseded (fix/drift-step-jumps)
+
+Decisions 1 and 5 named a gaussian with `mode='nearest'`; Decision 2's "transparent to real motion"
+did not hold on movies with stage bumps. On two-photon movies with jumps of 30–100 px between two
+frames, the gaussian spread each jump over ±3σ frames (5–25 px left misaligned) and dragged fast
+ramps toward their end values. `_smooth_positions` now cuts the trajectory at steps (a move beyond
+median + 6·MAD of the movie's own moves, floor 3 px) and fits each segment with Savitzky–Golay,
+order 2, window 4σ+1 (min 5), `mode='interp'`. Decision 1 (positions, not deltas), 3 and 4 stand;
+the edge drift of Decision 5 is gone (a local quadratic passes the ends through). Cost on the
+jitter case: a 200-frame random walk collapses 80 → 21 integer transitions, against 16 for the
+gaussian.
 
 ## Not doing
 

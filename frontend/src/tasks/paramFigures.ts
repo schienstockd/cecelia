@@ -221,7 +221,7 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
   },
 
   /**
-   * Drift correction's trajectory smoothing. Three columns, one per motion regime, each showing
+   * Drift correction's trajectory smoothing. Four columns, one per motion regime, each showing
    * the raw trajectory (faint) and the integer-rounded output the writer would apply (opaque)
    * at the CURRENT σ. See `driftSmoothVis` for why this exists: σ is a single number that does
    * one thing well (kill jitter) and one thing badly (eat fast motion), and a slider without
@@ -286,12 +286,12 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       vis,
       note,
       title: 'Trajectory smoothing',
-      tip: 'Show what σ does to jitter, slow drift, and a fast step',
-      headings: ['Noise', 'Slow drift', 'Fast step'],
+      tip: 'Show what σ does to jitter, slow drift, a fast step and a stage bump',
+      headings: ['Noise', 'Slow drift', 'Fast step', 'Stage bump'],
       storageKey: 'drift-smoothing-figure',
       // Wider than driftEstimator's 460 because this figure's story is temporal SHAPE — a
       // ramp/staircase read reliably only when each frame gets ~10 px on screen, not ~3.
-      defaultW: 720, defaultH: 380,
+      defaultW: 900, defaultH: 380,
     }
   },
 
@@ -315,7 +315,7 @@ export const PARAM_FIGURES: Record<string, FigureBuilder> = {
       tip: 'Show what σ does to real shear, a bad plane, and independent noise',
       headings: ['Shear', 'Outlier', 'Noise'],
       storageKey: 'drift-z-smoothing-figure',
-      // Narrower than driftSmoothing (720): each column here is ZP=10 planes tall and only
+      // Narrower than driftSmoothing (900): each column here is ZP=10 planes tall and only
       // ~48 px wide, so a 460 wide panel keeps three side-views legible without empty margin.
       defaultW: 460, defaultH: 320,
     }

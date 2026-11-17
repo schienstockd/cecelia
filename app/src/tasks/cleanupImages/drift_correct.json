@@ -91,7 +91,7 @@
       "max": 30,
       "step": 0.5,
       "figure": "driftSmoothing",
-      "tip": "Trajectory low-pass — kills sub-pixel-noise jitter, transparent to real motion (0 = off)"
+      "tip": "Trajectory low-pass — kills sub-pixel jitter, keeps stage bumps and real drift (0 = off)"
     },
     {
       "key": "driftPerPlane",

@@ -135,9 +135,10 @@ export function noiseScenario(seed = 53): PlaneShifts {
 }
 
 /**
- * 1D gaussian convolution over the Z axis, with `mode='nearest'` at the edges — the same kernel
- * `driftSmoothVis.gaussianSmooth` uses, and the same policy the Python-side
- * `_estimate_drift_per_plane` post-solve step applies (via `scipy.ndimage.gaussian_filter1d`).
+ * 1D gaussian convolution over the Z axis, with `mode='nearest'` at the edges — the policy the
+ * Python-side `_estimate_drift_per_plane` Z-coupling pass applies (via
+ * `scipy.ndimage.gaussian_filter1d`). Not the T-trajectory smoother: that one is step-aware
+ * Savitzky–Golay (`driftSmoothVis.trajectorySmooth`).
  * σ = 0 (or negative) is the identity, matching the Python shortcut when `z_smoothness <= 0`.
  *
  * The kernel is truncated at 4σ each side (the scipy default), which puts the tails below

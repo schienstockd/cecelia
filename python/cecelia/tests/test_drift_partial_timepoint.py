@@ -79,9 +79,16 @@ class EstimateDriftOnCompleteFramesTest(unittest.TestCase):
         self.arr = _still_movie_stopped_mid_volume()
         self.du = _dim_utils(self.arr)
 
-    def test_the_half_empty_frame_reads_as_movement_when_registered(self):
-        """The bug, pinned so the fix below is measured against something real."""
-        self.assertGreater(_excursion(cu.estimate_drift(self.arr, 0, self.du).positions), 5.0)
+    def test_the_half_empty_frame_is_gated_out_when_registered(self):
+        """Registered anyway, the half-empty frame used to read as > 5 px of movement. The pair
+        quality gate now recognises it as a frame with no registration signal: the movie stays
+        still, and the frame is reported as interpolated rather than silently placed. Holding it out
+        of the estimate (`measured_frames`, below) is still the better answer — it is placed exactly
+        with the last complete frame instead of being predicted."""
+        est = cu.estimate_drift(self.arr, 0, self.du)
+        self.assertLess(_excursion(est.positions), 0.5)
+        self.assertEqual(est.interpolated, [_N_T - 1])
+        self.assertGreater(est.residual_rms, 2.0, 'the bad frame must still show in the QC number')
 
     def test_a_still_movie_stays_still_and_keeps_every_frame(self):
         variants = [('multiLag', {}), ('chain', {'estimator': 'chain'}),
