@@ -1454,3 +1454,153 @@ end
         @test drop_stale_approach!(img, "B", "live", ["T1"]) == 0         # first run / already clean: no-op
     end
 end
+
+# ── Headings — circular statistics per movie (track_headings.jl; radiatR port) ─────────────────────
+
+@testset "heading_test golden — radiatR circ_model_select + circular rayleigh.test" begin
+    # Generated with radiatR @ 8bf7191 (`.circ_model_loglik` / `.circ_model_criteria`, the AICc table
+    # restricted to uniform/unimodal/axial and the Akaike weights renormalised over those three, which is
+    # the port's model set) and circular 0.5 `rayleigh.test` on the angles and on (2θ) %% 2π.
+    gold = [
+        ([0.1, 0.3, -0.2, 0.5, 0.05, 0.4, -0.1, 0.25, 0.6, -0.3, 0.15, 0.2],
+         (R = 0.966225621512, p = 1.18317819181e-06, axialR = 0.869810977848, axialP = 2.4188953462e-06,
+          w = (uniform = 0.0000000099, unimodal = 0.9997829398, axial = 0.0002170502))),
+        ([0.1, 3.3, -0.15, 3.0, 0.2, 3.25, -0.05, 2.95, 0.12, 3.35, 0.0, 3.1],
+         (R = 0.010132715866, p = 0.998819229379, axialR = 0.963760953782, axialP = 1.11148705767e-06,
+          w = (uniform = 0.0000000153, unimodal = 0.0000000011, axial = 0.9999999836))),
+        ([0.3, 1.9, 2.8, 4.4, 5.6, 0.9, 3.7, 5.1, 1.4, 2.2, 4.9, 6.0],
+         (R = 0.087329764082, p = 0.915840280622, axialR = 0.180586576099, axialP = 0.6851250015,
+          w = (uniform = 0.8479941119, unimodal = 0.0645796994, axial = 0.0874261886))),
+    ]
+    for (th, g) in gold
+        h = heading_test(th)
+        @test h.n == 12
+        @test h.R ≈ g.R atol = 1e-10
+        @test h.p ≈ g.p rtol = 1e-8
+        @test h.axialR ≈ g.axialR atol = 1e-10
+        @test h.axialP ≈ g.axialP rtol = 1e-8
+        for m in (:uniform, :unimodal, :axial)
+            @test getfield(h.weights, m) ≈ getfield(g.w, m) atol = 1e-9
+        end
+    end
+    # the radiatR log-likelihoods themselves (unimodal + axial for the 'directed' vector) — pins κ = A1inv
+    th = gold[1][1]
+    @test Cecelia._vm_loglik(th) ≈ -0.9618786580 atol = 1e-8
+    @test Cecelia._vm_loglik([mod2pi(2t) for t in th]) ≈ -9.3970432632 atol = 1e-8
+end
+
+@testset "a1inv — circular::A1inv's three pieces, and it inverts A1" begin
+    @test Cecelia.a1inv(0.0) == 0.0
+    @test Cecelia.a1inv(0.5) ≈ 2 * 0.5 + 0.5^3 + 5 * 0.5^5 / 6
+    @test Cecelia.a1inv(0.7) ≈ -0.4 + 1.39 * 0.7 + 0.43 / 0.3
+    @test Cecelia.a1inv(0.9) ≈ 1 / (0.9^3 - 4 * 0.9^2 + 3 * 0.9)
+    # A1(κ) = I1/I0 from the von Mises mean cosine (numerical integral); A1inv is an approximation (≤ 1%)
+    for k in (0.5, 2.0, 8.0)
+        a1 = sum(t -> cos(t) * exp(k * cos(t)), range(-π, π; length = 20_001)) /
+             sum(t -> exp(k * cos(t)), range(-π, π; length = 20_001))
+        @test isapprox(Cecelia.a1inv(a1), k; rtol = 0.01)
+    end
+end
+
+@testset "track_net_headings — bearing on screen, short and stationary tracks left out" begin
+    right = _diag_df([1 => [(Float64(t), Float64(t), 0.0) for t in 0:3]])
+    @test track_net_headings(right, _DIAG_XY) ≈ [0.0]
+    # image y grows DOWN, so a track whose y falls moves UP the screen: +π/2
+    up = _diag_df([1 => [(Float64(t), 0.0, -Float64(t)) for t in 0:3]])
+    @test track_net_headings(up, _DIAG_XY) ≈ [π / 2]
+    # net, not path: a detour that ends to the right of the start reads 0
+    detour = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 0.0, 5.0), (2.0, 3.0, 5.0), (3.0, 3.0, 0.0)]])
+    @test track_net_headings(detour, _DIAG_XY) ≈ [0.0]
+    # HEADING_MIN_STEPS steps needed; a track back where it started has no bearing
+    short = _diag_df([1 => [(Float64(t), Float64(t), 0.0) for t in 0:(HEADING_MIN_STEPS - 1)]])
+    @test isempty(track_net_headings(short, _DIAG_XY))
+    loop = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0), (2.0, 1.0, 1.0), (3.0, 0.0, 0.0)]])
+    @test isempty(track_net_headings(loop, _DIAG_XY))
+    @test isempty(track_net_headings(right, ["centroid_x"]))
+end
+
+@testset "heading_test — not assessed is NaN, never 0" begin
+    h = heading_test(collect(0.1:0.1:0.5))                     # HEADING_MIN_TRACKS − 1 headings
+    @test h.n == 5 && isnan(h.R) && isnan(h.p) && isnan(h.axialP) && isnan(h.critR)
+    @test all(isnan, values(h.weights))
+    @test all(isnan, values(heading_models([0.1, 0.2, 0.3])))   # n − k − 1 = 0 for the k = 2 models
+    @test !any(isnan, values(heading_models([0.1, 0.2, 0.3, 0.4])))
+end
+
+@testset "headings see the two-way field the vector tests cannot" begin
+    # 24 tracks along the x axis, half running right and half left, with a small sideways scatter: the
+    # field the order index and the drift test are built to miss (their vector means cancel)
+    tracks = [id => [(Float64(t), (isodd(id) ? 1 : -1) * 2.0 * t + 100.0 * id,
+                      0.1 * t * sin(id) + 50.0 * id) for t in 0:6] for id in 1:24]
+    df = _diag_df(tracks)
+    d = track_diagnostics(df, _DIAG_XY; max_lag = 3)
+    @test d.summary.orderMean < 0.1                       # φ: no shared direction
+    h = only(d.headings)
+    @test h.group === nothing && h.n == 24
+    @test h.p > 0.5                                       # the directional Rayleigh test sees nothing…
+    @test h.axialP < 1e-6                                 # …the axial one does
+    @test h.weights.axial > 0.99
+    @test h.axialAxis < 0.05 || h.axialAxis > π - 0.05    # the axis is horizontal
+end
+
+@testset "headings are per movie — pooling never mixes two images' bearings" begin
+    rightward = _diag_df([id => [(Float64(t), 2.0 * t + 0.2 * t * sin(id) * id, 30.0 * id + 0.3 * t * cos(id))
+                                 for t in 0:5] for id in 1:8])
+    upward = _diag_df([id => [(Float64(t), 30.0 * id + 0.3 * t * cos(id), -2.0 * t + 0.2 * t * sin(id))
+                              for t in 0:5] for id in 1:8])
+    pooled = pooled_track_frame([rightward, upward])
+    d = track_diagnostics(pooled, _DIAG_XY; max_lag = 3, group_col = :__pool_grp)
+    @test [h.group for h in d.headings] == [1, 2]
+    @test all(h -> h.p < 0.01 && h.weights.unimodal > 0.9, d.headings)
+    @test abs(d.headings[1].mu) < 0.2 && abs(d.headings[2].mu - π / 2) < 0.2
+    # the group index is the frame's position in the INPUT list, so an empty frame does not shift it
+    skip = pooled_track_frame([DataFrame(), rightward, upward])
+    @test sort(unique(skip.__pool_grp)) == [2, 3]
+
+    # …and each entry is named by its source; the population joins the label only when sources mix them
+    src(uid, pop, df) = TrackPlotSource(uid, nothing, "vn", pop, df, _DIAG_XY)
+    g = TrackPlotGroup("k", "", "live", [src("imgA", "", rightward), src("imgB", "", upward)], _DIAG_XY, NaN)
+    hs = track_group_headings(g, track_group_diagnostics(g; max_lag = 3))
+    @test [h.label for h in hs] == ["imgA", "imgB"] && [h.uid for h in hs] == ["imgA", "imgB"]
+    gm = TrackPlotGroup("k", "", "live", [src("imgA", "T", rightward), src("imgA", "B", upward)], _DIAG_XY, NaN)
+    @test [h.label for h in track_group_headings(gm, track_group_diagnostics(gm; max_lag = 3))] ==
+          ["imgA · T", "imgA · B"]
+end
+
+@testset "rayleigh_critical_R — the ring sits where the printed p crosses α" begin
+    for n in (HEADING_MIN_TRACKS, 12, 60, 600)
+        r = rayleigh_critical_R(n)
+        @test Cecelia.pvalue(Cecelia.RayleighTest(r, n)) ≈ HEADING_ALPHA rtol = 1e-6
+    end
+    # large n: radiatR add_critical_r's asymptotic sqrt(-log(α)/n) (Rayleigh: p ≈ exp(-n R̄²))
+    @test rayleigh_critical_R(600) ≈ sqrt(-log(HEADING_ALPHA) / 600) rtol = 0.01
+    @test isnan(rayleigh_critical_R(HEADING_MIN_TRACKS - 1))
+    @test heading_test(collect(0.1:0.1:0.6)).critR ≈ rayleigh_critical_R(6)
+end
+
+@testset "headings — identical and near-identical angles never throw" begin
+    # all identical: κ = ∞, no finite likelihood — the weights say "not assessed", the tests still run
+    h = heading_test(fill(0.3, 10))
+    @test h.R ≈ 1 && h.p < 1e-3 && all(isnan, values(h.weights))
+    @test Cecelia.a1inv(1.0) == Inf
+    # nearly identical: κ in the hundreds of thousands — the Amos Bessel routine throws there
+    near = heading_test(0.3 .+ 1e-4 .* (1:10))
+    @test near.weights.unimodal > 0.5 && sum(values(near.weights)) ≈ 1
+    # the Hankel branch meets Distributions' Bessel term at the switch (κ = 500 takes the Bessel branch)
+    @test Cecelia._log_i0e(500.0) ≈ -0.5 * log(2π * 500) + log1p(1 / 4000 + 9 / (128 * 500^2)) rtol = 1e-9
+end
+
+@testset "pooled_track_frame — which inputs count, and their group is the INPUT index" begin
+    a = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)]])
+    one_row = _diag_df([5 => [(0.0, 3.0, 3.0)]])                 # a single cell is still a frame
+    empty_tracked = a[1:0, :]                                    # has track_id, no rows
+    untracked = DataFrame(label = [1.0, 2.0], centroid_t = [0.0, 1.0],
+                          centroid_x = [0.0, 1.0], centroid_y = [0.0, 0.0])   # rows, no track_id
+    p = pooled_track_frame([empty_tracked, a, untracked, one_row])
+    # inputs 1 (no rows) and 3 (no track_id) contribute nothing; the others keep their input positions
+    @test sort(unique(p.__pool_grp)) == [2, 4]
+    @test nrow(p) == nrow(a) + nrow(one_row)
+    # a lone usable frame keeps its input position too
+    @test unique(pooled_track_frame([untracked, one_row]).__pool_grp) == [2]
+    @test nrow(pooled_track_frame([empty_tracked, untracked])) == 0
+end
