@@ -1,6 +1,6 @@
 <!--
   Can this tracking result be trusted, and what kind of motion is in it — the celltrackR quality-control
-  battery as four plots (Wortel et al. 2021, doi:10.1016/j.crmeth.2021.100048; the 32.7° plane
+  battery as four plots (Wortel et al. 2021, doi:10.1016/j.immuno.2021.100003; the 32.7° plane
   expectation is Beltman et al. 2009, doi:10.1038/nri2638).
 
   **Why this exists at all.** The pair diagnostics were ported months ago and shipped reachable from
@@ -37,6 +37,11 @@
     rather than an empty box — offered if ANY group has it, since a mixed cohort has one arm that can answer.
   - *Track pairs* — angle between two tracks' paths against how far apart they were. Unrelated cells
     average 90°; a lower average among the FAR pairs means the whole field moves together.
+  - *Heading* — which way the tracks went, per MOVIE (a bearing means nothing across images, so a pooled
+    group splits into its movies here): an area-true rose of net headings, the mean vector (one-way)
+    and the mean axis (two-way), and the ring either must pass for p = α — the display radiatR
+    (Kirwan, CRAN 0.1.3, `add_angle_rose` + `add_critical_r`) draws, with the ring and arrows zoomed
+    onto their own scale (`headingOverlay`). The two-way axis is the case Alignment and Drift miss.
 -->
 <script setup lang="ts">
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
@@ -56,6 +61,7 @@ import {
   availableModes, resolveMode, modeHint, referenceLine, axisLabels,
   cohortSummary, cohortFindings, pairCapNote, diagnosticsCsvRows, resolveTrackValueName,
   diagGroups, diagCurveRows, diagCloudRows, diagFitRows, furthFitRows, lengthRows, orderRows, DIAG_LABEL,
+  headingCells, headingSummary, headingLine, roseWedges, headingOverlay,
   type DiagnosticsResponse, type DiagMode,
 } from '../../plots/trackDiagnostics'
 import {
@@ -103,7 +109,7 @@ const error = ref('')
 const mode = computed<DiagMode | null>(() => resolveMode(data.value, props.state.mode))
 const modeOptions = computed<ChipOption[]>(() =>
   availableModes(data.value).map(m => ({ value: m, label: DIAG_LABEL[m] })))
-const summary = computed(() => cohortSummary(data.value))
+const summary = computed(() => (mode.value === 'heading' ? headingSummary(data.value) : cohortSummary(data.value)))
 const capNote = computed(() => (mode.value === 'pairs' ? pairCapNote(data.value) : ''))
 const findings = computed(() => cohortFindings(data.value))
 const groups = computed(() => diagGroups(data.value))
@@ -195,6 +201,7 @@ async function render() {
   const m = mode.value
   const d = data.value
   if (!m || !d || !groups.value.length) { host.value.replaceChildren(); node = null; return }
+  if (m === 'heading') { renderHeading(d); return }
 
   const dark = !forceLight.value && plotDark.value
   const { ink: fg, ground: bg } = plotTheme(dark)
@@ -300,6 +307,60 @@ async function render() {
   }) as SVGElement
   // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
   // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
+  applyPlotTheme(node, dark)
+  host.value.replaceChildren(node)
+}
+
+/**
+ * Heading mode: one SQUARE cell per movie (never per group, never overlaid — two movies' compass
+ * frames are unrelated), whatever `Facet by` says. Rose = the measurement (blue), arrow and axis = the
+ * fitted mean (amber), dashed ring = the p = α boundary (red), as the other modes colour them.
+ */
+function renderHeading(d: DiagnosticsResponse) {
+  if (!host.value || !Plot) return
+  const dark = !forceLight.value && plotDark.value
+  const { ink: fg, ground: bg } = plotTheme(dark)
+  const cells = headingCells(d)
+  if (!cells.length) { host.value.replaceChildren(); node = null; return }
+  const grid = facetGrid(cells.length)
+  const M = 14
+  const box = facetBox({ cols: grid.cols, rows: grid.rows,
+                         w: Math.max(160, host.value.clientWidth || 360),
+                         h: Math.max(160, host.value.clientHeight || 240), mx: 2 * M, my: 2 * M })
+  const at = new Map(cells.map((c, i) => [c.key, facetSlot(i, grid.cols)]))
+  const tag = <T extends object>(c: { key: string }, rows: T[]) =>
+    rows.map(r => ({ ...r, c: c.key, fx: at.get(c.key)!.fx, fy: at.get(c.key)!.fy }))
+  const ch = { fx: 'fx', fy: 'fy' }
+  const unit = Array.from({ length: 73 }, (_, i) => ({ x: Math.cos((i / 72) * 2 * Math.PI),
+                                                        y: Math.sin((i / 72) * 2 * Math.PI) }))
+  const wedges = cells.flatMap(c => tag(c, roseWedges(c.movie.theta)).map(r => ({ ...r, z: `${c.key}:${r.k}` })))
+  const disks = cells.flatMap(c => tag(c, unit))
+  const over = cells.map(c => ({ c, o: headingOverlay(c.movie) }))
+  const rings = over.flatMap(({ c, o }) => tag(c, o.ring))
+  const arrows = over.flatMap(({ c, o }) => (o.arrow ? tag(c, [o.arrow]) : []))
+  const axes = over.flatMap(({ c, o }) => (o.axis ? tag(c, [o.axis]) : []))
+  const titles = fitCellTitles(cells.map(c => ({ ...at.get(c.key)!, t: c.title, line: headingLine(c.movie) })),
+                               box.width - 2 * M, grid.cols, 10)
+  const marks = [
+    Plot.line(disks, { x: 'x', y: 'y', z: 'c', stroke: fg, strokeOpacity: 0.25, ...ch }),
+    Plot.line(wedges, { x: 'x', y: 'y', z: 'z', curve: 'linear-closed', fill: TRACK_TONE.measured,
+                        fillOpacity: 0.55, stroke: bg, strokeWidth: 0.5, ...ch }),
+    Plot.line(rings, { x: 'x', y: 'y', z: 'c', stroke: TRACK_TONE.alert, strokeDasharray: '3,3', ...ch }),
+    Plot.link(axes, { x1: 'x1', y1: 'y1', x2: 'x2', y2: 'y2', stroke: TRACK_TONE.expected,
+                      strokeWidth: 2, strokeDasharray: '5,2', ...ch }),
+    Plot.arrow(arrows, { x1: 'x1', y1: 'y1', x2: 'x2', y2: 'y2', stroke: TRACK_TONE.expected,
+                         strokeWidth: 2, headLength: 6, ...ch }),
+    Plot.text(titles, { fx: 'fx', fy: 'fy', text: 't', title: 'line', frameAnchor: 'top-left',
+                        dx: 2, dy: 2, fill: fg, fontSize: 10 }),
+  ]
+  node = Plot.plot({
+    width: box.width, height: box.height, margin: M,
+    style: { background: bg, color: fg, fontSize: '11px' },
+    // a square domain in a square cell: a stretched rose is a wrong rose
+    x: { domain: [-1.08, 1.08], axis: null }, y: { domain: [-1.08, 1.08], axis: null },
+    fx: { axis: null }, fy: { axis: null },
+    marks: marks as never[],
+  }) as SVGElement
   applyPlotTheme(node, dark)
   host.value.replaceChildren(node)
 }

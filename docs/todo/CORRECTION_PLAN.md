@@ -551,7 +551,7 @@ starred/not-starred, and `pi-asterisk` by density outliers.
 ### celltrackR plots worth adding to the suite
 
 From celltrackR 1.2.2's own vignettes (extracted locally; Wortel et al. 2021,
-doi:10.1016/j.crmeth.2021.100006). Cecelia already ports its *measures* in `track_measures.jl`; these
+doi:10.1016/j.immuno.2021.100003). Cecelia already ports its *measures* in `track_measures.jl`; these
 are the **plots**, and none exists in the frontend yet. Ordered by value-for-effort:
 
 | Plot | celltrackR | What it answers | Status |

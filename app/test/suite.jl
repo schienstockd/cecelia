@@ -556,6 +556,8 @@ include(joinpath(@__DIR__, "suite", "segmentation_selection.jl"))
 # inside this file's aggregating testset scope, so any helpers defined earlier in suite.jl
 # are still in scope for the tracking fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "tracking.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_heading_rayleigh_p.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_heading_small_n.jl"))
 include(joinpath(@__DIR__, "suite", "tracking_provenance.jl"))
 
 # ── bf2raw_series_subdir testset ───────────────────────────────────

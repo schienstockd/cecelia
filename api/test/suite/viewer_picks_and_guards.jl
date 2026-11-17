@@ -234,6 +234,14 @@ end
             dg = diag.groups[1]
             @test !isempty(dg.msd.lag) && !isempty(dg.acor.lag) && dg.nTracks > 0
             @test haskey(dg, :findings) && haskey(dg, :summary)
+            # headings: one entry per MOVIE, named by its source; not assessed is null, never 0
+            hd = dg.headings
+            @test hd.alpha == HEADING_ALPHA && hd.minSteps == HEADING_MIN_STEPS && hd.minTracks == HEADING_MIN_TRACKS
+            @test length(hd.movies) == 1 && hd.movies[1].uid == "KDIeEm" && hd.movies[1].label == "KDIeEm"
+            mv = hd.movies[1]
+            @test length(mv.theta) == mv.n
+            @test all(k -> haskey(mv.weights, k), (:uniform, :unimodal, :axial))
+            @test mv.n >= HEADING_MIN_TRACKS ? (0 <= mv.p <= 1 && mv.critR > 0) : (mv.p === nothing)
 
             # ── /api/tracking/detections — per-frame untracked cells (P3) ────────
             # smoke test: shape correctness on a real fixture. The `_is_untracked` rule itself is

@@ -282,7 +282,7 @@ in-plane (xy) axes before any measure is computed. The result dict carries `dims
 ### celltrackR port
 
 The measure functions are a Julia port of **celltrackR** (Wortel et al. 2021,
-doi:10.1016/j.crmeth.2021.100006; GPL-2). The attribution header is at the top of
+doi:10.1016/j.immuno.2021.100003; GPL-2). The attribution header is at the top of
 `track_measures.jl`. celltrackR is **not** a runtime dependency — the port is pinned to it by
 **golden values cross-checked against celltrackR 1.2.2** in `app/test/runtests.jl` (the
 `Track measures (celltrackR golden)` testset, to 1e-6, plus single-step / single-position /
@@ -607,7 +607,7 @@ Three modes, because "the tracks" is three questions:
 | Mode | Shows | Why |
 |---|---|---|
 | Paths | the polylines where the cells were | the spatial picture, the one the viewer draws |
-| Star | every track translated to a common origin | position discarded, SHAPE preserved — the celltrackR rose family (Wortel et al. 2021, doi:10.1016/j.crmeth.2021.100006); directed migration fans, a random walk fills a disc |
+| Star | every track translated to a common origin | position discarded, SHAPE preserved — the celltrackR rose family (Wortel et al. 2021, doi:10.1016/j.immuno.2021.100003); directed migration fans, a random walk fills a disc |
 | Rose | one arrow per track, start → end | net displacement, when hundreds of paths have become a scribble |
 
 - **Axes are always square** (`pathDomain` in `frontend/src/plots/trackPaths.ts`). A track plot
@@ -702,6 +702,7 @@ the arithmetic (see below).
 | Fürth fit | `MSD = 2N·M·(τ − P(1 − e^(−τ/P))) + 2N·σ²` on the MSD curve (`msd_furth_fit`; Fürth 1920 + Michalet 2010 noise offset) | M (µm²/frame) and P (frames) don't depend on track length; σ (µm) is the detection-noise floor under every speed and angle. Field drift adds a ballistic term and inflates P — read P only when the drift finding is absent. P well above the 1/e lag usually means noise is scrambling step directions, which σ quantifies. P is only measured inside the fitted lags: below one frame it reads `<1 f` (unresolved; M and σ still fit), past the longest lag `ok = false` and M is dropped too (the two trade off) — neither reaches the cohort |
 | Track length | Spearman ρ of per-track speed vs duration (`track_duration_bias`) | fast cells leave the volume sooner; \|ρ\| ≥ 0.3 over ≥ 30 tracks = speed partly measures track length (`tracking.duration_bias`) |
 | Alignment | order index φ = \|Σv\|/Σ\|v\| per frame (`track_order_index`; Vicsek & Zafeiris 2012) | 1 = all cells one way; a step up over time = a field-wide event. Read against the dashed chance line (`order_chance`, from each frame's own step lengths), not 0: with three steps a frame reaches ≈ 0.5 by chance |
+| Heading | per-track net XY bearing, PER MOVIE (`track_headings.jl`): Rayleigh on the angles (one-way) and on doubled angles (two-way), and radiatR's uniform / one-way / two-way von Mises models by AICc weight (Fitak & Johnsen 2017) | the arrow (one-way) or the axis (two-way) past the dashed ring = a preferred direction at p < 0.05. The two-way axis is what Alignment and Drift cannot see — their vector means cancel when cells run both ways along a fibre or vessel |
 
 **Three things that are easy to get wrong, and are pinned by the goldens:**
 
@@ -752,6 +753,38 @@ to be true, and neither announces itself when broken:
   `PAIR_SCAN_MAX_TRACKS` guard follows: it is measured on the LARGEST group (`_pair_scan_size`), because
   the cost of a pooled condition is Σ nᵢ² and not (Σ nᵢ)² — guarding on the total would report "not
   checked" for every pooled arm, three ordinary movies being enough to pass 800.
+- **A bearing from one movie is not comparable with another's.** The tissue sits at a different angle
+  in every movie, so the headings are the second exception: `track_headings` runs once per `group_col`
+  value, and `pooled_track_frame`'s group value is the frame's index in the INPUT list so
+  `track_group_headings` can name each entry by its source. The *Heading* mode therefore draws one cell
+  per movie, never per group.
+
+### Headings — one way or two (`track_headings.jl`)
+
+Ported from **radiatR** (J. D. Kirwan, CRAN 0.1.3, GPL ≥ 3, https://github.com/JohnKirwan/radiatR,
+audited at `8bf7191`): the three closed-form models of its `circ_model_select` (uniform, one von Mises
+mode, two equal antipodal modes; Fitak & Johnsen 2017, doi:10.1242/jeb.167056) with κ from
+`circular::A1inv` as radiatR fits it, and the critical ring of its `add_critical_r`. The Rayleigh tests
+are HypothesisTests' `RayleighTest`. Golden values come from radiatR's own code + circular 0.5.
+
+- **Why at all.** Alignment (φ) and Drift (Hotelling) test a VECTOR mean. Cells that run both ways
+  along one axis cancel it, so both read "no direction". The Rayleigh test on doubled angles (θ and θ+π
+  coincide) is the test that sees it. On RFtn9f's T cells, 2 of 17 movies preferred the two-way model
+  with Akaike weight ≥ 0.97; φ and drift did not flag them. The effects are small (R̄ ≈ 0.1 over ~600
+  tracks), which is why the ring and arrows are drawn on their own zoomed scale.
+- **One heading per track: the net XY displacement**, first → last position, `HEADING_MIN_STEPS` (3) steps
+  or more. 0 = right, 90° = up ON SCREEN (image y is negated). Not the per-step directions: consecutive
+  steps of one cell are not independent, and the Rayleigh test assumes independent angles. The tracks of
+  one movie still share the field, so a p-value is a statement about that movie, not about the mouse.
+- **The ring is solved from the printed p**, not radiatR's asymptotic `sqrt(-log(α)/n)`
+  (`rayleigh_critical_R`), so an arrow past the ring and p < α cannot disagree. One ring serves both
+  tests: same n, same α.
+- **The rose is area-true** (radius ∝ √count). radiatR scales the radius with the count, which draws a
+  bin with twice the tracks four times as big.
+- **Not ported:** radiatR's two mixture models (numerical fits), its loaders and arena heading rules,
+  circular regression, the circular boxplot, and `path_sinuosity` — whose step-length term sits outside
+  the `p·(…)` product that Benhamou (2004) and trajr's `TrajSinuosity2` both use (not reported upstream
+  yet).
 
 ## Track-property gating — done, end-to-end
 

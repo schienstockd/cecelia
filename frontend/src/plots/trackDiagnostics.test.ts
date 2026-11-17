@@ -4,6 +4,8 @@ import {
   axisLabels, diagnosticsSummary, cohortSummary, cohortFindings, pairCapNote,
   diagnosticsCsvRows, diagCurveRows, diagCloudRows, diagFitRows, furthFitRows, lengthRows, orderRows, DIAG_LABEL,
   type DiagnosticsResponse, type DiagGroup, type DiagMode,
+  headingCells, headingSummary, headingLine, bestHeadingModel, roseWedges, headingOverlay,
+  type HeadingMovie,
 } from './trackDiagnostics'
 
 const curve = (lag: number[], value: (number | null)[]) =>
@@ -351,5 +353,84 @@ describe('Fürth, track length and alignment', () => {
       expect(modeHint(m)).toBeTruthy()
       expect(axisLabels(m)).toHaveLength(2)
     }
+  })
+})
+
+// ── Headings (per movie; radiatR rose + critical ring) ──────────────────────────────────────────────
+
+const movie = (over: Partial<HeadingMovie> = {}): HeadingMovie => ({
+  uid: 'CKexSV', pop: '', label: 'CKexSV', theta: [0, 0.1, Math.PI, Math.PI + 0.1], n: 4,
+  R: 0.05, mu: 0.05, p: 0.99, axialR: 0.12, axialAxis: 0.05, axialP: 0.0001, critR: 0.08,
+  weights: { uniform: 0.01, unimodal: 0.016, axial: 0.974 },
+  ...over,
+})
+const withHeadings = (key: string, label: string, movies: HeadingMovie[]) =>
+  group({ key, label, headings: { movies, alpha: 0.05, minSteps: 3 } })
+
+describe('heading mode', () => {
+  it('is offered only when a movie has statistics', () => {
+    expect(availableModes(resp(withHeadings('g1', '', [movie()])))).toContain('heading')
+    // not assessed (fewer than the server's minTracks): R̄ is null and the movie is not drawn
+    expect(availableModes(resp(withHeadings('g1', '', [movie({ n: 5, R: null })])))).not.toContain('heading')
+    expect(availableModes(full)).not.toContain('heading')
+    expect(DIAG_LABEL.heading).toBe('Heading')
+    expect(axisLabels('heading')).toEqual(['', ''])
+    expect(modeHint('heading')).toMatch(/ring/)
+  })
+
+  it('draws one cell per MOVIE — a pooled group splits, and names its group only in a cohort', () => {
+    const one = resp(withHeadings('g1', '', [movie(), movie({ uid: 'TKufLV', label: 'TKufLV' })]))
+    expect(headingCells(one).map(c => c.title)).toEqual(['CKexSV', 'TKufLV'])
+    const two = resp(withHeadings('a', 'WT', [movie()]), withHeadings('b', 'KO', [movie({ label: 'X' })]))
+    expect(headingCells(two).map(c => c.title)).toEqual(['WT · CKexSV', 'KO · X'])
+    expect(new Set(headingCells(two).map(c => c.key)).size).toBe(2)
+  })
+
+  it('reads out the two p-values and the preferred model', () => {
+    const m = movie()
+    expect(bestHeadingModel(m)).toEqual({ model: 'axial', weight: 0.974 })
+    expect(headingLine(m)).toBe('4 tracks · one-way p 0.990 · two-way p <0.001 · best two-way (0.97)')
+    expect(bestHeadingModel(movie({ weights: { uniform: null, unimodal: null, axial: null } }))).toBeNull()
+    expect(headingLine(movie({ p: null }))).toContain('one-way p —')
+    expect(headingSummary(resp(withHeadings('g1', '', [movie()])))).toBe(headingLine(movie()))
+    expect(headingSummary(resp(withHeadings('g1', '', [movie(), movie({ label: 'B' })]))))
+      .toMatch(/^CKexSV: .* · B: /)
+  })
+
+  it('rose wedges are AREA-true: radius √(count / max)', () => {
+    // 4 tracks in bin 0, 1 in bin 9 (half way round): radii 1 and √(1/4) = 0.5
+    const theta = [0.01, 0.02, 0.03, 0.04, Math.PI + 0.01]
+    const w = roseWedges(theta, 18, 2)
+    const radius = (k: number) => Math.max(...w.filter(p => p.k === k).map(p => Math.hypot(p.x, p.y)))
+    expect(radius(0)).toBeCloseTo(1)
+    expect(radius(9)).toBeCloseTo(0.5)
+    expect(new Set(w.map(p => p.k))).toEqual(new Set([0, 9]))   // empty bins draw nothing
+    // negative angles wrap: −0.01 is the last bin, not a crash
+    expect(new Set(roseWedges([-0.01], 18, 2).map(p => p.k))).toEqual(new Set([17]))
+    expect(roseWedges([], 18)).toEqual([])
+  })
+
+  it('overlay: arrow, axis and ring share one zoomed scale, so past-the-ring survives the zoom', () => {
+    const m = movie({ R: 0.05, mu: Math.PI / 2, axialR: 0.12, axialAxis: 0, critR: 0.08 })
+    const o = headingOverlay(m)
+    expect(o.scale).toBeCloseTo(0.8 / 0.12)
+    const ringR = Math.hypot(o.ring[0].x, o.ring[0].y)
+    expect(ringR).toBeCloseTo(0.08 * o.scale)
+    // axis (two-way) is a line through the centre, longer than the ring; arrow (one-way) shorter
+    expect(o.axis!.x2).toBeCloseTo(0.8)
+    expect(o.axis!.x1).toBeCloseTo(-0.8)
+    expect(Math.hypot(o.arrow!.x2, o.arrow!.y2)).toBeLessThan(ringR)
+    expect(o.arrow!.x2).toBeCloseTo(0)
+    expect(o.arrow!.y2).toBeGreaterThan(0)                    // π/2 = up
+    const none = headingOverlay(movie({ R: null, mu: null, axialR: null, axialAxis: null, critR: null }))
+    expect(none.arrow).toBeNull(); expect(none.axis).toBeNull(); expect(none.ring).toEqual([])
+  })
+
+  it('CSV: one row per track heading in degrees, a movie column only when there are several', () => {
+    const one = resp(withHeadings('g1', '', [movie({ theta: [-Math.PI / 2, Math.PI] })]))
+    expect(diagnosticsCsvRows('heading', one)).toEqual([{ heading_deg: 270 }, { heading_deg: 180 }])
+    const two = resp(withHeadings('g1', '', [movie({ theta: [0] }), movie({ label: 'B', theta: [0] })]))
+    expect(diagnosticsCsvRows('heading', two)).toEqual([{ movie: 'CKexSV', heading_deg: 0 },
+                                                        { movie: 'B', heading_deg: 0 }])
   })
 })
