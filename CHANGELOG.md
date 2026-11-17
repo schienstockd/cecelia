@@ -13,6 +13,12 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+### Read this first
+
+These change results when old work is re-run:
+
+- **Neighbour stats on a kNN graph** count every edge. A kNN graph stores many edges one way only, and contacts and the graph's edge count read only the upper triangle, missing about a fifth of them. Delaunay and radius graphs are unchanged. Re-run the neighbour graph and its stats on every image of a set, so the cohort QC compares like with like.
+
 ### Changed
 
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).
