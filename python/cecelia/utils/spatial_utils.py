@@ -59,14 +59,25 @@ def build_spatial_graph(adata, method="delaunay", radius=30.0, n_neighs=6):
     return adata
 
 
+def undirected_edges(conn):
+    """Each edge of a neighbour graph once, as (row, col) with row < col: a pair linked in EITHER
+    direction. Delaunay and radius graphs store every edge both ways; a kNN graph is directed (a
+    cell's k nearest need not list it back), so its upper triangle alone misses the edges stored only
+    below the diagonal. Self-loops are not edges. The viewer's reader (`spatial_graph_edges`,
+    app/src/label_props.jl) counts edges the same way."""
+    sym = sp.triu((conn != 0).astype(np.int8) + (conn != 0).astype(np.int8).T, k=1).tocoo()
+    return sym.row, sym.col
+
+
 def graph_metrics(adata):
-    """Objective graph metrics (undirected: each edge counted once) for QC."""
+    """Objective graph metrics (undirected: each edge counted once, `undirected_edges`) for QC."""
     conn = adata.obsp["spatial_connectivities"]
-    deg = np.asarray((conn > 0).sum(axis=1)).ravel()
+    row, col = undirected_edges(conn)
     n = adata.n_obs
+    deg = np.bincount(np.concatenate([row, col]), minlength=n)
     return {
         "nCells": int(n),
-        "nEdges": int(conn.nnz // 2),
+        "nEdges": int(len(row)),
         "meanDegree": float(deg.mean()) if n else 0.0,
         "isolatedFrac": float((deg == 0).sum() / n) if n else 0.0,
     }
@@ -372,8 +383,7 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
     n_assigned = int(assigned.sum())
     freq = np.bincount(pop_codes[assigned], minlength=n_pops).astype(float) / max(n_assigned, 1)
 
-    coo = sp.triu(conn, k=1).tocoo()               # each undirected edge once; no self-loops
-    row, col = coo.row, coo.col
+    row, col = undirected_edges(conn)               # each edge once, either direction; no self-loops
     observed = _contact_counts(row, col, pop_codes, n_pops)
     n_edges = float(observed.sum() + np.trace(observed)) / 2.0   # pop–pop edges (diagonal counted once)
 
@@ -424,6 +434,8 @@ def neighbourhood_composition(conn, pop_codes, n_pops, include_other=False):
     `conn` is the (n_cells, n_cells) sparse connectivity matrix; `pop_codes` is a length-n_cells int
     array (each cell's population index, or UNASSIGNED). Returns a dense float32 matrix; a cell with no
     neighbours gets an all-zero row. Formula matches legacy cellRegionsStats (`freq = n / sum(n)`).
+    Row-wise on purpose: on a directed kNN graph a cell's neighbourhood is its OWN k nearest (the usual
+    kNN niche), not every cell that lists it — unlike edge counts, which use `undirected_edges`.
 
     `include_other=True` adds ONE extra trailing column counting UNASSIGNED neighbours — cells present in
     the graph but outside the basis. This matters for correctness, not just completeness: with it, the
