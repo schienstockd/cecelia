@@ -119,6 +119,13 @@ export interface BatchMovieCfg {
   // The skeletons (`segment.branching`) drawn as lines, `{segmentation → colour}` — a viewer look's
   // shown ones (`skeleton_segments` draws them). Absent / empty = none.
   skeletons?: Record<string, string>
+  // The neighbour graphs drawn as lines, `{run suffix → colour}` — a viewer look's shown ones
+  // (`spatial_graph_segments` draws them). Absent / empty = none.
+  spatialGraphs?: Record<string, string>
+  // their lines' width, in the tail width's units (`staticLineTEnd`); absent = `SPATIAL_GRAPH_WIDTH`
+  spatialGraphWidth?: number
+  // only the edges between cells of the pops drawn (`spatial_graph_between`)
+  spatialGraphPopsOnly?: boolean
   /** the viewer's scale bar / timestamp (on / off, text px on its canvas of `textCanvasPx` height)
    *  and 3D Steps — a look filled from the viewer. Absent: on, at the movie's own size. */
   showScaleBar?: boolean
@@ -202,6 +209,9 @@ export interface BatchMovieRequestConfig {
   /** the viewer's Tracks-legend colours (a look filled from the viewer) */
   trackSourceColours?: Record<string, string>
   skeletons?: Record<string, string>
+  spatialGraphs?: Record<string, string>
+  spatialGraphWidth?: number
+  spatialGraphPopsOnly?: boolean
   showScaleBar?: boolean
   showTimestamp?: boolean
   scaleBarPx?: number
@@ -355,6 +365,10 @@ export function buildBatchMovieConfig(
       ...(cfg.ribbonEyes && Object.keys(cfg.ribbonEyes).length ? { ribbonEyes: cfg.ribbonEyes } : {}),
     } : {}),
     ...(cfg.skeletons && Object.keys(cfg.skeletons).length ? { skeletons: { ...cfg.skeletons } } : {}),
+    ...(cfg.spatialGraphs && Object.keys(cfg.spatialGraphs).length
+      ? { spatialGraphs: { ...cfg.spatialGraphs },
+          ...(cfg.spatialGraphWidth ? { spatialGraphWidth: cfg.spatialGraphWidth } : {}),
+          ...(cfg.spatialGraphPopsOnly ? { spatialGraphPopsOnly: true } : {}) } : {}),
     ...(cfg.scaleBarPx ? { scaleBarPx: cfg.scaleBarPx } : {}),
     ...(cfg.timestampPx ? { timestampPx: cfg.timestampPx } : {}),
     ...(cfg.textCanvasPx ? { textCanvasPx: cfg.textCanvasPx } : {}),

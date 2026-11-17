@@ -294,7 +294,10 @@ try to invent one.
   (single-cell data + clustering), **scikit-image**, **PyTorch**.
 - The **celltrackR** R package (Wortel & Textor) — its track-measurement algorithms are ported in
   `app/src/tasks/tracking/track_measures.jl`. Cited work, not just a dependency: Wortel et al.
-  (2021), *Cell Reports Methods*, [doi:10.1016/j.crmeth.2021.100006](https://doi.org/10.1016/j.crmeth.2021.100006).
+  (2021), *ImmunoInformatics*, [doi:10.1016/j.immuno.2021.100003](https://doi.org/10.1016/j.immuno.2021.100003).
+- The **radiatR** R package (J. D. Kirwan) — its circular model comparison and critical-ring display
+  are ported for the track *Heading* diagnostic (`app/src/tracking/track_headings.jl`); cite with
+  Fitak & Johnsen (2017), *J. Exp. Biol.*, [doi:10.1242/jeb.167056](https://doi.org/10.1242/jeb.167056).
 - The **Julia**, **Python**, and **Vue** (with Observable Plot) open-source ecosystems.
 
 ---

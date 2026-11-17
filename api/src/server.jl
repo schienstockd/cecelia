@@ -369,6 +369,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/pop-types" => (req, body_bytes) -> (api_viewer_pop_types(req)),
     "/api/viewer/skeletons" => (req, body_bytes) -> (api_viewer_skeletons(req)),
+    "/api/viewer/spatial-graphs" => (req, body_bytes) -> (api_viewer_spatial_graphs(req)),
     "/api/viewer/props" => (req, body_bytes) -> (api_viewer_props_get(req)),
     "/api/viewer/marks" => (req, body_bytes) -> (api_viewer_marks_list(req)),
     # bidir PR #8 — live plot registry read (MCP `list_open_plots`); browser populates via the two POSTs.
@@ -590,6 +591,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/reply"          => (req, body_bytes) -> (api_viewer_reply(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
+    "/api/viewer/peek" => (req, body_bytes) -> (api_viewer_peek(body_bytes)),   # cursor readout, read-only
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),
     "/api/viewer/pick-set" => (req, body_bytes) -> (api_viewer_pick_set(body_bytes)),

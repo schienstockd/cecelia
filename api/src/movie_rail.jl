@@ -250,7 +250,12 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     skeletons = sk_raw isa AbstractDict ?
         Dict{String,String}(String(k) => (v isa AbstractString ? String(v) : "") for (k, v) in sk_raw) :
         Dict{String,String}()
-    if !(show_pops || show_tracks || show_gated || show_tc || has_mask || !isempty(skeletons))
+    # the neighbour graphs drawn as lines, `{suffix => colour}` (a look's shown ones)
+    sg_raw = _cfg_maybe(cfg, "spatialGraphs")
+    spatial_graphs = sg_raw isa AbstractDict ?
+        Dict{String,String}(String(k) => (v isa AbstractString ? String(v) : "") for (k, v) in sg_raw) :
+        Dict{String,String}()
+    if !(show_pops || show_tracks || show_gated || show_tc || has_mask || !isempty(skeletons) || !isempty(spatial_graphs))
         return nothing
     end
     # Per-segmentation tracks (`showTracks`): the visible `trackSources` — the viewer look's map
@@ -297,6 +302,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "hiddenTrackPops"  => hidden,
         "showTrackclust"   => show_tc,
         "skeletons"        => skeletons,
+        "spatialGraphs"    => spatial_graphs,
+        "spatialGraphWidth" => _cfg_maybe(cfg, "spatialGraphWidth"),
+        "spatialGraphPopsOnly" => _cfg_bool(cfg, "spatialGraphPopsOnly"),
         # The pop layers: a viewer look draws these cell pop types on EVERY segmentation (populations
         # are not a property of the shown segmentation); without them, the one `popType` of `valueName`.
         "popTypes"         => pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[],

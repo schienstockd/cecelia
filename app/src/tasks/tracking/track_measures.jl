@@ -2,7 +2,7 @@
 # Julia port of track measurement functions from the celltrackR R package
 # Original authors: Inge Wortel, Johannes Textor (MotilityLab / Radboud University)
 # Source: https://github.com/ingewortel/celltrackR
-# Reference: Wortel et al. (2021) Cell Reports Methods, doi:10.1016/j.crmeth.2021.100006
+# Reference: Wortel et al. (2021) ImmunoInformatics 1–2:100003, doi:10.1016/j.immuno.2021.100003
 # This port covers the measurement subset used by Cecelia. Simulation functions
 # (random walk models, bootstrapping) are not included.
 # Port is not one-to-one — see inline notes where behaviour was corrected or extended.

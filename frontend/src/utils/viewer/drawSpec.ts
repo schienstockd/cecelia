@@ -29,6 +29,8 @@ export interface LookImage {
   sizeZ?: number | null
   labels?: Record<string, unknown>
   branchLabels?: Record<string, unknown>
+  /** the neighbour graphs, by run suffix (the image payload's `spatialGraphs`) */
+  spatialGraphs?: Record<string, unknown>
   labelPropsNames?: string[]
   activeValueName?: string
 }
@@ -56,7 +58,7 @@ export const RECORDED: Record<keyof ViewerDrawSpec, RecordStatus> = {
   pointBorder: 'recorded', labelOpacity: 'recorded', pointZTol: 'recorded', trackZTol: 'recorded',
   tailWidth: 'recorded', tailLength: 'recorded', labelContour: 'recorded', maskColour: 'recorded',
   trackColourMode: 'recorded', colourBy: 'recorded', colourOverrides: 'recorded',
-  branchVisible: 'recorded',
+  branchVisible: 'recorded', graphVisible: 'recorded', graphColour: 'recorded', graphWidth: 'recorded', graphPopsOnly: 'recorded',
   scaleBar: 'recorded', timestamp: 'recorded',
   scaleBarPx: 'recorded', timestampPx: 'recorded', steps: 'recorded',
   grid: AID, gridDensity: AID, landscape: AID, landscapeLabels: AID, roiSpotlight: AID,
@@ -73,6 +75,8 @@ export interface DrawSpecSource {
   trackNames: string[]
   /** the skeleton segmentations */
   branchNames: string[]
+  /** the neighbour graphs (run suffixes) */
+  spatialGraphNames: string[]
   channelNames: string[]
   nZ: number
   version: string
@@ -139,6 +143,12 @@ export function drawSpecOf(src: DrawSpecSource): ViewerDrawSpec {
     get branchVisible() {
       return src.imageUid ? settings.getBranchVisibility(src.imageUid, src.branchNames) : {}
     },
+    get graphVisible() {
+      return src.imageUid ? settings.getGraphVisibility(src.imageUid, src.spatialGraphNames) : {}
+    },
+    get graphColour() { return settings.viewerGraphColour },
+    get graphWidth() { return settings.viewerGraphWidth },
+    get graphPopsOnly() { return src.imageUid ? settings.getGraphPopsOnly(src.imageUid) : false },
     get scaleBar() { return settings.viewerScaleBar },
     get timestamp() { return settings.viewerTimestamp },
     get scaleBarPx() { return settings.viewerScaleBarPx },
@@ -163,6 +173,7 @@ export function readDrawSpec(img: LookImage, setUid: string, onImg: boolean): Vi
     labelNames: open?.labelNames ?? Object.keys(img.labels ?? {}),
     trackNames: open?.trackNames ?? trackableValueNames(img),
     branchNames: open?.branchNames ?? Object.keys(img.branchLabels ?? {}),
+    spatialGraphNames: open?.spatialGraphNames ?? Object.keys(img.spatialGraphs ?? {}),
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
     version: open?.valueName || img.activeValueName || '',

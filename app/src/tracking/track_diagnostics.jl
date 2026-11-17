@@ -7,8 +7,8 @@
 # in the measures task.
 #
 # Sources (read from the package source, not the vignette prose):
-#   • celltrackR — Wortel et al. (2021), Cell Reports Methods 1(3):100048.
-#     doi:10.1016/j.crmeth.2021.100048.  https://github.com/ingewortel/celltrackR
+#   • celltrackR — Wortel et al. (2021), ImmunoInformatics 1–2:100003.
+#     doi:10.1016/j.immuno.2021.100003.  https://github.com/ingewortel/celltrackR
 #     `R/track-measures.R` (squareDisplacement, overallNormDot), `R/angle-functions.R`
 #     (angleToPlane, distanceToPlane), vignette `QC.Rmd` (hotellingsTest, autocovariance).
 #   • Beltman, Marée & de Boer (2009), Analysing immune cell migration.
@@ -634,13 +634,15 @@ Pass the returned frame with `group_col = ` to `track_diagnostics` so the pair s
 """
 function pooled_track_frame(frames::AbstractVector{<:DataFrame};
                             group_col::Symbol = :__pool_grp)::DataFrame
-    use = [d for d in frames if nrow(d) > 0 && "track_id" in names(d)]
+    # `group_col` is the frame's index in `frames` (not among the usable ones), so a caller can map a
+    # per-group result — the per-movie headings — back to the source it came from
+    use = [(i, d) for (i, d) in enumerate(frames) if nrow(d) > 0 && "track_id" in names(d)]
     isempty(use) && return DataFrame()
-    length(use) == 1 && return (d = copy(use[1]); d[!, group_col] = fill(1, nrow(d)); d)
-    maxid = maximum(isempty(track_ids_present(d)) ? 0 : maximum(track_ids_present(d)) for d in use)
+    length(use) == 1 && return (d = copy(use[1][2]); d[!, group_col] = fill(use[1][1], nrow(d)); d)
+    maxid = maximum(isempty(track_ids_present(d)) ? 0 : maximum(track_ids_present(d)) for (_, d) in use)
     stride = 10^max(3, ndigits(max(maxid, 1)))          # a round decimal stride: readable in a CSV
     out = DataFrame[]
-    for (i, d) in enumerate(use)
+    for (i, d) in use
         e = copy(d)
         # untracked stays untracked (NaN) — offsetting a 0 would MINT a track out of a cell that has none
         e[!, :track_id] = Float64[_is_untracked(v) ? NaN : Float64(v) + (i - 1) * stride
@@ -656,7 +658,9 @@ end
 """
     track_diagnostics(df, spatial; max_lag, step_spacing) -> NamedTuple
 
-Every diagnostic in this file, computed once: `(msd, acor, plane, drift, pairs, duplicates, summary)`.
+Every diagnostic in this file, computed once: `(msd, acor, plane, drift, pairs, duplicates, furth,
+durationBias, order, headings, summary)` — `headings` is one [`heading_test`] per movie (`group_col`
+value), from `track_headings.jl`.
 
 ONE entry point on purpose. The plot a person opens and the QC a tracking run banks read the same
 object, so the panel and the finding can never disagree about whether an image drifts — and the
@@ -695,9 +699,11 @@ function track_diagnostics(df::DataFrame, spatial::Vector{String};
     fur = msd_furth_fit(msd.lag, msd.msd, length(spatial); weights = msd.n)
     dbias = track_duration_bias(df, spatial)
     ord = track_order_index(df, spatial)
+    # per MOVIE, never pooled: a bearing means nothing across images (`track_headings.jl` header)
+    hdg = track_headings(df, spatial; group_col = group_col)
     (msd = msd, acor = acor, plane = (profile = prof, verdict = pl),
      drift = (test = dr, pairs = pdr), pairs = prs, duplicates = dup,
-     furth = fur, durationBias = dbias, order = ord,
+     furth = fur, durationBias = dbias, order = ord, headings = hdg,
      summary = (msdSlope = slope, motionKind = msd_motion_kind(slope),
                 persistenceLag = persistence_lag(acor.lag, acor.acor),
                 # a bounded P is not a number to compare across images (`msd_furth_fit`), and past

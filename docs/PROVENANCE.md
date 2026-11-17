@@ -84,6 +84,10 @@ Python launcher — were written down the same way, learned in flight rather tha
   against the FlowUtils `logicle_c` implementation. Golden values asserted in
   `app/test/runtests.jl`. This is the existing template referenced in `CLAUDE.md` for the
   "cite sources, validate against golden values" convention.
+- **Track headings** (`app/src/tracking/track_headings.jl`) — the uniform / one-way / two-way model
+  comparison ported from radiatR's `circ_model_select` (Kirwan, CRAN 0.1.3; Fitak & Johnsen 2017),
+  cross-checked against radiatR's own likelihood code and circular 0.5's `rayleigh.test`. Golden values
+  asserted in `app/test/suite/tracking.jl`.
 
 ### Original subsystems — validated by real-image visual inspection
 

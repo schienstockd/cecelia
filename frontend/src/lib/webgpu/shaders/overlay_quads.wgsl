@@ -82,6 +82,13 @@ fn tailAlpha(tEnd: f32, head: f32, length: f32) -> f32 {
   return mix(f32(${TAIL_ALPHA_FLOOR}), f32(${TAIL_ALPHA_PEAK}), f);
 }
 
+// A segment's width, in the tail width's units. A static line below -1 carries its own: `tEnd` =
+// -(1 + width) — a neighbour graph's edges (`appendSkeletonLines`, `_with_skeleton_lines`), thinner
+// than the tails they share the buffer with. Tails and skeletons (`tEnd` >= -1) take the tail width.
+fn lineWidth(tEnd: f32, tailWidth: f32) -> f32 {
+  return select(tailWidth, -tEnd - 1.0, tEnd < -1.0);
+}
+
 // Corner `vi` of a tail quad from NDC `pa` to `pb`, `widthPx` wide. Widened perpendicular to the
 // SCREEN-space direction, in pixels, so the width stays constant under perspective.
 fn ribbonPos(pa: vec2<f32>, pb: vec2<f32>, vi: u32, widthPx: f32, canvas: vec2<f32>) -> vec4<f32> {

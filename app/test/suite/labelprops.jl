@@ -610,7 +610,7 @@ end
 
 # ── Track measures: numeric cross-check vs celltrackR ─────────────────────
 # Golden values — provenance:
-#   Generated from celltrackR 1.2.2 (Wortel et al. 2021, doi:10.1016/j.crmeth.2021.100006)
+#   Generated from celltrackR 1.2.2 (Wortel et al. 2021, doi:10.1016/j.immuno.2021.100003)
 #   on the track below, via the R package's own functions (trackLength/speed/displacement/
 #   straightness/asphericity/overallAngle/meanTurningAngle, degrees=TRUE; per-step via
 #   subtracks()). celltrackR is the reference Cecelia ported these from; it is NOT a runtime

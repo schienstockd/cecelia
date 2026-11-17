@@ -332,6 +332,7 @@ include(joinpath(@__DIR__, "suite", "resolve_labels.jl"))
 # defined earlier in suite.jl are still in scope for the extracted fragments (Julia
 # includes are lexical).
 include(joinpath(@__DIR__, "suite", "summary_motion.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_graph_knn.jl"))   # RESULT-REVIEW result-be985135: directed kNN edges
 
 # ── Branch value_names are NOT label_props value_names ────────────────────────────────────────
 # Branching runs on a SEGMENTATION, which need not have a per-cell measurement table: an SHG
@@ -556,6 +557,8 @@ include(joinpath(@__DIR__, "suite", "segmentation_selection.jl"))
 # inside this file's aggregating testset scope, so any helpers defined earlier in suite.jl
 # are still in scope for the tracking fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "tracking.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_heading_rayleigh_p.jl"))
+include(joinpath(@__DIR__, "suite", "result_review_heading_small_n.jl"))
 include(joinpath(@__DIR__, "suite", "tracking_provenance.jl"))
 
 # ── bf2raw_series_subdir testset ───────────────────────────────────

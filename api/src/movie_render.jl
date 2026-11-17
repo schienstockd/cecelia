@@ -663,7 +663,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
               _to_str_dict(overlays_config))
     plan = overlay_track_plan(ov_legacy)
     # cell-track ribbons ride on the pops — without them they are nothing to draw
-    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || !isempty(plan.skeletons)
+    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || plan_draws_lines(plan)
     (show_pops || any_tracks || show_mask) || return (nothing, nothing)
 
     vn   = _ov_str(overlays_config, "valueName", "")
@@ -673,7 +673,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     end
     # The mask's segmentation, when the caller names it apart from the overlays' (`maskValueName`).
     mask_vn = _ov_str(overlays_config, "maskValueName", vn)
-    isempty(vn) && isempty(mask_vn) && !plan.trackclust && !plan.pop_all_segs && isempty(plan.skeletons) &&
+    isempty(vn) && isempty(mask_vn) && !plan.trackclust && !plan.pop_all_segs && !plan_draws_lines(plan) &&
         return (nothing, nothing)
     isempty(vn) && (vn = mask_vn)
     # `frame` = the recorded version's `(arr, caxes)` — a mask from another version's grid is skipped.

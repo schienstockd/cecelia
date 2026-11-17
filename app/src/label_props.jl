@@ -662,6 +662,39 @@ function uns_df(lp::LabelProps, key::AbstractString)
     end
 end
 
+"""
+    spatial_graph_edges(path) -> (; value_name, label, t, i, j)
+
+A neighbour graph (`spatialAnalysis.cellNeighbours` → `spatialGraph/{suffix}.h5ad`): each node's identity
+(obs `valueName` + `label`, and `_t` when built per timepoint, else `nothing`) and its edges, once each
+(`i < j`, 1-based node rows), from squidpy's `obsp/spatial_connectivities` (CSR). A delaunay or radius
+graph stores each edge both ways; a kNN graph is directed (a cell's k nearest need not list it back),
+so an edge is the pair in either direction, never only the upper triangle. Self-loops are not edges. Not a cell
+table — its obs index is the node row, not a label, and its coordinates carry no axis names — so it has
+its own reader here rather than `as_df`; positions come from the cell tables, by label.
+"""
+function spatial_graph_edges(path::AbstractString)
+    _with_h5(path, "r") do fid
+        obs = fid["obs"]
+        value_name = String[ismissing(v) ? "" : String(v) for v in _read_anndata_vector(obs, "valueName")]
+        label = Int.(_read_anndata_vector(obs, "label"))
+        t = haskey(obs, "_t") ? Int[round(Int, x) for x in _read_anndata_vector(obs, "_t")] : nothing
+        key = "obsp/spatial_connectivities"
+        pairs = Set{Tuple{Int,Int}}()
+        if haskey(fid, key)
+            g = fid[key]
+            _enc(g) == "csr_matrix" || error("spatial_graph_edges: '$key' is '$(_enc(g))', expected csr_matrix")
+            indptr = read(g["indptr"]); indices = read(g["indices"])
+            for r in 1:(length(indptr) - 1), k in (indptr[r] + 1):indptr[r + 1]
+                c = Int(indices[k]) + 1
+                c == r || push!(pairs, minmax(r, c))
+            end
+        end
+        e = sort!(collect(pairs))
+        (; value_name, label, t, i = first.(e), j = last.(e))
+    end
+end
+
 uns_keys(path::AbstractString) = uns_keys(label_props(path))
 uns_array(path::AbstractString, key::AbstractString; kwargs...) =
     uns_array(label_props(path), key; kwargs...)

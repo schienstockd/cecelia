@@ -400,3 +400,25 @@ function track_group_diagnostics(g::TrackPlotGroup; max_lag::Int = 10,
     track_diagnostics(df, g.spatial; max_lag = max_lag, step_spacing = step_spacing,
                       group_col = :__pool_grp)
 end
+
+"""
+    track_group_headings(g, diag) -> Vector{NamedTuple}
+
+The per-movie headings of [`track_group_diagnostics`]'s result, each named by the source it came from:
+`uid`, `pop`, and a `label` — the uID, plus the population when the group's sources mix populations (one
+image under two populations is two entries). Headings never pool across movies (`track_headings.jl`).
+"""
+function track_group_headings(g::TrackPlotGroup, diag)
+    mixed = length(unique(s.pop for s in g.sources)) > 1
+    out = NamedTuple[]
+    for h in diag.headings
+        h.group === nothing && continue
+        src = g.sources[Int(h.group)]
+        label = mixed && !isempty(src.pop) ? string(src.uid, " · ", src.pop) : src.uid
+        push!(out, (; uid = src.uid, pop = src.pop, label = label,
+                      theta = h.theta, n = h.n, R = h.R, mu = h.mu, p = h.p,
+                      axialR = h.axialR, axialAxis = h.axialAxis, axialP = h.axialP, critR = h.critR,
+                      weights = h.weights))
+    end
+    out
+end

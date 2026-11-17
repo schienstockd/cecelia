@@ -768,8 +768,8 @@ issue_to_dict(i::TrackIssue) = Dict{String,Any}(
 
 # ── Cell-pair angle/distance analysis (celltrackR) ───────────────────────────────
 #
-# Port of celltrackR's `analyzeCellPairs` (Wortel et al. 2021, Cell Reports Methods,
-# doi:10.1016/j.crmeth.2021.100006; the analysis itself is Beltman, Marée & de Boer 2009,
+# Port of celltrackR's `analyzeCellPairs` (Wortel et al. 2021, ImmunoInformatics,
+# doi:10.1016/j.immuno.2021.100003; the analysis itself is Beltman, Marée & de Boer 2009,
 # PMID 19834485). Verified against celltrackR 1.2.2's own QC vignette (`doc/QC.Rmd` §2.3, §3.1),
 # which is where the two uses and their thresholds come from.
 #
