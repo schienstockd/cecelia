@@ -338,7 +338,8 @@ const runOptions = computed<string[]>(() => (result.value as { suffixes?: string
 // A PER-IMAGE METRIC (spec `dataSource.imageMetric`): one number per image from a run's sidecars — a
 // spatial-pattern population or an interaction pair — grouped by image attribute (SPATIAL_PATTERN_PLAN
 // Decision 8). A run keyed by picker populations (`pickPops`, spatial pattern) plots the PICKED ones —
-// the server tests attribute groups within each; otherwise (interaction pairs) one of the run's at a time.
+// the server tests attribute groups within each, as on every attribute-grouped plot; otherwise
+// (interaction pairs) one of the run's at a time.
 const imageMetric = computed(() => props.spec.dataSource.imageMetric)
 const metricPicksPops = computed(() => imageMetricPicksPops(props.spec))
 const metricPopOptions = computed<string[]>(() => result.value?.pops ?? [])
