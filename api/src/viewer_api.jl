@@ -815,16 +815,26 @@ function _pick_mask(img, pu::AbstractString, iu::AbstractString, body::AbstractD
     vn = _resolve_vn(img, req)
     zp, lerr = label_store_path(pu, iu, vn)
     zp === nothing && return (nothing, nothing, (404, JSON3.write((; error = lerr))))
-    inx, iny = get(body, "imageNX", nothing), get(body, "imageNY", nothing)
-    if inx !== nothing && iny !== nothing
-        ld = try label_store_dims(String(zp)) catch; nothing end
-        if ld !== nothing && (ld.nX != _to_int(inx) || ld.nY != _to_int(iny))
-            return refuse("Mask '$vn' was segmented on another image version " *
-                          "($(ld.nX)×$(ld.nY) px, this image is $(_to_int(inx))×$(_to_int(iny))) — " *
-                          "re-segment to pick cells")
-        end
-    end
+    msg = _mask_version_problem(String(zp), vn, body)
+    msg === nothing || return refuse(msg * " — re-segment to pick cells")
     (vn, String(zp), nothing)
+end
+
+"""
+    _mask_version_problem(label_zp, vn, body) -> Union{String,Nothing}
+
+Why the mask at `label_zp` cannot be read at the viewer's coordinates: it was segmented on another image
+version (drift correct, crop), so its x/y extent differs from the image the viewer draws (`imageNX` /
+`imageNY` in `body`). `read_slab` clamps out-of-range x/y to the edge, so a read there lands on a shifted
+or edge cell. `nothing` when the dims agree or the client sent none.
+"""
+function _mask_version_problem(label_zp::AbstractString, vn::AbstractString, body::AbstractDict)
+    inx, iny = get(body, "imageNX", nothing), get(body, "imageNY", nothing)
+    (inx === nothing || iny === nothing) && return nothing
+    ld = try label_store_dims(label_zp) catch; nothing end
+    (ld === nothing || (ld.nX == _to_int(inx) && ld.nY == _to_int(iny))) && return nothing
+    "Mask '$vn' was segmented on another image version " *
+        "($(ld.nX)×$(ld.nY) px, this image is $(_to_int(inx))×$(_to_int(iny)))"
 end
 
 """
@@ -1270,6 +1280,59 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     _inject_pick_pop!(m, img)
     _broadcast_popmap(pu, iu, vn, pt, m, img)
     200, JSON3.write((; label, nSelected = length(labs)))
+end
+
+# ── POST /api/viewer/peek (cursor readout) ────────────────────────────────────────
+# The viewer's opt-in cursor readout: what is under the pointer, read-only — pick-cell without the
+# selection write. Body:
+#   projectUid, imageUid, valueName (the IMAGE version drawn), t, z,
+#   x, y        — LEVEL-0 pixel: every channel's intensity is read there, so the readout is the stored
+#                 value, not the downsampled level on screen;
+#   labels      — the mask drawn (optional; omitted for a preview / live mask, which has no cell ids
+#                 worth naming yet), read at
+#   lx, ly, level — the pixel of the LEVEL the viewer displays, the same discipline as pick-cell, so the
+#                 id named is the cell drawn there;
+#   imageNX, imageNY — the dims drawn, to refuse a mask from another image version.
+# → {values: [one per channel], label: Int | null, labelNote: String | null}. A mask that cannot be read
+# here leaves `label` null and says why in `labelNote`; the intensities still answer.
+function api_viewer_peek(body_bytes::Vector{UInt8})
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    pu = _wstr(body, "projectUid")
+    iu = _wstr(body, "imageUid")
+    vn = _wstr(body, "valueName")
+    zp, _, err = resolve_image_version(pu, iu, isempty(vn) ? nothing : vn)
+    err === nothing && zp !== nothing || return 404, JSON3.write((; error = something(err, "Image not found")))
+    t, z = _to_int(get(body, "t", 0)), _to_int(get(body, "z", 0))
+    x, y = _to_int(get(body, "x", 0)), _to_int(get(body, "y", 0))
+    values = try
+        # every channel at once: `c` as a range is clamped to the store, so 0:typemax reads them all
+        vol, _, _, _ = read_slab(String(zp), t, 0:typemax(Int16); z = z, x = x:x, y = y:y, level = 0)
+        Float64.(vec(vol))
+    catch e
+        return 500, JSON3.write((; error = "peek read failed: " * sprint(showerror, e)))
+    end
+    label, note = _peek_label(pu, iu, body, t, z)
+    200, JSON3.write((; values, label, labelNote = note))
+end
+
+"""
+    _peek_label(project_uid, image_uid, body, t, z) -> (label | nothing, note | nothing)
+
+The cell id of mask `body["labels"]` at the displayed level's pixel (`lx`, `ly`, `level`), or why there
+is none to name. Background is `0`, a real answer.
+"""
+function _peek_label(pu::AbstractString, iu::AbstractString, body::AbstractDict, t::Int, z::Int)
+    lvn = _wstr(body, "labels")
+    isempty(lvn) && return (nothing, nothing)
+    lzp, lerr = label_store_path(pu, iu, lvn)
+    lzp === nothing && return (nothing, lerr)
+    msg = _mask_version_problem(String(lzp), lvn, body)
+    msg === nothing || return (nothing, msg)
+    lvl, lvl_err = label_level(String(lzp), _to_int(get(body, "level", 0)))
+    lvl_err === nothing || return (nothing, lvl_err)
+    lx, ly = _to_int(get(body, "lx", 0)), _to_int(get(body, "ly", 0))
+    vol, _, _, _ = read_slab(String(lzp), t, 0; z = z, x = lx:lx, y = ly:ly, level = lvl)
+    (Int(first(vol)), nothing)
 end
 
 # ── POST /api/viewer/pick-rect (P8 rectangle drag) ────────────────────────────────

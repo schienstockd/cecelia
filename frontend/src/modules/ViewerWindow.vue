@@ -94,6 +94,7 @@ import {
   screenToImagePx, cameraViewL0, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES, screenToL0, type L0Rect,
 } from '../utils/viewerPick'
 import { placeBox } from '../utils/anchorPosition'
+import { peekPoint, fmtPosition, fmtMeasure, rulerLength, labelPopIndex, readoutChannels, READOUT_CHANNEL_ROWS } from '../utils/viewer/cursorReadout'
 import { BOX_HANDLES, resizeBox, drawnBox, squareBox, previewBoxNeeded, type BoxHandle, type BoxLimits } from '../utils/viewer/previewBox'
 import { cropTaskBox, type CropPick } from '../utils/viewer/cropPick'
 import ViewerCropBar from '../components/ViewerCropBar.vue'
@@ -150,6 +151,7 @@ import VwPlaybackBar from '../components/viewerWindow/VwPlaybackBar.vue'
 import VwOnImageOverlay from '../components/viewerWindow/VwOnImageOverlay.vue'
 import VwConsoleRow from '../components/viewerWindow/VwConsoleRow.vue'
 import VwTimeControls from '../components/viewerWindow/VwTimeControls.vue'
+import VwOverlayToggles from '../components/viewerWindow/VwOverlayToggles.vue'
 import VwAnnotationsSection from '../components/viewerWindow/VwAnnotationsSection.vue'
 import VwSegmentationSection from '../components/viewerWindow/VwSegmentationSection.vue'
 import VwTracksSection from '../components/viewerWindow/VwTracksSection.vue'
@@ -1524,18 +1526,26 @@ function setChannelColour(c: number, hex: string) {
 const INTERACT_MODES = [
   { value: 'view', name: 'Move', icon: 'pi pi-hand', tip: 'Drag moves the view' },
   { value: 'select', name: 'Select', icon: 'pi pi-mouse-pointer', tip: 'A click picks a cell' },
+  { value: 'measure', name: 'Measure', icon: 'pi pi-measure', tip: 'Drag a line to read its length' },
   { value: 'edit', name: 'Edit', icon: 'pi pi-pencil', tip: 'Correction tools, coming soon' },
 ]
 // One button showing the current mode; the three sit in a menu under it — a "which mode am I in"
 // readout does not need three buttons' width beside 2D / 3D.
-const interactMode = computed(() => editMode.value ? 'edit' : selectModeActive.value ? 'select' : 'view')
+const interactMode = computed(() =>
+  editMode.value ? 'edit' : measureMode.value ? 'measure' : selectModeActive.value ? 'select' : 'view')
 const interactShown = computed(() => INTERACT_MODES.find(m => m.value === interactMode.value) ?? INTERACT_MODES[0])
 const interactOpen = ref(false)
 const interactBtn = ref<HTMLElement | null>(null)
 /** The Edit slot is open. Not persisted: it edits nothing yet, so a reload lands back on the view. */
 const editMode = ref(false)
+/** Measure mode is on, and its ruler in L0 pixels (`rulerScreen` draws it). Not persisted, as Edit. */
+const measureMode = ref(false)
+const ruler = ref<{ a: [number, number]; b: [number, number] } | null>(null)
 function setInteractMode(v: string) {
   editMode.value = v === 'edit'
+  // Measure is a tool, not a remembered mode (like Edit): leaving it clears the ruler
+  measureMode.value = v === 'measure'
+  if (!measureMode.value) ruler.value = null
   if ((v === 'select') !== selectModeActive.value) toggleSelectMode()
 }
 const MODES = [
@@ -3323,12 +3333,16 @@ const CLICK_MAX_TRAVEL_PX = 4
 const dragRect = ref<{ x: number; y: number; w: number; h: number } | null>(null)
 function onDown(e: PointerEvent) {
   if (boxDrawDown(e)) return
+  if (rulerDown(e)) return
+  hoverAt.value = null   // the readout steps aside while a drag is in flight
   dragFrom  = { x: e.clientX, y: e.clientY }
   dragStart = { x: e.clientX, y: e.clientY }
   ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
 }
 function onMove(e: PointerEvent) {
   if (boxDrawMove(e)) return
+  if (rulerMove(e)) return
+  if (!dragFrom) trackHover(e)
   if (!dragFrom || !canvas.value) return
   const dx = e.clientX - dragFrom.x, dy = e.clientY - dragFrom.y
   dragFrom = { x: e.clientX, y: e.clientY }
@@ -3354,6 +3368,7 @@ function onMove(e: PointerEvent) {
 }
 function onUp(e: PointerEvent) {
   if (boxDrawUp(e)) return
+  if (rulerUp()) return
   // A click is a mouseup that did not travel — the pick fires here rather than on `onDown` so a
   // pan gesture that started with the same button is not misread as a pick. `dragStart` was
   // captured on `onDown` in canvas space; a small travel (see `CLICK_MAX_TRAVEL_PX`) IS a click.
@@ -4120,6 +4135,146 @@ function boxDrawUp(e: PointerEvent): boolean {
   boxDrawing.value = false
   return true
 }
+// ── Measure mode: a ruler on the image (2D) ───────────────────────────────────────
+// A drag draws a line, its length in the image's unit (`rulerLength` — x and y scaled by their own
+// voxel size). Either end drags; a click or Esc clears it. Anchored in L0 pixels so pan and zoom keep
+// it on the image. A tool on screen, like the select rectangle: not part of the look, not recorded.
+let rulerGrab: 'a' | 'b' | null = null
+/** How close (canvas px) a press must land to an end to drag it rather than start a new line. */
+const RULER_GRAB_PX = 8
+function l0ToCanvas(p: readonly [number, number]): { x: number; y: number } | null {
+  const m = meta.value, { w, h } = canvasSize.value
+  if (!m || h <= 0) return null
+  const s = l0RectToScreen({ x0: p[0], y0: p[1], x1: p[0], y1: p[1] }, cam.value, m, w, h)
+  return { x: s.x, y: s.y }
+}
+const rulerScreen = computed(() => {
+  const r = ruler.value, m = meta.value
+  if (!r || !m || mode.value !== 'plane') return null
+  const a = l0ToCanvas(r.a), b = l0ToCanvas(r.b)
+  if (!a || !b) return null
+  const len = rulerLength(r.a, r.b, m)
+  return { a, b, label: `${fmtMeasure(len.value)} ${len.unit}` }
+})
+function rulerDown(e: PointerEvent): boolean {
+  // Shift+drag still pans, as in Select mode
+  if (!measureMode.value || mode.value !== 'plane' || e.shiftKey) return false
+  const p = eventL0(e), c = canvas.value
+  if (!p || !c) return false
+  const s = rulerScreen.value
+  const rect = c.getBoundingClientRect()
+  const near = (q: { x: number; y: number }) =>
+    Math.hypot(e.clientX - rect.left - q.x, e.clientY - rect.top - q.y) <= RULER_GRAB_PX
+  if (s && ruler.value && near(s.b)) rulerGrab = 'b'
+  else if (s && ruler.value && near(s.a)) rulerGrab = 'a'
+  else { ruler.value = { a: p, b: p }; rulerGrab = 'b' }
+  ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+  return true
+}
+function rulerMove(e: PointerEvent): boolean {
+  if (!rulerGrab || !ruler.value) return false
+  const p = eventL0(e)
+  if (p) ruler.value = { ...ruler.value, [rulerGrab]: p }
+  return true
+}
+function rulerUp(): boolean {
+  if (!rulerGrab) return false
+  rulerGrab = null
+  // a click (no travel) clears rather than leaving a zero-length line
+  const s = rulerScreen.value
+  if (s && Math.hypot(s.b.x - s.a.x, s.b.y - s.a.y) < CLICK_MAX_TRAVEL_PX) ruler.value = null
+  return true
+}
+
+// ── Cursor readout (opt-in, 2D) ──────────────────────────────────────────────────
+// Position, every channel's intensity, the cell and its deepest populations under the pointer, in a
+// box beside it. Position is computed here at once; intensities and the cell id come from
+// `/api/viewer/peek` once the pointer rests (`debouncedLatest`), and only show while they belong to the
+// pixel under the pointer. Populations come from the overlay payloads already drawn — no extra request.
+const hoverAt = ref<{ cx: number; cy: number } | null>(null)
+/** `vn`: the image version read — a version swap under a resting pointer must refetch, not keep the old values */
+interface PeekKey { x: number; y: number; t: number; z: number; labels: string; vn: string }
+const peeked = ref<{ key: PeekKey; values: number[]; label: number | null; note: string | null } | null>(null)
+const readoutOn = computed(() => settings.viewerCursorReadout && mode.value === 'plane' && !!meta.value)
+/** The mask the readout names a cell in: the one drawn, never a preview / live store (no cell ids yet). */
+const readoutMaskVn = computed(() =>
+  previewVn.value || liveVn.value ? '' : drawnMaskVn(labelName.value, maskHidden.value))
+const readoutPopIndex = computed(() => labelPopIndex(
+  popLayers.value.filter(l => l.vn === readoutMaskVn.value)
+    .flatMap(l => l.payload.pops.filter(p => popDrawn(l, p.path)))))   // the pops on screen, not hidden ones
+const hoverPoint = computed(() => {
+  const h = hoverAt.value, m = meta.value, { w, h: ch } = canvasSize.value
+  if (!readoutOn.value || !h || !m || ch <= 0) return null
+  const p = peekPoint(h.cx, h.cy, w, ch, cam.value, m, renderNX.value, renderNY.value)
+  if (!p.in) return null
+  const z = Math.max(0, Math.min(m.nZ - 1, Math.round(zPlane.value)))
+  const tt = Math.max(0, Math.round(t.value))
+  return { ...p, z, t: tt, key: { x: p.x, y: p.y, t: tt, z, labels: readoutMaskVn.value, vn: valueName.value } as PeekKey }
+})
+const samePeek = (a: PeekKey, b: PeekKey) =>
+  a.x === b.x && a.y === b.y && a.t === b.t && a.z === b.z && a.labels === b.labels && a.vn === b.vn
+const peekRequest = debouncedLatest<{ key: PeekKey; lx: number; ly: number; level: number }>(
+  async ({ key, lx, ly, level }, isCurrent) => {
+    const m = meta.value
+    if (!m) return
+    const res = await fetch('/api/viewer/peek', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectUid, imageUid, valueName: key.vn, t: key.t, z: key.z, x: key.x, y: key.y,
+        ...(key.labels ? { labels: key.labels, lx, ly, level, imageNX: m.nX, imageNY: m.nY } : {}),
+      }),
+    })
+    if (!res.ok || !isCurrent()) return
+    const j = await res.json() as { values?: number[]; label?: number | null; labelNote?: string | null }
+    peeked.value = { key, values: j.values ?? [], label: j.label ?? null, note: j.labelNote ?? null }
+  },
+  { wait: 150, onError: err => vlog('warn', 'Readout: ' + (err instanceof Error ? err.message : String(err))) },
+)
+watch(hoverPoint, p => {
+  if (!p) { peekRequest.cancel(); return }
+  if (peeked.value && samePeek(peeked.value.key, p.key)) return
+  peekRequest.schedule({ key: p.key, lx: p.lx, ly: p.ly, level: slabLevel.value })
+})
+function trackHover(e: PointerEvent) {
+  if (!readoutOn.value || !canvas.value) { hoverAt.value = null; return }
+  const rect = canvas.value.getBoundingClientRect()
+  hoverAt.value = { cx: e.clientX - rect.left, cy: e.clientY - rect.top }
+}
+function onCanvasLeave() { hoverAt.value = null }
+/** The readout's lines, or null when there is nothing to show. */
+const readout = computed(() => {
+  const p = hoverPoint.value, m = meta.value
+  if (!p || !m) return null
+  const got = peeked.value && samePeek(peeked.value.key, p.key) ? peeked.value : null
+  const pops = got?.label ? readoutPopIndex.value.get(got.label) ?? [] : []
+  const ch = got ? readoutChannels(got.values, m.channels) : null
+  return {
+    // what it is first, then what it reads, then where — the order a glance needs them in
+    cell: !got || !p.key.labels ? null : got.note ? got.note : got.label ? `Cell ${got.label}` : 'Background',
+    pops,
+    channels: ch?.shown ?? null,
+    rows: Math.min(READOUT_CHANNEL_ROWS, ch?.shown.length || 1),
+    hidden: ch?.hidden ?? 0,
+    position: fmtPosition(p, p.z, p.t, m),
+  }
+})
+const readoutSize = ref({ width: 0, height: 0 })
+function measureReadout(el: unknown) {
+  if (!(el instanceof HTMLElement)) return
+  const { offsetWidth: width, offsetHeight: height } = el
+  if (width !== readoutSize.value.width || height !== readoutSize.value.height) readoutSize.value = { width, height }
+}
+/** Beside the pointer, never over it: right of it, flipping left at the canvas edge. */
+const readoutStyle = computed(() => {
+  const h = hoverAt.value, { w, h: ch } = canvasSize.value
+  if (!h) return undefined
+  const p = placeBox({
+    anchor: { left: h.cx, top: h.cy, width: 0, height: 0 }, box: readoutSize.value,
+    viewport: { width: w, height: ch }, placement: 'right-start', gap: 16, margin: 4,
+  })
+  return { left: p.left + 'px', top: p.top + 'px' }
+})
+
 const overviewRect = computed(() => {
   const m = meta.value, { w, h } = canvasSize.value
   if (!m || h <= 0 || w <= 0) return null
@@ -5330,6 +5485,7 @@ function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
   if (e.key === ' ') { e.preventDefault(); togglePlay(); return }
+  if (e.key === 'Escape' && ruler.value) { ruler.value = null; return }
   // the ROIs section open: Up / Down step through its list (it takes them from a solo channel)
   if (openSection.value === 'rois' && roiSection.value && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault()
@@ -6078,10 +6234,39 @@ onUnmounted(() => {
   <div class="vw">
     <div class="vw-canvas-wrap">
       <canvas
-        ref="canvas" class="vw-canvas" :class="{ 'vw-canvas-select': selectModeActive }"
+        ref="canvas" class="vw-canvas" :class="{ 'vw-canvas-select': selectModeActive || measureMode }"
         @pointerdown="onDown" @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
-        @wheel="onWheel"
+        @pointerleave="onCanvasLeave" @wheel="onWheel"
       />
+      <!-- Measure mode's ruler: the line, its two ends and its length at the middle. Anchored to the
+           image (`rulerScreen`); the ends are hit-tested in `rulerDown`, so nothing here takes clicks. -->
+      <div v-if="rulerScreen" class="vw-pbox-clip">
+        <svg class="vw-ruler">
+          <line :x1="rulerScreen.a.x" :y1="rulerScreen.a.y" :x2="rulerScreen.b.x" :y2="rulerScreen.b.y" />
+          <circle :cx="rulerScreen.a.x" :cy="rulerScreen.a.y" r="3.5" />
+          <circle :cx="rulerScreen.b.x" :cy="rulerScreen.b.y" r="3.5" />
+        </svg>
+        <span class="cc-hud-chip vw-ruler-label"
+              :style="{ left: (rulerScreen.a.x + rulerScreen.b.x) / 2 + 'px',
+                        top: (rulerScreen.a.y + rulerScreen.b.y) / 2 + 'px' }">{{ rulerScreen.label }}</span>
+      </div>
+      <div v-if="measureMode && !ruler && mode === 'plane'" class="cc-hud-chip vw-status-chip vw-pbox-hint">Drag to measure</div>
+      <!-- Cursor readout (Annotations → Readout): beside the pointer, never over it -->
+      <div v-if="readout" :ref="measureReadout" class="cc-hud-chip vw-readout" :style="readoutStyle">
+        <span v-if="readout.cell" class="cc-row cc-row-tight vw-readout-head">
+          <span class="vw-readout-cell">{{ readout.cell }}</span>
+          <span v-for="p in readout.pops" :key="p.name" class="vw-readout-pop"><span class="cc-dot" :style="{ background: p.colour }" />{{ p.name }}</span>
+        </span>
+        <span v-if="readout.channels?.length" class="vw-readout-grid"
+              :style="{ gridTemplateRows: `repeat(${readout.rows}, auto)` }">
+          <span v-for="ch in readout.channels" :key="ch.name" class="vw-readout-row">
+            <span class="cc-dot" :style="{ background: ch.colour }" />
+            <span class="vw-readout-name">{{ ch.name }}</span><span class="vw-readout-val">{{ ch.value }}</span>
+          </span>
+        </span>
+        <span v-if="readout.hidden" class="vw-readout-dim">+{{ readout.hidden }} hidden</span>
+        <span class="vw-readout-dim">{{ readout.position }}</span>
+      </div>
       <!-- Rubber-band selection rectangle in select mode. Absolute-positioned inside the canvas
            wrap so its coordinates are in the same space as the pointer events. Non-interactive so
            it doesn't intercept the pointerup that ends the drag. -->
@@ -6144,7 +6329,7 @@ onUnmounted(() => {
       <StillOverlay
         data-screenshot-keep
         v-if="meta && shownT >= 0" :extent-um="overlayExtent" :time-label="timeLabel" chrome="fixed"
-        :show-scale-bar="spec.scaleBar" :show-timestamp="spec.timestamp"
+        :show-scale-bar="spec.scaleBar" :show-timestamp="spec.timestamp && meta.nT > 1"
         :bar-font-px="spec.scaleBarPx" :time-font-px="spec.timestampPx"
       />
       <!-- Set-of-Mark grid — user-facing region names ("look at C4"). PR #2 of BIDIR_CONTEXT_PLAN.md.
@@ -6395,8 +6580,29 @@ onUnmounted(() => {
         <template #controls>
         <!-- The panel's top row (GUI_LAYOUT_PLAN V3, mock frame 4): what a click does, 2D / 3D, reset
              view and the advanced settings. -->
-        <!-- two non-wrapping groups: a narrow panel breaks the row between them, never inside one -->
-        <div class="cc-row cc-row-tight vw-top">
+        <!-- Two fixed rows, edges aligned, so a narrow panel never wraps them raggedly: the view (2D / 3D,
+             reset, settings), then the pointer (what a click does) and the overlays on the image. -->
+        <div class="vw-top">
+        <div class="cc-row cc-row-tight">
+          <ChipSelect
+            :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
+            @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
+          />
+          <div class="cc-row-group vw-top-end">
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
+                  v-tooltip.top="'Reset view — fit the image and face it square'" aria-label="Reset view">
+            <i class="pi pi-reset-view" />
+          </button>
+          <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': advancedOpen }"
+                  aria-label="Advanced viewer settings"
+                  v-tooltip.top="'Renderer, cache, projection, corner overlay, Debug'"
+                  @click="advancedOpen = !advancedOpen">
+            <i class="pi pi-cog" />
+          </button>
+          </div>
+        </div>
+        <div class="cc-row cc-row-tight">
           <button ref="interactBtn" class="cc-btn cc-btn-ghost cc-btn-dense" aria-haspopup="menu"
                   :aria-label="`What a click does: ${interactShown.name}`" @click="interactOpen = !interactOpen"
                   v-tooltip.bottom="`${interactShown.name} — ${interactShown.tip}`">
@@ -6411,23 +6617,8 @@ onUnmounted(() => {
               </button>
             </div>
           </TeleportPopover>
-          <div class="cc-row-group vw-top-end">
-          <ChipSelect
-            :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
-            @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
-          />
-          <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
-                  v-tooltip.top="'Reset view — fit the image and face it square'" aria-label="Reset view">
-            <i class="pi pi-reset-view" />
-          </button>
-          <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
-                  :class="{ 'cc-btn-on cc-btn-on-tint': advancedOpen }"
-                  aria-label="Advanced viewer settings"
-                  v-tooltip.top="'Renderer, cache, projection, corner overlay, Debug'"
-                  @click="advancedOpen = !advancedOpen">
-            <i class="pi pi-cog" />
-          </button>
-          </div>
+          <div class="vw-top-end"><VwOverlayToggles :plane="mode === 'plane'" :timed="meta.nT > 1" /></div>
+        </div>
         </div>
         </template>
         <div class="vw-side">
@@ -6442,7 +6633,7 @@ onUnmounted(() => {
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
              is what changes while you look; Annotations is set once. See
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
-        <VwAnnotationsSection :landscape="landscape" />
+        <VwAnnotationsSection :landscape="landscape" :timed="(meta?.nT ?? 0) > 1" />
 
         <VwChannelsSection :channels="meta!.channels.slice(0, MAX_CHANNELS)" :n-c="meta!.nC" :clipped="clipped"
                            :all-visible="allChannelsVisible" v-model:distinct="distinctChannelColours" v-model:solo="soloChannel"
@@ -6988,6 +7179,25 @@ onUnmounted(() => {
    pointer where the user is looking. */
 .vw-canvas-select { cursor: crosshair; }
 .vw-canvas-select:active { cursor: crosshair; }
+/* Measure mode's ruler — the select rectangle's accent, a HUD chip for its length at the midpoint */
+.vw-ruler { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.vw-ruler line { stroke: var(--cc-accent-strong); stroke-width: 2; }
+.vw-ruler circle { fill: var(--cc-accent-strong); }
+.vw-ruler-label { position: absolute; transform: translate(-50%, calc(-100% - 6px)); white-space: nowrap; }
+/* Cursor readout: a HUD chip stacked in lines, placed beside the pointer (`readoutStyle`) */
+.vw-readout {
+  position: absolute; pointer-events: none; z-index: 40;
+  flex-direction: column; align-items: stretch; gap: 0.25rem; white-space: nowrap;
+}
+.vw-readout-head { column-gap: 0.6rem; }
+.vw-readout-cell { font-weight: 600; }
+.vw-readout-pop { display: inline-flex; align-items: center; gap: 0.3rem; }
+/* channels fill a column to READOUT_CHANNEL_ROWS, then start the next */
+.vw-readout-grid { display: grid; grid-auto-flow: column; column-gap: 1rem; row-gap: 0.05rem; }
+.vw-readout-row { display: flex; align-items: center; gap: 0.35rem; }
+.vw-readout-name { flex: 1; opacity: 0.8; }
+.vw-readout-dim { opacity: 0.65; font-size: var(--cc-fs-2xs); }
+.vw-readout-val { font-variant-numeric: tabular-nums; }
 /* Rubber-band rectangle overlay for a select-mode drag. Bright enough to see over any content,
    but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
    the pointerup that ends the gesture (that would strand the drag). */
@@ -7050,7 +7260,7 @@ onUnmounted(() => {
 .vw-bar-zw { width: 6rem; }
 .vw-bar-pmro { display: inline-block; min-width: 3ch; text-align: right; }
 .vw-bar-level { width: 5.4rem; }
-.vw-top { flex-wrap: wrap; row-gap: 0.35rem; }
+.vw-top { display: flex; flex-direction: column; gap: 0.35rem; }
 .vw-top-end { margin-left: auto; }
 .vw-edit-banner {
   flex-shrink: 0; gap: 0.5rem; padding: 0.35rem 0.75rem;
