@@ -195,8 +195,9 @@ OS-independent:
      waiting for `/api/health` — ~20 s, and the only check that catches a load-time `include` of a
      file the bundle forgot, which is exactly how #540 reached users. Worth running before a tag.
 3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets, plus the
-   user-docs pages as stamped PDFs (`cecelia-training-run-sheet.pdf`, `cecelia-using-ai.pdf`, printed by
-   `scripts/docshots/pdf.mjs` from the committed markdown), for a facility to read before installing.
+   user-docs pages as stamped PDFs in one `cecelia-manuals.zip` (every page `scripts/docshots/pdf.mjs`
+   prints from the committed markdown, zipped by glob so a new page needs no workflow change), for a
+   facility to read before installing.
 
 **bioformats2raw is NOT in the bundle.** The image-import binary (its `lib/` of Bio-Formats JARs +
 native codecs) is ~190 MB — it would have dwarfed the ~6 MB of actual app. Instead `install.sh` /
