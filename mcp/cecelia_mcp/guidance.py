@@ -136,7 +136,9 @@ image; `rollup.divergences` for the odd image out; per-image `stale` lists resul
 input a later run replaced — say so before reading numbers off one), get_chains, \
 get_module_params (a step's real keys and ranges).{catalogue}
 - QC: get_qc_metrics (one image), get_cohort_qc (a set's outliers for one step), check_claim (a \
-comparison about to be stated as a finding).
+comparison about to be stated as a finding), get_thumbnails (a set's images side by side at one \
+shared contrast — look before running a step over the whole set; a tile that differs is a question \
+for the user, not a verdict).
 - The analysis: get_populations (what a population MEANS — its gate geometry or filter rule), \
 get_measure_summary (phenotype + motility per population), get_behaviour_summary (HMM states), \
 get_cluster_summary (cluster sizes, and what defines each cluster: its z-scored feature profile — \

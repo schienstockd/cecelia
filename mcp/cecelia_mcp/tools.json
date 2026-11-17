@@ -50,6 +50,7 @@
     "list_open_plots": "read",
     "get_plot_image": "read",
     "get_viewer_screenshot": "read",
+    "get_thumbnails": "read",
     "get_landscape": "read",
     "get_recent_captures": "read",
     "get_capture": "read",

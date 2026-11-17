@@ -14,7 +14,7 @@
 const ACQ_REVIEW_TOOLS = (
     "get_project_info", "find_object", "list_images", "get_image_info", "get_image_attributes",
     "get_qc_metrics", "get_cohort_qc", "get_task_log", "get_task_history", "get_acquisition_knowledge",
-    "get_guide", "get_task_catalogue")
+    "get_guide", "get_task_catalogue", "get_thumbnails")
 # What the review must not see, and why.
 const _ACQ_ANALYSIS = "the analysis record — this review is before analysis"
 const ACQ_REVIEW_WITHHELD = Dict(
@@ -80,7 +80,8 @@ $(_ACQ_STAGE_INTRO[stage])
 
 The project is `$(project_uid)` — pass exactly that as `project_uid` in every tool call. Read the movies'
 record (image info: acquisition settings, the import probe's photons, shared structure, fading;
-QC metrics; task logs) and the acquisition knowledge before you answer. You can only read.
+QC metrics; task logs; the set's thumbnails side by side at one contrast) and the acquisition knowledge
+before you answer. You can only read.
 
 Look for what would stop the plan: an object too dim or too noisy to segment; a channel that carries
 another's signal where the plan needs them apart; settings that differ between movies the plan compares;

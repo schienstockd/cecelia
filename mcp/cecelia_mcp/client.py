@@ -75,6 +75,7 @@ ALLOWED_ROUTES = frozenset(
                                          # board can compare by; the same route the summary canvas and the
                                          # UMAP colour/facet picker use, not a second attribute surface
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
+        ("GET", "/api/sets/thumbnails"),  # a set's images as one thumbnail montage (read-only render)
         ("GET", "/api/claim/checks"),    # claim recital: record / consistency / convention rules for a claim scope
         ("GET", "/api/claim/open"),      # claim recital: open claim entries re-checked, nothing written (briefing)
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
@@ -437,6 +438,18 @@ class CeceliaClient(gv.GatingClient, ft.FigureClient):
             {
                 "projectUid": project_uid, "setUid": set_uid, "funName": fun_name,
                 "valueName": value_name, "threshold": threshold,
+            },
+        )
+
+    def get_thumbnails(self, project_uid: str, set_uid: str, value_name: str | None = None,
+                           contrast: str = "shared", size: int | None = None, offset: int = 0):
+        # Every image of a set as one montage PNG (data URL) + a cell per tile (row/col → image).
+        return self._request(
+            "GET",
+            "/api/sets/thumbnails",
+            {
+                "projectUid": project_uid, "setUid": set_uid, "valueName": value_name,
+                "contrast": contrast, "size": size, "offset": offset or None,
             },
         )
 
