@@ -453,7 +453,7 @@ end
         "/api/update/apply",
         "/api/update/revert",
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
-        "/api/viewer/pick-cell",
+        "/api/viewer/pick-cell", "/api/viewer/peek",
         "/api/viewer/pick-rect",
         "/api/viewer/pick-clear",
         "/api/viewer/pick-set",
@@ -511,7 +511,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 129 && length(POST_ROUTES) == 201
+    @test length(GET_ROUTES) == 129 && length(POST_ROUTES) == 202
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

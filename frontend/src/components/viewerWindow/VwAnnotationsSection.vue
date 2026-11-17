@@ -1,6 +1,7 @@
 <!--
-  The viewer window's Annotations section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): scale
-  bar, timestamp, region grid and landscape heatmap. Overlays on the view, never baked into the frame
+  The viewer window's Annotations section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): the scale
+  bar's and timestamp's text sizes (their switches are `VwOverlayToggles`), then the region grid and
+  landscape heatmap, which captures carry. Overlays on the view, never baked into the frame
   or a Share capture, so they sit with the viewport controls rather than the layer sections
   (docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md, P1). Settings live in the settings store; the window only
   hands in the computed landscape for the legend.
@@ -11,45 +12,36 @@ import CcToggle from '../CcToggle.vue'
 import { useSettingsStore } from '../../stores/settings'
 import type { LandscapeResult } from '../../utils/landscape'
 
-defineProps<{ landscape: LandscapeResult | null }>()
+/** `timed`: more than one frame — the timestamp's size only matters when one is drawn */
+defineProps<{ landscape: LandscapeResult | null; timed: boolean }>()
 const settings = useSettingsStore()
 </script>
 
 <template>
-  <CollapsibleSection label="Annotations" tip="Overlays on the view — not in captures"
+  <CollapsibleSection label="Annotations" tip="Overlay text sizes, and the grid for captures"
                       accordion="cc.vw.section" section="ann"
                       fill="content">
-    <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
-         in front of you, and a separate row for each would double the group's height. -->
-    <div class="cc-row cc-row-tight">
-      <span class="cc-muted cc-fs-2xs cc-lbl-col"
-            v-tooltip.right="'Physical scale of the current zoom'">Scale bar</span>
-      <CcToggle v-model="settings.viewerScaleBar" aria-label="Show the scale bar" />
-      <!-- The size slider appears WITH the thing it sizes. A control you cannot move is noise in
-           a panel this dense — it says "there is something here" and then
-           refuses. Nothing is lost: the toggle beside it is how you get the slider back. -->
-      <template v-if="settings.viewerScaleBar">
-        <input
-          type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-          v-model.number="settings.viewerScaleBarPx"
-          v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
-        >
-        <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
-      </template>
+    <!-- The switches are the row of buttons under the panel's top controls (`VwOverlayToggles`); a
+         size slider shows here only while the thing it sizes is on. -->
+    <div v-if="settings.viewerScaleBar" class="cc-row cc-row-tight">
+      <span class="cc-muted cc-fs-2xs cc-lbl-col">Scale bar</span>
+      <input
+        type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+        v-model.number="settings.viewerScaleBarPx"
+        v-tooltip.bottom="'Scale-bar text size'" aria-label="Scale bar text size"
+      >
+      <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerScaleBarPx }}</span>
     </div>
-    <div class="cc-row cc-row-tight">
-      <span class="cc-muted cc-fs-2xs cc-lbl-col"
-            v-tooltip.right="'Elapsed time, or the frame index if uncalibrated'">Timestamp</span>
-      <CcToggle v-model="settings.viewerTimestamp" aria-label="Show the timestamp" />
-      <template v-if="settings.viewerTimestamp">
-        <input
-          type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
-          v-model.number="settings.viewerTimestampPx"
-          v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
-        >
-        <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
-      </template>
+    <div v-if="timed && settings.viewerTimestamp" class="cc-row cc-row-tight">
+      <span class="cc-muted cc-fs-2xs cc-lbl-col">Time</span>
+      <input
+        type="range" class="vw-grow vw-px" :min="8" :max="32" :step="1"
+        v-model.number="settings.viewerTimestampPx"
+        v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
+      >
+      <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
     </div>
+    <div class="cc-eyebrow cc-fs-3xs vw-ann-group">For captures</div>
     <!-- Set-of-Mark grid: named cells (A1..H8 at 8×8) over the current viewport, so a share-in
          / point-out session can cite a region by name. The density slider shows with the
          toggle OFF too: every capture carries a landscape at this density, so it is a capture
@@ -94,5 +86,6 @@ const settings = useSettingsStore()
 .vw-px-val { flex: none; min-width: 1.4rem; text-align: right; }
 .vw-landscape-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .vw-landscape-sub-lbl { margin-left: 0.4rem; }
+.vw-ann-group { margin-top: 0.2rem; }
 .vw-lg-swatch { display: inline-block; width: 10px; height: 10px; border-radius: var(--cc-radius-xs); border: 1px solid var(--cc-border); }
 </style>
