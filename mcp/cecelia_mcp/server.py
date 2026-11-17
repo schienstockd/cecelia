@@ -284,6 +284,32 @@ def get_qc_metrics(project_uid: str, image_uid: str) -> dict:
 
 
 @_tool
+def get_thumbnails(project_uid: str, set_uid: str, value_name: str | None = None,
+                       contrast: str = "shared", offset: int = 0) -> list:
+    """Every image of a set side by side — ONE montage picture (≤ 64 tiles, timepoint 0, z
+    max-projected) plus `cells`: `[{index, row, col, imageUid, name, included, error}]` (`error` null unless unreadable), row/col
+    0-based from the top left, so a tile you point at maps to an image.
+
+    Look before a step runs over the whole set: an empty field, a dead or saturated channel, a
+    different tissue or a much dimmer image is visible here and in no metric. `contrast="shared"`
+    (default) draws every image with the SAME per-channel contrast, pooled over the set, in the
+    palette `channels` lists (`{index, colour, name, lo, hi}`) — so a tile that looks different IS
+    different. `contrast="image"` draws each the way its viewer shows it (its own contrast and
+    colours); use it to see content, not to compare brightness.
+
+    A different-looking tile is a question for the user ("image 6 is much noisier — a different
+    acquisition, or a raw version?"), never a reason to drop it. `value_name` picks the version
+    (omit for each image's active one); `truncated: true` ⇒ more images — call again with
+    `offset`. Read-only."""
+    r = _client.get_thumbnails(project_uid, set_uid, value_name, contrast, offset=offset)
+    url = r.get("png") or ""
+    meta = {k: v for k, v in r.items() if k != "png"}
+    if not url.startswith("data:image/png;base64,"):
+        return [meta]
+    return [Image(data=base64.b64decode(url.split(",", 1)[1]), format="png"), meta]
+
+
+@_tool
 def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str | None = None) -> dict:
     """Cohort QC for one task across a set's images — the way to spot an outlier run ("image 7 has 8×
     fewer cells than the cohort"). Aggregates the objective metric each task banks, over the set's

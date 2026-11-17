@@ -28,7 +28,7 @@ const KIWI_READ_TOOLS = [
     "get_spatial_patterns",   # one population clustered or random among the tissue's cells
     "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "list_open_plots", "get_plot_catalogue", "get_analysis_boards",
-    "get_landscape", "get_viewer_screenshot", "get_plot_image", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
+    "get_landscape", "get_viewer_screenshot", "get_plot_image", "get_thumbnails", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
     "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
