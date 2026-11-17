@@ -98,6 +98,10 @@ end
     @test kiwi_claim_bundling("B tracks are short -> Set a minimum length. Then re-derive speed.") ==
           "what to do: more than one sentence"
     @test kiwi_claim_bundling("A has 17 tracks. B has 25. → Check both.") == "the finding: more than one sentence"
+    # the Kiwi prompt states the limits the check enforces — left out, an ordinary turn re-asks for them
+    # (the claim review's and acq review's prompts state the same, pinned in their own suites)
+    @test occursin("ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS)\ncharacters, with no semicolon",
+                   kiwi_system_prompt("p"))
 
     img = Dict("kind" => "image", "imageUid" => "3w4IY5")
     pop(p) = Dict("kind" => "population", "imageUid" => "3w4IY5", "valueName" => "B", "popPath" => p)

@@ -113,7 +113,8 @@ answer. You can only read.
 
 Reply ONLY through the structured output: at most $(KIWI_MAX_CLAIMS) claims, fewer is better. The first
 claim answers the question as directly as the data allows. Each claim is ONE fact — never two joined by
-"and", never a fact plus what it suggests. A comparison is one fact: "B median 3.1 vs T 7.0 µm/min" is
+"and", never a fact plus what it suggests. Each claim is ONE sentence of at most $(KIWI_CLAIM_MAX_CHARS)
+characters, with no semicolon: two facts are two claims. A comparison is one fact: "B median 3.1 vs T 7.0 µm/min" is
 one claim, not two readouts. Each claim carries at least one ref to an app object, and
 every ref must be an object you saw in this conversation — in a tool result or in the attached context —
 with its exact ids copied from there. Never cite from memory. Never invent an id.
