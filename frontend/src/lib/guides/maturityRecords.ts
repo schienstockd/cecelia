@@ -14,6 +14,7 @@ import type { Maturity, NextItem } from './types'
 export const REVIEW: NextItem = { text: 'Maintainer review of the fails-if lines → Tested', done: false }
 /** An open checklist item. */
 export const todo = (text: string): NextItem => ({ text, done: false })
+export const done = (text: string): NextItem => ({ text, done: true })
 
 export const IV2P = 'Intravital 2-photon movies, one lab'
 export const EXEMPT: Maturity = { tier: 'exempt', testedOn: '' }
@@ -37,7 +38,7 @@ export const GUIDE_MATURITY = {
     ],
     next: [
       REVIEW,
-      todo('Convert non-second / non-µm units on import, with a QC finding for units it can’t'),
+      done('Convert non-second / non-µm units on import, with a QC finding for units it can’t'),
       todo('Tiny vendor files with known calibration, incl. ms/min time and nm pixels'),
     ],
     needs: 'Vendor files with known pixel size and frame interval, in other units',
@@ -238,7 +239,7 @@ export const GUIDE_MATURITY = {
     next: [
       todo('One PROVENANCE.md line: what was checked by hand, on which data'),
       todo('A synthetic table with 3 planted clusters and two segmentations'),
-      todo('Compare channel names when pooling a set'),
+      done('Compare channel names when pooling a set'),
     ],
     needs: 'A multiplex image whose clustering gives 10+ clusters',
     datasetAsk: 'cluster-grouping-highplex',

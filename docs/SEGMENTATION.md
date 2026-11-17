@@ -1239,9 +1239,11 @@ So coastal defaults to `labelSmoothing` **0.5** — cosmetic, honest about being
 the size. (This paragraph read 1.5 until 2026-08-07. The shipped spec has always been 0.5 and 0.5 is
 the intended value: the doc was wrong, not the spec.)
 
-`embeddingBlurSigma` defaults to the calibrated **1.5** (2026-08-07) — the lowest σ in the table above
-and the one holding cell size closest to the expected ~11 µm, and independently coastal's own tuned
-`embedding_blur_sigma` for both passes. `probBlurSigma` stays at **0**: the same measurement shows it
+`embeddingBlurSigma` defaults to **0.5 µm** — the lowest σ in the table above and the one holding
+cell size closest to the expected ~11 µm. That table, and coastal's own tuned `embedding_blur_sigma`,
+are in **pixels** (1.5 px), measured before the params moved to microns; on its 0.3315 µm/px image
+1.5 px is 0.5 µm. From 2026-08-07 to 2026-11-16 the default read 1.5 µm (~4.5 px, near the σ 5 arm
+that shrinks cells), from taking the px value as µm. `probBlurSigma` stays at **0**: the same measurement shows it
 makes the border *worse*, so its calibrated value is off.
 
 Cellpose keeps `labelSmoothing` 0.0: it has no growing frontier and therefore not this failure mode,
