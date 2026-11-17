@@ -128,17 +128,16 @@ const bellTip = computed(() => labLogLauncherTip({ unseen: settings.labLogUnseen
 
 /* + cc-btn cc-btn-bare cc-btn-dense — the wordmark goes to Welcome. */
 .logo {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 0.95rem;
-  letter-spacing: 0.06em;
-  color: var(--cc-accent);
+  color: var(--cc-text);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
 .logo-mark { display: block; flex: none; }
-.logo:hover { color: var(--cc-accent); background: color-mix(in srgb, var(--cc-accent) 12%, transparent); }
+.logo:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 
 
 .spacer { flex: 1; }

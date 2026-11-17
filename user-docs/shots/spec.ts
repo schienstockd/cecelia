@@ -189,6 +189,8 @@ export const shotThemes = (set: ShotSet, x: Shot): ColourScheme[] => (isPicture(
  *  overview's text is not meant to be read; a UI screenshot is a PNG, its text sharp. */
 export const imageFile = (x: Shot, theme: ColourScheme): string =>
   isPicture(x) ? `${x.id}.jpg` : x.overview ? shotFile(x.id, theme).replace(/\.png$/, '.jpg') : shotFile(x.id, theme)
+/** An image file's key in `user-docs/images/images.json` (its width in CSS px, written by compose.mjs). */
+export const imageStem = (file: string): string => file.replace(/\.(png|jpg)$/, '')
 
 /** The image files a set puts in user-docs/images/. A shot that sits `beside` another has none of its
  *  own: compose draws it into that shot's image, so the two are one figure that scales as one (two

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readoutOf, emptyReadout, overrideFor } from './plotReadout'
+import { readoutOf, emptyReadout, overrideFor, offers } from './plotReadout'
 import { xRotationOverride, transformOverride } from './autoOverride'
 import type { ComparisonsResult } from './types'
 
@@ -41,5 +41,18 @@ describe('overrideFor', () => {
   it('is null-safe for a control rendered before the first result', () => {
     expect(overrideFor(undefined, 'X labels')).toBeNull()
     expect(overrideFor(emptyReadout(), 'X labels')).toBeNull()
+  })
+})
+
+describe('offers', () => {
+  it('lets a plot that declares its settings hide the rest', () => {
+    const r = readoutOf(null, [], ['legend', 'title'])
+    expect(offers(r, 'legend')).toBe(true)
+    expect(offers(r, 'logScale')).toBe(false)
+  })
+
+  it('shows everything for a plot that declares nothing', () => {
+    expect(offers(emptyReadout(), 'logScale')).toBe(true)
+    expect(offers(undefined, 'pointSize')).toBe(true)
   })
 })

@@ -3069,7 +3069,13 @@ page — and the Analysis board — reuses them unchanged:
   `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling
   knobs live in ONE place. `PopulationManager` renders it only when the host passes a `vis` bag (the
   cluster canvas does; the gate canvas doesn't) — the "add plot styling to the pop manager" keyword.
-  The universal Analysis board (`/analysis`) gets the same controls for free.
+  The universal Analysis board (`/analysis`) gets the same controls for free. **Only the rows the
+  active plot reacts to are shown** — `plots/plotControls.ts` `visControlsFor({chartType, trend})`
+  declares them per chart kind, `SummaryPanel` reports them on its readout (`PlotReadout.controls`),
+  and a section with no rows left disappears. A plot that declares nothing (`controls: null`) shows
+  every row. `plotControls.test.ts` flips every setting on every chart kind and fails when the
+  table and the renderer disagree — a new chart type, or a builder that starts reading a setting,
+  is answered there.
 - **`plots/export.ts`** — the ONE plot-export module: PNG/SVG rasterise, CSV, and the true-vector SVG
   builders. Two capture paths, because they solve different problems: `elementToImageURL` wraps a
   style-inlined clone in an SVG `<foreignObject>` (catches an HTML overlay legend alongside the `<svg>`),

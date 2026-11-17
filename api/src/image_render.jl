@@ -3,8 +3,8 @@
 # planes → per-channel contrast + colour → additive blend → PNG bytes.
 #
 # THE ONLY server-side image renderer in the codebase. If you need a thumbnail or preview, use this;
-# do not hand-roll a second compositor. `render_preview_frame` + `cached_render!` have no route
-# calling them today; they are kept for the next thumbnail/preview caller rather than rebuilt.
+# do not hand-roll a second compositor. The image-table thumbnails and the set montage
+# (`thumbnails_api.jl`) draw through `preview_chw` + `composite_rgb`.
 #
 # SANCTIONED, NARROW carve-out of the "one canonical image reader" rule: Julia reads the zarr
 # directly (Zarr.jl) ONLY for lightweight previews — Python `zarr_utils` stays canonical for anything
@@ -271,10 +271,44 @@ end
 # Render timepoint `t` (0-based) of `zarr_path` to composite-MIP PNG bytes. z is max-projected (subsampled
 # to ~≤`z_keep` planes for speed) and the frame is downsampled so its long side ≤ `max_px` (a crop
 # footprint needs no more). Colours from `props_path` (JSON) if present. Returns the PNG as a byte vector.
+#
+# Three steps, each callable on its own: `preview_chw` reads the projected (C, Y, X) block,
+# `preview_specs` picks the contrast + colours, `png_bytes(srgb_encode(composite_rgb(...)))` draws it.
+# The set montage (`thumbnails_api.jl`) needs the split — it pools contrast across images before
+# drawing any of them. `level` reads a coarser pyramid level (0 = full resolution).
 function render_preview_frame(zarr_path::AbstractString, props_path::AbstractString, t::Int;
-                           max_px::Int = 512, z_keep::Int = 12,
+                           max_px::Int = 512, z_keep::Int = 12, level::Int = 0,
                            z_lo_frac::Real = 0.0, z_hi_frac::Real = 1.0)
-    arr, caxes = open_level0(zarr_path)
+    chw = preview_chw(zarr_path, t; max_px, z_keep, level, z_lo_frac, z_hi_frac)
+    # sRGB-encode before writing PNG bytes — every image viewer treats an 8-bit PNG as sRGB, so a
+    # linear composite would read ~2× dimmer than the WebGPU volume viewer's canvas shows.
+    png_bytes(srgb_encode(composite_rgb(chw, preview_specs(chw, props_path))))
+end
+
+"""The viewer's saved colours + contrast for `chw`'s channels, else per-channel percentile contrast in
+the default palette — what a preview of an image no viewer has tuned looks like."""
+function preview_specs(chw::AbstractArray{<:Real,3}, props_path::AbstractString)
+    specs = layer_display_specs(props_path)
+    (specs === nothing || length(specs) < size(chw, 1)) || return specs
+    [percentile_spec(view(chw, c, :, :), DEFAULT_CMAPS[mod1(c, 4)]) for c in 1:size(chw, 1)]
+end
+
+function png_bytes(img::AbstractMatrix)
+    io = IOBuffer()
+    PNGFiles.save(io, img)
+    take!(io)
+end
+
+"""
+    preview_chw(zarr_path, t; max_px, z_keep, level, z_lo_frac, z_hi_frac) -> (C, Y, X) array
+
+Timepoint `t` (0-based) of pyramid level `level`, z max-projected over the kept z-range and
+subsampled in xy so the long side ≤ `max_px`. Raw stored values — no contrast applied.
+"""
+function preview_chw(zarr_path::AbstractString, t::Int;
+                     max_px::Int = 512, z_keep::Int = 12, level::Int = 0,
+                     z_lo_frac::Real = 0.0, z_hi_frac::Real = 1.0)
+    arr, caxes = open_level(zarr_path, level)
     nd = ndims(arr)
     dims = axis_dims(caxes, nd)
     jy, jx = dims["y"], dims["x"]
@@ -313,18 +347,7 @@ function render_preview_frame(zarr_path::AbstractString, props_path::AbstractStr
     C, Y, X = size(chw)
     step = max(1, cld(max(Y, X), max_px))
     step > 1 && (chw = chw[:, 1:step:Y, 1:step:X])
-
-    specs = layer_display_specs(props_path)
-    if specs === nothing || length(specs) < size(chw, 1)
-        specs = [percentile_spec(view(chw, c, :, :), DEFAULT_CMAPS[mod1(c, 4)]) for c in 1:size(chw, 1)]
-    end
-    # sRGB-encode before writing PNG bytes — every image viewer treats an 8-bit PNG as sRGB, so a
-    # linear composite would read ~2× dimmer than the WebGPU volume viewer's canvas shows.
-    img = srgb_encode(composite_rgb(chw, specs))
-
-    io = IOBuffer()
-    PNGFiles.save(io, img)
-    take!(io)
+    chw
 end
 
 caxes_or_fallback(caxes, nd) = length(caxes) == nd ? caxes : ["t", "c", "z", "y", "x"][(end - nd + 1):end]
@@ -343,20 +366,26 @@ function percentile_spec(plane, cmap::String)
     (lo, hi, cmap, true)
 end
 
-# Small bounded in-memory frame cache (server-lifetime). Key includes the props-file mtime so changing
-# the viewer's colours invalidates cached frames. FIFO eviction — a preview session touches few frames.
-const _RENDER_CACHE       = Dict{String,Vector{UInt8}}()
+# Small bounded in-memory render cache (server-lifetime): rendered PNG bytes, or a projected block
+# (`thumbnails_api.jl`). The caller's key carries whatever invalidates the value (a props-file or store
+# mtime). FIFO eviction. Locked: handlers run on several threads (`-t auto`); `produce` runs outside the
+# lock, so two threads missing on one key may both compute it — the second store wins, harmlessly.
+const _RENDER_CACHE       = Dict{String,Any}()
 const _RENDER_CACHE_ORDER = String[]
 const _RENDER_CACHE_MAX   = 256
+const _RENDER_CACHE_LOCK  = ReentrantLock()
 function cached_render!(key::String, produce)
-    haskey(_RENDER_CACHE, key) && return _RENDER_CACHE[key]
+    hit = lock(() -> get(_RENDER_CACHE, key, nothing), _RENDER_CACHE_LOCK)
+    hit === nothing || return hit
     v = produce()
-    _RENDER_CACHE[key] = v; push!(_RENDER_CACHE_ORDER, key)
-    if length(_RENDER_CACHE_ORDER) > _RENDER_CACHE_MAX
-        delete!(_RENDER_CACHE, popfirst!(_RENDER_CACHE_ORDER))
+    lock(_RENDER_CACHE_LOCK) do
+        haskey(_RENDER_CACHE, key) || push!(_RENDER_CACHE_ORDER, key)
+        _RENDER_CACHE[key] = v
+        length(_RENDER_CACHE_ORDER) > _RENDER_CACHE_MAX && delete!(_RENDER_CACHE, popfirst!(_RENDER_CACHE_ORDER))
     end
     v
 end
+cached_render!(produce, key::String) = cached_render!(key, produce)   # `cached_render!(key) do … end`
 
 # The decoded-chunk cache `read_native` reads through. Here, with `using Zarr`, because it is the other
 # half of this file's carve-out (docs/todo/SLAB_READ_PERF_PLAN.md, Decision 11) — and so every script

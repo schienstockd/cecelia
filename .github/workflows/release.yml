@@ -37,15 +37,17 @@ jobs:
           npm ci
           npm run build
 
-      # The generated user-docs pages (user-docs/using-ai.md, user-docs/training.md) as stamped A4 PDFs, attached
-      # to the release so a facility can read and print them without installing anything. Built from the
-      # committed markdown and images (no capture here); `npm ci` above brought playwright-core and marked,
-      # and the runner's Chrome prints. Never committed. scripts/docshots/pdf.mjs.
+      # The generated user-docs pages (every top-level user-docs page with a shot set) as stamped A4 PDFs,
+      # zipped into ONE release asset, cecelia-manuals.zip, so a facility can read and print them without
+      # installing anything. Zipped by glob: a new page lands in the zip with no change here. Built from
+      # the committed markdown and images (no capture here); `npm ci` above brought playwright-core and
+      # marked, and the runner's Chrome prints. Never committed. scripts/docshots/pdf.mjs.
       - name: Print user-docs PDFs
         run: |
-          node scripts/docshots/pdf.mjs --out out/docs
-          mv out/docs/training.pdf out/docs/cecelia-training-run-sheet.pdf
-          mv out/docs/using-ai.pdf out/docs/cecelia-using-ai.pdf
+          node scripts/docshots/pdf.mjs --out out/docs/cecelia-manuals
+          mv out/docs/cecelia-manuals/training.pdf out/docs/cecelia-manuals/training-run-sheet.pdf
+          (cd out/docs && zip -r -X cecelia-manuals.zip cecelia-manuals)
+          unzip -l out/docs/cecelia-manuals.zip
 
       # bioformats2raw (~190 MB) is NOT bundled — install.sh/install.ps1 fetch the latest release
       # into <install>/bioformats2raw at install time (keeps the bundle ~6 MB). See docs/SHIPPING.md.
@@ -115,8 +117,7 @@ jobs:
             install.ps1
             uninstall.sh
             uninstall.ps1
-            out/docs/cecelia-training-run-sheet.pdf
-            out/docs/cecelia-using-ai.pdf
+            out/docs/cecelia-manuals.zip
           # The CHANGELOG section is the body (see the step above). `generate_release_notes` would
           # APPEND the PR list underneath it, which is the thing being removed.
           body_path: RELEASE_NOTES.md

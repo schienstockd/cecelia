@@ -28,6 +28,8 @@ import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import CcCycleButton from './CcCycleButton.vue'
 import { isTimeSeries } from '../utils/imageState'
+import { profileStorage } from '../utils/profileStorage'
+import { allShown, loadThumb, parseShown, serializeShown, thumbsStorageKey, toggleAllShown, toggleShown } from '../utils/imageThumbs'
 
 const props = defineProps<{
   setUid: string
@@ -304,6 +306,7 @@ const images = computed(() => {
   return s ? sortImages(all, s.key, s.dir) : all
 })
 
+
 // ── Remembered selection ────────────────────────────────────────────────────
 // Persist the checkbox selection in the project store (keyed by scope + set) so it survives
 // navigating away from the page and back. `commit` is called after every change; `seed` restores
@@ -515,6 +518,8 @@ const COLUMNS = computed<SelectionColumn[]>(() => [
   // the table was rescaled, and the movies table had already shown the answer —
   // put them in the name cell, where they simply refuse to shrink and the name gives way instead.
   { key: 'name', label: 'Name', sortable: true, sticky: true, width: defaultWidth('name') },
+  // The thumbnail column — the table's mini map. Header toggles the whole set, each cell its own row.
+  { key: 'thumb', label: '', fixed: true, width: anyThumbShown.value ? 128 : 40 },
   ...channelIndices.value.map(idx => ({ key: `ch:${idx}`, label: String(idx), width: 90 })),
   ...attrKeys.value.map(k => ({ key: `attr:${k}`, label: k, sortable: true, width: 110 })),
   ...(!props.showAttrs ? [{ key: 'ch', label: 'Ch', sortable: true, fixed: true, width: 48 }] : []),
@@ -550,6 +555,46 @@ const selectedList = computed<string[]>({
 const unselectableUids = computed(() =>
   canSelectExcluded.value ? [] : images.value.filter(isExcluded).map(i => i.uid))
 
+
+// ── Row thumbnails ───────────────────────────────────────────────────────────
+// The table's mini map: its own column — a per-row toggle, and one in the header for the set — shows the
+// image at t0, z-projected, coloured as the viewer shows it. Which rows show one is per project and
+// per person (utils/imageThumbs.ts); the data URLs are fetched on demand and cached per version.
+const thumbsShown = ref<Set<string>>(new Set())
+watch(() => projectMeta.current?.uid, uid => {
+  thumbsShown.value = uid ? parseShown(profileStorage.getItem(thumbsStorageKey(uid))) : new Set()
+}, { immediate: true })
+function saveThumbsShown(next: Set<string>) {
+  thumbsShown.value = next
+  const uid = projectMeta.current?.uid
+  if (uid) profileStorage.setItem(thumbsStorageKey(uid), serializeShown(next))
+}
+const thumbableUids = computed(() => images.value.filter(isImported).map(i => i.uid))
+const allThumbsShown = computed(() => allShown(thumbsShown.value, thumbableUids.value))
+const toggleThumb = (img: CciaImage) => saveThumbsShown(toggleShown(thumbsShown.value, img.uid))
+const toggleAllThumbs = () => saveThumbsShown(toggleAllShown(thumbsShown.value, thumbableUids.value))
+const thumbShown = (img: CciaImage) => isImported(img) && thumbsShown.value.has(img.uid)
+const anyThumbShown = computed(() => images.value.some(thumbShown))   // narrow column until one is on
+
+/** uid → data URL ('' = loading, null = nothing to show). */
+const thumbUrls = ref<Record<string, string | null>>({})
+const thumbKeys = new Map<string, string>()    // uid → the version its URL (or request) is for
+watch([thumbsShown, images], () => {
+  const pu = projectMeta.current?.uid
+  if (!pu) return
+  for (const img of images.value) {
+    if (!thumbShown(img)) continue
+    const key = `${img.uid}|${img.filepath ?? ''}`
+    if (thumbKeys.get(img.uid) === key) continue
+    thumbKeys.set(img.uid, key)
+    thumbUrls.value = { ...thumbUrls.value, [img.uid]: '' }
+    void loadThumb(pu, img.uid, img.filepath).then(url => {
+      if (thumbKeys.get(img.uid) !== key) return          // a newer version took over mid-flight
+      if (url === null) thumbKeys.delete(img.uid)         // retry on the next toggle
+      thumbUrls.value = { ...thumbUrls.value, [img.uid]: url }
+    })
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -679,6 +724,26 @@ const unselectableUids = computed(() =>
     </template>
 
     <!-- channel names: editable only on the Metadata page (editableMeta); read-only elsewhere -->
+    <template #head-thumb>
+      <button v-if="thumbableUids.length" class="cc-btn cc-btn-bare cc-btn-icon"
+        :class="{ 'cc-btn-on': allThumbsShown }" @click.stop="toggleAllThumbs"
+        v-tooltip.bottom="allThumbsShown ? 'Hide all thumbnails' : 'Show all thumbnails'">
+        <i class="pi pi-image" />
+      </button>
+    </template>
+    <template #cell-thumb="{ row: img }">
+      <span class="thumb-cell" @click.stop>
+        <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': thumbShown(img) }"
+          :disabled="!isImported(img)" @click.stop="toggleThumb(img)"
+          v-tooltip.right="thumbShown(img) ? 'Hide thumbnail' : 'Show thumbnail'"><i class="pi pi-image" /></button>
+        <template v-if="thumbShown(img)">
+          <img v-if="thumbUrls[img.uid]" :src="thumbUrls[img.uid]!" class="row-thumb" :alt="img.name"
+            @click.stop="openViewer(img)" v-tooltip.right="'Open this image in the viewer'" />
+          <i v-else-if="thumbUrls[img.uid] === ''" class="pi pi-spin pi-spinner cc-muted cc-fs-xs" />
+          <span v-else class="cc-muted cc-fs-xs">No preview</span>
+        </template>
+      </span>
+    </template>
     <template v-for="idx in channelIndices" :key="'ch-' + idx" #[`cell-ch:${idx}`]="{ row: img }">
       <template v-if="editableMeta && channelEditable(img, idx)">
         <input v-if="isEditing(img.uid, 'ch:' + idx)" v-tooltip.bottom="'Enter to save, Esc to cancel'"
@@ -921,6 +986,14 @@ const unselectableUids = computed(() =>
 
 /* exclusion note — editable reason under the uid, only on excluded rows */
 .note-row { display: flex; align-items: center; margin-top: 0.15rem; }
+
+/* Thumbnail column — the table's mini map. Fixed height so a shown row is predictable; the width follows
+   the image's aspect within the column. Clicking it opens the viewer, the same as the eye. */
+.thumb-cell { display: flex; align-items: flex-start; gap: 0.25rem; min-width: 0; }
+.row-thumb {
+  height: 80px; width: auto; max-width: calc(100% - 1.75rem); object-fit: contain; cursor: pointer; display: block;
+  border-radius: var(--cc-radius-xs);
+}
 .note-text {
   font-size: var(--cc-fs-xs); color: var(--cc-text-dim); cursor: text;
   display: inline-flex; align-items: center; gap: 0.25rem;
