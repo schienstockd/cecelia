@@ -15,7 +15,7 @@ stack. Per-tag notes are also on the
 
 ### Changed
 
-- **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#PRNUM).
+- **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).
 
 ## [0.2.13] — 2026-11-17
 
