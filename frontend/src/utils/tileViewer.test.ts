@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
-  tileSlotShape, tileMaskSourceId, sameMaskLayer, retryWhenMaskMoved,
+  tileSlotShape, tileMaskSourceId, sameMaskLayer, retryWhenMaskMoved, channelRuns, splitChannelSlab,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -369,5 +369,31 @@ describe('retryWhenMaskMoved', () => {
     await expect(retryWhenMaskMoved(Promise.reject(new Error('409')), a, () => b, () => { again++ }))
       .rejects.toThrow('409')
     expect(again).toBe(1)
+  })
+})
+
+describe('channelRuns — one slab request per contiguous run of wanted channels', () => {
+  const never = () => false
+  it('groups contiguous channels, any order, duplicates once', () => {
+    expect(channelRuns([5, 0, 1, 2, 7, 6, 1], never)).toEqual([[0, 2], [5, 7]])
+  })
+  it('one visible channel is one request', () => {
+    expect(channelRuns([42], never)).toEqual([[42, 42]])
+  })
+  it('nothing wanted, nothing fetched', () => {
+    expect(channelRuns([], never)).toEqual([])
+  })
+  it('a channel that must travel alone (AF preview) splits the run around it', () => {
+    expect(channelRuns([0, 1, 2, 3], c => c === 2)).toEqual([[0, 1], [2, 2], [3, 3]])
+  })
+})
+
+describe('splitChannelSlab — a cTo body is channel-slowest', () => {
+  it('cuts n equal parts in channel order', () => {
+    const b = new Uint8Array([1, 1, 1, 2, 2, 2, 3, 3, 3]).buffer
+    expect(splitChannelSlab(b, 3).map(x => [...new Uint8Array(x)])).toEqual([[1, 1, 1], [2, 2, 2], [3, 3, 3]])
+  })
+  it('refuses a body that is not n equal parts rather than shifting channels', () => {
+    expect(() => splitChannelSlab(new ArrayBuffer(10), 3)).toThrow()
   })
 })

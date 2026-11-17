@@ -62,7 +62,7 @@ import { createBrickVolumeRenderer, type BrickSource } from '../lib/webgpu/brick
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
-  tileGridDims, tileMaskSourceId, retryWhenMaskMoved,
+  tileGridDims, tileMaskSourceId, retryWhenMaskMoved, channelRuns, splitChannelSlab,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -602,13 +602,13 @@ const chMax = computed(() =>
 /** Per-channel percentile window of the first timepoint loaded, behind the "Auto" button. Taken ONCE
  *  per image, like the server's: recomputed per timepoint, playback flickers as the window chases each
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
-const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
+const autoWin = ref<({ lo: number; hi: number; max: number } | undefined)[]>([])
 /** Stash of the LAST fetch's raw per-channel buffers + the row length + bytes-per-voxel needed to
  *  interpret them. Kept so `viewerAutoContrastPercent` can recompute `autoWin` in place without
  *  waiting for the next scrub — the reason the previous "just clear it" approach silently no-op'd
  *  the Auto button. `shallowRef` because the elements are big ArrayBuffers
  *  we never mutate, only replace whole. */
-const lastFetchedBufs = shallowRef<ArrayBuffer[] | null>(null)
+const lastFetchedBufs = shallowRef<(ArrayBuffer | undefined)[] | null>(null)
 const lastFetchedRowLen = ref(1)
 const lastFetchedBpv = ref(2)
 /** Per-channel strided subsample of the last-fetched slab, drawn as the histogram behind each
@@ -616,19 +616,27 @@ const lastFetchedBpv = ref(2)
  *  Populated in the same place as `lastFetchedBufs` so the histogram lands the moment the pixels
  *  do; null while nothing has landed yet (brick renderer path never populates — see the
  *  `setOnBrickLoaded` callback, which only sees per-channel maxima, not the pixels). */
-const channelSamples = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
-function stashForAutoRecompute(bufs: ArrayBuffer[], rowLength: number, bpv: number) {
-  lastFetchedBufs.value = bufs
+const channelSamples = shallowRef<((Uint16Array | Uint8Array) | undefined)[] | null>(null)
+/** `bufs` may have holes — a tile fetch brings only the visible channels. A hole keeps the channel's
+ *  previous buffer when it has the same row length (same geometry), so a hidden channel's histogram
+ *  survives the next tile; otherwise it stays empty until that channel is fetched. */
+function stashForAutoRecompute(bufs: readonly (ArrayBuffer | undefined)[], rowLength: number, bpv: number) {
+  const prev = lastFetchedRowLen.value === rowLength && lastFetchedBpv.value === bpv
+    ? lastFetchedBufs.value : null
+  const merged = Array.from({ length: Math.max(bufs.length, prev?.length ?? 0) },
+                            (_, c) => bufs[c] ?? prev?.[c])
+  lastFetchedBufs.value = merged
   lastFetchedRowLen.value = rowLength
   lastFetchedBpv.value = bpv
-  channelSamples.value = bufs.map(b => stridedSamples(slabView(b, bpv), rowLength))
+  channelSamples.value = merged.map(b => (b ? stridedSamples(slabView(b, bpv), rowLength) : undefined))
 }
 function recomputeAutoWin() {
   const bufs = lastFetchedBufs.value
   if (!bufs) { autoWin.value = []; return }
-  autoWin.value = bufs.map(b =>
-    contrastFromSlab(slabView(b, lastFetchedBpv.value), lastFetchedRowLen.value,
-                     undefined, settings.viewerAutoContrastPercent))
+  autoWin.value = bufs.map(b => (b
+    ? contrastFromSlab(slabView(b, lastFetchedBpv.value), lastFetchedRowLen.value,
+                       undefined, settings.viewerAutoContrastPercent)
+    : undefined))
 }
 /** The channels' `lo`/`hi` as the SERVER shipped them (autosaved or first-load percentile) — the
  *  reset target. Snapshot once at meta load; a drag on the slider only changes the live values, so
@@ -2813,9 +2821,11 @@ function gotoT(tp: number) {
 // thresholds cannot pile up requests. Same reason the timepoint pump exists.
 //
 // Load discipline mirrors the timepoint work: the visible tiles LOAD first (row-major inside the
-// viewport), then one halo ring outward at Chebyshev distance 1. The atlas holds all channels of one
-// tile atomically — a channel toggle costs zero and neither redraws nor refetches — so a fetch turns
-// into one HTTP per channel and one `uploadTile(key, channelBytes[])` per tile.
+// viewport), then one halo ring outward at Chebyshev distance 1. A tile is fetched with the VISIBLE
+// channels only, one `cTo` request per contiguous run (`channelRuns`): fetching every channel made a
+// 60-channel PhenoCycler slide pull 60× the bytes for its one visible marker. A channel switched on
+// later is fetched for the resident tiles alone (`missingChannels`) and draws black until it lands;
+// one switched off and back on is still resident and costs nothing.
 
 /** One outward ring of tiles beyond the viewport is prefetched. Two rings quadruples the fetch
  *  count for a marginal gain — an outward pan is asymmetric like a scrub, but pans in every
@@ -2850,12 +2860,28 @@ function computeViewportL0(): ViewportL0 | null {
 function missingTiles(): TileKey[] {
   const tr = tileRenderer.value
   if (!tr) return []
+  const want = tileChannels()
   const out: TileKey[] = []
   for (const key of viewportTileKeys()) {
-    if (tr.hasTile(key)) { tr.touchTile(key); continue }
+    if (tileComplete(tr, key, want)) { tr.touchTile(key); continue }
     out.push(key)
   }
   return out
+}
+
+/** Resident AND holding every visible channel — the ONE test of "nothing to fetch", for the list of
+ *  missing tiles and the pump alike. A resident tile missing a channel switched on since it landed is
+ *  NOT complete: `fetchTile` brings that channel alone. */
+function tileComplete(tr: TileRenderer, key: TileKey, want = tileChannels()): boolean {
+  return tr.hasTile(key) && tr.missingChannels(key, want).length === 0
+}
+
+/** The channels a tile fetch brings: the visible ones the atlas holds a layer for. */
+function tileChannels(): number[] {
+  const m = meta.value
+  if (!m) return []
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  return m.channels.slice(0, nch).flatMap((ch, c) => (ch.visible ? [c] : []))
 }
 
 /** The KEEP set for `tileEvictions` — every tile the current viewport wants right now, so an eviction
@@ -2904,13 +2930,19 @@ async function fetchTile(key: TileKey): Promise<boolean> {
   const enc = settings.viewerCompress ? 'zstd' : 'identity'
   const nch = Math.min(m.nC, MAX_CHANNELS)
   const rect = tileFetchRect(key.tx, key.ty, lvl)
+  // Only the visible channels this tile does not hold yet. None (every channel hidden) still uploads
+  // the tile, so it counts as resident and the loading chip clears.
+  const want = tr.missingChannels(key, tileChannels())
+  // An AF-preview channel comes from its own store, so it is a request of its own.
+  const runs = channelRuns(want, c => !!previewImageFor(c))
   try {
-    // Channels in parallel — same shape as `fetchTimepoint`, and for the same reason: independent
-    // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
-    const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+    // Runs in parallel — independent reads on the server's thread pool. One contiguous slab per
+    // response, channel slowest, cut back into one buffer per channel.
+    const got = await Promise.all(runs.map(async ([c, cTo]) => {
       const afPrev = previewImageFor(c)
       const url = slabUrl({
         projectUid, imageUid, valueName: valueName.value, t: key.t, c, enc, level: key.level,
+        cTo: cTo > c ? cTo : undefined,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
         // reachable at nZ > 1). `t` comes from the tile key so a scrub past a resident tile fetches
         // the current-t version — the atlas caches across timepoints (Phase F).
@@ -2926,25 +2958,36 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         rev: cacheClearRev.value || undefined,
       })
       const res = await fetch(url, { cache: 'default', signal: ac.signal })
-      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
-      const buf = await res.arrayBuffer()
-      return buf
+      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}–${cTo}: ${res.status}`)
+      return { c, parts: splitChannelSlab(await res.arrayBuffer(), cTo - c + 1) }
     }))
+    // Indexed by channel; a channel not fetched is a hole.
+    const bufs: (ArrayBuffer | undefined)[] = new Array(nch)
+    for (const { c, parts } of got) parts.forEach((b, i) => { bufs[c + i] = b })
     // Grow `seenMax` from the tile's own bytes — same discipline as `fetchTimepoint`. Without this
     // the contrast slider's ceiling fell back to `Math.max(ch.hi, 1)`, so dragging `hi` down shrank
     // the slider until it collapsed to 0-1 with no way back. Only ever grows —
     // a ceiling that shrinks re-scales the slider under a value the user set.
     const rowLen = rect.xTo - rect.x + 1
-    seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), rowLen)))
-    // Seed the auto-window off the first tile that lands — same p01/p999 percentile pass as the
-    // volume path uses (`contrastFromSlab`). Once, held: recomputed per tile the window would chase
-    // each tile's own distribution and the auto button would land somewhere new every time.
-    if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b =>
-        contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen, undefined, settings.viewerAutoContrastPercent))
+    const nextMax = seenMax.value.slice()
+    bufs.forEach((b, c) => {
+      if (b) nextMax[c] = Math.max(nextMax[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), rowLen))
+    })
+    if (got.length) seenMax.value = nextMax
+    // Seed the auto-window, per channel, off the first tile that brings it — same p01/p999
+    // percentile pass as the volume path (`contrastFromSlab`). Once, held: recomputed per tile the
+    // window would chase each tile's own distribution and Auto would land somewhere new every time.
+    if (bufs.some((b, c) => b && !autoWin.value[c])) {
+      const next = autoWin.value.slice()
+      bufs.forEach((b, c) => {
+        if (b && !next[c]) {
+          next[c] = contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen, undefined,
+                                     settings.viewerAutoContrastPercent)
+        }
+      })
+      autoWin.value = next
     }
-    stashForAutoRecompute(bufs, rowLen, m.bytesPerVoxel)
+    if (got.length) stashForAutoRecompute(bufs, rowLen, m.bytesPerVoxel)
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
     // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
@@ -3230,7 +3273,7 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
   })
   await Promise.allSettled([...labelJobs, ...want.map(async key => {
     if (!isCurrent()) return
-    if (tr.hasTile(key)) { tr.touchTile(key); return }
+    if (tileComplete(tr, key)) { tr.touchTile(key); return }
     const ok = await fetchTile(key)
     if (!ok) return
     // Its mask follows the image — drawn without one until it lands, never with another tile's.
@@ -5013,6 +5056,7 @@ async function loadVersion(refit: boolean) {
   seenMax.value = []
   hiCeiling.value = []                   // sibling of seenMax — a new image starts a fresh ceiling
   channelSamples.value = null            // histogram bars belong to the previous image's pixels
+  lastFetchedBufs.value = null           // …and so do the buffers a tile's hidden channels fall back to
   // Fit BEFORE reallocate: `useTiles` and `slabLevel` derive from `cam.dist`, so a stale dist=1
   // would allocate the wrong pipeline for a big image. `fitDist` is seeded here so the reset button
   // works even if a saved camera pose is later restored on top.

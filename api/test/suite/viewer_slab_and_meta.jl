@@ -415,6 +415,24 @@ end
         # a request. The route header assertions (`X-Slab-Shape`, `X-Slab-Level`) belong in an
         # integration test; here the point is that a tile request lands on the same voxels.
         # (The route itself needs a project_uid to resolve, which is set up in the `pyramid QC` fixture.)
+
+        # ── Cold-start contrast reads the COARSEST level that still has `target` px on its long side.
+        # Level 0 was read whole and then strided: ~83 GB of decode on a 60-channel PhenoCycler slide.
+        # L1's stamp (+30000) makes the level it read visible in the window it returns.
+        a1, _ = open_level(p, 1)
+        @test _sample_level(p, max(l1_nx, l1_ny))[1] == a1          # L1's long side (4) meets target 4
+        @test _sample_level(p, max(l1_nx, l1_ny) + 1)[1] == open_level0(p)[1]   # 5 → only L0 has it
+        @test all(s -> s[1] >= lvl_stamp, _sampled_specs(p, nc; target = 4))
+        @test all(s -> s[2] < lvl_stamp, _sampled_specs(p, nc; target = 8))
+    end
+
+    # A coarse level with a different channel count (or z depth) is not a sample of THIS image's
+    # channels — the sampler falls back to level 0 rather than indexing off its end.
+    mktempdir() do d
+        p = make_pyramid(joinpath(d, "fewer-c.ome.zarr"), ["t", "c", "z", "y", "x"],
+                         [(8, 6, 2, 2, 1), (4, 3, 2, 1, 1)], (buf, lvl) -> fill!(buf, UInt16(lvl)))
+        @test _sample_level(p, 2)[1] == open_level0(p)[1]
+        @test length(_sampled_specs(p, 2; target = 2)) == 2
     end
 end
 

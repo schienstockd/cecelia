@@ -337,3 +337,32 @@ export function tileMapCells(
   }
   return out
 }
+
+/**
+ * The channels a tile fetch asks for, as `[first, last]` runs (inclusive) — one `/api/viewer/slab`
+ * request per run via `cTo`, instead of one per channel. On a 60-channel u8 slide one 512² tile cost
+ * 105–120 ms as 60 per-channel requests (6 in flight, as a browser allows) against 35–60 ms as one
+ * `cTo` request. `want` is any order, duplicates allowed. A channel `alone(c)` says must travel by
+ * itself — an AF-preview channel, whose bytes come from another store — is a run of one.
+ */
+export function channelRuns(want: readonly number[], alone: (c: number) => boolean): [number, number][] {
+  const cs = [...new Set(want)].sort((a, b) => a - b)
+  const runs: [number, number][] = []
+  for (const c of cs) {
+    const last = runs[runs.length - 1]
+    if (last && last[1] === c - 1 && !alone(c) && !alone(last[1])) last[1] = c
+    else runs.push([c, c])
+  }
+  return runs
+}
+
+/** Cut a `cTo` slab of `n` channels — channel slowest (`X-Slab-Shape: nc,nz,ny,nx`) — into one
+ *  buffer per channel. Throws when the body is not `n` equal parts: a short read would otherwise
+ *  shift every later channel's pixels into the wrong channel. */
+export function splitChannelSlab(buf: ArrayBuffer, n: number): ArrayBuffer[] {
+  if (n < 1 || buf.byteLength % n !== 0) {
+    throw new Error(`Channel slab of ${buf.byteLength} bytes does not split into ${n} channels`)
+  }
+  const per = buf.byteLength / n
+  return Array.from({ length: n }, (_, i) => buf.slice(i * per, (i + 1) * per))
+}
