@@ -8,6 +8,7 @@ import { checkShotSets, fillFacts, guideIds, imageFile, setImages, shotAnchors, 
 import { IN_APP_SHOTS } from '../../../user-docs/shots/in-app.ts'
 import { TIPS } from '../lib/tips'
 import { FEATURE_CARDS, featureFor } from '../lib/whatsNew'
+import { docShot } from '../lib/docShots'
 import { figureGeometry, labelBox, type ShotMeta } from '../../../user-docs/shots/figure.ts'
 
 // The app's source, read the way guides.test.ts reads it: a shot's data-guide id must exist there, so a
@@ -148,6 +149,21 @@ describe("What's new feature cards", () => {
     expect(featureFor([20, 30], '', cards)?.title).toBe('B')
     expect(featureFor([], 'Fixes (#20)', cards)?.title).toBe('A')
     expect(featureFor([21], '#200', cards)).toBeNull()
+  })
+
+  // The files are captured at 2× (scripts/docshots/capture.mjs → SCALE); drawn at their own pixels a
+  // card showed the app's controls at twice their size. The card's width is the app's own.
+  it("a card's shot shows at the app's size: half the file's pixel width", () => {
+    // the files as data URLs (node:fs has no types here); a PNG's width is IHDR bytes 16–19, big-endian
+    const DATA = import.meta.glob('../../../user-docs/images/app-*.png', { query: '?inline', import: 'default', eager: true }) as Record<string, string>
+    const fileWidth = (url: string) => {
+      const name = url.split('/').pop()!.split('?')[0]
+      const b = atob(DATA[`../../../user-docs/images/${name}`].split(',')[1]).slice(16, 20)
+      return [...b].reduce((w, c) => w * 256 + c.charCodeAt(0), 0)
+    }
+    const shots = FEATURE_CARDS.flatMap(c => (['light', 'dark'] as const).map(s => docShot(c.shot.id, s))).filter(x => !!x)
+    expect(shots.length).toBeGreaterThan(0)
+    for (const shot of shots) expect(shot.width).toBe(fileWidth(shot.url) / 2)
   })
 })
 

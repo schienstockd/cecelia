@@ -18,7 +18,7 @@
   **Three modes, because "the tracks" is three different questions.**
   - *Paths* — where the cells actually were. The spatial picture, the one viewer shows.
   - *Star* — every track translated to a common origin (celltrackR's `plotTracks`/rose family, Wortel
-    et al. 2021, doi:10.1016/j.crmeth.2021.100006). Position is discarded and SHAPE survives, which
+    et al. 2021, doi:10.1016/j.immuno.2021.100003). Position is discarded and SHAPE survives, which
     is what you compare between conditions: directed migration fans out, random walk fills a disc.
   - *Rose* — one straight arrow per track, start to end. Net displacement, when hundreds of paths
     have turned the star into a scribble.

@@ -61,9 +61,17 @@ it is "does it differ between groups of images?". The spec declares
 run, `pop` for one of the run's populations or pairs) to the same `/api/plot_data`. The backend turns
 the run into a `pop_df`-shaped frame — one row per (image, population) — and runs the ordinary
 `_summary_agg`, so attribute grouping, box/strip/bar, the group tests and CSV export are the existing
-ones with the image as the unit. It is precomputed (`isPrecomputedSpec`), so it takes no population
-selection; the response reports `suffixes` and `pops` for the two header pickers, and a stale pick
-falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
+ones with the image as the unit. The response reports `suffixes` (the run picker) and `pops` (every
+population the run holds). Two kinds:
+- **Keyed by picker populations** (`imageMetric.pickPops: true` — spatial pattern, whose run scores
+  `<value_name><path>` targets): the population picker selects which to plot (`pops: [...]`, in pick
+  order) and greys out the ones the run has no result for (`PlotReadout.available`). Several
+  populations × attribute groups are tested **within each population** (`_stats_within_pops`): pairs
+  only compare a population with itself across groups, each population its own correction family, no
+  omnibus or letters across populations.
+- **Otherwise** (interaction pairs and proximity "population · band" rows, which are not picker populations) it is precomputed
+  (`isPrecomputedSpec`): no population selection, a header dropdown picks one of `pops`, and a stale
+  pick falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
 Specs: `spatial_pattern_summary.json` (source `spatialPattern`), `spatial_proximity_summary.json` (source
 `proximityProfile`, `pop` = "population · band") and `spatial_interaction_pairs.json`
 (source `neighbourStats`, `pop` = the pair "A × B"). With `shufflePops` set on an interaction run (the

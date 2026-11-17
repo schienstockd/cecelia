@@ -253,8 +253,8 @@ function api_track_paths(req::HTTP.Request)
 end
 
 # ── GET /api/tracking/diagnostics — the celltrackR QC battery ─────────────────
-# MSD, velocity autocorrelation, step-angle-to-the-volume-edge, pair angle-vs-distance, and the
-# Hotelling drift test — the whole battery from ONE package roll-up (`track_diagnostics`), which is
+# MSD, velocity autocorrelation, step-angle-to-the-volume-edge, pair angle-vs-distance, the
+# Hotelling drift test, and the per-movie headings — the whole battery from ONE package roll-up (`track_diagnostics`), which is
 # the same call `tracking.track_measures` banks as QC. The plot and the finding therefore cannot
 # disagree about whether an image drifts.
 #
@@ -316,6 +316,10 @@ function api_track_diagnostics(req::HTTP.Request)
                                   rho = d.durationBias.rho, n = d.durationBias.n,
                                   biased = d.durationBias.biased),
                 order = (; t = d.order.t, phi = d.order.phi, n = d.order.n, chance = d.order.chance),
+                # one entry per MOVIE, never pooled — a bearing means nothing across images
+                # (`track_headings.jl`); `alpha` is the level the panel's critical ring is drawn at
+                headings = (; movies = track_group_headings(g, d), alpha = HEADING_ALPHA,
+                              minSteps = HEADING_MIN_STEPS, minTracks = HEADING_MIN_TRACKS),
                 summary = (; msdSlope = d.summary.msdSlope, motionKind = d.summary.motionKind,
                              persistenceLag = d.summary.persistenceLag,
                              furthM = d.summary.furthM, furthP = d.summary.furthP,

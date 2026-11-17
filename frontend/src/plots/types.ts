@@ -91,7 +91,9 @@ export interface PlotSpec {
     // A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
     // per image, the populations (or interaction pairs) fixed by the run, grouped by image attribute. `source` is a key of the
     // backend's IMAGE_METRIC_SOURCES; `task` names the task that produces it, for the empty state.
-    imageMetric?: { source: string; task: string }
+    // `pickPops`: the run is keyed by picker populations (`<value_name><path>`), so the population picker
+    // selects which to plot instead of the run fixing them (popTypes.ts imageMetricPicksPops)
+    imageMetric?: { source: string; task: string; pickPops?: boolean }
     // display names for the spec's own measure keys (e.g. `nnRatio` → "NN ratio")
     measureLabels?: Record<string, string>
     // a readout fixed by analysis runs rather than the population selection (see isPrecomputedSpec):

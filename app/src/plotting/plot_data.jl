@@ -251,9 +251,9 @@ function _series_n_images(sub::DataFrame, measure::AbstractString)::Int
                   if col[i] isa Real && isfinite(col[i]) && !isempty(String(sub.uID[i]))))
 end
 
-function _stats_from_series(groups, measure::AbstractString, test::Symbol)
+function _stats_from_series(groups, measure::AbstractString, test::Symbol;
+                            labels::AbstractVector{<:AbstractString} = _stats_labels(groups))
     isempty(measure) && return nothing
-    labels = _stats_labels(groups)
     pairs = Pair{String,Vector{Float64}}[]
     n_images = Int[]
     for (i, s) in enumerate(groups)
@@ -272,6 +272,57 @@ function _stats_from_series(groups, measure::AbstractString, test::Symbol)
     catch e
         Dict{String,Any}("error" => sprint(showerror, e))
     end
+end
+
+# WITHIN-POPULATION stats: the series are populations × image-attribute groups, and the question is
+# "do the groups differ FOR THIS population" — one test per population, never one omnibus across every
+# box (that compares DAPI/A in WT with DAPI/B in KO). Each population is its own family: its pairs are
+# adjusted among themselves, as if plotted alone. The parts merge into ONE result in the renderer's
+# shape — pairs only within a population (a 2-group test's omnibus becomes its pair) — with the labels
+# computed over the WHOLE series set, so they match the chart's (`serverStatsLabels`). No omnibus p and
+# no letters: neither has a meaning across populations, and per-population letters would repeat "a"
+# across populations as if they matched. One population = the plain test, unchanged.
+function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
+    pkey(g) = (g.vn, g.sid)
+    keys = unique(pkey.(groups))
+    length(keys) < 2 && return _stats_from_series(groups, measure, test)
+    labels = _stats_labels(groups)
+    parts = Dict{String,Any}[]
+    for k in keys
+        idx = findall(g -> pkey(g) == k, groups)
+        r = _stats_from_series(groups[idx], measure, test; labels = labels[idx])
+        (r === nothing || haskey(r, "error")) && continue
+        push!(parts, r)
+    end
+    isempty(parts) && return nothing
+    length(parts) == 1 && return only(parts)
+    pairs = Dict{String,Any}[]
+    for r in parts
+        ps = r["comparisonPairs"]
+        if isempty(ps) && length(r["groups"]) == 2
+            push!(pairs, Dict{String,Any}("a" => r["groups"][1], "b" => r["groups"][2],
+                                          "pAdj" => r["pValue"], "significance" => r["significance"]))
+        else
+            append!(pairs, ps)
+        end
+    end
+    tests = unique(String[r["test"] for r in parts])
+    groups_out = reduce(vcat, [r["groups"] for r in parts])
+    Dict{String,Any}(
+        "test"            => length(tests) == 1 ? only(tests) : join(tests, "+"),
+        "groups"          => groups_out,
+        "n"               => reduce(vcat, [r["n"] for r in parts]),
+        "means"           => reduce(vcat, [r["means"] for r in parts]),
+        "medians"         => reduce(vcat, [r["medians"] for r in parts]),
+        "statistic"       => NaN,
+        "pValue"          => NaN,
+        "significance"    => "",
+        "methodNote"      => join(unique(String[r["methodNote"] for r in parts]), "; ") * ", within each population",
+        "autoReason"      => join(unique(filter(!isempty, String[r["autoReason"] for r in parts])), "; "),
+        "comparisonPairs" => pairs,
+        "letters"         => fill("", length(groups_out)),
+        "findings"        => unique(reduce(vcat, [r["findings"] for r in parts])),
+    )
 end
 
 # Evenly-strided downsample to ≤ cap values (keeps the distribution shape; deterministic, so it is
@@ -594,7 +645,10 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       matrix_normalize::Symbol=:none,
                       attr_map::Union{Nothing,AbstractDict}=nothing,
                       pop_order=nothing,
-                      stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
+                      stats_enabled::Bool=false, stats_test::Symbol=:auto,
+                      stats_within_pops::Bool=false)::Dict{String,Any}
+    # `stats_within_pops`: test the attribute groups within each population (`_stats_within_pops`)
+    stats_fn = stats_within_pops ? _stats_within_pops : _stats_from_series
     # matrix/heatmap pools the whole frame into one grid — handled before the per-series charts below.
     if chart_type == "matrix"
         matrix_mode === nothing && error("plot_summary_data: matrix needs a `matrix_mode` (profile | crosstab)")
@@ -763,7 +817,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         result = withgb(Dict{String,Any}("chartType" => "points", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
         any_ids && (result["pointIdKind"] = granularity == :track ? "track" : "cell")
-        stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
+        stats_enabled && (cmp = stats_fn(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
 
     elseif chart_type == "histogram"
@@ -821,7 +875,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         end
         result = withgb(Dict{String,Any}("chartType" => "bar", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
-        stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
+        stats_enabled && (cmp = stats_fn(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
 
     elseif chart_type == "percent"
@@ -916,7 +970,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         result = withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
         any_ids && (result["pointIdKind"] = granularity == :track ? "track" : "cell")
-        stats_enabled && (cmp = _stats_from_series(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
+        stats_enabled && (cmp = stats_fn(groups, m, stats_test)) !== nothing && (result["comparisons"] = cmp)
         return result
     else
         error("plot_summary_data: unknown chart_type '$chart_type' (expected points | histogram | frequency | bar | percent | count | boxplot)")

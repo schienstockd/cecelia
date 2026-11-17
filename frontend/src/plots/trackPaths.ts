@@ -172,8 +172,8 @@ export function gapHint(cosine: number | null): string {
 /**
  * Star plot (rose plot) — every track translated to start at a common origin.
  *
- * Port of celltrackR's `normalizeTracks()` (Wortel et al. 2021, Cell Reports Methods,
- * doi:10.1016/j.crmeth.2021.100006; vignette `ana-methods` §1.2 "Star plots (Rose plots)"). Overlaying
+ * Port of celltrackR's `normalizeTracks()` (Wortel et al. 2021, ImmunoInformatics,
+ * doi:10.1016/j.immuno.2021.100003; vignette `ana-methods` §1.2 "Star plots (Rose plots)"). Overlaying
  * the starting points is the standard way to SEE directionality: with unbiased migration the paths
  * fan out evenly in all directions, and a population that is actually drifting — or following a
  * gradient — shows as a fan pointing one way.

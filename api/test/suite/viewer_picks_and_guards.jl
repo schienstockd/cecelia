@@ -234,6 +234,14 @@ end
             dg = diag.groups[1]
             @test !isempty(dg.msd.lag) && !isempty(dg.acor.lag) && dg.nTracks > 0
             @test haskey(dg, :findings) && haskey(dg, :summary)
+            # headings: one entry per MOVIE, named by its source; not assessed is null, never 0
+            hd = dg.headings
+            @test hd.alpha == HEADING_ALPHA && hd.minSteps == HEADING_MIN_STEPS && hd.minTracks == HEADING_MIN_TRACKS
+            @test length(hd.movies) == 1 && hd.movies[1].uid == "KDIeEm" && hd.movies[1].label == "KDIeEm"
+            mv = hd.movies[1]
+            @test length(mv.theta) == mv.n
+            @test all(k -> haskey(mv.weights, k), (:uniform, :unimodal, :axial))
+            @test mv.n >= HEADING_MIN_TRACKS ? (0 <= mv.p <= 1 && mv.critR > 0) : (mv.p === nothing)
 
             # ── /api/tracking/detections — per-frame untracked cells (P3) ────────
             # smoke test: shape correctness on a real fixture. The `_is_untracked` rule itself is
@@ -308,5 +316,57 @@ end
         finally
             old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
         end
+    end
+end
+
+@testset "API: viewer peek — every channel at the L0 pixel, the mask id at the displayed level" begin
+    # The cursor readout. Values are known per voxel (100·c + 10·y + x at t=1, z=1), so a read that
+    # swaps x/y, drops a channel, reads the wrong t/z or the displayed level instead of L0 shows here.
+    axes_ms(names) = Dict("multiscales" => [Dict("axes" => [Dict("name" => n) for n in names],
+                                                 "datasets" => [Dict("path" => "0")])])
+    dirs = Cecelia.cecelia_conf()["dirs"]
+    old  = get(dirs, "projects", nothing)
+    dirs["projects"] = mktempdir()
+    try
+        proj = create_project!(name = "api-viewer-peek")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        img.filepath = Dict("default" => "ccidImage.ome.zarr", "_active" => "default")
+        img.labels = Dict("seg" => ["seg.zarr"])
+        save!(img)
+        nx, ny, nz, nc, nt = 6, 5, 2, 3, 2
+        dir = joinpath(dirname(dirname(img._dir)), "0", img.uid, "ccidImage.ome.zarr")
+        g = zgroup(Zarr.DirectoryStore(dir); attrs = axes_ms(["t", "c", "z", "y", "x"]))
+        a = zcreate(UInt16, g, "0", nx, ny, nz, nc, nt; chunks = (nx, ny, nz, nc, nt))
+        a[:, :, :, :, :] = UInt16[(t == 2 && z == 2) ? 100 * (c - 1) + 10 * (y - 1) + (x - 1) : 0
+                                  for x in 1:nx, y in 1:ny, z in 1:nz, c in 1:nc, t in 1:nt]
+        ldir = joinpath(img._dir, "labels", "seg.zarr"); mkpath(dirname(ldir))
+        lg = zgroup(Zarr.DirectoryStore(ldir); attrs = axes_ms(["t", "z", "y", "x"]))
+        la = zcreate(UInt32, lg, "0", nx, ny, nz, nt; chunks = (nx, ny, nz, nt))
+        lab = zeros(UInt32, nx, ny, nz, nt); lab[4, 2, 2, 2] = 7      # cell 7 at x=3, y=1 (0-based)
+        la[:, :, :, :] = lab
+
+        peek(d) = (r = api_viewer_peek(Vector{UInt8}(JSON3.write(merge(Dict(
+            "projectUid" => proj.uid, "imageUid" => img.uid, "t" => 1, "z" => 1), d))));
+                   (r[1], JSON3.read(r[2])))
+        st, d = peek(Dict("x" => 3, "y" => 1, "labels" => "seg", "lx" => 3, "ly" => 1, "level" => 0,
+                          "imageNX" => nx, "imageNY" => ny))
+        @test st == 200
+        @test collect(d.values) == [13.0, 113.0, 213.0]
+        @test d.label == 7
+        # background is a real answer, not "no mask"
+        _, d0 = peek(Dict("x" => 0, "y" => 0, "labels" => "seg", "lx" => 0, "ly" => 0))
+        @test d0.label == 0 && d0.labelNote === nothing
+        # no mask asked → no id, intensities still answer
+        _, dn = peek(Dict("x" => 5, "y" => 4))
+        @test dn.label === nothing && collect(dn.values) == [45.0, 145.0, 245.0]
+        # a mask from another image version: no id, and the reason
+        _, dv = peek(Dict("x" => 3, "y" => 1, "labels" => "seg", "lx" => 3, "ly" => 1,
+                          "imageNX" => nx + 1, "imageNY" => ny))
+        @test dv.label === nothing && occursin("another image version", dv.labelNote)
+        # unknown image → 404, not a 500 from the reader
+        st404, _ = api_viewer_peek(Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid, "imageUid" => "nope"))))
+        @test st404 == 404
+    finally
+        old === nothing ? delete!(dirs, "projects") : (dirs["projects"] = old)
     end
 end

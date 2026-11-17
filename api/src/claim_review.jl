@@ -19,7 +19,7 @@ const CLAIM_REVIEW_TOOLS = (
     "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "get_object_ids", "get_task_catalogue", "get_guide",
     "get_acquisition_knowledge", "gate_plot", "gate_cells_view", "gate_histogram", "gate_stats",
-    "gate_examples", "get_plot_catalogue")
+    "gate_examples", "get_plot_catalogue", "get_thumbnails")
 # What the review must not see, and why: where the analyst's own reasoning lives, and their other
 # plots — a review that reads those critiques the plots, not the claim.
 const CLAIM_REVIEW_WITHHELD = Dict(

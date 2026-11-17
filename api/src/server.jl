@@ -48,6 +48,7 @@ include("image_render.jl")   # builds on image_geometry.jl
 include("shader_constants.jl") # the defaults the viewer, its shaders and the movie renderer share
 include("overlay_author.jl") # resolves populations/tracks into the primitives' columnar shape
 include("viewer_api.jl")     # browser WebGPU renderer: volume slabs + display metadata
+include("thumbnails_api.jl") # image-table thumbnails + set montage, on image_render.jl
 include("movie_render.jl")   # the offline renderer's timelapse sweep — builds on image_render.jl + read_slab
 include("movie_rail.jl")     # movie rail (record button + batch) routed through the offline renderer, off napari
 include("movie_rois.jl")     # Record → What: ROIs — one movie per ROI of a set (+ contact sheet), on the rail's preparation
@@ -362,6 +363,8 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/examples" => (req, body_bytes) -> (api_gating_examples(req)),
     "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
+    "/api/images/thumbnail" => (req, body_bytes) -> (api_image_thumbnail(req)),
+    "/api/sets/thumbnails" => (req, body_bytes) -> (api_set_thumbnails(req)),
     "/api/viewer/meta" => (req, body_bytes) -> (api_viewer_meta(req)),
     "/api/viewer/overlays" => (req, body_bytes) -> (api_viewer_overlays(req)),
     "/api/viewer/pop-types" => (req, body_bytes) -> (api_viewer_pop_types(req)),
@@ -587,6 +590,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/reply"          => (req, body_bytes) -> (api_viewer_reply(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
+    "/api/viewer/peek" => (req, body_bytes) -> (api_viewer_peek(body_bytes)),   # cursor readout, read-only
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
     "/api/viewer/pick-clear" => (req, body_bytes) -> (api_viewer_pick_clear(body_bytes)),
     "/api/viewer/pick-set" => (req, body_bytes) -> (api_viewer_pick_set(body_bytes)),

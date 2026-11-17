@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
-  filterSeriesToPopType, migrateSpecId, SPEC_ALIASES, isPrecomputedSpec,
+  filterSeriesToPopType, migrateSpecId, SPEC_ALIASES, isPrecomputedSpec, imageMetricPicksPops,
 } from './popTypes'
 
 const COLLAPSED = {
@@ -156,6 +156,13 @@ describe('isPrecomputedSpec', () => {
   it('is true for a per-image metric: its populations are the run\'s, not the selection', () => {
     expect(isPrecomputedSpec({ dataSource: { popTypes: [{ popType: 'flow', granularity: 'cell' }],
                                              imageMetric: { source: 'spatialPattern' } } })).toBe(true)
+  })
+
+  it('is false for a per-image metric keyed by the picker\'s populations — the picker selects them', () => {
+    const spec = { dataSource: { popType: 'flow', imageMetric: { source: 'spatialPattern', pickPops: true } } }
+    expect(isPrecomputedSpec(spec)).toBe(false)
+    expect(imageMetricPicksPops(spec)).toBe(true)
+    expect(imageMetricPicksPops({ dataSource: { popType: 'flow', imageMetric: { source: 'neighbourStats' } } })).toBe(false)
   })
 
   it('is false for the matrix modes that DO aggregate the selected populations', () => {

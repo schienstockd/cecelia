@@ -644,7 +644,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // render on the leftmost facet).
   if (Array.isArray(opts.marks)) {
     (opts.marks as unknown[]).push(Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }))
-    if (!faceted(o)) (opts.marks as unknown[]).push(Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }))
+    // (a facet request on a chart that cannot facet draws one frame — it keeps its left axis line)
+    if (!faceted(o) || NON_FACETING_CHARTS.has(o.chartType))
+      (opts.marks as unknown[]).push(Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }))
   }
 
   // ── generic post-process: layout / label / font knobs (R plotHelpers adjustments) ──
@@ -652,7 +654,10 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // for the distribution charts (X when rotated — coord_flip); the POSITION (series) axis is the
   // other. range/label(labY) target the measure axis; labX/rotate-X-labels target the position axis.
   const isDist = new Set<ChartType>(['boxplot', 'violin', 'strip', 'bar', 'count', 'percent']).has(o.chartType)
-  const measAxis = (isDist && o.rotate) ? 'x' : 'y'
+  // only the distribution charts flip: on any other chart `rotate` is a setting the rail does not offer
+  // (plots/plotControls.ts), and a stale one left over from another plot must change nothing
+  const flip = isDist && !!o.rotate
+  const measAxis = flip ? 'x' : 'y'
   const posAxis = measAxis === 'y' ? 'x' : 'y'
 
   // measure-axis range: default INCLUDE 0 (R expand_limits(y=0)) for non-negative, non-log charts;
@@ -689,7 +694,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // honours the user's setting first and otherwise rotates only when they genuinely don't fit, reporting
   // it on `_autoRotatedX` so the panel can say a setting was adjusted (see plots/autoOverride.ts).
   const posLabels = seriesIndex(r, keyOf).labels
-  const xrot = resolveXRotation(posLabels, o)
+  const xrot = resolveXRotation(posLabels, flip === !!o.rotate ? o : { ...o, rotate: flip })
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   // Faceting is only wired for the charts that give each series its own position (box/violin/strip/bar)
   // and the trend line. Histogram and the frequency family composite every series into ONE frame, so a
@@ -710,7 +715,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // flipped: the SERIES labels move to Y, so fit the margin to them instead of reserving a fixed 104px
   // (short labels like "T · 1" left a wide empty gap on the left) — same helper as the heatmap. Past
   // its cap they are shortened, not clipped.
-  if (o.rotate) {
+  if (flip) {
     opts.marginLeft = yLabelMargin(posLabels, o.fontSize || 11)
     if (!facetSingle(o)) fitAxisLabels(opts, posAxis, posLabels, Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
   }
@@ -841,9 +846,10 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.
   const marginLeft = yLabelMargin(r.yLabels ?? [], o.fontSize || 11)
   // the column labels are population / category names — same overlap problem, same resolver. The bands
-  // start after marginLeft, so that is what's reserved.
+  // start after marginLeft, so that is what's reserved. A grid never flips, so a `rotate` left over from
+  // another plot must not switch the auto-rotation off.
   const xrot = resolveXRotation((r.xLabels ?? []).map(String),
-                                { ...o, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + 60) })
+                                { ...o, rotate: false, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + 60) })
   const opts: Record<string, unknown> = {
     // tight margins (R heat plots are compact — fig.height 2 × width 4)
     ...THEME, marginLeft, marginBottom: 48, marginTop: topPad, marginRight: 8,

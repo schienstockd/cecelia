@@ -5,6 +5,12 @@ taken for Decision 3 (option d: the observer's channel) and Decision 5 (no; `reg
 internal). P2 is a reply to the reporter, waiting on the maintainer sending it. P3 is held unless sessions without
 the observer turn out to matter.
 
+**Follow-up built 2026-11-17 (`feat/mcp-report-issue`):** "report fixes with the patch" had no
+destination, so sessions kept working around Cecelia. The observer now has `report_issue` (a local draft
+plus a redacted, prefilled bug-form link; a `workaround` field counts the gaps routed around), and the
+`SERVER_INSTRUCTIONS` rule names it. Failures that look like Cecelia's (HTTP 5xx, a crash, a failed run)
+point at it. See `mcp/cecelia_mcp/issue_report.py`.
+
 ## Goal
 
 Users are already pointing their own Claude Code session at Cecelia: at the install, at their project

@@ -5,7 +5,7 @@
 // shot set; the layout lives here once, so the pages read alike and a fix lands on all of them.
 // Shots, fixtures and composing: user-docs/shots/README.md.
 
-import { imageFile, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
+import { imageFile, imageStem, shotThemes, type Shot, type ShotSet } from '../../../user-docs/shots/spec.ts'
 import { svgEsc as esc } from '../plots/export'
 
 /** One step: Do → You'll see → If it goes wrong, plus Why for what isn't obvious. `shot` = an id of the
@@ -64,7 +64,7 @@ export interface ImageOpts {
  *  reader's. Not composed yet: a visible placeholder line, or an error when `strict`. */
 export function docImage(set: ShotSet, x: Shot, alt: string, widths: Record<string, number>, o: ImageOpts): string {
   const themes = shotThemes(set, x)
-  const w = widths[imageFile(x, themes[0]).replace(/\.(png|jpg)$/, '')]
+  const w = widths[imageStem(imageFile(x, themes[0]))]
   if (!w) {
     if (o.strict) throw new Error(`shot ${x.id} is not composed (pixi run doc-images)`)
     return `_Screenshot \`${x.id}\` not composed yet (pixi run doc-shots, then doc-images)._`

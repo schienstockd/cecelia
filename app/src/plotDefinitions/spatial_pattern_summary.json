@@ -8,9 +8,11 @@
   "whiteboardCompatible": true,
   "dataSource": {
     "popTypes": [
-      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+      { "popType": "flow", "granularity": "cell", "label": "Gated" },
+      { "popType": "clust", "granularity": "cell" },
+      { "popType": "region", "granularity": "cell" }
     ],
-    "imageMetric": { "source": "spatialPattern", "task": "Spatial pattern" },
+    "imageMetric": { "source": "spatialPattern", "task": "Spatial pattern", "pickPops": true },
     "measure": "nnRatio",
     "measureOptions": ["nnRatio", "ceR", "zScore"],
     "measureLabels": { "nnRatio": "NN ratio", "ceR": "Clark–Evans R", "zScore": "z-score" }

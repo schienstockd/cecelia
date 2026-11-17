@@ -44,6 +44,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
             "get_viewer_screenshot", "set_viewer_view",   # look at / adjust the open viewer
             "get_plot_image", "set_plot_view",   # look at / adjust an open plot panel
+            "get_thumbnails",           # a set's images as one montage (server-side render, no GUI needed)
             "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
             "add_gate",                     # ONE proposed gate, additive only (POST /api/gating/pop/add-gate)
             "add_boolean_pop",              # ONE proposed combination of existing pops (POST .../add-boolean)
@@ -88,6 +89,33 @@ class ServerToolRegistrationTest(unittest.TestCase):
         self.assertEqual({"captureId": "cap-20260918T140000-abcdef",
                           "surface": "viewer_frame",
                           "address": {"projectUid": "NRUBxU", "imageUid": "IMG1"}}, out[1])
+
+    def test_get_thumbnails_returns_image_and_cells(self):
+        # The montage must reach Claude as an Image block AND the cell map that ties a tile to an
+        # image — without the cells, "row 1, col 2 looks off" names nothing.
+        png_b64 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAD"
+                   "UlEQVR4nGNgYGD4DwABBAEAfbLI3wAAAABJRU5ErkJggg==")
+        seen = {}
+
+        def fake(uid, set_uid, value_name, contrast, size=None, offset=0):
+            seen.update(uid=uid, set_uid=set_uid, contrast=contrast, offset=offset)
+            return {"png": f"data:image/png;base64,{png_b64}", "contrast": contrast,
+                    "cells": [{"index": 0, "row": 0, "col": 0, "imageUid": "IMG1", "name": "a",
+                               "included": True}], "truncated": False}
+
+        with unittest.mock.patch.object(server._client, "get_thumbnails", fake):
+            out = server.get_thumbnails("P", "S")
+        from mcp.server.mcpserver import Image
+        self.assertIsInstance(out[0], Image)
+        self.assertEqual("IMG1", out[1]["cells"][0]["imageUid"])
+        self.assertNotIn("png", out[1])
+        self.assertEqual({"uid": "P", "set_uid": "S", "contrast": "shared", "offset": 0}, seen)
+
+        # an error reply (no png) comes back as the metadata alone, never a broken Image
+        with unittest.mock.patch.object(server._client, "get_thumbnails",
+                                        lambda *a, **k: {"error": "No images in this set at offset 0"}):
+            out = server.get_thumbnails("P", "S")
+        self.assertEqual([{"error": "No images in this set at offset 0"}], out)
 
     def test_get_capture_slims_landscape_tiles(self):
         # A capture with a fat v2 landscape must come back with the slim tile shape: prelude
@@ -528,7 +556,7 @@ class GuidanceTest(unittest.TestCase):
         # A session working on Cecelia's files never opens a briefing, so the always-in-context half is
         # the only place that can point it at a custom module instead of a hand edit
         # (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
-        for phrase in ("custom module", "docs/CUSTOM_MODULES.md", "ccid.json", "patch"):
+        for phrase in ("custom module", "docs/CUSTOM_MODULES.md", "ccid.json", "report_issue"):
             self.assertIn(phrase, guidance.SERVER_INSTRUCTIONS)
 
     def test_instructions_stay_short(self):

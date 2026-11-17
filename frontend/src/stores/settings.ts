@@ -29,7 +29,7 @@ const PROFILE_KEYS = [
   'autoRefreshOnTask', 'viewerAutoUpdate', 'preferDevChannel', 'csvIncludeAttrs',
   'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps',
   // Overlay preferences
-  'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity',
+  'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity', 'viewerCursorReadout',
   'viewerLandscape', 'viewerLandscapeLabels',
   'viewerScaleBarPx', 'viewerTimestampPx',
   'viewerPointSize', 'viewerPointBorder', 'viewerTailLength', 'viewerTailWidth',
@@ -181,6 +181,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // the same helpers draw them here (`StillOverlay`), so all three surfaces agree.
   const viewerScaleBar = ref(localStorage.getItem('cc.viewerScaleBar') !== 'false')    // default true
   const viewerTimestamp = ref(localStorage.getItem('cc.viewerTimestamp') !== 'false')  // default true
+  // Cursor readout (what is under the pointer — `utils/viewer/cursorReadout.ts`). Opt-in: default OFF,
+  // and off it sends nothing.
+  const viewerCursorReadout = ref(localStorage.getItem('cc.viewerCursorReadout') === 'true')
   // Set-of-Mark grid overlay (`components/GridOverlay.vue`, `utils/gridOverlay.ts`). Default OFF —
   // it is an active tool for referring to viewport regions by cell name ("look at C4"), not
   // default chrome like the scale bar. Density persists so the user's chosen mesh survives a reload.
@@ -838,6 +841,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerCacheMB,            v => localStorage.setItem('cc.viewerCacheMB',            String(v)))
   watch(viewerScaleBar,           v => localStorage.setItem('cc.viewerScaleBar',           String(v)))
   watch(viewerTimestamp,          v => localStorage.setItem('cc.viewerTimestamp',          String(v)))
+  watch(viewerCursorReadout,      v => localStorage.setItem('cc.viewerCursorReadout',      String(v)))
   watch(viewerGrid,               v => localStorage.setItem('cc.viewerGrid',               String(v)))
   watch(viewerGridDensity,        v => localStorage.setItem('cc.viewerGridDensity',        String(v)))
   watch(viewerLandscape,          v => localStorage.setItem('cc.viewerLandscape',          String(v)))
@@ -951,7 +955,7 @@ export const useSettingsStore = defineStore('settings', () => {
     vaultOtherUsers, vaultOtherProjects,
     autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, csvIncludeAttrs,
     importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps,
-    viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity,
+    viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout,
     viewerLandscape, viewerLandscapeLabels,
     viewerScaleBarPx, viewerTimestampPx,
     viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth,
@@ -1066,7 +1070,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, colourScheme, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, chainPaletteCollapsed, plotsMaximised, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getLabelFilesHidden, setLabelFilesHidden, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, colourScheme, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, chainPaletteCollapsed, plotsMaximised, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getLabelFilesHidden, setLabelFilesHidden, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

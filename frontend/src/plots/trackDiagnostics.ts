@@ -42,11 +42,27 @@ export interface DiagGroup extends TrackGroupMeta {
   durationBias?: { speed: number[]; duration: number[]; rho: number | null; n: number; biased: boolean }
   /** order index φ per frame, with the steps it was computed over and the φ random directions reach */
   order?: { t: number[]; phi: number[]; n: number[]; chance?: number[] }
+  /** per-track net headings, one entry per MOVIE (never pooled — a bearing means nothing across images) */
+  headings?: { movies: HeadingMovie[]; alpha: number; minSteps: number; minTracks?: number }
   summary?: { msdSlope: number | null; motionKind: string
               persistenceLag: number | null; nDuplicatePairs: number
               furthM?: number | null; furthP?: number | null; furthSigma?: number | null
               durationRho?: number | null; orderMean?: number | null; orderChance?: number | null }
   findings?: DiagFinding[]
+}
+
+/**
+ * One movie's headings (`app/src/tracking/track_headings.jl`): radians, 0 = right, π/2 = up on screen.
+ * Every statistic is the server's — the Rayleigh p, the axial one on doubled angles, the AICc weights of
+ * radiatR's uniform / one-way / two-way models, and `critR`, the R̄ either test needs for p = α.
+ */
+export interface HeadingMovie {
+  uid: string; pop: string; label: string
+  theta: number[]; n: number
+  R: number | null; mu: number | null; p: number | null
+  axialR: number | null; axialAxis: number | null; axialP: number | null
+  critR: number | null
+  weights: { uniform: number | null; unimodal: number | null; axial: number | null }
 }
 
 export interface DiagnosticsResponse {
@@ -61,7 +77,7 @@ export interface DiagnosticsResponse {
 export const diagGroups = (d: DiagnosticsResponse | null): DiagGroup[] =>
   (d?.groups ?? []).filter(g => g.tracked !== false)
 
-export type DiagMode = 'msd' | 'acor' | 'plane' | 'pairs' | 'length' | 'order'
+export type DiagMode = 'msd' | 'acor' | 'plane' | 'pairs' | 'length' | 'order' | 'heading'
 
 export const DIAG_LABEL: Record<DiagMode, string> = {
   msd: 'Displacement',
@@ -70,6 +86,7 @@ export const DIAG_LABEL: Record<DiagMode, string> = {
   pairs: 'Track pairs',
   length: 'Track length',
   order: 'Alignment',
+  heading: 'Heading',
 }
 
 /**
@@ -93,6 +110,7 @@ export function availableModes(d: DiagnosticsResponse | null): DiagMode[] {
   if (any(g => !!g.pairs?.angle.length && !g.pairs.skipped)) out.push('pairs')
   if (any(g => (g.durationBias?.speed.length ?? 0) > 2)) out.push('length')
   if (any(g => !!g.order?.t.length)) out.push('order')
+  if (headingCells(d).length) out.push('heading')
   return out
 }
 
@@ -150,6 +168,7 @@ export function modeHint(mode: DiagMode): string {
     case 'pairs': return 'Far-apart pairs should average 90° — lower means the field moves together'
     case 'length': return 'A trend means speed partly measures track length'
     case 'order':  return 'Above the dashed line = cells share a direction; on it = chance'
+    case 'heading': return 'Arrow (one way) or axis (two ways) past the ring = a preferred direction'
   }
 }
 
@@ -178,6 +197,7 @@ export function axisLabels(mode: DiagMode): [string, string] {
     case 'pairs': return ['distance between tracks (µm)', 'angle between paths (°)']
     case 'length': return ['track duration (frames)', 'mean speed (µm/frame)']
     case 'order':  return ['frame', 'order index φ']
+    case 'heading': return ['', '']
   }
 }
 
@@ -302,6 +322,120 @@ export function orderRows(
                                         chance: g.order!.chance?.[i] ?? null, g: g.key, label: g.label })))
 }
 
+// ── Headings (radiatR's rose + critical ring, per movie) ─────────────────────────────────────────────
+
+/** One heading cell: a movie, named by its group when there is more than one group. */
+export interface HeadingCell { key: string; title: string; movie: HeadingMovie }
+
+/**
+ * The movies to draw, one cell each, across every group. A heading cell is a MOVIE, not a group: the
+ * server never pools bearings across images, so a pooled group contributes one cell per image.
+ * A movie the server did not assess (fewer than its `minTracks` headings: R̄ is null) is left out.
+ */
+export function headingCells(d: DiagnosticsResponse | null): HeadingCell[] {
+  const gs = diagGroups(d)
+  return gs.flatMap(g => (g.headings?.movies ?? [])
+    .filter(m => fin(m.R))
+    .map(m => ({ key: `${g.key}#${m.label}`, movie: m,
+                 title: g.label && gs.length > 1 ? `${g.label} · ${m.label}` : m.label })))
+}
+
+/** radiatR's three models, in the words the panel uses. */
+export const HEADING_MODEL_LABEL = { uniform: 'none', unimodal: 'one-way', axial: 'two-way' } as const
+
+/** The model with the largest Akaike weight, or null when none was assessed. */
+export function bestHeadingModel(m: HeadingMovie): { model: keyof typeof HEADING_MODEL_LABEL; weight: number } | null {
+  let best: { model: keyof typeof HEADING_MODEL_LABEL; weight: number } | null = null
+  for (const k of ['uniform', 'unimodal', 'axial'] as const) {
+    const w = m.weights[k]
+    if (fin(w) && (!best || w! > best.weight)) best = { model: k, weight: w! }
+  }
+  return best
+}
+
+const fmtP = (p: number | null): string => (!fin(p) ? '—' : p! < 0.001 ? '<0.001' : p!.toFixed(3))
+
+/** One movie's reading in words: tracks, the two p-values, and which model the data prefer. */
+export function headingLine(m: HeadingMovie): string {
+  const best = bestHeadingModel(m)
+  const bits = [`${m.n} tracks`, `one-way p ${fmtP(m.p)}`, `two-way p ${fmtP(m.axialP)}`]
+  if (best) bits.push(`best ${HEADING_MODEL_LABEL[best.model]} (${best.weight.toFixed(2)})`)
+  return bits.join(' · ')
+}
+
+/** The header line in heading mode: each movie, named when there is more than one. */
+export function headingSummary(d: DiagnosticsResponse | null): string {
+  const cells = headingCells(d)
+  if (cells.length === 1) return headingLine(cells[0].movie)
+  return cells.map(c => `${c.title}: ${headingLine(c.movie)}`).join(' · ')
+}
+
+/**
+ * The rose as closed wedge outlines on the unit disk, `bins` equal sectors from 0.
+ *
+ * AREA-TRUE: a wedge's radius is √(count / max count), so its area — what the eye reads — is
+ * proportional to its count. radiatR's `add_angle_rose` scales the RADIUS with the count, which makes a
+ * bin with twice the tracks look four times as big. Empty bins draw nothing.
+ */
+export function roseWedges(theta: number[], bins = 18, arcPts = 6): { x: number; y: number; k: number }[] {
+  const w = (2 * Math.PI) / bins
+  const counts = new Array<number>(bins).fill(0)
+  for (const t of theta) {
+    if (!Number.isFinite(t)) continue
+    const a = ((t % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)
+    counts[Math.min(bins - 1, Math.floor(a / w))]++
+  }
+  const max = Math.max(0, ...counts)
+  const out: { x: number; y: number; k: number }[] = []
+  if (!max) return out
+  counts.forEach((c, k) => {
+    if (!c) return
+    const r = Math.sqrt(c / max)
+    out.push({ x: 0, y: 0, k })
+    for (let i = 0; i <= arcPts; i++) {
+      const a = k * w + (i / arcPts) * w
+      out.push({ x: r * Math.cos(a), y: r * Math.sin(a), k })
+    }
+  })
+  return out
+}
+
+/**
+ * The statistics drawn over the rose, on ONE radial scale chosen so the largest of R̄, the axial R̄ and
+ * the critical ring fills ~80% of the disk.
+ *
+ * The rose and R̄ are different quantities; drawn on the unit scale (as radiatR does) an R̄ of 0.1 — the
+ * size real fields show — is a dot at the centre. Zooming changes nothing about the readout, because
+ * the arrow, the axis and the ring share the scale: past the ring is past the ring at any zoom.
+ * The axis is a line through the centre (two-way), the arrow a ray (one-way).
+ */
+export function headingOverlay(m: HeadingMovie): {
+  ring: { x: number; y: number }[]
+  arrow: { x1: number; y1: number; x2: number; y2: number } | null
+  axis: { x1: number; y1: number; x2: number; y2: number } | null
+  scale: number
+} {
+  const top = Math.max(0, ...[m.R, m.axialR, m.critR].filter(fin) as number[])
+  const scale = top > 0 ? 0.8 / top : 1
+  const ring = fin(m.critR)
+    ? Array.from({ length: 73 }, (_, i) => {
+        const a = (i / 72) * 2 * Math.PI
+        return { x: m.critR! * scale * Math.cos(a), y: m.critR! * scale * Math.sin(a) }
+      })
+    : []
+  const arrow = fin(m.R) && fin(m.mu)
+    ? { x1: 0, y1: 0, x2: m.R! * scale * Math.cos(m.mu!), y2: m.R! * scale * Math.sin(m.mu!) }
+    : null
+  const axis = fin(m.axialR) && fin(m.axialAxis)
+    ? (() => {
+        const r = m.axialR! * scale
+        const c = Math.cos(m.axialAxis!), s = Math.sin(m.axialAxis!)
+        return { x1: -r * c, y1: -r * s, x2: r * c, y2: r * s }
+      })()
+    : null
+  return { ring, arrow, axis, scale }
+}
+
 /**
  * What the pair cloud is not showing, or empty. Same rule as the track plot: never a silent cap.
  *
@@ -329,6 +463,13 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
   if (mode === 'length')
     return gs.flatMap(g => (g.durationBias?.duration ?? [])
       .map((duration, i) => ({ ...tag(g), duration, speed: g.durationBias!.speed[i] })))
+  if (mode === 'heading') {
+    const cells = headingCells(d)
+    return cells.flatMap(c => c.movie.theta.map(t => ({
+      ...(cells.length > 1 ? { movie: c.title } : {}),
+      heading_deg: +((((t * 180) / Math.PI) % 360 + 360) % 360).toFixed(3),
+    })))
+  }
   if (mode === 'order')
     return gs.flatMap(g => (g.order?.t ?? [])
       .map((t, i) => ({ ...tag(g), frame: t, phi: g.order!.phi[i], n: g.order!.n[i],

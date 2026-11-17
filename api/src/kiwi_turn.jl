@@ -29,7 +29,7 @@ const KIWI_READ_TOOLS = [
     "get_proximity_profiles", # which populations sit near a structure, in distance bands
     "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "check_claim", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "list_open_plots", "get_plot_catalogue", "get_analysis_boards",
-    "get_landscape", "get_viewer_screenshot", "get_plot_image", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
+    "get_landscape", "get_viewer_screenshot", "get_plot_image", "get_thumbnails", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",
     "get_object_ids", "list_blackboard_entries", "read_blackboard_entry", "search_blackboard",
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
@@ -46,6 +46,7 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "get_observer_stats" => "runtime, not project data", "get_recent_logs" => "runtime, not project data",
     "get_repl_api" => "developer API reference, not project data",
     "register_push_target" => "pairing", "set_observer_active" => "write",
+    "report_issue" => "write — a draft file on this machine",
     "append_lab_log" => "write", "create_blackboard_entry" => "write", "revise_blackboard_entry" => "write",
     "set_blackboard_status" => "write", "set_blackboard_outcome" => "write",
     "set_blackboard_section_outcome" => "write", "create_chain" => "write", "state_claim" => "write",
