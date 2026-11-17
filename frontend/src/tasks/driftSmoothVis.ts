@@ -8,7 +8,8 @@
  * columns for the three cases, all reading the CURRENT σ, so the trade-off is on screen the same
  * way `smoothVis` puts window count on screen.
  *
- * **The three scenarios.** Chosen to bracket the two failure modes:
+ * **The four scenarios.** Chosen to bracket the two failure modes, plus the case the smoother is
+ * built not to touch:
  *
  *   1. `noise`  — a jittery random-walk trajectory that averages to zero. What the estimator
  *      returns on `zolIMa/2h06xA`: sub-pixel wobble around a still sample. Smoothing here has
@@ -19,6 +20,9 @@
  *   3. `jerk`   — a sharp step (a fast displacement over a few frames), the kind of transition
  *      the `d5vw7z/ttRMjQ` movie shows around frame 30. Smoothing at a σ larger than the
  *      transition width rounds off the corners and delays the step — the "eating motion" regime.
+ *   4. `bump`   — a stage bump: the sample jumps between two frames and stays. The smoother cuts
+ *      the trajectory at a jump that stands out against the movie's own moves and smooths each
+ *      side separately, so the bump stays one frame wide at any σ.
  *
  * **What the picture shows.** Each column is a small time-vs-position plot: the raw trajectory
  * (faint) and the INTEGER-ROUNDED trajectory the writer would apply (opaque). Rounded is the
@@ -31,10 +35,10 @@
  * shape at 25-frame width, chosen from the 2h06xA / ttRMjQ audit. Bigger σ trades column-3
  * fidelity for column-1 quiet.
  *
- * **All three trajectories and the smoother are real, not hand-waves.** `gaussianSmooth` is a
- * per-axis 1D gaussian convolution with `mode='nearest'` — the same edge policy the Python-side
- * `_smooth_positions` uses (`scipy.ndimage.gaussian_filter1d`). Rounded output is `Math.round`
- * per frame, matching `drift_frame_slices`' `round(slice.start)`.
+ * **All four trajectories and the smoother are real, not hand-waves.** `trajectorySmooth` is the
+ * Python-side `_smooth_positions` ported line for line: cut at steps (`_trajectory_steps`), then a
+ * Savitzky–Golay fit (order 2, window 4σ+1 and at least 5, `mode='interp'`) per segment. Rounded output is
+ * `Math.round` per frame, matching `drift_frame_slices`' `round(slice.start)`.
  */
 import type { VisColumns, VisRow, VisCell, VisFrame } from './paramVis'
 
@@ -125,35 +129,87 @@ export function jerkScenario(seed = 43): Trajectory {
   return out
 }
 
+export const BUMP_FRAME = 24
 /**
- * 1D gaussian convolution over `traj`, per-frame, with `mode='nearest'` at the edges — the same
- * kernel the Python-side `_smooth_positions` applies (`scipy.ndimage.gaussian_filter1d`). σ=0 is
- * the identity, matching `_smooth_positions`' `if sigma <= 0: return positions` shortcut.
- *
- * The kernel is truncated at 4σ each side (the scipy default), which puts the truncated tails
- * below 3e-4 of the peak — well under the display's own rounding to opacity.
+ * Bump scenario — slow drift with sub-pixel noise, and a 10 px stage bump between frames
+ * BUMP_FRAME-1 and BUMP_FRAME. The jump is far outside the movie's normal frame-to-frame moves, so
+ * the smoother cuts there and the rounded output keeps it as a single-frame jump.
  */
-export function gaussianSmooth(traj: Trajectory, sigma: number): Trajectory {
-  if (sigma <= 0) return traj.slice()
-  const radius = Math.max(1, Math.ceil(4 * sigma))
-  const kernel: number[] = []
-  let ksum = 0
-  for (let k = -radius; k <= radius; k++) {
-    const w = Math.exp(-(k * k) / (2 * sigma * sigma))
-    kernel.push(w); ksum += w
-  }
-  for (let i = 0; i < kernel.length; i++) kernel[i] /= ksum
-
+export function bumpScenario(seed = 44): Trajectory {
+  const rnd = mulberry32(seed)
   const out: Trajectory = []
-  const n = traj.length
+  for (let t = 0; t < W; t++) {
+    const base = -8 + (6 * t) / (W - 1) + (t >= BUMP_FRAME ? 10 : 0)
+    out.push(base + (rnd() - 0.5) * 0.8)
+  }
+  return out
+}
+
+function median(a: number[]): number {
+  if (!a.length) return 0
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
+}
+
+/**
+ * Segment bounds `[0, …, n]`, cut after every frame whose move is a step — the Python-side
+ * `_trajectory_steps`: a move beyond median + k·MAD of the trajectory's own moves, never below
+ * `floorPx`.
+ */
+export function trajectorySteps(traj: Trajectory, k = 6, floorPx = 3): number[] {
+  const d: number[] = []
+  for (let i = 1; i < traj.length; i++) d.push(Math.abs(traj[i] - traj[i - 1]))
+  if (!d.length) return [0, traj.length]
+  const med = median(d)
+  const mad = median(d.map(v => Math.abs(v - med)))
+  const thr = Math.max(med + k * 1.4826 * mad, floorPx)
+  const cuts = [0]
+  d.forEach((v, i) => { if (v > thr) cuts.push(i + 1) })
+  cuts.push(traj.length)
+  return cuts
+}
+
+/** Least-squares quadratic through `ys` at x = 0..n-1, evaluated at `at`. */
+function quadFitAt(ys: number[], at: number): number {
+  // Normal equations for y = a + b·x + c·x², x centred on the window for conditioning.
+  const n = ys.length, xc = (n - 1) / 2
+  const S = [0, 0, 0, 0, 0], T = [0, 0, 0]
   for (let i = 0; i < n; i++) {
-    let s = 0
-    for (let k = -radius; k <= radius; k++) {
-      // `nearest` boundary: sample outside the array replays the nearest edge value.
-      const j = Math.min(n - 1, Math.max(0, i + k))
-      s += traj[j] * kernel[k + radius]
+    const x = i - xc
+    let p = 1
+    for (let e = 0; e <= 4; e++) { S[e] += p; if (e <= 2) T[e] += p * ys[i]; p *= x }
+  }
+  const M = [[S[0], S[1], S[2]], [S[1], S[2], S[3]], [S[2], S[3], S[4]]]
+  const det = (m: number[][]) =>
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+    - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+    + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+  const D = det(M)
+  const coef = [0, 1, 2].map(c => det(M.map((row, r) => row.map((v, j) => (j === c ? T[r] : v)))) / D)
+  const x = at - xc
+  return coef[0] + coef[1] * x + coef[2] * x * x
+}
+
+/**
+ * The trajectory smoother the drift task applies — Python's `_smooth_positions`, per axis:
+ * segments split at steps, each smoothed by a Savitzky–Golay fit of order 2 over a 4σ+1 window (at least 5).
+ * Near a segment's ends the window stays inside the segment and the fit is evaluated off-centre —
+ * scipy's `mode='interp'`. σ ≤ 0 is the identity, as on the Python side.
+ */
+export function trajectorySmooth(traj: Trajectory, sigma: number): Trajectory {
+  if (sigma <= 0 || traj.length < 3) return traj.slice()
+  const out = traj.slice()
+  const win = Math.max(5, 2 * Math.round(2 * sigma) + 1)  // 5 = shortest window a quadratic smooths
+  const cuts = trajectorySteps(traj)
+  for (let s = 0; s + 1 < cuts.length; s++) {
+    const a = cuts[s], z = cuts[s + 1], len = z - a
+    const w = Math.min(win, len % 2 ? len : len - 1)
+    if (w < 5) continue
+    const h = (w - 1) / 2
+    for (let i = a; i < z; i++) {
+      const start = Math.min(Math.max(i - h, a), z - w)
+      out[i] = quadFitAt(traj.slice(start, start + w), i - start)
     }
-    out.push(s)
   }
   return out
 }
@@ -226,7 +282,7 @@ export function renderTrajectory(raw: Trajectory, rounded: Trajectory): VisFrame
   return f
 }
 
-export const SMOOTH_VIS_COLUMNS = ['noise', 'ramp', 'jerk'] as const
+export const SMOOTH_VIS_COLUMNS = ['noise', 'ramp', 'jerk', 'bump'] as const
 
 /** Static per-column labels for the "What it shows" row. Kept short — the whole figure teaches
  *  the same trade-off three ways, so the label names the case, not the verdict. */
@@ -234,6 +290,7 @@ const SCENARIO_LABEL: Record<typeof SMOOTH_VIS_COLUMNS[number], string> = {
   noise: 'sub-pixel jitter (still sample)',
   ramp:  'slow drift (real motion)',
   jerk:  'fast step (motion in a few frames)',
+  bump:  'stage bump (jumps between two frames)',
 }
 
 function cell(text: string, frames?: VisFrame[]): VisCell {
@@ -256,13 +313,14 @@ export function driftSmoothVisColumns(inp: DriftSmoothVisInput): VisColumns {
     noise: noiseScenario(),
     ramp:  rampScenario(),
     jerk:  jerkScenario(),
+    bump:  bumpScenario(),
   }
   const gridCells: VisCell[] = []
   const verdictCells: VisCell[] = []
 
   for (const col of SMOOTH_VIS_COLUMNS) {
     const raw = scenarios[col]
-    const smoothed = gaussianSmooth(raw, inp.sigma)
+    const smoothed = trajectorySmooth(raw, inp.sigma)
     const rounded = roundTrajectory(smoothed)
     gridCells.push(cell('', [renderTrajectory(raw, rounded)]))
     verdictCells.push(cell(verdictFor(col, raw, rounded)))
@@ -304,6 +362,12 @@ function verdictFor(col: typeof SMOOTH_VIS_COLUMNS[number],
     if (outRange >= rawRange - 1) return 'drift preserved'
     if (outRange >= rawRange / 2)  return `drift ${outRange}/${rawRange} px preserved`
     return `drift eaten (${outRange}/${rawRange} px)`
+  }
+  if (col === 'bump') {
+    // Kept = the rounded output still makes the whole jump in the bump's one frame.
+    const jump = Math.abs(rounded[BUMP_FRAME] - rounded[BUMP_FRAME - 1])
+    const rawJump = Math.abs(rawInt[BUMP_FRAME] - rawInt[BUMP_FRAME - 1])
+    return jump >= rawJump - 1 ? 'bump kept in one frame' : `bump spread (${jump}/${rawJump} px in one frame)`
   }
   // jerk: raw step is compact (~JERK_WIDTH). Wider rounded transition ⇒ motion eaten.
   const transWidth = transitionWidth(rounded)
@@ -354,7 +418,7 @@ export function driftSmoothVerdict(sigma: number): string {
     return 'σ = 0 — no smoothing. Sub-pixel noise reaches the writer as per-frame jumps.'
   }
   return `σ = ${sigma} — smoothing kills jitter (col 1). Motion faster than ~${Math.round(2 * sigma)} frames`
-       + ' gets rounded off (col 3).'
+       + ' gets rounded off (col 3); a stage bump stays sharp (col 4).'
 }
 
 /** The figure and the line under it — what a consumer mounts. */

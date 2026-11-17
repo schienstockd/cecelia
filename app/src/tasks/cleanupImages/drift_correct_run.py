@@ -17,9 +17,11 @@ Parameter contract (JSON written by Julia):
   driftEstimator     - "multiLag" | "chain" | "sitkRigid"  (see correction_utils.estimate_drift)
   driftMaxLag        - int, how far apart two frames may be and still be compared (multiLag only)
   driftMaxAngle      - float, degrees; per-frame |angle| cap (sitkRigid only)
-  driftSmoothSigma   - float, gaussian sigma (frames) on the cumulative trajectory. Kills
-                       integer-rounding jitter from sub-pixel-noise trajectories without
-                       significantly changing real motion. 0 = off. Default: DRIFT_TASK_SMOOTH_SIGMA.
+  driftSmoothSigma   - float, smoothing scale (frames) on the cumulative trajectory: a step-aware
+                       Savitzky–Golay fit, window 4σ+1, at least 5
+                       (correction_utils._smooth_positions). Kills integer-rounding jitter from
+                       sub-pixel-noise trajectories without smoothing across a stage bump.
+                       0 = off. Default: DRIFT_TASK_SMOOTH_SIGMA.
   partialTimepoint   - int | null, a last timepoint the acquisition stopped mid-volume and the import
                        kept (ccid meta["partialTimepoint"], trimmed = false). Left out of the estimate
                        and placed with the last complete frame (estimate_drift's measured_frames);
@@ -115,11 +117,13 @@ def run(params):
             # "everything is dropping out".
             total_pf = sum(len(v) for v in est.interpolated.values())
             log.log(f'[WARN] per-plane: {total_pf} plane-frame(s) could not be registered across '
-                    f'{len(est.interpolated)} plane(s) — positions predicted from neighbours')
+                    f'{len(est.interpolated)} plane(s) — positions predicted (from neighbours, '
+                    f'or held at the nearest measured frame at the ends)')
         else:
             why = 'exceeded angle cap' if is_rigid else 'could not be registered'
             log.log(f'[WARN] {len(est.interpolated)} frame(s) {why} — position '
-                    f'predicted from neighbours: {est.interpolated[:12]}'
+                    f'predicted (from neighbours, or held at the nearest measured frame at the '
+                    f'ends): {est.interpolated[:12]}'
                     + ('…' if len(est.interpolated) > 12 else ''))
     # Per-plane shifts are (T-1, Z, 2) — printing the whole array explodes the log. Print a
     # compact summary instead: cumulative XY excursion per plane, so the log still shows the shape

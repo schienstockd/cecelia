@@ -4,30 +4,48 @@
  *
  * The claims worth pinning are the ones a reader of the figure would take away: σ=0 is a no-op,
  * a wider σ collapses a random-walk to fewer integer transitions, a slow ramp survives across a
- * broad σ range, and a fast step gets rounded off when σ exceeds its width.
+ * broad σ range, a fast step gets rounded off when σ exceeds its width, and a stage bump is kept
+ * in one frame. Plus the port itself: the figure must draw what the Python smoother does.
  */
 import { describe, expect, it } from 'vitest'
 import {
-  countTransitions, driftSmoothFigure, driftSmoothVisColumns, gaussianSmooth, jerkScenario,
-  noiseScenario, rampScenario, roundTrajectory, SMOOTH_VIS_COLUMNS, transitionWidth,
-  W,
+  BUMP_FRAME, bumpScenario, countTransitions, driftSmoothFigure, driftSmoothVisColumns,
+  jerkScenario, noiseScenario, rampScenario, roundTrajectory, SMOOTH_VIS_COLUMNS,
+  trajectorySmooth, trajectorySteps, transitionWidth, W,
 } from './driftSmoothVis'
 
-describe('gaussianSmooth', () => {
+describe('trajectorySmooth', () => {
   it('σ=0 is the identity', () => {
     const t = noiseScenario()
-    expect(gaussianSmooth(t, 0)).toEqual(t)
+    expect(trajectorySmooth(t, 0)).toEqual(t)
     // Guard against a buggy JSON default reaching the smoother as a negative — same shortcut
     // the Python side takes in `_smooth_positions`.
-    expect(gaussianSmooth(t, -1)).toEqual(t)
+    expect(trajectorySmooth(t, -1)).toEqual(t)
   })
 
-  it('preserves the mean (up to edge effects)', () => {
-    const t = rampScenario()
-    const s = gaussianSmooth(t, 6)
-    const meanT = t.reduce((a, b) => a + b, 0) / t.length
-    const meanS = s.reduce((a, b) => a + b, 0) / s.length
-    expect(Math.abs(meanT - meanS)).toBeLessThan(0.5)
+  it('smooths at the smallest σ the slider offers (0.5), like the Python side', () => {
+    const t = noiseScenario()
+    const s = trajectorySmooth(t, 0.5)
+    expect(s.some((v, i) => Math.abs(v - t[i]) > 1e-9)).toBe(true)
+  })
+
+  it('reproduces a quadratic exactly, ends included (order-2 Savitzky–Golay)', () => {
+    const t = Array.from({ length: 30 }, (_, i) => 0.02 * i * i - 0.5 * i + 3)
+    const s = trajectorySmooth(t, 6)
+    for (let i = 0; i < t.length; i++) expect(s[i]).toBeCloseTo(t[i], 9)
+  })
+
+  it('matches the Python smoother on a fixed trajectory (scipy golden values)', () => {
+    // `_smooth_positions(x[:, None], 3.0)` on this input, printed from the analysis env. It cuts
+    // after frame 9 (the 10.7 px jump) and smooths 10 + 12 frames with windows 9 and 11.
+    const x = [0.0, 0.4, -0.3, 0.8, 1.1, 0.6, 1.4, 1.0, 1.9, 1.5, 12.2, 12.9, 12.4, 13.3, 12.8,
+      13.6, 13.1, 14.0, 13.7, 14.4, 14.1, 14.9]
+    const golden = [0.011515, 0.157879, 0.322424, 0.505152, 0.706061, 0.965801, 1.155931,
+      1.33632, 1.50697, 1.667879, 12.346853, 12.546014, 12.743543, 12.939441, 13.133706,
+      13.32634, 13.448252, 13.662517, 13.89986, 14.16028, 14.443776, 14.75035]
+    expect(trajectorySteps(x)).toEqual([0, 10, 22])
+    const s = trajectorySmooth(x, 3)
+    for (let i = 0; i < x.length; i++) expect(s[i]).toBeCloseTo(golden[i], 5)
   })
 
   it('a wider σ produces smaller frame-to-frame differences', () => {
@@ -38,8 +56,8 @@ describe('gaussianSmooth', () => {
       return s
     }
     // Monotone: bigger σ ⇒ smoother trajectory ⇒ smaller total variation.
-    expect(stepSize(gaussianSmooth(t, 6))).toBeLessThan(stepSize(gaussianSmooth(t, 3)))
-    expect(stepSize(gaussianSmooth(t, 3))).toBeLessThan(stepSize(t))
+    expect(stepSize(trajectorySmooth(t, 6))).toBeLessThan(stepSize(trajectorySmooth(t, 3)))
+    expect(stepSize(trajectorySmooth(t, 3))).toBeLessThan(stepSize(t))
   })
 })
 
@@ -48,12 +66,14 @@ describe('scenarios', () => {
     expect(noiseScenario()).toEqual(noiseScenario())
     expect(rampScenario()).toEqual(rampScenario())
     expect(jerkScenario()).toEqual(jerkScenario())
+    expect(bumpScenario()).toEqual(bumpScenario())
   })
 
-  it('all three have W frames', () => {
+  it('all four have W frames', () => {
     expect(noiseScenario().length).toBe(W)
     expect(rampScenario().length).toBe(W)
     expect(jerkScenario().length).toBe(W)
+    expect(bumpScenario().length).toBe(W)
   })
 
   it('noise averages near zero (no bias)', () => {
@@ -88,14 +108,14 @@ describe('the property σ=6 targets — jitter dies, drift survives, step almost
   it('noise: at σ=6 the rounded staircase has (near) zero integer transitions', () => {
     const raw = noiseScenario()
     const rawT = countTransitions(roundTrajectory(raw))
-    const outT = countTransitions(roundTrajectory(gaussianSmooth(raw, 6)))
+    const outT = countTransitions(roundTrajectory(trajectorySmooth(raw, 6)))
     expect(rawT).toBeGreaterThan(6)                              // the raw wobbles across integers
     expect(outT).toBeLessThan(rawT / 3)                          // smoothed collapses it
   })
 
   it('ramp: at σ=6 the rounded end-to-end drift is nearly the raw drift', () => {
     const raw = rampScenario()
-    const rounded = roundTrajectory(gaussianSmooth(raw, 6))
+    const rounded = roundTrajectory(trajectorySmooth(raw, 6))
     const rawInt = roundTrajectory(raw)
     const range = (a: number[]) => Math.max(...a) - Math.min(...a)
     // Preserves at least 60% of the drift range — the whole point of the property.
@@ -104,14 +124,16 @@ describe('the property σ=6 targets — jitter dies, drift survives, step almost
 
   it('jerk: plateaus still land near the raw plateaus at σ=6', () => {
     const raw = jerkScenario()
-    const rounded = roundTrajectory(gaussianSmooth(raw, 6))
-    // ±1 px slack because gaussian's `mode='nearest'` shrinks the edge value slightly toward
-    // the boundary, which can flip the round direction. What the reader takes away is "both
-    // plateaus visible on opposite sides of zero", not exact recovery.
+    const rounded = roundTrajectory(trajectorySmooth(raw, 6))
+    // ±2 px slack: this step is too gradual (~2.7 px/frame) to be cut as a stage bump, so one
+    // quadratic fit spans the plateau end AND part of the S-curve, and lands up to 2 px off the
+    // plateau. The trade the smoother makes — a gaussian kept the plateau but smeared the
+    // corners by far more. What the reader takes away is "both plateaus visible on opposite sides
+    // of zero", not exact recovery.
     const rawStart = Math.round(raw.slice(0, 4).reduce((s, v) => s + v, 0) / 4)
     const rawEnd   = Math.round(raw.slice(raw.length - 4).reduce((s, v) => s + v, 0) / 4)
-    expect(Math.abs(rounded[0] - rawStart)).toBeLessThanOrEqual(1)
-    expect(Math.abs(rounded[rounded.length - 1] - rawEnd)).toBeLessThanOrEqual(1)
+    expect(Math.abs(rounded[0] - rawStart)).toBeLessThanOrEqual(2)
+    expect(Math.abs(rounded[rounded.length - 1] - rawEnd)).toBeLessThanOrEqual(2)
     // ... and end up on opposite sides of zero (a real step, not a wobble).
     expect(Math.sign(rounded[0])).not.toBe(Math.sign(rounded[rounded.length - 1]))
   })
@@ -122,15 +144,31 @@ describe('the property σ=6 targets — jitter dies, drift survives, step almost
     // the jerk scenario, which the figure may need to retune for legibility.
     const raw = jerkScenario()
     const w0  = transitionWidth(roundTrajectory(raw))
-    const w6  = transitionWidth(roundTrajectory(gaussianSmooth(raw,  6)))
-    const w15 = transitionWidth(roundTrajectory(gaussianSmooth(raw, 15)))
+    const w6  = transitionWidth(roundTrajectory(trajectorySmooth(raw,  6)))
+    const w15 = transitionWidth(roundTrajectory(trajectorySmooth(raw, 15)))
     expect(w6).toBeGreaterThanOrEqual(w0)
     expect(w15).toBeGreaterThan(w6)
   })
 })
 
+describe('the stage bump — the case the smoother is built not to touch', () => {
+  it('stays a single-frame jump at σ=6 and at σ=15', () => {
+    const raw = bumpScenario()
+    for (const sigma of [6, 15]) {
+      const r = roundTrajectory(trajectorySmooth(raw, sigma))
+      expect(Math.abs(r[BUMP_FRAME] - r[BUMP_FRAME - 1])).toBeGreaterThanOrEqual(9)
+    }
+  })
+
+  it('its verdict says so', () => {
+    const vis = driftSmoothVisColumns({ sigma: 6 })
+    const verdict = vis.rows.find(r => r.key === 'verdict')!
+    expect(verdict.cells[SMOOTH_VIS_COLUMNS.indexOf('bump')].text).toBe('bump kept in one frame')
+  })
+})
+
 describe('driftSmoothVisColumns', () => {
-  it('produces the three named columns in order', () => {
+  it('produces the four named columns in order', () => {
     const vis = driftSmoothVisColumns({ sigma: 6 })
     expect(vis.columns).toEqual([...SMOOTH_VIS_COLUMNS])
   })

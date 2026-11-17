@@ -15,6 +15,7 @@ import shutil
 
 import scipy.fft
 import scipy.ndimage
+import scipy.signal
 import skimage.restoration
 import skimage.morphology
 import skimage.filters
@@ -63,7 +64,8 @@ DRIFT_DEFAULT_SMOOTHNESS = 0.5
 # rather than by the frame itself. See docs/todo/DRIFT_RIGID_PLAN.md Decision 6.
 DRIFT_DEFAULT_MAX_ANGLE = 5.0
 
-# Post-solve gaussian smoothing on the cumulative trajectory (per axis). 0 = off.
+# Post-solve smoothing on the cumulative trajectory (per axis), step-aware Savitzky–Golay —
+# `_smooth_positions` says how and why. 0 = off.
 # The writer places frames at integer pixels (`drift_correct_im` rounds
 # `cumsum(shifts)`), so a trajectory with sub-pixel noise around a small true
 # drift produces per-frame integer-pixel *jumps* in the corrected movie —
@@ -324,7 +326,10 @@ DriftEstimate = collections.namedtuple('DriftEstimate', [
     'max_lag',
     'n_pairs',       # how many pairwise measurements went in
     'n_rejected',    # …and how many the robust fit outvoted
-    'interpolated',  # frame indices with no surviving measurement — position predicted, not measured.
+    'interpolated',  # frame indices whose position is predicted, not measured: no surviving
+                     # measurement, or no surviving pair across the boundary before it
+                     # (`_unbridged_frames`) — placed relative to its predecessor by the prior.
+                     # Unmeasured frames at either end hold the nearest measured position.
                      # WHEN `per_plane` is True: dict {z: [t_list]} — different planes can rescue or
                      # reject different frames, and pooling them into one list would hide that.
     # px, cycle consistency (see `drift_residuals`) — the reliability number, and **None when there
@@ -362,10 +367,87 @@ def _drift_frame(image_array, dim_utils, phase_shift_channel, t,
     return np.squeeze(zarr_utils.fortify(image_array[tuple(sl)])).astype(np.float32)
 
 
+def _pair_quality(fa, fb, shift, ea=None, eb=None):
+    """Normalised cross-correlation of two frames at ``shift``, from their spectra — in [0, 1].
+
+    The correlation of the mean-free frames at the measured shift, over their norms (Parseval), so
+    no inverse transform is needed: the correlation at one shift is a single DFT coefficient, and
+    its phase factor separates per axis. Cost is one pass over the spectrum.
+
+    What it separates: a pair whose peak is a real match scores at the level of the movie's other
+    pairs, a pair involving a frame with no registration signal scores far below it (a noise frame
+    against texture: 0.03 against 1.0; on real two-photon movies, frames that lost lock: about a
+    third of the movie's median, where every correctly measured stage bump stayed above half). The
+    geometry of the pairs cannot tell those two apart — a dead frame's pairs agree with each other —
+    so the solver gates on this instead (`_quality_gate`).
+
+    ``ea`` / ``eb`` are the spectra's `_spectrum_energy`, when the caller already has them — the pair
+    loops compute each frame's once, next to its transform, instead of once per pair."""
+    x = fa * np.conj(fb)
+    x.flat[0] = 0.0
+    # Σ x·Π_d phase_d, contracted one axis at a time from the last: the first contraction is the
+    # only full pass, the rest run on an array already reduced by that axis's length.
+    for n, s in zip(reversed(x.shape), reversed(np.atleast_1d(shift))):
+        phase = np.exp(2j * np.pi * scipy.fft.fftfreq(n) * float(s)).astype(np.complex64)
+        x = x @ phase
+    num = abs(complex(x))
+    ea = _spectrum_energy(fa) if ea is None else ea
+    eb = _spectrum_energy(fb) if eb is None else eb
+    return num / np.sqrt(ea * eb) if ea > 0 and eb > 0 else 0.0
+
+
+def _spectrum_energy(f):
+    """Σ|F|² without the DC term — the mean-free frame's energy times its size (Parseval)."""
+    return float(np.vdot(f, f).real) - abs(complex(f.flat[0])) ** 2
+
+
+# A pair whose correlation quality is below this fraction of the movie's median is treated as
+# unmeasured. Relative, so it adapts to each movie's own texture and SNR rather than an absolute
+# score; the margin it sits in is measured in `_pair_quality`'s docstring.
+DRIFT_QUALITY_GATE = 0.5
+
+
+def _quality_gate(quality):
+    """1 for a pair worth believing, 0 for one below ``DRIFT_QUALITY_GATE`` × the median quality."""
+    q = np.asarray(quality, dtype=float)
+    if not len(q):
+        return q
+    return (q >= DRIFT_QUALITY_GATE * np.median(q)).astype(float)
+
+
+def _unbridged_frames(pairs, rejected, n_t):
+    """Frames placed relative to the frame before them by the prior alone — no surviving pair spans
+    that boundary.
+
+    A frame can be measured against its own neighbours on each side and still sit across such a
+    boundary: a stage bump bigger than half the frame aliases in phase correlation (a shift of s
+    and of s − N correlate identically) and the overlap that would anchor it is mostly gone, so the
+    pairs across it score low and are set aside. The two halves are then joined by the prior, and
+    that join is a prediction like any other: reported, so the QC says so instead of the bump
+    vanishing without a word."""
+    if n_t < 2:
+        return []
+    bridged = np.zeros(n_t - 1, dtype=bool)
+    measured = set()
+    for keep, (i, j, _) in zip(~np.asarray(rejected, dtype=bool), pairs):
+        if keep:
+            bridged[i:j] = True
+            measured.update((i, j))
+    if not measured:
+        return []
+    # Only a boundary with measured frames on BOTH sides joins two measured groups. A boundary beside
+    # an unmeasured run at the start or end is that run's own gap, already reported frame by frame.
+    first, last = min(measured), max(measured)
+    return [int(t) + 1 for t in np.flatnonzero(~bridged) if first <= t < last]
+
+
 def _drift_pair_measurements(image_array, dim_utils, phase_shift_channel, n_t, max_lag,
                              upsample_factor=100, normalisation=None,
-                             time_idx=None, channel_idx=None, on_progress=None):
+                             time_idx=None, channel_idx=None, on_progress=None,
+                             return_quality=False):
     """``[(i, j, shift)]`` for every frame pair with ``0 < j - i <= max_lag``.
+
+    With ``return_quality``, returns ``(pairs, quality)`` — one `_pair_quality` per pair.
 
     One read and one FFT per frame, held in a ring buffer of ``max_lag + 1`` — so raising the lag
     buys redundancy at the cost of extra *correlations*, not extra transforms (the expensive part).
@@ -377,12 +459,14 @@ def _drift_pair_measurements(image_array, dim_utils, phase_shift_channel, n_t, m
     spend more on thread fan-out than on arithmetic. 1.8x alone, 4.4x with four tasks running.
     Numbers and the reasoning: `cpu_utils.limit_blas_threads`.
     """
-    out, ring = [], {}
+    out, quality, ring, energy = [], [], {}, {}
     with cpu_utils.limit_blas_threads(), scipy.fft.set_workers(_FFT_WORKERS):
         for t in range(n_t):
             ring[t] = scipy.fft.fftn(_drift_frame(
                 image_array, dim_utils, phase_shift_channel, t,
                 time_idx=time_idx, channel_idx=channel_idx))
+            if return_quality:
+                energy[t] = _spectrum_energy(ring[t])
             for k in range(1, max_lag + 1):
                 if t - k < 0:
                     continue
@@ -392,17 +476,25 @@ def _drift_pair_measurements(image_array, dim_utils, phase_shift_channel, n_t, m
                     ring[t - k], ring[t], upsample_factor=upsample_factor,
                     normalization=normalisation, space='fourier')
                 out.append((t - k, t, np.asarray(shift, dtype=float)))
+                if return_quality:
+                    quality.append(_pair_quality(ring[t - k], ring[t], shift,
+                                                 energy[t - k], energy[t]))
             ring.pop(t - max_lag, None)
+            energy.pop(t - max_lag, None)
             if on_progress is not None:
                 on_progress(t + 1, n_t)
-    return out
+    return (out, quality) if return_quality else out
 
 
 def _drift_pair_measurements_per_plane(image_array, dim_utils, phase_shift_channel,
                                        n_t, n_z, max_lag,
                                        upsample_factor=100, normalisation=None,
-                                       time_idx=None, channel_idx=None, on_progress=None):
+                                       time_idx=None, channel_idx=None, on_progress=None,
+                                       return_quality=False):
     """Per-plane version of ``_drift_pair_measurements``.
+
+    With ``return_quality``, returns ``(pairs_by_z, quality_by_z)``, the quality lists shaped like
+    the pair lists.
 
     Returns ``{z: [(i, j, shift_yx)]}`` — one list of pair measurements per Z. Each shift is a 2D
     (dy, dx). Everything else is the same as the volume version: ring buffer of FFTs bounded by
@@ -423,7 +515,8 @@ def _drift_pair_measurements_per_plane(image_array, dim_utils, phase_shift_chann
     z_idx = dim_utils.dim_idx('Z')
 
     out = {z: [] for z in range(n_z)}
-    ring = {}                                                                 # {t: [FFT_z0, FFT_z1, ...]}
+    quality = {z: [] for z in range(n_z)}
+    ring, energy = {}, {}                                                                 # {t: [FFT_z0, FFT_z1, ...]}
     with cpu_utils.limit_blas_threads(), scipy.fft.set_workers(_FFT_WORKERS):
         for t in range(n_t):
             # One read → all Z planes' 2D FFTs. Fetch is a 3D slab; FFT is 2D per plane so peaks
@@ -443,6 +536,8 @@ def _drift_pair_measurements_per_plane(image_array, dim_utils, phase_shift_chann
                 vol = vol[np.newaxis, :, :]
             planes = [scipy.fft.fftn(vol[z]) for z in range(n_z)]
             ring[t] = planes
+            if return_quality:
+                energy[t] = [_spectrum_energy(pl) for pl in planes]
             for k in range(1, max_lag + 1):
                 if t - k < 0:
                     continue
@@ -452,15 +547,19 @@ def _drift_pair_measurements_per_plane(image_array, dim_utils, phase_shift_chann
                         a_planes[z], planes[z], upsample_factor=upsample_factor,
                         normalization=normalisation, space='fourier')
                     out[z].append((t - k, t, np.asarray(shift, dtype=float)))
+                    if return_quality:
+                        quality[z].append(_pair_quality(a_planes[z], planes[z], shift,
+                                                        energy[t - k][z], energy[t][z]))
             ring.pop(t - max_lag, None)
+            energy.pop(t - max_lag, None)
             if on_progress is not None:
                 on_progress(t + 1, n_t)
-    return out
+    return (out, quality) if return_quality else out
 
 
 def _solve_drift_trajectory_per_plane(pairs_by_z, n_t, n_z,
                                       smoothness=DRIFT_DEFAULT_SMOOTHNESS,
-                                      robust=True, n_iter=8):
+                                      robust=True, n_iter=8, quality_by_z=None):
     """Per-plane version of ``_solve_drift_trajectory``.
 
     Solves EACH Z's T-trajectory INDEPENDENTLY, using the existing 1D solver. Returns positions of
@@ -482,14 +581,15 @@ def _solve_drift_trajectory_per_plane(pairs_by_z, n_t, n_z,
     for z in range(n_z):
         pairs = pairs_by_z.get(z, [])
         pos_z, w_z = _solve_drift_trajectory(pairs, n_t, 2,
-                                             smoothness=smoothness, robust=robust, n_iter=n_iter)
+                                             smoothness=smoothness, robust=robust, n_iter=n_iter,
+                                             quality=(quality_by_z or {}).get(z))
         positions[:, z, :] = pos_z
         weights_by_z[z] = w_z
     return positions, weights_by_z
 
 
 def _solve_drift_trajectory(pairs, n_t, n_dim, smoothness=DRIFT_DEFAULT_SMOOTHNESS,
-                            robust=True, n_iter=8):
+                            robust=True, n_iter=8, quality=None):
     """Absolute per-frame positions from redundant pairwise measurements.
 
     Each measurement is one linear equation, ``pos[j] - pos[i] = shift``, and with more than one lag
@@ -519,6 +619,11 @@ def _solve_drift_trajectory(pairs, n_t, n_dim, smoothness=DRIFT_DEFAULT_SMOOTHNE
       `docs/todo/SMOOTHING_PLAN.md` → *Also worth changing*, done as a prior rather than as a filter
       applied after the fact.
 
+    * **A correlation-quality gate** (``quality``, one `_pair_quality` per pair). A pair below the
+      gate is treated as unmeasured from the start, whatever its geometry says — the only signal
+      that separates a frame with no registration signal from a real one-frame move, because a
+      dead frame's pairs agree with each other and so pass any consistency check.
+
     Returns ``(positions, weights)`` — ``positions[0]`` is the origin by construction.
     """
     n = len(pairs)
@@ -541,20 +646,33 @@ def _solve_drift_trajectory(pairs, n_t, n_dim, smoothness=DRIFT_DEFAULT_SMOOTHNE
         S = np.zeros((0, n_t))
         sb = np.zeros((0, n_dim))
 
-    w = np.ones(n)
+    gate = np.ones(n) if quality is None else _quality_gate(quality)
+    w = gate.copy()
+    ws = np.ones(S.shape[0])
     positions = np.zeros((n_t, n_dim))
     for _ in range(n_iter if robust else 1):
         # pos[0] is pinned to the origin by dropping its column — the measurements only ever
         # constrain differences, so without a pin the system is rank-deficient.
-        M = np.vstack([A * w[:, None], S])[:, 1:]
-        y = np.vstack([b * w[:, None], sb])
+        M = np.vstack([A * w[:, None], S * ws[:, None]])[:, 1:]
+        y = np.vstack([b * w[:, None], sb * ws[:, None]])
         sol, *_ = np.linalg.lstsq(M, y, rcond=None)
         positions = np.vstack([np.zeros(n_dim), sol])
         if not robust:
             break
         res = np.linalg.norm(A @ positions - b, axis=1)
-        scale = max(1.4826 * np.median(np.abs(res - np.median(res))), 0.25)
-        w = np.clip(2.5 * scale / np.maximum(res, 1e-9), 0.0, 1.0)
+        kept = res[gate > 0] if gate.any() else res
+        scale = max(1.4826 * np.median(np.abs(kept - np.median(kept))), 0.25)
+        w = np.clip(2.5 * scale / np.maximum(res, 1e-9), 0.0, 1.0) * gate
+        # The prior is reweighted too, with the same Huber rule. A stage bump or refocus is a STEP:
+        # one huge second difference against a bulk of tiny ones. Held at full weight, the prior
+        # bends the fit away from the step, every pair spanning it then disagrees with the bent
+        # fit, and the reweighting above throws exactly those correct pairs away. Releasing the
+        # prior where the measurements insist keeps it for what it is for: smooth drift, and
+        # filling frames no measurement survives for.
+        if len(S):
+            sr = np.linalg.norm(S @ positions, axis=1) / float(smoothness)
+            s_scale = max(1.4826 * np.median(sr), 0.25)
+            ws = np.clip(2.5 * s_scale / np.maximum(sr, 1e-9), 0.0, 1.0)
     return positions, w
 
 
@@ -594,14 +712,46 @@ def _smooth_positions(positions, sigma):
     with a symmetric kernel commutes with the writer's rounding in a
     predictable way and has the property we want: it collapses to zero when
     the trajectory is dominated by noise, and is nearly transparent when it
-    is dominated by real motion — no per-movie tuning."""
+    is dominated by real motion — no per-movie tuning.
+
+    Two things make that last claim hold on movies that really move (on a set of two-photon movies
+    with stage bumps, a plain σ=6 gaussian left 5–25 px of misalignment):
+
+    * **Steps are not smoothed across.** The trajectory is cut wherever one frame-to-frame move is
+      an outlier against the movie's own moves (`_trajectory_steps`) and each segment is smoothed
+      on its own. A gaussian across a 100 px stage bump spreads it over ±3σ frames.
+    * **Local quadratic fit, not a gaussian.** Savitzky–Golay (order 2, window 4σ+1, at least 5) passes ramps
+      and constant acceleration through untouched, including at segment ends, where a gaussian with
+      `mode="nearest"` drags a ramp toward its end value. Noise suppression is close to the
+      gaussian's (200-frame random walk: 80 → 21 integer transitions; gaussian 16)."""
     if sigma <= 0:
         return positions
     out = positions.astype(np.float64, copy=True)
-    for j in range(out.shape[1]):
-        out[:, j] = scipy.ndimage.gaussian_filter1d(
-            out[:, j], sigma=sigma, mode="nearest")
+    if len(out) < 3:
+        return out
+    win = max(5, 2 * int(round(2 * sigma)) + 1)   # 5 = the shortest window a quadratic smooths
+    cuts = _trajectory_steps(out)
+    for a, z in zip(cuts[:-1], cuts[1:]):
+        w = min(win, (z - a) if (z - a) % 2 else (z - a) - 1)
+        if w < 5:                     # too short to fit a quadratic and still smooth anything
+            continue
+        out[a:z] = scipy.signal.savgol_filter(out[a:z], w, 2, axis=0, mode="interp")
     return out
+
+
+def _trajectory_steps(positions, k=6.0, floor_px=3.0):
+    """Segment bounds ``[0, …, T]`` of a trajectory, cut after every frame whose move is a step.
+
+    A step is a frame-to-frame move beyond ``median + k·MAD`` of the movie's own moves, and never
+    below ``floor_px`` — so a movie whose moves are all sub-pixel noise has no steps (the smoother
+    then works on the whole trajectory, which is the jitter case it exists for), while a bump stands
+    out against whatever the movie's normal motion is."""
+    d = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+    if not len(d):
+        return [0, len(positions)]
+    med = np.median(d)
+    thr = max(med + k * 1.4826 * np.median(np.abs(d - med)), floor_px)
+    return [0] + [int(t) + 1 for t in np.flatnonzero(d > thr)] + [len(positions)]
 
 
 def _estimate_drift_per_plane(image_array, phase_shift_channel, dim_utils, n_t,
@@ -619,10 +769,11 @@ def _estimate_drift_per_plane(image_array, phase_shift_channel, dim_utils, n_t,
     ``z_smoothness`` is ignored there.
     """
     n_z = dim_utils.dim_val('Z')
-    pairs_by_z = _drift_pair_measurements_per_plane(
+    pairs_by_z, quality_by_z = _drift_pair_measurements_per_plane(
         image_array, dim_utils, phase_shift_channel, n_t, n_z, lag,
         upsample_factor=upsample_factor, normalisation=normalisation,
-        time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
+        time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress,
+        return_quality=True)
 
     positions = np.zeros((n_t, n_z, 2))
     weights_by_z = {}
@@ -636,7 +787,8 @@ def _estimate_drift_per_plane(image_array, phase_shift_channel, dim_utils, n_t,
             weights_by_z[z] = np.ones(len(pairs))
     else:
         positions, weights_by_z = _solve_drift_trajectory_per_plane(
-            pairs_by_z, n_t, n_z, smoothness=smoothness, robust=robust)
+            pairs_by_z, n_t, n_z, smoothness=smoothness, robust=robust,
+            quality_by_z=quality_by_z)
 
     # Z-coupling — a single algorithm both estimators share so the `z_smoothness` knob means the
     # same thing on multiLag and chain: gaussian across Z per (t, dim), sigma in planes. Fits are
@@ -663,14 +815,9 @@ def _estimate_drift_per_plane(image_array, phase_shift_channel, dim_utils, n_t,
                 res_per_z.append(r)
     res_all = np.concatenate(res_per_z) if res_per_z else np.zeros(0)
 
-    # Smooth each plane's T-trajectory independently. `_smooth_positions` runs axis-0 gaussian, so
-    # slicing per Z and re-inserting keeps the operation the same one the volume path uses.
-    if trajectory_smooth_sigma > 0 and n_t > 2:
-        for z in range(n_z):
-            positions[:, z, :] = _smooth_positions(positions[:, z, :], trajectory_smooth_sigma)
-
     # Interpolated planes per Z: same rule as the volume path (a frame with no surviving measurement
-    # was positioned by the smoothness prior — flagged so a reader knows it was predicted).
+    # was positioned by the smoothness prior — flagged so a reader knows it was predicted). Unmeasured
+    # frames at either end hold the nearest measured position, as on the volume path.
     interp_by_z = {}
     n_rejected_total = 0
     n_pairs_total = 0
@@ -684,9 +831,16 @@ def _estimate_drift_per_plane(image_array, phase_shift_channel, dim_utils, n_t,
         for keep, (i, j, _) in zip(~rejected, pairs):
             if keep:
                 measured.add(i); measured.add(j)
-        planes_interp = [t for t in range(n_t) if t not in measured]
+        planes_interp = sorted(set(t for t in range(n_t) if t not in measured)
+                               | set(_unbridged_frames(pairs, rejected, n_t)))
         if planes_interp:
             interp_by_z[z] = planes_interp
+        positions[:, z, :] = _hold_unmeasured_ends(positions[:, z, :], measured)
+
+    # Smooth each plane's T-trajectory independently, with the same smoother the volume path uses.
+    if trajectory_smooth_sigma > 0 and n_t > 2:
+        for z in range(n_z):
+            positions[:, z, :] = _smooth_positions(positions[:, z, :], trajectory_smooth_sigma)
 
     axes = ['Y', 'X']
     shifts = np.diff(positions, axis=0) if n_t > 1 else np.zeros((0, n_z, 2))
@@ -770,6 +924,23 @@ def estimate_drift(image_array, phase_shift_channel, dim_utils,
     return _hold_last_position(est, n_all)
 
 
+def _hold_unmeasured_ends(positions, measured):
+    """Unmeasured frames before the first / after the last measured frame hold that frame's position.
+
+    Between two measured frames the smoothness prior interpolates, which is the best guess there is.
+    Past the last one it EXTRAPOLATES — the second-difference prior carries the last velocity on —
+    so a movie whose final frames lost signal right after a stage bump had them launched along the
+    bump's slope, tens of pixels away, and the canvas grown to fit. Holding is the guess that adds no
+    motion nothing measured."""
+    if not measured:
+        return positions
+    out = np.array(positions, dtype=np.float64, copy=True)
+    first, last = min(measured), max(measured)
+    out[:first] = out[first]
+    out[last + 1:] = out[last]
+    return out
+
+
 def _hold_last_position(est, n_all):
     """``est`` extended to ``n_all`` frames, each extra frame at the last estimated position/angle."""
     positions = np.asarray(est.positions, dtype=np.float64)
@@ -832,10 +1003,11 @@ def _estimate_drift(image_array, phase_shift_channel, dim_utils, n_t,
             robust=robust,
             time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
 
-    pairs = _drift_pair_measurements(
+    pairs, quality = _drift_pair_measurements(
         image_array, dim_utils, phase_shift_channel, n_t, lag,
         upsample_factor=upsample_factor, normalisation=normalisation,
-        time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress)
+        time_idx=time_idx, channel_idx=channel_idx, on_progress=on_progress,
+        return_quality=True)
 
     n_dim = len(axes)
     if estimator == 'chain':
@@ -845,7 +1017,7 @@ def _estimate_drift(image_array, phase_shift_channel, dim_utils, n_t,
         weights = np.ones(len(pairs))
     else:
         positions, weights = _solve_drift_trajectory(
-            pairs, n_t, n_dim, smoothness=smoothness, robust=robust)
+            pairs, n_t, n_dim, smoothness=smoothness, robust=robust, quality=quality)
 
     # The `smoothness` prior above pulls the trajectory toward its own second
     # difference, which is not enough when the true drift is at or below the
@@ -857,7 +1029,6 @@ def _estimate_drift(image_array, phase_shift_channel, dim_utils, n_t,
     # Residuals are computed on the *unsmoothed* solution so the QC metric
     # still measures the estimator's self-consistency, not the smoother's.
     res = drift_residuals(pairs, positions) if lag > 1 else np.zeros(0)
-    positions = _smooth_positions(positions, trajectory_smooth_sigma)
     rejected = weights < 0.5
     # A frame nothing survived for is placed where its neighbours say it should be — flagged so a
     # reader of the QC sidecar knows that position was predicted rather than measured.
@@ -866,7 +1037,10 @@ def _estimate_drift(image_array, phase_shift_channel, dim_utils, n_t,
         if keep:
             measured.add(i)
             measured.add(j)
-    interpolated = [t for t in range(n_t) if t not in measured]
+    interpolated = sorted(set(t for t in range(n_t) if t not in measured)
+                          | set(_unbridged_frames(pairs, rejected, n_t)))
+    positions = _hold_unmeasured_ends(positions, measured)
+    positions = _smooth_positions(positions, trajectory_smooth_sigma)
 
     return DriftEstimate(
         shifts=np.diff(positions, axis=0),
