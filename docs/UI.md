@@ -377,7 +377,7 @@ in the task-param form turns it on (`ParamRenderer`: `chipSelect`, `channelSelec
 
 **Long lists collapse.** A pill list with more than `collapseAbove` options (default
 `CHIP_COLLAPSE_ABOVE` = 12; `0` = never) shows only the picked chips, a dashed **+N more** chip that
-expands to everything, and a filter box that narrows by label / value / path. Every long chip list
+expands to everything, and a filter box that narrows by label / value / path (every word must match — `utils/textQuery.ts`, the one list-search rule). Every long chip list
 gets this for free — no per-caller flag. **Hierarchical options** (`path: string[]` on each option —
 population pickers set it via `groupPopulations`) lay out as an indented tree: one line per parent,
 its leaf children inline after a `›`, each chip showing only its own segment with the full label in
