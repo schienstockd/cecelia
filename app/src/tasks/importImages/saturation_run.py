@@ -41,10 +41,9 @@ def run(params):
     result_path = params['resultPath']
     result = {}
 
-    log.progress(0, 2)
     try:
-        log.progress(1, 2)
-        result = data_path.measure_store(im_path, log=log.log,
+        # the bar moves per channel of the histogram pass, the long part on a slide scan
+        result = data_path.measure_store(im_path, log=log.log, on_progress=log.progress,
                                          photons_untestable=params.get('photonsUntestable'))
     except Exception as e:
         # Advisory QC on a store that already converted successfully: report and move on. A
@@ -52,7 +51,7 @@ def run(params):
         log.log(f'>> [WARN] could not check for saturation: {e}')
 
     write_json_atomic(result_path, result)
-    log.progress(2, 2)
+    log.progress(1, 1)
 
 
 def main():
