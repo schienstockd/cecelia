@@ -942,6 +942,17 @@ end
     @test [x.sid for x in Cecelia._series_groups(df; pop_order = ["/T/CD8"])] == ["cpSAM/T/CD8", "cpSAM/B"]
 end
 
+@testset "attribute groups follow the user's order, the rest category-sorted after" begin
+    df = DataFrame(uID = ["u1", "u2", "u3", "u4"], value_name = fill("cpSAM", 4),
+                   pop = fill("/B", 4), m = [1.0, 2.0, 3.0, 4.0])
+    amap = Dict("u1" => "1", "u2" => "2", "u3" => "10", "u4" => "WT")
+    grp(o) = [x.uid for x in Cecelia._series_groups(df; by_image = true, attr_map = amap, attr_order = o)]
+    @test grp(nothing) == ["1", "10", "2", "WT"]                     # mixed → lexical fallback
+    @test grp(["WT", "2"]) == ["WT", "2", "1", "10"]                 # named first, the rest sorted after
+    @test grp(["gone", "10"]) == ["10", "1", "2", "WT"]              # a stale value is ignored
+    @test Cecelia._ordered_cats(["3", "1", "2"], String[]) == ["1", "2", "3"]   # empty = category sort
+end
+
 @testset "heatmap across images pools each channel by name" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")

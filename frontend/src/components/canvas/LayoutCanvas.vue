@@ -169,6 +169,7 @@ const {
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  attrGroups, setAttrOrder,
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
   shared: computed(() => entry.value.shared),
@@ -445,7 +446,7 @@ function ctxFor(c: SlotContent, i: number) {
   // passing the map would be a prop wired to nothing — the failure this file's rail comments warn about.)
   if (railOf(c) === 'pops') return {
     ...base, series: panelSeries(i, c), popTypes: popTypesFor(c.ref),
-    compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value,
+    compareMode: compareMode.value, groupAttr: panelGroupAttr.value, groupOrder: attrGroups.value, poolGroups: poolGroups.value,
   }
   return base
 }
@@ -819,7 +820,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                           :spec="specById[entry.contents[i]!.ref]"
                           :project-uid="projectUid" :image-uid="imageUid"
                           :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                          :group-attr="panelGroupAttr" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
+                          :group-attr="panelGroupAttr" :group-order="attrGroups" :series="panelSeries(i, entry.contents[i]!)" :series-color="seriesColor"
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="panelReloadToken(panelSeries(i, entry.contents[i]!))" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)"
@@ -926,7 +927,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                         :unused-note="activeRail === 'none' && !activeIsPrecomputed ? 'This plot picks its own data.' : undefined"
                         :manual-apply="manualApply" :has-staged="hasStaged"
                         :staged-change-count="stagedChangeCount" :reloadable="true"
-                        @toggle="toggleTarget" @reorder="reorderTargets" @update:scope="scope = $event" @update:vis="setVis"
+                        @toggle="toggleTarget" @reorder="reorderTargets"
+                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />

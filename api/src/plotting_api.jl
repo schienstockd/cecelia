@@ -275,6 +275,10 @@ function api_plot_data(body_bytes::Vector{UInt8})
                   ga_v isa AbstractString ? (isempty(ga_v) ? String[] : String[String(ga_v)]) :
                   ga_v isa AbstractVector ? String[string(a) for a in ga_v if !isempty(string(a))] :
                   String[]
+    # the user's order of those groups (combined values, as `image_attr_groups` joins them); groups it
+    # doesn't name follow, category-sorted (`_ordered_cats`)
+    go_v       = get(body, "groupOrder", nothing)
+    group_order = go_v isa AbstractVector ? String[string(v) for v in go_v] : nothing
 
     # Between-group hypothesis tests (STATS_ANNOTATIONS_PLAN.md). When enabled, `plot_summary_data`
     # attaches a `comparisons` field to the response with the StatsResult. `test="auto"` picks
@@ -330,7 +334,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                           measure = measure, suffix = sfx,
                                           pop = string(something(get(body, "pop", ""), "")),
                                           pops = (pv = get(body, "pops", nothing)) === nothing ? nothing : string.(pv),
-                                          attr_map = attr_map,
+                                          attr_map = attr_map, attr_order = group_order,
                                           stats_enabled = stats_enabled, stats_test = stats_test, raw = raw)
             stats_enabled && _record_stats_event(proj, result)
             return 200, JSON3.write(_json_safe(result))
@@ -380,7 +384,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
-                                  attr_map = attr_map, cluster_suffix = cluster_suffix,
+                                  attr_map = attr_map, attr_order = group_order, cluster_suffix = cluster_suffix,
                                   stats_enabled = stats_enabled, stats_test = stats_test) :
                 plot_summary_data(first.(pairs), last.(pairs), pop_type, targets, chart;
                                   scope = scope, granularity = gran, measure = measure,
@@ -388,7 +392,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg, composition = composition,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
-                                  attr_map = attr_map,
+                                  attr_map = attr_map, attr_order = group_order,
                                   # `suffix` names WHICH RUN — a clustering run for a cluster plot, a
                                   # neighbourStats run for the interaction matrix. Same field, same meaning.
                                   stats_suffix = something(cluster_suffix, ""),

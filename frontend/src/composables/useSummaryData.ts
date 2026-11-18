@@ -3,7 +3,8 @@ import { useWsStore } from '../stores/ws'
 import { useDataRefresh } from './useDataRefresh'
 import { useWhenVisible } from './useKeepAlive'
 import { useViewState } from './useViewState'
-import { tkey, parseTkey } from '../plots/series'
+import { tkey, parseTkey, attrGroupsOf, orderedAttrGroups } from '../plots/series'
+import { useProjectStore } from '../stores/project'
 import { resolvePopType, granularityFor, popTypeOptions, type PopTypeSpecLike } from '../plots/popTypes'
 import { defaultVis, type VisProps } from '../plots/plot'
 import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
@@ -50,7 +51,7 @@ export function useSummaryData(opts: {
   const ws = useWsStore()
   const imageUid = computed(() => imageUids.value[0] ?? null)
 
-  const { compareMode, compareAttr, compareAttr2, scope, sel: gSel, vis: gVis, poolGroups } =
+  const { compareMode, compareAttr, compareAttr2, attrOrder, scope, sel: gSel, vis: gVis, poolGroups } =
     useViewState(opts.shared, {
       // DEFAULT = per_image, not 'image'. `'image'` means "the first selected image only", so with the
       // old default you could tick five images and see one, with nothing but a dropdown labelled
@@ -61,6 +62,9 @@ export function useSummaryData(opts: {
       compareMode: 'per_image' as 'image' | 'per_image' | 'summarised' | 'by_attr',
       compareAttr: '' as string,
       compareAttr2: '' as string,
+      // the user's order of the attribute groups, per attribute combination (`groupOrderKey`) — so
+      // switching Treatment → Mouse and back keeps each one's order
+      attrOrder: {} as Record<string, string[]>,
       scope: 'global' as 'global' | 'local',
       sel: [] as string[],
       vis: defaultVis() as VisProps,
@@ -102,6 +106,19 @@ export function useSummaryData(opts: {
     compareMode.value === 'by_attr' && crossImage.value
       ? [compareAttr.value, compareAttr2.value].filter(Boolean) : [])
   const attrOptions2 = computed(() => setAttrs.value.filter(a => a.name !== compareAttr.value))
+  // The attribute groups the selected images form, in the order the plots draw them: the user's dragged
+  // order first, the rest category-sorted — the server applies the same rule to `groupOrder`
+  // (`_ordered_cats`, plot_data.jl), so the strip and the plots agree.
+  const project = useProjectStore()
+  const groupOrderKey = computed(() => panelGroupAttr.value.join(' × '))
+  const attrGroups = computed<string[]>(() => {
+    if (!panelGroupAttr.value.length) return []
+    const present = attrGroupsOf(imageUids.value.map(uid => ({ uid, attr: project.imageAttr(uid) })), panelGroupAttr.value)
+    return orderedAttrGroups(present, attrOrder.value[groupOrderKey.value])
+  })
+  function setAttrOrder(groups: string[]) {
+    if (groupOrderKey.value) attrOrder.value = { ...attrOrder.value, [groupOrderKey.value]: [...groups] }
+  }
 
   // available plot specs (per-module registry; null module = universal → all specs)
   const specs = ref<PlotSpec[]>([])
@@ -281,5 +298,6 @@ export function useSummaryData(opts: {
     manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
     // compare-derived
     canCompare, crossImage, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2,
+    attrGroups, setAttrOrder,
   }
 }

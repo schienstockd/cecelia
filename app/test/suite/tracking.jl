@@ -914,6 +914,9 @@ end
     byattr = Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], false)
     @test [g.label for g in byattr] == ["MerTK", "WT"]
     @test length(byattr[1].items) == 1 && length(byattr[2].items) == 2
+    # the user's dragged order of the groups wins over the category sort
+    @test [g.label for g in Cecelia._track_image_groups(collect(zip(imgs, uids)), ["Treatment"], false;
+                                                        group_order = ["WT"])] == ["WT", "MerTK"]
 
     # pooled: one unlabelled bundle (there is nothing to distinguish)
     pooled = Cecelia._track_image_groups(collect(zip(imgs, uids)), String[], true)

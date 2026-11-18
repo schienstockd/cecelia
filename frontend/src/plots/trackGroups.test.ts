@@ -34,6 +34,11 @@ describe('cohortParams — the board\'s compare selector, translated', () => {
     expect(q(ctx({ compareMode: 'per_image', groupAttr: ['Treatment'] })).groupAttr).toBeUndefined()
   })
 
+  it('by attribute sends the user order of the groups with them, and not without', () => {
+    expect(q(ctx({ compareMode: 'by_attr', groupAttr: ['Mouse'], groupOrder: ['3', '1'] })).groupOrder).toBe('3,1')
+    expect(q(ctx({ compareMode: 'per_image', groupOrder: ['3', '1'] })).groupOrder).toBeUndefined()
+  })
+
   it('defaults to per image, so a module page with one image behaves as before', () => {
     expect(q(ctx({ imageUids: ['only'] }))).toEqual({ imageUids: 'only', popType: 'live' })
   })

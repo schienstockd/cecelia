@@ -52,7 +52,7 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
                         group_col::Union{Nothing,AbstractString}=nothing,
                         collapse::Bool=false,
                         attr_map::Union{Nothing,AbstractDict}=nothing,
-                        pop_order=nothing)
+                        pop_order=nothing, attr_order=nothing)
     out = NamedTuple[]
     (nrow(df) == 0 || !(:pop in propertynames(df))) && return out
     has_vn  = :value_name in propertynames(df)
@@ -91,9 +91,10 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
     # Category-sort the series axis so composed multi-attribute keys ("WT.M1", "MerTK.M2", …) group
     # cleanly instead of reading in first-appearance-of-row order. `_sort_cats` on the primary axis
     # (imgkey — the attribute value when `attr_map` is set, else uID); then the populations in the
-    # order the user picked them (`_pop_rank`), grp last.
+    # order the user picked them (`_pop_rank`), grp last. `attr_order` (the user's dragged order of the
+    # attribute groups) wins over the category sort; a group it doesn't name follows, category-sorted.
     if !isempty(order)
-        img_rank = Dict(k => i for (i, k) in enumerate(_sort_cats(unique(String[t[1] for t in order]))))
+        img_rank = Dict(k => i for (i, k) in enumerate(_ordered_cats(unique(String[t[1] for t in order]), attr_order)))
         prank = _pop_rank(pop_order)
         sort!(order, by = t -> (img_rank[t[1]], prank(t[2], t[3])..., t[4]))
     end
@@ -107,6 +108,15 @@ function _series_groups(df::DataFrame; by_image::Bool=false,
         push!(out, (uid=uid, vn=vn, sid=sid, grp=grp, sub=df[mask, :]))
     end
     out
+end
+
+# `keys` in the user's `wanted` order (those it names, in its order), then the rest by `_sort_cats`.
+# `nothing`/empty `wanted` = `_sort_cats` alone.
+function _ordered_cats(keys::Vector{String}, wanted)::Vector{String}
+    (wanted === nothing || isempty(wanted)) && return _sort_cats(keys)
+    have = Set(keys)
+    first_ = unique(String[String(w) for w in wanted if String(w) in have])
+    vcat(first_, _sort_cats(String[k for k in keys if !(k in Set(first_))]))
 end
 
 # A series' place among the populations: its index in `pop_order` — the picked `(value_name, pop)`
@@ -651,7 +661,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       separator::AbstractString="_", zscore::Bool=false,
                       matrix_normalize::Symbol=:none,
                       attr_map::Union{Nothing,AbstractDict}=nothing,
-                      pop_order=nothing,
+                      pop_order=nothing, attr_order=nothing,
                       stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     # grouped by image attribute: the boxes are population × attribute group, so test the attribute
     # groups within each population (`_stats_within_pops`); otherwise the populations ARE the comparison.
@@ -719,7 +729,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     base(g) = Dict{String,Any}("pop" => g.sid, "value_name" => g.vn, "uID" => g.uid, "group" => g.grp)
     gb = group_by === nothing ? nothing : String(group_by)
     sgroups(d) = _series_groups(d; by_image=by_image, group_col=gb, collapse=collapse_series, attr_map=attr_map,
-                                pop_order=pop_order)
+                                pop_order=pop_order, attr_order=attr_order)
     # every per-series response reports whether the measure is BOOLEAN, so the panel can offer the
     # "% positive" chart without a second probe (it learns the measure TYPE the same way).
     mbool = !composed && asked_for_measure && measure !== nothing && String(measure) in names(df) &&
@@ -1414,7 +1424,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
-                           attr_map::Union{Nothing,AbstractDict}=nothing,
+                           attr_map::Union{Nothing,AbstractDict}=nothing, attr_order=nothing,
                            cluster_suffix::Union{AbstractString,Nothing}=nothing,
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pops = String.(collect(pops))
@@ -1447,7 +1457,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                          attr_map=attr_map,
+                          attr_map=attr_map, attr_order=attr_order,
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     _attach_hmm_fit!(result, fit)
@@ -1586,7 +1596,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
-                           attr_map::Union{Nothing,AbstractDict}=nothing,
+                           attr_map::Union{Nothing,AbstractDict}=nothing, attr_order=nothing,
                            stats_suffix::AbstractString="",
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     # The interaction matrix belongs to ONE image's sidecar (it is a per-image statistic), so a
@@ -1621,7 +1631,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg, composition=composition,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                          attr_map=attr_map,
+                          attr_map=attr_map, attr_order=attr_order,
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
     _attach_hmm_fit!(result, fit)

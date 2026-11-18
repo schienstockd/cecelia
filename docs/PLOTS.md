@@ -411,9 +411,15 @@ add a new plot with its own popover/menu, follow this pattern — a plain absolu
    **Axis order.** The series axis is category-sorted (`_sort_cats`: numeric-when-all-numeric, else
    lex) on the primary axis (attribute value when `attr_map` is set, else `uID`). So a two-attribute
    cross like "Treatment.Mouse" groups cleanly ("MerTK.M2" → "WT.M1" → "WT.M3") instead of reading in
-   image-insertion order. Within an image key the **populations follow the user's pick order** (the
+   image-insertion order. **By attribute, the user can override it**: the picker's *attribute order*
+   strip (shown while comparing by attribute, one chip per group the selected images form) drags the
+   groups, and the panel sends them as `groupOrder` — those groups lead in that order, any it doesn't
+   name follow category-sorted (`_ordered_cats`). The order is kept per attribute combination
+   (`attrOrder` in the canvas's shared view state); the track plots take the same `groupOrder`. Within an image key the **populations follow the user's pick order** (the
    request's targets, `_pop_rank`) — the picker's *plot order* strip drags them; a population nobody
-   picked sorts after, by name. The colour legend inherits the same domain. Same image rule in
+   picked sorts after, by name. The strip shows only picks the active plot's picker lists — on a mixed
+   board the selection also holds other slots' families, which a reorder keeps in place
+   (`mergePickOrder`). The colour legend inherits the same domain. Same image rule in
    `_track_image_groups` for the track-plot family.
 
    **`groupBy` — a generic categorical sub-axis.** Optionally split the measure by the levels of any

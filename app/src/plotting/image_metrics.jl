@@ -97,7 +97,7 @@ end
 
 """
     image_metric_summary(imgs, uids, source, chart_type; measure, suffix="", pop="", pops=nothing, attr_map=nothing,
-                         stats_enabled=false, stats_test=:auto, raw=false) -> Dict
+                         attr_order=nothing, stats_enabled=false, stats_test=:auto, raw=false) -> Dict
 
 The summary-plot response for a per-image metric: `chart_type` ∈ boxplot | points | bar, each dot one
 image. With `attr_map` (uID → attribute value) the series are attribute groups per population and the
@@ -113,7 +113,7 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
                               measure::AbstractString, suffix::AbstractString = "",
                               pop::AbstractString = "",
                               pops::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                              attr_map::Union{Nothing,AbstractDict} = nothing,
+                              attr_map::Union{Nothing,AbstractDict} = nothing, attr_order = nothing,
                               stats_enabled::Bool = false, stats_test::Symbol = :auto,
                               raw::Bool = false)::Dict{String,Any}
     df, chosen, suffixes = image_metric_frame(imgs, uids, source; suffix = suffix)
@@ -130,6 +130,7 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
     end
     result = _summary_agg(df, chart_type; measure = String(measure), granularity = :cell, nbins = 30,
                           normalize = :none, by_image = attr_map !== nothing, attr_map = attr_map,
+                          attr_order = attr_order,
                           raw_points = true, raw = raw, pop_order = picked,
                           stats_enabled = stats_enabled, stats_test = stats_test)
     result["imageMetric"] = String(source)
