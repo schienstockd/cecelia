@@ -1,6 +1,7 @@
 {
   "id": "spatial_interaction_pairs",
   "label": "Interaction across images",
+  "category": "compare",
   "answers": "Does a population pair's interaction (contact log-odds) differ between images or treatments?",
   "module": "spatialAnalysis",
   "family": "summary",

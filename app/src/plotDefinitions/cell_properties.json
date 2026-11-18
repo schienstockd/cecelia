@@ -1,6 +1,7 @@
 {
   "id": "cell_properties",
   "label": "Cell properties",
+  "category": "compare",
   "answers": "How does a per-cell, per-timepoint measure (cell speed, turning angle) differ between populations or images?",
   "module": "behaviourAnalysis",
   "family": "summary",

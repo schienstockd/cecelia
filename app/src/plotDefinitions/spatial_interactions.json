@@ -1,6 +1,7 @@
 {
   "id": "spatial_interactions",
   "label": "Interaction matrix",
+  "category": "profiles",
   "answers": "Which populations touch more or less often than chance in one image (interaction matrix)?",
   "module": "spatialAnalysis",
   "family": "summary",

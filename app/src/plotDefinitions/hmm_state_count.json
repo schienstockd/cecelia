@@ -1,6 +1,7 @@
 {
   "id": "hmm_state_count",
   "label": "HMM state count",
+  "category": "checks",
   "answers": "How many HMM states should the behaviour model have — fit against number of states?",
   "module": "behaviourAnalysis",
   "family": "summary",

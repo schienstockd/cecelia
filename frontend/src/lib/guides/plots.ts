@@ -38,7 +38,7 @@ export const plotsGuide: GuideDef = {
       route: '/analysis',
       placement: 'right',
       title: 'Fill a slot',
-      text: 'Each empty slot offers every plot this page has — summary, interactive, clustering.',
+      text: 'Each empty slot offers every board plot, grouped by the question it answers.',
       bullets: [
         'A plot whose run has not happened yet renders empty rather than being hidden.',
         'The clustering ones DO hide until a run of that kind exists.',

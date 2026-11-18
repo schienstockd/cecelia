@@ -11,16 +11,49 @@ build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
    answers, in the user's words — required (as on `INTERACTIVE_VIEWS` and `CLUSTER_PANELS` entries):
    it is what an agent matches "how do I plot X?" against in `get_guide("which-plot")`
    (`frontend/src/lib/guides/plotCatalogue.ts`, rendered into `mcp/cecelia_mcp/guides.json`).
+   `category` files it in the `+ Plot…` picker — see *The `+ Plot…` picker* below. Required on a
+   built-in spec (`plots/plotPicker.test.ts`).
 2. Rendered by `SummaryCanvas` → `SummaryPanel` → `PlotChart` (Observable Plot). Data comes from the
    single `POST /api/plot_data` aggregator (`plot_summary_data`). `whiteboardCompatible: true` makes
    the same definition available on the whiteboard too.
 
 3. `SummaryCanvas` may ALSO host an interactive view (`interactiveViews.ts` → `InteractivePanel`),
-   offered under an **Interactive** optgroup in its `+ Plot…` picker. Today only a plugin's custom
+   offered in its `+ Plot…` picker under the view's own category. Today only a plugin's custom
    module page asks for one — `plugin.json` → `contributions.views` names a view by its stable id, and
    the view must be flagged `pluginPage` + `rail: 'none'` (self-contained: it fetches its own data and
    the canvas's population picker does not drive it). See `docs/CUSTOM_MODULES.md` and
    `docs/todo/PLUGINS_PLAN.md` → Decision 11.
+
+### The `+ Plot…` picker — grouped by the question, with a sketch
+
+Every plot surface (module pages, the board, the cluster / model-training / track canvases) uses ONE
+picker, `components/canvas/PlotPicker.vue`. It groups plots by the question a user brings, in this
+order everywhere (`plots/plotPicker.ts` → `PLOT_CATEGORIES`):
+
+| `category` | Shown as | Holds |
+|---|---|---|
+| `compare` | Compare groups | a measure between populations, images or treatments (Track measures, Cell properties, Population summary, the spatial comparisons) |
+| `time` | Over time | Populations over time |
+| `makeup` | Make-up | fractions per state / class / cluster (HMM state, motif class, track cluster frequency) |
+| `profiles` | Profiles & matrices | what defines each group, who goes or touches whom (state signature, transition / interaction matrix, cluster heatmap) |
+| `look` | Images & cards | the cells themselves (cluster map, tracks, filmstrip, figure, cards, gating strategy, timeline) |
+| `checks` | Checks & diagnostics | did it work (segmentation QC, HMM state count, flow model views, track diagnostics) |
+| `other` | Other | a plugin spec without a category — the fallback, never set on a built-in |
+
+The category is declared on the plot — `category` in a spec's JSON, `category` on an
+`INTERACTIVE_VIEWS` / `CLUSTER_PANELS` entry (required by the type). The old optgroups
+(Summary / Interactive / Clustering / Image) grouped by how a plot is BUILT, which tells a user nothing.
+
+**Previews.** With `settings.plotPickerPreviews` on (default; Preferences → Plots, or the picker's own
+button) each plot is a card: a schematic of its shape (`PlotSketch.vue`, one inline SVG per
+`PlotSketchKind`) plus its `answers` line. A spec's sketch is its default (first) chart type; a spec
+whose chart type's shape depends on the data overrides it with `"sketch"` (Populations over time:
+`count` over frames is a `line`). Views declare `sketch` beside `category`. The sketch is drawn, never
+rendered from data — no request, nothing blank before a task has run. Off, the picker is a plain
+grouped menu with the question on hover.
+
+**Search** matches every word against the label and the question, plus a short synonym list for words
+users reach for that the app spells differently ("velocity" → speed). Enter picks the first match.
 
 **A page's default plots** are declared on the spec: `"defaultOn": ["segment"]` names the pages whose
 canvas starts with it. `SummaryCanvas` places them once, when that canvas is first seen with no

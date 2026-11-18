@@ -1,5 +1,6 @@
 import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from '../../components/canvas/canvasManager'
+import type { PlotCategory, PlotSketchKind } from '../../plots/plotPicker'
 import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
 import ClusterHmmStatesPanel from './ClusterHmmStatesPanel.vue'
 import ClusterHmmTransitionsPanel from './ClusterHmmTransitionsPanel.vue'
@@ -26,6 +27,8 @@ export interface ClusterPanelDef {
   label: string
   answers: string                            // the question it answers (lib/guides/plotCatalogue.ts)
   component: Component
+  category: PlotCategory                     // where the "+ Plot…" picker files it (plots/plotPicker.ts)
+  sketch: PlotSketchKind                     // the schematic the picker draws
   trackOnly?: boolean                        // trackclust runs only (HMM behaviour plots)
   needsCols?: 'hmmState' | 'hmmTransition'   // only offer when the run has these obs columns
   analysisBoard?: boolean                    // ALSO offered on the Analysis board (not just the cluster page)
@@ -42,19 +45,19 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   heatmap: {
     label: 'Cluster heatmap',
     answers: 'What defines each cluster — its feature profile (heatmap)?',
-    component: ClusterHeatmapPanel, analysisBoard: true, rail: CLUSTER_RAIL,
+    component: ClusterHeatmapPanel, category: 'profiles', sketch: 'heatmap', analysisBoard: true, rail: CLUSTER_RAIL,
     props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap, channelNames: ctx.channelNames }),
   },
   hmmStates: {
     label: 'HMM states',
     answers: 'How do the HMM states split across the track clusters?',
-    component: ClusterHmmStatesPanel, trackOnly: true, needsCols: 'hmmState',
+    component: ClusterHmmStatesPanel, category: 'makeup', sketch: 'stacked', trackOnly: true, needsCols: 'hmmState',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmStateCols }),
   },
   hmmTransitions: {
     label: 'HMM transitions',
     answers: 'How do HMM state transitions differ between track clusters?',
-    component: ClusterHmmTransitionsPanel, trackOnly: true, needsCols: 'hmmTransition',
+    component: ClusterHmmTransitionsPanel, category: 'profiles', sketch: 'heatmap', trackOnly: true, needsCols: 'hmmTransition',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmTransitionCols }),
   },
   // One card per trackclust pop the manager ticks: medoid track's filmstrip (server-rendered via
@@ -63,7 +66,7 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   cellCards: {
     label: 'Cell cards',
     answers: 'What does a typical track of each track-cluster population look like?',
-    component: CellCardsView, trackOnly: true,
+    component: CellCardsView, category: 'look', sketch: 'cards', trackOnly: true,
     analysisBoard: true, rail: CLUSTER_RAIL,
   },
 }

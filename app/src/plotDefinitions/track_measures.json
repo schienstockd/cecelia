@@ -1,6 +1,7 @@
 {
   "id": "track_measures",
   "label": "Track measures",
+  "category": "compare",
   "answers": "How do whole-track measures (speed, displacement, straightness, duration) differ between populations, images or treatments?",
   "module": "behaviourAnalysis",
   "family": "summary",

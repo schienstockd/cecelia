@@ -1,6 +1,7 @@
 {
   "id": "population_summary",
   "label": "Population summary",
+  "category": "compare",
   "answers": "How big is each population per image — count or proportion — compared between populations, images or treatments?",
   "modules": {
     "phenotype": ["flow", "clust"],

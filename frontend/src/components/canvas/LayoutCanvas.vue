@@ -39,7 +39,9 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
+import PlotPicker from './PlotPicker.vue'
+import { specOption, type PlotOption } from '../../plots/plotPicker'
+import { INTERACTIVE_VIEWS, boardViews, viewOption, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import { boardParamsScope, historyParamsUrl, type BoardParamsScope, type HistoryParamsRow } from '../../utils/chainFromHistory'
 import { snapshotScope, paramsScopeKey, snapshotDue } from '../../utils/boardProvenance'
@@ -218,11 +220,6 @@ const activeContent = computed<SlotContent | null>(() => entry.value.contents[en
 type PState = { sel: string[]; vis: VisProps; [k: string]: unknown }
 const st = (c: SlotContent): PState => c.state as PState
 
-// The picker's three interactive optgroups come STRAIGHT from the registry's `analysisBoard` flag +
-// `boardGroup` — no key list here. There used to be one (`ANALYSIS_VIEWS`/`IMAGE_VIEWS`), which made
-// the flag a lie: a view could set `analysisBoard: true` and never appear, because nothing read it.
-// Self-contained interactive views (read their own context / pops):
-const interactiveOptions = computed(() => boardViews('interactive'))
 // Which MANAGER a slot needs, straight from the registry that owns the slot's kind. Summary slots have
 // no registry entry and take the default (the population picker) — see canvasManager.ts.
 function railOf(c: SlotContent | null): RailKind {
@@ -234,8 +231,15 @@ function railOf(c: SlotContent | null): RailKind {
 // by the board's clustering run" and "wants the cluster pop manager" are the same statement, so this is
 // now the rail declaration rather than a second, parallel test that could disagree with it.
 const isClusterSlot = (c: SlotContent | null): boolean => railOf(c) === 'clusterPops'
-const clusterOptions = computed(() => {
-  const out: { key: string; label: string }[] = [...boardViews('clustering')]
+// The "+ Plot…" picker: every board plot, filed by category (plots/plotPicker.ts) like every other
+// picker. The views come STRAIGHT from the registries' `analysisBoard` flag — no key list here. There
+// used to be one (`ANALYSIS_VIEWS`/`IMAGE_VIEWS`), which made the flag a lie: a view could set
+// `analysisBoard: true` and never appear, because nothing read it.
+const pickerOptions = computed<PlotOption[]>(() => {
+  const out: PlotOption[] = [
+    ...specs.value.map(s => specOption(s, `summary:${s.id}`)),
+    ...boardViews().map(v => ({ ...v, value: `interactive:${v.key}` })),
+  ]
   for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
     if (!def.analysisBoard) continue
     // `trackOnly` no longer filters the picker — picking such a plot AUTO-SETS `clustPopType` (see
@@ -245,12 +249,10 @@ const clusterOptions = computed(() => {
     // RUN, not from a user choice, so hiding a plot that has no data to draw is right.
     if (def.needsCols === 'hmmState' && !clustHmmStateCols.value.length) continue
     if (def.needsCols === 'hmmTransition' && !clustHmmTransitionCols.value.length) continue
-    out.push({ key, label: def.label })
+    out.push({ ...viewOption(key, def), value: `interactive:${key}` })
   }
   return out
 })
-// image-content views (viewer screenshot slots) — grouped separately in the picker
-const imageOptions = computed(() => boardViews('image'))
 
 // the "+ Plot" value is "summary:<specId>" or "interactive:<viewKey>"
 function addPlot(i: number, val: string) {
@@ -839,22 +841,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                               @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- empty slot: add a plot (summary spec or interactive view) -->
             <div v-else class="lc-add">
-              <select data-guide="board.addPlot" v-tooltip.bottom="'Add a plot to this slot'"
-                      @change="addPlot(i, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-                <option value="">+ Plot…</option>
-                <optgroup label="Summary">
-                  <option v-for="s in specs" :key="s.id" :value="`summary:${s.id}`">{{ s.label }}</option>
-                </optgroup>
-                <optgroup v-if="interactiveOptions.length" label="Interactive">
-                  <option v-for="v in interactiveOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
-                </optgroup>
-                <optgroup v-if="clusterOptions.length" label="Clustering">
-                  <option v-for="v in clusterOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
-                </optgroup>
-                <optgroup v-if="imageOptions.length" label="Image">
-                  <option v-for="v in imageOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
-                </optgroup>
-              </select>
+              <PlotPicker :options="pickerOptions" data-guide="board.addPlot" tip="Add a plot to this slot"
+                          @pick="addPlot(i, $event)" />
               <span class="lc-add-hint cc-muted cc-fs-xs">empty slot</span>
             </div>
             </div>
