@@ -72,18 +72,20 @@ end
     @test "proximity.thin_band" in codes(Cecelia.proximity_findings(50, [rec("T", "0–15 µm", 3, 19)]))
 end
 
-# End to end on a real tracked timecourse: structure = the brightest third, counted = the other two
-# thirds. Distances are re-derived by a brute-force same-frame loop, so the band counts are checked
-# against the definition rather than against the KDTree search the task shares with cellContacts.
-@testset "proximityProfile on a real timecourse (KDIeEm)" begin
-    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
-    if !have_fixture(h5)
-        @test_skip "proximityProfile end to end (fixture missing)"
+# End to end on a real tracked timecourse, CALIBRATED (0.5 × 0.5 × 2 µm): structure = the brightest
+# third, counted = the other two thirds. Distances are re-derived by a brute-force same-frame loop, so
+# the band counts are checked against the definition rather than against the KDTree search the task
+# shares with cellContacts. On an uncalibrated table µm are pixels and a missing conversion passes, so
+# the brute force is also run in pixels and must disagree. The multiplex still this readout is for is
+# test-data/NEEDS.toml → multiplex-structure-still.
+@testset "proximityProfile on a real calibrated timecourse" begin
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy: the task writes into it
+    if fx === nothing
+        @test_skip "proximityProfile end to end (calibrated fixture missing)"
     else
-        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
-        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
-        img = CciaImage(uid = "KDIeEm", dir = td)
-        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        td = fx.dir
+        img = Cecelia._load_image(td)
+        @test img_is_calibrated(img)
         full = label_props(img; value_name = "B") |> select_cols(["mean_intensity_0"]) |> as_df
         v = sort(full.mean_intensity_0); t1 = v[cld(nrow(full), 3)]; t2 = v[cld(2 * nrow(full), 3)]
         m = PopulationMap(pop_type = "flow", value_name = "B")
@@ -105,21 +107,29 @@ end
         cloud(pop) = (d = pop_df_multi([img], [img.uid], ["B/$(pop)"]; granularity = :cell, centroids = :physical);
                       Cecelia._centroid_matrix(img, "B", d))
         sC, sL, sT = cloud("hi")
+        # the same loop in pixels: µm ÷ each axis's size (columns x, y, z: 0.5, 0.5, 2), the conversion
+        # the task must apply
+        px = [0.5 0.5 2.0]
+        pxcloud(pop) = (c = cloud(pop); (c[1] ./ px[:, 1:size(c[1], 2)], c[2], c[3]))
         expect = Dict{String,Vector{Int}}()
-        for pop in ("lo", "mid", "one", "root")
-            cC, cL, cT = cloud(pop)
+        expect_px = Dict{String,Vector{Int}}()
+        for (out, cl, sCx) in ((expect, cloud, sC), (expect_px, pxcloud, pxcloud("hi")[1]))
+          for pop in ("lo", "mid", "one", "root")
+            cC, cL, cT = cl(pop)
             counts = zeros(Int, 3)
             for i in eachindex(cL)
                 cL[i] in sL && continue                  # a structure cell is never counted around it
                 same = [j for j in eachindex(sL) if sT[j] == cT[i]]
                 isempty(same) && continue
-                d = minimum(sqrt(sum((cC[i, :] .- sC[j, :]) .^ 2)) for j in same)
+                d = minimum(sqrt(sum((cC[i, :] .- sCx[j, :]) .^ 2)) for j in same)
                 counts[d <= 10 ? 1 : d <= 20 ? 2 : 3] += 1
             end
-            expect[pop] = counts
+            out[pop] = counts
+          end
         end
         got(pop) = [Int(r[:n]) for r in run.records if r[:pop] == "B/$(pop)"]
         @test got("lo") == expect["lo"] && got("mid") == expect["mid"]
+        @test expect_px["lo"] != expect["lo"]      # the bands are in µm, not pixels: they can tell
         # a population of exactly the dimmest cell(s) is counted, not dropped as empty
         @test count(==(v[1]), full.mean_intensity_0) == 1     # exactly one cell: the edge case
         @test sum(got("one")) == sum(expect["one"]) == 1
@@ -140,7 +150,7 @@ end
         @test [r.key for r in kind.list(img)] == ["gc"]
         kind.delete(img, only(kind.list(img)))
         @test isempty(img_proximity_suffixes(img))
-        rm(td; recursive = true)
+        rm(fx.project; recursive = true)
     end
 end
 
