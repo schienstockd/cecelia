@@ -39,6 +39,17 @@
         # scaled values behind for a later :pixel caller.
         @test pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"],
                      centroids=:pixel).centroid_x == px.centroid_x
+        # On this uncalibrated image the conversion is the identity, so the line above cannot fail.
+        # Calibrate it (z ≠ x) and ask again: :physical scales, and a :pixel read after it still
+        # gets pixels from the shared cache entry.
+        merge!(img.meta, Dict("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5", "PhysicalSizeZ" => "2.0"))
+        @test img_is_calibrated(img)
+        phc = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"], centroids=:physical)
+        @test phc.centroid_x ≈ px.centroid_x .* 0.5
+        @test phc.centroid_z ≈ px.centroid_z .* 2.0
+        @test pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"],
+                     centroids=:pixel).centroid_x == px.centroid_x
+        empty!(img.meta)
 
         # …and `false` is a DIFFERENT read (different columns), so it must not share their entry
         @test !("centroid_x" in names(pop_df(img, "labels", String[]; value_name="B",

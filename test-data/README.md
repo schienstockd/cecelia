@@ -20,6 +20,15 @@ Individual fixtures are reached with `fixture_path(relparts...)`, and each tests
 `have_fixture(path)` (`@test_skip` + one `@warn` when absent) so a missing fixture never fails
 an unrelated test.
 
+## What each fixture can prove — `fixtures.toml`, and what's missing — `NEEDS.toml`
+
+`fixtures.toml` lists each fixture's properties (calibrated, still/movie, 2D/3D, marker names, regions,
+image store, …) and technology; the `fixture registry` testsets re-derive them from these files. Tests
+that depend on a property call `fixture_for(...)` instead of naming a path, and get a match or nothing.
+`NEEDS.toml` is the request list for data no fixture has yet. `KDIeEm-cal` is a derived fixture: KDIeEm
+with a pixel size written into a temp copy, no bytes here. See `docs/DEV.md` → *Ask for properties, not a
+path*. Adding a fixture: register it in `fixtures.toml` in the same change.
+
 ## Layout
 
 ```
