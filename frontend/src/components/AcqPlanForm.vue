@@ -8,7 +8,9 @@ import ChipSelect from './ChipSelect.vue'
 import type { AcqDesign, AcqPlan, AcqPlanChannel, AcqStage } from '../utils/acqCheckApi'
 import { ACQ_MEASURES, ACQ_STAGES, cleanPlan, planByName, planProblems, planSentence } from '../utils/acqCheck'
 
-const props = defineProps<{ plan: AcqPlan; designs: AcqDesign[]; saving?: boolean }>()
+// `items`: the set's noun from the check ("movies" only when every image is a time-lapse)
+const props = withDefaults(defineProps<{ plan: AcqPlan; designs: AcqDesign[]; saving?: boolean; items?: string }>(),
+                           { items: 'images' })
 const emit = defineEmits<{ save: [AcqPlan]; cancel: [] }>()
 
 // a working copy: the form edits it, Save hands it back cleaned
@@ -34,9 +36,9 @@ const sentence = computed(() => planSentence(cleanPlan(draft.value)))
 <template>
   <div class="acq-form">
     <div class="cc-row">
-      <span class="cc-muted cc-fs-xs lbl">Movies</span>
-      <ChipSelect :model-value="draft.stage ?? 'test'" @update:model-value="v => draft.stage = v as AcqStage" :options="ACQ_STAGES" aria-label="Where these movies stand"
-                  v-tooltip.top="'Final data: no more movies, advice is for the analysis'" />
+      <span class="cc-muted cc-fs-xs lbl">{{ props.items.charAt(0).toUpperCase() + props.items.slice(1) }}</span>
+      <ChipSelect :model-value="draft.stage ?? 'test'" @update:model-value="v => draft.stage = v as AcqStage" :options="ACQ_STAGES" :aria-label="`Where these ${props.items} stand`"
+                  v-tooltip.top="`Final data: no more ${props.items}, advice is for the analysis`" />
     </div>
     <div class="cc-eyebrow cc-fs-2xs">Objects you'll segment or track</div>
     <div class="grid" :style="{ '--n': draft.designs.length }">

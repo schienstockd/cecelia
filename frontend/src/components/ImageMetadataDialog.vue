@@ -35,7 +35,7 @@ import { cropSourceLine } from '../utils/cropSource'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { fetchAcqCheck, type AcqCheckResult } from '../utils/acqCheckApi'
 import { findingsFor } from '../utils/acqCheck'
-// lazily: the set's check dialog opens this one for a movie, so a static import would be circular
+// lazily: the set's check dialog opens this one for an image, so a static import would be circular
 const AcqCheckDialog = defineAsyncComponent(() => import('./AcqCheckDialog.vue'))
 
 const props = defineProps<{ image: CciaImage }>()
@@ -51,7 +51,7 @@ const acqLine = computed(() => {
   if (!acq.value) return null
   const mine = findingsFor(acq.value, props.image.uid).filter(f => f.level === 'warn').length
   const set = findingsFor(acq.value, 'set').filter(f => f.level === 'warn').length
-  return mine + set ? `Acquisition check: ${mine} for this movie, ${set} across the set` : null
+  return mine + set ? `Acquisition check: ${mine} for this ${acq.value.item ?? 'image'}, ${set} across the set` : null
 })
 const projectMeta = useProjectMetaStore()
 const project = useProjectStore()
