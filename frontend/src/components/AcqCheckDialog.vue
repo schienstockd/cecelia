@@ -74,7 +74,7 @@ const setFindings = computed(() => (result.value ? findingsFor(result.value, 'se
 const unmeasured = computed(() => findingImageUids(result.value?.findings.find(f => f.code === 'acq.not_measured')))
 const measureLeft = computed(() => measuringCount(taskStore.tasks, MEASURE_FUN, unmeasured.value))
 const measuring = computed(() => measureLeft.value > 0)
-function measure() { if (!measuring.value) submitMeasure(props.projectUid, props.setUid, unmeasured.value) }
+function measure() { if (!measuring.value) submitMeasure(props.projectUid, props.setUid, unmeasured.value, item.value, items.value) }
 watch(measuring, (now, was) => { if (was && !now) load() })
 const groups = computed(() => (result.value ? rowsByDesign(result.value) : []))
 // the review names movies in full; shown as names or uids like the finding lists
@@ -162,7 +162,7 @@ const metaImage = computed(() => {
             {{ plan ? 'Edit' : 'Set a plan' }}
           </button>
         </template>
-        <AcqPlanForm v-else class="form" :plan="formPlan" :designs="formDesigns" :saving="saving"
+        <AcqPlanForm v-else class="form" :items="items" :plan="formPlan" :designs="formDesigns" :saving="saving"
                      @save="save" @cancel="editing = false" />
       </div>
 
