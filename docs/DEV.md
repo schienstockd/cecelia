@@ -657,6 +657,11 @@ and `have_fixture(path)` (override the root with the `CECELIA_TEST_DATA` env var
 on `have_fixture(...)` and `@test_skip` otherwise; `have_fixture` emits a single strong `@warn` per
 missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` testsets.
 
+**Two images? Make them differ too.** `distinct_image!(dir; value_name = "B")` copies KDIeEx — KDIeEm's
+cells minus a known third, `area` and track speed doubled — into a second image dir or beside B as
+another segmentation, so "which image / which segmentation" and "pooled twice" mistakes change counts
+and medians. Derive expectations from B with `distinct_keeps_cell` / `distinct_keeps_track`.
+
 **Two segmentations? Make them differ.** A test of "which segmentation did this read" needs a second
 table that disagrees with the first, or a mix-up returns the same numbers. Don't copy `B` as `T` —
 call `distinct_segmentation!(labelProps_dir)` (`app/test/distinct_segmentations.jl`, loaded by both
@@ -697,7 +702,9 @@ tested on that movie) and in the viewer overlay test (`if sizes[3] != 1.0` — n
   `test-data/NEEDS.toml` (properties, why, the waiting tests, a size budget), pass `need = "<id>"`, and
   let the test skip with its warning. If a synthesised fixture with a known answer would do
   (`synthetic = true` — distances, band edges, a unit conversion), build it yourself like `CONTMESH`;
-  only real-data behaviour waits for the maintainer. A PR reservation that says "not run on <X> data"
+  only real-data behaviour waits for the maintainer — the weekly judge lists the images in their
+  projects that match (`pixi run judge-fixtures`), and `pixi run fixture-cut` cuts one under the cap
+  into `test-data/projects/FIXPRJ` (cell table, and the image + label stores cropped to one box). A PR reservation that says "not run on <X> data"
   names the request id. The registry testset fails once a registered fixture meets an open request, so
   the list can't go stale.
 - **Guards that skip on the fixture are the same bug.** `if <property> … end` around the assertion that

@@ -116,5 +116,22 @@ class JvmFallbackTest(unittest.TestCase):
         self.assertEqual(r['targetChunk'], peek.PLAYBACK_TARGET)
 
 
+class QptiffPeekTest(unittest.TestCase):
+    """An Akoya `.qptiff` is a TIFF: the fast reader peeks it, rather than the advisor going quiet."""
+
+    def test_a_qptiff_is_peeked_by_tifffile(self):
+        import tempfile
+        import numpy as np
+        import tifffile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'scan.qptiff')
+            tifffile.imwrite(path, np.zeros((3, 64, 2048), np.uint8), metadata={'axes': 'CYX'})
+            r = peek.peek_one(path, still_target=512)
+        self.assertEqual(r['reader'], 'tifffile')
+        self.assertEqual((r['nX'], r['nY'], r['nC']), (2048, 64, 3))
+        # 2048 / 512 = 4 → log2 = 2, +1 → 3 levels.
+        self.assertEqual(r['recommendedPyramidLevels'], 3)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -11,7 +11,7 @@
 #       → `{png, width, height, cols, tileSize, contrast, channels, cells, total, offset, truncated}` —
 #         every image of a set in one grid, for looking across a set before a batch run (the MCP
 #         `get_thumbnails` tool). `contrast=shared` (default) draws every image with the SAME
-#         per-channel contrast (pooled over the set) in the default palette, so a dim, saturated or empty
+#         contrast per channel NAME (pooled over the set) in the default palette, so a dim, saturated or empty
 #         image stands out; `contrast=image` draws each the way its viewer shows it.
 #
 # Docs: docs/API.md → Route index.
@@ -70,16 +70,48 @@ function api_image_thumbnail(req::HTTP.Request)
 end
 
 """
-    shared_specs(chws) -> Vector
+    tile_channel_names(names, nc) -> Vector{String}
 
-One contrast per channel index, pooled over every block in `chws` that has that channel (the same
-nonzero 1st/99.9th percentile as `percentile_spec`), in the default palette — so every image in a
-montage is drawn by the same rule and differences between tiles are differences in the data.
+One name per channel of a tile's `nc`-channel block: the image's names (`channel_names`), padded to
+`nc` and made whole by `unique_channel_names` — a channel with no name is `CH<n>`, 1-based, as at
+import.
 """
-function shared_specs(chws::AbstractVector)
-    nc = maximum((size(c, 1) for c in chws); init = 0)
-    [percentile_spec(reduce(vcat, (vec(view(c, k, :, :)) for c in chws if size(c, 1) >= k)),
-                     DEFAULT_CMAPS[mod1(k, 4)]) for k in 1:nc]
+tile_channel_names(names, nc::Int) =
+    unique_channel_names([k <= length(something(names, String[])) ? names[k] : "" for k in 1:nc])
+
+"""
+    shared_specs(chws, names) -> (legend, per_tile)
+
+One contrast per channel NAME, pooled over every block in `chws` that has that channel (the same
+nonzero 1st/99.9th percentile as `percentile_spec`), so every image in a montage is drawn by the same
+rule and differences between tiles are differences in the data. `names[i]` names the channels of
+`chws[i]` (`tile_channel_names`). Names match case-insensitively, as the measure-column resolver
+does (`resolve_channel_columns`) — `mem-TOM` in one image is `mem-Tom` in the next; two channels of
+ONE image that differ only in case stay apart. A channel is coloured by its place in the legend (the
+order names first appear), not by its index, so a set whose images list their channels in different
+orders still draws each marker in one colour.
+
+`legend` is `[(; name, spec)]` in that order; `per_tile[i]` is the spec of each channel of `chws[i]`.
+"""
+function shared_specs(chws::AbstractVector, names::AbstractVector)
+    keys = String[]; shown = String[]
+    tile_keys = map(names) do ns
+        ks = String[]
+        for n in ns
+            k = lowercase(n)
+            k in ks && (k = string(n, "#", length(ks) + 1))   # a case-only twin within one image: its own
+            push!(ks, k)
+            k in keys || (push!(keys, k); push!(shown, n))
+        end
+        ks
+    end
+    specs = map(enumerate(keys)) do (j, key)
+        vals = reduce(vcat, (vec(view(c, i, :, :)) for (c, ks) in zip(chws, tile_keys)
+                             for (i, k) in enumerate(ks) if k == key); init = Float32[])
+        percentile_spec(vals, DEFAULT_CMAPS[mod1(j, 4)])
+    end
+    legend = [(; name = shown[j], spec = specs[j]) for j in eachindex(keys)]
+    legend, [[specs[findfirst(==(k), keys)] for k in ks] for ks in tile_keys]
 end
 
 """
@@ -117,10 +149,20 @@ function api_set_thumbnails(req::HTTP.Request)
             nothing, sprint(showerror, e)
         end
     end
-    ok = [r[1] for r in reads if r[1] !== nothing]
-    # Nothing readable is a failure, not a blank montage: say why, from the first image.
-    isempty(ok) && return 500, JSON3.write((; error = "no image in this set could be read: $(reads[1][2])"))
-    shared = contrast == "shared" && !isempty(ok) ? shared_specs(ok) : nothing
+    any(r -> r[1] !== nothing, reads) ||       # nothing readable is a failure, not a blank montage
+        return 500, JSON3.write((; error = "no image in this set could be read: $(reads[1][2])"))
+
+    # Shared contrast pools by channel NAME, so a set with mixed channel order is not drawn in mixed colours.
+    shared = nothing
+    if contrast == "shared"
+        drawn = [i for (i, r) in enumerate(reads) if r[1] !== nothing]
+        names = map(drawn) do i
+            ns = try channel_names(imgs[i]; value_name = vn) catch; nothing end
+            tile_channel_names(ns, size(reads[i][1], 1))
+        end
+        legend, per_tile = shared_specs([reads[i][1] for i in drawn], names)
+        shared = (; legend, specs = Dict(zip(drawn, per_tile)))
+    end
 
     cols, rows, W, H = montage_layout(length(imgs), tile)
     canvas = fill(MONTAGE_BG, H, W)
@@ -130,7 +172,7 @@ function api_set_thumbnails(req::HTTP.Request)
         push!(cells, (; index = offset + i - 1, row = r, col = c, imageUid = img.uid, name = img.name,
                         included = image_included(img), error = chw === nothing ? props : nothing))
         if chw !== nothing
-            specs = shared === nothing ? preview_specs(chw, props) : shared[1:size(chw, 1)]
+            specs = shared === nothing ? preview_specs(chw, props) : shared.specs[i]
             t = srgb_encode(composite_rgb(chw, specs))
             th, tw = size(t)
             y0 = MONTAGE_PAD + r * (tile + MONTAGE_PAD) + (tile - th) ÷ 2
@@ -139,19 +181,10 @@ function api_set_thumbnails(req::HTTP.Request)
         end
     end
 
-    # Channel legend for the shared palette — named from the first image that reports names.
-    channels = Any[]
-    if shared !== nothing
-        names = String[]
-        for img in imgs
-            ns = try something(channel_names(img; value_name = vn), String[]) catch; String[] end
-            isempty(ns) || (names = ns; break)
-        end
-        for (k, s) in enumerate(shared)
-            push!(channels, (; index = k - 1, colour = s[3], name = k <= length(names) ? names[k] : "",
-                               lo = s[1], hi = s[2]))
-        end
-    end
+    # Channel legend for the shared palette — one row per channel name, in colour order.
+    channels = shared === nothing ? Any[] :
+        [(; index = k - 1, colour = l.spec[3], name = l.name, lo = l.spec[1], hi = l.spec[2])
+         for (k, l) in enumerate(shared.legend)]
 
     total = length(all_imgs)
     200, JSON3.write((; png = _png_data_url(png_bytes(canvas)), width = W, height = H, cols, rows,

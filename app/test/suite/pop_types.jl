@@ -185,16 +185,18 @@ end
 end
 
 @testset "region_membership / region_enrichment count ONE segmentation's cells" begin
-    # A bare region pop on B must not pool the co-clustered T's cells: the counts are read for B.
+    # A bare region pop on B must not pool the co-clustered T's cells: the counts are read for B. T is
+    # KDIeEx (a known third fewer cells), so reading T for B, or pooling both, changes every count.
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !have_fixture(h5)
         @test_skip "region_membership (fixture missing)"
     else
         td = mktempdir()
         lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+        cp(h5, joinpath(lpdir, "B.h5ad"))
+        distinct_image!(td; value_name = "T", tracks = false)
         for vn in ("B", "T")
             p = joinpath(lpdir, "$(vn).h5ad")
-            cp(h5, p)
             lab = (label_props(p) |> v -> select_cols(v, String[]) |> as_df).label
             label_props(p) |> v -> add_obs(v, DataFrame("label" => lab,
                 "regions.immune" => [Float64(l % 2) for l in lab])) |> save!
@@ -208,10 +210,15 @@ end
         n_b = nrow(label_props(img; value_name="B") |> v -> select_cols(v, String[]) |> as_df)
         @test length(Cecelia._expand_cluster_pops(img, ["/R"], "region", "B")) == 2   # the run spans B + T
 
+        want = distinct_cell_counts(h5)
+        @test n_b == want.b && want.x < want.b
+        blab = Int.((label_props(h5) |> v -> select_cols(v, String[]) |> as_df).label)
         rm_ = region_membership(img, ("region", "/R"), "immune"; value_name="B")
-        @test sum(rm_.n) == n_b
+        @test sum(rm_.n) == want.b
+        # per region, B's own split (regions.immune = label % 2)
+        @test sort(Int.(rm_.n)) == sort([count(iseven, blab), count(isodd, blab)])
         re = region_enrichment(img, [("region", "/R")], "immune"; value_name="B")
-        @test sum(re.n) == n_b
+        @test sum(re.n) == want.b
     end
 end
 

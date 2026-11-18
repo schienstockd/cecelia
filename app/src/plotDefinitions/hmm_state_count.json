@@ -1,7 +1,9 @@
 {
   "id": "hmm_state_count",
   "label": "HMM state count",
-  "answers": "How many HMM states should the behaviour model have — fit against number of states?",
+  "category": "checks",
+  "sketch": "stateCount",
+  "answers": "How many HMM states does the behaviour model need?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["elbow"],

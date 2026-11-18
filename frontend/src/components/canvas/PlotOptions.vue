@@ -20,33 +20,28 @@ import CcToggle from '../CcToggle.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
 import InlineNote from '../InlineNote.vue'
 import { emptyReadout, offers, overrideFor, type PlotReadout } from '../../plots/plotReadout'
-import type { VisControl } from '../../plots/plotControls'
+import { DEFAULT_SECTIONS, SECTION_ROWS, type OptionSection, type VisControl } from '../../plots/plotControls'
 import { overrideTooltip, effectiveOf } from '../../plots/autoOverride'
 import { useFieldDraft } from '../../composables/useFieldDraft'
 
-type SectionKey = 'layout' | 'points' | 'colours' | 'labels' | 'stats'
 
 const props = withDefaults(defineProps<{
   vis: VisProps
-  sections?: SectionKey[]
+  sections?: OptionSection[]
   // What the active plot's last render actually DID, as opposed to what these controls asked for: which
   // stats test `auto` resolved to (and why), and any setting the renderer had to substitute. A control
   // whose value was overridden marks itself amber and explains in its tooltip — see plots/plotReadout.ts.
   readout?: PlotReadout
-}>(), { sections: () => ['layout', 'points', 'colours', 'labels'], readout: emptyReadout })
+}>(), { sections: () => DEFAULT_SECTIONS, readout: emptyReadout })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
 
 // ACCORDION: only one section open at a time — the sections below share
 // `accordion="plotOptions.openSection"` (persisted per profile under that key; none open by default).
 
 // the facet mode, migrating the legacy boolean so a canvas saved before the mode existed still
-// shows as faceted rather than silently reverting to None
+// shows as faceted rather than silently reverting to None. (A chart that can't facet hides the row —
+// plots/plotControls.ts — so there is no "ignored" state to display.)
 const facetBy = computed(() => facetMode(props.vis))
-// …and when the chart can't facet at all, SHOW the effective value ('none') while the select still
-// WRITES the preference — the same contract as the gating transform selects (see effectiveOf). An
-// ambered control still displaying the mode that was NOT used reads as "your setting is ignored".
-const facetOverrideNote = computed(() => overrideFor(props.readout, 'Facet by'))
-const facetShown = computed(() => effectiveOf(facetOverrideNote.value, facetBy.value, 'none' as const))
 
 // the x-tick-label rotation the renderer applied without being asked (labels wouldn't fit their bands)
 const xLabelOverride = computed(() => overrideFor(props.readout, 'X labels'))
@@ -73,14 +68,7 @@ const coloursDraft = useFieldDraft(() => props.vis.userColors)
 // a control that changes nothing reads as broken. A section left with no rows is not drawn. The hidden
 // value is kept, not reset: under Global scope it still drives the plots that do use it.
 const can = (c: VisControl) => offers(props.readout, c)
-const SECTION_ROWS: Record<SectionKey, VisControl[]> = {
-  layout: ['legend', 'logScale', 'grid', 'rotateXLabel', 'rotate', 'facetBy', 'yRange'],
-  points: ['jitter', 'colorData', 'pointSize', 'pointOpacity'],
-  colours: ['palette'],
-  stats: ['stats'],
-  labels: ['title', 'labX', 'labY', 'fontSize'],
-}
-const has = (s: SectionKey) => props.sections.includes(s) && SECTION_ROWS[s].some(can)
+const has = (s: OptionSection) => props.sections.includes(s) && SECTION_ROWS[s].some(can)
 </script>
 
 <template>
@@ -109,10 +97,10 @@ const has = (s: SectionKey) => props.sections.includes(s) && SECTION_ROWS[s].som
                  @update:model-value="set({ rotate: $event, ...($event ? { facetBy: 'none' } : {}) })" /></div>
         <!-- WHAT a small-multiple panel is one OF. Image = compare the selected images side by side,
              each panel holding that image's segmentations/populations. -->
-        <label v-if="can('facetBy')" class="po-row cc-muted cc-fs-xs" :class="{ 'cc-auto-override': !!facetOverrideNote }"
-               v-tooltip.top="overrideTooltip(facetOverrideNote, 'Split into small multiples (mutually exclusive with rotate)')">
-          <span>Facet by<i v-if="facetOverrideNote" class="pi pi-exclamation-triangle po-warn" /></span>
-          <select class="po-sel" :value="facetShown"
+        <label v-if="can('facetBy')" class="po-row cc-muted cc-fs-xs"
+               v-tooltip.top="'Split into small multiples (mutually exclusive with rotate)'">
+          <span>Facet by</span>
+          <select class="po-sel" :value="facetBy"
                   @change="set({ facetBy: ($event.target as HTMLSelectElement).value as VisProps['facetBy'],
                                  ...(($event.target as HTMLSelectElement).value !== 'none' ? { rotate: false } : {}) })">
             <option value="none">None</option>

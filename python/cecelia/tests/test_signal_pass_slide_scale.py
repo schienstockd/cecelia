@@ -111,6 +111,37 @@ class ProcessedFloor(unittest.TestCase):
         self.assertIn('autofluorescence subtracted', fl1['evidence'])
 
 
+class HistogramPassProgress(unittest.TestCase):
+    def _measure(self, arr, axes):
+        lines, ticks = [], []
+        order = ''.join(a.upper() for a in axes)
+        with mock.patch.object(data_path.ome_xml_utils, 'load_ome_xml', return_value=None), \
+             mock.patch.object(data_path, 'DimUtils') as du, \
+             mock.patch.object(data_path.zarr_utils, 'open_as_zarr', return_value=([arr], None)), \
+             mock.patch.object(data_path.zarr_utils, 'read_axes', return_value=axes):
+            du.return_value.im_dim_order = order
+            du.return_value.dim_idx.side_effect = order.index
+            data_path.measure_store('unused', log=lines.append, on_progress=lambda n, t: ticks.append((n, t)))
+        return lines, ticks
+
+    def test_the_full_pass_ticks_once_per_channel_and_logs_each_tenth(self):
+        # a 60-channel slide scan spent minutes in this pass with no output: it read as a hang
+        import math
+        for n_c in (10, 25):
+            with self.subTest(n_c=n_c):
+                arr = np.random.default_rng(3).integers(0, 255, (n_c, 3, 16, 16)).astype(np.uint8)
+                lines, ticks = self._measure(arr, ['c', 'z', 'y', 'x'])
+                self.assertEqual(ticks, [(i, n_c) for i in range(n_c + 1)])
+                tenths = [l.split()[1] for l in lines if l.strip().startswith('histograms:')]
+                # the first channel count to reach each tenth, 1/10 … 9/10 (10/10 is the pass ending)
+                self.assertEqual(tenths, [f'{math.ceil(k * n_c / 10)}/{n_c}' for k in range(1, 10)])
+
+    def test_a_store_without_a_channel_axis_is_one_channel(self):
+        arr = np.random.default_rng(4).integers(0, 255, (1, 32, 32)).astype(np.uint8)   # a single plane: first is last
+        _, ticks = self._measure(arr, ['z', 'y', 'x'])
+        self.assertEqual(ticks, [(0, 1), (1, 1)])
+
+
 class HistogramRowBlocks(unittest.TestCase):
     def test_a_large_plane_is_read_in_row_blocks_with_the_same_histogram(self):
         arr = np.random.default_rng(2).integers(0, 4096, (2, 300, 257)).astype(np.uint16)

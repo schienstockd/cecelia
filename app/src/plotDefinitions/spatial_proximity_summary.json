@@ -1,6 +1,8 @@
 {
   "id": "spatial_proximity_summary",
   "label": "Proximity across images",
+  "category": "compare",
+  "sketch": "contactImages",
   "answers": "Does a population's enrichment near a structure differ between images or treatments?",
   "module": "spatialAnalysis",
   "family": "summary",

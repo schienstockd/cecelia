@@ -4,7 +4,8 @@
 # too, and the run stamp (`runAt`) that marks a population picked on an earlier run under the same name.
 #
 # The testpr image's cell table has no cell clustering, so the test writes one — `clusters.immune`, five
-# clusters by label — through the obs writer, onto the image and a copy of it (TgtImg), and records the
+# clusters by label — through the obs writer, onto the image and a second image derived from KDIeEx
+# (TgtImg: a known third fewer cells, so a count that reads one image twice shows), and records the
 # run's manifest on both: a run spanning two images, as a set-wide clustering does.
 
 @testset "API: add-cluster-pops groups a run's clusters — set-wide, all or nothing" begin
@@ -15,10 +16,10 @@
     proj = joinpath(dir, "testpr")
     cp(api_fixture("testpr"), proj)
     tgt = joinpath(proj, "1", "TgtImg")
-    cp(joinpath(proj, "1", "KDIeEm"), tgt)
+    cp(joinpath(proj, "1", "KDIeEx"), tgt)    # disagrees with KDIeEm (test-data/fixtures.toml)
     rm(joinpath(tgt, "gating"); recursive = true, force = true)
     ccid = joinpath(tgt, "ccid.json")
-    write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEm\"" => "\"uid\": \"TgtImg\""))
+    write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEx\"" => "\"uid\": \"TgtImg\""))
     old = Cecelia.cecelia_conf()["dirs"]["projects"]
     empty!(_GATING_HISTORY)
     try
@@ -55,7 +56,10 @@
         @test String(ch.clusterRunAt[:immune]) == at1
         c1, c2, c3, c4 = universe[1:4]
         col = label_props(img_label_props_path(a, "B")) |> select_cols(["clusters.immune"]) |> as_df
-        n_in(cs) = count(x -> isfinite(x) && Int(round(x)) in cs, col[!, "clusters.immune"])
+        colb = label_props(img_label_props_path(b, "B")) |> select_cols(["clusters.immune"]) |> as_df
+        n_of(c, cs) = count(x -> isfinite(x) && Int(round(x)) in cs, c[!, "clusters.immune"])
+        n_in(cs) = n_of(col, cs) + n_of(colb, cs)      # each image's own cells, not one image twice
+        @test length(colb.label) < length(col.label)
         grouping = [Dict("name" => "T", "clusters" => [c2, c1]),        # several clusters → one population
                     Dict("name" => "B cells", "clusters" => [c3])]
 
@@ -64,7 +68,7 @@
         r = JSON3.read(body)
         @test st == 200 && r.dryRun
         @test Set(String.(r.images)) == Set(["KDIeEm", "TgtImg"]) && isempty(r.skipped)
-        @test r.populations[1].count == 2 * n_in((c1, c2)) && r.populations[2].count == 2 * n_in((c3,))
+        @test r.populations[1].count == n_in((c1, c2)) && r.populations[2].count == n_in((c3,))
         @test r.populations[1].clusters == [c1, c2]                   # sorted, as the manager stores them
         @test sort(Int.(r.unassigned)) == setdiff(universe, [c1, c2, c3])
         @test isempty(clustmap(a).pops) && isempty(clustmap(b).pops)
@@ -219,10 +223,10 @@ end
     proj = joinpath(dir, "testpr")
     cp(api_fixture("testpr"), proj)
     tgt = joinpath(proj, "1", "TgtImg")
-    cp(joinpath(proj, "1", "KDIeEm"), tgt)
+    cp(joinpath(proj, "1", "KDIeEx"), tgt)    # disagrees with KDIeEm (test-data/fixtures.toml)
     rm(joinpath(tgt, "gating"); recursive = true, force = true)
     ccid = joinpath(tgt, "ccid.json")
-    write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEm\"" => "\"uid\": \"TgtImg\""))
+    write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEx\"" => "\"uid\": \"TgtImg\""))
     old = Cecelia.cecelia_conf()["dirs"]["projects"]
     empty!(_GATING_HISTORY)
     try
@@ -257,7 +261,10 @@ end
         universe = sort!(Int.(collect(ch.clusterIds[:immune])))
         c1, c2, c3, c4 = universe[1:4]
         col = label_props(img_label_props_path(a, "B")) |> select_cols(["clusters.immune"]) |> as_df
-        n_in(cs) = count(x -> isfinite(x) && Int(round(x)) in cs, col[!, "clusters.immune"])
+        colb = label_props(img_label_props_path(b, "B")) |> select_cols(["clusters.immune"]) |> as_df
+        n_of(c, cs) = count(x -> isfinite(x) && Int(round(x)) in cs, c[!, "clusters.immune"])
+        n_in(cs) = n_of(col, cs) + n_of(colb, cs)      # each image's own cells, not one image twice
+        @test length(colb.label) < length(col.label)
         @test add([Dict("name" => "T", "clusters" => [c1, c2]), Dict("name" => "B cells", "clusters" => [c3])])[1] == 200
 
         # moving c2 from T to B cells is ONE call: the grouping is checked as it will be after it.
@@ -266,7 +273,7 @@ end
         st, body = set(move, Dict{String,Any}("dryRun" => true))
         r = JSON3.read(body)
         @test st == 200 && r.dryRun
-        @test r.populations[1].count == 2 * n_in((c1,)) && r.populations[2].count == 2 * n_in((c2, c3))
+        @test r.populations[1].count == n_in((c1,)) && r.populations[2].count == n_in((c2, c3))
         @test Int.(r.populations[2].clusters) == [c2, c3]
         @test sort(Int.(r.unassigned)) == setdiff(universe, [c1, c2, c3])
         @test ids_of(a, "/T") == [c1, c2] && ids_of(b, "/T") == [c1, c2]

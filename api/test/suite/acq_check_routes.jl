@@ -46,6 +46,8 @@
         @test a["setUid"] == s.uid && length(a["rounds"]) == 1 && !isempty(a["lastCheck"]["open"])
         md = read(joinpath(Cecelia.projects_dir(), proj.uid, "blackboard", id, "entry.md"), String)
         @test occursin("## Across the set", md) && occursin("OT-I carries", md)
+        # still images (no time axis): the entry says images, never movies — the check's own noun
+        @test !occursin(r"\bmovies?\b"i, md)
 
         # the GET now finds the entry and runs the plan
         st, r2 = get_(proj.uid, s.uid)

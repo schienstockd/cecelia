@@ -1,7 +1,9 @@
 {
   "id": "spatial_proximity",
   "label": "Proximity profile",
-  "answers": "Which populations sit near a structure, and how far out (enrichment by distance band)?",
+  "category": "profiles",
+  "sketch": "cellDistance",
+  "answers": "Which populations sit near a structure, and how far out?",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["heatmap"],
