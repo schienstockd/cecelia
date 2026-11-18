@@ -4,6 +4,8 @@ import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
 import ClusterHmmStatesPanel from './ClusterHmmStatesPanel.vue'
 import ClusterHmmTransitionsPanel from './ClusterHmmTransitionsPanel.vue'
 import CellCardsView from '../../components/plots/CellCardsView.vue'
+import { visControlsFor, type VisControl } from '../../plots/plotControls'
+import { viewControls } from '../../components/canvas/interactiveViews'
 
 // Registry of CLUSTER "panel" plots — the summary-family cluster plots that wrap CanvasPanel themselves
 // (heatmap, HMM behaviour), as opposed to the interactive WebGL views in interactiveViews.ts (UMAP).
@@ -31,6 +33,8 @@ export interface ClusterPanelDef {
   analysisBoard?: boolean                    // ALSO offered on the Analysis board (not just the cluster page)
   rail?: RailKind                            // which manager the host's rail shows (default below)
   props?: (ctx: ClusterCtx) => Record<string, unknown>   // panel-specific props from the shared context
+  // the rail settings it reacts to (plots/plotControls.ts); absent = none. Pinned by visControlsDeclared.test.ts
+  visControls?: VisControl[]
 }
 
 // Every cluster panel is driven by the board's one clustering run, so they all want the read-only
@@ -43,6 +47,7 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
     label: 'Cluster heatmap',
     answers: 'What defines each cluster — its feature profile (heatmap)?',
     component: ClusterHeatmapPanel, analysisBoard: true, rail: CLUSTER_RAIL,
+    visControls: visControlsFor({ chartType: 'heatmap' }),    // built by buildPlotOptions, like a summary heatmap
     props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap, channelNames: ctx.channelNames }),
   },
   hmmStates: {
@@ -50,12 +55,14 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
     answers: 'How do the HMM states split across the track clusters?',
     component: ClusterHmmStatesPanel, trackOnly: true, needsCols: 'hmmState',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmStateCols }),
+    visControls: ['legend', 'grid', 'palette', 'title', 'labX', 'labY', 'fontSize'],
   },
   hmmTransitions: {
     label: 'HMM transitions',
     answers: 'How do HMM state transitions differ between track clusters?',
     component: ClusterHmmTransitionsPanel, trackOnly: true, needsCols: 'hmmTransition',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmTransitionCols }),
+    visControls: ['legend', 'grid', 'title', 'labX', 'labY', 'fontSize'],
   },
   // One card per trackclust pop the manager ticks: medoid track's filmstrip (server-rendered via
   // /api/cell_cards, trace baked in by overlay_author's `track_color_mode="pop"`) + a stats footer
@@ -72,3 +79,10 @@ export const isClusterPanel = (kind: string): boolean => kind in CLUSTER_PANELS
 
 /** The manager this panel needs, defaulted — the `railFor` of interactiveViews.ts. */
 export const clusterPanelRail = (kind: string): RailKind => CLUSTER_PANELS[kind]?.rail ?? DEFAULT_RAIL
+
+/** The rail settings a panel reacts to — none unless it declares them. */
+export const clusterPanelControls = (kind: string): VisControl[] => CLUSTER_PANELS[kind]?.visControls ?? []
+
+/** …for a plot of either registry, by key — what a host hosting both (board, cluster page) asks. */
+export const registeredControls = (kind: string): VisControl[] =>
+  isClusterPanel(kind) ? clusterPanelControls(kind) : viewControls(kind)

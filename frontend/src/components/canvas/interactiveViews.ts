@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import { popTypeLabel, type PopTypeOption, type PopTypeSpecLike } from '../../plots/popTypes'
 import { TRACK_FAMILY_POP_TYPES } from '../../plots/popTypeRegistry'
+import type { VisControl } from '../../plots/plotControls'
 import ClusterMapView from '../plots/ClusterMapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
@@ -64,6 +65,9 @@ export interface InteractiveView {
   // the second and third ticks changed nothing and said nothing. A picker that accepts input it
   // discards is worse than one that refuses it.
   singlePop?: boolean
+  // The rail's plot settings this view reacts to (plots/plotControls.ts); absent = none, so the rail
+  // shows no options block. Pinned against the view's source by `visControlsDeclared.test.ts`.
+  visControls?: VisControl[]
   square?: boolean            // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
   initialState?: () => Record<string, unknown>   // seed for a NEW panel's state bag (host-agnostic)
 }
@@ -88,14 +92,16 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     answers: 'Where does each cluster sit in the UMAP / behaviour map, and which populations cover it?',
     component: ClusterMapView, clusterPage: true, analysisBoard: true,
     boardGroup: 'clustering', square: true, rail: 'clusterPops',
+    visControls: ['legend', 'pointSize', 'pointOpacity', 'palette', 'fontSize'],
     initialState: () => ({ labels: true, hl: [] }),
   },
   // Self-contained: both pick their own image/segmentation in their panel state, so a population list
   // is dead chrome for them. `'none'` still gives them the rail's styling block — the gating strategy
-  // reads `vis.fontSize` from it.
+  // reads font size and dot size from it.
   gatingStrategy: { label: 'Gating strategy',
     answers: 'How was a population gated — every gate from the root down to it?',
-    component: GatingStrategyView, analysisBoard: true, rail: 'none', pluginPage: true },
+    component: GatingStrategyView, analysisBoard: true, rail: 'none', pluginPage: true,
+    visControls: ['pointSize', 'fontSize'] },
   filmstrip: { label: 'Image / strip',
     answers: 'What does it look like — a viewer screenshot or filmstrip beside the plots?',
     component: ImageStripView, analysisBoard: true, boardGroup: 'image', rail: 'none', pluginPage: true },
@@ -214,6 +220,9 @@ export function migrateViewKey(state: { kind: string }): boolean {
 
 /** The manager a view needs, defaulted. Hosts call this rather than reading `.rail` themselves. */
 export const railFor = (key: string): RailKind => INTERACTIVE_VIEWS[key]?.rail ?? DEFAULT_RAIL
+
+/** The rail settings a view reacts to — none unless it declares them. */
+export const viewControls = (key: string): VisControl[] => INTERACTIVE_VIEWS[key]?.visControls ?? []
 
 /** The population families a view offers (empty when it does not slice by population). */
 export const popTypesFor = (key: string): PopTypeOption[] => INTERACTIVE_VIEWS[key]?.popTypes ?? []

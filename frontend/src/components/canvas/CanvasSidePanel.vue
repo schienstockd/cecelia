@@ -27,7 +27,7 @@
   two floating mechanisms are a deliberate split (see INVENTORY.md).
 -->
 <script setup lang="ts">
-import { ref, watch, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import { profileStorage } from '../../utils/profileStorage'
 import { useFloatingPanel } from '../../composables/useFloatingPanel'
 import { useResizeHandles } from '../../composables/useResizeHandles'
@@ -35,6 +35,7 @@ import PlotOptions from './PlotOptions.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
 import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
+import { hasAnyOption, type OptionSection } from '../../plots/plotControls'
 
 // scope: global = every plot, local = active plot only (icon-only segmented control)
 const SCOPE_OPTIONS: ChipOption[] = [
@@ -58,7 +59,7 @@ const props = withDefaults(defineProps<{
   scope?: 'global' | 'local'
   // when provided, the shared PlotOptions styling block renders above the footer (obeys `scope`)
   vis?: VisProps
-  optionsSections?: ('layout' | 'points' | 'colours' | 'labels' | 'stats')[]
+  optionsSections?: OptionSection[]
   readout?: PlotReadout            // active plot's last render (stats test + auto-overrides)
   // DOCKED: render in-flow (a fixed rail, e.g. the Analysis-canvas layout) instead of a draggable
   // floating box — no absolute positioning, no drag, full width of its container.
@@ -89,6 +90,9 @@ const emit = defineEmits<{
 }>()
 
 const collapsed = ref(false)
+// the styling block exists only when the host passes a `vis` bag AND the active plot reacts to at least
+// one of its rows — a plot that takes none (an image strip, a figure) gets no settings toggle at all
+const optionsOffered = computed(() => !!props.vis && hasAnyOption(props.readout.controls, props.optionsSections))
 // PlotOptions visibility — defaults OFF (the block is crowded and rarely touched — surface it from
 // the footer toggle when it's wanted). Reads from profileStorage so a user who turned it on stays on.
 const plotOptionsVisible = ref((() => {
@@ -172,7 +176,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
     <!-- shared plot-styling block (only when the host passes a `vis` bag), obeys the scope below.
          `v-if` on `plotOptionsVisible` UNMOUNTS the block when the settings toggle is off, so it costs
          nothing to render while hidden. -->
-    <div v-show="!collapsed" v-if="vis && plotOptionsVisible" class="csp-opts">
+    <div v-show="!collapsed" v-if="vis && optionsOffered && plotOptionsVisible" class="csp-opts">
       <PlotOptions :vis="vis" :sections="optionsSections" :readout="readout"
                    @update:vis="emit('update:vis', $event)" />
     </div>
@@ -183,7 +187,7 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
          host opts in with `manualApply` defined (null = "the host doesn't support staging" — hide
          the toggle entirely). -->
     <div v-show="!collapsed" v-if="scope || vis || reloadable" class="csp-footer">
-      <button v-if="vis" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
+      <button v-if="optionsOffered" class="csp-opts-toggle cc-btn cc-btn-ghost cc-btn-icon"
               :class="{ 'cc-btn-on cc-btn-on-tint': plotOptionsVisible }"
               v-tooltip.top="plotOptionsVisible ? 'Hide plot settings' : 'Show plot settings'"
               @click="plotOptionsVisible = !plotOptionsVisible">
