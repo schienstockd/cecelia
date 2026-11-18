@@ -31,7 +31,7 @@ import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews, migrateViewKey } from '../../components/canvas/interactiveViews'
-import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, clusterPanelReadout } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import CanvasSelectionOverlay from '../../components/canvas/CanvasSelectionOverlay.vue'
@@ -69,7 +69,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -352,7 +352,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         </button>
       </div>
 
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
@@ -412,7 +412,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
                              :run-at="clusterRunAt[suffix]"
-                             :vis="activeVis"
+                             :vis="activeVis" :readout="clusterPanelReadout(activePanel?.state.kind)"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
                              @update:selected="selectedPop = $event" @update:scope="scope = $event"

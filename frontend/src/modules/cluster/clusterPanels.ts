@@ -1,5 +1,7 @@
 import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from '../../components/canvas/canvasManager'
+import { visControlsFor, type VisControl } from '../../plots/plotControls'
+import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
 import ClusterHmmStatesPanel from './ClusterHmmStatesPanel.vue'
 import ClusterHmmTransitionsPanel from './ClusterHmmTransitionsPanel.vue'
@@ -31,6 +33,8 @@ export interface ClusterPanelDef {
   analysisBoard?: boolean                    // ALSO offered on the Analysis board (not just the cluster page)
   rail?: RailKind                            // which manager the host's rail shows (default below)
   props?: (ctx: ClusterCtx) => Record<string, unknown>   // panel-specific props from the shared context
+  // the plot settings (rail rows) it reacts to — plots/plotControls.ts. Undeclared → the rail shows all.
+  controls?: VisControl[]
 }
 
 // Every cluster panel is driven by the board's one clustering run, so they all want the read-only
@@ -43,6 +47,7 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
     label: 'Cluster heatmap',
     answers: 'What defines each cluster — its feature profile (heatmap)?',
     component: ClusterHeatmapPanel, analysisBoard: true, rail: CLUSTER_RAIL,
+    controls: visControlsFor({ chartType: 'heatmap' }),   // drawn by the generic heatmap builder
     props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap, channelNames: ctx.channelNames }),
   },
   hmmStates: {
@@ -72,3 +77,7 @@ export const isClusterPanel = (kind: string): boolean => kind in CLUSTER_PANELS
 
 /** The manager this panel needs, defaulted — the `railFor` of interactiveViews.ts. */
 export const clusterPanelRail = (kind: string): RailKind => CLUSTER_PANELS[kind]?.rail ?? DEFAULT_RAIL
+
+/** What the rail reports for a cluster panel: the settings it declares (null = all rows). */
+export const clusterPanelReadout = (kind: string | undefined): PlotReadout =>
+  readoutOf(null, [], (kind && CLUSTER_PANELS[kind]?.controls) || null)

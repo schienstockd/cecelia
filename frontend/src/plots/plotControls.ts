@@ -42,8 +42,9 @@ const TABLE: Record<ChartType, VisControl[]> = {
   frequency: ['legend', 'grid', 'rotateXLabel', 'yRange', 'palette', ...LABELS],
   stacked: ['legend', 'grid', 'rotateXLabel', 'yRange', 'palette', ...LABELS],
   stacked100: ['legend', 'grid', 'rotateXLabel', 'yRange', 'palette', ...LABELS],
-  // a fixed colour ramp, cells not series: no palette, no measure axis to log or range
-  heatmap: ['legend', 'rotateXLabel', ...LABELS],
+  // a fixed colour ramp, cells not series: no palette, no measure axis to log or range; rotate
+  // transposes the grid
+  heatmap: ['legend', 'rotateXLabel', 'rotate', ...LABELS],
   elbow: ['legend', 'grid', ...LABELS],
   trend: ['legend', 'logScale', 'grid', 'rotateXLabel', 'facetBy', 'palette', ...LABELS],
 }

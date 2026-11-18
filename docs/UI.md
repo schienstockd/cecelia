@@ -2398,12 +2398,16 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
     (`contentBounds.h` + 16px), so a Tile grid that needs more rows than fit — or a panel dragged down —
     extends the workspace instead of spilling out of it. **Only the height grows**; the width stays
     viewport-derived, since Tile takes its columns from the width and a horizontal scrollbar on a plot
-    workspace is worse than a narrower grid. Each host therefore has THREE layers, the same shape
-    `LayoutCanvas` uses for the board: `.{gp,sc,cp,fp}-canvas` (`position: relative` — the rail's
-    offsetParent, so the rail does NOT scroll away with the plots) → `.…-scroll` (`inset: 0;
-    overflow: auto` — the measured viewport) → `.…-zoom` (the workspace, `transform: scale`). Zooming out
-    and growing compose: both are logical px, so a grown height is expressed in the same units as the
-    zoom-expanded base.
+    workspace is worse than a narrower grid. Each host (`FloatingCanvasHost`) has THREE layers:
+    `.floating-canvas` (`position: relative` — the rail's offsetParent) → `.floating-canvas-scroll`
+    (`inset: 0` — the measured viewport; scrolls SIDEWAYS only, when zoomed in past the width) →
+    `.floating-canvas-zoom` (the workspace, `transform: scale`). Zooming out and growing compose: both are
+    logical px, so a grown height is expressed in the same units as the zoom-expanded base.
+  - **…and the canvas box grows with it** (`hostStyle`, a min-height on `.floating-canvas`): the PAGE
+    scrolls to a low panel; the canvas has no vertical scroller of its own. It used to — a fixed 70vh box
+    scrolling inside a page that scrolls too, so a panel past the box's bottom edge read as cut off. The
+    base is the box's height *before* growth (`floorHeight`): measuring the grown box would ratchet (it
+    never shrinks back) and Tile would lay out into the grown height.
 
 **Zoom shortcuts** (all canvases, wired once in `useCanvasZoom`): **shift + mouse-wheel** over the canvas
 zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing in an input.
@@ -2435,7 +2439,7 @@ overflow, so clamping it there would shrink the plot for nothing.
 **Neither mode crams — the grid flows DOWN and the workspace grows.** When a cell would fall below the
 readable floor (`MIN_TILE_W` 300 / `MIN_TILE_H` 260), Tile keeps the floor, takes its columns from the
 WIDTH alone, and lets the extra rows go below the fold: 12 gating plots become 5 across × 3 down at
-260px, and the canvas scrolls. It never overflows sideways. The workspace then extends to hold them
+260px, and the page scrolls. It never overflows sideways. The workspace then extends to hold them
 (next bullet), so the bottom rows are reachable both by scrolling and by dragging a panel into the new
 room. **Tile is always sized from the VIEWPORT** (`tileBox`, i.e. `useCanvasWorkspace`'s
 `workspaceBase`), never from the grown workspace — feeding a content-derived height back into the

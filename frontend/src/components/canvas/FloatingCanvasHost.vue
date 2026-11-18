@@ -29,11 +29,12 @@ defineProps<{
   bindCanvas: (el: BindTarget) => void
   bindZoom: (el: BindTarget) => void
   workspaceStyle: CSSProperties
+  hostStyle: CSSProperties       // min-height that grows the box to the lowest panel (useCanvasWorkspace)
 }>()
 </script>
 
 <template>
-  <div class="floating-canvas">
+  <div class="floating-canvas" :style="hostStyle">
     <div :ref="bindCanvas" class="floating-canvas-scroll">
       <div :ref="bindZoom" class="floating-canvas-zoom" :style="workspaceStyle">
         <slot />
@@ -47,9 +48,9 @@ defineProps<{
 /* Outer positioned box. Panels' floating chrome is `position: absolute`; overlay-slot chips also
    anchor here (not `.floating-canvas-zoom`) so the workspace's CSS transform doesn't scale them. */
 .floating-canvas { position: relative; flex: 1; min-height: 70vh; }
-/* Measured viewport: the workspace it holds can be taller than this box (useCanvasWorkspace grows
-   it to fit the plots), so overflow scrolls here rather than escaping the canvas. */
-.floating-canvas-scroll { position: absolute; inset: 0; overflow: auto; }
+/* Measured viewport. The box itself grows to hold the workspace (`hostStyle`), so the PAGE scrolls
+   vertically — no second scroller nested in it. Sideways (zoomed in past the width) scrolls here. */
+.floating-canvas-scroll { position: absolute; inset: 0; overflow-x: auto; overflow-y: hidden; }
 /* Scaled workspace: the panels zoom together. Size + transform come from useCanvasWorkspace via the
    `workspaceStyle` prop. `min-width/min-height: 100%` keeps the workspace filling the viewport even
    before JS lands a measured size — else a 0-sized workspace pins panel drag to the top-left. */

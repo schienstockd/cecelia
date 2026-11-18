@@ -895,7 +895,9 @@ It never picks K — see `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 **More ported adjustments** (second pass): **`coord_flip` (rotate 90°)** — `axM(o)` maps the
 position/measure axes (series→Y, measure→X when rotated) so each distribution builder has one path;
-long series labels then sit on Y with horizontal room. **The app scheme sets the plot ground** (all ink is
+long series labels then sit on Y with horizontal room. On the **heatmap** it transposes the grid
+(rows — features / `from` — along X, columns down Y); the cells, the per-row rescale and the tooltips
+keep the data's own x/y, only the channels and domains swap (`buildHeatmap`). **The app scheme sets the plot ground** (all ink is
 `currentColor`; PlotChart draws the legend + title overlays in the theme ink so they're visible on the
 dark ground — Plot's HTML title/legend would otherwise inherit the app's text colour). **Colour by
 population** is consistent across images (a population reads identically in every image; facet/x

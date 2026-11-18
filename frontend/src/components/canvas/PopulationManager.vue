@@ -37,6 +37,7 @@ import { useWindowListener } from '../../composables/useKeepAlive'
 // `PALETTES` is gone from here on purpose: the swatch is `ColourPicker` now, which owns the default
 // palette. Only `DOT_R` is still needed, for the gate colour-by legend main added.
 import { type VisProps, POPULATION_PALETTE } from '../../plots/plot'
+import type { PlotReadout } from '../../plots/plotReadout'
 import { DOT_R } from '../../plots/density'
 import { clusterMeasure, isClusterPopType, isGatingPopType, clusterPopStale } from '../../utils/clusterMeasure'
 import { eyeKey, offPaths, popEyeOn, popTypeSwitch } from '../../utils/viewer/popEyes'
@@ -67,6 +68,7 @@ const props = withDefaults(defineProps<{
   // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
+  readout?: PlotReadout            // the active plot's last render — which styling rows it reacts to
   docked?: boolean                 // fill a docked rail (Analysis board) instead of floating
   readonly?: boolean               // read-only surface (Analysis board): highlight only — no add / delete /
                                    // rename / recolour / cluster reassignment (project_analysis_canvas_readonly)
@@ -435,7 +437,7 @@ function moveTo(target: string) {
 </script>
 
 <template>
-  <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
+  <CanvasSidePanel :count="visiblePops.length" :scope="scope" :vis="vis" :readout="readout" :docked="docked"
                         :manual-apply="manualApply" :has-staged="hasStaged"
                         :staged-change-count="stagedChangeCount" :reloadable="reloadable"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)"

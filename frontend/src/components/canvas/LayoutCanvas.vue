@@ -50,7 +50,7 @@ import PopulationManager from './PopulationManager.vue'
 import ModelVault from '../../modules/modelTraining/ModelVault.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
-import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail } from '../../modules/cluster/clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail, clusterPanelReadout } from '../../modules/cluster/clusterPanels'
 import CcToggle from '../CcToggle.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
@@ -918,6 +918,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
                              :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :reloadable="true"
+                             :readout="clusterPanelReadout(activeContent?.ref)"
                              @update:scope="scope = $event" @update:vis="setVis"
                              @toggle-highlight="toggleClustHl" @reload="reload" />
           <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"
