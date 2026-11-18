@@ -26,8 +26,8 @@ import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
-// charts whose series composite into a single frame — a `Facet by` request cannot be honoured
-// on these (see facetOverride in plots/autoOverride.ts)
+// charts whose series composite into a single frame — a `Facet by` request cannot be honoured on
+// these, so the rail doesn't offer it there (plots/plotControls.ts) and the builder ignores a stale one
 const NON_FACETING_CHARTS = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100', 'heatmap'])
 /**
  * Charts whose series have NO position label — every series is composited into one frame (histogram)
@@ -694,10 +694,6 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   const posLabels = seriesIndex(r, keyOf).labels
   const xrot = resolveXRotation(posLabels, flip === !!o.rotate ? o : { ...o, rotate: flip })
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
-  // Faceting is only wired for the charts that give each series its own position (box/violin/strip/bar)
-  // and the trend line. Histogram and the frequency family composite every series into ONE frame, so a
-  // facet request there is silently not applied — report it rather than leaving the control lying.
-  ;(opts as Record<string, unknown>)._facetIgnored = faceted(o) && NON_FACETING_CHARTS.has(o.chartType)
   opts[posAxis] = { ...(opts[posAxis] as object ?? {}), grid: o.grid,
                     ...(o.labX ? { label: o.labX } : {}),
                     ...(xrot.rotate ? { tickRotate: xTickRotate(o) } : {}) }
@@ -807,9 +803,16 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   const lo = Math.min(...vals), hi = Math.max(...vals), mid = (lo + hi) / 2
   const textInk = (c: { value: number; norm?: number }) =>
     diverging ? PAPER_INK : useMinmax ? ((c.norm ?? 0) > 0.5 ? PAPER_INK : PLOT_INK_DARK) : (c.value > mid ? PAPER_INK : PLOT_INK_DARK)
+  // Rotate 90° transposes the grid: the rows (features / `from`) run along X, the columns along Y. Only
+  // the channels and domains swap — the cells, the per-row rescale and the tooltips stay keyed by the
+  // data's own x/y. The flipped column order is the unflipped top→bottom order, read left→right.
+  const flip = !!o.rotate
+  const cx = flip ? 'y' : 'x', cy = flip ? 'x' : 'y'
+  const colLabels = flip ? [...(r.yLabels ?? [])].reverse() : (r.xLabels ?? [])
+  const rowLabels = flip ? (r.xLabels ?? []) : [...(r.yLabels ?? [])].reverse()   // first row at the top
   // profile heatmaps blank the category axis title (R uses xlab("")/ylab("")); crosstab keeps to/from.
-  const xLab = r.matrixMode === 'crosstab' ? 'to' : null
-  const yLab = r.matrixMode === 'crosstab' ? 'from' : null
+  const xLab = r.matrixMode === 'crosstab' ? (flip ? 'from' : 'to') : null
+  const yLab = r.matrixMode === 'crosstab' ? (flip ? 'to' : 'from') : null
   // on by default wherever the NUMBER is the readout: a transition rate, and a log-odds (a 2×2 or 3×3
   // interaction matrix has room, and the effect size is what the user came for)
   const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab' || interaction)
@@ -839,24 +842,24 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
   // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
   // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.
-  const marginLeft = yLabelMargin(r.yLabels ?? [], o.fontSize || 11)
+  const marginLeft = yLabelMargin(rowLabels, o.fontSize || 11)
   // the column labels are population / category names — same overlap problem, same resolver. The bands
-  // start after marginLeft, so that is what's reserved. A grid never flips, so a `rotate` left over from
-  // another plot must not switch the auto-rotation off.
-  const xrot = resolveXRotation((r.xLabels ?? []).map(String),
+  // start after marginLeft, so that is what's reserved. `rotate` here transposes the grid (above); it
+  // must not reach the resolver, where it would switch the column-label auto-rotation off.
+  const xrot = resolveXRotation(colLabels.map(String),
                                 { ...o, rotate: false, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + 60) })
   const opts: Record<string, unknown> = {
     // tight margins (R heat plots are compact — fig.height 2 × width 4)
     ...THEME, marginLeft, marginBottom: 48, marginTop: topPad, marginRight: 8,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: xrot.rotate ? xTickRotate(o) : 0 },
-    y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
+    x: { domain: colLabels, label: o.labX || xLab, tickRotate: xrot.rotate ? xTickRotate(o) : 0 },
+    y: { domain: rowLabels, label: o.labY || yLab },
     color: colorScale,
     marks: [
-      Plot.cell(drawCells, { x: 'x', y: 'y', fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
+      Plot.cell(drawCells, { x: cx, y: cy, fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
                          title: tip, tip: true }),
       ...(showValues
-        ? [Plot.text(drawCells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
+        ? [Plot.text(drawCells, { x: cx, y: cy, text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
         : []),
       // theme_classic L-shaped axis: a black (theme-ink) line on the left + bottom, matching the other
       // charts (Observable Plot draws ticks/labels but no domain line for band scales).
@@ -865,7 +868,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     ],
   }
   // the column bands are equal (Plot's default 0.1 padding), so the first tick sits ~half a band in
-  const xLabels = r.xLabels ?? []
+  const xLabels = colLabels
   if (xrot.rotate) {
     const lay = rotatedXMargins(xLabels, { ...o, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + THEME.marginLeft) },
                                 48, xLabels.length ? 0.5 / xLabels.length : 0)
@@ -873,7 +876,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     opts.marginLeft = Math.max(marginLeft, lay.marginLeft)
     fitAxisLabels(opts, 'x', xLabels, lay.maxLabelPx, o.fontSize || 11)
   }
-  fitAxisLabels(opts, 'y', r.yLabels ?? [], Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
+  fitAxisLabels(opts, 'y', rowLabels, Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }

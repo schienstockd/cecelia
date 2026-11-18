@@ -27,6 +27,7 @@ export type ChartType =
 export interface PlotSpec {
   id: string
   label: string
+  answers?: string   // the question it answers — the picker card's subtitle (required on built-ins, see docs/PLOTS.md)
   // Where the plot is offered. Either a single page (`module`) or several, each with its own subset of
   // `dataSource.popTypes` (`modules`) — the server narrows the list per page, so by the time a spec
   // reaches here `popTypes` already holds only what this page offers. See docs/PLOTS.md.
@@ -36,6 +37,11 @@ export interface PlotSpec {
   // when that page's canvas is first seen empty, and never again — a removed default stays removed.
   // A page named here must be one the spec is offered on (`module`/`modules`).
   defaultOn?: string[]
+  // The "+ Plot…" picker's group and schematic (plots/plotPicker.ts). `category` is set on every
+  // built-in spec; a plugin's may omit it (→ "Other"). `sketch` overrides the one drawn from the
+  // default chart, for a chart type whose shape depends on the spec (a count over frames is a line).
+  category?: string
+  sketch?: string
   family: 'summary' | 'interactive'
   // the chart types valid for this data source's measures (the panel lets the user switch among
   // them); chart type is INDEPENDENT of the data source (single image vs cross-image set).

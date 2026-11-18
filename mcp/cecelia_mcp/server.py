@@ -292,8 +292,8 @@ def get_thumbnails(project_uid: str, set_uid: str, value_name: str | None = None
 
     Look before a step runs over the whole set: an empty field, a dead or saturated channel, a
     different tissue or a much dimmer image is visible here and in no metric. `contrast="shared"`
-    (default) draws every image with the SAME per-channel contrast, pooled over the set, in the
-    palette `channels` lists (`{index, colour, name, lo, hi}`) — so a tile that looks different IS
+    (default) draws every image with the SAME contrast per channel name, pooled over the set, in
+    the palette `channels` lists (a marker keeps one colour even where images order channels differently) (`{index, colour, name, lo, hi}`) — so a tile that looks different IS
     different. `contrast="image"` draws each the way its viewer shows it (its own contrast and
     colours); use it to see content, not to compare brightness.
 

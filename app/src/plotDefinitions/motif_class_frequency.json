@@ -1,7 +1,9 @@
 {
   "id": "motif_class_frequency",
   "label": "Motif class frequency",
-  "answers": "What fraction of each population's cells falls in each discovered motif class?",
+  "category": "makeup",
+  "sketch": "motif",
+  "answers": "What fraction of each population's cells is in each motif class?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["frequency", "stacked", "stacked100"],

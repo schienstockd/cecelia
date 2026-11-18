@@ -704,7 +704,7 @@ tested on that movie) and in the viewer overlay test (`if sizes[3] != 1.0` — n
   (`synthetic = true` — distances, band edges, a unit conversion), build it yourself like `CONTMESH`;
   only real-data behaviour waits for the maintainer — the weekly judge lists the images in their
   projects that match (`pixi run judge-fixtures`), and `pixi run fixture-cut` cuts one under the cap
-  into `test-data/projects/FIXPRJ`. A PR reservation that says "not run on <X> data"
+  into `test-data/projects/FIXPRJ` (cell table, and the image + label stores cropped to one box). A PR reservation that says "not run on <X> data"
   names the request id. The registry testset fails once a registered fixture meets an open request, so
   the list can't go stale.
 - **Guards that skip on the fixture are the same bug.** `if <property> … end` around the assertion that

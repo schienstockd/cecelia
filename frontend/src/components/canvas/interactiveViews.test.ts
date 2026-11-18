@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { cohortParams } from '../../plots/trackGroups'
 import { tkey, parseTkey } from '../../plots/series'
 import { resolvePopType } from '../../plots/popTypes'
+import { PLOT_CATEGORY_IDS, PLOT_SKETCH_KINDS } from '../../plots/plotPicker'
 import { INTERACTIVE_VIEWS, boardViews, pageViews, railFor, isPluginView, popTypesFor,
          VIEW_ALIASES, migrateViewKey } from './interactiveViews'
 import { CLUSTER_PANELS, clusterPanelRail } from '../../modules/cluster/clusterPanels'
@@ -43,33 +44,35 @@ describe('board views the expander can author', () => {
 })
 
 describe('interactive view surface flags', () => {
-  it('every analysisBoard view lands in exactly one board optgroup', () => {
+  it('the board offers exactly the analysisBoard views, each filed under a picker category', () => {
     const flagged = Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.analysisBoard).map(([k]) => k)
-    const grouped = (['interactive', 'clustering', 'image'] as const).flatMap(g => boardViews(g).map(v => v.key))
-    expect([...grouped].sort()).toEqual([...flagged].sort())
-    expect(new Set(grouped).size).toBe(grouped.length)     // no view in two groups
+    expect(boardViews().map(v => v.key).sort()).toEqual([...flagged].sort())
+    for (const v of boardViews()) {
+      expect(PLOT_CATEGORY_IDS, v.key).toContain(v.category)
+      expect(v.category, `${v.key}: 'other' is the plugin fallback, a built-in view picks a real one`).not.toBe('other')
+      expect(PLOT_SKETCH_KINDS, v.key).toContain(v.sketch)
+    }
   })
 
   it('unflagged views are offered nowhere', () => {
     const anywhere = new Set([
-      ...boardViews('interactive'), ...boardViews('clustering'), ...boardViews('image'),
-      ...pageViews('clusterPage'), ...pageViews('opticalFlowPage'),
+      ...boardViews(), ...pageViews('clusterPage'), ...pageViews('opticalFlowPage'),
     ].map(v => v.key))
     for (const [key, v] of Object.entries(INTERACTIVE_VIEWS))
       expect(anywhere.has(key)).toBe(!!(v.analysisBoard || v.clusterPage || v.opticalFlowPage))
   })
 
-  it('groups the views the board picker separates', () => {
-    expect(boardViews('clustering').map(v => v.key)).toContain('clusterMap')
-    expect(boardViews('image').map(v => v.key)).toContain('filmstrip')
-    expect(boardViews('interactive').map(v => v.key)).toContain('flowMetrics')
+  it('a picker row carries the question the view answers', () => {
+    const row = boardViews().find(v => v.key === 'clusterMap')!
+    expect(row.answers).toBe(INTERACTIVE_VIEWS.clusterMap!.answers)
+    expect(row.category).toBe('profiles')
   })
 
   it('the flow views are offered on their module page AND the board', () => {
     expect(pageViews('opticalFlowPage').map(v => v.key))
       .toEqual(['flowMetrics', 'flowTraining', 'flowProbability'])
     for (const k of ['flowMetrics', 'flowTraining', 'flowProbability'])
-      expect(boardViews('interactive').map(v => v.key)).toContain(k)
+      expect(boardViews().map(v => v.key)).toContain(k)
   })
 
   it('the cluster page offers only cluster-page views', () => {

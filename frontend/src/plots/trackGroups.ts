@@ -85,7 +85,7 @@ export const cohortKey = (ctx: TrackCohortCtx): string => {
 }
 
 /**
- * Small multiples, one cell per group — and, when the user asked for one box, why it split anyway.
+ * Small multiples, one cell per group, whenever there is more than one group.
  *
  * **A track plot always splits.** Overlaying two conditions needs a colour per group and therefore a
  * legend, and it reads worse than two boxes at every count: the paths of two movies have unrelated
@@ -94,22 +94,16 @@ export const cohortKey = (ctx: TrackCohortCtx): string => {
  * title instead of a legend entry, so nothing needs colour to identify it and `colorBy` keeps the whole
  * colour channel for the measure it was picked for.
  *
- * `facetBy` is therefore not honoured here, so it says so rather than leaving the control lying — the
- * same rule the summary charts follow when a chart type cannot facet (`_facetIgnored` in `plots/plot.ts`).
+ * `Facet by` therefore means nothing here, so the track views don't offer it (their `visControls` in
+ * components/canvas/interactiveViews.ts) — the rail hides the row instead of showing a dead control.
  */
-export function facetPlan(
-  facetBy: 'none' | 'series' | 'image', nGroups: number,
-): { facet: boolean; note: string } {
-  if (nGroups <= 1) return { facet: false, note: '' }
-  return { facet: true,
-           note: facetBy === 'none' ? 'One box per group — track plots always split.' : '' }
-}
+export const splitsByGroup = (nGroups: number): boolean => nGroups > 1
 
 /**
  * A group's display name — its label, or the segmentation when it is the only group.
  *
  * There is deliberately no per-group COLOUR to go with it. A group is identified by its facet title
- * (`facetPlan` always splits), which leaves the colour channel entirely to `colorBy` — and avoids the
+ * (`splitsByGroup`), which leaves the colour channel entirely to `colorBy` — and avoids the
  * swatch legend the house style rules out anyway: Plot's inline legend wraps the svg in a `<figure>`
  * whose swatch div eats height and clips the bottom axis in a fixed-height panel (`plots/plot.ts`).
  */

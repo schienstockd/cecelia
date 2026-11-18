@@ -1,7 +1,9 @@
 {
   "id": "transition_matrix",
   "label": "Transition matrix",
-  "answers": "How often do cells switch from one HMM state to another?",
+  "category": "profiles",
+  "sketch": "transitions",
+  "answers": "How often do cells switch between HMM states?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["heatmap"],

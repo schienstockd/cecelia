@@ -38,6 +38,7 @@ import GatePlotPanel from './GatePlotPanel.vue'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews, migrateViewKey, railFor, popTypesFor, singlePopFor }
   from '../../components/canvas/interactiveViews'
+import PlotPicker from '../../components/canvas/PlotPicker.vue'
 import SeriesPicker from '../../components/canvas/SeriesPicker.vue'
 import { fetchSegmentationPops } from '../../plots/populations'
 import { granularityFor } from '../../plots/popTypes'
@@ -135,7 +136,7 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // in SummaryCanvas + ClusterPlots). `squareCells: true` because every plot here is `:square`
 // (GatePlotPanel / GatePairsPanel), so Tile hands out square cells.
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -167,7 +168,7 @@ function addView(key: string) {
   const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = key
 }
 // what the "+ Track…" picker offers — the registry's `trackPage` flag, never a key list here
-const trackOptions = computed(() => pageViews('trackPage'))
+const trackOptions = computed(() => pageViews('trackPage').map(v => ({ ...v, value: v.key })))
 // what a registry view needs from the page (the panel's own state carries the rest) — the same
 // {projectUid, imageUids, setUid} contract the cluster and optical-flow canvases pass
 /**
@@ -588,12 +589,8 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
              each — four `+ Xxx` buttons made this bar wider than the window. Built from the registry's
              `trackPage` flag (`pageViews`), so a new track view appears here with no edit to this file;
              a hardcoded key list here is the same silently-dead-checkbox bug the registry warns about. -->
-        <select v-if="isTrack && trackOptions.length" class="gp-add"
-                v-tooltip.bottom="'Add a track plot'" aria-label="Add a track plot"
-                @change="addView(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-          <option value="">+ Track…</option>
-          <option v-for="v in trackOptions" :key="v.key" :value="v.key">{{ v.label }}</option>
-        </select>
+        <PlotPicker v-if="isTrack && trackOptions.length" :options="trackOptions" label="+ Track…"
+                    tip="Add a track plot" @pick="addView" />
         <!-- Spatial cell-selection tools — pointer (mode), clear, z-scope. Shared across every
              gating-capable module page via `CellSelectionTools`. Track pops have no spatial
              selection, so hide the whole cluster. . -->
@@ -651,7 +648,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           Re-eval on _latest
         </button>
       </div>
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- registry views (track paths, the correction worklist) → generic InteractivePanel, the
                same host the cluster and optical-flow canvases use -->
@@ -758,7 +755,6 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
             background: var(--cc-surface-1); font-size: var(--cc-fs-xs); color: var(--cc-text); }
 .gp-drift .pi-info-circle { color: var(--cc-warn); }
 /* the picker sits with the + buttons, so it must not take the 9rem the segmentation select does */
-.gp-bar select.gp-add { min-width: auto; }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; padding: 3px 4px; }

@@ -1,7 +1,9 @@
 {
   "id": "cell_properties",
   "label": "Cell properties",
-  "answers": "How does a per-cell, per-timepoint measure (cell speed, turning angle) differ between populations or images?",
+  "category": "compare",
+  "sketch": "cell",
+  "answers": "How does a per-cell measure (speed, turning angle) differ between groups?",
   "module": "behaviourAnalysis",
   "family": "summary",
   "chartTypes": ["boxplot", "violin", "strip", "bar", "histogram"],

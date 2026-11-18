@@ -1590,7 +1590,7 @@ const maskColourNote = computed(() => {
  *  enabled even after an OOM fallback — the flag is mode-scoped, so a 3D flat OOM does not
  *  block a 2D flat pick, and an explicit user pick beats the fallback in `bricksEnabled`. */
 const BRICKS_MODES = [
-  { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
+  { value: 'auto', label: 'Auto', tip: 'Pick based on image size vs cache' },
   { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
   { value: 'flat', label: 'Flat', tip: 'Force per-timepoint cache' },
 ]
@@ -7092,7 +7092,7 @@ onUnmounted(() => {
           </div>
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Auto picks based on movie size vs cache'">Renderer</span>
+                  v-tooltip.right="'Auto picks based on image size vs cache'">Renderer</span>
             <ChipSelect
               :options="BRICKS_MODES" :model-value="settings.viewerBricksMode"
               variant="segmented" aria-label="Renderer"

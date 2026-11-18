@@ -173,6 +173,8 @@ end
     comp = read(joinpath(fe, "composables", "useCanvasPanels.ts"), String)
     @test occursin("function removeAll", comp)
     @test occursin("removeAll,", comp)                  # …and it is actually returned to hosts
+    # …and the shared shell the hosts actually call passes it on
+    @test occursin("removeAll: canvas.removeAll", read(joinpath(fe, "composables", "useFloatingCanvas.ts"), String))
     @test isfile(joinpath(fe, "components", "canvas", "CanvasArrangeButtons.vue"))
 
     HOSTS = [joinpath("components", "canvas", "SummaryCanvas.vue"),
@@ -181,7 +183,8 @@ end
              joinpath("modules", "modelTraining", "ModelPlots.vue")]
     for h in HOSTS
         src = read(joinpath(fe, h), String)
-        @test occursin("useCanvasPanels", src)
+        # drives the panels directly or through the shared shell (useFloatingCanvas wraps useCanvasPanels)
+        @test occursin("useCanvasPanels", src) || occursin("useFloatingCanvas", src)
         @test occursin("CanvasArrangeButtons", src)     # the shared group, not a private copy
         @test occursin("close-all", src)                # …wired, not merely imported
         # the arrange buttons must not be re-inlined beside the shared component
@@ -194,9 +197,11 @@ end
         endswith(f, ".vue") || continue
         p = joinpath(root, f)
         src = read(p, String)
-        occursin("useCanvasPanels(", src) || continue   # calls it (not merely a type import)
+        # calls it (not merely a type import) — directly or through the shared shell
+        (occursin("useCanvasPanels(", src) || occursin("useFloatingCanvas<", src) ||
+         occursin("useFloatingCanvas(", src)) || continue
         occursin("CanvasArrangeButtons", src) ||
-            error("$(relpath(p, fe)) drives useCanvasPanels but renders no CanvasArrangeButtons — " *
+            error("$(relpath(p, fe)) drives the canvas panels but renders no CanvasArrangeButtons — " *
                   "every plot canvas must offer Tile/Cascade/Close all")
     end
 end

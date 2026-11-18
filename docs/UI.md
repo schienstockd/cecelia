@@ -2305,8 +2305,8 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
 
 **Two registries carry the surface "checkboxes":**
 - `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
-  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
-  `interactive` (default) / `clustering` / `image`), the plugin flag `pluginPage`, the `rail` the plot
+  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard`, `category` + `sketch` (the `+ Plot…`
+  picker's group and schematic — `docs/PLOTS.md` → *The `+ Plot…` picker*), the plugin flag `pluginPage`, the `rail` the plot
   needs, an optional `initialState()` seed for a new panel's state bag, and — for a view that slices by
   population — `popTypes`, the population FAMILIES it offers (same shape as a summary spec's
   `dataSource.popTypes`, read by the same `plots/popTypes.ts` functions, so the rail lists the family
@@ -2320,14 +2320,14 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
 
-**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
+**Hosts render from the registries**: each builds its `+Plot` picker (`PlotPicker.vue`, the one picker) by filtering on its own flag and
 renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
 component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`), the
 Model Training page (`modelTraining/ModelPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
 there is no "cluster page way" and "board way", and a future chain-whiteboard host consumes the same
 registries rather than re-wiring plots per node.
 
-**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews(group)`; never
+**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews()`; never
 a local key list. The board once filtered a hardcoded `ANALYSIS_VIEWS`/`IMAGE_VIEWS` array, which made
 the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, with nothing failing.
 `interactiveViews.test.ts` now fails if any view id shows up as a literal in `LayoutCanvas.vue`.
@@ -2398,12 +2398,16 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
     (`contentBounds.h` + 16px), so a Tile grid that needs more rows than fit — or a panel dragged down —
     extends the workspace instead of spilling out of it. **Only the height grows**; the width stays
     viewport-derived, since Tile takes its columns from the width and a horizontal scrollbar on a plot
-    workspace is worse than a narrower grid. Each host therefore has THREE layers, the same shape
-    `LayoutCanvas` uses for the board: `.{gp,sc,cp,fp}-canvas` (`position: relative` — the rail's
-    offsetParent, so the rail does NOT scroll away with the plots) → `.…-scroll` (`inset: 0;
-    overflow: auto` — the measured viewport) → `.…-zoom` (the workspace, `transform: scale`). Zooming out
-    and growing compose: both are logical px, so a grown height is expressed in the same units as the
-    zoom-expanded base.
+    workspace is worse than a narrower grid. Each host (`FloatingCanvasHost`) has THREE layers:
+    `.floating-canvas` (`position: relative` — the rail's offsetParent) → `.floating-canvas-scroll`
+    (`inset: 0` — the measured viewport; scrolls SIDEWAYS only, when zoomed in past the width) →
+    `.floating-canvas-zoom` (the workspace, `transform: scale`). Zooming out and growing compose: both are
+    logical px, so a grown height is expressed in the same units as the zoom-expanded base.
+  - **…and the canvas box grows with it** (`hostStyle`, a min-height on `.floating-canvas`): the PAGE
+    scrolls to a low panel; the canvas has no vertical scroller of its own. It used to — a fixed 70vh box
+    scrolling inside a page that scrolls too, so a panel past the box's bottom edge read as cut off. The
+    base is the box's height *before* growth (`floorHeight`): measuring the grown box would ratchet (it
+    never shrinks back) and Tile would lay out into the grown height.
 
 **Zoom shortcuts** (all canvases, wired once in `useCanvasZoom`): **shift + mouse-wheel** over the canvas
 zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing in an input.
@@ -2435,7 +2439,7 @@ overflow, so clamping it there would shrink the plot for nothing.
 **Neither mode crams — the grid flows DOWN and the workspace grows.** When a cell would fall below the
 readable floor (`MIN_TILE_W` 300 / `MIN_TILE_H` 260), Tile keeps the floor, takes its columns from the
 WIDTH alone, and lets the extra rows go below the fold: 12 gating plots become 5 across × 3 down at
-260px, and the canvas scrolls. It never overflows sideways. The workspace then extends to hold them
+260px, and the page scrolls. It never overflows sideways. The workspace then extends to hold them
 (next bullet), so the bottom rows are reachable both by scrolling and by dragging a panel into the new
 room. **Tile is always sized from the VIEWPORT** (`tileBox`, i.e. `useCanvasWorkspace`'s
 `workspaceBase`), never from the grown workspace — feeding a content-derived height back into the
@@ -3072,10 +3076,16 @@ page — and the Analysis board — reuses them unchanged:
   The universal Analysis board (`/analysis`) gets the same controls for free. **Only the rows the
   active plot reacts to are shown** — `plots/plotControls.ts` `visControlsFor({chartType, trend})`
   declares them per chart kind, `SummaryPanel` reports them on its readout (`PlotReadout.controls`),
-  and a section with no rows left disappears. A plot that declares nothing (`controls: null`) shows
-  every row. `plotControls.test.ts` flips every setting on every chart kind and fails when the
-  table and the renderer disagree — a new chart type, or a builder that starts reading a setting,
-  is answered there.
+  and a section with no rows left disappears. `plotControls.test.ts` flips every setting on every
+  chart kind and fails when the table and the renderer disagree — a new chart type, or a builder that
+  starts reading a setting, is answered there. **Interactive views and cluster panels** (UMAP, HMM,
+  track plots, gating strategy …) aren't built by `buildPlotOptions`, so each declares `visControls`
+  on its registry entry (`interactiveViews.ts` / `clusterPanels.ts`; absent = none) and the host
+  turns it into the rail's readout (`declaredReadout(registeredControls(kind))`).
+  `plots/visControlsDeclared.test.ts` scans each view's source and fails when it reads a key it
+  doesn't declare, or declares one it never reads. A plot offering no row gets no settings toggle at
+  all (`hasAnyOption`). A hidden setting keeps its value — under Global scope it still drives the
+  plots that use it — so a builder must ignore it rather than announce it as overridden.
 - **`plots/export.ts`** — the ONE plot-export module: PNG/SVG rasterise, CSV, and the true-vector SVG
   builders. Two capture paths, because they solve different problems: `elementToImageURL` wraps a
   style-inlined clone in an SVG `<foreignObject>` (catches an HTML overlay legend alongside the `<svg>`),
@@ -3468,7 +3478,6 @@ Today's overrides:
 |---|---|---|
 | Gate plot / gate pairs | axis transform → `linear` when the measure's range can't take logicle | the server (`plotmeta` reports the transform it USED) |
 | Any summary plot | x tick labels → rotated when they wouldn't fit their bands | `needsXRotation` (measured label widths vs the panel width) |
-| Any summary plot | `Facet by` → `None` on a chart that composites its series into one frame (histogram / frequency family / heatmap) | `NON_FACETING_CHARTS` in `plots/plot.ts` → `_facetIgnored` |
 
 This replaced two ad-hoc copies. `GatePlotPanel` and `GatePairsPanel` each did their own
 preferred-vs-used comparison with their own amber class and their own wording — and `GatePlotPanel`'s
