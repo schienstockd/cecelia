@@ -24,7 +24,7 @@ build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
    the canvas's population picker does not drive it). See `docs/CUSTOM_MODULES.md` and
    `docs/todo/PLUGINS_PLAN.md` → Decision 11.
 
-### The `+ Plot…` picker — grouped by the question, with a sketch
+### The `+ Plot…` picker — kinds of plot beside their plots
 
 Every plot surface (module pages, the board, the cluster / model-training / track canvases) uses ONE
 picker, `components/canvas/PlotPicker.vue`. It groups plots by the question a user brings, in this
@@ -35,8 +35,8 @@ order everywhere (`plots/plotPicker.ts` → `PLOT_CATEGORIES`):
 | `compare` | Compare groups | a measure between populations, images or treatments (Track measures, Cell properties, Population summary, the spatial comparisons) |
 | `time` | Over time | Populations over time |
 | `makeup` | Make-up | fractions per state / class / cluster (HMM state, motif class, track cluster frequency) |
-| `profiles` | Profiles & matrices | what defines each group, who goes or touches whom (state signature, transition / interaction matrix, cluster heatmap) |
-| `look` | Images & cards | the cells themselves (cluster map, tracks, filmstrip, figure, cards, gating strategy, timeline) |
+| `profiles` | Clusters & matrices | where clusters sit, what defines each group, who goes or touches whom (cluster map, state signature, transition / interaction matrix, cluster heatmap) |
+| `look` | Images & cards | the cells themselves (tracks, filmstrip, figure, cards, gating strategy, timeline) |
 | `checks` | Checks & diagnostics | did it work (segmentation QC, HMM state count, flow model views, track diagnostics) |
 | `other` | Other | a plugin spec without a category — the fallback, never set on a built-in |
 
@@ -45,12 +45,21 @@ The category is declared on the plot — `category` in a spec's JSON, `category`
 (Summary / Interactive / Clustering / Image) grouped by how a plot is BUILT, which tells a user nothing.
 
 **Previews.** With `settings.plotPickerPreviews` on (default; Preferences → Plots, or the picker's own
-button) each plot is a card: a schematic of its shape (`PlotSketch.vue`, one inline SVG per
-`PlotSketchKind`) plus its `answers` line. A spec's sketch is its default (first) chart type; a spec
-whose chart type's shape depends on the data overrides it with `"sketch"` (Populations over time:
-`count` over frames is a `line`). Views declare `sketch` beside `category`. The sketch is drawn, never
-rendered from data — no request, nothing blank before a task has run. Off, the picker is a plain
-grouped menu with the question on hover.
+button) the picker lists the kinds of plot (categories) in a column on the left, each with its chart
+shape (`PlotKindSketch.vue`) — every Compare-groups plot opens as a box plot, so the shape is drawn
+once, there, not on every card. Beside the column are the picked kind's plots (the first kind until one is hovered — after a short rest, so crossing the column doesn't flip
+it — or clicked), a card each with a sketch of what the plot is ABOUT (`PlotSketch.vue`: a cell, a track,
+two images, a track coloured by state) plus its `answers` line. Typing in the search shows every match
+beside the column, grouped by kind, and the hovered card's kind lights up in the column; a host offering one kind only has no column.
+
+The card sketches come from `plots/plotSketchArt.ts`: a few shared subjects (cell, track, population
+in an image, contact, spread, states, motif, movement patterns, clusters, gate, image) plus a modifier
+(× 2 images, × frames, → card), so a new plot is usually a reuse of a subject rather than a new
+drawing. Every plot names its sketch — `"sketch"` in a spec's JSON, `sketch` on a view / cluster panel
+— and `plotPicker.test.ts` fails when a built-in one doesn't. A plugin spec with none, or one this
+build doesn't know, draws `generic`. `plotSketchArt.test.ts` keeps every sketch inside its box. The
+sketch is drawn, never rendered from data — no request, nothing blank before a task has run. Off, the
+picker is a plain grouped menu with the question on hover.
 
 **Search** matches every word against the label and the question, plus a short synonym list for words
 users reach for that the app spells differently ("velocity" → speed). Enter picks the first match.

@@ -65,7 +65,7 @@ describe('interactive view surface flags', () => {
   it('a picker row carries the question the view answers', () => {
     const row = boardViews().find(v => v.key === 'clusterMap')!
     expect(row.answers).toBe(INTERACTIVE_VIEWS.clusterMap!.answers)
-    expect(row.category).toBe('look')
+    expect(row.category).toBe('profiles')
   })
 
   it('the flow views are offered on their module page AND the board', () => {

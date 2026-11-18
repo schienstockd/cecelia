@@ -9,16 +9,16 @@
 // (`app/src/plotDefinitions/*.json` → `category`), views in `INTERACTIVE_VIEWS` / `CLUSTER_PANELS`.
 // A plugin's spec without one lands in `other` rather than vanishing.
 //
-// Pure (no Vue) so the grouping, the sketch choice and the search are unit-tested.
+// Pure (no Vue) so the grouping, the sketch fallback and the search are unit-tested.
 
-import type { ChartType } from './types'
+import { isPlotSketchKind, type PlotSketchKind } from './plotSketchArt'
 import { matchesQuery } from '../utils/textQuery'
 
 export const PLOT_CATEGORIES = [
   { id: 'compare',  label: 'Compare groups',        blurb: 'A measure between populations, images or treatments' },
   { id: 'time',     label: 'Over time',             blurb: 'How something changes over the movie' },
   { id: 'makeup',   label: 'Make-up',               blurb: 'What fraction falls in each state, class or cluster' },
-  { id: 'profiles', label: 'Profiles & matrices',   blurb: 'What defines each group, and who goes or touches whom' },
+  { id: 'profiles', label: 'Clusters & matrices',   blurb: 'Where clusters sit, what defines each, who goes or touches whom' },
   { id: 'look',     label: 'Images & cards',        blurb: 'See the cells, tracks and gates themselves' },
   { id: 'checks',   label: 'Checks & diagnostics',  blurb: 'Did the segmentation, model or tracking work?' },
   { id: 'other',    label: 'Other',                 blurb: 'Plots a plugin added without a category' },
@@ -29,26 +29,8 @@ export const PLOT_CATEGORY_IDS: readonly PlotCategory[] = PLOT_CATEGORIES.map(c 
 export const isPlotCategory = (v: unknown): v is PlotCategory =>
   typeof v === 'string' && (PLOT_CATEGORY_IDS as readonly string[]).includes(v)
 
-// The schematic shapes — few, because many plots share a shape (every box/strip comparison draws the
-// same sketch). PlotSketch.vue draws one inline SVG per kind.
-export type PlotSketchKind =
-  | 'box' | 'hist' | 'bars' | 'stacked' | 'line' | 'elbow' | 'heatmap'
-  | 'scatter' | 'image' | 'cards' | 'tracks' | 'timeline' | 'gates'
-
-export const PLOT_SKETCH_KINDS: readonly PlotSketchKind[] = [
-  'box', 'hist', 'bars', 'stacked', 'line', 'elbow', 'heatmap',
-  'scatter', 'image', 'cards', 'tracks', 'timeline', 'gates',
-]
-
-// A summary spec's sketch is its DEFAULT chart (the first of `chartTypes` — what the panel opens on),
-// so the preview shows the plot the user will actually get.
-const CHART_SKETCH: Record<ChartType, PlotSketchKind> = {
-  boxplot: 'box', violin: 'box', strip: 'box', bar: 'bars', percent: 'bars',
-  histogram: 'hist', frequency: 'bars', stacked: 'stacked', stacked100: 'stacked',
-  heatmap: 'heatmap', count: 'bars', trend: 'line', elbow: 'elbow',
-}
-export const sketchForCharts = (chartTypes: readonly string[] | undefined): PlotSketchKind =>
-  CHART_SKETCH[(chartTypes?.[0] ?? '') as ChartType] ?? 'box'
+// What each card draws (the plot's subject) — plotSketchArt.ts owns the vocabulary and the drawings.
+export { PLOT_SKETCH_KINDS, isPlotSketchKind, type PlotSketchKind } from './plotSketchArt'
 
 /** One row of a picker: what it adds (`value`, opaque to the picker) and how it is shown. */
 export interface PlotOption {
@@ -104,13 +86,13 @@ const STOP_WORDS = new Set(['mean', 'median', 'average', 'plot', 'graph', 'chart
 
 /** A summary spec as a picker row; `value` is what the host's add handler receives. */
 export function specOption(
-  s: { id: string; label: string; answers?: string; category?: string; sketch?: string; chartTypes?: readonly string[] },
+  s: { id: string; label: string; answers?: string; category?: string; sketch?: string },
   value: string = s.id,
 ): PlotOption {
   return {
     value, label: s.label, answers: s.answers,
     category: isPlotCategory(s.category) ? s.category : 'other',
-    sketch: (PLOT_SKETCH_KINDS as readonly string[]).includes(s.sketch ?? '') ? s.sketch as PlotSketchKind
-      : sketchForCharts(s.chartTypes),
+    // plugin JSON is unvalidated: no sketch, or one this build doesn't know, draws the plain one
+    sketch: isPlotSketchKind(s.sketch) ? s.sketch : 'generic',
   }
 }

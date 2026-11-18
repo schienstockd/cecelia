@@ -44,20 +44,20 @@ const CLUSTER_RAIL: RailKind = 'clusterPops'
 export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   heatmap: {
     label: 'Cluster heatmap',
-    answers: 'What defines each cluster — its feature profile (heatmap)?',
-    component: ClusterHeatmapPanel, category: 'profiles', sketch: 'heatmap', analysisBoard: true, rail: CLUSTER_RAIL,
+    answers: 'What defines each cluster — its feature profile?',
+    component: ClusterHeatmapPanel, category: 'profiles', sketch: 'clusters', analysisBoard: true, rail: CLUSTER_RAIL,
     props: ctx => ({ featureOptions: ctx.featureOptions, nameMap: ctx.nameMap, channelNames: ctx.channelNames }),
   },
   hmmStates: {
     label: 'HMM states',
-    answers: 'How do the HMM states split across the track clusters?',
-    component: ClusterHmmStatesPanel, category: 'makeup', sketch: 'stacked', trackOnly: true, needsCols: 'hmmState',
+    answers: 'How do the HMM states split across track clusters?',
+    component: ClusterHmmStatesPanel, category: 'makeup', sketch: 'states', trackOnly: true, needsCols: 'hmmState',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmStateCols }),
   },
   hmmTransitions: {
     label: 'HMM transitions',
     answers: 'How do HMM state transitions differ between track clusters?',
-    component: ClusterHmmTransitionsPanel, category: 'profiles', sketch: 'heatmap', trackOnly: true, needsCols: 'hmmTransition',
+    component: ClusterHmmTransitionsPanel, category: 'profiles', sketch: 'transitions', trackOnly: true, needsCols: 'hmmTransition',
     analysisBoard: true, rail: CLUSTER_RAIL, props: ctx => ({ hmmCols: ctx.hmmTransitionCols }),
   },
   // One card per trackclust pop the manager ticks: medoid track's filmstrip (server-rendered via
@@ -65,8 +65,8 @@ export const CLUSTER_PANELS: Record<string, ClusterPanelDef> = {
   // of the pop's median motility measures. Needs no per-panel `ClusterCtx` beyond the shared bag.
   cellCards: {
     label: 'Cell cards',
-    answers: 'What does a typical track of each track-cluster population look like?',
-    component: CellCardsView, category: 'look', sketch: 'cards', trackOnly: true,
+    answers: 'What does a typical track of each track cluster look like?',
+    component: CellCardsView, category: 'look', sketch: 'trackCard', trackOnly: true,
     analysisBoard: true, rail: CLUSTER_RAIL,
   },
 }

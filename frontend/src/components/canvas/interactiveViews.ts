@@ -88,24 +88,24 @@ const TRACK_FAMILIES: PopTypeOption[] = TRACK_FAMILY_POP_TYPES.map(popType =>
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   clusterMap: {
     label: 'Cluster map',
-    answers: 'Where does each cluster sit in the UMAP / behaviour map, and which populations cover it?',
+    answers: 'Where does each cluster sit on the UMAP / behaviour map?',
     component: ClusterMapView, clusterPage: true, analysisBoard: true,
-    category: 'look', sketch: 'scatter', square: true, rail: 'clusterPops',
+    category: 'profiles', sketch: 'umap', square: true, rail: 'clusterPops',
     initialState: () => ({ labels: true, hl: [] }),
   },
   // Self-contained: both pick their own image/segmentation in their panel state, so a population list
   // is dead chrome for them. `'none'` still gives them the rail's styling block — the gating strategy
   // reads `vis.fontSize` from it.
   gatingStrategy: { label: 'Gating strategy',
-    answers: 'How was a population gated — every gate from the root down to it?',
-    component: GatingStrategyView, analysisBoard: true, category: 'look', sketch: 'gates', rail: 'none', pluginPage: true },
+    answers: 'How was a population gated, from the root down?',
+    component: GatingStrategyView, analysisBoard: true, category: 'look', sketch: 'gate', rail: 'none', pluginPage: true },
   filmstrip: { label: 'Image / strip',
-    answers: 'What does it look like — a viewer screenshot or filmstrip beside the plots?',
+    answers: 'What does it look like — a viewer screenshot or filmstrip?',
     component: ImageStripView, analysisBoard: true, category: 'look', sketch: 'image', rail: 'none', pluginPage: true },
   // A rendered figure (docs/todo/FIGURES_PLAN.md), picked by name and shown as made — the paper-quality
   // counterpart of `filmstrip`'s viewer screenshots. Read-only; the Movies & figures page edits it.
   figure: { label: 'Figure',
-    answers: 'Can a rendered figure from Movies & figures sit on the board beside the plots?',
+    answers: 'Can a figure from Movies & figures sit beside the plots?',
     component: FigureView, analysisBoard: true, category: 'look', sketch: 'image', rail: 'none' },
   // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
   // from `filmstrip`, which is a viewer SCREENSHOT montage — these planes are computed, are not
@@ -114,34 +114,34 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // exists, so it must not be handed one.
   flowMetrics: { label: 'Flow metrics',
     answers: 'Which flow metric planes should the motion model train on?',
-    component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'image', rail: 'none' },
+    component: FlowMetricsView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'planes', rail: 'none' },
   // Training convergence per loss TERM. A plot, not a chart in the vault's details modal, so it gets
   // the canvas chrome and the CSV/PNG/SVG + board-PDF export for free.
   flowTraining: { label: 'Training convergence',
-    answers: 'Has the flow model\'s training converged — loss per term over epochs?',
-    component: FlowTrainingView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'line', rail: 'flowModels' },
+    answers: 'Has the flow model\'s training converged?',
+    component: FlowTrainingView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'curve', rail: 'flowModels' },
   // What the trained model SEES: the projected input beside its probability map. Separate from
   // `flowMetrics` on purpose — that one is asked before a model exists and must not take one, this
   // one is meaningless without a checkpoint. Model comes from the vault's selection, not a picker.
   flowProbability: { label: 'Model probability',
-    answers: 'What does the trained flow model see — the input beside its probability map?',
-    component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'image', rail: 'flowModels' },
+    answers: 'What does the trained flow model see?',
+    component: FlowProbabilityView, opticalFlowPage: true, analysisBoard: true, category: 'checks', sketch: 'probability', rail: 'flowModels' },
   // Tracks as a PLOT (the viewer layer's counterpart): read-only, so unlike the timeline below it
   // belongs on the board. It takes the board's COMPARISON (`rail: 'pops'` + `TRACK_FAMILIES`): one group
   // per (images × population), so treatments and populations sit side by side like every other plot here
   // — see docs/TRACKING.md. `square` because its axes are µm on both sides and a stretched track plot is
   // a wrong one; the facet cells stay square too (`plots/facetGrid.ts`).
   trackPaths: { label: 'Tracks',
-    answers: 'What do the tracks look like — paths, star or rose plots per population, image or treatment?',
-    component: TrackPathsView, trackPage: true, analysisBoard: true, category: 'look', sketch: 'tracks',
+    answers: 'What do the tracks look like — paths, star or rose plots?',
+    component: TrackPathsView, trackPage: true, analysisBoard: true, category: 'look', sketch: 'tracksStar',
                 square: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Can this tracking result be trusted — the celltrackR QC battery (docs/TRACKING.md). Read-only, so
   // it belongs on the board: "is this movie comparable to its peers" is a board question, and it answers
   // it as a cohort — one curve per group, a group's images POOLED. Its verdicts come from the server, the
   // same ones `tracking.track_measures` banks as QC.
   trackDiagnostics: { label: 'Track diagnostics',
-    answers: 'Can this tracking be trusted — the track QC battery per group?',
-    component: TrackDiagnosticsView, trackPage: true, category: 'checks', sketch: 'line',
+    answers: 'Can this tracking be trusted?',
+    component: TrackDiagnosticsView, trackPage: true, category: 'checks', sketch: 'trackCheck',
                       analysisBoard: true, rail: 'pops', popTypes: TRACK_FAMILIES, pluginPage: true },
   // Tracks as LANES OVER FRAMES — the correction workspace (docs/todo/TRACK_SCHEME_PLAN.md). This
   // REPLACED the `trackCorrection` worklist, deleted with it: that surface drew each candidate on
@@ -157,9 +157,9 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // `category: 'look'` beside cellCards — both show real cells.
   motifCards: {
     label: 'Motif cards',
-    answers: 'What does each discovered motif class look like on real cells?',
+    answers: 'What does each motif class look like on real cells?',
     component: MotifCardsView, analysisBoard: true,
-    category: 'look', sketch: 'cards', rail: 'none',
+    category: 'look', sketch: 'motifCard', rail: 'none',
   },
   // HMM state cards — one card per HMM state value on a chosen `live.cell.hmm.state.<measure>`
   // column. Server enumerates eligible segmentations + hmm cols; panel exposes both pickers.
@@ -170,12 +170,12 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     label: 'HMM state cards',
     answers: 'What does each HMM state look like on a real track?',
     component: HmmStateCardsView, analysisBoard: true,
-    category: 'look', sketch: 'cards', rail: 'none',
+    category: 'look', sketch: 'statesCard', rail: 'none',
   },
   trackScheme: {
     label: 'Track timeline',
-    answers: 'Which tracks overlap in time — lanes over frames, to join or split tracks?',
-    component: TrackSchemeView, trackPage: true, category: 'look', sketch: 'timeline',
+    answers: 'Which tracks overlap in time, to join or split them?',
+    component: TrackSchemeView, trackPage: true, category: 'look', sketch: 'trackLanes',
     // `'pops'` like its two siblings, and NOT `pluginPage`: this one mutates. A track population is
     // what a user picks — the segmentation is the storage detail underneath it — so the Track canvas
     // shows the series picker whenever one of these three is the active panel, rather than each panel

@@ -5,8 +5,13 @@
   the plot's name and its question (and a few user words: "velocity" → speed).
 
   Two looks, one switch (`settings.plotPickerPreviews`, also in Preferences → Plots):
-    • previews on  — a category list on the left (when there are two or more), a card per plot on the
-      right with a schematic of its shape (PlotSketch) and the question it answers;
+    • previews on  — the KINDS of plot in a column on the left, each with its chart shape
+      (PlotKindSketch — every "Compare groups" plot opens as a box plot, so the shape is drawn once
+      there), and the picked kind's plots beside it, a card each with what it is about (PlotSketch: a
+      cell, a track, two images) and the question it answers. Hovering a kind shows its plots (after a
+      short pause, so crossing the column on the way to a card doesn't flip it), clicking pins it.
+      Typing shows every match beside the column, and the hovered card's kind lights up in it; a host
+      with one kind only drops the column;
     • previews off — a plain grouped menu, the question on hover.
 
   The host hands in `PlotOption`s and gets the picked `value` back through `@pick`; what a value
@@ -16,6 +21,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import PlotSketch from './PlotSketch.vue'
+import PlotKindSketch from './PlotKindSketch.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { groupPlotOptions, matchesPlotQuery, type PlotOption, type PlotCategory } from '../../plots/plotPicker'
 
@@ -33,15 +39,22 @@ const open = ref(false)
 const btn = ref<HTMLElement | null>(null)
 const searchEl = ref<HTMLInputElement | null>(null)
 const query = ref('')
-const sectionEls = new Map<PlotCategory, HTMLElement>()
-const activeCat = ref<PlotCategory | null>(null)
+const picked = ref<PlotCategory | null>(null)   // the kind clicked in the column; null = the first
 
+const allGroups = computed(() => groupPlotOptions(props.options))
 const groups = computed(() =>
   groupPlotOptions(props.options.filter(o => matchesPlotQuery(o, query.value))))
-const showRail = computed(() => settings.plotPickerPreviews && groupPlotOptions(props.options).length > 1)
+const hoveredCard = ref<PlotCategory | null>(null)   // a card's kind, lit in the column while searching
+const searching = computed(() => !!query.value.trim())
+const showKinds = computed(() => allGroups.value.length > 1)
+const activeKind = computed(() =>
+  searching.value ? null : allGroups.value.find(g => g.id === picked.value)?.id ?? allGroups.value[0]?.id ?? null)
+// the cards beside the column: every match while searching, else the active kind's plots
+const cardGroups = computed(() =>
+  searching.value ? groups.value : groups.value.filter(g => g.id === activeKind.value))
 
 watch(open, async v => {
-  if (!v) { query.value = ''; activeCat.value = null; return }
+  if (!v) { query.value = ''; picked.value = null; hoveredCard.value = null; clearTimeout(hoverTimer); return }
   await nextTick()
   searchEl.value?.focus()
 })
@@ -57,16 +70,20 @@ function pickFirst() {
   if (first) pick(first)
 }
 
-function jumpTo(id: PlotCategory) {
-  activeCat.value = id
+function showKind(id: PlotCategory) {
+  clearTimeout(hoverTimer)
+  picked.value = id
   query.value = ''
-  nextTick(() => sectionEls.get(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
 }
 
-function setSectionEl(id: PlotCategory, el: unknown) {
-  if (el instanceof HTMLElement) sectionEls.set(id, el)
-  else sectionEls.delete(id)
+// hover intent: a kind shows its plots only once the pointer rests on it, never while searching
+let hoverTimer: ReturnType<typeof setTimeout> | undefined
+function hoverKind(id: PlotCategory) {
+  clearTimeout(hoverTimer)
+  if (searching.value) return
+  hoverTimer = setTimeout(() => { picked.value = id }, 150)
 }
+function leaveKind() { clearTimeout(hoverTimer) }
 </script>
 
 <template>
@@ -90,18 +107,22 @@ function setSectionEl(id: PlotCategory, el: unknown) {
 
       <div v-if="!groups.length" class="cc-empty-inline pp-empty">No plot matches “{{ query }}”</div>
 
-      <!-- previews: category rail + cards -->
+      <!-- previews: the kinds of plot in a column, the active kind's plots beside it -->
       <div v-else-if="settings.plotPickerPreviews" class="pp-body">
-        <nav v-if="showRail" class="pp-rail">
-          <button v-for="g in groupPlotOptions(options)" :key="g.id" type="button" class="pp-rail-item"
-                  :class="{ 'pp-rail-on': activeCat === g.id }" @click="jumpTo(g.id)">
-            {{ g.label }}
+        <nav v-if="showKinds" class="pp-kinds">
+          <button v-for="g in allGroups" :key="g.id" type="button" class="pp-kind"
+                  :class="{ 'pp-kind-on': activeKind === g.id || (searching && hoveredCard === g.id) }"
+                  v-tooltip.right="g.blurb" @click="showKind(g.id)" @mouseenter="hoverKind(g.id)" @mouseleave="leaveKind">
+            <PlotKindSketch :category="g.id" />
+            <span class="pp-card-label">{{ g.label }}</span>
           </button>
         </nav>
         <div class="pp-cards">
-          <section v-for="g in groups" :key="g.id" :ref="el => setSectionEl(g.id, el)" class="pp-section">
-            <div class="cc-eyebrow cc-fs-2xs pp-section-head">{{ g.label }}</div>
-            <button v-for="o in g.options" :key="o.value" type="button" class="pp-card" @click="pick(o)">
+          <section v-for="g in cardGroups" :key="g.id" class="pp-section">
+            <div v-if="searching" class="cc-eyebrow cc-fs-2xs pp-section-head">{{ g.label }}</div>
+            <button v-for="o in g.options" :key="o.value" type="button" class="pp-card"
+                    v-tooltip.bottom="o.answers ?? ''" @click="pick(o)"
+                    @mouseenter="hoveredCard = o.category" @mouseleave="hoveredCard = null">
               <PlotSketch :kind="o.sketch" />
               <span class="pp-card-text">
                 <span class="pp-card-label">{{ o.label }}</span>
@@ -131,31 +152,34 @@ function setSectionEl(id: PlotCategory, el: unknown) {
 .plot-picker-btn .pi { font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); }
 
 .pp { display: flex; flex-direction: column; width: 240px; max-height: min(70vh, 560px); }
-.pp-wide { width: min(600px, 92vw); }
+.pp-wide { width: min(660px, 94vw); }
 .pp-head { padding: 0.4rem; gap: 0.3rem; border-bottom: 1px solid var(--cc-border); }
 .pp-search { flex: 1; min-width: 0; }
 .pp-empty { padding: 0.8rem; }
 
 .pp-body { display: flex; min-height: 0; flex: 1; }
-.pp-rail { display: flex; flex-direction: column; flex-shrink: 0; width: 150px; padding: 0.3rem 0;
-           border-right: 1px solid var(--cc-border); background: var(--cc-surface-1); overflow-y: auto; }
-.pp-rail-item { text-align: left; padding: 0.35rem 0.7rem; background: none; border: none; color: var(--cc-text);
-                font-size: var(--cc-fs-sm); cursor: pointer; }
-.pp-rail-item:hover { background: var(--cc-surface-2); }
-.pp-rail-on { color: var(--cc-accent); font-weight: 600; }
+.pp-kinds { display: flex; flex-direction: column; gap: 0.25rem; flex-shrink: 0; width: 190px; padding: 0.4rem;
+            border-right: 1px solid var(--cc-border); background: var(--cc-surface-1); overflow-y: auto; }
+.pp-kind { display: flex; align-items: center; gap: 0.5rem; text-align: left; padding: 0.3rem 0.4rem;
+           background: none; border: 1px solid transparent; border-radius: var(--cc-radius-sm);
+           color: var(--cc-text); cursor: pointer; }
+.pp-kind .plot-kind-sketch { width: 70px; height: 42px; }
+.pp-kind:hover, .pp-kind:focus-visible { background: var(--cc-surface-2); }
+.pp-kind-on { border-color: var(--cc-accent); background: var(--cc-surface-2); }
+.pp-kind-on .pp-card-label { color: var(--cc-accent); }
 
-.pp-cards { flex: 1; min-width: 0; overflow-y: auto; padding: 0.3rem 0.4rem 0.5rem; }
-.pp-section { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem; scroll-margin-top: 0.3rem; }
+.pp-cards { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 0.4rem; }
+.pp-section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.25rem; }
 .pp-section + .pp-section { margin-top: 0.5rem; }
 .pp-section-head { grid-column: 1 / -1; padding: 0.3rem 0.2rem 0.1rem; }
-.pp-card { display: flex; gap: 0.5rem; align-items: flex-start; text-align: left; padding: 0.4rem;
+.pp-card { display: flex; gap: 0.4rem; align-items: center; text-align: left; padding: 0.25rem 0.35rem;
            background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: var(--cc-radius-sm);
            color: var(--cc-text); cursor: pointer; }
 .pp-card:hover, .pp-card:focus-visible { border-color: var(--cc-accent); background: var(--cc-surface-2); }
 .pp-card-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
 .pp-card-label { font-size: var(--cc-fs-sm); font-weight: 600; }
 .pp-card-answers { color: var(--cc-text-dim); line-height: 1.25;
-                   display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+                   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .pp-list { overflow-y: auto; }
 </style>

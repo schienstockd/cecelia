@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  PLOT_CATEGORIES, PLOT_CATEGORY_IDS, PLOT_SKETCH_KINDS, groupPlotOptions, matchesPlotQuery, sketchForCharts,
+  PLOT_CATEGORIES, PLOT_CATEGORY_IDS, PLOT_SKETCH_KINDS, groupPlotOptions, matchesPlotQuery,
   specOption, type PlotOption,
 } from './plotPicker'
 import { CLUSTER_PANELS } from '../modules/cluster/clusterPanels'
@@ -11,7 +11,7 @@ const SPECS = Object.values(import.meta.glob<SpecJson>('../../../app/src/plotDef
                                                        { eager: true, import: 'default' }))
 
 const opt = (value: string, category: PlotOption['category'], label = value, answers = ''): PlotOption =>
-  ({ value, label, answers, category, sketch: 'box' })
+  ({ value, label, answers, category, sketch: 'generic' })
 
 describe('plot picker categories', () => {
   it('every built-in spec is filed under a real category (not the plugin fallback)', () => {
@@ -19,7 +19,9 @@ describe('plot picker categories', () => {
     for (const s of SPECS) {
       expect(PLOT_CATEGORY_IDS, s.id).toContain(s.category)
       expect(s.category, s.id).not.toBe('other')
-      if (s.sketch !== undefined) expect(PLOT_SKETCH_KINDS, `${s.id}: sketch`).toContain(s.sketch)
+      // named, not left to the fallback: a built-in plot that loses its sketch shows the plain one
+      expect(PLOT_SKETCH_KINDS, `${s.id}: sketch`).toContain(s.sketch)
+      expect(s.sketch, s.id).not.toBe('generic')
     }
   })
 
@@ -47,19 +49,13 @@ describe('plot picker categories', () => {
 })
 
 describe('plot sketch', () => {
-  it('draws the default (first) chart type', () => {
-    expect(sketchForCharts(['histogram', 'boxplot'])).toBe('hist')
-    expect(sketchForCharts(['stacked100', 'boxplot'])).toBe('stacked')
-    expect(sketchForCharts(['heatmap'])).toBe('heatmap')
-    expect(sketchForCharts(['elbow'])).toBe('elbow')
-    expect(sketchForCharts(undefined)).toBe('box')
+  it('a spec draws the sketch it names', () => {
+    expect(specOption({ id: 'x', label: 'X', sketch: 'track' }).sketch).toBe('track')
   })
 
-  it('a spec can override the sketch (a count over frames is a line, not bars)', () => {
-    const overTime = SPECS.find(s => s.id === 'population_over_time')!
-    expect(overTime.chartTypes?.[0]).toBe('count')
-    expect(specOption(overTime).sketch).toBe('line')
-    expect(sketchForCharts(['count'])).toBe('bars')
+  it('a plugin spec with no or an unknown sketch draws the plain one, not a blank card', () => {
+    expect(specOption({ id: 'x', label: 'X' }).sketch).toBe('generic')
+    expect(specOption({ id: 'x', label: 'X', sketch: 'box' }).sketch).toBe('generic')
   })
 
   it('a plugin spec with no or an unknown category lands in Other', () => {
