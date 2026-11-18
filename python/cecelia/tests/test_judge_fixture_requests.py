@@ -45,7 +45,7 @@ class PropertiesTest(unittest.TestCase):
 
     def test_scan_finds_every_image_with_a_cell_table(self):
         found = {im["image"] for im in self.fr.scan(PROJECTS)}
-        self.assertEqual(found, {"KDIeEm", "CtMsh1"})      # ZARRFMT has stores, no cell table
+        self.assertEqual(found, {"KDIeEm", "KDIeEx", "CtMsh1"})   # ZARRFMT has stores, no cell table
         self.assertEqual(self.fr.scan(None), [])
         self.assertEqual(self.fr.scan(PROJECTS / "nope"), [])
 
@@ -63,7 +63,8 @@ class MatchTest(unittest.TestCase):
 
     def test_every_checkable_property_and_the_technology_must_match(self):
         m = self.fr.match(self.requests, self.images)
-        self.assertEqual([im["image"] for im in m["movie"]], ["KDIeEm"])
+        # smallest table first: KDIeEx (933 cells) before KDIeEm (1377)
+        self.assertEqual([im["image"] for im in m["movie"]], ["KDIeEx", "KDIeEm"])
         # `structure` can't be read off a file: it is left to confirm, not a reason to drop the image
         self.assertEqual([im["image"] for im in m["still-structure"]], ["CtMsh1"])
         self.assertEqual(m["calibrated-still"], [])          # CONTMESH is 1.0 µm/px in x
@@ -73,10 +74,10 @@ class MatchTest(unittest.TestCase):
         m = self.fr.match(self.requests, self.images)
         s = self.fr.summary(self.requests, m, configured=True)
         text = json.dumps(s)
-        for name in ("KDIeEm", "CtMsh1", "testpr", "CONTMESH", str(PROJECTS)):
+        for name in ("KDIeEm", "KDIeEx", "CtMsh1", "testpr", "CONTMESH", str(PROJECTS)):
             self.assertNotIn(name, text)
         by = {r["id"]: r for r in s["requests"]}
-        self.assertEqual(by["movie"]["candidates"], 1)
+        self.assertEqual(by["movie"]["candidates"], 2)
         self.assertEqual(by["still-structure"]["confirm"], ["structure"])
 
     def test_no_source_is_reported_not_guessed(self):
