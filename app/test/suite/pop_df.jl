@@ -39,6 +39,17 @@
         # scaled values behind for a later :pixel caller.
         @test pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"],
                      centroids=:pixel).centroid_x == px.centroid_x
+        # On this uncalibrated image the conversion is the identity, so the line above cannot fail.
+        # Calibrate it (z ≠ x) and ask again: :physical scales, and a :pixel read after it still
+        # gets pixels from the shared cache entry.
+        merge!(img.meta, Dict("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5", "PhysicalSizeZ" => "2.0"))
+        @test img_is_calibrated(img)
+        phc = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"], centroids=:physical)
+        @test phc.centroid_x ≈ px.centroid_x .* 0.5
+        @test phc.centroid_z ≈ px.centroid_z .* 2.0
+        @test pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"],
+                     centroids=:pixel).centroid_x == px.centroid_x
+        empty!(img.meta)
 
         # …and `false` is a DIFFERENT read (different columns), so it must not share their entry
         @test !("centroid_x" in names(pop_df(img, "labels", String[]; value_name="B",
@@ -245,19 +256,22 @@ end
     else
         td = mktempdir(); mkpath(joinpath(td, "labelProps"))
         cp(h5, joinpath(td, "labelProps", "B.h5ad"))
-        cp(h5, joinpath(td, "labelProps", "C.h5ad"))    # a SECOND segmentation on the same image
+        # a SECOND segmentation on the same image that disagrees with B (KDIeEx: a known third fewer
+        # cells), so reading B for C, or pooling B twice, changes the counts below
+        distinct_image!(td; value_name = "C", tracks = false)
+        want = distinct_cell_counts(h5)
         img = CciaImage(uid="KDIeEm", dir=td)
         img.label_props["B"] = "B.h5ad"
         img.label_props["C"] = "C.h5ad"
         img.label_props["_active"] = "B"                # active is B — the old code always returned B
 
         n1 = nrow(pop_df(img, "labels", ["B/labels"]; pop_cols=["area"]))
-        @test n1 > 0
+        @test n1 == want.b
 
         # the PREFIX picks the segmentation, not the active one
         onlyC = pop_df(img, "labels", ["C/labels"]; pop_cols=["area"])
         @test unique(onlyC.value_name) == ["C"]
-        @test nrow(onlyC) == n1
+        @test nrow(onlyC) == want.x
 
         # both segmentations pool in ONE call — the QC canvas comparing two label sets side by side
         both = pop_df(img, "labels", ["B/labels", "C/labels"]; pop_cols=["area"])
@@ -265,7 +279,8 @@ end
         @test unique(both.pop) == ["/labels"]
         # `label` is unique only WITHIN a segmentation, so the pooled frame repeats ids across
         # value_names — nothing may dedup by label alone or one segmentation's cells vanish
-        @test nrow(both) == 2 * n1
+        @test nrow(both) == want.b + want.x
+        @test count(==("C"), both.value_name) == want.x
 
         # a segmentation absent on THIS image is skipped, not an error: a set-level call spans images
         # segmented differently (a cellpose run yielding zero objects writes no labelProps at all)

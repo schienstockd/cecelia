@@ -84,3 +84,17 @@ systemctl --user daemon-reload
 
 macOS: wire `scripts/judge/cron_pass.sh` into a `launchd` plist yourself. Windows: run
 `pixi run judge-weekly` by hand or from Task Scheduler via WSL.
+
+## Matching fixture requests against your projects
+
+The pass matches `test-data/NEEDS.toml` requests against a projects dir only when one is named. Give
+the unit yours in a drop-in, so no path lands in the repo:
+
+```bash
+systemctl --user edit weekly-judge.service
+# [Service]
+# Environment=CECELIA_FIXTURE_SOURCE_PROJECTS=/path/to/your/projects
+```
+
+The record then counts candidates per request; `pixi run judge-fixtures` (same variable, or
+`--projects-dir`) lists them. `docs/ai-assist/WEEKLY_JUDGE.md` → *Fixture requests*.

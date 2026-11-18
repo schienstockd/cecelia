@@ -505,10 +505,14 @@ end
                 @test Int(r3.ids[end]) == Int(r.ids[end])
             end
 
-            # Tracks — no track_props on this fixture, so 404 rather than 500. Confirms the "no
-            # tracks for this vn" branch reads as a not-found, not a server bug.
-            st4, _ = g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=tracks")
-            @test st4 in (200, 404)  # tolerant: some fixtures may grow track_props later
+            # Tracks — the fixture is tracked (B__tracks.h5ad, 62 tracks): every track id, once.
+            st4, body4 = g("projectUid=testpr&imageUid=KDIeEm&valueName=B&kind=tracks")
+            @test st4 == 200
+            # MAINT-EXEMPT: the expected ids come from the same copied table the route reads
+            tids = (label_props(joinpath(dir, "testpr", "1", "KDIeEm", "labelProps", "B.h5ad")) |>
+                    v -> select_cols(v, ["track_id"]) |> as_df).track_id
+            want = sort(unique(Int[Int(t) for t in tids if !ismissing(t) && t isa Real && isfinite(t) && t >= 0]))
+            @test sort(Int.(JSON3.read(body4).ids)) == want
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
             rm(dir; recursive = true, force = true)

@@ -240,9 +240,11 @@ def merged_pr_heads(branch: str, cwd: str | None = None, state: str = "merged") 
         return None
 
 
-def git_output(*args: str, cwd: str | None = None) -> str | None:
+def git_output(*args: str, cwd: str | None = None, errors: str = "strict") -> str | None:
     """`git <args>` stdout (stripped), or None on any failure — not a repo, `git` missing, non-zero
-    exit, timeout, output that is not UTF-8 text (`git show` of a binary blob). For one-off
+    exit, timeout, output that is not UTF-8 text (`git show` of a binary blob). `errors="replace"`
+    decodes non-UTF-8 output with U+FFFD instead: a diff a reviewer reads, which must match how
+    `scripts/recital.py` reads the staged diff rather than drop the file. For one-off
     git-state questions (the commit hook's `core.hooksPath` / in-progress-merge checks) so they
     don't grow a second subprocess wrapper. `cwd` defaults to
     the process cwd."""
@@ -258,7 +260,7 @@ def git_output(*args: str, cwd: str | None = None) -> str | None:
     # Decoded here, not by subprocess: on Windows its reader thread swallows a decode error and
     # leaves stdout None. Newlines as text mode gives them.
     try:
-        out = result.stdout.decode("utf-8")
+        out = result.stdout.decode("utf-8", errors=errors)
     except UnicodeDecodeError:
         return None
     return out.replace("\r\n", "\n").replace("\r", "\n").strip()

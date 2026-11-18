@@ -409,8 +409,10 @@ def _reused_round(rounds: Rounds | None, mechanism: str, title: str, event_name:
 
 def _tree_delta(old_tree: str, new_tree: str) -> str | None:
     """`git diff` between two staged trees: what changed since the last round. None when git
-    can't say (a tree pruned by `git gc`): the round is then a full one."""
-    return _git_output("diff", old_tree, new_tree)
+    can't say (a tree pruned by `git gc`): the round is then a full one. Non-UTF-8 text decodes
+    with `errors="replace"`, as `scripts/recital.py` reads the full staged diff, so such a file
+    doesn't turn every repeat round into a full one."""
+    return _git_output("diff", old_tree, new_tree, errors="replace")
 
 
 def _delta_note(delta: str, earlier: _t.Sequence[str]) -> str:

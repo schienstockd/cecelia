@@ -173,8 +173,15 @@ end
 
 # Percentile contrast from ONE z-plane of timepoint 0, xy-subsampled to ~`target` px per side. The
 # viewer's own contrast (the props file) always wins; this is the cold-start answer for an image
-# nobody has opened yet, and it is deliberately cheap: z chunks are size 1, so this reads a handful of
-# chunks per channel rather than a whole volume.
+# nobody has opened yet, and it is meant to be cheap — which takes reading the COARSEST pyramid level
+# that still has `target` px on its long side (`_sample_level`), not level 0. Indexing a Zarr array
+# with a stride still decodes every chunk the stride crosses, which at ~216 px on a 512² grid is every
+# chunk: on a 60-channel 55440×24960 u8 PhenoCycler slide the level-0 read was 1.38 GB of decode per
+# channel (~3 s; ~190 s before the viewer opened), against a 433×195 plane at L7 (0.03 s for all 60).
+# The pyramid writers (bioformats2raw's SimpleImageScaler, `write_multiscale_pyramid`) both SUBSAMPLE
+# with power-of-two strides — no averaging — so a coarse level holds the same kind of pixels the
+# stride took from L0, and a sparse marker's p99 is not smoothed away. A store built elsewhere with an
+# AVERAGING downsampler would narrow the window; the thumbnails read coarse levels the same way.
 #
 # It is sampled from ONE FIXED (t, z) on purpose — decision 5 of WEB_VIEWER_PLAN.md. Contrast computed
 # per timepoint makes playback flicker as the window chases each frame's own distribution.
@@ -185,8 +192,27 @@ end
 # well above any one plane's — sampled from the mid plane, the camera noise of a 9-plane stack sat at
 # ~20–30% of every ramp and the crops read as a coloured haze.
 const MAX_PROJECT_PLANES = 16
+"""
+    _sample_level(zarr_path, target) -> (array, c_order_axis_names)
+
+The pyramid level `_sampled_specs` reads: the coarsest whose longer XY side is still `>= target`, and
+whose t / c / z extents equal level 0's (a writer that also downsampled z would move the mid plane,
+and one with fewer channels would index off the end) — else level 0. A store with no readable
+multiscales is level 0 only.
+"""
+function _sample_level(zarr_path::AbstractString, target::Int)
+    lvls = try store_pyramid_levels(zarr_path) catch; nothing end
+    (lvls === nothing || length(lvls) <= 1) && return open_level0(zarr_path)
+    # C-order shapes, X last: everything before the last two dims is t / c / z. A level that differs
+    # there is blanked (no shape) so `thumbnail_level` passes over it without shifting the indices.
+    lead(l) = length(l.shape) >= 2 ? l.shape[1:end-2] : l.shape
+    same = [lead(l) == lead(first(lvls)) ? l : (; l..., shape = Int[]) for l in lvls]
+    lvl = thumbnail_level(same, target)
+    lvl == 0 ? open_level0(zarr_path) : open_level(zarr_path, lvl)
+end
+
 function _sampled_specs(zarr_path::AbstractString, nc::Int; target::Int = 256, project::Bool = false)
-    arr, caxes = open_level0(zarr_path)
+    arr, caxes = _sample_level(zarr_path, target)
     nd   = ndims(arr)
     dims = axis_dims(caxes, nd)
     jz   = get(dims, "z", 0)

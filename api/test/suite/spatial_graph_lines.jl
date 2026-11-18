@@ -22,6 +22,9 @@
         try
             proj = create_project!(name = "graph-lines")
             img = add_image!(add_set!(proj; name = "s"); name = "im", uid = "grphA")
+            # calibrated, z ≠ x: on 1 µm/px the route's "in µm" below could not tell µm from pixels
+            merge!(img.meta, Dict("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5", "PhysicalSizeZ" => "2.0"))
+            save!(img)
             mkpath(img_label_props_dir(img))
             cp(joinpath(src, "labelProps", "B.h5ad"), img_label_props_path(img, "B"))
             cp(joinpath(src, "spatialGraph"), img_spatial_graph_dir(img))
@@ -79,6 +82,7 @@
             @test code == 200
             j = JSON3.read(body)
             ux = physical_size_for_axis(first(img_physical_sizes(img)), :x)
+            @test ux == 0.5
             @test j.nSegments == length(gp) && isapprox(collect(j.x0), gp.segs.x0 .* ux; rtol = 1e-6)   # Float32 µm via JSON
             @test j.nCrossFrame == gp.n_cross_frame && occursin("join two frames", j.note)
             code2, _ = api_viewer_spatial_graphs(HTTP.Request("GET", replace(q, "pooled" => "none")))

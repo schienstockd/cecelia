@@ -126,6 +126,11 @@ _cc_drift(maxlag) = Dict{String,Any}("valueName" => "default", "driftChannel" =>
     # cells: the label table's centroid axes say 2D or 3D — read from a real table, then the rules
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     have_fixture(h5) ? (@test Cecelia._claim_measure_dims(h5) == 3) : (@test_skip "measure dims (fixture missing)")
+    # …and the 2D branch on a table whose spatial axes are y/x only. No committed cell table is 2D; the
+    # branch sidecar is written in the same label-props layout (`uns.spatial_cols`), which is all this reads.
+    # MAINT-EXEMPT: the one committed table with 2D spatial columns, read for its layout only
+    h2 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
+    have_fixture(h2) ? (@test Cecelia._claim_measure_dims(h2) == 2) : (@test_skip "2D measure dims (fixture missing)")
     @test Cecelia._claim_measure_dims(joinpath(mktempdir(), "none.h5ad")) === nothing
     sc = ClaimScope(_cc_set(_cc_clean()), ["B/qc", "T/qc"], "area"; unit_attrs = ["Mouse"])
     rows = claim_record_table(sc)

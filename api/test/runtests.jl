@@ -76,6 +76,8 @@ api_src_jl_files(src::AbstractString = joinpath(API_TEST_DIR, "..", "src")) =
 # A second segmentation that DIFFERS from the first — the package suite's helper, shared so the API
 # multi-segmentation tests don't fall back to an identical copy (app/test/distinct_segmentations.jl).
 include(joinpath(@__DIR__, "..", "..", "app", "test", "distinct_segmentations.jl"))
+# Fixtures by property (app/test/fixture_registry.jl): fixture_for(:cells, :calibrated; need = …).
+include(joinpath(@__DIR__, "..", "..", "app", "test", "fixture_registry.jl"))
 
 # ── Image payload + narrow-query API testsets ─────────────────────
 # Five testsets covering payload shape (points-only value_name), run-log enrichment

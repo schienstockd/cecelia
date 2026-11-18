@@ -220,3 +220,44 @@ class ReproMarkerTest(unittest.TestCase):
         with mock.patch("cecelia.effectiveness.maintainability_lint.append_event"):
             self.assertNotIn("skipped", run_maintainability_lint(d, after_lines=lambda p: 1))
 
+
+
+class FixtureByPathTest(unittest.TestCase):
+    """A new test reaching a fixture by path is flagged; `fixture_for` asks for properties instead."""
+
+    def _checks(self, path, added, **kw):
+        return [(f.check, f.line, f.detail) for f in _lint(_diff(path, added, **kw)) if f.check.startswith("fixture")]
+
+    def test_each_way_of_reaching_a_fixture_by_path(self):
+        # MAINT-EXEMPT: these strings are the lint's inputs, not fixture reads
+        for line, detail in (('    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")', "fixture_path"),
+                             ('    h5 = api_fixture("testpr", "1", "KDIeEm")', "api_fixture"),
+                             ('    _B = os.path.join(_ROOT, "testpr", "1", "KDIeEm")', "testpr")):
+            path = "python/cecelia/tests/test_x.py" if line.lstrip().startswith("_B") else "app/test/suite/x.jl"
+            self.assertEqual(self._checks(path, [line]), [("fixture:by_path", 1, detail)], line)
+
+    def test_asking_for_properties_is_clean(self):
+        self.assertEqual(self._checks("api/test/suite/x.jl", ['    fx = fixture_for(:cells, :calibrated; need = "multiplex-structure-still")']), [])
+
+    def test_source_files_comments_and_exempt_lines_are_not_flagged(self):
+        self.assertEqual(self._checks("app/src/x.jl", ['    p = fixture_path("testpr")']), [])
+        self.assertEqual(self._checks("app/test/suite/x.jl", ['    # KDIeEm via fixture_path("testpr") is uncalibrated']), [])
+        self.assertEqual(self._checks("app/test/suite/x.jl", [
+            '    # MAINT-EXEMPT: reads the table only, no property of the data matters',
+            '    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")']), [])
+
+    def test_only_added_lines_and_once_per_hunk(self):
+        self.assertEqual(self._checks("app/test/suite/x.jl", ['    @test true'],
+                                      context=['    h5 = fixture_path("testpr")']), [])
+        two = self._checks("app/test/suite/x.jl", ['    a = fixture_path("testpr")', '    b = fixture_path("testpr")'])
+        self.assertEqual(len(two), 1)
+        # an exemption on the hunk's first use covers the hunk
+        self.assertEqual(self._checks("app/test/suite/x.jl", ['    # MAINT-EXEMPT: reader round-trip',
+                                                              '    a = fixture_path("testpr")',
+                                                              '    b = fixture_path("testpr")']), [])
+
+    def test_the_warning_names_the_fix(self):
+        section = format_section(_lint(_diff("app/test/suite/x.jl", ['    h5 = fixture_path("testpr")'])), files_checked=1)
+        self.assertIn("fixture_for(", section)
+        self.assertIn("NEEDS.toml", section)
+        self.assertIn("MAINT-EXEMPT", section)

@@ -2555,7 +2555,8 @@ end
         @test Cecelia._summarise_measure("y", Any[NaN, missing]) === nothing
 
         # integration over the real KDIeEm B fixture: UNGATED image → the base fallback (all-cells
-        # phenotype + tracked motility). The gated path (T/_qc) is validated separately off-suite.
+        # phenotype + tracked motility); then the GATED path, with one flow gate on area whose cell
+        # count and median come from the gate's own definition.
         h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
         trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
         if !have_fixture(h5) || !have_fixture(trk)
@@ -2590,6 +2591,24 @@ end
             @test isempty(measure_summary(proj; value_names = ["nope"]).images[1].summaries)
             @test length(measure_summary(proj; value_names = ["B"]).images[1].summaries) == length(summ)
             @test_throws ArgumentError measure_summary(proj; kind = "morphology")
+
+            # gated: one flow pop, area above a cut between two of B's values → it is what's summarised
+            areas = sort(Float64.((label_props(joinpath(td, "labelProps", "B.h5ad")) |>
+                                   select_cols(["area"]) |> as_df).area))
+            k = length(areas) ÷ 3
+            cut = (areas[k] + areas[k + 1]) / 2
+            @test areas[k] < cut < areas[k + 1]
+            m = PopulationMap(pop_type = "flow", value_name = "B")
+            add_pop!(m, "big"; gate = RectangleGate("area", "mean_intensity_0", cut, 1e12, -1e12, 1e12))
+            save_pop_map!(m, img)
+            g = measure_summary(proj).images[1].summaries
+            @test !any(x -> x.population == "all cells", g)          # gated → the base fallback is gone
+            ph = only(filter(x -> x.population == "/big" && x.kind == "phenotype", g))
+            big = areas[areas .> cut]
+            @test ph.n == length(big) == length(areas) - k
+            ar = only(filter(x -> x.name == "area", ph.measures))
+            mid = sort(big); nb = length(mid)
+            @test ar.median == round(isodd(nb) ? mid[(nb + 1) ÷ 2] : (mid[nb ÷ 2] + mid[nb ÷ 2 + 1]) / 2; sigdigits = 4)
         end
     end
 
@@ -2603,14 +2622,23 @@ end
         @test big.nDistinct == 100 && length(big.top) == 5   # capped, but distinct count is the true total
         @test Cecelia._category_distribution(Any[NaN, missing, nothing]).n == 0
 
-        # integration over the real KDIeEm B fixture: the summaries run and return the right shape
-        # (behaviour/cluster entries only if the fixture banked HMM/cluster obs — asserted when present)
+        # integration over the real KDIeEm B fixture. It carries no HMM state and no cell cluster column,
+        # so both are written into the temp copy first: without them the entry loops below run zero
+        # times and prove nothing. States and clusters are label-derived, so the expected
+        # distributions come from the labels, not from the code under test.
         h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
         if !have_fixture(h5)
             @test_skip "behaviour/cluster summary (fixture missing)"
         else
             td = mktempdir(); mkpath(joinpath(td, "labelProps"))
             cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+            p = joinpath(td, "labelProps", "B.h5ad")
+            lab = Int.((label_props(p) |> v -> select_cols(v, String[]) |> as_df).label)
+            state = [l % 3 == 0 ? missing : Float64(l % 3) for l in lab]     # 0 → undecoded (missing)
+            label_props(p) |> v -> add_obs(v, DataFrame("label" => lab,
+                "live.cell.hmm.state.speed" => state,
+                "clusters.cellA" => [Float64(l % 4) for l in lab])) |> save!
+            n_dec = count(l -> l % 3 != 0, lab)
             img = CciaImage(uid = "KDIeEm", dir = td)
             img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
             proj = CciaProject(; uid = "bP", name = "b"); proj.root = mktempdir()
@@ -2626,6 +2654,13 @@ end
                 @test e.kind in ("state", "transitions") && e.n > 0 && !isempty(e.distribution)
                 @test all(x -> 0.0 <= x.fraction <= 1.0, e.distribution)
             end
+            st_e = only(filter(e -> e.kind == "state", b.images[1].behaviour))
+            @test st_e.column == "live.cell.hmm.state.speed" && st_e.n == n_dec && st_e.nStates == 2
+            @test Dict(x.value => x.n for x in st_e.distribution) ==
+                  Dict("1.0" => count(l -> l % 3 == 1, lab), "2.0" => count(l -> l % 3 == 2, lab))
+            cl_e = only(filter(e -> e.suffix == "cellA", c.images[1].clusters))
+            @test cl_e.granularity == "cell" && cl_e.nClusters == 4 && cl_e.n == length(lab)
+            @test cl_e.largestFrac == round(maximum(k -> count(l -> l % 4 == k, lab), 0:3) / length(lab); digits = 4)
         end
     end
 

@@ -547,52 +547,67 @@ end
     if !have_fixture(h5) || !have_fixture(trk)
         @test_skip "plot_summary_data cross-image (fixture missing)"
     else
-        # two "images" from the same fixture (uX, uY) — exercises set-level pooling mechanics
-        mk = function (uid)
+        # two images that DISAGREE: uX is KDIeEm's B, uY is KDIeEx (a known third of the tracks gone,
+        # speed doubled). Two copies of one table could not tell a swapped or doubled read apart.
+        mk = function (uid, distinct)
             td = mktempdir(); mkpath(joinpath(td, "labelProps"))
-            cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
-            cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+            if distinct
+                distinct_image!(td)
+            else
+                cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
+                cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+            end
             img = CciaImage(uid=uid, dir=td)
             img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
             img
         end
-        imgs = [mk("uX"), mk("uY")]; uids = ["uX", "uY"]
+        imgs = [mk("uX", false), mk("uY", true)]; uids = ["uX", "uY"]
+        # expectations from B's own track table and the KDIeEx rule, not from the code under test
+        spB = distinct_track_speeds(trk)
+        spX = Dict(t => DISTINCT_SCALE * v for (t, v) in spB if distinct_keeps_track(t))
+        nB, nX = length(spB), length(spX)
+        @test nX < nB
 
-        # pop_df set-level: uID column tags each image; rows = 2× a single image's tracks
+        # pop_df set-level: uID column tags each image; rows = each image's own tracks
         one = pop_df(imgs[1], "live", ["B/_tracked"]; granularity=:track)
         both = pop_df(imgs, uids, "live", ["B/_tracked"]; granularity=:track)
         @test "uID" in names(both)
-        @test Set(unique(both.uID)) == Set(uids)
-        @test nrow(both) == 2 * nrow(one)
+        @test nrow(one) == nB
+        @test count(==("uX"), both.uID) == nB && count(==("uY"), both.uID) == nX
 
-        # boxplot per_image → one box per image (same data → equal stats), + scope field
+        # boxplot per_image → one box per image, each with its own numbers, + scope field
         sp = plot_summary_data(imgs, uids, "live", ["B/_tracked"], "boxplot";
                                measure="live.track.speed", granularity=:track, scope=:per_image)
         @test sp["scope"] == "per_image" && sp["chartType"] == "boxplot"
         @test length(sp["series"]) == 2
-        @test Set(s["uID"] for s in sp["series"]) == Set(uids)
-        @test Set(keys(sp["series"][1])) ⊇ Set(["q1","median","q3","lower","upper","mean","n"])
-        @test sp["series"][1]["median"] ≈ sp["series"][2]["median"]    # identical fixtures
-        @test sp["series"][1]["q1"] <= sp["series"][1]["median"] <= sp["series"][1]["q3"]
-        @test sp["series"][1]["n"] == nrow(one)
+        by = Dict(s["uID"] => s for s in sp["series"])
+        @test Set(keys(by)) == Set(uids)
+        @test Set(keys(by["uX"])) ⊇ Set(["q1","median","q3","lower","upper","mean","n"])
+        @test by["uX"]["n"] == nB && by["uY"]["n"] == nX
+        @test by["uX"]["median"] ≈ distinct_median(values(spB))
+        @test by["uY"]["median"] ≈ distinct_median(values(spX))
+        @test by["uX"]["q1"] <= by["uX"]["median"] <= by["uX"]["q3"]
 
         # summarised → one pooled box across both images
         ss = plot_summary_data(imgs, uids, "live", ["B/_tracked"], "boxplot";
                                measure="live.track.speed", granularity=:track, scope=:summarised)
-        @test length(ss["series"]) == 1 && ss["series"][1]["n"] == 2 * nrow(one)
+        @test length(ss["series"]) == 1 && ss["series"][1]["n"] == nB + nX
+        @test ss["series"][1]["median"] ≈ distinct_median(vcat(collect(values(spB)), collect(values(spX))))
 
         # SAME data source, different chart type (bar of mean ± sd) — chart ⊥ data source
         br = plot_summary_data(imgs, uids, "live", ["B/_tracked"], "bar";
                                measure="live.track.speed", granularity=:track, scope=:per_image)
         @test br["chartType"] == "bar" && length(br["series"]) == 2
-        @test Set(keys(br["series"][1])) ⊇ Set(["value", "sd", "n"])
-        @test br["series"][1]["value"] ≈ br["series"][2]["value"]
+        bb = Dict(s["uID"] => s for s in br["series"])
+        @test Set(keys(bb["uX"])) ⊇ Set(["value", "sd", "n"])
+        @test bb["uX"]["value"] ≈ sum(values(spB)) / nB
+        @test bb["uY"]["value"] ≈ sum(values(spX)) / nX
 
-        # histogram per_image → 2 overlay series sharing bin edges
+        # histogram per_image → 2 overlay series sharing bin edges, each summing to its own tracks
         hh = plot_summary_data(imgs, uids, "live", ["B/_tracked"], "histogram";
                                measure="live.track.speed", granularity=:track, scope=:per_image, nbins=10)
         @test length(hh["series"]) == 2 && length(hh["binEdges"]) == 11
-        @test all(sum(s["counts"]) == nrow(one) for s in hh["series"])
+        @test sort([sum(s["counts"]) for s in hh["series"]]) == sort([nB, nX])
     end
 end
 
@@ -856,8 +871,7 @@ end
         td = mktempdir(); mkpath(joinpath(td, "labelProps"))
         cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
         cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
-        cp(h5,  joinpath(td, "labelProps", "B2.h5ad"))
-        cp(trk, joinpath(td, "labelProps", "B2__tracks.h5ad"))
+        distinct_image!(td; value_name = "B2")   # B2 disagrees with B (KDIeEx), so a swap shows
         img = CciaImage(uid="uM", dir=td)
         img.label_props["B"] = "B.h5ad"; img.label_props["B2"] = "B2.h5ad"
         img.label_props["_active"] = "B"
@@ -869,10 +883,20 @@ end
         @test bp["chartType"] == "boxplot" && length(bp["series"]) == 2
         @test Set(s["value_name"] for s in bp["series"]) == Set(["B", "B2"])
         @test Set(s["pop"] for s in bp["series"]) == Set(["B/_tracked", "B2/_tracked"])
-        @test bp["series"][1]["median"] ≈ bp["series"][2]["median"]   # identical underlying data
+        spB = distinct_track_speeds(trk)
+        spX = Dict(t => DISTINCT_SCALE * v for (t, v) in spB if distinct_keeps_track(t))
+        bv = Dict(s["value_name"] => s for s in bp["series"])
+        @test bv["B"]["n"] == length(spB) && bv["B2"]["n"] == length(spX)
+        @test bv["B"]["median"] ≈ distinct_median(values(spB))
+        @test bv["B2"]["median"] ≈ distinct_median(values(spX))
 
         # cross-image AND cross-segmentation: 2 images × 2 segmentations → 4 per_image series
-        img2 = CciaImage(uid="uN", dir=td)
+        # uN has its OWN dir with the two tables the other way round (B = KDIeEx, B2 = KDIeEm's B), so
+        # reading uM's tables for uN, or swapping the images, changes the per-series values below
+        td2 = mktempdir()
+        distinct_image!(td2; value_name = "B")
+        cp(h5, joinpath(td2, "labelProps", "B2.h5ad")); cp(trk, joinpath(td2, "labelProps", "B2__tracks.h5ad"))
+        img2 = CciaImage(uid="uN", dir=td2)
         img2.label_props["B"] = "B.h5ad"; img2.label_props["B2"] = "B2.h5ad"
         img2.label_props["_active"] = "B"
         xp = plot_summary_data([img, img2], ["uM", "uN"], "live", targets, "bar";
@@ -880,6 +904,10 @@ end
         @test xp["scope"] == "per_image" && length(xp["series"]) == 4
         @test Set((s["uID"], s["value_name"]) for s in xp["series"]) ==
               Set([("uM","B"), ("uM","B2"), ("uN","B"), ("uN","B2")])
+        xv = Dict((s["uID"], s["value_name"]) => s for s in xp["series"])
+        meanB, meanX = sum(values(spB)) / length(spB), sum(values(spX)) / length(spX)
+        @test xv[("uM", "B")]["value"] ≈ meanB && xv[("uM", "B2")]["value"] ≈ meanX
+        @test xv[("uN", "B")]["value"] ≈ meanX && xv[("uN", "B2")]["value"] ≈ meanB
     end
 end
 
@@ -965,4 +993,61 @@ end
         rd = plot_summary_data(x, "live", ["B/_tracked"], "matrix"; kw...)
         @test cellv(rd, "mean_intensity_0") ≈ sum(raw.mean_intensity_0) / nrow(raw)
     end
+end
+
+@testset "grouped by image attribute — stats test the groups within each population" begin
+    # Two populations × WT/KO, cells counted per image. /a is fully separated (WT 1,2,3 vs KO 10,11,12);
+    # /b overlaps (WT 4,6,8 vs KO 5,7,9). Plotted alone, each is an exact two-sided Mann-Whitney 3 vs 3:
+    # /a p = 2/C(6,3) = 0.1, /b U = 3 → p = 0.7. One Kruskal over all four boxes would instead compare
+    # /a in WT with /b in KO and Bonferroni-adjust six pairs.
+    cnt = Dict(("/a", "w1") => 1, ("/a", "w2") => 2, ("/a", "w3") => 3,
+               ("/a", "k1") => 10, ("/a", "k2") => 11, ("/a", "k3") => 12,
+               ("/b", "w1") => 4, ("/b", "w2") => 6, ("/b", "w3") => 8,
+               ("/b", "k1") => 5, ("/b", "k2") => 7, ("/b", "k3") => 9)
+    rows = [(p, u) for ((p, u), n) in sort(collect(cnt)) for _ in 1:n]
+    df = DataFrame("value_name" => fill("A", length(rows)), "pop" => first.(rows),
+                   "uID" => last.(rows), "label" => 1:length(rows))
+    am = Dict(u => startswith(u, "w") ? "WT" : "KO" for u in ("w1", "w2", "w3", "k1", "k2", "k3"))
+    r = Cecelia._summary_agg(df, "boxplot"; measure = nothing, granularity = :cell, nbins = 10,
+                             normalize = :none, by_image = false, attr_map = am, stats_enabled = true)
+    c = r["comparisons"]
+    pairs = Dict(Set([p["a"], p["b"]]) => p["pAdj"] for p in c["comparisonPairs"])
+    @test length(pairs) == 2
+    @test pairs[Set(["WT · a", "KO · a"])] ≈ 0.1
+    @test pairs[Set(["WT · b", "KO · b"])] ≈ 0.7
+    @test isnan(c["pValue"]) && all(isempty, c["letters"])
+    @test occursin("within each population", c["methodNote"])
+
+    # a group_by level (an HMM state) splits the same way: one population, two states, WT vs KO per state
+    st = DataFrame("value_name" => fill("A", 12), "pop" => fill("/p", 12),
+                   "uID" => repeat(["w1", "w2", "w3", "k1", "k2", "k3"], 2),
+                   "m" => [1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 5.0, 7.0, 9.0, 4.0, 6.0, 8.0],
+                   "s" => vcat(fill(1, 6), fill(2, 6)))
+    rs = Cecelia._summary_agg(st, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, stat_unit = :image, group_by = "s",
+                              attr_map = am, stats_enabled = true)
+    cs = rs["comparisons"]
+    @test length(cs["comparisonPairs"]) == 2
+    @test sort([p["pAdj"] for p in cs["comparisonPairs"]]) ≈ [0.1, 0.7]
+    @test occursin("within each population and level", cs["methodNote"])
+
+    # pooled populations never carry the attribute (the series are the groupBy levels alone), so the
+    # levels are compared with one test, as before — not split into one-series families that test nothing
+    rc = Cecelia._summary_agg(st, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, stat_unit = :image, group_by = "s",
+                              attr_map = am, collapse_series = true, stats_enabled = true)
+    @test haskey(rc, "comparisons") && rc["comparisons"]["groups"] == ["1", "2"]
+
+    # an attribute sent with summarised (by_image=false) cell values never reaches the series either:
+    # each population is one box, so the populations are compared, not dropped
+    cells = DataFrame("value_name" => fill("A", 8), "pop" => repeat(["/a", "/b"], inner = 4),
+                      "uID" => repeat(["w1", "k1"], 4), "m" => [1.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 13.0])
+    rb = Cecelia._summary_agg(cells, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = false, attr_map = am, stats_enabled = true)
+    @test haskey(rb, "comparisons") && length(rb["comparisons"]["groups"]) == 2
+
+    # without an attribute the populations ARE the comparison: one test across them, as before
+    rp = Cecelia._summary_agg(df, "boxplot"; measure = nothing, granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = false, stats_enabled = true)
+    @test !isnan(rp["comparisons"]["pValue"])
 end

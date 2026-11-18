@@ -13,6 +13,12 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+### Read this first
+
+These change results when old work is re-run:
+
+- **Neighbour stats on kNN graphs** now count edges stored one way only, which they missed (about a fifth). Re-run the graph and stats on every image of a set (#2317).
+
 ### Changed
 
 - **Copy gating is Tested:** a test fails if a copied gate reads the wrong marker (#2304).

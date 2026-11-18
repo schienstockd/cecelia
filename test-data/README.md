@@ -20,6 +20,15 @@ Individual fixtures are reached with `fixture_path(relparts...)`, and each tests
 `have_fixture(path)` (`@test_skip` + one `@warn` when absent) so a missing fixture never fails
 an unrelated test.
 
+## What each fixture can prove — `fixtures.toml`, and what's missing — `NEEDS.toml`
+
+`fixtures.toml` lists each fixture's properties (calibrated, still/movie, 2D/3D, marker names, regions,
+image store, …) and technology; the `fixture registry` testsets re-derive them from these files. Tests
+that depend on a property call `fixture_for(...)` instead of naming a path, and get a match or nothing.
+`NEEDS.toml` is the request list for data no fixture has yet. `KDIeEm-cal` is a derived fixture: KDIeEm
+with a pixel size written into a temp copy, no bytes here. See `docs/DEV.md` → *Ask for properties, not a
+path*. Adding a fixture: register it in `fixtures.toml` in the same change.
+
 ## Layout
 
 ```
@@ -48,6 +57,15 @@ projects/testpr/
     labelProps/aniso__branch.h5ad  # SYNTHETIC branch sidecar (~32 KB): 6 branches over 3
                               # timepoints + the `uns` orientation block (3 frames x 4x4 boxes)
 ```
+
+`testpr/1/KDIeEx/` is a SECOND image derived from KDIeEm so the two disagree: `labelProps/B.h5ad` is
+KDIeEm's B without whole tracks whose id is divisible by 3 and untracked cells whose label is (933 of
+1377 cells), with `area` doubled; `B__tracks.h5ad` drops the same tracks (43 of 62) with
+`live.track.speed` doubled. Two verbatim copies cannot show a read of the wrong image or segmentation,
+or one pooled twice — these can. Tests set it up with `distinct_image!(dir; value_name)`
+(`app/test/distinct_segmentations.jl`), which also restates the rule (`distinct_keeps_cell`,
+`distinct_keeps_track`, `DISTINCT_SCALE`) so expectations come from B, never from KDIeEx. Regenerate with
+`pixi run python python/cecelia/tests/make_distinct_fixture.py`.
 
 `B.h5ad` is a real measured output (image `KDIeEm`), used to test the `LabelProps` reader
 and `pop_dt` against ground truth. It is a **20-timepoint** timecourse (t 0–19, 3D

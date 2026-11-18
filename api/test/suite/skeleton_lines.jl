@@ -21,6 +21,9 @@
         try
             proj = create_project!(name = "skeleton-lines")
             img = add_image!(add_set!(proj; name = "s"); name = "im", uid = "skelA")
+            # calibrated: on 1 µm/px the route's "in µm" below could not tell µm from pixels
+            merge!(img.meta, Dict("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5"))
+            save!(img)
             mkpath(img_label_props_dir(img))
             cp(h5, img_branch_props_path(img, "SHG"))
 
@@ -54,6 +57,7 @@
             j = JSON3.read(body)
             @test j.nSegments == 6 && sort(unique(collect(j.t))) == [0, 2] && !j.flat
             ux = physical_size_for_axis(first(img_physical_sizes(img)), :x)
+            @test ux == 0.5
             segs = skeleton_segments(img, "SHG")
             @test collect(j.x0) ≈ segs.x0 .* ux
             @test collect(j.type) == segs.type

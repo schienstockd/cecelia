@@ -299,6 +299,28 @@ end
         paired = [(l, Int(c)) for (l, c) in zip(out.label, out[!, idcol]) if !ismissing(c) && isfinite(c) && c > 0]
         @test !isempty(paired)
         @test all(t_of[a] == t_of[b] for (a, b) in paired)
+
+        # maxContactDist is µm: on a calibrated image (0.5 µm x/y, 2 µm z) each A cell's min distance is
+        # the brute-force same-frame minimum over the B cells, in µm — not in pixels
+        merge!(img.meta, Dict("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5", "PhysicalSizeZ" => "2.0"))
+        res = Cecelia._run_task(CellContacts(), img,
+                                Dict{String,Any}("popsA" => ["B/hi"], "popsB" => ["B/lo"], "maxContactDist" => 10.0);
+                                on_log = _ -> nothing)
+        dcol = "flow.cell.min_distance#$(only(res["targets"]))"
+        xyz = label_props(img; value_name="B") |> v -> view_centroid_cols(v; order = [:x, :y, :z]) |>
+              select_cols(["mean_intensity_0", "centroid_t", dcol]) |> as_df
+        isA = xyz.mean_intensity_0 .>= thr; isB = xyz.mean_intensity_0 .<= thr   # both gates include thr
+        um(i) = (0.5 * xyz.centroid_x[i], 0.5 * xyz.centroid_y[i], 2.0 * xyz.centroid_z[i])
+        brute(i) = minimum((sqrt(sum(abs2, um(i) .- um(j))) for j in findall(isB)
+                            if xyz.centroid_t[j] == xyz.centroid_t[i]); init = Inf)
+        checked = 0
+        for i in findall(isA)
+            want = brute(i); got = xyz[i, dcol]
+            isfinite(want) || continue
+            checked += 1
+            @test got ≈ want rtol = 1e-4
+        end
+        @test checked > 0
         rm(td; recursive=true)
     end
 end
@@ -306,14 +328,16 @@ end
 # End to end, several targets on a real image: per-target columns, each searching only its own target;
 # `combineTargets` = today's pooled set (= the per-target minimum); the same population in two
 # segmentations = one set. Intensity tertiles of KDIeEm's B give A ("lo") and two targets ("mid", "hi");
-# segmentation "C" is a copy of B, so `B/mid` + `C/mid` must reproduce `B/mid`'s distances.
+# segmentation "C" is KDIeEx (a known third of B's cells gone) and its "mid" gate takes the TOP band, so
+# `B/mid` + `C/mid` is the minimum of two different distance sets: dropping or doubling either shows.
 @testset "cellContacts one column set per target (KDIeEm)" begin
     h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
     if !have_fixture(h5)
         @test_skip "cellContacts per target (fixture missing)"
     else
         td = mktempdir(); mkpath(joinpath(td, "labelProps"))
-        for vn in ("B", "C"); cp(h5, joinpath(td, "labelProps", "$(vn).h5ad")); end
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        distinct_image!(td; value_name = "C", tracks = false)
         img = CciaImage(uid="KDIeEm", dir=td)
         img.label_props["B"] = "B.h5ad"; img.label_props["C"] = "C.h5ad"; img.label_props["_active"] = "B"
         full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
@@ -321,7 +345,8 @@ end
         for vn in ("B", "C")
             m = PopulationMap(pop_type="flow", value_name=vn)
             band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
-            add_pop!(m, "lo"; gate=band(-1e12, t1)); add_pop!(m, "mid"; gate=band(t1, t2))
+            add_pop!(m, "lo"; gate=band(-1e12, t1))
+            add_pop!(m, "mid"; gate=vn == "B" ? band(t1, t2) : band(t2, 1e12))
             add_pop!(m, "hi"; gate=band(t2, 1e12)); add_pop!(m, "none"; gate=band(1e11, 1e12))
             save_pop_map!(m, img)
         end
@@ -359,11 +384,18 @@ end
             "popsB" => ["B/mid", "B/hi"], "maxContactDist" => 10.0); on_log = l -> push!(logs, l))
         @test any(l -> occursin("earlier combined columns", l) && occursin("B_hi+B_mid", l), logs)
 
-        # the same population from two segmentations → ONE set (pools within its group)
+        # the same population from two segmentations → ONE set (pools within its group): the nearer of
+        # B/mid and C/mid, each measured on its own first
+        res = run(["C/mid"])
+        @test res["targets"] == ["flow.C_mid"]
+        onlyC = read_cols(res["targets"])[aRows, :]
+        @test onlyC[!, col("min_distance", "flow.C_mid")] != per[!, col("min_distance", "flow.B_mid")]
         res = run(["B/mid", "C/mid"])
         @test res["targets"] == ["flow.B_mid+C_mid"]
         cross = read_cols(res["targets"])[aRows, :]
-        @test same(cross[!, col("min_distance", "flow.B_mid+C_mid")], per[!, col("min_distance", "flow.B_mid")])
+        want = min.(per[!, col("min_distance", "flow.B_mid")], onlyC[!, col("min_distance", "flow.C_mid")])
+        @test same(cross[!, col("min_distance", "flow.B_mid+C_mid")], want)
+        @test !same(want, per[!, col("min_distance", "flow.B_mid")])     # C contributes: dropping it would show
 
         # a target that resolves no cells is skipped with a QC warning, not a failed run
         res = run(["B/mid", "B/none"])

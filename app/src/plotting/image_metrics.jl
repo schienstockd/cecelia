@@ -96,7 +96,7 @@ function image_metric_frame(imgs::AbstractVector{<:CciaImage}, uids::AbstractVec
 end
 
 """
-    image_metric_summary(imgs, uids, source, chart_type; measure, suffix="", pop="", attr_map=nothing,
+    image_metric_summary(imgs, uids, source, chart_type; measure, suffix="", pop="", pops=nothing, attr_map=nothing,
                          stats_enabled=false, stats_test=:auto, raw=false) -> Dict
 
 The summary-plot response for a per-image metric: `chart_type` ∈ boxplot | points | bar, each dot one
@@ -105,7 +105,8 @@ between-group test compares images; without it, each population pools its images
 `pops` plots the picked populations (keys as the run stores them, `"<value_name><path>"`), in that order;
 `pop` plots one (the interaction pairs' dropdown). Neither = all. The response lists every population
 the run holds as `pops`, so the picker can grey out the rest. With `attr_map` and several populations
-the test compares attribute groups WITHIN each population (`_stats_within_pops`), never across them.
+the test compares attribute groups WITHIN each population (`_stats_within_pops`); only when each
+population is a single box (one attribute value) are the populations compared.
 """
 function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
                               source::AbstractString, chart_type::AbstractString;
@@ -130,8 +131,7 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
     result = _summary_agg(df, chart_type; measure = String(measure), granularity = :cell, nbins = 30,
                           normalize = :none, by_image = attr_map !== nothing, attr_map = attr_map,
                           raw_points = true, raw = raw, pop_order = picked,
-                          stats_enabled = stats_enabled, stats_test = stats_test,
-                          stats_within_pops = attr_map !== nothing)
+                          stats_enabled = stats_enabled, stats_test = stats_test)
     result["imageMetric"] = String(source)
     result["suffix"] = chosen
     result["suffixes"] = suffixes
