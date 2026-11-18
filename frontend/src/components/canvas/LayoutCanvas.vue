@@ -34,7 +34,7 @@ import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
-import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
+import { emptyReadout, declaredReadout, type PlotReadout } from '../../plots/plotReadout'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
@@ -50,7 +50,7 @@ import PopulationManager from './PopulationManager.vue'
 import ModelVault from '../../modules/modelTraining/ModelVault.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
-import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail, clusterPanelReadout } from '../../modules/cluster/clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, clusterPanelRail, registeredControls } from '../../modules/cluster/clusterPanels'
 import CcToggle from '../CcToggle.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
@@ -362,7 +362,14 @@ const panelSeries = (i: number, c: SlotContent): SeriesTarget[] => memoSeries(i,
 // group count) — the rail shows the ACTIVE slot's, so the user can see what `auto` chose. Keyed by slot
 // index; a readout of the current result, not a persisted setting.
 const readouts = ref<Record<number, PlotReadout>>({})
-const activeReadout = computed<PlotReadout>(() => readouts.value[entry.value.activeIndex] ?? emptyReadout())
+// A summary slot reports its own; an interactive view or cluster panel has only its registry declaration
+// (which rail settings it reacts to) — read per KIND, so a slot that was a summary plot before can't
+// leave its stale readout behind.
+const activeReadout = computed<PlotReadout>(() => {
+  const c = activeContent.value
+  if (c?.kind === 'interactive') return declaredReadout(registeredControls(c.ref))
+  return readouts.value[entry.value.activeIndex] ?? emptyReadout()
+})
 
 // ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
 // the board's gating store is driven unambiguously; only active when a cluster slot exists. ────────────
@@ -917,8 +924,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :selected="''" :highlighted="activeClustHl" :scope="scope"
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
-                             :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :reloadable="true"
-                             :readout="clusterPanelReadout(activeContent?.ref)"
+                             :suffix="clustSuffix" :run-at="clustRunAt[clustSuffix]" :vis="activeVis" :readout="activeReadout" :reloadable="true"
                              @update:scope="scope = $event" @update:vis="setVis"
                              @toggle-highlight="toggleClustHl" @reload="reload" />
           <SeriesPicker v-else :groups="segPops" :selected="pickerSel" :scope="scope" :vis="activeVis" :docked="true"

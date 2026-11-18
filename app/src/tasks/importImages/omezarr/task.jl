@@ -59,16 +59,16 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         plan_versioned_target(img, value_name, "ccidImage.ome.zarr")
     pyramid_levels = isnothing(p.pyramidLevels) ? p.pyramidScale : Int(p.pyramidLevels)
 
-    # Multi-series source (LIF, CZI, …): the register step (or the series picker) recorded which
-    # series the user chose in `meta.ori_series`. We ask bioformats2raw to convert ONLY that series
-    # (`--series N`) instead of every series in the file — a 4-series LIF where only the last carries
-    # the timelapse used to convert all four (wasted disk + minutes of wall clock) and then be pinned
-    # to series 0 downstream via `series_base`. `bf2raw` preserves the source series index in the
-    # output subdir name (so `--series 3` writes `<zarr>/3/…`), which is why `_resolve_series_subdir!`
-    # below rewrites `filepath` to point at that subdir — the flat-store branch of `series_base` then
-    # picks it up transparently.
-    series_choice = get(img.meta, "ori_series", nothing)
-    series_flags  = isnothing(series_choice) ? `` : `--series $(Int(series_choice))`
+    # Multi-series source (LIF, CZI, qptiff, …): the register step (or the series picker) recorded
+    # which series the user chose in `meta.ori_series` (none recorded → 0). We ask bioformats2raw to
+    # convert ONLY that series (`--series N`) instead of every series in the file — a 4-series LIF
+    # where only the last carries the timelapse used to convert all four (wasted disk + minutes of
+    # wall clock) and then be pinned to series 0 downstream via `series_base`. `bf2raw` preserves the
+    # source series index in the output subdir name (so `--series 3` writes `<zarr>/3/…`), which is
+    # why `_resolve_series_subdir!` below rewrites `filepath` to point at that subdir — the flat-store
+    # branch of `series_base` then picks it up transparently.
+    series_choice = _source_series(img)   # 0 when none was picked: never bf2raw's "convert every series"
+    series_flags  = `--series $series_choice`
 
     bf2raw = bioformats2raw_bin()
     if !isfile(bf2raw)
@@ -189,11 +189,10 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Conversion complete.")
 
     # With `--series N`, bioformats2raw writes `<zarr>/N/` and leaves `<zarr>/0/` absent, so both the
-    # NGFF read below and every downstream `series_base` must be pointed at `<zarr>/N/` instead. When
-    # no --series was passed, this returns "" (root has multiscales? no) or "0" (the bf2raw default),
-    # so the plain-old single-series case is unchanged. See `bf2raw_series_subdir` above.
-    series_subdir = bf2raw_series_subdir(zarr_out;
-                                         prefer = isnothing(series_choice) ? nothing : Int(series_choice))
+    # NGFF read below and every downstream `series_base` must be pointed at `<zarr>/N/` instead. With
+    # no pick recorded the import converts series 0, so this returns "0" — the plain single-series
+    # layout, unchanged. See `bf2raw_series_subdir` above.
+    series_subdir = bf2raw_series_subdir(zarr_out; prefer = series_choice)
     # zarr path pointed at whichever subdir carries the multiscales — flat root, "0/", or "N/" for a
     # series-picked import. `store_rel` lands verbatim in `filepath["default"]`, so downstream
     # `img_filepath(img)` → `series_base(...)` resolves to this same directory (flat-store branch).
@@ -248,7 +247,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # Acquisition settings Bio-Formats drops (laser power and its depth ramp, scan timing, detector
     # settings). Read from the source file; advisory, a failure never fails the import.
     _recover_acquisition_settings!(zarr_meta, src_path, task_run_dir(img._dir);
-                                  series = _source_series(img), on_log = on_log)
+                                  series = series_choice, on_log = on_log)
 
     # Clipping at ACQUISITION, checked on every import. A channel the detector clipped has lost
     # information nothing downstream recovers, and import is the only point where the useful answer is

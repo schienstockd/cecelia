@@ -26,8 +26,8 @@ import { plotTheme, PLOT_INK_DARK } from './overlays'
 import { categoryColours } from './categoryColours'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
-// charts whose series composite into a single frame — a `Facet by` request cannot be honoured
-// on these (see facetOverride in plots/autoOverride.ts)
+// charts whose series composite into a single frame — a `Facet by` request cannot be honoured on
+// these, so the rail doesn't offer it there (plots/plotControls.ts) and the builder ignores a stale one
 const NON_FACETING_CHARTS = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100', 'heatmap'])
 /**
  * Charts whose series have NO position label — every series is composited into one frame (histogram)
@@ -694,10 +694,6 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   const posLabels = seriesIndex(r, keyOf).labels
   const xrot = resolveXRotation(posLabels, flip === !!o.rotate ? o : { ...o, rotate: flip })
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
-  // Faceting is only wired for the charts that give each series its own position (box/violin/strip/bar)
-  // and the trend line. Histogram and the frequency family composite every series into ONE frame, so a
-  // facet request there is silently not applied — report it rather than leaving the control lying.
-  ;(opts as Record<string, unknown>)._facetIgnored = faceted(o) && NON_FACETING_CHARTS.has(o.chartType)
   opts[posAxis] = { ...(opts[posAxis] as object ?? {}), grid: o.grid,
                     ...(o.labX ? { label: o.labX } : {}),
                     ...(xrot.rotate ? { tickRotate: xTickRotate(o) } : {}) }

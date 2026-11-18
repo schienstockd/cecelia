@@ -15,7 +15,7 @@
   and is handled where it belongs: the pair scan never pairs two tracks from different movies
   (`app/src/tracking/track_cohort.jl`).
 
-  **A cohort SPLITS, it does not overlay** — the same rule as the track plot (`facetPlan`), and for the
+  **A cohort SPLITS, it does not overlay** — the same rule as the track plot (`splitsByGroup`), and for the
   same two reasons: identifying a group by colour needs a swatch legend the house style rules out (Plot's
   inline legend wraps the svg in a `<figure>` that clips the bottom axis — `plots/plot.ts`), and the
   curves' own colours (blue for the measurement, amber for the fit it is read against) mean something
@@ -52,7 +52,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { useViewerStore } from '../../stores/viewer'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
-import { facetMode, fitCellTitles, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { fitCellTitles } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
 import PopFamilySelect from './PopFamilySelect.vue'
@@ -65,7 +65,7 @@ import {
   type DiagnosticsResponse, type DiagMode,
 } from '../../plots/trackDiagnostics'
 import {
-  cohortParams, cohortKey, facetPlan, groupLabel, type CompareMode,
+  cohortParams, cohortKey, splitsByGroup, groupLabel, type CompareMode,
 } from '../../plots/trackGroups'
 import type { SeriesTarget } from '../../plots/types'
 import { applyPlotTheme, plotTheme } from '../../plots/overlays'
@@ -75,7 +75,6 @@ import { TRACK_TONE } from '../../plots/fixedColours'
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   // the board's comparison context — absent on a module page, which is then exactly the old behaviour
-  vis?: VisProps
   series?: SeriesTarget[]
   compareMode?: CompareMode
   groupAttr?: string[]
@@ -97,7 +96,6 @@ const valueName = computed({
 // the population FAMILY, one per plot (docs/PLOTS.md) — resolved through the same helper the rail uses
 const { options: familyOptions, popType } =
   usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
-const vis = computed(() => props.vis ?? DEFAULT_VIS)
 
 const data = ref<DiagnosticsResponse | null>(null)
 const valueNames = ref<string[]>([])
@@ -185,7 +183,7 @@ let Plot: typeof import('@observablehq/plot') | null = null
 let node: SVGElement | null = null
 
 // curves and clouds share one domain across facets — two conditions on two scales are not a comparison
-const plan = computed(() => facetPlan(facetMode(vis.value), groups.value.length))
+const split = computed(() => splitsByGroup(groups.value.length))
 const slots = computed(() => {
   const grid = facetGrid(groups.value.length)
   const m = new Map<string, { fx: number; fy: number }>()
@@ -205,7 +203,7 @@ async function render() {
 
   const dark = !forceLight.value && plotDark.value
   const { ink: fg, ground: bg } = plotTheme(dark)
-  const facet = plan.value.facet
+  const facet = split.value
   const grid = facetGrid(facet ? groups.value.length : 1)
   // MT leaves room for the y-axis label, which Plot draws ABOVE the top tick — at 10 it rode up
   // into the findings row
@@ -369,7 +367,7 @@ function renderHeading(d: DiagnosticsResponse) {
 // that loops, and what stops it
 const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
-watch([mode, data, plan], () => nextTick(() => plotBox.redraw()))
+watch([mode, data, split], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts) ──
 const exportFormats = ['png', 'svg', 'csv']

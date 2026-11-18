@@ -11,10 +11,10 @@
 <script setup lang="ts">
 import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
-import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
+import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
 import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../../plots/export'
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
-import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
+import { xRotationOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import { usePlotDark } from '../../composables/usePlotDark'
 import { pointInPoly } from '../../utils/drawGeometry'
@@ -272,7 +272,6 @@ async function render(pass = 0) {
   // render a state write, which renders again. See sameOverrides in plots/autoOverride.ts.
   const overrides = [
     xRotationOverride(!!base._autoRotatedX, !!props.opts.rotateXLabel),
-    facetOverride(!!base._facetIgnored, facetMode(props.opts)),
   ].filter(Boolean) as AutoOverride[]
   if (!lastOverrides || !sameOverrides(overrides, lastOverrides)) {
     lastOverrides = overrides; emit('auto-override', overrides)

@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import { facetLoad, explodeLoad, FACET_PANELS_HEAVY, EXPLODE_PLOTS_HEAVY } from './renderLoad'
-import { facetOverride } from './autoOverride'
 
 // These predicates only ever drive a NOTICE. The property that matters is that they warn above the
 // threshold and stay quiet at it — an off-by-one here is a warning that nags on every ordinary plot,
@@ -32,19 +31,3 @@ describe('explodeLoad', () => {
   })
 })
 
-// The other half of "warn when we didn't do something": a facet request a chart cannot honour. The
-// silence this replaces was the control sitting on `Image` beside a single-frame plot.
-describe('facetOverride', () => {
-  it('reports the mode that was asked for, and that None was used', () => {
-    const o = facetOverride(true, 'image')
-    expect(o).toMatchObject({ setting: 'Facet by', from: 'Image', to: 'None' })
-    expect(o?.why).toBeTruthy()                       // the "why" is the part that was missing before
-    expect(facetOverride(true, 'series')?.from).toBe('Series')
-  })
-
-  it('says nothing when the facet WAS honoured, or none was asked for', () => {
-    expect(facetOverride(false, 'image')).toBeNull()
-    expect(facetOverride(true, 'none')).toBeNull()    // not an override — nothing was requested
-    expect(facetOverride(false, 'none')).toBeNull()
-  })
-})

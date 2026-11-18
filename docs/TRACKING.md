@@ -655,9 +655,9 @@ colours by:
   labelled by the movie it came from, and its key is prefixed so two movies' track 17 are not one
   polyline); diagnostics POOL them (a condition is judged on all its replicates).
 - **A cohort SPLITS; it never overlays, and there is no per-group colour.** Both plots draw one cell per
-  group named by its facet TITLE, whatever `Facet by` says — the override reports itself in a
-  `PlotNotice` rather than quietly disagreeing with the control (`facetPlan`,
-  `frontend/src/plots/trackGroups.ts`). Two reasons, and the second is the load-bearing one:
+  group named by its facet TITLE (`splitsByGroup`, `frontend/src/plots/trackGroups.ts`). `Facet by`
+  therefore means nothing here, so the plot-settings rail doesn't offer it on a track plot (the
+  views' `visControls` in `interactiveViews.ts`). Two reasons, and the second is the load-bearing one:
   overlaying two conditions is unreadable in every mode (paths have unrelated coordinate frames; a
   star/rose fan turns to scribble — the SHAPE is the readout), and telling groups apart by colour needs a
   swatch legend, which costs the colour channel `colorBy` exists for **and** breaks the house rule that

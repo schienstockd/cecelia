@@ -31,9 +31,10 @@ import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews, migrateViewKey } from '../../components/canvas/interactiveViews'
-import { CLUSTER_PANELS, isClusterPanel, clusterPanelReadout } from './clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, registeredControls } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { declaredReadout } from '../../plots/plotReadout'
 import CanvasSelectionOverlay from '../../components/canvas/CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../../components/FrameAnnotator.vue'
 import CaptureViewSurface from '../../components/CaptureViewSurface.vue'
@@ -140,6 +141,8 @@ const activeHL = computed(() => scope.value === 'global'
 const panelVis = (s: ClusterPanelState) => scope.value === 'global' ? gVis.value : (s.vis ?? DEFAULT_VIS)
 const activeVis = computed(() =>
   scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
+// which of those settings the ACTIVE plot reacts to, from its registry entry (plots/plotControls.ts)
+const activeReadout = computed(() => declaredReadout(registeredControls(String(activePanel.value?.state.kind ?? ''))))
 function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }
   else if (activePanel.value) activePanel.value.state.vis = { ...(activePanel.value.state.vis ?? defaultVis()), ...patch }
@@ -412,7 +415,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
                              :run-at="clusterRunAt[suffix]"
-                             :vis="activeVis" :readout="clusterPanelReadout(activePanel?.state.kind)"
+                             :vis="activeVis" :readout="activeReadout"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
                              @update:selected="selectedPop = $event" @update:scope="scope = $event"
