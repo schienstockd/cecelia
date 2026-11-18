@@ -3072,10 +3072,16 @@ page — and the Analysis board — reuses them unchanged:
   The universal Analysis board (`/analysis`) gets the same controls for free. **Only the rows the
   active plot reacts to are shown** — `plots/plotControls.ts` `visControlsFor({chartType, trend})`
   declares them per chart kind, `SummaryPanel` reports them on its readout (`PlotReadout.controls`),
-  and a section with no rows left disappears. A plot that declares nothing (`controls: null`) shows
-  every row. `plotControls.test.ts` flips every setting on every chart kind and fails when the
-  table and the renderer disagree — a new chart type, or a builder that starts reading a setting,
-  is answered there.
+  and a section with no rows left disappears. `plotControls.test.ts` flips every setting on every
+  chart kind and fails when the table and the renderer disagree — a new chart type, or a builder that
+  starts reading a setting, is answered there. **Interactive views and cluster panels** (UMAP, HMM,
+  track plots, gating strategy …) aren't built by `buildPlotOptions`, so each declares `visControls`
+  on its registry entry (`interactiveViews.ts` / `clusterPanels.ts`; absent = none) and the host
+  turns it into the rail's readout (`declaredReadout(registeredControls(kind))`).
+  `plots/visControlsDeclared.test.ts` scans each view's source and fails when it reads a key it
+  doesn't declare, or declares one it never reads. A plot offering no row gets no settings toggle at
+  all (`hasAnyOption`). A hidden setting keeps its value — under Global scope it still drives the
+  plots that use it — so a builder must ignore it rather than announce it as overridden.
 - **`plots/export.ts`** — the ONE plot-export module: PNG/SVG rasterise, CSV, and the true-vector SVG
   builders. Two capture paths, because they solve different problems: `elementToImageURL` wraps a
   style-inlined clone in an SVG `<foreignObject>` (catches an HTML overlay legend alongside the `<svg>`),
@@ -3467,7 +3473,6 @@ Today's overrides:
 |---|---|---|
 | Gate plot / gate pairs | axis transform → `linear` when the measure's range can't take logicle | the server (`plotmeta` reports the transform it USED) |
 | Any summary plot | x tick labels → rotated when they wouldn't fit their bands | `needsXRotation` (measured label widths vs the panel width) |
-| Any summary plot | `Facet by` → `None` on a chart that composites its series into one frame (histogram / frequency family / heatmap) | `NON_FACETING_CHARTS` in `plots/plot.ts` → `_facetIgnored` |
 
 This replaced two ad-hoc copies. `GatePlotPanel` and `GatePairsPanel` each did their own
 preferred-vs-used comparison with their own amber class and their own wording — and `GatePlotPanel`'s
