@@ -28,8 +28,10 @@ end
     # to show exactly that difference.
     A = reshape(Float32.(1:400), 1, 20, 20)
     B = 2 .* A
-    shared = shared_specs([A, B])
-    @test length(shared) == 1
+    legend, per = shared_specs([A, B], [["GFP"], ["GFP"]])
+    @test length(legend) == 1
+    shared = per[2]
+    @test per[1] == per[2]
     lo, hi = shared[1][1], shared[1][2]
     @test lo < maximum(A) < hi                          # pooled range reaches past A into B
 
@@ -42,10 +44,29 @@ end
     @test lum(composite_rgb(A, perA)) ≈ lum(composite_rgb(B, perB)) rtol = 0.02
 
     # mixed channel counts: a channel only some images have is pooled over those images only
-    C3 = cat(A, A, A; dims = 1)
-    s = shared_specs([A, C3])
-    @test length(s) == 3
-    @test s[2][1] == percentile_spec(view(C3, 2, :, :), "x")[1]
+    C3 = cat(A, 3 .* A, 5 .* A; dims = 1)
+    legend, per = shared_specs([A, C3], [["a"], ["a", "b", "c"]])
+    @test [l.name for l in legend] == ["a", "b", "c"]
+    @test per[2][2][1] == percentile_spec(view(C3, 2, :, :), "x")[1]
+end
+
+@testset "API: shared_specs pools by channel name, not position" begin
+    # Two images list the same two markers in opposite order. Pooled by index, each colour would mix
+    # a dim and a bright marker; pooled by name, each marker keeps one colour and one range.
+    dim = Float32.(reshape(1:100, 10, 10)); bright = 100 .* dim
+    X = cat(reshape(dim, 1, 10, 10), reshape(bright, 1, 10, 10); dims = 1)   # [CD4, CD8]
+    Y = cat(reshape(bright, 1, 10, 10), reshape(dim, 1, 10, 10); dims = 1)   # [cd8, CD4] (case differs)
+    legend, per = shared_specs([X, Y], [["CD4", "CD8"], ["cd8", "CD4"]])
+    @test [l.name for l in legend] == ["CD4", "CD8"]                    # first spelling, first order
+    @test per[2][1] == per[1][2]                                          # Y's channel 1 is CD8
+    @test per[2][2] == per[1][1]
+    @test per[1][1][3] != per[1][2][3]                                    # one colour per marker
+    @test per[1][1][2] <= maximum(dim)                                        # CD4 range excludes CD8 data
+    # two channels of one image that differ only in case stay apart
+    legend2, per2 = shared_specs([X], [["ab", "AB"]])
+    @test length(legend2) == 2 && per2[1][1] != per2[1][2]
+    @test tile_channel_names(["x"], 3) == ["x", "CH2", "CH3"]
+    @test tile_channel_names(nothing, 2) == ["CH1", "CH2"]
 end
 
 @testset "API: preview_chw reads a real store at thumbnail size" begin
