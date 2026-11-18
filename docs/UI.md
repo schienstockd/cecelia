@@ -3222,9 +3222,10 @@ UI conventions specific to these pages:
 - **Heatmap features are exactly what the run clustered on**, read from the `{props}.clustfeatures.json`
   sidecar via `GET /api/gating/channels`; channel rows aggregate by RAW name and relabel via `nameMap`.
 - **The population manager is the shared, pop_type-agnostic one.** A cluster pop has no gate — it is a
-  filter on `clusters.{suffix}` — so in cluster mode the manager shows "Add population" plus per-pop
-  **cluster-ID toggle chips**, and ticking a chip moves that cluster out of any other pop (a cluster
-  lives in at most one). Writes mirror across the run's images (`mirrorUids`); a banner names selected
+  filter on `clusters.{suffix}` — so in cluster mode the manager shows "Add population" plus ONE shared
+  **cluster strip**: each chip coloured by the pop holding it, a click puts it into the *selected* row (click the row again, or the header ✕, to deselect)
+  (moving it out of any other pop — a cluster lives in at most one), the hovered row — else the selected one — lights its chips.
+  Rows are one line with a cluster count; strip clicks undo/redo (`docs/POPULATION.md` → *Undo / redo*). Writes mirror across the run's images (`mirrorUids`); a banner names selected
   images outside the run, with a "Select clustered images" button driving `selectUids`.
 - **Highlight → overlays.** The manager's per-pop eye feeds `shownPops`: UMAP recolours from cached codes
   (no refetch), the heatmap switches its columns from clusters to populations. Scope (global/local) works
