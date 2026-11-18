@@ -200,16 +200,17 @@ end
     end
 end
 
-# End to end on a real tracked timecourse with DEFAULT params: every aggregate lies within one frame.
-@testset "detectAggregates aggregates within a frame (KDIeEm)" begin
-    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
-    if !have_fixture(h5)
-        @test_skip "detectAggregates per-frame (fixture missing)"
+# End to end on a real tracked timecourse: every aggregate lies within one frame, and `clustDiameter`
+# is µm. On the calibrated copy (0.5 µm x/y, 2 µm z) the task's groups are DBSCAN's on the µm centroids
+# worked out here from the raw pixel columns; the same DBSCAN in pixels must group differently, or the
+# check could not tell a missing conversion.
+@testset "detectAggregates aggregates within a frame, in µm" begin
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy: the task writes into it
+    if fx === nothing
+        @test_skip "detectAggregates per-frame (calibrated fixture missing)"
     else
-        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
-        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
-        img = CciaImage(uid="KDIeEm", dir=td)
-        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        img = Cecelia._load_image(fx.dir)
+        @test img_is_calibrated(img)
         m = PopulationMap(pop_type="flow", value_name="B")
         add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
         save_pop_map!(m, img)
@@ -218,15 +219,26 @@ end
                                 on_log = _ -> nothing)
         @test res !== nothing
         # an unnamed run is the `default` run
-        out = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id#default", "centroid_t"]) |> as_df
+        idcol = "flow.cell.aggregate.id#default"
+        out = label_props(img; value_name="B") |> v -> view_centroid_cols(v; order = [:x, :y, :z]) |>
+              select_cols([idcol, "centroid_t"]) |> as_df
         frames_of = Dict{Float64,Set{Float64}}()
-        for (a, t) in zip(out[!, "flow.cell.aggregate.id#default"], out.centroid_t)
+        for (a, t) in zip(out[!, idcol], out.centroid_t)
             (ismissing(a) || a <= 0) && continue
             push!(get!(frames_of, a, Set{Float64}()), t)
         end
         @test !isempty(frames_of)
         @test all(length(ts) == 1 for ts in values(frames_of))
-        rm(td; recursive=true)
+
+        # the grouping as a set of label sets — DBSCAN's ids are arbitrary, its partition is not
+        groups(ids) = Set(Set(out.label[ids .== k]) for k in unique(ids) if k > 0)
+        px  = hcat(out.centroid_x, out.centroid_y, out.centroid_z)
+        um  = px .* [0.5 0.5 2.0]
+        got = groups(Int.(coalesce.(out[!, idcol], 0.0)))
+        want    = groups(Cecelia._aggregate_ids_by_frame(um, out.centroid_t, 30.0, 3))
+        want_px = groups(Cecelia._aggregate_ids_by_frame(px, out.centroid_t, 30.0, 3))
+        @test want != want_px                    # the units change the answer on this data
+        @test got == want
     end
 end
 

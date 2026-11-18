@@ -15,6 +15,10 @@ including the two equal-length box axes).
 
 The grid is 3 frames x 4x4 boxes; the table is 6 branches over 3 timepoints with real endpoint
 columns, a per-branch `anisotropy` obs column, and an `orientation_summary` frame (one row per t).
+
+Also writes `KDIeEx/labelProps/aniso__branch.h5ad`, a SECOND table that disagrees: the same layout with
+`orientation_summary` cut to two frames (t_index 0 and 5) and `SECOND_ANISOTROPY` as its anisotropy, so
+a test that reads a second branch table or a second image cannot pass on a copy of the first.
 """
 import os
 
@@ -28,6 +32,9 @@ import anndata as ad
 _ROOT = os.environ.get("CECELIA_TEST_DATA") or os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "test-data", "projects"))
 OUT = os.path.join(_ROOT, "testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")
+OUT_SECOND = os.path.join(_ROOT, "testpr", "1", "KDIeEx", "labelProps", "aniso__branch.h5ad")
+SECOND_ANISOTROPY = [0.55, 0.66]
+SECOND_T_INDEX = [0, 5]
 T, NY, NX = 3, 4, 4
 
 coor = np.zeros((T, NY, NX, 2), dtype=np.float32)
@@ -101,3 +108,12 @@ adata.uns["orientation_meta"] = {
 }
 adata.write_h5ad(OUT)
 print("wrote", OUT)
+
+second = adata.copy()
+s2 = summary.iloc[:2].copy()
+s2["anisotropy"] = np.array(SECOND_ANISOTROPY, dtype=np.float32)
+second.uns["orientation_summary"] = s2
+second.uns["orientation_meta"] = {**adata.uns["orientation_meta"],
+                                  "t_index": np.array(SECOND_T_INDEX, dtype=np.int64)}
+second.write_h5ad(OUT_SECOND)
+print("wrote", OUT_SECOND)

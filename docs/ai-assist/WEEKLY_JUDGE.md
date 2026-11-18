@@ -45,7 +45,10 @@ test whether an agent can actually use the framework.
    `pixi run judge-fixtures` prints them with a ready `pixi run fixture-cut -- --image … --need …`.
    The cut (`scripts/fixture_cut.py`) writes `test-data/projects/FIXPRJ/1/<uid>/` — the cells nearest
    the image centre, shrunk under the 1 MB cap, the gating sidecars, a `ccid.json` without the
-   image's name or paths — and prints the `fixtures.toml` entry. Committing it is the owner's call.
+   image's name or paths — and prints the `fixtures.toml` entry. An image with an image store and a
+   label store for that segmentation gets both cropped to one box instead (≤ 64 × 64 px, 5 frames,
+   4 channels, 16 planes, one level, NGFF axes/scale/units kept; `FIXPRJ/0/<uid>/` for the image), and
+   the table keeps the cells inside it; `--no-stores` skips that. Committing it is the owner's call.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
    never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, and every
    `plausible` note not tagged `fixed_pre_commit`; a finding's tag is the newest resolution on its own
