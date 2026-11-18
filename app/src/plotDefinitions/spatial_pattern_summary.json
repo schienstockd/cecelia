@@ -1,7 +1,9 @@
 {
   "id": "spatial_pattern_summary",
   "label": "Spatial pattern by group",
-  "answers": "Is a population clustered or dispersed among the tissue's cells, compared between treatments?",
+  "category": "compare",
+  "sketch": "spreadImages",
+  "answers": "Is a population clustered or dispersed, by treatment?",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["boxplot", "strip", "bar"],

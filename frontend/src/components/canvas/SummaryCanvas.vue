@@ -26,7 +26,9 @@ import { useSummaryData } from '../../composables/useSummaryData'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isPluginView, railFor, viewControls, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, isPluginView, railFor, viewControls, popTypesFor, popTypeSpecFor, singlePopFor, viewOption } from './interactiveViews'
+import PlotPicker from './PlotPicker.vue'
+import { specOption, type PlotOption } from '../../plots/plotPicker'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
@@ -168,6 +170,15 @@ const VIEW_OPT_PREFIX = 'view:'   // option values are namespaced so a view id c
 const declaredViews = computed(() => (props.views ?? []).filter(v => isPluginView(v.view)))
 const unusableViews = computed(() => (props.views ?? []).filter(v => !isPluginView(v.view)))
 const viewLabel = (v: DeclaredView) => v.label || INTERACTIVE_VIEWS[v.view]?.label || v.view
+// the "+ Plot…" picker's rows: this page's specs, then the plugin-declared views, each filed under its
+// own category (plots/plotPicker.ts) — a view is no longer set apart as "Interactive", the picker
+// groups by what a plot answers, not by how it is drawn
+const pickerOptions = computed<PlotOption[]>(() => [
+  ...specs.value.map(s => specOption(s)),
+  ...declaredViews.value.map(v => ({
+    ...viewOption(v.view, INTERACTIVE_VIEWS[v.view]!), label: viewLabel(v), value: `${VIEW_OPT_PREFIX}${v.view}`,
+  })),
+])
 const unusableViewText = computed(() =>
   `Plot not available here: ` +
   unusableViews.value.map(v => v.plugin ? `${v.view} (${v.plugin})` : v.view).join(', '))
@@ -460,19 +471,7 @@ watch(segPops, () => {
     <div v-if="!imageUid" class="cc-empty-inline cc-empty-pane">Select images above to plot</div>
     <template v-else>
       <div class="sc-bar cc-row cc-row-loose">
-        <select class="sc-add" v-tooltip.bottom="'Add a plot'"
-                @change="addPanel(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-          <option value="">+ Plot…</option>
-          <option v-for="s in specs" :key="s.id" :value="s.id">{{ s.label }}</option>
-          <!-- Interactive views a plugin asked for on this page. In their own group so it is obvious
-               they are a different kind of plot: they fetch their own data and carry their own
-               controls, so the population picker does not drive them. -->
-          <optgroup v-if="declaredViews.length" label="Interactive">
-            <option v-for="v in declaredViews" :key="v.view" :value="`${VIEW_OPT_PREFIX}${v.view}`">
-              {{ viewLabel(v) }}
-            </option>
-          </optgroup>
-        </select>
+        <PlotPicker :options="pickerOptions" @pick="addPanel" />
         <!-- compare cluster: mode + (by attribute) its attribute selects, kept tight in one group -->
         <!-- the row's tip belongs on the mode select (the control it describes, and the only one here
              without its own); on the container it fired over the attribute selects too -->
@@ -612,7 +611,6 @@ watch(segPops, () => {
 .summary-canvas { display: flex; flex-direction: column; height: 100%; min-height: 80vh; }
 .sc-bar { padding: 8px 4px; font-size: var(--cc-fs-sm); flex-shrink: 0; }
 .sc-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
-.sc-add { min-width: 8rem; }
 /* compare cluster: one tight group so the mode + attribute selects read as a unit */
 .sc-compare { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
   padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md); }

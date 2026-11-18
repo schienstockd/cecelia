@@ -2305,8 +2305,8 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
 
 **Two registries carry the surface "checkboxes":**
 - `components/canvas/interactiveViews.ts` — interactive VIEWS (hosted by `InteractivePanel`), page flags
-  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard` + `boardGroup` (which board optgroup:
-  `interactive` (default) / `clustering` / `image`), the plugin flag `pluginPage`, the `rail` the plot
+  `clusterPage` / `opticalFlowPage`, board flag `analysisBoard`, `category` + `sketch` (the `+ Plot…`
+  picker's group and schematic — `docs/PLOTS.md` → *The `+ Plot…` picker*), the plugin flag `pluginPage`, the `rail` the plot
   needs, an optional `initialState()` seed for a new panel's state bag, and — for a view that slices by
   population — `popTypes`, the population FAMILIES it offers (same shape as a summary spec's
   `dataSource.popTypes`, read by the same `plots/popTypes.ts` functions, so the rail lists the family
@@ -2320,14 +2320,14 @@ the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot hos
   `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
   props generically.
 
-**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag and
+**Hosts render from the registries**: each builds its `+Plot` picker (`PlotPicker.vue`, the one picker) by filtering on its own flag and
 renders every slot with one generic `<component :is v-bind>`. So adding a plot to a surface = write the
 component to the contract + one registry line + tick the flag. The cluster page (`ClusterPlots.vue`), the
 Model Training page (`modelTraining/ModelPlots.vue`) and the board (`LayoutCanvas.vue`) do this identically —
 there is no "cluster page way" and "board way", and a future chain-whiteboard host consumes the same
 registries rather than re-wiring plots per node.
 
-**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews(group)`; never
+**RULE: a host names no view key.** Build the picker with `pageViews(flag)` / `boardViews()`; never
 a local key list. The board once filtered a hardcoded `ANALYSIS_VIEWS`/`IMAGE_VIEWS` array, which made
 the flag a lie — `flowModel` set `analysisBoard: true` and never appeared, with nothing failing.
 `interactiveViews.test.ts` now fails if any view id shows up as a literal in `LayoutCanvas.vue`.

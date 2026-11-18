@@ -173,7 +173,7 @@ describe('no text field lets the DOM drift from its binding', () => {
 // rule so much as the inventory that makes a NEW entry a visible decision.
 // Meta-ratchet: growing DECLARED_TIMERS requires bumping DECLARED_TIMERS_MAX in the same PR, so a
 // reviewer sees "weaken the check" attempts.
-const DECLARED_TIMERS_MAX = 13
+const DECLARED_TIMERS_MAX = 14
 const DECLARED_TIMERS: Record<string, string> = {
   'utils/debouncedLatest.ts': 'IS the canonical request scheduler',
   'utils/debouncedSave.ts':   'IS the canonical write-behind scheduler',
@@ -184,6 +184,7 @@ const DECLARED_TIMERS: Record<string, string> = {
   'composables/useTaskCompletionWatch.ts':
     'coalesces terminal WS frames over an 8 s window — no result, no restore; the canonical helper for that job (INVENTORY)',
   'components/ConfirmButton.vue':     'disarms a confirm button after a grace period',
+  'components/canvas/PlotPicker.vue': 'hover intent — a kind shows its plots only once the pointer rests on it, so crossing the column on the way to a card does not flip it',
   'stores/taskPreview.ts':            'a POLL loop while the preview worker warms up — each tick arms the next',
   'stores/guide.ts':
     'two, both deliberate: a POLL that re-reads DOM-derived gate state while a guide is open (Vue cannot track a <select>\'s value), and a one-shot delay before advancing a satisfied step so the user sees it acknowledged',
