@@ -40,7 +40,7 @@ real           = [false, "measured from a real acquisition, not synthesised"]
 dir = "testpr/1/KDIeEm"
 value_name = "B"
 technology = "two-photon"
-properties = ["cells", "movie", "3d", "tracked", "track-table", "real"]
+properties = ["cells", "movie", "3d", "tracked", "track-table", "real", "multi-image"]
 note = "Real intravital two-photon movie, 1377 cells × 20 frames. NOT calibrated: µm == pixels here. Channels are ch0..ch3."
 
 # A derived fixture: a temp copy of its base's project with `meta` written into the image's ccid.json
@@ -49,8 +49,18 @@ note = "Real intravital two-photon movie, 1377 cells × 20 frames. NOT calibrate
 [fixtures.KDIeEm-cal]
 derive = "KDIeEm"
 meta = { PhysicalSizeX = "0.5", PhysicalSizeY = "0.5", PhysicalSizeZ = "2.0", TimeIncrement = "30", TimeIncrementUnit = "s" }
-properties = ["cells", "movie", "3d", "tracked", "track-table", "real", "calibrated"]
+properties = ["cells", "movie", "3d", "tracked", "track-table", "real", "calibrated", "multi-image"]
 note = "KDIeEm with 0.5 × 0.5 × 2 µm and 30 s frames written into a temp copy's ccid.json meta. The real acquisition's calibration is unknown: these are chosen values."
+
+# A second image in the same project, derived from KDIeEm so it DISAGREES with it: whole tracks with
+# id % 3 == 0 and untracked cells with label % 3 == 0 removed, `area` and `live.track.speed` × 2.
+# For "which image / which segmentation did this read" tests (python/cecelia/tests/make_distinct_fixture.py).
+[fixtures.KDIeEx]
+dir = "testpr/1/KDIeEx"
+value_name = "B"
+technology = "two-photon"
+properties = ["cells", "movie", "3d", "tracked", "track-table", "multi-image"]
+note = "KDIeEm's cells minus a known third, area and track speed doubled. Not `real`: derived. Uncalibrated, like KDIeEm."
 
 [fixtures.CtMsh1]
 dir = "CONTMESH/1/CtMsh1"
