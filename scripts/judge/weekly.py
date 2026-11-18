@@ -69,6 +69,7 @@ _verify = _load_sibling("verify")
 _rules = _load_sibling("rules")
 _judge = _load_sibling("judge")
 _run_reviews = _load_sibling("run_reviews")
+_fixture_requests = _load_sibling("fixture_requests")
 _issues = _load_sibling("issues")
 _chart = _load_sibling("chart")
 
@@ -357,12 +358,14 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
            live: bool = True, persist: bool = True, bug_judge: _t.Callable | None = None,
            merged_prs: _t.Callable | None = None, verifier: _t.Callable | None = None,
            assign: _t.Callable | None = None, state: dict | None = None,
-           projects: pathlib.Path | None = None) -> dict:
+           projects: pathlib.Path | None = None, fixture_projects: pathlib.Path | None = None) -> dict:
     """Run one pass; returns its record, unwritten.
 
     `live=False` checks the local `ref` without fetching or preparing the worktree (a re-run, a test).
     `persist=False` (a dry run) leaves the earlier records in the store and the log untouched.
-    `projects`: where the agent run records are (default: `run_reviews.projects_dir()`). `state` is
+    `projects`: where the agent run records are (default: `run_reviews.projects_dir()`).
+    `fixture_projects`: where to look for images meeting fixture requests (default: the
+    `fixture_requests.ENV` variable; unset → the step only lists the open requests). `state` is
     updated as it goes (`stage`, `sha`), so a crash can say where it stopped.
     """
     state = state if state is not None else {}
@@ -399,6 +402,9 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     state["stage"] = "run reviews"
     reviewed = _run_reviews.scan(projects)
     events += _run_reviews.log_new(reviewed, events, pass_ts=ts, write=persist)
+    # open fixture requests against the source projects: counts on the record, names in a local file
+    state["stage"] = "fixture requests"
+    fixtures = _fixture_requests.run(fixture_projects, write=persist)
     state["stage"] = "bugs"
     sweep_tokens: dict = {}
     failed: dict = {}   # step → why its judge didn't run; a usage limit raises instead
@@ -420,7 +426,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
              "tokens": {**steps, "total": total},
              "finding_bins": bins}
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend,
-                           agent_causes=_run_reviews.agent_causes(reviewed))
+                           agent_causes=_run_reviews.agent_causes(reviewed), fixture_requests=fixtures)
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
                          swept=list(_bugs.SOURCES),
                          backlog_last=_record.backlog(previous["bugs"]) if previous else None,
@@ -520,6 +526,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="the old layout: the record in a PR, no issues or status comment (also JUDGE_ISSUES=0)")
     ap.add_argument("--projects-dir", type=pathlib.Path,
                     help=f"where the agent run records are (default {_run_reviews.projects_dir()})")
+    ap.add_argument("--fixture-projects-dir", type=pathlib.Path,
+                    help=f"projects to match fixture requests against (default ${_fixture_requests.ENV})")
     args = ap.parse_args(argv)
 
     lock = try_lock(state_dir() / "judge.lock")   # on Windows two passes simply aren't guarded
@@ -529,7 +537,8 @@ def main(argv: list[str] | None = None) -> int:
     state = {"stage": "start", "sha": None}
     try:
         record = weekly(ref=args.ref, worktree=args.worktree, date=args.date, persist=not args.dry_run,
-                        state=state, projects=args.projects_dir.expanduser() if args.projects_dir else None)
+                        state=state, projects=args.projects_dir.expanduser() if args.projects_dir else None,
+                        fixture_projects=args.fixture_projects_dir)
         if args.dry_run:
             print(_record.render_markdown(record))
             return 0
