@@ -167,6 +167,7 @@ function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.
 const heatmapFrame: Frame = rectFrame(() => plotRef.value?.axisRect?.() ?? null)
 defineExpose({ exportImage, getCsv, exportSvg, getFrame: (): Frame => heatmapFrame })
 
+const colAxis = computed(() => ((props.shownPops?.length ?? 0) > 0 ? 'populations' : 'clusters'))
 // BIDIR PR #8 — plot registry adopter. Suffix in the title so two heatmap runs disambiguate.
 const _route = useRoute()
 useVisualPanel(
@@ -175,12 +176,12 @@ useVisualPanel(
     family: 'cluster-heatmap',
     title: props.suffix ? `Heatmap (${props.suffix})` : 'Heatmap',
     route: _route.path,
-    // BIDIR PR #8 extension — axis meta. Rows (Y) are always features; columns (X) are populations
-    // when shownPops carries picks, else raw cluster ids. `nCols` counts the actual columns the
-    // response resolved (falls back to 0 while the fetch is in flight).
+    // BIDIR PR #8 extension — axis meta. Rows are features; columns are populations when shownPops
+    // carries picks, else raw cluster ids — swapped onto the other axes when Rotate 90° transposes the
+    // grid. `nCols` counts the columns the response resolved (0 while the fetch is in flight).
     content: {
-      xLabel: (props.shownPops?.length ?? 0) > 0 ? 'populations' : 'clusters',
-      yLabel: 'features',
+      xLabel: props.vis?.rotate ? 'features' : colAxis.value,
+      yLabel: props.vis?.rotate ? colAxis.value : 'features',
       nFeatures: features.value.length,
       nCols: (heatmap.value as (PlotDataResponse & { xLabels?: string[] }) | null)?.xLabels?.length ?? 0,
     },

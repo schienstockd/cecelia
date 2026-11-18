@@ -100,7 +100,7 @@ interface PanelState {
 // usable; plot renders/exports stay at 100% (Vega, PNG, PDF, and the frame-annotator composite all
 // sample from the logical canvas via CANVAS_ZOOM_KEY-injected 1/zoom).
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -519,7 +519,7 @@ watch(segPops, () => {
         <span v-if="!specs.length && !declaredViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
         <span v-else-if="specs.length" class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <InteractivePanel v-if="p.state.kind" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"

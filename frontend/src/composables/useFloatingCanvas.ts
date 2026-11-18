@@ -48,6 +48,7 @@ export function useFloatingCanvas<S>(
   return {
     bindCanvas, bindZoom,
     workspaceStyle: workspace.workspaceStyle,
+    hostStyle: workspace.hostStyle,
     workspaceBase: workspace.workspaceBase,
     // useCanvasPanels
     panels: canvas.panels,
