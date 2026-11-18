@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { allShown, parseShown, serializeShown, thumbCacheKey, thumbsStorageKey, toggleAllShown, toggleShown } from './imageThumbs'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { allShown, loadThumb, parseShown, thumbCacheSize, serializeShown, thumbCacheKey, thumbsStorageKey, toggleAllShown, toggleShown } from './imageThumbs'
 
 describe('image table thumbnails — which rows show one', () => {
   it('round-trips through storage, and reads junk as nothing shown', () => {
@@ -36,5 +36,22 @@ describe('image table thumbnails — which rows show one', () => {
     expect(thumbsStorageKey('P1')).not.toBe(thumbsStorageKey('P2'))
     expect(thumbCacheKey('P', 'i', 'default')).not.toBe(thumbCacheKey('P', 'i', 'corrected'))
     expect(thumbCacheKey('P', 'i', 'default', 0)).not.toBe(thumbCacheKey('P', 'i', 'default', 1))
+  })
+})
+
+describe('image table thumbnails — the fetch cache', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('re-fetches when the rev moves (a store rewritten in place), and keeps one entry per image', async () => {
+    let n = 0
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ png: `data:${++n}` }) })))
+    const first = await loadThumb('Pc', 'img', 'default', 0)
+    expect(await loadThumb('Pc', 'img', 'default', 0)).toBe(first)     // same rev → cached
+    const after = await loadThumb('Pc', 'img', 'default', 1)            // a task finished on it
+    expect(after).not.toBe(first)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const before = thumbCacheSize()
+    await loadThumb('Pc', 'img', 'default', 2)
+    expect(thumbCacheSize()).toBe(before)                                // the older one was dropped
   })
 })

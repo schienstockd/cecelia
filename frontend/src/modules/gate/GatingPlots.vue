@@ -136,7 +136,7 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // in SummaryCanvas + ClusterPlots). `squareCells: true` because every plot here is `:square`
 // (GatePlotPanel / GatePairsPanel), so Tile hands out square cells.
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -648,7 +648,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
           Re-eval on _latest
         </button>
       </div>
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- registry views (track paths, the correction worklist) → generic InteractivePanel, the
                same host the cluster and optical-flow canvases use -->

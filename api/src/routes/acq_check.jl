@@ -30,7 +30,8 @@ _acq_finding_key(f) = string(f["code"], "|", f["scope"], "|", get(get(f, "subs",
                              get(get(f, "subs", Dict()), "variable", ""))
 
 # The entry's text for a plan and its check: the plan, then the findings as plain lines — across the
-# set, then per movie. No timestamp, so a re-check that finds the same leaves the text unchanged.
+# set, then per image (the check's noun: "movie" only when every one is a time-lapse). No timestamp,
+# so a re-check that finds the same leaves the text unchanged.
 function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
     io = IOBuffer()
     println(io, "# Acquisition check · ", set_name, "\n")
@@ -40,14 +41,15 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
             Cecelia.acq_stage(p) == "final" ? " · final data" : "",
             Int(get(a, "round", 1)) > 1 ? " · round $(a["round"])" : "", "\n")
     mark = Dict("warn" => "⚠", "info" => "–", "ok" => "✓")
+    item, items = string(get(result, "item", "image")), string(get(result, "items", "images"))
     line(f) = string("- ", mark[f["level"]], " ", f["short"], " → ", f["long"],
-                     haskey(f, "thisData") ? " For these movies: " * f["thisData"] : "")
+                     haskey(f, "thisData") ? " For these $(items): " * f["thisData"] : "")
     println(io, "## Across the set\n")
     for f in filter(f -> f["scope"] == "set", result["findings"]); println(io, line(f)); end
     names = Dict(r["uid"] => r["name"] for r in result["rows"])
     per = filter(f -> f["scope"] != "set", result["findings"])
     if !isempty(per)
-        println(io, "\n## Per movie\n")
+        println(io, "\n## Per $(item)\n")
         for uid in unique(f["scope"] for f in per)
             println(io, "**", get(names, uid, uid), "**\n")
             for f in filter(f -> f["scope"] == uid, per); println(io, line(f)); end
@@ -55,7 +57,7 @@ function _acq_entry_md(set_name, a::AbstractDict, result::AbstractDict)::String
         end
     end
     _review_md!(io, get(a, "review", nothing); categories = Cecelia.ACQ_CATEGORIES, label = _acq_category_label,
-                intro = "read the plan, the movies' record and the acquisition knowledge.",
+                intro = "read the plan, the $(items)' record and the acquisition knowledge.",
                 nothing_more = "Nothing beyond the checks.", supports_heading = nothing)
     # the verdict: the rule checks' steps, then the one step the model review adds
     println(io, "## ", acq_verdict_heading(p), "\n\n", result["verdict"], "\n")

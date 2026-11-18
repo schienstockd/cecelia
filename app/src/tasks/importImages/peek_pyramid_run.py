@@ -149,6 +149,7 @@ _READERS_BY_SUFFIX = (
     ('.ome.tiff', 'tifffile', _peek_tiff),
     ('.tif', 'tifffile', _peek_tiff),
     ('.tiff', 'tifffile', _peek_tiff),
+    ('.qptiff', 'tifffile', _peek_tiff),   # Akoya PhenoImager/Vectra slide scan: a TIFF with a pyramid
 )
 
 # Formats we don't have a fast Python reader for but Bio-Formats does. Peek via `showinf`. Kept

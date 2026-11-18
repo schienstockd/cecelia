@@ -26,7 +26,7 @@ import { useSummaryData } from '../../composables/useSummaryData'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
-import { INTERACTIVE_VIEWS, isPluginView, railFor, popTypesFor, popTypeSpecFor, singlePopFor, viewOption } from './interactiveViews'
+import { INTERACTIVE_VIEWS, isPluginView, railFor, viewControls, popTypesFor, popTypeSpecFor, singlePopFor, viewOption } from './interactiveViews'
 import PlotPicker from './PlotPicker.vue'
 import { specOption, type PlotOption } from '../../plots/plotPicker'
 import CanvasZoomControl from './CanvasZoomControl.vue'
@@ -34,7 +34,7 @@ import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
-import { emptyReadout, type PlotReadout } from '../../plots/plotReadout'
+import { emptyReadout, declaredReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
 import PlotNotice from './PlotNotice.vue'
 import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
@@ -102,7 +102,7 @@ interface PanelState {
 // usable; plot renders/exports stay at 100% (Vega, PNG, PDF, and the frame-annotator composite all
 // sample from the logical canvas via CANVAS_ZOOM_KEY-injected 1/zoom).
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -219,7 +219,11 @@ const activeVis = computed(() => scope.value === 'global' ? gVis.value : (active
 // count) — the picker shows the ACTIVE plot's, so the user can see what `auto` chose. Not persisted:
 // it's a readout of the current result, not a setting.
 const readouts = ref<Record<number, PlotReadout>>({})
-const activeReadout = computed<PlotReadout>(() => readouts.value[activeId.value] ?? emptyReadout())
+// …and an interactive view reports nothing, so its rail reads the settings its registry entry declares
+const activeReadout = computed<PlotReadout>(() => {
+  const kind = activePanel.value?.state.kind
+  return kind ? declaredReadout(viewControls(String(kind))) : (readouts.value[activeId.value] ?? emptyReadout())
+})
 // the active plot is PRECOMPUTED — its populations come from an analysis run, so the picker says so
 // instead of offering eye toggles that do nothing (see isPrecomputedSpec)
 const activeIsPrecomputed = computed(() => {
@@ -514,7 +518,7 @@ watch(segPops, () => {
         <span v-if="!specs.length && !declaredViews.length" class="sc-hint cc-muted cc-fs-xs">No plot types available for this module yet.</span>
         <span v-else-if="specs.length" class="sc-hint cc-muted cc-fs-xs">eye-select populations to plot · drag plots by their title</span>
       </div>
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <InteractivePanel v-if="p.state.kind" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"

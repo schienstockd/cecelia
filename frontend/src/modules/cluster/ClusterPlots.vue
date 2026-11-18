@@ -33,9 +33,10 @@ import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { isInteractiveView, pageViews, viewOption, migrateViewKey } from '../../components/canvas/interactiveViews'
 import PlotPicker from '../../components/canvas/PlotPicker.vue'
 import type { PlotOption } from '../../plots/plotPicker'
-import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
+import { CLUSTER_PANELS, isClusterPanel, registeredControls } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { declaredReadout } from '../../plots/plotReadout'
 import CanvasSelectionOverlay from '../../components/canvas/CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../../components/FrameAnnotator.vue'
 import CaptureViewSurface from '../../components/CaptureViewSurface.vue'
@@ -71,7 +72,7 @@ const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const {
-  bindCanvas, bindZoom, workspaceStyle,
+  bindCanvas, bindZoom, workspaceStyle, hostStyle,
   panels, activeId, activePanel, shared,
   add, remove, removeAll, arrangeGrid, arrangeCascade,
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
@@ -142,6 +143,8 @@ const activeHL = computed(() => scope.value === 'global'
 const panelVis = (s: ClusterPanelState) => scope.value === 'global' ? gVis.value : (s.vis ?? DEFAULT_VIS)
 const activeVis = computed(() =>
   scope.value === 'global' ? gVis.value : (activePanel.value?.state.vis ?? DEFAULT_VIS))
+// which of those settings the ACTIVE plot reacts to, from its registry entry (plots/plotControls.ts)
+const activeReadout = computed(() => declaredReadout(registeredControls(String(activePanel.value?.state.kind ?? ''))))
 function setVis(patch: Partial<VisProps>) {
   if (scope.value === 'global') gVis.value = { ...gVis.value, ...patch }
   else if (activePanel.value) activePanel.value.state.vis = { ...(activePanel.value.state.vis ?? defaultVis()), ...patch }
@@ -350,7 +353,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
         </button>
       </div>
 
-      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle">
+      <FloatingCanvasHost :bind-canvas="bindCanvas" :bind-zoom="bindZoom" :workspace-style="workspaceStyle" :host-style="hostStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
@@ -410,7 +413,7 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
                              :line-width="1" :gate-labels="false" :axis-from-zero="false"
                              :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
                              :run-at="clusterRunAt[suffix]"
-                             :vis="activeVis"
+                             :vis="activeVis" :readout="activeReadout"
                              :manual-apply="manualApply" :has-staged="hasStaged"
                              :staged-change-count="stagedChangeCount" :reloadable="true"
                              @update:selected="selectedPop = $event" @update:scope="scope = $event"
