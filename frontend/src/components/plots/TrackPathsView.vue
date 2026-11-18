@@ -26,7 +26,7 @@
   **A cohort always SPLITS, never overlays.** One cell per group, named by a title — never a colour and a
   legend. Two conditions in one box is unreadable in all three modes (paths have unrelated coordinate
   frames; a star/rose fan turns to scribble), and identifying a group by colour would spend the colour
-  channel that `colorBy` exists for. So `facetPlan` splits whatever `Facet by` says, and says so.
+  channel that `colorBy` exists for. So `splitsByGroup` splits, and the rail offers no `Facet by`.
 
   The axes are always SQUARE (`pathDomain` + `facetBox`) — a track plot stretched to fill a panel turns a
   straight run into a diagonal, which destroys the only thing these modes exist to show. Facets share
@@ -44,7 +44,6 @@ import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
-import PlotNotice from '../canvas/PlotNotice.vue'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, figureToSvg } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { debouncedLatest } from '../../utils/debouncedLatest'
@@ -52,7 +51,7 @@ import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
          type CanvasTrackSelection } from '../../lib/trackSelection'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { useViewerStore } from '../../stores/viewer'
-import { distinctColors, facetMode, fitCellTitles, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { distinctColors, fitCellTitles } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
 import PopFamilySelect from './PopFamilySelect.vue'
@@ -62,7 +61,7 @@ import {
   type GroupedPathPoint, type PathGroup,
 } from '../../plots/trackPaths'
 import {
-  cohortParams, cohortKey, facetPlan, groupLabel, cohortNote,
+  cohortParams, cohortKey, splitsByGroup, groupLabel, cohortNote,
   type CompareMode, type TrackGroupMeta,
 } from '../../plots/trackGroups'
 import { resolveTrackValueName } from '../../plots/trackDiagnostics'
@@ -77,7 +76,6 @@ type Mode = 'paths' | 'star' | 'rose'
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   // the board's comparison context — absent on a module page, which is then exactly the old behaviour
-  vis?: VisProps
   series?: SeriesTarget[]
   compareMode?: CompareMode
   groupAttr?: string[]
@@ -122,7 +120,6 @@ const showEnds = computed({ get: () => props.state.ends ?? true,
 // resolves through the same `resolvePopType` the rail uses and cannot disagree with it
 const { options: familyOptions, popType } =
   usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
-const vis = computed(() => props.vis ?? DEFAULT_VIS)
 
 interface PathGroupResponse extends TrackGroupMeta {
   total: number; shown: number; stepScale: number
@@ -262,9 +259,7 @@ const rows = computed<GroupedPathPoint[]>(() => groupedPathPoints(
   groups.value.map(g => ({ key: g.key, label: g.label, paths: g.paths, values: g.values })),
   { normalise: normalise.value }))
 const coloured = computed(() => data.value?.colorKind === 'numeric' || data.value?.colorKind === 'categorical')
-// a plan, not a boolean: a cohort always splits, and the plan carries the note that says so when the
-// `Facet by` control asked for one box
-const plan = computed(() => facetPlan(facetMode(vis.value), groups.value.length))
+const split = computed(() => splitsByGroup(groups.value.length))
 const slots = computed(() => {
   const grid = facetGrid(groups.value.length)
   const m = new Map<string, { fx: number; fy: number }>()
@@ -308,7 +303,7 @@ async function render() {
 
   const dark = !forceLight.value && plotDark.value
   const { ink: fg, ground: bg } = plotTheme(dark)
-  const facet = plan.value.facet
+  const facet = split.value
   const grid = facetGrid(facet ? groups.value.length : 1)
   const ML = 44, MB = 34, MT = 12, MR = 12
   const avail = Math.max(160, Math.min(host.value.clientWidth || 320, host.value.clientHeight || 320))
@@ -417,7 +412,7 @@ const plotBox = usePlotResize(host, render)
 onBeforeUnmount(() => { node?.remove(); node = null })
 // `showEnds` is a REDRAW, not a refetch — the endpoints are derived from points the panel already
 // holds, so the toggle must be in this list and not in the load watchers above.
-watch([mode, rows, plan, showEnds, claudeTrackIds], () => nextTick(() => plotBox.redraw()))
+watch([mode, rows, split, showEnds, claudeTrackIds], () => nextTick(() => plotBox.redraw()))
 
 // ── export (the generic panel contract — plots/export.ts, same helpers as the other views) ──
 const exportFormats = ['png', 'svg', 'csv']
@@ -490,8 +485,6 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
     <p v-else-if="data && !data.tracked" class="cc-muted">Not tracked — run Track cells first.</p>
     <p v-else-if="data && data.total === 0" class="cc-muted">No tracks.</p>
 
-    <PlotNotice v-if="plan.note" variant="banner" tone="muted" :text="plan.note"
-                tip="Overlaid tracks from two images are not comparable." />
     <div ref="host" class="tpv-host" />
     <PlotSpinner v-if="loading" label="Reading tracks" />
     <span v-if="note" class="tpv-note cc-muted cc-fs-2xs">

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { readoutOf, emptyReadout, overrideFor, offers, popAvailable } from './plotReadout'
+import { readoutOf, emptyReadout, overrideFor, offers, popAvailable, declaredReadout } from './plotReadout'
+import { hasAnyOption } from './plotControls'
 import { xRotationOverride, transformOverride } from './autoOverride'
 import type { ComparisonsResult } from './types'
 
@@ -68,5 +69,22 @@ describe('popAvailable — which picker rows the active plot can draw', () => {
     expect(popAvailable(r, 'T', '/')).toBe(true)
     expect(popAvailable(r, 'B', '/other')).toBe(false)
     expect(popAvailable(readoutOf(null, [], null, []), 'B', '/qc')).toBe(false)   // a run that scored nothing
+  })
+})
+
+describe('declaredReadout / hasAnyOption — a plot that reports nothing but its declaration', () => {
+  it('offers exactly the declared rows', () => {
+    const r = declaredReadout(['fontSize'])
+    expect(offers(r, 'fontSize')).toBe(true)
+    expect(offers(r, 'legend')).toBe(false)
+    expect(r.stats).toEqual(emptyReadout().stats)
+  })
+  it('a plot reacting to nothing has no options block; undeclared still shows everything', () => {
+    expect(hasAnyOption([])).toBe(false)
+    expect(hasAnyOption(null)).toBe(true)
+    expect(hasAnyOption(['fontSize'])).toBe(true)
+    // only the host's sections count — stats alone is no row on a rail that has no Stats section
+    expect(hasAnyOption(['stats'])).toBe(false)
+    expect(hasAnyOption(['stats'], ['stats'])).toBe(true)
   })
 })

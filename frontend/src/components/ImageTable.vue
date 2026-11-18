@@ -559,7 +559,7 @@ const unselectableUids = computed(() =>
 // ── Row thumbnails ───────────────────────────────────────────────────────────
 // The table's mini map: its own column — a per-row toggle, and one in the header for the set — shows the
 // image at t0, z-projected, coloured as the viewer shows it. Which rows show one is per project and
-// per person (utils/imageThumbs.ts); the data URLs are fetched on demand and cached per version.
+// per person (utils/imageThumbs.ts); the data URLs are fetched on demand and cached per version + rev.
 const thumbsShown = ref<Set<string>>(new Set())
 watch(() => projectMeta.current?.uid, uid => {
   thumbsShown.value = uid ? parseShown(profileStorage.getItem(thumbsStorageKey(uid))) : new Set()
@@ -578,17 +578,20 @@ const anyThumbShown = computed(() => images.value.some(thumbShown))   // narrow 
 
 /** uid → data URL ('' = loading, null = nothing to show). */
 const thumbUrls = ref<Record<string, string | null>>({})
-const thumbKeys = new Map<string, string>()    // uid → the version its URL (or request) is for
-watch([thumbsShown, images], () => {
+const thumbKeys = new Map<string, string>()    // uid → the version + rev its URL (or request) is for
+// `dataVersion` moves when a task finishes on the image, so a store rewritten in place is re-read.
+// (Read per uid: `bumpDataVersion` writes into the record in place, which a watch on the record misses.)
+watch([thumbsShown, images, () => images.value.map(i => project.dataVersion[i.uid] ?? 0).join()], () => {
   const pu = projectMeta.current?.uid
   if (!pu) return
   for (const img of images.value) {
     if (!thumbShown(img)) continue
-    const key = `${img.uid}|${img.filepath ?? ''}`
+    const rev = project.dataVersion[img.uid] ?? 0
+    const key = `${img.uid}|${img.filepath ?? ''}|${rev}`
     if (thumbKeys.get(img.uid) === key) continue
     thumbKeys.set(img.uid, key)
     thumbUrls.value = { ...thumbUrls.value, [img.uid]: '' }
-    void loadThumb(pu, img.uid, img.filepath).then(url => {
+    void loadThumb(pu, img.uid, img.filepath, rev).then(url => {
       if (thumbKeys.get(img.uid) !== key) return          // a newer version took over mid-flight
       if (url === null) thumbKeys.delete(img.uid)         // retry on the next toggle
       thumbUrls.value = { ...thumbUrls.value, [img.uid]: url }

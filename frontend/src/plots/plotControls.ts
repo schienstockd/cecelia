@@ -51,3 +51,34 @@ const TABLE: Record<ChartType, VisControl[]> = {
 export function visControlsFor(k: PlotKind): VisControl[] {
   return TABLE[k.trend ? 'trend' : k.chartType] ?? TABLE.boxplot
 }
+
+// ── the rail's sections ───────────────────────────────────────────────────────
+// The interactive views and cluster panels are not built by `buildPlotOptions`, so they DECLARE their
+// list on their registry entry (`visControls` in components/canvas/interactiveViews.ts and
+// modules/cluster/clusterPanels.ts), pinned by `visControlsDeclared.test.ts`: every VisProps key a view
+// reads must belong to a control it declares.
+
+export type OptionSection = 'layout' | 'points' | 'colours' | 'labels' | 'stats'
+export const DEFAULT_SECTIONS: OptionSection[] = ['layout', 'points', 'colours', 'labels']
+export const SECTION_ROWS: Record<OptionSection, VisControl[]> = {
+  layout: ['legend', 'logScale', 'grid', 'rotateXLabel', 'rotate', 'facetBy', 'yRange'],
+  points: ['jitter', 'colorData', 'pointSize', 'pointOpacity'],
+  colours: ['palette'],
+  stats: ['stats'],
+  labels: ['title', 'labX', 'labY', 'fontSize'],
+}
+
+/** The VisProps keys each control writes — what the declaration guard scans a view's source for. */
+export const VIS_KEYS: Record<VisControl, string[]> = {
+  legend: ['legend'], logScale: ['logScale'], grid: ['grid'],
+  rotateXLabel: ['rotateXLabel', 'rotateXAngle'], rotate: ['rotate'], facetBy: ['facetBy', 'facet'],
+  yRange: ['yMin', 'yMax'], jitter: ['jitter'], colorData: ['colorData'],
+  pointSize: ['pointSize'], pointOpacity: ['pointOpacity'], palette: ['palette', 'userColors'],
+  stats: ['statsEnabled', 'statsTest', 'statsUseLetters', 'statsShowNs', 'statsUseStars'],
+  title: ['title'], labX: ['labX'], labY: ['labY'], fontSize: ['fontSize'],
+}
+
+/** Does the rail have any row to show? `controls` null = undeclared → every row. A plot that reacts to
+ *  none gets no options block at all, not an empty one behind a toggle. */
+export const hasAnyOption = (controls: VisControl[] | null, sections: OptionSection[] = DEFAULT_SECTIONS): boolean =>
+  !controls || sections.some(s => SECTION_ROWS[s].some(c => controls.includes(c)))

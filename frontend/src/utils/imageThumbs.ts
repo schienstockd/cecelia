@@ -52,8 +52,9 @@ export function allShown(shown: ReadonlySet<string>, uids: readonly string[]): b
   return uids.length > 0 && uids.every(u => shown.has(u))
 }
 
-/** Cache key: a new active version (or a re-written store under the same name, via `rev`) is a new
- *  thumbnail. */
+/** Cache key: a new active version, or a new `rev`, is a new thumbnail. `rev` is the image's
+ *  `dataVersion` (project store), bumped when a task finishes on it — a re-run that rewrites a store
+ *  under the same name changes neither the image record nor its version, only that. */
 export function thumbCacheKey(projectUid: string, imageUid: string, version: string | undefined, rev = 0): string {
   return `${projectUid}|${imageUid}|${version ?? ''}|${rev}`
 }
@@ -61,12 +62,14 @@ export function thumbCacheKey(projectUid: string, imageUid: string, version: str
 const _cache = new Map<string, Promise<string | null>>()
 
 /** The thumbnail as a data URL, or null when the image has none to show (not imported, unreadable).
- *  One request per key per session; a failure is not cached, so the next toggle retries. */
+ *  One request per key per session; a failure is not cached, so the next toggle retries. A new key
+ *  drops the image's older ones, so the cache holds one thumbnail per image. */
 export function loadThumb(projectUid: string, imageUid: string, version: string | undefined,
                           rev = 0): Promise<string | null> {
   const key = thumbCacheKey(projectUid, imageUid, version, rev)
   const hit = _cache.get(key)
   if (hit) return hit
+  dropOlderThumbs(projectUid, imageUid, key)
   const q = new URLSearchParams({ projectUid, imageUid, size: String(THUMB_PX) })
   const p = fetch(`/api/images/thumbnail?${q}`)
     .then(async r => (r.ok ? ((await r.json()).png as string) ?? null : null))
@@ -78,3 +81,11 @@ export function loadThumb(projectUid: string, imageUid: string, version: string 
   _cache.set(key, p)
   return p
 }
+
+function dropOlderThumbs(projectUid: string, imageUid: string, keep: string) {
+  const prefix = `${projectUid}|${imageUid}|`
+  for (const k of [..._cache.keys()]) if (k.startsWith(prefix) && k !== keep) _cache.delete(k)
+}
+
+/** How many thumbnails the session holds — for tests. */
+export const thumbCacheSize = () => _cache.size

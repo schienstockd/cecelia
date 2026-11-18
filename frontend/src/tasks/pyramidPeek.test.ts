@@ -89,6 +89,7 @@ describe('pyramidPeek — shared cache the advisor + TaskRunner both read', () =
     expect(isFastPeekPath('/img.tif')).toBe(true)
     expect(isFastPeekPath('/img.ome.tif')).toBe(true)
     expect(isFastPeekPath('/img.ome.tiff')).toBe(true)
+    expect(isFastPeekPath('/Scan1.qptiff')).toBe(true)   // Akoya slide scan: a TIFF
     expect(isFastPeekPath('/img.lif')).toBe(true)
     expect(isFastPeekPath('/img.ims')).toBe(true)
     expect(isFastPeekPath('/IMG.TIF')).toBe(true)
