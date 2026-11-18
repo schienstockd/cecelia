@@ -657,6 +657,11 @@ and `have_fixture(path)` (override the root with the `CECELIA_TEST_DATA` env var
 on `have_fixture(...)` and `@test_skip` otherwise; `have_fixture` emits a single strong `@warn` per
 missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` testsets.
 
+**Two images? Make them differ too.** `distinct_image!(dir; value_name = "B")` copies KDIeEx — KDIeEm's
+cells minus a known third, `area` and track speed doubled — into a second image dir or beside B as
+another segmentation, so "which image / which segmentation" and "pooled twice" mistakes change counts
+and medians. Derive expectations from B with `distinct_keeps_cell` / `distinct_keeps_track`.
+
 **Two segmentations? Make them differ.** A test of "which segmentation did this read" needs a second
 table that disagrees with the first, or a mix-up returns the same numbers. Don't copy `B` as `T` —
 call `distinct_segmentation!(labelProps_dir)` (`app/test/distinct_segmentations.jl`, loaded by both

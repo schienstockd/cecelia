@@ -2555,7 +2555,8 @@ end
         @test Cecelia._summarise_measure("y", Any[NaN, missing]) === nothing
 
         # integration over the real KDIeEm B fixture: UNGATED image → the base fallback (all-cells
-        # phenotype + tracked motility). The gated path (T/_qc) is validated separately off-suite.
+        # phenotype + tracked motility); then the GATED path, with one flow gate on area whose cell
+        # count and median come from the gate's own definition.
         h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
         trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
         if !have_fixture(h5) || !have_fixture(trk)
@@ -2590,6 +2591,24 @@ end
             @test isempty(measure_summary(proj; value_names = ["nope"]).images[1].summaries)
             @test length(measure_summary(proj; value_names = ["B"]).images[1].summaries) == length(summ)
             @test_throws ArgumentError measure_summary(proj; kind = "morphology")
+
+            # gated: one flow pop, area above a cut between two of B's values → it is what's summarised
+            areas = sort(Float64.((label_props(joinpath(td, "labelProps", "B.h5ad")) |>
+                                   select_cols(["area"]) |> as_df).area))
+            k = length(areas) ÷ 3
+            cut = (areas[k] + areas[k + 1]) / 2
+            @test areas[k] < cut < areas[k + 1]
+            m = PopulationMap(pop_type = "flow", value_name = "B")
+            add_pop!(m, "big"; gate = RectangleGate("area", "mean_intensity_0", cut, 1e12, -1e12, 1e12))
+            save_pop_map!(m, img)
+            g = measure_summary(proj).images[1].summaries
+            @test !any(x -> x.population == "all cells", g)          # gated → the base fallback is gone
+            ph = only(filter(x -> x.population == "/big" && x.kind == "phenotype", g))
+            big = areas[areas .> cut]
+            @test ph.n == length(big) == length(areas) - k
+            ar = only(filter(x -> x.name == "area", ph.measures))
+            mid = sort(big); nb = length(mid)
+            @test ar.median == round(isodd(nb) ? mid[(nb + 1) ÷ 2] : (mid[nb ÷ 2] + mid[nb ÷ 2 + 1]) / 2; sigdigits = 4)
         end
     end
 
