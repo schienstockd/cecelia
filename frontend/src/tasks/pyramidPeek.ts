@@ -31,7 +31,7 @@ export interface PeekResult {
 // Fast Python readers on the backend. Anything else is either JVM-eligible (Bio-Formats) or an
 // extension we don't peek at all — either way, deferred to the lazy path so set-add stays cheap.
 // Kept in lockstep with `_READERS_BY_SUFFIX` in `peek_pyramid_run.py`.
-const FAST_EXTS = ['.ims', '.lif', '.ome.tif', '.ome.tiff', '.tif', '.tiff'] as const
+const FAST_EXTS = ['.ims', '.lif', '.ome.tif', '.ome.tiff', '.tif', '.tiff', '.qptiff'] as const
 
 const _cache = new Map<string, Promise<PeekResult | null>>()
 const _settled = new Map<string, PeekResult | null>()

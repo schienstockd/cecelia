@@ -13,6 +13,8 @@ the pile-up down with it.
 
 No drift estimate: that is the drift correction task's job.
 """
+import time
+
 import numpy as np
 
 import cecelia.utils.zarr_utils as zarr_utils
@@ -42,7 +44,7 @@ SIGNAL_PATCH_PX = 1024
 SIGNAL_PATCH_MARGIN_PX = int(4 * photon_utils.STRUCTURE_BG_SIGMA_PX)
 
 
-def measure_store(im_path, log=None, photons_untestable=None):
+def measure_store(im_path, log=None, photons_untestable=None, on_progress=None):
     """`{"channels": [...], "sampling": "full pass"}` for the store at `im_path`; one entry per channel
     with `intensity_utils.saturation_stats` + `index`, `containerBits`, `range` (`range_stats`),
     `floor` (`floor_stats`), `noise` (`noise_stats`) and `profile` (`PlaneProfile.summary`), plus
@@ -53,8 +55,9 @@ def measure_store(im_path, log=None, photons_untestable=None):
     signal-pass patches sat on it — and the signal pass reads its patches there, not on the glass.
     ``photons_untestable`` (`measure_signal`) names channels whose photons the file cannot tell: no
     photon fit, and a `photon-counted` floor on one is read as `indeterminate` (no photon count).
-    Raises on a store that is not integer data (`channel_histograms`) — the caller decides whether
-    that fails anything."""
+    ``on_progress(n, total)`` (a `StdoutLogger.progress`) is called once per channel of the histogram
+    pass. Raises on a store that is not integer data (`channel_histograms`) — the caller decides
+    whether that fails anything."""
     say = log or (lambda _m: None)
     dim_utils = DimUtils(ome_xml_utils.load_ome_xml(im_path))
     levels, _ = zarr_utils.open_as_zarr(im_path)
@@ -76,8 +79,19 @@ def measure_store(im_path, log=None, photons_untestable=None):
     t_pos = lead.index(axes['T']) if axes['T'] in lead else None
     last_t = level0.shape[axes['T']] - 1 if t_pos is not None else None
     last_hists = {}
+    # A slide scan's pass is minutes with nothing else to say: the bar moves per channel, and the log
+    # gets a line at each tenth so a long pass does not read as a hang.
+    n_ch = level0.shape[c_idx] if c_idx is not None else 1
+    last_ix = tuple(n - 1 for n in occupied.shape)   # a channel's last plane: the pass moves on after it
+    tick = on_progress or (lambda _n, _t: None)
+    t0 = time.monotonic()
+    tick(0, n_ch)
 
     def _per_plane(c, ix, h):
+        if ix == last_ix:
+            tick(c + 1, n_ch)
+            if c + 1 < n_ch and (c + 1) * 10 // n_ch > c * 10 // n_ch:
+                say(f'   histograms: {c + 1}/{n_ch} channels ({time.monotonic() - t0:.0f} s)')
         profile(c, ix, h)
         if not occupied[ix]:
             occupied[ix] = bool(h[1:].any())
