@@ -637,6 +637,13 @@ end
     old = Cecelia.cecelia_conf()["dirs"]["projects"]
     try
         Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        # KDIeEm has no regions column; write one into the copy (levels 0, 1, 2 by label), or the
+        # colour assertions below run over an empty legend and cannot fail
+        # MAINT-EXEMPT: the copied project's own table, written to above; no data property read
+        h5 = joinpath(dir, "testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+        labs = Int.((label_props(h5) |> v -> select_cols(v, String[]) |> as_df).label)
+        label_props(h5) |> add_obs(Cecelia.DataFrames.DataFrame("label" => labs,
+            "regions.r1" => [Float64(l % 3) for l in labs])) |> save!
         img, _ = _gating_image("testpr", "KDIeEm")
         m = PopulationMap(; pop_type = "region", value_name = "B")
         add_pop!(m, "niche"; filter_measure = "regions.r1", filter_fun = "in", filter_values = [1],
@@ -645,14 +652,16 @@ end
         # region pops are gathered for the legend's names …
         @test _pop_labels_for(img, "regions.r1", COLOUR_BY_POP_TYPES) == Dict("1" => "niche")
         # … but never lend it their colour: a row's swatch is the value's own slot among the column's
-        # levels (what the viewer and the movie draw), and this fixture holds no regions.r1 column,
-        # so there is no swatch to show
+        # levels 0, 1, 2 (what the viewer and the movie draw), so "1" is the second palette slot
         items = overlay_legend_content(img, "regions.r1", nothing, nothing).colourBy["items"]
+        @test !isempty(items)
         @test !any(it -> it["colour"] == "#123456", items)
-        @test isempty(items)
-        # a user recolour still shows, with the population's name
+        one = only(filter(it -> it["value"] == "1", items))
+        @test one["colour"] == POPULATION_PALETTE[2] && one["label"] == "niche"
+        # a user recolour wins over the slot, and keeps the population's name
         rec = overlay_legend_content(img, "regions.r1", nothing, Dict("1" => "#abcdef")).colourBy["items"]
-        @test rec == [Dict{String,Any}("value" => "1", "colour" => "#abcdef", "label" => "niche")]
+        one = only(filter(it -> it["value"] == "1", rec))
+        @test one["colour"] == "#abcdef" && one["label"] == "niche"
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end

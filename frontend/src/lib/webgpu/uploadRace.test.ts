@@ -27,6 +27,8 @@ function noopProxy(): unknown {
 let created = 0
 /** Queue submits so far — a free is released only by work submitted AFTER it. */
 let submits = 0
+/** Every `writeTexture`: the atlas layer it wrote and whether the bytes were all zero. */
+const layerWrites: { layer: number; zero: boolean }[] = []
 
 const fakeDevice = new Proxy({} as Record<string, unknown>, {
   get(_t, prop) {
@@ -40,7 +42,11 @@ const fakeDevice = new Proxy({} as Record<string, unknown>, {
       return new Proxy({}, {
         get: (_q, p) => p === 'onSubmittedWorkDone'
           ? () => new Promise<void>(res => { releaseQueue = res })
-          : p === 'submit' ? () => { submits++ } : () => undefined,
+          : p === 'submit' ? () => { submits++ }
+          : p === 'writeTexture' ? (dst: { origin?: number[] }, data: ArrayBuffer) => {
+            layerWrites.push({ layer: dst.origin?.[2] ?? 0, zero: new Uint8Array(data).every(v => v === 0) })
+          }
+          : () => undefined,
       })
     }
     if (prop === 'lost') return new Promise(() => {})
@@ -220,5 +226,47 @@ describe('tile atlas — an upload that straddles a store swap', () => {
     tr.setImage(tileMeta, 0, 1e9, 4, 4, 1, 'img/default/2')
     expect(await tr.uploadTile(tile, tileBytes(), new Set(), [], 'img/default/1')).toBe(-1)
     expect(tr.hasTile(tile)).toBe(false)
+  })
+})
+
+describe('tile atlas — only the channels on screen are uploaded', () => {
+  const meta2 = {
+    ...(meta as object), nC: 2, levels: [{ level: 0, nX: 8, nY: 4, chunkX: 4, chunkY: 4 }],
+  } as never
+  const tileA = { t: 0, z: 0, level: 0, tx: 0, ty: 0 }
+  const tileB = { t: 0, z: 0, level: 0, tx: 1, ty: 0 }
+  const ones = () => new Uint8Array(4 * 4 * 2).fill(1).buffer
+  async function upload(tr: Awaited<ReturnType<typeof tileRenderer>>, key: typeof tileA,
+                        bytes: (ArrayBuffer | undefined)[]) {
+    const up = tr.uploadTile(key, bytes, new Set(), [], 'img/default/1')
+    await tick(); release()
+    return up
+  }
+
+  it('a tile holds the channels it was given; a later upload adds one in place', async () => {
+    const tr = await tileRenderer()
+    tr.setImage(meta2, 0, 1e9, 4, 4, 2, 'img/default/1')
+    const slot = await upload(tr, tileA, [ones(), undefined])
+    expect(slot).toBeGreaterThanOrEqual(0)
+    expect(tr.missingChannels(tileA, [0, 1])).toEqual([1])
+    expect(tr.missingChannels(tileB, [0, 1])).toEqual([0, 1])       // not resident: everything
+    layerWrites.length = 0
+    expect(await tr.uploadTile(tileA, [undefined, ones()], new Set(), [], 'img/default/1')).toBe(slot)
+    expect(layerWrites).toEqual([{ layer: slot * 2 + 1, zero: false }])   // channel 1 only, same slot
+    expect(tr.missingChannels(tileA, [0, 1])).toEqual([])
+  })
+
+  it('a recycled slot zeroes the layers the new tile did not bring — never the old tile\'s pixels', async () => {
+    const tr = await tileRenderer()
+    tr.setImage(meta2, 0, 1e9, 4, 4, 2, 'img/default/1')
+    const slot = await upload(tr, tileA, [ones(), ones()])
+    tr.evictTile(tileA)
+    layerWrites.length = 0
+    expect(await upload(tr, tileB, [ones(), undefined])).toBe(slot)   // the freed slot is reused
+    expect(layerWrites).toEqual([
+      { layer: slot * 2, zero: false },
+      { layer: slot * 2 + 1, zero: true },
+    ])
+    expect(tr.missingChannels(tileB, [0, 1])).toEqual([1])
   })
 })

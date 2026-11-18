@@ -672,6 +672,37 @@ OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
 > tree exceeds **8 MB** (today: largest 332 KB, tree 432 KB). Needing more room is a design conversation,
 > not a number to raise.
 
+
+### Ask for properties, not a path
+
+A path says nothing about what the data can prove. The one real cell table, `KDIeEm`, is a two-photon
+movie with **no pixel size**: µm are pixels there, so a test that checks "in µm" or a distance threshold
+on it passes whatever the code does. That happened in #2318 (a structure readout for multiplex slides,
+tested on that movie) and in the viewer overlay test (`if sizes[3] != 1.0` — never true).
+
+- **`test-data/fixtures.toml`** says what each fixture can prove (`cells`, `movie`/`still`, `3d`/`2d`,
+  `calibrated`, `marker-names`, `tracked`, `regions`, `image-store`, …) and its technology. The
+  `fixture registry` testsets re-derive every checked property from the files and fail on a claim the
+  data doesn't back.
+- **A test whose assertions depend on a property asks for it:** `fixture_for(:cells, :calibrated)`
+  (Julia, `app/test/fixture_registry.jl`, both suites) / `fixture_for("cells", "calibrated")` (Python,
+  `cecelia.tests.fixture_registry`). It returns a fixture that has every property, or nothing — never
+  the nearest one. Plumbing that no data property can break (a reader round-trip, a payload shape) may
+  keep `fixture_path`, marked `MAINT-EXEMPT: <reason>` on new lines; the maintainability lint flags a new
+  path reach otherwise.
+- **A derived fixture costs no bytes:** `KDIeEm-cal` is KDIeEm with a pixel size (0.5 × 0.5 × 2 µm,
+  30 s) written into a fresh temp copy's `ccid.json`, so every µm claim has real cells to run on. A test
+  that builds its own image calibrates it the same way (`img.meta["PhysicalSizeX"] = "0.5"`, z ≠ x).
+- **No fixture has it → file a request, don't work around it.** Add an entry to
+  `test-data/NEEDS.toml` (properties, why, the waiting tests, a size budget), pass `need = "<id>"`, and
+  let the test skip with its warning. If a synthesised fixture with a known answer would do
+  (`synthetic = true` — distances, band edges, a unit conversion), build it yourself like `CONTMESH`;
+  only real-data behaviour waits for the maintainer. A PR reservation that says "not run on <X> data"
+  names the request id. The registry testset fails once a registered fixture meets an open request, so
+  the list can't go stale.
+- **Guards that skip on the fixture are the same bug.** `if <property> … end` around the assertion that
+  matters makes it vacuous on a fixture without the property: ask for the property instead.
+
 ---
 
 

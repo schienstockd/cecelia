@@ -50,6 +50,7 @@ import { usePlotResize, observeBoxChanges } from '../composables/usePlotResize'
 import { useVwPlayback } from '../composables/useVwPlayback'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { debouncedLatest } from '../utils/debouncedLatest'
+import { rafCoalesce } from '../utils/rafCoalesce'
 import {
   createVolumeRenderer, WebGpuUnavailable,
   // Kiln brick renderer (KILN_BRICK_PLAN.md P5) — dev-flagged via `?bricks=1`. Same interface
@@ -61,7 +62,7 @@ import { createBrickVolumeRenderer, type BrickSource } from '../lib/webgpu/brick
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
-  tileGridDims, tileMaskSourceId, retryWhenMaskMoved,
+  tileGridDims, tileMaskSourceId, retryWhenMaskMoved, channelRuns, splitChannelSlab,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -105,8 +106,8 @@ import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, popTypesUrl, type PresentPopTypes, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
   buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
-  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE,
-  type SkeletonPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  filterPayloadByTrackSource, appendSkeletonLines, skeletonsUrl, SKELETON_BY_TYPE, spatialGraphsUrl, graphEdgesBetween,
+  type SkeletonPayload, type SpatialGraphPayload, type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
          isTrackDrawable, type TrackColorMode } from '../utils/viewerOverlays'
@@ -601,13 +602,13 @@ const chMax = computed(() =>
 /** Per-channel percentile window of the first timepoint loaded, behind the "Auto" button. Taken ONCE
  *  per image, like the server's: recomputed per timepoint, playback flickers as the window chases each
  *  frame's own distribution (WEB_VIEWER_PLAN.md decision 5). */
-const autoWin = ref<{ lo: number; hi: number; max: number }[]>([])
+const autoWin = ref<({ lo: number; hi: number; max: number } | undefined)[]>([])
 /** Stash of the LAST fetch's raw per-channel buffers + the row length + bytes-per-voxel needed to
  *  interpret them. Kept so `viewerAutoContrastPercent` can recompute `autoWin` in place without
  *  waiting for the next scrub — the reason the previous "just clear it" approach silently no-op'd
  *  the Auto button. `shallowRef` because the elements are big ArrayBuffers
  *  we never mutate, only replace whole. */
-const lastFetchedBufs = shallowRef<ArrayBuffer[] | null>(null)
+const lastFetchedBufs = shallowRef<(ArrayBuffer | undefined)[] | null>(null)
 const lastFetchedRowLen = ref(1)
 const lastFetchedBpv = ref(2)
 /** Per-channel strided subsample of the last-fetched slab, drawn as the histogram behind each
@@ -615,19 +616,27 @@ const lastFetchedBpv = ref(2)
  *  Populated in the same place as `lastFetchedBufs` so the histogram lands the moment the pixels
  *  do; null while nothing has landed yet (brick renderer path never populates — see the
  *  `setOnBrickLoaded` callback, which only sees per-channel maxima, not the pixels). */
-const channelSamples = shallowRef<(Uint16Array | Uint8Array)[] | null>(null)
-function stashForAutoRecompute(bufs: ArrayBuffer[], rowLength: number, bpv: number) {
-  lastFetchedBufs.value = bufs
+const channelSamples = shallowRef<((Uint16Array | Uint8Array) | undefined)[] | null>(null)
+/** `bufs` may have holes — a tile fetch brings only the visible channels. A hole keeps the channel's
+ *  previous buffer when it has the same row length (same geometry), so a hidden channel's histogram
+ *  survives the next tile; otherwise it stays empty until that channel is fetched. */
+function stashForAutoRecompute(bufs: readonly (ArrayBuffer | undefined)[], rowLength: number, bpv: number) {
+  const prev = lastFetchedRowLen.value === rowLength && lastFetchedBpv.value === bpv
+    ? lastFetchedBufs.value : null
+  const merged = Array.from({ length: Math.max(bufs.length, prev?.length ?? 0) },
+                            (_, c) => bufs[c] ?? prev?.[c])
+  lastFetchedBufs.value = merged
   lastFetchedRowLen.value = rowLength
   lastFetchedBpv.value = bpv
-  channelSamples.value = bufs.map(b => stridedSamples(slabView(b, bpv), rowLength))
+  channelSamples.value = merged.map(b => (b ? stridedSamples(slabView(b, bpv), rowLength) : undefined))
 }
 function recomputeAutoWin() {
   const bufs = lastFetchedBufs.value
   if (!bufs) { autoWin.value = []; return }
-  autoWin.value = bufs.map(b =>
-    contrastFromSlab(slabView(b, lastFetchedBpv.value), lastFetchedRowLen.value,
-                     undefined, settings.viewerAutoContrastPercent))
+  autoWin.value = bufs.map(b => (b
+    ? contrastFromSlab(slabView(b, lastFetchedBpv.value), lastFetchedRowLen.value,
+                       undefined, settings.viewerAutoContrastPercent)
+    : undefined))
 }
 /** The channels' `lo`/`hi` as the SERVER shipped them (autosaved or first-load percentile) — the
  *  reset target. Snapshot once at meta load; a drag on the slider only changes the live values, so
@@ -868,6 +877,7 @@ const specSource: DrawSpecSource = {
   get labelNames() { return meta.value?.labelNames ?? [] },
   get trackNames() { return cellTableNames() },
   get branchNames() { return meta.value?.branchNames ?? [] },
+  get spatialGraphNames() { return meta.value?.spatialGraphNames ?? [] },
   get channelNames() { return meta.value?.channels.map(c => c.name) ?? [] },
   get nZ() { return meta.value?.nZ ?? 0 },
   get version() { return meta.value?.valueName ?? valueName.value ?? '' },
@@ -2075,7 +2085,7 @@ function rebuildOverlays() {
     trackSpeedRange.value = null
   }
   // the skeletons ride in the same buffer, after the tracks (`appendSkeletonLines`)
-  segments = appendSkeletonLines(segments, shownSkeletons(), meta.value)
+  segments = appendSkeletonLines(segments, [...shownSkeletons(), ...shownGraphs()], meta.value)
   segCount.value = segments.count
   // Whichever renderer owns the canvas draws them — the volume ones or the 2D tile one.
   if (renderer.value) seedRendererOverlays(renderer.value, points, segments)
@@ -2250,6 +2260,61 @@ async function loadSkeletons(force = false) {
   rebuildOverlays()
 }
 watch(() => skeletonVns.value.join('\n'), () => { void loadSkeletons() })
+
+/** Each shown neighbour graph's edges (`/api/viewer/spatial-graphs`), by run suffix — the skeletons'
+ *  lifecycle: fetched once per graph, dropped when its switch goes off, refetched after a task. */
+const graphPayloads = ref<Map<string, SpatialGraphPayload>>(new Map())
+const graphSuffixes = computed(() => {
+  const vis = spec.graphVisible
+  return (meta.value?.spatialGraphNames ?? []).filter(sfx => vis[sfx])
+})
+/** The cells of every pop drawn as a point, by segmentation — `popDrawn`, the eye the points obey. */
+function shownPopCells(): Map<string, Set<number>> {
+  const out = new Map<string, Set<number>>()
+  for (const l of popLayers.value)
+    for (const p of l.payload.pops) {
+      if (!popDrawn(l, p.path)) continue
+      const set = out.get(l.vn) ?? new Set<number>()
+      for (const lab of p.labels) set.add(lab)
+      out.set(l.vn, set)
+    }
+  return out
+}
+const shownGraphs = () => {
+  // "only between shown populations": both cells of an edge in a drawn pop (the movie's `spatial_graph_between`)
+  const cells = spec.graphPopsOnly ? shownPopCells() : null
+  return graphSuffixes.value.flatMap(sfx => {
+    const payload = graphPayloads.value.get(sfx)
+    if (!payload) return []
+    return [{ payload: cells ? graphEdgesBetween(payload, cells) : payload, colour: spec.graphColour, width: spec.graphWidth }]
+  })
+}
+async function loadGraphs(force = false) {
+  if (!projectUid || !imageUid) return
+  const want = graphSuffixes.value
+  const next = new Map<string, SpatialGraphPayload>()
+  await Promise.all(want.map(async sfx => {
+    const cached = force ? undefined : graphPayloads.value.get(sfx)
+    if (cached) { next.set(sfx, cached); return }
+    try {
+      const res = await fetch(spatialGraphsUrl({ projectUid, imageUid, suffix: sfx }), { cache: 'no-store' })
+      if (!res.ok) return
+      const payload = await res.json() as SpatialGraphPayload
+      next.set(sfx, payload)
+      // edges it could not draw (across frames, cells gone from their table): say so
+      if (payload.note) overlaysErr.value = `Graph ${sfx}: ${payload.note}`
+    } catch { /* no lines for this one; the rest still draw */ }
+  }))
+  if (want.join('\n') !== graphSuffixes.value.join('\n')) return
+  graphPayloads.value = next
+  rebuildOverlays()
+}
+watch(() => graphSuffixes.value.join('\n'), () => { void loadGraphs() })
+// A new colour or width redraws the lines already fetched — no refetch. The width slider writes on
+// release, and the redraw is coalesced to one per frame, so a burst of picks rebuilds the buffer once.
+const graphRestyle = rafCoalesce(() => { if (graphSuffixes.value.length) rebuildOverlays() })
+watch(() => [spec.graphColour, spec.graphWidth, spec.graphPopsOnly], () => graphRestyle.schedule())
+onUnmounted(() => graphRestyle.cancel())
 
 async function loadTracks() {
   if (!projectUid || !imageUid) return
@@ -2756,9 +2821,11 @@ function gotoT(tp: number) {
 // thresholds cannot pile up requests. Same reason the timepoint pump exists.
 //
 // Load discipline mirrors the timepoint work: the visible tiles LOAD first (row-major inside the
-// viewport), then one halo ring outward at Chebyshev distance 1. The atlas holds all channels of one
-// tile atomically — a channel toggle costs zero and neither redraws nor refetches — so a fetch turns
-// into one HTTP per channel and one `uploadTile(key, channelBytes[])` per tile.
+// viewport), then one halo ring outward at Chebyshev distance 1. A tile is fetched with the VISIBLE
+// channels only, one `cTo` request per contiguous run (`channelRuns`): fetching every channel made a
+// 60-channel PhenoCycler slide pull 60× the bytes for its one visible marker. A channel switched on
+// later is fetched for the resident tiles alone (`missingChannels`) and draws black until it lands;
+// one switched off and back on is still resident and costs nothing.
 
 /** One outward ring of tiles beyond the viewport is prefetched. Two rings quadruples the fetch
  *  count for a marginal gain — an outward pan is asymmetric like a scrub, but pans in every
@@ -2793,12 +2860,28 @@ function computeViewportL0(): ViewportL0 | null {
 function missingTiles(): TileKey[] {
   const tr = tileRenderer.value
   if (!tr) return []
+  const want = tileChannels()
   const out: TileKey[] = []
   for (const key of viewportTileKeys()) {
-    if (tr.hasTile(key)) { tr.touchTile(key); continue }
+    if (tileComplete(tr, key, want)) { tr.touchTile(key); continue }
     out.push(key)
   }
   return out
+}
+
+/** Resident AND holding every visible channel — the ONE test of "nothing to fetch", for the list of
+ *  missing tiles and the pump alike. A resident tile missing a channel switched on since it landed is
+ *  NOT complete: `fetchTile` brings that channel alone. */
+function tileComplete(tr: TileRenderer, key: TileKey, want = tileChannels()): boolean {
+  return tr.hasTile(key) && tr.missingChannels(key, want).length === 0
+}
+
+/** The channels a tile fetch brings: the visible ones the atlas holds a layer for. */
+function tileChannels(): number[] {
+  const m = meta.value
+  if (!m) return []
+  const nch = Math.min(m.nC, MAX_CHANNELS)
+  return m.channels.slice(0, nch).flatMap((ch, c) => (ch.visible ? [c] : []))
 }
 
 /** The KEEP set for `tileEvictions` — every tile the current viewport wants right now, so an eviction
@@ -2847,13 +2930,19 @@ async function fetchTile(key: TileKey): Promise<boolean> {
   const enc = settings.viewerCompress ? 'zstd' : 'identity'
   const nch = Math.min(m.nC, MAX_CHANNELS)
   const rect = tileFetchRect(key.tx, key.ty, lvl)
+  // Only the visible channels this tile does not hold yet. None (every channel hidden) still uploads
+  // the tile, so it counts as resident and the loading chip clears.
+  const want = tr.missingChannels(key, tileChannels())
+  // An AF-preview channel comes from its own store, so it is a request of its own.
+  const runs = channelRuns(want, c => !!previewImageFor(c))
   try {
-    // Channels in parallel — same shape as `fetchTimepoint`, and for the same reason: independent
-    // reads on the server's thread pool. One HTTP per channel, one contiguous slab per response.
-    const bufs = await Promise.all(Array.from({ length: nch }, async (_, c) => {
+    // Runs in parallel — independent reads on the server's thread pool. One contiguous slab per
+    // response, channel slowest, cut back into one buffer per channel.
+    const got = await Promise.all(runs.map(async ([c, cTo]) => {
       const afPrev = previewImageFor(c)
       const url = slabUrl({
         projectUid, imageUid, valueName: valueName.value, t: key.t, c, enc, level: key.level,
+        cTo: cTo > c ? cTo : undefined,
         // 2D view is one plane; server drops z from the response. Follows the plane control (only
         // reachable at nZ > 1). `t` comes from the tile key so a scrub past a resident tile fetches
         // the current-t version — the atlas caches across timepoints (Phase F).
@@ -2869,25 +2958,36 @@ async function fetchTile(key: TileKey): Promise<boolean> {
         rev: cacheClearRev.value || undefined,
       })
       const res = await fetch(url, { cache: 'default', signal: ac.signal })
-      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}: ${res.status}`)
-      const buf = await res.arrayBuffer()
-      return buf
+      if (!res.ok) throw new Error(`Tile L${key.level} (${key.tx},${key.ty}) c${c}–${cTo}: ${res.status}`)
+      return { c, parts: splitChannelSlab(await res.arrayBuffer(), cTo - c + 1) }
     }))
+    // Indexed by channel; a channel not fetched is a hole.
+    const bufs: (ArrayBuffer | undefined)[] = new Array(nch)
+    for (const { c, parts } of got) parts.forEach((b, i) => { bufs[c + i] = b })
     // Grow `seenMax` from the tile's own bytes — same discipline as `fetchTimepoint`. Without this
     // the contrast slider's ceiling fell back to `Math.max(ch.hi, 1)`, so dragging `hi` down shrank
     // the slider until it collapsed to 0-1 with no way back. Only ever grows —
     // a ceiling that shrinks re-scales the slider under a value the user set.
     const rowLen = rect.xTo - rect.x + 1
-    seenMax.value = bufs.map((b, c) =>
-      Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), rowLen)))
-    // Seed the auto-window off the first tile that lands — same p01/p999 percentile pass as the
-    // volume path uses (`contrastFromSlab`). Once, held: recomputed per tile the window would chase
-    // each tile's own distribution and the auto button would land somewhere new every time.
-    if (autoWin.value.length === 0) {
-      autoWin.value = bufs.map(b =>
-        contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen, undefined, settings.viewerAutoContrastPercent))
+    const nextMax = seenMax.value.slice()
+    bufs.forEach((b, c) => {
+      if (b) nextMax[c] = Math.max(nextMax[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), rowLen))
+    })
+    if (got.length) seenMax.value = nextMax
+    // Seed the auto-window, per channel, off the first tile that brings it — same p01/p999
+    // percentile pass as the volume path (`contrastFromSlab`). Once, held: recomputed per tile the
+    // window would chase each tile's own distribution and Auto would land somewhere new every time.
+    if (bufs.some((b, c) => b && !autoWin.value[c])) {
+      const next = autoWin.value.slice()
+      bufs.forEach((b, c) => {
+        if (b && !next[c]) {
+          next[c] = contrastFromSlab(slabView(b, m.bytesPerVoxel), rowLen, undefined,
+                                     settings.viewerAutoContrastPercent)
+        }
+      })
+      autoWin.value = next
     }
-    stashForAutoRecompute(bufs, rowLen, m.bytesPerVoxel)
+    if (got.length) stashForAutoRecompute(bufs, rowLen, m.bytesPerVoxel)
     // Compute the evict list right BEFORE upload, not when the fetch started: the viewport may have
     // moved during the fetch, so the RIGHT tiles to evict now are different from the ones to evict
     // then. The ranker penalises cross-level distance too, so a stale coarser-level tile is dropped
@@ -3173,7 +3273,7 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
   })
   await Promise.allSettled([...labelJobs, ...want.map(async key => {
     if (!isCurrent()) return
-    if (tr.hasTile(key)) { tr.touchTile(key); return }
+    if (tileComplete(tr, key)) { tr.touchTile(key); return }
     const ok = await fetchTile(key)
     if (!ok) return
     // Its mask follows the image — drawn without one until it lands, never with another tile's.
@@ -4956,6 +5056,7 @@ async function loadVersion(refit: boolean) {
   seenMax.value = []
   hiCeiling.value = []                   // sibling of seenMax — a new image starts a fresh ceiling
   channelSamples.value = null            // histogram bars belong to the previous image's pixels
+  lastFetchedBufs.value = null           // …and so do the buffers a tile's hidden channels fall back to
   // Fit BEFORE reallocate: `useTiles` and `slabLevel` derive from `cam.dist`, so a stale dist=1
   // would allocate the wrong pipeline for a big image. `fitDist` is seeded here so the reset button
   // works even if a saved camera pose is later restored on top.
@@ -5345,6 +5446,7 @@ watch(meta, m => {
     labelNames: m.labelNames ?? [],
     trackNames: cellTableNames(),
     branchNames: m.branchNames ?? [],
+    spatialGraphNames: m.spatialGraphNames ?? [],
   })
 })
 
@@ -5621,6 +5723,8 @@ async function applyCacheClear(job: CacheClearJob): Promise<void> {
     }
     // a branching re-run rewrites the lines under the same name
     void loadSkeletons(true)
+    // a re-run neighbour graph rewrites its edges under the same suffix
+    void loadGraphs(true)
     // A rewritten mask: its new stamp moves `maskSourceId`, whose watcher refetches the mask alone.
     if (reload === 'mask') maskRev.value = job.rev
     return
@@ -6540,6 +6644,7 @@ onUnmounted(() => {
       <VwOnImageOverlay v-if="meta" :set-uid="setUid" :clear-top="overlayClearTop"
                         :image-uid="imageUid ?? ''" :label-names="meta.labelNames ?? []" :track-names="cellTableNames()"
                         :branch-names="meta.branchNames ?? []"
+                        :graph-names="meta.spatialGraphNames ?? []"
                         :label-files="meta.labelFiles ?? {}" :dims="viewerStore.labelsDimMismatch?.imageUid === imageUid ? viewerStore.labelsDimMismatch : null"
                         :project-uid="projectUid ?? ''" :version="meta.valueName ?? valueName ?? ''" :timecourse="nT > 1" :present="presentPopTypes" />
       <!-- The navigation widget (overview in 2D, axes in 3D), top right on its own; its height is
@@ -6649,7 +6754,8 @@ onUnmounted(() => {
                                v-model:hidden="maskHidden" :shown-label-count="shownLabelCount"
                                :label-name="labelName" :colour-note="maskColourNote"
                                :truncated-past="maskTable?.truncated ? maskTable.width * maskTable.rows - 1 : null"
-                               :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1" @redraw="frame.redraw()" />
+                               :single-plane="singlePlane" :mode="mode" :timecourse="nT > 1"
+                               :graph-shown="graphSuffixes.length > 0" @redraw="frame.redraw()" />
 
         <VwPopulationsSection :panel-on="popsPanelOn" :summary="summary" :error="overlaysErr"
                               :layers="listedPopLayers" :segs="popLayerSegs" :types="popLayerTypes" :is-drawn="popDrawn"

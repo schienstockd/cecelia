@@ -65,10 +65,9 @@ ones with the image as the unit. The response reports `suffixes` (the run picker
 population the run holds). Two kinds:
 - **Keyed by picker populations** (`imageMetric.pickPops: true` — spatial pattern, whose run scores
   `<value_name><path>` targets): the population picker selects which to plot (`pops: [...]`, in pick
-  order) and greys out the ones the run has no result for (`PlotReadout.available`). Several
-  populations × attribute groups are tested **within each population** (`_stats_within_pops`): pairs
-  only compare a population with itself across groups, each population its own correction family, no
-  omnibus or letters across populations.
+  order) and greys out the ones the run has no result for (`PlotReadout.available`). All six pop
+  types are offered (the task accepts tracked and track-cluster populations too). Several populations
+  × attribute groups are tested within each population, as every attribute-grouped plot is (below).
 - **Otherwise** (interaction pairs and proximity "population · band" rows, which are not picker populations) it is precomputed
   (`isPrecomputedSpec`): no population selection, a header dropdown picks one of `pops`, and a stale
   pick falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
@@ -570,6 +569,15 @@ box with its images as points. Box/beeswarm/strip/bar + a numeric measure only (
 proportions per image are a follow-up). Per-plot, persisted in the panel's `ui.statUnit`/`ui.imageAgg`;
 the raw CSV export honours it (rows become the per-image means/medians). Surfaced as the **Datapoint**
 control (+ a **Per image** mean/median select when set to image) in the plot options popover.
+
+**Grouped by image attribute, the test runs within each population.** With `attr_map` the boxes are
+population × attribute group (× `groupBy` level), so `_summary_agg` tests through `_stats_within_pops`:
+one test per (population, level) over its attribute groups, each its own Bonferroni family, as if
+plotted alone. Pairs only ever join a population to itself; there is no omnibus p or letters across
+populations (they would compare /a in WT with /b in KO). One population and level = the plain test;
+so is a plot where every population is a single box (one attribute value, or summarised values where
+the attribute never reaches the series) — there the populations are compared, within that one group.
+Without an attribute the populations themselves are the comparison and one test spans them.
 
 **The between-group test reports on its own replicates.** `comparisons.findings` (`stats.jl`
 `stats_qc_findings`, catalog text) rides every test result and shows under the test name in the plot

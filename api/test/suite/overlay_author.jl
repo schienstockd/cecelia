@@ -41,13 +41,12 @@ end
     # catches: the shader draws whatever it is handed while the resolver silently drops every cell
     # (wrong column names, wrong
     # 0/1-based indexing, wrong µm/pixel mix).
-    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
-    if !api_have_fixture(h5)
-        @test_skip "labelProps fixture missing"
+    # Calibrated (0.5 µm x/y, 2 µm z): on 1 µm/px a µm/voxel mix-up would change nothing.
+    fx = fixture_for(:cells, :movie, :calibrated)    # a fresh temp copy of the project
+    if fx === nothing
+        @test_skip "calibrated cell-table fixture missing"
     else
-        dir = mktempdir()
-        proj = joinpath(dir, "testpr")
-        cp(api_fixture("testpr"), proj)
+        dir = dirname(fx.project)
         old = Cecelia.cecelia_conf()["dirs"]["projects"]
         try
             Cecelia.cecelia_conf()["dirs"]["projects"] = dir

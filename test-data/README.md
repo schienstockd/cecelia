@@ -20,6 +20,15 @@ Individual fixtures are reached with `fixture_path(relparts...)`, and each tests
 `have_fixture(path)` (`@test_skip` + one `@warn` when absent) so a missing fixture never fails
 an unrelated test.
 
+## What each fixture can prove — `fixtures.toml`, and what's missing — `NEEDS.toml`
+
+`fixtures.toml` lists each fixture's properties (calibrated, still/movie, 2D/3D, marker names, regions,
+image store, …) and technology; the `fixture registry` testsets re-derive them from these files. Tests
+that depend on a property call `fixture_for(...)` instead of naming a path, and get a match or nothing.
+`NEEDS.toml` is the request list for data no fixture has yet. `KDIeEm-cal` is a derived fixture: KDIeEm
+with a pixel size written into a temp copy, no bytes here. See `docs/DEV.md` → *Ask for properties, not a
+path*. Adding a fixture: register it in `fixtures.toml` in the same change.
+
 ## Layout
 
 ```
@@ -38,6 +47,10 @@ projects/testpr/
                               # `movement` run: features=[10 live.track.*], partOf=[KDIeEm],
                               # family="clusters". Pairs with the obs column above so the
                               # cell-cards pipeline can resolve trackclust pops on this fixture.
+    spatialGraph/net.h5ad     # REAL `cellNeighbours` builder output over B.h5ad frames 0–2
+    spatialGraph/pooled.h5ad  # (198 nodes): per timepoint / frames pooled / kNN k=3 (directed).
+    spatialGraph/knn.h5ad     # Regenerate with
+                              # `pixi run python python/cecelia/tests/make_spatial_graph_fixture.py`
     gating/B__trackclust.json # SYNTHETIC trackclust pop map: three pops (Scanning/Directed/
                               # Meandering) each filter `clusters.movement in [0|1|2]`. Also the
                               # track-cluster INPUT to the track tasks (pop_df_multi_share.jl).

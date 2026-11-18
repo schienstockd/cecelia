@@ -41,7 +41,7 @@ defineProps<{
   afSuspended: Set<number>
   chMax: number[]
   hiCeiling: number[]
-  samples: (Uint16Array | Uint8Array)[] | null
+  samples: ((Uint16Array | Uint8Array) | undefined)[] | null
 }>()
 const emit = defineEmits<{
   setAll: [visible: boolean]

@@ -257,3 +257,42 @@ end
         @test skeleton_segments(fixture_path("testpr", "1", "KDIeEm", "labelProps", "aniso__branch.h5ad")) === nothing
     end
 end
+
+# A neighbour graph's edges (`spatial_graph_edges`, app/src/label_props.jl) — what the viewer and the
+# movie draw as lines. Fixtures: the real `cellNeighbours` builder over B.h5ad frames 0–2, delaunay
+# pruned at 60 µm on an uncalibrated (1 µm/px) image (`make_spatial_graph_fixture.py`). The counts are
+# scipy's `nnz // 2` the builder printed; the rest is what a radius graph per frame means.
+@testset "neighbour-graph edges (spatial_graph_edges)" begin
+    net = fixture_path("testpr", "1", "KDIeEm", "spatialGraph", "net.h5ad")
+    pooled = fixture_path("testpr", "1", "KDIeEm", "spatialGraph", "pooled.h5ad")
+    if !have_fixture(net) || !have_fixture(pooled)
+        @test_skip "spatialGraph fixtures (missing)"
+    else
+        lp = label_props(fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad"))
+        view_centroid_cols(lp; order = [:x, :y, :z])
+        df = as_df(lp; include_x = false, include_obs = false)
+        cell = Dict(Int(r.label) => (Float64(r.centroid_x), Float64(r.centroid_y), Float64(r.centroid_z),
+                                     round(Int, r.centroid_t)) for r in eachrow(df))
+        dist(a, b) = sqrt(sum(abs2, (cell[a][1:3] .- cell[b][1:3])))
+        for (path, n_edges, per_t) in ((net, 219, true), (pooled, 591, false))
+            g = spatial_graph_edges(path)
+            # every cell of frames 0–2, by label, and nothing else
+            @test sort(g.label) == sort([l for (l, c) in cell if c[4] < 3])
+            @test all(==("B"), g.value_name)
+            @test length(g.i) == n_edges                       # each edge once
+            @test all(g.i .< g.j)
+            @test length(Set(zip(g.i, g.j))) == n_edges
+            # a radius graph: no edge longer than the builder's 60 µm prune. In pixels, z unscaled: the
+            # fixture is uncalibrated, so this pins the reader, not the builder's µm conversion
+            @test all(k -> dist(g.label[g.i[k]], g.label[g.j[k]]) <= 60, eachindex(g.i))
+            if per_t
+                # built per frame: `_t` is each cell's frame, and no edge joins two frames
+                @test g.t !== nothing && all(r -> g.t[r] == cell[g.label[r]][4], eachindex(g.label))
+                @test all(k -> g.t[g.i[k]] == g.t[g.j[k]], eachindex(g.i))
+            else
+                @test g.t === nothing
+                @test any(k -> cell[g.label[g.i[k]]][4] != cell[g.label[g.j[k]]][4], eachindex(g.i))
+            end
+        end
+    end
+end

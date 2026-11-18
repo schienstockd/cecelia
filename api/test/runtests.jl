@@ -76,6 +76,8 @@ api_src_jl_files(src::AbstractString = joinpath(API_TEST_DIR, "..", "src")) =
 # A second segmentation that DIFFERS from the first — the package suite's helper, shared so the API
 # multi-segmentation tests don't fall back to an identical copy (app/test/distinct_segmentations.jl).
 include(joinpath(@__DIR__, "..", "..", "app", "test", "distinct_segmentations.jl"))
+# Fixtures by property (app/test/fixture_registry.jl): fixture_for(:cells, :calibrated; need = …).
+include(joinpath(@__DIR__, "..", "..", "app", "test", "fixture_registry.jl"))
 
 # ── Image payload + narrow-query API testsets ─────────────────────
 # Five testsets covering payload shape (points-only value_name), run-log enrichment
@@ -302,6 +304,9 @@ include(joinpath(@__DIR__, "suite", "movie_rail_translators.jl"))
 # (VIEWER_PARITY 1+2). Path expression uses API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
 include(joinpath(@__DIR__, "suite", "skeleton_lines.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_graph_lines.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_graph_stale.jl"))   # RESULT-REVIEW result-090b69ae
+include(joinpath(@__DIR__, "suite", "spatial_graph_pops.jl"))
 
 # ── /api/tasks/validate + /api/cell_cards + _require_ids testsets ─
 # Three testsets: /api/tasks/validate wiring (form-time advisory), /api/cell_cards metadata + sidecar

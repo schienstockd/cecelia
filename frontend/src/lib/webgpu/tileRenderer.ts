@@ -113,9 +113,10 @@ export interface TileRenderer {
   setImage(meta: ViewerMeta, level: number, budgetBytes: number,
            chunkX: number, chunkY: number, nC: number, sourceId: string): void
   /**
-   * Upload one tile's channels (each a raw little-endian slab of exactly `w*h*2` bytes where
-   * `(w, h)` are the tile's sampled dims, given by `tileFetchRect` on the level). Returns the slot it
-   * landed in, or `-1` if the atlas was destroyed under the fetch.
+   * Upload one tile's channels (each a raw little-endian slab of exactly `w*h*bpv` bytes where
+   * `(w, h)` are the tile's sampled dims, given by `tileFetchRect` on the level), indexed by channel;
+   * an absent entry is a channel not fetched (hidden). Onto a RESIDENT tile it adds those channels
+   * in place. Returns the slot, or `-1` if the atlas was destroyed under the fetch.
    *
    * If the atlas is full, evicts the tile ranked farthest from the current viewport by
    * `tileEvictions` — the RANKER is external, so this only enforces "reuse an entry named in `evict`
@@ -124,10 +125,12 @@ export interface TileRenderer {
    * `sourceId` is the `setImage` source the bytes were FETCHED for; a tile whose store has since been
    * swapped is refused (`-1`) rather than installed under the new store's key.
    */
-  uploadTile(key: TileKey, channelBytes: ArrayBuffer[],
+  uploadTile(key: TileKey, channelBytes: readonly (ArrayBuffer | undefined)[],
              keep: ReadonlySet<string>, evict: readonly string[],
              sourceId?: string): Promise<number>
   hasTile(key: TileKey): boolean
+  /** The channels of `want` this tile does not hold — all of them when it is not resident. */
+  missingChannels(key: TileKey, want: readonly number[]): number[]
   getSlot(key: TileKey): number
   /** Touch — bump this tile in the LRU order without a re-upload. */
   touchTile(key: TileKey): void
@@ -334,6 +337,16 @@ export async function createTileRenderer(
   let labAllocFailed = false
   let labelSrcBySlot: string[] = []
   let labelSource = ''
+  /** Per slot, the channels whose layer holds the CURRENT tenant's bytes. A tile is uploaded with
+   *  only the channels the viewer shows (60 hidden channels of a PhenoCycler slide are 98% of the
+   *  bytes), so a channel switched on later is fetched for the resident tiles alone. */
+  let chansBySlot: Set<number>[] = []
+  /** Per slot, the channel layers holding ANY bytes — current tenant's or a previous one's. A new
+   *  texture is all zeros; a recycled slot's unfetched layers are re-zeroed (`zeroLayers`) so a
+   *  channel switched on draws black until its bytes land, never the previous tile's pixels. */
+  let dirtyBySlot: Set<number>[] = []
+  /** One zeroed slot layer, sized to the atlas — the source for `zeroLayers`. */
+  let zeroLayer: ArrayBuffer | null = null
   /** Bumped whenever the tile map is emptied — the atlas dropped, or the store swapped under a kept
    *  atlas. An `uploadTile` that wakes to a newer value must not register its tile: its bytes went to
    *  a destroyed texture or describe the old store, and once registered `hasTile` says "cached" and
@@ -426,6 +439,9 @@ export async function createTileRenderer(
     labAtlas = null
     labAllocFailed = false
     labelSrcBySlot = []
+    chansBySlot = []
+    dirtyBySlot = []        // the next texture is a fresh, zeroed one
+    zeroLayer = null
     bindGroup = null
     tiles.clear()
     freeSlots.length = 0
@@ -556,6 +572,37 @@ export async function createTileRenderer(
     }
   }
 
+  /** Write the given channels of a tile into `slot` — `channelBytes[c]` absent = not fetched.
+   *  `fresh`: the slot just changed tenant, so every layer it does not get now is zeroed if dirty. */
+  function writeChannels(slot: number, channelBytes: readonly (ArrayBuffer | undefined)[],
+                         w: number, h: number, fresh: boolean): boolean {
+    const have = fresh ? new Set<number>() : (chansBySlot[slot] ?? new Set<number>())
+    const dirty = dirtyBySlot[slot] ?? new Set<number>()
+    // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
+    // STAGED — the caller can then read `hasTile` synchronously.
+    for (let c = 0; c < atlasNC; c++) {
+      if (!usable() || !atlas) return false
+      const b = channelBytes[c]
+      if (b) {
+        device.queue.writeTexture(
+          { texture: atlas, origin: [0, 0, slot * atlasNC + c] }, b,
+          { bytesPerRow: w * atlasBPV, rowsPerImage: h }, [w, h, 1],
+        )
+        have.add(c); dirty.add(c)
+      } else if (fresh && dirty.has(c)) {
+        zeroLayer ??= new ArrayBuffer(atlasChunkX * atlasChunkY * atlasBPV)
+        device.queue.writeTexture(
+          { texture: atlas, origin: [0, 0, slot * atlasNC + c] }, zeroLayer,
+          { bytesPerRow: atlasChunkX * atlasBPV, rowsPerImage: atlasChunkY }, [atlasChunkX, atlasChunkY, 1],
+        )
+        dirty.delete(c)
+      }
+    }
+    chansBySlot[slot] = have
+    dirtyBySlot[slot] = dirty
+    return true
+  }
+
   return {
     adapter: report,
     lost: device.lost,
@@ -584,6 +631,7 @@ export async function createTileRenderer(
         tileGen++
         tiles.clear()
         labelSrcBySlot = []
+        chansBySlot = []      // `dirtyBySlot` stays: the kept texture still holds the old bytes
         freeSlots.length = 0
         for (let i = 0; i < capacity; i++) freeSlots.push(i)
       }
@@ -631,11 +679,20 @@ export async function createTileRenderer(
       // A `setImage` during the wait may have dropped the atlas this upload was waiting for.
       if (!usable() || !atlas || stale()) return -1
       const kStr = tileKeyStr(key)
-      // Re-upload just refreshes the LRU position; the slot stays. A tile the pump re-fetched (level
-      // moved back after a swap, for example) does not need a second slot.
+      // A resident tile keeps its slot: the upload adds the channels it brings (one switched on since
+      // the tile landed) and refreshes the LRU position. A tile the pump re-fetched (level moved back
+      // after a swap, for example) does not need a second slot.
       const existing = tiles.get(kStr)
       if (existing) {
         existing.lastUsed = ++touchCounter
+        if (channelBytes.some(b => b)) {
+          const lvlE = metaRef?.levels?.find(v => v.level === key.level)
+          if (!lvlE) return -1
+          const r = tileFetchRect(key.tx, key.ty, lvlE)
+          const we = r.xTo - r.x + 1, he = r.yTo - r.y + 1
+          if (we <= 0 || he <= 0 || we > atlasChunkX || he > atlasChunkY) return -1
+          if (!writeChannels(existing.slot, channelBytes, we, he, false)) return -1
+        }
         return existing.slot
       }
       // Slot: prefer a free one, else recycle from the eviction list (ranker-supplied, ordered
@@ -672,17 +729,7 @@ export async function createTileRenderer(
       // `writeTexture` then throws "Texture copy range touches outside …". Reject cleanly; the
       // tile pump will re-request at the current level
       if (w > atlasChunkX || h > atlasChunkY) return -1
-      // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
-      // STAGED — the caller can then read `hasTile` synchronously.
-      for (let c = 0; c < Math.min(channelBytes.length, atlasNC); c++) {
-        if (!usable()) return -1
-        device.queue.writeTexture(
-          { texture: atlas, origin: [0, 0, slot * atlasNC + c] },
-          channelBytes[c],
-          { bytesPerRow: w * atlasBPV, rowsPerImage: h },
-          [w, h, 1],
-        )
-      }
+      if (!writeChannels(slot, channelBytes, w, h, true)) return -1
       await device.queue.onSubmittedWorkDone()
       if (!usable() || stale()) return -1
       tiles.set(kStr, {
@@ -693,6 +740,11 @@ export async function createTileRenderer(
     },
 
     hasTile(key) { return tiles.has(tileKeyStr(key)) },
+    missingChannels(key, want) {
+      const t = tiles.get(tileKeyStr(key))
+      const have = t ? chansBySlot[t.slot] : undefined
+      return have ? want.filter(c => !have.has(c)) : [...want]
+    },
     getSlot(key) { return tiles.get(tileKeyStr(key))?.slot ?? -1 },
     touchTile(key) {
       const t = tiles.get(tileKeyStr(key))

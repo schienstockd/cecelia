@@ -966,3 +966,60 @@ end
         @test cellv(rd, "mean_intensity_0") ≈ sum(raw.mean_intensity_0) / nrow(raw)
     end
 end
+
+@testset "grouped by image attribute — stats test the groups within each population" begin
+    # Two populations × WT/KO, cells counted per image. /a is fully separated (WT 1,2,3 vs KO 10,11,12);
+    # /b overlaps (WT 4,6,8 vs KO 5,7,9). Plotted alone, each is an exact two-sided Mann-Whitney 3 vs 3:
+    # /a p = 2/C(6,3) = 0.1, /b U = 3 → p = 0.7. One Kruskal over all four boxes would instead compare
+    # /a in WT with /b in KO and Bonferroni-adjust six pairs.
+    cnt = Dict(("/a", "w1") => 1, ("/a", "w2") => 2, ("/a", "w3") => 3,
+               ("/a", "k1") => 10, ("/a", "k2") => 11, ("/a", "k3") => 12,
+               ("/b", "w1") => 4, ("/b", "w2") => 6, ("/b", "w3") => 8,
+               ("/b", "k1") => 5, ("/b", "k2") => 7, ("/b", "k3") => 9)
+    rows = [(p, u) for ((p, u), n) in sort(collect(cnt)) for _ in 1:n]
+    df = DataFrame("value_name" => fill("A", length(rows)), "pop" => first.(rows),
+                   "uID" => last.(rows), "label" => 1:length(rows))
+    am = Dict(u => startswith(u, "w") ? "WT" : "KO" for u in ("w1", "w2", "w3", "k1", "k2", "k3"))
+    r = Cecelia._summary_agg(df, "boxplot"; measure = nothing, granularity = :cell, nbins = 10,
+                             normalize = :none, by_image = false, attr_map = am, stats_enabled = true)
+    c = r["comparisons"]
+    pairs = Dict(Set([p["a"], p["b"]]) => p["pAdj"] for p in c["comparisonPairs"])
+    @test length(pairs) == 2
+    @test pairs[Set(["WT · a", "KO · a"])] ≈ 0.1
+    @test pairs[Set(["WT · b", "KO · b"])] ≈ 0.7
+    @test isnan(c["pValue"]) && all(isempty, c["letters"])
+    @test occursin("within each population", c["methodNote"])
+
+    # a group_by level (an HMM state) splits the same way: one population, two states, WT vs KO per state
+    st = DataFrame("value_name" => fill("A", 12), "pop" => fill("/p", 12),
+                   "uID" => repeat(["w1", "w2", "w3", "k1", "k2", "k3"], 2),
+                   "m" => [1.0, 2.0, 3.0, 10.0, 11.0, 12.0, 5.0, 7.0, 9.0, 4.0, 6.0, 8.0],
+                   "s" => vcat(fill(1, 6), fill(2, 6)))
+    rs = Cecelia._summary_agg(st, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, stat_unit = :image, group_by = "s",
+                              attr_map = am, stats_enabled = true)
+    cs = rs["comparisons"]
+    @test length(cs["comparisonPairs"]) == 2
+    @test sort([p["pAdj"] for p in cs["comparisonPairs"]]) ≈ [0.1, 0.7]
+    @test occursin("within each population and level", cs["methodNote"])
+
+    # pooled populations never carry the attribute (the series are the groupBy levels alone), so the
+    # levels are compared with one test, as before — not split into one-series families that test nothing
+    rc = Cecelia._summary_agg(st, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = true, stat_unit = :image, group_by = "s",
+                              attr_map = am, collapse_series = true, stats_enabled = true)
+    @test haskey(rc, "comparisons") && rc["comparisons"]["groups"] == ["1", "2"]
+
+    # an attribute sent with summarised (by_image=false) cell values never reaches the series either:
+    # each population is one box, so the populations are compared, not dropped
+    cells = DataFrame("value_name" => fill("A", 8), "pop" => repeat(["/a", "/b"], inner = 4),
+                      "uID" => repeat(["w1", "k1"], 4), "m" => [1.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 13.0])
+    rb = Cecelia._summary_agg(cells, "boxplot"; measure = "m", granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = false, attr_map = am, stats_enabled = true)
+    @test haskey(rb, "comparisons") && length(rb["comparisons"]["groups"]) == 2
+
+    # without an attribute the populations ARE the comparison: one test across them, as before
+    rp = Cecelia._summary_agg(df, "boxplot"; measure = nothing, granularity = :cell, nbins = 10,
+                              normalize = :none, by_image = false, stats_enabled = true)
+    @test !isnan(rp["comparisons"]["pValue"])
+end

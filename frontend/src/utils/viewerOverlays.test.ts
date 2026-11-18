@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  appendSkeletonLines, skeletonLineRanges, SEG_STRIDE as SEG_W, type SkeletonPayload,
+  appendSkeletonLines, skeletonLineRanges, SEG_STRIDE as SEG_W, type SkeletonPayload, type SpatialGraphPayload, graphEdgesBetween,
   SKELETON_BY_TYPE, BRANCH_TYPE_COLOURS, BRANCH_TYPE_NAMES,
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
@@ -723,6 +723,28 @@ describe('ribbon eye', () => {
   })
 })
 
+describe('graph edges between shown populations (graphEdgesBetween)', () => {
+  // three edges: 1–2 within B, 2–7 from B to T, 7–8 within T; the same label 2 in both segmentations
+  const g: SpatialGraphPayload = {
+    suffix: 'net', flat: false, nSegments: 3, t: [0, 0, 1], plane: [0, 1, 2], nCrossFrame: 0, nUnplaced: 0, stale: false,
+    x0: [1, 2, 3], y0: [0, 0, 0], z0: [0, 0, 0], x1: [4, 5, 6], y1: [0, 0, 0], z1: [0, 0, 0],
+    vns: ['B', 'T'], aVn: [0, 0, 1], aLabel: [1, 2, 7], bVn: [0, 1, 1], bLabel: [2, 7, 8],
+  }
+  it('keeps an edge only when both of its cells are shown', () => {
+    const out = graphEdgesBetween(g, new Map([['B', new Set([1, 2])], ['T', new Set([7])]]))
+    expect(out.nSegments).toBe(2)
+    expect(out.x0).toEqual([1, 2]); expect(out.x1).toEqual([4, 5])
+    expect(out.t).toEqual([0, 0]); expect(out.plane).toEqual([0, 1])
+  })
+  it('matches a cell by segmentation and label, not label alone', () => {
+    // label 2 shown in T only: the B–B edge 1–2 and the B–T edge 2–7 both lose their B cell 2
+    expect(graphEdgesBetween(g, new Map([['B', new Set([1])], ['T', new Set([2, 7, 8])]])).x0).toEqual([3])
+  })
+  it('nothing shown, nothing drawn', () => {
+    expect(graphEdgesBetween(g, new Map()).nSegments).toBe(0)
+  })
+})
+
 describe('skeleton lines (appendSkeletonLines)', () => {
   // three segments: one on every frame, one at t=0, one at t=2; z at plane 1 (vz = 2 µm)
   const skel = (over: Partial<SkeletonPayload> = {}): SkeletonPayload => ({
@@ -763,6 +785,25 @@ describe('skeleton lines (appendSkeletonLines)', () => {
     expect(rgb(1)).toEqual(f32(hexToUnit(BRANCH_TYPE_COLOURS[0])))      // t = 0
     expect(rgb(2)).toEqual(f32(hexToUnit(BRANCH_TYPE_COLOURS[2])))      // t = 2
     expect(BRANCH_TYPE_COLOURS).toHaveLength(BRANCH_TYPE_NAMES.length)
+  })
+
+  it('a neighbour graph (no branch types) draws every edge in its one colour, beside a skeleton', () => {
+    const graph: SpatialGraphPayload = {
+      suffix: 'net', flat: false, nSegments: 2, t: [0, 0], plane: [0, 0], nCrossFrame: 0, nUnplaced: 0, stale: false,
+      vns: ['B'], aVn: [0, 0], aLabel: [1, 2], bVn: [0, 0], bLabel: [2, 3],
+      x0: [5, 6], y0: [5, 6], z0: [0, 0], x1: [7, 8], y1: [7, 8], z1: [0, 0],
+    }
+    const buf = appendSkeletonLines(buildTrackBuffer(payload(), meta(), []),
+                                    [{ payload: skel(), colour: SKELETON_BY_TYPE }, { payload: graph, colour: '#ff00ff', width: 0.5 }], meta())
+    const rows = [...Array(5).keys()].map(k => Array.from(buf.data.subarray((buf.count + k) * SEG_W, (buf.count + k + 1) * SEG_W)))
+    const edges = rows.filter(r => r[0] === 5 || r[0] === 6)
+    expect(edges).toHaveLength(2)
+    for (const r of edges) expect(r.slice(6, 9)).toEqual([1, 0, 1])
+    // its own width rides the end-timepoint lane, -(1 + width) (`lineWidth` in overlay_quads.wgsl);
+    // the skeleton's stays -1, the tail width
+    for (const r of edges) expect(r[10]).toBe(-1.5)
+    expect(rows.filter(r => !edges.includes(r)).map(r => r[10])).toEqual([-1, -1, -1])
+    expect(skeletonLineRanges(buf, 0).reduce((n, [, c]) => n + c, 0)).toBe(4)   // 1 every-frame + skel t0 + 2 edges
   })
 
   it('a flattened skeleton is on every plane', () => {

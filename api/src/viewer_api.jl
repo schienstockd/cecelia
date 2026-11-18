@@ -173,8 +173,15 @@ end
 
 # Percentile contrast from ONE z-plane of timepoint 0, xy-subsampled to ~`target` px per side. The
 # viewer's own contrast (the props file) always wins; this is the cold-start answer for an image
-# nobody has opened yet, and it is deliberately cheap: z chunks are size 1, so this reads a handful of
-# chunks per channel rather than a whole volume.
+# nobody has opened yet, and it is meant to be cheap — which takes reading the COARSEST pyramid level
+# that still has `target` px on its long side (`_sample_level`), not level 0. Indexing a Zarr array
+# with a stride still decodes every chunk the stride crosses, which at ~216 px on a 512² grid is every
+# chunk: on a 60-channel 55440×24960 u8 PhenoCycler slide the level-0 read was 1.38 GB of decode per
+# channel (~3 s; ~190 s before the viewer opened), against a 433×195 plane at L7 (0.03 s for all 60).
+# The pyramid writers (bioformats2raw's SimpleImageScaler, `write_multiscale_pyramid`) both SUBSAMPLE
+# with power-of-two strides — no averaging — so a coarse level holds the same kind of pixels the
+# stride took from L0, and a sparse marker's p99 is not smoothed away. A store built elsewhere with an
+# AVERAGING downsampler would narrow the window; the thumbnails read coarse levels the same way.
 #
 # It is sampled from ONE FIXED (t, z) on purpose — decision 5 of WEB_VIEWER_PLAN.md. Contrast computed
 # per timepoint makes playback flicker as the window chases each frame's own distribution.
@@ -185,8 +192,27 @@ end
 # well above any one plane's — sampled from the mid plane, the camera noise of a 9-plane stack sat at
 # ~20–30% of every ramp and the crops read as a coloured haze.
 const MAX_PROJECT_PLANES = 16
+"""
+    _sample_level(zarr_path, target) -> (array, c_order_axis_names)
+
+The pyramid level `_sampled_specs` reads: the coarsest whose longer XY side is still `>= target`, and
+whose t / c / z extents equal level 0's (a writer that also downsampled z would move the mid plane,
+and one with fewer channels would index off the end) — else level 0. A store with no readable
+multiscales is level 0 only.
+"""
+function _sample_level(zarr_path::AbstractString, target::Int)
+    lvls = try store_pyramid_levels(zarr_path) catch; nothing end
+    (lvls === nothing || length(lvls) <= 1) && return open_level0(zarr_path)
+    # C-order shapes, X last: everything before the last two dims is t / c / z. A level that differs
+    # there is blanked (no shape) so `thumbnail_level` passes over it without shifting the indices.
+    lead(l) = length(l.shape) >= 2 ? l.shape[1:end-2] : l.shape
+    same = [lead(l) == lead(first(lvls)) ? l : (; l..., shape = Int[]) for l in lvls]
+    lvl = thumbnail_level(same, target)
+    lvl == 0 ? open_level0(zarr_path) : open_level(zarr_path, lvl)
+end
+
 function _sampled_specs(zarr_path::AbstractString, nc::Int; target::Int = 256, project::Bool = false)
-    arr, caxes = open_level0(zarr_path)
+    arr, caxes = _sample_level(zarr_path, target)
     nd   = ndims(arr)
     dims = axis_dims(caxes, nd)
     jz   = get(dims, "z", 0)
@@ -390,6 +416,8 @@ function api_viewer_meta(req::HTTP.Request)
                             cellTableNames = try _overlay_segmentations(init_object(pu, iu)) catch; String[] end,
                             # the skeletons with a branch table — what `/api/viewer/skeletons` draws
                             branchNames = try img_branch_value_names(init_object(pu, iu)) catch; String[] end,
+                            # the neighbour graphs (`spatialGraph/{suffix}.h5ad`) — what `/api/viewer/spatial-graphs` draws
+                            spatialGraphNames = try img_spatial_graph_suffixes(init_object(pu, iu)) catch; String[] end,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -987,6 +1015,51 @@ function api_viewer_skeletons(req::HTTP.Request)
                         x1 = segs.x1 .* ux, y1 = segs.y1 .* uy, z1 = segs.z1 .* uz))
 end
 
+# ── GET /api/viewer/spatial-graphs ────────────────────────────────────────────────
+# ?projectUid=&imageUid=&suffix= → {suffix, flat, nSegments, t, plane, x0, y0, z0, x1, y1, z1,
+#                                   nCrossFrame, nUnplaced, stale, note?, vns, aVn, aLabel, bVn, bLabel}
+#
+# A neighbour graph (`spatialAnalysis.cellNeighbours`) as line segments, one per edge, centroid to
+# centroid (`spatial_graph_segments` — the reader the movie overlay closure uses too). The skeleton
+# route's shape and units: µm, `t` a frame index (-1 = every frame), `plane` computed server side.
+# Edges it cannot draw are counted, never dropped silently: `nCrossFrame` (a graph pooled over time
+# joining two frames) and `nUnplaced` (a cell no longer in its table); `stale` = a mask store newer
+# than the graph, whose labels may name other cells now. `note` says every one that applies.
+function api_viewer_spatial_graphs(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    sfx = get(q, "suffix", "")
+    isempty(sfx) && return 400, JSON3.write((; error = "suffix is required"))
+    g = try
+        spatial_graph_segments(img, sfx)
+    catch e
+        @warn "viewer spatial graph: unreadable" suffix = sfx exception = e
+        return 500, JSON3.write((; error = "could not read the neighbour graph '$sfx': $(sprint(showerror, e))"))
+    end
+    g === nothing && return 404, JSON3.write((; error = "no neighbour graph '$sfx' on this image"))
+    n = length(g)
+    n > SKELETON_MAX_SEGMENTS && return 413, JSON3.write((;
+        error = "$n graph edges is past the limit of $SKELETON_MAX_SEGMENTS"))
+    s = g.segs
+    sz = first(img_physical_sizes(img))
+    ux, uy, uz = (Float32(physical_size_for_axis(sz, a)) for a in (:x, :y, :z))
+    notes = String[]
+    g.n_unplaced > 0 && push!(notes, "$(g.n_unplaced) edges not drawn: cells missing from their table")
+    g.stale && push!(notes, "segmented again since the graph was built; re-run the graph")
+    g.n_cross_frame > 0 && push!(notes, "$(g.n_cross_frame) edges join two frames and are not drawn")
+    note = isempty(notes) ? nothing : join(notes, "; ")
+    # each segment's two cells, `(vns[aVn + 1], aLabel)` — what "only between shown populations" matches
+    vns = unique(vcat(g.a_vn, g.b_vn))
+    vix = Dict(v => i - 1 for (i, v) in enumerate(vns))
+    200, JSON3.write((; suffix = sfx, flat = false, nSegments = n, t = s.t, plane = s.plane,
+                        x0 = s.x0 .* ux, y0 = s.y0 .* uy, z0 = s.z0 .* uz,
+                        x1 = s.x1 .* ux, y1 = s.y1 .* uy, z1 = s.z1 .* uz,
+                        nCrossFrame = g.n_cross_frame, nUnplaced = g.n_unplaced, stale = g.stale, note,
+                        vns, aVn = [vix[v] for v in g.a_vn], aLabel = g.a_label,
+                        bVn = [vix[v] for v in g.b_vn], bLabel = g.b_label))
+end
+
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────
 # ?projectUid=&imageUid=&valueName=&popType=flow&colourBy= →
 #   {nCells, axes, hasT, cells: {label, t, x, y, z, track}, pops: [...],
@@ -1550,7 +1623,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # reads the legacy `allTracks` / `includeTracks` / `trackSources` keys of the smoke route.
     plan = overlay_track_plan(ov_raw)
     # cell-track ribbons ride on the pops — without them they are nothing to draw
-    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || !isempty(plan.skeletons)
+    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust || plan_draws_lines(plan)
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     style = movie_overlay_style(k -> _ov(ov_raw, Symbol(k), nothing))
@@ -1572,7 +1645,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || !isempty(plan.skeletons) ||
+    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || plan_draws_lines(plan) ||
                                any(x -> !isempty(first(x)), plan.segs))
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)

@@ -78,6 +78,9 @@ export interface ViewerMeta {
   /** The skeletons (`segment.branching`) with a branch table — what `/api/viewer/skeletons` draws.
    *  Absent on an older server. */
   branchNames?: string[]
+  /** The neighbour graphs (`spatialGraph/{suffix}.h5ad`), by run suffix — what `/api/viewer/spatial-graphs`
+   *  draws. Absent on an older server. */
+  spatialGraphNames?: string[]
   /**
    * Per-vn (nX, nY, nZ) of each mask store's L0. Lets the client flag a mask that was segmented on a
    * DIFFERENT image version whose spatial dims no longer match this image version's — overlaying such
@@ -551,9 +554,9 @@ export function shownStoresChanged(
  */
 export function refreshMetaInPlace(
   prev: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'branchNames'
-    | 'storeRevs' | 'valueNames' | 'activeValueName'>,
+    | 'spatialGraphNames' | 'storeRevs' | 'valueNames' | 'activeValueName'>,
   next: Pick<ViewerMeta, 'labelNames' | 'labelDims' | 'labelFiles' | 'cellTableNames' | 'branchNames'
-    | 'storeRevs' | 'valueNames' | 'activeValueName'>,
+    | 'spatialGraphNames' | 'storeRevs' | 'valueNames' | 'activeValueName'>,
 ): boolean {
   const was = prev.cellTableNames ?? []
   const now = next.cellTableNames ?? []
@@ -562,6 +565,7 @@ export function refreshMetaInPlace(
   prev.labelFiles = next.labelFiles
   prev.cellTableNames = next.cellTableNames
   prev.branchNames = next.branchNames
+  prev.spatialGraphNames = next.spatialGraphNames
   prev.storeRevs = next.storeRevs
   prev.valueNames = next.valueNames
   prev.activeValueName = next.activeValueName

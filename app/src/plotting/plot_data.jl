@@ -276,16 +276,21 @@ end
 
 # WITHIN-POPULATION stats: the series are populations × image-attribute groups, and the question is
 # "do the groups differ FOR THIS population" — one test per population, never one omnibus across every
-# box (that compares DAPI/A in WT with DAPI/B in KO). Each population is its own family: its pairs are
+# box (that compares DAPI/A in WT with DAPI/B in KO). A `group_by` sub-axis level (an HMM state, a
+# composition category) splits the same way: WT vs KO for state 1, never state 1 in WT vs state 2 in KO. Each population is its own family: its pairs are
 # adjusted among themselves, as if plotted alone. The parts merge into ONE result in the renderer's
 # shape — pairs only within a population (a 2-group test's omnibus becomes its pair) — with the labels
 # computed over the WHOLE series set, so they match the chart's (`serverStatsLabels`). No omnibus p and
 # no letters: neither has a meaning across populations, and per-population letters would repeat "a"
 # across populations as if they matched. One population = the plain test, unchanged.
 function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
-    pkey(g) = (g.vn, g.sid)
-    keys = unique(pkey.(groups))
-    length(keys) < 2 && return _stats_from_series(groups, measure, test)
+    pkey(g) = (g.vn, g.sid, g.grp)
+    pk = pkey.(groups)
+    keys = unique(pk)
+    # one population, or series that never took the attribute (each population a single box): the
+    # populations are what is compared, so the plain test across them
+    (length(keys) < 2 || all(k -> count(==(k), pk) < 2, keys)) &&
+        return _stats_from_series(groups, measure, test)
     labels = _stats_labels(groups)
     parts = Dict{String,Any}[]
     for k in keys
@@ -317,7 +322,9 @@ function _stats_within_pops(groups, measure::AbstractString, test::Symbol)
         "statistic"       => NaN,
         "pValue"          => NaN,
         "significance"    => "",
-        "methodNote"      => join(unique(String[r["methodNote"] for r in parts]), "; ") * ", within each population",
+        "methodNote"      => join(unique(String[r["methodNote"] for r in parts]), "; ") *
+                             (length(unique(last.(keys))) > 1 ? ", within each population and level" :
+                                                                ", within each population"),
         "autoReason"      => join(unique(filter(!isempty, String[r["autoReason"] for r in parts])), "; "),
         "comparisonPairs" => pairs,
         "letters"         => fill("", length(groups_out)),
@@ -645,10 +652,11 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       matrix_normalize::Symbol=:none,
                       attr_map::Union{Nothing,AbstractDict}=nothing,
                       pop_order=nothing,
-                      stats_enabled::Bool=false, stats_test::Symbol=:auto,
-                      stats_within_pops::Bool=false)::Dict{String,Any}
-    # `stats_within_pops`: test the attribute groups within each population (`_stats_within_pops`)
-    stats_fn = stats_within_pops ? _stats_within_pops : _stats_from_series
+                      stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
+    # grouped by image attribute: the boxes are population × attribute group, so test the attribute
+    # groups within each population (`_stats_within_pops`); otherwise the populations ARE the comparison.
+    # Pooled series (`collapse_series`) never carry the attribute — they are the groupBy levels alone.
+    stats_fn = (attr_map !== nothing && !collapse_series) ? _stats_within_pops : _stats_from_series
     # matrix/heatmap pools the whole frame into one grid — handled before the per-series charts below.
     if chart_type == "matrix"
         matrix_mode === nothing && error("plot_summary_data: matrix needs a `matrix_mode` (profile | crosstab)")

@@ -42,6 +42,8 @@ export interface OpenImage {
   trackNames?: string[]
   /** the skeletons it draws as lines (`meta.branchNames`) */
   branchNames?: string[]
+  /** the neighbour graphs it can draw as lines (`meta.spatialGraphNames`) */
+  spatialGraphNames?: string[]
 }
 
 const K_OPEN_IMAGE       = 'cc.viewer.openImage'

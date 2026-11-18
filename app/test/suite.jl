@@ -19,6 +19,7 @@
 # Three `joinpath(@__DIR__, "..", "..")` repo-root reaches rerouted through `pathof(Cecelia)`
 # — @__DIR__ from `app/test/suite/` resolves one dir too shallow, same fix the earlier splits did.
 include(joinpath(@__DIR__, "suite", "config.jl"))
+include(joinpath(@__DIR__, "suite", "fixture_registry.jl"))   # fixtures.toml / NEEDS.toml say only what the data backs
 # ── Model vaults + denoise + support-training testsets ─────────────────
 # 13 sections covering the cellpose / coastal / denoise model-vault + training-workflow
 # pipeline (resolvers, enumeration, denoise_model_names / _target, opticalFlow.trainSupportDenoise
@@ -335,6 +336,7 @@ include(joinpath(@__DIR__, "suite", "resolve_labels.jl"))
 # defined earlier in suite.jl are still in scope for the extracted fragments (Julia
 # includes are lexical).
 include(joinpath(@__DIR__, "suite", "summary_motion.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_graph_knn.jl"))   # RESULT-REVIEW result-be985135: directed kNN edges
 
 # ── Branch value_names are NOT label_props value_names ────────────────────────────────────────
 # Branching runs on a SEGMENTATION, which need not have a per-cell measurement table: an SHG

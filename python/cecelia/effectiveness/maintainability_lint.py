@@ -7,6 +7,11 @@ looks at what the diff DOES, never at what a touched file already is, so old deb
 - **Incident history** — an added comment line carrying a dataset uid, a dated authorship, an
   internal phase code, or a commit SHA. A comment defending an adjacent numeric constant is
   measurement provenance, not history, and is skipped.
+- **Fixture by path** — an added test line that reaches a real-data fixture by its path
+  (`fixture_path(`, `api_fixture(`, a fixture uid in a string) instead of asking for the properties its
+  assertions need with `fixture_for(...)`: a path says nothing about what the data can prove.
+  Data-agnostic plumbing marks the line `MAINT-EXEMPT: <reason>` (`docs/DEV.md` → *Ask for
+  properties, not a path*).
 - **Repro marker** — an added `RESULT-REVIEW:` line in any code file, tests included, that is not
   in the file's header (first `MARKER_HEADER_LINES` lines) or whose slug the commit hook can't parse.
   The hook guards a whole file by its marker, so a marker inside a shared suite blocks every later
@@ -165,6 +170,31 @@ def marker_findings(fd: FileDiff) -> list[Finding]:
     return out
 
 
+#: A test file: the fixture check reads only these.
+_TEST_FILE = re.compile(r"(^|/)(app|api)/test/.*\.jl$|(^|/)python/cecelia/tests/test_[^/]*\.py$|(^|/)mcp/tests/test_[^/]*\.py$")
+#: Reaching a committed fixture by path. The uids are the registered fixtures that hold data
+#: (test-data/fixtures.toml); a derived one (`KDIeEm-cal`) is reached through `fixture_for` only.
+_FIXTURE_BY_PATH = re.compile(r"\b(?:fixture_path|api_fixture)\(|[\"'](?:testpr|KDIeEm|CONTMESH|CtMsh1|ZARRFMT|ZV2img|ZV3img)[\"']")
+
+
+def fixture_path_findings(fd: FileDiff) -> list[Finding]:
+    """Added test lines that reach a fixture by its path rather than by the properties they need."""
+    if not _TEST_FILE.search(fd.path):
+        return []
+    out: list[Finding] = []
+    for hunk in fd.hunks:
+        for i, ln in enumerate(hunk):
+            if ln.kind != "+" or not (m := _FIXTURE_BY_PATH.search(ln.text)):
+                continue
+            if comment_text(fd.path, ln.text) is not None:    # prose about a fixture is not a use
+                continue
+            # one decision per hunk: its first use is flagged, or exempted for the whole hunk
+            if not _exempt(hunk, i):
+                out.append(Finding("fixture:by_path", fd.path, ln.lineno, m.group(0).strip("('\"")))
+            break
+    return out
+
+
 def is_task_file(path: str) -> bool:
     """A file under a task category dir (`app/src/tasks/<category>/…`); top-level framework files
     (`task.jl`, `chain.jl`, …) and the framework dirs don't count."""
@@ -195,6 +225,7 @@ def lint_diff(diff: str, *, after_lines: _t.Callable[[str], int | None]) -> list
     for fd in parse_diff(diff):
         out += incident_findings(fd)
         out += marker_findings(fd)
+        out += fixture_path_findings(fd)
         # Only a task file has a size rule, and counting reads the staged copy as text: a binary
         # fixture in the diff would not decode.
         if is_task_file(fd.path) and (n := after_lines(fd.path)) is not None and (f := size_finding(fd, n)):
@@ -226,6 +257,14 @@ def format_section(findings: _t.Sequence[Finding], *, files_checked: int) -> str
                 f"- `{f.path}:{f.line}` — repro marker `{f.detail}` is below the file header. The hook "
                 f"guards the whole file, so every later edit to it is blocked: put the repro in its own "
                 f"file with the marker at the top (`docs/ai-assist/RESULT_REVIEW.md`)."
+            )
+        elif f.check == "fixture:by_path":
+            lines.append(
+                f"- `{f.path}:{f.line}` — a test reaches a fixture by path (`{f.detail}`). Ask for what its "
+                f"assertions need: `fixture_for(:cells, :calibrated, …)`; no fixture has it → file "
+                f"`test-data/NEEDS.toml` and pass `need = \"<id>\"`, don't use a stand-in. Plumbing that "
+                f"no data property can break: `MAINT-EXEMPT: <reason>` (`docs/DEV.md` → *Ask for properties, "
+                f"not a path*)."
             )
         elif f.check == "size":
             lines.append(

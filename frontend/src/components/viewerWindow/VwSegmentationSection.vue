@@ -1,12 +1,13 @@
 <!--
   The viewer window's Segmentation section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): what
-  mask is on screen, its visibility, opacity, outline and colour mode. No picker — which segmentation
+  mask is on screen, its visibility, opacity, outline and colour mode; and the neighbour graph's colour. No picker — which segmentation
   is shown is picked under "On the image" (docs/todo/VIEWER_ON_THE_IMAGE_PLAN.md, Decision 2).
   The window owns the mask state; this renders it and asks for a redraw.
 -->
 <script setup lang="ts">
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
+import ColourPicker from '../ColourPicker.vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useSettingsStore } from '../../stores/settings'
 import { computed } from 'vue'
@@ -29,6 +30,8 @@ const props = defineProps<{
   mode: 'plane' | 'volume'
   /** more than one timepoint; a still image has no track clusters to colour by */
   timecourse: boolean
+  /** a neighbour graph is drawn ("On the image") — its lines' colour is picked here */
+  graphShown: boolean
 }>()
 const emit = defineEmits<{ 'update:hidden': [hidden: boolean]; redraw: [] }>()
 const settings = useSettingsStore()
@@ -103,6 +106,15 @@ const colourOptions = computed(() => maskColourOptions(props.timecourse, setting
     </template>
     <div v-else class="cc-empty-inline cc-fs-2xs">
       No mask shown — turn one on under On the image
+    </div>
+    <div v-if="graphShown" class="cc-row cc-row-tight">
+      <span class="cc-muted cc-fs-2xs cc-lbl-col">Graph</span>
+      <ColourPicker v-model="settings.viewerGraphColour" tip="Colour of the neighbour graph's edges" />
+      <!-- `.lazy`: written on release — each write rebuilds the whole line buffer -->
+      <input type="range" class="vw-grow" :min="0.25" :max="4" :step="0.25"
+             v-model.lazy.number="settings.viewerGraphWidth" aria-label="Graph line width"
+             v-tooltip.bottom="'Edge width'">
+      <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerGraphWidth }}</span>
     </div>
 
   </CollapsibleSection>
