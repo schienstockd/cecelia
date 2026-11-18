@@ -870,7 +870,7 @@ body {
 /* Its :hover/:focus use :where() so they don't outrank a component's own class     */
 /* (an accent-bordered inline edit must stay accent on hover).                      */
 
-select, input:not([type]),
+select, .cc-select, input:not([type]),
 input[type="text"], input[type="number"], input[type="search"],
 input[type="password"], input[type="email"], textarea {
   font: inherit;
@@ -888,10 +888,10 @@ input[type="password"], input[type="email"], textarea {
   transition: border-color 0.12s, box-shadow 0.12s;
   outline: none;
 }
-select:hover, input:where(:not([type])):hover,
+select:hover, .cc-select:hover, input:where(:not([type])):hover,
 input[type="text"]:hover, input[type="number"]:hover, input[type="search"]:hover,
 input[type="password"]:hover, input[type="email"]:hover, textarea:hover { border-color: var(--cc-border-hover); }
-select:focus, input:where(:not([type])):focus,
+select:focus, .cc-select:focus-visible, input:where(:not([type])):focus,
 input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus,
 input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
   border-color: var(--cc-accent);
@@ -914,8 +914,9 @@ input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
 .cc-input-xs  { font-size: var(--cc-fs-xs);  padding: 0.15rem 0.4rem; }
 .cc-input-2xs { font-size: var(--cc-fs-2xs); padding: 0.05rem 0.25rem; }
 
-/* native select chevron → custom caret so dropdowns match across browsers */
-select {
+/* native select chevron → custom caret so dropdowns match across browsers. `.cc-select` = a button
+   that opens a list (SearchSelect) and must look like the select it stands in for. */
+select, .cc-select {
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;

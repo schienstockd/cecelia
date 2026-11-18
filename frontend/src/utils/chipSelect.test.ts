@@ -155,4 +155,8 @@ describe('visibleChips', () => {
     expect(visibleChips(opts, [], { expanded: false, filter: 'KAT' }).map(o => o.value)).toEqual(['b'])
     expect(visibleChips(opts, [], { expanded: false, filter: 'alp' }).map(o => o.value)).toEqual(['a'])
   })
+  it('a filter of several words needs each one somewhere (textQuery, the one list-search rule)', () => {
+    expect(visibleChips(opts, [], { expanded: false, filter: 'beta kat' }).map(o => o.value)).toEqual(['b'])
+    expect(visibleChips(opts, [], { expanded: false, filter: 'beta alp' })).toEqual([])
+  })
 })

@@ -5,10 +5,11 @@
   channel state and pushes it to the renderer; this renders it and reports each change.
 
   The list scrolls inside the section (default max-height): a whole-slide image has 24+ channels and
-  the sidebar's own scroll never engages.
+  the sidebar's own scroll never engages. Past `CHIP_COLLAPSE_ABOVE` channels a search box narrows
+  the cards by name (a multiplex panel has 40+); it only hides cards, never changes what is shown.
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect from '../ChipSelect.vue'
@@ -21,8 +22,10 @@ import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/viewerColormap'
 import { channelHexFrom } from '../../utils/viewerProps'
 import { fmtContrastWindow } from '../../utils/contrastReadout'
 import { WHITE } from '../../plots/fixedColours'
+import { CHIP_COLLAPSE_ABOVE } from '../../utils/chipSelect'
+import { matchesQuery } from '../../utils/textQuery'
 
-defineProps<{
+const props = defineProps<{
   /** the channels shown (the window caps how many) */
   channels: { name: string; visible: boolean; lo: number; hi: number; lut: number[][] }[]
   /** the image's channel count — more than `channels.length` says the list is clipped */
@@ -59,6 +62,12 @@ const emit = defineEmits<{
   range: [c: number, lo: number, hi: number]
 }>()
 const settings = useSettingsStore()
+
+// Search box for a long channel list; transient on purpose — a filter that survives a reload hides
+// channels from someone who has forgotten it is set.
+const query = ref('')
+const searchable = computed(() => props.channels.length > CHIP_COLLAPSE_ABOVE)
+const nMatching = computed(() => props.channels.filter(ch => matchesQuery([ch.name], query.value)).length)
 
 // Auto-contrast tuning popover; not persisted, because a popover that reopens on reload is its own bug.
 const autoTuneOpen = ref(false)
@@ -146,7 +155,10 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
       </button>
       </div>
     </div>
-    <div v-for="(ch, c) in channels" :key="c"
+    <input v-if="searchable" v-model="query" type="search" class="cc-input-xs vw-ch-search"
+           placeholder="Search channels" aria-label="Search channels"
+           v-tooltip.bottom="'Narrow the list by name'" />
+    <div v-for="(ch, c) in channels" :key="c" v-show="matchesQuery([ch.name], query)"
          :class="['vw-ch cc-card cc-card-2', { 'vw-ch-compact': isCompact(compact, flips, c) }]">
       <div class="cc-row cc-row-tight">
         <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-ch-fold"
@@ -199,6 +211,7 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
               v-tooltip.left="`${ch.lo} – ${ch.hi}`">{{ fmtContrastWindow(ch.lo, ch.hi) }}</span>
       </div>
     </div>
+    <div v-if="searchable && !nMatching" class="cc-empty cc-empty-inline">No channel matches</div>
     <div v-if="clipped" class="cc-muted-warn cc-fs-2xs">
       Showing {{ channels.length }} of {{ nC }} channels
     </div>
@@ -226,6 +239,7 @@ const channelHex = (ch: { lut: number[][] }): string => channelHexFrom(ch.lut ??
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
 .vw-ch-master { margin-bottom: 0.35rem; }
+.vw-ch-search { width: 100%; box-sizing: border-box; margin-bottom: 0.35rem; }
 .vw-ch-master-end { margin-left: auto; }
 /* FIXED width, not min-width: a readout that grows with its digits shifts the slider beside it, so
    channels with different windows stop lining up. 11ch fits the longest `fmtContrast` window
