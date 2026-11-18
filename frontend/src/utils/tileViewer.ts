@@ -71,10 +71,11 @@ export function tileMaskSourceId(o: {
  * (a durable-store rewrite, a live run promoted to its final store). Drawing the previous bytes until
  * the new ones land is what keeps a refresh from blanking the mask; another segmentation's bytes must
  * never draw under the new name. A task preview is never "the same": its re-run is another parameter
- * set, the very thing being compared.
+ * set, the very thing being compared — but the SAME preview run is itself, or its bytes never draw.
  */
 export function sameMaskLayer(slotSource: string, current: string): boolean {
   if (!slotSource || !current) return false
+  if (slotSource === current) return true
   const [a, aStore = ''] = slotSource.split('|'), [b, bStore = ''] = current.split('|')
   if (aStore.startsWith('preview') || bStore.startsWith('preview')) return false
   return a === b
