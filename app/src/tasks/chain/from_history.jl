@@ -287,6 +287,7 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
         at = Dates.format(Dates.unix2datetime(run.created_at), "yyyy-mm-ddTHH:MM:SS")
         for uid in run.image_uids, node in run.template_snapshot.nodes
             uid in want || continue
+            node.after_live && continue   # a "Queue after" step waited; the run it waited for is logged itself
             st = get(run.image_states[uid], node.id, nothing)
             (st === nothing || st.status != NODE_DONE) && continue
             # with the overrides the run recorded — what the step ran with, not just the template's values

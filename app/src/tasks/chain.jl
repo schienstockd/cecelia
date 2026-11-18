@@ -15,6 +15,7 @@ import SHA
 #                    JSON write after every state transition).
 #   execute.jl     — the ~800-line execution engine: topo sort, per-image threads, barriers,
 #                    resume/reset, and the three node runners (image-scope, set-scope, incremental).
+#   after_live.jl  — the "Queue after" node: waits for runs already going instead of starting one.
 #   api.jl         — the public entry points: `load_chain_run`, `run_chain` (two methods),
 #                    `chain_node`, `make_chain`.
 #
@@ -36,6 +37,7 @@ include(joinpath(@__DIR__, "chain", "validate.jl"))
 include(joinpath(@__DIR__, "chain", "persistence.jl"))
 include(joinpath(@__DIR__, "chain", "execute.jl"))
 include(joinpath(@__DIR__, "chain", "manual.jl"))
+include(joinpath(@__DIR__, "chain", "after_live.jl"))
 include(joinpath(@__DIR__, "chain", "api.jl"))
 include(joinpath(@__DIR__, "chain", "from_history.jl"))
 include(joinpath(@__DIR__, "chain", "history_params.jl"))
