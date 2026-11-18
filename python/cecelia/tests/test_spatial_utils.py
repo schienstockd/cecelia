@@ -466,5 +466,37 @@ class TestPooledImageGraphPerFrame(unittest.TestCase):
         self.assertGreater(framed["nnObserved"], pooled["nnObserved"])
 
 
+class TestGraphRadiusIsMicrons(unittest.TestCase):
+    """The neighbour graph's prune radius is µm: on a calibrated image (0.5 × 0.5 × 2 µm) no edge is longer
+    than the radius in µm, worked out here from the raw pixel centroids, and the graph differs from the one
+    built in pixels — so a dropped conversion fails instead of passing on 1 µm/px. Needs squidpy."""
+    RADIUS = 30.0
+
+    def _build(self, fx, sizes_zyx, labels):
+        from cecelia.utils.spatial_utils import build_pooled_image_graph
+        segs = [{"valueName": fx.value_name, "propsPath": fx.table, "labels": labels}]
+        adata, obs = build_pooled_image_graph(segs, sizes_zyx, method="delaunay", radius=self.RADIUS)
+        conn = adata.obsp["spatial_connectivities"].tocoo()
+        lab = obs["label"].to_numpy()
+        return {tuple(sorted((int(lab[i]), int(lab[j])))) for i, j in zip(conn.row, conn.col)}
+
+    def test_prune_radius_is_in_microns(self):
+        from cecelia.tests.fixture_registry import fixture_for
+        from cecelia.utils.label_props_utils import LabelPropsView
+        fx = fixture_for("cells", "movie", "calibrated")
+        sizes = [float(fx.meta[k]) for k in ("PhysicalSizeZ", "PhysicalSizeY", "PhysicalSizeX")]
+        self.assertNotEqual(sizes, [1.0, 1.0, 1.0])
+        view = LabelPropsView(fx.table).only_centroid_cols()
+        d = view.as_df(); view.close()
+        d = d[d["centroid_t"] < 3]                                  # three frames: enough edges, quick
+        labels = d["label"].astype(int).tolist()
+        um = {int(r.label): np.array([r.centroid_x * sizes[2], r.centroid_y * sizes[1], r.centroid_z * sizes[0]])
+              for r in d.itertuples()}
+        edges = self._build(fx, sizes, labels)
+        self.assertGreater(len(edges), 0)
+        self.assertLessEqual(max(np.linalg.norm(um[a] - um[b]) for a, b in edges), self.RADIUS + 1e-6)
+        self.assertNotEqual(edges, self._build(fx, [1.0, 1.0, 1.0], labels))
+
+
 if __name__ == "__main__":
     unittest.main()

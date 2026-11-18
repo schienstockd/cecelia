@@ -58,6 +58,16 @@ projects/testpr/
                               # timepoints + the `uns` orientation block (3 frames x 4x4 boxes)
 ```
 
+`testpr/1/KDIeEx/labelProps/aniso__branch.h5ad` is a second SYNTHETIC branch table that disagrees with
+KDIeEm's: two frames (t 0 and 5), anisotropy 0.55 / 0.66 — for "a second branch table / a second image"
+reads (`make_aniso_fixture.py` writes both).
+
+`graph-cross/` (outside `projects/`, so no other test sees a second segmentation or a fourth graph):
+`T.h5ad` is B's cells on frames 0–2 whose label is divisible by 3, moved 7 px along x — a second
+segmentation whose labels are B's; `cross.h5ad` is the real graph builder over B and T. A test copies
+both into a temp project (`labelProps/T.h5ad`, `spatialGraph/cross.h5ad`). Regenerate with
+`make_spatial_graph_fixture.py`.
+
 `testpr/1/KDIeEx/` is a SECOND image derived from KDIeEm so the two disagree: `labelProps/B.h5ad` is
 KDIeEm's B without whole tracks whose id is divisible by 3 and untracked cells whose label is (933 of
 1377 cells), with `area` doubled; `B__tracks.h5ad` drops the same tracks (43 of 62) with
