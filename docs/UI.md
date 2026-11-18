@@ -3213,8 +3213,8 @@ UI conventions specific to these pages:
   sidecar via `GET /api/gating/channels`; channel rows aggregate by RAW name and relabel via `nameMap`.
 - **The population manager is the shared, pop_type-agnostic one.** A cluster pop has no gate — it is a
   filter on `clusters.{suffix}` — so in cluster mode the manager shows "Add population" plus ONE shared
-  **cluster strip**: each chip coloured by the pop holding it, a click puts it into the *selected* row
-  (moving it out of any other pop — a cluster lives in at most one), hovering a row lights its chips.
+  **cluster strip**: each chip coloured by the pop holding it, a click puts it into the *selected* row (click the row again, or the header ✕, to deselect)
+  (moving it out of any other pop — a cluster lives in at most one), the hovered row — else the selected one — lights its chips.
   Rows are one line with a cluster count; strip clicks undo/redo (`docs/POPULATION.md` → *Undo / redo*). Writes mirror across the run's images (`mirrorUids`); a banner names selected
   images outside the run, with a "Select clustered images" button driving `selectUids`.
 - **Highlight → overlays.** The manager's per-pop eye feeds `shownPops`: UMAP recolours from cached codes

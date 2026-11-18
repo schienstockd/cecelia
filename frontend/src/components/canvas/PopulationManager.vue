@@ -121,7 +121,10 @@ const beginRename = (p: FlatPop) => beginRenameAt(p.path, p.name)
 // browser volume viewer needed the same control. It owns the popover, the palette and the anchor, so the
 // `colourPop`/`colourAnchor` bookkeeping this file used to carry is gone.
 
-function pick(p: FlatPop) { emit('update:selected', p.path) }
+// cluster mode: clicking the selected row again deselects it, so the strip can be disarmed (gating keeps a selection)
+function pick(p: FlatPop) {
+  emit('update:selected', clusterMode.value && p.path === props.selected ? '' : p.path)
+}
 const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
   // reserved-prefix + same-list duplicate are caught here for instant feedback; a cross-pop-type
   // collision is rejected by the server (pop_name_conflict) and surfaced via the store's error toast.
@@ -271,8 +274,10 @@ const armedPop = computed(() => clusterMode.value
   ? visiblePops.value.find(p => p.path === props.selected && p.filter) : undefined)
 const hoverPath = ref<string | null>(null)
 const hoverPop = computed(() => hoverPath.value ? visiblePops.value.find(p => p.path === hoverPath.value) : undefined)
-const isHoverLit = (id: number) => !!hoverPop.value && popClusterIds(hoverPop.value).includes(id)
-const isHoverDim = (id: number) => !!hoverPop.value && !isHoverLit(id)
+// strip focus: the hovered row, else the selected (armed) one — so filling a pop keeps its clusters lit
+const focusPop = computed(() => hoverPop.value ?? armedPop.value)
+const isFocusLit = (id: number) => !!focusPop.value && popClusterIds(focusPop.value).includes(id)
+const isFocusDim = (id: number) => !!focusPop.value && !isFocusLit(id)
 function chipStyle(id: number) {
   const o = clusterOwner(id)
   return o ? { background: o.colour, borderColor: o.colour, color: 'var(--cc-on-bright)' } : {}
@@ -629,16 +634,18 @@ function moveTo(target: string) {
       <!-- cluster mode: ONE shared strip of the run's clusters, each chip coloured by the population that
            holds it (white = in none). Clicking puts the cluster into the SELECTED population row (or takes
            it out, if it is already there).
-           Hovering a row lights its clusters here. -->
+           The hovered row (else the selected one) lights its clusters here. -->
       <div v-if="clusterMode && visiblePops.length" class="pm-clusters" data-guide="popmanager.clusterChips">
         <div class="pm-clusters-head cc-fs-2xs">
           <template v-if="readonly">Clusters</template>
-          <template v-else-if="armedPop">Click to put into <b :style="{ color: armedPop.colour }">{{ armedPop.name }}</b></template>
+          <template v-else-if="armedPop">Click to put into <b :style="{ color: armedPop.colour }">{{ armedPop.name }}</b>
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro pm-disarm" v-tooltip.bottom="'Deselect'"
+                    @click.stop="emit('update:selected', '')"><i class="pi pi-times" /></button></template>
           <template v-else>Select a population, then click clusters</template>
         </div>
         <div class="pm-chip-grid cc-row cc-row-tight">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
-                  :class="{ on: !!clusterOwner(id), ro: readonly || !armedPop, lit: isHoverLit(id), dim: isHoverDim(id) }"
+                  :class="{ on: !!clusterOwner(id), ro: readonly || !armedPop, lit: isFocusLit(id), dim: isFocusDim(id) }"
                   :disabled="readonly || !armedPop"
                   :style="chipStyle(id)"
                   v-tooltip.bottom="chipTip(id)"
@@ -958,8 +965,10 @@ function moveTo(target: string) {
 button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
 button.pm-filter-badge:hover { opacity: 1; }
 .pm-clusters { padding: 4px 8px 6px; border-bottom: 1px solid var(--cc-border); }
-.pm-clusters-head { color: var(--cc-text-dim); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* fixed height: the armed name + ✕ appearing must not push the chips down */
+.pm-clusters-head { height: 1rem; line-height: 1rem; color: var(--cc-text-dim); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-chip-grid { gap: 2px; }
+.pm-disarm { margin-left: 2px; vertical-align: top; }
 .pm-chip.lit { outline: 2px solid var(--cc-accent-strong); outline-offset: 1px; }
 .pm-chip.dim { opacity: 0.35; }
 .pm-ncl { color: var(--cc-text-dim); white-space: nowrap; }
