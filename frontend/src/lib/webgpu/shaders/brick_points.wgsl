@@ -6,6 +6,7 @@
 
 #include "brick_common.wgsl"
 #include "overlay_quads.wgsl"
+#include "lens.wgsl"
 
 struct POut {
   @builtin(position) pos: vec4<f32>,
@@ -43,5 +44,5 @@ struct POut {
 @fragment fn fs(in: POut) -> @location(0) vec4<f32> {
   let c = markerColour(in.local, in.rgb, in.px.x, in.px.y);
   if (c.a <= 0.001) { discard; }
-  return c;
+  return vec4(c.rgb * lensShade(in.pos.xy), c.a);   // dims outside a spotlight lens (lens.wgsl)
 }

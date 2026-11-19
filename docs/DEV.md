@@ -285,6 +285,7 @@ parallel jobs per OS**, split by what each needs installed:
 | `julia` | pixi + Julia + depot cache | **package tests** (the long pole) |
 | `server` | pixi + Julia + Node | API tests → frontend build → **frontend tests (Vitest)** → server serves `/api/health` + the frontend |
 | `python` | pixi only | **Python tests** → MCP tests |
+| `gui` | Node only, **Linux only** | **GUI tests** (Chromium, the runner's Chrome) — advisory while its flake rate is measured |
 
 Jobs run concurrently, so wall-clock is the longest job, not the sum. It runs as a
 **matrix on Linux, Windows and macOS-arm64** (`fail-fast: false`), so a
@@ -401,6 +402,18 @@ toolchain.
   taken here. Vitest is zero-config on top of the existing Vite toolchain, so the category stays cheap.
   The convention this enforces: **keep testable logic in plain `.ts` modules, not the component**, so it
   can be unit-tested without mounting Vue.
+- **GUI (browser):** `pixi run test-gui` (`npm run test:browser` in `frontend/`). `*.browser.test.ts`
+  mount a component in a real Chromium (vitest browser mode, the SYSTEM browser via
+  `scripts/lib/chromium.mjs`, `CECELIA_CHROMIUM` picks it) and **measure the DOM**: where a pinned header
+  or a frozen column lands after a scroll. For what Node can't see — layout and interaction — in shared
+  components; not page layouts (those churn). Mount with `mountInto` from `src/test/browser/mount.ts`
+  (the app's own `installAppPlugins`), wait with `frames()`, never a sleep; expected positions come from
+  the scenario's geometry, not from the code under test. The setup file **fails any test that reaches
+  the network** (`fetch` / `WebSocket` are replaced) or trips a ResizeObserver loop, and the config
+  drops the dev `server` block (the proxy to your live :8080, the 5173 port) — guarded by
+  `src/test/browser/vitestBrowserConfig.test.ts`. A rendering bug that reached someone's eyes gets a
+  browser test in its fix PR, watched failing against the old code. Plan:
+  `docs/todo/GUI_TESTING_PLAN.md`.
 - **Python (analysis env):** `pixi run test-py` — the Pixi-env Python code Julia drives via `run_py`
   (segmentation, measurement, corrections, the zarr/dask I/O layer): anywhere logic can silently produce
   wrong data on disk. stdlib `unittest`, auto-discovered from `python/cecelia/tests/test_*.py`

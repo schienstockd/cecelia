@@ -58,6 +58,7 @@ import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import TaskPreviewControls from '../components/TaskPreviewControls.vue'
 import { previewValueName } from '../utils/taskPreview'
+import { liveGroups, queueAfterTemplate, type LiveGroup } from '../utils/queueAfter'
 import { taskParamsName, namesParamsRecord, taskReads } from '../utils/taskOutput'
 import { staleReadNote } from '../lib/staleOutputs'
 import { useStaleOutputsStore } from '../stores/staleOutputs'
@@ -799,7 +800,7 @@ function dispatch(def: TaskDef, params: ParamValues, at: SweepTarget): string[] 
     const repName = at.names[0] ?? rep
     const label = uids.length > 1 ? `${def.label} (${uids.length} images)` : def.label
     const t = taskStore.add({
-      module: props.module, label, imageUid: rep, imageName: repName,
+      module: props.module, label, imageUid: rep, imageName: repName, imageUids: [...uids],
       status: 'queued', taskName: def.task, funName: def.fun_name,
       params: params as Record<string, unknown>, projectUid: at.projectUid,
       pool: at.pool,
@@ -860,6 +861,27 @@ const runLabel = computed(() => {
   const k = sweepPlan.value?.runs.length
   return `Run ${k ? `${k}× ` : ''}on ${n} image${n > 1 ? 's' : ''}`
 })
+
+// ── Queue after: run this once what is already going on the selection finishes (utils/queueAfter.ts) ──
+// Not offered for a sweep (one chain per value is not what the user asked for) or a cluster run (chains
+// run on this computer).
+const queueAfterGroups = computed<LiveGroup[]>(() =>
+  (sweepPlan.value || onHpc.value) ? [] :
+    liveGroups(taskStore.tasks, props.selectedUids, projectUid.value))
+
+function queueAfter(live: LiveGroup) {
+  if (!canRun.value || !taskDef.value) return
+  const def = taskDef.value
+  profileStorage.setItem(`cc-fn:${props.module}`, def.task)
+  drafts.set(currentDraftKey.value, paramValues.value)   // as `run()`: keep what was submitted
+  const template = queueAfterTemplate(live, {
+    funName: def.fun_name, label: def.label, scope: def.scope === 'set' ? 'set' : 'image',
+    params: flattenParams(def, runValues.value) as Record<string, unknown>, pool: selectedPool.value,
+  })
+  log.info(`Queued "${def.label}" after "${live.label}" on ${props.selectedUids.length} image(s)`,
+           { source: props.module, detail: JSON.stringify(template, null, 2) })
+  ws.send({ type: 'chain:run', projectUid: projectUid.value, imageUids: [...props.selectedUids], template })
+}
 
 // ── Cancel all running/queued tasks for this module ────────────────────────
 const activeTasks = computed(() =>
@@ -1172,6 +1194,16 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
         />
       </div>
 
+      <!-- Queue after: the same run, started when what is already going on these images finishes -->
+      <button v-for="g in queueAfterGroups" :key="g.funName"
+        class="cc-btn cc-btn-ghost cc-fs-xs queue-after-btn"
+        :disabled="!canRun"
+        @click="queueAfter(g)"
+        v-tooltip.left="`Run on the selected images once ${g.label} finishes`">
+        <i class="pi pi-forward" />
+        Queue after {{ g.label }}
+      </button>
+
       <!-- The pool is picked from the task; changing it is rare, so it sits behind one quiet button
            together with the throttle (progressive disclosure), not as chips on every page. -->
       <div class="pool-row" v-if="pools.length > 0">
@@ -1360,5 +1392,6 @@ function showTaskList() { if (pane.value !== 'bottom') togglePane('bottom') }
 /* Run + Preview on one line. `stretch` is what makes the preview buttons match Run's height without
    either side hardcoding a number — so a change to Run's padding can't silently desync them. */
 .run-row { display: flex; align-items: stretch; gap: 0.4rem; flex-wrap: wrap; }
-.run-btn { flex: 1 1 auto; width: auto; min-width: 0; }   /* + .cc-btn .cc-btn-primary .cc-btn-run; shares the row with Preview */
+.run-btn { flex: 1 1 auto; width: auto; min-width: 0; }
+.queue-after-btn { width: 100%; margin-top: 0.3rem; justify-content: center; }   /* + .cc-btn .cc-btn-primary .cc-btn-run; shares the row with Preview */
 </style>

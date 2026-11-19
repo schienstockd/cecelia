@@ -1,4 +1,5 @@
 #include "brick_common.wgsl"
+#include "lens.wgsl"
 // Current-level page table — slots span all N atlases (Decision 2 of the parent plan).
 // atlasSample decodes global slot → (atlasIndex, localSlot) below.
 @group(0) @binding(${PT_BINDING}) var<storage, read> pt: array<u32>;
@@ -169,7 +170,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
 
   let t = hitBox(org, rd, h);
   let t0 = max(t.x, 0.0);
-  if (t.y <= t0) { return vec4(0.0, 0.0, 0.0, 1.0); }
+  if (t.y <= t0) { return vec4(lensRim(vec3(0.0), in.pos.xy), 1.0); }
 
   let n = i32(p.cam.w);
   let dt = (t.y - t0) / f32(n);
@@ -195,8 +196,9 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
       mx[ci] = max(mx[ci], v);
     }
   }
+  let inLens = lensIn(in.pos.xy);   // the channel lens draws its own set (lens.wgsl)
   for (var ci = 0; ci < nch; ci = ci + 1) {
-    if (p.ch[ci].z < 0.5) { continue; }
+    if (!chOn(ci, inLens)) { continue; }
     let lo = p.ch[ci].x;
     let hi = p.ch[ci].y;
     let win = clamp((mx[ci] - lo) / max(hi - lo, 1.0), 0.0, 1.0);
@@ -216,5 +218,5 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
       else if (labInPick(labId)) { acc = vec3(1.0, 1.0, 1.0); }
     }
   }
-  return vec4(min(acc, vec3(1.0)), 1.0);
+  return vec4(lensRim(min(acc, vec3(1.0)), in.pos.xy), 1.0);
 }

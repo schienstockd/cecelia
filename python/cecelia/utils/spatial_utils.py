@@ -705,7 +705,7 @@ def pool_region_rows(blocks):
 def cluster_composition(X, var_names, method="leiden", num_clusters=5, resolution=1.0,
                         create_umap=True, random_state=0, log=None, run_env=None):
     """Cluster neighbourhood-composition rows (`clustRegions`): one row per cell, or per track when a
-    run pools per track. k-means (fixed count, sklearn) or Leiden through `find_populations` with no
+    run pools per track. k-means (fixed count, sklearn) or Leiden through `find_populations_on_distinct_rows` with no
     transform/normalisation — the rows are already fractions in [0, 1]. Returns an AnnData whose obs
     `clusters` holds string codes and, with `create_umap`, `obsm['X_umap']`."""
     import anndata as ad
@@ -724,11 +724,25 @@ def cluster_composition(X, var_names, method="leiden", num_clusters=5, resolutio
             sc.pp.neighbors(adata, use_rep="X")
             sc.tl.umap(adata, random_state=random_state)
     else:
-        from cecelia.utils.clustering_utils import find_populations
-        find_populations(adata, resolution=resolution, axis="NONE", transformation="NONE",
-                         create_umap=create_umap, backend="auto", random_state=random_state,
-                         log=log, run_env=run_env if run_env is not None else {})
+        # compositions repeat exactly (k/6 steps on a Delaunay graph), which splits Leiden's kNN graph
+        # into one island per repeated vector — cluster the distinct vectors once, then map back
+        from cecelia.utils.clustering_utils import find_populations_on_distinct_rows
+        find_populations_on_distinct_rows(adata, resolution=resolution, axis="NONE", transformation="NONE",
+                                          create_umap=create_umap, backend="auto", random_state=random_state,
+                                          log=log, run_env=run_env if run_env is not None else {})
     return adata
+
+
+def drop_empty_other(comp_obs, other_col):
+    """Drop the "other" composition column from `comp_obs` (column name → per-cell values) when it is
+    all zero, and say whether it was. It is all zero exactly when the graph holds nothing outside the
+    basis (built over the basis populations themselves): then it is no measurement, only a flat heatmap
+    row that invites "where does this come from?". The region run tells Julia, so the clustfeatures
+    sidecar doesn't advertise it, which keeps the option on by default without a dead measure."""
+    if other_col in comp_obs and not np.any(np.asarray(comp_obs[other_col]) > 0):
+        del comp_obs[other_col]
+        return True
+    return False
 
 
 def broadcast_clusters(clustered, X, obs, inverse=None):

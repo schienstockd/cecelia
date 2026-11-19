@@ -15,6 +15,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
+import { tooManyClustersToDraw, tooManyClustersText } from '../../utils/clusterLimit'
 import { useObserverStore } from '../../stores/observer'
 import { ref, computed, watch } from 'vue'
 import { useGatingStore, type FlatPop } from '../../stores/gating'
@@ -30,7 +31,7 @@ import ColourPicker from '../ColourPicker.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
-import { popNameError, popPath, isInSubtree } from '../../utils/popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName } from '../../utils/popName'
 import { claudeProposal } from '../../utils/authorStamp'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
@@ -47,6 +48,7 @@ import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
 import { SEVERITY } from '../../lib/severity'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
+import { allSelected } from '../../utils/tableSelection'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
 const AXIS_OPTIONS: ChipOption[] = [
@@ -147,20 +149,42 @@ const RUN_STALE_TIP = 'Clustering re-run since — check its clusters, then clic
 // through the bag channel before the write's refetch ping, and holds with the pop-out closed.
 const viewerEyeOn = (p: FlatPop) => !g.imageUid ? p.show : popEyeOn(
   new Map([[g.valueName, settings.getPopEyes(g.imageUid, g.valueName)]]), g.valueName, g.popType, p.path, p.show)
-async function toggleViewer(p: FlatPop) {
-  const on = !viewerEyeOn(p), k = eyeKey(g.popType, p.path)
+// one write path for a single eye and for the "all" toggle: every eye first (one settings pass per
+// image), then the pops' `show` — not undoable server-side (looking, not editing) — then ONE refresh
+async function setViewer(pops: FlatPop[], on: boolean) {
+  if (!pops.length) return
+  const keys = pops.map(p => eyeKey(g.popType, p.path))
   for (const uid of [g.imageUid, ...g.mirrorUids]) {
     if (!uid) continue
-    for (const layer of ['points', 'ribbons'] as const)
-      settings.setPopEyes(uid, g.valueName, { ...settings.getPopEyes(uid, g.valueName, layer), [k]: on }, layer)
+    for (const layer of ['points', 'ribbons'] as const) {
+      const eyes = { ...settings.getPopEyes(uid, g.valueName, layer) }
+      for (const k of keys) eyes[k] = on
+      settings.setPopEyes(uid, g.valueName, eyes, layer)
+    }
     // the ribbon eyes' per-path projection, as the pop-out's `storeRibbonEyes` keeps it
     settings.setTrackPopHidden(uid, g.valueName, new Set(offPaths(settings.getPopEyes(uid, g.valueName, 'ribbons'))))
     // an eye under a switched-off population type draws nothing: turning a pop on turns its type on
     const sw = on ? popTypeSwitch(g.popType) : null, su = sw ? projectStore.setUidOfImage(uid) : null
     if (sw && su) settings.setPopVisible(su, sw, true)
   }
-  await g.updatePop(p.path, { show: on })
+  // sequential: each update rewrites the same popmap file server-side
+  for (const p of pops) await g.updatePop(p.path, { show: on })
   g.refreshOverlays()
+}
+const toggleViewer = (p: FlatPop) => setViewer([p], !viewerEyeOn(p))
+
+// "All" row: one click instead of ticking every row. Mixed → turn the rest ON (the first click
+// completes the set; the second clears it), so a partly-lit list never needs two clicks to show all.
+const allLit = computed(() => allSelected(visiblePops.value.map(p => p.path), props.highlighted))
+function toggleAllHighlight() {
+  const on = !allLit.value
+  for (const p of visiblePops.value) if (isLit(p) !== on) emit('toggleHighlight', p.path)
+}
+const viewerPops = computed(() => visiblePops.value.filter(p => !p.transient))
+const allViewerOn = computed(() => viewerPops.value.length > 0 && viewerPops.value.every(viewerEyeOn))
+const toggleAllViewer = () => {
+  const on = !allViewerOn.value
+  return setViewer(viewerPops.value.filter(p => viewerEyeOn(p) !== on), on)
 }
 
 // ── Undo / redo ───────────────────────────────────────────────────────────────
@@ -264,7 +288,10 @@ async function stepAssign(dir: 'undo' | 'redo') {
 }
 
 async function addClusterPopulation() {
-  const n = visiblePops.value.length, name = `Population ${n + 1}`
+  if (!isClusterPopType(props.popType)) return
+  // named for its run and numbered past every name in the segmentation, not just this run's
+  const n = visiblePops.value.length
+  const name = nextClusterPopName(props.suffix, props.popType, g.flat.map(p => p.name))
   await g.addClusterPop(name, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
   // select the new pop so the strip's next click fills it — "add, then click clusters" in one go
   const made = [...visiblePops.value].reverse().find(p => p.name === name)
@@ -645,7 +672,9 @@ function moveTo(target: string) {
                     @click.stop="emit('update:selected', '')"><i class="pi pi-times" /></button></template>
           <template v-else>Select a population, then click clusters</template>
         </div>
-        <div class="pm-chip-grid cc-row cc-row-tight">
+        <span v-if="tooManyClustersToDraw(props.clusterIds.length)" class="pm-chip-empty cc-empty-inline cc-fs-2xs">
+          {{ tooManyClustersText(props.clusterIds.length) }}</span>
+        <div v-else class="pm-chip-grid cc-row cc-row-tight">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
                   :class="{ on: !!clusterOwner(id), ro: readonly || !armedPop, lit: isFocusLit(id), dim: isFocusDim(id) }"
                   :disabled="readonly || !armedPop"
@@ -658,6 +687,23 @@ function moveTo(target: string) {
 
       <div v-if="!visiblePops.length" class="pm-empty cc-muted">
         {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
+      </div>
+
+      <!-- "All" row: the eye + viewer toggles for every population at once, in the rows' own columns.
+           Only worth its height once there is more than one row to tick. -->
+      <div v-if="visiblePops.length > 1" class="pm-row pm-allrow" data-guide="popmanager.allToggles">
+        <span class="pm-name cc-fs-2xs cc-muted">All populations</span>
+        <button class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: allLit }"
+                v-tooltip.left="allLit ? 'Hide all on plots' : 'Highlight all on plots'"
+                @click.stop="toggleAllHighlight">
+          <i :class="allLit ? 'pi pi-eye' : 'pi pi-eye-slash'" />
+        </button>
+        <button v-if="viewerPops.length" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: allViewerOn }"
+                v-tooltip.left="allViewerOn ? 'Hide all in viewer' : 'Show all in viewer'"
+                @click.stop="toggleAllViewer">
+          <i class="pi pi-images" />
+        </button>
+        <span class="pm-icon pm-allrow-pad cc-btn cc-btn-bare cc-btn-icon" aria-hidden="true"><i class="pi pi-ellipsis-h" /></span>
       </div>
 
       <template v-for="p in visiblePops" :key="p.path">
@@ -893,6 +939,10 @@ function moveTo(target: string) {
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
+/* the "All" row is a control strip, not a population: no pick-hover, the ⋯ column kept as a spacer */
+.pm-allrow { cursor: default; }
+.pm-allrow:hover { background: none; }
+.pm-allrow-pad { visibility: hidden; }
 .pm-row.transient { font-style: italic; background: color-mix(in srgb, var(--cc-ink-cyan) 8%, transparent); }
 .pm-viewer { width: 16px; text-align: center; font-size: var(--cc-fs-md); }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

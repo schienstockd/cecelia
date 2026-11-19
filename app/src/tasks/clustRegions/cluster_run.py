@@ -31,6 +31,9 @@ import cecelia.utils.spatial_utils as spatial_utils
 import cecelia.utils.clustering_utils as clustering_utils
 from cecelia.utils.atomic_io import write_json_atomic
 
+# Most regions a run may write (see the check after clustering).
+MAX_REGIONS = 200
+
 
 def run(params):
     log = script_utils.get_logfile_utils(params)
@@ -147,26 +150,25 @@ def run(params):
     # back to one row per CELL for the write-back (per track: every cell takes its track's region)
     adata = spatial_utils.broadcast_clusters(clustered, X, obs, inverse)
 
-    # ── persist the composition vectors as continuous per-cell measures so the region-composition
-    # heatmap reuses the cluster-heatmap (region × measures) — no new plot family (SPATIAL_REGIONS_PLAN
-    # Decision 16). Names were resolved above from Julia's `compCols`/`otherCol`, which are ALSO what the
-    # clustfeatures sidecar records for the heatmap — one namer, so the two cannot drift. ──
+    # hundreds of regions is not a result, and the pages draw a label, legend row and heatmap column per
+    # region — refuse to write it rather than leave a run that freezes the browser
+    n_regions = adata.obs["clusters"].nunique()
+    if n_regions > MAX_REGIONS:
+        log.log(f"[ERROR] clustRegions: {n_regions} regions — over the limit of {MAX_REGIONS}, nothing "
+                "written. Lower the resolution, or choose k-means with a set number of regions.")
+        raise SystemExit(1)
+
+    # ── composition vectors as per-cell measures, so the region heatmap reuses the cluster heatmap
+    # (SPATIAL_REGIONS_PLAN Decision 16); names are Julia's `compCols`/`otherCol`, one namer for both ──
     comp_obs = {comp_cols[j]: X[:, j] for j in range(len(comp_cols))}
     if windows:
         comp_obs[density_col] = density[inverse]       # cells in its window per frame (edge-corrected)
 
-    # DON'T persist an all-zero "other" column. It is all-zero exactly when the graph contains nothing
-    # outside the basis — i.e. the graph was built over the basis populations themselves — and then it is
-    # not a measurement, just a flat row in the composition heatmap that invites "where does this come
-    # from?". Dropping it here (and telling Julia, so the clustfeatures sidecar doesn't advertise it)
-    # keeps the option on by default without producing a dead measure for a basis-only graph.
-    other_all_zero = False
-    if inc_other and other_col in comp_obs:
-        if not np.any(comp_obs[other_col] > 0):
-            other_all_zero = True
-            del comp_obs[other_col]
-            log.log(">> every graph neighbour is in the basis — skipping the empty 'other' column "
-                    "(build the graph over the segmentations' all-cells roots to populate it)")
+    # an all-zero "other" column means a basis-only graph, not a measure — dropped, and Julia is told
+    other_all_zero = bool(inc_other) and spatial_utils.drop_empty_other(comp_obs, other_col)
+    if other_all_zero:
+        log.log(">> every graph neighbour is in the basis — skipping the empty 'other' column "
+                "(build the graph over the segmentations' all-cells roots to populate it)")
 
     # ── write regions.{suffix} back per segmentation (shared writer, region column family) ──
     qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log,

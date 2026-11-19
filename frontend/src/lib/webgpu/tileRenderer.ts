@@ -38,8 +38,8 @@ import { retireDestroyed } from './retireDestroyed'
 /** f32 slot of every uniform lane, by name (`shaders/uniforms.json` → "tile"). */
 const U = TILE_LAYOUT.at
 import {
-  MAX_CHANNELS, LUT_STOPS, lutTextureBytes,
-  type ViewerMeta, type ViewerChannel,
+  MAX_CHANNELS, LUT_STOPS, lutTextureBytes, writeLens,
+  type ViewerMeta, type ViewerChannel, type ViewerLens,
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
@@ -166,6 +166,8 @@ export interface TileRenderer {
    *  `OrbitCamera` — no orbit angles here since 2D is always face-on). */
   setCamera(panX: number, panY: number, dist: number): void
   setChannels(channels: ViewerChannel[]): void
+  /** The channel lens, or `null` for none (`ViewerLens`). Takes effect on the next draw. */
+  setLens(lens: ViewerLens | null): void
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
   /** Replace the population point instances (`POINT_STRIDE` floats each, ordered by timepoint). Once
@@ -427,6 +429,7 @@ export async function createTileRenderer(
       u[U.ch.lo + o] = ch ? ch.lo : 0
       u[U.ch.hi + o] = ch ? ch.hi : 1
       u[U.ch.visible + o] = ch && ch.visible ? 1 : 0
+      u[U.ch.lens + o] = ch && ch.lens ? 1 : 0
     }
   }
 
@@ -805,6 +808,7 @@ export async function createTileRenderer(
       u[U.cam.panX] = panX; u[U.cam.panY] = panY; u[U.cam.dist] = dist
     },
     setChannels: setChannelsImpl,
+    setLens(lens) { writeLens(u, U.lens, lens) },
 
     setOverlayPoints(data) {
       if (!usable()) return

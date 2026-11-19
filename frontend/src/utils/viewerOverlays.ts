@@ -979,6 +979,21 @@ export interface OverlayStyle {
  * 3D, or the 3D Depth crop — is itself the selection, so it is drawn exactly: widened, it would mark
  * cells with no signal in the MIP, or in 3D put markers outside the box.
  */
+/**
+ * The planes a 2D marker draws on: `planes` widened by `zTol` on a single plane (see
+ * `setOverlayWindow`), never below plane 0 — a negative low end is the shader's "no filter"
+ * (`offPlanes`, overlay_quads.wgsl), so plane 0 with a tolerance would draw every plane's cells.
+ * A negative `planes[0]` (no filter) passes through.
+ */
+export function overlayPlaneWindow(
+  planes: readonly [number, number], zTol: number, mode: 'plane' | 'volume',
+): [number, number] {
+  const [lo, hi] = planes
+  if (lo < 0) return [lo, hi]
+  const tol = mode === 'plane' && lo === hi ? Math.max(0, zTol) : 0
+  return [Math.max(0, lo - tol), hi + tol]
+}
+
 export function setOverlayWindow(
   r: {
     setOverlayDraw(first: number, count: number, sizePx: number, planeLo: number, planeHi?: number,
@@ -992,15 +1007,13 @@ export function setOverlayWindow(
   points: PointBuffer, segments: SegmentBuffer, t: number, planes: readonly [number, number],
   style: OverlayStyle, mode: 'plane' | 'volume',
 ): void {
-  const [lo, hi] = planes
-  const reach = mode === 'plane' && lo === hi
   r.setOverlaySizeUnit(style.umPerSize)
   const range = t >= 0 ? timepointRange(points, t) : null
-  const tol = reach ? Math.max(0, style.pointZTol) : 0
-  r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0, style.pointPx, lo - tol, hi + tol, style.borderPx)
+  const [pLo, pHi] = overlayPlaneWindow(planes, style.pointZTol, mode)
+  r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0, style.pointPx, pLo, pHi, style.borderPx)
   const tail = t >= 0 && style.tailFrames > 0 ? tailRange(segments, t, style.tailFrames) : null
-  const trackTol = reach ? Math.max(0, style.trackZTol) : 0
-  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, style.tailPx, lo - trackTol, hi + trackTol)
+  const [sLo, sHi] = overlayPlaneWindow(planes, style.trackZTol, mode)
+  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, style.tailPx, sLo, sHi)
   // skeleton lines: the tail's width and plane window, this frame's only
   r.setOverlayLineDraw(skeletonLineRanges(segments, t))
   // Fade by age so a tail reads as a trail in time: the hop arriving now solid, older hops fainter.

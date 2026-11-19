@@ -174,6 +174,38 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
     return adata.obs["clusters"], adata.obsm.get("X_umap")
 
 
+def find_populations_on_distinct_rows(adata, log=None, **kwargs):
+    """`find_populations` for a feature matrix with many EXACTLY repeated rows — clusters each distinct
+    row once and gives every cell its row's cluster (and UMAP position).
+
+    Leiden runs on a kNN graph (15 neighbours). When more than 15 cells share one row, every cell of
+    that row links only to its own copies, so the graph falls apart into one island per repeated row
+    and Leiden returns roughly one cluster per island — resolution cannot merge islands. Neighbourhood
+    compositions are this case: over a ~6-cell Delaunay neighbourhood each fraction is a step of 1/6.
+    Identical rows must share a cluster anyway, so clustering the distinct rows loses nothing that
+    defines a cluster; it does drop how many cells sit on each row from the graph, so a region holding
+    most of the cells can split at a resolution that suits balanced data (weighting rows by their cell
+    count splits it more, not less). On a matrix without repeats it is exactly `find_populations`."""
+    _log = log if callable(log) else (lambda _m: None)
+    X = np.asarray(adata.X)
+    distinct, first, inverse = np.unique(X, axis=0, return_index=True, return_inverse=True)
+    inverse = np.asarray(inverse).ravel()
+    if len(distinct) == X.shape[0]:
+        return find_populations(adata, log=log, **kwargs)
+    _log(f">> {X.shape[0]} rows hold {len(distinct)} distinct values — clustering the distinct rows")
+    sub = adata[np.sort(first)].copy()
+    sub.X = distinct.astype(X.dtype)     # `distinct` is sorted by value; `inverse` indexes into it
+    if len(distinct) < 3:                # too few points for a kNN graph: each value is its own cluster
+        sub.obs["clusters"] = pd.Categorical([str(i) for i in range(len(distinct))])
+    else:
+        find_populations(sub, log=log, **kwargs)
+    codes = sub.obs["clusters"]
+    adata.obs["clusters"] = pd.Categorical(codes.to_numpy()[inverse], categories=codes.cat.categories)
+    if "X_umap" in sub.obsm:
+        adata.obsm["X_umap"] = np.asarray(sub.obsm["X_umap"])[inverse]
+    return adata.obs["clusters"], adata.obsm.get("X_umap")
+
+
 # ── QC: per-segment cluster distribution ─────────────────────────────────────────
 # ── behaviour axes: diffusion map + path position (track runs) ─────────────────────
 def behaviour_axes(adata, features=None, n_axes: int = 2, reverse: bool = False,

@@ -276,3 +276,17 @@ function recent_tasks(; since::AbstractString = "")
     rows = lock(_OUTCOMES_LOCK) do; copy(_OUTCOMES); end
     isempty(since) ? rows : filter(r -> r.finished_at >= since, rows)
 end
+
+"""
+    banked_task_outcome(task_id) -> "done" | "failed" | "cancelled" | nothing
+
+How the run under `task_id` ended, if this process banked it (`nothing` = not banked: still going, never
+seen here, or past the cap). The chain's "Queue after" step reads it for a run another process ran
+(`chain/after_live.jl`).
+"""
+function banked_task_outcome(task_id::AbstractString)::Union{String,Nothing}
+    lock(_OUTCOMES_LOCK) do
+        i = findlast(r -> r.id == task_id, _OUTCOMES)
+        isnothing(i) ? nothing : _OUTCOMES[i].status
+    end
+end

@@ -253,6 +253,9 @@ export interface ChainNodeSpec {
   params: Record<string, unknown>
   barrier_policy: string
   resource_pool: string
+  // "Queue after" wait step (app/src/tasks/chain/after_live.jl): starts nothing, waits for the runs of
+  // `fn` already going. Only on the runner's inline chains; absent on every saved template.
+  after_live?: boolean
 }
 
 export interface ChainEdgeSpec {

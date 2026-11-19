@@ -56,7 +56,7 @@ class ClusterRegionsRunnerQcTest(unittest.TestCase):
             adata.obs['clusters'] = pd.Categorical(['0'] * adata.n_obs)
             run_env['device'] = 'cpu'
 
-        with mock.patch.object(cu, 'find_populations', side_effect=fake_find), \
+        with mock.patch.object(cu, 'find_populations_on_distinct_rows', side_effect=fake_find), \
              mock.patch.object(cu, 'split_back_and_write',
                                lambda *a, **k: {'nClusters': 1, 'perSegment': []}), \
              tempfile.TemporaryDirectory() as td:
@@ -181,7 +181,28 @@ class ClusterRegionsRunnerQcTest(unittest.TestCase):
             'randomState': 0, 'qcOutPath': os.path.join(td, 'region_qc.json')})
         return props_path, labels, left
 
-    def _run_chain(self, td, **over):
+    def test_too_many_regions_writes_nothing(self):
+        """A run over the region limit fails before writing: the pages that plot regions draw one label,
+        legend row and heatmap column per region."""
+        from unittest import mock
+        import pandas as pd
+        mod = _load_runner()
+        cu = mod.clustering_utils
+
+        def fake_find(adata, **_kw):   # every cell its own region: one more than the limit allows
+            adata.obs['clusters'] = pd.Categorical([str(i % (mod.MAX_REGIONS + 1))
+                                                    for i in range(adata.n_obs)])
+
+        write = mock.Mock()
+        with mock.patch.object(cu, 'find_populations_on_distinct_rows', side_effect=fake_find), \
+             mock.patch.object(cu, 'split_back_and_write', write), \
+             mock.patch.object(mod, 'MAX_REGIONS', 3), \
+             tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(SystemExit):
+                self._run_chain(td, runner=mod, clusterMethod='leiden')
+        write.assert_not_called()
+
+    def _run_chain(self, td, runner=None, **over):
         """An 8-cell CHAIN neighbour graph over one segment, clustered once; returns the QC path."""
         import anndata as ad
         import pandas as pd
@@ -209,7 +230,7 @@ class ClusterRegionsRunnerQcTest(unittest.TestCase):
             'clusterMethod': 'kmeans', 'numClusters': 2, 'createUmap': False,
             'randomState': 0, 'qcOutPath': qc_path}
         params.update(over)
-        _load_runner().run(params)
+        (runner or _load_runner()).run(params)
         return qc_path
 
 
