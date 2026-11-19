@@ -1451,7 +1451,8 @@ Two patterns it demonstrates:
   dir, then registers `filepath`/`imChannelNames` on the **new** image's `ccid.json`. It returns
   `{newImageUid, setUid}`; the frontend adds the image live via `/api/images/meta` + `addImagesFromApi`
   (see `stores/ws.ts`). Contrast with the correction tasks, which register a new **version** of the same
-  image via `versioned_set_field!`.
+  image via `versioned_set_field!`. A cancelled or failed run's new image is removed by the scheduler
+  (`docs/SCHEDULER.md` → *Task cancel is acknowledged…*), so the handler just returns `nothing`.
 
 ---
 

@@ -202,6 +202,58 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── A run that does not finish leaves no new images behind ─────────────────────
+# Tasks that make new images (crop, copy, project, bin, resample, register, split into tissues) register
+# each one with `add_image!` before writing it, so a cancelled or failed run would leave them in the set,
+# "pending" forever and unopenable. The scheduler discards what the run registered unless it ends done;
+# a done run keeps them.
+@testset "An unfinished run discards the images it added" begin
+    proj = create_project!(name="newimg-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="src")
+    _NEW_IMAGE_SET[] = s
+    proj_dir = dirname(dirname(s._dir))
+    on_disk(uid) = isdir(joinpath(proj_dir, "1", uid)) || isdir(joinpath(proj_dir, "0", uid))
+    added() = filter(!=(img.uid), String[string(u) for u in
+                     Cecelia.read_state_json(Cecelia.state_file(s._dir); as = Dict{String,Any})["image_uids"]])
+
+    for mode in ("fail", "crash")
+        logs = String[]
+        @test isnothing(run_task(_NewImageTask(), img, Dict{String,Any}("mode" => mode); on_log = l -> push!(logs, l)))
+        @test isempty(added())                                   # gone from the set manifest on disk…
+        @test s.image_uids == [img.uid]                          # …and from the set the task held
+        @test any(l -> occursin("Removed 2 unfinished", l), logs)
+    end
+
+    # cancelled while running
+    _HOLD_TASK_GO[] = Channel{Nothing}(1)
+    tid = "newimgcancel$(rand(1000:9999))"
+    th  = Threads.@spawn run_task(_NewImageTask(), img, Dict{String,Any}("mode" => "hold"); task_id = tid)
+    try
+        @test timedwait(() -> length(added()) == 2, 30.0) === :ok
+        uids = added()
+        @test all(on_disk, uids)
+        @test cancel_task!(tid) === true
+        put!(_HOLD_TASK_GO[], nothing)
+        @test timedwait(() -> istaskdone(th), 30.0) === :ok
+        @test isempty(added())
+        @test timedwait(() -> !any(on_disk, uids), 30.0) === :ok   # discard! removes the dirs in the background
+    finally
+        isready(_HOLD_TASK_GO[]) || put!(_HOLD_TASK_GO[], nothing)
+        timedwait(() -> istaskdone(th), 30.0)
+    end
+    forget_task_start!(tid)
+
+    # a done run keeps what it made
+    @test run_task(_NewImageTask(), img, Dict{String,Any}("mode" => "done")) === true
+    @test length(added()) == 2
+
+    # outside a scheduled run nothing is tracked: an import's add_image! is never undone
+    @test isnothing(get(task_local_storage(), Cecelia._NEW_IMAGES_KEY, nothing))
+    _NEW_IMAGE_SET[] = nothing
+    rm(proj.root; recursive=true)
+end
+
 # ── Cancel kills the task's whole process tree ──────────────────────────────
 # The scheduler holds only the process it launched; a Python runner's own workers (or a shell's
 # background job) are children of it. A cancel that killed only the parent would leave them running
