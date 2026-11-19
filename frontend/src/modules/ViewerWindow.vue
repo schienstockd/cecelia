@@ -5736,7 +5736,8 @@ function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
   if (e.key === ' ') { e.preventDefault(); togglePlay(); return }
-  if (e.key === 'Escape' && ruler.value) { ruler.value = null; return }
+  // an Escape a popover or dialog on top already took is not the ruler's (utils/topmostSurface.ts)
+  if (e.key === 'Escape' && ruler.value && !e.defaultPrevented) { ruler.value = null; return }
   // the ROIs section open: Up / Down step through its list (it takes them from a solo channel)
   if (openSection.value === 'rois' && roiSection.value && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault()
