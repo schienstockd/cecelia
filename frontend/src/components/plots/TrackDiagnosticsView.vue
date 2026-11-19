@@ -78,6 +78,7 @@ const props = defineProps<{
   series?: SeriesTarget[]
   compareMode?: CompareMode
   groupAttr?: string[]
+  groupOrder?: string[]
   poolGroups?: boolean
   popTypes?: PopTypeOption[]
   state: { valueName?: string; mode?: string; popType?: string }
@@ -131,7 +132,7 @@ async function loadValueNames() {
 
 /** The cohort query: the board's compare/population context, translated once (plots/trackGroups.ts). */
 const cohort = computed(() => ({
-  imageUids: props.imageUids, compareMode: props.compareMode, groupAttr: props.groupAttr,
+  imageUids: props.imageUids, compareMode: props.compareMode, groupAttr: props.groupAttr, groupOrder: props.groupOrder,
   poolGroups: props.poolGroups, series: props.series, popType: popType.value,
 }))
 

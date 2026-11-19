@@ -121,6 +121,7 @@ const {
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   manualApply, stagedSel, hasStaged, stagedChangeCount, applyStaged, discardStaged,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
+  attrGroups, setAttrOrder,
 } = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared,
   // The population picker follows the ACTIVE plot's spec, exactly as on the Analysis board. This used
   // to be board-only, on the assumption that a module page's specs all share one popType — which stopped
@@ -198,7 +199,7 @@ const viewContext = (id: number, st: PanelState) => {
                  vis: panelVis(st) }
   return railFor(String(st.kind)) === 'pops'
     ? { ...base, series: panelSeries(id, st), popTypes: popTypesFor(String(st.kind), props.module),
-        compareMode: compareMode.value, groupAttr: panelGroupAttr.value, poolGroups: poolGroups.value }
+        compareMode: compareMode.value, groupAttr: panelGroupAttr.value, groupOrder: attrGroups.value, poolGroups: poolGroups.value }
     : base
 }
 
@@ -533,7 +534,7 @@ watch(segPops, () => {
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
                         :project-uid="projectUid" :image-uid="imageUid"
                         :set-uid="panelSetUid" :image-uids="panelImageUids" :scope="panelScope"
-                        :group-attr="panelGroupAttr"
+                        :group-attr="panelGroupAttr" :group-order="attrGroups"
                         :series="panelSeries(p.id, p.state)" :series-color="seriesColor" :vis="panelVis(p.state)"
                         :ui="p.state" :collapse-series="poolGroups"
                         :reload-token="panelReloadToken(panelSeries(p.id, p.state))" :persist-key="`${ckey}:${p.id}`"
@@ -600,7 +601,8 @@ watch(segPops, () => {
                         :readout="activeReadout" :selection-unused="activeIsPrecomputed"
                         :manual-apply="manualApply" :staged-change-count="stagedChangeCount"
                         :has-staged="hasStaged" :reloadable="true"
-                        @toggle="toggleTarget" @reorder="reorderTargets" @update:scope="scope = $event" @update:vis="setVis"
+                        @toggle="toggleTarget" @reorder="reorderTargets"
+                        :attr-groups="attrGroups" @reorder:attrs="setAttrOrder" @update:scope="scope = $event" @update:vis="setVis"
                         @update:manualApply="manualApply = $event"
                         @apply:staged="applyStaged" @discard:staged="discardStaged"
                         @reload="reload" />

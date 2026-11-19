@@ -11,7 +11,7 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { tkey, pickedOrderChips } from '../../plots/series'
+import { tkey, pickedOrderChips, mergePickOrder } from '../../plots/series'
 import ChipSelect from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
 import type { SegmentationPops } from '../../plots/types'
@@ -51,11 +51,16 @@ const props = defineProps<{
   hasStaged?: boolean
   stagedChangeCount?: number
   reloadable?: boolean | null      // forward to CanvasSidePanel — manual reload button (null = hide)
+  // "compare by attribute": the attribute groups in the order the plots draw them (draggable). Omit, or
+  // fewer than two, and the strip doesn't render.
+  attrGroups?: string[]
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
   /** the picked keys in a new order (dragged) or fewer (a chip clicked off) — the plots' order */
   reorder: [keys: string[]]
+  /** the attribute groups in a new order (dragged) */
+  'reorder:attrs': [groups: string[]]
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
   'update:manualApply': [boolean]
@@ -74,7 +79,14 @@ function pick(vn: string, pop: string, pt: string) { if (!isOff(vn, pop, pt)) em
 const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 // the picked populations in plot order, draggable — only when there is an order to choose
 const orderChips = computed(() => pickedOrderChips(props.selected, props.groups))
-const showOrder = computed(() => !props.selectionUnused && !props.single && props.selected.length > 1)
+const showOrder = computed(() => !props.selectionUnused && !props.single && orderChips.value.length > 1)
+// a chip dropped or dragged reorders only the picks the strip shows; the other slots' picks stay put
+function reorderShown(shown: string[]) {
+  emit('reorder', mergePickOrder(props.selected, shown, orderChips.value.map(c => c.value)))
+}
+const attrChips = computed(() => (props.attrGroups ?? []).map(g => ({ value: g, label: g, tip: g })))
+// a chip clicked off would drop the group from the order, not from the plot — so only a reorder counts
+function reorderAttrs(v: string[]) { if (v.length === attrChips.value.length) emit('reorder:attrs', v) }
 </script>
 
 <template>
@@ -94,9 +106,15 @@ const showOrder = computed(() => !props.selectionUnused && !props.single && prop
     <div v-else-if="single" class="pick-note cc-muted cc-fs-2xs">one at a time</div>
     <div v-if="showOrder" class="pick-order">
       <span class="cc-muted cc-fs-2xs" v-tooltip.left="'Drag to set the order on the plots'">plot order</span>
-      <ChipSelect multiple reorderable :options="orderChips" :model-value="selected"
+      <ChipSelect multiple reorderable :options="orderChips" :model-value="orderChips.map(c => c.value)"
                   aria-label="Population order on the plots"
-                  @update:model-value="v => emit('reorder', v as string[])" />
+                  @update:model-value="v => reorderShown(v as string[])" />
+    </div>
+    <div v-if="!selectionUnused && attrChips.length > 1" class="pick-order">
+      <span class="cc-muted cc-fs-2xs" v-tooltip.left="'Drag to set the order of the attribute groups on the plots'">attribute order</span>
+      <ChipSelect multiple reorderable :options="attrChips" :model-value="attrGroups ?? []"
+                  aria-label="Attribute group order on the plots"
+                  @update:model-value="v => reorderAttrs(v as string[])" />
     </div>
     <template v-for="grp in (selectionUnused ? [] : groups)" :key="grp.valueName">
       <div v-if="grp.populations.length" class="pick-group-head">{{ grp.valueName }}</div>
