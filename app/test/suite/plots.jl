@@ -520,6 +520,11 @@ end
                               by_image=false, matrix_mode="composition", category="regions.x",
                               matrix_normalize=:enrichment)
     @test cc(ez, "2", "/B")["value"] === nothing && cc(ez, "2", "/B")["count"] == 0
+    # more regions than a heatmap can draw is refused, as profile/crosstab are
+    dfr = DataFrame("value_name" => fill("A", nmax + 1), "pop" => fill("/B", nmax + 1),
+                    "regions.x" => Float64.(1:nmax + 1))
+    @test_throws ErrorException Cecelia._summary_agg(dfr, "matrix"; measure=nothing, granularity=:cell,
+        nbins=0, normalize=:none, by_image=false, matrix_mode="composition", category="regions.x")
     # a composition never takes the per-cluster root pooling (that is the profile heatmap's path)
     @test Cecelia._cluster_matrix_suffix("matrix", "regions.x", "composition") === nothing
     @test Cecelia._cluster_matrix_suffix("matrix", "regions.x", "profile") == "x"

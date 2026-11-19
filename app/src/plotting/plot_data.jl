@@ -1171,6 +1171,7 @@ function _composition_matrix(df::DataFrame, cat::AbstractString, catkeys, normal
         counts[(p, k)] = get(counts, (p, k), 0) + 1
     end
     levels = _sort_cats(unique(String[k for k in catkeys if k !== nothing]))
+    _check_matrix_columns(length(levels))
     present = unique(popkeys)
     # rows follow the caller's population order (the picker's), then any it didn't name
     want = pop_order === nothing ? String[] :
