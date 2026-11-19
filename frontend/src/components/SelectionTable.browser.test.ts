@@ -6,7 +6,8 @@
 // (#2361 the last). Each scenario here is one of those arrangements. Expected positions come from the
 // scroll box's own geometry, never from the code under test. docs/todo/GUI_TESTING_PLAN.md, PR 1.
 import { describe, expect, it } from 'vitest'
-import { h, type VNode } from 'vue'
+import { h, ref, type VNode } from 'vue'
+import { userEvent } from 'vitest/browser'
 import SelectionTable from './SelectionTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import BaseModal from './BaseModal.vue'
@@ -110,5 +111,117 @@ describe('SelectionTable stickyHeader', () => {
     expect(parseFloat(getComputedStyle(body).paddingTop)).toBeGreaterThan(0)   // the scenario has padding
     expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)              // …and really scrolls
     await checkPinned(host, body)
+  })
+})
+
+// ── Widths: what `fit` does with the declared column widths (P3a) ─────────────────────────────────
+const width = (el: Element) => el.getBoundingClientRect().width
+const pickWidth = (host: HTMLElement) => width(host.querySelector('thead th.sel-sticky-pick')!)
+const headCell = (host: HTMLElement, label: string) =>
+  [...host.querySelectorAll<HTMLElement>('thead th')].find(th => th.textContent?.trim().startsWith(label))!
+const FILL_COLS = [
+  { key: 'name', label: 'Name', sticky: true, width: 160 },
+  { key: 'c0', label: 'Fixed', width: 100, fixed: true },
+  { key: 'c1', label: 'Last', width: 100 },
+]
+const sized = (columns: typeof FILL_COLS, fit: 'fill' | 'content', extra: Record<string, unknown> = {}) =>
+  h(SelectionTable, { columns, rows: ROWS.slice(0, 5), idKey: 'id', selectionMode: 'multi', selected: [],
+    columnWidthKey: `gui-test-${keyN++}`, fit, ...extra })
+
+describe('SelectionTable fit', () => {
+  it('fill: the table is the container width, and the spare goes to the last resizable column only', async () => {
+    const host = mountInto({ render: () => h('div', { style: 'width:900px' }, [sized(FILL_COLS, 'fill')]) })
+    await frames(3)
+    expect(width(host.querySelector('table')!)).toBeCloseTo(900, 0)
+    expect(width(headCell(host, 'Fixed'))).toBeCloseTo(100, 0)            // `fixed` keeps its width
+    expect(width(headCell(host, 'Name'))).toBeCloseTo(160, 0)
+    expect(width(headCell(host, 'Last'))).toBeCloseTo(900 - pickWidth(host) - 160 - 100, 0)
+  })
+
+  it('content: never squeezed below the declared widths in a narrow box, still fills a wide one', async () => {
+    const narrow = mountInto({ render: () => h('div', { style: 'width:300px;overflow-x:auto' }, [sized(FILL_COLS, 'content')]) })
+    await frames(3)
+    expect(width(headCell(narrow, 'Name'))).toBeCloseTo(160, 0)
+    expect(width(headCell(narrow, 'Fixed'))).toBeCloseTo(100, 0)
+    expect(width(narrow.querySelector('table')!)).toBeCloseTo(pickWidth(narrow) + 360, 0)
+    const wide = mountInto({ render: () => h('div', { style: 'width:1200px' }, [sized(FILL_COLS, 'content')]) })
+    await frames(3)
+    expect(width(wide.querySelector('table')!)).toBeCloseTo(1200, 0)
+  })
+})
+
+describe('SelectionTable column resize', () => {
+  it("dragging a header's right edge widens that column by the drag, and a remount keeps it", async () => {
+    const key = `gui-test-resize-${keyN++}`
+    // narrower than the columns: a content table in a WIDER box fills it, spreading the spare over them
+    const render = () => h('div', { style: 'width:400px;overflow-x:auto' },
+      [h(SelectionTable, { columns: FILL_COLS, rows: ROWS.slice(0, 5), idKey: 'id', selectionMode: 'multi',
+        selected: [], columnWidthKey: key, fit: 'content' })])
+    const host = mountInto({ render })
+    await frames(3)
+    const name = headCell(host, 'Name')
+    const grip = name.querySelector<HTMLElement>('.sel-col-resize')!
+    const r = grip.getBoundingClientRect()
+    const at = (x: number) => ({ bubbles: true, clientX: x, clientY: r.top + 2, button: 0 })
+    grip.dispatchEvent(new MouseEvent('mousedown', at(r.left + 2)))
+    document.dispatchEvent(new MouseEvent('mousemove', at(r.left + 62)))
+    document.dispatchEvent(new MouseEvent('mouseup', at(r.left + 62)))
+    await frames(3)
+    expect(width(name)).toBeCloseTo(220, 0)
+    // the frozen column's body cells moved with it
+    const td = host.querySelector<HTMLElement>('tbody td.sel-sticky:not(.sel-sticky-pick)')!
+    expect(width(td)).toBeCloseTo(220, 0)
+    const again = mountInto({ render })
+    await frames(3)
+    expect(width(headCell(again, 'Name'))).toBeCloseTo(220, 0)
+  })
+})
+
+// ── Picking rows with a real pointer (P3a) ────────────────────────────────────────────────────────
+describe('SelectionTable picking', () => {
+  function pickable() {
+    const selected = ref<string[]>([])
+    const pressed = ref(0)
+    const host = mountInto({
+      render: () => h(SelectionTable, {
+        columns: NARROW, rows: ROWS.slice(0, 8), idKey: 'id', selectionMode: 'multi',
+        selected: selected.value, 'onUpdate:selected': (v: string[]) => { selected.value = v },
+      }, {
+        // `#actions` is the documented home of row buttons: "clicks inside it do NOT select the row".
+        // A `#cell-<key>` button stops its own click (ImageTable's do) — the table doesn't promise it.
+        actions: ({ row }: { row: Record<string, string> }) =>
+          h('button', { class: 't-btn', 'data-id': row.id, onClick: () => { pressed.value++ } }, 'go'),
+      }),
+    })
+    const cell = (id: string) => host.querySelector<HTMLElement>(`tr[data-sel-id="${id}"] td:nth-child(2)`)!
+    return { host, selected, pressed, cell }
+  }
+
+  it('click selects that row only; ctrl-click adds; shift-click takes the range from the anchor', async () => {
+    const { selected, cell } = pickable()
+    await frames()
+    await userEvent.click(cell('r1'))
+    expect(selected.value).toEqual(['r1'])
+    await userEvent.click(cell('r3'), { modifiers: ['Control'] })
+    expect([...selected.value].sort()).toEqual(['r1', 'r3'])
+    await userEvent.click(cell('r1'))
+    await userEvent.click(cell('r4'), { modifiers: ['Shift'] })
+    expect(selected.value).toEqual(['r1', 'r2', 'r3', 'r4'])
+  })
+
+  it('a button in the #actions cell does its own thing and leaves the selection alone', async () => {
+    const { host, selected, pressed, cell } = pickable()
+    await frames()
+    await userEvent.click(cell('r2'))
+    await userEvent.click(host.querySelector<HTMLElement>('.t-btn[data-id="r5"]')!)
+    expect(pressed.value).toBe(1)
+    expect(selected.value).toEqual(['r2'])
+  })
+
+  it('pressing on a row and dragging sweeps the rows passed over', async () => {
+    const { selected, cell } = pickable()
+    await frames()
+    await userEvent.dragAndDrop(cell('r1'), cell('r4'))
+    expect(selected.value).toEqual(['r1', 'r2', 'r3', 'r4'])
   })
 })

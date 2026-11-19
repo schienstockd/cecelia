@@ -1,9 +1,11 @@
 # GUI tests: shared components in a real browser, and every bug that reaches the eye
 
-**Status:** in progress — P1 (harness + SelectionTable sticky header) #2370; P2 (recital: frontend
-passes-on-base + `no browser test`) on `feat/gui-tests-test-value`.
-Open questions answered by default (2026-11-19, "work through the plan autonomously"): advisory first,
-Chromium only, `fix/*` + `.vue`/CSS/layout-util trigger, smoke with `testpr`, base gap closed in P2.
+**Status:** in progress — MERGED: P1 harness + SelectionTable sticky header (#2370), P2 recital leg
+(#2375), P3b popover/modal/confirm (#2379), P4 route smoke (#2383). Open: P3a SelectionTable
+fit/resize/picking + CollapsibleSection (#2376), P3c chips/toggle/tooltip (#2381). P5 (make `gui`
+required) after two weeks of runs. Open questions answered by default (2026-11-19, "work through the
+plan autonomously"): advisory first, Chromium only, `fix/*` + `.vue`/CSS/layout-util trigger, smoke
+with `testpr`, base gap closed in P2.
 
 ## Goal
 
