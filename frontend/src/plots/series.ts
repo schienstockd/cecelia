@@ -3,6 +3,7 @@
 // `popType::valueName + pop`. pop_types/value_names contain no "::" and pop paths always start with
 // "/", so we split on the first "::" (popType) then the first "/" (valueName | pop).
 import type { SeriesTarget, SegmentationPops } from './types'
+import { popDisplayLabels, withOwnName } from '../utils/popName'
 
 export const tkey = (popType: string, valueName: string, pop: string) => `${popType}::${valueName}${pop}`
 
@@ -47,11 +48,17 @@ export function pickedOrderChips(
   selected: readonly string[], groups: readonly SegmentationPops[],
 ): { value: string; label: string; swatch?: string; tip: string }[] {
   const multiSeg = new Set(selected.map(k => parseTkey(k).valueName)).size > 1
-  return selected.map(k => {
-    const t = parseTkey(k)
-    const p = groups.find(g => g.valueName === t.valueName)?.populations
-      .find(q => q.path === t.pop && q.popType === t.popType)
-    const name = p?.name ?? (t.pop.split('/').filter(Boolean).pop() ?? t.pop)
+  const find = (t: SeriesTarget) => groups.find(g => g.valueName === t.valueName)?.populations
+    .find(q => q.path === t.pop && q.popType === t.popType)
+  const targets = selected.map(parseTkey)
+  // two picked pops can share a name (every tracked pop is `_tracked`): name them by as much of their
+  // path as tells them apart
+  const labels = popDisplayLabels(targets.map(t => t.pop))
+  return selected.map((k, i) => {
+    const t = targets[i]!
+    const p = find(t)
+    // the climbed parents come from the path; the pop's own name from ITS segmentation's listing
+    const name = withOwnName(labels.get(t.pop) ?? t.pop, p?.name)
     return { value: k, label: multiSeg ? `${t.valueName} ${name}` : name,
              ...(p?.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }
   })

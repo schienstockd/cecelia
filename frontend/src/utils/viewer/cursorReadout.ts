@@ -16,7 +16,7 @@ import type { OrbitCamera, ViewerMeta, ViewerChannel } from '../volumeViewer'
 import { shortUnit } from '../physicalSize'
 import { channelHexFrom } from '../viewerProps'
 import type { OverlayPop } from '../viewerOverlays'
-import { isInSubtree } from '../popName'
+import { isInSubtree, popRowLabels } from '../popName'
 
 /** The pixel under a canvas point, at both resolutions the peek reads. */
 export interface PeekPoint {
@@ -102,10 +102,14 @@ export function labelPopIndex(pops: readonly Pick<OverlayPop, 'path' | 'name' | 
       else byLabel.set(l, [p])
     }
   }
+  // named as the Populations section lists them: two pops sharing a name (every tracked pop is
+  // `_tracked`) by as much of their path as tells them apart
+  const names = popRowLabels(pops)
+  const nameOf = new Map(pops.map((p, i) => [p.path, names[i]!]))
   const out = new Map<number, ReadoutPop[]>()
   for (const [label, list] of byLabel) {
     const deepest = list.filter(p => !list.some(q => q.path !== p.path && isInSubtree(q.path, p.path)))
-    out.set(label, deepest.map(p => ({ name: p.name, colour: p.colour })))
+    out.set(label, deepest.map(p => ({ name: nameOf.get(p.path) ?? p.name, colour: p.colour })))
   }
   return out
 }

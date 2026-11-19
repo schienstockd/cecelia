@@ -927,6 +927,9 @@ end
     @test [g.refs[1] for g in pg] == [("B", "/tcells"), ("C", "/qc/_tracked")]
     # the LEAF is what a user calls a population; the path is a file path
     @test [g.label for g in pg] == ["tcells", "_tracked"]
+    # two tracked pops share the leaf `_tracked`: each is named by the parent that tells it apart
+    pt = Cecelia._track_pop_groups(["T/qc/OTI/_tracked", "T/qc/gBT/_tracked"], "T", false)
+    @test [g.label for g in pt] == ["OTI/_tracked", "gBT/_tracked"]
     poolp = Cecelia._track_pop_groups(["B/a", "B/b"], "B", true)
     @test length(poolp) == 1 && length(poolp[1].refs) == 2
 

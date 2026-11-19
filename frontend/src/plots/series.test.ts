@@ -68,6 +68,14 @@ describe('pickedOrderChips — the plot-order strip', () => {
     expect(chips[0].swatch).toBe('#00ff00')
     expect(chips[2].swatch).toBeUndefined()
   })
+  it('names two picked pops that share a name by their parents (every tracked pop is _tracked)', () => {
+    const tg = [{ valueName: 'T', populations: [
+      { path: '/qc/OTI/_tracked', name: '_tracked', colour: '#111111', popType: 'live', uid: 'c' },
+      { path: '/qc/non-OTI/gBT/_tracked', name: '_tracked', colour: '#222222', popType: 'live', uid: 'd' },
+      { path: '/qc/non-OTI/P14', name: 'P14', colour: '#333333', popType: 'live', uid: 'e' }] }]
+    expect(pickedOrderChips(['live::T/qc/OTI/_tracked', 'live::T/qc/non-OTI/gBT/_tracked', 'live::T/qc/non-OTI/P14'], tg)
+      .map(c => c.label)).toEqual(['OTI/_tracked', 'gBT/_tracked', 'P14'])
+  })
   it('names the segmentation when the picks span more than one', () => {
     expect(pickedOrderChips(['flow::cpSAM/T', 'flow::flowTom/T'], groups).map(c => c.label))
       .toEqual(['cpSAM T cells', 'flowTom T'])

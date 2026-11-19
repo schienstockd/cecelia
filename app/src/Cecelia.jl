@@ -128,7 +128,7 @@ export Density2D, density_2d, axis_summary, grid_summary
 export Population, PopulationMap, ROOT, PopType, PopTypeArg
 export POP_FLOW, POP_CLUST, POP_TRACK, POP_TRACKCLUST, POP_BRANCH, POP_LIVE, POP_REGION, POP_LABELS
 export parse_pop_type
-export pop_parent, pop_name, pop_path, is_root
+export pop_parent, pop_name, pop_path, is_root, pop_display_labels
 export add_pop!, stamp_edit!, set_gate!, set_boolean!, rename_pop!, move_pop!, del_pop!, del_children!
 export boolean_dependents, boolean_spec, filter_spec, pops_depending_on, BOOLEAN_OPS, BoolMembership, BOOL_AND, BOOL_OR, parse_bool_membership
 export FilterFun, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE, FILTER_EQ, FILTER_NEQ, FILTER_IN,

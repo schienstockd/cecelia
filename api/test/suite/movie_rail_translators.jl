@@ -582,6 +582,23 @@ end
     old = JSON3.read("""[{"valueName": "flowTom", "popType": "track", "path": "/_tracked"}]""")
     @test overlay_legend_content(nothing, "", old, nothing).populations ==
           [Dict{String,Any}("name" => "flowTom tracks", "colour" => nothing)]
+    # tracking per population: several `_tracked` pops in one segmentation → one row each, named by
+    # the pop it tracks (every one is `_tracked`, so "<vn> tracks" would collapse them into one row)
+    perpop = JSON3.read("""[
+        {"valueName": "T", "popType": "track", "path": "/qc/OTI/_tracked", "colour": "#111111"},
+        {"valueName": "T", "popType": "track", "path": "/qc/non-OTI/gBT/_tracked", "colour": "#222222"},
+        {"valueName": "T", "popType": "track", "path": "/qc/non-OTI/P14/_tracked", "colour": "#333333"}]""")
+    @test [p["name"] for p in overlay_legend_content(nothing, "", perpop, nothing).populations] ==
+          ["OTI tracks", "gBT tracks", "P14 tracks"]
+    # the root's `/_tracked` beside per-pop ones is still the segmentation's tracks; the same pops
+    # tracked in a second segmentation (tails in its own colour) are named by segmentation, not dropped
+    two = JSON3.read("""[
+        {"valueName": "T", "popType": "track", "path": "/_tracked", "colour": "#000000"},
+        {"valueName": "T", "popType": "track", "path": "/qc/OTI/_tracked", "colour": "#111111"},
+        {"valueName": "B", "popType": "track", "path": "/qc/OTI/_tracked", "colour": "#444444"},
+        {"valueName": "B", "popType": "track", "path": "/qc/gBT/_tracked", "colour": "#555555"}]""")
+    @test [p["name"] for p in overlay_legend_content(nothing, "", two, nothing).populations] ==
+          ["T tracks", "T OTI tracks", "B OTI tracks", "gBT tracks"]
 end
 
 @testset "API: overlay legend — a captured cell-track ribbon is its own row, in the tails' colour" begin

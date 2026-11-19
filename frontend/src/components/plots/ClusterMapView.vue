@@ -33,6 +33,7 @@ import { fitLabel } from '../../plots/valueColour'
 import { placeChips } from '../../plots/chipPlacement'
 import { asinhSpread } from '../../plots/diffmapScale'
 import { tkey, parseTkey } from '../../plots/series'
+import { popDisplayLabels, popRowLabels, withOwnName } from '../../utils/popName'
 import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -350,10 +351,16 @@ async function loadPopGroups() {
 const attrs = computed(() => project.imageAttrsFor(props.imageUids))
 // a colour-pop is stored as a tkey (popType::valueName+pop); the endpoint wants "popType~vnPrefixedPath"
 const popToken = (key: string) => { const t = parseTkey(key); return `${t.popType}~${t.valueName}${t.pop}` }
+// the colour-pops' paths, labelled together: two sharing a name (every tracked pop is `_tracked`) by
+// as much of their path as tells them apart
+const colourPopLabels = computed(() => popDisplayLabels(colourPops.value.map(k => parseTkey(k).pop)))
+// the pop list's rows, per segmentation group (the group header names the segmentation)
+const groupPopLabels = computed(() => popGroups.value.map(g => popRowLabels(g.populations)))
 const popLabelForKey = (key: string) => {
   const t = parseTkey(key)
   const grp = popGroups.value.find(g => g.valueName === t.valueName)
-  const nm = grp?.populations.find(pp => pp.path === t.pop)?.name ?? (t.pop.split('/').pop() || t.pop)
+  const nm = withOwnName(colourPopLabels.value.get(t.pop) ?? popDisplayLabels([t.pop]).get(t.pop)!,
+                         grp?.populations.find(pp => pp.path === t.pop)?.name)
   return `${t.valueName}·${nm}`
 }
 const togglePop = (vn: string, pop: string, pt: string) => {
@@ -424,7 +431,8 @@ function recolour() {
     const clusterColour = new Map<number, string>()
     for (const p of pops) for (const id of p.clusterIds) clusterColour.set(id, p.colour)
     distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, clusterColour.get(c) ?? UNCLUSTERED) })
-    const popN = pops.map(p => ({ label: p.name, colour: p.colour,
+    const popNames = popRowLabels(pops)
+    const popN = pops.map((p, i) => ({ label: popNames[i]!, colour: p.colour,
       n: p.clusterIds.reduce((s, id) => s + (counts.get(id) ?? 0), 0) }))
     const shownIds = new Set(pops.flatMap(p => p.clusterIds))
     const otherN = distinct.filter(c => !shownIds.has(c)).reduce((s, c) => s + (counts.get(c) ?? 0), 0)
@@ -445,10 +453,11 @@ function recolour() {
   categories.value = cats
   // labels at centroids: pop NAMES (at each pop's centroid) when pops are shown, else cluster numbers
   if (pops.length > 0) {
-    centroids.value = pops.map(p => {
+    const names = popRowLabels(pops)   // as the legend names them
+    centroids.value = pops.map((p, i) => {
       let sx = 0, sy = 0, nn = 0
       for (const id of p.clusterIds) { sx += sumX.get(id) ?? 0; sy += sumY.get(id) ?? 0; nn += counts.get(id) ?? 0 }
-      return nn > 0 ? { label: p.name, x: sx / nn, y: sy / nn } : null
+      return nn > 0 ? { label: names[i]!, x: sx / nn, y: sy / nn } : null
     }).filter((c): c is { label: string; x: number; y: number } => c !== null)
   } else {
     centroids.value = distinct.filter(c => c >= 0)
@@ -905,13 +914,13 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
             <div class="uv-opt-sep">Populations</div>
             <div class="uv-pop">
               <div v-if="!popGroups.length" class="uv-pop-empty cc-muted">No populations in the clustered segmentations.</div>
-              <template v-for="grp in popGroups" :key="grp.valueName">
+              <template v-for="(grp, gi) in popGroups" :key="grp.valueName">
                 <div v-if="grp.populations.length" class="uv-pop-head cc-eyebrow cc-fs-2xs">{{ grp.valueName }}</div>
-                <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
+                <div v-for="(p, pi) in grp.populations" :key="p.popType + grp.valueName + p.path"
                      class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
                      @click="togglePop(grp.valueName, p.path, p.popType)">
                   <i :class="isPopOn(grp.valueName, p.path, p.popType) ? 'pi pi-check-square' : 'pi pi-stop'" />
-                  <span class="uv-pop-name">{{ p.name }}</span>
+                  <span class="uv-pop-name">{{ groupPopLabels[gi]?.[pi] ?? p.name }}</span>
                   <span v-if="p.popType !== 'live'" class="uv-pop-tag">{{ p.popType }}</span>
                 </div>
               </template>
