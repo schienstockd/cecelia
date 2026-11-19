@@ -12,7 +12,7 @@
 //
 // The composable that PERFORMS a pointTarget (stores, router, pop-out) is `composables/useKiwiPoint.ts`.
 
-import type { KiwiRef, KiwiRefResult } from './kiwiRef'
+import type { KiwiRef, KiwiRefResult, ViewerRefLens } from './kiwiRef'
 import { svcPost } from './serviceApi'
 import { formatTaskDuration } from './taskElapsed'
 import { fmtCompact } from './compactNumber'
@@ -187,7 +187,7 @@ export function taskPageLabel(category: string): { label: string; order: number 
 }
 
 export type PointTarget =
-  | { action: 'viewer'; imageUid: string; t?: number; z?: number;
+  | { action: 'viewer'; imageUid: string; t?: number; z?: number; lens?: ViewerRefLens;
       tracks?: { valueName: string; ids: number[] }; cells?: { valueName: string; ids: number[] } }
   | { action: 'set'; setUid: string }
   | { action: 'route'; path: string; query?: Record<string, string>; rememberFn?: { module: string; task: string } }
@@ -206,7 +206,8 @@ export function pointTarget(ref: KiwiRef, taskDefs?: ReadonlyMap<string, { task:
     case 'set':        return { action: 'set', setUid: ref.setUid }
     case 'image':      return { action: 'viewer', imageUid: ref.imageUid }
     case 'viewer':     return { action: 'viewer', imageUid: ref.imageUid,
-                                ...(ref.t != null ? { t: ref.t } : {}), ...(ref.z != null ? { z: ref.z } : {}) }
+                                ...(ref.t != null ? { t: ref.t } : {}), ...(ref.z != null ? { z: ref.z } : {}),
+                                ...(ref.lens ? { lens: ref.lens } : {}) }
     case 'tracks':     return { action: 'viewer', imageUid: ref.imageUid, tracks: { valueName: ref.valueName, ids: ref.trackIds } }
     case 'cells':      return { action: 'viewer', imageUid: ref.imageUid, cells: { valueName: ref.valueName, ids: ref.labelIds } }
     // A population reference is too general to point at — the "right" landing depends on why you'd
@@ -429,8 +430,8 @@ interface HL { imageUid: string; valueName: string; origin?: 'user' | 'claude' }
 export function viewerRefFor(v: { imageUid: string; t: number; z: number; plane: boolean;
                                   tracks?: (HL & { trackIds: number[] }) | null;
                                   cells?: (HL & { labels: number[] }) | null;
-                                  /** a pinned lens (level-0 px) — the view's ref carries it */
-                                  lens?: { x: number; y: number; r: number } | null }): { ref: KiwiRef; tip: string } {
+                                  /** a pinned lens (level-0 px) and its channels by name — the view's ref carries it */
+                                  lens?: { x: number; y: number; r: number } | null; lensChannels?: string[] }): { ref: KiwiRef; tip: string } {
   const mine = (h: HL | null | undefined) => !!h && h.imageUid === v.imageUid && h.origin !== 'claude'
   if (mine(v.tracks) && v.tracks!.trackIds.length)
     return { ref: { kind: 'tracks', imageUid: v.imageUid, valueName: v.tracks!.valueName, trackIds: v.tracks!.trackIds },
@@ -439,7 +440,8 @@ export function viewerRefFor(v: { imageUid: string; t: number; z: number; plane:
     return { ref: { kind: 'cells', imageUid: v.imageUid, valueName: v.cells!.valueName, labelIds: v.cells!.labels },
              tip: `Add the ${v.cells!.labels.length} selected cell${v.cells!.labels.length === 1 ? '' : 's'} to Kiwi` }
   const lens = v.plane && v.lens
-    ? { x: Math.round(v.lens.x), y: Math.round(v.lens.y), r: Math.round(v.lens.r) } : null
+    ? { x: Math.max(0, Math.round(v.lens.x)), y: Math.max(0, Math.round(v.lens.y)), r: Math.max(1, Math.round(v.lens.r)),
+        channels: [...(v.lensChannels ?? [])] } : null
   return { ref: { kind: 'viewer', imageUid: v.imageUid, t: v.t, ...(v.plane ? { z: v.z } : {}), ...(lens ? { lens } : {}) },
            tip: lens ? 'Add this view and its lens to Kiwi' : 'Add this view to Kiwi' }
 }

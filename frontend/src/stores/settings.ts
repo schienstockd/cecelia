@@ -7,7 +7,6 @@ import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
 import { decodeViewerBagEvent, decodeScalarPrefEvent, createEchoGuard } from '../utils/viewerBagChannel'
 import { LABEL_OPACITY, OVERLAY_Z_TOL } from '../utils/viewerLabels'
-import { clampLensRadius, LENS_RADIUS_DEFAULT } from '../utils/viewer/channelLens'
 import { SPATIAL_GRAPH_COLOUR, SPATIAL_GRAPH_WIDTH } from '../utils/viewerOverlays'
 import { debouncedSave } from '../utils/debouncedSave'
 import { fetchProfileSettings, patchProfileSettings,
@@ -32,7 +31,7 @@ const PROFILE_KEYS = [
   'importPyramidAdvisor', 'animationSyncViewer', 'viewerAutoSaveLayerProps', 'plotPickerPreviews',
   // Overlay preferences
   'viewerScaleBar', 'viewerTimestamp', 'viewerGrid', 'viewerGridDensity', 'viewerCursorReadout',
-  'viewerLens', 'viewerLensRadius',
+  'viewerLens', 'viewerLensRadiusUm',
   'viewerLandscape', 'viewerLandscapeLabels',
   'viewerScaleBarPx', 'viewerTimestampPx',
   'viewerPointSize', 'viewerPointBorder', 'viewerTailLength', 'viewerTailWidth',
@@ -196,7 +195,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // Channel lens (a circle on the pointer that draws its own channel set — `utils/viewer/channelLens.ts`).
   // The pointer tool beside the readout: the two are exclusive (`pointerToolChips`). Radius in CSS px.
   const viewerLens = ref(localStorage.getItem('cc.viewerLens') === 'true')
-  const viewerLensRadius = ref(clampLensRadius(Number(localStorage.getItem('cc.viewerLensRadius') ?? LENS_RADIUS_DEFAULT)))
+  // The lens radius on the tissue, µm — 0 = unset, each image's own default (`lensRadiusRangeUm`).
+  const viewerLensRadiusUm = ref(Math.max(0, Number(localStorage.getItem('cc.viewerLensRadiusUm') ?? 0) || 0))
   // Set-of-Mark grid overlay (`components/GridOverlay.vue`, `utils/gridOverlay.ts`). Default OFF —
   // it is an active tool for referring to viewport regions by cell name ("look at C4"), not
   // default chrome like the scale bar. Density persists so the user's chosen mesh survives a reload.
@@ -891,7 +891,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerTimestamp,          v => persistPref('viewerTimestamp',          String(v)))
   watch(viewerCursorReadout,      v => persistPref('viewerCursorReadout',      String(v)))
   watch(viewerLens,               v => persistPref('viewerLens',               String(v)))
-  watch(viewerLensRadius,         v => persistPref('viewerLensRadius',         String(v)))
+  watch(viewerLensRadiusUm,       v => persistPref('viewerLensRadiusUm',       String(v)))
   watch(viewerGrid,               v => persistPref('viewerGrid',               String(v)))
   watch(viewerGridDensity,        v => persistPref('viewerGridDensity',        String(v)))
   watch(viewerLandscape,          v => persistPref('viewerLandscape',          String(v)))
@@ -1012,7 +1012,7 @@ export const useSettingsStore = defineStore('settings', () => {
     autoRefreshOnTask, viewerAutoUpdate, preferDevChannel, csvIncludeAttrs,
     importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, plotPickerPreviews,
     viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout,
-    viewerLens, viewerLensRadius,
+    viewerLens, viewerLensRadiusUm,
     viewerLandscape, viewerLandscapeLabels,
     viewerScaleBarPx, viewerTimestampPx,
     viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth,
@@ -1128,7 +1128,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, colourScheme, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, plotPickerPreviews, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout, viewerLens, viewerLensRadius, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, viewerGraphColour, viewerGraphWidth, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, chainPaletteCollapsed, plotsMaximised, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getLabelFilesHidden, setLabelFilesHidden, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getGraphVisibility, setGraphVisibility, getGraphPopsOnly, setGraphPopsOnly, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, colourScheme, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, plotPickerPreviews, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerCursorReadout, viewerLens, viewerLensRadiusUm, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerRoiSpotlight, viewerRoiAutoNext, getRoiChecked, setRoiChecked, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, viewerGraphColour, viewerGraphWidth, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, chainPaletteCollapsed, plotsMaximised, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, showImageNames, guidesShowClaude, kiwiHidden, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getLabelFilesHidden, setLabelFilesHidden, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getGraphVisibility, setGraphVisibility, getGraphPopsOnly, setGraphPopsOnly, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

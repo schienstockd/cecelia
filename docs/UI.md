@@ -2783,16 +2783,23 @@ doi:10.1109/TVCG.2021.3114786); no code is taken from it.
 
 - **Switching it on**: the lens chip beside Readout in the overlay strip (`VwOverlayToggles.vue`,
   `settings.viewerLens`). The two pointer tools are exclusive — the one just switched on wins
-  (`pointerToolChips`). 2D only, like the readout. Its radius is a slider in Annotations
-  (`settings.viewerLensRadius`, CSS px), or Alt+wheel over the image.
+  (`pointerToolChips`). 2D only, like the readout. Its radius is on the tissue, in µm, so it grows
+  as you zoom in, like the population dots (`settings.viewerLensRadiusUm`; 0 = the image's default).
+  The Annotations slider spans 1% to half of the image's short side, starting at a tenth, in round
+  steps (`lensRadiusRangeUm`); a value from another image is held in this one's range, not rewritten.
+  Alt+wheel over the image moves it 10% a notch (`lensRadiusWheel`).
 - **Pinning**: a click (no drag) pins the lens to the tissue (`lensPin`, level-0 px; `lensScreenAt`
   places it through the camera, so a pan or zoom carries it); a click unpins it back onto the
   pointer. Pinned, the chip holds still and takes clicks: unpin, **@ Kiwi** (the view's Kiwi ref
-  carries the lens — `viewerRefFor`, schema `viewer.lens`) and **Draw and note** (a capture to Kiwi
+  carries the lens and its channels by name — `viewerRefFor`, schema `viewer.lens`; clicking that ref
+  reopens the viewer centred on the lens, zoomed so it fits the radius slider, and pins it again with
+  those channels — `pointTarget` → `pendingViewState.lens` → `lensFocusView` + `placeLens`; 2D only)
+  and **Draw and note** (a capture to Kiwi
   and/or the paired Claude session, the DrawSurface switches). Select mode keeps the click for picking.
 - **For Claude**: `get_viewer_screenshot` answers a `lens` beside the view — where, pinned or not, its
-  channels, the cells and populations inside (the chip's numbers); `set_viewer_view` `{lens: {x, y,
-  r, channels}}` pins one, `{lens: false}` switches it off (`placeLens`, `lensRadiusCss`).
+  channels, the cells and populations inside (the chip's numbers, `trackClusters` and `regions` as
+  their own groups); `set_viewer_view` `{lens: {x, y,
+  r, channels}}` pins one, `{lens: false}` switches it off (`placeLens`, `lensRadiusUm`).
 - **Its channels**: while the lens is on, each channel card has an aperture button — in the lens or
   not, independent of the eye (`ViewerChannel.lens`); its place is kept while the lens is off, so
   nothing shifts. *Every channel in the lens* is in the section's ⋯ menu. Saved
@@ -2800,10 +2807,17 @@ doi:10.1109/TVCG.2021.3114786); no code is taken from it.
 - **No channel picked = a spotlight**: the lens shows the view as it is and everything outside it
   dims (`LENS_DIM`, the ROI spotlight's on-screen level), points and tracks included. Decided in the
   shader from the picks, so the viewer and a recording cannot disagree.
-- **The chip beside it** names what it draws (its channels, or *Spotlight*) and counts what it holds:
+- **The chip beside it** names what it draws (its channels one per row, the first `LENS_CHIP_CHANNELS`
+  then *+n more*, which a pinned chip opens; or *Spotlight*) and counts what it holds:
   the cells inside, and each drawn population's count and share of them — the fullest first (`lensPopCounts`,
   `lensChipPops`). Centroids on the frame and planes the markers are drawn on, so the numbers match
-  the points; a segmentation's cells counted once across its pop types. Viewer only — a recording
+  the points; a segmentation's cells counted once across its pop types. Below, one group per source
+  so each share column means one thing (`lensChipCounts`): **track clusters** (*n tracks* — the
+  clustered tracks' cells inside on this frame, one per track; each cluster's share of them, a hidden
+  cluster still in the total), counted as drawn — the ribbons' eyes and colours
+  (`trackclustPayloads`, `trackSourceColours`) while the Track-cluster ribbons are on, else the mask's
+  when its *Colour* is Track clusters; then **regions** (the `region` pop type's populations, on
+  with its switch — shares of the same cells as the cell pops; left off when none is inside). Viewer only — a recording
   draws the lens, not the chip. Scope2Screen's lens shows a cell-type summary the same way.
 - **Drawing**: `shaders/lens.wgsl`, included by every pass that draws the 2D view (tile, flat,
   brick, their point and track passes, and the movie host's): per channel the `ch[c].w` lane says "picked for the lens", the

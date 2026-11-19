@@ -227,7 +227,11 @@ function _kiwi_resolve_viewer(puid, ref)
     # a pinned channel lens on the view (level-0 px) — named, so the turn knows to look at it
     # (`get_viewer_screenshot` → `view.lens` / `lens`)
     lens = _kiwi_get(ref, "lens")
-    lens isa AbstractDict && (where_ = strip(where_ * " lens at ($(_kiwi_get(lens, "x")), $(_kiwi_get(lens, "y"))) r $(_kiwi_get(lens, "r")) px"))
+    if lens isa AbstractDict
+        chans = _kiwi_get(lens, "channels")
+        what  = chans isa AbstractVector ? (isempty(chans) ? " (spotlight)" : " of " * join(string.(chans), ", ")) : ""
+        where_ = strip(where_ * " lens$what at ($(_kiwi_get(lens, "x")), $(_kiwi_get(lens, "y"))) r $(_kiwi_get(lens, "r")) px")
+    end
     _kiwi_ok("exists", isempty(where_) ? img.name : "$(img.name) · $where_")
 end
 

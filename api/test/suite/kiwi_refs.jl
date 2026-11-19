@@ -27,6 +27,8 @@
     @test occursin("must be a number", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "t" => true)))
     @test occursin("≥ 0", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "t" => -1)))
     @test kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2, "r" => 3))) == ""
+    @test kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2, "r" => 3, "channels" => ["CD3"]))) == ""
+    @test occursin("channels items must be a string", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2, "r" => 3, "channels" => [1]))))
     @test occursin("must be an object", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => "x")))
     @test occursin("missing r", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2))))
     @test occursin("x must be a number", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => "a", "y" => 2, "r" => 3))))
@@ -132,6 +134,10 @@ end
             # MAINT-EXEMPT: label plumbing on the suite's synthetic testpr image; no data property can break it
             r = res(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "lens" => Dict("x" => 120, "y" => 80, "r" => 40)))
             @test r["ok"] && occursin("lens at (120, 80) r 40 px", r["label"])
+            r = res(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "lens" => Dict("x" => 120, "y" => 80, "r" => 40, "channels" => ["CD3", "CD8"])))  # MAINT-EXEMPT: label plumbing
+            @test r["ok"] && occursin("lens of CD3, CD8 at (120, 80)", r["label"])
+            r = res(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "lens" => Dict("x" => 120, "y" => 80, "r" => 40, "channels" => String[])))  # MAINT-EXEMPT: label plumbing
+            @test r["ok"] && occursin("lens (spotlight) at", r["label"])
             @test no(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "t" => g.sizeT), "outside")
             @test no(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "z" => g.sizeZ), "outside")
             rm(zdst; recursive = true)

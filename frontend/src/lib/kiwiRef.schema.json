@@ -63,7 +63,8 @@
           "type": "object", "additionalProperties": false, "required": ["x", "y", "r"],
           "properties": {
             "x": { "type": "integer", "minimum": 0 }, "y": { "type": "integer", "minimum": 0 },
-            "r": { "type": "integer", "minimum": 1 }
+            "r": { "type": "integer", "minimum": 1 },
+            "channels": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 200 } }
           }
         }
       }

@@ -2432,8 +2432,9 @@ def get_viewer_screenshot(project_uid: str, image_uid: str, max_side: int = 1600
     `max_side` caps the picture's long side in px (never upscales). Waits for the frame to finish
     loading. Nothing changes. With the channel lens on (2D) there is a `lens` too: `{pinned, x, y, r}`
     (level-0 px; pinned = the user parked it on the tissue), `channels` it draws (none = a spotlight:
-    the view inside, the rest dimmed), `cells` inside and `pops` `[{name, n, share}]` — the user's
-    "look at the lens" means this. `{reason: "no_viewer"}` ⇒ no viewer of that image is open: ask the
+    the view inside, the rest dimmed), `cells` inside and `pops` `[{name, n, share}]` (gated + cell
+    clusters, share of `cells`); when drawn, `trackClusters` `{tracks, pops}` (share of the clustered
+    tracks inside) and `regions` `{pops}` (share of `cells`) — the user's "look at the lens" means this. `{reason: "no_viewer"}` ⇒ no viewer of that image is open: ask the
     user to open it. `{error: "no frame drawn …"}` ⇒ the viewer shows nothing yet (3D still loading,
     or stuck): tell the user, don't retry in a loop. Use it to check what a change looks like, not to
     guess from numbers.
