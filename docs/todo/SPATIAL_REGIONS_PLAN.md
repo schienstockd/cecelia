@@ -233,6 +233,16 @@ region_enrichment(img; region=("region","arrest_zone"),
 
 Both return **flat, MCP-friendly tables** (Decision 9), not matrices.
 
+**Built (2026-11-19) — the "how many of type X in region Y" readout.** Not a join: both labels sit on
+the same cell row, so it is a crosstab of `pop` × `regions.{suffix}`. One count grid, read four ways
+(CytoMAP region heatmap, Stoltzfus 2020 doi:10.1016/j.celrep.2020.107523; CN composition + enrichment,
+Schürch 2020 doi:10.1016/j.cell.2020.07.005 and Hickey 2023 doi:10.1038/s41586-023-05915-x): % of region,
+% of population, log2 enrichment, counts. It is the heatmap's `composition` matrix mode
+(`_composition_matrix`, plot_data.jl) behind the **Region composition** plot (`region_composition.json`:
+heatmap + stacked/box per image), and the SAME call fills `composition` on MCP `get_region_clusters`
+(`ai/spatial.jl`). Margins are over the selected populations. Region density (cells/mm²) is parked — it
+needs a region area. `region_membership`/`region_enrichment` stay REPL helpers.
+
 ### Decision 7 — temporal handling is a user parameter (`perTimepoint`)
 
 Carried from legacy `cellRegions.json`: `perTimepoint` (default off). Off → aggregate all timepoints
@@ -481,7 +491,7 @@ Spatial Analysis population selectors show **all poptypes** (`flow`/`clust`/`liv
 | Spatial association / null | **stronger** (`nhood_enrichment`, `co_occurrence`, `ripley`, Moran's I) | **squidpy** (Phase 5); RDP not ported as a test |
 | Positional remapping (region-colored dots) | `sq.pl.spatial_scatter` (trivial) | interactive **PositionalScatterView** + napari points (Phase 5/8) |
 | Region adjacency (% shared-border force graph) | `interaction_matrix` approximates | **custom** border-% metric + network overlay (Phase 8) |
-| Per-region population frequency | none (one-line groupby) | **summary plot**, `popType:"region"` (Phase 5) |
+| Per-region population frequency | none (one-line groupby) | **Region composition** plot — heatmap `composition` mode (built 2026-11-19) |
 | UMAP of composition colored by region | (scanpy umap) | reuse `X_umap.{suffix}` + `ClusterMapView` (Phase 4) |
 
 ---

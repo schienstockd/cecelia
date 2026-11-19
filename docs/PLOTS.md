@@ -880,7 +880,7 @@ Observable Plot covers both natively.
 
 **Heatmap (`heatmap` ChartType, backend `chartType: "matrix"`) — implemented.** A matrix POOLS the
 whole `pop_df` frame (every selected population/segmentation/image) into ONE grid — a composition view,
-not a per-series overlay. Two **modes** (generic, reusable for any data):
+not a per-series overlay. Three **modes** (generic, reusable for any data):
 - **profile** — rows = `measures` (the spec's `measureOptions`), columns = the levels of a categorical
   `category` column; each cell = the **mean** of that measure for cells in that level: the **"state
   signature"** (what properties do cells in each HMM state have). Each row is normalised so
@@ -895,6 +895,12 @@ not a per-series overlay. Two **modes** (generic, reusable for any data):
   transitions `"1_2"`, or the cross-model hybrid `"1.2_3.4"` — the hybrid joins state columns with
   `.`, so the FIRST `sep` splits prev|cur). Cell = count, or a rate (`row` = P(to|from), `col` =
   P(from|to), `total` = fraction): the **transition matrix**.
+- **composition** — rows = the selected populations, columns = the levels of a categorical column
+  (the spatial region run, `regions.{suffix}` — the plot's **measure**, so no Category control). Cell =
+  `col` fraction of the region (default — what is the region made of), `row` fraction of the population
+  (where does it live), `enrichment` log2(observed/expected) on a diverging scale symmetric about 0 (a
+  zero count is a blank tile), or counts. Margins are over the selected populations; named regions read
+  by name. Plot def: `region_composition.json`, which also offers the per-image stacked/box views.
 
 Backend: `_matrix_agg(df; mode, measures, category, separator, zscore, normalize)` in
 `plot_data.jl`, dispatched from `_summary_agg` when `chart_type == "matrix"` (and threaded through all

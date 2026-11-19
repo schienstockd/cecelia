@@ -25,7 +25,7 @@ export const PLOT_SKETCH_KINDS = [
   'cell', 'track', 'popImage', 'cellDistance', 'contactImages', 'spreadImages', 'popOverTime',
   'states', 'motif', 'movementPatterns', 'contacts', 'stateSignature', 'transitions', 'clusters', 'umap',
   'gate', 'image', 'tracksStar', 'trackLanes', 'trackCard', 'motifCard', 'statesCard', 'masks',
-  'stateCount', 'trackCheck', 'planes', 'probability', 'curve', 'generic',
+  'stateCount', 'trackCheck', 'planes', 'probability', 'curve', 'regions', 'generic',
 ] as const
 export type PlotSketchKind = typeof PLOT_SKETCH_KINDS[number]
 export const isPlotSketchKind = (v: unknown): v is PlotSketchKind =>
@@ -193,6 +193,10 @@ const ART: Record<PlotSketchKind, () => SketchShape[]> = {
       return { el: 'rect', x: 56 + c * 9, y: 12 + r * 9, w: 8.6, h: 8.6, cls: 'heat', op: 0.1 + (((r * 5 + c * 3) % 7) / 7) * 0.8 }
     })],
   curve: () => [path('dim', 'M6 6 L6 54 L90 54'), path('ink', 'M10 12 C20 40 40 46 88 48')],
+  // a tissue split into two regions, each holding the two cell types in a different mix
+  regions: () => [frame(6, 6, 84, 48), path('dim dash', 'M48 6 C40 22 58 38 50 54'),
+    ...dots([[16, 16], [26, 26], [18, 38], [32, 44], [34, 14]], 3.2, 'acc fill'), dot(24, 48, 3.2, 'fill-dim'),
+    ...dots([[62, 16], [78, 22], [66, 34], [82, 44], [70, 46]], 3.2, 'fill-dim'), dot(80, 12, 3.2, 'acc fill')],
   // a plugin plot that names no sketch: deliberately plain, not a blank card
   generic: () => [path('dim', 'M6 6 L6 54 L90 54'), path('dim dash', 'M10 46 L86 14'),
     ...dots([[20, 40], [34, 34], [48, 30], [62, 24], [76, 20]], 2.6, 'acc fill')],

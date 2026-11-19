@@ -261,7 +261,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
     separator = string(get(body, "separator", "_"))
     zscore    = _wbool(body, "zscore", false)
     mnorm_v   = string(get(body, "matrixNormalize", "none"))
-    matrix_normalize = mnorm_v in ("row", "col", "total") ? Symbol(mnorm_v) : :none
+    matrix_normalize = mnorm_v in ("row", "col", "total", "enrichment") ? Symbol(mnorm_v) : :none
     # clustering run suffix (cluster pop_types only): lets the per-population cluster heatmap resolve
     # value_name to the run's segmentation instead of the drifting active one (plot_data.jl _cluster_pop_vn).
     sfx_v     = get(body, "suffix", nothing)

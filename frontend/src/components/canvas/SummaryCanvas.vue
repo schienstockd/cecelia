@@ -32,7 +32,7 @@ import { specOption, type PlotOption } from '../../plots/plotPicker'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, seriesMemo } from '../../plots/series'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
-import type { SeriesTarget, ChartType } from '../../plots/types'
+import type { SeriesTarget, ChartType, MatrixMode, MatrixNormalize } from '../../plots/types'
 import { migrateSpecId, isPrecomputedSpec } from '../../plots/popTypes'
 import { emptyReadout, declaredReadout, type PlotReadout } from '../../plots/plotReadout'
 import CcToggle from '../CcToggle.vue'
@@ -94,7 +94,7 @@ interface PanelState {
   popType?: string        // which population family this plot shows (specs that offer a choice)
   chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'
   groupBy?: string; smooth?: number; interval?: boolean
-  matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'
+  matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: MatrixNormalize
 }
 // Workspace shell + zoomable panels + zoom provided to plot components inside. See
 // useFloatingCanvas — the wiring that used to be four hand-rolled statements here (and identically

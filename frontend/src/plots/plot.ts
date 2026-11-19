@@ -230,6 +230,10 @@ export function heatmapControls(mode: string | undefined): HeatmapControls {
   if (isRunMatrixMode(m)) {
     return { mode: false, category: false, zscore: false, normalize: false, cellValues: true }
   }
+  // a composition's category is the plot's measure (the region run), so it has no Category control
+  if (m === 'composition') {
+    return { mode: false, category: false, zscore: false, normalize: true, cellValues: true }
+  }
   return { mode: true, category: true, zscore: m === 'profile', normalize: m === 'crosstab',
            cellValues: true }
 }
@@ -779,9 +783,12 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // per row); it is wrong for anything already on a common, signed scale.
   // a run-backed grid (interaction log-odds, proximity log2 enrichment) is a signed effect size
   const interaction = isRunMatrixMode(r.matrixMode)
-  const profile = !interaction && r.matrixMode !== 'crosstab'
+  // a composition's log2 enrichment is signed like a log-odds: diverging, symmetric about 0
+  const enrichment = r.matrixMode === 'composition' && r.normalize === 'enrichment'
+  const signed = interaction || enrichment
+  const profile = !signed && r.matrixMode !== 'crosstab' && r.matrixMode !== 'composition'
   const useMinmax = profile && (o.heatmapScale ?? 'minmax') === 'minmax'
-  const diverging = interaction || (profile && !useMinmax)   // log-odds / z-score → diverging RdBu
+  const diverging = signed || (profile && !useMinmax)   // log-odds / enrichment / z-score → diverging RdBu
   const valLabel = r.valueLabel ?? 'value'
   // per-feature (row) min-max → [0,1] (rescaleRows01, tested in utils); attach as `norm` on a COPY so
   // the fill uses it while the tooltip/label still read the original value, and r.cells is untouched.
@@ -799,7 +806,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     ? { scheme: 'viridis', domain: [0, 1] }
     : diverging
       ? { scheme: 'rdbu', pivot: 0, reverse: true, label: valLabel,
-          ...(interaction ? { domain: [-absMax, absMax] } : {}) }
+          ...(signed ? { domain: [-absMax, absMax] } : {}) }
       : { scheme: 'viridis', label: valLabel, domain: [Math.min(...vals), Math.max(...vals)] }
   // contrast ink for the value text: for viridis, light cells (high end) get dark text. Cheap split
   // at the scale midpoint (good enough — the labels are a readout, not a precise encoding).
@@ -818,7 +825,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   const yLab = r.matrixMode === 'crosstab' ? (flip ? 'to' : 'from') : null
   // on by default wherever the NUMBER is the readout: a transition rate, and a log-odds (a 2×2 or 3×3
   // interaction matrix has room, and the effect size is what the user came for)
-  const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab' || interaction)
+  const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab' || r.matrixMode === 'composition' || interaction)
   // tile border: white (R's geom_tile colour="white") — a thin gap that reads on both the dark ground
   // and the white export; never black (that framed every cell too heavily).
   const tileStroke = WHITE
@@ -827,7 +834,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     interaction && c.significance ? `${fmt(c.value)} ${c.significance}` : fmt(c.value)
   const tip = (c: MatrixCell) =>
     `${r.matrixMode === 'crosstab' ? `${c.y} → ${c.x}` : `${c.y} · ${c.x}`}\n${valLabel}: ${fmt(c.value)}` +
-    (c.count != null ? `\n${r.matrixMode === 'proximity' ? 'cells' : 'observed'} ${fmtCount(c.count)}`
+    (c.count != null ? `\n${r.matrixMode === 'proximity' || r.matrixMode === 'composition' ? 'cells' : 'observed'} ${fmtCount(c.count)}`
       : c.n != null ? `\nn ${fmtCount(c.n)}` : '') +
     (c.nImages != null ? `\nmean of ${c.nImages} image${c.nImages === 1 ? '' : 's'}` : '') +
     // z and p were already on the wire and shown NOWHERE — the permutation test is the reason to
@@ -1846,6 +1853,11 @@ export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string 
       if (r.matrixMode === 'interaction') {
         return tbl([yH, xH, r.valueLabel ?? 'value', 'observed', 'z', 'p', 'significance'],
                    cells.map(c => [c.y, c.x, c.value, c.count ?? c.n, c.zScore, c.pValue, c.significance]))
+      }
+      // composition: the value AND the count behind it (a fraction without its n hides a 2-cell region)
+      if (r.matrixMode === 'composition') {
+        return tbl(['population', r.category ?? 'category', r.valueLabel ?? 'value', 'cells'],
+                   cells.map(c => [c.y, c.x, c.value, c.count]))
       }
       // proximity: the mean enrichment, the cells behind it, and how many images it averages
       if (r.matrixMode === 'proximity') {

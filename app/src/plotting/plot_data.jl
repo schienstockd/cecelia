@@ -664,7 +664,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
              (measure === nothing ? String[] : String[String(measure)])
         return _matrix_agg(df; mode = String(matrix_mode), measures = ms, category = category,
                            separator = separator, zscore = zscore, normalize = matrix_normalize,
-                           granularity = granularity)
+                           granularity = granularity, pop_order = pop_order)
     end
     # POPULATION SUMMARY — a distribution/bar chart with NO cell `measure`: each IMAGE becomes one data
     # point whose value is the pop's count (or its fraction of the image's plotted total). Pre-aggregate
@@ -987,7 +987,7 @@ end
 
 # ── Matrix / heatmap aggregation (Plot.cell renderer) ─────────────────────────────
 # A matrix pools the whole `pop_df` frame (every selected population/segmentation/image) into ONE
-# grid — it's a composition view, not a per-series overlay. Two modes (docs/PLOTS.md §9):
+# grid — it's a composition view, not a per-series overlay. Three modes (docs/PLOTS.md §9):
 #
 #   profile  — rows = `measures`, columns = the levels of a categorical `category` column; each cell
 #              is the MEAN of that measure for cells in that level. `zscore` standardises each row
@@ -997,6 +997,9 @@ end
 #              HMM transitions "1_2", or the cross-model hybrid "1.2_3.4" — the hybrid joins state
 #              columns with '.', so the FIRST `sep` splits prev|cur). Cell = count of from→to, or a
 #              normalised rate (`:row` = P(to|from), `:col` = P(from|to), `:total` = fraction).
+#   composition — rows = the selected populations (`pop`), columns = the levels of a categorical
+#              `category` (spatial regions); cell = count, fraction of region / of population, or log2
+#              enrichment. See `_composition_matrix`.
 #
 # Returns a flat `cells` list `[{x, y, value, n|count}]` plus ordered `xLabels`/`yLabels` (so the
 # renderer lays out a fixed grid even where a cell is absent). Pure over the frame, headless-testable.
@@ -1005,6 +1008,11 @@ end
 _crosstab_value_label(normalize::Symbol) =
     normalize == :row ? "P(to|from)" : normalize == :col ? "P(from|to)" :
     normalize == :total ? "fraction" : "count"
+
+# The composition's value label — what the cell number is under each `normalize` (see `_matrix_agg`).
+_composition_value_label(normalize::Symbol) =
+    normalize == :row ? "fraction of population" : normalize == :col ? "fraction of region" :
+    normalize == :total ? "fraction" : normalize == :enrichment ? "log2 enrichment" : "count"
 
 # The SAME response shape with an empty grid, for a request whose frame has no rows (an absent
 # population). Keys mirror each mode's populated return exactly — the renderer reads `cells` to decide
@@ -1018,7 +1026,10 @@ function _empty_matrix(mode::AbstractString, cat::AbstractString, normalize::Sym
         "zscore" => zscore, "valueLabel" => zscore ? "z-score" : "mean", "xCounts" => Int[]))
     mode == "crosstab" && return merge(base, Dict{String,Any}(
         "normalize" => String(normalize), "valueLabel" => _crosstab_value_label(normalize)))
-    error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab)")
+    mode == "composition" && return merge(base, Dict{String,Any}(
+        "normalize" => String(normalize), "valueLabel" => _composition_value_label(normalize),
+        "xCounts" => Int[]))
+    error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab | composition)")
 end
 
 # Most columns (or rows) a matrix plot is built with. Each one is an SVG column with its own axis label,
@@ -1033,7 +1044,8 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
                      measures::AbstractVector{<:AbstractString}=String[],
                      category::Union{Nothing,AbstractString}=nothing,
                      separator::AbstractString="_", zscore::Bool=false,
-                     normalize::Symbol=:none, granularity::Symbol=:cell)::Dict{String,Any}
+                     normalize::Symbol=:none, granularity::Symbol=:cell,
+                     pop_order=nothing)::Dict{String,Any}
     cat = category === nothing ? nothing : String(category)
     cat === nothing &&
         error("plot_summary_data: matrix needs a `category` column present in the data (got none)")
@@ -1129,9 +1141,62 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
             "xLabels" => tos, "yLabels" => froms, "cells" => cells, "category" => cat,
             "normalize" => String(normalize), "valueLabel" => vlabel,
             "granularity" => String(granularity), "series" => Any[])
+    elseif mode == "composition"
+        return _composition_matrix(df, cat, catkeys, normalize, granularity, pop_order)
     else
-        error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab)")
+        error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab | composition)")
     end
+end
+
+# COMPOSITION — population × the levels of a categorical cell column (spatial regions: "how many B cells
+# sit in which region"). Both labels are on the same cell row, so this is a crosstab of `pop` against
+# `category`, not a join. One count grid, four readings (CytoMAP region heatmap; Schürch 2020 CN
+# enrichment):
+#   :col        — fraction of the REGION each population makes up (what is region R made of?)
+#   :row        — fraction of the POPULATION in each region (where do B cells live?)
+#   :total      — fraction of all counted cells
+#   :enrichment — log2(observed / expected), expected = pop total × region total / all: > 0 = the
+#                 population is over-represented in that region. A zero count has no log → null.
+#   :none       — counts
+# Margins are over the SELECTED populations (their union), so "fraction of region" is of the cells those
+# populations cover — tick every cell type to read the region's whole make-up. Images pool by count.
+function _composition_matrix(df::DataFrame, cat::AbstractString, catkeys, normalize::Symbol,
+                             granularity::Symbol, pop_order)::Dict{String,Any}
+    :pop in propertynames(df) ||
+        error("plot_summary_data: a composition matrix needs the population column (got none)")
+    popkeys = String[string(p) for p in df.pop]
+    counts = Dict{Tuple{String,String},Int}()
+    for (p, k) in zip(popkeys, catkeys)
+        k === nothing && continue
+        counts[(p, k)] = get(counts, (p, k), 0) + 1
+    end
+    levels = _sort_cats(unique(String[k for k in catkeys if k !== nothing]))
+    present = unique(popkeys)
+    # rows follow the caller's population order (the picker's), then any it didn't name
+    want = pop_order === nothing ? String[] :
+           String[p isa Tuple ? string(p[end]) : string(p) for p in pop_order]
+    rows = vcat(String[p for p in want if p in present], String[p for p in present if !(p in want)])
+    rowtot = Dict{String,Int}(); coltot = Dict{String,Int}(); total = 0
+    for ((p, k), c) in counts
+        rowtot[p] = get(rowtot, p, 0) + c; coltot[k] = get(coltot, k, 0) + c; total += c
+    end
+    cells = Dict{String,Any}[]
+    for p in rows, k in levels
+        c = get(counts, (p, k), 0)
+        rt = get(rowtot, p, 0); ct = get(coltot, k, 0)
+        val = normalize == :row   ? (rt == 0 ? 0.0 : c / rt) :
+              normalize == :col   ? (ct == 0 ? 0.0 : c / ct) :
+              normalize == :total ? (total == 0 ? 0.0 : c / total) :
+              normalize == :enrichment ?
+                  ((c == 0 || rt == 0 || ct == 0) ? nothing : log2(c * total / (rt * ct))) :
+              Float64(c)
+        push!(cells, Dict{String,Any}("x" => k, "y" => p, "value" => val, "count" => c))
+    end
+    Dict{String,Any}("chartType" => "matrix", "matrixMode" => "composition",
+        "xLabels" => levels, "yLabels" => rows, "cells" => cells, "category" => cat,
+        "xCounts" => Int[get(coltot, k, 0) for k in levels],
+        "normalize" => String(normalize), "valueLabel" => _composition_value_label(normalize),
+        "granularity" => String(granularity), "series" => Any[])
 end
 
 # ── Named clusters on a frequency chart ──────────────────────────────────────────────
@@ -1217,8 +1282,13 @@ pooled under it there — so a linked-brush chip resolves against the TARGET ima
 `(df, nothing)` untouched when the chart doesn't read levels or nothing names them.
 """
 function _named_cluster_frame(df::DataFrame, imgs, keys, value_names, measure, granularity::Symbol,
-                              chart_type::AbstractString)
-    chart_type in _CATEGORY_LEVEL_CHARTS || return (df, nothing)
+                              chart_type::AbstractString; matrix_mode=nothing, category=nothing)
+    # a composition heatmap's columns ARE the category's levels — named regions read as their names
+    if chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "composition"
+        measure = category
+    else
+        chart_type in _CATEGORY_LEVEL_CHARTS || return (df, nothing)
+    end
     m = measure === nothing ? "" : String(measure)
     (nrow(df) == 0 || !(m in names(df))) && return (df, nothing)
     named = _cluster_category_names(imgs, keys, value_names, m, granularity)
@@ -1312,8 +1382,10 @@ _cols_for(chart_type, measure, group_by, measures, category) =
 # run suffix when this applies, else nothing (the normal single-value_name pop_df is used). Per-POPULATION
 # heatmaps (category="pop", bare cluster-pop paths) already pool via the bare-pop expansion in pop_df, so
 # only the root case needs it.
-function _cluster_matrix_suffix(chart_type, category)::Union{String,Nothing}
+function _cluster_matrix_suffix(chart_type, category, matrix_mode=nothing)::Union{String,Nothing}
     (chart_type == "matrix" && category !== nothing) || return nothing
+    # a composition crosses the TICKED populations with the column — never the run-wide root pooling
+    (matrix_mode !== nothing && String(matrix_mode) == "composition") && return nothing
     c = String(category)
     for prefix in ("clusters.", "regions.")
         startswith(c, prefix) && return c[ncodeunits(prefix)+1:end]
@@ -1374,7 +1446,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
     measures = _hmm_profile_rows(measures, fit)
     chart_type == "matrix" && (measures = _named_plot_cols([img], eff_vn, measures))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
-    sfx = _cluster_matrix_suffix(chart_type, category)
+    sfx = _cluster_matrix_suffix(chart_type, category, matrix_mode)
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
         _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity,
                                                     family=_cluster_measure_family(pop_type)),
@@ -1382,7 +1454,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                          pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
         pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
-    df, named = _named_cluster_frame(df, [img], [""], [eff_vn], measure, granularity, chart_type)
+    df, named = _named_cluster_frame(df, [img], [""], [eff_vn], measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, eff_vn), pop_order=pops,
@@ -1438,7 +1510,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     measures = _hmm_profile_rows(measures, fit)
     chart_type == "matrix" && (measures = _named_plot_cols(imgs, eff_vn, measures))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
-    sfx = _cluster_matrix_suffix(chart_type, category)
+    sfx = _cluster_matrix_suffix(chart_type, category, matrix_mode)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
     # so the value_name set is consistent; take it from the first image). Each vn still pools across
     # images via the multi-image pop_df.
@@ -1451,7 +1523,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
                                 pop_cols=cols) :
         pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity, pop_cols=cols)
-    df, named = _named_cluster_frame(df, imgs, uids, [eff_vn], measure, granularity, chart_type)
+    df, named = _named_cluster_frame(df, imgs, uids, [eff_vn], measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn), pop_order=pops,
@@ -1615,7 +1687,7 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
                pop_cols=pcols, raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
-    df, named = _named_cluster_frame(df, [img], [""], first.(targets), measure, granularity, chart_type)
+    df, named = _named_cluster_frame(df, [img], [""], first.(targets), measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
     _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
@@ -1668,7 +1740,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                                 pop_cols=pcols, expand_cluster_pops=false) :
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
                expand_cluster_pops=false))
-    df, named = _named_cluster_frame(df, imgs, uids, first.(targets), measure, granularity, chart_type)
+    df, named = _named_cluster_frame(df, imgs, uids, first.(targets), measure, granularity, chart_type; matrix_mode=matrix_mode, category=category)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by,
