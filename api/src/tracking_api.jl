@@ -144,6 +144,7 @@ end
 #   imageUids=a,b,c        the board's selected images (`imageUid=` alone still works, unchanged)
 #   groupAttr=Treatment    image ATTRIBUTES to group by — images sharing the combined value pool into one
 #                          group labelled by it, the same join as the summary canvas
+#   groupOrder=3,1,2       the attribute groups in the user's order (the rest follow, category-sorted)
 #   poolImages=1           no attribute, but pool every image into one group (compare = "pooled")
 #   popType=live&pops=B/qc/_tracked,B/qc/other   the population family + value-name-prefixed refs
 #   poolPops=1             the selected populations as ONE group instead of one each
@@ -176,7 +177,8 @@ function _track_plot_groups(q)
     max_groups = something(tryparse(Int, get(q, "maxGroups", "")), 12)
     try
         groups, dropped, vn = track_plot_groups(imgs, uids;
-            group_attrs = _query_list(q, "groupAttr"), pool_images = _flag("poolImages"),
+            group_attrs = _query_list(q, "groupAttr"), group_order = _query_list(q, "groupOrder"),
+            pool_images = _flag("poolImages"),
             pops = _query_list(q, "pops"), pop_type = get(q, "popType", "live"),
             value_name = get(q, "valueName", ""), pool_pops = _flag("poolPops"),
             max_groups = max(max_groups, 1))
