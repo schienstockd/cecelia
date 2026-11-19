@@ -3,6 +3,7 @@
 
 #include "tile_common.wgsl"
 #include "overlay_quads.wgsl"
+#include "lens.wgsl"
 
 struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @location(1) alpha: f32 };
 
@@ -30,5 +31,5 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @l
 }
 
 @fragment fn fs(in: SOut) -> @location(0) vec4<f32> {
-  return vec4(in.rgb, in.alpha);
+  return vec4(in.rgb * lensShade(in.pos.xy), in.alpha);   // dims outside a spotlight lens (lens.wgsl)
 }

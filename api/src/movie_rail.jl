@@ -94,25 +94,40 @@ _cfg_int(cfg, k, default::Int) = (v = _cfg_get(cfg, k, default); v isa Integer ?
 # carry, ignoring the picker on the batch panel (reported).
 #
 # A channel named in `cfg.channels` gets its picked colormap and is visible; every other channel is
-# hidden. lo/hi stay from the props, so contrast is still whatever the viewer measured. `cfg`
+# hidden — except that a channel of the look's channel LENS (`cfg.lens.channels`, name → colormap)
+# takes its colour from there, so the lens draws it in the viewer's colour though it is hidden outside.
+# lo/hi stay from the props, so contrast is still whatever the viewer measured. `cfg`
 # without `channels` → specs unchanged (channels-only movie the recorder would render before this
 # override existed).
-function _apply_channel_picks(specs, cfg, img, vnn::Union{Nothing,AbstractString})
-    (specs === nothing) && return specs
+_apply_channel_picks(specs, cfg, img, vnn::Union{Nothing,AbstractString}) =
+    specs === nothing ? specs : _picked_specs(specs, cfg, channel_names(img; value_name = vnn))
+
+# `_apply_channel_picks` over the image's channel names `ch_all` — the pure half.
+function _picked_specs(specs, cfg, ch_all)
     chans = cfg isa AbstractDict ? get(cfg, :channels, get(cfg, "channels", nothing)) : nothing
     (chans isa AbstractDict && !isempty(chans)) || return specs
     wanted = Dict(String(k) => String(v) for (k, v) in pairs(chans))
-    ch_all = channel_names(img; value_name = vnn)
+    lens = cfg isa AbstractDict ? _cfg_maybe(cfg, "lens") : nothing
+    lens_chans = lens isa AbstractDict ? _cfg_maybe(lens, "channels") : nothing
+    in_lens = lens_chans isa AbstractDict ?
+        Dict(String(string(k)) => String(v) for (k, v) in pairs(lens_chans) if v isa AbstractString) :
+        Dict{String,String}()
     (ch_all === nothing || length(ch_all) != length(specs)) && return specs
     [begin
         s = specs[i]; ch = ch_all[i]
         if haskey(wanted, ch)
             (; lo = s.lo, hi = s.hi, lut = _as_lut(wanted[ch]), visible = true)
+        elseif haskey(in_lens, ch)
+            (; lo = s.lo, hi = s.hi, lut = _as_lut(in_lens[ch]), visible = false)
         else
             (; lo = s.lo, hi = s.hi, lut = s.lut,             visible = false)
         end
      end for i in eachindex(specs)]
 end
+
+# The look's channel lens as the renderer's per-state block (`lens_state`), or `nothing`.
+_movie_lens(cfg, img, vnn) = cfg isa AbstractDict ?
+    lens_state(_cfg_maybe(cfg, "lens"), channel_names(img; value_name = vnn)) : nothing
 
 # The viewer's LIVE channel specs (contrast, colour, visibility) from a view-state snapshot, in the
 # shape this renderer takes (`resolved_display_specs`' named `(lo, hi, lut, visible)`). Channels the
@@ -434,7 +449,8 @@ function _prepare_single_record(task_id::AbstractString, project_uid::AbstractSt
                                        mask_value_name = label_value_name === nothing ? nothing : String(label_value_name),
                                        tally = false,
                                        on_log = line -> ws_log(nothing, task_id, line))
-    (; zp, arr, caxes, specs, ov, nc, native_h = Int(native_h), native_w = Int(native_w))
+    (; zp, arr, caxes, specs, ov, nc, native_h = Int(native_h), native_w = Int(native_w),
+       lens = _movie_lens(look_cfg, img, vnn))
 end
 
 function run_single_offline(task_id::String, project_uid::String, image_uid::String;
@@ -482,7 +498,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    (; zp, arr, caxes, specs, ov, nc, native_h, native_w) = prep
+    (; zp, arr, caxes, specs, ov, nc, native_h, native_w, lens) = prep
     ts = _record_ts_range(arr, caxes, t_start, t_end)
     if isempty(ts)
         ws_log(nothing, task_id, "[ERROR] no timepoints in range (image is single-frame or range is empty)")
@@ -523,7 +539,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                                    ts = ts, fps = fps,
                                    z = z_slice, channels = 0:(nc - 1), specs = specs,
                                    crop = view_crop, max_px = max_px,
-                                   title_card = title_card,
+                                   title_card = title_card, lens = lens,
                                    overlays3d_for = ov.overlays3d_for, mask = ov.mask,
                                    style = ov.style,
                                    show_timestamp = show_timestamp, show_scale_bar = show_scale_bar,
@@ -875,7 +891,7 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
                                        tally = false,
                                        on_log = on_log)
     (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc, view_crop,
-       banked_specs = picked_specs)
+       banked_specs = picked_specs, lens = _movie_lens(cfg, img, vnn))
 end
 
 # The compare-grid renderer. `rows` is what `_compare_grid` produced (versions across, masks down; a
@@ -962,6 +978,7 @@ function _render_grid_offline(task_id::String, pu::String, iu::String, img,
                                                  z = cell.z_slice, channels = 0:(cell.nc - 1),
                                                  specs = cell.specs,
                                                  crop = cell.view_crop, max_px = cell_max_px,
+                                                 lens = cell.lens,
                                                  title_card = nothing,           # applied at end
                                                  overlays3d_for = cell.ov.overlays3d_for, mask = cell.ov.mask,
                                                  style = cell.ov.style,

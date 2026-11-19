@@ -15,7 +15,8 @@ export type KiwiRef =
   | { kind: 'population'; imageUid: string; valueName: string; popPath: string }
   | { kind: 'cells'; imageUid: string; valueName: string; labelIds: number[] }
   | { kind: 'tracks'; imageUid: string; valueName: string; trackIds: number[] }
-  | { kind: 'viewer'; imageUid: string; t?: number; z?: number }
+  // `lens` = a pinned channel lens on that view: centre + radius in level-0 px (utils/viewer/channelLens.ts)
+  | { kind: 'viewer'; imageUid: string; t?: number; z?: number; lens?: { x: number; y: number; r: number } }
   | { kind: 'plot'; plotId: string; u?: number; v?: number }
   | { kind: 'tile'; imageUid: string; valueName: string; cellId: string; t?: number; z?: number }
   | { kind: 'capture'; captureId: string }

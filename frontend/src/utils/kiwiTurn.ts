@@ -89,7 +89,7 @@ export function refLabel(ref: KiwiRef): string {
     case 'tracks':     return `track${ref.trackIds.length > 1 ? 's' : ''} ${ids(ref.trackIds)} · ${ref.valueName}`
     case 'viewer': {
       const tz = [ref.t != null ? `t=${ref.t}` : '', ref.z != null ? `z=${ref.z}` : ''].filter(Boolean).join(' ')
-      return `viewer ${ref.imageUid}${tz ? ' ' + tz : ''}`
+      return `viewer ${ref.imageUid}${tz ? ' ' + tz : ''}${ref.lens ? ' · lens' : ''}`
     }
     case 'plot':       return 'plot'
     case 'tile':       return `tile ${ref.cellId}`
@@ -428,7 +428,9 @@ interface HL { imageUid: string; valueName: string; origin?: 'user' | 'claude' }
  *  and one for another image is not this view's. */
 export function viewerRefFor(v: { imageUid: string; t: number; z: number; plane: boolean;
                                   tracks?: (HL & { trackIds: number[] }) | null;
-                                  cells?: (HL & { labels: number[] }) | null }): { ref: KiwiRef; tip: string } {
+                                  cells?: (HL & { labels: number[] }) | null;
+                                  /** a pinned lens (level-0 px) — the view's ref carries it */
+                                  lens?: { x: number; y: number; r: number } | null }): { ref: KiwiRef; tip: string } {
   const mine = (h: HL | null | undefined) => !!h && h.imageUid === v.imageUid && h.origin !== 'claude'
   if (mine(v.tracks) && v.tracks!.trackIds.length)
     return { ref: { kind: 'tracks', imageUid: v.imageUid, valueName: v.tracks!.valueName, trackIds: v.tracks!.trackIds },
@@ -436,6 +438,8 @@ export function viewerRefFor(v: { imageUid: string; t: number; z: number; plane:
   if (mine(v.cells) && v.cells!.labels.length)
     return { ref: { kind: 'cells', imageUid: v.imageUid, valueName: v.cells!.valueName, labelIds: v.cells!.labels },
              tip: `Add the ${v.cells!.labels.length} selected cell${v.cells!.labels.length === 1 ? '' : 's'} to Kiwi` }
-  return { ref: { kind: 'viewer', imageUid: v.imageUid, t: v.t, ...(v.plane ? { z: v.z } : {}) },
-           tip: 'Add this view to Kiwi' }
+  const lens = v.plane && v.lens
+    ? { x: Math.round(v.lens.x), y: Math.round(v.lens.y), r: Math.round(v.lens.r) } : null
+  return { ref: { kind: 'viewer', imageUid: v.imageUid, t: v.t, ...(v.plane ? { z: v.z } : {}), ...(lens ? { lens } : {}) },
+           tip: lens ? 'Add this view and its lens to Kiwi' : 'Add this view to Kiwi' }
 }

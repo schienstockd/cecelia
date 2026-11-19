@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { decodeViewerBagEvent, decodeScalarPrefEvent } from './viewerBagChannel'
+import { decodeViewerBagEvent, decodeScalarPrefEvent, createEchoGuard, unguardedPrefWrites } from './viewerBagChannel'
+import settingsSrc from '../stores/settings.ts?raw'
 
 describe('decodeViewerBagEvent', () => {
   it('decodes the ticked ROIs', () => {
@@ -108,5 +109,37 @@ describe('decodeScalarPrefEvent', () => {
     expect(dec('cc.viewerTailLength', null)).toBeNull()
     expect(dec('cc.viewerTailLength', 'abc')).toBeNull()
     expect(dec('cc.viewerScaleBar', 'yes')).toBeNull()
+  })
+})
+
+describe('createEchoGuard — a window never writes back what another window just wrote', () => {
+  it('a dragged slider: the receiver skips its late write of a value it received, so it cannot overwrite a newer one', () => {
+    const g = createEchoGuard()
+    // the pop-out wrote 100 then 110; this window applied 110 (its watcher flushes once, batched)
+    g.received('cc.viewerLensRadius', '100')
+    g.received('cc.viewerLensRadius', '110')
+    expect(g.isEcho('cc.viewerLensRadius', '110')).toBe(true)
+  })
+  it('this window\'s own change after it is written — the mark is spent once', () => {
+    const g = createEchoGuard()
+    g.received('cc.viewerLensRadius', '110')
+    expect(g.isEcho('cc.viewerLensRadius', '110')).toBe(true)
+    expect(g.isEcho('cc.viewerLensRadius', '110')).toBe(false)
+    g.received('cc.viewerLensRadius', '110')
+    expect(g.isEcho('cc.viewerLensRadius', '150')).toBe(false)
+  })
+  it('keys are separate', () => {
+    const g = createEchoGuard()
+    g.received('cc.viewerTailWidth', '3')
+    expect(g.isEcho('cc.viewerLensRadius', '3')).toBe(false)
+  })
+})
+
+describe('the settings store writes every synced preference through the echo guard', () => {
+  it('no watcher writes a cc. key to localStorage directly (stores/settings.ts → persistPref)', () => {
+    expect(unguardedPrefWrites(settingsSrc)).toEqual([])
+  })
+  it('the scan finds a direct write', () => {
+    expect(unguardedPrefWrites("  watch(x, v => localStorage.setItem('cc.x', String(v)))")).toHaveLength(1)
   })
 })

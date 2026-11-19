@@ -197,6 +197,11 @@ describe('viewerRefFor', () => {
     expect(viewerRefFor({ ...base, cells: { imageUid: 'I', valueName: 'B', labels: [7] } }).ref)
       .toEqual({ kind: 'cells', imageUid: 'I', valueName: 'B', labelIds: [7] })
   })
+  it('a pinned lens rides on the view (2D only), rounded to whole level-0 px', () => {
+    const lens = { x: 10.4, y: 20.6, r: 30 }
+    expect(viewerRefFor({ ...base, lens }).ref).toEqual({ kind: 'viewer', imageUid: 'I', t: 4, z: 9, lens: { x: 10, y: 21, r: 30 } })
+    expect(viewerRefFor({ ...base, plane: false, lens }).ref).not.toHaveProperty('lens')
+  })
 })
 
 describe('claim text + failures, as the user reads them', () => {

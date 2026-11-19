@@ -137,7 +137,7 @@ end
 # `labelValueNames` is what `viewerLook` writes from the viewer's mask picker, 0 or 1 long.
 function _look_keyframe_mask(look)::Union{Nothing,@NamedTuple{name::String, contour::Int}}
     look isa AbstractDict || return nothing
-    raw = _cfg_get(look, "labelValueNames", nothing)
+    raw = _cfg_maybe(look, "labelValueNames")
     (raw isa AbstractVector && length(raw) == 1) || return nothing
     name = String(only(raw))
     isempty(name) ? nothing : (name = name, contour = _label_contour(look))

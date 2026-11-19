@@ -2774,6 +2774,48 @@ and the sidebar launcher (`PanelLaunchers.vue`) bring it forward or reopen it on
 (`composables/useViewerLauncher.ts` → `raiseViewerWindow`). The viewer's ← back returns to the main
 window.
 
+### Channel lens
+
+A circle on the pointer that draws **its own channel set** over the 2D view, so a multiplex slide
+(60 markers) keeps a quiet context — DAPI, a structure marker — while the lens shows the panel being
+read. The focus+context idea is Scope2Screen's (Jessup, Krueger et al., IEEE TVCG 2022,
+doi:10.1109/TVCG.2021.3114786); no code is taken from it.
+
+- **Switching it on**: the lens chip beside Readout in the overlay strip (`VwOverlayToggles.vue`,
+  `settings.viewerLens`). The two pointer tools are exclusive — the one just switched on wins
+  (`pointerToolChips`). 2D only, like the readout. Its radius is a slider in Annotations
+  (`settings.viewerLensRadius`, CSS px), or Alt+wheel over the image.
+- **Pinning**: a click (no drag) pins the lens to the tissue (`lensPin`, level-0 px; `lensScreenAt`
+  places it through the camera, so a pan or zoom carries it); a click unpins it back onto the
+  pointer. Pinned, the chip holds still and takes clicks: unpin, **@ Kiwi** (the view's Kiwi ref
+  carries the lens — `viewerRefFor`, schema `viewer.lens`) and **Draw and note** (a capture to Kiwi
+  and/or the paired Claude session, the DrawSurface switches). Select mode keeps the click for picking.
+- **For Claude**: `get_viewer_screenshot` answers a `lens` beside the view — where, pinned or not, its
+  channels, the cells and populations inside (the chip's numbers); `set_viewer_view` `{lens: {x, y,
+  r, channels}}` pins one, `{lens: false}` switches it off (`placeLens`, `lensRadiusCss`).
+- **Its channels**: while the lens is on, each channel card has an aperture button — in the lens or
+  not, independent of the eye (`ViewerChannel.lens`); its place is kept while the lens is off, so
+  nothing shifts. *Every channel in the lens* is in the section's ⋯ menu. Saved
+  with the image's viewer props, like visibility.
+- **No channel picked = a spotlight**: the lens shows the view as it is and everything outside it
+  dims (`LENS_DIM`, the ROI spotlight's on-screen level), points and tracks included. Decided in the
+  shader from the picks, so the viewer and a recording cannot disagree.
+- **The chip beside it** names what it draws (its channels, or *Spotlight*) and counts what it holds:
+  the cells inside, and each drawn population's count and share of them — the fullest first (`lensPopCounts`,
+  `lensChipPops`). Centroids on the frame and planes the markers are drawn on, so the numbers match
+  the points; a segmentation's cells counted once across its pop types. Viewer only — a recording
+  draws the lens, not the chip. Scope2Screen's lens shows a cell-type summary the same way.
+- **Drawing**: `shaders/lens.wgsl`, included by every pass that draws the 2D view (tile, flat,
+  brick, their point and track passes, and the movie host's): per channel the `ch[c].w` lane says "picked for the lens", the
+  `lens` uniform is centre + radius + rim in framebuffer px. The tile atlas holds only the channels it
+  fetched, so the fetch set is visible ∪ lens while the lens is on (`lensFetchChannels`).
+- **Screen in the viewer, tissue in a recording.** The lens follows the pointer — a pan slides the
+  image under it — and stays where the pointer left the canvas. The published view state carries it
+  pinned to the tissue (`lensForRecording`: L0 px centre + radius), because a movie crops to the image
+  and picks its own size. Record, the compare grid, stills and animations draw it (keyframes tween its
+  centre); a **batch** does not — a spot on one image's tissue means nothing on another's. Pure
+  logic: `utils/viewer/channelLens.ts` (tested); server: `lens_state` (`movie_render.jl`).
+
 ---
 
 ## Task definition fields — resource_pool

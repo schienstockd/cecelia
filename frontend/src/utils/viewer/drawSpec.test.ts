@@ -33,7 +33,8 @@ const vol = (zRange: [number, number]) =>
  *  needs a row here too. */
 const PROBES: Record<keyof ViewerDrawSpec, [Partial<ViewerDrawSpec>, Partial<ViewerDrawSpec>]> = {
   viewState: [{}, { viewState: { ...spec.viewState!, layers: { DAPI: { visible: true, colormap: 'blue' },
-                                                                GFP: { visible: true, colormap: 'green' } } } }],
+                                                                GFP: { visible: true, colormap: 'green' } },
+                                                       lens: { x: 10, y: 10, r: 5, channels: ['GFP'] } } }],
   channelNames: [{}, { channelNames: ['Hoechst', 'GFP'] }],
   nZ: [{ viewState: vol([0, 9]) }, { nZ: 10 }],
   version: [{}, { version: 'raw' }],

@@ -23,7 +23,7 @@ const MINIMAL: KiwiRef[] = [
 ]
 const FULL: KiwiRef[] = [
   ...MINIMAL.filter((r) => !['viewer', 'plot', 'tile', 'task', 'blackboard', 'proposedPlot'].includes(r.kind)),
-  { kind: 'viewer', imageUid: 'i', t: 0, z: 0 },
+  { kind: 'viewer', imageUid: 'i', t: 0, z: 0, lens: { x: 10, y: 20, r: 30 } },
   { kind: 'plot', plotId: 'p', u: 0.5, v: 0.5 },
   { kind: 'tile', imageUid: 'i', valueName: 'B', cellId: 'B3', t: 0, z: 0 },
   { kind: 'task', funName: 'f', imageUid: 'i', valueName: 'B' },

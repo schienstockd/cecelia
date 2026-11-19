@@ -26,6 +26,12 @@
         Dict("kind" => "cells", "imageUid" => "a", "valueName" => "B", "labelIds" => [1.5])))
     @test occursin("must be a number", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "t" => true)))
     @test occursin("≥ 0", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "t" => -1)))
+    @test kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2, "r" => 3))) == ""
+    @test occursin("must be an object", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => "x")))
+    @test occursin("missing r", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2))))
+    @test occursin("x must be a number", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => "a", "y" => 2, "r" => 3))))
+    @test occursin("unknown field z", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2, "r" => 3, "z" => 0))))
+    @test occursin("r must be ≥ 1", kiwi_ref_shape_error(Dict("kind" => "viewer", "imageUid" => "a", "lens" => Dict("x" => 1, "y" => 2, "r" => 0))))
     @test occursin("≤ 1", kiwi_ref_shape_error(Dict("kind" => "plot", "plotId" => "p", "u" => 1.5)))
     @test occursin("wrong format", kiwi_ref_shape_error(
         Dict("kind" => "tile", "imageUid" => "a", "valueName" => "B", "cellId" => "b3")))
@@ -122,6 +128,10 @@ end
             g = image_geometry(zdst)
             @test yes(Dict("kind" => "viewer", "imageUid" => "KDIeEm"))
             @test yes(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "t" => g.sizeT - 1, "z" => g.sizeZ - 1))
+            # a pinned channel lens rides on the view, and the label names it
+            # MAINT-EXEMPT: label plumbing on the suite's synthetic testpr image; no data property can break it
+            r = res(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "lens" => Dict("x" => 120, "y" => 80, "r" => 40)))
+            @test r["ok"] && occursin("lens at (120, 80) r 40 px", r["label"])
             @test no(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "t" => g.sizeT), "outside")
             @test no(Dict("kind" => "viewer", "imageUid" => "KDIeEm", "z" => g.sizeZ), "outside")
             rm(zdst; recursive = true)

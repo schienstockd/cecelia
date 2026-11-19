@@ -58,7 +58,14 @@
       "type": "object", "additionalProperties": false, "required": ["kind", "imageUid"],
       "properties": {
         "kind": { "const": "viewer" }, "imageUid": { "$ref": "#/definitions/uid" },
-        "t": { "type": "integer", "minimum": 0 }, "z": { "type": "integer", "minimum": 0 }
+        "t": { "type": "integer", "minimum": 0 }, "z": { "type": "integer", "minimum": 0 },
+        "lens": {
+          "type": "object", "additionalProperties": false, "required": ["x", "y", "r"],
+          "properties": {
+            "x": { "type": "integer", "minimum": 0 }, "y": { "type": "integer", "minimum": 0 },
+            "r": { "type": "integer", "minimum": 1 }
+          }
+        }
       }
     },
     "plot": {

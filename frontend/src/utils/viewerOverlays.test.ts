@@ -5,7 +5,7 @@ import {
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
-  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
+  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow, overlayPlaneWindow,
   isTrackDrawable,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload, type TrackColorMode,
 } from './viewerOverlays'
@@ -823,5 +823,19 @@ describe('skeleton lines (appendSkeletonLines)', () => {
     setOverlayWindow(r, pts, buf, 2, [1, 1], style, 'plane')
     expect(lines).toEqual(skeletonLineRanges(buf, 2))
     expect(lines.length).toBe(2)
+  })
+})
+
+describe('overlayPlaneWindow', () => {
+  it('one 2D plane widens by the tolerance', () => {
+    expect(overlayPlaneWindow([5, 5], 1, 'plane')).toEqual([4, 6])
+  })
+  it('plane 0 with a tolerance stops at 0 — a negative low end reads as "no filter" in the shader', () => {
+    expect(overlayPlaneWindow([0, 0], 2, 'plane')).toEqual([0, 2])
+  })
+  it('a range, or 3D, is drawn exactly; a negative low end (no filter) passes through', () => {
+    expect(overlayPlaneWindow([4, 10], 1, 'plane')).toEqual([4, 10])
+    expect(overlayPlaneWindow([3, 3], 1, 'volume')).toEqual([3, 3])
+    expect(overlayPlaneWindow([-1, -1], 1, 'plane')).toEqual([-1, -1])
   })
 })
