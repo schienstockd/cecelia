@@ -454,6 +454,12 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `_`-leaf (→ 400), and the frontend hints against it while typing. This makes a derived name
   unambiguous and impossible to shadow with a real gate. (Deserialisation via `from_tree` bypasses
   the guard, and the derived injection itself passes `reserved_ok=true`.)
+- **Naming pops shown side by side.** Every tracked pop is called `_tracked`, so a flat list of
+  leaf names (plot-order chips, viewer rows, legends, cluster columns) can repeat one name. Such a
+  list names its pops through `popDisplayLabels` (`frontend/src/utils/popName.ts`; row lists across
+  segmentations `popRowLabels`) / Julia `pop_display_labels` (`gating/popmanager/types.jl`): the
+  leaf, unless another pop in the SAME list shares it — then each climbs its path until they differ
+  (`OTI/_tracked`, `gBT/_tracked`). A tree view (indented) shows the parent already and keeps leaves.
 - **`_tracked` is offered only where it says something new.** The picker
   (`plot_population_groups`) can inject `/_tracked` at the root and under every stored pop
   (`/qc/_tracked` = qc's tracked subset), but the API's `derived_ok` predicate keeps only the paths

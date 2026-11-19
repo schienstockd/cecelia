@@ -31,6 +31,7 @@ import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
 import { NEUTRAL } from '../../plots/fixedColours'
+import { popRowLabels } from '../../utils/popName'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -128,7 +129,9 @@ async function fetchHeatmap(isCurrent: () => boolean) {
   if (r.cells) for (const c of r.cells) c.y = label(c.y)
   // per-population columns come back as pop PATHS → show the pop name instead
   if (popMode) {
-    const nameByPath = Object.fromEntries(pops.map(p => [p.path, p.name]))
+    // two pops sharing a name would merge into one column: name each by as much path as tells it apart
+    const names = popRowLabels(pops)
+    const nameByPath = Object.fromEntries(pops.map((p, i) => [p.path, names[i]!]))
     const xlabel = (path: string) => nameByPath[path] ?? path
     if (r.xLabels) r.xLabels = r.xLabels.map(xlabel)
     if (r.cells) for (const c of r.cells) c.x = xlabel(c.x)

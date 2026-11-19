@@ -3,6 +3,7 @@
 // `popType::valueName + pop`. pop_types/value_names contain no "::" and pop paths always start with
 // "/", so we split on the first "::" (popType) then the first "/" (valueName | pop).
 import type { SeriesTarget, SegmentationPops } from './types'
+import { popDisplayLabels, withOwnName } from '../utils/popName'
 
 export const tkey = (popType: string, valueName: string, pop: string) => `${popType}::${valueName}${pop}`
 
@@ -55,8 +56,14 @@ export function pickedOrderChips(
     return p ? [{ k, t, p }] : []
   })
   const multiSeg = new Set(listed.map(x => x.t.valueName)).size > 1
-  return listed.map(({ k, t, p }) => ({ value: k, label: multiSeg ? `${t.valueName} ${p.name}` : p.name,
-                                       ...(p.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }))
+  // two picked pops can share a name (every tracked pop is `_tracked`): name them by as much of their
+  // path as tells them apart — the parents from the path, the own name from ITS segmentation's listing
+  const labels = popDisplayLabels(listed.map(x => x.t.pop))
+  return listed.map(({ k, t, p }) => {
+    const name = withOwnName(labels.get(t.pop) ?? t.pop, p.name)
+    return { value: k, label: multiSeg ? `${t.valueName} ${name}` : name,
+             ...(p.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }
+  })
 }
 
 /**
