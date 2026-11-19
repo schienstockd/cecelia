@@ -16,6 +16,7 @@
   the panel's persisted per-panel options bag (here just `labels`).
 -->
 <script setup lang="ts">
+import { tooManyClustersToDraw, tooManyClustersText } from '../../utils/clusterLimit'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { observeBoxChanges } from '../../composables/usePlotResize'
@@ -136,6 +137,8 @@ const categories = ref<Float32Array | null>(null)
 const palette = ref<string[]>([])
 const legend = ref<{ label: string; colour: string; n: number }[]>([])
 const centroids = ref<{ label: string; x: number; y: number }[]>([])
+// cluster count when it is over the drawing limit (utils/clusterLimit) — labels and legend are skipped
+const tooManyClusters = ref(0)
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })
 const loading = ref(false)
 // board idle (utils/plotReady): a board export / headless render waits on this load, not a guess
@@ -420,6 +423,8 @@ function recolour() {
   const counts = countsMap, distinct = distinctCodes
   const colourFor = new Map<number, string>(), idxOf = new Map<number, number>()
   const pops = props.shownPops ?? []
+  const nClusters = distinct.filter(c => c >= 0).length
+  tooManyClusters.value = pops.length === 0 && tooManyClustersToDraw(nClusters) ? nClusters : 0
   if (pops.length > 0) {
     const clusterColour = new Map<number, string>()
     for (const p of pops) for (const id of p.clusterIds) clusterColour.set(id, p.colour)
@@ -437,7 +442,7 @@ function recolour() {
     const pal = (props.vis ? paletteRange(props.vis, distinct.filter(c => c >= 0).length) : null) ?? PALETTE
     const byCluster = categoryColours(distinct.filter(c => c >= 0), pal)
     distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : byCluster.get(String(c))!) })
-    legend.value = distinct.map(c => ({ label: c < 0 ? 'unclustered' : `cluster ${c}`, colour: colourFor.get(c)!, n: counts.get(c)! }))
+    legend.value = tooManyClustersToDraw(nClusters) ? [] : distinct.map(c => ({ label: c < 0 ? 'unclustered' : `cluster ${c}`, colour: colourFor.get(c)!, n: counts.get(c)! }))
   }
   const cats = new Float32Array(codes.length)
   for (let i = 0; i < codes.length; i++) cats[i] = idxOf.get(codes[i])!
@@ -450,6 +455,8 @@ function recolour() {
       for (const id of p.clusterIds) { sx += sumX.get(id) ?? 0; sy += sumY.get(id) ?? 0; nn += counts.get(id) ?? 0 }
       return nn > 0 ? { label: p.name, x: sx / nn, y: sy / nn } : null
     }).filter((c): c is { label: string; x: number; y: number } => c !== null)
+  } else if (tooManyClusters.value) {
+    centroids.value = []
   } else {
     centroids.value = distinct.filter(c => c >= 0)
       .map(c => ({ label: `${c}`, x: sumX.get(c)! / counts.get(c)!, y: sumY.get(c)! / counts.get(c)! }))
@@ -963,6 +970,9 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
           </div>
         </div>
       </SquarePlot>
+      <div v-if="showLegend && tooManyClusters" class="uv-legend cc-fs-2xs" :style="{ color: legendInk, background: legendBg }">
+        {{ tooManyClustersText(tooManyClusters) }}
+      </div>
       <div v-if="showLegend && legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
         <div v-for="l in legend" :key="l.label" class="leg-row">
           <span class="leg-dot" :style="{ background: l.colour }" />

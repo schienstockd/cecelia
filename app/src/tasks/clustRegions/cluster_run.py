@@ -31,6 +31,9 @@ import cecelia.utils.spatial_utils as spatial_utils
 import cecelia.utils.clustering_utils as clustering_utils
 from cecelia.utils.atomic_io import write_json_atomic
 
+# Most regions a run may write (see the check after clustering).
+MAX_REGIONS = 200
+
 
 def run(params):
     log = script_utils.get_logfile_utils(params)
@@ -142,11 +145,22 @@ def run(params):
             sc.tl.umap(adata, random_state=rs)   # obsm['X_umap']
     else:
         # Leiden on the composition graph — no normalisation (vectors are already fractions in [0,1]).
-        clustering_utils.find_populations(
+        # Compositions over a small neighbourhood repeat exactly (k/6 steps on a Delaunay graph), which
+        # splits Leiden's kNN graph into one island per repeated vector — cluster the distinct vectors.
+        clustering_utils.find_populations_on_distinct_rows(
             adata,
             resolution=float(script_utils.get_param(params, "resolution", default=1.0)),
             axis="NONE", transformation="NONE",
             create_umap=create_umap, backend="auto", random_state=rs, log=log.log, run_env=run_env)
+
+    # A region map with hundreds of regions is not a result, and the pages that plot it draw one label,
+    # legend row and heatmap column per region — refuse to write it rather than leave a run that
+    # freezes the browser.
+    n_regions = adata.obs["clusters"].nunique()
+    if n_regions > MAX_REGIONS:
+        log.log(f"[ERROR] clustRegions: {n_regions} regions — over the limit of {MAX_REGIONS}, nothing "
+                "written. Lower the resolution, or choose k-means with a set number of regions.")
+        raise SystemExit(1)
 
     # ── persist the composition vectors as continuous per-cell measures so the region-composition
     # heatmap reuses the cluster-heatmap (region × measures) — no new plot family (SPATIAL_REGIONS_PLAN

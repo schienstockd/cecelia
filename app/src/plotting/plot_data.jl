@@ -1031,6 +1031,14 @@ function _empty_matrix(mode::AbstractString, cat::AbstractString, normalize::Sym
     error("plot_summary_data: unknown matrix mode '$mode' (expected profile | crosstab)")
 end
 
+# Most columns (or rows) a matrix plot is built with. Each one is an SVG column with its own axis label,
+# so a run with thousands of clusters makes a heatmap no one can read and the browser cannot draw.
+const MATRIX_MAX_LEVELS = 200
+
+_check_matrix_columns(n::Integer) = n > MATRIX_MAX_LEVELS &&
+    error("$n clusters — too many to draw (limit $MATRIX_MAX_LEVELS). Group them into populations, " *
+          "or re-run the clustering with fewer.")
+
 function _matrix_agg(df::DataFrame; mode::AbstractString,
                      measures::AbstractVector{<:AbstractString}=String[],
                      category::Union{Nothing,AbstractString}=nothing,
@@ -1060,13 +1068,16 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
         levels = String[]; seen = Set{String}()
         for k in catkeys; (k === nothing || k in seen) || (push!(levels, k); push!(seen, k)); end
         levels = _sort_cats(levels)
+        _check_matrix_columns(length(levels))
+        # rows of each level, found in ONE pass — a scan per level was levels × rows per measure
+        rows_of = Dict{String,Vector{Int}}(l => Int[] for l in levels)
+        for (i, k) in enumerate(catkeys); k === nothing || push!(rows_of[k], i); end
         cells = Dict{String,Any}[]
         for m in ms
             col = df[!, m]
             means = Dict{String,Float64}(); ns = Dict{String,Int}()
             for lvl in levels
-                vals = Float64[Float64(col[i]) for i in eachindex(col)
-                               if catkeys[i] === lvl && col[i] isa Real && isfinite(col[i])]
+                vals = Float64[Float64(col[i]) for i in rows_of[lvl] if col[i] isa Real && isfinite(col[i])]
                 means[lvl] = isempty(vals) ? NaN : mean(vals); ns[lvl] = length(vals)
             end
             if zscore                                  # standardise the row across its levels
@@ -1088,7 +1099,7 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
         end
         # rows per level (a cluster's size), parallel to `xLabels` — a cell's `n` counts only the rows
         # FINITE in that measure, so it is not the level's size where a measure has gaps
-        xcounts = Int[count(==(lvl), catkeys) for lvl in levels]
+        xcounts = Int[length(rows_of[lvl]) for lvl in levels]
         return Dict{String,Any}("chartType" => "matrix", "matrixMode" => "profile",
             "xLabels" => levels, "yLabels" => ms, "cells" => cells, "category" => cat,
             "xCounts" => xcounts,
@@ -1110,6 +1121,7 @@ function _matrix_agg(df::DataFrame; mode::AbstractString,
             counts[(f, t)] = get(counts, (f, t), 0) + 1
         end
         froms = _sort_cats(froms); tos = _sort_cats(tos)
+        _check_matrix_columns(max(length(froms), length(tos)))
         rowtot = Dict{String,Int}(); coltot = Dict{String,Int}(); total = 0
         for ((f, t), c) in counts
             rowtot[f] = get(rowtot, f, 0) + c; coltot[t] = get(coltot, t, 0) + c; total += c
