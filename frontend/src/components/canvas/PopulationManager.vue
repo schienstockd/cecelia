@@ -30,7 +30,7 @@ import ColourPicker from '../ColourPicker.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
-import { popNameError, popPath, isInSubtree } from '../../utils/popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName } from '../../utils/popName'
 import { claudeProposal } from '../../utils/authorStamp'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
@@ -264,7 +264,10 @@ async function stepAssign(dir: 'undo' | 'redo') {
 }
 
 async function addClusterPopulation() {
-  const n = visiblePops.value.length, name = `Population ${n + 1}`
+  if (!isClusterPopType(props.popType)) return
+  // named for its run and numbered past every name in the segmentation, not just this run's
+  const n = visiblePops.value.length
+  const name = nextClusterPopName(props.suffix, props.popType, g.flat.map(p => p.name))
   await g.addClusterPop(name, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
   // select the new pop so the strip's next click fills it — "add, then click clusters" in one go
   const made = [...visiblePops.value].reverse().find(p => p.name === name)
