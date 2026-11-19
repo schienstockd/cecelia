@@ -918,7 +918,13 @@ def get_region_clusters(project_uid: str, image_uid: str = "", set_uid: str = ""
       - `suffix` is the run id.
       - `largestFrac` near 1.0 (one niche swallowing most points) or a very low `nRegions` vs peers
         means a near-uninformative / collapsed region clustering for that image — worth flagging.
-    Use this to answer "what spatial niches exist in this tissue"; pair with get_contact_stats for
+      - `composition`: how many cells of each named cell-cluster population sit in each region —
+        `{popType, pops, regions, counts}`, `counts[i][j]` = cells of `pops[i]` in `regions[j]` (regions
+        read by the names the user gave them). null when the segmentation has no cluster populations.
+        Divide by the column total for "what is region R made of", by the row total for "where does
+        this type live". Compare images by these per-image fractions, never pooled cells.
+    Use this to answer "what spatial niches exist in this tissue" and "how many B cells are in which
+    region"; pair with get_contact_stats for
     "who co-localises with whom". Summary-level, reads current on-disk state (region columns in the
     per-image label props)."""
     return _spatial_only("regionRuns", project_uid, image_uid, set_uid)

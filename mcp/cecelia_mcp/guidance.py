@@ -142,7 +142,7 @@ for the user, not a verdict).
 - The analysis: get_populations (what a population MEANS — its gate geometry or filter rule), \
 get_measure_summary (phenotype + motility per population), get_behaviour_summary (HMM states), \
 get_cluster_summary (cluster sizes, and what defines each cluster: its z-scored feature profile — \
-describe from it, the name is the user's call), get_region_clusters (spatial niches), \
+describe from it, the name is the user's call), get_region_clusters (spatial niches + cell types per niche), \
 get_contact_stats (pairwise co-localisation), get_spatial_patterns (one population clustered or \
 random among the tissue's cells), get_proximity_profiles (which populations sit near a structure).
 - A population as pictures: gate_histogram / gate_plot (its distribution and gate plot), \

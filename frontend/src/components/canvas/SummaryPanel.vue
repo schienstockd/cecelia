@@ -27,7 +27,7 @@ import { centroidLabel } from '../../utils/gatingAxes'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
-import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, MatrixMode } from '../../plots/types'
+import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget, MatrixMode, MatrixNormalize } from '../../plots/types'
 import { isRunMatrixMode } from '../../plots/types'
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { visControlsFor } from '../../plots/plotControls'
@@ -69,7 +69,7 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+        statsSuffix?: string; elbowMetric?: ElbowMetric; matrixMode?: MatrixMode; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: MatrixNormalize; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median'   // datapoint = each cell/track, or each image's mean/median (one dot per image)
         metricPop?: string    // per-image metric: which of the run's populations (or pairs) to plot
         statsPair?: string    // legacy name of metricPop, from boards saved before the pair plot became a metric
@@ -364,10 +364,16 @@ const zscore = computed<boolean>({ get: () => props.ui.zscore ?? false, set: v =
 // — a crosstab (counts/probs) and an interaction matrix (the log-odds effect size). NB the panel always
 // sends a boolean, so `buildHeatmap`'s own `??` default can never fire; this is the only default.
 const heatmapValues = computed<boolean>({
-  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab' || isRunMatrixMode(matrixMode.value)),
+  get: () => props.ui.heatmapValues ?? (matrixMode.value !== 'profile'),
   set: v => (props.ui.heatmapValues = v) })
-const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
-  get: () => props.ui.matrixNormalize ?? 'row', set: v => (props.ui.matrixNormalize = v) })
+// composition defaults to "fraction of region" (what is each region made of — the CytoMAP / CN
+// composition view); a crosstab to P(to|from). Enrichment is composition-only, so a crosstab never sends it.
+const matrixNormalize = computed<MatrixNormalize>({
+  get: () => {
+    const v = props.ui.matrixNormalize ?? (matrixMode.value === 'composition' ? 'col' : 'row')
+    return v === 'enrichment' && matrixMode.value !== 'composition' ? 'row' : v
+  },
+  set: v => (props.ui.matrixNormalize = v) })
 // effective category: the user's chosen column, else the spec's pinned hint (if available), else a
 // sensible default for the mode. Crosstab needs a "from_to" transitions column; profile needs a real
 // multi-level state column — NB `track_state` also contains "state" but is usually constant, so match
@@ -375,6 +381,9 @@ const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
 // `track_state` → a single "5" column). Transitions are pair-encoded, so they're excluded from the
 // profile fallback.
 const matrixCategory = computed<string>(() => {
+  // a composition crosses the populations with the plot's MEASURE (the region run picked in the Measure
+  // dropdown, discovered via obsMeasurePatterns) — one control for the heatmap and the stacked/box views
+  if (matrixMode.value === 'composition') return measure.value
   if (groupBy.value) return groupBy.value
   const opts = groupByOpts.value
   if (!opts.length) return ''
@@ -552,7 +561,11 @@ async function fetchData(isCurrent: () => boolean) {
     try {
       const cat = isRunMatrix.value ? '' : matrixCategory.value
       if (!isRunMatrix.value && !cat) {
-        result.value = null; error.value = 'Pick a Category column (plot options) for the heatmap.'; return
+        result.value = null
+        error.value = matrixMode.value === 'composition'
+          ? 'No region run on these images yet — run Cluster regions first.'
+          : 'Pick a Category column (plot options) for the heatmap.'
+        return
       }
       const body: Record<string, unknown> = isRunMatrix.value ? {
         projectUid: props.projectUid,
@@ -1380,7 +1393,17 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
               <span>Z-score rows</span>
               <CcToggle aria-label="Z-score rows" v-model="zscore" />
             </div>
-            <label v-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.top="'Normalise the transition matrix'">
+            <label v-if="hmCtl.normalize && matrixMode === 'composition'" class="sp-pop-row cc-muted"
+                   v-tooltip.top="'What each cell shows'">
+              <span>Show</span>
+              <select v-model="matrixNormalize">
+                <option value="col">% of region</option>
+                <option value="row">% of population</option>
+                <option value="enrichment">enrichment (log2)</option>
+                <option value="none">counts</option>
+              </select>
+            </label>
+            <label v-else-if="hmCtl.normalize" class="sp-pop-row cc-muted" v-tooltip.top="'Normalise the transition matrix'">
               <span>Normalize</span>
               <select v-model="matrixNormalize">
                 <option value="row">row · P(to|from)</option>

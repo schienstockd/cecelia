@@ -115,11 +115,38 @@ function contact_matrix(img::CciaImage; suffix::AbstractString = "")
     (; suffixes, suffix = e.suffix, basis = e.basis, cells, nCells = e.nCells, nEdges = e.nEdges)
 end
 
+# Per region run: how many cells of each NAMED cell-cluster population (the image's `clust` pops on
+# the same segmentation) sit in each region — the counts behind the Region composition plot, read
+# through the SAME `plot_summary_data` composition matrix (one computation, two readers). Regions read
+# by their population names where the user named them. Compact grid: `pops` × `regions` → `counts`
+# (row = pop). `nothing` when the segmentation has no cluster populations. A failure on one image is
+# logged and leaves that run without a composition, never the whole summary.
+function _region_composition(img::CciaImage, vn::AbstractString, suffix::AbstractString)
+    pt = "clust"
+    isfile(gating_path(img._dir, vn; pop_type = pt)) || return nothing
+    pops = pop_paths(load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false))
+    isempty(pops) && return nothing
+    m = try
+        plot_summary_data(img, pt, [(String(vn), p) for p in pops], "matrix";
+                          matrix_mode = "composition", category = "regions." * suffix,
+                          matrix_normalize = :none)
+    catch e
+        @warn "spatial summary: region composition failed" uid = img.uid vn suffix exception = e
+        return nothing
+    end
+    rows = String[string(x) for x in m["yLabels"]]; cols = String[string(x) for x in m["xLabels"]]
+    isempty(rows) && return nothing
+    at = Dict((string(c["y"]), string(c["x"])) => Int(c["count"]) for c in m["cells"])
+    (; popType = pt, pops = rows, regions = cols,
+       counts = [Int[get(at, (r, c), 0) for c in cols] for r in rows])
+end
+
 function _spatial_image(img::CciaImage)
     regions = Any[]
     for vn in sort(img_value_names(img))
         _collect_region_cols!(regions, vn, img_label_props_path(img, vn))
     end
+    regions = Any[merge(r, (; composition = _region_composition(img, r.valueName, r.suffix))) for r in regions]
     (; _observer_image_header(img)..., regionRuns = regions, contactStats = _collect_contact_stats(img),
        patternStats = _collect_pattern_stats(img), proximityStats = _collect_proximity_stats(img))
 end
