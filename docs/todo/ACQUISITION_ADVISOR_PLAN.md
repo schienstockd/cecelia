@@ -421,6 +421,10 @@ later. **CZI reader built** (`python/cecelia/utils/czi_meta.py`): same settings 
 reader, ZEN black and ZEN blue, tested on public files (an LSM 780 two-photon stack among them). Not
 read: auto Z brightness points (no file with it on), mean vs sum averaging, ZEN black detector mode.
 The dialog and light path name the ramp per vendor (`depthRampName`: "Auto Z brightness" for Zeiss).
+ZEN API streaming (`napari-zenapi-streaming`, audited 2026-11-19) is **not adopted**: ZEN blue only,
+needs a gateway token and certificate on the scope PC, and a watch folder gives the same loop on every
+scope. Its one idea worth keeping — settings rules — runs on the imported file instead
+(ACQUISITION_TEST_CHECK_PLAN.md → *Sampling against the optics*).
 
 ### Later, optional
 

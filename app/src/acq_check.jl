@@ -33,7 +33,7 @@ _acq_r2(x) = round(x; digits = 2)
 
 # What each finding is about, for the reader and the model review (labels in qc/text.jl, `acq.cat.<id>`).
 # The review uses the same ones, plus `fading` (signal lost over the movie — no rule reads it yet) and `other`.
-const ACQ_CATEGORIES = ("movies", "settings", "depth", "photons", "balance", "shared", "fading", "other")
+const ACQ_CATEGORIES = ("movies", "settings", "sampling", "depth", "photons", "balance", "shared", "fading", "other")
 const ACQ_CATEGORY_OF = Dict(
     "acq.not_measured" => "movies", "acq.channels_unnamed" => "movies", "acq.channel_missing" => "movies",
     "acq.not_in_plan" => "movies",
@@ -43,7 +43,9 @@ const ACQ_CATEGORY_OF = Dict(
     "acq.gain_high" => "photons", "acq.few_photons" => "photons", "acq.balance" => "balance",
     "acq.shares_object" => "shared", "acq.shares_object_image" => "shared",
     "acq.shares_reference" => "shared", "acq.shares_reference_image" => "shared",
-    "acq.shares_all" => "shared", "acq.shares_no_baseline" => "shared", "acq.dim_movie" => "photons")
+    "acq.shares_all" => "shared", "acq.shares_no_baseline" => "shared", "acq.dim_movie" => "photons",
+    "acq.undersampled_xy" => "sampling", "acq.oversampled_xy" => "sampling", "acq.undersampled_z" => "sampling",
+    "acq.pinhole_differs" => "sampling")
 
 # a field of a String- or Symbol-keyed dict (meta read back through JSON3 can be either)
 _ag(d, k, default = nothing) = d isa AbstractDict ? something(get(d, k, nothing), get(d, Symbol(k), nothing), Some(default)) : default
@@ -166,7 +168,9 @@ function acq_image_facts(uid::AbstractString, name::AbstractString, meta::Abstra
         # no ramp found while some ramp value went unread: whether one was saved is unknown
         "brightZRampKnown" => !(acq isa AbstractDict) || acq_bright_z_ramp(_ag(acq, "brightZ")) !== nothing ||
                               !_acq_ramp_has_gaps(_ag(acq, "brightZ")), "objective" => obj, "pixelSize" => px,
-        "channels" => chans, "shared" => shared, "probed" => probed)
+        "channels" => chans, "shared" => shared, "probed" => probed,
+        # pixel size, z-step and pinholes against the optics (acq_sampling.jl)
+        "sampling" => acq_sampling(meta))
 end
 
 """Facts for every image of a set, in set order."""
@@ -533,6 +537,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
     noramp = filter(f -> f["brightZ"] === false && f["brightZRamp"] === nothing, facts)
     isempty(noramp) || add!("info", "acq.brightz_off", "set"; n = length(noramp), s = length(noramp) == 1 ? "" : "s",
                             where = k -> join((f[k] for f in noramp), ", "), detail = Dict("imageUids" => [f["uid"] for f in noramp]))
+    _acq_sampling_findings!(add!, facts)
     if !isempty(head_hits)
         worst = argmin(h -> h["headroom"], head_hits)
         add!(any(h -> h["band"] == "problem", head_hits) ? "warn" : "info", "acq.gain_high", "set";
@@ -596,6 +601,7 @@ function acq_check(plan, facts::AbstractVector)::Dict{String,Any}
 
     ran = String["settings", "Bright Z", "detector range"]
     skipped = String[]
+    push!(any(f -> get(get(f, "sampling", Dict()), "nyquistXYUm", nothing) !== nothing, facts) ? ran : skipped, "sampling")
     has_plan ? append!(ran, ["photons", "balance", "shared structure"]) :
                append!(skipped, ["photons", "balance", "shared structure"])
     steps, verdict = acq_verdict(findings, stage; item = item, items = items, technology = tech)
@@ -606,3 +612,38 @@ end
 
 """The warnings a check result still has open — the badge count and the Blackboard entry's sections."""
 acq_open(result) = [f for f in result["findings"] if f["level"] == "warn"]
+
+_acq_um_text(v) = string(round(v; sigdigits = 2)) * " µm"
+
+# Sampling against the optics (acq_sampling.jl), one note per kind across the set, its movies grouped by
+# value: a pixel or z-step coarser than the Nyquist value, a pixel much finer, and a confocal's channels
+# set to different pinholes. Notes, not warnings: whether a coarse pixel matters depends on the objects
+# (cells are many pixels wide; beads may be one), which the settings don't say.
+function _acq_sampling_findings!(add!, facts)
+    states = Dict(f["uid"] => acq_sampling_state(f["sampling"]) for f in facts if haskey(f, "sampling"))
+    for (code, axis, want, val, crit, verb) in (
+            ("acq.undersampled_xy", 1, :under, "pixelUm", "nyquistXYUm", "needs ≤"),
+            ("acq.oversampled_xy", 1, :over, "pixelUm", "nyquistXYUm", "Nyquist"),
+            ("acq.undersampled_z", 2, :under, "zStepUm", "nyquistZUm", "needs ≤"))
+        hit = [f for f in facts if haskey(states, f["uid"]) && states[f["uid"]][axis] === want]
+        isempty(hit) && continue
+        text(f) = _acq_um_text(f["sampling"][val]) * " (" * verb * " " * _acq_um_text(f["sampling"][crit]) * ")"
+        groups = Vector{Vector{Dict{String,Any}}}()
+        for f in hit
+            g = findfirst(g -> text(g[1]) == text(f), groups)
+            g === nothing ? push!(groups, [f]) : push!(groups[g], f)
+        end
+        ratio = maximum(f["sampling"][val] / f["sampling"][crit] for f in hit)
+        add!("info", code, "set"; n = length(hit), s = length(hit) == 1 ? "" : "s",
+             value = string(round(want == :over ? minimum(f["sampling"][crit] / f["sampling"][val] for f in hit) : ratio; digits = 1)),
+             where = k -> join((text(g[1]) * ": " * join((f[k] for f in g), ", ") for g in groups), " · "),
+             detail = Dict("images" => [Dict("uid" => f["uid"], "value" => f["sampling"][val], "nyquist" => f["sampling"][crit],
+                                             "basis" => f["sampling"]["basis"]) for f in hit]))
+    end
+    for f in facts
+        ph = get(get(f, "sampling", Dict()), "pinholes", Float64[])
+        (length(ph) >= 2 && minimum(ph) > 0 && maximum(ph) / minimum(ph) > ACQ_PINHOLE_SPREAD) || continue
+        add!("info", "acq.pinhole_differs", f["uid"]; what = join((string(round(p; digits = 2)) for p in ph), " / "),
+             detail = Dict("pinholesAiry" => ph))
+    end
+end
