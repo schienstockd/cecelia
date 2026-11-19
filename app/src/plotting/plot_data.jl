@@ -1512,6 +1512,46 @@ function _interaction_matrix(img::CciaImage; suffix::AbstractString="")
         "granularity" => "cell", "series" => Any[])
 end
 
+# ── Proximity matrix (a PRECOMPUTED population × distance-band grid) ─────────────────────────────
+#
+# `spatialAnalysis.proximityProfile` wrote, per image, each population's log2 enrichment in distance
+# bands around a structure (`proximity/{suffix}.json`). Rows = the run's populations, columns = its bands
+# (nearest first), value = the MEAN enrichment over the selected images that have the run — unlike the
+# interaction matrix, every image's grid has the same rows and columns, so the mean is well defined.
+# `count` sums the cells behind each cell; `nImages` says how many images went into the mean. Only runs
+# that measured the SAME thing are averaged (`matching_run_images`, the most common structure, counted
+# and reference populations and bands); a same-named run built differently is left out and counted in
+# `nSkipped`, which the panel shows. Comparing groups of images is the per-image metric plot
+# (`image_metrics.jl`, source `proximityProfile`).
+function _proximity_matrix(imgs::AbstractVector{<:CciaImage}; suffix::AbstractString = "")
+    src = IMAGE_METRIC_SOURCES["proximityProfile"]
+    chosen, suffixes = _image_metric_run(imgs, src, suffix)
+    keep, n_skipped = matching_run_images(imgs, src, chosen)
+    rows = String[]; cols = String[]
+    acc = Dict{Tuple{String,String},Vector{Float64}}(); counts = Dict{Tuple{String,String},Int}()
+    n_images = 0
+    for (img, k) in zip(imgs, keep)
+        k || continue
+        runs = _collect_proximity_stats(img)
+        run = runs[findfirst(r -> r.suffix == chosen, runs)]
+        n_images += 1
+        for r in run.records
+            pop, band = String(r[:pop]), String(r[:band])
+            pop in rows || push!(rows, pop); band in cols || push!(cols, band)
+            v = _metric_value(get(r, :log2Enrichment, nothing))
+            isnan(v) || push!(get!(acc, (band, pop), Float64[]), v)
+            counts[(band, pop)] = get(counts, (band, pop), 0) + Int(something(get(r, :n, 0), 0))
+        end
+    end
+    cells = Any[Dict{String,Any}("x" => x, "y" => y, "value" => mean(acc[(x, y)]),
+                                 "count" => counts[(x, y)], "nImages" => length(acc[(x, y)]))
+                for y in rows for x in cols if !isempty(get(acc, (x, y), Float64[]))]
+    Dict{String,Any}("chartType" => "matrix", "matrixMode" => "proximity",
+        "xLabels" => cols, "yLabels" => rows, "cells" => cells, "valueLabel" => "log2 enrichment",
+        "suffix" => chosen, "suffixes" => suffixes, "nImages" => n_images, "nSkipped" => n_skipped,
+        "granularity" => "cell", "series" => Any[])
+end
+
 # One interaction PAIR across images is a per-image metric: `image_metric_summary` with source
 # `neighbourStats` (app/src/plotting/image_metrics.jl).
 
@@ -1549,6 +1589,8 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     # `spatialStats/{suffix}.json` sidecar. Intercept before any membership work (see _interaction_matrix).
     chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "interaction" &&
         return _interaction_matrix(img; suffix = stats_suffix)
+    chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "proximity" &&
+        return _proximity_matrix([img]; suffix = stats_suffix)
     # the HMM state-count comparison reads the runs' fit records, not cells (hmm_fit_curve.jl)
     chart_type == "elbow" && return hmm_fit_curve_data([img])
     fit = _hmm_profile_fit([img], unique(first.(targets)), chart_type, matrix_mode, category)
@@ -1597,6 +1639,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
             "xLabels" => String[], "yLabels" => String[], "cells" => Any[], "series" => Any[])
         return _interaction_matrix(first(imgs); suffix = stats_suffix)
     end
+    chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "proximity" &&
+        return _proximity_matrix(imgs; suffix = stats_suffix)
     # every recorded HMM run on the selected images, as state-count curves (hmm_fit_curve.jl)
     if chart_type == "elbow"
         result = hmm_fit_curve_data(imgs); result["scope"] = String(scope)

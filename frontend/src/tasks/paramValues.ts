@@ -596,6 +596,7 @@ export function imageNamesForField(img: CciaImage, field: string | undefined | n
   if (field === 'statsSuffixes') return img.statsSuffixes ?? []
   if (field === 'roiSuffixes') return img.roiSuffixes ?? []
   if (field === 'patternSuffixes') return img.patternSuffixes ?? []
+  if (field === 'proximitySuffixes') return img.proximitySuffixes ?? []
   if (field === 'clusterSuffixes') return img.clusterSuffixes ?? []
   if (field === 'regionSuffixes') return img.regionSuffixes ?? []
   return Object.keys(img.filepaths ?? { default: '' })

@@ -1,0 +1,79 @@
+{
+  "task": "proximityProfile",
+  "fun_name": "spatialAnalysis.proximityProfile",
+  "label": "Proximity profile",
+  "purpose": "Which populations sit near a structure, in distance bands around it",
+  "useWhen": ["Cell types around germinal centres, follicles, vessels or aggregates", "Comparing what surrounds a structure between groups of images", "After Detect aggregates or Region clustering: their cells make the structure"],
+  "notWhen": ["Each cell's own distance to a target: use Cell contacts", "Who neighbours whom across the whole tissue: use Interaction matrix"],
+  "category": "Spatial analysis",
+  "group": "Contacts",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "requires": {
+    "scale": ["xy"]
+  },
+  "params": [
+    {
+      "key": "proximitySuffix",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "proximity",
+      "default": "default",
+      "tip": "Output name → proximity/<name>.json"
+    },
+    {
+      "key": "structurePops",
+      "required": true,
+      "requiredMessage": "Select the structure",
+      "label": "Structure",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Its cells mark the structure, e.g. a region or aggregated cells"
+    },
+    {
+      "key": "pops",
+      "required": true,
+      "requiredMessage": "Select at least one population to count",
+      "label": "Populations",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Counted in each band"
+    },
+    {
+      "key": "referencePops",
+      "label": "Reference",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Shares are of these cells; empty = all cells"
+    },
+    {
+      "key": "bandWidth",
+      "label": "Band width (µm)",
+      "type": "float",
+      "min": 1,
+      "max": 500,
+      "step": 1,
+      "default": 15,
+      "tip": "Width of each distance band from the structure"
+    },
+    {
+      "key": "nBands",
+      "label": "Bands",
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 3,
+      "tip": "Number of bands; cells further out form one last band"
+    }
+  ]
+}

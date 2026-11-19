@@ -28,6 +28,7 @@
 // pop type alone — each spec states it, per option.
 
 import { popTypeInfo } from './popTypeRegistry'
+import { isRunMatrixMode } from './types'
 
 export interface PopTypeOption {
   popType: string
@@ -55,13 +56,13 @@ export interface PopTypeSpecLike {
  * or validates a selection asks THIS predicate — the panel (don't require series, don't say "select
  * populations"), the population picker (don't offer a selection that does nothing), and the server
  * (`api_plot_data`'s `precomputed`, which must not reject a body with no pops). One question, one
- * answer. A per-image metric (`imageMetric`: a spatial-pattern population's or an interaction pair's
+ * answer. A run-backed matrix (interaction, proximity) reads its task's sidecar. A per-image metric (`imageMetric`: a spatial-pattern population's or an interaction pair's
  * number per image, grouped by image attribute) and the HMM state-count elbow (`precomputed: 'hmmFit'`,
  * every recorded HMM run's fit) are fixed by their runs too, not by the ticked populations — unless
  * the metric is keyed by the picker's own populations (`pickPops`, see `imageMetricPicksPops`).
  */
 export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
-  spec.dataSource.matrix?.mode === 'interaction' || spec.dataSource.precomputed === 'hmmFit' ||
+  isRunMatrixMode(spec.dataSource.matrix?.mode) || spec.dataSource.precomputed === 'hmmFit' ||
   (!!spec.dataSource.imageMetric && !spec.dataSource.imageMetric.pickPops)
 
 /**

@@ -85,6 +85,16 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
+**A second run-backed matrix: the proximity profile.** `spatialAnalysis.proximityProfile` writes, per
+image, each population's log2 enrichment in distance bands around a structure (`proximity/{suffix}.json`).
+`matrixMode: "proximity"` (`_proximity_matrix`, `plot_data.jl`) draws populations × bands. Unlike the
+interaction matrix it is the MEAN over the selected images whose run MATCHES — the most common structure,
+counted and reference populations and bands (`matching_run_images`, `image_metrics.jl`); a same-named run
+built differently is left out and counted in `nSkipped`, which the panel shows as a footer notice. Each
+cell reports `nImages`. The per-image plot (`spatial_proximity_summary`) applies the same rule. The frontend treats both modes alike through
+`isRunMatrixMode` (`plots/types.ts`): diverging colours pivoted at 0, a run picker, no population picker.
+Spec: `spatial_proximity.json`.
+
 **When the data is one number per image from a run.** A spatial-pattern run's NN ratio, or one
 interaction pair's log-odds, is a per-IMAGE value a task wrote to a sidecar, and the question asked of
 it is "does it differ between groups of images?". The spec declares
@@ -100,10 +110,11 @@ population the run holds). Two kinds:
   order) and greys out the ones the run has no result for (`PlotReadout.available`). All six pop
   types are offered (the task accepts tracked and track-cluster populations too). Several populations
   × attribute groups are tested within each population, as every attribute-grouped plot is (below).
-- **Otherwise** (interaction pairs, which are not picker populations) it is precomputed
+- **Otherwise** (interaction pairs and proximity "population · band" rows, which are not picker populations) it is precomputed
   (`isPrecomputedSpec`): no population selection, a header dropdown picks one of `pops`, and a stale
   pick falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
-Specs: `spatial_pattern_summary.json` (source `spatialPattern`) and `spatial_interaction_pairs.json`
+Specs: `spatial_pattern_summary.json` (source `spatialPattern`), `spatial_proximity_summary.json` (source
+`proximityProfile`, `pop` = "population · band") and `spatial_interaction_pairs.json`
 (source `neighbourStats`, `pop` = the pair "A × B"). With `shufflePops` set on an interaction run (the
 conditional null), the log-odds is observed vs that null's exact mean, so ≈ 0 means "no different from
 the shuffled populations in general". See `docs/todo/SPATIAL_PATTERN_PLAN.md` Decision 8.

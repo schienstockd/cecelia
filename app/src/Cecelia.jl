@@ -78,6 +78,7 @@ export img_labels_dir, img_labels_path, img_label_files
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
 export img_pattern_dir, img_pattern_path, img_pattern_suffixes
+export img_proximity_dir, img_proximity_path, img_proximity_suffixes
 export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
 export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
@@ -232,7 +233,7 @@ export stale_artefacts_for, staleness_sidecar_path, stale_outputs_for
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes
+export CellNeighbours, ClustRegions, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes, ProximityProfile
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
@@ -425,6 +426,8 @@ include("tasks/spatialAnalysis/aggregate_runs.jl")
 include("tasks/spatialAnalysis/detectAggregates.jl")
 include("tasks/spatialAnalysis/contact_targets.jl")   # target grouping shared by both contact routes
 include("tasks/spatialAnalysis/cellContacts.jl")
+include("tasks/spatialAnalysis/proximity_bands.jl")
+include("tasks/spatialAnalysis/proximityProfile.jl")
 include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")
 include("tasks/clustRegions/cluster.jl")

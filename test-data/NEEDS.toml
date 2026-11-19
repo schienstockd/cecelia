@@ -25,7 +25,7 @@
 [needs.multiplex-structure-still]
 properties = ["cells", "still", "2d", "calibrated", "marker-names", "multiplex", "structure", "real"]
 why = "Proximity profile and the structure readouts are for multiplex slides: their real-data test runs on a 2P movie with µm == pixels."
-waiting = []
+waiting = ["app/test/suite/proximity_profile.jl → a still multiplex case, to write when this is met (today: the calibrated KDIeEm movie)"]
 budget = "labelProps table + gating sidecar only, no image store; under the 1 MB per-file cap (a few thousand cells, a subset if needed)"
 opened = "2026-11-18"
 status = "open"
