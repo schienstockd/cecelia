@@ -39,6 +39,8 @@ import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSe
 import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
+import SearchSelect from '../SearchSelect.vue'
+import { STRUCTURAL_COL, summaryMeasurePicks } from '../../utils/measureGroups'
 import PlotNotice from './PlotNotice.vue'
 import { facetLoad, explodeLoad } from '../../plots/renderLoad'
 import { usePanelExport } from '../../stores/canvasPanelExports'
@@ -101,9 +103,9 @@ const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === 
 // which reads these refs; declaring them later would be a temporal-dead-zone crash.
 // structural regionprops that are not QC morphology measures (bounding box, centroid, raw inertia
 // eigvals, the label index). New measurements no longer save bbox; this also hides it in existing data.
-const STRUCTURAL_COL = /^(label$|bbox[-_]|centroid[-_]|inertia_tensor)/
 const varCols = ref<string[]>([])        // var columns (morphology + intensity)
 const channelCols = ref<string[]>([])    // intensity var columns specifically (mean_intensity_* / renamed)
+const channelNames = ref<string[]>([])   // display names by channel index (a marker is stored by name)
 const obsCols = ref<string[]>([])        // obs columns (live.cell.*, hmm.state, cluster ids, …)
 const temporalCols = ref<string[]>([])   // obsm temporal col(s) (e.g. "t") — groupable but not in obs
 // which (imageUid, valueName) the loaded columns belong to. On an image/segmentation switch the col
@@ -117,8 +119,15 @@ const temporalCols = ref<string[]>([])   // obsm temporal col(s) (e.g. "t") — 
 const colsKey = () => `${props.imageUid ?? ''}|${distinctValueNames(ownSeries.value).join(',')}|${granularity.value}`
 const colsFor = ref('')
 const colsReady = computed(() => colsFor.value === colsKey())
+// channelMeasures: the image's markers (by name), shape and the spec's own measures, grouped for the
+// searchable picker — a multiplex panel's 40 channels are unreadable as one flat <select>.
+const measurePicks = computed(() => props.spec.dataSource.channelMeasures && varCols.value.length
+  ? summaryMeasurePicks({ columns: varCols.value, channels: channelCols.value, obsColumns: obsCols.value,
+                          channelNames: channelNames.value, options: props.spec.dataSource.measureOptions ?? [] })
+  : null)
 const measureOpts = computed<string[]>(() => {
   const ds = props.spec.dataSource
+  if (measurePicks.value) return measurePicks.value.flatMap(g => g.options.map(o => o.value))
   // `ds.measure` is OPTIONAL (a population summary has none; a discovered-measure spec can't name one),
   // so normalise it here and keep this list strictly string[] for every consumer below.
   const def = ds.measure ?? ''
@@ -254,7 +263,12 @@ const CATEGORICAL_OBS = /(\.hmm\.state\.|\.hmm\.transitions\.|\.clusters?\.|trac
 async function loadObsCols() {
   const key = colsKey()
   const vns = distinctValueNames(ownSeries.value)
-  if (!props.imageUid || !vns.length) { obsCols.value = []; temporalCols.value = []; colsFor.value = key; return }
+  // nothing selected: clear EVERY list, or a column-built picker (`channelMeasures`) keeps offering the
+  // previous image's markers and `colsReady` lets the fetch ask for them
+  if (!props.imageUid || !vns.length) {
+    varCols.value = []; channelCols.value = []; channelNames.value = []; obsCols.value = []; temporalCols.value = []
+    colsFor.value = key; return
+  }
   try {
     // one request per segmentation, unioned — see distinctValueNames / mergeColumnSets. Concurrent:
     // these are small metadata reads and the panel already defers its fetch until they all land.
@@ -274,12 +288,13 @@ async function loadObsCols() {
     const merged = mergeColumnSets(parts)
     varCols.value = merged.columns
     channelCols.value = merged.channels
+    channelNames.value = merged.channelNames
     obsCols.value = merged.obsColumns
     temporalCols.value = merged.temporalColumns
     colsFor.value = key
   } catch {
     if (colsKey() !== key) return
-    varCols.value = []; channelCols.value = []; obsCols.value = []; temporalCols.value = []
+    varCols.value = []; channelCols.value = []; channelNames.value = []; obsCols.value = []; temporalCols.value = []
     colsFor.value = key
   }
 }
@@ -515,7 +530,7 @@ async function fetchData(isCurrent: () => boolean) {
   // against a 2D image) → a backend "ignoring unknown columns" warning + a transient empty plot. Defer
   // until loadObsCols reports the current (imageUid, valueName)'s columns; the `colsReady` fetch-watch
   // re-fires this, by which point the measure-reset watch has moved `measure` onto a valid option.
-  if (props.spec.dataSource.measuresFromData && !colsReady.value) return
+  if ((props.spec.dataSource.measuresFromData || props.spec.dataSource.channelMeasures) && !colsReady.value) return
   // `loading` is driven by the scheduler's onState (with a small sticky window), not per-fetch —
   // toggling it here would flash the spinner off between two fast fetches during a click burst.
   error.value = ''
@@ -1302,7 +1317,10 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       </select>
       <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid and
            for a row count) -->
-      <select v-if="chartType !== 'heatmap' && chartType !== 'count' && hasMeasure" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
+      <SearchSelect v-if="chartType !== 'heatmap' && chartType !== 'count' && hasMeasure && measurePicks"
+                    v-model="measure" :groups="measurePicks" class="sp-measure" aria-label="Measure to plot"
+                    v-tooltip.bottom="'Measure to plot'" />
+      <select v-else-if="chartType !== 'heatmap' && chartType !== 'count' && hasMeasure" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
         <option v-for="m in measureOpts" :key="m" :value="m">{{ measureLabel(m) }}</option>
       </select>
       <select v-if="validCharts.length > 1" v-model="chartType" class="sp-chart"
