@@ -700,6 +700,7 @@ export const clusterRegionsGuide = moduleTaskGuide({
   params: [
     'Neighbour graph — the graph a Spatial run produced; pick one to cluster over.',
     'Population basis — the populations whose mix defines each neighbourhood\'s composition vector.',
+    'Neighbourhood over — each frame, a whole track (one region per track), or a whole movie on a window graph.',
     'Suffix — output name for this run; you pick it again when reading the regions downstream.',
   ],
   after: [

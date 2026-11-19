@@ -46,6 +46,12 @@ def run(params):
         return
 
     a, obs = spatial_utils.load_graph(graph_path)
+    if spatial_utils.graph_window_grid(a) is not None:
+        # a fixed-window graph places cells on tiles and has no cell-to-cell edges to count contacts on
+        log.log(f"[ERROR] neighbourStats: graph '{graph_sfx}' is a fixed-window graph — contacts need a "
+                "cell-to-cell graph (Delaunay, kNN or radius)")
+        _dump(qc_path, {"nCells": a.n_obs, "nEdges": 0, "meanDegree": 0.0, "coverage": 0.0})
+        return
     meta = spatial_utils.graph_meta(a)
     log.log(f">> graph '{graph_sfx}': {a.n_obs} cells, method={meta.get('method')} "
             f"radius={meta.get('radius')} k={meta.get('nNeighbours')}")

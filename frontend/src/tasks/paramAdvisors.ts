@@ -143,6 +143,8 @@ export interface AdvisorParam {
   optionsFrom?: string
   /** Server-set: a Julia validator is registered for this task + key (see `taskBackendAdvisor`). */
   backendAdvisory?: boolean
+  /** Server-set beside `backendAdvisory`: sibling keys the verdict reads, so a change re-asks. */
+  advisoryReloadOn?: string[]
   /** `namespace` on a `valueNameInput` — which registry the name writes into (`labels`, …). */
   namespace?: string
   /** `outputRegistry` on a label writer's `valueNameInput` — `branch_labels` for branching. */
@@ -157,7 +159,7 @@ export interface ParamAdvisor {
    */
   advise: (value: unknown, ctx: AdvisorContext, param?: AdvisorParam) => Promise<ParamAdvisory | null>
   /** Context values whose change should re-run `advise`, beyond the param value itself. */
-  reloadOn?: (ctx: AdvisorContext) => unknown[]
+  reloadOn?: (ctx: AdvisorContext, param?: AdvisorParam) => unknown[]
 }
 
 // ── anisotropy grid spacing ────────────────────────────────────────────────────────────────────
@@ -710,7 +712,9 @@ const imagesKey = (ctx: AdvisorContext) => [(ctx.images ?? []).map(i => `${i.uid
  * backend on the tasks that registered it and on no other.
  */
 export const taskBackendAdvisor: ParamAdvisor = {
-  reloadOn: imagesKey,
+  // the images, plus any sibling the server says the verdict reads (`advisoryReloadOn`)
+  reloadOn: (ctx, param) => [...imagesKey(ctx),
+                             ...(param?.advisoryReloadOn ?? []).map(k => ctx.values?.[k])],
   advise: async (value, ctx, param) =>
     ctx.funName && param?.key ? validateOnBackend(ctx.funName, param.key, value, ctx) : null,
 }

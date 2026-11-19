@@ -1020,7 +1020,7 @@ end
 #                                   nCrossFrame, nUnplaced, stale, note?, vns, aVn, aLabel, bVn, bLabel}
 #
 # A neighbour graph (`spatialAnalysis.cellNeighbours`) as line segments, one per edge, centroid to
-# centroid (`spatial_graph_segments` — the reader the movie overlay closure uses too). The skeleton
+# centroid — or, for a fixed-window graph, one per tile border (cells ""/-1, `flat` through a stack) (`spatial_graph_segments` — the reader the movie overlay closure uses too). The skeleton
 # route's shape and units: µm, `t` a frame index (-1 = every frame), `plane` computed server side.
 # Edges it cannot draw are counted, never dropped silently: `nCrossFrame` (a graph pooled over time
 # joining two frames) and `nUnplaced` (a cell no longer in its table); `stale` = a mask store newer
@@ -1052,7 +1052,7 @@ function api_viewer_spatial_graphs(req::HTTP.Request)
     # each segment's two cells, `(vns[aVn + 1], aLabel)` — what "only between shown populations" matches
     vns = unique(vcat(g.a_vn, g.b_vn))
     vix = Dict(v => i - 1 for (i, v) in enumerate(vns))
-    200, JSON3.write((; suffix = sfx, flat = false, nSegments = n, t = s.t, plane = s.plane,
+    200, JSON3.write((; suffix = sfx, flat = s.flat, nSegments = n, t = s.t, plane = s.plane,
                         x0 = s.x0 .* ux, y0 = s.y0 .* uy, z0 = s.z0 .* uz,
                         x1 = s.x1 .* ux, y1 = s.y1 .* uy, z1 = s.z1 .* uz,
                         nCrossFrame = g.n_cross_frame, nUnplaced = g.n_unplaced, stale = g.stale, note,

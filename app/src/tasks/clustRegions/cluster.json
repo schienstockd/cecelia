@@ -53,6 +53,18 @@
       "tip": "Count graph neighbours outside the basis as an \"other\" fraction"
     },
     {
+      "key": "pooling",
+      "label": "Neighbourhood over",
+      "type": "select",
+      "default": "frame",
+      "options": [
+        { "value": "frame", "label": "Each frame" },
+        { "value": "track", "label": "Whole track (cell graphs)" },
+        { "value": "movie", "label": "Whole movie (window graphs)" }
+      ],
+      "tip": "Pool neighbours over a whole track (cell graph) or a whole movie (window graph)"
+    },
+    {
       "key": "clusterMethod",
       "label": "Clustering",
       "type": "select",
