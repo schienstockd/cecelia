@@ -98,7 +98,7 @@ MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("confirmed",),
     "convention": ("should reuse", "wrong home"),
     "result": ("reproduced",),
-    "test_value": ("passes on base", "untested"),   # mechanical: test_value.py
+    "test_value": ("passes on base", "untested", "no browser test"),   # mechanical: test_value.py
 }
 
 #: Advisory markers — no outcome tag required and no `_finding` row, but still a finding the
