@@ -40,7 +40,7 @@ and is where a user checks before letting Claude near their Analysis page. See
 `docs/ai-assist/OBSERVER.md` and `docs/todo/MCP_BOARD_AUTHORING_PLAN.md`.
 
 A `plot` is a summary spec id **or a board VIEW key** — the interactive views and cluster panels the
-board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`,
+board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`, `popPositions`,
 `hmmStateCards`, `motifCards`, `figure` (a rendered figure by file `name`), and the clustering plots `clusterMap` (was `umap`), `heatmap`, `hmmStates`,
 `hmmTransitions`, `cellCards`), each with its own few fields, stored as `{kind: "interactive", ref,
 state}`. Clustering views name their run (`suffix` + `popType` clust/trackclust), which becomes the

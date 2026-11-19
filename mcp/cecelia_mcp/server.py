@@ -645,6 +645,8 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
       - "gatingStrategy" {image?, valueName?, popType?, pop?, hierarchy?} — the gates leading to `pop`
         (popType "live" for a segmentation's gates); `hierarchy: true` draws every gate below it.
       - "trackPaths" {pops?, mode?: paths|star|rose} · "trackDiagnostics" {pops?} — tracked populations.
+      - "popPositions" {pops?, frame?} — where the populations' cells sit on the image (x/y), at one frame;
+        any population type, but ONE type per plot (regions, or behaviour clusters, not both).
       - "hmmStateCards" {valueName?, hmmCol?} · "motifCards" {valueName?} — example-cell cards.
       - "figure" {name} — a rendered figure (list_figures for the names), shown as made.
       - clustering plots "clusterMap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",

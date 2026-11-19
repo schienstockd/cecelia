@@ -33,6 +33,7 @@ import { fitLabel } from '../../plots/valueColour'
 import { placeChips } from '../../plots/chipPlacement'
 import { asinhSpread } from '../../plots/diffmapScale'
 import { tkey, parseTkey } from '../../plots/series'
+import { popWireToken } from '../../plots/popPositions'
 import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -349,7 +350,7 @@ async function loadPopGroups() {
 // GET /api/plots/attrs — which left the picker empty when the set wasn't the active one).
 const attrs = computed(() => project.imageAttrsFor(props.imageUids))
 // a colour-pop is stored as a tkey (popType::valueName+pop); the endpoint wants "popType~vnPrefixedPath"
-const popToken = (key: string) => { const t = parseTkey(key); return `${t.popType}~${t.valueName}${t.pop}` }
+const popToken = (key: string) => popWireToken(parseTkey(key))
 const popLabelForKey = (key: string) => {
   const t = parseTkey(key)
   const grp = popGroups.value.find(g => g.valueName === t.valueName)

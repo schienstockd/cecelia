@@ -154,6 +154,7 @@ export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, 
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
+export pop_positions, pop_index_by_label
 export image_metric_frame, image_metric_summary, IMAGE_METRIC_SOURCES
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
@@ -334,6 +335,7 @@ include("plotting/plot_data.jl")
 include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "elbow") from the hmmfit records
 include("plotting/stats.jl")
 include("plotting/image_metrics.jl")   # per-image sidecar metrics → summary plots (SPATIAL_PATTERN_PLAN D8)
+include("plotting/pop_positions.jl")   # every cell at its position, tagged by population (popPositions plot)
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_headings.jl")     # per-movie heading circular stats (radiatR port; the battery reads it)

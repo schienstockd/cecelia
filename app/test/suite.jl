@@ -355,6 +355,7 @@ include(joinpath(@__DIR__, "suite", "spatial_graph_knn.jl"))   # RESULT-REVIEW r
 # testset scope, so any helpers defined earlier in suite.jl are still in scope for the
 # extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "plots.jl"))
+include(joinpath(@__DIR__, "suite", "pop_positions.jl"))   # the population positions plot read
 
 # ── track_props: per-track aggregation (ports tracksInfo; cell→track properties) ──
 # ── tracking + HMM testsets ────────────────────────────────────────────
