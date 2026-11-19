@@ -446,7 +446,9 @@ SEEING AND ADJUSTING THE VIEWER. `get_viewer_screenshot(image_uid)` returns the 
 picture (its Save image) plus its `view` (camera, 2D/3D, t/z, per-channel visible + \
 contrast_limits). `set_viewer_view(image_uid, view)` changes that view live — a PARTIAL view, only \
 the fields named — and is saved as the image's viewer settings, so change only what the user \
-asked for. Loop: screenshot → adjust → screenshot; never ask the user to re-run anything for it.
+asked for. Loop: screenshot → adjust → screenshot; never ask the user to re-run anything for it. \
+"The lens" is the viewer's channel lens: the screenshot's `lens` says where it is and the cells and \
+populations inside; `view.lens` `{x, y, r, channels}` (level-0 px) pins one there.
 
 SEEING AND ADJUSTING A PLOT. `get_plot_image(plot_id)` returns an open plot panel's picture (a \
 UMAP, heatmap, summary chart, gate pairs …) as the user has it set up, plus the `settings` it lets \

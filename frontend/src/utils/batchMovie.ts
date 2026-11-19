@@ -49,11 +49,18 @@ export interface TitleCardCfg {
 /** What a movie's point size and tail width count — see `BatchMovieCfg.overlaySizeUnit`. */
 export type OverlaySizeUnit = 'image' | 'screen'
 
+/** The channel lens in a movie (`utils/viewer/channelLens.ts`): centre and radius in level-0 image
+ *  px — pinned to the tissue — and the channels it draws, name → colormap (as `channels`). A 2D look
+ *  only. Drawn by `shaders/lens.wgsl`, the viewer's own lens. */
+export interface MovieLens { x: number; y: number; r: number; channels: Record<string, string> }
+
 export interface BatchMovieCfg {
   // The image versions each movie shows, in COLUMN order (docs/todo/MOVIE_COMPARE_PLAN.md). Two or
   // more record a side-by-side comparison. `valueName` is what configs saved before that carried —
   // read it through `versionsFromConfig`, never directly, so an old config keeps its version.
   valueNames?: string[]
+  // The channel lens the viewer showed, where it was left (2D only).
+  lens?: MovieLens
   // The segmentation masks each movie draws, in order. 2+ makes them the grid's ROWS (with the
   // versions as its columns); one draws it in every cell. Read via `segmentationsFromConfig`.
   labelValueNames?: string[]

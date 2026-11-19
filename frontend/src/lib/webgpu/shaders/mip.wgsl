@@ -33,6 +33,7 @@
 // Used by `volumeRenderer.ts` (browser) and the movie host (`python/cecelia/utils/wgsl_utils.py`).
 
 #include "mip_common.wgsl"
+#include "lens.wgsl"
 @group(0) @binding(1) var vol: texture_3d<u32>;
 @group(0) @binding(2) var lut: texture_2d<f32>;
 // The segmentation mask for the SAME timepoint and the same planes — uploaded in the same slot as the
@@ -113,7 +114,7 @@ fn labAt(vi: vec3<i32>) -> u32 {
 
   let t = hitBox(org, rd, h);
   let t0 = max(t.x, 0.0);
-  if (t.y <= t0) { return vec4(0.0, 0.0, 0.0, 1.0); }
+  if (t.y <= t0) { return vec4(lensRim(vec3(0.0), in.pos.xy), 1.0); }
 
   let n = i32(p.cam.w);
   let dt = (t.y - t0) / f32(n);
@@ -150,8 +151,9 @@ fn labAt(vi: vec3<i32>) -> u32 {
   }
 
   var acc = vec3(0.0);
+  let inLens = lensIn(in.pos.xy);   // the channel lens draws its own set (lens.wgsl)
   for (var c = 0; c < nch; c = c + 1) {
-    if (p.ch[c].z < 0.5) { continue; }
+    if (!chOn(c, inLens)) { continue; }
     let win = clamp((mx[c] - p.ch[c].x) / max(p.ch[c].y - p.ch[c].x, 1.0), 0.0, 1.0);
     acc = acc + ramp(c, win);
   }
@@ -176,5 +178,5 @@ fn labAt(vi: vec3<i32>) -> u32 {
       else if (labInPick(labId)) { acc = vec3(1.0, 1.0, 1.0); }
     }
   }
-  return vec4(min(acc, vec3(1.0)), 1.0);
+  return vec4(lensRim(min(acc, vec3(1.0)), in.pos.xy), 1.0);
 }

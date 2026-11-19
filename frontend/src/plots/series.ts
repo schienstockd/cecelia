@@ -40,19 +40,72 @@ export function seriesMemo<K>(): (id: K, keys: readonly string[]) => SeriesTarge
 
 /**
  * The picked series as chips, in pick order — the order the plots draw them in (the server keeps the
- * targets' order, `_pop_rank` in `app/src/plotting/plot_data.jl`). A key no longer listed (its image
- * left the selection) keeps a chip under its bare path, so it can still be dragged or dropped.
+ * targets' order, `_pop_rank` in `app/src/plotting/plot_data.jl`). Only picks the picker LISTS get a
+ * chip: on a mixed board the selection also holds the other slots' families (a track plot's HMM pops
+ * while a live-pop plot is active), and a chip for each of those was a strip longer than the plot.
+ * Reorder through `mergePickOrder`, which keeps the unlisted picks where they were.
  */
 export function pickedOrderChips(
   selected: readonly string[], groups: readonly SegmentationPops[],
 ): { value: string; label: string; swatch?: string; tip: string }[] {
-  const multiSeg = new Set(selected.map(k => parseTkey(k).valueName)).size > 1
-  return selected.map(k => {
+  const listed = selected.flatMap(k => {
     const t = parseTkey(k)
     const p = groups.find(g => g.valueName === t.valueName)?.populations
       .find(q => q.path === t.pop && q.popType === t.popType)
-    const name = p?.name ?? (t.pop.split('/').filter(Boolean).pop() ?? t.pop)
-    return { value: k, label: multiSeg ? `${t.valueName} ${name}` : name,
-             ...(p?.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }
+    return p ? [{ k, t, p }] : []
   })
+  const multiSeg = new Set(listed.map(x => x.t.valueName)).size > 1
+  return listed.map(({ k, t, p }) => ({ value: k, label: multiSeg ? `${t.valueName} ${p.name}` : p.name,
+                                       ...(p.colour ? { swatch: p.colour } : {}), tip: `${t.valueName}${t.pop}` }))
+}
+
+/**
+ * The full selection after the chip strip reordered (or dropped) the chips it shows: each shown key's
+ * slot takes the next key of `shown` in its new order; a slot whose key was dropped goes; a key the strip
+ * doesn't show stays where it was.
+ */
+export function mergePickOrder(selected: readonly string[], shown: readonly string[],
+                               shownBefore: readonly string[]): string[] {
+  const was = new Set(shownBefore)
+  const queue = [...shown]
+  const out: string[] = []
+  for (const k of selected) {
+    if (!was.has(k)) out.push(k)
+    else if (queue.length) out.push(queue.shift()!)
+  }
+  return [...out, ...queue]
+}
+
+// ── attribute groups ("compare by attribute") ─────────────────────────────────────────────────────
+
+/** Category order the server falls back to (`_sort_cats`, plot_data.jl): numeric when every key is a
+ *  number, else lexical. */
+export function sortCats(keys: readonly string[]): string[] {
+  const nums = keys.map(k => (k.trim() !== '' && Number.isFinite(Number(k)) ? Number(k) : null))
+  return nums.every(n => n !== null)
+    ? keys.map((k, i) => [k, nums[i]!] as const).sort((a, b) => a[1] - b[1]).map(x => x[0])
+    : [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+}
+
+/** The groups the images form under `attrs` — each image's values joined with "." (empty ones dropped),
+ *  the rule `image_attr_groups` (app/src/model/set.jl) applies; an image with none is plotted under its
+ *  own uID (`_series_groups`), so it is a group of its own here too. */
+export function attrGroupsOf(images: readonly { uid: string; attr?: Record<string, unknown> }[],
+                             attrs: readonly string[]): string[] {
+  if (!attrs.length) return []
+  const out = new Set<string>()
+  for (const im of images) {
+    const v = attrs.map(n => String(im.attr?.[n] ?? '')).filter(Boolean).join('.')
+    out.add(v || im.uid)
+  }
+  return [...out]
+}
+
+/** The groups in the user's `wanted` order (those still present), then the rest by `sortCats` — the
+ *  order the server draws them in (`_ordered_cats`). */
+export function orderedAttrGroups(present: readonly string[], wanted: readonly string[] | undefined): string[] {
+  const have = new Set(present)
+  const first = [...new Set((wanted ?? []).filter(w => have.has(w)))]
+  const taken = new Set(first)
+  return [...first, ...sortCats(present.filter(k => !taken.has(k)))]
 }

@@ -8,7 +8,8 @@
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:browser": "vitest run -c vitest.browser.config.ts"
   },
   "dependencies": {
     "@observablehq/plot": "^0.6.17",
@@ -26,8 +27,10 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@vitejs/plugin-vue": "^6.0.10",
+    "@vitest/browser-playwright": "5.0.5",
     "@vue/tsconfig": "^0.9.1",
     "@webgpu/types": "^0.1.74",
+    "playwright": "1.65.0",
     "playwright-core": "1.65.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.5",

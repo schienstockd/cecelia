@@ -59,9 +59,10 @@ export function useKiwiPoint() {
         if (tgt.cells) viewer.setPickHighlight({ imageUid: tgt.imageUid, valueName: tgt.cells.valueName,
                                                  labels: tgt.cells.ids, focusId: tgt.cells.ids[0] ?? 0,
                                                  label: caption, origin: 'claude', ttlSeconds: MARK_TTL_S })
-        if (tgt.t != null || tgt.z != null) {
+        if (tgt.t != null || tgt.z != null || tgt.lens) {
           viewer.setPendingViewState({ imageUid: tgt.imageUid,
-                                       focus: { ...(tgt.t != null ? { t: tgt.t } : {}), ...(tgt.z != null ? { z: tgt.z } : {}) } })
+                                       focus: { ...(tgt.t != null ? { t: tgt.t } : {}), ...(tgt.z != null ? { z: tgt.z } : {}) },
+                                       ...(tgt.lens ? { lens: tgt.lens } : {}) })
         }
         const vn = tgt.tracks?.valueName ?? tgt.cells?.valueName
         openViewerWindow({ projectUid: puid, imageUid: tgt.imageUid, ...(vn ? { valueName: vn } : {}) })

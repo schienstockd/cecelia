@@ -27,6 +27,8 @@ export interface TrackCohortCtx {
   compareMode?: CompareMode
   /** image attributes to group by — only meaningful in `by_attr` (the board sends [] otherwise) */
   groupAttr?: string[]
+  /** the attribute groups in the user's order (the picker's *attribute order* strip) */
+  groupOrder?: string[]
   /** the board's "pool to groups" toggle: collapse the POPULATION dimension */
   poolGroups?: boolean
   /** the rail's population selection, already family-tagged */
@@ -61,7 +63,10 @@ export function cohortParams(ctx: TrackCohortCtx): URLSearchParams {
   const mode = ctx.compareMode ?? 'per_image'
   const uids = mode === 'image' ? ctx.imageUids.slice(0, 1) : ctx.imageUids
   if (uids.length) p.set('imageUids', uids.join(','))
-  if (mode === 'by_attr' && ctx.groupAttr?.length) p.set('groupAttr', ctx.groupAttr.join(','))
+  if (mode === 'by_attr' && ctx.groupAttr?.length) {
+    p.set('groupAttr', ctx.groupAttr.join(','))
+    if (ctx.groupOrder?.length) p.set('groupOrder', ctx.groupOrder.join(','))
+  }
   if (mode === 'summarised') p.set('poolImages', '1')
 
   // populations: the rail keeps keys for families this plot no longer shows (that is what stops

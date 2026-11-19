@@ -99,6 +99,9 @@ end
     @test movie_overlay_style(k -> k == "overlaySizeUnit" ? "bogus" : nothing).size_unit == "screen"
     zr, filt = _plane_window(5, 10, (; point_z_tol = 2, track_z_tol = 3))
     @test zr == [5, 5] && filt["points"] == [3, 7] && filt["tracks"] == [2, 8]
+    # plane 0 stops at 0: a negative low end is the shader's "no filter" — every plane's cells
+    @test _plane_window(0, 10, (; point_z_tol = 2, track_z_tol = 3))[2] ==
+          Dict{String,Any}("points" => [0, 2], "tracks" => [0, 3])
     # a range — the 2D ±n window, or a 3D crop — is drawn exactly: no reach past it
     tol = (; point_z_tol = 2, track_z_tol = 3)
     for flat in (true, false)

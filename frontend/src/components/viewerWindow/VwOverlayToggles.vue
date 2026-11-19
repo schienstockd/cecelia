@@ -1,5 +1,6 @@
 <!--
-  The viewer window's overlay switches — scale bar, timestamp, cursor readout — as one segmented
+  The viewer window's overlay switches — scale bar, timestamp, and the two pointer tools (cursor
+  readout, channel lens; one at a time — `pointerToolChips`) — as one segmented
   multi-select in "How it looks"'s top row beside what a click does (shown folded too), the same control
   as 2D / 3D beside it, so they are found without opening a section. Their text sizes, and the grid /
   landscape captures use, stay in the Annotations section (`VwAnnotationsSection`). Settings live in the
@@ -9,6 +10,7 @@
 import { computed } from 'vue'
 import ChipSelect from '../ChipSelect.vue'
 import { useSettingsStore } from '../../stores/settings'
+import { pointerToolChips } from '../../utils/viewer/channelLens'
 
 /** `plane`: 2D view — the readout reads a plane, so in 3D its tip says so rather than it doing nothing.
  *  `timed`: more than one frame — a static image has no time to stamp, so no timestamp switch. */
@@ -22,17 +24,22 @@ const options = computed(() => [
     : []),
   { value: 'readout', label: '', icon: 'pi pi-readout',
     tip: props.plane ? 'Readout — position, intensities and cell under the pointer' : 'Readout works in 2D' },
+  { value: 'lens', label: '', icon: 'pi pi-lens',
+    tip: props.plane ? 'Lens — its own channels around the pointer' : 'Lens works in 2D' },
 ])
 const on = computed<string[]>({
   get: () => [
     ...(settings.viewerScaleBar ? ['scaleBar'] : []),
     ...(settings.viewerTimestamp ? ['timestamp'] : []),
     ...(settings.viewerCursorReadout ? ['readout'] : []),
+    ...(settings.viewerLens ? ['lens'] : []),
   ],
-  set: v => {
+  set: next => {
+    const v = pointerToolChips(on.value, next)
     settings.viewerScaleBar = v.includes('scaleBar')
     if (props.timed) settings.viewerTimestamp = v.includes('timestamp')   // hidden: keep the saved choice
     settings.viewerCursorReadout = v.includes('readout')
+    settings.viewerLens = v.includes('lens')
   },
 })
 </script>

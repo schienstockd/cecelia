@@ -132,7 +132,8 @@ describe('the shaders the renderers compile', () => {
       expect(code.match(/fn tailAlpha\(/g)).toHaveLength(1)
       expect(code).toMatch(/@location\(4\) tEnd: f32/)
       expect(code).toContain(`o.alpha = tailAlpha(tEnd, ${lanes});`)
-      expect(code).toMatch(/return vec4\(in\.rgb, in\.alpha\);/)
+      // the tail keeps its age alpha; the colour only takes the spotlight lens's dim (lens.wgsl)
+      expect(code).toMatch(/return vec4\(in\.rgb \* lensShade\(in\.pos\.xy\), in\.alpha\);/)
     })
   }
 

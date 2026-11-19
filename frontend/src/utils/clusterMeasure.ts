@@ -18,7 +18,7 @@ export function clusterMeasure(popType: string, suffix: string): string {
   return `${clusterMeasurePrefix(popType)}${suffix}`
 }
 
-export function isClusterPopType(popType: string): boolean {
+export function isClusterPopType(popType: string): popType is ClusterPopType {
   return !!popTypeInfo(popType)?.cluster
 }
 

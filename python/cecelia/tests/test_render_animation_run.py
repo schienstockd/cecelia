@@ -143,6 +143,67 @@ class RenderAnimationRunTest(unittest.TestCase):
 
 
 
+class LensRunTest(unittest.TestCase):
+    """The channel lens (`shaders/lens.wgsl`): inside its circle the lens channels, outside the visible
+    ones — pinned to the tissue in L0 px and placed through the frame's camera."""
+
+    @classmethod
+    def setUpClass(cls):
+        _shared_host()
+        cls.d = tempfile.mkdtemp()
+        img = np.full((1, 2, 1, N, N), 1000, np.uint16)      # both channels bright everywhere
+        cls.zarr = _store(os.path.join(cls.d, "img.zarr"), img, "tczyx")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.d, ignore_errors=True)
+
+    def _frame(self, lens, centre=N / 2):
+        from cecelia.writers import render_animation_run
+        out = os.path.join(self.d, f"f{len(os.listdir(self.d))}.mp4")
+        red = {"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [1, 0, 0]], "visible": True}
+        green = {"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [0, 1, 0]], "visible": False}
+        st = {"t": 0, "ndisplay": 2, "zRange": [0, 0], "snapH": N,
+              "camera": {"center": [0, centre, centre], "zoom": 1.0, "angles": [0, 0, 0]},
+              "specs": [red, green]}
+        if lens:
+            st["lens"] = lens
+        render_animation_run.run({"zarrPath": self.zarr, "outPath": out, "canvasH": 64, "canvasW": 64,
+                                  "fps": 2, "states": [st, st]})
+        return _frames(out)[0]
+
+    def test_inside_the_lens_its_channels_outside_the_visible_ones(self):
+        # L0 (8, 8) r 4 on a 64-px frame of the whole 32-px image: 2 output px per L0 px → centre
+        # (16, 16), radius 8.
+        f = self._frame({"x": 8, "y": 8, "r": 4, "channels": [1]})
+        inside, outside = f[13:19, 13:19].reshape(-1, 3).mean(0), f[44:52, 44:52].reshape(-1, 3).mean(0)
+        self.assertGreater(inside[1], 150, "the lens channel is not drawn inside")
+        self.assertLess(inside[0], 40, "the context channel shows through the lens")
+        self.assertGreater(outside[0], 150)
+        self.assertLess(outside[1], 40, "the lens channel leaks outside")
+
+    def test_the_lens_is_pinned_to_the_tissue(self):
+        # The camera looks 8 L0 px further right and down: the same tissue spot lands 16 output px
+        # up-left, at (0, 0) — its centre now in the frame's corner.
+        f = self._frame({"x": 8, "y": 8, "r": 4, "channels": [1]}, centre=N / 2 + 8)
+        self.assertGreater(f[1:4, 1:4, 1].mean(), 150)
+        self.assertLess(f[13:19, 13:19, 1].mean(), 40)
+
+    def test_a_lens_with_no_channels_is_a_spotlight(self):
+        # Nothing picked: the lens shows the view as it is, outside dims to LENS_DIM of it.
+        from cecelia.utils import wgsl_utils
+        dim = float(wgsl_utils.shader_constants()['LENS_DIM'])
+        f = self._frame({"x": 8, "y": 8, "r": 4, "channels": []})
+        inside, outside = f[13:19, 13:19, 0].mean(), f[44:52, 44:52, 0].mean()
+        self.assertGreater(inside, 200, "the view is not drawn inside the spotlight")
+        self.assertAlmostEqual(outside / inside, dim, delta=0.06, msg="outside the spotlight is not dimmed")
+        self.assertLess(f[13:19, 13:19, 1].mean(), 40, "an unpicked channel shows in the lens")
+
+    def test_no_lens_draws_the_plain_view(self):
+        f = self._frame(None)
+        self.assertLess(f[..., 1].mean(), 20)
+
+
 class Render2DRunTest(unittest.TestCase):
     """2D movies through the same pass: a slab of planes, head-on, as the viewer's 2D view draws."""
 
