@@ -378,6 +378,18 @@ describe('taskBackendAdvisor — a shared key or type, asked about the form\'s t
     expect(body.paramKey).toBe('channels')
   })
 
+  it('re-asks when a sibling the server named changes, and only then', () => {
+    const p = { key: 'pooling', type: 'select', backendAdvisory: true, advisoryReloadOn: ['graphSuffix'] }
+    const at = (values: Record<string, unknown>) => taskBackendAdvisor.reloadOn!({ ...CTX, values }, p)
+    expect(at({ graphSuffix: 'cells' })).not.toEqual(at({ graphSuffix: 'win50' }))
+    expect(at({ graphSuffix: 'cells', clusterMethod: 'leiden' }))
+      .toEqual(at({ graphSuffix: 'cells', clusterMethod: 'kmeans' }))
+    // a param with no named siblings keeps reloading on the images alone
+    const plain = { key: 'channels', type: 'channelSelection', backendAdvisory: true }
+    expect(taskBackendAdvisor.reloadOn!({ ...CTX, values: { graphSuffix: 'a' } }, plain))
+      .toEqual(taskBackendAdvisor.reloadOn!({ ...CTX, values: { graphSuffix: 'b' } }, plain))
+  })
+
   it('asks nothing without a task — a form with no funName stays silent', async () => {
     const f = okReply(); globalThis.fetch = f as unknown as typeof fetch
     expect(await taskBackendAdvisor.advise(['SHG'], { ...CTX, funName: undefined },

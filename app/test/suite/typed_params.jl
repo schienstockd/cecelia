@@ -599,7 +599,9 @@ end
         @test p.clusterMethod == "leiden"
         @test p.numClusters === 5
         @test p.includeOther === true
+        @test p.pooling == "frame"                     # per-frame stays the default: old runs re-run unchanged
     end
+    @test Cecelia.parse_clust_regions_params(Dict{String,Any}("pooling" => "track")).pooling == "track"
 
     # behaviour.hmm_states
     let p = Cecelia.parse_hmm_states_params(Dict{String,Any}(

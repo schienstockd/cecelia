@@ -114,7 +114,7 @@ export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
 export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df, branch_paths
 export SkeletonSegments, skeleton_segments, skeleton_segments_at
-export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between
+export SpatialGraphSegments, spatial_graph_segments, spatial_graph_edges, spatial_graph_between, spatial_graph_window_grid, window_grid_segments
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform
@@ -419,6 +419,7 @@ include("tasks/behaviour/hmm_transitions.jl")
 include("tasks/behaviour/motif_discovery.jl")
 include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
+include("tasks/spatialAnalysis/neighbour_graph_qc.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
 include("tasks/spatialAnalysis/spatialPattern.jl")
@@ -431,6 +432,7 @@ include("tasks/spatialAnalysis/proximity_bands.jl")
 include("tasks/spatialAnalysis/proximityProfile.jl")
 include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")
+include("tasks/clustRegions/graph.jl")
 include("tasks/clustRegions/cluster.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")

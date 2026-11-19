@@ -743,6 +743,12 @@ describe('graph edges between shown populations (graphEdgesBetween)', () => {
   it('nothing shown, nothing drawn', () => {
     expect(graphEdgesBetween(g, new Map()).nSegments).toBe(0)
   })
+  it("keeps a window graph's tile borders, which join no cells", () => {
+    const grid: SpatialGraphPayload = { ...g, flat: true, nSegments: 2, t: [-1, -1], plane: [-1, -1],
+      x0: [0, 0], y0: [0, 5], z0: [0, 0], x1: [0, 9], y1: [9, 5], z1: [0, 0],
+      vns: [''], aVn: [0, 0], aLabel: [-1, -1], bVn: [0, 0], bLabel: [-1, -1] }
+    expect(graphEdgesBetween(grid, new Map()).nSegments).toBe(2)
+  })
 })
 
 describe('skeleton lines (appendSkeletonLines)', () => {

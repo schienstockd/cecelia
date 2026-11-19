@@ -59,6 +59,8 @@ export interface ParamDef {
   // Set by the SERVER (`stamp_backend_advisories!`), never authored: a Julia form-time validator is
   // registered for this task + key, so the form shows its advisory (`taskBackendAdvisor`).
   backendAdvisory?: boolean
+  // Set by the SERVER beside `backendAdvisory`: sibling keys that validator reads (`reload_on`).
+  advisoryReloadOn?: string[]
   /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown.
    *  text: `'chips'` types a comma-separated list as chips (ChipInput); `max` caps how many. */
   variant?: 'chips'

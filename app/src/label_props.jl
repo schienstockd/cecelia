@@ -695,6 +695,23 @@ function spatial_graph_edges(path::AbstractString)
     end
 end
 
+"""
+    spatial_graph_window_grid(path) -> NamedTuple | nothing
+
+A FIXED-WINDOW graph's grid (`spatialAnalysis.cellNeighbours`, method `windows`;
+`spatial_utils.window_grid`): `(; window_size, tile, axes, shape)` — µm, axis names in the order of
+`shape` (`["y", "x"]` for columns through Z), tiles per axis. `nothing` for a cell-to-cell graph.
+"""
+function spatial_graph_window_grid(path::AbstractString)
+    _with_h5(path, "r") do fid
+        haskey(fid, "uns/method") || return nothing
+        m = read(fid["uns/method"])
+        (m isa AbstractString && m == "windows") || return nothing
+        (; window_size = Float64(read(fid["uns/windowSize"])), tile = Float64(read(fid["uns/tile"])),
+           axes = _as_strings(read(fid["uns/gridAxes"])), shape = Int.(vec(read(fid["uns/gridShape"]))))
+    end
+end
+
 uns_keys(path::AbstractString) = uns_keys(label_props(path))
 uns_array(path::AbstractString, key::AbstractString; kwargs...) =
     uns_array(label_props(path), key; kwargs...)

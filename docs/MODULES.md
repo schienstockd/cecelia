@@ -1420,6 +1420,8 @@ sequences the results so a slider drag can't land an out-of-order answer.
   with a registered validator (`stamp_backend_advisories!`), and `paramAdvisor` hands a stamped
   param to **`taskBackendAdvisor`**, which asks about the form's own task (`ctx.funName`). So a
   shared key (`channels`, `model`) asks the backend on the tasks that registered it and on no other.
+  A verdict that reads a sibling param passes `reload_on = ["graphSuffix"]`: the server stamps it as
+  `advisoryReloadOn`, and the form re-asks when that sibling changes (Cluster regions' pooling).
   The **channel-pick advisory** is the main user: picked channels saturated or not photon-limited,
   from the import's per-channel facts (`channel_signal_flags`, which the denoise gate and
   `import.photon_limited` also read); a cleanup task opts in with one row in the table at the end of

@@ -108,6 +108,9 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
                (isempty(have) ? "run 'Neighbour graph' first" : "available: $(join(have, ", "))"))
         return nothing
     end
+    # contacts need cell-to-cell edges; a window graph has none (`region_graph_kind`, clustRegions/graph.jl)
+    region_graph_kind(graph_path) === :window && (on_log("[ERROR] neighbourStats: graph \"$(p.graphSuffix)\" " *
+        "is a fixed-window graph, which has no contacts — pick a cell-to-cell graph"); return nothing)
 
     # pops may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each
     # under its own type; set-scope form carries uID (shared _basis_segments).

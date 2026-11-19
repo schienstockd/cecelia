@@ -39,6 +39,7 @@ Base.@kwdef struct CellNeighboursParams
     perTimepoint::Bool      = true
     neighbourRadius::Float64 = 30.0
     nNeighbours::Int        = 6
+    windowSize::Float64     = 50.0
 end
 
 function parse_cell_neighbours_params(d::AbstractDict)::CellNeighboursParams
@@ -48,50 +49,11 @@ function parse_cell_neighbours_params(d::AbstractDict)::CellNeighboursParams
         graphSuffix     = string(get(d, "graphSuffix", "default")),
         perTimepoint    = Bool(get(d, "perTimepoint", true)),
         neighbourRadius = Float64(get(d, "neighbourRadius", 30.0)),
-        nNeighbours     = Int(get(d, "nNeighbours", 6)))
+        nNeighbours     = Int(get(d, "nNeighbours", 6)),
+        windowSize      = Float64(get(d, "windowSize", 50.0)))
 end
 
-# Pure QC helper (unit-tested per docs/MODULES.md): objective graph metrics → advisory findings. The
-# unambiguous problems are an empty graph (no edges — usually a radius far below the cell spacing, or
-# wrong units), a majority of isolated cells, and a graph too sparse to describe a neighbourhood:
-# a mean degree under `SPARSE_GRAPH_MEAN_DEGREE` leaves each cell's composition vector a handful
-# of 0/1 steps, and region clustering on it is noise. An unpruned 2D Delaunay graph averages ~6, so
-# falling under 3 means the radius is cutting most real contacts. Counts bank as metrics, not findings.
-const SPARSE_GRAPH_MEAN_DEGREE = 3.0
-
-function _neighbours_qc_findings(n_cells::Integer, n_edges::Integer, isolated_frac::Real,
-                                 mean_degree::Real = Inf)
-    findings = Dict{String,Any}[]
-    if n_cells == 0
-        push!(findings, qc_finding("warn", "spatial.no_cells", "No cells",
-            "The selection had no cells to build a neighbour graph from — check the population."))
-    elseif n_edges == 0
-        push!(findings, qc_finding("warn", "spatial.no_edges", "No neighbours found",
-            "The neighbour graph has no edges — the radius (in µm) may be far below the cell spacing. Increase the radius or use a kNN / Delaunay graph."))
-    elseif isolated_frac >= 0.5
-        push!(findings, qc_finding("warn", "spatial.many_isolated", "Over half of cells have no neighbours",
-            "$(round(Int, isolated_frac * 100))% of cells are isolated (no graph edge). Consider a larger radius or a kNN graph."))
-    elseif mean_degree < SPARSE_GRAPH_MEAN_DEGREE
-        md = round(mean_degree; digits = 1)
-        push!(findings, qc_finding("warn", "spatial.sparse_graph"; value = md,
-                                   detail = Dict{String,Any}("meanDegree" => md)))
-    end
-    findings
-end
-
-# The same check, re-run by a graph CONSUMER (clustRegions, neighbourStats) on the graph it loaded:
-# `m` = the runner's `spatial_utils.graph_metrics` dict (nCells, nEdges = the GRAPH's edges, isolatedFrac,
-# meanDegree). Each finding's detail names the graph, since the run's QC is not the graph's own.
-function _loaded_graph_findings(m::AbstractDict, graph_suffix::AbstractString)
-    fs = _neighbours_qc_findings(Int(get(m, "nCells", 0)), Int(get(m, "nEdges", 0)),
-                                 Float64(get(m, "isolatedFrac", 0.0)), Float64(get(m, "meanDegree", 0.0)))
-    for f in fs
-        d = get(f, "detail", nothing)
-        d isa AbstractDict || (d = Dict{String,Any}())
-        d["graphSuffix"] = String(graph_suffix); f["detail"] = d
-    end
-    fs
-end
+# The graph's QC — edge findings, and the window graph's own — is in `neighbour_graph_qc.jl`.
 
 # a value_name-qualified root pick (e.g. "B/", the picker's per-segmentation "all" entry) means
 # "every cell of that segmentation" — no membership filter. The accepts picker always offers this root
@@ -138,7 +100,8 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
     qc_out_path = joinpath(task_run_dir(img._dir), "spatial_qc.json")
 
     vns = String[seg["valueName"] for seg in segments]
-    on_log("[INFO] cellNeighbours: segmentations=$(join(vns, ", ")) method=$(p.neighbourMethod) " *
+    on_log("[INFO] cellNeighbours: segmentations=$(join(vns, ", ")) method=$(p.neighbourMethod)" *
+           (p.neighbourMethod == "windows" ? " ($(p.windowSize) µm windows) " : " ") *
            (p.perTimepoint ? "per-timepoint " : "") * "→ spatialGraph/$(p.graphSuffix).h5ad")
     on_progress(2, 3)
 
@@ -149,6 +112,7 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
         "neighbourRadius" => p.neighbourRadius,
         "nNeighbours" => p.nNeighbours,
         "perTimepoint" => p.perTimepoint,
+        "windowSize" => p.windowSize,
         "qcOutPath" => qc_out_path)
 
     ok = run_py("tasks/spatialAnalysis/cell_neighbours_run.py", task_params, task_run_dir(img._dir);
@@ -159,6 +123,11 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
     # the RUN suffix (the graph is cross-segmentation, so a value_name would be the wrong key).
     try
         qc = JSON3.read(read(qc_out_path, String), Dict{String,Any})
+        if get(qc, "method", "") == "windows"
+            _write_window_graph_qc!(img, p.graphSuffix, qc, on_log)
+            on_progress(3, 3)
+            return Dict{String,Any}("graphSuffix" => p.graphSuffix, "valueNames" => vns, "graphPath" => graph_path)
+        end
         n_cells = Int(get(qc, "nCells", 0)); n_edges = Int(get(qc, "nEdges", 0))
         isolated_frac = Float64(get(qc, "isolatedFrac", 0.0))
         mean_degree   = Float64(get(qc, "meanDegree", 0.0))

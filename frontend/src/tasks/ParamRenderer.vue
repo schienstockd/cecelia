@@ -549,7 +549,7 @@ function loadAdvisory() {
 // estimate changes as the slider moves), and `reloadOn` only covers the context. The fetch itself is
 // the expensive part, so advisors whose fetch does not depend on the value should cache — today both
 // are cheap enough (one metadata read) that correctness wins over a caching layer nobody needs yet.
-watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value)],
+watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.value, props.param)],
   () => { loadAdvisory() }, { immediate: true, deep: true })
 onUnmounted(() => advisoryRun.cancel())
 

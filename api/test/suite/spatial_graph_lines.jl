@@ -101,3 +101,43 @@
         end
     end
 end
+
+# A FIXED-WINDOW graph (`test-data/graph-cross/win.h5ad`, `make_spatial_graph_fixture.py`: B's frames 0–2,
+# 60 µm windows → 30 µm tiles, 17 × 17 over y, x) has no edges: it is drawn as its tile borders, on every
+# frame, in voxels — on a 0.5 µm/px image a 30 µm tile is 60 px — and "only between shown populations"
+# keeps them, since a border joins no cells. Viewer route and movie read the same `spatial_graph_segments`.
+@testset "API: a fixed-window graph is drawn as its tile borders" begin
+    win = normpath(joinpath(api_test_projects_dir(), "..", "graph-cross", "win.h5ad"))
+    if !api_have_fixture(win)
+        @test_skip "graph-cross/win.h5ad fixture (missing)"
+    else
+        conf = cecelia_conf()
+        dirs = get!(conf, "dirs", Dict{String,Any}())
+        had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+        dirs["projects"] = mktempdir()
+        try
+            proj = create_project!(name = "graph-win")
+            img = add_image!(add_set!(proj; name = "s"); name = "im", uid = "grphW")
+            merge!(img.meta, Dict("PhysicalSizeX" => "0.5", "PhysicalSizeY" => "0.5", "PhysicalSizeZ" => "2.0"))
+            save!(img)
+            mkpath(img_spatial_graph_dir(img))
+            cp(win, joinpath(img_spatial_graph_dir(img), "win.h5ad"))
+            grid = spatial_graph_window_grid(joinpath(img_spatial_graph_dir(img), "win.h5ad"))
+            @test grid.tile == 30.0 && grid.window_size == 60.0
+            @test grid.axes == ["y", "x"] && grid.shape == [17, 17]
+            g = spatial_graph_segments(img, "win")
+            s = g.segs
+            @test length(s) == (17 + 1) + (17 + 1)            # every tile edge, both directions
+            @test all(==(-1), s.t)                            # on every frame
+            xs = sort(unique(s.x0[s.x0 .== s.x1]))            # vertical borders, voxels
+            @test xs ≈ Float32[k * 30 / 0.5 for k in 0:17]
+            @test maximum(s.y1) ≈ 17 * 30 / 0.5               # down to the last tile
+            @test length(spatial_graph_between(g, Set{Tuple{String,Int}}())) == length(s)
+            # a cell-to-cell graph has no grid
+            net = api_fixture("testpr", "1", "KDIeEm", "spatialGraph", "net.h5ad")   # MAINT-EXEMPT: any cell graph will do; the registry has no graph property
+            @test spatial_graph_window_grid(net) === nothing
+        finally
+            had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        end
+    end
+end

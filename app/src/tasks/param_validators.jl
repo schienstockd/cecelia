@@ -23,15 +23,23 @@ const _ADVISORY_SEVERITIES = ("ok", "warn", "fail")
 
 const PARAM_VALIDATORS = Dict{Tuple{String,String}, Function}()
 
+# Sibling params whose change re-runs a validator in the form (its verdict reads them), by the same
+# key. Stamped on the param as `advisoryReloadOn` beside `backendAdvisory`.
+const PARAM_VALIDATOR_RELOAD_ON = Dict{Tuple{String,String}, Vector{String}}()
+
 """
     register_param_validator!(fun_name, param_key, validator)
 
 Register a form-time validator for `param_key` on task `fun_name`. Idempotent — a re-include of the
-task file overwrites the prior registration, which is what Revise wants.
+task file overwrites the prior registration, which is what Revise wants. `reload_on` names sibling
+params the verdict reads, so the form re-asks when one of them changes.
 """
 function register_param_validator!(fun_name::AbstractString, param_key::AbstractString,
-                                   validator::Function)
-    PARAM_VALIDATORS[(String(fun_name), String(param_key))] = validator
+                                   validator::Function; reload_on = String[])
+    key = (String(fun_name), String(param_key))
+    PARAM_VALIDATORS[key] = validator
+    isempty(reload_on) ? delete!(PARAM_VALIDATOR_RELOAD_ON, key) :
+                         (PARAM_VALIDATOR_RELOAD_ON[key] = String.(collect(reload_on)))
     return validator
 end
 
@@ -81,8 +89,11 @@ function stamp_backend_advisories!(spec::AbstractDict, fun_name::AbstractString)
     walk(ps) = for p in ps
         p isa AbstractDict || continue
         k = get(p, "key", nothing)
-        k isa AbstractString && haskey(PARAM_VALIDATORS, (String(fun_name), k)) &&
-            (p["backendAdvisory"] = true)
+        if k isa AbstractString && haskey(PARAM_VALIDATORS, (String(fun_name), k))
+            p["backendAdvisory"] = true
+            ro = get(PARAM_VALIDATOR_RELOAD_ON, (String(fun_name), k), nothing)
+            ro === nothing || (p["advisoryReloadOn"] = ro)
+        end
         sub = get(p, "params", nothing)
         sub isa AbstractVector && walk(sub)
     end
