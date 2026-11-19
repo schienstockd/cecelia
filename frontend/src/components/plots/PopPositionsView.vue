@@ -1,0 +1,218 @@
+<!--
+  Population positions: where each population's cells sit on the image, frame by frame. One tile per
+  selected image (x/y in µm when calibrated, y downward like the image), every cell of the frame as the
+  gate plot's density dots (dimmed under populations), each picked population's cells in its colour.
+  Any population type: gates, cell clusters, regions, and the track families, whose cells are coloured
+  in every frame they were tracked. The populations decide the segmentations drawn (server-side).
+
+  Populations come from the host: the population rail (`series`, one family — the board and the summary
+  module pages) or, on a Cluster / Region page, the populations its manager has switched on
+  (`shownPops`). Data: `GET /api/plots/pop-positions` (`meta=1` per image for the axes, then the
+  cells — both with the populations); the layer split is `plots/popPositions.ts` (tested). Drawn by the shared `GateScatterCell`,
+  read-only.
+-->
+<script setup lang="ts">
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
+import { usePopFamily } from '../../composables/usePopFamily'
+import { useProjectStore } from '../../stores/project'
+import GateScatterCell from './GateScatterCell.vue'
+import PopFamilySelect from './PopFamilySelect.vue'
+import PlotSpinner from './PlotSpinner.vue'
+import CcToggle from '../CcToggle.vue'
+import type { PopLayer } from './PlotLayers.vue'
+import type { PopTypeOption } from '../../plots/popTypes'
+import { filterSeriesToPopType } from '../../plots/popTypes'
+import type { SeriesTarget } from '../../plots/types'
+import { fetchSegmentationPops } from '../../plots/populations'
+import type { CompareMode } from '../../plots/trackGroups'
+import type { VisProps } from '../../plots/plot'
+import { dotRadiusFor } from '../../plots/density'
+import { containBox, framesIn, positionLayers, positionPops, resolveFrame } from '../../plots/popPositions'
+import { fitGridCols } from '../../plots/montage'
+import { useBoxSize } from '../../composables/usePlotResize'
+import { debouncedLatest } from '../../utils/debouncedLatest'
+import { useDataRefresh } from '../../composables/useDataRefresh'
+
+const props = defineProps<{
+  projectUid: string; imageUids: string[]; setUid: string | null
+  // the population rail (board, summary module pages)
+  series?: SeriesTarget[]
+  popTypes?: PopTypeOption[]
+  compareMode?: CompareMode
+  // a Cluster / Region page: its family and the populations its manager shows
+  popType?: string
+  shownPops?: { path: string; name: string; colour: string }[]
+  vis?: VisProps
+  state: { popType?: string; frame?: number | null }
+}>()
+
+type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
+type Tick = { pos: number; label: string }
+interface Meta { n: number; unit: string; extents: Ext; xTicks: Tick[]; yTicks: Tick[]; frames: [number, number] }
+interface Tile { uid: string; meta: Meta; data: Float32Array }
+
+const project = useProjectStore()
+
+// the family: the rail's (persisted per panel) on a rail host, the page's on a cluster/region page
+const { options: familyOptions, popType: railFamily } =
+  usePopFamily(() => props.popTypes, () => props.state.popType, v => (props.state.popType = v))
+const onRail = computed(() => !!props.popTypes?.length)
+const family = computed(() => onRail.value ? railFamily.value : (props.popType ?? 'flow'))
+const ownSeries = computed(() => filterSeriesToPopType(props.series ?? [], family.value))
+
+// "this image" compare mode focuses on the first selected image; otherwise one tile per image
+const MAX_TILES = 12
+const uids = computed(() => (props.compareMode === 'image' ? props.imageUids.slice(0, 1) : props.imageUids)
+  .slice(0, MAX_TILES))
+
+// a rail population keeps its gating-map colour (the manager's swatch)
+const popColours = ref<Record<string, string>>({})
+async function loadColours() {
+  if (!onRail.value || !props.projectUid || !uids.value.length) { popColours.value = {}; return }
+  const groups = await fetchSegmentationPops({ projectUid: props.projectUid, imageUids: uids.value.slice(0, 1),
+                                               popType: family.value, granularity: 'cell' })
+  const out: Record<string, string> = {}
+  for (const g of groups) for (const pp of g.populations) if (pp.colour) out[`${g.valueName}${pp.path}`] = pp.colour
+  popColours.value = out
+}
+const pops = computed(() => positionPops({
+  series: onRail.value ? ownSeries.value : undefined,
+  shownPops: onRail.value ? undefined : props.shownPops,
+  popType: family.value,
+  colourOf: t => popColours.value[`${t.valueName}${t.pop}`],
+}))
+
+const tiles = ref<Tile[]>([])
+const loading = ref(false)
+useDelayedLoading(loading)
+const error = ref('')
+async function fetchTiles(isCurrent: () => boolean) {
+  if (!props.projectUid || !uids.value.length) { tiles.value = []; return }
+  loading.value = true; error.value = ''
+  try {
+    const out: Tile[] = []
+    for (const uid of uids.value) {
+      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: uid, popType: family.value })
+      if (pops.value.length) q.set('pops', pops.value.map(p => p.token).join(','))
+      const mr = await fetch(`/api/plots/pop-positions?${q}&meta=1`)
+      if (!mr.ok) continue
+      const meta = await mr.json() as Meta
+      if (!meta.n) continue
+      const dr = await fetch(`/api/plots/pop-positions?${q}`)
+      if (!dr.ok) continue
+      out.push({ uid, meta, data: new Float32Array(await dr.arrayBuffer()) })
+    }
+    if (!isCurrent()) return
+    tiles.value = out
+    if (!out.length) error.value = 'No cells to show'
+  } catch (e) {
+    if (isCurrent()) error.value = String(e)
+  } finally {
+    if (isCurrent()) loading.value = false
+  }
+}
+// one coalesced request per change burst (ticking several populations is several updates)
+const run = debouncedLatest<void>((_a, isCurrent) => fetchTiles(isCurrent),
+  { wait: 150, onError: e => { error.value = e instanceof Error ? e.message : String(e); loading.value = false } })
+watch([() => uids.value.join(','), family, () => pops.value.map(p => p.token).join(',')],
+      () => run.schedule(), { immediate: true })
+onBeforeUnmount(() => run.cancel())
+// a task finishing on one of these images (a new region run, a re-gate) redraws the plot
+useDataRefresh(() => uids.value, () => { loadColours(); run.schedule() })
+watch([() => uids.value.join(','), family], loadColours, { immediate: true })
+
+// ── time: one frame (the slider), or every frame at once ──
+const frames = computed(() => [...new Set(tiles.value.flatMap(t => framesIn(t.data)))].sort((a, b) => a - b))
+const isMovie = computed(() => frames.value.length > 1)
+const frame = computed<number | null>({
+  get: () => resolveFrame(props.state.frame, frames.value),
+  set: v => (props.state.frame = v),
+})
+const allFrames = computed({ get: () => frame.value === null, set: on => (frame.value = on ? null : (frames.value[0] ?? 0)) })
+const frameIdx = computed({
+  get: () => Math.max(0, frames.value.indexOf(frame.value ?? frames.value[0]!)),
+  set: i => (frame.value = frames.value[i] ?? null),
+})
+
+const imageName = (uid: string) =>
+  project.sets.flatMap(s => s.images).find(i => i.uid === uid)?.name ?? uid
+// each tile's layers for the shown frame — computed once per frame/population change, not per binding
+const layers = computed(() => Object.fromEntries(tiles.value.map(t => {
+  const l = positionLayers(t.data, frame.value, pops.value.length)
+  const popLayers: PopLayer[] = l.pops.map((pts, k) =>
+    ({ path: pops.value[k]!.token, colour: pops.value[k]!.colour, points: pts }))
+  return [t.uid, { base: l.base, popLayers }]
+})))
+// THE TILE SIZE, from the measured panel: as many columns as give the biggest tiles (the gating
+// montage's rule), then each map as large as its cell allows at its own aspect. A CSS auto-fill grid
+// kept empty tracks, so a wider panel gave a SMALLER map.
+const gridEl = ref<HTMLElement | null>(null)
+const gridBox = useBoxSize(gridEl)
+const CAPTION_H = 16, GAP = 8
+const cols = computed(() => fitGridCols(tiles.value.length, gridBox.value.w, gridBox.value.h))
+const tileStyle = (e: Ext) => {
+  const n = tiles.value.length, c = cols.value, r = Math.max(1, Math.ceil(n / c))
+  const cw = (gridBox.value.w - (c - 1) * GAP) / c
+  const ch = (gridBox.value.h - (r - 1) * GAP) / r - (n > 1 ? CAPTION_H : 0)
+  const b = containBox(cw, ch, (e.xMax - e.xMin) / (e.yMax - e.yMin))
+  return { width: `${b.w}px`, height: `${b.h}px` }
+}
+</script>
+
+<template>
+  <div class="ppv">
+    <div class="ppv-ctrl cc-panel-controls">
+      <div class="cc-row">
+        <PopFamilySelect v-if="onRail" :options="familyOptions" v-model="railFamily" />
+        <template v-if="isMovie">
+          <span class="cc-row-group">
+            <CcToggle v-model="allFrames" aria-label="All frames" v-tooltip.top="'Every frame at once'" />
+            <span class="cc-fs-xs">All frames</span>
+          </span>
+          <span v-if="!allFrames" class="cc-row-group ppv-frame">
+            <input v-model.number="frameIdx" type="range" min="0" :max="frames.length - 1" step="1"
+                   aria-label="Frame" v-tooltip.top="'Frame'" />
+            <span class="cc-fs-xs">t {{ frame }}</span>
+          </span>
+        </template>
+      </div>
+      <div v-if="pops.length" class="cc-row ppv-legend">
+        <span v-for="p in pops" :key="p.token" class="ppv-key cc-fs-xs">
+          <i class="ppv-swatch" :style="{ background: p.colour }" />{{ p.label }}
+        </span>
+      </div>
+    </div>
+
+    <p v-if="error" class="cc-muted cc-fs-xs">{{ error }}</p>
+    <div ref="gridEl" class="ppv-grid" :style="{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }">
+      <figure v-for="t in tiles" :key="t.uid" class="ppv-tile">
+        <!-- the uid, not the name: names run to two lines and push the maps down; the name is on hover -->
+        <figcaption v-if="tiles.length > 1" v-tooltip.top="imageName(t.uid)" class="cc-fs-2xs cc-muted">{{ t.uid }}</figcaption>
+        <div class="ppv-plot" :style="tileStyle(t.meta.extents)">
+          <GateScatterCell :points="layers[t.uid]!.base" :extents="t.meta.extents" :view-extents="t.meta.extents"
+                           :x-ticks="t.meta.xTicks" :y-ticks="t.meta.yTicks"
+                           :x-label="`X (${t.meta.unit})`" :y-label="`Y (${t.meta.unit})`"
+                           :pop-layers="layers[t.uid]!.popLayers" :show-pops="pops.length > 0"
+                           render-mode="points" mode="off" :readonly="true" :flip-y="true"
+                           :compact="tiles.length > 1" :font-size="vis?.fontSize ?? 11"
+                           :dot-size="dotRadiusFor(vis?.pointSize)" />
+        </div>
+      </figure>
+    </div>
+    <PlotSpinner v-if="loading" label="Reading cells" />
+  </div>
+</template>
+
+<style scoped>
+/* flex: 1 (not height: 100%, which the panel body does not resolve): the grid must measure the PANEL,
+   not its own content, or the map keeps whatever size it first had (ClusterMapView .uv, same rule) */
+.ppv { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; }
+.ppv-frame input { width: 10rem; }
+.ppv-legend { flex-wrap: wrap; gap: 0.6rem; }
+.ppv-key { display: inline-flex; align-items: center; gap: 0.3rem; }
+.ppv-swatch { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; }
+.ppv-grid { flex: 1; min-height: 0; overflow: hidden; display: grid; gap: 8px; align-content: center; }
+.ppv-tile { margin: 0; display: flex; flex-direction: column; align-items: center; min-width: 0; min-height: 0; }
+.ppv-plot { position: relative; }
+</style>

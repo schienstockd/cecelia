@@ -1142,20 +1142,7 @@ function api_plots_cluster_map(req::HTTP.Request)
     # docs/todo/UMAP_COLOUR_FACET_PLAN.md.
     colour_toks = _query_list(q, "colourPops")
     grain = track ? :track : :cell
-    pop_of = Dict{Tuple{String,Int},Int}()              # (value_name, label) → popIdx (0-based)
-    for (pi, tok) in enumerate(colour_toks)
-        parts = split(tok, '~'; limit = 2)
-        pt, path = length(parts) == 2 ? (String(parts[1]), String(parts[2])) : (pop_type, String(parts[1]))
-        df = try
-            pop_df(img, pt, [path]; granularity = grain, include_obs = false, include_x = false)
-        catch
-            continue                                    # a bad/foreign pop just contributes no colour
-        end
-        ("value_name" in names(df) && "label" in names(df)) || continue
-        for r in eachrow(df)
-            get!(pop_of, (String(r.value_name), Int(r.label)), pi - 1)
-        end
-    end
+    pop_of = pop_index_by_label(img, colour_toks, pop_type; granularity = grain)   # (value_name, label) → popIdx
 
     with_labels = get(q, "withLabels", "") == "1"
     stride = with_labels ? 5 : 4
@@ -1202,6 +1189,38 @@ function api_plots_cluster_map(req::HTTP.Request)
     isempty(out) && return _gerr(404, basis == "diffmap" ? "No $emb_key — a track run writes it; re-run clustering" :
                                                          "No $emb_key — run clustering with UMAP enabled")
     200, collect(reinterpret(UInt8, out))
+end
+
+# ── GET /api/plots/pop-positions → every cell at its position, tagged by population ──────────────────
+# ?projectUid&imageUid&valueName&pops=popType~vn/path,…[&popType=<default for a bare path>][&meta=1]
+# The read behind the `popPositions` plot (`pop_positions`, app/src/plotting/pop_positions.jl).
+#   meta=1 → JSON { n, unit, extents{xMin,xMax,yMin,yMax}, xTicks, yTicks, frames:[t0,t1], valueNames } —
+#            the axes, over the same cells as the data (the populations decide the segmentations)
+#   else   → binary Float32 [x, y, t, popIdx] per cell; popIdx = index into `pops`, -1 = in none
+function api_plots_pop_positions(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    # the segmentations come from the populations (`pop_positions`); `valueName` only names the one to
+    # draw when none are picked, and is NOT swapped for the active one when this image lacks it — that
+    # would draw another segmentation's cells under populations that are not on it
+    r = pop_positions(img, get(q, "valueName", ""), _query_list(q, "pops");
+                      default_pop_type = get(q, "popType", "flow"))
+    if get(q, "meta", "") == "1"
+        xr, yr = _finite_extrema(r.x), _finite_extrema(r.y)
+        tr = isempty(r.t) ? (0.0, 0.0) : _finite_extrema(r.t, (0.0, 0.0))
+        lin = Cecelia.LinearTransform()
+        return 200, JSON3.write((; n = length(r.x), unit = r.unit == SPATIAL_UNIT_UM ? "µm" : r.unit,
+            extents = (; xMin = xr[1], xMax = xr[2], yMin = yr[1], yMax = yr[2]),
+            xTicks = _axis_ticks(lin, xr...), yTicks = _axis_ticks(lin, yr...),
+            frames = [tr[1], tr[2]], valueNames = unique(r.value_name)))
+    end
+    n = length(r.x)
+    buf = Vector{Float32}(undef, 4n)
+    @inbounds for i in 1:n
+        buf[4i - 3] = r.x[i]; buf[4i - 2] = r.y[i]; buf[4i - 1] = r.t[i]; buf[4i] = Float32(r.pop[i])
+    end
+    200, collect(reinterpret(UInt8, buf))
 end
 
 # ── GET /api/gating/density → binary Float32 grid (bins×bins, row-major) ──────

@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import { popTypeLabel, type PopTypeOption, type PopTypeSpecLike } from '../../plots/popTypes'
-import { TRACK_FAMILY_POP_TYPES } from '../../plots/popTypeRegistry'
+import { TRACK_FAMILY_POP_TYPES, CELL_PLOT_POP_TYPES } from '../../plots/popTypeRegistry'
 import type { VisControl } from '../../plots/plotControls'
 import ClusterMapView from '../plots/ClusterMapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
@@ -16,6 +16,7 @@ import TrackDiagnosticsView from '../plots/TrackDiagnosticsView.vue'
 import TrackSchemeView from '../plots/TrackSchemeView.vue'
 import MotifCardsView from '../plots/MotifCardsView.vue'
 import HmmStateCardsView from '../plots/HmmStateCardsView.vue'
+import PopPositionsView from '../plots/PopPositionsView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // 2D-canvas dot plots), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -62,6 +63,11 @@ export interface InteractiveView {
   // family the first registered summary spec happens to carry — a picker full of populations the plot
   // cannot draw. One family at a time, per docs/PLOTS.md; the plot owns the choice.
   popTypes?: PopTypeOption[]
+  // The built-in SUMMARY-canvas module pages that offer this view (Phenotype, Behaviour, Spatial —
+  // `SummaryCanvas`'s `module`), each with the families it slices THERE: the same shape and the same
+  // per-page curation as a summary spec's `modules` (docs/PLOTS.md), so a page lists only its own
+  // families. Absent = on no summary page (a plugin page still names it through `pluginPage`).
+  modules?: Record<string, string[]>
   // ONE population at a time, and the rail enforces it. A plot that FACETS can take any number — that
   // is what the cohort comparison is — but a plot that edits one image's tracks cannot: several ticked
   // populations resolve to several groups, and the timeline draws `groups.find(mine) ?? groups[0]`, so
@@ -81,6 +87,10 @@ export interface InteractiveView {
 // draw a path or measure a displacement, which is a property of the plot, not of the family.
 const TRACK_FAMILIES: PopTypeOption[] = TRACK_FAMILY_POP_TYPES.map(popType =>
   ({ popType, granularity: 'track', label: popTypeLabel({ popType, granularity: 'track' }) }))
+
+// EVERY family, at cell granularity: a population of tracks is drawn as its member cells, frame by frame.
+const CELL_FAMILIES: PopTypeOption[] = CELL_PLOT_POP_TYPES.map(popType =>
+  ({ popType, granularity: 'cell', label: popTypeLabel({ popType, granularity: 'cell' }) }))
 
 // The flags are the surface "checkboxes": each host builds its picker with `pageViews`/`boardViews`
 // below, so a view appears on a surface with no host-side wiring (see docs/UI.md).
@@ -178,6 +188,22 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
     component: HmmStateCardsView, analysisBoard: true,
     category: 'look', sketch: 'statesCard', rail: 'none',
   },
+  // Where each population's cells sit on the image, frame by frame. Read-only, so it belongs on the board and every page that defines or compares populations:
+  // on the rail where the page has one, and on the Cluster / Region pages (`clusterPage`) it draws the
+  // populations their manager shows. `square`: x and y are both image distance.
+  popPositions: { label: 'Population positions',
+    answers: 'Where do the populations sit on the image, frame by frame?',
+    component: PopPositionsView, analysisBoard: true, clusterPage: true, category: 'look', sketch: 'popPositions',
+    square: true, rail: 'pops', popTypes: CELL_FAMILIES,
+    modules: {
+      // POP-TYPES-OK: per-page curation, the same lists as a summary spec's `modules` (population_summary.json)
+      phenotype: ['flow', 'clust'],
+      // POP-TYPES-OK: per-page curation; `region` too — a movie's regions are built from its behaviour
+      // clusters, so where they sit over time is a behaviour question
+      behaviourAnalysis: ['live', 'track', 'trackclust', 'region'],
+      spatialAnalysis: ['region'],
+    },
+    visControls: ['pointSize', 'fontSize'] },
   trackScheme: {
     label: 'Track timeline',
     answers: 'Which tracks overlap in time, to join or split them?',
@@ -227,8 +253,17 @@ export const railFor = (key: string): RailKind => INTERACTIVE_VIEWS[key]?.rail ?
 /** The rail settings a view reacts to — none unless it declares them. */
 export const viewControls = (key: string): VisControl[] => INTERACTIVE_VIEWS[key]?.visControls ?? []
 
-/** The population families a view offers (empty when it does not slice by population). */
-export const popTypesFor = (key: string): PopTypeOption[] => INTERACTIVE_VIEWS[key]?.popTypes ?? []
+/** The population families a view offers (empty when it does not slice by population) — on a summary
+ *  module page (`module`), only that page's families from its `modules` entry. */
+export const popTypesFor = (key: string, module?: string | null): PopTypeOption[] => {
+  const all = INTERACTIVE_VIEWS[key]?.popTypes ?? []
+  const page = module ? INTERACTIVE_VIEWS[key]?.modules?.[module] : undefined
+  return page ? all.filter(o => page.includes(o.popType)) : all
+}
+
+/** The built-in views a SUMMARY module page offers (their `modules` names it), by key. */
+export const moduleViewKeys = (module: string | null | undefined): string[] =>
+  module ? Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => !!v.modules?.[module]).map(([k]) => k) : []
 
 /** Does this view take exactly ONE population? Hosts ask; they must not read `.singlePop` themselves. */
 export const singlePopFor = (key: string): boolean => !!INTERACTIVE_VIEWS[key]?.singlePop
@@ -240,8 +275,8 @@ export const singlePopFor = (key: string): boolean => !!INTERACTIVE_VIEWS[key]?.
  * same mechanism a summary slot uses through its spec, rather than a second resolution path that could
  * disagree about which populations a plot is showing.
  */
-export const popTypeSpecFor = (key: string): PopTypeSpecLike | null => {
-  const popTypes = popTypesFor(key)
+export const popTypeSpecFor = (key: string, module?: string | null): PopTypeSpecLike | null => {
+  const popTypes = popTypesFor(key, module)
   return popTypes.length ? { dataSource: { popTypes } } : null
 }
 

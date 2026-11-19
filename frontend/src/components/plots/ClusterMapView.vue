@@ -34,6 +34,7 @@ import { fitLabel } from '../../plots/valueColour'
 import { placeChips } from '../../plots/chipPlacement'
 import { asinhSpread } from '../../plots/diffmapScale'
 import { tkey, parseTkey } from '../../plots/series'
+import { popWireToken } from '../../plots/popPositions'
 import { popDisplayLabels, popRowLabels, withOwnName } from '../../utils/popName'
 import { setting, type PlotSettings } from '../../utils/plotSettings'
 import type { SegmentationPops } from '../../plots/types'
@@ -353,7 +354,7 @@ async function loadPopGroups() {
 // GET /api/plots/attrs — which left the picker empty when the set wasn't the active one).
 const attrs = computed(() => project.imageAttrsFor(props.imageUids))
 // a colour-pop is stored as a tkey (popType::valueName+pop); the endpoint wants "popType~vnPrefixedPath"
-const popToken = (key: string) => { const t = parseTkey(key); return `${t.popType}~${t.valueName}${t.pop}` }
+const popToken = (key: string) => popWireToken(parseTkey(key))
 // the colour-pops' paths, labelled together: two sharing a name (every tracked pop is `_tracked`) by
 // as much of their path as tells them apart
 const colourPopLabels = computed(() => popDisplayLabels(colourPops.value.map(k => parseTkey(k).pop)))

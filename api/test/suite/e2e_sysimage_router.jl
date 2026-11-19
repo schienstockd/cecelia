@@ -304,7 +304,7 @@ end
         "/api/denoise/models",
         "/api/kiwi/turns", "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
-        "/api/plots/cluster-map", "/api/pools", "/api/tasks/threads", "/api/runner/status",
+        "/api/plots/cluster-map", "/api/plots/pop-positions", "/api/pools", "/api/tasks/threads", "/api/runner/status",
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
@@ -511,7 +511,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 129 && length(POST_ROUTES) == 202
+    @test length(GET_ROUTES) == 130 && length(POST_ROUTES) == 202
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

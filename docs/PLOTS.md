@@ -244,6 +244,29 @@ Hosts declare it, renderers consume it: `GatePlotPanel` and `GateMontage` pass
 it simply sets Observable Plot's `y: { reverse: true }`. `density.ts` is exempt — it bins the grid in
 DATA order and never touches pixels; `gridToPx` converts those back through the shared mapping.
 
+## Population positions — where the populations sit on the image
+
+`popPositions` (`components/plots/PopPositionsView.vue`, an interactive view) draws every cell of the
+segmentations the picked populations live on (a co-clustered run or a multi-segmentation pick draws
+each; with nothing picked, the active one) at its centroid — µm when calibrated, y downward like the image — in the gate plot's
+density colours (dimmed once populations are shown), with each picked population's cells in its colour, one square tile per selected image, at one frame (a slider)
+or all frames at once. It is the old R version's read-only gating plot of X/Y with populations on top.
+Any population type: a track family (behaviour clusters, tracked cells) resolves to its member cells
+in every frame, so a behaviour cluster is coloured along its tracks and a region shows the cells it
+holds at each timepoint. One family per plot, like every plot here. A cell in several picked
+populations takes the colour of the deepest (a child picked after its parent stays visible). An image
+the picked populations are not on draws no tile, rather than another segmentation's cells. Captions are
+image uids (the name on hover): names run to two lines and push the maps down.
+
+It is offered on the Analysis board, on the Cluster and Region pages (`clusterPage` — there it draws
+the populations the page's manager has switched on, the way the UMAP does) and on the Phenotype,
+Behaviour and Spatial pages through the registry's **`modules`** field: a view names the summary
+module pages that offer it, with each page's families — the same shape and curation as a summary
+spec's `modules`. `SummaryCanvas` reads it (`moduleViewKeys`, `popTypesFor(key, module)`), so a page
+lists only its own families. Data: `GET /api/plots/pop-positions` (`app/src/plotting/pop_positions.jl`
+→ `pop_positions`; population membership through `pop_index_by_label`, shared with the UMAP's
+colour-by-population). Layers: `plots/popPositions.ts` (tested). Drawn by `GateScatterCell`, read-only.
+
 ## 0. Rendering engine — Observable Plot
 
 The summary canvas renders with **Observable Plot** (`@observablehq/plot`), NOT Vega-Lite. We started
