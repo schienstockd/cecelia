@@ -62,6 +62,7 @@ const props = defineProps<{
   imageUids?: string[]                 // cross-image: optional image subset (default = whole set)
   scope?: 'per_image' | 'summarised'   // cross-image scope (default per_image)
   groupAttr?: string[]                 // group cross-image series by these image attributes (combined; else per-image)
+  groupOrder?: string[]                // the attribute groups in the user's order (the picker's "attribute order")
   series: SeriesTarget[]               // selected (segmentation, pop) targets — each one a series
   seriesColor: (s: PlotSeries) => string
   vis?: VisProps                       // visual properties (log scale, legend, point size/opacity)
@@ -405,6 +406,10 @@ const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', st
 const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 
 const crossImage = computed(() => !!props.setUid)
+// "compare by attribute" — the attributes to group by and the user's order of the groups, in every
+// request that draws the data (plot, CSV, raw export)
+const groupAttrBody = () => props.groupAttr?.length && crossImage.value
+  ? { groupAttr: props.groupAttr, ...(props.groupOrder?.length ? { groupOrder: props.groupOrder } : {}) } : {}
 const result = ref<PlotDataResponse | null>(null)
 // default to the run's first population once the response names them; drop a pick the run lacks
 // (declared after `result`: a watch evaluates its source at setup)
@@ -629,7 +634,7 @@ async function fetchData(isCurrent: () => boolean) {
         ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
         ...(composition.value ? { composition: true } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
-        ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+        ...groupAttrBody(),
         ...(vis.value.statsEnabled && canCompareGroups.value
               ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
       }
@@ -661,7 +666,7 @@ async function fetchData(isCurrent: () => boolean) {
 watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'), popType,
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        statUnit, imageAgg, matrixMode, statsSuffix, zscore, matrixNormalize, matrixCategory, colsReady,
-       () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
+       () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','), () => (props.groupOrder ?? []).join('\u0000'),
        () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto',
        // the run (interaction matrix / per-image metric) and the metric's population are fetch inputs
@@ -837,7 +842,7 @@ function imageMetricBody(source: string, raw = false): Record<string, unknown> {
     // response names the run's populations — the server then plots them all
     ...(metricPicksPops.value ? { pops: ownSeries.value.map(t => `${t.valueName}${t.pop}`) }
       : metricPop.value ? { pop: metricPop.value } : {}),
-    ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+    ...groupAttrBody(),
     ...(vis.value.statsEnabled && canCompareGroups.value
           ? { stats: { enabled: true, test: vis.value.statsTest ?? 'auto' } } : {}),
     ...(raw ? { raw: true } : {}),
@@ -879,7 +884,7 @@ async function fetchRawCsv(): Promise<string | null> {
       ...(groupBy.value ? { groupBy: groupBy.value } : {}),
       ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
       ...(composition.value ? { composition: true } : {}),
-      ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+      ...groupAttrBody(),
     }
     applyImageSelector(body)
     const res = await fetch('/api/plot_data', {
@@ -1477,7 +1482,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <div v-if="!series.length && !isPrecomputed" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
-      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
+      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" :host-busy="showSpinner"
                  @auto-override="autoOverrides = $event"
                  @point-click="onPlotPointClick"
                  @point-brush="onPlotPointBrush" />

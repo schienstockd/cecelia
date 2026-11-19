@@ -30,6 +30,7 @@ import { useViewerStore } from '../../stores/viewer'
 import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { popRowLabels } from '../../utils/popName'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -98,8 +99,10 @@ async function load() {
     if (!res.ok) { err.value = (await res.json()).error ?? res.statusText; render(); return }
     const r = await res.json() as { categories?: string[]; series?: { pop?: string; value_name?: string; group?: string; values?: number[] }[] }
     const cats = r.categories ?? []
+    // two pops sharing a name would merge into one group: name each by as much path as tells it apart
+    const popNames = popRowLabels(props.shownPops)
     const labelOf = (s: { pop?: string; value_name?: string; group?: string }) => popMode
-      ? (props.shownPops.find(p => String(s.pop) === (String(s.value_name ?? '') + p.path) || String(s.pop) === p.path)?.name ?? String(s.pop))
+      ? (popNames[props.shownPops.findIndex(p => String(s.pop) === (String(s.value_name ?? '') + p.path) || String(s.pop) === p.path)] ?? String(s.pop))
       : `cluster ${s.group}`
     const out: { group: string; from: string; to: string; freq: number }[] = []
     for (const s of r.series ?? []) {

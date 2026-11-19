@@ -77,6 +77,7 @@ Resolve a track-plot request into [`TrackPlotGroup`]s, in the order they should 
 
 - `group_attrs` — image attributes to group by (`String[]` = don't). Wins over `pool_images`: grouping by
   attribute IS the pooling, and doing both would silently discard the attribute.
+- `group_order` — the attribute groups in the user's order; groups it doesn't name follow, category-sorted.
 - `pool_images` — one group over every image (the "pooled" compare mode).
 - `pops` — value-name-prefixed population refs; empty means the whole segmentation.
 - `pool_pops` — the selected populations as ONE group instead of one each.
@@ -90,6 +91,7 @@ group whose images carry no tracks yields no sources and is dropped here, so "no
 """
 function track_plot_groups(imgs::AbstractVector, uids::AbstractVector;
                            group_attrs::Vector{String} = String[],
+                           group_order::Vector{String} = String[],
                            pool_images::Bool = false,
                            pops::Vector{String} = String[],
                            pop_type::PopTypeArg = "live",
@@ -102,7 +104,7 @@ function track_plot_groups(imgs::AbstractVector, uids::AbstractVector;
     pairs = collect(zip(imgs, uids))
     vn0 = resolve_value_name(first(imgs), value_name)
 
-    igroups = _track_image_groups(pairs, group_attrs, pool_images)
+    igroups = _track_image_groups(pairs, group_attrs, pool_images; group_order = group_order)
     pgroups = _track_pop_groups(pops, vn0, pool_pops)
 
     out = TrackPlotGroup[]
@@ -161,14 +163,16 @@ function _label_suffix(g::TrackPlotGroup, peers)
     any(p -> track_group_images(p) != imgs, peers) && return join(imgs, "+")
     vn = track_group_value_name(g)
     any(p -> track_group_value_name(p) != vn, peers) && return vn
-    _track_pop_label(track_group_pop(g))
+    pop = track_group_pop(g)
+    pop_display_labels([pop; [track_group_pop(p) for p in peers]])[pop]
 end
 
 # Images → labelled bundles. `key` is stable (uIDs), and so is the `label` a legend shows: the uID,
 # not the image NAME. A microscope filename ("M2b-MERTK_KAT-SWHL-GFP-Tom-res (cropped)") is longer
 # than the panel it titles and pushes the population — the part that differs between facets — off the
 # end; the uID is six characters and is what every other surface identifies an image by.
-function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bool)
+function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bool;
+                             group_order::Vector{String} = String[])
     if !isempty(group_attrs)
         amap = image_attr_groups(first.(pairs), last.(pairs), group_attrs)
         order = String[]
@@ -181,8 +185,8 @@ function _track_image_groups(pairs, group_attrs::Vector{String}, pool_images::Bo
         end
         # Sort the attribute-value axis (composed "Treatment.Mouse" when group_attrs is multi-)
         # so facets read in category order instead of image-insertion order — same rationale
-        # as _series_groups for the summary plots.
-        return [(; key = v, label = v, items = byval[v]) for v in _sort_cats(order)]
+        # as _series_groups for the summary plots, including the user's dragged order (`group_order`)
+        return [(; key = v, label = v, items = byval[v]) for v in _ordered_cats(order, group_order)]
     end
     pool_images && return [(; key = "pooled", label = "",
                              items = Any[(img, String(uid)) for (img, uid) in pairs])]
@@ -198,16 +202,17 @@ function _track_pop_groups(pops::Vector{String}, vn0::AbstractString, pool_pops:
     isempty(pops) && return [(; key = String(vn0), label = "", refs = Tuple{String,String}[(String(vn0), "")])]
     refs = Tuple{String,String}[_split_pop_ref(p, vn0) for p in pops]
     pool_pops && return [(; key = "pooled", label = "populations", refs = refs)]
-    [(; key = string(vn, pop), label = _track_pop_label(pop), refs = Tuple{String,String}[(vn, pop)])
+    labels = _track_pop_labels(last.(refs))
+    [(; key = string(vn, pop), label = labels[pop], refs = Tuple{String,String}[(vn, pop)])
      for (vn, pop) in refs]
 end
 
 # The leaf name is what a user calls a population ("/T cells/CD4" → "CD4"); the whole path is a file
-# path, not a label.
-function _track_pop_label(pop::AbstractString)::String
-    segs = split(String(pop), '/'; keepempty = false)
-    isempty(segs) ? "" : String(last(segs))
-end
+# path, not a label. Pops compared side by side that share a leaf (every tracked pop is `_tracked`)
+# climb their paths until they differ (`pop_display_labels`). "" (whole segmentation) stays "".
+_track_pop_labels(pops)::Dict{String,String} =
+    merge(Dict(p => "" for p in pops if isempty(strip(p, '/'))),
+          pop_display_labels(filter(p -> !isempty(strip(p, '/')), pops)))
 
 # "WT · CD4" — the two dimensions of the comparison, in the order the board's own controls read. Empty
 # when there is only one group to name (one image, one population): a legend of one entry is noise.
@@ -259,7 +264,8 @@ function _track_source_labels(g::TrackPlotGroup)::Vector{String}
     n == 1 && return [""]
     by_uid = length(unique(String[s.uid for s in g.sources])) > 1
     by_pop = length(unique(String[s.pop for s in g.sources])) > 1
-    [join(filter(!isempty, String[by_uid ? s.uid : "", by_pop ? _track_pop_label(s.pop) : ""]), "/")
+    pl = _track_pop_labels(String[s.pop for s in g.sources])
+    [join(filter(!isempty, String[by_uid ? s.uid : "", by_pop ? pl[s.pop] : ""]), "/")
      for s in g.sources]
 end
 

@@ -76,6 +76,14 @@ describe('labelPopIndex', () => {
     expect(idx.get(2)?.map(p => p.name)).toEqual(['CD8'])
     expect(idx.get(3)?.map(p => p.name)).toEqual(['T'])
   })
+  it('names two pops sharing a name by their parents', () => {
+    const t = labelPopIndex([
+      { path: '/qc/OTI/_tracked', name: '_tracked', colour: '#111111', labels: [1] },
+      { path: '/qc/gBT/_tracked', name: '_tracked', colour: '#222222', labels: [2] },
+    ])
+    expect(t.get(1)?.map(p => p.name)).toEqual(['OTI/_tracked'])
+    expect(t.get(2)?.map(p => p.name)).toEqual(['gBT/_tracked'])
+  })
   it('has nothing for a cell in no population', () => {
     expect(idx.get(9)).toBeUndefined()
   })

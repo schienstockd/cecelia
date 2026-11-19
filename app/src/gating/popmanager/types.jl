@@ -40,6 +40,42 @@ function pop_name(path::AbstractString)::String
     idx === nothing ? path : path[(idx+1):end]
 end
 
+"""
+    pop_display_labels(paths; name_of = p -> nothing) -> Dict{String,String}
+
+Display labels for populations SHOWN TOGETHER: each pop's own name, unless another pop in the same
+list shares it — then each clashing pop climbs its path one step at a time until they differ
+(`/qc/OTI/_tracked` + `/qc/gBT/_tracked` → `OTI/_tracked`, `gBT/_tracked`). Every tracked pop is
+called `_tracked`, so leaf names alone make identical legend rows. `name_of(path)` overrides the own
+(last) name; the climbed parents always come from the path. Twin of the frontend `popDisplayLabels`
+(`frontend/src/utils/popName.ts`).
+"""
+function pop_display_labels(paths; name_of = _ -> nothing)::Dict{String,String}
+    uniq  = unique(String.(paths))
+    segs  = Dict(p => String.(split(p, '/'; keepempty = false)) for p in uniq)
+    depth = Dict(p => 1 for p in uniq)
+    function label(p)
+        s, d = segs[p], depth[p]
+        own = something(name_of(p), isempty(s) ? p : last(s))
+        (length(s) <= 1 || d <= 1) ? String(own) : join([s[end-d+1:end-1]; own], "/")
+    end
+    while true
+        by = Dict{String,Vector{String}}()
+        for p in uniq
+            push!(get!(by, label(p), String[]), p)
+        end
+        climbed = false
+        for clash in values(by)
+            length(clash) < 2 && continue
+            for p in clash
+                depth[p] < length(segs[p]) && (depth[p] += 1; climbed = true)
+            end
+        end
+        climbed || break
+    end
+    Dict(p => label(p) for p in uniq)
+end
+
 """Join a parent path + leaf name into a pop path."""
 pop_path(parent::AbstractString, name::AbstractString) =
     is_root(parent) ? "/" * name : rstrip(parent, '/') * "/" * name
