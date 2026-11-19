@@ -1477,7 +1477,7 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <div v-if="!series.length && !isPrecomputed" class="sp-msg cc-muted">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg cc-muted-error">{{ error }}</div>
       <div v-else-if="!hasData && !loading" class="sp-msg cc-muted">{{ emptyMessage }}</div>
-      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts"
+      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" :host-busy="showSpinner"
                  @auto-override="autoOverrides = $event"
                  @point-click="onPlotPointClick"
                  @point-brush="onPlotPointBrush" />

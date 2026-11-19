@@ -4,7 +4,7 @@
   "Plot loading state"). Place inside a `position: relative` container; it fills and centres.
 
     <div class="plot-host" style="position: relative">
-      <PlotChart :data="..." :opts="..." />
+      <PlotChart :data="..." :opts="..." :host-busy="showSpinner" />   <!-- no second wheel on a slow redraw -->
       <PlotSpinner v-if="showSpinner" label="Loading…" />
     </div>
 -->
