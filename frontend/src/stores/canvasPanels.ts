@@ -115,7 +115,12 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
     })
   }
 
-  watch([entries, geom], () => _autosave.schedule(), { deep: true })
+  // Two watchers, two depths. A drag writes `geom` on EVERY mousemove, and one deep watcher over both
+  // sources re-walked every canvas's panel state in the project each time — the measured cost of
+  // dragging a plot. `setGeom`/`copyEntry`/`load` always REPLACE a panel's `{x,y,w,h}`, never edit it
+  // in place, so depth 1 (the record's keys and values) sees every geometry change.
+  watch(entries, () => _autosave.schedule(), { deep: true })
+  watch(geom, () => _autosave.schedule(), { deep: 1 })
 
   return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, copyEntry, clear, load }
 })

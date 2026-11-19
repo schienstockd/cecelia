@@ -40,6 +40,22 @@ export function workspaceBox(
   return { base, size: { w: base.w, h: grown } }
 }
 
+/** The placed panels' bounding box (max right / bottom over the geometries whose key starts with
+ *  `prefix`). Returns `prev` itself when the box is unchanged: a drag writes a panel's geometry on
+ *  every mousemove, and a fresh-but-equal object would re-render the whole canvas host each time
+ *  (the workspace style is derived from it) although nothing it shows moved. */
+export function contentBox(
+  geom: Record<string, { x: number; y: number; w: number; h: number }>, prefix: string,
+  prev?: { w: number; h: number },
+): { w: number; h: number } {
+  let w = 0, h = 0
+  for (const [k, g] of Object.entries(geom)) {
+    if (!k.startsWith(prefix)) continue
+    w = Math.max(w, g.x + g.w); h = Math.max(h, g.y + g.h)
+  }
+  return prev && prev.w === w && prev.h === h ? prev : { w, h }
+}
+
 /** The canvas box's own height without our growth — what `base` is measured from. While the box is
  *  held open by the min-height we applied (`applied`), its measured height is that min-height, not
  *  the layout's: keep the floor measured before it. Measuring the grown box would ratchet — the

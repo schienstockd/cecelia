@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { workspaceBox, floorHeight, hostMinHeight } from './useCanvasWorkspace'
+import { workspaceBox, floorHeight, hostMinHeight, contentBox } from './useCanvasWorkspace'
 
 // the visible box, and the two things that can enlarge the logical workspace inside it
 const VP = { w: 1600, h: 800 }
@@ -97,5 +97,29 @@ describe('the canvas box grows with the workspace — one page scroll, nothing c
     const short = workspaceBox(VP.w, floor, 1, { w: 900, h: 300 })
     expect(short.size.h).toBe(800)
     expect(hostMinHeight(short.size.h, 1, floor)).toBe(0)
+  })
+})
+
+describe('contentBox — the placed panels, and the same object while they fill the same box', () => {
+  const G = { 'c:1': { x: 0, y: 0, w: 300, h: 200 }, 'c:2': { x: 350, y: 250, w: 300, h: 200 }, 'other:1': { x: 0, y: 0, w: 5000, h: 5000 } }
+
+  it('is the max right / bottom over this canvas only', () => {
+    expect(contentBox(G, 'c:')).toEqual({ w: 650, h: 450 })
+  })
+
+  it('is empty with no panels', () => {
+    expect(contentBox({}, 'c:')).toEqual({ w: 0, h: 0 })
+  })
+
+  it('returns the previous object when a panel moved inside the box', () => {
+    const prev = contentBox(G, 'c:')
+    expect(contentBox({ ...G, 'c:1': { x: 40, y: 30, w: 300, h: 200 } }, 'c:', prev)).toBe(prev)
+  })
+
+  it('returns a new box when a panel moved past the edge', () => {
+    const prev = contentBox(G, 'c:')
+    const next = contentBox({ ...G, 'c:2': { x: 350, y: 400, w: 300, h: 200 } }, 'c:', prev)
+    expect(next).not.toBe(prev)
+    expect(next).toEqual({ w: 650, h: 600 })
   })
 })
