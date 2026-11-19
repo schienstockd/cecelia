@@ -19,6 +19,8 @@
     sticky      bool     The toggle bar pins to the top of the enclosing scroll box while the body scrolls past
                          under it, so a long section can be collapsed without scrolling back up (ModuleLayout's
                          Images section). Needs `maxHeight="none"` (the outer box is the one that scrolls).
+                         The bar's height is published to the body as `--cc-sticky-above`, so a pinned
+                         table header inside (SelectionTable `stickyHeader`) stops BELOW the bar, not under it.
   Slot `after-label`: a status mark after the heading (e.g. a warning icon), visible while closed.
     open        bool|null CONTROLLED mode, outside an accordion: pass it (with @update:open, or v-model:open)
                          and the parent owns open/closed. Omit it — it is `null` — and the section manages
@@ -35,7 +37,7 @@
                          would size it to nothing there: its basis is 0 and the parent has no height.
 -->
 <script setup lang="ts">
-import { ref, watch, computed, onBeforeUnmount } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { onSectionOpen } from '../utils/sectionOpen'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
@@ -93,11 +95,21 @@ const open = computed({
     else emit('update:open', v)
   },
 })
+
+// `sticky`: the pinned bar's height, handed to the body as `--cc-sticky-above` so a pinned header
+// inside it stops under the bar. Only when the OUTER box scrolls (`maxHeight: 'none'`) — with a real
+// max-height the body is its own scroll box and the bar sits above it, not over it. One line of text
+// in fixed padding, so measured once, not observed.
+const toggleEl = ref<HTMLElement | null>(null)
+const barPx = ref(0)
+onMounted(() => { if (props.sticky) barPx.value = toggleEl.value?.offsetHeight ?? 0 })
+const stickyVar = computed(() =>
+  props.sticky && props.maxHeight === 'none' ? { '--cc-sticky-above': `${barPx.value}px` } : {})
 </script>
 
 <template>
   <div :class="['collapsible-section', { 'cs-fill': fill && open, 'cs-fill-content': fill === 'content' && open, 'cs-sticky': sticky }]">
-    <button class="cs-toggle cc-section-toggle" @click="open = !open"
+    <button ref="toggleEl" class="cs-toggle cc-section-toggle" @click="open = !open"
       v-tooltip.right="tip || (open ? `Collapse ${label}` : `Expand ${label}`)">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
       <span class="cs-label cc-eyebrow">{{ label }}</span>
@@ -108,7 +120,7 @@ const open = computed({
          descendant — e.g. the board's pop-manager rail — sticks to a box that never scrolls and never
          activates). Let the outer page scroll handle it. -->
     <div v-show="open" class="cs-body"
-         :style="fill ? undefined : { maxHeight, overflowY: maxHeight === 'none' ? 'visible' : 'auto' }">
+         :style="fill ? undefined : { maxHeight, overflowY: maxHeight === 'none' ? 'visible' : 'auto', ...stickyVar }">
       <slot />
     </div>
   </div>
