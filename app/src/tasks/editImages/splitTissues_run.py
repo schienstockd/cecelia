@@ -83,6 +83,8 @@ def _write_one(levels, dim_utils, im_path, labels, factor, tissue, out_path, log
         n_t = level_in.shape[axis['T']] if axis['T'] is not None else 1
         n_c = level_in.shape[axis['C']] if axis['C'] is not None else 1
         xs = np.arange(x0, x1)
+        # STREAMING-READ-EXEMPT: reads one (band, t, c) block of the tissue box at a time, so memory is
+        # bounded by a band; `read_timepoint` would load a whole slide frame, every channel at full res.
         for b0 in range(0, y1 - y0, BAND_ROWS):
             b1 = min(y1 - y0, b0 + BAND_ROWS)
             keep = tissue_split_utils.labels_block(
