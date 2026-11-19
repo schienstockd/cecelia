@@ -718,9 +718,10 @@ tested on that movie) and in the viewer overlay test (`if sizes[3] != 1.0` — n
   `test-data/NEEDS.toml` (properties, why, the waiting tests, a size budget), pass `need = "<id>"`, and
   let the test skip with its warning. If a synthesised fixture with a known answer would do
   (`synthetic = true` — distances, band edges, a unit conversion), build it yourself like `CONTMESH`;
-  only real-data behaviour waits for the maintainer — the weekly judge lists the images in their
-  projects that match (`pixi run judge-fixtures`), and `pixi run fixture-cut` cuts one under the cap
-  into `test-data/projects/FIXPRJ` (cell table, and the image + label stores cropped to one box). A PR reservation that says "not run on <X> data"
+  only real-data behaviour waits for the maintainer — the weekly judge matches the request against
+  their projects and stages a cut under the cap outside the repo (`pixi run judge-fixtures` shows it),
+  and `pixi run fixture-accept -- <id>` takes it into `test-data/projects/FX<uid>` once they have looked
+  at it. A PR reservation that says "not run on <X> data"
   names the request id. The registry testset fails once a registered fixture meets an open request, so
   the list can't go stale.
 - **Guards that skip on the fixture are the same bug.** `if <property> … end` around the assertion that

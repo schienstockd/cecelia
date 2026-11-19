@@ -365,7 +365,9 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     `persist=False` (a dry run) leaves the earlier records in the store and the log untouched.
     `projects`: where the agent run records are (default: `run_reviews.projects_dir()`).
     `fixture_projects`: where to look for images meeting fixture requests (default: the
-    `fixture_requests.ENV` variable; unset → the step only lists the open requests). `state` is
+    `fixture_requests.ENV` variable, else the Cecelia config's projects dir; none → the step only lists
+    the open requests). With `persist`, it also stages a cut per matched request outside the repo
+    (`fixture_requests.stage_cuts`). `state` is
     updated as it goes (`stage`, `sha`), so a crash can say where it stopped.
     """
     state = state if state is not None else {}
@@ -402,7 +404,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     state["stage"] = "run reviews"
     reviewed = _run_reviews.scan(projects)
     events += _run_reviews.log_new(reviewed, events, pass_ts=ts, write=persist)
-    # open fixture requests against the source projects: counts on the record, names in a local file
+    # open fixture requests against the source projects: counts on the record, names and staged cuts local
     state["stage"] = "fixture requests"
     fixtures = _fixture_requests.run(fixture_projects, write=persist)
     state["stage"] = "bugs"
@@ -527,7 +529,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--projects-dir", type=pathlib.Path,
                     help=f"where the agent run records are (default {_run_reviews.projects_dir()})")
     ap.add_argument("--fixture-projects-dir", type=pathlib.Path,
-                    help=f"projects to match fixture requests against (default ${_fixture_requests.ENV})")
+                    help=f"projects to match fixture requests against (default ${_fixture_requests.ENV}, "
+                         "else [dirs] projects in the Cecelia config)")
     args = ap.parse_args(argv)
 
     lock = try_lock(state_dir() / "judge.lock")   # on Windows two passes simply aren't guarded
