@@ -2,7 +2,7 @@
 // build behaviour is identical.
 import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { rangeFillTransform } from './src/utils/rangeFillTransform'
 import { createLogger } from 'vite'
@@ -53,9 +53,10 @@ export default defineConfig({
     dedupe: ['vue'],
   },
   // Vitest stubs CSS imports to '' by default, which would make the design-token guard in
-  // utils/cssTokens.test.ts read an empty style.css and pass vacuously. No test mounts components,
-  // so processing CSS costs nothing else.
-  test: { css: true },
+  // utils/cssTokens.test.ts read an empty style.css and pass vacuously. No Node test mounts components,
+  // so processing CSS costs nothing else. `*.browser.test.ts` mount in a real Chromium and run from
+  // their own config (`vitest.browser.config.ts`, `npm run test:browser`), never in this Node run.
+  test: { css: true, exclude: [...configDefaults.exclude, 'src/**/*.browser.test.ts'] },
   server: {
     host: '127.0.0.1',
     port: frontendPort,

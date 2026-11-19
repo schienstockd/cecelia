@@ -270,6 +270,9 @@ test-runner   = { cmd = "julia --project test/runner_e2e.jl", cwd = "app" }
 # CECELIA_HPC_TEST_HOST (CI: .github/workflows/verify-hpc.yml), else it skips.
 test-hpc      = { cmd = "julia -O0 --project test/hpc_e2e.jl", cwd = "app" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
+# Shared components mounted in a real (system) Chromium — `*.browser.test.ts`, vitest.browser.config.ts.
+# Never reaches a backend or :5173. docs/DEV.md → Tests → GUI (browser).
+test-gui      = { cmd = "npm run test:browser", cwd = "frontend" }
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 # No PYTHONPATH override on the two mcp tasks: `-m` / `-t .` already put mcp/ on sys.path, and the
 # project-wide pin ([activation.env]) supplies python/ for `cecelia.utils.loopback`.
