@@ -18,9 +18,9 @@ import { acquireGpuDevice, WebGpuUnavailable } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
 import type { VolumeRenderer, FrameSample, UniformState } from './volumeRenderer'
 import { PROBE_PX } from './volumeRenderer'
-import type { ViewerMeta, ViewerChannel, OrbitCamera } from '../../utils/volumeViewer'
+import type { ViewerMeta, ViewerChannel, OrbitCamera, ViewerLens } from '../../utils/volumeViewer'
 import {
-  extentUm, slabMax, slabView, lutTextureBytes,
+  extentUm, slabMax, slabView, lutTextureBytes, writeLens,
   MAX_CHANNELS, LUT_STOPS,
 } from '../../utils/volumeViewer'
 import {
@@ -57,7 +57,7 @@ import { compileShader } from './compileShader'
 import { retireDestroyed } from './retireDestroyed'
 import {
   BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
-  BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
+  BRICK_UNIFORM_BYTES, BU, BRICK_LENS, EMPTY_SLOT,
   BRICK_MAX_ATLASES, makeBrickShader,
   type BrickShaderBindings,
 } from './brickShader'
@@ -1439,6 +1439,8 @@ export async function createBrickVolumeRenderer(
     atlas.pageTableDirty = true
   }
 
+  /** The channel lens (`setLens`), written with every uniform push. */
+  let lens: ViewerLens | null = null
   const writeUniform = (widthOverride?: number, heightOverride?: number) => {
     uniformCpu[BU.CAM + 0] = camState.yaw
     uniformCpu[BU.CAM + 1] = camState.pitch
@@ -1528,7 +1530,7 @@ export async function createBrickVolumeRenderer(
     } else {
       uniformCpu[BU.PREV_GRID + 3] = 0
     }
-    // Per-channel (lo, hi, visible, unused). Rows past `channels.length` stay zero so the shader
+    // Per-channel (lo, hi, visible, in lens). Rows past `channels.length` stay zero so the shader
     // skips them via the `visible < 0.5` check. Same discipline as `CH0` in `volumeRenderer.ts`.
     for (let ci = 0; ci < MAX_CHANNELS; ci++) {
       const off = BU.CH0 + ci * 4
@@ -1542,9 +1544,10 @@ export async function createBrickVolumeRenderer(
         uniformCpu[off + 0] = ch.lo
         uniformCpu[off + 1] = ch.hi
         uniformCpu[off + 2] = ch.visible ? 1 : 0
-        uniformCpu[off + 3] = 0
+        uniformCpu[off + 3] = ch.lens ? 1 : 0
       }
     }
+    writeLens(uniformCpu, BRICK_LENS, lens)
     device.queue.writeBuffer(uniformBuf, 0, uniformCpu)
   }
 
@@ -1764,6 +1767,7 @@ export async function createBrickVolumeRenderer(
 
     setSteps(steps) { uniform.steps = steps },
     setOrthographic(on) { uniform.ortho = on },
+    setLens(l) { lens = l },
 
     setOverlayPoints(data) {
       // Grow-only: the movie's total instance count is bounded by the population data and the

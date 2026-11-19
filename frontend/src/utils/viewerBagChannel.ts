@@ -84,3 +84,33 @@ export function decodeScalarPrefEvent(
   if (typeof cur === 'string') return { name, value: newValue }
   return null
 }
+
+/**
+ * The echo guard for the scalar preferences synced across windows. A window applies another's value
+ * from a `storage` event, and its own `watch → localStorage.setItem` then writes that value BACK —
+ * late: by the time the watcher flushes, the writing window may have moved on (a slider mid-drag
+ * writes 100, 110, 120), so the echo puts 100 over 120, the writer receives it, and its slider jumps
+ * back. Every cross-window slider had this race. The receiver marks what it applied (`received`);
+ * the writer asks `isEcho` before writing and skips exactly that value, once.
+ */
+export function createEchoGuard() {
+  const applied = new Map<string, string>()
+  return {
+    /** A `storage` event's value for `key` was applied to this window's ref. */
+    received(key: string, raw: string) { applied.set(key, raw) },
+    /** Whether writing `raw` to `key` would only echo the value just received — skip it. Any other
+     *  value is this window's own change and is written; either way the mark is spent. */
+    isEcho(key: string, raw: string): boolean {
+      const was = applied.get(key)
+      applied.delete(key)
+      return was === raw
+    },
+  }
+}
+
+/** The store's synced-preference writes that bypass the echo guard: `watch(…)` lines writing a
+ *  `cc.` key straight to `localStorage`. Read by the convention test over `stores/settings.ts`. */
+export function unguardedPrefWrites(src: string): string[] {
+  return src.split('\n').filter(l => /^\s*watch\(/.test(l) && /localStorage\.setItem\(\s*['"`]cc\./.test(l))
+    .map(l => l.trim())
+}

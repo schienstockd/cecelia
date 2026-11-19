@@ -37,6 +37,8 @@ export interface WebgpuChannelState {
   lo: number
   hi: number
   visible: boolean
+  /** Drawn inside the channel lens. Absent in older snapshots = not. */
+  lens?: boolean
 }
 
 export interface WebgpuBlock {
@@ -85,6 +87,7 @@ export function captureViewState(input: CaptureInput): ViewerViewState {
     channels: channels.map(ch => ({
       hex: channelHexFrom(ch.lut),
       lo: ch.lo, hi: ch.hi, visible: !!ch.visible,
+      ...(ch.lens ? { lens: true } : {}),
     })),
     cam: { ...cam },
     mode,
@@ -114,7 +117,7 @@ export function captureViewState(input: CaptureInput): ViewerViewState {
 
 export interface ApplyTarget {
   /** Mutate the ViewerMeta's `channels[c]` in-place: (lo, hi, visible, lut). */
-  applyChannel(c: number, patch: { lo?: number; hi?: number; visible?: boolean; hex?: string }): void
+  applyChannel(c: number, patch: { lo?: number; hi?: number; visible?: boolean; lens?: boolean; hex?: string }): void
   applyCamera(cam: OrbitCamera): void
   applyMode(mode: 'plane' | 'volume'): void
   applyZ(zPlane: number, zRange: [number, number]): void
@@ -137,7 +140,7 @@ export function applyViewState(
   if (w && Array.isArray(w.channels)) {
     for (let c = 0; c < w.channels.length && c < meta.channels.length; c++) {
       const s = w.channels[c]
-      target.applyChannel(c, { lo: s.lo, hi: s.hi, visible: !!s.visible, hex: s.hex })
+      target.applyChannel(c, { lo: s.lo, hi: s.hi, visible: !!s.visible, lens: !!s.lens, hex: s.hex })
     }
     if (w.cam) target.applyCamera({ ...w.cam })
     if (w.mode === 'plane' || w.mode === 'volume') target.applyMode(w.mode)

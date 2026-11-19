@@ -31,7 +31,7 @@ const KIWI_REF_KINDS = String[split(String(b["\$ref"]), '/')[end] for b in _KIWI
 _kiwi_def(d) = haskey(d, "\$ref") ? _KIWI_REF_DEFS[split(String(d["\$ref"]), '/')[end]] : d
 
 # The subset of JSON Schema the file uses: type / const / minLength / maxLength / pattern / minimum /
-# maximum / minItems / items. Returns "" when `v` fits `spec`, else a short reason. PURE → tested.
+# maximum / minItems / items / object (properties, required, additionalProperties: false). Returns "" when `v` fits `spec`, else a short reason. PURE → tested.
 function _kiwi_value_error(v, spec)::String
     d = _kiwi_def(spec)
     haskey(d, "const") && return v == d["const"] ? "" : "must be \"$(d["const"])\""
@@ -51,6 +51,18 @@ function _kiwi_value_error(v, spec)::String
         length(v) >= get(d, "minItems", 0) || return "must not be empty"
         for x in v
             e = _kiwi_value_error(x, d["items"]); isempty(e) || return "items $e"
+        end
+    elseif t == "object"
+        v isa AbstractDict || return "must be an object"
+        props = get(d, "properties", Dict{String,Any}())
+        ks = Set(String(string(k)) for k in keys(v))
+        for r in get(d, "required", String[])
+            String(r) in ks || return "is missing $r"
+        end
+        for (k, x) in pairs(v)
+            kn = String(string(k))
+            haskey(props, kn) || return "has an unknown field $kn"
+            e = _kiwi_value_error(x, props[kn]); isempty(e) || return "$kn $e"
         end
     end
     ""
@@ -212,6 +224,14 @@ function _kiwi_resolve_viewer(puid, ref)
         v < n || return _kiwi_bad("exists", "$name=$v is outside $(img.name) (0–$(n - 1))")
     end
     where_ = join(("$k=$v" for (k, v) in (("t", t), ("z", z)) if v !== nothing), " ")
+    # a pinned channel lens on the view (level-0 px) — named, so the turn knows to look at it
+    # (`get_viewer_screenshot` → `view.lens` / `lens`)
+    lens = _kiwi_get(ref, "lens")
+    if lens isa AbstractDict
+        chans = _kiwi_get(lens, "channels")
+        what  = chans isa AbstractVector ? (isempty(chans) ? " (spotlight)" : " of " * join(string.(chans), ", ")) : ""
+        where_ = strip(where_ * " lens$what at ($(_kiwi_get(lens, "x")), $(_kiwi_get(lens, "y"))) r $(_kiwi_get(lens, "r")) px")
+    end
     _kiwi_ok("exists", isempty(where_) ? img.name : "$(img.name) · $where_")
 end
 
