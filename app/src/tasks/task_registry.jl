@@ -177,6 +177,10 @@ function _spec_path(::CropImage)
     joinpath(@__DIR__, "editImages", "cropImage.json")
 end
 
+function _spec_path(::SplitTissues)
+    joinpath(@__DIR__, "editImages", "splitTissues.json")
+end
+
 function _spec_path(::ExportOmeTiff)
     joinpath(@__DIR__, "exportImages", "ome_tiff.json")
 end
@@ -306,6 +310,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.smooth"              => Smooth(),
         "cleanupImages.denoise"             => Denoise(),
         "editImages.cropImage"              => CropImage(),
+        "editImages.splitTissues"           => SplitTissues(),
         "editImages.copyImage"              => CopyImage(),
         "editImages.zProject"               => ZProject(),
         "editImages.tProject"               => TProject(),

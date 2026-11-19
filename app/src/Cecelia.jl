@@ -237,7 +237,7 @@ export CellNeighbours, ClustRegions, NeighbourStats, SpatialPattern, RoiDiscover
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
-export CropImage
+export CropImage, SplitTissues
 export CopyImage
 export ZProject
 export TProject
@@ -389,6 +389,7 @@ include("tasks/cleanupImages/denoise_advisory.jl")
 include("tasks/opticalFlow/train_support_denoise.jl")
 include("tasks/editImages/cropImage_box.jl")
 include("tasks/editImages/cropImage.jl")
+include("tasks/editImages/splitTissues.jl")
 include("tasks/editImages/copyImage.jl")
 include("tasks/editImages/zProject.jl")
 include("tasks/editImages/tProject.jl")
