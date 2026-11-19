@@ -76,7 +76,7 @@
   ],
   "layout": {
     "mip": {
-      "floats": 292,
+      "floats": 296,
       "slots": {
         "cam.dist": 2,
         "vp.ortho": 7,
@@ -92,7 +92,7 @@
       }
     },
     "tile": {
-      "floats": 284,
+      "floats": 288,
       "slots": {
         "cam.aspect": 3,
         "vp.canvasH": 6,
@@ -106,7 +106,7 @@
       }
     },
     "brick": {
-      "floats": 312,
+      "floats": 316,
       "slots": {
         "atlas.slotsX": 23,
         "lab.opacity": 36,

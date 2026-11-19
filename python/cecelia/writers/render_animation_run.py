@@ -23,6 +23,8 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
         ``snapH``      : height of the canvas the zoom was measured on (the view state's ``canvas``),
                          or absent
         ``specs``      : per channel ``{lo, hi, lut: [[r, g, b], …], visible}`` (``_as_lut`` stops)
+        ``lens``       : optional channel lens (2D) — ``{x, y, r}`` in L0 image px and ``channels``, the
+                         0-based indices it draws (``lens_lanes``, ``shaders/lens.wgsl``)
         ``overlays3d`` : optional ``{points: {x, y, z, colour}, segments: {x0, y0, z0, x1, y1, z1,
                          colour, t1?, head?, length?}}`` in native voxel coordinates, colours as
                          ``[r, g, b]`` in 0..1; ``t1`` (per segment) + ``head`` + ``length`` drive
@@ -185,7 +187,36 @@ def _in_region(state, origin, l0_zyx):
     cam = dict(state.get('camera') or {})
     centre = cam.get('center') or [0.0, l0_zyx[1] / 2, l0_zyx[2] / 2]
     cam['center'] = [float(centre[0]), float(centre[1]) - oy, float(centre[2]) - ox]
-    return dict(state, camera=cam)
+    out = dict(state, camera=cam)
+    lens = state.get('lens')
+    if lens:   # pinned to the tissue in L0 px, so it moves with the centre
+        out['lens'] = dict(lens, x=float(lens['x']) - ox, y=float(lens['y']) - oy)
+    return out
+
+
+def lens_lanes(state, l0_zyx, canvas_h, canvas_w):
+    """The channel lens on this frame (``shaders/lens.wgsl``) — the uniform lanes for the state's
+    ``lens``: ``{x, y, r}`` in L0 image px (pinned to the tissue, ``channelLens.ts`` →
+    ``lensForRecording``), ``channels`` the 0-based indices it draws. Placed through the frame's camera
+    as ``view_camera`` reads it: ``snapH / zoom`` L0 rows fill the output height, centred on
+    ``center``. The rim keeps the viewer's width relative to the frame. A 2D state only; none = {}."""
+    lens = state.get('lens')
+    if not lens or int(state.get('ndisplay', 3)) != 2:
+        return {}
+    _, ny0, nx0 = l0_zyx
+    cam = state.get('camera') or {}
+    snap_h = float(state.get('snapH') or canvas_h)
+    k = canvas_h * float(cam.get('zoom') or 1) / max(1e-6, snap_h)     # output px per L0 px
+    centre = cam.get('center')
+    cy = float(centre[1]) if centre is not None else ny0 / 2
+    cx = float(centre[2]) if centre is not None else nx0 / 2
+    rim = float(wgsl_utils.shader_constants()['LENS_RIM_PX']) * canvas_h / max(1e-6, snap_h)
+    u = {'lens.x': canvas_w / 2 + (float(lens['x']) - cx) * k,
+         'lens.y': canvas_h / 2 + (float(lens['y']) - cy) * k,
+         'lens.r': max(0.0, float(lens['r']) * k), 'lens.rimPx': max(1.0, rim)}
+    for c in lens.get('channels') or []:
+        u[f'ch[{int(c)}].lens'] = 1
+    return u
 
 
 def _point_instances(pts, voxel_um, origin_yx=(0.0, 0.0)):
@@ -236,7 +267,7 @@ def trail_lanes(segs):
 
 
 def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_style, overlay_style,
-                   z_range=None):
+                   z_range=None, canvas_w=None):
     """The uniform lanes for one frame — the same lanes ``volumeRenderer.ts`` writes.
 
     ``dims_czyx`` is the texture actually uploaded; ``l0_zyx`` and ``voxel_um`` are level 0's, which
@@ -281,6 +312,9 @@ def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_st
         u[f'ch[{c}].lo'] = float(spec['lo'])
         u[f'ch[{c}].hi'] = float(spec['hi'])
         u[f'ch[{c}].visible'] = 1 if spec.get('visible', True) else 0
+    # the channel lens: its lanes, and which channels it draws (past the shader's count: none)
+    u.update({k: v for k, v in lens_lanes(state, l0_zyx, canvas_h, canvas_w or canvas_h).items()
+              if not k.startswith('ch[') or int(k[3:k.index(']')]) < shown})
     return u
 
 
@@ -425,7 +459,7 @@ def render_frames(params, host, log):
         # each, which hits every plane's centre (the viewer's ± window marches it finer).
         n_steps = max(1, dims[1]) if flat else steps
         lanes = frame_uniforms(frame_state, dims, frame_l0, voxel_um, canvas_h, n_steps,
-                               label_style, overlay_style, z_range=z_range)
+                               label_style, overlay_style, z_range=z_range, canvas_w=canvas_w)
         frame = host.render(canvas_w, canvas_h, lanes)[..., :3]
         frame = crop_to_even(np.ascontiguousarray(frame))
         # Timestamp / scale bar go onto the ENCODED frame, already sRGB — the same helper

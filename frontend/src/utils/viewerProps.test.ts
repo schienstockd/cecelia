@@ -73,6 +73,21 @@ function mkTarget() {
   return { target, calls }
 }
 
+describe('channel lens set round-trip', () => {
+  it('a channel in the lens is saved and restored; one not in it is saved without the key', () => {
+    const chs: ViewerChannel[] = [
+      { name: 'DAPI', lo: 0, hi: 1, visible: true, lut: [[0, 0, 0], [0, 0, 1]] },
+      { name: 'CD3',  lo: 0, hi: 1, visible: false, lens: true, lut: [[0, 0, 0], [0, 1, 0]] },
+    ]
+    const vs = captureViewState({ meta: mkMeta(chs), channels: chs, cam: CAM, mode: 'plane',
+                                  zPlane: 0, zRange: [0, 0], t: 0, valueName: '' })
+    expect(vs.webgpu!.channels.map(c => c.lens)).toEqual([undefined, true])
+    const { target, calls } = mkTarget()
+    applyViewState(vs, mkMeta(chs), target)
+    expect(calls.channel.map(c => c.patch.lens)).toEqual([false, true])
+  })
+})
+
 describe('applyViewState', () => {
   const ch: ViewerChannel[] = [
     { name: 'DAPI', lo: 0, hi: 1, visible: true, lut: [[0, 0, 0], [0, 0, 1]] },
@@ -91,7 +106,8 @@ describe('applyViewState', () => {
     }
     const { target, calls } = mkTarget()
     applyViewState(vs, meta, target)
-    expect(calls.channel[0]).toEqual({ c: 0, patch: { lo: 111, hi: 222, visible: false, hex: '#ff00ff' } })
+    // a snapshot from before the lens says no channel is in it
+    expect(calls.channel[0]).toEqual({ c: 0, patch: { lo: 111, hi: 222, visible: false, lens: false, hex: '#ff00ff' } })
     expect(calls.channel[1].patch.hex).toBe('#00ffff')
     expect(calls.cam).toEqual(CAM)
     expect(calls.mode).toBe('volume')

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { popNameError, popPath, isInSubtree } from './popName'
+import { popNameError, popPath, isInSubtree, nextClusterPopName } from './popName'
 
 describe('popNameError', () => {
   const existing = ['CD4', 'CD8', 'myeloid']
@@ -54,5 +54,25 @@ describe('isInSubtree', () => {
     expect(isInSubtree('/qc', '/qc/B')).toBe(false)
     expect(isInSubtree('/qc/T', '/qc/B')).toBe(false)
     expect(isInSubtree('/qc/Blast', '/qc/B')).toBe(false)   // prefix without the boundary
+  })
+})
+
+describe('nextClusterPopName — a new run never takes another run\'s name', () => {
+  it('ignores another run\'s numbering: its "Population 1" leaves this run at 1', () => {
+    const other = ['Population 1', 'Population 2', 'Population 3']
+    expect(nextClusterPopName('win50', 'region', other)).toBe('win50 region 1')
+  })
+  it('numbers past this run\'s own names, case aside, and fills a gap', () => {
+    expect(nextClusterPopName('win50', 'region', ['win50 region 1', 'WIN50 REGION 2'])).toBe('win50 region 3')
+    expect(nextClusterPopName('win50', 'region', ['win50 region 2'])).toBe('win50 region 1')
+  })
+  it('keeps a cluster run and a region run of the same name apart', () => {
+    expect(nextClusterPopName('default', 'clust', [])).toBe('default cell cluster 1')
+    expect(nextClusterPopName('default', 'trackclust', [])).toBe('default track cluster 1')
+    expect(nextClusterPopName('default', 'region', [])).toBe('default region 1')
+  })
+  it('never returns a name in the list', () => {
+    const names = Array.from({ length: 50 }, (_, i) => `m cell cluster ${i + 1}`)
+    expect(names).not.toContain(nextClusterPopName('m', 'clust', names))
   })
 })

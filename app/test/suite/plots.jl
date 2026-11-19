@@ -452,6 +452,25 @@ end
     zs = [c["value"] for c in prz["cells"] if c["y"] == "speed"]
     @test isapprox(sum(zs), 0.0; atol=1e-9) && all(isfinite, zs)
 
+    # More levels than a heatmap can draw is refused with the count, not built: a region run with
+    # thousands of clusters otherwise freezes the page that draws its heatmap.
+    nmax = Cecelia.MATRIX_MAX_LEVELS
+    dfl = DataFrame("value_name" => fill("A", nmax + 1), "pop" => fill("/p", nmax + 1),
+                    "speed" => ones(nmax + 1), "st" => Float64.(1:nmax + 1))
+    toomany = try
+        Cecelia._summary_agg(dfl, "matrix"; measure=nothing, granularity=:cell, nbins=0,
+                             normalize=:none, by_image=false,
+                             matrix_mode="profile", measures=["speed"], category="st")
+        ""
+    catch e
+        sprint(showerror, e)
+    end
+    @test occursin("$(nmax + 1) clusters", toomany)
+    atmax = Cecelia._summary_agg(dfl[1:nmax, :], "matrix"; measure=nothing, granularity=:cell, nbins=0,
+                                 normalize=:none, by_image=false,
+                                 matrix_mode="profile", measures=["speed"], category="st")
+    @test length(atmax["xLabels"]) == nmax && atmax["xCounts"] == ones(Int, nmax)
+
     # CROSSTAB: a "from_to" categorical → transition matrix; the hybrid uses '.', so the first '_'
     # splits prev|cur ("1.2_3.4" → from "1.2", to "3.4"). Row-normalise → P(to|from).
     dft = DataFrame("value_name" => fill("A", 5), "pop" => fill("/p", 5),

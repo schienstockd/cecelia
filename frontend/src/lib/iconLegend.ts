@@ -158,6 +158,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-scale-bar', lucide: 'ruler-dimension-line', means: 'Scale bar on the image' },
       { icon: 'pi-timestamp', lucide: 'timer', means: 'Elapsed time on the image' },
       { icon: 'pi-readout', lucide: 'crosshair', means: 'Readout — what is under the pointer' },
+      { icon: 'pi-lens', lucide: 'aperture', means: 'Lens — its own channels around the pointer' },
       { icon: 'pi-key', lucide: 'key-round', means: 'This glossary' },
       { icon: 'pi-compass', lucide: 'compass', means: 'Guides — walk through the basics' },
       { icon: 'pi-cog', lucide: 'settings', means: 'Settings and options' },

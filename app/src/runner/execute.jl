@@ -254,6 +254,10 @@ not required.
 `from_run` non-empty means **replay**: a fresh run of that past run's frozen template and recorded
 overrides (`run_chain(...; from_run)`). `chain_name` is then not needed, and empty `image_uids` means
 the past run's images.
+
+`template` non-empty is a chain built on the spot and never saved (the runner's "Queue after",
+`chain/after_live.jl`): the raw template document, parsed by `chain_template_from_raw` in the executing
+process. Fresh runs only.
 """
 Base.@kwdef struct ChainRequest
     project_uid::String
@@ -271,6 +275,7 @@ Base.@kwdef struct ChainRequest
     # executing process only records. Fresh runs only.
     excluded::Dict{String,String} = Dict{String,String}()
     caller::Dict{String,Any}   = Dict{String,Any}()   # as TaskRequest.caller
+    template::Dict{String,Any} = Dict{String,Any}()   # an inline template document; empty = by name
 end
 
 # `req.by`, or this process's active profile when the asker didn't say.
@@ -280,7 +285,7 @@ chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
     "runId" => r.run_id, "startNode" => r.start_node, "fromRun" => r.from_run, "target" => string(r.target), "by" => r.by,
     "excluded" => r.excluded,
-    "caller" => r.caller)
+    "caller" => r.caller, "template" => r.template)
 
 chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     project_uid = string(get(d, "projectUid", "")),
@@ -292,7 +297,8 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     target      = run_target(string(get(d, "target", "local"))),
     by          = string(get(d, "by", "")),
     excluded    = Dict{String,String}(string(k) => string(v) for (k, v) in get(d, "excluded", Dict())),
-    caller      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "caller", Dict{String,Any}())))
+    caller      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "caller", Dict{String,Any}())),
+    template    = Dict{String,Any}(String(k) => v for (k, v) in get(d, "template", Dict{String,Any}())))
 
 """
     execute_chain(req::ChainRequest; on_log, on_finished) -> Bool
@@ -316,7 +322,9 @@ function execute_chain(req::ChainRequest;
         req.target === TARGET_LOCAL || throw(ArgumentError("Chains run on this computer, not the cluster"))
         proj = load_project(req.project_uid)
         if isempty(req.run_id)
-            run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req), caller = req.caller,
+            inline = isempty(req.template) ? nothing : chain_template_from_raw(req.template; name = req.chain_name)
+            run_chain(proj, req.image_uids; chain = isnothing(inline) ? req.chain_name : "", template = inline,
+                      by = _request_by(req), caller = req.caller,
                       from_run = isempty(req.from_run) ? nothing : req.from_run,
                       excluded = req.excluded, on_cancel_check = is_chain_cancelled, on_log = on_log)
         else

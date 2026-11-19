@@ -1,6 +1,6 @@
 <!--
   The viewer window's Annotations section (docs/todo/GUI_LAYOUT_PLAN.md, V0: split the viewer): the scale
-  bar's and timestamp's text sizes (their switches are `VwOverlayToggles`), then the region grid and
+  bar's and timestamp's text sizes and the lens radius (their switches are `VwOverlayToggles`), then the region grid and
   landscape heatmap, which captures carry. Overlays on the view, never baked into the frame
   or a Share capture, so they sit with the viewport controls rather than the layer sections
   (docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md, P1). Settings live in the settings store; the window only
@@ -11,9 +11,10 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import CcToggle from '../CcToggle.vue'
 import { useSettingsStore } from '../../stores/settings'
 import type { LandscapeResult } from '../../utils/landscape'
+import { lensRadiusUm, type LensRadiusRange } from '../../utils/viewer/channelLens'
 
 /** `timed`: more than one frame — the timestamp's size only matters when one is drawn */
-defineProps<{ landscape: LandscapeResult | null; timed: boolean }>()
+const props = defineProps<{ landscape: LandscapeResult | null; timed: boolean; lensRange: LensRadiusRange | null }>()
 const settings = useSettingsStore()
 </script>
 
@@ -40,6 +41,16 @@ const settings = useSettingsStore()
         v-tooltip.bottom="'Timestamp text size'" aria-label="Timestamp text size"
       >
       <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerTimestampPx }}</span>
+    </div>
+    <div v-if="settings.viewerLens && props.lensRange" class="cc-row cc-row-tight">
+      <span class="cc-muted cc-fs-2xs cc-lbl-col">Lens</span>
+      <input
+        type="range" class="vw-grow vw-px" :min="props.lensRange.min" :max="props.lensRange.max" :step="props.lensRange.step"
+        :value="lensRadiusUm(settings.viewerLensRadiusUm, props.lensRange)"
+        @input="settings.viewerLensRadiusUm = Number(($event.target as HTMLInputElement).value)"
+        v-tooltip.bottom="'Lens radius, µm'" aria-label="Lens radius in µm"
+      >
+      <span class="cc-readout cc-fs-3xs vw-px-val">{{ lensRadiusUm(settings.viewerLensRadiusUm, props.lensRange) }} µm</span>
     </div>
     <div class="cc-eyebrow cc-fs-3xs vw-ann-group">For captures</div>
     <!-- Set-of-Mark grid: named cells (A1..H8 at 8×8) over the current viewport, so a share-in
