@@ -26,7 +26,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { chromium, findChromium, repo } from './lib/chromium.mjs'
-import { closeDialogs, openProject, refuseSlotZero, settle, signIn } from './lib/app_page.mjs'
+import { NOT_A_PAGE, closeDialogs, openProject, refuseSlotZero, settle, signIn } from './lib/app_page.mjs'
 
 // ── args ───────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -43,12 +43,11 @@ function parseArgs(argv) {
 }
 
 // Every routed page from the router table in frontend/src/main.ts, minus redirects, parameterised
-// routes, pop-out windows and first-run screens (those need their own state to mean anything).
-const SKIP = new Set(['/console', '/tasks-window', '/viewer-window', '/board-render', '/setup', '/profile-picker'])
+// routes, pop-out windows and first-run screens (`NOT_A_PAGE`: those need their own state to mean anything).
 function routesFromMain() {
   const src = readFileSync(join(repo, 'frontend', 'src', 'main.ts'), 'utf8')
   return [...src.matchAll(/\{\s*path:\s*'([^']+)',\s*component:/g)]
-    .map(m => m[1]).filter(p => !p.includes(':') && !SKIP.has(p))
+    .map(m => m[1]).filter(p => !p.includes(':') && !(p in NOT_A_PAGE))
 }
 
 // ── in-page helpers (run in the browser) ───────────────────────────────────────────────────────
